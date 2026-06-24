@@ -50,31 +50,45 @@ much `unsafe` as its world genuinely requires:
 
 `slotmap`, `thunderdome`, and `generational-arena` already provide the
 single-threaded vessel, and `crossbeam-epoch` provides the reclamation
-machinery. Phases 0–2 deliberately re-tread the single-threaded ground — we
-build our own clean, verified core as craft and as the foundation the upper
-tiers rest on. The genuinely novel work, where there is **no safe, ready-made
-answer**, is Phases 3b–4: the concurrent epoch tier and the byte /
-global-allocator descent.
+machinery. **We adopt `slotmap` (`slotmap = "1"`) as the single-threaded
+engine** rather than hand-build it — a battle-tested slotmap with years of
+production exposure and fuzzing is *safer* than fresh hand-rolled code, even
+though slotmap itself uses internal `unsafe`. Our crate keeps a thin **typed
+membrane** on top: `Region<T>` wraps `slotmap::SlotMap<DefaultKey, T>`, and
+`Handle<T>` is a newtype over `slotmap::DefaultKey` + `PhantomData<fn() -> T>`
+so handles stay generic-over-`T` and typed (which raw slotmap keys are not).
+This frees the creative budget for the genuinely novel work, where there is
+**no safe, ready-made answer**: Phases 3b–4 — the concurrent lock-free read
+tier and the byte / global-allocator descent.
 
-If priorities change, the core can be swapped for `slotmap` and effort
-refocused on 3b–4 without losing the architecture.
+`slotmap`'s audited `unsafe` does the job our own Hand would have done in the
+single-threaded core; our own Hand organ now appears ONLY in the concurrent
+epoch tier (3b-II) and the byte tier (4).
 
 ## 2. Architecture (summary)
 
-Three organs (full treatment in [`DESIGN.md`](DESIGN.md)):
+Three organs (full treatment in [`DESIGN.md`](DESIGN.md)). For the
+single-threaded core the Cartographer + Hand are now **provided by `slotmap`**
+(an audited dependency); our code contributes the typed Membrane and stays
+`#![forbid(unsafe_code)]`. Our own Hand organ appears only in the concurrent
+epoch tier (3b-II) and the byte mode (4).
 
 - **Cartographer** (safe) — all placement / free-list / compaction logic; pure
-  integer arithmetic over indices, never touches memory.
+  integer arithmetic over indices, never touches memory. In the
+  single-threaded core this is `slotmap`'s.
 - **Membrane** (safe) — the typed `Handle<T>` API and generation checks;
-  *total*, cannot express UB.
+  *total*, cannot express UB. **This is our contribution** in the
+  single-threaded core.
 - **Hand** (unsafe) — the single confined `unsafe` organ, present only in the
   epoch tier and the byte mode.
 
-Data layout (single-threaded core): a stable `slots` array (`handle.index`
-indexes it; each slot carries a generation and is either `Occupied{dense}` or
+Data layout (single-threaded core): the dense generational layout is the one
+`slotmap` gives us — a stable `slots` array (`handle.index` indexes it; each
+slot carries a generation and is either `Occupied{dense}` or
 `Vacant{next_free}`), a compact `dense: Vec<T>` of the live values, a
 `dense_to_slot` back-pointer array, and a `free_head`. All operations are
-`O(1)`; the dense array is compact by construction.
+`O(1)`; the dense array is compact by construction. (We adopt this rather than
+re-implement it.)
 
 ## 3. Verification methodology (first-class)
 
@@ -130,47 +144,66 @@ the objective, tool-checkable condition for "done".
 - **Remaining for full CI:** wire an actual GitHub Actions workflow (fmt,
   clippy, test, miri) — deferred until a remote exists.
 
-### Phase 1 — Single-threaded dense generational `Region<T>` · core landed early · task #120
+### Phase 1 — Single-threaded engine: adopt `slotmap` + typed `Region<T>`/`Handle<T>` membrane · task #120
 
-- **Goal:** the typed core — zero `unsafe`, miri-clean, with generation
-  saturation handled.
-- **Deliverables:** the full op set (done); a miri CI gate; slot retirement at
-  generation saturation; an expanded proptest op-set.
+- **Goal:** the typed core — zero `unsafe` of our own, miri-clean — built by
+  adopting `slotmap` as the engine and wrapping it in a thin typed membrane.
+- **Deliverables:** `Region<T>` wrapping `slotmap::SlotMap<DefaultKey, T>`;
+  `Handle<T>` as a newtype over `slotmap::DefaultKey` + `PhantomData<fn() ->
+  T>`; the full op set; the proptest differential harness kept as a
+  **conformance check** (does our typed wrapper behave like the reference
+  model?); a miri CI gate; a one-export-per-file module structure.
 - **Steps:**
-  1. ✅ `new` / `with_capacity` / `len` / `is_empty` / `capacity` / `insert` /
-     `get` / `get_mut` / `contains` / `remove` / `iter` / `iter_mut` / `clear`.
-  2. **Generation saturation:** when a slot's generation would wrap, **retire**
-     the slot (never return it to the free list) so handles can never alias.
-     Track a retired count; document the (astronomically rare) capacity cost.
-  3. **Expand the proptest op-set** to include `get_mut`, `clear`, and a
-     drop-counting payload so I5 is checked under random sequences, not only the
-     unit test.
-  4. **Run under miri** (`cargo +nightly miri test`). Even with zero `unsafe`,
-     miri validates the logic and guards future `unsafe`; make it a CI gate.
+  1. Restructure into **one-export-per-file** modules (per project convention):
+    `region.rs` for `Region<T>`, `handle.rs` for `Handle<T>`, `lib.rs` only
+    re-exports. No logic in `mod.rs`.
+  2. Implement the typed membrane over `slotmap`: `new` / `with_capacity` /
+    `len` / `is_empty` / `capacity` / `insert` / `get` / `get_mut` / `contains`
+    / `remove` / `iter` / `iter_mut` / `clear` — delegating to `slotmap` and
+    only adding the typed `Handle<T>` boundary.
+  3. **Generation saturation / slot retirement** is now `slotmap`'s
+    responsibility — `DefaultKey` already handles version saturation safely
+    (it retires a slot rather than wrapping a generation into alias). The
+    hand-rolled retirement is **removed**; note this explicitly so it is not
+    re-introduced.
+  4. **Keep the proptest differential harness** as a conformance check on our
+    wrapper (expand the op-set to include `get_mut`, `clear`, and a
+    drop-counting payload so I5 is checked under random sequences).
+  5. **Run under miri** (`cargo +nightly miri test`). Even with zero
+    `unsafe` of our own, miri validates the logic (and `slotmap`'s) and guards
+    future `unsafe`; make it a CI gate.
 - **Gate:** I1–I5 green (unit + proptest) **+ miri clean + `forbid(unsafe_code)`
-  compiles + saturation handled**.
-- **Tools:** proptest, miri.
-- **Status:** core implemented and green; OUTSTANDING — saturation retirement,
-  a miri run, proptest op-set expansion.
+  compiles for our crate**. (Version saturation handled by `slotmap`.)
+- **Tools:** slotmap, proptest, miri.
+- **Status:** old hand-rolled core landed (commit before this decision); now
+  PIVOTING to the `slotmap`-engine + typed membrane.
 
-### Phase 2 — Compaction, capacity policy, cache-locality benches · task #121
+### Phase 2 — Container choice benches + delegated compaction · task #121
 
-- **Goal:** explicit reclamation of the sparse slot array, a capacity policy,
-  and a measured cache-locality win.
-- **Deliverables:** `shrink_to_fit` + trailing-vacant trim; an optional
-  remap-returning compaction; criterion benches; the I6 property.
+- **Goal:** empirically **choose** the backing container, and confirm the
+  compaction/capacity properties that `slotmap` now owns on our behalf.
+- **Why this phase changed:** compaction and capacity are now mostly DELEGATED
+  to `slotmap` (it owns the dense layout, the free list, and capacity growth).
+  Our work shifts to measuring and to asserting slotmap's properties as a
+  contract.
+- **Deliverables:** criterion benches that empirically CHOOSE the container
+  (`SlotMap` vs `DenseSlotMap` vs `HashMap` vs `Vec<Box<T>>`) with an honest
+  verdict; I6 (compaction) confirmed as a property of `slotmap` via a test.
 - **Steps:**
-  1. The dense `Vec` is *already* compact, so values need no compaction. This
-     phase compacts the **slot** array: `shrink_to_fit` and trimming a trailing
-     run of vacant slots — both **handle-preserving** (they never move a live
-     slot, so outstanding handles stay valid).
-  2. A separate `compact_and_remap() -> HandleRemap` for callers who *can*
-     update their handles and want full slot renumbering. Documented as
-     handle-invalidating by design.
-  3. `reserve` / `capacity` growth policy.
-  4. criterion benches: dense iteration vs `HashMap` and `Vec<Box<T>>` (prove
-     locality); insert/remove throughput.
-- **Gate:** I6 green; benches show the dense-iteration locality advantage.
+  1. **Honest verdict on container choice:** the dense layout (`DenseSlotMap`)
+     wins **ITERATION** (contiguous `dense` array, cache-friendly); but the
+     standard `SlotMap` has the faster single-indirection **LOOKUP**, which is
+     the hotter path for resocks5's read-mostly workload (per-packet lookups
+     vastly outnumber connect/disconnect). Bench both and record the verdict
+     honestly — including if `DenseSlotMap`'s extra indirection on lookup
+     matters more than its iteration win.
+  2. Benchmark insert/remove throughput against `HashMap` and `Vec<Box<T>>`.
+  3. **I6 (compaction) as a property of `slotmap`:** a test that after a
+     sequence of inserts and removes, live-handle resolution is preserved and
+     the dense store has no live-value fragmentation — asserting `slotmap`'s
+     compaction-by-construction holds through our wrapper.
+- **Gate:** I6 green (test over our wrapper); benches recorded with an honest
+  verdict naming the chosen container and why.
 - **Tools:** proptest, criterion.
 
 ### Phase 3a — `RwLock` concurrent wrapper · baseline, always-shippable · task #122
@@ -183,24 +216,58 @@ the objective, tool-checkable condition for "done".
 - **Gate:** stress test clean; still `forbid(unsafe_code)`.
 - **Tools:** std threads, proptest.
 
-### Phase 3b — Lock-free read tier via epoch reclamation · loom-gated, experimental · task #123
+### Phase 3b — Lock-free read tier · two staged incarnations · loom-gated, experimental · task #123
 
-- **Goal:** lock-free reads — the Btrfs-CoW / RCU principle incarnate for
-  concurrent memory.
-- **Deliverables:** behind an `experimental` feature; `crossbeam-epoch` reader
-  guards; writers CoW the slot array (or use per-slot atomics) with old
-  versions reclaimed at epoch boundaries; the **first `hand` (unsafe) module**,
-  every block carrying a `// SAFETY:` proof; a loom harness.
+This is the crate's **true reason to exist**: making concurrent
+handle-addressed storage safe AND fast at once — collapsing the usual choice
+between "`RwLock` (safe, slow under contention)" and "hand-rolled lock-free
+(fast, unsafe, easy to get wrong)". resocks5's read-mostly hot paths
+(per-packet lookups vastly outnumber connect/disconnect) are the target.
+
+We admit only as much `unsafe` as each stage genuinely needs. 3b-I is the
+trusted default; 3b-II is a heavier fallback taken only if 3b-I proves
+inadequate.
+
+#### 3b-I — RCU reads via `arc-swap` (page-granularity CoW) · ZERO `unsafe`
+
+- **Goal:** lock-free reads via read-copy-update with page-granularity
+  copy-on-write (the Btrfs-CoW principle) — with **zero `unsafe`** of our own.
+- **Deliverables:** behind the `experimental` feature; readers load an
+  **immutable snapshot** (an `Arc` to the current page table) and look up
+  lock-free; rare writers serialise, CoW only the **touched page**, and publish
+  via `arc.store`; reclamation is plain `Arc` refcounting (no epoch handoff,
+  no `unsafe`).
 - **Steps:**
-  1. Design the concurrency model (what readers see, how writers publish, when
-     old versions are reclaimed).
+  1. Design the page-granularity model: how readers pin a snapshot, how a
+     writer CoWs only the touched page and atomically publishes, how `Arc`
+     drop reclaims the old version once the last reader releases it.
+  2. Implement with `arc-swap` — no `hand` module here; this stage stays under
+    `#![forbid(unsafe_code)]`.
+  3. Concurrent stress test under ThreadSanitizer.
+- **Gate:** stress test + TSan clean; still `#![forbid(unsafe_code)]`. This is
+  the trusted concurrent path unless its write cost / reader-pinning proves
+  unacceptable.
+- **Tools:** arc-swap, ThreadSanitizer, miri.
+
+#### 3b-II — `crossbeam-epoch` + per-slot atomics · the single confined `unsafe` Hand
+
+- **Goal:** a heavier lock-free design with finer-grained writes — taken ONLY
+  if 3b-I's write cost / reader-pinning proves unacceptable.
+- **Deliverables:** behind the `experimental` feature; `crossbeam-epoch` reader
+  guards; writers use per-slot atomics with old versions reclaimed at epoch
+  boundaries; the **first `hand` (unsafe) module**, every block carrying a
+  `// SAFETY:` proof; a loom harness.
+- **Steps:**
+  1. Design the per-slot concurrency model (what readers see, how writers
+     publish a new version of a single slot, when old versions are reclaimed).
   2. Implement the confined `unsafe` Hand.
   3. **loom** model-check the core scenarios (1 writer + 2 readers over a small
      region, exhaustive interleavings, assert linearizability of `get` vs
      `insert`/`remove`).
   4. ThreadSanitizer under stress; aarch64 CI.
-- **Gate:** **loom-green + TSan clean** → ship behind the feature; otherwise it
-  stays experimental/off and 3a remains the trusted path. No false confidence.
+- **Gate:** **loom-green + TSan clean** → ship behind the feature; **if loom is
+  not satisfied, it stays experimental and 3b-I / 3a remain the trusted path**.
+  No false confidence.
 - **Tools:** crossbeam-epoch, loom, ThreadSanitizer, miri.
 
 ### Phase 4 — `ByteRegion` + `GlobalAlloc` experiment · the tzimtzum, research-flagged · task #124
@@ -266,40 +333,71 @@ once 1 is green; 3b and 4 are the research frontier and do not block 5/6.
 - **Phase 3b is the time sink.** 3a (`RwLock`) is the always-shippable
   concurrent answer; 3b dives into lock-free only under loom's protection. If
   loom is not satisfied, 3b stays experimental.
-- **Phases 0–2 overlap `slotmap`.** Accepted deliberately (craft + verification
-  foundation). The core can be swapped for `slotmap` if priorities shift.
-- **Generation wrap (`u32`).** A handle outliving `2^32` reuses of *its* slot
-  could alias; mitigated by slot retirement at saturation (Phase 1 gate).
+- **~~Phases 0–2 overlap `slotmap`.~~** RESOLVED — we **adopted `slotmap`** as
+  the single-threaded engine (§1, §8). The overlap is gone; the dense
+  generational core is `slotmap`'s, and our effort is the typed membrane + the
+  concurrent/byte tiers.
+- **~~Generation wrap (`u32`).~~** Now `slotmap`'s responsibility — `DefaultKey`
+  handles version saturation safely (retires a slot rather than wrapping into
+  alias). The hand-rolled retirement is removed; the Phase 1 gate no longer
+  asserts it.
 - **`u32` index ceiling.** A region holds up to `u32::MAX` entries; documented.
 
 ## 8. Decisions log
 
+- **Adopt `slotmap` as the single-threaded engine** (DECIDED) — a
+  battle-tested slotmap with years of production exposure and fuzzing is
+  *safer* than fresh hand-rolled code, even though slotmap uses internal
+  `unsafe`. `slotmap`'s audited `unsafe` does the Cartographer/Hand job our
+  own Hand would have done in the single-threaded core; our code keeps a thin
+  typed membrane (`Region<T>` / `Handle<T>`) and stays
+  `#![forbid(unsafe_code)]`.
+- **The crate's differentiated value is the concurrent lock-free read tier**
+  (3b) — collapsing the usual choice between "`RwLock` (safe, slow under
+  contention)" and "hand-rolled lock-free (fast, unsafe, easy to get wrong)".
+  This matches resocks5's read-mostly hot paths. The single-threaded core is
+  not where we add value over existing crates.
+- **`mimalloc` stays resocks5's global allocator.** Phase 4 (`ByteRegion` +
+  `GlobalAlloc`) is honest research to honour the design, NOT a goal — it may
+  never beat `mimalloc`, and that is an acceptable, documented outcome.
 - **Dense-slotmap layout** (values in a compact `Vec<T>`, slots index into it)
   over a sparse "array with holes" — gives cache-friendly iteration and
-  compaction-by-construction.
+  compaction-by-construction. Now obtained from `slotmap` rather than
+  hand-built.
 - **Handles store `index + generation`**, with `PhantomData<fn() -> T>` so a
   handle is typed yet unconditionally `Copy + Send + Sync` and covariant in `T`.
-- **`#![forbid(unsafe_code)]` for the upper world**; `unsafe` admitted only in
-  the epoch tier (3b) and byte mode (4), each behind a feature and confined to
-  one module.
-- **`RwLock` baseline before lock-free** — ship a correct concurrent API first,
-  treat lock-free as an opt-in, loom-gated upgrade.
-- **Build the core ourselves despite `slotmap`** — craft and a verification
-  foundation; reversible.
+  In the `slotmap`-engine core, `Handle<T>` is a newtype over
+  `slotmap::DefaultKey` + `PhantomData<fn() -> T>`.
+- **`#![forbid(unsafe_code)]` for the upper world** — our own `unsafe` is
+  admitted only in the epoch tier (3b-II) and byte mode (4), each behind a
+  feature and confined to one module. (The single-threaded core has zero
+  `unsafe` of our own; `slotmap`'s audited `unsafe` does that job.)
+- **`RwLock` baseline before lock-free** — ship a correct concurrent API first
+  (3a), treat lock-free as an opt-in, staged upgrade (3b-I RCU, then 3b-II
+  epoch only if needed).
 - **The global allocator is not the goal for resocks5** — `mimalloc` stays;
   Phase 4 is a research descent, honestly bounded.
 
 ## 9. Crate metadata
 
 `no_std` + `alloc` (added in Phase 5; the arena needs only `alloc`); dual
-**MIT OR Apache-2.0**; MSRV **1.88**; the only dependency so far is `proptest`
-(dev). A standalone workspace root to avoid ancestor-workspace capture.
+**MIT OR Apache-2.0**; MSRV **1.88**. Dependencies:
+
+- `slotmap = "1"` — a **normal (non-dev) dependency**, the single-threaded
+  engine (Phase 1+).
+- `proptest` — dev-dependency, the differential/conformance harness.
+- `arc-swap` — enters with the `experimental` concurrent feature (3b-I).
+- `crossbeam-epoch` / `loom` — enter with 3b-II (loom is dev-only).
+
+A standalone workspace root to avoid ancestor-workspace capture.
 
 ## 10. Open questions
 
 - **Remote & name:** create a GitHub repo and grab the `sefer-alloc` name on
   crates.io? (No remote yet; `repository` is omitted from `Cargo.toml`.)
-- **Core vs adopt:** keep building the core, or adopt `slotmap` and refocus on
-  3b–4?
+- **~~Core vs adopt~~** — **RESOLVED (DECIDED → adopt `slotmap`)**: adopt
+  `slotmap = "1"` as the single-threaded engine; the crate's differentiated
+  value is the concurrent lock-free read tier (3b); `mimalloc` stays
+  resocks5's global allocator. See §1 and §8 for rationale.
 - **`ByteRegion` backing:** `Vec<u8>` vs `mmap`; which size-class scheme.
 - **`no_std` timing:** Phase 5, or earlier if a `no_std` consumer appears.

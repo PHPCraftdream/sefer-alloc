@@ -13,6 +13,16 @@ Cartographer** (it is just arithmetic on `u32`s), so the Hand stays mechanical
 and tiny. That is what makes verification tractable — you prove a total
 membrane and an integer algorithm, not a tangle of pointer math.
 
+**Organ attribution in the single-threaded core:** the Cartographer + Hand are
+now **provided by `slotmap`** (an audited dependency with years of production
+exposure and fuzzing). Our own code contributes only the typed **Membrane** —
+`Region<T>` wraps `slotmap::SlotMap<DefaultKey, T>`, and `Handle<T>` is a
+newtype over `slotmap::DefaultKey` + `PhantomData<fn() -> T>` so handles stay
+generic-over-`T` (which raw slotmap keys are not). A battle-tested slotmap is
+*safer* than fresh hand-rolled code, even though slotmap uses internal
+`unsafe`. Our wrapper therefore stays `#![forbid(unsafe_code)]`; our own Hand
+organ appears ONLY in the concurrent epoch tier (3b-II) and the byte tier (4).
+
 ## Dense generational layout
 
 ```text
@@ -21,6 +31,12 @@ dense:         [ T, T, T, ... ]                               compact value stor
 dense_to_slot: [ slot, slot, slot, ... ]                      back pointer dense[i] → slot
 free_head:     Option<u32>                                    head of the vacant free list
 ```
+
+This is the layout **`slotmap` gives us** (and what we would otherwise have
+hand-built in Phases 0–2). We adopt it rather than re-implement it. The
+machinery — the `slots` array, the free list, the cross pointers, generation
+bump on remove, version-saturation retirement — is `slotmap`'s; our wrapper
+contributes the typed `Handle<T>` boundary on top.
 
 - **insert** — push the value onto `dense`; claim a slot (reuse a vacant one or
   grow `slots`); wire the cross pointers. `O(1)`.
@@ -31,18 +47,31 @@ free_head:     Option<u32>                                    head of the vacant
   swap moved. `O(1)`.
 
 Because values live in a `dense` `Vec<T>`, the store is **always compact**:
-iteration is cache-friendly and there is no fragmentation to defragment. This
-is the log-structured/compacted ideal, achieved by construction rather than by
-a background pass.
+iteration is cache-friendly and there is no fragmentation to defragment — the
+live values are contiguous in memory, so a stride through `dense` hits cache
+lines maximally. This is the log-structured/compacted ideal, achieved by
+construction rather than by a background pass, and now provided by `slotmap`.
 
 ## The descent of `unsafe` (where the Hand appears)
 
-- **Typed single-threaded core (today):** zero `unsafe`
-  (`#![forbid(unsafe_code)]`). The dense `Vec<T>` owns all init and drop.
-- **Concurrent epoch tier (Phase 3b):** the first confined `unsafe` —
-  lock-free reads via epoch reclamation (the read-copy-update / shadow-paging
-  principle). Every block carries a `// SAFETY:` proof and the core is
-  loom-model-checked.
+- **Typed single-threaded core (today):** **our wrapper is zero `unsafe`**
+  (`#![forbid(unsafe_code)]`). Honest caveat: the engine's `unsafe` now lives
+  in the audited `slotmap` dependency — `slotmap` uses internal `unsafe` to
+  manage the dense generational layout, and we rely on its maturity rather than
+  re-rolling it. The "one screenful of `unsafe`" structural promise applies to
+  **OUR repo**: `#![forbid(unsafe_code)]` everywhere except the one documented
+  `hand.rs` (which does not exist in the single-threaded core).
+- **Concurrent tier (Phase 3b) — TWO stages:**
+  - **3b-I** — lock-free reads via `arc-swap` RCU with page-granularity
+    copy-on-write (the Btrfs-CoW principle): **zero `unsafe` of our own**.
+    Readers load an immutable snapshot and look up lock-free; rare writers
+    serialise, CoW only the touched page, and publish via `arc.store`;
+    reclamation is plain `Arc` refcounting.
+  - **3b-II** — the heavier `crossbeam-epoch` + per-slot-atomics design: the
+    single confined `unsafe` Hand module (loom-gated + ThreadSanitizer +
+    aarch64), taken ONLY if 3b-I's write cost / reader-pinning proves
+    unacceptable. Every block carries a `// SAFETY:` proof and the core is
+    loom-model-checked.
 - **Byte / global-allocator mode (Phase 4):** raw byte ranges, and a single
   irreducible `*mut u8` handed to `std`. `GlobalAlloc`'s contract demands an
   address, so this is the one aperture a handle cannot replace — kept minimal,
