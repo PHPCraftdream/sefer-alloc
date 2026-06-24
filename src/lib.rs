@@ -47,6 +47,8 @@
 
 mod handle;
 mod region;
+mod sync_region;
 
 pub use handle::Handle;
 pub use region::Region;
+pub use sync_region::SyncRegion;
