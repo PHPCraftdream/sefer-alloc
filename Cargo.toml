@@ -16,6 +16,11 @@ categories = ["data-structures", "memory-management"]
 [workspace]
 
 [dependencies]
+# Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
+# years of production exposure and fuzzing. Our crate wraps it in a thin typed
+# membrane and stays `#![forbid(unsafe_code)]`; slotmap's internal `unsafe`
+# does the Cartographer/Hand job for the single-threaded core. See docs/PLAN.md.
+slotmap = "1"
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference
