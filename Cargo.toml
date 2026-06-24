@@ -15,12 +15,22 @@ categories = ["data-structures", "memory-management"]
 # workspace if this repo is ever nested under one.
 [workspace]
 
+[features]
+# Phase 3b-I: lock-free reads via `arc-swap` RCU with page-granularity copy-on-write
+# — zero `unsafe` of our own. The concurrent tier is opt-in; the default build
+# pulls in only `slotmap`. See docs/PLAN.md.
+experimental = ["dep:arc-swap"]
+
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
 # years of production exposure and fuzzing. Our crate wraps it in a thin typed
 # membrane and stays `#![forbid(unsafe_code)]`; slotmap's internal `unsafe`
 # does the Cartographer/Hand job for the single-threaded core. See docs/PLAN.md.
 slotmap = "1"
+# Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
+# the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
+# dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
+arc-swap = { version = "1", optional = true }
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference

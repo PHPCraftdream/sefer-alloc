@@ -49,6 +49,12 @@ mod handle;
 mod region;
 mod sync_region;
 
+#[cfg(feature = "experimental")]
+mod concurrent;
+
 pub use handle::Handle;
 pub use region::Region;
 pub use sync_region::SyncRegion;
+
+#[cfg(feature = "experimental")]
+pub use concurrent::{LockFreeHandle, LockFreeRegion};
