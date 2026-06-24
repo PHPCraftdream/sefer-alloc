@@ -15,11 +15,20 @@ categories = ["data-structures", "memory-management"]
 # workspace if this repo is ever nested under one.
 [workspace]
 
+[lints.rust]
+# `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that gates the
+# loom model-check harness. Declare it so `unexpected cfg` warnings are silent.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
 [features]
-# Phase 3b-I: lock-free reads via `arc-swap` RCU with page-granularity copy-on-write
-# — zero `unsafe` of our own. The concurrent tier is opt-in; the default build
-# pulls in only `slotmap`. See docs/PLAN.md.
-experimental = ["dep:arc-swap"]
+# Phase 3b: lock-free reads. The concurrent tier is opt-in; the default build
+# pulls in only `slotmap`.
+# - 3b-I (`arc-swap`): RCU with page-granularity copy-on-write — zero `unsafe`
+#   of our own.
+# - 3b-II (`crossbeam-epoch`): per-slot atomics + epoch reclamation — the single
+#   confined `unsafe` Hand organ (src/concurrent/hand.rs), the only module with
+#   `#![allow(unsafe_code)]`. See docs/PLAN.md.
+experimental = ["dep:arc-swap", "dep:crossbeam-epoch"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -31,6 +40,12 @@ slotmap = "1"
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.
 arc-swap = { version = "1", optional = true }
+# Phase 3b-II: epoch-based memory reclamation for the per-slot-atomics lock-free
+# read tier. Optional — only pulled in by `experimental`. Its `unsafe` is the
+# dependency's; OUR `unsafe` is confined to src/concurrent/hand.rs (the single
+# documented `#![allow(unsafe_code)]` module) and is wrapped in a safe-to-use
+# `AtomicSlot<T>` API. See docs/PLAN.md.
+crossbeam-epoch = { version = "0.9", optional = true }
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference
@@ -40,6 +55,15 @@ proptest = "1"
 # backing container (SlotMap vs DenseSlotMap vs HashMap vs Vec<Box<T>>) across
 # the iterate / lookup / churn axes. See docs/BENCHMARKS.md for the verdict.
 criterion = "0.5"
+
+# Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
+# ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom
+# replaces the allocator and atomics), so the loom harness models a bare
+# AtomicU32 generation + AtomicPtr value publication using loom's own atomics,
+# NOT crossbeam. Reclamation correctness rests on the crate + miri, not loom.
+# Built only under `cfg(loom)` (`RUSTFLAGS="--cfg loom"` / `--cfg loom`).
+[target.'cfg(loom)'.dev-dependencies]
+loom = "0.7"
 
 [[bench]]
 name = "locality"
