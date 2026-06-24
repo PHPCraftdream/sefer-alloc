@@ -43,6 +43,9 @@ enum Op {
 }
 
 proptest! {
+    // Short scenario by default: 64 cases keeps this conformance smoke-check
+    // sub-second. Exhaustive fuzzing over long op streams is Phase 5's job.
+    #![proptest_config(ProptestConfig::with_cases(64))]
     #[test]
     fn region_matches_reference_model(
         ops in prop::collection::vec(

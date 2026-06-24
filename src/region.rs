@@ -73,6 +73,18 @@ impl<T> Region<T> {
         self.inner.capacity()
     }
 
+    /// Reserves capacity for at least `additional` more insertions.
+    ///
+    /// Does nothing if the backing store already has room. After a churn that
+    /// removes entries, the freed slots live on the free list, so re-inserting
+    /// reuses existing capacity and does not grow unboundedly (the backing
+    /// stays bounded by the high-water mark of live entries). Delegates to
+    /// `slotmap`'s `reserve`; may allocate more than asked to avoid frequent
+    /// reallocations. Panics if the new allocation size overflows `usize`.
+    pub fn reserve(&mut self, additional: usize) {
+        self.inner.reserve(additional);
+    }
+
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).
     pub fn insert(&mut self, value: T) -> Handle<T> {
         Handle::from_key(self.inner.insert(value))

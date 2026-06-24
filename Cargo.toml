@@ -26,3 +26,11 @@ slotmap = "1"
 # Phase 0 dependency: property-based differential testing against a reference
 # model. This is the heart of the verification-first build — see docs/PLAN.md.
 proptest = "1"
+# Phase 2: criterion benches that empirically choose the single-threaded
+# backing container (SlotMap vs DenseSlotMap vs HashMap vs Vec<Box<T>>) across
+# the iterate / lookup / churn axes. See docs/BENCHMARKS.md for the verdict.
+criterion = "0.5"
+
+[[bench]]
+name = "locality"
+harness = false
