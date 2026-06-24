@@ -61,7 +61,11 @@ struct Lcg(u64);
 impl Lcg {
     fn new(seed: u64) -> Self {
         // Guard against the all-zero state, which xorshift would get stuck in.
-        Self(if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed })
+        Self(if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        })
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -310,9 +314,7 @@ fn build_region(n: usize) -> Region<Payload> {
 /// Builds a region and returns it alongside the handles captured at insert
 /// time, so the lookup bench can re-derive the handle for logical entry `i`
 /// while the region stays live. `Region` exposes no `keys()` iterator.
-fn build_region_with_handles(
-    n: usize,
-) -> (Region<Payload>, Vec<sefer_alloc::Handle<Payload>>) {
+fn build_region_with_handles(n: usize) -> (Region<Payload>, Vec<sefer_alloc::Handle<Payload>>) {
     let mut r = Region::with_capacity(n);
     let mut handles = Vec::with_capacity(n);
     for i in 0..n {
@@ -346,9 +348,7 @@ fn build_dense(n: usize) -> DenseSlotMap<DefaultKey, Payload> {
     sm
 }
 
-fn build_dense_with_keys(
-    n: usize,
-) -> (DenseSlotMap<DefaultKey, Payload>, Vec<DefaultKey>) {
+fn build_dense_with_keys(n: usize) -> (DenseSlotMap<DefaultKey, Payload>, Vec<DefaultKey>) {
     let mut sm = DenseSlotMap::with_capacity(n);
     let mut keys = Vec::with_capacity(n);
     for i in 0..n {

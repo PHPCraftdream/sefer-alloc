@@ -40,7 +40,9 @@ impl<T> Clone for SlotState<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Occupied(v) => Self::Occupied(Arc::clone(v)),
-            Self::Vacant { next_free } => Self::Vacant { next_free: *next_free },
+            Self::Vacant { next_free } => Self::Vacant {
+                next_free: *next_free,
+            },
         }
     }
 }

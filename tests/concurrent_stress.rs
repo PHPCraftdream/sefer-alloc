@@ -28,7 +28,10 @@ impl Lcg {
     }
     /// Next pseudo-random `u64`.
     fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         self.0
     }
     /// `true` with probability `num / denom`.
@@ -59,7 +62,9 @@ const OPS_PER_THREAD: usize = 2_000;
 
 #[test]
 fn concurrent_insert_read_remove_never_corrupts_and_accounting_holds() {
-    let region = Arc::new(SyncRegion::<Tagged>::with_capacity(OPS_PER_THREAD * THREADS));
+    let region = Arc::new(SyncRegion::<Tagged>::with_capacity(
+        OPS_PER_THREAD * THREADS,
+    ));
 
     let total_survivors = scope(|scope| {
         let handles: Vec<_> = (0..THREADS)
@@ -89,7 +94,11 @@ fn concurrent_insert_read_remove_never_corrupts_and_accounting_holds() {
 }
 
 fn worker(tid: usize, region: &SyncRegion<Tagged>) -> usize {
-    let mut rng = Lcg::new(u64::try_from(tid).unwrap().wrapping_add(0x9E37_79B9_7F4A_7C15));
+    let mut rng = Lcg::new(
+        u64::try_from(tid)
+            .unwrap()
+            .wrapping_add(0x9E37_79B9_7F4A_7C15),
+    );
     let mut my_handles: Vec<sefer_alloc::Handle<Tagged>> = Vec::with_capacity(OPS_PER_THREAD);
 
     for seq in 0..u64::try_from(OPS_PER_THREAD).unwrap() {
@@ -117,7 +126,10 @@ fn worker(tid: usize, region: &SyncRegion<Tagged>) -> usize {
             let removed = region
                 .remove(victim)
                 .expect("our own live handle must remove exactly once");
-            assert_eq!(removed.thread, tid, "removed a value from a different thread");
+            assert_eq!(
+                removed.thread, tid,
+                "removed a value from a different thread"
+            );
             // After remove, the handle must be None forever (I2).
             assert_eq!(
                 region.get_cloned(victim),

@@ -55,9 +55,15 @@ fn single_threaded_sequence_matches_reference_model() {
     // a no-op None, and survivors stay valid (I1).
     let victim_idx = 2;
     let (victim_h, victim_v) = model.remove(victim_idx);
-    let removed = region.remove(victim_h).expect("live handle must remove once");
+    let removed = region
+        .remove(victim_h)
+        .expect("live handle must remove once");
     assert_eq!(*removed, victim_v);
-    assert_eq!(region.get(victim_h), None, "removed handle must be None (I2)");
+    assert_eq!(
+        region.get(victim_h),
+        None,
+        "removed handle must be None (I2)"
+    );
     assert!(!region.contains(victim_h));
     assert_eq!(
         region.remove(victim_h),
@@ -215,7 +221,11 @@ fn writer(
     region: &LockFreeRegion<Tagged>,
     pool: &Mutex<Vec<(usize, sefer_alloc::LockFreeHandle<Tagged>)>>,
 ) -> usize {
-    let mut rng = Lcg::new(u64::try_from(tid).unwrap().wrapping_add(0x9E37_79B9_7F4A_7C15));
+    let mut rng = Lcg::new(
+        u64::try_from(tid)
+            .unwrap()
+            .wrapping_add(0x9E37_79B9_7F4A_7C15),
+    );
     // Track this writer's own handles locally so removal is ownership-safe and
     // we can report survivors. The shared pool is a read-only view for readers.
     let mut my_handles: Vec<sefer_alloc::LockFreeHandle<Tagged>> = Vec::with_capacity(WRITER_OPS);
@@ -228,15 +238,12 @@ fn writer(
         // a different one — the per-handle property under contention.
         let got = region.get(h).expect("fresh handle must resolve");
         assert_eq!(
-            *got,
-            value,
+            *got, value,
             "writer {tid}: immediate re-read returned a different value"
         );
 
         my_handles.push(h);
-        pool.lock()
-            .expect("pool mutex poisoned")
-            .push((tid, h));
+        pool.lock().expect("pool mutex poisoned").push((tid, h));
 
         // Randomly remove one of our own handles (ownership-safe: only ours).
         if !my_handles.is_empty() && rng.chance(1, 3) {
@@ -246,8 +253,7 @@ fn writer(
                 .remove(victim)
                 .expect("our own live handle must remove exactly once");
             assert_eq!(
-                removed.thread,
-                tid,
+                removed.thread, tid,
                 "writer {tid}: removed a value from a different thread"
             );
             assert_eq!(

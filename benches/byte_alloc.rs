@@ -7,7 +7,6 @@
 //! what matters. The honest verdict lives in `docs/BYTE_BENCH.md`.
 
 #![cfg(feature = "byte")]
-
 // Benches are not shipped code. Pedantic lints that flag intentional patterns
 // here (fixed-N truncation casts, criterion closure formatting) are allowed at
 // the file level, mirroring `benches/locality.rs`. The library itself stays
@@ -55,9 +54,8 @@ fn bench_alloc_dealloc(c: &mut Criterion) {
         let label = format!("System/{size}B");
         group.bench_function(&label, |b| {
             b.iter(|| {
-                let ptrs: Vec<*mut u8> = (0..512)
-                    .map(|_| unsafe { System.alloc(layout) })
-                    .collect();
+                let ptrs: Vec<*mut u8> =
+                    (0..512).map(|_| unsafe { System.alloc(layout) }).collect();
                 black_box(&ptrs);
                 for &ptr in &ptrs {
                     unsafe { System.dealloc(ptr, layout) };

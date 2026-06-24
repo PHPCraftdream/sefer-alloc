@@ -1,0 +1,142 @@
+name: CI
+
+# Phase 5 hardening + publish-prep gate. Runs the full verification matrix the
+# PLAN calls for: fmt, clippy (pedantic), the test suite across feature sets,
+# miri on the invariant + byte tests, a no_std build, and a multi-arch matrix
+# (x86_64 + aarch64) for weak-memory coverage. The cargo-fuzz and the
+# multi-arch cross runs are documented intent here; cargo-fuzz has its own
+# scheduled/nightly cadence (see fuzz/README.md) because it is CPU-hour heavy.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "--features experimental", "--features byte", "--all-features"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # -W clippy::pedantic: the project's lint posture. `-D warnings` (from
+      # RUSTFLAGS above) turns any pedantic hit into a hard failure.
+      - run: cargo clippy --all-targets ${{ matrix.features }} -- -W clippy::pedantic
+
+  test:
+    name: test (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - "" # default: the safe core + SyncRegion
+          - "--features experimental" # adds LockFreeRegion + EpochRegion
+          - "--features byte" # adds ByteRegion + ByteAllocator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test ${{ matrix.features }}
+
+  no_std:
+    # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
+    # alloc. A build check is sufficient evidence; there is no std in the core
+    # to link against, so `cargo build --no-default-features` failing would
+    # surface any accidental std dependency.
+    name: no_std core build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabi
+      # A bare-metal target with no std, so a successful compile proves the core
+      # truly is no_std + alloc (not just "host build without the std feature").
+      - run: cargo build --no-default-features --target thumbv7em-none-eabi
+
+  miri:
+    name: miri (${{ matrix.test }})
+    runs-on: ubuntu-latest
+    env:
+      # Miri needs the nightly toolchain and its Miri component. Per the
+      # short-scenario policy, run miri on the focused invariant/byte tests,
+      # NOT the full suite.
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    strategy:
+      fail-fast: false
+      matrix:
+        # The two miri-relevant targets: the core invariants (UB-free slotmap
+        # membrane) and the byte tier (raw-pointer alloc/dealloc correctness).
+        test:
+          - "region_invariants"
+          # The byte test binary needs the `byte` feature.
+          - "--features byte --test byte"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test ${{ matrix.test }}
+
+  multi-arch:
+    # x86 is a strong-memory model; aarch64 is weak-memory and can surface
+    # ordering bugs the x86 run hides. We cross-compile and run via `cross` for
+    # aarch64. (The concurrent tiers carry the ordering-sensitive `unsafe`.)
+    name: test (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            use_cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross
+        if: ${{ matrix.use_cross }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Run tests (native)
+        if: ${{ !matrix.use_cross }}
+        run: cargo test --target ${{ matrix.target }} --features experimental
+      - name: Run tests (cross)
+        if: ${{ matrix.use_cross }}
+        run: cross test --target ${{ matrix.target }} --features experimental
+
+  docs:
+    name: rustdoc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # All-features so every intra-doc link (including the gated tiers) resolves.
+      - run: cargo doc --no-deps --all-features

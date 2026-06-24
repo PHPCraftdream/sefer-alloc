@@ -99,7 +99,10 @@ fn alloc_write_read_dealloc_across_classes_and_large() {
     let big_size = 4096;
     let big_layout = Layout::from_size_align(big_size, 16).unwrap();
     let big_ptr = region.alloc(big_layout);
-    assert!(!big_ptr.is_null(), "large alloc must succeed via system fallback");
+    assert!(
+        !big_ptr.is_null(),
+        "large alloc must succeed via system fallback"
+    );
     assert_aligned(big_ptr, 16);
     // SAFETY: `big_ptr` allocated for `big_size` bytes.
     unsafe { fill_and_check(big_ptr, big_size, 0x5A) };
@@ -290,7 +293,11 @@ fn global_alloc_round_trip_direct() {
     assert!(!p2.is_null());
     // SAFETY: first 32 bytes copied over; verify sentinel survived the move.
     for i in 0..32 {
-        assert_eq!(unsafe { p2.add(i).read() }, 0xAB, "realloc preserved byte {i}");
+        assert_eq!(
+            unsafe { p2.add(i).read() },
+            0xAB,
+            "realloc preserved byte {i}"
+        );
     }
     // Shrink back to 16.
     // SAFETY: `p2` valid for 256 bytes (post-grow); shrinking to 16 is fine.
@@ -298,7 +305,11 @@ fn global_alloc_round_trip_direct() {
     assert!(!p3.is_null());
     // SAFETY: first 16 bytes still carry the sentinel.
     for i in 0..16 {
-        assert_eq!(unsafe { p3.add(i).read() }, 0xAB, "shrink preserved byte {i}");
+        assert_eq!(
+            unsafe { p3.add(i).read() },
+            0xAB,
+            "shrink preserved byte {i}"
+        );
     }
     // SAFETY: final dealloc with the layout matching the last realloc's size.
     unsafe { alloc.dealloc(p3, Layout::from_size_align(16, 8).unwrap()) };

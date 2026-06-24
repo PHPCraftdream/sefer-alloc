@@ -54,9 +54,7 @@ impl<T> SyncRegion<T> {
     /// Multiple readers may hold the guard concurrently. Recovers from poison
     /// (see the [poisoning policy](Self#poisoning-policy)).
     pub fn read(&self) -> RwLockReadGuard<'_, Region<T>> {
-        self.inner
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.inner.read().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Locks for exclusive write, returning a guard that hands out `&mut Region<T>`.
@@ -64,9 +62,7 @@ impl<T> SyncRegion<T> {
     /// Blocks all other readers and writers until dropped. Recovers from poison
     /// (see the [poisoning policy](Self#poisoning-policy)).
     pub fn write(&self) -> RwLockWriteGuard<'_, Region<T>> {
-        self.inner
-            .write()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.inner.write().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Inserts `value`, returning a fresh handle that resolves to it (I1).

@@ -44,8 +44,8 @@
 //! ```
 
 // Structural confinement of `unsafe` (compiler-checked, not prose):
-//  - With NO features: `#![forbid(unsafe_code)]` — no `unsafe` is possible
-//    anywhere in the crate.
+//  - With NO features (or only `std`): `#![forbid(unsafe_code)]` — no `unsafe`
+//    is possible anywhere in the crate.
 //  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
 //    (Phase 4 `ByteRegion` + `GlobalAlloc`): the crate is `#![deny(unsafe_code)]`
 //    (any `unsafe` outside an allowed module is a hard error), and the confined
@@ -54,11 +54,21 @@
 //      * `byte::byte_region` / `byte::byte_allocator` (under `byte`).
 //    So "the `unsafe` lives in named modules" is enforced by the compiler in
 //    EVERY configuration. See `src/concurrent/hand.rs` and `src/byte/*`.
-#![cfg_attr(not(any(feature = "experimental", feature = "byte")), forbid(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "experimental", feature = "byte")),
+    forbid(unsafe_code)
+)]
 #![deny(unsafe_code)]
+// The single-threaded core (`Region<T>` / `Handle<T>`) needs only `alloc` and
+// builds under `no_std`. Disable the default `std` feature to drop `SyncRegion`
+// and the concurrent/byte tiers and get the bare `no_std` + `alloc` core.
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
 
 mod handle;
 mod region;
+
+#[cfg(feature = "std")]
 mod sync_region;
 
 #[cfg(feature = "experimental")]
@@ -69,6 +79,8 @@ mod byte;
 
 pub use handle::Handle;
 pub use region::Region;
+
+#[cfg(feature = "std")]
 pub use sync_region::SyncRegion;
 
 #[cfg(feature = "experimental")]

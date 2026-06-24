@@ -21,7 +21,11 @@ struct Lcg(u64);
 impl Lcg {
     fn new(seed: u64) -> Self {
         // Guard against the all-zero state, which xorshift would get stuck in.
-        Self(if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed })
+        Self(if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        })
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -60,7 +64,11 @@ fn churn(seed: u64, target: usize) -> Region<u64> {
             #[allow(clippy::cast_possible_truncation)]
             let idx = (rng.next_u64() as usize) % live.len();
             let (handle, value) = live.swap_remove(idx);
-            assert_eq!(region.remove(handle), Some(value), "remove returned wrong value");
+            assert_eq!(
+                region.remove(handle),
+                Some(value),
+                "remove returned wrong value"
+            );
         }
     }
     // Final resolution check while we still hold the model.
@@ -108,7 +116,10 @@ fn reinsert_reuses_capacity_without_unbounded_growth() {
         live.push(region.insert(0u64));
     }
     let high_water_capacity = region.capacity();
-    assert!(high_water_capacity >= 2048, "capacity must cover live entries");
+    assert!(
+        high_water_capacity >= 2048,
+        "capacity must cover live entries"
+    );
 
     // Steady-state churn: remove all, then re-insert the same count. Because
     // the freed slots return to slotmap's free list, this must not push

@@ -103,7 +103,10 @@ unsafe impl GlobalAlloc for ByteAllocator {
         // returns a pointer into the region's own pinned memory (or a
         // system-allocated pointer recorded for dealloc). The mutex guarantees
         // exclusive access to the region's mutable free-list state.
-        let mut region = self.inner.lock().expect("byte allocator mutex not poisoned");
+        let mut region = self
+            .inner
+            .lock()
+            .expect("byte allocator mutex not poisoned");
         region.alloc(layout)
     }
 
@@ -113,14 +116,20 @@ unsafe impl GlobalAlloc for ByteAllocator {
         // not been deallocated already. `ByteRegion::dealloc` routes it to the
         // correct backend (system allocator for large, class free list
         // otherwise). The mutex serialises access.
-        let mut region = self.inner.lock().expect("byte allocator mutex not poisoned");
+        let mut region = self
+            .inner
+            .lock()
+            .expect("byte allocator mutex not poisoned");
         region.dealloc(ptr, layout);
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         // SAFETY: same as `alloc` — the mutex serialises, and `ByteRegion`
         // returns valid memory (or null) for the layout.
-        let mut region = self.inner.lock().expect("byte allocator mutex not poisoned");
+        let mut region = self
+            .inner
+            .lock()
+            .expect("byte allocator mutex not poisoned");
         region.alloc_zeroed(layout)
     }
 
@@ -130,7 +139,10 @@ unsafe impl GlobalAlloc for ByteAllocator {
         // `ByteRegion::realloc` either delegates to the system allocator (for
         // large) or performs alloc + copy + dealloc, returning a valid new
         // pointer (or null on OOM). The mutex serialises access.
-        let mut region = self.inner.lock().expect("byte allocator mutex not poisoned");
+        let mut region = self
+            .inner
+            .lock()
+            .expect("byte allocator mutex not poisoned");
         region.realloc(ptr, old_layout, new_size)
     }
 }

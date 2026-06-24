@@ -337,8 +337,8 @@ impl ByteRegion {
         // arena this is acceptable and keeps the deallocation path simple and
         // obviously correct (no pointer arithmetic on the caller's pointer
         // beyond range checks).
-        let Some(class_size) = Self::class_for(layout.size(), layout.align())
-            .map(|c| SIZE_CLASSES[c])
+        let Some(class_size) =
+            Self::class_for(layout.size(), layout.align()).map(|c| SIZE_CLASSES[c])
         else {
             // Not large-tracked and not classifiable — a foreign pointer.
             // This is a contract violation; for safety we no-op rather than

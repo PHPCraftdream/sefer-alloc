@@ -144,7 +144,10 @@ fn full_region_returns_err_with_value_back() {
     let returned = region
         .insert(overflow_value)
         .expect_err("insert into a full region must return Err (no panic)");
-    assert_eq!(returned, overflow_value, "the overflow value is handed back");
+    assert_eq!(
+        returned, overflow_value,
+        "the overflow value is handed back"
+    );
 
     // Capacity is unchanged by the failed insert, and the region still resolves
     // every live handle.
@@ -312,7 +315,11 @@ fn writer(
     region: &EpochRegion<Tagged>,
     pool: &Mutex<Vec<(usize, EpochHandle<Tagged>)>>,
 ) -> usize {
-    let mut rng = Lcg::new(u64::try_from(tid).unwrap().wrapping_add(0x9E37_79B9_7F4A_7C15));
+    let mut rng = Lcg::new(
+        u64::try_from(tid)
+            .unwrap()
+            .wrapping_add(0x9E37_79B9_7F4A_7C15),
+    );
     // Track this writer's own handles locally so removal is ownership-safe and
     // we can report survivors. The shared pool is a read-only view for readers.
     let mut my_handles: Vec<EpochHandle<Tagged>> = Vec::with_capacity(WRITER_OPS);
@@ -331,15 +338,12 @@ fn writer(
             .get_cloned(h)
             .expect("fresh handle must resolve immediately");
         assert_eq!(
-            got,
-            value,
+            got, value,
             "writer {tid}: immediate re-read returned a different value"
         );
 
         my_handles.push(h);
-        pool.lock()
-            .expect("pool mutex poisoned")
-            .push((tid, h));
+        pool.lock().expect("pool mutex poisoned").push((tid, h));
 
         // Randomly remove one of our own handles (ownership-safe: only ours).
         if !my_handles.is_empty() && rng.chance(1, 3) {
@@ -397,8 +401,8 @@ fn reader(
     );
 
     loop {
-        let done = !live.load(Ordering::Relaxed)
-            && PROBES.load(Ordering::Relaxed) >= READER_OPS * READERS;
+        let done =
+            !live.load(Ordering::Relaxed) && PROBES.load(Ordering::Relaxed) >= READER_OPS * READERS;
         if done {
             break;
         }

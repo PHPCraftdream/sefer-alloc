@@ -21,14 +21,21 @@ categories = ["data-structures", "memory-management"]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [features]
-# Phase 3b: lock-free reads. The concurrent tier is opt-in; the default build
-# pulls in only `slotmap`.
+# The single-threaded core (`Region<T>` / `Handle<T>`) needs only `alloc` and
+# builds under `no_std`. `std` (default-on) is required only for `SyncRegion`
+# (it wraps `std::sync::RwLock`) and the concurrent/byte tiers. Disable default
+# features to get the bare `no_std` + `alloc` core.
+default = ["std"]
+std = ["slotmap/std"]
+# Phase 3b: lock-free reads. The concurrent tier is opt-in; it requires `std`
+# (its deps need it) and pulls in only `arc-swap` + `crossbeam-epoch` beyond the
+# core.
 # - 3b-I (`arc-swap`): RCU with page-granularity copy-on-write — zero `unsafe`
 #   of our own.
 # - 3b-II (`crossbeam-epoch`): per-slot atomics + epoch reclamation — the single
 #   confined `unsafe` Hand organ (src/concurrent/hand.rs), the only module with
 #   `#![allow(unsafe_code)]`. See docs/PLAN.md.
-experimental = ["dep:arc-swap", "dep:crossbeam-epoch"]
+experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
 # Phase 4: the byte / global-allocator descent ("the tzimtzum"). A
 # size-classed free-list byte arena (`ByteRegion`) plus an experimental
 # `unsafe impl GlobalAlloc` (`ByteAllocator`). It is honest research, NOT a
@@ -36,15 +43,21 @@ experimental = ["dep:arc-swap", "dep:crossbeam-epoch"]
 # mimalloc. Adds a SECOND confined-unsafe module (`src/byte/*`), so the crate
 # switches from `forbid(unsafe_code)` to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside `src/byte/*` (and `src/concurrent/hand.rs` under
-# `experimental`) stays a hard error. See docs/PLAN.md and docs/BYTE_BENCH.md.
-byte = []
+# `experimental`) stays a hard error. Requires `std`. See docs/PLAN.md and
+# docs/BYTE_BENCH.md.
+byte = ["std"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
 # years of production exposure and fuzzing. Our crate wraps it in a thin typed
 # membrane and stays `#![forbid(unsafe_code)]`; slotmap's internal `unsafe`
 # does the Cartographer/Hand job for the single-threaded core. See docs/PLAN.md.
-slotmap = "1"
+#
+# `default-features = false`: slotmap supports `no_std` + `alloc` (it gates
+# `#![no_std]` on `not(feature = "std")`). We re-enable its `std` feature via
+# our own `std` feature so the core compiles under `no_std` when defaults are
+# off, and behaves identically to before when `std` is on (the default).
+slotmap = { version = "1", default-features = false }
 # Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.

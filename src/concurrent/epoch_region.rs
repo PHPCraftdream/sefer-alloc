@@ -51,7 +51,7 @@ struct FreeState {
 /// writer-serialised writes, and `crossbeam-epoch` reclamation.
 ///
 /// This is Phase 3b-II: the heavier lock-free design that admits the crate's
-/// single confined `unsafe` organ ([`AtomicSlot<T>`]) in exchange for O(1)
+/// single confined `unsafe` organ (`AtomicSlot<T>`) in exchange for O(1)
 /// per-slot writes (no snapshot clone, unlike [`LockFreeRegion`](super::LockFreeRegion)).
 ///
 /// ## Fixed capacity
@@ -70,7 +70,7 @@ struct FreeState {
 /// - **I2 — tombstone:** after `remove(h)`, `get_with(h, …)` is `None` forever;
 ///   a second `remove(h)` is a no-op `false`.
 /// - **I3 — no ABA:** `remove` **bumps the slot's generation** (via
-///   [`AtomicSlot::evict`]), so a stale handle (slot reused) never resolves to
+///   `AtomicSlot::evict`), so a stale handle (slot reused) never resolves to
 ///   a live value.
 /// - **I4 — accounting:** [`len`](Self::len) equals the number of live entries.
 ///
@@ -121,10 +121,7 @@ impl<T> EpochRegion<T> {
     /// it). Readers are unaffected.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.state
-            .lock()
-            .expect("writer mutex poisoned")
-            .len
+        self.state.lock().expect("writer mutex poisoned").len
     }
 
     /// Whether the region holds no live values (I4).
@@ -215,7 +212,10 @@ impl<T> EpochRegion<T> {
             return false;
         }
         let reused = slot.evict(&guard);
-        state.len = state.len.checked_sub(1).expect("len underflow: double-remove?");
+        state.len = state
+            .len
+            .checked_sub(1)
+            .expect("len underflow: double-remove?");
         if reused {
             // Generation was bumped below saturation: return the slot to the
             // free list for reuse.

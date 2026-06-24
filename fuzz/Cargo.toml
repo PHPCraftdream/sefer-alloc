@@ -1,0 +1,29 @@
+[package]
+name = "sefer-alloc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "libFuzzer target for sefer-alloc's Region op-stream invariants (Phase 5 hardening)."
+
+# This crate is its OWN workspace root so it is never pulled into the parent
+# `sefer-alloc` workspace — the main `cargo build` / `cargo test` are completely
+# unaffected by it. Run targets from inside this directory.
+[workspace]
+
+[dependencies]
+# The crate under test, with its default features (the single-threaded core).
+sefer-alloc = { path = ".." }
+
+# libFuzzer harness + `arbitrary` op derivation. Pinned to the versions that
+# `cargo-fuzz` scaffolds; both are fuzz-only deps and do NOT touch the main
+# crate's manifest.
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "region_ops"
+path = "fuzz_targets/region_ops.rs"
+test = false
+doc = false
