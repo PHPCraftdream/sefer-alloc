@@ -95,3 +95,11 @@ harness = false
 name = "byte_alloc"
 harness = false
 required-features = ["byte"]
+
+# Phase 7a: sharded write-scaling bench — `ShardedRegion` vs `SyncRegion` /
+# `Arc<Mutex<Region>>` across thread counts. Quick criterion profile. Requires
+# `experimental` (for `ShardedRegion`) and the default `std` (for `SyncRegion`).
+[[bench]]
+name = "sharded_write"
+harness = false
+required-features = ["experimental"]

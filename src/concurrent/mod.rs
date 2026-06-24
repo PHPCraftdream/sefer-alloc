@@ -7,8 +7,12 @@ mod epoch_region;
 mod hand;
 mod lock_free_handle;
 mod lock_free_region;
+mod sharded_handle;
+mod sharded_region;
 
 pub use epoch_handle::EpochHandle;
 pub use epoch_region::EpochRegion;
 pub use lock_free_handle::LockFreeHandle;
 pub use lock_free_region::LockFreeRegion;
+pub use sharded_handle::ShardedHandle;
+pub use sharded_region::ShardedRegion;

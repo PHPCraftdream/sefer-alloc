@@ -312,6 +312,112 @@ inadequate.
   hazards. The global allocator stays `mimalloc` — this is an app-level swap.
 - **Tools:** resocks5's existing test + bench harness.
 
+### Phase 7 — Shared-nothing per-thread substrate (parallel writes) · tasks #13–#16
+
+The reads are already fast and parallel everywhere; the *write* path still
+funnels through one `Mutex` in every tier. Phase 7 dissolves that — not by
+sharding a lock (striping still collides), but by the **single-writer
+principle**: give each writer **thread** its own vessel (shard), so two writers
+in different shards never meet on a lock. The shard is the master key for
+parallel write, twin of the handle-key that unlocked safe relocation.
+
+**Invariant of the descent:** the single-threaded vessels
+(`EpochRegion`/`Region`/`ByteRegion`) are reused **UNCHANGED**; only *who picks
+which vessel* changes. New `unsafe` appears in exactly one place and only in 7b
+(a re-audit of the existing `hand.rs`). The "unsafe is two screens" promise
+holds.
+
+DAG: `7a → 7b → { 7c, 7d }`. 7a already carries ~90 % of the win for bounded,
+long-lived thread pools, with **zero new `unsafe`**.
+
+#### 7a — `ShardedRegion<T>` — sharding skeleton · zero new `unsafe` · task #13
+
+- **Goal:** N-way parallel writes via thread-local shard binding; reads stay the
+  untouched lock-free `EpochRegion` seqlock. Pure safe composition.
+- **Deliverables (behind `experimental`):** `ShardedHandle<T> { shard: u16,
+  inner: EpochHandle<T> }` (hand-written `Copy`/`Eq`/`Hash`/`Debug`);
+  `ShardedRegion<T> = Box<[EpochRegion<T>]>`, `with_shards(n, cap_per_shard)`,
+  default `n = available_parallelism()`; a **TLS router**
+  (`thread_local! { MY_SHARD }`) that lazily claims a free shard on a thread's
+  first `insert` (atomic round-robin; threads > N share a shard — graceful
+  degradation, still correct); `insert → own shard → ShardedHandle` (`Err` when
+  the shard is full); `get_with` / `remove` route by `handle.shard`.
+- **Steps:** the handle + the shard array; the TLS lazy-bind router + free-shard
+  registry; routing for read/remove; extend the differential proptest to
+  multi-shard.
+- **Gate:** multi-shard differential proptest (a handle from shard A **never**
+  resolves in shard B; I1–I4 hold across shards); a **write-scaling bench**
+  (write throughput rising with thread count vs `SyncRegion` / `Arc<Mutex>`);
+  the module compiles under `#![forbid(unsafe_code)]` (no new `unsafe`);
+  miri-clean.
+- **Tools:** proptest, criterion. (No loom — the router is safe.)
+- **Honest edge:** a claimed shard is not released in 7a, so it fits a *bounded
+  pool of long-lived threads*; thread-per-connection churn would exhaust shards
+  (the lifecycle lands in 7b).
+
+#### 7b — Remote-free + shard lifecycle · loom-gated · task #14
+
+- **Goal:** cross-thread `remove` becomes lock-free (no contention on the owner
+  shard); threads die safely; **live blocks of a dead thread stay valid**.
+- **Key soundness insight:** `AtomicSlot::evict` is *already atomic* — the
+  `swap(value → null)` is the linearization point (exactly one thread gets the
+  non-null value and evicts; a second sees null → no-op). So **any thread may do
+  the VISIBLE part of a removal** (generation bump + null + `defer_destroy`) —
+  I2/I3 hold immediately. Only the free-list re-add stays owner-only.
+- **Deliverables:** a per-shard **remote-free queue** (`crossbeam::SegQueue<u32>`
+  or a Treiber stack); a non-owner `remove` atomically evicts the slot and
+  **enqueues the index** for the owner, who drains it on its next op
+  (single-consumer); an **abandoned-shard registry** (epoch/`ArcSwap`): a dead
+  thread's shard is abandoned (its live slots stay resolvable), a new thread may
+  adopt and drain it; a **re-audit of `AtomicSlot`** under the relaxed
+  "any thread may evict" contract (was writer-only) — updated `// SAFETY:`
+  proving evict-vs-evict / evict-vs-install are race-free. `unsafe` stays ONLY
+  in the existing `concurrent/hand.rs`.
+- **Gate:** **loom** on the remote-free + multi-writer-evict protocol (1 owner +
+  1 remote-remover + 1 reader, bounded preemption); differential proptest with
+  cross-thread remove; a thread-death test (live blocks survive the owner's
+  death); miri on the relaxed `AtomicSlot`. **loom-green → ship; else it stays
+  experimental and 7a remains the trusted path.**
+- **Tools:** crossbeam, loom, miri, criterion.
+
+#### 7c — Pinning (thread-per-core) — the locality apex · task #15
+
+- **Goal:** maximal cache locality; `shard == core`.
+- **Deliverables:** a thread-per-core helper (pin workers to cores via
+  `core_affinity`/libc; each takes a stable shard == its core id) + docs on
+  integrating with `glommio`/`monoio`/`tokio` current-thread-per-core. Naturally
+  async-safe: no lock on the hot path, so "lock across `.await`" cannot arise.
+- **Gate:** a pinned write-scaling bench showing improvement (lower latency
+  variance, higher throughput) vs unpinned; honest "depends on workload
+  locality" note.
+- **Tools:** core_affinity, criterion.
+
+#### 7d — `ShardedByteArena` — parallel raw allocation · research · task #16
+
+- **Goal:** parallel tuple/node allocation: `[ByteRegion; N]` per-thread.
+- **Deliverables:** the same pattern for the byte tier — TLS shard, remote-free
+  for cross-thread `dealloc`, **segment-aligned chunks** (a large power of two)
+  so `ptr & !(SEGMENT-1)` yields the owner (safe Cartographer arithmetic) →
+  route the free to its queue; an optional `#[global_allocator]`. `unsafe` stays
+  ONLY in the existing `byte/*`.
+- **Gate:** **miri-clean** (hard — byte has no crossbeam); a parallel alloc
+  bench vs the single-`Mutex` `ByteAllocator`; an **honest verdict** (parallel
+  now, still not aiming to beat `mimalloc`).
+- **Tools:** miri, criterion.
+
+**Where `unsafe` lives (the structural promise holds):** 7a — zero new; 7b —
+only the existing `concurrent/hand.rs` (re-audited); 7d — only the existing
+`byte/*`. Compiler-enforced `deny + allow` in exactly those two modules.
+
+**Honest map:** 7a scales writes linearly *until two writers hit the same
+shard* (the striping compromise; near-linear for thread-spread workloads); 7b is
+the real concurrency depth and the only new correctness reasoning (hard
+loom-gate); a fully lock-free *slot choice* (a Treiber stack of vacant indices
+replacing the per-shard free-list `Mutex`) is a possible **7b′** finishing the
+last lock. This is an **architecture** on the application side (partition by key
+at ingress → route to the owning thread); the crate supplies the per-thread
+vessel within it.
+
 ---
 
 ## 6. Dependency DAG
@@ -320,11 +426,14 @@ inadequate.
 0 ─▶ 1 ─▶ 2 ─▶ 4
           │
           └──▶ 5 ─▶ 6
-     1 ─▶ 3a ─▶ 3b
+     1 ─▶ 3a ─▶ 3b ─▶ 7a ─▶ 7b ─▶ { 7c, 7d }
 ```
 
-`0 → 1 → { 2 → { 4, 5 → 6 }, 3a → 3b }`. Phases 2/3a can proceed in parallel
-once 1 is green; 3b and 4 are the research frontier and do not block 5/6.
+`0 → 1 → { 2 → { 4, 5 → 6 }, 3a → 3b → 7a → 7b → { 7c, 7d } }`. Phases 2/3a can
+proceed in parallel once 1 is green; 3b and 4 are the research frontier and do
+not block 5/6. Phase 7 (parallel writes via per-thread sharding) builds on the
+3b epoch tier: 7a is the zero-`unsafe` sharding baseline, 7b the loom-gated
+remote-free depth, 7c/7d the locality apex and the parallel byte tier.
 
 ## 7. Risk register
 

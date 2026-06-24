@@ -84,7 +84,9 @@ pub use region::Region;
 pub use sync_region::SyncRegion;
 
 #[cfg(feature = "experimental")]
-pub use concurrent::{EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion};
+pub use concurrent::{
+    EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion, ShardedHandle, ShardedRegion,
+};
 
 #[cfg(feature = "byte")]
 pub use byte::{ByteAllocator, ByteRegion};
