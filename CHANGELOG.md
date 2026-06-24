@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Safety invariants I1–I5 documented (`docs/INVARIANTS.md`) and encoded as
   unit tests plus a proptest differential harness against a reference model
   (`tests/differential.rs`).
-- Implementation plan with verification gates (`docs/PLAN.md`) and architecture
-  notes (`docs/DESIGN.md`).
+- Full detailed implementation plan — per-phase goals, deliverables, steps, and
+  gates, plus dependency DAG, risk register, decisions log, and open questions
+  (`docs/PLAN.md`) — alongside architecture notes (`docs/DESIGN.md`).
 - Dual MIT / Apache-2.0 licensing; MSRV pinned to 1.88.
