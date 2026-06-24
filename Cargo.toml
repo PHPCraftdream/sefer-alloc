@@ -29,6 +29,15 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 #   confined `unsafe` Hand organ (src/concurrent/hand.rs), the only module with
 #   `#![allow(unsafe_code)]`. See docs/PLAN.md.
 experimental = ["dep:arc-swap", "dep:crossbeam-epoch"]
+# Phase 4: the byte / global-allocator descent ("the tzimtzum"). A
+# size-classed free-list byte arena (`ByteRegion`) plus an experimental
+# `unsafe impl GlobalAlloc` (`ByteAllocator`). It is honest research, NOT a
+# production allocator — it is not expected to beat the system allocator or
+# mimalloc. Adds a SECOND confined-unsafe module (`src/byte/*`), so the crate
+# switches from `forbid(unsafe_code)` to `deny(unsafe_code)` with this feature
+# on; `unsafe` outside `src/byte/*` (and `src/concurrent/hand.rs` under
+# `experimental`) stays a hard error. See docs/PLAN.md and docs/BYTE_BENCH.md.
+byte = []
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -68,3 +77,8 @@ loom = "0.7"
 [[bench]]
 name = "locality"
 harness = false
+
+[[bench]]
+name = "byte_alloc"
+harness = false
+required-features = ["byte"]

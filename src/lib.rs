@@ -46,12 +46,15 @@
 // Structural confinement of `unsafe` (compiler-checked, not prose):
 //  - With NO features: `#![forbid(unsafe_code)]` — no `unsafe` is possible
 //    anywhere in the crate.
-//  - With `experimental` (3b-II `crossbeam-epoch` tier): the crate is
-//    `#![deny(unsafe_code)]` (any `unsafe` outside the one allowed module is a
-//    hard error), and the SINGLE module `concurrent::hand` lifts this with
-//    `#![allow(unsafe_code)]`. So "the `unsafe` is one module" is enforced by
-//    the compiler in BOTH configurations. See `src/concurrent/hand.rs`.
-#![cfg_attr(not(feature = "experimental"), forbid(unsafe_code))]
+//  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
+//    (Phase 4 `ByteRegion` + `GlobalAlloc`): the crate is `#![deny(unsafe_code)]`
+//    (any `unsafe` outside an allowed module is a hard error), and the confined
+//    modules lift this with `#![allow(unsafe_code)]`:
+//      * `concurrent::hand` (under `experimental`), and
+//      * `byte::byte_region` / `byte::byte_allocator` (under `byte`).
+//    So "the `unsafe` lives in named modules" is enforced by the compiler in
+//    EVERY configuration. See `src/concurrent/hand.rs` and `src/byte/*`.
+#![cfg_attr(not(any(feature = "experimental", feature = "byte")), forbid(unsafe_code))]
 #![deny(unsafe_code)]
 
 mod handle;
@@ -61,9 +64,15 @@ mod sync_region;
 #[cfg(feature = "experimental")]
 mod concurrent;
 
+#[cfg(feature = "byte")]
+mod byte;
+
 pub use handle::Handle;
 pub use region::Region;
 pub use sync_region::SyncRegion;
 
 #[cfg(feature = "experimental")]
 pub use concurrent::{EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion};
+
+#[cfg(feature = "byte")]
+pub use byte::{ByteAllocator, ByteRegion};

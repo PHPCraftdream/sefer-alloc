@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol is **loom-model-checked**; live values are dropped on region drop
   (I5). miri cannot run the tier only because `crossbeam-epoch`'s global
   collector is not miri-clean upstream — our `unsafe` is not implicated.
+- `ByteRegion` and `ByteAllocator` (behind the research-flagged `byte` feature)
+  — the descent to raw bytes: a size-classed free-list byte arena whose
+  placement logic is pure safe integer arithmetic (the Cartographer), with the
+  single irreducible `*mut u8` aperture confined and documented, plus an
+  experimental `unsafe impl GlobalAlloc` delegating through a `Mutex`. The
+  second confined-`unsafe` module; confinement stays compiler-enforced. The
+  whole byte tier is **miri-clean**. Honest scope: it does not aim to beat the
+  system allocator / `mimalloc` (see `docs/BYTE_BENCH.md`); resocks5's global
+  allocator stays `mimalloc` regardless.
 - Safety invariants I1–I5 documented (`docs/INVARIANTS.md`) and encoded as
   unit tests plus a proptest differential harness against a reference model
   (`tests/differential.rs`).
