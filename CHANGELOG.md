@@ -48,6 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across shards) and a routed concurrent stress test guard it; a write-scaling
   bench (`benches/sharded_write.rs`) compares it to the `SyncRegion` / `Arc<Mutex>`
   baselines.
+- **Phase 7b — lock-free cross-thread removal + shard lifecycle** (behind
+  `experimental`). A non-owner thread can now `remove` a handle WITHOUT taking
+  the owning shard's writer mutex: `AtomicSlot::try_evict_at` performs a
+  generation **`compare_exchange`** as the single linearization point — exactly
+  one thread wins per generation, so exactly one schedules `defer_destroy` and
+  decrements the (now `AtomicUsize`) live count (no double-free, no
+  lost-live-value). The freed index is enqueued to a per-shard remote-free queue
+  the owner drains on its next op (free list stays owner-only). `EpochRegion`
+  gains `remote_evict`; `ShardedRegion::remove` routes owner-path vs lock-free
+  remote-path by the calling thread's shard. Shards are now **releasable**: a
+  thread-local `Drop` guard frees the shard's `occupied` token on thread exit,
+  so a dead thread's shard can be adopted by a new thread while its live slots
+  stay resolvable (reads are ownership-free). The relaxed "any thread may evict"
+  contract is **loom-model-checked** (`tests/loom_sharded.rs`, 1 owner + 1
+  remote-remover + 1 reader, `preemption_bound = 3`) — verified to FAIL on the
+  naive load-then-swap protocol. `unsafe` stays confined to `concurrent/hand.rs`.
 - `ByteRegion` and `ByteAllocator` (behind the research-flagged `byte` feature)
   — the descent to raw bytes: a size-classed free-list byte arena whose
   placement logic is pure safe integer arithmetic (the Cartographer), with the

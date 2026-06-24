@@ -91,6 +91,11 @@ proptest! {
         // Total inserts that SUCCEEDED (so we can cross-check I4 against the
         // shard lengths at the end).
         let mut total_inserts = 0usize;
+        // Total Payloads CONSTRUCTED (Ok AND Err arms). A full-shard `Err`
+        // hands the value back and it drops uncounted-as-insert; the no-double
+        // -free upper bound must therefore be against constructions, not just
+        // successful inserts, or it can spuriously fail when a shard fills.
+        let mut total_constructed = 0usize;
 
         prop_assert_eq!(region.shard_count(), n_shards);
         prop_assert!(region.is_empty());
@@ -108,6 +113,7 @@ proptest! {
                     // Force the router to claim a fresh shard this insert.
                     ShardedRegion::<Payload>::_reset_my_shard_binding_for_tests();
                     let p = Payload { id: v, drops: Arc::clone(&drops) };
+                    total_constructed += 1;
                     match region.insert(p) {
                         Ok(h) => {
                             // The router must have claimed the shard we expected.
@@ -195,14 +201,20 @@ proptest! {
             "at least every survivor must be dropped once by region-drop \
              (survivors={survivors}, observed_drops={observed_drops})"
         );
-        // No double-free: across all inserts, no value is dropped more than
-        // once. Removed-and-reclaimed values drop exactly once (when epoch
-        // advances); survivors drop exactly once (on region drop). So the
-        // total observed drops can be at most total_inserts.
+        // No double-free: no value is dropped more than once. Removed-and-
+        // reclaimed values drop exactly once (when epoch advances); survivors
+        // drop exactly once (on region drop); a full-shard `Err` payload drops
+        // exactly once (handed back). So total observed drops can be at most
+        // the number of Payloads ever CONSTRUCTED — exceeding that is a true
+        // double-free. (Bounding by successful inserts alone is wrong: it omits
+        // the Err-returned payloads, which also drop.)
         prop_assert!(
-            observed_drops <= total_inserts,
-            "no double-free: drops ({observed_drops}) must not exceed inserts ({total_inserts})"
+            observed_drops <= total_constructed,
+            "no double-free: drops ({observed_drops}) must not exceed constructed payloads ({total_constructed})"
         );
+        // Anchor that total_inserts is still meaningful (every success is also a
+        // construction) so the rename cannot silently drop the accounting link.
+        prop_assert!(total_inserts <= total_constructed);
     }
 }
 

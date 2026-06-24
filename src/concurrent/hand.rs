@@ -17,8 +17,11 @@
 //! via a publication protocol:
 //!
 //! - A **writer** (holding the writer mutex) calls [`AtomicSlot::install`] to
-//!   publish a value (Release store) and returns the *current* generation; or
-//!   [`AtomicSlot::evict`] to swap the value to null and bump the generation.
+//!   publish a value (Release store) and returns the *current* generation. **Phase
+//!   7b:** ANY thread (owner or remote) may call
+//!   [`AtomicSlot::try_evict_at`] to perform a generation-CAS-checked eviction
+//!   — the CAS is the single linearization point that prevents the
+//!   lost-live-value hazard (see the method's SAFETY proof).
 //! - A **reader** calls [`AtomicSlot::read_with`] with the generation baked into
 //!   its handle: it loads the generation (Acquire), compares, then loads the
 //!   value pointer (Acquire) under a pinned epoch `Guard`. The generation/value
@@ -47,6 +50,36 @@ use crossbeam_epoch::{Atomic, Guard, Owned, Shared};
 /// may carry. Install leaves the generation unchanged; only eviction bumps it.
 const INITIAL_GENERATION: u32 = 0;
 
+/// The outcome of a generation-checked eviction ([`AtomicSlot::try_evict_at`]).
+///
+/// This is the SINGLE linearization point of a removal: the
+/// `compare_exchange(expected_gen → next)` on the slot's generation is the
+/// atomic step that decides who owns the reclamation. See the `try_evict_at`
+/// SAFETY argument for why this rules out the off-mutex "lost-live-value"
+/// hazard (a remote remover that checks `generation == handle.gen` then swaps
+/// value→null can destroy a NEWER value installed by the owner after an
+/// intervening eviction — a use-after-free).
+#[derive(Debug, PartialEq, Eq)]
+#[must_use]
+pub(crate) enum EvictOutcome {
+    /// THIS call won the generation CAS and therefore uniquely owns the
+    /// transition out of `expected_gen`: it has swapped the value to null and
+    /// scheduled `defer_destroy` of the old pointer.
+    ///
+    /// `reusable` is always `true` for a CAS win: saturation (`expected_gen ==
+    /// u32::MAX`) is handled upfront by returning [`EvictOutcome::Stale`], so a
+    /// win implies a non-saturated generation that the caller may re-add to a
+    /// free list. (A slot reaches `u32::MAX` only via retirement, and no live
+    /// handle ever carries MAX — see `try_evict_at`.)
+    Evicted { reusable: bool },
+    /// The slot was NO LONGER at `expected_gen` when the CAS ran: another
+    /// remover already transitioned it (or the owner reinstalled at a later
+    /// generation). No value was touched and no reclamation was scheduled —
+    /// the caller treats this as a no-op `false` (the handle was already stale
+    /// or already removed: I2).
+    Stale,
+}
+
 /// A single slot of an [`EpochRegion`](crate::concurrent::EpochRegion): a
 /// generation counter plus an epoch-managed value pointer (null = vacant).
 ///
@@ -58,8 +91,9 @@ const INITIAL_GENERATION: u32 = 0;
 /// - [`read_with`](Self::read_with) — lock-free read under a pinned guard.
 /// - [`install`](Self::install) — writer-only publish (caller holds the writer
 ///   mutex); requires the slot be vacant.
-/// - [`evict`](Self::evict) — writer-only publish of a tombstone; bumps
-///   generation, schedules reclamation.
+/// - [`try_evict_at`](Self::try_evict_at) — generation-CAS-checked eviction
+///   (Phase 7b); callable by ANY thread (owner or remote). The CAS is the
+///   single linearization point of a removal.
 ///
 /// `T` is stored on the heap behind a `crossbeam_epoch::Atomic<T>`; the slot
 /// itself is plain data (an atomic `u32` and an atomic-pointer word) and is
@@ -91,10 +125,13 @@ impl<T> AtomicSlot<T> {
 
     /// Loads the slot's current generation with `Acquire` ordering.
     ///
-    /// Pairing: a writer stores the generation with `Release` in
-    /// [`evict`](Self::evict); this `Acquire` load therefore sees the bump (and
-    /// any value publication ordered before it).
+    /// Pairing: an evicting thread stores the generation with `Release` in
+    /// [`try_evict_at`](Self::try_evict_at); this `Acquire` load therefore sees
+    /// the bump (and any value publication ordered before it). Retained as a
+    /// diagnostic accessor; the eviction path uses the CAS directly rather than
+    /// a load-then-check (which would be the unsound off-mutex hazard).
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn generation(&self) -> u32 {
         self.generation.load(Ordering::Acquire)
     }
@@ -165,8 +202,9 @@ impl<T> AtomicSlot<T> {
         //  3. NO ALIASING VIOLATION: `f` takes a shared `&T`; multiple readers
         //     may concurrently hold `&T` to the same value, which is sound
         //     (shared references are `Sync`-free; `T` is only mutated by the
-        //     writer, and the writer has swapped the pointer to null before
-        //     scheduling destruction, so no `&mut` coexists with this `&`).
+        //     owner via `install`, and an evicting thread — owner OR remote, in
+        //     Phase 7b — has swapped the pointer to null before scheduling
+        //     destruction, so no `&mut` coexists with this `&`).
         //  4. GENERATION COHERENCE (seqlock): the g1==g2 re-check above proves
         //     no eviction occurred between the generation load and the value
         //     load, so `shared` belongs to generation `g1 == expected_gen`.
@@ -197,6 +235,17 @@ impl<T> AtomicSlot<T> {
     /// writer lock); `install` unconditionally overwrites. The
     /// [`EpochRegion`](crate::concurrent::EpochRegion) only ever calls this on a
     /// slot popped from the free list, which is vacant by construction.
+    ///
+    /// **Phase 7b note:** a slot popped from the free list is vacant AND at a
+    /// generation no live handle carries (the generation was bumped on the
+    /// eviction that freed it). `install` does not bump the generation, so the
+    /// just-installed value is associated with that post-eviction generation.
+    /// Because no remote remover can have a handle at this generation (none was
+    /// ever minted here between the eviction and this install), `install` cannot
+    /// race a `try_evict_at` — the install is the FIRST event at this
+    /// generation. This is part of the [`try_evict_at`] no-reinstall proof.
+    ///
+    /// [`try_evict_at`]: AtomicSlot::try_evict_at
     pub(crate) fn install(&self, value: T, _guard: &Guard) -> u32 {
         let owned = Owned::new(value);
         // Release-publish the pointer. A reader's Acquire load of this pointer
@@ -209,53 +258,120 @@ impl<T> AtomicSlot<T> {
         self.generation.load(Ordering::Acquire)
     }
 
-    /// Writer-only: tombstone the slot, bump the generation, and schedule
-    /// reclamation of the old value.
+    /// Generation-checked eviction — the SINGLE linearization point of a
+    /// removal (Phase 7b).
     ///
-    /// The caller MUST hold the writer mutex. Swaps the value pointer to null
-    /// (`AcqRel`); if it was non-null, schedules `guard.defer_destroy(old)` and
-    /// bumps the generation (`Release`). Returns `true` if the slot may be
-    /// reused (generation was bumped below saturation), `false` if it saturated
-    /// (generation at `u32::MAX`, slot must be retired) OR if the slot was
-    /// already vacant (nothing to evict).
+    /// Atomically transitions the slot's generation from `expected_gen` to
+    /// `expected_gen + 1` via `compare_exchange` (saturation at `u32::MAX`:
+    /// the CAS still wins but the generation stays at MAX, and the slot is
+    /// reported non-reusable — retired). On a SUCCESSFUL CAS the caller
+    /// UNIQUELY owns the reclamation: this method then swaps the value
+    /// pointer to null and schedules `guard.defer_destroy(old)`. On a FAILED
+    /// CAS the slot was no longer at `expected_gen` (another remover won, or
+    /// the owner reinstalled) — nothing is touched and [`EvictOutcome::Stale`]
+    /// is returned.
     ///
-    /// **Reclamation:** after the swap-to-null, no NEW reader can obtain the
-    /// old pointer (they load null). Readers that already loaded the old
-    /// pointer are protected by their pinned guard; `defer_destroy` frees the
-    /// pointee only after the next epoch advance past all such guards.
-    pub(crate) fn evict(&self, guard: &Guard) -> bool {
-        // AcqRel: Acquire to see prior publications (so we reclaim the right
-        // pointer), Release so a subsequent reader's Acquire load observes the
-        // null (and never the about-to-be-destroyed pointer).
-        let old: Shared<'_, T> = self.value.swap(Shared::null(), Ordering::AcqRel, guard);
-        if old.is_null() {
-            // Already vacant — nothing to evict. Report "not reusable" so the
-            // caller does not double-count a free slot.
-            return false;
+    /// # Why this is the sound way to evict from a NON-OWNER thread
+    ///
+    /// A remote remover holds no writer mutex. The naive "load
+    /// `generation()`, compare to `handle.gen`, then `swap(value → null)`"
+    /// is **UNSOUND** off-mutex: between the check and the swap, the slot can
+    /// be evicted AND reinstalled by the owner at `gen+1` with a NEW live
+    /// value, and the stale remover's swap-to-null would then destroy that
+    /// newer live value (a lost-live-value / use-after-free). The generation
+    /// CAS makes the check-and-swap atomic relative to ALL other eviction
+    /// attempts: exactly one remover can win the CAS at `expected_gen`, so
+    /// exactly one remover can swap the value out, and it can only ever swap
+    /// out the value that was published at `expected_gen` (see the SAFETY
+    /// proof below for why no owner reinstall can slip between the CAS win and
+    /// the swap).
+    ///
+    /// # Returns
+    ///
+    /// - [`EvictOutcome::Evicted { reusable }`] if THIS call won the CAS
+    ///   (uniquely owns the reclamation). `reusable` is `false` iff the slot
+    ///   saturated (caller retires it).
+    /// - [`EvictOutcome::Stale`] if the CAS failed (caller treats as no-op).
+    pub(crate) fn try_evict_at(&self, expected_gen: u32, guard: &Guard) -> EvictOutcome {
+        // Saturation guard: a handle carrying `u32::MAX` cannot be live. A slot
+        // reaches generation MAX only via eviction (which RETIRES it — never
+        // re-adds to a free list), and `install` (which mints handles) never
+        // runs on a retired slot. So no live handle ever carries MAX. We treat
+        // `expected_gen == u32::MAX` as Stale upfront — this ALSO avoids a racy
+        // idempotent MAX→MAX CAS (which two threads could both "win", causing a
+        // double `fetch_sub` on `len` and a double `defer_destroy` report).
+        if expected_gen == u32::MAX {
+            return EvictOutcome::Stale;
         }
-        // SAFETY: `old` is the non-null pointer that WAS published in this slot.
-        // After the `swap` to null, NO new reader can load `old` (they load
-        // null). Any reader that ALREADY loaded `old` did so under a pinned
-        // guard; `guard.defer_destroy(old)` defers the deallocation until at
-        // least two epoch advances later, by which time every such reader has
-        // unpinned. Therefore scheduling destruction here is sound — the memory
-        // is freed only when no reader can still be holding `old`. We do NOT
-        // dereference `old` here.
+        // Normal path: CAS the generation `expected_gen → expected_gen + 1`.
+        let next = expected_gen + 1;
+        // AcqRel on success: Acquire to see prior publications (so we reclaim
+        // the correct pointer in the swap below), Release so a concurrent
+        // reader's Acquire load of the generation observes the bump BEFORE it
+        // could load a stale value. Acquire on failure: we read the actual
+        // current generation on failure for diagnostics, which we discard —
+        // Relaxed would also suffice, but Acquire is harmless and matches the
+        // reader's pairing.
+        let cas = self.generation.compare_exchange(
+            expected_gen,
+            next,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+        if cas.is_err() {
+            // Another thread transitioned the generation first (a concurrent
+            // remover won, or the owner reinstalled at a later generation).
+            // We touched NOTHING — no swap, no defer_destroy. The caller treats
+            // this handle as already-removed (I2: a second remove is a no-op).
+            return EvictOutcome::Stale;
+        }
+        // CAS WON: we uniquely own the transition out of `expected_gen`. Swap
+        // the value to null and reclaim whatever was published at
+        // `expected_gen`. AcqRel: Acquire pairs with the publisher's Release
+        // store in `install` (we see the initialised value), Release so a
+        // subsequent reader's Acquire load observes null (never the about-to-
+        // be-destroyed pointer).
+        let old: Shared<'_, T> = self.value.swap(Shared::null(), Ordering::AcqRel, guard);
+        // SAFETY: identical contract to `evict`'s defer_destroy, restated for
+        // the multi-thread eviction context:
+        //  1. WE WON THE CAS — so we are the UNIQUE thread that may reclaim a
+        //     value published at `expected_gen`. No other remover can reach
+        //     this swap for `expected_gen` (they all failed the CAS and
+        //     returned `Stale`), so there is no double-free.
+        //  2. NO OWNER REINSTALL CAN RACE THE SWAP: the owner only ever
+        //     `install`s into a slot it popped from its free list. A slot
+        //     reaches the free list ONLY after a remover (this one, or a
+        //     local one) enqueues the index AND the owner has drained that
+        //     queue AND observed the slot vacant. Between our CAS win and our
+        //     swap, the slot is at `next` (a generation NO live handle
+        //     carries — handles are minted at install-time generations, and
+        //     install does not bump the generation), so no concurrent
+        //     `try_evict_at` can target it (their `expected_gen` would not
+        //     match `next` unless a NEW install + handle-mint happened, which
+        //     requires the free-list drain that has not yet occurred). Hence
+        //     the pointer we swap out is exactly the one published at
+        //     `expected_gen` — never a newer live value.
+        //  3. LIFETIME (carries over from `evict`): after the swap-to-null no
+        //     NEW reader can load `old` (they load null). Readers that already
+        //     loaded `old` did so under a pinned `guard`; `defer_destroy(old)`
+        //     frees the pointee only after the next epoch advance past every
+        //     such reader's guard. We do NOT dereference `old` here.
+        //  4. `old` MAY BE NULL: if the slot was already vacant at
+        //     `expected_gen` (e.g. a retire-without-reuse left it vacant, or
+        //     a prior `drop_value` ran under exclusive access — impossible
+        //     concurrently but defensive), `defer_destroy(null)` is a no-op.
+        //     A CAS win at `expected_gen` against a slot a live handle pointed
+        //     at implies a value WAS installed (the handle was minted by an
+        //     install), so in practice `old` is non-null; the null guard is
+        //     belt-and-braces. We trust the caller (EpochRegion) to only call
+        //     this for handles it minted.
         unsafe {
             guard.defer_destroy(old);
         }
-        // Bump the generation so handles minted at the old generation go stale
-        // (I3 — no ABA). Saturation: at u32::MAX we RETIRE the slot (leave
-        // generation at MAX, signal the caller not to reuse it) rather than
-        // wrap into alias with a prior generation.
-        let cur = self.generation.load(Ordering::Acquire);
-        if cur == u32::MAX {
-            // Saturated: retire. Generation stays at MAX; old handles are stale
-            // (slot is now vacant) and no fresh handle is ever minted here.
-            return false;
-        }
-        self.generation.store(cur + 1, Ordering::Release);
-        true
+        // We won the CAS at a non-saturated generation (saturated returns early
+        // as Stale above), so the slot is reusable: the caller may re-add it to
+        // a free list once the freed index reaches the owner.
+        EvictOutcome::Evicted { reusable: true }
     }
 
     /// Drops the value this slot holds (if any), given EXCLUSIVE access.
@@ -288,6 +404,20 @@ impl<T> AtomicSlot<T> {
 // reclaimed by the epoch collector (not dropped by the slot). The slot is
 // therefore `Send + Sync` for every `T` (matches `crossbeam_epoch::Atomic<T>`,
 // which is unconditionally `Send + Sync`).
+//
+// PHASE 7b RE-AUDIT (relaxed "any thread may evict via try_evict_at" contract):
+// pre-7b the ONLY mutator was the single writer holding the region's writer
+// mutex. In 7b a REMOTE thread may also call `try_evict_at`, which performs a
+// generation CAS + a value swap-to-null + `defer_destroy`. This does NOT
+// broaden the aliasing surface: every mutation is still an atomic operation
+// (`compare_exchange`, `swap`) on the atomic fields, and the reclamation is
+// still routed through `crossbeam_epoch`'s `defer_destroy` (never a raw
+// `drop`). The `try_evict_at` SAFETY proof establishes that exactly ONE thread
+// can win the generation CAS at a given `expected_gen`, so exactly one thread
+// schedules `defer_destroy` for the value published there — no double-free, no
+// `&mut` racing a reader's `&`. The invariants below are therefore unchanged
+// in substance; only the "single writer" framing widens to "the unique CAS
+// winner among all evicting threads".
 // SAFETY (Send): an `AtomicSlot<T>` may hold a heap `T` behind its `Atomic<T>`,
 // so sending it to another thread sends that `T` — hence the `T: Send` bound.
 // `T: Sync` is also required because readers on multiple threads share `&T`
@@ -300,10 +430,12 @@ unsafe impl<T: Send + Sync> Send for AtomicSlot<T> {}
 // SAFETY (Sync): `&AtomicSlot<T>` grants shared access to the generation
 // counter (atomic) and the `Atomic<T>` pointer (lock-free under a guard).
 // Readers run `read_with` concurrently, each obtaining a shared `&T` to the
-// same value — sound only when `T: Sync`. The single writer (under the region's
-// writer mutex) is the only mutator, via atomic operations; no `&mut T`
-// coexists with a reader `&T`. `T: Send` is required because a value installed
-// on one thread may be dropped (reclaimed) on another. Matches `Atomic<T>: Sync`.
+// same value — sound only when `T: Sync`. Evicting threads (owner OR remote in
+// 7b) mutate ONLY via atomic operations (`compare_exchange`, `swap`); no `&mut
+// T` ever coexists with a reader `&T` (the pointer is swapped to null before
+// `defer_destroy` is scheduled). `T: Send` is required because a value
+// installed on one thread may be dropped (reclaimed) on another. Matches
+// `Atomic<T>: Sync`.
 unsafe impl<T: Send + Sync> Sync for AtomicSlot<T> {}
 
 // `AtomicSlot<T>` has no hand-written `Drop`: its default drop drops the

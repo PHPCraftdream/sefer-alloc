@@ -1,5 +1,6 @@
-//! [`ShardedRegion<T>`] — N-way parallel writes via thread-local shard binding
-//! (Phase 7a, `experimental`).
+//! [`ShardedRegion<T>`] — N-way parallel writes via thread-local shard binding,
+//! with **lock-free cross-thread removal** and a **shard lifecycle** (Phase 7b,
+//! `experimental`; supersedes 7a's claim-and-never-release model).
 //!
 //! This is pure **safe composition** on top of [`EpochRegion<T>`]: the
 //! single-writer-per-shard principle gives each writer *thread* its own
@@ -8,23 +9,65 @@
 //! `unsafe`** appears here — all pointer work lives in the existing confined
 //! [`hand`](super::hand) organ.
 //!
-//! ## The router
+//! ## The router (7b)
 //!
 //! On a thread's *first* [`insert`](ShardedRegion::insert), the TLS router
-//! lazily claims a shard for that thread via an atomic round-robin counter
-//! (`fetch_add` modulo the shard count) and caches the result in a
-//! `thread_local` cell. Every subsequent op on that thread routes to its
-//! claimed shard. Threads beyond `n` share a shard by modulo — graceful
-//! degradation (still correct, just less parallel).
+//! claims a shard for that thread: it scans the per-shard `occupied` tokens for
+//! a FREE one (atomic `compare_exchange false → true`), or — if every shard is
+//! occupied — falls back to modulo round-robin (graceful degradation: two
+//! threads share a shard, still correct, just less parallel). The claim is
+//! cached in a `thread_local` cell, and a separate TLS type-erased
+//! [`ErasedGuard`] whose `Drop` **releases** the shard on thread exit is
+//! installed so a dead thread's shard id can be reused by a new thread.
 //!
-//! ## Honest edge (7a)
+//! ### One region per thread pool (design assumption)
 //!
-//! A claimed shard is **never released** in 7a: once a thread binds to a shard
-//! id, that binding persists for the thread's lifetime even after the thread
-//! exits. This fits a **bounded pool of long-lived threads** (the stated 7a
-//! target — e.g. a fixed worker pool). A thread-per-connection churn model
-//! would exhaust shard ids over time (the shard lifecycle — release, adoption,
-//! drain — lands in 7b). Until then: size `n` to your stable thread count.
+//! The router's TLS cells (`MY_SHARD`, `ERASED_GUARD`) are **process-global** —
+//! one binding per thread, shared across every `ShardedRegion` instance (they
+//! cannot be keyed by region without a per-region id). The intended use is a
+//! SINGLE long-lived `ShardedRegion` shared across a thread pool. If one thread
+//! drives two different regions, they share the one TLS binding: this stays
+//! correct (`claim_or_get_shard` re-validates the cached id against the current
+//! region's shard count and re-claims if it is out of range, so a smaller
+//! region never indexes out of bounds), but the two regions may not each get an
+//! exclusive per-thread shard. For the targeted one-region-per-pool topology
+//! this is a non-issue.
+//!
+//! ## Cross-thread removal (7b)
+//!
+//! [`remove`](Self::remove) routes by `handle.shard`:
+//!
+//! - if it equals the CALLING thread's claimed shard → owner path
+//!   ([`EpochRegion::remove`], which takes the shard's writer mutex for
+//!   free-list bookkeeping only; the evict itself is a CAS).
+//! - otherwise → the **lock-free** [`EpochRegion::remote_evict`], which performs
+//!   the generation-CAS eviction WITHOUT taking the owner shard's writer mutex
+//!   and enqueues the freed index into a per-shard remote-free queue the owner
+//!   drains later.
+//!
+//! This is the 7b win: a non-owner-thread remove does not contend on the owner
+//! shard's lock.
+//!
+//! ## Shard lifecycle (7b)
+//!
+//! A claimed shard is **releasable**: the TLS [`ErasedGuard`] flips the shard's
+//! `occupied` token to `false` on `Drop` (thread exit). A new thread may then
+//! claim that freed shard. A dead thread's LIVE slots stay resolvable — reads
+//! route by `handle.shard` and do NOT depend on ownership (a read never checks
+//! `occupied`; it just resolves the slot via the seqlock). An adopting thread
+//! that reuses a freed shard drains its abandoned remote-free queue on its
+//! first op (the `EpochRegion::insert`/`remove` drain does this automatically).
+//!
+//! ## Why the guard is type-erased
+//!
+//! A `thread_local!` is monomorphic — there can be only one guard cell per
+//! program, but a process may host `ShardedRegion<A>` and `ShardedRegion<B>`
+//! concurrently. So the guard owns the **type-erased** `occupied` tokens
+//! (`Arc<[AtomicBool]>`, carrying no `T`) rather than an `Arc<ShardedInner<T>>`.
+//! This keeps a single TLS registry sound across multiple `T`. The `Arc` keeps
+//! the tokens alive after the region-handling `&self` borrow is gone, so the
+//! guard's `Drop` can flip the token at thread-exit even if the
+//! `ShardedRegion<T>` is dropped first (the `Arc` refcount holds the tokens).
 //!
 //! ## Invariants upheld
 //!
@@ -32,40 +75,78 @@
 //! preserves them across shards:
 //!
 //! - **I1 — resolution:** a fresh [`ShardedHandle<T>`] resolves to its value
-//!   until `remove`d (routed to its own shard).
+//!   until `remove`d (routed to its own shard — owner or remote path).
 //! - **I2 — tombstone:** after `remove(h)`, `get_with(h, …)` is `None` forever;
-//!   a second `remove(h)` is a no-op `false`.
-//! - **I3 — no ABA:** `remove` delegates to `EpochRegion::remove`, which bumps
-//!   the slot's generation.
-//! - **I4 — accounting:** [`len`](Self::len) sums the live counts across all
-//!   shards.
+//!   a second `remove(h)` is a no-op `false` (the CAS returns `Stale`).
+//! - **I3 — no ABA:** `remove`/`remote_evict` bumps the slot's generation via
+//!   `AtomicSlot::try_evict_at`.
+//! - **I4 — accounting:** [`len`](Self::len) sums the live counts (now
+//!   `AtomicUsize` per shard, correct under concurrent remote removal).
 //! - **Multi-shard locality:** a handle minted in shard A carries
-//!   `shard == A` and is routed *only* to shard A, so it can never resolve
-//!   against shard B's slot table (asserted in `tests/sharded.rs`).
+//!   `shard == A` and is routed *only* to shard A.
 //!
 //! [`EpochRegion<T>`]: crate::concurrent::EpochRegion
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::concurrent::{EpochHandle, EpochRegion, ShardedHandle};
 
-/// A `u16`-indexed array of [`EpochRegion<T>`] shards with a thread-local
-/// router that lazily binds each writer thread to one shard.
-///
-/// See the [module docs](self) for the design, the router, and the honest 7a
-/// edge (shards are not released).
-pub struct ShardedRegion<T> {
+/// The `Arc`-shared interior of a [`ShardedRegion`]: the shards themselves plus
+/// the round-robin fallback cursor. The per-shard `occupied` tokens live in a
+/// SEPARATE `Arc<[AtomicBool]>` ([`ShardedRegion::tokens`]) so they can be
+/// owned by a type-erased [`ErasedGuard`] (which carries no `T`), letting a
+/// single `thread_local!` registry release any thread's claim on exit.
+struct ShardedInner<T> {
     shards: Box<[EpochRegion<T>]>,
-    /// Atomic round-robin cursor for lazy shard claiming. `fetch_add` then
-    /// modulo shard count → the shard id a new thread binds to. Monotonic;
-    /// never resets (7a has no shard release).
-    next_shard: std::sync::atomic::AtomicUsize,
+    /// Atomic round-robin cursor for the graceful-degradation fallback (when
+    /// no free shard is available). `fetch_add` then modulo shard count.
+    next_shard: AtomicUsize,
 }
 
-// The TLS router: caches the shard id a thread has claimed, or `None` if it has
-// not yet bound. Lazily populated on the thread's first `insert`.
+/// A type-erased thread-local guard that RELEASES its shard on `Drop` (thread
+/// exit). Owns an `Arc<[AtomicBool]>` of the occupied tokens (carrying no `T`)
+/// so it can flip the token even after the region-handling `&self` borrow is
+/// gone — the `Arc` keeps the tokens alive. `shard` is `None` for a thread
+/// that degraded to modulo sharing without an exclusive claim (in that case
+/// there is nothing to release).
+struct ErasedGuard {
+    tokens: Arc<[AtomicBool]>,
+    /// `Some(id)` iff THIS thread exclusively claimed shard `id` (won the
+    /// `compare_exchange`). `None` for the modulo-degradation fallback (shared
+    /// shard — no exclusive release).
+    shard: Option<u16>,
+}
+
+impl Drop for ErasedGuard {
+    fn drop(&mut self) {
+        if let Some(id) = self.shard {
+            // We are the unique owner of this shard (the CAS that claimed it
+            // was atomic, and only THIS guard carries the claim for `id`).
+            // Release it so a new thread may adopt it. Release ordering pairs
+            // with the adopting thread's Acquire-on-success CAS, so the adopter
+            // observes the released state.
+            if let Some(occupied) = self.tokens.get(usize::from(id)) {
+                occupied.store(false, Ordering::Release);
+            }
+        }
+        // If `shard` is None we degraded to modulo sharing — nothing to
+        // release (no exclusive claim was recorded).
+    }
+}
+
+// The TLS router: `MY_SHARD` caches the claimed shard id for the fast path (a
+// plain integer TLS read); `ERASED_GUARD` holds the type-erased guard whose
+// `Drop` releases an exclusively-claimed shard on thread exit. `RefCell`
+// because `Option<ErasedGuard>` is not `Copy` (the guard owns an `Arc`).
 thread_local! {
     static MY_SHARD: Cell<Option<u16>> = const { Cell::new(None) };
+}
+
+thread_local! {
+    static ERASED_GUARD: RefCell<Option<ErasedGuard>> = const { RefCell::new(None) };
 }
 
 /// The default per-shard capacity when none is specified. Generous enough that
@@ -76,14 +157,29 @@ const DEFAULT_CAP_PER_SHARD: usize = 1024;
 /// The hard cap on shard count, matching the `u16` shard id space.
 const MAX_SHARDS: usize = u16::MAX as usize;
 
+/// A `u16`-indexed array of [`EpochRegion<T>`] shards with a thread-local
+/// router that lazily binds each writer thread to one shard, **releasable** on
+/// thread exit (Phase 7b).
+///
+/// See the [module docs](self) for the design, the router, the lock-free
+/// cross-thread removal, and the shard lifecycle.
+pub struct ShardedRegion<T> {
+    inner: Arc<ShardedInner<T>>,
+    /// Per-shard `occupied` tokens, `Arc`-shared with every live
+    /// [`ErasedGuard`] so a thread's `Drop` can flip its token at exit. Type-
+    /// erased (no `T`) for the single-registry reason (see module docs).
+    tokens: Arc<[AtomicBool]>,
+}
+
 impl<T> ShardedRegion<T> {
     /// Creates a sharded region with `n` shards, each pre-allocated with
     /// `cap_per_shard` vacant slots.
     ///
-    /// Each shard is an independent [`EpochRegion`] with its own writer mutex
-    /// and free list; writers in different shards never contend. `n` is capped
-    /// at `u16::MAX` (the shard-id space) — a larger `n` is clamped with a
-    /// panic, since it almost certainly indicates a caller bug.
+    /// Each shard is an independent [`EpochRegion`] with its own writer mutex,
+    /// free list, and remote-free queue; writers in different shards never
+    /// contend. `n` is capped at `u16::MAX` (the shard-id space) — a larger
+    /// `n` is clamped with a panic, since it almost certainly indicates a
+    /// caller bug.
     ///
     /// # Panics
     ///
@@ -100,9 +196,15 @@ impl<T> ShardedRegion<T> {
         let shards: Vec<EpochRegion<T>> = (0..n)
             .map(|_| EpochRegion::with_capacity(cap_per_shard))
             .collect();
+        // Every shard starts FREE (occupied == false). A thread claims by
+        // CASing false → true.
+        let tokens: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
         Self {
-            shards: shards.into_boxed_slice(),
-            next_shard: std::sync::atomic::AtomicUsize::new(0),
+            inner: Arc::new(ShardedInner {
+                shards: shards.into_boxed_slice(),
+                next_shard: AtomicUsize::new(0),
+            }),
+            tokens: Arc::from(tokens.into_boxed_slice()),
         }
     }
 
@@ -120,57 +222,104 @@ impl<T> ShardedRegion<T> {
     /// Number of shards (fixed for the region's lifetime).
     #[must_use]
     pub fn shard_count(&self) -> usize {
-        self.shards.len()
+        self.inner.shards.len()
     }
 
     /// Total live entries across all shards (I4).
     ///
-    /// Sums each shard's [`EpochRegion::len`]. Under concurrency this is a
-    /// momentary observation — a writer in any shard may change it immediately
-    /// afterwards. Acquires each shard's writer mutex in turn, so it is NOT
-    /// lock-free (use it for accounting/diagnostics, not on a hot path).
-    ///
-    /// # Panics
-    ///
-    /// Panics if any shard's writer mutex is poisoned.
+    /// Sums each shard's [`EpochRegion::len`] (an `AtomicUsize` per shard —
+    /// correct under concurrent remote removal). Under concurrency this is a
+    /// momentary observation.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.shards.iter().map(EpochRegion::len).sum()
+        self.inner.shards.iter().map(EpochRegion::len).sum()
     }
 
     /// Whether the region holds no live values across any shard (I4).
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.shards.iter().all(EpochRegion::is_empty)
+        self.inner.shards.iter().all(EpochRegion::is_empty)
+    }
+
+    /// Returns the calling thread's claimed shard id, or `None` if it has not
+    /// yet bound. Fast path: a plain TLS read (no atomic).
+    fn my_shard(&self) -> Option<u16> {
+        MY_SHARD.with(|cell| cell.get())
     }
 
     /// Lazily claims a shard for the calling thread (on first use) and returns
     /// its id. Subsequent calls return the cached binding from TLS.
     ///
-    /// The claim is an atomic `fetch_add` on the round-robin cursor, modulo the
-    /// shard count. Threads beyond `n` share a shard by modulo — correct, just
-    /// less parallel. The binding is cached in a `thread_local` cell so the
-    /// fast path is a plain TLS read with no atomic.
+    /// **7b claim protocol:**
+    /// 1. Scan the `occupied` tokens for a FREE shard; atomically claim it via
+    ///    `compare_exchange(false → true)`. The first free shard wins.
+    /// 2. If NO shard is free, fall back to modulo round-robin (graceful
+    ///    degradation: share a shard, still correct). In this case NO exclusive
+    ///    claim is recorded (the guard's `shard` is `None` — nothing to
+    ///    release on thread exit; the shared shard stays owned by whoever did
+    ///    claim it, or stays free if nobody has).
+    ///
+    /// The binding (id + a type-erased [`ErasedGuard`] holding an `Arc` to the
+    /// tokens) is cached in TLS so the fast path is a plain integer read, and
+    /// the guard's `Drop` releases an exclusively-claimed shard on thread exit.
     fn claim_or_get_shard(&self) -> u16 {
-        MY_SHARD.with(|cell| {
-            if let Some(id) = cell.get() {
+        let n = self.inner.shards.len();
+        if let Some(id) = self.my_shard() {
+            // Robustness: the TLS binding is process-global (one cell across all
+            // `ShardedRegion` instances — see the module note on one-region-per
+            // -thread-pool). If a thread bound to a shard in a DIFFERENT region
+            // with MORE shards, the cached id can exceed THIS region's shard
+            // count; returning it verbatim would index out of bounds in
+            // `insert`. Only trust the cache when it is in range for this
+            // region; otherwise fall through and (re)claim a valid shard here.
+            if usize::from(id) < n {
                 return id;
             }
-            // First insert on this thread: claim the next shard round-robin.
-            // `fetch_add` gives every thread a distinct monotonic ticket; the
-            // modulo spreads tickets across shards. Relaxed is fine — we only
-            // need mutual exclusion of the *tickets*, and the TLS cell then
-            // caches the result so each thread claims exactly once.
-            let ticket = self
-                .next_shard
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let n = self.shards.len();
-            let id = u16::try_from(ticket % n).expect(
-                "shard id fits u16: ticket%n where n<=u16::MAX cannot exceed u16::MAX",
-            );
-            cell.set(Some(id));
-            id
-        })
+        }
+        // 1. Try to exclusively claim a FREE shard (scan in order).
+        let mut claimed_exclusively: Option<u16> = None;
+        for (i, occupied) in self.tokens.iter().enumerate() {
+            // Acquire on success: pairs with the releaser's Release store in
+            // ErasedGuard::drop, so we observe the released state. Relaxed on
+            // failure: we just move on to the next candidate.
+            if occupied
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                claimed_exclusively = Some(
+                    u16::try_from(i).expect("shard index fits u16: n <= u16::MAX"),
+                );
+                break;
+            }
+        }
+        // 2. Graceful degradation: no free shard → modulo round-robin. The
+        //    ticket is monotonic; modulo spreads across shards.
+        let id = claimed_exclusively.unwrap_or_else(|| {
+            let ticket = self.inner.next_shard.fetch_add(1, Ordering::Relaxed);
+            u16::try_from(ticket % n)
+                .expect("shard id fits u16: ticket%n where n<=u16::MAX cannot exceed u16::MAX")
+        });
+        // Cache the id (fast path).
+        MY_SHARD.with(|cell| cell.set(Some(id)));
+        // Install (once per thread) the type-erased [`ErasedGuard`] whose `Drop`
+        // releases an exclusively-claimed shard on thread exit. The guard owns
+        // an `Arc::clone(&self.tokens)` so it outlives any `&self` borrow and
+        // can flip the token at thread-exit (the `Arc` keeps the tokens alive).
+        ERASED_GUARD.with(|slot| {
+            // Idempotent: if a guard is already registered for this thread,
+            // do nothing. On the same thread subsequent claims return the
+            // cached id via `my_shard` and never reach here except on the
+            // very first claim.
+            let mut slot = slot.borrow_mut();
+            if slot.is_some() {
+                return;
+            }
+            *slot = Some(ErasedGuard {
+                tokens: Arc::clone(&self.tokens),
+                shard: claimed_exclusively,
+            });
+        });
+        id
     }
 
     /// Inserts `value` into the calling thread's claimed shard, returning a
@@ -178,22 +327,20 @@ impl<T> ShardedRegion<T> {
     /// that shard is full (mirroring [`EpochRegion::insert`]).
     ///
     /// On the thread's first insert, lazily claims a shard via the TLS router
-    /// (see [the router docs](self#the-router)). The returned handle carries
+    /// (see [the router docs](self#the-router-7b)). The returned handle carries
     /// the shard id, so later reads/removes route back to this shard.
     ///
     /// # Errors
     ///
     /// Returns `Err(value)` (handing the value back unchanged) when the calling
-    /// thread's shard is full — every slot occupied or retired. The shard does
-    /// not grow; remove a value to free a slot, or size the shard larger at
-    /// construction ([`with_shards`](Self::with_shards)).
+    /// thread's shard is full — every slot occupied or retired.
     ///
     /// # Panics
     ///
     /// Panics if the shard's writer mutex is poisoned.
     pub fn insert(&self, value: T) -> Result<ShardedHandle<T>, T> {
         let shard = self.claim_or_get_shard();
-        match self.shards[usize::from(shard)].insert(value) {
+        match self.inner.shards[usize::from(shard)].insert(value) {
             Ok(inner) => Ok(ShardedHandle::new(shard, inner)),
             Err(value) => Err(value),
         }
@@ -207,12 +354,12 @@ impl<T> ShardedRegion<T> {
     /// shard's lock-free [`EpochRegion::get_with`]. The borrow is confined to
     /// the call — `f` may not store the reference.
     ///
-    /// A handle minted in shard A is routed *only* to shard A; it can never
-    /// resolve against shard B's slot table (the multi-shard locality
-    /// property). If `handle.shard` is out of range (a handle from a different
-    /// region, or corruption), this returns `None` rather than panicking.
+    /// **7b:** a read does NOT depend on shard ownership — it resolves the slot
+    /// via the seqlock regardless of whether the owning thread is alive. So a
+    /// DEAD thread's live slots stay resolvable (asserted in
+    /// `tests/sharded_remote.rs`).
     pub fn get_with<R>(&self, handle: ShardedHandle<T>, f: impl FnOnce(&T) -> R) -> Option<R> {
-        let shard = self.shards.get(usize::from(handle.shard))?;
+        let shard = self.inner.shards.get(usize::from(handle.shard))?;
         shard.get_with(handle.inner, f)
     }
 
@@ -230,33 +377,45 @@ impl<T> ShardedRegion<T> {
     /// now tombstoned), or `false` if it was already stale/removed/out-of-range
     /// (I2 — a second remove is a no-op `false`).
     ///
-    /// Routes by `handle.shard` to the owning shard, then delegates to that
-    /// shard's [`EpochRegion::remove`] (which bumps the generation — I3). Note:
-    /// in 7a the *caller's* thread does the remove against the owning shard's
-    /// writer mutex; a non-owner-thread remove is correct (the mutex
-    /// serialises it) but contends on that shard's lock. The lock-free
-    /// cross-thread remove lands in 7b.
+    /// **7b routing:** if `handle.shard` equals the CALLING thread's claimed
+    /// shard, this takes the OWNER path ([`EpochRegion::remove`], which takes
+    /// the shard's writer mutex for free-list bookkeeping only — the evict
+    /// itself is a CAS). Otherwise it takes the **lock-free** remote path
+    /// ([`EpochRegion::remote_evict`]), which performs the generation-CAS
+    /// eviction WITHOUT the owner shard's writer mutex and enqueues the freed
+    /// index for the owner to drain later. A thread that has not yet claimed a
+    /// shard is treated as remote for every handle.
     ///
     /// If `handle.shard` is out of range, this returns `false` rather than
     /// panicking.
     ///
     /// # Panics
     ///
-    /// Panics if the owning shard's writer mutex is poisoned.
+    /// Panics if the owning shard's writer mutex is poisoned (owner path only;
+    /// the remote path takes no writer mutex).
     pub fn remove(&self, handle: ShardedHandle<T>) -> bool {
-        let Some(shard) = self.shards.get(usize::from(handle.shard)) else {
+        let Some(shard) = self.inner.shards.get(usize::from(handle.shard)) else {
             return false;
         };
-        shard.remove(handle.inner)
+        // Owner path iff THIS thread claimed this shard. Otherwise remote
+        // (lock-free, no owner mutex). A thread that never claimed (TLS empty)
+        // is remote for every handle.
+        let mine = self.my_shard() == Some(handle.shard);
+        if mine {
+            shard.remove(handle.inner)
+        } else {
+            shard.remote_evict(handle.inner)
+        }
     }
 
     /// Resets the calling thread's TLS shard binding to `None`, so its *next*
     /// [`insert`](Self::insert) claims a fresh shard.
     ///
     /// **Diagnostics/testing only.** This does NOT release the previously
-    /// claimed shard (7a has no shard release — see the [honest
-    /// edge](self#honest-edge-7a)); it only clears the TLS cache so the round
-    /// robin advances on the next insert. Production code should not call this.
+    /// claimed shard's `occupied` token (that happens on thread exit via the
+    /// [`ErasedGuard`]'s `Drop`); it only clears the TLS id cache so the router
+    /// re-runs the claim scan on the next insert. Production code should not
+    /// call this.
     #[doc(hidden)]
     pub fn _reset_my_shard_binding_for_tests() {
         MY_SHARD.with(|cell| cell.set(None));
