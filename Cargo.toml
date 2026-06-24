@@ -1,0 +1,23 @@
+[package]
+name = "sefer-alloc"
+version = "0.1.0"
+edition = "2021"
+# Matches the resocks5 ecosystem floor; the core is plain safe Rust and will
+# build on much older toolchains, but we pin a known-good MSRV from day one.
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "A safe, handle-addressed region store: generational handles instead of pointers, a dense cache-friendly core with zero unsafe, and a verification-first build."
+readme = "README.md"
+keywords = ["arena", "slotmap", "generational", "handle", "allocator"]
+categories = ["data-structures", "memory-management"]
+
+# Standalone workspace root — prevents accidental capture by an ancestor
+# workspace if this repo is ever nested under one.
+[workspace]
+
+[dependencies]
+
+[dev-dependencies]
+# Phase 0 dependency: property-based differential testing against a reference
+# model. This is the heart of the verification-first build — see docs/PLAN.md.
+proptest = "1"
