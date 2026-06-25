@@ -180,3 +180,35 @@ segments fully to the stack) and reclaim re-materialises / re-acquires via
 adopt-or-reserve; OR re-stamp owner_state LIVE on reuse so stale stack entries
 fail the adopter CAS. Without this, wiring `try_adopt` would let an adopter pop a
 segment that the slot's current holder still uses → DOUBLE OWNERSHIP.
+
+---
+
+## From Phase 12.6a (drain-reclaim hypothesis — FALSIFIED)
+
+### 8. ❌ Naive drain→BinTable restore SEGFAULTS — reclaim genuinely needs a guard
+
+The /oxx hypothesis ("the 12.5 cross-thread-free leak is a scar; in the clean
+shard model the owner is the sole BinTable writer, so simply restoring
+`drain_thread_free` to return blocks to the BinTable is sound — no epoch") was
+**TESTED AND FALSIFIED**. With the naive restore (swap + walk +
+`dealloc_small_by_segment`), the committed `global_allocator_cross_thread_free`
+MT test fails with **STATUS_ACCESS_VIOLATION (0xc0000005)** — a real UAF, not a
+test bug (the discard version passes the same test).
+
+The single-writer reasoning missed a real race at the **slot-reuse handoff /
+intrusive-word**: a cross-thread freer can push a block X onto a slot's TFS
+*after* the slot's current owner has already drained-and-reused X (or is
+concurrently reusing it), so the drain reads X's first word — now user data —
+as a free-list `next` pointer → out-of-segment deref / corrupted free list →
+fault. The owner is the sole BinTable *writer*, but the BLOCK's intrusive word
+is contended between the cross-thread pusher and the owner's reuse, across the
+release→claim boundary.
+
+**Conclusion:** the bounded-leak **discard** (shipped in 12.5, `abe5610`) is the
+correct SOUND choice. Closing the leak requires a real guard — a per-segment (or
+per-slot) **generation-tag**: stamp a generation that bumps on the
+release→claim boundary; the cross-thread freer records the generation it
+observed; the drain accepts a block into the BinTable only if the segment's
+generation still matches (else the block is from a stale epoch and is skipped /
+re-routed). This is the same family as the M11 decommit epoch-guard (#35). Until
+that guard exists, the discard-leak stays. Do NOT re-attempt the naive restore.
