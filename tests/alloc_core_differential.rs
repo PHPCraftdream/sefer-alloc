@@ -176,6 +176,22 @@ proptest! {
                                     );
                                 }
                             }
+                            // Re-establish a known fill across the FULL new
+                            // extent. The grown tail (keep..new_size) is
+                            // legitimately UNINITIALISED after a realloc —
+                            // `GlobalAlloc::realloc` does not zero grown bytes —
+                            // so a LATER realloc that copies this block must not
+                            // assert those tail bytes against 0xA7/0. Writing
+                            // 0xA7 over the whole block keeps the model
+                            // consistent for subsequent reallocs (mirrors the
+                            // Phase 9 `heap_differential` realloc-tail fix; the
+                            // prefix-preservation check above already ran).
+                            // SAFETY: `new_ptr` is valid for `new_size` bytes.
+                            unsafe {
+                                for b in 0..new_size {
+                                    new_ptr.add(b).write(0xA7);
+                                }
+                            }
                             live[i] = Live { ptr: new_ptr, size: new_size, align: l.align };
                         }
                     }
