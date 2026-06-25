@@ -127,3 +127,46 @@ decommit-safety (#35).
   segfaults (proven).
 - Do NOT hold a `Mutex`/`SpinLock` across an allocation or free in any stress
   test (lock-order deadlock with the fallback spinlock).
+
+---
+
+## 7. "If we have shards, where does the race come from?" (honest root-cause status)
+
+A fair challenge: in a CLEAN shard model — one owner writes each `BinTable`, the
+only cross-thread channel is the atomic TFS (loom-proven, Phase 10) — a
+single-owner `drain→BinTable` MUST be sound. It segfaults, so **isolation is
+violated somewhere**. This was NOT rigorously root-caused; §2's "intrusive-word
+handoff" is a HYPOTHESIS, not a proven cause. **#33 must root-cause FIRST**
+(minimal repro identifying the exact double-owner / double-free / stale-pointer
+path) before choosing a fix — the fix may be far simpler than a generation-tag.
+
+Leading suspects, in order:
+
+1. **The fallback heap is a SHARED (non-sharded) heap.** It is process-global,
+   used by multiple threads (serialized by a spinlock), with its own inline TFS;
+   its segments are stamped `owner_thread_free = &FALLBACK.TFS`. It is the only
+   heap that is NOT a per-thread shard. A block allocated from the fallback and
+   freed cross-thread routes to the fallback TFS; the single-owner-at-a-time
+   guarantee rests entirely on the spinlock — verify nothing drains/reuses a
+   fallback block outside that lock, and that own-thread vs the global drain
+   cannot interleave.
+2. **Intrusive TFS word at slot reuse.** The original `ShardedRegion` remote-free
+   queue stored freed *indices* (numbers) — it never reinterpreted an object's
+   own bytes as a link. Our TFS is *intrusive* (the block's first word is the
+   queue `next`). Across a slot release→claim, `owner_thread_free` is stable but
+   the owner changed; a block can be reachable as "in-flight TFS entry" and
+   "reused by the new owner" — the contended word.
+3. **Plain implementation bug** in the restored `drain_thread_free` /
+   `dealloc_small_by_segment` routing (e.g. a drained block pushed to the wrong
+   segment's `BinTable`, or `free_list_contains` walking a list mutated by a
+   path that should not touch it).
+
+**Method for #33 (root-cause before fix):** instrument the restored drain to
+record, for the faulting block, (a) which thread/slot allocated it, (b) which
+freed it and via which path (own/cross/fallback), (c) the segment's owner at
+drain time. Reproduce the `STATUS_ACCESS_VIOLATION` deterministically (small
+thread count, `--test-threads=1` won't show it — needs real concurrency; use a
+tight 2-thread producer/consumer with NO mutex held across alloc/free). Identify
+which of (1)/(2)/(3) it is. THEN fix the actual cause — only fall back to the
+generation-tag (§4) if the cause is genuinely the §2/(2) fundamental handoff
+race, not a fixable isolation leak.
