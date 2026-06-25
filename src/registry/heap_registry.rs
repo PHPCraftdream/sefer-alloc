@@ -232,6 +232,19 @@ impl HeapRegistry {
     /// is in their `BinTable`s), so NO merging is needed — this is the
     /// keystone simplification of the §2.0 segment-centric ownership model.
     ///
+    /// **Phase 12.5 (shard model — FINDINGS №7 dissolved, not patched):**
+    /// `abandon_segments` is NOT called on the hot path. The `AbandonGuard`
+    /// releases the slot ONLY (`recycle`), leaving the `HeapCore` whole — its
+    /// segments and inline TFS stay with the slot, and the next thread to claim
+    /// the slot reuses the same heap in full (whole-heap reuse, the shard
+    /// discipline). Because the heap is never fragmented, no segment is ever
+    /// co-owned, so the §7 double-ownership cannot arise — the landmine is
+    /// dissolved by the architecture, not patched by clearing the table. This
+    /// method (and the `abandoned_segs`/`owner_state` substrate it drives)
+    /// is retained, loom-proven, as the basis for a FUTURE decommit-when-empty
+    /// policy; when that is wired it must coordinate ownership with the new
+    /// policy, but it does NOT clear the table here.
+    ///
     /// # Safety
     ///
     /// `heap` must be either null (treated as a no-op) or a pointer
@@ -255,6 +268,14 @@ impl HeapRegistry {
         for base in heap_ref.segment_bases() {
             abandon_one_segment(reg, base, owner_id);
         }
+        // Phase 12.5 (shard model): we do NOT clear the heap's table here.
+        // `abandon_segments` is retained as a loom-proven substrate primitive
+        // (for a future decommit-when-empty policy) but is NOT on the hot
+        // path — the `AbandonGuard` releases the slot only, leaving the
+        // HeapCore whole. When/if this primitive is wired for decommit, the
+        // caller must coordinate table-clearing with the new policy; for now
+        // the segments stay referenced by their owning heap's table (which is
+        // correct: they ARE still owned by this heap until it is dropped).
     }
 
     /// Push a segment base onto the abandoned-segments intrusive Treiber
@@ -659,4 +680,12 @@ fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
     }
     // Push the base onto the global abandoned-segments stack.
     push_abandoned_segment_into(reg, base);
+    // Phase 12.5 (shard model): we do NOT clear `owner_thread_free` here.
+    // The abandon/adopt substrate is retained for a future decommit-when-empty
+    // policy, but on the shard-model hot path abandon is NOT called (the
+    // AbandonGuard releases the slot only; the HeapCore stays whole with its
+    // segments + inline TFS). The `owner_thread_free` stamp is set ONCE (on
+    // the segment's first alloc) and points at the slot's inline TFS, whose
+    // address is stable for the process lifetime — so it never needs clearing
+    // or re-stamping across release→claim.
 }

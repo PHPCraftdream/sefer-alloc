@@ -243,12 +243,14 @@ impl AllocCore {
         self.table.register(base)
     }
 
-    /// Mark `base` as the current small segment (Phase 12.4 adoption). An
-    /// adopted segment with free space becomes the bump target so the adopter
-    /// carves new allocations from it. If the segment is full, the caller
-    /// simply does not call this (the segment still serves frees via its
-    /// BinTable, found by `find_segment_with_free`).
+    /// Mark `base` as the current small segment (Phase 12.4 adoption primitive).
+    /// An adopted segment with free space becomes the bump target so the
+    /// adopter carves new allocations from it. Retained for the loom-proven
+    /// abandon/adopt substrate (a future decommit-when-empty policy); NOT on
+    /// the hot path of the shard model (a heap owns its segments exclusively
+    /// and never transfers them).
     #[cfg(feature = "alloc-global")]
+    #[allow(dead_code)]
     pub(crate) fn set_small_current(&mut self, base: *mut u8) {
         self.small_cur = base;
     }
@@ -275,6 +277,12 @@ impl AllocCore {
     /// carves a refill batch (Phase 9 amortisation), pushing each extra block
     /// into its OWN segment's `BinTable` via `segment_base_of` (defect A fix:
     /// never a captured "current" pointer).
+    ///
+    /// Phase 12.5 (shard model): a heap owns its segments exclusively — there
+    /// is no adoption hook. On a free-list miss it carves/reserves from its
+    /// OWN segments only. Cross-thread frees arrive via the inline TFS and are
+    /// drained by `HeapCore::alloc` BEFORE this runs, so they are already on
+    /// the per-segment BinTables by the time we scan.
     fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);

@@ -124,6 +124,39 @@ the MT end-to-end gate (12.5) must run under `alloc-xthread`.
   tag in the low (SEGMENT-aligned) bits, with an intrusive next_abandoned link.
   Unit test `abandoned_head_packing_preserves_high_address` guards it.
 
+- **Finding #7 (abandon/reuse double-ownership): RESOLVED in 12.5 via the
+  SHARD MODEL architectural turn.** The original fix attempted to
+  `clear_table` on abandon + re-acquire via adopt-or-reserve, but that path
+  TRANSFERRED SEGMENTS BETWEEN HEAPS, creating a window where two heaps could
+  write the same segment's BinTable/header concurrently (a data race that tore
+  the SegmentHeader and corrupted free lists). The resolution is subtractive:
+  a heap is a SHARD that stays whole across release→claim. Thread death now
+  releases the SLOT ONLY (`recycle`); the HeapCore (segments + inline TFS)
+  persists untouched in the slot. The reclaiming thread reuses the SAME
+  HeapCore (claim does not re-materialise when `new_gen != 1`). Late
+  cross-thread frees drain from the inline TFS on the new owner's first alloc
+  (the shard-reuse discipline, mirroring `ShardedRegion` 7b). The
+  abandon/adopt primitives (abandoned_segs Treiber, owner_state CAS) remain as
+  a loom-proven substrate for a future decommit-when-empty policy, but are OFF
+  the hot path. `owner_thread_free` is stamped ONCE (on first alloc) and never
+  cleared/re-stamped — its address (the slot's inline TFS) is stable for the
+  process lifetime. This removes the racy cross-thread header writes
+  (clear-on-abandon, re-stamp-on-adopt) that were the root cause. The
+  headline MT gate (`tests/global_alloc_mt.rs`) runs green under
+  `alloc-global,alloc-xthread` with thread churn + cross-thread free.
+
+  **Phase 12.5 remainder (honest):** TFS drain currently DISCARDS the drained
+  blocks (sound bounded leak — they stay mapped, simply not reused) rather
+  than re-injecting them into the BinTables. Re-injection races with the slot's
+  own concurrent alloc/free under shard-reuse (a block freed cross-thread can
+  be pushed after the owner already popped and reused it → the drain reads user
+  data as a free-list `next` pointer → `free_list_contains` overflows). A
+  correct re-injection needs a per-slot epoch/generation guard; deferred. M6
+  decommit / M11 epoch-safety are deferred behind a future `alloc-decommit`
+  feature flag (default off; RSS grows under sustained cross-thread churn —
+  the bounded leak — but correctness holds). The single-thread `Heap` path
+  (`heap::thread_free`) is unaffected and fully reuses.
+
 ## From Phase 12.4 (adoption) review
 
 ### 7. 🔴 → fix in **12.5**: abandon does not clear the heap's table → dormant double-ownership

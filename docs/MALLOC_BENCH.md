@@ -74,18 +74,29 @@ hardening gate. What works today and what remains:
   `with_heap_try` variant).
 
 **Remaining (NOT done — do not deploy as a process-wide allocator yet):**
-- **Robust process-wide `#[global_allocator]` under hostile runtimes.** Installed
-  as the allocator for a *multithreaded, reentrancy-heavy* harness (e.g.
-  `libtest` itself — parallel test threads, panic hooks, thread teardown), the
-  current TLS binding returns null under reentrant / early-init / teardown access,
-  which aborts the process. A bootstrap-safe, reentrancy-tolerant TLS discipline
-  (a recursion guard + a bootstrap fallback path) is required. Until then,
-  `SeferMalloc` is trustworthy for **single-threaded** global use and for
-  **direct/`Heap`-API** multi-threaded use, not as the drop-in allocator of an
-  arbitrary multithreaded process.
-- Cross-thread free requires the `alloc-xthread` feature; abandoned-heap
-  **adoption** (vs the current bounded abandonment-leak) and **M6 decommit**
-  wiring are deferred (Phase 10 notes).
+- **Robust process-wide `#[global_allocator]` under hostile runtimes.**
+  RESOLVED in Phase 12.5 (the shard-model turn). The raw-pointer TLS + global
+  heap registry + never-null fallback heap make the face reentrancy-safe (M5)
+  and never-null (M10) under the multithreaded libtest harness — parallel test
+  threads, panic hooks, thread teardown. The headline MT gate
+  (`tests/global_alloc_mt.rs`) installs `SeferMalloc` as the
+  `#[global_allocator]` and runs `Vec`/`String`/`HashMap`/`Box` churn across
+  threads that spawn AND exit mid-allocation, plus a cross-thread free channel
+  test (under `alloc-xthread`), all green. This removes the "abort under
+  reentrant/teardown access" caveat. **Caveat that REMAINS:** the heavy
+  hardening gate (fuzz / aarch64 weak-memory CI / TSan) has not been run, so
+  "production-trusted on every target" is still pending that gate (§4 of
+  `MALLOC_PLAN_PHASE12-13.md`).
+- Cross-thread free requires the `alloc-xthread` feature. Phase 12.5 ships the
+  shard model (a heap is a shard; thread death releases the slot, the HeapCore
+  stays whole for the next claimant). **Phase 12.5 remainder (honest):** TFS
+  drain currently DISCARDS drained blocks (sound bounded leak — they stay
+  mapped, simply not reused) rather than re-injecting them into the BinTables
+  (re-injection races with the slot's own concurrent alloc/free under
+  shard-reuse and needs a per-slot epoch/generation guard; deferred). M6
+  decommit + M11 epoch-safety are deferred behind a future `alloc-decommit`
+  feature flag. RSS grows under sustained cross-thread churn (the bounded
+  leak); correctness holds. The single-thread `Heap` path fully reuses.
 - The heavy correctness gate — `cargo-fuzz` (CPU-hours over adversarial
   alloc/free/realloc streams), **aarch64** multi-arch CI (the weak memory model
   x86 hides), and **ThreadSanitizer** under stress — needs CI / non-Windows
@@ -95,9 +106,13 @@ hardening gate. What works today and what remains:
 
 `SeferMalloc` proves the thesis: a safe-by-construction allocator can be
 *competitive with mimalloc* (and beat it on realistic patterns) while being
-*much faster than the OS allocator*. It is a **working, fast, single-threaded
-drop-in allocator today**; promoting it to a process-wide multithreaded
-`#[global_allocator]` for arbitrary programs needs the documented reentrancy-safe
-TLS work + the fuzz/aarch64/TSan hardening gate. For a process-wide allocator
-right now, use `mimalloc`; use `SeferMalloc` where you have measured it helps
-(single-threaded services, or via the `Heap` API), and watch this space.
+*much faster than the OS allocator*. As of Phase 12.5 it is a **working,
+multithreaded drop-in `#[global_allocator]`** — the reentrancy/teardown abort
+that blocked MT use is closed, and the headline MT gate runs green with thread
+churn + cross-thread free. Two honest remainders: (1) TFS drain leaks under
+sustained cross-thread churn (bounded RSS growth, not a correctness issue), and
+(2) the heavy hardening gate (fuzz / aarch64 / TSan) is still pending, so
+"production-trusted on every target" is not yet claimed. For a process-wide
+allocator right now, `SeferMalloc` is a viable MT choice where the bounded
+RSS leak under cross-thread churn is acceptable; otherwise use `mimalloc` and
+watch this space.

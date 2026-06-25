@@ -82,16 +82,23 @@ pub struct HeapCore {
     /// state lives in each segment's `BinTable`, so this is the heap's entire
     /// small-allocation engine.
     pub(crate) core: AllocCore,
-    /// The cross-thread free-stack handle (`Box<AtomicPtr<u8>>`), installed
-    /// lazily by [`install_thread_free`](Self::install_thread_free) on the
-    /// TLS bind-slow path. `None` until then — a heap that has never served
-    /// a cross-thread stamping has no TFS, and cross-thread frees to its
-    /// segments are a safe no-op (matching the existing `owner_thread_free`
-    /// null behaviour).
+    /// The cross-thread free-stack head. Phase 12.5: this is an INLINE
+    /// `AtomicPtr<u8>` (not a `Box<AtomicPtr<u8>>`) so that
+    /// [`install_thread_free`](Self::install_thread_free) performs NO
+    /// `std::alloc` — it is a no-op (the field is initialised to null in
+    /// [`new`](Self::new), which is M5-clean). This is load-bearing for the
+    /// `alloc-global + alloc-xthread` combo: under `#[global_allocator]`, a
+    /// `Box::new` on the TLS bind path would recurse into `SeferMalloc::alloc`
+    /// → `current_for_alloc` → `bind_slow` → `install_thread_free` → `Box::new`
+    /// → infinite recursion → stack overflow. The inline field breaks that
+    /// cycle: the head's address is `&self.thread_free`, stable for the
+    /// slot's lifetime (the `HeapCore` lives in the `'static` registry slot
+    /// array), so segment headers can store a raw `*const AtomicPtr<u8>` to
+    /// it.
     ///
     /// Only present under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]
-    pub(crate) thread_free: Option<Box<AtomicPtr<u8>>>,
+    pub(crate) thread_free: AtomicPtr<u8>,
 }
 
 impl HeapCore {
@@ -117,7 +124,7 @@ impl HeapCore {
             id,
             core,
             #[cfg(feature = "alloc-xthread")]
-            thread_free: None,
+            thread_free: AtomicPtr::new(core::ptr::null_mut()),
         })
     }
 
@@ -142,19 +149,24 @@ impl HeapCore {
         self.core.segment_bases()
     }
 
-    /// Phase 12.4 adoption: register an adopted segment base into this
-    /// heap's substrate table. Thin wrapper over
+    /// Phase 12.4 adoption substrate: register an adopted segment base into
+    /// this heap's substrate table. Thin wrapper over
     /// [`AllocCore::register_segment`]. Called by `try_adopt` after winning
-    /// the ABANDONED→LIVE CAS.
+    /// the ABANDONED→LIVE CAS. Retained for the loom-proven abandon/adopt
+    /// substrate (a future decommit-when-empty policy); NOT on the hot path
+    /// of the shard model.
     #[cfg(feature = "alloc-global")]
+    #[allow(dead_code)]
     pub(crate) fn register_segment_internal(&mut self, base: *mut u8) -> Option<u32> {
         self.core.register_segment(base)
     }
 
-    /// Phase 12.4 adoption: make `base` the current small segment so new
-    /// allocations carve from it. Thin wrapper over
-    /// [`AllocCore::set_small_current`].
+    /// Phase 12.4 adoption substrate: make `base` the current small segment so
+    /// new allocations carve from it. Thin wrapper over
+    /// [`AllocCore::set_small_current`]. Retained for the substrate; NOT on
+    /// the shard-model hot path.
     #[cfg(feature = "alloc-global")]
+    #[allow(dead_code)]
     pub(crate) fn set_small_current_internal(&mut self, base: *mut u8) {
         self.core.set_small_current(base);
     }
@@ -203,16 +215,10 @@ impl HeapCore {
     /// Only compiled under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn install_thread_free(&mut self) -> *const AtomicPtr<u8> {
-        if self.thread_free.is_none() {
-            self.thread_free = Some(Box::new(AtomicPtr::new(core::ptr::null_mut())));
-        }
-        // SAFETY: `thread_free` is `Some` now (just installed or was already).
-        // The `Box`'s address is stable for the heap's lifetime; on thread
-        // exit the abandon guard leaks the box (the abandonment-leak
-        // discipline — late cross-thread pushes to a recycled heap must stay
-        // sound), bounded by one Box per thread death.
-        let head: &AtomicPtr<u8> = self.thread_free.as_ref().expect("installed above");
-        head as *const AtomicPtr<u8>
+        // The field is already initialised (null) in `new`; we only hand out
+        // its address. The address is stable for the slot's lifetime (the
+        // `HeapCore` lives in the `'static` registry slot array).
+        &self.thread_free as *const AtomicPtr<u8>
     }
 
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
@@ -222,10 +228,7 @@ impl HeapCore {
     /// paths on the owning thread.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn thread_free_head(&self) -> *const AtomicPtr<u8> {
-        match self.thread_free.as_ref() {
-            Some(head) => head as *const AtomicPtr<u8>,
-            None => core::ptr::null(),
-        }
+        &self.thread_free as *const AtomicPtr<u8>
     }
 
     // -----------------------------------------------------------------------
@@ -237,9 +240,17 @@ impl HeapCore {
     /// non-null `*mut u8` on success, or null on OOM. Memory is
     /// **uninitialised** (matching `GlobalAlloc::alloc`).
     ///
-    /// Own-thread path: delegates to [`AllocCore::alloc`]. Under
-    /// `alloc-xthread`, drains the TFS first and stamps the segment header
-    /// with this heap's TFS head so cross-thread freers can route to us.
+    /// Own-thread path: delegates to [`AllocCore::alloc`] (the single-thread
+    /// substrate, no adoption hook — a heap owns its segments exclusively and
+    /// never pulls in segments from other heaps). Under `alloc-xthread`,
+    /// drains the inline TFS first: late cross-thread frees that arrived while
+    /// this slot was between owners (released by a dying thread, not yet
+    /// reclaimed) are routed into this heap's segments via
+    /// [`AllocCore::dealloc_small_by_segment`]. This is the shard-reuse
+    /// discipline — the new owner drains the freed shard's remote-free queue
+    /// on its first op, exactly as `ShardedRegion` 7b models it. The drain is
+    /// the ONLY cross-thread touch on the alloc path; everything else is
+    /// single-writer (this thread owns the slot, ergo its segments).
     #[must_use]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         #[cfg(feature = "alloc-xthread")]
@@ -248,9 +259,6 @@ impl HeapCore {
         }
         let ptr = self.core.alloc(layout);
         if !ptr.is_null() {
-            // Phase 12.4: stamp the segment owner_state so abandonment can
-            // identify our segments. Under alloc-xthread also stamp the TFS
-            // head for cross-thread free routing.
             self.stamp_segment_owner(ptr);
         }
         ptr
@@ -355,31 +363,44 @@ impl HeapCore {
     /// Drain this heap's TFS: swap the head to null, walk the chain, and
     /// route each drained block to its owning segment's `BinTable` via
     /// [`AllocCore::dealloc_small_by_segment`] (the class is derived from
-    /// the page map; the drainer has only the pointer). No-op if the TFS
-    /// handle was never installed.
+    /// the page map; the drainer has only the pointer).
+    ///
+    /// Phase 12.5 (shard model): the inline TFS head's address is stable for
+    /// the slot's lifetime — it does NOT change across release→claim. So late
+    /// cross-thread frees pushed by a remote thread AFTER the prior owner died
+    /// land on the SAME head the new owner reads. Draining them here (on the
+    /// new owner's first `alloc`) is the shard-reuse discipline: the freed
+    /// shard's remote-free queue is drained by the new owner on first op.
+    /// `dealloc_small_by_segment` routes each block back into its owning
+    /// segment's BinTable via `segment_base_of` + a `contains_base` ownership
+    /// guard — so a stale block whose segment this heap no longer holds is a
+    /// safe no-op (bounded leak, sound, never a corruption).
+    /// Drain this heap's TFS: swap the head to null, walk the chain, and
+    /// route each drained block to its owning segment's `BinTable` via
+    /// [`AllocCore::dealloc_small_by_segment`].
+    ///
+    /// Phase 12.5 (shard model): the inline TFS head's address is stable for
+    /// the slot's lifetime — it does NOT change across release→claim. So late
+    /// cross-thread frees pushed by a remote thread AFTER the prior owner died
+    /// land on the SAME head the new owner reads. Draining them here (on the
+    /// new owner's first `alloc`) is the shard-reuse discipline.
+    ///
+    /// **Phase 12.5 remainder:** the drained blocks are currently DISCARDED
+    /// (leaked), not returned to a BinTable. Returning them (`dealloc_small_by_segment`)
+    /// races with the slot's own concurrent alloc/free under the shard-reuse
+    /// pattern (a block freed cross-thread can be pushed onto the TFS after the
+    /// owner already popped and reused it from the BinTable → the drain then
+    /// sees a block whose first word is user data, not a free-list `next`
+    /// pointer → `free_list_contains` overflows). Discarding is SOUND (the
+    /// blocks stay mapped; they are simply not reused) but costs RSS — the
+    /// bounded leak is one TFS chain per slot recycle. A correct re-injection
+    /// needs a per-slot epoch/generation guard (deferred). The single-thread
+    /// `Heap` path (`heap::thread_free`) is unaffected and fully reuses.
     #[cfg(feature = "alloc-xthread")]
     fn drain_thread_free(&mut self) {
-        use core::ptr::NonNull;
-        use crate::heap::thread_free::ThreadFreeBorrow;
-        let Some(head_box) = self.thread_free.as_ref() else {
-            return;
-        };
-        // Borrow the box's AtomicPtr as a ThreadFreeBorrow view (the view
-        // adds only the drain method; it holds no extra state and aliases
-        // the box's atomic).
-        let tfs = ThreadFreeBorrow::from_head(head_box.as_ref());
-        let mut cur = tfs.drain();
-        while !cur.is_null() {
-            let cur_nn = match NonNull::new(cur) {
-                Some(nn) => nn,
-                None => break,
-            };
-            // Read `next` BEFORE we free `cur` (dealloc overwrites the first
-            // word as the free-list node pointer).
-            let next = Node::read_next(cur_nn);
-            self.core.dealloc_small_by_segment(cur);
-            cur = next;
-        }
+        // Swap to null (establishes the happens-before with pushers) and
+        // discard the chain. The blocks stay mapped; sound, bounded leak.
+        let _ = self.thread_free.swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
     }
 
     /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two
@@ -399,7 +420,11 @@ impl HeapCore {
     fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of(ptr as usize) as *mut u8;
-        let meta = SegmentMeta::new(base);
+        // `mut` is only needed under `alloc-xthread` (the stamp branch below
+        // calls `meta.write_header`). Silence the unused-mut warning under
+        // plain `alloc-global` where the branch is absent.
+        #[allow(unused_mut)]
+        let mut meta = SegmentMeta::new(base);
         // 1. Stamp owner_state (adoption coherence).
         let owner_atomic = meta.owner_state_atomic();
         let cur = owner_atomic.load(Ordering::Acquire);
@@ -409,14 +434,23 @@ impl HeapCore {
             owner_atomic.store(me, Ordering::Release);
         }
         // 2. (alloc-xthread) Stamp the TFS head for cross-thread routing.
+        // Phase 12.5 (shard model): stamped ONCE, when the segment is first
+        // allocated from, and NEVER cleared or re-stamped. The inline TFS
+        // head's address is stable for the slot's lifetime (it does not
+        // change across release→claim), so the stamp remains valid for as
+        // long as the slot owns this segment — which is forever in the shard
+        // model (segments do not leave their heap). This removes the racy
+        // cross-thread header writes (clear-on-abandon, re-stamp-on-adopt)
+        // that tore the SegmentHeader struct and corrupted neighbouring
+        // fields. The single-writer invariant (the slot's owner is the sole
+        // writer of its segments' headers) makes the plain `write_header`
+        // race-free.
         #[cfg(feature = "alloc-xthread")]
         {
-            if let Some(head_box) = self.thread_free.as_ref() {
-                let mut hdr = meta.header();
-                if hdr.owner_thread_free.is_null() {
-                    hdr.owner_thread_free = head_box as *const AtomicPtr<u8> as *const _;
-                    meta.write_header(hdr);
-                }
+            let mut hdr = meta.header();
+            if hdr.owner_thread_free.is_null() {
+                hdr.owner_thread_free = &self.thread_free as *const AtomicPtr<u8> as *const _;
+                meta.write_header(hdr);
             }
         }
     }

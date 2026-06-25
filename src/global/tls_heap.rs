@@ -122,37 +122,38 @@ impl Drop for AbandonGuard {
         if heap.is_null() {
             return; // This thread never bound a registry heap.
         }
-        // Abandon the heap's segments onto the global abandoned-segments
-        // stack so a later adopter (12.4) can reclaim them. Phase 12.4: this
-        // is the REAL walk — `abandon_segments` stamps each owned segment's
-        // `owner_state = ABANDONED` and pushes its base onto the intrusive
-        // Treiber stack. The segments stay mapped; their free state travels
-        // with them (in their `BinTable`s). An adopter CAS-claims them on a
-        // later cold path. Segments no longer leak on thread exit.
+        // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
+        // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL
+        // its segments + the inline TFS head) STAYS WHOLE in the slot — it is
+        // not dropped, not fragmented, not transferred. A later thread that
+        // claims this recycled slot reuses the SAME HeapCore in full (claim
+        // does not re-materialise when `new_gen != 1`): its segments, its free
+        // lists, and crucially its inline TFS, which still holds any
+        // cross-thread frees pushed after this thread exited. The reclaiming
+        // thread drains that TFS on its first `alloc` (`HeapCore::alloc`
+        // already calls `drain_thread_free` under xthread) — this is the
+        // shard-reuse discipline (a freed shard's remote-free queue is drained
+        // by the new owner on first op, exactly as `ShardedRegion` 7b models).
+        //
+        // Why NO abandon walk: the abandon/adopt protocol TRANSFERRED SEGMENTS
+        // BETWEEN HEAPS, which meant two heaps could write the same segment's
+        // BinTable/header concurrently (a data race that tore the header and
+        // corrupted free lists). The shard model restores the single-writer
+        // invariant — a segment is written ONLY by its slot's current owner,
+        // full stop. The abandon/adopt primitives (abandoned_segs Treiber,
+        // owner_state CAS) remain as a loom-proven substrate for a future
+        // decommit-when-empty policy, but they are OFF the hot path.
+        //
+        // `owner_thread_free` points at the slot's inline TFS, whose address is
+        // stable for the process lifetime. Across release→claim it does NOT
+        // change, so it is stamped ONCE (on the segment's first alloc) and
+        // never cleared/re-stamped — removing the racy cross-thread header
+        // writes that caused the corruption.
         //
         // SAFETY: `heap` was returned by `HeapRegistry::claim` (set in
         // `bind_slow`) and has not yet been recycled (the guard drops once,
-        // on thread exit). The `abandon_segments` contract is satisfied.
-        unsafe { HeapRegistry::abandon_segments(heap) };
-
-        // Under `alloc-xthread`: leak this heap's `Box<AtomicPtr<u8>>` TFS
-        // handle (if installed) so late cross-thread pushes to a recycled
-        // heap's TFS remain sound. We do this by NOT dropping the box —
-        // `HeapCore::thread_free` is an `Option<Box<AtomicPtr<u8>>>` field
-        // of the slot-resident `HeapCore`; the slot is NEVER dropped (it
-        // lives in the `'static` registry array), so the box is leaked
-        // automatically by the registry's lifecycle. There is nothing to do
-        // here — the leak is structural (the registry owns the slot for the
-        // process lifetime; `recycle` does not drop the `HeapCore`, it only
-        // flips the slot state FREE). This matches the Phase 10
-        // abandonment-leak discipline.
-        //
-        // Recycle the slot back to the free pool so a future thread can
-        // claim it.
-        //
-        // SAFETY: `heap` was returned by `claim` and `abandon_segments` (a
-        // no-op in 12.3) has been called. The slot is still LIVE (we have
-        // not recycled it yet). `recycle` is the matching half of `claim`.
+        // on thread exit). The slot is still LIVE; `recycle` is the matching
+        // half of `claim` (CAS LIVE→FREE + push_free_slot).
         unsafe { HeapRegistry::recycle(heap) };
     }
 }
