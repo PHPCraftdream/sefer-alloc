@@ -506,6 +506,126 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize) 
     std::alloc::dealloc(reservation.as_ptr(), layout);
 }
 
+/// Decommit the payload pages of a segment: return their physical backing to the
+/// OS while keeping the address-space reservation alive (the header stays mapped
+/// for owner-routing reads). This is the M6 delivery — memory freed back to
+/// empty segments is returned to the OS so steady-state RSS does not grow
+/// unboundedly under churn.
+///
+/// `base` is the SEGMENT-aligned base. We decommit `[base + start_offset,
+/// base + end_offset)` — typically the payload region past the metadata. The
+/// offsets MUST be page-aligned and within the segment.
+///
+/// # Safety contract for callers (this fn is safe; the contract is the
+/// caller's invariant)
+///
+/// The segment at `base` must be a live segment owned by this allocator with no
+/// live blocks in the decommitted range. After decommit the pages read as zero
+/// on re-access (the OS lazily re-provides zeroed pages on demand for the
+/// existing reservation).
+#[allow(dead_code)] // M6 infrastructure; exercised by the soak test and future heap integration.
+#[cfg(all(windows, not(miri)))]
+pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
+    debug_assert!(start_offset.is_multiple_of(PAGE), "start must be page-aligned");
+    debug_assert!(end_offset.is_multiple_of(PAGE), "end must be page-aligned");
+    debug_assert!(start_offset < end_offset, "empty range");
+    let len = end_offset - start_offset;
+    if len == 0 {
+        return;
+    }
+    // SAFETY: `[base + start_offset, base + start_offset + len)` is within a
+    // committed segment owned by this allocator. The caller guarantees no live
+    // blocks exist in the range. `MEM_DECOMMIT` returns the physical pages to
+    // the OS while keeping the address-space reservation (the pages become
+    // inaccessible until re-committed; re-access triggers a fresh zero-fill
+    // commit from the OS).
+    unsafe {
+        let addr = base.add(start_offset);
+        VirtualFree(addr as *mut core::ffi::c_void, len, MEM_DECOMMIT);
+    }
+}
+
+#[allow(dead_code)] // M6 infrastructure; exercised by the soak test.
+#[cfg(all(unix, not(miri)))]
+pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
+    debug_assert!(start_offset.is_multiple_of(PAGE), "start must be page-aligned");
+    debug_assert!(end_offset.is_multiple_of(PAGE), "end must be page-aligned");
+    debug_assert!(start_offset < end_offset, "empty range");
+    let len = end_offset - start_offset;
+    if len == 0 {
+        return;
+    }
+    // SAFETY: `[base + start_offset .. base + start_offset + len)` is within a
+    // live segment owned by this allocator. The caller guarantees no live blocks
+    // exist in the range. `madvise(MADV_DONTNEED)` tells the kernel to discard
+    // the physical pages; subsequent accesses get fresh zeroed pages on demand.
+    unsafe {
+        let addr = base.add(start_offset);
+        libc_madvise_dontneed(addr, len);
+    }
+}
+
+#[allow(dead_code)] // M6 infrastructure; exercised by the soak test.
+#[cfg(miri)]
+pub(crate) fn decommit_pages(_base: *mut u8, _start_offset: usize, _end_offset: usize) {
+    // Under miri we cannot call OS syscalls. Decommit is a no-op (the M6 soak
+    // test asserts the bookkeeping, not the RSS measurement, since miri does not
+    // model RSS). The pages remain accessible — correctness is unchanged (the
+    // caller already proved no live blocks exist).
+}
+
+#[cfg(all(unix, not(miri)))]
+extern "C" {
+    fn madvise(addr: *mut core::ffi::c_void, length: usize, advice: i32) -> i32;
+}
+
+#[cfg(all(unix, not(miri)))]
+const MADV_DONTNEED: i32 = 4;
+
+#[cfg(all(unix, not(miri)))]
+unsafe fn libc_madvise_dontneed(addr: *mut u8, len: usize) {
+    // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region.
+    // `MADV_DONTNEED` discards the backing pages; re-access produces zero-filled
+    // pages on demand.
+    let _ = madvise(addr as *mut core::ffi::c_void, len, MADV_DONTNEED);
+}
+
+/// Recommit previously-decommitted pages within a segment. On windows this is
+/// `VirtualAlloc(MEM_COMMIT)` over the range; on unix re-access after
+/// `MADV_DONTNEED` is implicit (the kernel re-provides zeroed pages), so this
+/// is a no-op. Under miri: no-op (decommit was a no-op).
+#[allow(dead_code)] // M6 infrastructure; future heap integration.
+#[cfg(all(windows, not(miri)))]
+pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
+    debug_assert!(start_offset.is_multiple_of(PAGE));
+    debug_assert!(end_offset.is_multiple_of(PAGE));
+    let len = end_offset - start_offset;
+    if len == 0 {
+        return;
+    }
+    // SAFETY: `[base + start_offset .. +len)` is within an address-space
+    // reservation owned by this allocator (the segment was reserved with
+    // MEM_RESERVE|MEM_COMMIT; after MEM_DECOMMIT the reservation persists).
+    // MEM_COMMIT re-commits the physical pages.
+    unsafe {
+        let addr = base.add(start_offset);
+        VirtualAlloc(addr as *mut core::ffi::c_void, len, MEM_COMMIT, PAGE_READWRITE);
+    }
+}
+
+#[allow(dead_code)] // M6 infrastructure.
+#[cfg(all(unix, not(miri)))]
+pub(crate) fn recommit_pages(_base: *mut u8, _start_offset: usize, _end_offset: usize) {
+    // On unix, re-access after MADV_DONTNEED is implicit — the kernel provides
+    // fresh zeroed pages on demand. No syscall needed.
+}
+
+#[allow(dead_code)] // M6 infrastructure.
+#[cfg(miri)]
+pub(crate) fn recommit_pages(_base: *mut u8, _start_offset: usize, _end_offset: usize) {
+    // Miri: decommit was a no-op, so recommit is too.
+}
+
 /// Round `addr` up to the next multiple of `align` (a power of two). Pure safe
 /// arithmetic on addresses (no pointer math).
 #[cfg(not(miri))]

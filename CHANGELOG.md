@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 10 -- cross-thread free (M7), opt-in via `alloc-xthread`** (extends
+  the `alloc` feature). Correct, lock-free cross-thread `dealloc` behind a
+  new opt-in `alloc-xthread = ["alloc"]` sub-feature. When a thread frees a
+  block it does NOT own, it pushes it onto the owning heap's atomic Treiber
+  stack via a `compare_exchange` loop (the Phase-7b linearization protocol,
+  re-based onto the Phase 8/9 segment substrate). The owner drains the stack
+  in bulk on its next operation and returns each block to its per-class
+  `FreeList`. O(1) owner lookup via `segment_base_of(ptr)` -> segment header
+  -> `owner_thread_free` pointer (a stable `*const AtomicPtr<u8>` stored in
+  each segment's header, pointing to the owning heap's `Box`-allocated Treiber
+  head). The `ThreadFreeStack` is pure safe composition over
+  `core::sync::atomic::AtomicPtr` + the `Node` seam (one new
+  `Node::deref_atomic_ptr` in the existing `node` unsafe seam; no new unsafe
+  module). **Thread-death soundness via abandonment-leak:** under
+  `alloc-xthread`, `Heap::drop` intentionally LEAKS its segments (via
+  `ManuallyDrop<AllocCore>`) and the Treiber head (via
+  `ManuallyDrop<ThreadFreeStack>`) so that late cross-thread `dealloc` calls
+  from other threads never touch unmapped memory or a freed `Box` -- segments
+  stay mapped, the `AtomicPtr` stays allocated. This is a BOUNDED leak on
+  thread death (one heap per thread), acceptable for the target long-lived
+  thread-pool workload. Full abandoned-heap adoption (reclaiming leaked
+  segments) is a Phase 11 deliverable. **Default `alloc` (no `alloc-xthread`)
+  is unchanged Phase 9:** the single-thread-owner allocator with no
+  `ThreadFreeStack`, no owner stamping, and normal segment release on
+  `Heap::drop` (sound: single owner, no cross-thread refs). **Large / unstamped
+  cross-thread free:** under `alloc-xthread`, a cross-thread free of a large
+  block (`SegmentKind::Large`) or a block in an unstamped segment
+  (`owner_thread_free == null`) is a documented no-op -- the block is
+  conservatively leaked until the owning heap drops (or until Phase 11
+  adoption). This avoids mis-accounting and is sound. **Decommit (M6) is NOT
+  delivered** -- the `os::decommit_pages` / `os::recommit_pages` seam landed in
+  Phase 10 (ready to wire) but is not integrated into the heap path. M6 is a
+  Phase 11 deliverable. The soak test (`tests/heap_soak.rs`) asserts bounded
+  segment growth via free-list reuse, not via decommit. Verification: **loom**
+  model-check (`tests/loom_thread_free.rs`, 2 pushers + 1 drainer,
+  `preemption_bound = 3`) with a proven counterfactual -- the naive non-CAS
+  push demonstrably loses blocks under loom (the
+  `counterfactual_naive_push_loses_blocks` test `#[should_panic]`s).
+  Cross-thread differential proptest (`tests/heap_cross_thread.rs`, 64 cases,
+  multiple threads, pattern write+readback -- non-vacuous). Soak test
+  (`tests/heap_soak.rs`) -- bounded segment usage under sustained churn.
+  Miri-clean on the cross-thread atomic seam (`tests/heap_miri_xthread.rs`,
+  2-thread alloc/free, with `-Zmiri-ignore-leaks` for the intentional
+  abandonment-leak).
 - **Phase 9 -- per-thread heap + intrusive free lists (the lock-free fast
   path)** (behind a new opt-in `alloc` feature = `["alloc-core"]`). Each
   thread owns a `Heap` with per-size-class intrusive free lists stored inside

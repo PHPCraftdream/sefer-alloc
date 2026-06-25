@@ -83,6 +83,15 @@ alloc-core = ["std"]
 # case. Single-owner still (cross-thread free is Phase 10). Builds on the
 # Phase 8 segment substrate (`alloc-core`). Requires `std` (TLS).
 alloc = ["alloc-core"]
+# Phase 10: opt-in cross-thread free. Enables the lock-free Treiber stack
+# (`ThreadFreeStack`) for cross-thread `dealloc`, owner stamping on segment
+# headers, and the `dealloc_any_thread` entry point. Sound across thread death
+# via abandonment-leak (segments and the Treiber head are leaked on `Heap::drop`
+# so late cross-thread frees never touch unmapped memory). Full abandoned-heap
+# adoption (reclaiming leaked segments) is Phase 11. Without this feature, the
+# `alloc` feature provides the Phase 9 single-thread-only allocator (sound:
+# single owner, no cross-thread refs). Requires `alloc` (and thus `alloc-core`).
+alloc-xthread = ["alloc"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with

@@ -133,6 +133,13 @@ pub(crate) struct SegmentHeader {
     /// The full size of the OS reservation (head + usable + tail). Paired with
     /// `reservation` for the OS free call.
     pub reservation_len: usize,
+    /// Phase 10: a stable pointer to the owning heap's thread-free stack head
+    /// (`*const AtomicPtr<u8>`). A cross-thread freer reads this from the
+    /// segment header after `segment_base_of(ptr)` and CAS-pushes the freed
+    /// block onto the Treiber stack. `null` for segments not yet bound to a
+    /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
+    /// it is `Box`-allocated inside the owning `Heap`.
+    pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
 }
 
 impl SegmentHeader {
@@ -154,6 +161,7 @@ impl SegmentHeader {
             large_align: 0,
             reservation,
             reservation_len,
+            owner_thread_free: core::ptr::null(),
         }
     }
 
@@ -176,6 +184,7 @@ impl SegmentHeader {
             large_align: align,
             reservation,
             reservation_len,
+            owner_thread_free: core::ptr::null(),
         }
     }
 

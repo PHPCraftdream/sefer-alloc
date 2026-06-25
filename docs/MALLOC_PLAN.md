@@ -206,38 +206,62 @@ hardening gate.
 - **Tools:** criterion (vs mimalloc), miri, proptest. Reuses the Phase-7 TLS
   router and single-writer principle.
 
-### Phase 10 — Cross-thread free + OS return · the concurrency depth · loom-gated
+### Phase 10 — Cross-thread free · the concurrency depth · loom-gated
 
-- **Goal:** correct, lock-free cross-thread `free`, and memory returned to the
-  OS — the two hardest correctness pieces, both already prototyped safely in
-  Phase 7b.
-- **Deliverables:**
+- **Goal:** correct, lock-free cross-thread `free` — the hardest correctness
+  piece, already prototyped safely in Phase 7b. Sound across thread death.
+- **Deliverables (behind a new opt-in `alloc-xthread = ["alloc"]` feature):**
   - **Thread-free list:** a freeing thread that does not own the block pushes it
     onto the owning heap's atomic Treiber stack (`compare_exchange` push); the
     owner drains in bulk on its next op. O(1) owner via segment alignment (M7).
     This is the Phase-7b linearization protocol, re-based onto segments.
-  - **Decommit (M6):** when a segment's live count reaches zero, the safe segment
-    table schedules `madvise(DONTNEED)`/`VirtualFree(MEM_DECOMMIT)`; generations
-    + epoch reclamation ensure no stale handle/pointer resolves into decommitted
-    pages.
-  - Abandoned-heap adoption on thread death (Phase-7b lifecycle, re-based).
-- **Gate:** **loom** on the thread-free + decommit protocol (1 owner + 1 remote
-  freer + 1 reader, bounded preemption) — must FAIL on a naive non-CAS variant
-  (counterfactual); cross-thread differential proptest; a **soak test** showing
-  bounded RSS under churn (M6); miri on the relaxed seam. loom-green → ship; else
-  it stays experimental and P9 (single-thread-fast) remains the trusted path.
+  - **Thread-death soundness via abandonment-leak:** `Heap::drop` under
+    `alloc-xthread` intentionally leaks segments (`ManuallyDrop<AllocCore>`) and
+    the Treiber head (`ManuallyDrop<ThreadFreeStack>`) so late cross-thread
+    `dealloc` calls never touch unmapped memory or a freed `Box`. This is a
+    bounded leak on thread death — acceptable for long-lived thread pools.
+  - **Large / unstamped cross-thread free:** a cross-thread free of a large block
+    or an unstamped segment is a documented no-op (conservatively leaked until the
+    owning heap drops).
+  - **Decommit seam (M6 infrastructure, NOT wired):** `os::decommit_pages` /
+    `os::recommit_pages` added to the OS aperture, ready for Phase 11 integration.
+    The soak test asserts bounded segment growth via free-list reuse, not decommit.
+  - Default `alloc` (without `alloc-xthread`) is unchanged Phase 9: single-owner,
+    no `ThreadFreeStack`, no owner stamping, normal segment release on drop.
+- **NOT delivered (deferred to Phase 11):**
+  - **Decommit (M6):** wiring the decommit seam into the heap's empty-segment
+    path. The seam landed here; the policy integration is Phase 11.
+  - **Full abandoned-heap adoption:** a live thread discovering and reclaiming
+    abandoned heaps' segments (dissolving the abandonment-leak). Phase 11.
+- **Gate:** **loom** on the thread-free protocol (1 owner + 2 remote pushers,
+  bounded preemption) — must FAIL on a naive non-CAS variant (counterfactual);
+  cross-thread differential proptest; a **soak test** showing bounded segment
+  usage under churn (via free-list reuse); miri on the relaxed seam (with
+  `-Zmiri-ignore-leaks` for the intentional abandonment-leak). loom-green → ship
+  the protocol behind `alloc-xthread`; P9 (single-thread-fast) remains the
+  trusted default path.
 - **Tools:** loom, miri, criterion (multi-thread scaling vs mimalloc), a soak
   harness. Reuses `AtomicSlot`/epoch from Phase 3b-II and the 7b protocol.
 
-### Phase 11 — `GlobalAlloc` face + hardening + the verdict · production trust
+### Phase 11 — `GlobalAlloc` face + decommit + adoption + hardening · production trust
 
-- **Goal:** the drop-in face, earn production trust, and measure honestly against
-  `mimalloc`.
+- **Goal:** the drop-in face, decommit (M6), full abandoned-heap adoption
+  (dissolving the Phase 10 abandonment-leak), earn production trust, and measure
+  honestly against `mimalloc`.
 - **Deliverables:**
   - `SeferMalloc` — `unsafe impl GlobalAlloc` over the heap substrate, **proven
     reentrancy-free** (M5) and **no-panic** (a panic in a global allocator =
     abort): the audit is a hard CI gate; an installation example as
     `#[global_allocator]`.
+  - **Decommit (M6):** wire the `os::decommit_pages` / `os::recommit_pages` seam
+    (landed in Phase 10) into the heap's empty-segment path. When a segment's
+    live count reaches zero, the safe segment table schedules decommit;
+    generations + epoch reclamation ensure no stale handle/pointer resolves into
+    decommitted pages. Soak test proves bounded RSS under churn.
+  - **Full abandoned-heap adoption:** a live thread discovers and reclaims
+    abandoned heaps' segments (the Phase-7b lifecycle, re-based). Dissolves the
+    bounded abandonment-leak from Phase 10. The `ManuallyDrop` wrappers in
+    `Heap` are replaced with proper adoption handoff.
   - The **two-faces** API surface finalized: `Handle` face and `malloc` face over
     one substrate, documented.
   - Security hardening: free-list integrity (encoded/`debug`-checked next
@@ -250,8 +274,9 @@ hardening gate.
     multi-arch CI (x86_64 + **aarch64** — the weak memory model that x86 hides);
     ThreadSanitizer under stress.
 - **Gate:** fuzz clean (CPU-hours); multi-arch green; TSan clean; the reentrancy
-  + no-panic audit green; a published honest verdict. Only after all green is the
-  `malloc` face called production-trusted.
+  + no-panic audit green; M6 soak-verified bounded RSS; adoption reclaims
+  abandoned segments under test; a published honest verdict. Only after all green
+  is the `malloc` face called production-trusted.
 - **Tools:** cargo-fuzz, miri, loom, ThreadSanitizer, criterion, multi-arch CI,
   mimalloc (comparison).
 
