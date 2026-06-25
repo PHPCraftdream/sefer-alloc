@@ -123,14 +123,12 @@ impl Drop for AbandonGuard {
             return; // This thread never bound a registry heap.
         }
         // Abandon the heap's segments onto the global abandoned-segments
-        // stack so a later adopter (12.4) can reclaim them. In Phase 12.3
-        // this is a NO-OP STUB (the segment-walk needs the 12.4 owner-field
-        // machinery): the heap's segments LEAK on thread exit until 12.4.
-        // This is bounded (one heap's footprint per thread death), sound
-        // (the segments stay mapped; a late cross-thread free via
-        // `segment_base_of` → header `owner_thread_free` still routes to a
-        // valid TFS, which the abandon guard leaks too — see below), and
-        // documented as a known remainder.
+        // stack so a later adopter (12.4) can reclaim them. Phase 12.4: this
+        // is the REAL walk — `abandon_segments` stamps each owned segment's
+        // `owner_state = ABANDONED` and pushes its base onto the intrusive
+        // Treiber stack. The segments stay mapped; their free state travels
+        // with them (in their `BinTable`s). An adopter CAS-claims them on a
+        // later cold path. Segments no longer leak on thread exit.
         //
         // SAFETY: `heap` was returned by `HeapRegistry::claim` (set in
         // `bind_slow`) and has not yet been recycled (the guard drops once,

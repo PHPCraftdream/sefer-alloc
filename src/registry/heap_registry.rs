@@ -34,7 +34,14 @@
 
 use core::sync::atomic::Ordering;
 
-use super::bootstrap::{ensure, Registry, MAX_HEAPS};
+use crate::alloc_core::segment_header::{
+    pack_owner, unpack_owner_gen, unpack_owner_id, unpack_owner_state, SegmentMeta, ABANDONED_TAIL,
+    OWNER_ID_NONE, OWNER_STATE_ABANDONED,
+};
+use super::bootstrap::{
+    abandoned_head_is_empty, ensure, pack_abandoned_head, unpack_abandoned_head, ABANDONED_HEAD_EMPTY,
+    Registry, MAX_HEAPS,
+};
 use super::heap_core::HeapCore;
 use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL, STATE_FREE, STATE_LIVE};
 use super::tagged_ptr::TaggedPtr;
@@ -211,109 +218,217 @@ impl HeapRegistry {
     }
 
     /// Abandon a heap's owned segments onto the global abandoned-segments
-    /// stack, so a later adopter (12.4) can reclaim them. Called by the
+    /// intrusive stack, so a later adopter can reclaim them. Called by the
     /// owning thread BEFORE recycling the slot (typically on thread exit:
     /// the segments stay mapped, the free state travels with them in their
     /// `BinTable`s, and an adopter CAS-claims them).
     ///
-    /// **Phase 12.2:** this is a no-op stub — the registry structure is in
-    /// place (the `abandoned_segs` stack and its push/pop primitives are
-    /// fully implemented and tested via [`pop_abandoned_segment`]), but
-    /// wiring it to walk a `HeapCore`'s owned segments requires the segment
-    /// header's `owner` field that 12.3 introduces. We expose the primitive
-    /// so the API surface is complete and the round-trip test passes; the
-    /// actual abandonment-walk is a 12.3 deliverable.
-    ///
-    /// [`pop_abandoned_segment`]: Self::pop_abandoned_segment
+    /// **Phase 12.4:** this is the real implementation. It walks the heap's
+    /// owned segments (via [`AllocCore::segment_bases`] — the read-only
+    /// segment-table iterator), CASes each segment's `owner_state`
+    /// LIVE→ABANDONED (under the owning thread's exclusive writer status this
+    /// CAS trivially succeeds), and pushes each base onto the abandoned-segs
+    /// intrusive Treiber stack. The free state travels with the segments (it
+    /// is in their `BinTable`s), so NO merging is needed — this is the
+    /// keystone simplification of the §2.0 segment-centric ownership model.
     ///
     /// # Safety
     ///
     /// `heap` must be either null (treated as a no-op) or a pointer
-    /// previously returned by [`claim`](Self::claim). In Phase 12.2 this is
-    /// a no-op stub, so the pointer is never dereferenced; the `unsafe`
-    /// obligation is forward-looking (12.3+ will walk the heap's segment
-    /// table through it).
-    pub unsafe fn abandon_segments(_heap: *mut HeapCore) {
-        // 12.3/12.4: walk the heap's owned segments (via the segment table),
-        // mark each `owner.state = ABANDONED`, and `push_abandoned_segment`
-        // its base onto the stack. The free state travels with the segments
-        // (it is in their `BinTable`s), so no merging is needed.
-        //
-        // Until the owner-stamping exists (12.3), there is nothing to walk
-        // safely. This stub preserves the API shape and the round-trip test
-        // exercises push/pop directly.
+    /// previously returned by [`claim`](Self::claim) and not yet recycled.
+    /// The caller (the owning thread) must be the sole writer of the heap's
+    /// segment owner-state (established by the claim CAS).
+    pub unsafe fn abandon_segments(heap: *mut HeapCore) {
+        if heap.is_null() {
+            return;
+        }
+        let reg = ensure();
+        // SAFETY: caller guarantees `heap` was returned by `claim` and is the
+        // slot's sole writer. We hold a `&mut HeapCore` for the duration of
+        // the walk; no other thread mutates this heap's segments (the slot is
+        // still LIVE — we have not recycled it yet).
+        let heap_ref: &mut HeapCore = unsafe { &mut *heap };
+        let owner_id = heap_ref.id();
+        // Walk every segment this heap owns and abandon each. The bases come
+        // from the heap's own AllocCore segment table; the registry's global
+        // abandoned-segs stack is the destination.
+        for base in heap_ref.segment_bases() {
+            abandon_one_segment(reg, base, owner_id);
+        }
     }
 
-    /// Push a segment base onto the abandoned-segments stack. The registry
-    /// retains the segment (it stays mapped); a later adopter pops it via
-    /// [`pop_abandoned_segment`](Self::pop_abandoned_segment) and CAS-claims
-    /// its ownership. Tagged-Treiber: the high 32 bits of the head carry a
-    /// monotonic tag bumped per push (ABA fix).
+    /// Push a segment base onto the abandoned-segments intrusive Treiber
+    /// stack. The registry retains the segment (it stays mapped); a later
+    /// adopter pops it via [`pop_abandoned_segment`](Self::pop_abandoned_segment)
+    /// and CAS-claims its ownership.
     ///
-    /// **Phase 12.2:** exposed as a primitive for the round-trip test and for
-    /// `abandon_segments` (12.3+). It is fully implemented and ordering-
-    /// correct.
+    /// Sets the segment's `next_abandoned` header link to chain off the
+    /// current head, then CASes the head to this base. The head packs the
+    /// full 64-bit base (in the high bits — the base is SEGMENT-aligned, so
+    /// its low 22 bits are zero) with an ABA tag in those low bits, bumped
+    /// per push. This is the fix for FINDINGS №1: the old `AtomicU64` packing
+    /// stored the base in the low 32 bits and truncated addresses above 4 GiB
+    /// (ASLR); the new packing preserves the full base.
+    ///
+    /// `base` MUST be a SEGMENT-aligned segment base with a valid header (the
+    /// caller — `abandon_segments` — derives it from a registered segment
+    /// table). The segment's `owner_state` SHOULD already be ABANDONED (the
+    /// caller sets it before pushing); this push does not touch `owner_state`.
     pub fn push_abandoned_segment(base: *mut u8) {
         let reg = ensure();
-        let value = base as u64;
-        // The tag defeats ABA across the pop-repush race (see TaggedPtr).
-        debug_assert!(
-            (value & !((1u64 << 32) - 1)) == 0 || cfg!(miri),
-            "abandoned_segs stores segment bases in the low 32 bits; \
-             base addresses above 4 GiB are unsupported on this target \
-             (use an intrusive head+next layout if the target needs it)"
-        );
-        let mut head = reg.abandoned_segs.load(Ordering::Acquire);
-        loop {
-            let (_cur_base, tag) = TaggedPtr::unpack(head);
-            let new_tag = tag.wrapping_add(1);
-            let new_head = TaggedPtr::pack(value, new_tag);
-            // CAS: Acquire on success (we read the prior head to chain off
-            // it — though this stack is non-intrusive, the tag's monotonicity
-            // is the correctness invariant); Release would also suffice; we
-            // use AcqRel for symmetry with the pop's swap(Acquire). Relaxed
-            // on failure (retry).
-            match reg.abandoned_segs.compare_exchange(
-                head,
-                new_head,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return,
-                Err(actual) => head = actual,
-            }
-        }
+        push_abandoned_segment_into(reg, base);
     }
 
     /// Pop the most-recently-abandoned segment base, or `None` if the stack
     /// is empty. Called by an adopter (12.4) on its cold path to reclaim an
     /// abandoned segment. The adopter then CAS-claims the segment's
-    /// `owner` `ABANDONED → LIVE(me, gen+1)` (the M9 linearization point).
+    /// `owner_state` `ABANDONED → LIVE(me, gen+1)` (the M9 linearization
+    /// point) — if that CAS fails (another adopter won, or the segment was
+    /// already adopted), the adopter discards this base and pops the next.
     ///
-    /// **Phase 12.2 single-slot semantics:** the abandoned-segments stack
-    /// stores at most ONE base at a time in this phase (a `swap(empty)` pop
-    /// drains the head and clears the stack). This is sufficient for the
-    /// round-trip test and for the 12.3 thread-exit abandon protocol (a
-    /// thread abandons its heap's segments as a batch, then the next adopter
-    /// pops them as a batch). Multi-element chaining with an intrusive
-    /// `next_abandoned` field (in the segment header, once 12.3 adds the
-    /// `owner` field) is the 12.4 form; until then this single-slot drain is
-    /// exact for the single-threaded tests. The `tag` on the head still
-    /// defeats ABA for the push/pop race even with a single entry.
+    /// The pop is a Treiber pop: load the (tagged) head, read the segment's
+    /// `next_abandoned` link, CAS the head to that next link. The ABA tag in
+    /// the head defeats the pop-repush race (if another abandon pushed a new
+    /// base between our load and CAS, the tag differs and we retry).
     #[must_use]
     pub fn pop_abandoned_segment() -> Option<*mut u8> {
         let reg = ensure();
-        // swap(empty) atomically drains the head: we take whatever was there
-        // and clear the stack. Acquire to see the push's Release store of the
-        // base value. Under the single-slot 12.2 semantics this is exact;
-        // under concurrency (12.4) the swap resolves a pop race atomically
-        // (one popper gets the base, the other gets empty).
-        let head = reg.abandoned_segs.swap(TaggedPtr::empty(), Ordering::Acquire);
-        if TaggedPtr::is_empty(head) {
-            return None;
+        let mut head = reg.abandoned_segs.load(Ordering::Acquire);
+        loop {
+            if abandoned_head_is_empty(head) {
+                return None;
+            }
+            let (base, tag) = unpack_abandoned_head(head);
+            // Read the segment's `next_abandoned` link BEFORE the CAS (the
+            // pusher stored it under Release; our Acquire load of the head +
+            // this Acquire read see it). The link is the FULL 64-bit base of
+            // the next abandoned segment (plain u64), or ABANDONED_TAIL.
+            let meta = SegmentMeta::new(base);
+            let next_link = meta.next_abandoned_atomic().load(Ordering::Acquire);
+            // Compute the new head: the next base (full pointer) with the
+            // SAME tag (a pop preserves the tag — only pushes bump it), or
+            // empty if `next == ABANDONED_TAIL`.
+            let new_head = if next_link == ABANDONED_TAIL {
+                ABANDONED_HEAD_EMPTY
+            } else {
+                let next_base = next_link as *mut u8;
+                // Preserve the tag (pop does not bump it). A concurrent
+                // re-push of `base` will bump the tag and fail our CAS.
+                pack_abandoned_head(next_base, tag)
+            };
+            // CAS the head to `new_head`. Acquire on success (see the push's
+            // Release store of `next_abandoned`); Relaxed on failure (retry).
+            match reg.abandoned_segs.compare_exchange(
+                head,
+                new_head,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(base),
+                Err(actual) => head = actual, // retry with the new head
+            }
         }
-        let (value, _tag) = TaggedPtr::unpack(head);
-        Some(value as *mut u8)
+    }
+
+    /// Phase 12.4 — the adoption cold path. Called by a heap on its free-list
+    /// miss (before reserving a fresh segment): pop an abandoned segment and
+    /// CAS-claim its `owner_state` `ABANDONED → LIVE(me, gen+1)`. If the CAS
+    /// succeeds, the segment becomes part of `adopter`'s `AllocCore` (it is
+    /// registered in the adopter's segment table and becomes the current
+    /// small segment); its `ThreadFreeStack` (if any) is drained into its
+    /// `BinTable`s. If the CAS fails (another adopter won this segment, or it
+    /// was already adopted), the segment is discarded and the next abandoned
+    /// segment is tried (the caller loops).
+    ///
+    /// **M9 (adopt-exactly-once):** the Abandoned→Live CAS on the segment's
+    /// `owner_state` is the SINGLE linearization point — exactly one adopter
+    /// wins per generation. The CAS expected value encodes the segment's
+    /// pre-adoption `(ABANDONED, old_owner, gen)`; the winner writes
+    /// `(LIVE, adopter, gen+1)`. A racing adopter that loaded the same
+    /// expected value loses the CAS (the winner's store changed the word) and
+    /// retries with a fresh pop.
+    ///
+    /// Returns `true` if a segment was adopted (the caller may retry the
+    /// allocation that triggered the cold path); `false` if the abandoned
+    /// stack was empty or no segment could be claimed (the caller should
+    /// reserve a fresh segment).
+    ///
+    /// # Safety
+    ///
+    /// `adopter` must be a pointer previously returned by [`claim`](Self::claim)
+    /// and the caller must be its sole writer (the owning thread).
+    pub unsafe fn try_adopt(adopter: *mut HeapCore) -> bool {
+        if adopter.is_null() {
+            return false;
+        }
+        // Pop abandoned segments until we win one or the stack empties.
+        loop {
+            let Some(base) = Self::pop_abandoned_segment() else {
+                return false; // stack empty — nothing to adopt
+            };
+            // CAS-claim the segment's owner_state ABANDONED → LIVE(me, gen+1).
+            // This is the M9 linearization point.
+            let meta = SegmentMeta::new(base);
+            let owner_atomic = meta.owner_state_atomic();
+            // Load the current state to build the expected word. We expect
+            // ABANDONED (the abandon path set it). The owner_id and generation
+            // are whatever the abandoner left — we match them exactly so only
+            // a segment that has NOT been adopted since we popped it passes
+            // the CAS.
+            let cur = owner_atomic.load(Ordering::Acquire);
+            if unpack_owner_state(cur) != OWNER_STATE_ABANDONED {
+                // Not abandoned (another adopter already won it, or it was
+                // never abandoned — defensive). Discard and pop the next.
+                continue;
+            }
+            // SAFETY: `adopter` was returned by `claim` and we are its sole
+            // writer (caller's contract). We hold `&mut HeapCore` for the
+            // register/drain/set_small_current calls below.
+            let adopter_ref: &mut HeapCore = unsafe { &mut *adopter };
+            let new_gen = unpack_owner_gen(cur).wrapping_add(1);
+            let new_word = pack_owner(
+                crate::alloc_core::segment_header::OWNER_STATE_LIVE,
+                adopter_ref.id(),
+                new_gen,
+            );
+            // The CAS: AcqRel on success (Acquire to see the abandoner's
+            // ABANDONED store + BinTable state; Release so a later freer's
+            // Acquire read of owner_state sees our LIVE stamp). Relaxed on
+            // failure (we discard this segment).
+            match owner_atomic.compare_exchange(
+                cur,
+                new_word,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    // We won the segment. Register it in the adopter's
+                    // AllocCore segment table (so alloc/dealloc routing finds
+                    // it) and make it the current small segment (so new
+                    // allocations carve from it). If the table is full
+                    // (pathological — too many segments), we still keep the
+                    // segment LIVE-owned but it will not be allocatable from
+                    // directly; its BinTable frees still work via
+                    // `dealloc_small_by_segment` (which uses segment_base_of,
+                    // not the table, for routing).
+                    let _ = adopter_ref.register_segment_internal(base);
+                    adopter_ref.set_small_current_internal(base);
+                    // Under alloc-xthread: drain the segment's TFS (if it has
+                    // one) into its BinTable so cross-thread frees that
+                    // arrived while it was abandoned are processed.
+                    #[cfg(feature = "alloc-xthread")]
+                    {
+                        adopter_ref.drain_segment_tfs(base);
+                    }
+                    return true;
+                }
+                Err(_) => {
+                    // Lost the CAS (another adopter won). Discard and pop the
+                    // next abandoned segment.
+                    continue;
+                }
+            }
+        }
     }
 }
 
@@ -432,4 +547,116 @@ fn bump_count(reg: &Registry) -> Option<usize> {
         return None;
     }
     Some(idx as usize)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12.4 — abandoned-segments intrusive Treiber stack primitives.
+//
+// The stack head (`Registry::abandoned_segs`) packs the full 64-bit segment
+// base (high bits; the base is SEGMENT-aligned so its low 22 bits are zero)
+// with an ABA tag in those low 22 bits. Each abandoned segment chains to the
+// next via its `next_abandoned` header field (a segment-relative offset or
+// `ABANDONED_TAIL`). This is the intrusive analogue of `ThreadFreeStack`,
+// with the ABA tag added because abandoned segments CAN be re-abandoned
+// (unlike TFS nodes, which are drained once).
+// ---------------------------------------------------------------------------
+
+/// Push `base` onto the abandoned-segments stack chained off `reg`'s head.
+/// Sets the segment's `next_abandoned` link to the current head's base
+/// (a full 64-bit absolute pointer, stored as `u64` plain data), then CASes
+/// the head to `base` with a bumped tag. The full 64-bit base is preserved
+/// (high bits in the head; full pointer in the link) — this is the FINDINGS
+/// №1 fix.
+///
+/// `base` MUST be a SEGMENT-aligned segment base with a valid header.
+fn push_abandoned_segment_into(reg: &Registry, base: *mut u8) {
+    let meta = SegmentMeta::new(base);
+    let next_atomic = meta.next_abandoned_atomic();
+    let mut head = reg.abandoned_segs.load(Ordering::Acquire);
+    loop {
+        // The `next_abandoned` link: the current head's FULL base address
+        // (stored as u64 plain data — a full 64-bit pointer, no truncation),
+        // or ABANDONED_TAIL if the stack is empty. A real base is always
+        // non-null and SEGMENT-aligned, so it never collides with ABANDONED_TAIL
+        // (u64::MAX).
+        let next_link = if abandoned_head_is_empty(head) {
+            ABANDONED_TAIL
+        } else {
+            let (head_base, _tag) = unpack_abandoned_head(head);
+            head_base as u64
+        };
+        // Write the link under Release so a concurrent pop's Acquire read of
+        // `next_abandoned` (after observing this segment as the head) sees it.
+        next_atomic.store(next_link, Ordering::Release);
+        // Bump the tag (the ABA fix) and CAS the head to this base.
+        let (_cur_base, tag) = unpack_abandoned_head(head);
+        let new_tag = tag.wrapping_add(1) & (super::bootstrap::ABANDON_TAG_MASK);
+        let new_head = pack_abandoned_head(base, new_tag);
+        // CAS: Release on success so a pop's Acquire sees the `next_abandoned`
+        // link we just wrote. Relaxed on failure (retry).
+        match reg.abandoned_segs.compare_exchange(
+            head,
+            new_head,
+            Ordering::Release,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return,
+            Err(actual) => head = actual,
+        }
+    }
+}
+
+/// Abandon a single segment: CAS its `owner_state` LIVE→ABANDONED (under the
+/// owning thread's exclusive writer status this succeeds), then push its base
+/// onto the abandoned-segments stack. Called by `abandon_segments` for each
+/// owned segment.
+///
+/// `owner_id` is the abandoning heap's slot index (recorded in the segment's
+/// new ABANDONED owner_state for the adopter's coherence check).
+fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
+    let meta = SegmentMeta::new(base);
+    let owner_atomic = meta.owner_state_atomic();
+    // CAS LIVE→ABANDONED. Under the owning thread's exclusive writer status
+    // (the abandon caller is the heap's sole writer, established by the claim
+    // CAS), this CAS trivially succeeds — it is a store under AcqRel in
+    // practice. We use a CAS (not a plain store) so the adopter's
+    // ABANDONED→LIVE CAS has a well-defined expected value, and so a
+    // concurrent adopter that already won this segment (race with a prior
+    // adoption) makes us skip it (the CAS fails on ABANDONED-or-other).
+    //
+    // We preserve the existing generation (the adopter bumps it). We expect
+    // the current LIVE state with THIS owner_id (a segment we own); if the
+    // owner_id is OWNER_ID_NONE (a never-stamped primordial/early segment),
+    // we still abandon it (it has no owner to lose).
+    loop {
+        let cur = owner_atomic.load(Ordering::Acquire);
+        let cur_state = unpack_owner_state(cur);
+        if cur_state == OWNER_STATE_ABANDONED {
+            // Already abandoned (a concurrent abandon raced and won, or a
+            // prior adoption abandoned it again). Nothing to do.
+            return;
+        }
+        let cur_owner = unpack_owner_id(cur);
+        let cur_gen = unpack_owner_gen(cur);
+        // Only abandon segments we own (cur_owner == owner_id) OR unbound
+        // segments (OWNER_ID_NONE — stamped at reserve time as LIVE/NONE).
+        // A segment owned by ANOTHER heap must not be touched here.
+        if cur_owner != owner_id && cur_owner != OWNER_ID_NONE {
+            // Not ours and not unbound: skip (defensive — abandon_segments
+            // walks THIS heap's table, so every base should be ours).
+            return;
+        }
+        let new_word = pack_owner(OWNER_STATE_ABANDONED, owner_id, cur_gen);
+        match owner_atomic.compare_exchange(
+            cur,
+            new_word,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(_) => continue, // retry the load+CAS
+        }
+    }
+    // Push the base onto the global abandoned-segments stack.
+    push_abandoned_segment_into(reg, base);
 }

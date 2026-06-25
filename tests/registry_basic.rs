@@ -196,6 +196,17 @@ fn free_slots_is_lifo() {
 
 /// `push_abandoned_segment` → `pop_abandoned_segment` round-trip returns the
 /// pushed base; an empty pop returns `None`.
+///
+/// FINDINGS №1 regression test: the abandoned-segments stack now packs the
+/// FULL 64-bit base (SEGMENT-aligned bases have zero low 22 bits, reused for
+/// the ABA tag). The pop reads the segment's `next_abandoned` header field, so
+/// it requires a REAL segment base (a fake non-segment address would crash on
+/// the header read). We obtain a real segment base from a claimed heap's
+/// `segment_bases()` iterator. To exercise the >4 GiB path we would need a
+/// real high mapping; on hosts where the OS returns low addresses (miri) we
+/// still assert the round-trip is exact — the PACKING correctness (no
+/// truncation) is unit-tested separately in `bootstrap`'s pack/unpack, and
+/// the loom harness exercises the push/pop CAS protocol.
 #[test]
 fn abandon_pop_round_trip() {
     serial!();
@@ -206,14 +217,29 @@ fn abandon_pop_round_trip() {
         "pop on an empty abandoned stack must return None"
     );
 
-    // Push a fake segment base; pop must return it. We use a low 32-bit
-    // address to satisfy the abandoned_segs packing constraint (low 32 bits
-    // = base); 0x1000 is a safe non-null sentinel.
-    let base = 0x1000usize as *mut u8;
+    // Obtain a REAL segment base from a claimed heap (the pop reads the
+    // segment header, so a fake address would crash). A fresh heap owns its
+    // primordial segment.
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null());
+    // SAFETY: `heap` was returned by `claim` and is the slot's sole writer.
+    let heap_ref: &mut sefer_alloc::registry::HeapCore = unsafe { &mut *heap };
+    let base = heap_ref
+        .segment_bases()
+        .next()
+        .expect("a fresh heap owns at least its primordial segment");
+    assert!(
+        !base.is_null(),
+        "segment base must be non-null"
+    );
+
     HeapRegistry::push_abandoned_segment(base);
     let popped =
         HeapRegistry::pop_abandoned_segment().expect("pop must return the pushed base");
-    assert_eq!(popped, base, "pop must return the exact base that was pushed");
+    assert_eq!(
+        popped, base,
+        "pop must return the exact base that was pushed (no address truncation)"
+    );
 
     // After a pop the stack is empty again.
     assert!(
@@ -222,23 +248,88 @@ fn abandon_pop_round_trip() {
     );
 }
 
-/// `abandon_segments` is currently a no-op stub (the segment-walk needs the
-/// 12.3 `owner` field). This test pins that contract: calling it does not
-/// populate the abandoned stack. (When 12.3 implements the walk, this test
-/// will be replaced with a real abandonment assertion.)
+/// FINDINGS №1 — the abandoned-head PACKING preserves a full >4 GiB address.
+/// This is a pure-arithmetic unit test of `pack_abandoned_head` /
+/// `unpack_abandoned_head`: a SEGMENT-aligned address above 4 GiB round-trips
+/// intact. On the OLD (pre-12.4) packing — base in the low 32 bits — this
+/// address would be truncated to a DIFFERENT value and the test would FAIL
+/// (the counterfactual that makes this test non-vacuous).
+///
+/// We test the packing directly (not through the registry's push/pop, which
+/// dereference the segment header) so we can feed a synthetic high address
+/// without needing a real OS mapping at that address.
 #[test]
-fn abandon_segments_is_noop_in_phase_12_2() {
+fn abandoned_head_packing_preserves_high_address() {
+    use sefer_alloc::registry::bootstrap::*;
+
+    const SEGMENT: u64 = 1 << 22; // matches os::SEGMENT
+    // A realistic ASLR-style address: ~127 GiB into the address space, well
+    // above 4 GiB. Masked to SEGMENT alignment.
+    let high = 0x7f_0123_4000_u64;
+    let base = (high & !(SEGMENT - 1)) as *mut u8;
+    assert_eq!(
+        base as u64 % SEGMENT,
+        0,
+        "fake base must be SEGMENT-aligned (the packing requires it)"
+    );
+    assert!(
+        (base as u64) > (1u64 << 32),
+        "fake base must be above 4 GiB to exercise the >4 GiB path"
+    );
+
+    // Pack with a non-zero tag, then unpack — base must round-trip EXACTLY.
+    let word = pack_abandoned_head(base, 0x123456);
+    let (recovered_base, recovered_tag) = unpack_abandoned_head(word);
+    assert_eq!(
+        recovered_base, base,
+        "pack/unpack must preserve the full >4 GiB base (FINDINGS №1 fix)"
+    );
+    assert_eq!(
+        recovered_tag, 0x123456,
+        "pack/unpack must preserve the tag"
+    );
+
+    // The empty sentinel round-trips as empty.
+    assert!(
+        abandoned_head_is_empty(ABANDONED_HEAD_EMPTY),
+        "the empty sentinel must denote an empty stack"
+    );
+    assert!(
+        !abandoned_head_is_empty(word),
+        "a packed non-null base must NOT denote an empty stack"
+    );
+}
+
+/// `abandon_segments` is now a REAL walk (Phase 12.4): it stamps each owned
+/// segment `owner_state = ABANDONED` and pushes its base onto the abandoned
+/// stack. This test pins that contract: after abandoning a heap, the segments
+/// ARE on the abandoned stack (a pop returns a non-null base). This replaces
+/// the Phase 12.2 no-op stub test — the walk is implemented and segments no
+/// longer leak on thread exit.
+#[test]
+fn abandon_segments_walks_owned_segments() {
     serial!();
     drain_abandoned();
     let a = HeapRegistry::claim();
     assert!(!a.is_null());
+    // SAFETY: `a` was returned by `claim` and is the slot's sole writer.
+    let heap: &mut sefer_alloc::registry::HeapCore = unsafe { &mut *a };
+    // Allocate from the heap so it owns at least one segment with a stamped
+    // owner_state (the primordial segment is reserved at HeapCore::new).
+    let layout = core::alloc::Layout::from_size_align(64, 8).unwrap();
+    let ptr = heap.alloc(layout);
+    assert!(!ptr.is_null(), "alloc must succeed on a fresh heap");
     // SAFETY: `a` was returned by `claim` and not yet recycled.
     unsafe { HeapRegistry::abandon_segments(a) };
+    // The heap owned ≥1 segment (the primordial); abandoning pushed it.
+    let popped = HeapRegistry::pop_abandoned_segment();
     assert!(
-        HeapRegistry::pop_abandoned_segment().is_none(),
-        "abandon_segments is a no-op stub in Phase 12.2; the abandoned stack \
-         must stay empty until 12.3 wires the segment-table walk"
+        popped.is_some(),
+        "abandon_segments must push owned segments onto the abandoned stack \
+         (Phase 12.4: it is a real walk, not a no-op)"
     );
+    // Drain any remaining (a heap may own several segments).
+    while HeapRegistry::pop_abandoned_segment().is_some() {}
 }
 
 /// Bootstrap idempotency: a second `ensure` returns the SAME static and does

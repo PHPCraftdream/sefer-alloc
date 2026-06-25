@@ -224,6 +224,35 @@ impl AllocCore {
         new_ptr
     }
 
+    /// Iterate over all registered segment bases (read-only). Exposed for the
+    /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
+    /// `abandon_segments`).
+    #[cfg(feature = "alloc-global")]
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
+        self.table.bases()
+    }
+
+    /// Register an already-reserved segment base into this substrate's table
+    /// (Phase 12.4 adoption). Returns the assigned `segment_id`, or `None` if
+    /// the table is full. Used by `HeapRegistry::try_adopt` to register an
+    /// adopted segment into the adopter's `AllocCore` so subsequent
+    /// `alloc`/`dealloc` routing finds it. The caller MUST have laid down a
+    /// valid header at `base` (the abandon path left it intact).
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn register_segment(&mut self, base: *mut u8) -> Option<u32> {
+        self.table.register(base)
+    }
+
+    /// Mark `base` as the current small segment (Phase 12.4 adoption). An
+    /// adopted segment with free space becomes the bump target so the adopter
+    /// carves new allocations from it. If the segment is full, the caller
+    /// simply does not call this (the segment still serves frees via its
+    /// BinTable, found by `find_segment_with_free`).
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn set_small_current(&mut self, base: *mut u8) {
+        self.small_cur = base;
+    }
+
     // -----------------------------------------------------------------------
     // Internals — the safe Cartographer. All raw memory touches go through
     // `Node`; no `Vec`/`Box`/`HashSet`/`std::alloc`.

@@ -21,13 +21,13 @@
 //! ```text
 //!   SEGMENT-aligned base
 //!   ┌─────────────────────────────────────────────────────────────┐
-//!   │ SegmentHeader (fixed-size, page-0)                         │
-//!   │  • magic, kind, segment_id                                 │
-//!   │  • bump cursor (next uncarved page offset, in bytes)       │
-//!   │  • BinTable:  per-class free-list head OFFSETS (u32 each)  │
-//!   │  • PageMap:    per-page descriptor (which class, or free)  │
+//!   │ SegmentHeader (fixed-size, page-0)                          │
+//!   │  • magic, kind, segment_id                                  │
+//!   │  • bump cursor (next uncarved page offset, in bytes)        │
+//!   │  • BinTable:  per-class free-list head OFFSETS (u32 each)   │
+//!   │  • PageMap:    per-page descriptor (which class, or free)   │
 //!   ├─────────────────────────────────────────────────────────────┤
-//!   │ payload pages (carved bump-allocated into class runs)      │
+//!   │ payload pages (carved bump-allocated into class runs)       │
 //!   └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -46,6 +46,79 @@ use super::size_classes::SMALL_CLASS_COUNT;
 /// check that a computed segment base really is one of our segments (defence
 /// against a foreign pointer being passed to `dealloc`).
 pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
+
+// ---------------------------------------------------------------------------
+// Phase 12.4 — segment ownership state (the M9 adoption linearization point).
+//
+// Each small/primordial segment carries an `owner_state: u64` field packing:
+//
+//   bits [0]      : state    — 0 = LIVE (owned by a heap), 1 = ABANDONED
+//   bits [1..32]  : owner_id — the owning heap's registry slot index
+//                              (MAX_HEAPS = 4096 ≪ 2^31, so 31 bits is ample)
+//   bits [32..63] : generation — bumped on each adopt; the M9 coherence key
+//                                (a stale pointer reading an old generation
+//                                refuses — see §2.4 / §2.6 M9)
+//
+// The Abandoned→Live CAS on `owner_state` is the SINGLE linearization point
+// of adoption (M9): exactly one adopter wins per generation. The packing is
+// plain data (laid down / read through the `node` seam, like the rest of the
+// header) so this file stays `unsafe`-free.
+//
+// `cfg_attr(not(alloc-global), allow(dead_code))`: the helpers below are used
+// by the registry's abandon/adopt path, which is `alloc-global`-gated. Without
+// `alloc-global` the registry does not compile, so the helpers appear unused —
+// but they are part of the segment header's documented contract (the fields
+// exist in every build's layout), so we silence the dead-code lint rather than
+// gate the fields themselves.
+// ---------------------------------------------------------------------------
+
+/// Owner-state bit layout.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const OWNER_STATE_LIVE: u64 = 0;
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const OWNER_STATE_ABANDONED: u64 = 1;
+/// Mask for the state bit (bit 0).
+const OWNER_STATE_MASK: u64 = 0x1;
+/// Bit-shift for the owner heap id field (starts at bit 1).
+const OWNER_ID_SHIFT: u32 = 1;
+const OWNER_ID_MASK: u64 = ((1u64 << 31) - 1) << OWNER_ID_SHIFT;
+/// Bit-shift for the generation field (starts at bit 32).
+const OWNER_GEN_SHIFT: u32 = 32;
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+const OWNER_GEN_MASK: u64 = (u32::MAX as u64) << OWNER_GEN_SHIFT;
+
+/// Sentinel owner id meaning "not bound to any heap yet" (a freshly-reserved
+/// segment before its first stamp). Distinct from a real slot index (which is
+/// `< MAX_HEAPS`); adoption skips such segments.
+pub(crate) const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
+
+/// Pack `(state, owner_id, generation)` into one `u64` word (the layout
+/// documented above the [`OWNER_STATE_LIVE`] constant). `const` so the header
+/// constructors can build the initial packed word at compile time.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u64 {
+    (state & OWNER_STATE_MASK)
+        | ((owner_id as u64) << OWNER_ID_SHIFT)
+        | ((generation as u64) << OWNER_GEN_SHIFT)
+}
+
+/// Unpack the state bit (0 = LIVE, 1 = ABANDONED) from an owner-state word.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const fn unpack_owner_state(word: u64) -> u64 {
+    word & OWNER_STATE_MASK
+}
+
+/// Unpack the owner heap id from an owner-state word.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const fn unpack_owner_id(word: u64) -> u32 {
+    ((word & OWNER_ID_MASK) >> OWNER_ID_SHIFT) as u32
+}
+
+/// Unpack the generation from an owner-state word.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const fn unpack_owner_gen(word: u64) -> u32 {
+    ((word & OWNER_GEN_MASK) >> OWNER_GEN_SHIFT) as u32
+}
 
 /// The number of pages in one segment (`SEGMENT / PAGE` = 1024 for the default
 /// 4 MiB / 4 KiB pair). The `PageMap` has exactly this many entries.
@@ -140,12 +213,45 @@ pub(crate) struct SegmentHeader {
     /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
     /// it is `Box`-allocated inside the owning `Heap`.
     pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
+    /// Phase 12.4: the segment's ownership state — packed
+    /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
+    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The
+    /// Abandoned→Live CAS on this word is the SINGLE linearization point of
+    /// adoption (M9). Stored as a plain `u64` so the `#[repr(C)] Copy`
+    /// `SegmentHeader` remains a plain bit-pattern (the bootstrap lays it down
+    /// via `Node::write_struct`, and `SegmentMeta::header` reads it back as a
+    /// unit). The adoption path accesses it through the dedicated
+    /// [`owner_state_atomic`](SegmentMeta::owner_state_atomic) view (`&AtomicU64`
+    /// at the same fixed offset), because a plain struct-field read would be a
+    /// non-atomic data race under the concurrent adoption CAS.
+    pub owner_state: u64,
+    /// Phase 12.4: the intrusive link for the global abandoned-segments
+    /// Treiber stack. While a segment is ABANDONED and on the stack, this
+    /// holds the segment-relative OFFSET of the NEXT abandoned segment's base
+    /// (or [`ABANDONED_TAIL`] if this is the stack tail). Stored as an offset
+    /// (not a pointer) so the field is plain `Copy` data inside the header.
+    /// Live (non-abandoned) segments carry [`ABANDONED_TAIL`] here ("not on
+    /// the stack"). Accessed atomically through
+    /// [`next_abandoned_atomic`](SegmentMeta::next_abandoned_atomic) on the
+    /// abandon/adopt path.
+    pub next_abandoned: u64,
 }
+
+/// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
+/// "this segment is not currently on the abandoned stack". A real
+/// segment-relative offset is always `< SEGMENT` (`1 << 22`), so `u64::MAX`
+/// is unambiguous.
+#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+pub(crate) const ABANDONED_TAIL: u64 = u64::MAX;
 
 impl SegmentHeader {
     /// Build a fresh small-segment header value (does NOT write it — the
     /// bootstrap writes it through [`Node::write_struct`]). `bump` is where
     /// payload carving may begin (just past the metadata region).
+    ///
+    /// The segment starts in the LIVE owner-state bound to `OWNER_ID_NONE`
+    /// (not yet stamped with a real heap id); the abandonment/adopt path
+    /// stamps it when the segment is bound to a heap.
     pub(crate) const fn small(
         segment_id: u32,
         bump: usize,
@@ -162,6 +268,8 @@ impl SegmentHeader {
             reservation,
             reservation_len,
             owner_thread_free: core::ptr::null(),
+            owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
+            next_abandoned: ABANDONED_TAIL,
         }
     }
 
@@ -185,6 +293,8 @@ impl SegmentHeader {
             reservation,
             reservation_len,
             owner_thread_free: core::ptr::null(),
+            owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
+            next_abandoned: ABANDONED_TAIL,
         }
     }
 
@@ -408,6 +518,44 @@ impl SegmentMeta {
     /// The bin-table view.
     pub(crate) fn bin_table(&self) -> BinTable {
         BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
+    }
+
+    // -------------------------------------------------------------------
+    // Phase 12.4 — atomic views over the owner-state / next_abandoned
+    // fields. These return `&AtomicU64` at the field's fixed offset so the
+    // adoption CAS is a genuine atomic operation (NOT a non-atomic struct
+    // field read, which would be a data race under concurrency). The single
+    // `unsafe` dereference lives in the [`node`](super::node) seam
+    // (`Node::atomic_u64_at`); the field offset is computed by the safe
+    // `core::mem::offset_of!` macro on the `#[repr(C)]` header, so this file
+    // stays unsafe-free, as it has been since Phase 8.
+    // -------------------------------------------------------------------
+
+    /// A `&AtomicU64` view over this segment's `owner_state` field. The
+    /// adoption path uses this for the Abandoned→Live CAS (the M9
+    /// linearization point). The view aliases the header byte range; access
+    /// is atomic so there is no data race with a concurrent header read.
+    ///
+    /// # Caller's contract
+    ///
+    /// `self.base` MUST be a live small/primordial segment base with a valid
+    /// header at offset 0 (the caller — the abandon/adopt path — guarantees
+    /// this; the segment is registered and has a valid header).
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn owner_state_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
+        // `offset_of!` is a safe macro (address arithmetic on a
+        // `#[repr(C)]` type); the atomic-view dereference is delegated to
+        // the `node` seam.
+        let off = core::mem::offset_of!(SegmentHeader, owner_state);
+        Node::atomic_u64_at(self.base, off)
+    }
+
+    /// A `&AtomicU64` view over this segment's `next_abandoned` intrusive-link
+    /// field. Used by the abandon (push) and adopt (pop chain-walk) paths.
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn next_abandoned_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
+        let off = core::mem::offset_of!(SegmentHeader, next_abandoned);
+        Node::atomic_u64_at(self.base, off)
     }
 }
 

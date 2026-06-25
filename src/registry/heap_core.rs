@@ -47,14 +47,19 @@
 //! registry. The eventual collapse of `Heap` into `HeapCore` is later work.
 
 use core::alloc::Layout;
+use core::sync::atomic::Ordering;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
 
 use crate::alloc_core::{node::Node, AllocCore};
-#[cfg(feature = "alloc-xthread")]
+#[cfg(feature = "alloc-global")]
 use crate::alloc_core::os;
 #[cfg(feature = "alloc-xthread")]
-use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, SEGMENT_MAGIC};
+use crate::alloc_core::segment_header::{
+    SegmentHeader, SegmentKind, SEGMENT_MAGIC,
+};
+#[cfg(feature = "alloc-global")]
+use crate::alloc_core::segment_header::{pack_owner, SegmentMeta};
 #[cfg(feature = "alloc-xthread")]
 use crate::heap::thread_free::ThreadFreeStack;
 
@@ -123,6 +128,67 @@ impl HeapCore {
         self.id
     }
 
+    /// Iterate over the segment bases this heap owns (read-only). Used by the
+    /// Phase 12.4 abandonment walk: `abandon_segments` stamps each segment's
+    /// `owner_state = ABANDONED` and pushes its base onto the global
+    /// abandoned-segments stack. Delegates to the substrate's segment-table
+    /// iterator. Phase 12.4 addition.
+    ///
+    /// `#[doc(hidden)] pub` so integration tests can obtain a real segment
+    /// base for the abandoned-stack round-trip test (the test-only pub
+    /// surface of the registry, documented in `mod.rs`).
+    #[doc(hidden)]
+    pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
+        self.core.segment_bases()
+    }
+
+    /// Phase 12.4 adoption: register an adopted segment base into this
+    /// heap's substrate table. Thin wrapper over
+    /// [`AllocCore::register_segment`]. Called by `try_adopt` after winning
+    /// the ABANDONED→LIVE CAS.
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn register_segment_internal(&mut self, base: *mut u8) -> Option<u32> {
+        self.core.register_segment(base)
+    }
+
+    /// Phase 12.4 adoption: make `base` the current small segment so new
+    /// allocations carve from it. Thin wrapper over
+    /// [`AllocCore::set_small_current`].
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn set_small_current_internal(&mut self, base: *mut u8) {
+        self.core.set_small_current(base);
+    }
+
+    /// Phase 12.4 adoption: drain an adopted segment's `ThreadFreeStack`
+    /// (if its header stamps one) into its `BinTable`s. Cross-thread frees
+    /// that arrived while the segment was abandoned are processed here.
+    /// No-op if the segment has no TFS head stamped (own-thread-only heap).
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn drain_segment_tfs(&mut self, base: *mut u8) {
+        let hdr = SegmentHeader::read_at(base);
+        if hdr.owner_thread_free.is_null() {
+            return;
+        }
+        // Drain via the segment's stamped TFS head. We borrow the TFS view
+        // through the node seam (the head pointer is stable — the abandoning
+        // heap leaked its `Box<AtomicPtr>` per the abandonment discipline).
+        use crate::heap::thread_free::ThreadFreeBorrow;
+        let head_atomic = Node::deref_atomic_ptr(hdr.owner_thread_free);
+        let tfs = ThreadFreeBorrow::from_head(head_atomic);
+        let mut cur = tfs.drain();
+        while !cur.is_null() {
+            let cur_nn = match core::ptr::NonNull::new(cur) {
+                Some(nn) => nn,
+                None => break,
+            };
+            // Read `next` BEFORE we free `cur` (dealloc overwrites the first
+            // word as the free-list node pointer).
+            let next = Node::read_next(cur_nn);
+            self.core.dealloc_small_by_segment(cur);
+            cur = next;
+        }
+    }
+
     /// Lazily install the cross-thread free-stack handle on the TLS bind-slow
     /// path. Allocates a single `Box<AtomicPtr<u8>>` (via `std::alloc`); this
     /// is the ONLY `std::alloc` touch on the `HeapCore` path, and it is
@@ -181,9 +247,11 @@ impl HeapCore {
             self.drain_thread_free();
         }
         let ptr = self.core.alloc(layout);
-        #[cfg(feature = "alloc-xthread")]
         if !ptr.is_null() {
-            self.stamp_owner(ptr);
+            // Phase 12.4: stamp the segment owner_state so abandonment can
+            // identify our segments. Under alloc-xthread also stamp the TFS
+            // head for cross-thread free routing.
+            self.stamp_segment_owner(ptr);
         }
         ptr
     }
@@ -314,24 +382,42 @@ impl HeapCore {
         }
     }
 
-    /// Stamp a segment's header with our TFS head pointer so cross-thread
-    /// freers can find this heap. Called on the alloc path after a successful
-    /// allocation. Idempotent: only stamps if the header's
-    /// `owner_thread_free` is currently null.
-    #[cfg(feature = "alloc-xthread")]
-    fn stamp_owner(&mut self, ptr: *mut u8) {
-        let Some(head_box) = self.thread_free.as_ref() else {
-            // No TFS installed yet (own-thread-only path). Nothing to stamp;
-            // cross-thread frees to this segment will be a safe no-op until
-            // the TFS is installed on a later bind/alloc.
-            return;
-        };
+    /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two
+    /// parts:
+    ///
+    /// 1. **`owner_state = LIVE(self.id, 0)`** — the adoption-coherence field.
+    ///    Set on every alloc so the abandonment walk can identify our segments
+    ///    and an adopter's CAS has a well-defined expected value. Idempotent:
+    ///    a segment already stamped with our id is left alone.
+    /// 2. **(alloc-xthread only) `owner_thread_free` head pointer** — the
+    ///    cross-thread free routing target, so a remote freer can find this
+    ///    heap's TFS. Idempotent: only stamps if currently null.
+    ///
+    /// Called on the alloc path after a successful allocation. The segment is
+    /// exclusively ours (single-writer invariant from the claim CAS), so the
+    /// `owner_state` store is race-free.
+    fn stamp_segment_owner(&mut self, ptr: *mut u8) {
+        use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of(ptr as usize) as *mut u8;
-        let mut meta = SegmentMeta::new(base);
-        let mut hdr = meta.header();
-        if hdr.owner_thread_free.is_null() {
-            hdr.owner_thread_free = head_box as *const AtomicPtr<u8> as *const _;
-            meta.write_header(hdr);
+        let meta = SegmentMeta::new(base);
+        // 1. Stamp owner_state (adoption coherence).
+        let owner_atomic = meta.owner_state_atomic();
+        let cur = owner_atomic.load(Ordering::Acquire);
+        if unpack_owner_id(cur) != self.id {
+            let me = pack_owner(OWNER_STATE_LIVE, self.id, 0);
+            // Release: a later abandon's Acquire CAS must observe our stamp.
+            owner_atomic.store(me, Ordering::Release);
+        }
+        // 2. (alloc-xthread) Stamp the TFS head for cross-thread routing.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            if let Some(head_box) = self.thread_free.as_ref() {
+                let mut hdr = meta.header();
+                if hdr.owner_thread_free.is_null() {
+                    hdr.owner_thread_free = head_box as *const AtomicPtr<u8> as *const _;
+                    meta.write_header(hdr);
+                }
+            }
         }
     }
 }

@@ -65,6 +65,67 @@ use super::tagged_ptr::TaggedPtr;
 /// At ~64 B per slot this is ~256 KiB of `.bss` — negligible.
 pub const MAX_HEAPS: usize = 4096;
 
+/// The segment size used for the abandoned-segment address packing. Mirrors
+/// [`crate::alloc_core::os::SEGMENT`] (kept as a literal here to avoid a
+/// cross-feature dependency from the registry bootstrap — the value is
+/// structural, set in `MALLOC_PLAN.md`, and a `const _: () = assert!` below
+/// ties them together so they cannot drift).
+const ABANDON_SEG_SHIFT: u32 = 22; // log2(4 MiB)
+const ABANDON_SEG_SIZE: u64 = 1u64 << ABANDON_SEG_SHIFT;
+/// Number of low bits available for the ABA tag in the abandoned-segment head
+/// packing (a segment base is `ABANDON_SEG_SIZE`-aligned, so its low
+/// `ABANDON_SEG_SHIFT = 22` bits are always zero — we reuse them for the tag).
+const ABANDON_TAG_BITS: u32 = ABANDON_SEG_SHIFT;
+pub(crate) const ABANDON_TAG_MASK: u64 = (1u64 << ABANDON_TAG_BITS) - 1;
+
+/// Compile-time tie: if the real `SEGMENT` ever diverges from
+/// `ABANDON_SEG_SIZE`, this fails to compile (the abandoned-segment packing
+/// would silently corrupt high address bits). `cfg`-gated so it only fires
+/// when `alloc-core` (and thus `os::SEGMENT`) is in the build graph.
+#[cfg(feature = "alloc-core")]
+const _: () = assert!(
+    ABANDON_SEG_SIZE == crate::alloc_core::os::SEGMENT as u64,
+    "ABANDON_SEG_SIZE must match os::SEGMENT (the abandoned-segment head packing relies on SEGMENT alignment)"
+);
+
+/// Pack `(base, tag)` into one `AtomicU64` head word for the
+/// abandoned-segments intrusive stack. `base` MUST be SEGMENT-aligned (its low
+/// `ABANDON_SEG_SHIFT` bits are zero — true for every segment base by
+/// construction); the tag occupies those low bits and is bumped on every push
+/// (ABA defence). The full 64-bit base is recoverable, so addresses above 4
+/// GiB (ASLR) are handled correctly (the bug fixed in Phase 12.4 — FINDINGS №1).
+///
+/// Not `const` because `*mut u8 as u64` is not stable in `const fn` (it needs
+/// `const_raw_ptr_to_int_transmute`, unstable). Runtime-only use.
+#[doc(hidden)]
+pub fn pack_abandoned_head(base: *mut u8, tag: u64) -> u64 {
+    let addr = base as u64;
+    // The tag lives in the low ABANDON_TAG_BITS (which are zero in `addr`
+    // because `base` is SEGMENT-aligned). OR them together.
+    (addr & !ABANDON_TAG_MASK) | (tag & ABANDON_TAG_MASK)
+}
+
+/// Unpack the abandoned-segment head word back into `(base, tag)`. The base's
+/// low `ABANDON_TAG_BITS` are restored to zero.
+#[doc(hidden)]
+pub fn unpack_abandoned_head(word: u64) -> (*mut u8, u64) {
+    let base = (word & !ABANDON_TAG_MASK) as *mut u8;
+    let tag = word & ABANDON_TAG_MASK;
+    (base, tag)
+}
+
+/// The empty-stack sentinel for the abandoned-segment head: base = null, tag = 0.
+/// A null base unambiguously denotes "empty" (no real segment base is null).
+#[doc(hidden)]
+pub const ABANDONED_HEAD_EMPTY: u64 = 0;
+
+/// Whether an abandoned-segment head word denotes the empty stack.
+#[doc(hidden)]
+pub fn abandoned_head_is_empty(word: u64) -> bool {
+    // Empty iff base is null (tag is irrelevant — only the base distinguishes).
+    (word & !ABANDON_TAG_MASK) == 0
+}
+
 /// Bootstrap-state values stored in the init atomic.
 const STATE_UNINIT: u8 = 0;
 const STATE_INITIALIZING: u8 = 1;
@@ -85,8 +146,13 @@ pub struct Registry {
     /// Tagged-Treiber head of the `free_slots` stack: low 32 = slot index,
     /// high 32 = tag (bumped per push). Initialised empty.
     pub free_slots: AtomicU64,
-    /// Tagged-Treiber head of the `abandoned_segs` stack: low 32 = segment
-    /// base, high 32 = tag. Initialised empty.
+    /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
+    /// the full 64-bit segment base (in the high bits, since bases are
+    /// `SEGMENT`-aligned → low [`ABANDON_SEG_SHIFT`] bits are zero) with an
+    /// ABA tag in those low bits. Each abandoned segment's
+    /// `next_abandoned` header field chains to the next base. This fixes
+    /// FINDINGS №1 (the old `AtomicU64` packing truncated bases >4 GiB);
+    /// the full base is now preserved.
     pub abandoned_segs: AtomicU64,
 }
 
@@ -104,7 +170,7 @@ impl Registry {
             slots: [const { HeapSlot::new_uninit() }; MAX_HEAPS],
             count: AtomicU32::new(0),
             free_slots: AtomicU64::new(TaggedPtr::empty()),
-            abandoned_segs: AtomicU64::new(TaggedPtr::empty()),
+            abandoned_segs: AtomicU64::new(ABANDONED_HEAD_EMPTY),
         }
     }
 }

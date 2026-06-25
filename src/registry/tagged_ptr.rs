@@ -1,13 +1,19 @@
 //! [`TaggedPtr`] — the packed `(value | tag)` word used by the registry's
-//! Treiber stacks to defeat the ABA problem.
+//! `free_slots` Treiber stack to defeat the ABA problem.
 //!
-//! Both registry stacks (`free_slots`, `abandoned_segs`) are Treiber stacks
-//! whose head is a single `AtomicU64`. The low [`INDEX_BITS`] = 32 bits carry
-//! the stack entry's identity (a slot index for `free_slots`; a segment base
-//! for `abandoned_segs`), and the high 32 bits carry a monotonic **tag** that
-//! is bumped on every successful push. The classic ABA scenario — thread A
-//! reads head=X, thread B pops X then re-pushes X — is defeated because the
-//! re-push bumps the tag, so A's CAS on `(X, old_tag)` fails.
+//! The `free_slots` stack head is a single `AtomicU64`. The low
+//! [`INDEX_BITS`] = 32 bits carry the slot index; the high 32 bits carry a
+//! monotonic **tag** that is bumped on every successful push. The classic ABA
+//! scenario — thread A reads head=X, thread B pops X then re-pushes X — is
+//! defeated because the re-push bumps the tag, so A's CAS on `(X, old_tag)`
+//! fails.
+//!
+//! (Phase 12.4: the `abandoned_segs` stack previously also used `TaggedPtr`,
+//! which stored the segment base in the low 32 bits and truncated addresses
+//! above 4 GiB — FINDINGS №1. It now uses a dedicated intrusive
+//! head+next layout in [`super::bootstrap`] that packs the full 64-bit base
+//! with the ABA tag in the SEGMENT-alignment low bits. `TaggedPtr` is
+//! henceforth `free_slots`-only.)
 //!
 //! ## Why 32-bit tags are enough
 //!

@@ -245,4 +245,41 @@ impl Node {
         // address without dereferencing.
         unsafe { base.add(off) }
     }
+
+    /// Return a `&'static AtomicU64` view over the 8 aligned bytes at
+    /// `base + off`. Used by the Phase 12.4 adoption path to obtain an atomic
+    /// view over a segment header field (the `owner_state` CAS is the M9
+    /// linearization point; a plain struct-field read would be a data race).
+    ///
+    /// # Caller's contract
+    ///
+    /// - `base` MUST be a live segment base owned by this allocator (it will
+    ///   remain mapped and the header byte range valid for the process
+    ///   lifetime — segments are only freed at `AllocCore::drop`, which runs
+    ///   after all adoption has quiesced).
+    /// - `off` MUST be the offset of an 8-byte-aligned `u64`/`AtomicU64`
+    ///   field within a `#[repr(C)]` header at `base`, and `off + 8` MUST be
+    ///   within the segment. The caller (the segment-header module) derives
+    ///   `off` via `core::mem::offset_of!` on the `#[repr(C)]` header, which
+    ///   yields a properly-aligned in-layout offset — so alignment and bounds
+    ///   hold by construction.
+    ///
+    /// The returned reference carries `'static` because the segment is never
+    /// freed while adoption may be in flight (the abandon/adopt protocol
+    /// completes before `AllocCore::drop`).
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn atomic_u64_at(
+        base: *mut u8,
+        off: usize,
+    ) -> &'static core::sync::atomic::AtomicU64 {
+        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
+        // SAFETY: caller guarantees `base` is a live segment base and `off` is
+        // the offset of a properly-aligned `AtomicU64` field within a
+        // `#[repr(C)]` header at `base`, with `off + 8` in-bounds. The
+        // segment remains mapped for the process lifetime (freed only at
+        // `AllocCore::drop`, after adoption quiesces), so the `'static`
+        // lifetime is sound. `AtomicU64` is `Sync`, so shared atomic access
+        // from any thread is race-free.
+        unsafe { &*ptr }
+    }
 }
