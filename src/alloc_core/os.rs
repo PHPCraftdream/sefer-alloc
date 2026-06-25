@@ -119,15 +119,18 @@ impl Segment {
     /// `len` is rounded UP to a multiple of `SEGMENT` (a span is always whole
     /// segments) — large/huge allocations request `len` and get a span whose
     /// usable length is `round_up(len, SEGMENT)`. Returns `None` only on OOM
-    /// (the OS refused the reservation). The span is **uninitialised**.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `len == 0` (a degenerate request that has no legitimate
-    /// caller — every allocation rounds up to at least one segment).
+    /// (the OS refused the reservation) or if `len == 0` (a degenerate request
+    /// that has no legitimate caller — every allocation rounds up to at least
+    /// one segment; we return `None` rather than panicking so the `GlobalAlloc`
+    /// face never aborts).
     #[must_use]
     pub(crate) fn reserve(len: usize) -> Option<Self> {
-        assert!(len > 0, "Segment::reserve requires len > 0");
+        // no-panic (Phase 11): a zero-length request returns None (graceful
+        // OOM) rather than asserting. The GlobalAlloc contract guarantees
+        // non-zero size, but defensive code must never abort.
+        if len == 0 {
+            return None;
+        }
         // Round up to a whole number of segments. A span is always an integral
         // number of segments so segment_of(ptr) lands on a real header.
         let n_segments = len.div_ceil(SEGMENT);

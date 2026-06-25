@@ -50,3 +50,50 @@ where
         Some(f(heap))
     })
 }
+
+/// Execute `f` with a mutable reference to the current thread's [`Heap`], or
+/// return `None` if the heap cannot be accessed right now WITHOUT panicking.
+///
+/// This is the **no-panic** variant for the `GlobalAlloc` face (Phase 11,
+/// `alloc-global`). A panic inside `#[global_allocator]` aborts the whole
+/// process, so the malloc face must never panic. The two situations where
+/// `with_heap` would panic are handled gracefully here:
+///
+/// 1. **TLS slot destroyed (thread shutdown):** `try_with` returns `Err` when
+///    the thread-local's destructor has already run (the thread is exiting and
+///    its TLS slot has been reclaimed). We return `None` -- the caller (the
+///    `GlobalAlloc` impl) returns null, signalling OOM. This is correct: a
+///    thread that has outlived its TLS heap cannot serve allocations, and
+///    returning null lets `std` fall back gracefully (most allocation requests
+///    during shutdown are best-effort).
+/// 2. **Reentrant borrow:** `RefCell::try_borrow_mut` returns `Err` if the
+///    cell is already borrowed. Under M5 (reentrancy-freedom) this never
+///    happens on the alloc path (no alloc call reaches back into the heap),
+///    but we guard defensively rather than panicking.
+///
+/// Returns `None` if the heap cannot be accessed (TLS destroyed, reentrant
+/// borrow, or primordial OOM). The caller MUST handle `None` by returning null
+/// -- never by panicking.
+#[cfg(feature = "alloc-global")]
+pub(crate) fn with_heap_try<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut Heap) -> R,
+{
+    // `try_with` returns `Result<R, AccessError>`; `AccessError` means the
+    // thread-local's destructor has already run (thread shutdown). We treat
+    // this as "no heap available" and return None -- the caller (the
+    // GlobalAlloc impl) returns null. This is the no-panic contract: `.ok()?`
+    // converts Err(AccessError) to None without panicking.
+    HEAP.try_with(|cell| {
+        // `try_borrow_mut` returns `Err` only on a reentrant borrow. Under M5
+        // (reentrancy-freedom) this is impossible on the alloc path, but we
+        // guard defensively (no panic).
+        let mut borrow = cell.try_borrow_mut().ok()?;
+        if borrow.is_none() {
+            *borrow = Some(Heap::new()?);
+        }
+        let heap = borrow.as_mut()?;
+        Some(f(heap))
+    })
+    .ok()?
+}

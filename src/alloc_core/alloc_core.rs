@@ -221,8 +221,15 @@ impl AllocCore {
                 if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
                     return ptr;
                 }
+                // no-panic: a fresh small segment is guaranteed by construction
+                // to have room for at least one block of every small class
+                // (compile-time sanity: `small_meta_end() + PAGE <= SEGMENT`,
+                // and every class block fits in a page). If carve_block returns
+                // None here it indicates metadata corruption; we return null
+                // (graceful OOM) rather than panicking — the GlobalAlloc face
+                // (Phase 11) must never abort.
                 self.carve_block(class_idx, block_size)
-                    .expect("fresh small segment must have room")
+                    .unwrap_or(core::ptr::null_mut())
             }
             None => core::ptr::null_mut(),
         }
@@ -362,7 +369,17 @@ impl AllocCore {
         let base = segment.as_ptr();
         let reservation = segment.reservation();
         let reservation_len = segment.reservation_len();
-        let id = self.table.register(base);
+        // no-panic: register returns None if the segment table is full (too many
+        // live large allocations). We release the segment and return null
+        // (graceful OOM) rather than panicking.
+        let id = match self.table.register(base) {
+            Some(id) => id,
+            None => {
+                // Release the segment we just reserved (drop releases it).
+                drop(segment);
+                return core::ptr::null_mut();
+            }
+        };
         // Lay down the large header. The allocation lives at `hdr_aligned`.
         let bump = hdr_aligned + align_up(size, align);
         let hdr = SegmentHeader::large(
@@ -386,7 +403,9 @@ impl AllocCore {
         let base = segment.as_ptr();
         let reservation = segment.reservation();
         let reservation_len = segment.reservation_len();
-        let id = self.table.register(base);
+        // no-panic: register returns None if the segment table is full. We
+        // release the segment and return None (graceful OOM).
+        let id = self.table.register(base)?;
         // Lay down the small header + page map + bin table at the fixed
         // offsets. `bump` starts at the small-meta end (past the metadata).
         let meta_end = SegLayout::small_meta_end();

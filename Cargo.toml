@@ -92,6 +92,18 @@ alloc = ["alloc-core"]
 # `alloc` feature provides the Phase 9 single-thread-only allocator (sound:
 # single owner, no cross-thread refs). Requires `alloc` (and thus `alloc-core`).
 alloc-xthread = ["alloc"]
+# Phase 11: the drop-in `GlobalAlloc` face -- `SeferMalloc`. Installs over the
+# per-thread `Heap` substrate via the TLS `with_heap` binding (allocation-free
+# lazy init). The `unsafe impl GlobalAlloc` is the single new `unsafe` surface
+# of this phase -- it is the documented malloc-face seam (the trait is `unsafe`;
+# the body delegates to the already-proven safe `Heap` entry points). Every
+# entry point is no-panic (a panic in a global allocator aborts the process):
+# checked branches return null on OOM, never panic/abort. Reentrancy-free (M5)
+# is upheld structurally: no `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
+# path -- the TLS init is the Phase 9 lazy allocation-free discipline. Requires
+# `alloc` (and thus `alloc-core`). Add `alloc-xthread` alongside it for the
+# multi-thread face (cross-thread `dealloc` via the Phase 10 Treiber stack).
+alloc-global = ["alloc"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -189,3 +201,18 @@ required-features = ["byte-sharded"]
 name = "heap_alloc"
 harness = false
 required-features = ["alloc"]
+
+# Phase 11: `SeferMalloc` installed as `#[global_allocator]` vs `mimalloc` and
+# the system allocator, exercising real Rust allocation patterns (Vec/Box churn).
+# Quick criterion profile (sample_size 10, short warm-up). Honest verdict in
+# docs/MALLOC_BENCH.md. Requires `alloc-global` (which brings `alloc`).
+[[bench]]
+name = "global_alloc"
+harness = false
+required-features = ["alloc-global"]
+
+# Phase 11: minimal example installing `SeferMalloc` as the `#[global_allocator]`.
+# Gated so the default build does not try to compile it without the feature.
+[[example]]
+name = "global_allocator"
+required-features = ["alloc-global"]

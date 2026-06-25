@@ -49,7 +49,8 @@
 //  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
 //    (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
 //    the Phase 7d parallel `ShardedByteArena`) and/or `alloc-core`
-//    (Phase 8 self-hosted segment substrate): the crate is
+//    (Phase 8 self-hosted segment substrate) and/or `alloc-global`
+//    (Phase 11 `SeferMalloc` `GlobalAlloc` face): the crate is
 //    `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //    error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //      * `concurrent::hand` (under `experimental`), and
@@ -58,12 +59,19 @@
 //        `byte-sharded`), and
 //      * `alloc_core::os` (the OS segment aperture) and `alloc_core::node`
 //        (the intrusive free-list node seam — the generalized `hand`
-//        discipline) (both under `alloc-core`).
+//        discipline) (both under `alloc-core`), and
+//      * `global::sefer_malloc` (the `unsafe impl GlobalAlloc` malloc-face
+//        seam — the trait obligation + pointer handoff to the Heap)
+//        (under `alloc-global`).
 //    So "the `unsafe` lives in named modules" is enforced by the compiler in
-//    EVERY configuration. See `src/concurrent/hand.rs`, `src/byte/*`, and
-//    `src/alloc_core/{os,node}.rs`.
+//    EVERY configuration. See `src/concurrent/hand.rs`, `src/byte/*`,
+//    `src/alloc_core/{os,node}.rs`, and `src/global/sefer_malloc.rs`.
 #![cfg_attr(
-    not(any(feature = "experimental", feature = "byte", feature = "alloc-core")),
+    not(any(
+        feature = "experimental",
+        feature = "byte",
+        feature = "alloc-core"
+    )),
     forbid(unsafe_code)
 )]
 #![deny(unsafe_code)]
@@ -91,6 +99,9 @@ mod alloc_core;
 #[cfg(feature = "alloc")]
 mod heap;
 
+#[cfg(feature = "alloc-global")]
+mod global;
+
 pub use handle::Handle;
 pub use region::Region;
 
@@ -113,6 +124,9 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 
 #[cfg(feature = "alloc")]
 pub use heap::{with_heap, Heap};
+
+#[cfg(feature = "alloc-global")]
+pub use global::SeferMalloc;
 
 #[cfg(feature = "byte-sharded")]
 pub use byte::ShardedByteArena;

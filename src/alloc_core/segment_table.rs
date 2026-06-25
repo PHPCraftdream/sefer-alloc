@@ -79,15 +79,18 @@ impl SegmentTable {
     }
 
     /// Register a new segment base. Returns its assigned `segment_id` (which
-    /// equals the index it was placed at). Panics if the table is full (a
-    /// bounded-capacity invariant — Phase 8 surface is sized so this never
-    /// fires for legitimate workloads; future phases grow the table).
-    pub(crate) fn register(&mut self, base: *mut u8) -> u32 {
+    /// equals the index it was placed at), or `None` if the table is full.
+    ///
+    /// no-panic (Phase 11 GlobalAlloc face): the bounded-capacity table can be
+    /// exhausted by a pathological workload (many simultaneous large
+    /// allocations). Previously this asserted (panicked); now it returns
+    /// `None` so the caller (`reserve_small_segment` / `alloc_large`) returns
+    /// null (graceful OOM) rather than aborting the process.
+    pub(crate) fn register(&mut self, base: *mut u8) -> Option<u32> {
         let idx = self.count as usize;
-        assert!(
-            idx < MAX_SEGMENTS,
-            "SegmentTable full: MAX_SEGMENTS exceeded (bump MAX_SEGMENTS)"
-        );
+        if idx >= MAX_SEGMENTS {
+            return None;
+        }
         // The write goes through the `node` seam — this file is pure safe
         // composition. `Node::offset` computes the address (the unsafe `add`
         // lives in the seam); `Node::write_struct` does the proven write.
@@ -95,7 +98,7 @@ impl SegmentTable {
             as *mut *mut u8;
         super::node::Node::write_struct::<*mut u8>(slot, base);
         self.count += 1;
-        idx as u32
+        Some(idx as u32)
     }
 
     /// The current number of live segments (including the primordial).

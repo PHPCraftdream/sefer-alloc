@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 11 -- the `malloc` face: `SeferMalloc` (`#[global_allocator]`) +
+  no-panic hardening + honest mimalloc verdict** (behind a new opt-in
+  `alloc-global = ["alloc"]` feature). `SeferMalloc` is an `unsafe impl
+  GlobalAlloc` over the per-thread segment heap (one substrate, two faces: the
+  typed `Handle` face and this raw `*mut u8` drop-in face), routing
+  `alloc`/`dealloc`/`realloc`/`alloc_zeroed` through the no-panic TLS binding
+  `with_heap_try` (returns null / no-ops instead of panicking — a panic in a
+  global allocator aborts the process). **No-panic hardening:** the substrate's
+  alloc-path panic sites were made graceful — the `alloc_small` `.expect` is
+  gone, `SegmentTable::register` and `Segment::reserve` now return `Option`
+  (null on failure, never `assert!`-panic). **Reentrancy-freedom (M5)** holds on
+  the malloc path (no `Vec`/`Box`/`std::alloc`/`format!`). The `unsafe impl
+  GlobalAlloc` is the documented malloc-face seam (every method `// SAFETY:`);
+  `unsafe` stays confined. **Honest verdict (`docs/MALLOC_BENCH.md`):** on the
+  alloc/dealloc hot path `SeferMalloc` is competitive with `mimalloc` (faster at
+  1024 B and on realistic `Vec` push/grow churn; ~1.2-2x behind on small
+  fixed-size churn) and consistently **~2.5-5x faster than the Windows system
+  allocator** — safe by construction. Proven working as a real
+  `#[global_allocator]` for a single-threaded workload
+  (`examples/global_allocator.rs`: 100 k-`Vec` + 10 k-`HashMap`), and correct via
+  direct-API tests (`tests/global_alloc.rs`: aligned, non-overlapping, reusable,
+  realloc-prefix-preserving, 20 k churn). **NOT yet production-trusted:** as a
+  *process-wide multithreaded* `#[global_allocator]` (e.g. under libtest's
+  reentrancy-heavy harness) the current TLS binding returns null on
+  reentrant/early-init/teardown access and aborts — a bootstrap-safe,
+  reentrancy-tolerant TLS discipline is the remaining work, alongside the
+  deferred heavy gate (`cargo-fuzz` CPU-hours, aarch64 multi-arch CI,
+  ThreadSanitizer) and the Phase-10 deferrals (abandoned-heap adoption, M6
+  decommit wiring). Honestly documented; for a process-wide allocator today, use
+  `mimalloc`.
 - **Phase 10 -- cross-thread free (M7), opt-in via `alloc-xthread`** (extends
   the `alloc` feature). Correct, lock-free cross-thread `dealloc` behind a
   new opt-in `alloc-xthread = ["alloc"]` sub-feature. When a thread frees a

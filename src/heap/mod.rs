@@ -13,4 +13,6 @@ pub(crate) mod thread_free;
 mod tls;
 
 pub use heap::Heap;
+#[cfg(feature = "alloc-global")]
+pub(crate) use tls::with_heap_try;
 pub use tls::with_heap;
