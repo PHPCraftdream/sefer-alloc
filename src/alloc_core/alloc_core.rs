@@ -162,6 +162,45 @@ impl AllocCore {
         }
     }
 
+    /// Deallocate a small block whose size class is NOT known from a `Layout`
+    /// (e.g. a block drained from the cross-thread free stack — the drainer
+    /// only has the pointer, not the original layout). The class is derived
+    /// from the owning segment's page map (the Phase 8 page-dedication rule:
+    /// the page holding the block knows its class).
+    ///
+    /// **Phase 12.1:** this routes the block to its own segment's `BinTable`
+    /// (via `segment_base_of(ptr)`), preserving the segment-centric free state.
+    /// Used by the heap layer's cross-thread drain path.
+    ///
+    /// Safe: a foreign pointer or a block not in a class page is a no-op
+    /// (matches the defensive `dealloc` contract). Applies the M2 double-free
+    /// guard.
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub(crate) fn dealloc_small_by_segment(&mut self, ptr: *mut u8) {
+        if ptr.is_null() {
+            return;
+        }
+        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        if !self.table.contains_base(base) {
+            return; // Foreign pointer.
+        }
+        let hdr = SegmentHeader::read_at(base);
+        if hdr.magic != super::segment_header::SEGMENT_MAGIC {
+            return;
+        }
+        if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
+            return; // Large/other: not a small-block free.
+        }
+        // Derive the class from the page map (the page-dedication rule).
+        let meta = SegmentMeta::new(base);
+        let page_idx = (ptr as usize - base as usize) / super::os::PAGE;
+        let class_idx = match meta.page_map().class_of(page_idx) {
+            Some(c) => c,
+            None => return, // Page is Meta/Free: not a class block; skip.
+        };
+        self.dealloc_small(base, ptr, class_idx);
+    }
+
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
@@ -199,8 +238,14 @@ impl AllocCore {
     }
 
     /// Allocate a small block of the given class. Routes through the current
-    /// small segment's free list (pop) or carves a fresh page-run if the free
-    /// list is empty, growing the segment pool when the current segment fills.
+    /// small segment's free list (pop); on a miss, scans ALL owned segments for
+    /// one with a non-empty class free list (Phase 12.1: free state lives in
+    /// per-segment `BinTable`s, so a freed block in a non-current segment must
+    /// be reusable — otherwise non-current segments leak unboundedly); only
+    /// then carves a fresh block / reserves a fresh segment. When carving, also
+    /// carves a refill batch (Phase 9 amortisation), pushing each extra block
+    /// into its OWN segment's `BinTable` via `segment_base_of` (defect A fix:
+    /// never a captured "current" pointer).
     fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
@@ -208,12 +253,31 @@ impl AllocCore {
         if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
             return ptr;
         }
-        // 2. Free list empty: carve a fresh block from the bump cursor, or a
-        //    fresh page-run if the cursor can't fit one block.
-        if let Some(ptr) = self.carve_block(class_idx, block_size) {
+        // 2. Current segment's class free list is empty: scan the OTHER owned
+        //    segments for one with a non-empty class free list. A freed block
+        //    may live in any segment we own (Phase 12.1 segment-centric free
+        //    state); without this scan those blocks would leak. O(segments)
+        //    only on a free-list miss — acceptable for 12.1 (per-class
+        //    segment queues are a Phase 13 speed optimisation, not a 12.1
+        //    deliverable). M5-safe: pure arithmetic + head reads via `Node`,
+        //    no allocation.
+        if let Some(seg) = self.find_segment_with_free(class_idx) {
+            if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                return ptr;
+            }
+        }
+        // 3. No free block anywhere: carve a FRESH block. On the cold carve
+        //    path we also carve a refill batch (Phase 9 amortisation) so the
+        //    next allocs pop from the free list instead of carving one-by-one.
+        //    Each refilled block is pushed into its OWN segment's BinTable
+        //    (via `segment_base_of(ptr)`), never a captured "current" pointer
+        //    — defect A fix: `small_cur` may shift mid-batch when a segment
+        //    fills, and a captured pointer would then target the wrong
+        //    segment, corrupting its BinTable head.
+        if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
             return ptr;
         }
-        // 3. Current segment is full: reserve a new small segment and retry.
+        // 4. Current segment is full: reserve a new small segment and retry.
         match self.reserve_small_segment() {
             Some(_) => {
                 // Retry once on the fresh segment. Recurse-free: a single
@@ -228,11 +292,79 @@ impl AllocCore {
                 // None here it indicates metadata corruption; we return null
                 // (graceful OOM) rather than panicking — the GlobalAlloc face
                 // (Phase 11) must never abort.
-                self.carve_block(class_idx, block_size)
+                self.carve_block_with_refill(class_idx, block_size)
                     .unwrap_or(core::ptr::null_mut())
             }
             None => core::ptr::null_mut(),
         }
+    }
+
+    /// Carve one fresh block of `class_idx` for the caller, plus a refill
+    /// batch of extra blocks that are pushed onto their OWN segments'
+    /// `BinTable[class_idx]` (Phase 9 amortisation, Phase 12.1 segment-centric
+    /// free state). Each extra block's owning segment is derived per-block via
+    /// `segment_base_of(ptr)` — `small_cur` may shift mid-batch when the
+    /// current segment fills, so a captured pointer would corrupt the wrong
+    /// segment's BinTable head (defect A).
+    ///
+    /// Returns the first carved block (for the caller), or `None` if the
+    /// current segment cannot fit even one block (caller reserves a fresh
+    /// segment and retries).
+    fn carve_block_with_refill(
+        &mut self,
+        class_idx: usize,
+        block_size: usize,
+    ) -> Option<*mut u8> {
+        // Carve the caller's block first.
+        let first = self.carve_block(class_idx, block_size)?;
+        // Refill batch: carve extra blocks and push each into its OWN segment.
+        // `carve_block` returns None when the current segment is full; we stop
+        // the batch there (the next alloc will reserve a fresh segment).
+        const REFILL_BATCH: usize = 31;
+        for _ in 0..REFILL_BATCH {
+            let Some(extra) = self.carve_block(class_idx, block_size) else {
+                break;
+            };
+            let base = os::segment_base_of(extra as usize) as *mut u8;
+            self.dealloc_small(base, extra, class_idx);
+        }
+        Some(first)
+    }
+
+    /// Scan all owned SMALL/PRIMORDIAL segments and return the base of the
+    /// first one whose `BinTable[class_idx]` is non-empty. Used by
+    /// [`alloc_small`] on a current-segment miss to reuse freed blocks in
+    /// non-current segments (Phase 12.1: free state lives in per-segment
+    /// `BinTable`s).
+    ///
+    /// **Large segments are excluded:** a large segment has no `BinTable`
+    /// (only a header), so reading its `bin_table()` would dereference
+    /// garbage and could return a bogus non-null head — leading `pop_free`
+    /// to read a junk block and compute an out-of-segment `next` pointer
+    /// (overflow/UAF). We read each candidate's header `kind` and skip
+    /// non-small/primordial segments.
+    ///
+    /// Returns `None` if no owned small segment has a free block of this
+    /// class. Pure safe composition: iterates `self.table.bases()` (read-only)
+    /// and reads each segment's header kind + `BinTable` head through the
+    /// `node` seam. No allocation, no mutation — M5 (reentrancy-freedom)
+    /// upheld.
+    pub(crate) fn find_segment_with_free(&self, class_idx: usize) -> Option<*mut u8> {
+        for base in self.table.bases() {
+            // Skip large/huge segments: they have no BinTable. Reading the
+            // header kind is safe (every registered segment has a valid header
+            // at offset 0, including large ones).
+            let hdr = SegmentHeader::read_at(base);
+            if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
+                continue;
+            }
+            let meta = SegmentMeta::new(base);
+            let bt = meta.bin_table();
+            if bt.head(class_idx) != FREE_LIST_NULL {
+                return Some(base);
+            }
+        }
+        None
     }
 
     /// Pop a free block of `class_idx` from `segment`'s bin table. Returns

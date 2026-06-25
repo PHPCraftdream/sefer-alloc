@@ -4,7 +4,8 @@
 //! owning heap's `ThreadFreeStack` via an atomic `compare_exchange` loop (the
 //! Phase-7b linearization protocol, re-based onto the Phase 8/9 segment
 //! substrate). The owner drains the stack in bulk on its next operation and
-//! returns each block to its per-class `FreeList`.
+//! returns each block to its owning segment's `BinTable` (Phase 12.1: free
+//! state lives in segments, not a heap-local array).
 //!
 //! ## Design (simplest sound)
 //!

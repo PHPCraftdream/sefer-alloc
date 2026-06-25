@@ -1,56 +1,63 @@
-//! [`Heap`] -- a per-thread heap with intrusive free lists over the Phase 8
-//! segment substrate. The hot path (`alloc_small` / `dealloc_small`) is a
-//! lock-free pop / push on a singly-linked intrusive free list stored inside
-//! freed blocks via the [`Node`](crate::alloc_core::node::Node) seam.
+//! [`Heap`] -- a per-thread heap over the Phase 8 segment substrate.
 //!
-//! Phase 9: the single-owner fast path. No lock, no atomic, no
-//! `Vec`/`Box`/`HashSet`/`std::alloc` on the alloc/dealloc path (M5
-//! reentrancy-freedom upheld).
+//! ## Phase 12.1 — segment-centric free state (refactor)
+//!
+//! The small free-list state lives in each segment's [`BinTable`] (the "each
+//! page owns its free list" rule, mimalloc-style), NOT in a heap-local `bins`
+//! array. A segment is self-describing for free state: a freed block returns
+//! to its owning segment's `BinTable[class]`, found by pure address arithmetic
+//! (`segment_base_of(ptr)`). This is the foundation for Phase 12.2+ (heap
+//! registry, adoption, decommit): adoption becomes O(1) because the free state
+//! travels *with* the segments, not in a thread-local array that would need
+//! merging.
+//!
+//! The heap is now thin: it holds the segment substrate ([`AllocCore`], which
+//! owns the segments and does all per-segment free-list arithmetic) plus the
+//! cross-thread [`ThreadFreeStack`] (Phase 10, `alloc-xthread`). The own-thread
+//! small alloc/dealloc paths delegate to `core.alloc` / `core.dealloc`, which
+//! route every freed block to its own segment's `BinTable` and, on a miss, scan
+//! all owned segments for a non-empty class free list before carving fresh
+//! blocks — preserving cross-segment reuse (the Phase 9 behaviour).
 //!
 //! Phase 10 (behind `alloc-xthread`): cross-thread free (M7) via the
 //! [`ThreadFreeStack`] Treiber stack. A non-owner thread pushes freed blocks
 //! onto the owning heap's thread-free stack; the owner drains in bulk on its
-//! next operation. Sound across thread death via abandonment-leak: on
-//! `Heap::drop`, segments and the Treiber head are intentionally leaked so
-//! late cross-thread frees never touch unmapped memory or a freed `Box`.
-//! Full abandoned-heap adoption (reclaiming leaked segments) is Phase 11.
+//! next operation, routing each drained block to its segment's `BinTable`.
+//! Sound across thread death via abandonment-leak: on `Heap::drop`, segments
+//! and the Treiber head are intentionally leaked so late cross-thread frees
+//! never touch unmapped memory or a freed `Box`. Full abandoned-heap adoption
+//! is Phase 12.2+.
 //!
-//! Decommit (M6) is NOT delivered in Phase 10 -- the `os::decommit_pages` /
-//! `os::recommit_pages` seam is in place but not wired into the heap. M6 is
-//! a Phase 11 deliverable.
+//! Decommit (M6) is NOT delivered here -- the `os::decommit_pages` /
+//! `os::recommit_pages` seam is in place but not wired into the heap. M6 is a
+//! Phase 12.5 deliverable.
 
 use core::alloc::Layout;
 #[cfg(feature = "alloc-xthread")]
 use core::mem::ManuallyDrop;
-#[cfg(feature = "alloc-xthread")]
-use core::ptr::NonNull;
 
-use crate::alloc_core::node::Node;
 #[cfg(feature = "alloc-xthread")]
 use crate::alloc_core::os;
 #[cfg(feature = "alloc-xthread")]
-use crate::alloc_core::segment_header::{
-    SegmentHeader, SegmentKind, SegmentMeta, SEGMENT_MAGIC,
-};
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SegmentMeta, SEGMENT_MAGIC};
 use crate::alloc_core::AllocCore;
 
-use super::free_list::FreeList;
 #[cfg(feature = "alloc-xthread")]
 use super::thread_free::ThreadFreeStack;
 
-/// Number of size classes we cache per-heap. Must equal `SMALL_CLASS_COUNT`
-/// from the size-class table.
-const HEAP_BINS: usize = crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
-
-/// A per-thread heap: owns an [`AllocCore`] plus per-class intrusive free
-/// lists. With `alloc-xthread`, also owns a cross-thread free stack (Phase 10).
+/// A per-thread heap: owns an [`AllocCore`] (the segment substrate). With
+/// `alloc-xthread`, also owns a cross-thread free stack (Phase 10).
 ///
-/// The hot path is a pop/push on the thread's own free list -- no lock,
-/// no atomic. Cross-thread frees (only with `alloc-xthread`) are pushed
-/// onto the `ThreadFreeStack` by remote threads and drained by the owner
-/// on its next op.
+/// **Phase 12.1:** the heap holds NO free-list state of its own. Free-list
+/// state lives in each segment's [`BinTable`]; own-thread alloc/dealloc
+/// delegate to `AllocCore`, which routes every block to its owning segment via
+/// `segment_base_of(ptr)` and scans owned segments for reusable free blocks on
+/// a miss. The heap layer's only extra state is the cross-thread
+/// [`ThreadFreeStack`] (Phase 10).
 pub struct Heap {
-    /// The underlying single-threaded segment substrate.
+    /// The underlying single-threaded segment substrate. It owns the segments
+    /// and performs all per-segment `BinTable` arithmetic; the heap layer is a
+    /// thin wrapper that adds cross-thread routing on top.
     ///
     /// Under `alloc-xthread`: wrapped in `ManuallyDrop` so `Heap::drop` can
     /// LEAK the segments (abandonment-leak for thread-death soundness) by
@@ -63,13 +70,9 @@ pub struct Heap {
     #[cfg(not(feature = "alloc-xthread"))]
     core: AllocCore,
 
-    /// Per-class intrusive free lists. Index `i` caches freed blocks of class
-    /// `i`. The free-list nodes are stored inside the freed blocks themselves
-    /// (the `next` pointer occupies the first word of the block).
-    bins: [FreeList; HEAP_BINS],
-
     /// The Treiber stack for cross-thread free (Phase 10, M7). Remote threads
-    /// push freed blocks here; the owner drains on its next alloc/dealloc.
+    /// push freed blocks here; the owner drains on its next alloc/dealloc,
+    /// routing each drained block to its segment's `BinTable`.
     /// `Box`-allocated internally so its `AtomicPtr` has a stable address
     /// that segment headers can store.
     ///
@@ -92,7 +95,6 @@ impl Heap {
             core: ManuallyDrop::new(core),
             #[cfg(not(feature = "alloc-xthread"))]
             core,
-            bins: [FreeList::EMPTY; HEAP_BINS],
             #[cfg(feature = "alloc-xthread")]
             thread_free: ManuallyDrop::new(ThreadFreeStack::new()),
         })
@@ -103,10 +105,12 @@ impl Heap {
     /// Returns a non-null `*mut u8` on success, or null on OOM. The memory is
     /// **uninitialised**.
     ///
-    /// **Hot path (small):** pop from the thread's class free list -- one
-    /// pointer read, no lock, no atomic. On drain, refill from the substrate.
-    /// With `alloc-xthread`, drains the cross-thread free stack before refilling
-    /// so remotely-freed blocks are returned to their class free lists.
+    /// **Hot path (small):** pops from the current segment's `BinTable` via
+    /// `core.alloc`; on a miss, scans owned segments for a non-empty class
+    /// free list, then refills from the substrate (carving a batch whose
+    /// blocks each return to their own segment's `BinTable`). With
+    /// `alloc-xthread`, drains the cross-thread free stack before the scan so
+    /// remotely-freed blocks are reused first.
     #[must_use]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         let size = layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK);
@@ -131,7 +135,7 @@ impl Heap {
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
         let ptr = self.alloc(layout);
         if !ptr.is_null() {
-            Node::zero(
+            crate::alloc_core::node::Node::zero(
                 ptr,
                 layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK),
             );
@@ -142,14 +146,16 @@ impl Heap {
     /// Deallocate memory previously returned by [`alloc`](Self::alloc).
     ///
     /// Without `alloc-xthread`, this is the Phase 9 single-owner dealloc: the
-    /// block is returned to the local free list or substrate. Cross-thread
-    /// dealloc is NOT supported (the caller must free from the owning thread).
+    /// block is returned to its owning segment's `BinTable` (Phase 12.1) via
+    /// `core.dealloc` (which uses `segment_base_of(ptr)` + the M2 double-free
+    /// guard). Cross-thread dealloc is NOT supported (the caller must free
+    /// from the owning thread).
     ///
     /// With `alloc-xthread` (Phase 10, M7): if the block belongs to a segment
-    /// owned by THIS heap, it is returned to the local free list (hot path).
-    /// If the block belongs to a segment owned by ANOTHER heap (cross-thread
-    /// free), it is pushed onto that heap's `ThreadFreeStack` via an atomic CAS
-    /// (the Phase-7b Treiber protocol).
+    /// owned by THIS heap, it is returned to that segment's `BinTable` via
+    /// `core.dealloc` (hot path). If the block belongs to a segment owned by
+    /// ANOTHER heap (cross-thread free), it is pushed onto that heap's
+    /// `ThreadFreeStack` via an atomic CAS (the Phase-7b Treiber protocol).
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
@@ -176,7 +182,7 @@ impl Heap {
             return core::ptr::null_mut();
         }
         let copy = old_layout.size().min(new_size);
-        Node::copy_nonoverlapping(ptr, new_ptr, copy);
+        crate::alloc_core::node::Node::copy_nonoverlapping(ptr, new_ptr, copy);
         self.dealloc(ptr, old_layout);
         new_ptr
     }
@@ -195,7 +201,7 @@ impl Heap {
     /// leaked under `alloc-xthread`). This is a bounded leak, not a
     /// correctness violation: the block is not lost (it remains accessible to
     /// the owning heap), and the segment is reclaimed when the owning thread
-    /// exits (or, under Phase 11 adoption, when another thread adopts the
+    /// exits (or, under Phase 12.4 adoption, when another thread adopts the
     /// abandoned heap). The alternative -- routing large cross-thread frees
     /// through the Treiber stack -- would require the drain path to distinguish
     /// large from small blocks, adding complexity for a rare case.
@@ -237,40 +243,67 @@ impl Heap {
     // Internals
     // -----------------------------------------------------------------------
 
-    /// Pop from the per-heap free list for `class_idx`. If the list is empty,
-    /// drain the thread-free stack first (with `alloc-xthread`), then try
-    /// again, then refill from the substrate.
+    /// Allocate a small block of `class_idx`. Drains the cross-thread free
+    /// stack first (with `alloc-xthread`) so remotely-freed blocks are reused,
+    /// then delegates to `core.alloc` — which pops from the current segment,
+    /// scans owned segments for a reusable free block, and only then carves
+    /// (carving a refill batch into each block's own segment via
+    /// `segment_base_of`, fixing defect A). Phase 12.1: free state lives in
+    /// per-segment `BinTable`s, reachable across all owned segments by the
+    /// substrate's cross-segment scan (fixing defect B).
     fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
-        // Hot path: pop from our free list.
-        if let Some(ptr) = self.bins[class_idx].pop() {
-            return ptr;
-        }
-        // With alloc-xthread: drain remotely-freed blocks before refilling.
+        // With alloc-xthread: drain remotely-freed blocks before allocating so
+        // they are reused first. Each drained block is routed to its own
+        // segment's BinTable by `drain_thread_free`.
         #[cfg(feature = "alloc-xthread")]
         {
             self.drain_thread_free();
-            // Retry after drain.
-            if let Some(ptr) = self.bins[class_idx].pop() {
-                return ptr;
-            }
         }
-        // Cold path: refill from the substrate.
-        self.refill_and_alloc(class_idx)
+        // Delegate to the substrate. The substrate does the pop + cross-segment
+        // scan + carve-with-refill; it routes every block to its own segment's
+        // BinTable via `segment_base_of(ptr)` (defect A fix). No heap-layer
+        // free-list state — defect B fix (no captured `bins` array that would
+        // bypass non-current segments).
+        let block_size =
+            crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+        let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
+            Ok(l) => l,
+            Err(_) => return core::ptr::null_mut(),
+        };
+        let ptr = self.core.alloc(layout);
+        #[cfg(feature = "alloc-xthread")]
+        if !ptr.is_null() {
+            // Stamp ownership on the segment this block came from so
+            // cross-thread freers can find us.
+            self.stamp_owner(ptr);
+        }
+        ptr
     }
 
-    /// Push a freed block onto the per-heap free list for `class_idx`.
+    /// Push a freed small block onto its owning segment's class free list, or
+    /// — under `alloc-xthread` — onto the remote heap's Treiber stack if the
+    /// block belongs to another heap.
     ///
-    /// Without `alloc-xthread`: always pushes locally (the caller must be the
-    /// owning thread -- single-owner Phase 9 invariant).
+    /// Without `alloc-xthread`: delegates to `core.dealloc`, which routes via
+    /// `segment_base_of(ptr)` to the owning segment's `BinTable` (the M2
+    /// double-free guard is applied). Single-owner Phase 9 invariant: the
+    /// caller IS the owning thread.
     ///
     /// With `alloc-xthread`: checks ownership via the segment header. If the
-    /// block belongs to this heap, pushes locally (hot path). If it belongs
-    /// to another heap, pushes onto the remote heap's Treiber stack.
+    /// block belongs to this heap, delegates to `core.dealloc` (hot path). If
+    /// it belongs to another heap, pushes onto that heap's Treiber stack.
     fn dealloc_small(&mut self, ptr: *mut u8, class_idx: usize) {
         #[cfg(not(feature = "alloc-xthread"))]
         {
-            // Phase 9 single-owner: always local.
-            self.bins[class_idx].push(ptr);
+            // Phase 9 single-owner: route to the owning segment's BinTable via
+            // the substrate (which uses segment_base_of + double-free guard).
+            let block_size =
+                crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+            let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
+                Ok(l) => l,
+                Err(_) => return,
+            };
+            self.core.dealloc(ptr, layout);
         }
         #[cfg(feature = "alloc-xthread")]
         {
@@ -285,14 +318,22 @@ impl Heap {
             // the remote heap's Treiber stack.
             let our_head = self.thread_free.head_ptr();
             if hdr.owner_thread_free == our_head {
-                // Own-thread dealloc: push onto our local free list (fast path).
-                self.bins[class_idx].push(ptr);
+                // Own-thread dealloc: route to the owning segment's BinTable
+                // via the substrate (segment_base_of + double-free guard).
+                let block_size =
+                    crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+                let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
+                    Ok(l) => l,
+                    Err(_) => return,
+                };
+                self.core.dealloc(ptr, layout);
             } else if !hdr.owner_thread_free.is_null() {
                 // Cross-thread dealloc: push onto the owning heap's Treiber stack.
                 ThreadFreeStack::push(hdr.owner_thread_free, ptr);
             } else {
                 // No owner registered. Fall back to substrate dealloc.
-                let block_size = crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+                let block_size =
+                    crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
                 let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
                     Ok(l) => l,
                     Err(_) => return,
@@ -303,30 +344,31 @@ impl Heap {
     }
 
     /// Drain the thread-free stack: atomically swap the head to null, then walk
-    /// the chain and return each block to its per-class free list (determined
-    /// from the segment's page map).
+    /// the chain and return each block to its owning segment's `BinTable`
+    /// (determined from the segment's page map). Phase 12.1: the free state
+    /// lives in segments, so drained blocks route to their segments via the
+    /// substrate's `dealloc_small_by_segment` (which derives the class from the
+    /// page map — the drainer has only the pointer, not the original layout).
     ///
     /// Only compiled with `alloc-xthread`.
     #[cfg(feature = "alloc-xthread")]
     fn drain_thread_free(&mut self) {
+        use core::ptr::NonNull;
+        use crate::alloc_core::node::Node;
         let mut cur = self.thread_free.drain();
         while !cur.is_null() {
             let cur_nn = match NonNull::new(cur) {
                 Some(nn) => nn,
                 None => break,
             };
-            // Read `next` BEFORE we push `cur` onto a free list (which
-            // overwrites the first word).
+            // Read `next` BEFORE we free `cur` (dealloc overwrites the first
+            // word as the free-list node pointer).
             let next = Node::read_next(cur_nn);
-            // Determine the class from the segment's page map.
-            let base = os::segment_base_of(cur as usize) as *mut u8;
-            let meta = SegmentMeta::new(base);
-            let page_idx = (cur as usize - base as usize) / os::PAGE;
-            if let Some(class_idx) = meta.page_map().class_of(page_idx) {
-                self.bins[class_idx].push(cur);
-            }
-            // else: page is Meta or Free -- this block is not from a class page
-            // (should not happen in correct usage; skip it defensively).
+            // Route the drained block to its owning segment's BinTable via the
+            // substrate. The class is derived from the segment's page map
+            // (the drainer has no layout; the page-dedication rule gives the
+            // class). Applies the M2 double-free guard.
+            self.core.dealloc_small_by_segment(cur);
             cur = next;
         }
     }
@@ -346,40 +388,6 @@ impl Heap {
             meta.write_header(hdr);
         }
     }
-
-    /// Refill class `class_idx` by carving a batch of blocks from the
-    /// substrate, then return one block to the caller. With `alloc-xthread`,
-    /// also stamps the segment with our owner pointer.
-    fn refill_and_alloc(&mut self, class_idx: usize) -> *mut u8 {
-        let block_size = crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
-        let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
-            Ok(l) => l,
-            Err(_) => return core::ptr::null_mut(),
-        };
-
-        // Carve one block for the caller.
-        let first = self.core.alloc(layout);
-        if first.is_null() {
-            return core::ptr::null_mut();
-        }
-        // Stamp ownership on the segment this block came from (xthread only).
-        #[cfg(feature = "alloc-xthread")]
-        self.stamp_owner(first);
-
-        // Carve more blocks to pre-populate the free list.
-        const REFILL_BATCH: usize = 31;
-        for _ in 0..REFILL_BATCH {
-            let ptr = self.core.alloc(layout);
-            if ptr.is_null() {
-                break;
-            }
-            #[cfg(feature = "alloc-xthread")]
-            self.stamp_owner(ptr);
-            self.bins[class_idx].push(ptr);
-        }
-
-        first
-    }
 }
 
 /// Drop implementation.
@@ -392,14 +400,14 @@ impl Heap {
 /// memory (UAF). If we freed the `Box<AtomicPtr>` inside `ThreadFreeStack`,
 /// the late push would CAS on a freed box (UAF).
 ///
-/// The SOUND fix (without full abandoned-heap adoption, which is Phase 11):
+/// The SOUND fix (without full abandoned-heap adoption, which is Phase 12.2+):
 /// LEAK both the segments and the Treiber head. The segments stay mapped, so
 /// `segment_base_of` + header reads remain valid. The `Box<AtomicPtr>` stays
 /// allocated, so CAS pushes remain valid. This is a BOUNDED leak: it happens
 /// only on thread death (one heap per thread), and the leaked memory is bounded
 /// by the heap's segment footprint at death time. For the target workload
 /// (long-lived thread pools), thread death is rare and the leak is negligible.
-/// Phase 11 will implement full abandoned-heap adoption.
+/// Phase 12.2+ will implement full abandoned-heap adoption.
 ///
 /// Under plain `alloc` (no `alloc-xthread`, Phase 9): release segments
 /// normally. No cross-thread refs exist, so this is sound. `AllocCore::drop`
