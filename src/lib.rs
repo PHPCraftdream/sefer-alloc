@@ -62,10 +62,15 @@
 //        discipline) (both under `alloc-core`), and
 //      * `global::sefer_malloc` (the `unsafe impl GlobalAlloc` malloc-face
 //        seam — the trait obligation + pointer handoff to the Heap)
-//        (under `alloc-global`).
+//        (under `alloc-global`), and
+//      * `registry::heap_slot` + `registry::heap_registry` (the Phase 12.2
+//        global heap slot-table seam — the `Sync`/`Send` impls on `HeapSlot`
+//        under the atomic single-writer protocol, and the `*mut HeapCore`
+//        pointer handoff out of a slot's `UnsafeCell`) (under `alloc-global`).
 //    So "the `unsafe` lives in named modules" is enforced by the compiler in
 //    EVERY configuration. See `src/concurrent/hand.rs`, `src/byte/*`,
-//    `src/alloc_core/{os,node}.rs`, and `src/global/sefer_malloc.rs`.
+//    `src/alloc_core/{os,node}.rs`, `src/global/sefer_malloc.rs`, and
+//    `src/registry/{heap_slot,heap_registry}.rs`.
 #![cfg_attr(
     not(any(
         feature = "experimental",
@@ -101,6 +106,10 @@ mod heap;
 
 #[cfg(feature = "alloc-global")]
 mod global;
+
+#[cfg(feature = "alloc-global")]
+#[doc(hidden)]
+pub mod registry;
 
 pub use handle::Handle;
 pub use region::Region;
