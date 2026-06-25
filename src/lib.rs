@@ -88,6 +88,9 @@ mod byte;
 #[cfg(feature = "alloc-core")]
 mod alloc_core;
 
+#[cfg(feature = "alloc")]
+mod heap;
+
 pub use handle::Handle;
 pub use region::Region;
 
@@ -107,6 +110,9 @@ pub use byte::{ByteAllocator, ByteRegion};
 
 #[cfg(feature = "alloc-core")]
 pub use alloc_core::{AllocCore, SegmentLayout};
+
+#[cfg(feature = "alloc")]
+pub use heap::{with_heap, Heap};
 
 #[cfg(feature = "byte-sharded")]
 pub use byte::ShardedByteArena;

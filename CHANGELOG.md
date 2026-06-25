@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 9 -- per-thread heap + intrusive free lists (the lock-free fast
+  path)** (behind a new opt-in `alloc` feature = `["alloc-core"]`). Each
+  thread owns a `Heap` with per-size-class intrusive free lists stored inside
+  the freed blocks themselves (via the Phase 8 `node` seam -- zero metadata
+  allocation). The hot path (`alloc_small` / `dealloc_small`) is a single
+  pointer read/write -- no lock, no atomic, no `Vec`/`Box`/`std::alloc` (M5
+  reentrancy-freedom upheld). On free-list drain, a batch refill carves
+  blocks from the Phase 8 `AllocCore` substrate. TLS heap binding via
+  `std::thread_local!` with lazy, allocation-free init (`with_heap`); heap
+  released on thread exit. Large/huge allocations route through the Phase 8
+  dedicated-segment path. No new `unsafe` module -- the heap is pure safe
+  composition over the Phase 8 `os` + `node` seams. Cross-thread free is
+  Phase 10. Differential proptest (M1--M4 through the heap, 64 cases),
+  targeted unit tests (alignment, reuse, refill, realloc, churn, multi-thread
+  isolation), miri-clean. Single-thread throughput bench vs mimalloc and the
+  system allocator (`benches/heap_alloc.rs`, `docs/HEAP_BENCH.md`): the heap
+  matches the system allocator but is ~7--12x slower than mimalloc on the hot
+  path; the architecture is structurally correct (same design as mimalloc) and
+  the constant-factor gap is implementation overhead targeted for Phase 11.
 - **Phase 8 — segment substrate + self-hosted metadata (the Membrane
   Inversion)** (behind a new opt-in `alloc-core` feature). The foundation of a
   real general-purpose allocator: the safe slot-table discipline stops

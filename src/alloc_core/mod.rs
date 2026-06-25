@@ -13,12 +13,12 @@
 #[allow(clippy::module_inception)]
 mod alloc_core;
 mod bootstrap;
-mod node;
-mod os;
-mod segment_header;
+pub(crate) mod node;
+pub(crate) mod os;
+pub(crate) mod segment_header;
 mod segment_layout;
-mod segment_table;
-mod size_classes;
+pub(crate) mod segment_table;
+pub(crate) mod size_classes;
 
 pub use alloc_core::AllocCore;
 pub use segment_layout::SegmentLayout;

@@ -78,6 +78,11 @@ pinning = ["experimental", "dep:core_affinity"]
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/MALLOC_PLAN.md` §5 P8 and §6.
 alloc-core = ["std"]
+# Phase 9: per-thread heap + intrusive free lists -- the lock-free fast path.
+# A thread allocates from its own heap with no lock and no atomic on the common
+# case. Single-owner still (cross-thread free is Phase 10). Builds on the
+# Phase 8 segment substrate (`alloc-core`). Requires `std` (TLS).
+alloc = ["alloc-core"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -115,6 +120,10 @@ proptest = "1"
 # backing container (SlotMap vs DenseSlotMap vs HashMap vs Vec<Box<T>>) across
 # the iterate / lookup / churn axes. See docs/BENCHMARKS.md for the verdict.
 criterion = "0.5"
+# Phase 9: mimalloc for head-to-head benchmarking of the per-thread heap's
+# alloc/dealloc hot path vs a state-of-the-art allocator. Dev-only — NOT a
+# runtime dependency.
+mimalloc = "0.1"
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom
@@ -163,3 +172,11 @@ required-features = ["pinning"]
 name = "byte_sharded"
 harness = false
 required-features = ["byte-sharded"]
+
+# Phase 9: per-thread heap alloc/dealloc hot path vs mimalloc and the system
+# allocator. Quick criterion profile (sample_size 10, short warm-up). Honest
+# verdict in docs/HEAP_BENCH.md.
+[[bench]]
+name = "heap_alloc"
+harness = false
+required-features = ["alloc"]
