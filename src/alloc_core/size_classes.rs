@@ -40,6 +40,12 @@
 /// power of two `>=` [`super::node::NODE_SIZE`] (the free-list node word).
 pub(crate) const MIN_BLOCK: usize = 16;
 
+/// `log2(MIN_BLOCK)` — the shift that turns a byte size into a `MIN_BLOCK`-unit
+/// index. Derived from `MIN_BLOCK` at compile time so it cannot drift if
+/// `MIN_BLOCK` ever changes (the table assumes `MIN_BLOCK` is a power of two;
+/// `build_table` and [`build_size2class`] rely on this).
+pub(crate) const MIN_BLOCK_SHIFT: u32 = MIN_BLOCK.trailing_zeros();
+
 /// The maximum alignment a small allocation may request and still be served by
 /// a small size class. Equal to `MIN_BLOCK` (every small block is
 /// `MIN_BLOCK`-aligned, so any alignment `<= MIN_BLOCK` is honoured). Larger
@@ -50,7 +56,8 @@ pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 /// The table of fine small size classes, in strictly increasing order. Each
 /// entry is a multiple of `MIN_BLOCK` and `>=` the previous entry. Constructed
 /// at compile time by [`build_table`] so the spacing is visible as code, not
-/// magic numbers.
+/// magic numbers. This is the **single source of truth** for the small-class
+/// geometry; [`SIZE2CLASS`] is derived from it by [`build_size2class`].
 pub(crate) const SIZE_CLASS_TABLE: [usize; 40] = build_table();
 
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
@@ -59,6 +66,19 @@ pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
 /// The largest small size class. Allocations `<=` this (with alignment `<=`
 /// [`SMALL_ALIGN_MAX`]) are served by the small free-list path.
 pub(crate) const SMALL_MAX: usize = *SIZE_CLASS_TABLE.last().unwrap();
+
+/// The O(1) size→class lookup table, **derived at compile time from
+/// [`SIZE_CLASS_TABLE`]** by [`build_size2class`]. `SIZE2CLASS[k]` is the index
+/// of the smallest class whose `block_size >= (k * MIN_BLOCK)` — i.e. the class
+/// that fits a request of `k * MIN_BLOCK` bytes (the `(size-1) >> MIN_BLOCK_SHIFT`
+/// index maps a 1-based `size` onto the `k` whose class is the smallest that
+/// holds `size` bytes, matching the old linear scan exactly).
+///
+/// Length is `(SMALL_MAX / MIN_BLOCK) + 1`: every `MIN_BLOCK`-aligned size bucket
+/// from `0` (sentinel, unused on the live path) up to and including `SMALL_MAX`.
+/// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (40) is far below 256; a
+/// compile-time assertion in [`build_size2class`] makes that invariant explicit.
+pub(crate) const SIZE2CLASS: [u8; (SMALL_MAX / MIN_BLOCK) + 1] = build_size2class();
 
 /// The huge threshold: allocations of this size or larger are flagged "huge"
 /// so future phases can apply distinct policy (guard pages, eager decommit).
@@ -81,22 +101,25 @@ impl SizeClasses {
     ///
     /// A small class fits iff its `block_size >= max(size, align)` AND
     /// `align <= SMALL_ALIGN_MAX`. Returns the index of the smallest such
-    /// class. Linear scan of a 40-entry table is fast (one cache line of
-    /// comparisons) and the table is small; a future phase may binary-search.
+    /// class. The small path is **O(1)** — two comparisons plus one
+    /// [`SIZE2CLASS`] load (no loop) — using the compile-time-derived lookup
+    /// table. `size` here is already clamped to `>= MIN_BLOCK` by the only
+    /// caller ([`super::alloc_core::AllocCore::alloc`]); the `(size-1) >>
+    /// MIN_BLOCK_SHIFT` index maps a 1-based size onto its bucket exactly as
+    /// the former linear scan did (verified by `tests/size_classes_lookup.rs`).
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
-        if align > SMALL_ALIGN_MAX {
+        if align > SMALL_ALIGN_MAX || size > SMALL_MAX {
             return None;
         }
-        let need = if size > align { size } else { align };
-        let mut i = 0;
-        while i < SIZE_CLASS_TABLE.len() {
-            if SIZE_CLASS_TABLE[i] >= need {
-                return Some(i);
-            }
-            i += 1;
-        }
-        None
+        // `(size - 1) >> MIN_BLOCK_SHIFT`: 1-based size → 0-based MIN_BLOCK-unit
+        // index. size==1 → 0, size==MIN_BLOCK → 0 (same class), size==MIN_BLOCK+1
+        // → 1, … size==SMALL_MAX → SMALL_MAX/MIN_BLOCK. This is exactly the
+        // smallest class `>= size`, because SIZE2CLASS was built so that entry
+        // `k` is the smallest class whose block_size covers `k*MIN_BLOCK` bytes,
+        // and `(size-1) >> shift` is the `k` for which `k*MIN_BLOCK < size <=
+        // (k+1)*MIN_BLOCK` — i.e. the first class that can hold `size`.
+        Some(SIZE2CLASS[(size - 1) >> MIN_BLOCK_SHIFT] as usize)
     }
 
     /// The block size of class `idx`. Panics (debug) if out of range — the
@@ -140,6 +163,62 @@ const fn build_table() -> [usize; 40] {
         i += 1;
     }
     t
+}
+
+/// Build the O(1) size→class lookup [`SIZE2CLASS`] **from
+/// [`SIZE_CLASS_TABLE`]** at compile time — so the lookup and the table cannot
+/// drift (one source of truth). The caller indexes it as
+/// `SIZE2CLASS[(size - 1) >> MIN_BLOCK_SHIFT]`, so bucket `k` covers every size
+/// in `(k * MIN_BLOCK, (k + 1) * MIN_BLOCK]`. To fit the *largest* size in that
+/// bucket, `SIZE2CLASS[k]` must be the smallest class whose `block_size >=
+/// (k + 1) * MIN_BLOCK` (NOT `k * MIN_BLOCK` — that would under-serve sizes
+/// near the top of the bucket). The table is strictly increasing and spans
+/// `[MIN_BLOCK, SMALL_MAX]`, so a linear leftward walk over it settles every
+/// bucket.
+///
+/// The `u8` entry type is sound only while [`SMALL_CLASS_COUNT`] < 256; a
+/// compile-time `assert!` pins that invariant (a future table growth beyond
+/// 255 classes would fail to compile here, rather than silently truncate).
+const fn build_size2class() -> [u8; (SMALL_MAX / MIN_BLOCK) + 1] {
+    // The `u8` entry type is sound only while SMALL_CLASS_COUNT < 256; pin that
+    // invariant at compile time (a future table growth beyond 255 classes would
+    // fail to compile here, rather than silently truncate).
+    const { assert!(
+        SMALL_CLASS_COUNT < 256,
+        "SIZE2CLASS entries are u8; SMALL_CLASS_COUNT must stay below 256"
+    ) };
+    let len = SMALL_MAX / MIN_BLOCK + 1;
+    let mut out = [0u8; (SMALL_MAX / MIN_BLOCK) + 1];
+    let mut k = 0;
+    while k < len {
+        // The largest size that maps to bucket k via (size-1)>>shift is
+        // (k+1)*MIN_BLOCK; that is the size the resolved class must cover.
+        // (k == 0 ⇒ need = MIN_BLOCK ⇒ class 0; this also correctly handles the
+        // size-in-(0, MIN_BLOCK] range the caller clamps into.) The top bucket
+        // (k == SMALL_MAX/MIN_BLOCK) is only ever indexed by a size > SMALL_MAX,
+        // which `class_for` rejects before indexing — but the array still has a
+        // slot for it, so clamp `need` to SMALL_MAX to keep the compile-time walk
+        // in-range (it resolves to the last class, a harmless sentinel).
+        let need = if (k + 1) * MIN_BLOCK < SMALL_MAX {
+            (k + 1) * MIN_BLOCK
+        } else {
+            SMALL_MAX
+        };
+        // Find the smallest class whose block_size >= need. The table is sorted,
+        // so a linear walk settles it; this runs ONCE at compile time, not per
+        // alloc. need <= SMALL_MAX == table.last() always holds here, so the loop
+        // always breaks in-range (no panic).
+        let mut class_idx = 0;
+        while class_idx < SIZE_CLASS_TABLE.len() {
+            if SIZE_CLASS_TABLE[class_idx] >= need {
+                break;
+            }
+            class_idx += 1;
+        }
+        out[k] = class_idx as u8;
+        k += 1;
+    }
+    out
 }
 
 /// The kind of an allocation, decided by the Cartographer. Determines which
