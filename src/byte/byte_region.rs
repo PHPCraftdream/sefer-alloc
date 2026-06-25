@@ -449,6 +449,31 @@ impl ByteRegion {
         new_ptr
     }
 
+    /// Returns whether `ptr` was handed out by this region (it lies within one
+    /// of this region's chunks, OR it is a recorded large/system-fallback
+    /// allocation).
+    ///
+    /// This is the **owner-lookup** primitive used by the Phase 7d sharded
+    /// arena's cross-thread `dealloc` router: when a pointer is freed by a
+    /// thread other than the one that allocated it, the arena scans its shards
+    /// and asks each `contains_ptr` to find the owner. It performs **no
+    /// dereference of `ptr`** — only safe pointer-comparison against the chunk
+    /// base addresses and a lookup in the `large` set — so it adds **no new
+    /// `unsafe`** and stays miri-clean. The scan is `O(shards + chunks)`; shards
+    /// are few (typically one per hardware thread) and chunks are 64 KiB each,
+    /// so the cost is modest for the research scope. A pointer that no shard
+    /// owns is treated as a contract violation by the caller and never freed
+    /// against the wrong shard.
+    ///
+    /// Note: a pointer that originates from a *different* region is never
+    /// claimed here (chunk bases and large pointers are disjoint per region),
+    /// so routing cannot misidentify the owner.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn contains_ptr(&self, ptr: *mut u8) -> bool {
+        self.locate(ptr).is_some() || self.large.contains(&ptr)
+    }
+
     /// Number of backing chunks currently held. Exposed (`#[doc(hidden)]`) for
     /// the integration tests in `tests/byte.rs` to assert that free-list reuse
     /// keeps growth bounded under churn — not part of the public allocation API.
@@ -464,3 +489,16 @@ impl Default for ByteRegion {
         Self::new()
     }
 }
+
+// SAFETY (Send): a `ByteRegion` OWNS all the memory it tracks — its `Chunk`s
+// own their backing buffers (each `Chunk` is itself `Send`), and the `large`
+// set holds pointers to system allocations this region made and frees on
+// `dealloc`/drop. The default `Send` is withheld only because `large` is a
+// `HashSet<*mut u8>` (a raw pointer is not `Send`); but moving the whole region
+// to another thread moves ownership of every one of those allocations with it —
+// no allocation stays referenced by the origin thread, so there is no aliased
+// mutable access. This is what lets `Mutex<ByteRegion>` be `Send + Sync`, which
+// `ByteAllocator` and the Phase-7d `ShardedByteArena` rely on to serialise
+// access across threads. `ByteRegion` is deliberately NOT `Sync`: shared
+// concurrent access is only ever mediated through a `Mutex`.
+unsafe impl Send for ByteRegion {}

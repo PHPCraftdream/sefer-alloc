@@ -47,11 +47,14 @@
 //  - With NO features (or only `std`): `#![forbid(unsafe_code)]` — no `unsafe`
 //    is possible anywhere in the crate.
 //  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
-//    (Phase 4 `ByteRegion` + `GlobalAlloc`): the crate is `#![deny(unsafe_code)]`
-//    (any `unsafe` outside an allowed module is a hard error), and the confined
-//    modules lift this with `#![allow(unsafe_code)]`:
+//    (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
+//    the Phase 7d parallel `ShardedByteArena`): the crate is
+//    `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
+//    error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //      * `concurrent::hand` (under `experimental`), and
-//      * `byte::byte_region` / `byte::byte_allocator` (under `byte`).
+//      * `byte::byte_region` / `byte::byte_allocator`
+//        / `byte::sharded_byte_arena` (under `byte`; the last only with
+//        `byte-sharded`).
 //    So "the `unsafe` lives in named modules" is enforced by the compiler in
 //    EVERY configuration. See `src/concurrent/hand.rs` and `src/byte/*`.
 #![cfg_attr(
@@ -93,3 +96,6 @@ pub use concurrent::PinnedRunner;
 
 #[cfg(feature = "byte")]
 pub use byte::{ByteAllocator, ByteRegion};
+
+#[cfg(feature = "byte-sharded")]
+pub use byte::ShardedByteArena;

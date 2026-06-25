@@ -76,6 +76,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Pinning is best-effort (honoured per OS); the shard binding (the routing
   truth) always holds, so tests assert routing, not affinity. A `pinned_write`
   bench compares pinned vs unpinned with an honest, workload-dependent verdict.
+- **Phase 7d — `ShardedByteArena`** (behind a new opt-in `byte-sharded` feature
+  = `["byte"]`, research-flagged). N per-thread `ByteRegion` shards
+  (`Box<[Mutex<ByteRegion>]>`) for parallel raw allocation: a thread binds to its
+  own shard via a TLS round-robin router, so threads in different shards never
+  contend on one lock. Cross-thread `dealloc`/`realloc` route to the owning shard
+  via a scan over `ByteRegion::contains_ptr` (safe pointer-comparison, no
+  dereference) — a pointer is never freed against the wrong shard. `prewarm()`
+  carves a chunk per shard and touches its pages up front to remove cold-start
+  latency (callable from a background thread; the arena is `Send + Sync`). The
+  only added `unsafe` is a one-line `unsafe impl Send for ByteRegion` (the region
+  owns all its memory; access is `Mutex`-serialised) — everything else is safe
+  composition; `unsafe` stays confined to `src/byte/*`. Correctness (cross-thread
+  free, concurrent per-shard churn, bounded chunk growth, realloc byte
+  preservation) is covered by `tests/byte_sharded.rs` and is **miri-clean**.
+  Honest verdict (`docs/BYTE_SHARDED_BENCH.md`): it parallelises across shards
+  but is NOT a `mimalloc` competitor and never returns memory to the OS until
+  drop — research, not production.
 - `ByteRegion` and `ByteAllocator` (behind the research-flagged `byte` feature)
   — the descent to raw bytes: a size-classed free-list byte arena whose
   placement logic is pure safe integer arithmetic (the Cartographer), with the
