@@ -43,6 +43,20 @@ pub(crate) struct ThreadFreeStack {
     head: Box<AtomicPtr<u8>>,
 }
 
+/// A borrow-only view over a `ThreadFreeStack`'s head atomic. Used by
+/// [`HeapCore`](crate::registry::HeapCore), which owns its head as an
+/// `Option<Box<AtomicPtr<u8>>>` (so it can lazily install it on the TLS
+/// bind-slow path, outside the registry bootstrap). The view exposes the
+/// drain method without taking ownership of the box.
+///
+/// This is the borrow-equivalent of [`ThreadFreeStack`]: same head atomic,
+/// no allocation. The lifetime ties the view to the borrow of the underlying
+/// `AtomicPtr`. Only constructed under `alloc-xthread` (by `HeapCore`).
+#[cfg(feature = "alloc-xthread")]
+pub(crate) struct ThreadFreeBorrow<'a> {
+    head: &'a AtomicPtr<u8>,
+}
+
 impl ThreadFreeStack {
     /// Create a new empty thread-free stack.
     pub(crate) fn new() -> Self {
@@ -127,5 +141,26 @@ impl ThreadFreeStack {
         // owner uses this to skip the drain path when the stack is likely
         // empty (an optimization, not a correctness requirement).
         self.head.load(Ordering::Relaxed).is_null()
+    }
+}
+
+#[cfg(feature = "alloc-xthread")]
+impl<'a> ThreadFreeBorrow<'a> {
+    /// Construct a borrow view over an externally-owned `AtomicPtr<u8>` head.
+    /// Used by [`HeapCore`](crate::registry::HeapCore) to drain its
+    /// `Option<Box<AtomicPtr<u8>>>` without moving out of it. The caller
+    /// guarantees `head` outlives the borrow (it does: the box is leaked on
+    // thread death by the abandon guard).
+    #[allow(dead_code)] // Used only by `registry::HeapCore`, gated on `alloc-global`.
+    pub(crate) fn from_head(head: &'a AtomicPtr<u8>) -> Self {
+        Self { head }
+    }
+
+    /// Drain the entire stack atomically: swap the head to null and return
+    /// the old head (the chain start). Same ordering/contract as
+    /// [`ThreadFreeStack::drain`].
+    #[allow(dead_code)] // Used only by `registry::HeapCore`, gated on `alloc-global`.
+    pub(crate) fn drain(&self) -> *mut u8 {
+        self.head.swap(core::ptr::null_mut(), Ordering::Acquire)
     }
 }

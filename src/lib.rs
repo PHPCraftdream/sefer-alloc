@@ -61,8 +61,14 @@
 //        (the intrusive free-list node seam — the generalized `hand`
 //        discipline) (both under `alloc-core`), and
 //      * `global::sefer_malloc` (the `unsafe impl GlobalAlloc` malloc-face
-//        seam — the trait obligation + pointer handoff to the Heap)
-//        (under `alloc-global`), and
+//        seam — the trait obligation + pointer handoff to the Heap),
+//        `global::tls_heap` (the Phase 12.3 raw-pointer TLS binding +
+//        `AbandonGuard` seam — the `*mut HeapCore` handoff under the
+//        single-writer invariant, and the `unsafe fn recycle`/
+//        `abandon_segments` calls in the guard's drop), and
+//        `global::fallback` (the Phase 12.3 primordial fallback heap seam —
+//        the `static mut MaybeUninit<HeapCore>` + atomic-init state-machine
+//        + spinlock-guarded `&mut` handout) (all under `alloc-global`), and
 //      * `registry::heap_slot` + `registry::heap_registry` (the Phase 12.2
 //        global heap slot-table seam — the `Sync`/`Send` impls on `HeapSlot`
 //        under the atomic single-writer protocol, and the `*mut HeapCore`

@@ -1,59 +1,72 @@
-//! Phase 11 -- the `malloc` face: [`SeferMalloc`], an `unsafe impl GlobalAlloc`
-//! over the Phase 9/10 per-thread `Heap` substrate.
+//! Phase 12.3 -- the `malloc` face: [`SeferMalloc`], an `unsafe impl GlobalAlloc`
+//! over the global heap registry (Phase 12.2) via raw-pointer TLS (Phase 12.3).
 //!
 //! This is the **drop-in face** -- the campaign's victory deliverable. One
-//! substrate (the segment-backed, self-hosted, per-thread-heap allocator),
-//! two faces: the `Handle` face (typed, generational, relocatable) and this
-//! `malloc` face (raw `*mut u8`, drop-in `#[global_allocator]` replacement).
+//! substrate (the segment-backed, self-hosted, registry-resident heap
+//! allocator), two faces: the `Handle` face (typed, generational,
+//! relocatable) and this `malloc` face (raw `*mut u8`, drop-in
+//! `#[global_allocator]` replacement).
 //!
-//! ## What this module IS
+//! ## Phase 12.3 rewiring
 //!
-//! - The `unsafe impl GlobalAlloc` -- the trait is `unsafe`, so this is a
-//!   documented `unsafe` seam. Every method carries a `// SAFETY:` proof.
-//! - Routing: `alloc`/`dealloc`/`realloc`/`alloc_zeroed` delegate to the
-//!   per-thread `Heap` via the **no-panic** TLS binding `with_heap_try`
-//!   (returns `None` instead of panicking during TLS teardown; on `None` we
-//!   return null / no-op).
+//! Previously (Phase 11) this face routed through
+//! `RefCell<Option<Heap>>` via `with_heap_try`. That binding ABORTED under
+//! libtest's reentrant harness: `RefCell::try_borrow_mut` returns `Err` on
+//! a reentrant borrow → the malloc face returned null → std aborted.
+//!
+//! Phase 12.3 replaces that with [`tls_heap::current`](super::tls_heap::current):
+//! a raw `Cell<*mut HeapCore>` TLS cache (no borrow state to fail) over the
+//! global [`HeapRegistry`](crate::registry::HeapRegistry). The heap lives in
+//! a registry slot (not in TLS); thread exit abandons + recycles the slot
+//! (not drops the heap). The malloc face is therefore **reentrancy-safe**
+//! (M5) and **never-null** (M10): [`current`] returns a non-null pointer in
+//! every case (cached slot, fresh claim, or the process-global fallback
+//! heap).
 //!
 //! ## M5 (reentrancy-freedom) -- how it is upheld
 //!
 //! The whole point (§4 M5, §8 of `MALLOC_PLAN.md`): when WE are the global
 //! allocator, ANY use of `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
 //! alloc path would recurse infinitely. This module contains NONE of those.
-//! The TLS access (`with_heap_try`) is a plain thread-local load with a `const`
-//! initialiser (no allocation). `Heap::new()` bootstraps via the OS aperture
-//! (`mmap`/`VirtualAlloc`) -- never `std::alloc`. The `Heap`'s alloc/dealloc
-//! paths are pure safe integer arithmetic + the `node` seam (intrusive pointer
-//! r/w). No `std` collection is reachable from here.
+//! `current()` is a plain thread-local load + null check. `bind_slow` claims
+//! a registry slot (which bootstraps via the OS aperture, never `std::alloc`);
+//! the only `std::alloc` touch is the `Box<AtomicPtr<u8>>` TFS handle under
+//! `alloc-xthread`, installed on the bind path (outside the registry
+//! bootstrap). The `HeapCore` alloc/dealloc paths are pure safe integer
+//! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
+//! is reachable from here.
 //!
 //! ## No-panic -- how it is upheld
 //!
 //! A panic in `#[global_allocator]` aborts the process (§8 of `MALLOC_PLAN.md`).
-//! Every entry point here returns null on failure (OOM, TLS unavailable) and
-//! NEVER panics:
-//! - `alloc`: `with_heap_try` returns `None` → we return null. `Heap::alloc`
-//!   returns null on OOM.
-//! - `dealloc`: `with_heap_try` returns `None` → no-op (the block leaks; safe
-//!   during thread shutdown).
-//! - `realloc`: delegates to `alloc` + copy + `dealloc`, all null-returning.
+//! Every entry point here returns null on failure and NEVER panics:
+//! - `alloc`: `current()` → `&mut HeapCore` → `HeapCore::alloc` (returns
+//!   null on OOM). If `current()` itself yields the fallback (TLS teardown),
+//!   the fallback's `with_heap` returns `None` only on true OOM → null.
+//! - `dealloc`: `current()` → `HeapCore::dealloc`. If TLS is torn down, the
+//!   fallback's `with_heap` deallocs under the spinlock; a torn-down-TLS
+//!   dealloc still routes correctly (the segment's owner routes via the
+//!   header). On any failure this is a no-op (the block is leaked safely).
+//! - `realloc`: `alloc` + copy + `dealloc`, all null-returning.
 //! - `alloc_zeroed`: `alloc` + zero-fill.
 //!
-//! The substrate panic sites (`.expect` in `alloc_small`, `assert!` in
-//! `register`, `assert!(len > 0)` in `Segment::reserve`) were hardened to
-//! graceful null-returning branches in Phase 11.
+//! [`current`]: super::tls_heap::current
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see `src/lib.rs`);
-// this is the documented malloc-face seam. `allow` lifts the crate-level `deny`
-// for this file only -- `unsafe` anywhere else in the crate is a hard error.
-// The ONLY `unsafe` here is the `unsafe impl GlobalAlloc` (the trait is
-// `unsafe`) plus the `// SAFETY:`-annotated pointer handoff to the Heap.
+// this is the documented malloc-face seam. `allow` lifts the crate-level
+// deny for this file only -- `unsafe` anywhere else in the crate is a hard
+// error. The ONLY `unsafe` here is the `unsafe impl GlobalAlloc` (the trait
+// is `unsafe`) plus the `// SAFETY:`-annotated pointer handoff to HeapCore.
 #![allow(unsafe_code)]
 
 use core::alloc::{GlobalAlloc, Layout};
 
-use crate::heap::{with_heap_try, Heap};
+use super::fallback;
+use super::tls_heap::{current_for_alloc, CurrentHeap};
 
-/// The drop-in `GlobalAlloc` face over the `sefer-alloc` segment substrate.
+/// The drop-in `GlobalAlloc` face over the `sefer-alloc` segment substrate,
+/// routed through the global heap registry (Phase 12.2) via raw-pointer TLS
+/// (Phase 12.3).
 ///
 /// Install it as your process's global allocator:
 ///
@@ -67,12 +80,19 @@ use crate::heap::{with_heap_try, Heap};
 /// # }
 /// ```
 ///
-/// Each thread gets its own [`Heap`] (lazily bootstrapped on first allocation
-/// via a `const`-initialised TLS slot -- no allocation on the TLS path).
-/// `alloc`/`dealloc`/`realloc`/`alloc_zeroed` route through the per-thread
-/// heap's lock-free free-list pop/push (the Phase 9 hot path). With
-/// `alloc-xthread`, cross-thread `dealloc` routes through the Phase 10 Treiber
-/// stack.
+/// Each thread gets its own heap slot in the global registry (lazily claimed
+/// on first allocation via the raw-pointer TLS binding -- no `RefCell`, no
+/// reentrant-borrow failure). `alloc`/`dealloc`/`realloc`/`alloc_zeroed`
+/// route through the per-thread heap's segment-centric `BinTable` free lists
+/// (the Phase 12.1 hot path). With `alloc-xthread`, cross-thread `dealloc`
+/// routes through the Phase 10 Treiber stack, now stamped from the
+/// registry-resident heap (12.3 owner stamping).
+///
+/// Thread exit abandons the heap's segments back to the registry (a no-op
+/// stub in 12.3 -- segments leak until 12.4 adoption; bounded and sound) and
+/// recycles the slot for reuse. A primordial fallback heap (§2.3) serves
+/// the pre-TLS / post-teardown windows, so the face is **never-null for a
+/// serviceable request** (M10).
 ///
 /// This is the **malloc face** of one substrate; the **handle face**
 /// (`Region<T>` / `Handle<T>`) is the typed, generational view over the same
@@ -81,8 +101,8 @@ pub struct SeferMalloc;
 
 impl SeferMalloc {
     /// Construct the allocator. This is a zero-cost `const` constructor -- the
-    /// per-thread heaps are lazily bootstrapped on first use (not here), so
-    /// this can be used in `static` initialisers without any allocation or OS
+    /// per-thread heaps are lazily claimed on first use (not here), so this
+    /// can be used in `static` initialisers without any allocation or OS
     /// calls.
     #[must_use]
     pub const fn new() -> Self {
@@ -97,55 +117,78 @@ impl Default for SeferMalloc {
 }
 
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
-// `alloc_zeroed`/`realloc` return valid memory for the requested `Layout` (or
-// null on failure), and that `dealloc` receives a pointer previously returned
-// by an allocating method. We delegate to `Heap::alloc`/`dealloc`/`realloc`/
-// `alloc_zeroed`, which uphold M1 (validity), M3 (no overlap), and M4
-// (alignment/size fidelity) -- verified by the Phase 8/9 differential
-// proptests and miri. The `Heap` returns null on OOM (never panics -- the
-// substrate panic sites were hardened in Phase 11). If the TLS heap is
-// unavailable (`with_heap_try` returns `None` -- thread shutdown), `alloc`
-// returns null and `dealloc` is a no-op (the block leaks safely; sound because
-// the substrate never reuses memory across heaps without the Phase 10 Treiber
-// protocol, and a thread in shutdown is exiting).
+// `alloc_zeroed`/`realloc` return valid memory for the requested `Layout`
+// (or null on failure), and that `dealloc` receives a pointer previously
+// returned by an allocating method. We delegate to `HeapCore::alloc`/
+// `dealloc`/`realloc`/`alloc_zeroed`, which uphold M1 (validity), M3 (no
+// overlap), and M4 (alignment/size fidelity) -- verified by the Phase 8/9
+// differential proptests and miri. `HeapCore` returns null on OOM (never
+// panics -- the substrate panic sites were hardened in Phase 11). If the
+// TLS heap is unavailable (thread teardown), `current()` returns the
+// process-global fallback heap (never null); `dealloc` on the fallback is
+// sound under the fallback's spinlock. M10 (never-null for serviceable
+// requests) is upheld: the only null return is true OOM.
 unsafe impl GlobalAlloc for SeferMalloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: the caller (Rust's allocator infrastructure) guarantees
-        // `layout` has non-zero size and valid alignment. We route through the
-        // per-thread Heap, which is reentrancy-free (M5: no Vec/Box/std::alloc
-        // on the path) and no-panic (returns null on OOM).
-        with_heap_try(|heap: &mut Heap| heap.alloc(layout)).unwrap_or(core::ptr::null_mut())
+        match current_for_alloc() {
+            // Fallback path (TLS torn down, registry exhausted, or true
+            // fallback OOM): route through the fallback's spinlock-guarded
+            // `with_heap`. `with_heap` returns `None` only on true OOM → we
+            // surface null.
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
+            }
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in
+            // a registry slot. `current_for_alloc` returned it for THIS
+            // thread; the single-writer invariant (the CAS-won slot owner)
+            // makes `&mut` access exclusive. `HeapCore::alloc` upholds the
+            // GlobalAlloc contract (returns valid memory or null).
+            CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
+        }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        // SAFETY: the caller guarantees `ptr` was returned by a prior `alloc`
-        // on this allocator with `layout` and not yet deallocated. We route
-        // through the per-thread Heap. If the TLS heap is unavailable (thread
-        // shutdown), this is a no-op -- the block is leaked, which is sound
-        // (no corruption, no UAF; the memory stays mapped under alloc-xthread's
-        // abandonment-leak, or is freed by AllocCore::drop under plain alloc).
         if ptr.is_null() {
             return;
         }
-        let _ = with_heap_try(|heap: &mut Heap| heap.dealloc(ptr, layout));
+        match current_for_alloc() {
+            CurrentHeap::Fallback => {
+                // Fallback path: dealloc under the spinlock. A failure here
+                // (true OOM at fallback init) is a safe no-op — the block
+                // is leaked, never corrupted.
+                let _ = fallback::with_heap(|h| h.dealloc(ptr, layout));
+            }
+            // SAFETY: as above; `dealloc` is a safe no-op on a
+            // foreign/dangling pointer (M2 defence-in-depth), so even if
+            // `ptr` was allocated on a different thread's heap, this routes
+            // correctly (own-thread → BinTable; cross-thread → TFS under
+            // `alloc-xthread`).
+            CurrentHeap::Own(heap) => unsafe { (*heap).dealloc(ptr, layout) },
+        }
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: same contract as `alloc`; the returned memory is zero-filled.
-        // `Heap::alloc_zeroed` allocates then zeroes via the `node` seam.
-        with_heap_try(|heap: &mut Heap| heap.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
+        match current_for_alloc() {
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
+            }
+            // SAFETY: as in `alloc`.
+            CurrentHeap::Own(heap) => unsafe { (*heap).alloc_zeroed(layout) },
+        }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
-        // SAFETY: the caller guarantees `ptr` is a valid prior allocation of
-        // `old_layout` not yet deallocated. `Heap::realloc` performs
-        // alloc-new + copy + dealloc-old, returning a valid new pointer (or
-        // null on OOM, leaving the old allocation intact). If the TLS heap is
-        // unavailable, we return null (the old block leaks safely).
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
-        with_heap_try(|heap: &mut Heap| heap.realloc(ptr, old_layout, new_size))
-            .unwrap_or(core::ptr::null_mut())
+        match current_for_alloc() {
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
+                    .unwrap_or(core::ptr::null_mut())
+            }
+            // SAFETY: as in `alloc`; `realloc` is alloc-new + copy +
+            // dealloc-old, leaving the old allocation intact on OOM.
+            CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },
+        }
     }
 }

@@ -54,27 +54,19 @@ where
 /// Execute `f` with a mutable reference to the current thread's [`Heap`], or
 /// return `None` if the heap cannot be accessed right now WITHOUT panicking.
 ///
-/// This is the **no-panic** variant for the `GlobalAlloc` face (Phase 11,
-/// `alloc-global`). A panic inside `#[global_allocator]` aborts the whole
-/// process, so the malloc face must never panic. The two situations where
-/// `with_heap` would panic are handled gracefully here:
-///
-/// 1. **TLS slot destroyed (thread shutdown):** `try_with` returns `Err` when
-///    the thread-local's destructor has already run (the thread is exiting and
-///    its TLS slot has been reclaimed). We return `None` -- the caller (the
-///    `GlobalAlloc` impl) returns null, signalling OOM. This is correct: a
-///    thread that has outlived its TLS heap cannot serve allocations, and
-///    returning null lets `std` fall back gracefully (most allocation requests
-///    during shutdown are best-effort).
-/// 2. **Reentrant borrow:** `RefCell::try_borrow_mut` returns `Err` if the
-///    cell is already borrowed. Under M5 (reentrancy-freedom) this never
-///    happens on the alloc path (no alloc call reaches back into the heap),
-///    but we guard defensively rather than panicking.
+/// This was the **no-panic** variant for the Phase 11 `GlobalAlloc` face.
+/// Phase 12.3 rewired `SeferMalloc` to route through the registry-backed
+/// raw-pointer TLS ([`crate::global::tls_heap`]) instead of this `RefCell`
+/// binding, so `with_heap_try` is no longer on the malloc path. It is
+/// retained as a documented part of the explicit-`Heap` API surface (and a
+/// reference implementation of the no-panic TLS pattern); the `alloc` /
+/// `alloc-xthread` paths and their tests still use [`with_heap`].
 ///
 /// Returns `None` if the heap cannot be accessed (TLS destroyed, reentrant
 /// borrow, or primordial OOM). The caller MUST handle `None` by returning null
 /// -- never by panicking.
 #[cfg(feature = "alloc-global")]
+#[allow(dead_code)]
 pub(crate) fn with_heap_try<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut Heap) -> R,
