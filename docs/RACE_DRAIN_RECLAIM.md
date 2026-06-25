@@ -170,3 +170,64 @@ tight 2-thread producer/consumer with NO mutex held across alloc/free). Identify
 which of (1)/(2)/(3) it is. THEN fix the actual cause — only fall back to the
 generation-tag (§4) if the cause is genuinely the §2/(2) fundamental handoff
 race, not a fixable isolation leak.
+
+---
+
+## 8. ROOT CAUSE CONFIRMED (instrumented repro) — suspect #2
+
+Root-caused with a deterministic, instrumented repro (`tests/race_repro.rs`).
+**Verdict: suspect #2 (intrusive TFS word at slot-reuse handoff) — CONFIRMED.
+Suspects #1 (fallback) and #3 (routing bug) REFUTED.**
+
+Captured trace (reclaim drain enabled):
+
+```
+[XPUSH tid=6 our_slot=3 block=0x..57a0 base=0x..400000 target_head=...078 (foreign)]
+[DRAIN tid=2 slot=1 block=0x..57a0 next=0x0 base=0x..400000 our_head=...078]
+[POP!! tid=2 seg=0x..400000 class=2] block 0x..57c0 next=0x6c64657463657078 OUTSIDE segment
+[FLC!! ...] block 0x..57c0 on the free list has next=0x6c64657463657078 OUTSIDE segment
+```
+
+`0x6c64657463657078` = little-endian ASCII (`xpectdl`) — **user data written by the
+app into a reused block, read back as a free-list `next` pointer**. The signature
+of the UAF.
+
+**Counterfactual (my own run + the agent's):**
+
+| `drain_thread_free` | `tests/race_repro.rs` |
+|---|---|
+| **reclaim** (swap+walk+`dealloc_small_by_segment`) | **STATUS_ACCESS_VIOLATION** (deterministic) |
+| **discard** (swap only — shipped) | **3/3 OK** |
+
+`tests/race_repro.rs` is committed as the **counterfactual gate** for any future
+fix: it passes under the shipped discard, and MUST keep passing under a future
+guarded reclaim (and would segfault under an unguarded one). `heap_cross_thread`
+(the single-heap path) is unaffected (3/3 OK) — the race is exclusively in the
+registry cross-thread reclaim.
+
+Why it is fundamental (not a missing lock): the block's first word is contended
+between "in-flight TFS entry" (per the freer) and "reused by the new slot owner"
+(per the owner), because the TFS head is a STABLE per-slot address (the 12.5
+inline-`AtomicPtr` choice) — a freer's push and a *different* (post-reuse) owner's
+drain meet on the same atomic, and the single-writer BinTable owner has no way to
+know a drained block was already reused.
+
+## 9. Fix direction (open decision)
+
+- **Variant 1 — generation-tag (surgical, keeps intrusive TFS).** Caveat found
+  while scoping: a 32-bit generation does NOT fit in a block pointer's spare
+  bits (`MIN_BLOCK=16` → only 4 aligned low bits). So the observed generation
+  cannot simply be packed into the pushed pointer; it needs side storage or a
+  coarser scheme (e.g. a per-segment generation checked at drain against a
+  generation the freer stamped into the *segment header* at push time — but two
+  freers racing on one header field is itself contended). Needs careful design.
+- **Variant 2 — non-intrusive TFS (architecturally cleanest; matches the
+  original `ShardedRegion` 7b, which queued segment-relative OFFSETS, never
+  reinterpreting object bytes).** Removes the contended word entirely. Cost: the
+  queue node needs storage that is NOT the block's own first word — either a
+  side array indexed per segment, or a small bounded ring, M5-clean (no
+  `std::alloc` on the path).
+
+Decision pending (this is the same class of architectural choice as the sharding
+inversion). Variant 2 is the more faithful "fix the shards" — it restores the
+original discipline (queues carry references/indices, never poison the object).
