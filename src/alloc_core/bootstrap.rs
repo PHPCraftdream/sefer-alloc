@@ -1,0 +1,104 @@
+//! [`primordial`] — the bootstrap routine that hand-carves the first
+//! [`SegmentTable`] from the first segment (the `_mi_heap_main` analogue).
+//!
+//! This is the primordial bootstrap. It runs ONCE, at `AllocCore::new`, to
+//! establish the self-hosting loop: the primordial segment is reserved; its
+//! header, page map, bin table, and the registry array are laid down at their
+//! fixed [`Layout`] offsets; and the registry's first slot is set to point
+//! back at itself. After this, the safe Cartographer can mutate metadata
+//! through normal `node`-seam writes with no further bootstrap-time writes.
+//!
+//! ## This file is PURE SAFE COMPOSITION
+//!
+//! Every raw memory touch goes through the [`os`](super::os) seam (segment
+//! reservation) and the [`node`](super::node) seam (typed writes). The
+//! bootstrap composes those already-proven `unsafe` primitives in safe code —
+//! there is NO `unsafe` block in this file. So the crate's structural promise
+//! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
+
+use super::os::Segment;
+use super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
+use super::segment_table::SegmentTable;
+
+/// The bootstrap outcome: the primordial [`Segment`] (owned) and the
+/// [`SegmentTable`] view over the registry carved in its payload. The
+/// primordial segment's metadata (header / page map / bin table) is laid down
+/// by `primordial()`; `AllocCore::new` reads it back via `SegmentMeta` when it
+/// needs to mutate the primordial as a small segment.
+pub(crate) struct Primordial {
+    pub segment: Segment,
+    pub table: SegmentTable,
+}
+
+/// Reserve the primordial segment and hand-carve its self-hosted metadata.
+///
+/// This is the analogue of mimalloc's `_mi_heap_main` init: it establishes the
+/// segment that hosts the registry, after which the allocator is self-hosting.
+///
+/// Returns `None` only if the OS refuses the primordial reservation (OOM at
+/// startup — unrecoverable for an allocator, but we propagate rather than
+/// abort so a caller may fall back).
+pub(crate) fn primordial() -> Option<Primordial> {
+    // 1. Reserve the primordial segment (SEGMENT-aligned, SEGMENT bytes). This
+    //    is the ONLY OS allocation primitive on the bootstrap path; everything
+    //    else is safe composition over the segment's bytes.
+    let segment = Segment::reserve(super::os::SEGMENT)?;
+    let base = segment.as_ptr();
+    let reservation = segment.reservation();
+    let reservation_len = segment.reservation_len();
+
+    // 2. Lay down the small-segment header at offset 0 via the node seam. We
+    //    write `bump = 0` here and fix it up after computing the metadata end.
+    let mut meta = SegmentMeta::new(base);
+    meta.write_header(SegmentHeader::small(
+        0,
+        0,
+        reservation.as_ptr(),
+        reservation_len,
+    ));
+
+    // 3. Initialise the page map and bin table at their fixed offsets. The
+    //    `Node::write_*` primitives (called from `init_in_place`) do the raw
+    //    writes; this code only computes offsets.
+    let pm_off = Layout::page_map_off();
+    let bt_off = Layout::bin_table_off();
+    let reg_off = Layout::primordial_registry_off();
+    let meta_end = Layout::primordial_meta_end();
+    let meta_pages = Layout::primordial_meta_pages();
+
+    // SAFETY (caller-side reasoning, encoded as the `init_in_place` contract):
+    // `base + pm_off` is within the freshly-reserved segment (compile-time
+    // checked: `Layout::primordial_meta_end() + PAGE <= SEGMENT`), and the
+    // segment is exclusively owned (single-threaded bootstrap). Each
+    // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
+    super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
+    super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+
+    // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
+    //    segment's own base (self-reference). The write goes through `Node`.
+    let reg_slots = base_plus(base, reg_off) as *mut *mut u8;
+    super::node::Node::write_struct::<*mut u8>(reg_slots, base);
+
+    // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
+    //    carving begins). Mark the page map / bin table / registry pages Meta
+    //    in the page map we just wrote.
+    let mut hdr = meta.header();
+    hdr.kind = SegmentKind::Primordial;
+    hdr.bump = meta_end;
+    meta.write_header(hdr);
+
+    // 6. Construct the SegmentTable view. `from_primordial` is safe (it
+    //    performs no memory operation — just wraps the pointer + count); the
+    //    contract that slot 0 was written is the bootstrap's invariant.
+    let table = SegmentTable::from_primordial(reg_slots, 1);
+
+    Some(Primordial { segment, table })
+}
+
+/// `base + off` as a `*mut u8`, routed through the `node` seam (`add` is
+/// unsafe; the seam documents the in-bounds contract). The result is
+/// dereferenced later only by code that has proven `off` is within the segment
+/// bounds.
+fn base_plus(base: *mut u8, off: usize) -> *mut u8 {
+    super::node::Node::offset(base, off)
+}

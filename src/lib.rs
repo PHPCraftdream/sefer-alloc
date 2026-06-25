@@ -48,17 +48,22 @@
 //    is possible anywhere in the crate.
 //  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
 //    (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
-//    the Phase 7d parallel `ShardedByteArena`): the crate is
+//    the Phase 7d parallel `ShardedByteArena`) and/or `alloc-core`
+//    (Phase 8 self-hosted segment substrate): the crate is
 //    `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //    error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //      * `concurrent::hand` (under `experimental`), and
 //      * `byte::byte_region` / `byte::byte_allocator`
 //        / `byte::sharded_byte_arena` (under `byte`; the last only with
-//        `byte-sharded`).
+//        `byte-sharded`), and
+//      * `alloc_core::os` (the OS segment aperture) and `alloc_core::node`
+//        (the intrusive free-list node seam — the generalized `hand`
+//        discipline) (both under `alloc-core`).
 //    So "the `unsafe` lives in named modules" is enforced by the compiler in
-//    EVERY configuration. See `src/concurrent/hand.rs` and `src/byte/*`.
+//    EVERY configuration. See `src/concurrent/hand.rs`, `src/byte/*`, and
+//    `src/alloc_core/{os,node}.rs`.
 #![cfg_attr(
-    not(any(feature = "experimental", feature = "byte")),
+    not(any(feature = "experimental", feature = "byte", feature = "alloc-core")),
     forbid(unsafe_code)
 )]
 #![deny(unsafe_code)]
@@ -80,6 +85,9 @@ mod concurrent;
 #[cfg(feature = "byte")]
 mod byte;
 
+#[cfg(feature = "alloc-core")]
+mod alloc_core;
+
 pub use handle::Handle;
 pub use region::Region;
 
@@ -96,6 +104,9 @@ pub use concurrent::PinnedRunner;
 
 #[cfg(feature = "byte")]
 pub use byte::{ByteAllocator, ByteRegion};
+
+#[cfg(feature = "alloc-core")]
+pub use alloc_core::{AllocCore, SegmentLayout};
 
 #[cfg(feature = "byte-sharded")]
 pub use byte::ShardedByteArena;

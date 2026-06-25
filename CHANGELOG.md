@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 8 — segment substrate + self-hosted metadata (the Membrane
+  Inversion)** (behind a new opt-in `alloc-core` feature). The foundation of a
+  real general-purpose allocator: the safe slot-table discipline stops
+  *consuming* `Vec<T>` and starts *governing* OS-backed, SEGMENT-aligned memory
+  (default 4 MiB), with the allocator's own metadata **carved from the segments
+  it manages** (no `Vec`/`HashSet`/`std::alloc` on any alloc path). `unsafe`
+  stays confined to exactly two documented seams: `os` (the OS aperture —
+  `VirtualAlloc`/`VirtualFree` on windows, `mmap`/`munmap` on unix, via an
+  over-reserve+trim for SEGMENT alignment; replaces `std::alloc` entirely) and
+  `node` (the intrusive free-list node r/w, generalising the `hand` discipline).
+  Everything between — `SegmentTable` (self-hosted generational registry),
+  `PageMap`/`BinTable` (per-segment page descriptors + per-class free bins), the
+  primordial `bootstrap`, the ~40-class size scheme, and `AllocCore`'s
+  single-threaded `alloc`/`dealloc`/`realloc`/`alloc_zeroed` — is pure safe
+  integer arithmetic (the Cartographer). Invariants **M1–M8** documented
+  (`docs/INVARIANTS.md`, spec in `docs/MALLOC_PLAN.md` §4) and encoded as a
+  differential proptest (M1–M4 vs a reference model), targeted unit tests, and a
+  **runtime reentrancy audit (M5)** — a counting global allocator proves the
+  alloc path never recurses into `std::alloc`. The core is **miri-clean**:
+  because miri cannot execute the raw OS FFI, the `os` aperture has a
+  `#[cfg(miri)]`-only fallback to `std::alloc` (test instrumentation; the
+  production aperture is unchanged and the M5 proof runs without miri). Single
+  confined unsafe per seam; `forbid`/`deny(unsafe_code)` everywhere else.
+  **Supersedes** the Phase-4 `byte_region.rs` `std::alloc` fallback and its
+  `Vec`/`HashSet` metadata. Per-thread heaps (Phase 9), cross-thread free +
+  decommit (Phase 10), and the `GlobalAlloc` face (Phase 11) build on this.
 - Initial scaffold of the `sefer-alloc` crate.
 - Single-threaded `Region<T>` — a thin typed membrane over the
   [`slotmap`](https://crates.io/crates/slotmap) crate (`insert` / `get` /

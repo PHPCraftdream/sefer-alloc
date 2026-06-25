@@ -20,6 +20,40 @@ and form the spec that every future change must keep green.
   live handle still resolves to the same logical value, and reclaimed slots are
   reused. See `docs/PLAN.md`.
 
+## Allocator invariants (Phase 8+, `alloc-core`)
+
+These hold for the segment substrate / allocator faces (`AllocCore` and the
+future `GlobalAlloc` face). I1–I6 continue to hold for the Handle face. Spec
+source: `docs/MALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
+
+- **M1 — validity.** Every pointer returned by `alloc(layout)` is non-null
+  (unless OOM), valid for `layout.size()` bytes, and aligned to `layout.align()`.
+- **M2 — no double-free / no UAF.** A pointer is live from its `alloc` until its
+  `dealloc`; freeing twice, or freeing a foreign pointer, never corrupts the
+  allocator — it is detected and no-op'd, never UB.
+- **M3 — no overlap.** Two simultaneously-live allocations never share a byte.
+- **M4 — alignment & size fidelity.** The class chosen always satisfies size and
+  alignment; large/huge allocations honour arbitrary alignment via a dedicated
+  segment.
+- **M5 — reentrancy-freedom (load-bearing).** No entry point on the
+  alloc/dealloc path allocates through the global allocator, takes a global lock
+  that could deadlock against itself, or recurses. Proven structurally (no
+  `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path — metadata self-hosts
+  in segment memory) and at runtime by `tests/alloc_core_reentrancy.rs` (a
+  counting global allocator observes a zero delta across an `AllocCore`
+  workload). Under `miri` the `os` aperture falls back to `std::alloc` as a
+  test-instrumentation path (`#[cfg(miri)]` only); the M5 runtime proof runs
+  WITHOUT miri so the production path's freedom from `std::alloc` is still shown.
+- **M6 — OS return (Phase 10).** Memory freed back to empty segments is
+  eventually returned to the OS (decommit); steady-state RSS does not grow
+  unboundedly under churn. (Phase 8 frees all segments at `AllocCore` drop;
+  eager decommit lands in Phase 10.)
+- **M7 — owner routing.** A pointer's owning segment is found in O(1) via
+  `segment_of(ptr) = ptr & ~(SEGMENT-1)`; cross-thread free (Phase 10) reaches
+  exactly the owning heap and reclaims exactly once.
+- **M8 — generational coherence (Handle face).** A stale `Handle` into reused
+  memory never resolves to a live value (I3 carried onto the segment substrate).
+
 ## Why handles, not pointers
 
 A raw pointer into a `Vec` dangles the moment the `Vec` reallocates or the

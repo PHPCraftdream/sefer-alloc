@@ -63,6 +63,21 @@ byte-sharded = ["byte"]
 # runner on `ShardedRegion`. The default and `experimental` builds do NOT pull
 # `core_affinity`: this feature is purely opt-in. See docs/PLAN.md §7c.
 pinning = ["experimental", "dep:core_affinity"]
+# Phase 8: the segment substrate + self-hosted metadata — the foundation of a
+# real allocator (the Membrane Inversion). OS-backed SEGMENT-aligned spans via a
+# confined `unsafe` aperture (`mmap`/`VirtualAlloc`, NO `std::alloc` anywhere),
+# a self-hosted `SegmentTable` carved from the first primordial segment,
+# per-segment `PageMap` / `BinTable`, and single-threaded
+# `alloc`/`dealloc`/`realloc`/`alloc_zeroed`. The alloc path is provably
+# reentrancy-free (M5): no `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` is
+# reachable — all metadata self-hosts in segment memory. This is single-threaded
+# correctness-first; per-thread heaps + concurrency are Phases 9–10. Introduces
+# two confined-`unsafe` modules — `alloc_core::os` (the OS aperture) and
+# `alloc_core::node` (the intrusive free-list node seam, the generalized `hand`
+# discipline) — so the crate switches to `deny(unsafe_code)` with this feature
+# on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
+# syscalls are std-gated). See `docs/MALLOC_PLAN.md` §5 P8 and §6.
+alloc-core = ["std"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with

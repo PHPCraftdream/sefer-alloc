@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a59c716c11369158414b66245e0186662d6582a7bf7ff50ecc5bab063770e781 # shrinks to ops = [AllocZeroed { size: 1, align: 1 }, Alloc { size: 1, align: 1 }, Dealloc(0), AllocZeroed { size: 1, align: 1 }, Alloc { size: 1, align: 1 }, AllocZeroed { size: 1, align: 2 }, Alloc { size: 46242, align: 8 }, Alloc { size: 3518, align: 16 }, AllocZeroed { size: 1709015, align: 4096 }, Alloc { size: 896761, align: 8 }, AllocZeroed { size: 2240, align: 1 }, Alloc { size: 3741, align: 4 }, AllocZeroed { size: 529530, align: 4 }, Dealloc(3924455193535965430), AllocZeroed { size: 126399, align: 8 }, Dealloc(11941357215929851715), AllocZeroed { size: 936423, align: 4 }, AllocZeroed { size: 3349, align: 1 }, Alloc { size: 3601, align: 1 }]
