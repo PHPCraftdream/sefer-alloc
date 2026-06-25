@@ -114,3 +114,36 @@ freed on thread B routes to B's own `AllocCore::dealloc` → foreign (not in B's
 table) → no-op → leak (sound, not UAF). Cross-thread free correctness requires
 `alloc-xthread` (the TFS routing). This matches the opt-in cross-thread design;
 the MT end-to-end gate (12.5) must run under `alloc-xthread`.
+
+---
+
+## Status updates
+
+- **Finding #1 (abandoned_segs >4 GiB): RESOLVED in 12.4** (commit c13ff0a).
+  abandoned_segs now packs the full 64-bit base in the high bits + a 22-bit ABA
+  tag in the low (SEGMENT-aligned) bits, with an intrusive next_abandoned link.
+  Unit test `abandoned_head_packing_preserves_high_address` guards it.
+
+## From Phase 12.4 (adoption) review
+
+### 7. 🔴 → fix in **12.5**: abandon does not clear the heap's table → dormant double-ownership
+
+`abandon_segments` (heap_registry.rs) marks each owned segment ABANDONED + pushes
+it onto the abandoned stack, but does NOT remove it from the abandoning heap's
+`AllocCore` segment table; and `recycle` + claim-reuse reuse the `HeapCore`
+wholesale (no re-materialise). So after a thread exits and another thread
+reclaims the slot, the segment is simultaneously (a) ABANDONED + on the global
+abandoned stack and (b) in the reused HeapCore's table, actively allocated from.
+
+**Why 12.4 is still SOUND:** `try_adopt` is NOT wired into the malloc cold path,
+so nothing pops the stack in production; and `owner_id == slot-id` (the HeapCore
+is reused in the same slot, same id) means `stamp_segment_owner` does not
+re-stamp LIVE and `abandon_one_segment` does not re-push (it returns early on an
+already-ABANDONED segment) — no double-push, no stack corruption, no UAF.
+
+**Required in 12.5 (before wiring try_adopt):** make abandon/reuse consistent —
+e.g. `abandon_segments` clears the heap's `AllocCore` table (transfers the
+segments fully to the stack) and reclaim re-materialises / re-acquires via
+adopt-or-reserve; OR re-stamp owner_state LIVE on reuse so stale stack entries
+fail the adopter CAS. Without this, wiring `try_adopt` would let an adopter pop a
+segment that the slot's current holder still uses → DOUBLE OWNERSHIP.
