@@ -88,5 +88,8 @@ pub use concurrent::{
     EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion, ShardedHandle, ShardedRegion,
 };
 
+#[cfg(feature = "pinning")]
+pub use concurrent::PinnedRunner;
+
 #[cfg(feature = "byte")]
 pub use byte::{ByteAllocator, ByteRegion};

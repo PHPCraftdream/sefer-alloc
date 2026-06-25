@@ -408,6 +408,77 @@ impl<T> ShardedRegion<T> {
         }
     }
 
+    /// Explicitly binds the CALLING thread to a SPECIFIC shard `id` (Phase 7c,
+    /// `pinning`), overriding the lazy round-robin/scan-free claim.
+    ///
+    /// After this returns `true`, the calling thread's subsequent
+    /// [`insert`](Self::insert)/[`get_with`](Self::get_with)/[`remove`](Self::remove)
+    /// route to shard `id` directly (the TLS router trusts a cached, in-range
+    /// binding on the fast path). This is what makes the `shard == core`
+    /// topology deterministic: a thread-per-core runner pins thread *i* to core
+    /// *i* and binds it to shard *i*, so each thread owns exactly the shard
+    /// matching its core — maximal cache locality, no cross-shard contention,
+    /// and (because the hot path holds no lock) naturally async-safe.
+    ///
+    /// # Returns
+    ///
+    /// - `true` if `shard < shard_count()` — the binding was recorded. (Whether
+    ///   the OS also honored a concurrent `core_affinity` pin is separate and
+    ///   best-effort; this method only concerns the *routing* binding.)
+    /// - `false` if `shard >= shard_count()` — rejected, no binding recorded.
+    ///   This is the chosen contract (over `Result` / clamping) because an
+    ///   out-of-range shard id is a caller bug that should be surfaced, not
+    ///   silently routed elsewhere, and `bool` keeps the call ergonomic in the
+    ///   thread-per-core runner where the caller already knows the count.
+    ///
+    /// # Concurrency & correctness
+    ///
+    /// Optionally claims shard `id`'s `occupied` token if it is free (so the
+    /// shard-lifecycle release on thread exit still works), but correctness does
+    /// NOT depend on exclusivity: two threads binding the same shard is graceful
+    /// degradation — both route there, both stay correct, they just share the
+    /// shard's writer mutex. The `occupied` CAS is best-effort; if it loses, the
+    /// binding is still recorded.
+    ///
+    /// If the calling thread already has an exclusive claim on a DIFFERENT
+    /// shard, that claim is NOT released by this call (releasing happens only on
+    /// thread exit via the [`ErasedGuard`]'s `Drop`). In the intended
+    /// thread-per-core topology each thread binds exactly once at startup, so
+    /// this does not arise.
+    #[must_use]
+    pub fn bind_current_thread_to_shard(&self, shard: u16) -> bool {
+        if usize::from(shard) >= self.inner.shards.len() {
+            return false;
+        }
+        // Optionally claim the `occupied` token for this shard if it is free
+        // (best-effort exclusivity for the lifecycle release). Acquire on
+        // success pairs with the releaser's Release store in ErasedGuard::drop.
+        let claimed_exclusively = self.tokens[usize::from(shard)]
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok();
+        // Record the routing binding (fast-path TLS cache).
+        MY_SHARD.with(|cell| cell.set(Some(shard)));
+        // Install (once per thread) the type-erased guard whose Drop releases an
+        // exclusively-claimed shard on thread exit. Idempotent: if a guard is
+        // already registered, we do NOT overwrite it (its existing claim, if
+        // any, is released at thread exit; overwriting would leak that claim).
+        // If this bind won its CAS but a guard already exists from a prior claim
+        // on a different shard, the just-won token is simply held until THIS
+        // thread exits and the prior guard's Drop runs — correct, just not
+        // released early. The thread-per-core runner binds once at startup, so
+        // the idempotent path is the norm.
+        ERASED_GUARD.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(ErasedGuard {
+                    tokens: Arc::clone(&self.tokens),
+                    shard: claimed_exclusively.then_some(shard),
+                });
+            }
+        });
+        true
+    }
+
     /// Resets the calling thread's TLS shard binding to `None`, so its *next*
     /// [`insert`](Self::insert) claims a fresh shard.
     ///

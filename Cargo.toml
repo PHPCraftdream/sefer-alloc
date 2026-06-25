@@ -46,6 +46,12 @@ experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
 # `experimental`) stays a hard error. Requires `std`. See docs/PLAN.md and
 # docs/BYTE_BENCH.md.
 byte = ["std"]
+# Phase 7c: thread-per-core pinning. Additive over `experimental` — pulls in
+# `core_affinity` (a safe wrapper over the OS affinity syscalls; zero `unsafe`
+# of our own) and exposes an explicit shard-binding API plus a thread-per-core
+# runner on `ShardedRegion`. The default and `experimental` builds do NOT pull
+# `core_affinity`: this feature is purely opt-in. See docs/PLAN.md §7c.
+pinning = ["experimental", "dep:core_affinity"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -68,6 +74,12 @@ arc-swap = { version = "1", optional = true }
 # documented `#![allow(unsafe_code)]` module) and is wrapped in a safe-to-use
 # `AtomicSlot<T>` API. See docs/PLAN.md.
 crossbeam-epoch = { version = "0.9", optional = true }
+# Phase 7c: OS thread-to-core pinning for the thread-per-core runner. A safe
+# wrapper over `sched_setaffinity` (Linux) / `SetThreadAffinityMask` (Windows)
+# / `thread_policy_set` (macOS). Optional — only the `pinning` feature pulls it
+# in. Pinning is best-effort on some OSes; the runner still runs correctly if
+# the host refuses the affinity. See docs/PLAN.md §7c.
+core_affinity = { version = "0.8", optional = true }
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference
@@ -103,3 +115,14 @@ required-features = ["byte"]
 name = "sharded_write"
 harness = false
 required-features = ["experimental"]
+
+# Phase 7c: pinned thread-per-core write bench — `ShardedRegion` writes with
+# each worker pinned to a core AND explicitly bound to the matching shard, vs
+# the unpinned 7a path. Quick criterion profile. Honest verdict: the win is
+# workload-dependent (only manifests when the working set is cache-hot and
+# shard-local); see the bench's module docs. Requires `pinning` (which brings
+# `experimental` + `core_affinity`).
+[[bench]]
+name = "pinned_write"
+harness = false
+required-features = ["pinning"]

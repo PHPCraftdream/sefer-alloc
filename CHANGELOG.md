@@ -64,6 +64,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract is **loom-model-checked** (`tests/loom_sharded.rs`, 1 owner + 1
   remote-remover + 1 reader, `preemption_bound = 3`) — verified to FAIL on the
   naive load-then-swap protocol. `unsafe` stays confined to `concurrent/hand.rs`.
+- **Phase 7c — thread-per-core pinning** (behind a new opt-in `pinning` feature
+  = `["experimental", "dep:core_affinity"]`). `ShardedRegion::bind_current_thread_to_shard`
+  deterministically routes a thread to a specific shard (the auto round-robin
+  claim cannot), and `PinnedRunner` spawns one worker per core, pins worker *i*
+  to core *i* (via `core_affinity`, a safe wrapper — **zero new `unsafe`**), and
+  binds it to shard *i* — so `shard == core` and the hot path has no lock and no
+  cross-shard contention (also why it composes with `glommio`/`monoio`/`tokio`
+  current-thread-per-core without "lock across `.await`"). `core_affinity` is an
+  **optional** dependency: the default and `experimental` builds do not pull it.
+  Pinning is best-effort (honoured per OS); the shard binding (the routing
+  truth) always holds, so tests assert routing, not affinity. A `pinned_write`
+  bench compares pinned vs unpinned with an honest, workload-dependent verdict.
 - `ByteRegion` and `ByteAllocator` (behind the research-flagged `byte` feature)
   — the descent to raw bytes: a size-classed free-list byte arena whose
   placement logic is pure safe integer arithmetic (the Cartographer), with the
