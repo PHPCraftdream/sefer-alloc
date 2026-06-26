@@ -276,29 +276,6 @@ impl Node {
         unsafe { dst.write(value) };
     }
 
-    /// Dereference a `*const AtomicPtr<u8>` to obtain a shared reference.
-    /// Used by the Phase 10 cross-thread free path: a segment header stores a
-    /// `*const AtomicPtr<u8>` pointing to the owning heap's thread-free stack
-    /// head; the cross-thread freer reads this pointer to CAS-push onto it.
-    ///
-    /// # Caller's contract
-    ///
-    /// `ptr` must be a valid, aligned pointer to a live `AtomicPtr<u8>` that
-    /// will remain valid for the duration of the returned reference's use.
-    /// The pointed-to `AtomicPtr` is `Box`-allocated inside the owning `Heap`
-    /// and outlives all segments that reference it (see the heap-lifetime
-    /// reasoning in `ThreadFreeStack::push`).
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn deref_atomic_ptr<'a>(ptr: *const core::sync::atomic::AtomicPtr<u8>) -> &'a core::sync::atomic::AtomicPtr<u8> {
-        // SAFETY: the caller guarantees `ptr` is a valid, aligned pointer to
-        // a live `AtomicPtr<u8>` that will not be dropped during the returned
-        // reference's lifetime. The `AtomicPtr` is `Sync`, so shared access
-        // from any thread is sound. The heap-lifetime discipline (documented
-        // in `ThreadFreeStack::push`) ensures the `Box<AtomicPtr>` outlives
-        // all segment headers that reference it.
-        unsafe { &*ptr }
-    }
-
     /// Compute `base + off` as a `*mut u8` — the address-arithmetic primitive
     /// the safe Cartographer needs to address in-segment metadata. Wrapping
     /// `*mut u8::add` (an `unsafe fn` because a bad offset could wrap or

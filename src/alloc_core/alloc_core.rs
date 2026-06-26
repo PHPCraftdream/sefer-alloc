@@ -205,45 +205,6 @@ impl AllocCore {
         }
     }
 
-    /// Deallocate a small block whose size class is NOT known from a `Layout`
-    /// (e.g. a block drained from the cross-thread free stack — the drainer
-    /// only has the pointer, not the original layout). The class is derived
-    /// from the owning segment's page map (the Phase 8 page-dedication rule:
-    /// the page holding the block knows its class).
-    ///
-    /// **Phase 12.1:** this routes the block to its own segment's `BinTable`
-    /// (via `segment_base_of(ptr)`), preserving the segment-centric free state.
-    /// Used by the heap layer's cross-thread drain path.
-    ///
-    /// Safe: a foreign pointer or a block not in a class page is a no-op
-    /// (matches the defensive `dealloc` contract). Applies the M2 double-free
-    /// guard.
-    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-    pub(crate) fn dealloc_small_by_segment(&mut self, ptr: *mut u8) {
-        if ptr.is_null() {
-            return;
-        }
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
-        if !self.table.contains_base(base) {
-            return; // Foreign pointer.
-        }
-        let hdr = SegmentHeader::read_at(base);
-        if hdr.magic != super::segment_header::SEGMENT_MAGIC {
-            return;
-        }
-        if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
-            return; // Large/other: not a small-block free.
-        }
-        // Derive the class from the page map (the page-dedication rule).
-        let meta = SegmentMeta::new(base);
-        let page_idx = (ptr as usize - base as usize) / super::os::PAGE;
-        let class_idx = match meta.page_map().class_of(page_idx) {
-            Some(c) => c,
-            None => return, // Page is Meta/Free: not a class block; skip.
-        };
-        self.dealloc_small(base, ptr, class_idx);
-    }
-
     /// Reclaim a cross-thread-freed block identified by its **segment-relative
     /// offset** back into its owning segment's `BinTable`. This is the
     /// non-intrusive reclaim path (Variant-2): the block's offset arrived via
@@ -286,7 +247,7 @@ impl AllocCore {
         let class_idx = class_idx as usize;
         let ptr = Node::deref(base, off);
         // Field-specific reads: this runs on the Owner's alloc path
-        // (drain_thread_free / find_segment_with_free), concurrent with a
+        // (find_segment_with_free's lazy ring drain), concurrent with a
         // Remote's `dealloc_routing` field reads. A full-struct
         // `SegmentHeader::read_at` here would race them; reading individual
         // fields via their offsets touches bytes disjoint from any racing
@@ -303,7 +264,7 @@ impl AllocCore {
         // the free-list `next` into the middle of a block — the §13 corruption.
         // This never fires for a correctly-packed entry; it is defence-in-depth
         // against a garbled ring value (no abort — just skip, matching the
-        // defensive `dealloc_small_by_segment` contract).
+        // defensive `dealloc` contract).
         let bs = SizeClasses::block_size(class_idx) as u32;
         if !(off as u32).is_multiple_of(bs) {
             return;
@@ -379,10 +340,11 @@ impl AllocCore {
     /// to `ptr`'s page, so the counterfactual test for "own-thread dealloc
     /// derives the class from `Layout`, not `page_map`" can prove it is
     /// non-vacuous. Returns `None` if `ptr` is foreign, the segment is not
-    /// small/primordial, or the page is uncarved. This is the SAME lookup
-    /// `dealloc_small_by_segment` performs on the cross-thread drain path —
-    /// kept here as a pure read for the test to compare against the Layout's
-    /// class. `#[doc(hidden)] pub` per the established test-only surface.
+    /// small/primordial, or the page is uncarved. This is the (now-removed)
+    /// `page_map`-class derivation the old intrusive-TFS drain used — kept here
+    /// as a pure read so the test can prove the Layout-class and page_map-class
+    /// genuinely differ on a mixed-class page (the §13 counterfactual).
+    /// `#[doc(hidden)] pub` per the established test-only surface.
     #[doc(hidden)]
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
         let base = os::segment_base_of(ptr as usize) as *mut u8;
@@ -437,8 +399,7 @@ impl AllocCore {
 
     /// Iterate over all registered segment bases (read-only). Exposed for the
     /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
-    /// `abandon_segments`) and, under `alloc-xthread`, the per-segment
-    /// `RemoteFreeRing` drain in `HeapCore::drain_thread_free`.
+    /// `abandon_segments`).
     #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.table.bases()

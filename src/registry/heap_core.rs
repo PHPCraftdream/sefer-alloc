@@ -171,43 +171,6 @@ impl HeapCore {
         self.core.set_small_current(base);
     }
 
-    /// Phase 12.4 adoption: drain an adopted segment's `ThreadFreeStack`
-    /// (if its header stamps one) into its `BinTable`s. Cross-thread frees
-    /// that arrived while the segment was abandoned are processed here.
-    /// No-op if the segment has no TFS head stamped (own-thread-only heap).
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn drain_segment_tfs(&mut self, base: *mut u8) {
-        // Field-specific read (task #33 root-cause fix): read ONLY
-        // `owner_thread_free`, not the whole mutable header. This path runs
-        // in the adopter context after winning the ABANDONED→LIVE CAS, which
-        // happens-before-synchronises with the prior owner's abandonment, but
-        // a concurrent Remote `dealloc_routing` may still be mid-flight on
-        // the same header; reading a single field avoids racing the Owner's
-        // `bump` writes (the §11 root cause).
-        let owner_tf = SegmentHeader::owner_thread_free_at(base);
-        if owner_tf.is_null() {
-            return;
-        }
-        // Drain via the segment's stamped TFS head. We borrow the TFS view
-        // through the node seam (the head pointer is stable — the abandoning
-        // heap leaked its `Box<AtomicPtr>` per the abandonment discipline).
-        use crate::heap::thread_free::ThreadFreeBorrow;
-        let head_atomic = Node::deref_atomic_ptr(owner_tf);
-        let tfs = ThreadFreeBorrow::from_head(head_atomic);
-        let mut cur = tfs.drain();
-        while !cur.is_null() {
-            let cur_nn = match core::ptr::NonNull::new(cur) {
-                Some(nn) => nn,
-                None => break,
-            };
-            // Read `next` BEFORE we free `cur` (dealloc overwrites the first
-            // word as the free-list node pointer).
-            let next = Node::read_next(cur_nn);
-            self.core.dealloc_small_by_segment(cur);
-            cur = next;
-        }
-    }
-
     /// Lazily install the cross-thread free-stack handle on the TLS bind-slow
     /// path. Allocates a single `Box<AtomicPtr<u8>>` (via `std::alloc`); this
     /// is the ONLY `std::alloc` touch on the `HeapCore` path, and it is
@@ -250,14 +213,14 @@ impl HeapCore {
     /// Own-thread path: delegates to [`AllocCore::alloc`] (the single-thread
     /// substrate, no adoption hook — a heap owns its segments exclusively and
     /// never pulls in segments from other heaps). Under `alloc-xthread`,
-    /// drains the inline TFS first: late cross-thread frees that arrived while
-    /// this slot was between owners (released by a dying thread, not yet
-    /// reclaimed) are routed into this heap's segments via
-    /// [`AllocCore::dealloc_small_by_segment`]. This is the shard-reuse
-    /// discipline — the new owner drains the freed shard's remote-free queue
-    /// on its first op, exactly as `ShardedRegion` 7b models it. The drain is
-    /// the ONLY cross-thread touch on the alloc path; everything else is
-    /// single-writer (this thread owns the slot, ergo its segments).
+    /// cross-thread frees that targeted this heap's segments sit in each
+    /// segment's [`RemoteFreeRing`](crate::alloc_core::remote_free_ring) and are
+    /// reclaimed LAZILY by [`AllocCore::find_segment_with_free`] on a free-list
+    /// miss (it drains every owned segment's ring via `reclaim_offset`, which
+    /// trusts the class carried in the ring entry — never the owner's `page_map`,
+    /// unreliable for mixed-class pages, §13). This is the `ShardedRegion` 7b
+    /// shard-reuse discipline; everything else is single-writer (this thread
+    /// owns the slot, ergo its segments).
     #[must_use]
     #[inline]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {

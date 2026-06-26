@@ -128,12 +128,13 @@ impl Drop for AbandonGuard {
         // not dropped, not fragmented, not transferred. A later thread that
         // claims this recycled slot reuses the SAME HeapCore in full (claim
         // does not re-materialise when `new_gen != 1`): its segments, its free
-        // lists, and crucially its inline TFS, which still holds any
-        // cross-thread frees pushed after this thread exited. The reclaiming
-        // thread drains that TFS on its first `alloc` (`HeapCore::alloc`
-        // already calls `drain_thread_free` under xthread) — this is the
-        // shard-reuse discipline (a freed shard's remote-free queue is drained
-        // by the new owner on first op, exactly as `ShardedRegion` 7b models).
+        // lists, and crucially its segments' per-segment `RemoteFreeRing`s,
+        // which still hold any cross-thread frees pushed after this thread
+        // exited. The reclaiming thread reclaims those entries LAZILY on a
+        // free-list miss (`AllocCore::find_segment_with_free` drains each owned
+        // segment's ring via `reclaim_offset`) — this is the shard-reuse
+        // discipline (a freed shard's remote-free queue is drained by the new
+        // owner, exactly as `ShardedRegion` 7b models).
         //
         // Why NO abandon walk: the abandon/adopt protocol TRANSFERRED SEGMENTS
         // BETWEEN HEAPS, which meant two heaps could write the same segment's

@@ -430,17 +430,16 @@ impl HeapRegistry {
                     // (pathological — too many segments), we still keep the
                     // segment LIVE-owned but it will not be allocatable from
                     // directly; its BinTable frees still work via
-                    // `dealloc_small_by_segment` (which uses segment_base_of,
-                    // not the table, for routing).
+                    // `segment_base_of` routing in `AllocCore::dealloc`.
                     let _ = adopter_ref.register_segment_internal(base);
                     adopter_ref.set_small_current_internal(base);
-                    // Under alloc-xthread: drain the segment's TFS (if it has
-                    // one) into its BinTable so cross-thread frees that
-                    // arrived while it was abandoned are processed.
-                    #[cfg(feature = "alloc-xthread")]
-                    {
-                        adopter_ref.drain_segment_tfs(base);
-                    }
+                    // Under alloc-xthread: cross-thread frees that arrived while
+                    // the segment was abandoned sit in its `RemoteFreeRing`; the
+                    // adopter reclaims them LAZILY on its next alloc miss
+                    // (`AllocCore::find_segment_with_free` drains every owned
+                    // segment's ring via `reclaim_offset`). No eager TFS drain —
+                    // the intrusive TFS is gone (the ring carries the size class,
+                    // which the owner's `page_map` cannot reliably supply, §13).
                     return true;
                 }
                 Err(_) => {
