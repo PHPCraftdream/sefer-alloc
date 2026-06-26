@@ -73,6 +73,11 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
     super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
     super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+    // Initialise the per-segment alloc-bitmap (Phase 13.4a O(1) double-free
+    // guard) to all-zeros ("everything allocated / not-a-block"). Carved at the
+    // fixed `alloc_bitmap_off`; the bits are flipped to FREE as blocks are
+    // pushed onto free lists.
+    super::alloc_bitmap::AllocBitmap::init_in_place(base_plus(base, Layout::alloc_bitmap_off()));
     // Initialise the per-segment non-intrusive cross-thread-free ring (the
     // Variant-2 fix: queues carry offsets, never poison the block). Only under
     // `alloc-xthread`; without it the ring metadata is reserved (the Layout

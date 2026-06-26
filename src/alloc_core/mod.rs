@@ -12,6 +12,7 @@
 // crate's one-export-per-file convention; silence clippy's module_inception.
 #[allow(clippy::module_inception)]
 mod alloc_core;
+pub(crate) mod alloc_bitmap;
 mod bootstrap;
 pub(crate) mod node;
 pub(crate) mod os;

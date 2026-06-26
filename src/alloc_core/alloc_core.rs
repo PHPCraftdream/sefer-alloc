@@ -314,28 +314,15 @@ impl AllocCore {
         // an associated function), so we replicate the body. The replication is
         // small and the invariant is identical.
         let mut bt = meta.bin_table();
-        // Double-free guard: walk the free list; if `ptr` is already there,
-        // no-op (M2). (Inline of `free_list_contains`.)
-        let mut cur_off = bt.head(class_idx);
-        let mut already = false;
-        while cur_off != FREE_LIST_NULL {
-            let cur_ptr = Node::deref(base, cur_off as usize);
-            if cur_ptr == ptr {
-                already = true;
-                break;
-            }
-            let cur_nn = match NonNull::new(cur_ptr) {
-                Some(n) => n,
-                None => break,
-            };
-            let next = Node::read_next(cur_nn);
-            if next.is_null() || next == cur_ptr {
-                break;
-            }
-            cur_off = (next as usize - base as usize) as u32;
-        }
-        if already {
-            return;
+        // O(1) exact double-free guard (Phase 13.4a): test the segment's alloc
+        // bitmap instead of walking the free list. The owner is the bitmap's
+        // sole writer (reclaim runs on the owner — see this fn's docs), so the
+        // read/modify/write needs no atomics. Replaces the former inline O(N)
+        // `free_list_contains` walk that gave reclaim the same O(N²) regression
+        // as own-thread free.
+        let mut bm = meta.alloc_bitmap();
+        if bm.is_free(off as u32) {
+            return; // Already on a free list (M2 double-free): no-op.
         }
         let block_nn = match NonNull::new(ptr) {
             Some(nn) => nn,
@@ -349,6 +336,7 @@ impl AllocCore {
         };
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off as u32);
+        bm.mark_free(off as u32);
     }
 
     /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
@@ -666,6 +654,10 @@ impl AllocCore {
             (next as usize - segment as usize) as u32
         };
         bt.set_head(class_idx, new_head);
+        // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
+        // and is handed to the caller, so a subsequent free must NOT see it as
+        // already-free (and the next legitimate free must be able to re-mark it).
+        meta.alloc_bitmap().mark_alloc(head_off);
         let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
     }
@@ -706,22 +698,25 @@ impl AllocCore {
     /// list. `ptr` is the block address; `base` is its segment base (computed
     /// by the caller via `segment_of`).
     ///
-    /// **Double-free guard (M2):** before pushing, we scan the class free list
-    /// for `ptr`. If it is already on the list (a double-free), this is a
-    /// no-op — we never corrupt the free list (no self-loop, no duplicate).
-    /// The scan is O(free-list length); Phase 8 free lists stay short for a
-    /// typical working set, and Phase 9's per-thread heaps will replace this
-    /// with a cheaper cookie-based guard.
+    /// **Double-free guard (M2 — Phase 13.4a):** before pushing, we test the
+    /// segment's [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) bit for this
+    /// block. If it is already FREE (`is_free` true → the block is on some free
+    /// list of this segment), this is a double-free: we no-op (never corrupt the
+    /// free list — no self-loop, no duplicate). Otherwise we set the bit
+    /// (`mark_free`) and push. This replaces the Phase 8 O(free-list-length)
+    /// `free_list_contains` walk — which made own-thread free O(N²) under churn
+    /// (#41) — with an O(1) exact bit test. The bitmap is single-writer (owner
+    /// only), so the read/modify/write needs no atomics.
     #[inline]
     fn dealloc_small(&mut self, base: *mut u8, ptr: *mut u8, class_idx: usize) {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
-        // Double-free guard: walk the free list; if `ptr` is already there,
-        // no-op (M2 — never corrupt).
-        if self.free_list_contains(&bt, base, class_idx, ptr) {
-            return;
-        }
         let off = (ptr as usize - base as usize) as u32;
+        // O(1) exact double-free guard via the alloc bitmap.
+        let mut bm = meta.alloc_bitmap();
+        if bm.is_free(off) {
+            return; // Already on a free list (M2 double-free): no-op.
+        }
         let block_nn = match NonNull::new(ptr) {
             Some(nn) => nn,
             None => return,
@@ -734,39 +729,7 @@ impl AllocCore {
         };
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
-    }
-
-    /// Whether `ptr` is currently on segment `base`'s class-`class_idx` free
-    /// list. O(free-list length). Used by the double-free guard.
-    #[inline]
-    fn free_list_contains(
-        &self,
-        bt: &BinTable,
-        base: *mut u8,
-        class_idx: usize,
-        ptr: *mut u8,
-    ) -> bool {
-        let mut cur_off = bt.head(class_idx);
-        while cur_off != FREE_LIST_NULL {
-            let cur_ptr = Node::deref(base, cur_off as usize);
-            if cur_ptr == ptr {
-                return true;
-            }
-            let cur_nn = match NonNull::new(cur_ptr) {
-                Some(n) => n,
-                None => return false,
-            };
-            let next = Node::read_next(cur_nn);
-            if next.is_null() {
-                return false;
-            }
-            // Guard against a (bug-introduced) self-loop terminating the scan.
-            if next == cur_ptr {
-                return false;
-            }
-            cur_off = (next as usize - base as usize) as u32;
-        }
-        false
+        bm.mark_free(off);
     }
 
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
@@ -834,6 +797,11 @@ impl AllocCore {
         ));
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
+        // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
+        // guard) to all-zeros; bits flip to FREE as blocks are pushed.
+        super::alloc_bitmap::AllocBitmap::init_in_place(
+            base_add(base, SegLayout::alloc_bitmap_off()),
+        );
         // Initialise the per-segment remote-free ring (Variant-2 fix). Only
         // under `alloc-xthread`; the Layout always reserves the bytes.
         #[cfg(feature = "alloc-xthread")]

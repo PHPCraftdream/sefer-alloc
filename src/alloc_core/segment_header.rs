@@ -506,14 +506,28 @@ impl Layout {
     pub(crate) const fn bin_table_off() -> usize {
         Self::page_map_off() + PageMap::FOOTPRINT
     }
+    /// Offset of the per-segment [`AllocBitmap`](super::alloc_bitmap::AllocBitmap)
+    /// — the O(1) double-free guard (Phase 13.4a), one bit per `MIN_BLOCK` slot
+    /// of the whole segment. Placed AFTER **two** `BinTable::FOOTPRINT`s, 8-byte
+    /// aligned: the second `BinTable` footprint is the slot Phase 13.4b's
+    /// two-list (`free` + `local_free`) will occupy. Reserving it now means
+    /// 13.4b adds its second head array in place WITHOUT shifting the bitmap /
+    /// ring / registry offsets again (the spec's "compute the layout with the
+    /// doubled BinTable up front" requirement — §1.2 / §2).
+    pub(crate) const fn alloc_bitmap_off() -> usize {
+        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT * 2, 8)
+    }
     /// Offset of the per-segment `RemoteFreeRing` (the non-intrusive
     /// cross-thread-free MPSC queue of `u32` block-offsets). Lives in segment
-    /// metadata right after the bin table, 4-byte aligned (each ring slot is a
+    /// metadata right after the alloc bitmap, 4-byte aligned (each ring slot is a
     /// `u32`). Carved alongside the bin table at bootstrap. See
     /// [`crate::alloc_core::remote_free_ring::RemoteFreeRing`] for the protocol.
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     pub(crate) const fn remote_ring_off() -> usize {
-        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT, 4)
+        align_up_const(
+            Self::alloc_bitmap_off() + super::alloc_bitmap::AllocBitmap::FOOTPRINT,
+            4,
+        )
     }
     /// End of the small-segment metadata (page-aligned past the remote ring).
     /// Payload carving begins here.
@@ -636,6 +650,13 @@ impl SegmentMeta {
     /// The bin-table view.
     pub(crate) fn bin_table(&self) -> BinTable {
         BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
+    }
+
+    /// The alloc-bitmap view (the Phase 13.4a O(1) double-free guard). The
+    /// bitmap bytes are carved at [`Layout::alloc_bitmap_off`] and zeroed at
+    /// bootstrap; this returns the typed view over them.
+    pub(crate) fn alloc_bitmap(&self) -> super::alloc_bitmap::AllocBitmap {
+        super::alloc_bitmap::AllocBitmap::new(Node::offset(self.base, Layout::alloc_bitmap_off()))
     }
 
     /// The per-segment `RemoteFreeRing` view (the non-intrusive cross-thread
