@@ -531,6 +531,21 @@ impl AllocCore {
         // Refill batch: carve extra blocks and push each into its OWN segment.
         // `carve_block` returns None when the current segment is full; we stop
         // the batch there (the next alloc will reserve a fresh segment).
+        //
+        // Size chosen by measurement (Phase 13.5, task #29). Swept
+        // {31, 63, 127, 255, 511} over the MT macro-bench (larson + mstress,
+        // T=1/2/4 ops/sec — the load where refill actually bites) and the
+        // single-threaded fixed-size churn micro-bench. Result: 31 is the
+        // throughput winner. Larger batches do NOT help — they monotonically
+        // HURT larson (working-set churn): T1/T2 larson fell from ~21–25 M to
+        // ~14–18 M at 127–511, because a free-list miss now does up to 8×–16×
+        // more upfront carve work (page faults, page-map writes) that the
+        // steady-state churn never amortises. mstress was within noise and the
+        // single-threaded churn was flat (~23–24 µs at every value — it pops
+        // from the free list and never re-enters the cold carve). The §3.5
+        // "raise toward a page of blocks (256–512)" hypothesis did not hold
+        // under measurement; 31 stays. (Bigger upfront carve = worse locality
+        // for the churn pattern, not better.)
         const REFILL_BATCH: usize = 31;
         for _ in 0..REFILL_BATCH {
             let Some(extra) = self.carve_block(class_idx, block_size) else {
