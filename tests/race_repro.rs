@@ -52,6 +52,51 @@ static GLOBAL: SeferMalloc = SeferMalloc::new();
 // process-global static; reset_for_test in sibling tests would interfere).
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
+// A bounded fail-fast watchdog (task #36 step 3): a watcher thread aborts the
+// process after `DEADLINE_SECS` so a deadlock or runaway loop fails fast
+// instead of hanging the suite. Started per-test and joined (cancelled) on
+// success — the process is allowed to continue. The watcher prints a
+// diagnostic before aborting so the failure reason is obvious.
+const DEADLINE_SECS: u64 = 20;
+
+struct Watchdog {
+    done: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+impl Watchdog {
+    fn start(label: &'static str) -> Self {
+        let done = Arc::new(AtomicBool::new(false));
+        let done_w = Arc::clone(&done);
+        let handle = std::thread::Builder::new()
+            .name(format!("watchdog-{label}"))
+            .spawn(move || {
+                let start = std::time::Instant::now();
+                while start.elapsed().as_secs() < DEADLINE_SECS {
+                    if done_w.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                eprintln!(
+                    "\n[watchdog-{label}] TEST EXCEEDED {DEADLINE_SECS}s — likely deadlock \
+                     or runaway loop in drain-reclaim. Aborting process to fail fast \
+                     (task #36 watchdog)."
+                );
+                std::process::abort();
+            })
+            .expect("spawn watchdog");
+        Watchdog { done, handle: Some(handle) }
+    }
+}
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
 struct SerialGuard;
 impl SerialGuard {
     fn acquire() -> Self {
@@ -79,6 +124,7 @@ impl Drop for SerialGuard {
 #[test]
 fn drain_reclaim_uaf_repro_tight_handoff() {
     let _serial = SerialGuard::acquire();
+    let _wd = Watchdog::start("tight-handoff");
 
     const WAVES: usize = 64;
     const PRODUCERS_PER_WAVE: usize = 3;
@@ -160,6 +206,7 @@ fn drain_reclaim_uaf_repro_tight_handoff() {
 #[test]
 fn drain_reclaim_uaf_repro_long_lived_consumer() {
     let _serial = SerialGuard::acquire();
+    let _wd = Watchdog::start("long-lived-consumer");
 
     const WAVES: usize = 128;
     const PRODUCERS_PER_WAVE: usize = 2;
@@ -229,6 +276,7 @@ fn drain_reclaim_uaf_repro_long_lived_consumer() {
 #[test]
 fn drain_reclaim_uaf_repro_direct_api() {
     let _serial = SerialGuard::acquire();
+    let _wd = Watchdog::start("direct-api");
 
     const WAVES: usize = 200;
     const ALLOCS_PER_PRODUCER: usize = 16;

@@ -203,6 +203,76 @@ impl Node {
         unsafe { src.read() }
     }
 
+    /// Read a single `usize` from `src` (aligned). Used by the field-specific
+    /// segment-header accessors (e.g. reading the owner-only `bump` cursor).
+    /// A field read is a single word load — it does NOT race with a concurrent
+    /// field write of a DIFFERENT field (the struct-read/struct-write RMW of
+    /// `read_struct`/`write_struct` would, because it touches every field).
+    ///
+    /// `src` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
+    /// `usize`, in a live segment.
+    pub(crate) fn read_usize(src: *const usize) -> usize {
+        // SAFETY: caller guarantees `src` is valid, aligned, in a live segment.
+        // One word load.
+        unsafe { src.read() }
+    }
+
+    /// Write a single `usize` `value` at `dst` (aligned). Used by the
+    /// field-specific segment-header accessor for the owner-only `bump` cursor
+    /// (written on every `carve_block`); writing only this field avoids the
+    /// full-struct RMW that raced with cross-thread field reads.
+    ///
+    /// `dst` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
+    /// `usize`, and (for fields read cross-thread under the single-writer
+    /// discipline) the field must be owner-only or atomic.
+    pub(crate) fn write_usize(dst: *mut usize, value: usize) {
+        // SAFETY: caller guarantees `dst` is valid, aligned, exclusively owned
+        // (single-writer: the owning thread is the sole writer of its segments'
+        // bump cursors). One word store.
+        unsafe { dst.write(value) };
+    }
+
+    /// Read a single `u32` from `src` (aligned). Used by the field-specific
+    /// segment-header accessor for `magic` (the sanity word written once at
+    /// segment init and only read thereafter — a field read does not race with
+    /// the owner's `bump` field writes because they touch disjoint bytes).
+    ///
+    /// `src` MUST be valid for 4 bytes, 4-byte aligned, in a live segment.
+    pub(crate) fn read_u32(src: *const u32) -> u32 {
+        // SAFETY: caller guarantees `src` is valid, 4-byte aligned, in a live
+        // segment. One 4-byte load.
+        unsafe { src.read() }
+    }
+
+    /// Read a `*const T` pointer from `src` (aligned, word-sized). Used by the
+    /// field-specific segment-header accessor for `owner_thread_free` (a
+    /// pointer written ONCE at stamp time and only read cross-thread
+    /// thereafter — a field read does not race with the owner's `bump` writes).
+    ///
+    /// `src` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
+    /// for a pointer, in a live segment.
+    pub(crate) fn read_ptr<T>(src: *const *const T) -> *const T {
+        // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
+        // segment. One word load.
+        unsafe { src.read() }
+    }
+
+    /// Write a `*const T` pointer `value` at `dst` (aligned, word-sized). Used
+    /// by the field-specific segment-header accessor that stamps
+    /// `owner_thread_free` ONCE per segment (owner-only write under the
+    /// single-writer discipline; cross-thread readers use [`read_ptr`] on the
+    /// same field — a single-word write does not race with single-word reads of
+    /// disjoint fields the way a full-struct `write_struct` RMW does).
+    ///
+    /// `dst` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
+    /// for a pointer, and exclusively owned.
+    pub(crate) fn write_ptr<T>(dst: *mut *const T, value: *const T) {
+        // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
+        // exclusively owned (single-writer: the stamping path runs on the
+        // owning thread and writes the field at most once per segment).
+        unsafe { dst.write(value) };
+    }
+
     /// Dereference a `*const AtomicPtr<u8>` to obtain a shared reference.
     /// Used by the Phase 10 cross-thread free path: a segment header stores a
     /// `*const AtomicPtr<u8>` pointing to the owning heap's thread-free stack
@@ -244,6 +314,39 @@ impl Node {
         // does not wrap (off <= SEGMENT < isize::MAX). `add` computes the
         // address without dereferencing.
         unsafe { base.add(off) }
+    }
+
+    /// Return a `&'static AtomicU32` view over the 4 aligned bytes at
+    /// `base + off`. Used by the per-segment `RemoteFreeRing` (the
+    /// non-intrusive cross-thread-free queue) to obtain atomic views over its
+    /// in-segment slot/cursor words. Mirrors [`atomic_u64_at`]; see that fn's
+    /// contract — the same segment-lifetime + alignment-by-construction
+    /// reasoning applies, only the field width is 4 bytes and the alignment
+    /// requirement is 4 (not 8).
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub(crate) fn atomic_u32_at(
+        base: *mut u8,
+        off: usize,
+    ) -> &'static core::sync::atomic::AtomicU32 {
+        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU32;
+        // SAFETY: caller guarantees `base` is a live segment base and `off` is
+        // the offset of a properly 4-byte-aligned `AtomicU32` field within a
+        // `#[repr(C)]` (or hand-laid-out) metadata region at `base`, with
+        // `off + 4` in-bounds. The segment remains mapped for the process
+        // lifetime (freed only at `AllocCore::drop`, after all cross-thread
+        // frees have quiesced), so the `'static` lifetime is sound. `AtomicU32`
+        // is `Sync`, so shared atomic access from any thread is race-free.
+        unsafe { &*ptr }
+    }
+
+    /// Write a single `u32` `value` at `dst` (aligned — used by the ring init).
+    /// Same contract as [`write_u32_unaligned`] but requires 4-byte alignment
+    /// (the ring slots are 4-aligned by the Layout).
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub(crate) fn write_u32(dst: *mut u32, value: u32) {
+        // SAFETY: caller guarantees `dst` is valid for 4 bytes, 4-byte aligned,
+        // and exclusively owned (bootstrap-time init). One 4-byte write.
+        unsafe { dst.write(value) };
     }
 
     /// Return a `&'static AtomicU64` view over the 8 aligned bytes at

@@ -402,7 +402,7 @@ fn reserve_aligned(usable: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
             // SAFETY: `[region_addr, region_addr + head)` is within the freshly
             // mapped region; `munmap` unmaps it, returning the address space
             // and physical pages to the kernel.
-            libc_munmap(region_ptr, head);
+            libc_munmap(region_ptr as *mut u8, head);
         }
     }
     if tail_len > 0 {

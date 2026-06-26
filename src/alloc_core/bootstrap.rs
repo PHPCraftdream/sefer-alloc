@@ -73,6 +73,16 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
     super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
     super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
+    // Initialise the per-segment non-intrusive cross-thread-free ring (the
+    // Variant-2 fix: queues carry offsets, never poison the block). Only under
+    // `alloc-xthread`; without it the ring metadata is reserved (the Layout
+    // always carves it, to keep the byte layout uniform) but left uninitialised
+    // — it is never read on the single-thread path.
+    #[cfg(feature = "alloc-xthread")]
+    {
+        let ring_off = Layout::remote_ring_off();
+        super::remote_free_ring::RemoteFreeRing::init_in_place(base, ring_off);
+    }
 
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.

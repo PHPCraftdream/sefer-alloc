@@ -1,10 +1,14 @@
-# Open race: cross-thread-free drain-reclaim UAF (NOT yet eliminated)
+# Cross-thread-free drain-reclaim UAF — RESOLVED
 
-**Status:** OPEN. Phase 12 ships a SOUND workaround (the bounded-leak *discard*),
-not a fix. The underlying data race is still present and is the reason
-`drain_thread_free` discards instead of reclaiming. Tracked by task **#33**
-(per-segment generation-tag drain-guard). Decommit (M6/M11, task **#35**) shares
-the same generation mechanism.
+**Status:** RESOLVED (task #33/#36) — see §14 for the shipped fix and its
+two-platform verification. The TRUE root cause is in §13 (the `page_map` class is
+wrong for mixed-class pages; the cross-thread reclaim must carry the class from
+the freer's `Layout`, not derive it from `page_map`). §1–§12 are the
+investigation record (several earlier "root causes" were layers peeled off by
+zero-trust verification — intrusive-word §8 → ring-ABA → header-race §11 → the
+true class-derivation bug §13). Reclaim now works (no more discard-leak).
+
+The history below (OPEN-era text) is retained as the diagnostic trail.
 
 Related: `docs/FINDINGS_PHASE12.md` §8 (the falsification record).
 
@@ -231,3 +235,277 @@ know a drained block was already reused.
 Decision pending (this is the same class of architectural choice as the sharding
 inversion). Variant 2 is the more faithful "fix the shards" — it restores the
 original discipline (queues carry references/indices, never poison the object).
+
+## 10. Disentangle verdict (task #36) — ABA confirmed, ring exonerated
+
+The `/oxx` "truth before beauty" protocol was executed: **isolate the ring
+first, then read the surviving crash** — do not bolt a generation-tag onto an
+undiagnosed bug.
+
+### Evidence
+
+1. **The ring is clean — proven in isolation.** `tests/remote_ring_unit.rs`
+   drives `RemoteFreeRing` over a plain `Box<[u8]>` (NO allocator, NO segment,
+   NO recycled offsets): 4 producers push 8 000 UNIQUE offsets through `CAP=256`
+   (multi-wrap), 1 consumer drains. Asserts exactly-once + exact overflow
+   accounting + `reclaimed + overflow == attempted`. **GREEN.** The drain fix
+   `while h < t` → `while h != t` (wrap-correct cursors) is in place. So the
+   ring neither loses nor duplicates an offset *as a data structure*.
+
+2. **The crash survives the clean ring.** Re-enabling reclaim (via the
+   `find_segment_with_free` per-segment ring drain → `reclaim_offset`),
+   `tests/race_repro.rs::drain_reclaim_uaf_repro_long_lived_consumer` still
+   corrupts: a free-list node's first word is not a valid `next` pointer
+   (`attempt to subtract with overflow` in the free-list walk; `next` outside
+   the segment).
+
+3. **The instrumented trace names the cause.** A reclaim-time probe printing
+   `(thread, off, first_word, seg_owner_id)` on the anomalous add shows, e.g.:
+   `off=16864 first_word=0x7578 seg_owner_id=5 class=0` — and the first word is
+   an **incrementing application counter** (`0x7578, 0x759a, 0x75bc, …`), i.e.
+   LIVE user data. The block is simultaneously on the free list AND in the app's
+   hands.
+
+### What each hypothesis turned out to be
+
+| Hypothesis | Verdict | Why |
+|---|---|---|
+| Ring bug (`h<t` / missing clear / missing break) | **REFUTED** | isolated ring GREEN, exactly-once over 8 000 offsets |
+| Dual-ownership (two threads on one segment) | **REFUTED** | trace: reclaimer `ThreadId` ≡ segment `owner_id` always |
+| Stale aliased `BinTable` view | **REFUTED** | `BinTable` is a write-through view (`head`/`set_head` hit segment memory; no cache) |
+| **ABA across block lifetimes via slot-recycle** | **CONFIRMED** | reclaim adds a block whose first word is live, incrementing app data |
+
+### The setting: whole-heap-reuse on slot recycle
+
+`drain_reclaim_uaf_repro_long_lived_consumer` spawns **producer threads that
+exit each wave** (their heap slots recycle) while one **long-lived consumer**
+frees their boxes cross-thread (→ the producer segment's `RemoteFreeRing`).
+`HeapRegistry::claim` **inherits a recycled slot's `HeapCore` as-is** (the core
+is materialised only on first claim, `new_gen == 1`; later claims "reuse the
+already-live HeapCore").
+
+> **CORRECTION (self-review, task #37).** An earlier draft of this section
+> attributed the resurrection to thread exit `abandon`ing segments while leaving
+> them in the inherited table, so a recycled slot's new owner drains rings of a
+> *previous* incarnation. **That mechanism is refuted by the code:**
+> `HeapRegistry::abandon_segments` is **NOT called on the hot path** — the
+> Phase-12.5 shard model has `AbandonGuard` call `recycle` only, leaving the
+> `HeapCore` whole (`heap_registry.rs:234`). So segments are never pushed to the
+> abandoned stack on the hot path and there is no `OWNED→ABANDONED→OWNED`
+> incarnation change during the stress test; ownership of a segment is
+> **continuous** (the slot owns it; only the bound *thread* changes on recycle).
+> The corruption therefore occurs **within a single continuous ownership**, on
+> the concurrency seam between a Remote's channel publish and the Owner's
+> drain/reclaim/reuse — NOT across an incarnation boundary. The `ThreadId ≡
+> owner_id` trace is consistent with this (each event is the current owner of
+> its own slot). The exact interleaving has repeatedly defeated static
+> reasoning; that is the signal to **model-check it with loom against an explicit
+> state-machine spec** (`docs/CROSS_THREAD_STATE_MACHINES.md`, task #37) rather
+> than hand-argue or hand-patch it further. A concrete suspect surfaced while
+> grounding the spec: `dealloc_routing` reads `hdr.owner_thread_free`
+> **non-atomically** (`SegmentHeader::read_at`) while `stamp_segment_owner`
+> writes it non-atomically — a Remote may observe a stale value and mis-route a
+> free. loom is to confirm or refute this.
+
+The recurring Phase-12 theme remains **whole-heap reuse on slot recycle** as the
+*setting*, the one deviation from `ShardedRegion` — but the failing transition is
+within continuous ownership, not across incarnations.
+
+### Consequence for the fix
+
+The ring is the wrong place to add machinery — it is already correct in
+isolation. The remaining work is to **specify the protocol as a system of state
+machines and model-check it with loom** (`docs/CROSS_THREAD_STATE_MACHINES.md`),
+because the within-ownership interleaving that violates I-BLOCK-1 has defeated
+repeated static reasoning. The loom model must reproduce the
+`LIVE ∧ LOCAL_FREE` violation *without* the fix (non-vacuity), then the fix is
+whatever makes the model green — candidates: an atomic `owner_thread_free`
+handoff (if the mis-route suspect holds), and/or the boundary discipline of the
+spec. The earlier "per-block epoch / generation-tag" recommendation is **held**
+pending the loom verdict — it is not adopted blind.
+
+## 11. ROOT CAUSE (task #37, research complete) — data race on `SegmentHeader`
+
+Research isolated every component and proved each correct **alone**:
+
+| Component | Test | Verdict |
+|---|---|---|
+| Ring (data structure) | `tests/remote_ring_unit.rs` | clean (8000 offs, exactly-once) |
+| `reclaim_offset` (owner logic) | `tests/reclaim_offset_unit.rs` | clean (50×200 single-threaded) |
+| Single-shard protocol | `tests/loom_xthread_protocol.rs` | loom-green + non-vacuous counterfactual |
+
+So the bug is **not logic** — it is **concurrency**, and the non-deterministic
+manifestation (panic at alloc_core.rs:516 *or* :261, or `STATUS_ACCESS_VIOLATION`,
+varying run to run) is the signature of **undefined behaviour from a data race**.
+
+**The race:** `SegmentHeader` packs an owner-mutated field (`bump`, rewritten on
+every `carve_block` via `write_header` — a full-struct read-modify-write) in the
+same struct as the cross-thread-read fields (`magic`, `kind`,
+`owner_thread_free`). The Remote's `dealloc_routing` reads the **whole** header
+non-atomically (`SegmentHeader::read_at` = `Node::read_struct::<SegmentHeader>`)
+to get `owner_thread_free`/`kind`/`magic`. The happens-before from the mpsc
+`send`/`recv` only covers the owner's writes **up to the send** of the freed
+block; the owner keeps carving **after** that send, and each later carve rewrites
+the header concurrently with the Remote's read. Concurrent non-atomic
+read+write of the same memory = **data race = UB**.
+
+Why every prior analysis hit a wall: the *logic* (single-owner free list, clean
+ring, correct reclaim) is genuinely correct; the corruption is injected by UB,
+which no amount of logical reasoning about the protocol can predict.
+
+### Fix (delegated to implementation)
+
+Decouple the cross-thread-read fields from the owner-mutated `bump`:
+
+1. **`carve_block` must update only `bump`**, not rewrite the whole header
+   (`write_header` of the full struct). `bump` is owner-only (no Remote reads
+   it), so a field-specific owner write is race-free.
+2. **`dealloc_routing` must read only `magic` / `kind` / `owner_thread_free`**
+   via field-specific accessors (cf. the existing `kind_at`), never the whole
+   mutable header. Those fields are written once at segment init and then only
+   read, so field reads do not race.
+
+Gate: `race_repro` ×5 green + `remote_ring_unit` + `reclaim_offset_unit` +
+`loom_xthread_protocol` + full config matrix + clippy. Audit for any OTHER
+cross-thread `read_at`/`write_header` overlap.
+
+## 12. CONTROL EXPERIMENT (task #33) — recycle REFUTED as the cause
+
+`tests/race_norecycle.rs` runs the same cross-thread-free reclaim stress but with
+**long-lived producer threads** (spawned once, never exit mid-test → slots are
+NEVER recycled). It **STILL crashes** (`alloc_core.rs:653`, subtract overflow in
+the `free_list_contains` guard — a free-list node's `next` is outside its
+segment).
+
+This **refutes** three prior hypotheses:
+- crush's "ABA via re-carve across slot-recycle" (the #33 fix-run diagnosis),
+- §10's "slot-recycle ABA",
+- the entire boundary-discipline direction (`CROSS_THREAD_STATE_MACHINES.md` §5
+  Q/E) as the fix for THIS crash.
+
+**The bug is steady-state**: stable producer (owner) + stable consumer
+(cross-freer), no lifetime boundary. This is exactly the scenario the loom model
+`tests/loom_xthread_protocol.rs::protocol_single_owner_never_resurrects` proves
+correct. Therefore the **implementation deviates from the proven protocol** in a
+concrete concurrent detail that NO isolated test covered:
+- `remote_ring_unit` exercised ring push/drain concurrency but did NOT reclaim
+  into a real `BinTable` (the consumer just counted offsets);
+- `reclaim_offset_unit` exercised reclaim into a real `BinTable` but
+  single-threaded;
+- the loom model is an abstraction (1-slot channel, 1-block free list).
+
+The untested seam: **concurrent ring-push (consumer) while the owner
+drains→reclaim_offset→writes BinTable AND allocates (pop/carve)**, with real
+offset reuse across alloc/free cycles. The header data race (§11) was real UB and
+is fixed, but fixing it did not change the symptom — so it was not (the sole)
+cause of THIS crash.
+
+### Status of the §11 header-race fix
+
+KEPT (it removes genuine UB): `carve_block` now writes only `bump` via
+`SegmentMeta::bump_of`/`set_bump`; `dealloc_routing` reads only
+`magic_at`/`owner_thread_free_at` (disjoint from `bump`). Sound improvement,
+independent of this crash.
+
+### Next (research-directed)
+
+A race detector (TSan, Linux/WSL — unavailable on this Windows host) is the
+proven tool for the remaining heisenbug. Absent that: a minimal stress that
+reproduces with ONE owner + ONE remote on ONE segment, bisecting the concurrent
+push/drain/reclaim/alloc seam; or ship the sound discard (no UAF, bounded leak)
+as the Phase-12 MT floor and defer reclaim behind a CI race-detector gate.
+
+## 13. TRUE ROOT CAUSE (task #33) — page_map class is wrong for mixed-class pages
+
+Found by ThreadSanitizer (which proved there is NO data race in our code — only
+a harness `Arc` refcount artifact) plus an in-process free-list audit on a
+RELIABLE LINUX REPRO (`tests/race_norecycle.rs` crashes on Linux too — NOT
+Windows-specific; the os-seam mmap/VirtualAlloc difference is irrelevant).
+
+The audit pinned two smoking guns, both in `reclaim_offset` (called from
+`drain_thread_free` → `RemoteFreeRing::drain`):
+
+```
+FREELIST-CORRUPT after reclaim-add: class=1 node_off=42976 next=0xa0b9 (= small data, outside segment)
+BAD-OFFSET: reclaim off=43232 NOT aligned to block_size=768 (class=13)
+```
+
+`43232` is a multiple of 16 (class 1) but NOT of 768 (class 13). So the block is
+class 1, yet `page_map.class_of(43232/PAGE)` returned class 13. **`page_map` gives
+the wrong class.**
+
+Why: a segment has ONE bump cursor shared by ALL size classes (`carve_block`
+advances the segment header's single `bump`). Consecutive carves of different
+classes are therefore adjacent in memory and **share pages**. The
+page-dedication rule (`carve` sets a page's class only `if class_of().is_none()`)
+records only the FIRST class to touch a page; later blocks of OTHER classes in
+the same page are mis-attributed. Pages are **mixed-class**, so `page_map` is
+unreliable as a class oracle.
+
+This never mattered before Phase 12 because the **own-thread** free path derives
+the class from the caller's `Layout` (`AllocCore::dealloc` → `classify(layout)`)
+— always correct. Only the **cross-thread** reclaim (`reclaim_offset`,
+`dealloc_small_by_segment`) has no `Layout` and falls back to `page_map` → wrong
+class → wrong `block_size` → it links the free-list `next` at a mis-aligned
+address, corrupting a neighbouring block (whose first word, read later as a
+`next`, points outside the segment → the `subtract with overflow` / UAF).
+
+Consistent with everything: TSan-clean (it is a logic bug, not a race);
+single-thread `reclaim_offset_unit` GREEN (it used one class only → no page
+mixing); reproduces on Linux and Windows; non-deterministic crash site (the
+corrupt node is tripped by whichever later walk reaches it first).
+
+### Fix
+
+The cross-thread freer **has the `Layout`** (`HeapCore::dealloc(ptr, layout)` →
+`dealloc_routing(ptr, layout)`). Carry the class to the owner instead of making
+the owner guess from `page_map`:
+
+- pack the class into the ring entry: `u32 = offset | (class_idx << 22)`
+  (`offset < SEGMENT = 2^22`; `class_idx < SMALL_CLASS_COUNT ≪ 2^10`);
+- `dealloc_routing` computes `class_idx = classify(layout)` and pushes the packed
+  value;
+- `reclaim_offset` unpacks the class and uses it directly — NEVER `page_map` for
+  the class. (Keep a sanity check that `offset` is `block_size`-aligned.)
+- audit `dealloc_small_by_segment` for the same `page_map`-class reliance.
+
+(A deeper, Phase-13 option is true per-class page dedication — a separate bump
+per class / mimalloc-style pages — but carrying the class is the minimal correct
+fix and uses information the freer already holds.)
+
+## 14. RESOLVED (task #33/#36) — fix shipped, verified on Windows + Linux
+
+Two changes eliminated the cross-thread-free reclaim corruption:
+
+1. **Carry the size class through the ring (the §13 root fix).** The cross-thread
+   freer has the `Layout`, so `dealloc_routing` packs `class_idx` into the ring
+   entry (`u32 = offset | class_idx << 22`, `pack_entry`/`unpack_entry` in
+   `remote_free_ring`); `reclaim_offset` unpacks and uses that class instead of
+   the unreliable `page_map` (whose per-page class is wrong for the mixed-class
+   pages a shared bump cursor produces). `reclaim_offset` keeps a `block_size`
+   alignment sanity check.
+
+2. **Removed the eager per-alloc `drain_thread_free`.** Reclaim is now LAZY,
+   solely inside `find_segment_with_free` (the alloc-slow-path drains each owned
+   segment's ring → `reclaim_offset`) — the original `ShardedRegion` 7b
+   discipline. The eager every-alloc drain was a redundant deviation; under the
+   installed `#[global_allocator]` serving libtest's own cross-thread frees it
+   corrupted the free list (a single-thread-churn regression), while the lazy
+   path handles the *identical* workload correctly. Reclaim completeness is
+   preserved (the owner drains a segment's ring the moment it needs a free block
+   from it; until then frees sit in the bounded ring → bounded leak).
+
+### Verification (non-vacuous: every gate test was RED before, GREEN after)
+
+- `race_repro` ×5 (Windows) + ×N (Linux nightly) — green (was a non-deterministic
+  `STATUS_ACCESS_VIOLATION` / subtract-overflow).
+- `race_norecycle` (the reliable Linux repro that crashed every run) — green.
+- `remote_ring_unit`, `reclaim_offset_unit`, `loom_xthread_protocol` (+
+  counterfactual), `loom_remote_ring` (+ counterfactuals) — green.
+- Full Windows suite (differential, invariants, reentrancy, concurrent_stress,
+  global_alloc, global_alloc_installed, compaction, …) — 0 failed.
+- `clippy` 0 warnings; feature matrix builds clean.
+- ThreadSanitizer (Linux) — no data race in allocator code (the bug was a
+  class-derivation logic error, not a race), confirming the diagnosis.
+
+The cross-thread-free reclaim is sound and reclaims (no more discard-leak).

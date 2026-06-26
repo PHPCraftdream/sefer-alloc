@@ -305,12 +305,58 @@ impl SegmentHeader {
         Node::read_struct::<SegmentHeader>(base as *const SegmentHeader)
     }
 
-    /// Read the header's `kind` field only (the hot dealloc-routing path needs
-    /// just this). Reads the full header through the seam (a single struct
-    /// read is cheaper than one byte read at an offset for a small struct).
+    /// Read the header's `kind` field only (field-specific read: a single
+    /// byte load at the field's offset, NOT a full-struct read). The
+    /// dealloc-routing hot path needs just this together with `magic` and
+    /// `owner_thread_free`; reading each field individually avoids the
+    /// full-struct `read_at` that raced with the owner's `bump` field writes
+    /// (the §11 root cause — `kind`/`magic`/`owner_thread_free` are written
+    /// once at init/stamp time and only read cross-thread thereafter, so a
+    /// field read of any of them does not race with the owner's `bump` writes
+    /// on a disjoint field).
     #[allow(dead_code)] // Used by Phase 9+ cross-thread routing; kept for that.
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {
-        Self::read_at(base).kind
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        // The `SegmentKind` discriminant is one byte at `base + off`; read it
+        // via the node seam and transcribe the raw byte back to the enum.
+        let b = Node::read_u8(Node::offset(base, off) as *const u8);
+        // SAFETY (of the transcribe): the byte was laid down by `SegmentHeader::
+        // small`/`large` as a valid `SegmentKind` discriminant (`#[repr(u8)]`),
+        // and the header is otherwise immutable in this field, so the byte is
+        // always one of {0,1,2}. A corrupt byte would still produce a defined
+        // value here (the match is exhaustive on u8's three tag values; we map
+        // anything unexpected to `Small` defensively — the `magic_at` check the
+        // caller performs first rejects non-sefer bases).
+        match b {
+            0 => SegmentKind::Primordial,
+            2 => SegmentKind::Large,
+            _ => SegmentKind::Small,
+        }
+    }
+
+    /// Read the header's `magic` field only (field-specific `u32` load). Used
+    /// by the cross-thread dealloc-routing path to validate the segment base
+    /// without reading the whole mutable header. `magic` is written once at
+    /// segment init and only read thereafter, so this field read does not race
+    /// with the owner's `bump` field writes.
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn magic_at(base: *mut u8) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, magic);
+        Node::read_u32(Node::offset(base, off) as *const u32)
+    }
+
+    /// Read the header's `owner_thread_free` field only (field-specific pointer
+    /// load). Used by the cross-thread dealloc-routing path to find the owning
+    /// heap's TFS head without reading the whole mutable header. The field is
+    /// written ONCE at stamp time (by the owning thread) and only read
+    /// cross-thread thereafter, so a field read does not race with the owner's
+    /// `bump` writes on a disjoint field.
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn owner_thread_free_at(base: *mut u8) -> *const core::sync::atomic::AtomicPtr<u8> {
+        let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
+        Node::read_ptr(Node::offset(base, off) as *const *const core::sync::atomic::AtomicPtr<u8>)
     }
 }
 
@@ -458,15 +504,30 @@ impl Layout {
     pub(crate) const fn bin_table_off() -> usize {
         Self::page_map_off() + PageMap::FOOTPRINT
     }
-    /// End of the small-segment metadata (page-aligned past the bin table).
+    /// Offset of the per-segment `RemoteFreeRing` (the non-intrusive
+    /// cross-thread-free MPSC queue of `u32` block-offsets). Lives in segment
+    /// metadata right after the bin table, 4-byte aligned (each ring slot is a
+    /// `u32`). Carved alongside the bin table at bootstrap. See
+    /// [`crate::alloc_core::remote_free_ring::RemoteFreeRing`] for the protocol.
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub(crate) const fn remote_ring_off() -> usize {
+        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT, 4)
+    }
+    /// End of the small-segment metadata (page-aligned past the remote ring).
     /// Payload carving begins here.
     pub(crate) const fn small_meta_end() -> usize {
-        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT, PAGE)
+        align_up_const(
+            Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT,
+            PAGE,
+        )
     }
     /// Offset of the registry array in the primordial segment (page-aligned
-    /// past the bin table — the registry is primordial-only).
+    /// past the remote ring — the registry is primordial-only).
     pub(crate) const fn primordial_registry_off() -> usize {
-        align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT, PAGE)
+        align_up_const(
+            Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT,
+            PAGE,
+        )
     }
     /// End of the primordial metadata (page-aligned past the registry).
     pub(crate) const fn primordial_meta_end() -> usize {
@@ -510,6 +571,61 @@ impl SegmentMeta {
         Node::write_struct(self.base as *mut SegmentHeader, hdr);
     }
 
+    // -------------------------------------------------------------------
+    // Field-specific header accessors (task #33 root-cause fix).
+    //
+    // The Phase-12 `SegmentHeader` packs an owner-mutated field (`bump`,
+    // rewritten on every `carve_block`) alongside cross-thread-read fields
+    // (`magic`, `kind`, `owner_thread_free`). A full-struct `read_at` /
+    // `write_header` RMW of the whole header therefore races a Remote's
+    // non-atomic struct read with the Owner's `bump`-touching struct write —
+    // a data race and UB (see docs/RACE_DRAIN_RECLAIM.md §11).
+    //
+    // These accessors touch a SINGLE field via its `offset_of!` offset:
+    //   - `bump_of` / `set_bump` — owner-only (the Owner is the sole writer
+    //     and the sole reader of `bump`; no Remote ever reads it), so a plain
+    //     field read/write is race-free.
+    //   - the cross-thread-read fields (`magic`, `kind`,
+    //     `owner_thread_free`) are written ONCE at init/stamp time and only
+    //     read cross-thread thereafter, so a field read of any of them does
+    //     not race with the owner's disjoint-field `bump` writes.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-only `bump` cursor (the next uncarved payload byte
+    /// offset). Owner-only: the owning thread is the sole reader/writer of
+    /// `bump`; a plain field read is race-free (no Remote ever reads it).
+    pub(crate) fn bump_of(&self) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, bump);
+        Node::read_usize(Node::offset(self.base, off) as *const usize)
+    }
+
+    /// Write the owner-only `bump` cursor. Replaces the full-struct
+    /// `write_header` on the `carve_block` hot path: writing only this field
+    /// avoids rewriting the cross-thread-read header fields, so it cannot race
+    /// with a Remote's field read of `magic`/`kind`/`owner_thread_free`.
+    /// Owner-only (the Owner is the sole writer of `bump`).
+    pub(crate) fn set_bump(&mut self, value: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, bump);
+        Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
+    }
+
+    /// Stamp the `owner_thread_free` field ONLY (not a full-struct
+    /// `write_header`). The stamping path runs on the owning thread and writes
+    /// the field at most once per segment (when it transitions null → the
+    /// heap's inline TFS head address); cross-thread readers use the
+    /// field-specific [`SegmentHeader::owner_thread_free_at`]. A single-word
+    /// field write here cannot race with a Remote's single-word field read of
+    /// a disjoint header field.
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn stamp_owner_thread_free(&mut self, head: *const core::sync::atomic::AtomicPtr<u8>) {
+        let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
+        Node::write_ptr(
+            Node::offset(self.base, off) as *mut *const core::sync::atomic::AtomicPtr<u8>,
+            head,
+        );
+    }
+
     /// The page-map view.
     pub(crate) fn page_map(&self) -> PageMap {
         PageMap::new(Node::offset(self.base, Layout::page_map_off()))
@@ -518,6 +634,14 @@ impl SegmentMeta {
     /// The bin-table view.
     pub(crate) fn bin_table(&self) -> BinTable {
         BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
+    }
+
+    /// The per-segment `RemoteFreeRing` view (the non-intrusive cross-thread
+    /// free queue). The ring metadata is carved at [`Layout::remote_ring_off`]
+    /// at bootstrap; this returns the typed view over it.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn remote_ring(&self) -> super::remote_free_ring::RemoteFreeRing {
+        super::remote_free_ring::RemoteFreeRing::at(self.base, Layout::remote_ring_off())
     }
 
     // -------------------------------------------------------------------

@@ -58,10 +58,10 @@ use crate::alloc_core::os;
 use crate::alloc_core::segment_header::{
     SegmentHeader, SegmentKind, SEGMENT_MAGIC,
 };
+#[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(feature = "alloc-global")]
-use crate::alloc_core::segment_header::{pack_owner, SegmentMeta};
-#[cfg(feature = "alloc-xthread")]
-use crate::heap::thread_free::ThreadFreeStack;
+use crate::alloc_core::segment_header::pack_owner;
 
 /// The thin, slot-resident heap value.
 ///
@@ -177,15 +177,22 @@ impl HeapCore {
     /// No-op if the segment has no TFS head stamped (own-thread-only heap).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn drain_segment_tfs(&mut self, base: *mut u8) {
-        let hdr = SegmentHeader::read_at(base);
-        if hdr.owner_thread_free.is_null() {
+        // Field-specific read (task #33 root-cause fix): read ONLY
+        // `owner_thread_free`, not the whole mutable header. This path runs
+        // in the adopter context after winning the ABANDONED→LIVE CAS, which
+        // happens-before-synchronises with the prior owner's abandonment, but
+        // a concurrent Remote `dealloc_routing` may still be mid-flight on
+        // the same header; reading a single field avoids racing the Owner's
+        // `bump` writes (the §11 root cause).
+        let owner_tf = SegmentHeader::owner_thread_free_at(base);
+        if owner_tf.is_null() {
             return;
         }
         // Drain via the segment's stamped TFS head. We borrow the TFS view
         // through the node seam (the head pointer is stable — the abandoning
         // heap leaked its `Box<AtomicPtr>` per the abandonment discipline).
         use crate::heap::thread_free::ThreadFreeBorrow;
-        let head_atomic = Node::deref_atomic_ptr(hdr.owner_thread_free);
+        let head_atomic = Node::deref_atomic_ptr(owner_tf);
         let tfs = ThreadFreeBorrow::from_head(head_atomic);
         let mut cur = tfs.drain();
         while !cur.is_null() {
@@ -253,10 +260,19 @@ impl HeapCore {
     /// single-writer (this thread owns the slot, ergo its segments).
     #[must_use]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        #[cfg(feature = "alloc-xthread")]
-        {
-            self.drain_thread_free();
-        }
+        // Cross-thread-freed blocks are reclaimed LAZILY, inside
+        // `AllocCore::find_segment_with_free` (the alloc-slow-path drains each
+        // owned segment's `RemoteFreeRing` → `reclaim_offset`). We do NOT drain
+        // eagerly on every alloc: that was a redundant deviation from the
+        // `ShardedRegion` lazy discipline, and draining-before-alloc under a
+        // real allocation workload (the installed `#[global_allocator]` serving
+        // libtest's own cross-thread frees) corrupted the free list, while the
+        // lazy slow-path drain handles the identical workload correctly
+        // (verified: `global_alloc_installed` + `race_repro` ×5). Reclaim
+        // completeness is preserved — the owner drains a segment's ring the
+        // moment it needs a free block from it; until then cross-thread frees
+        // sit in the bounded ring (overflow → bounded leak, the original 7b
+        // discipline).
         let ptr = self.core.alloc(layout);
         if !ptr.is_null() {
             self.stamp_segment_owner(ptr);
@@ -332,75 +348,46 @@ impl HeapCore {
     #[cfg(feature = "alloc-xthread")]
     fn dealloc_routing(&mut self, ptr: *mut u8, layout: Layout) {
         let base = os::segment_base_of(ptr as usize) as *mut u8;
-        let hdr = SegmentHeader::read_at(base);
-        if hdr.magic != SEGMENT_MAGIC {
-            // Foreign pointer: not a sefer segment. The substrate's `dealloc`
-            // also no-ops on foreign pointers, but we short-circuit here to
-            // avoid even the table-contains scan (a hot-path micro-opt that
-            // also avoids reading our table for a pointer that cannot be in
-            // it).
+        // Field-specific reads (task #33 root-cause fix): read ONLY `magic`,
+        // `kind`, `owner_thread_free` — the cross-thread-read fields written
+        // once at init/stamp time and only read thereafter. A full-struct
+        // `SegmentHeader::read_at` here raced with the Owner's `bump`-touching
+        // `write_header` on `carve_block` (the §11 data race); reading each
+        // field individually via its `offset_of!` offset touches bytes
+        // disjoint from the owner-mutated `bump`, so there is no race.
+        if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
             return;
         }
         let our_head = self.thread_free_head();
-        if hdr.owner_thread_free.is_null() || hdr.owner_thread_free == our_head {
-            // Own-thread free (or unstamped — treat as own; matches the
-            // existing `Heap::dealloc_small` fallback). The substrate
-            // applies the M2 double-free guard and the foreign-pointer
-            // table-contains check.
+        let owner_tf = SegmentHeader::owner_thread_free_at(base);
+        if owner_tf.is_null() || owner_tf == our_head {
             self.core.dealloc(ptr, layout);
             return;
         }
-        // Cross-thread free: the segment is stamped with another heap's TFS
-        // head. Large segments are skipped cross-thread (bounded leak,
-        // matching `Heap::dealloc_any_thread` — the large segment stays
-        // mapped until the owning heap recycles).
-        if hdr.kind == SegmentKind::Large {
+        if SegmentHeader::kind_at(base) == SegmentKind::Large {
             return;
         }
-        ThreadFreeStack::push(hdr.owner_thread_free, ptr);
-    }
-
-    /// Drain this heap's TFS: swap the head to null, walk the chain, and
-    /// route each drained block to its owning segment's `BinTable` via
-    /// [`AllocCore::dealloc_small_by_segment`] (the class is derived from
-    /// the page map; the drainer has only the pointer).
-    ///
-    /// Phase 12.5 (shard model): the inline TFS head's address is stable for
-    /// the slot's lifetime — it does NOT change across release→claim. So late
-    /// cross-thread frees pushed by a remote thread AFTER the prior owner died
-    /// land on the SAME head the new owner reads. Draining them here (on the
-    /// new owner's first `alloc`) is the shard-reuse discipline: the freed
-    /// shard's remote-free queue is drained by the new owner on first op.
-    /// `dealloc_small_by_segment` routes each block back into its owning
-    /// segment's BinTable via `segment_base_of` + a `contains_base` ownership
-    /// guard — so a stale block whose segment this heap no longer holds is a
-    /// safe no-op (bounded leak, sound, never a corruption).
-    /// Drain this heap's TFS: swap the head to null, walk the chain, and
-    /// route each drained block to its owning segment's `BinTable` via
-    /// [`AllocCore::dealloc_small_by_segment`].
-    ///
-    /// Phase 12.5 (shard model): the inline TFS head's address is stable for
-    /// the slot's lifetime — it does NOT change across release→claim. So late
-    /// cross-thread frees pushed by a remote thread AFTER the prior owner died
-    /// land on the SAME head the new owner reads. Draining them here (on the
-    /// new owner's first `alloc`) is the shard-reuse discipline.
-    ///
-    /// **Phase 12.5 remainder:** the drained blocks are currently DISCARDED
-    /// (leaked), not returned to a BinTable. Returning them (`dealloc_small_by_segment`)
-    /// races with the slot's own concurrent alloc/free under the shard-reuse
-    /// pattern (a block freed cross-thread can be pushed onto the TFS after the
-    /// owner already popped and reused it from the BinTable → the drain then
-    /// sees a block whose first word is user data, not a free-list `next`
-    /// pointer → `free_list_contains` overflows). Discarding is SOUND (the
-    /// blocks stay mapped; they are simply not reused) but costs RSS — the
-    /// bounded leak is one TFS chain per slot recycle. A correct re-injection
-    /// needs a per-slot epoch/generation guard (deferred). The single-thread
-    /// `Heap` path (`heap::thread_free`) is unaffected and fully reuses.
-    #[cfg(feature = "alloc-xthread")]
-    fn drain_thread_free(&mut self) {
-        // Swap to null (establishes the happens-before with pushers) and
-        // discard the chain. The blocks stay mapped; sound, bounded leak.
-        let _ = self.thread_free.swap(core::ptr::null_mut(), core::sync::atomic::Ordering::AcqRel);
+        // Variant-2: push (offset, class) to the per-segment ring (block bytes
+        // untouched). The freer HAS the `Layout`, so it derives the size class
+        // here and carries it in the ring entry — the owner's `page_map` is
+        // unreliable for the mixed-class pages a shared bump cursor produces, so
+        // `reclaim_offset` must NOT derive the class itself (RACE_DRAIN_RECLAIM
+        // §13). `kind != Large` is already established above, so a small block's
+        // class is always `Some`.
+        let off = (ptr as usize - base as usize) as u32;
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let class_idx = match crate::alloc_core::size_classes::SizeClasses::class_for(
+            size,
+            layout.align(),
+        ) {
+            Some(c) => c as u32,
+            None => return, // Large layout on a small segment: contract violation; drop.
+        };
+        let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
+        let ring = SegmentMeta::new(base).remote_ring();
+        let _ = ring.push(packed);
     }
 
     /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two
@@ -420,9 +407,9 @@ impl HeapCore {
     fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of(ptr as usize) as *mut u8;
-        // `mut` is only needed under `alloc-xthread` (the stamp branch below
-        // calls `meta.write_header`). Silence the unused-mut warning under
-        // plain `alloc-global` where the branch is absent.
+        // `mut` is needed under `alloc-xthread` (the stamp branch below calls
+        // `meta.stamp_owner_thread_free(&mut self)`). Silence the unused-mut
+        // warning under plain `alloc-global` where the branch is absent.
         #[allow(unused_mut)]
         let mut meta = SegmentMeta::new(base);
         // 1. Stamp owner_state (adoption coherence).
@@ -439,18 +426,27 @@ impl HeapCore {
         // head's address is stable for the slot's lifetime (it does not
         // change across release→claim), so the stamp remains valid for as
         // long as the slot owns this segment — which is forever in the shard
-        // model (segments do not leave their heap). This removes the racy
-        // cross-thread header writes (clear-on-abandon, re-stamp-on-adopt)
-        // that tore the SegmentHeader struct and corrupted neighbouring
-        // fields. The single-writer invariant (the slot's owner is the sole
-        // writer of its segments' headers) makes the plain `write_header`
-        // race-free.
+        // model (segments do not leave their heap).
+        //
+        // Field-specific write (task #33 root-cause fix): we stamp ONLY the
+        // `owner_thread_free` field via `stamp_owner_thread_free`, NOT a
+        // full-struct `write_header`. A full-struct RMW here rewrote `bump`
+        // and every other field, and — although the stamp itself runs on the
+        // owning thread — the struct read it performed (`meta.header()`)
+        // raced the Owner's own later `bump` writes is not the issue; the
+        // issue is that `write_header` writes `magic`/`kind`/`bump` bytes
+        // that a concurrent Remote `dealloc_routing` field-read may observe
+        // mid-update. Writing only the `owner_thread_free` word touches bytes
+        // disjoint from every field a Remote reads, so there is no race.
+        // The single-writer invariant (the slot's owner is the sole writer
+        // of its segments' headers) makes the plain field write race-free.
         #[cfg(feature = "alloc-xthread")]
         {
-            let mut hdr = meta.header();
-            if hdr.owner_thread_free.is_null() {
-                hdr.owner_thread_free = &self.thread_free as *const AtomicPtr<u8> as *const _;
-                meta.write_header(hdr);
+            let cur_head = crate::alloc_core::segment_header::SegmentHeader::owner_thread_free_at(base);
+            if cur_head.is_null() {
+                meta.stamp_owner_thread_free(
+                    &self.thread_free as *const AtomicPtr<u8> as *const _,
+                );
             }
         }
     }

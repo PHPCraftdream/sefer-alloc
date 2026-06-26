@@ -201,6 +201,149 @@ impl AllocCore {
         self.dealloc_small(base, ptr, class_idx);
     }
 
+    /// Reclaim a cross-thread-freed block identified by its **segment-relative
+    /// offset** back into its owning segment's `BinTable`. This is the
+    /// non-intrusive reclaim path (Variant-2): the block's offset arrived via
+    /// the segment's `RemoteFreeRing` (the block's own bytes were never touched
+    /// by the cross-thread freer), so we turn the offset back into a pointer
+    /// and route it through the same `dealloc_small` path as an own-thread free.
+    ///
+    /// **Self-less** (an associated function, not `&mut self`): it touches ONLY
+    /// segment metadata reachable from `base` via `SegmentMeta` (header, page
+    /// map, bin table) — never the `AllocCore` registry. This lets the
+    /// `find_segment_with_free` drain call it while iterating `&self.table`
+    /// without an aliasing conflict, and keeps the single-consumer reclaim
+    /// uniform with the own-thread path. The caller MUST be the segment's sole
+    /// `BinTable` writer (the slot's owner) — the same invariant `dealloc_small`
+    /// relies on.
+    ///
+    /// **Class is carried in the ring entry, NOT derived from `page_map`.** The
+    /// segment has ONE bump cursor shared by all size classes, so a page can
+    /// host blocks of several classes (the page-dedication rule records only
+    /// the FIRST class to touch a page). Deriving the class from `page_map`
+    /// therefore returns the wrong class for any later block of a different
+    /// class in the same page, and reclaim would link the free-list `next` at a
+    /// mis-aligned address, corrupting a neighbour (the §13 root cause). The
+    /// cross-thread freer has the original `Layout`, so it packs
+    /// `class_idx = classify(layout)` into the high bits of the ring entry;
+    /// here we unpack it and use it directly.
+    ///
+    /// `packed` layout: `off = packed & OFF_MASK` (low 22 bits, since
+    /// `SEGMENT = 1 << 22` so every offset is `< 2^22`), `class_idx = packed >>
+    /// OFF_BITS` (high bits; `SMALL_CLASS_COUNT = 40 ≪ 2^10`, so it fits).
+    ///
+    /// Safe: a foreign segment (magic mismatch), a large segment, or an offset
+    /// that is not `block_size`-aligned is a no-op (defence-in-depth). Applies
+    /// the M2 double-free guard.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32) {
+        // Unpack the offset and the class the cross-thread freer stamped.
+        let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
+        let off = off as usize;
+        let class_idx = class_idx as usize;
+        let ptr = Node::deref(base, off);
+        // Field-specific reads: this runs on the Owner's alloc path
+        // (drain_thread_free / find_segment_with_free), concurrent with a
+        // Remote's `dealloc_routing` field reads. A full-struct
+        // `SegmentHeader::read_at` here would race them; reading individual
+        // fields via their offsets touches bytes disjoint from any racing
+        // writer, so there is no data race.
+        if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
+            return;
+        }
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+            return;
+        }
+        // Sanity: the offset must be a whole number of `block_size` units. carve
+        // aligns the bump to `block_size`, so a real block offset is always a
+        // multiple of its class's block_size. A mis-aligned offset would write
+        // the free-list `next` into the middle of a block — the §13 corruption.
+        // This never fires for a correctly-packed entry; it is defence-in-depth
+        // against a garbled ring value (no abort — just skip, matching the
+        // defensive `dealloc_small_by_segment` contract).
+        let bs = SizeClasses::block_size(class_idx) as u32;
+        if !(off as u32).is_multiple_of(bs) {
+            return;
+        }
+        let meta = SegmentMeta::new(base);
+        // Inline of `dealloc_small` (self-less): double-free guard + push to
+        // BinTable. We cannot call the `&mut self` method from here (this fn is
+        // an associated function), so we replicate the body. The replication is
+        // small and the invariant is identical.
+        let mut bt = meta.bin_table();
+        // Double-free guard: walk the free list; if `ptr` is already there,
+        // no-op (M2). (Inline of `free_list_contains`.)
+        let mut cur_off = bt.head(class_idx);
+        let mut already = false;
+        while cur_off != FREE_LIST_NULL {
+            let cur_ptr = Node::deref(base, cur_off as usize);
+            if cur_ptr == ptr {
+                already = true;
+                break;
+            }
+            let cur_nn = match NonNull::new(cur_ptr) {
+                Some(n) => n,
+                None => break,
+            };
+            let next = Node::read_next(cur_nn);
+            if next.is_null() || next == cur_ptr {
+                break;
+            }
+            cur_off = (next as usize - base as usize) as u32;
+        }
+        if already {
+            return;
+        }
+        let block_nn = match NonNull::new(ptr) {
+            Some(nn) => nn,
+            None => return,
+        };
+        let old_head = bt.head(class_idx);
+        let old_head_ptr = if old_head == FREE_LIST_NULL {
+            core::ptr::null_mut()
+        } else {
+            Node::deref(base, old_head as usize)
+        };
+        Node::write_next(block_nn, old_head_ptr);
+        bt.set_head(class_idx, off as u32);
+    }
+
+    /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
+    /// `class_idx` in the high bits — into its segment's `RemoteFreeRing`,
+    /// exactly as a cross-thread freer would. Lets a single-threaded test
+    /// exercise the ring→reclaim path (which the public own-thread `dealloc`
+    /// bypasses) and isolate `reclaim_offset` logic from concurrency. The caller
+    /// supplies `class_idx` (the class it allocated the block under) because the
+    /// reclaim contract carries the class in the ring entry — the owner must
+    /// never re-derive it from `page_map` (the §13 root cause).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-xthread")]
+    pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
+        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        if !self.table.contains_base(base) {
+            return false;
+        }
+        let off = (ptr as usize - base as usize) as u32;
+        let packed = super::remote_free_ring::pack_entry(off, class_idx as u32);
+        let ring = SegmentMeta::new(base).remote_ring();
+        ring.push(packed).is_ok()
+    }
+
+    /// TEST-ONLY (task #37): drain every owned segment's ring into its
+    /// `BinTable`, exactly as `find_segment_with_free` does, but unconditionally.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-xthread")]
+    pub fn dbg_drain_all_rings(&mut self) {
+        for base in self.table.bases() {
+            let hdr = SegmentHeader::read_at(base);
+            if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
+                continue;
+            }
+            let ring = SegmentMeta::new(base).remote_ring();
+            ring.drain(|off| Self::reclaim_offset(base, off));
+        }
+    }
+
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
@@ -226,8 +369,9 @@ impl AllocCore {
 
     /// Iterate over all registered segment bases (read-only). Exposed for the
     /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
-    /// `abandon_segments`).
-    #[cfg(feature = "alloc-global")]
+    /// `abandon_segments`) and, under `alloc-xthread`, the per-segment
+    /// `RemoteFreeRing` drain in `HeapCore::drain_thread_free`.
+    #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.table.bases()
     }
@@ -388,12 +532,26 @@ impl AllocCore {
     /// upheld.
     pub(crate) fn find_segment_with_free(&self, class_idx: usize) -> Option<*mut u8> {
         for base in self.table.bases() {
-            // Skip large/huge segments: they have no BinTable. Reading the
-            // header kind is safe (every registered segment has a valid header
-            // at offset 0, including large ones).
-            let hdr = SegmentHeader::read_at(base);
-            if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
+            // Skip large/huge segments: they have no BinTable. Field-specific
+            // `kind` read (task #33): this is the Owner's alloc path,
+            // concurrent with a Remote's `dealloc_routing` field reads — a
+            // full-struct `read_at` here would race them. `kind_at` reads only
+            // the `kind` byte, disjoint from any writer.
+            if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
                 continue;
+            }
+            // Variant-2: lazily drain this segment's remote-free ring before
+            // inspecting its BinTable. Cross-thread frees that targeted THIS
+            // segment (a segment we own but are not currently allocating from)
+            // are sitting in its ring; without this drain they would never
+            // reach the BinTable and the scan would miss them. The drain uses
+            // the self-less `reclaim_offset` (it touches only segment metadata
+            // via `SegmentMeta`, never `self`), so the immutable `bases()`
+            // iterator borrow is not aliased. M5-clean.
+            #[cfg(feature = "alloc-xthread")]
+            {
+                let ring = SegmentMeta::new(base).remote_ring();
+                ring.drain(|off| Self::reclaim_offset(base, off));
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -438,15 +596,19 @@ impl AllocCore {
     fn carve_block(&mut self, class_idx: usize, block_size: usize) -> Option<*mut u8> {
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
-        let mut hdr = meta.header();
-        let bump = hdr.bump;
+        // Field-specific bump read/write (task #33 root-cause fix): the Owner
+        // touches ONLY the `bump` field, never the cross-thread-read header
+        // fields. A full-struct `write_header` here rewrote `magic`/`kind`/
+        // `owner_thread_free` too, racing a Remote's full-struct `read_at` in
+        // `dealloc_routing` (the §11 data race). `bump` is owner-only (no
+        // Remote reads it), so a plain field write is race-free.
+        let bump = meta.bump_of();
         let aligned_bump = align_up(bump, block_size);
         if aligned_bump + block_size > SEGMENT {
             return None;
         }
-        // Update the bump cursor.
-        hdr.bump = aligned_bump + block_size;
-        meta.write_header(hdr);
+        // Update ONLY the bump cursor.
+        meta.set_bump(aligned_bump + block_size);
         // Mark the page containing `aligned_bump` as owned by `class_idx`.
         let mut pm = meta.page_map();
         let page = aligned_bump / super::os::PAGE;
@@ -588,6 +750,15 @@ impl AllocCore {
         ));
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
+        // Initialise the per-segment remote-free ring (Variant-2 fix). Only
+        // under `alloc-xthread`; the Layout always reserves the bytes.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            super::remote_free_ring::RemoteFreeRing::init_in_place(
+                base,
+                SegLayout::remote_ring_off(),
+            );
+        }
         core::mem::forget(segment);
         self.small_cur = base;
         Some(base)

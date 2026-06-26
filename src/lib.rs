@@ -104,8 +104,15 @@ mod concurrent;
 #[cfg(feature = "byte")]
 mod byte;
 
+// `alloc_core` is the Phase 8+ segment substrate. Its public surface is
+// `AllocCore` / `SegmentLayout` (re-exported below). The module itself is also
+// `#[doc(hidden)] pub` so the isolated ring test (`tests/remote_ring_unit.rs`)
+// can reach `alloc_core::remote_free_ring::RemoteFreeRing`'s `#[doc(hidden)]`
+// test surface — this is the established test-only export pattern (see
+// `registry` below). Nothing in `alloc_core` is stable public API.
 #[cfg(feature = "alloc-core")]
-mod alloc_core;
+#[doc(hidden)]
+pub mod alloc_core;
 
 #[cfg(feature = "alloc")]
 mod heap;
