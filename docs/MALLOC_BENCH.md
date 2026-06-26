@@ -89,14 +89,19 @@ hardening gate. What works today and what remains:
   `MALLOC_PLAN_PHASE12-13.md`).
 - Cross-thread free requires the `alloc-xthread` feature. Phase 12.5 ships the
   shard model (a heap is a shard; thread death releases the slot, the HeapCore
-  stays whole for the next claimant). **Phase 12.5 remainder (honest):** TFS
-  drain currently DISCARDS drained blocks (sound bounded leak — they stay
-  mapped, simply not reused) rather than re-injecting them into the BinTables
-  (re-injection races with the slot's own concurrent alloc/free under
-  shard-reuse and needs a per-slot epoch/generation guard; deferred). M6
-  decommit + M11 epoch-safety are deferred behind a future `alloc-decommit`
-  feature flag. RSS grows under sustained cross-thread churn (the bounded
-  leak); correctness holds. The single-thread `Heap` path fully reuses.
+  stays whole for the next claimant); **Phase 12.6 makes cross-thread free
+  RECLAIM** — the freer pushes the block's `offset | class` into a non-intrusive
+  per-segment ring; the owner reclaims it into the `BinTable` lazily on its
+  alloc-slow-path (`find_segment_with_free`). See `RACE_DRAIN_RECLAIM.md`
+  §13/§14: the true root was that `page_map`'s per-page class is unreliable for
+  the mixed-class pages a shared bump cursor produces, so cross-thread reclaim
+  must carry the class from the freer's `Layout` (not derive it). The
+  Phase-12.5 discard-leak is **gone**: cross-thread-freed blocks are reused; RSS
+  is bounded (only an in-flight ring's worth may sit un-reclaimed until the next
+  slow-path drain). Verified on Windows + Linux (ThreadSanitizer-clean — it was
+  a class-derivation logic bug, not a data race). M6 decommit (return empty
+  segments to the OS) + M11 remain deferred behind a future `alloc-decommit`
+  flag (#35). The single-thread `Heap` path fully reuses.
 - The heavy correctness gate — `cargo-fuzz` (CPU-hours over adversarial
   alloc/free/realloc streams), **aarch64** multi-arch CI (the weak memory model
   x86 hides), and **ThreadSanitizer** under stress — needs CI / non-Windows
@@ -109,10 +114,10 @@ hardening gate. What works today and what remains:
 *much faster than the OS allocator*. As of Phase 12.5 it is a **working,
 multithreaded drop-in `#[global_allocator]`** — the reentrancy/teardown abort
 that blocked MT use is closed, and the headline MT gate runs green with thread
-churn + cross-thread free. Two honest remainders: (1) TFS drain leaks under
-sustained cross-thread churn (bounded RSS growth, not a correctness issue), and
-(2) the heavy hardening gate (fuzz / aarch64 / TSan) is still pending, so
-"production-trusted on every target" is not yet claimed. For a process-wide
-allocator right now, `SeferMalloc` is a viable MT choice where the bounded
-RSS leak under cross-thread churn is acceptable; otherwise use `mimalloc` and
-watch this space.
+churn + cross-thread free, and (Phase 12.6) cross-thread-freed blocks are now
+**reclaimed** (no discard-leak). One honest remainder: the heavy hardening gate
+(fuzz / aarch64 / TSan-under-stress) is still pending, so "production-trusted on
+every target" is not yet claimed — though the cross-thread reclaim path is now
+ThreadSanitizer-verified on Linux. For a process-wide allocator right now,
+`SeferMalloc` is a viable MT choice; the remaining gap to `mimalloc` is the
+multi-arch / CPU-hours hardening gate, not a known correctness or RSS issue.

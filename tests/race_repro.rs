@@ -1,8 +1,13 @@
-//! DIAGNOSTIC repro for the cross-thread-free drain-reclaim UAF (task #33).
+//! Cross-thread-free reclaim GATE (task #33/#36) — now GREEN.
 //!
-//! Goal: PROVE the exact interleaving that corrupts when `drain_thread_free`
-//! re-injects drained blocks into the BinTable (the naive restore), under the
-//! shard-reuse model (slot release → claim reuse).
+//! Originally a diagnostic repro of the cross-thread-free drain-reclaim crash;
+//! it is now the regression gate for the Phase-12.6 fix. It exercises the
+//! installed `#[global_allocator]` under producer/consumer cross-thread free +
+//! slot recycle and asserts no corruption (tag checksums + no UAF). It was RED
+//! (non-deterministic `STATUS_ACCESS_VIOLATION` / subtract-overflow) before the
+//! fix and is GREEN after — see `RACE_DRAIN_RECLAIM.md` §13 (root: `page_map`
+//! class unreliable for mixed-class pages) / §14 (fix: carry the class through
+//! the ring). The historical hypothesis text below is kept for context.
 //!
 //! ## The hypothesis under test (§2 of RACE_DRAIN_RECLAIM.md)
 //!

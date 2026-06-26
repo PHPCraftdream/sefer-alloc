@@ -145,17 +145,15 @@ the MT end-to-end gate (12.5) must run under `alloc-xthread`.
   headline MT gate (`tests/global_alloc_mt.rs`) runs green under
   `alloc-global,alloc-xthread` with thread churn + cross-thread free.
 
-  **Phase 12.5 remainder (honest):** TFS drain currently DISCARDS the drained
-  blocks (sound bounded leak — they stay mapped, simply not reused) rather
-  than re-injecting them into the BinTables. Re-injection races with the slot's
-  own concurrent alloc/free under shard-reuse (a block freed cross-thread can
-  be pushed after the owner already popped and reused it → the drain reads user
-  data as a free-list `next` pointer → `free_list_contains` overflows). A
-  correct re-injection needs a per-slot epoch/generation guard; deferred. M6
-  decommit / M11 epoch-safety are deferred behind a future `alloc-decommit`
-  feature flag (default off; RSS grows under sustained cross-thread churn —
-  the bounded leak — but correctness holds). The single-thread `Heap` path
-  (`heap::thread_free`) is unaffected and fully reuses.
+  **Phase 12.5 remainder — RESOLVED in 12.6:** the 12.5 cross-thread drain
+  DISCARDED drained blocks (a sound bounded leak). 12.6 makes it RECLAIM via a
+  non-intrusive per-segment ring carrying `offset | class`; the owner reclaims
+  lazily on its alloc-slow-path. The race this note attributed to "re-injection
+  vs concurrent reuse" was actually a class-derivation logic bug (see §8 banner
+  and `RACE_DRAIN_RECLAIM.md` §13), not a data race — TSan-confirmed. The
+  discard-leak is gone; cross-thread-freed blocks are reused. M6 decommit / M11
+  remain deferred behind a future `alloc-decommit` flag (#35). The single-thread
+  `Heap` path (`heap::thread_free`) is unaffected and fully reuses.
 
 ## From Phase 12.4 (adoption) review
 
@@ -185,7 +183,20 @@ segment that the slot's current holder still uses → DOUBLE OWNERSHIP.
 
 ## From Phase 12.6a (drain-reclaim hypothesis — FALSIFIED)
 
-### 8. ❌ Naive drain→BinTable restore SEGFAULTS — reclaim genuinely needs a guard
+### 8. ❌ Naive drain→BinTable restore SEGFAULTS — RESOLVED in 12.6 (true root ≠ what this note guessed)
+
+> **RESOLVED (Phase 12.6, commit `255e18c`).** The crash was real, but BOTH this
+> note's diagnosis ("intrusive-word race at the slot-reuse handoff") AND its
+> proposed fix ("generation-tag") were wrong — layers peeled off by zero-trust
+> verification. The TRUE root (found via ThreadSanitizer, which proved there is
+> NO data race, plus a free-list audit on a reliable Linux repro) is in
+> `RACE_DRAIN_RECLAIM.md` §13: a segment's single bump cursor interleaves size
+> classes across pages, so `page_map.class_of()` is unreliable; the cross-thread
+> reclaim derived the class from `page_map` (wrong class → wrong `block_size` →
+> corrupted free list). Fix (§14): carry the class from the freer's `Layout`
+> through the ring (`offset | class<<22`) and drop the redundant eager drain — no
+> generation-tag. Reclaim now works (Windows + Linux green). The text below is
+> the historical (falsified) hypothesis, kept as the diagnostic trail.
 
 The /oxx hypothesis ("the 12.5 cross-thread-free leak is a scar; in the clean
 shard model the owner is the sole BinTable writer, so simply restoring

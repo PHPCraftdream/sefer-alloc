@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 12 — production multithreaded trust + Phase 12.6 cross-thread-free
+  reclaim** (behind `alloc-xthread`). The installed `#[global_allocator]` is now
+  a SOUND multithreaded drop-in: heap-as-shard isolation (each heap = a shard
+  owned by one thread via a FREE/LIVE slot token), a self-hosted `HeapRegistry`,
+  raw-pointer TLS with a never-null fallback heap, and loom-gated segment
+  adoption (12.1–12.5). **Phase 12.6** closes the cross-thread-free
+  *reclaim*: a non-intrusive per-segment MPSC ring carries each freed block's
+  `offset | class` (the freer has the `Layout`; the owner's `page_map` class is
+  unreliable for the mixed-class pages a shared bump cursor produces — the true
+  root, found via ThreadSanitizer + a Linux free-list audit; NOT a data race).
+  The owner reclaims lazily on its alloc-slow-path. This removes the Phase-12.5
+  bounded-leak *discard* — cross-thread-freed blocks are now **reused**. Also
+  fixed a real `SegmentHeader` data race (field-specific `bump`/`magic`/
+  `owner_thread_free` accessors). Verified on Windows + Linux: `race_repro` ×5,
+  `race_norecycle` (reliable Linux repro), isolated ring + reclaim unit tests,
+  loom protocol/ring models with counterfactuals, full suite, clippy.
+  See `docs/RACE_DRAIN_RECLAIM.md` (§13 root, §14 fix) and
+  `docs/CROSS_THREAD_STATE_MACHINES.md` (the state-machine spec).
+- **Phase 13.1 — O(1) size-class lookup** (`const SIZE2CLASS` table replacing the
+  per-alloc linear scan).
+
 - **Phase 11 -- the `malloc` face: `SeferMalloc` (`#[global_allocator]`) +
   no-panic hardening + honest mimalloc verdict** (behind a new opt-in
   `alloc-global = ["alloc"]` feature). `SeferMalloc` is an `unsafe impl
