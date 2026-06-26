@@ -118,6 +118,37 @@ impl AllocCore {
     /// face will require. A well-behaved caller passes a valid prior
     /// allocation of `layout`; the safety here is defence-in-depth, not a
     /// licence to free garbage.
+    ///
+    /// **Phase 13.3 — arithmetic own-thread free.** The hot path is now pure
+    /// arithmetic + (at most) one field-specific header byte read, NOT a
+    /// full-struct `SegmentHeader::read_at`. Specifically:
+    ///   - `segment_base_of(ptr)` — one mask (already the case).
+    ///   - `self.table.contains_base(base)` — the foreign-pointer guard (this
+    ///     is the load-bearing defence-in-depth check, NOT the `magic` word:
+    ///     a foreign pointer's computed base is simply not in our registry,
+    ///     so we never touch its bytes).
+    ///   - `SegmentHeader::kind_at(base)` — ONE byte field read (via
+    ///     `offset_of!`) to distinguish Large from Small/Primordial. This is
+    ///     the minimum read necessary: Large blocks are freed by marking the
+    ///     segment (no class free list), Small/Primordial go to the BinTable;
+    ///     without distinguishing them we'd misroute. `kind` is written once
+    ///     at segment init and immutable thereafter, so this byte read cannot
+    ///     race an owner write on the disjoint `bump` field (the §11
+    ///     root-cause analysis).
+    ///   - the size class is derived from the caller-supplied `Layout` via
+    ///     [`Self::classify`] — pure arithmetic, no `page_map` lookup (§13:
+    ///     `page_map` is unreliable for mixed-class pages, and own-thread
+    ///     free HAS the `Layout`, so deriving from it is both cheaper AND
+    ///     correct).
+    ///
+    /// The `SEGMENT_MAGIC` full-struct sanity check is intentionally absent
+    /// here: it lives ONLY on the defensive cross-thread routing path
+    /// ([`HeapCore::dealloc_routing`] under `alloc-xthread`), where a foreign
+    /// pointer could in principle resolve to a registered-but-not-ours base.
+    /// On the trusted own-thread path, `contains_base` is the sole guard and
+    /// the `Layout` is authoritative for the class — a full header load would
+    /// be a dependent load on the free critical path with no correctness gain.
+    #[inline]
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
@@ -129,12 +160,12 @@ impl AllocCore {
         if !self.table.contains_base(base) {
             return;
         }
-        // Now safe to read the header (the base is one of ours).
-        let hdr = SegmentHeader::read_at(base);
-        if hdr.magic != super::segment_header::SEGMENT_MAGIC {
-            return;
-        }
-        match hdr.kind {
+        // Field-specific `kind` read (Phase 13.3): a single byte at its
+        // `offset_of!` offset, NOT a full-struct `read_at`. Distinguishes
+        // Large (free = mark segment) from Small/Primordial (free = push to
+        // BinTable). `kind` is immutable after init, so this byte read is
+        // race-free against the owner's disjoint `bump` writes.
+        match SegmentHeader::kind_at(base) {
             SegmentKind::Large => {
                 // Large/huge: mark the segment as freed (zero the magic) so
                 // `Drop` knows its reservation should be released. We do NOT
@@ -142,11 +173,23 @@ impl AllocCore {
                 // `Drop` can read it to discover the reservation info. (M6 —
                 // eager decommit / OS return — is a Phase 10 deliverable; for
                 // Phase 8 correctness, all segment freeing happens at `Drop`.)
-                let mut stale = hdr;
+                //
+                // The full header read here is on the cold Large path (one
+                // allocation per segment, rare), so the dependent-load cost
+                // does not matter; correctness requires reading + rewriting
+                // the header to flag the segment for `Drop`.
+                let mut stale = SegmentHeader::read_at(base);
                 stale.magic = 0;
                 Node::write_struct(base as *mut SegmentHeader, stale);
             }
             SegmentKind::Small | SegmentKind::Primordial => {
+                // Derive the class from the caller's `Layout` (pure
+                // arithmetic via `SIZE2CLASS`) — NOT from `page_map`. §13 of
+                // RACE_DRAIN_RECLAIM.md: `page_map` records only the FIRST
+                // class to touch a page, so it returns the wrong class for
+                // any later block of a different class in the same page. The
+                // own-thread freer HAS the original `Layout`, so classifying
+                // from it is both cheaper (no page_map load) AND correct.
                 let size = layout.size().max(super::size_classes::MIN_BLOCK);
                 let align = layout.align();
                 let kind = Self::classify(size, align);
@@ -344,6 +387,43 @@ impl AllocCore {
         }
     }
 
+    /// TEST-ONLY (Phase 13.3): reveal the size class `page_map` would assign
+    /// to `ptr`'s page, so the counterfactual test for "own-thread dealloc
+    /// derives the class from `Layout`, not `page_map`" can prove it is
+    /// non-vacuous. Returns `None` if `ptr` is foreign, the segment is not
+    /// small/primordial, or the page is uncarved. This is the SAME lookup
+    /// `dealloc_small_by_segment` performs on the cross-thread drain path —
+    /// kept here as a pure read for the test to compare against the Layout's
+    /// class. `#[doc(hidden)] pub` per the established test-only surface.
+    #[doc(hidden)]
+    pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
+        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        if !self.table.contains_base(base) {
+            return None;
+        }
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+            return None;
+        }
+        let meta = SegmentMeta::new(base);
+        let page_idx = (ptr as usize - base as usize) / super::os::PAGE;
+        meta.page_map().class_of(page_idx)
+    }
+
+    /// TEST-ONLY (Phase 13.3): the size class the own-thread `dealloc` SHOULD
+    /// derive from `layout` (i.e. what `Self::classify` resolves to). Returns
+    /// `None` for a Large layout. Exposed so the counterfactual test can
+    /// compare the Layout-derived class against the `page_map`-derived class
+    /// on a mixed-class page and prove the two genuinely differ (otherwise
+    /// the test would be vacuous).
+    #[doc(hidden)]
+    pub fn dbg_layout_class_for(&self, layout: Layout) -> Option<usize> {
+        let size = layout.size().max(super::size_classes::MIN_BLOCK);
+        match Self::classify(size, layout.align()) {
+            AllocKind::Small { class_idx } => Some(class_idx),
+            AllocKind::Large => None,
+        }
+    }
+
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
@@ -405,6 +485,7 @@ impl AllocCore {
     // -----------------------------------------------------------------------
 
     /// Classify a `(size, align)` request as Small or Large.
+    #[inline]
     fn classify(size: usize, align: usize) -> AllocKind {
         match SizeClasses::class_for(size, align) {
             Some(class_idx) => AllocKind::Small { class_idx },
@@ -565,6 +646,7 @@ impl AllocCore {
     /// Pop a free block of `class_idx` from `segment`'s bin table. Returns
     /// null if the free list is empty. Writes the block's `next` word to null
     /// (it becomes the new head) via the node seam.
+    #[inline]
     fn pop_free(&self, segment: *mut u8, class_idx: usize, block_size: usize) -> Option<*mut u8> {
         let meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
@@ -630,6 +712,7 @@ impl AllocCore {
     /// The scan is O(free-list length); Phase 8 free lists stay short for a
     /// typical working set, and Phase 9's per-thread heaps will replace this
     /// with a cheaper cookie-based guard.
+    #[inline]
     fn dealloc_small(&mut self, base: *mut u8, ptr: *mut u8, class_idx: usize) {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
@@ -655,6 +738,7 @@ impl AllocCore {
 
     /// Whether `ptr` is currently on segment `base`'s class-`class_idx` free
     /// list. O(free-list length). Used by the double-free guard.
+    #[inline]
     fn free_list_contains(
         &self,
         bt: &BinTable,

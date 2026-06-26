@@ -259,6 +259,7 @@ impl HeapCore {
     /// the ONLY cross-thread touch on the alloc path; everything else is
     /// single-writer (this thread owns the slot, ergo its segments).
     #[must_use]
+    #[inline]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         // Cross-thread-freed blocks are reclaimed LAZILY, inside
         // `AllocCore::find_segment_with_free` (the alloc-slow-path drains each
@@ -282,6 +283,7 @@ impl HeapCore {
 
     /// Allocate `layout.size()` bytes of **zeroed** memory.
     #[must_use]
+    #[inline]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
         let ptr = self.alloc(layout);
         if !ptr.is_null() {
@@ -298,6 +300,7 @@ impl HeapCore {
     /// head, route cross-thread via the TFS (the §2.2 protocol re-based on
     /// the registry). Foreign pointers (not a sefer segment) are a safe
     /// no-op.
+    #[inline]
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;

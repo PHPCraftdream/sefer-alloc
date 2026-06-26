@@ -70,6 +70,7 @@ impl Node {
     /// not handed to the user). The block MUST lie within a segment owned by
     /// this allocator. `next` is either null (tail) or another such free
     /// block's address.
+    #[inline]
     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: `block` is non-null (from `NonNull`), aligned to at least the
@@ -89,6 +90,7 @@ impl Node {
     /// Returns the address previously stored by [`write_next`](Self::write_next),
     /// or null if none. The block MUST currently be a free-list node (caller's
     /// invariant).
+    #[inline]
     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: same bounds/alignment/exclusivity proof as `write_next`. The
@@ -108,6 +110,7 @@ impl Node {
     /// MUST be `< segment_len` (the caller — the safe Cartographer — guarantees
     /// this by construction). The resulting pointer is valid for whatever block
     /// size the Cartographer carved at that offset.
+    #[inline]
     pub(crate) fn deref(segment_base: *mut u8, offset: usize) -> *mut u8 {
         // SAFETY: `segment_base` is the start of an OS-reserved span owned by
         // this allocator (the `Segment` is alive — the safe Cartographer holds

@@ -470,12 +470,14 @@ impl BinTable {
 
     /// The segment-relative offset of the head free block of class `c`, or
     /// `FREE_LIST_NULL` if empty.
+    #[inline]
     pub(crate) fn head(&self, c: usize) -> u32 {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
         Node::read_u32_unaligned(self.heads_at_const(c))
     }
 
     /// Set the head of class `c`'s free list to `off`.
+    #[inline]
     pub(crate) fn set_head(&mut self, c: usize, off: u32) {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
         Node::write_u32_unaligned(self.heads_at_const(c), off);

@@ -129,6 +129,7 @@ impl Default for SeferMalloc {
 // sound under the fallback's spinlock. M10 (never-null for serviceable
 // requests) is upheld: the only null return is true OOM.
 unsafe impl GlobalAlloc for SeferMalloc {
+    #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match current_for_alloc() {
             // Fallback path (TLS torn down, registry exhausted, or true
@@ -147,6 +148,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
         }
     }
 
+    #[inline]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
@@ -167,6 +169,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
         }
     }
 
+    #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         match current_for_alloc() {
             CurrentHeap::Fallback => {
@@ -177,6 +180,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
         }
     }
 
+    #[inline]
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
