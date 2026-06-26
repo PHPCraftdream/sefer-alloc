@@ -387,10 +387,16 @@ impl Heap {
     fn stamp_owner(&mut self, ptr: *mut u8) {
         let base = os::segment_base_of(ptr as usize) as *mut u8;
         let mut meta = SegmentMeta::new(base);
-        let mut hdr = meta.header();
-        if hdr.owner_thread_free.is_null() {
-            hdr.owner_thread_free = self.thread_free.head_ptr();
-            meta.write_header(hdr);
+        // Field-specific read + write (task #33 / §11): a full-struct
+        // `header()` + `write_header(hdr)` here rewrites EVERY header field
+        // (magic/kind/bump/...) and races a concurrent cross-thread freer's
+        // field reads of `magic`/`kind`/`owner_thread_free` (in `dealloc_small`
+        // / `dealloc_any_thread`) — the §11 data race. Stamp ONLY the
+        // `owner_thread_free` word via its `offset_of!` offset, disjoint from
+        // every field a Remote reads/the owner's `bump` writes. Idempotent:
+        // only when currently null (mirrors `HeapCore::stamp_segment_owner`).
+        if SegmentHeader::owner_thread_free_at(base).is_null() {
+            meta.stamp_owner_thread_free(self.thread_free.head_ptr());
         }
     }
 }
