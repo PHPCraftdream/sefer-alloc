@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 35 — M6 decommit: return empty segments to the OS** (behind a new
+  opt-in `alloc-decommit = ["alloc-core"]` feature; **default OFF — the default
+  build is byte-for-byte unchanged**). When a small segment's live-block count
+  drops to zero and it is not the current carve target, its payload pages
+  `[small_meta_end, SEGMENT)` are returned to the OS (`VirtualFree MEM_DECOMMIT`
+  / `madvise MADV_DONTNEED`; no-op under miri) and the segment is reset to a
+  clean blank (`bump = small_meta_end`, `BinTable` heads = NULL, payload
+  page-map = Free, alloc-bitmap = 0, `decommitted` flag set); the payload is
+  recommitted on the first reuse. This bounds steady-state RSS under churn (the
+  one honest gap in `MALLOC_BENCH`). Bookkeeping: a new **owner-only** `u32`
+  `live_count` field in `SegmentHeader` (present in every build's layout so the
+  byte layout is stable; mutated only under the feature) — `+1` on
+  `pop_free`/`carve_block` hand-out, `−1` on `dealloc_small`/`reclaim_offset`;
+  refill blocks net to zero (carve `+1`, push-to-free-list `−1`). **No
+  crossbeam-epoch / M11 barrier is needed** — Variant-2 (Phase 12.6) already
+  removed the only reason the original plan reached for epoch: the cross-thread
+  freer never dereferences the block (it pushes `offset|class` into the
+  in-metadata `RemoteFreeRing`, and metadata pages are never decommitted). The
+  full safety argument is recorded in code at the decommit point and in
+  `docs/PHASE35_DECOMMIT_DESIGN.md` §1. A **post-decommit stale-free guard**
+  (`off >= bump` after the reset) in both `dealloc_small` and `reclaim_offset`
+  closes the window where a late free / double-free / stale ring entry targeting
+  a reset segment would write a free-list `next` into a decommitted page. NO new
+  dependency, NO new `unsafe` site (the OS seam already existed; the bookkeeping
+  is plain safe arithmetic through the `node` seam). Tests (`alloc-decommit`):
+  `decommit_soak` (decommit fires on `live→0` + recommit readback; counterfactual
+  proven — the soak goes red if the hook is disconnected), `decommit_stale_ring`
+  (stale ring entry into a decommitted segment is a no-op, no UAF),
+  `decommit_miri_cycle` (bounded miri decommit/recommit bookkeeping). Verified:
+  full suite green WITH and WITHOUT the feature (incl. `alloc_core_differential`,
+  the heap suite, `race_repro`/`race_norecycle`/`global_alloc_mt`), clippy clean,
+  miri on the bounded cycle. `heap_cross_segment`'s strict free-list-reuse
+  invariant is relaxed under `alloc-decommit` to a bounded-footprint invariant
+  (decommitted segments are legitimately re-carved, not free-list-reused).
+
 - **Phase 12 — production multithreaded trust + Phase 12.6 cross-thread-free
   reclaim** (behind `alloc-xthread`). The installed `#[global_allocator]` is now
   a SOUND multithreaded drop-in: heap-as-shard isolation (each heap = a shard

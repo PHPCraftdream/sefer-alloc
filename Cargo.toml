@@ -104,6 +104,21 @@ alloc-xthread = ["alloc"]
 # `alloc` (and thus `alloc-core`). Add `alloc-xthread` alongside it for the
 # multi-thread face (cross-thread `dealloc` via the Phase 10 Treiber stack).
 alloc-global = ["alloc"]
+# Phase 35: M6 decommit — return the payload pages of an empty small segment to
+# the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its
+# live-block count drops to zero, recommitting on first reuse. Additive over
+# `alloc-core`: it adds an owner-only `live_count` field to the segment header
+# (the field is present in EVERY build's layout so the byte layout is stable;
+# its mutation/read is gated on this feature) and wires the decommit/reset/
+# recommit policy into the own-thread free + cross-thread reclaim + carve paths,
+# all under `#[cfg(feature = "alloc-decommit")]`. With this feature OFF the
+# default build is byte-for-byte unchanged. NO new dependency and NO new `unsafe`
+# site — the OS seam (`os::decommit_pages`/`recommit_pages`) already exists; the
+# new bookkeeping is plain safe arithmetic through the `node` seam. M6 is
+# decommit-safe WITHOUT crossbeam-epoch / M11 — see the safety argument at the
+# decommit point in `alloc_core` and `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
+# Requires `alloc-core`. Default OFF.
+alloc-decommit = ["alloc-core"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with

@@ -39,6 +39,12 @@ use super::segment_header::{
 use super::segment_table::SegmentTable;
 use super::size_classes::{AllocKind, SizeClasses};
 
+/// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
+/// [`AllocCore::decommit_empty_segment`]; read by the soak test via
+/// [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
+#[cfg(feature = "alloc-decommit")]
+static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// A single-threaded allocator over the self-hosted segment substrate.
 ///
 /// Owns its segments (the primordial + any additionally-reserved small or
@@ -240,7 +246,10 @@ impl AllocCore {
     /// that is not `block_size`-aligned is a no-op (defence-in-depth). Applies
     /// the M2 double-free guard.
     #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32) {
+    // `small_cur` is consumed only by the `alloc-decommit` dec-then-decommit
+    // step; without that feature the reclaim path does no live-count bookkeeping.
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
+    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32, small_cur: *mut u8) {
         // Unpack the offset and the class the cross-thread freer stamped.
         let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
         let off = off as usize;
@@ -270,6 +279,24 @@ impl AllocCore {
             return;
         }
         let meta = SegmentMeta::new(base);
+        // Phase 35 (M6 decommit) — the STALE-RING-INTO-DECOMMITTED-SEGMENT guard.
+        // When a segment empties it is decommitted AND reset: its `bump` returns
+        // to `small_meta_end()` and its alloc bitmap is zeroed. A ring entry that
+        // arrives (or lingers) for an offset in the now-decommitted payload would
+        // pass the bitmap `is_free` check (the reset cleared every bit), and the
+        // reclaim below would `write_next` into a DECOMMITTED page — a UAF / write
+        // to unmapped memory. The bump guard closes this: a real, currently-carved
+        // block always has `off < bump`; an offset `>= bump` is either uncarved or
+        // (post-reset) in the decommitted region — no-op, never touch the page.
+        // This is the concrete realization of design §1.3 ("reclaim does a no-op
+        // BEFORE touching the block on a stale entry") for the reset bitmap. The
+        // owner is the sole `bump` writer, and reclaim runs owner-side, so this
+        // field read is consistent (no concurrent bump write). Owner-only, so
+        // gated to the feature that resets the bump.
+        #[cfg(feature = "alloc-decommit")]
+        if off >= meta.bump_of() {
+            return;
+        }
         // Inline of `dealloc_small` (self-less): double-free guard + push to
         // BinTable. We cannot call the `&mut self` method from here (this fn is
         // an associated function), so we replicate the body. The replication is
@@ -298,6 +325,169 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off as u32);
         bm.mark_free(off as u32);
+        // Phase 35 (M6): a cross-thread-freed block is now back on the free list
+        // → one fewer live block. The owner-side drain runs this, so the
+        // owner-only counter is single-writer (the cross-thread freer NEVER
+        // touched it — it only pushed the offset into the ring). If the segment
+        // is now empty AND not the carve target, return its payload to the OS.
+        #[cfg(feature = "alloc-decommit")]
+        Self::dec_live_and_maybe_decommit(base, small_cur);
+    }
+
+    /// Phase 35 (M6 decommit) — the shared dec-then-maybe-decommit step, called
+    /// after a block returns to a segment's free list (own-thread `dealloc_small`
+    /// or owner-side `reclaim_offset`). It decrements the owner-only `live_count`
+    /// and, if the segment just went empty (`live_count == 0`) AND is not the
+    /// current carve target (`base != small_cur`), returns the segment's payload
+    /// pages to the OS and resets the segment to a clean-empty blank for reuse.
+    ///
+    /// **Self-less** (associated fn) so the self-less `reclaim_offset` can call
+    /// it; the `small_cur` snapshot is threaded in from the owner.
+    ///
+    /// ## Why M6 is decommit-safe WITHOUT an M11 epoch barrier (design §1)
+    ///
+    /// The original plan (§2.5) reached for `crossbeam-epoch` because the OLD
+    /// intrusive cross-thread-free model wrote the free-list `next` pointer INSIDE
+    /// the block — a late cross-thread freer could write into a page we had just
+    /// decommitted (UAF / write-to-unmapped). Variant-2 (Phase 12.6) dissolved
+    /// that: the cross-thread freer NEVER dereferences the block — it pushes
+    /// `(offset|class)` into the `RemoteFreeRing`, which lives in the segment's
+    /// METADATA (the metadata pages are NEVER decommitted — we decommit only
+    /// `[small_meta_end, SEGMENT)`). The decommit is therefore safe without epoch:
+    ///
+    ///   1. We decommit the payload ONLY at `live_count == 0` → there is not one
+    ///      live block in the decommitted range; nothing to UAF.
+    ///   2. A late VALID cross-thread free at `live_count == 0` is impossible:
+    ///      every block is already free, so a further free of one is a double-free
+    ///      (the bitmap `is_free` guard below makes it a no-op before any write).
+    ///   3. `reclaim_offset` on a stale ring entry computes the block address via
+    ///      `Node::deref` (pure arithmetic — NO memory access) and then reads
+    ///      `magic` / `kind` / **bitmap `is_free`** — ALL in the never-decommitted
+    ///      metadata — and for a free block (and at `live==0` ALL are free) does a
+    ///      no-op BEFORE touching the block. The decommitted page is never read or
+    ///      written.
+    ///   4. `reclaim` (drain) and `decommit` both run owner-side, so they are
+    ///      serialized on the owning thread — there is no reclaim-vs-decommit race
+    ///      on one segment.
+    ///
+    /// ⇒ No UAF, no write to decommitted memory. `crossbeam-epoch` is NOT needed;
+    /// none is added. (Full argument: `docs/PHASE35_DECOMMIT_DESIGN.md` §1.)
+    #[cfg(feature = "alloc-decommit")]
+    fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) {
+        let mut meta = SegmentMeta::new(base);
+        let live = meta.dec_live();
+        // Only an empty, non-current, not-already-decommitted segment is
+        // returned to the OS. The current carve target stays committed (we are
+        // about to bump-allocate into it); already-decommitted is idempotent.
+        if live != 0 || base == small_cur || meta.is_decommitted() {
+            return;
+        }
+        // NEVER decommit the PRIMORDIAL segment: its metadata extends to
+        // `primordial_meta_end()` (it hosts the self-hosted registry between
+        // `small_meta_end()` and `primordial_meta_end()`), but the decommit reset
+        // computes the payload start at `small_meta_end()`. Decommitting from
+        // there would return the registry pages to the OS and reset page-map /
+        // bump over the registry — corrupting the substrate. Only `Small`
+        // segments (whose payload genuinely starts at `small_meta_end()`) are
+        // eligible. A field-specific `kind` read (disjoint from the owner's
+        // `bump`/`live_count` writes; race-free like the other `kind_at` reads).
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+            return;
+        }
+        Self::decommit_empty_segment(&mut meta, base);
+    }
+
+    /// TEST-ONLY (Phase 35): the process-wide count of M6 decommit invocations
+    /// (`decommit_empty_segment` calls). The soak test reads this to assert the
+    /// decommit hook actually fires when segments empty (the counterfactual: with
+    /// the live-count proviso miswired it stays zero and the test goes red). A
+    /// plain relaxed atomic — diagnostic only, no ordering obligation.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_decommit_count() -> u64 {
+        DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TEST-ONLY (Phase 35): the owner-only `live_count` of `ptr`'s segment, or
+    /// `None` if `ptr` is foreign / not small/primordial. Lets the soak test
+    /// assert a segment reaches `live_count == 0` before decommit.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
+        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        if !self.table.contains_base(base) {
+            return None;
+        }
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).live_count_of())
+    }
+
+    /// TEST-ONLY (Phase 35): whether `ptr`'s segment is currently decommitted, or
+    /// `None` if `ptr` is foreign / not small/primordial.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
+        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        if !self.table.contains_base(base) {
+            return None;
+        }
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).is_decommitted())
+    }
+
+    /// Decommit an empty small segment's payload and reset it to a clean blank.
+    /// Precondition (caller's invariant): `live_count == 0` for this segment, so
+    /// the entire payload `[small_meta_end, SEGMENT)` holds no live block.
+    ///
+    /// Steps (design §3):
+    ///   1. Return the payload pages `[small_meta_end, SEGMENT)` to the OS. The
+    ///      metadata pages (header / page-map / bin-table / alloc-bitmap / ring)
+    ///      stay committed — cross-thread readers touch them.
+    ///   2. Reset the segment to clean-empty: `bump = small_meta_end`, every
+    ///      `BinTable` head = `FREE_LIST_NULL`, every payload page-map entry =
+    ///      `Free`, the alloc bitmap = all-zeros. Safe because `live_count == 0`:
+    ///      no block is live, every free-list node we are dropping is itself free.
+    ///   3. Set the `decommitted` flag so the next carve recommits first.
+    #[cfg(feature = "alloc-decommit")]
+    fn decommit_empty_segment(meta: &mut SegmentMeta, base: *mut u8) {
+        // Test seam: count the invocation (diagnostic; relaxed).
+        DECOMMIT_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        let payload_start = SegLayout::small_meta_end();
+        // 1. Return the payload pages to the OS (no-op under miri).
+        os::decommit_pages(base, payload_start, SEGMENT);
+        // 2a. Reset the bump cursor to the payload start (segment is blank). This
+        //     is the load-bearing reset for the post-decommit stale-free guard:
+        //     after this, every prior block offset in the payload is `>= bump`, so
+        //     a late free / double-free / stale reclaim targeting this segment is
+        //     rejected by the `off >= bump` check in `dealloc_small` /
+        //     `reclaim_offset` BEFORE it writes a `next` pointer into a (now
+        //     decommitted / unmapped) payload page.
+        meta.set_bump(payload_start);
+        // 2b. Empty every class free list.
+        let mut bt = meta.bin_table();
+        for c in 0..super::size_classes::SMALL_CLASS_COUNT {
+            bt.set_head(c, FREE_LIST_NULL);
+        }
+        // 2c. Re-mark every payload page `Free` in the page map (metadata pages
+        //     keep their `Meta` marking). Payload pages are `[meta_pages,
+        //     PAGES_PER_SEGMENT)`.
+        let mut pm = meta.page_map();
+        let meta_pages = SegLayout::small_meta_pages();
+        for p in meta_pages..super::segment_header::PAGES_PER_SEGMENT {
+            pm.set_free(p);
+        }
+        // 2d. Zero the alloc bitmap (every slot "allocated / not-a-block" — the
+        //     init state; with no live blocks and an empty free list this is the
+        //     correct clean state). Re-init in place over the bitmap bytes.
+        super::alloc_bitmap::AllocBitmap::init_in_place(
+            Node::offset(base, SegLayout::alloc_bitmap_off()),
+        );
+        // 3. Flag the segment decommitted so the next `carve_block` recommits.
+        meta.set_decommitted(true);
     }
 
     /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
@@ -332,7 +522,8 @@ impl AllocCore {
                 continue;
             }
             let ring = SegmentMeta::new(base).remote_ring();
-            ring.drain(|off| Self::reclaim_offset(base, off));
+            let small_cur = self.small_cur;
+            ring.drain(|off| Self::reclaim_offset(base, off, small_cur));
         }
     }
 
@@ -596,7 +787,8 @@ impl AllocCore {
             #[cfg(feature = "alloc-xthread")]
             {
                 let ring = SegmentMeta::new(base).remote_ring();
-                ring.drain(|off| Self::reclaim_offset(base, off));
+                let small_cur = self.small_cur;
+                ring.drain(|off| Self::reclaim_offset(base, off, small_cur));
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -612,6 +804,9 @@ impl AllocCore {
     /// (it becomes the new head) via the node seam.
     #[inline]
     fn pop_free(&self, segment: *mut u8, class_idx: usize, block_size: usize) -> Option<*mut u8> {
+        #[cfg(feature = "alloc-decommit")]
+        let mut meta = SegmentMeta::new(segment);
+        #[cfg(not(feature = "alloc-decommit"))]
         let meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
         let head_off = bt.head(class_idx);
@@ -634,6 +829,14 @@ impl AllocCore {
         // and is handed to the caller, so a subsequent free must NOT see it as
         // already-free (and the next legitimate free must be able to re-mark it).
         meta.alloc_bitmap().mark_alloc(head_off);
+        // Phase 35 (M6): a block left the free list and is handed to the caller
+        // → one more live block in this segment. Owner-only counter. A popped
+        // block always comes from a COMMITTED payload (a decommitted segment was
+        // reset to an empty free list, so `pop_free` finds nothing there), so no
+        // recommit is needed on this path — only `carve_block` writes fresh
+        // payload and thus recommits.
+        #[cfg(feature = "alloc-decommit")]
+        meta.inc_live();
         let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
     }
@@ -657,8 +860,28 @@ impl AllocCore {
         if aligned_bump + block_size > SEGMENT {
             return None;
         }
+        // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
+        // emptied and we returned its pages to the OS), we are about to write
+        // into the payload — recommit the whole payload range and clear the flag
+        // BEFORE the bump cursor advances / the page-map / the block is touched.
+        // The reset that accompanied decommit left `bump == small_meta_end`, so
+        // a decommitted segment is always carved from its payload start; the
+        // simplest correct recommit is the whole `[small_meta_end, SEGMENT)`
+        // payload at once (per §4 of the design — pessimistic but correct, and
+        // a recommit only happens on the first reuse after an empty→decommit).
+        #[cfg(feature = "alloc-decommit")]
+        if meta.is_decommitted() {
+            os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT);
+            meta.set_decommitted(false);
+        }
         // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
+        // Phase 35: this carved block is now live (handed to the caller, or — on
+        // the refill path — immediately pushed to the free list, which calls
+        // `dealloc_small` → `dec_live`, netting zero for refill blocks; the
+        // caller's block keeps the +1). Owner-only counter, plain field bump.
+        #[cfg(feature = "alloc-decommit")]
+        meta.inc_live();
         // Mark the page containing `aligned_bump` as owned by `class_idx`.
         let mut pm = meta.page_map();
         let page = aligned_bump / super::os::PAGE;
@@ -688,6 +911,21 @@ impl AllocCore {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
         let off = (ptr as usize - base as usize) as u32;
+        // Phase 35 (M6 decommit) — the post-decommit stale-free guard. When a
+        // segment empties it is decommitted AND reset: `bump` returns to
+        // `small_meta_end()` and the alloc bitmap is zeroed. A late free / a
+        // legitimate double-free of a block that lived in the now-decommitted
+        // payload would (a) pass the zeroed bitmap `is_free` check and (b)
+        // `write_next` into a DECOMMITTED / unmapped page — a UAF. Every block
+        // that was ever carved has `off >= bump` ONLY after such a reset (a live
+        // block in a committed segment always has `off < bump`); so rejecting
+        // `off >= bump` closes the window with no false positive on a real free.
+        // Owner-only `bump` read (single-writer), gated to the feature that
+        // resets the bump.
+        #[cfg(feature = "alloc-decommit")]
+        if (off as usize) >= meta.bump_of() {
+            return;
+        }
         // O(1) exact double-free guard via the alloc bitmap.
         let mut bm = meta.alloc_bitmap();
         if bm.is_free(off) {
@@ -706,6 +944,11 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
+        // Phase 35 (M6): one fewer live block in this segment; decommit if it
+        // just emptied and is not the current carve target. Own-thread free runs
+        // on the owner, so the counter stays single-writer.
+        #[cfg(feature = "alloc-decommit")]
+        Self::dec_live_and_maybe_decommit(base, self.small_cur);
     }
 
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
@@ -745,7 +988,6 @@ impl AllocCore {
             reservation_len,
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
-        // Forget the owning handle: drop walks the registry to free.
         core::mem::forget(segment);
         Node::deref(base, hdr_aligned)
     }

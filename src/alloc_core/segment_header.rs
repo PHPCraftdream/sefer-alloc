@@ -235,6 +235,33 @@ pub(crate) struct SegmentHeader {
     /// [`next_abandoned_atomic`](SegmentMeta::next_abandoned_atomic) on the
     /// abandon/adopt path.
     pub next_abandoned: u64,
+    /// Phase 35 (M6 decommit): the **owner-only** count of live (carved-and-not-
+    /// free) blocks in this small/primordial segment. Incremented when a block
+    /// is handed to the caller (`pop_free` / `carve_block`), decremented when a
+    /// block is freed (`dealloc_small` / `reclaim_offset`). When it reaches zero
+    /// the segment is empty and (under `alloc-decommit`) its payload pages are
+    /// returned to the OS.
+    ///
+    /// **Not atomic — owner-only.** Every mutation runs on the segment's owner:
+    /// own-thread alloc/free AND the owner-side ring drain (`reclaim_offset`).
+    /// The cross-thread freer NEVER touches this field (it pushes an offset into
+    /// the `RemoteFreeRing`; the owner decrements when it drains). So a plain
+    /// `u32` field, accessed through its `offset_of!` offset like `bump`, is
+    /// race-free under the single-writer discipline (see §2 of the Phase 35
+    /// design and the `bump_of`/`set_bump` precedent).
+    ///
+    /// The field is present in EVERY build's layout (so the header byte layout
+    /// is stable regardless of feature config — like `owner_state`/
+    /// `next_abandoned`); it is read/mutated ONLY under `alloc-decommit`. Without
+    /// that feature it is dead data (silenced below).
+    pub live_count: u32,
+    /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
+    /// segment's payload pages are currently DECOMMITTED (returned to the OS).
+    /// Set when `live_count` hits zero and the payload is decommitted+reset;
+    /// cleared when the segment is reselected for carving and the payload is
+    /// recommitted. Like `live_count`, present in every layout, used only under
+    /// `alloc-decommit`.
+    pub decommitted: u32,
 }
 
 /// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
@@ -270,6 +297,9 @@ impl SegmentHeader {
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
             next_abandoned: ABANDONED_TAIL,
+            // A fresh small segment has no live blocks and a committed payload.
+            live_count: 0,
+            decommitted: 0,
         }
     }
 
@@ -295,6 +325,11 @@ impl SegmentHeader {
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
             next_abandoned: ABANDONED_TAIL,
+            // Large segments do not use the small-segment decommit bookkeeping
+            // (they hold one allocation and are freed wholesale at Drop); these
+            // are inert for a Large header.
+            live_count: 0,
+            decommitted: 0,
         }
     }
 
@@ -423,6 +458,14 @@ impl PageMap {
     pub(crate) fn set_class(&mut self, p: usize, class_idx: usize) {
         debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
         Node::write_u8(self.entries_at_const(p), PageClass::encode_class(class_idx));
+    }
+
+    /// Mark page `p` as `Free` (uncarved). Phase 35: used by the M6 decommit
+    /// reset to return an emptied segment's payload pages to the bump region.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn set_free(&mut self, p: usize) {
+        debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
+        Node::write_u8(self.entries_at_const(p), PageClass::Free as u8);
     }
 
     /// Pointer to entry `p`. Caller guarantees `p < PAGES_PER_SEGMENT`.
@@ -625,6 +668,69 @@ impl SegmentMeta {
         Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
     }
 
+    // -------------------------------------------------------------------
+    // Phase 35 (M6 decommit) — field-specific owner-only accessors for the
+    // `live_count` and `decommitted` fields. Identical discipline to
+    // `bump_of`/`set_bump`: a single-word load/store at the field's
+    // `offset_of!` offset through the `node` seam, so this file stays
+    // `unsafe`-free. Owner-only (the owning thread is the sole mutator of
+    // both fields — own-thread alloc/free and the owner-side ring drain;
+    // the cross-thread freer never touches them), so a plain field
+    // read/write is race-free, exactly as for `bump`.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-only `live_count` (number of carved-and-not-free blocks).
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn live_count_of(&self) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, live_count);
+        Node::read_u32(Node::offset(self.base, off) as *const u32)
+    }
+
+    /// Write the owner-only `live_count`.
+    #[cfg(feature = "alloc-decommit")]
+    fn set_live_count(&mut self, value: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, live_count);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
+    }
+
+    /// Increment `live_count` (a block was handed to the caller). Saturating so
+    /// a corrupt/overflowed counter never wraps to zero and spuriously triggers
+    /// a decommit of a non-empty segment (defence-in-depth; a real `live_count`
+    /// is bounded by `SEGMENT / MIN_BLOCK` ≪ `u32::MAX`).
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn inc_live(&mut self) {
+        let v = self.live_count_of();
+        self.set_live_count(v.saturating_add(1));
+    }
+
+    /// Decrement `live_count` (a block was freed) and return the NEW value.
+    /// Saturating at zero: a decrement below zero would indicate a double-free
+    /// that slipped past the bitmap guard (it cannot, since the caller checks
+    /// `is_free` first), but saturating keeps the counter sane rather than
+    /// wrapping to `u32::MAX` and permanently suppressing decommit.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn dec_live(&mut self) -> u32 {
+        let v = self.live_count_of();
+        let new = v.saturating_sub(1);
+        self.set_live_count(new);
+        new
+    }
+
+    /// Read the owner-only `decommitted` flag (true ⟺ payload pages are
+    /// currently returned to the OS).
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn is_decommitted(&self) -> bool {
+        let off = core::mem::offset_of!(SegmentHeader, decommitted);
+        Node::read_u32(Node::offset(self.base, off) as *const u32) != 0
+    }
+
+    /// Set/clear the owner-only `decommitted` flag.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn set_decommitted(&mut self, value: bool) {
+        let off = core::mem::offset_of!(SegmentHeader, decommitted);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
+    }
+
     /// Stamp the `owner_thread_free` field ONLY (not a full-struct
     /// `write_header`). The stamping path runs on the owning thread and writes
     /// the field at most once per segment (when it transitions null → the
@@ -717,3 +823,11 @@ const fn align_up_const(n: usize, a: usize) -> usize {
 const _: () = assert!(Layout::primordial_meta_end() + PAGE <= super::os::SEGMENT);
 const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
 const _: () = assert!(super::size_classes::MIN_BLOCK >= super::node::NODE_SIZE);
+// Phase 35: adding the `live_count` / `decommitted` fields must NOT push the
+// header past one page, or `Layout::page_map_off()` (= `align_up(sizeof header,
+// PAGE)`) would shift and break every downstream offset / the M9 abandoned-stack
+// layout. The header is ~96 bytes ≪ PAGE (4 KiB); this asserts it stays so, so
+// the byte layout is identical to the pre-Phase-35 build (the fields land in the
+// header's existing sub-page padding).
+const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
+const _: () = assert!(Layout::page_map_off() == PAGE);

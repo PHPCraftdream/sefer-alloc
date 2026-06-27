@@ -71,7 +71,7 @@ fn cross_segment_free_blocks_are_reused() {
     }
 
     // --- Round 2: must reuse — no allocation may land in a fresh segment. ---
-    let mut new_bases = 0usize;
+    let mut new_bases: HashSet<usize> = HashSet::new();
     for i in 0..COUNT {
         let p = heap.alloc(layout);
         assert!(!p.is_null(), "round2 alloc null at {i}");
@@ -82,14 +82,47 @@ fn cross_segment_free_blocks_are_reused() {
             }
         }
         if !bases1.contains(&seg_base(p)) {
-            new_bases += 1;
+            new_bases.insert(seg_base(p));
         }
     }
+
+    // Without `alloc-decommit` the segment-centric free-state refactor requires
+    // EXACT reuse: every round-2 block lands in a round-1 segment (zero fresh
+    // segments) — the original Phase 12.1 invariant.
+    #[cfg(not(feature = "alloc-decommit"))]
     assert_eq!(
-        new_bases, 0,
-        "cross-segment reuse regression: round 2 placed {new_bases}/{COUNT} blocks \
-         in fresh segments instead of reusing round-1's freed blocks \
-         (round 1 spanned {} segments)",
+        new_bases.len(),
+        0,
+        "cross-segment reuse regression: round 2 placed blocks in {} fresh \
+         segments instead of reusing round-1's freed blocks (round 1 spanned {})",
+        new_bases.len(),
         bases1.len()
     );
+
+    // With `alloc-decommit` the policy legitimately diverges: when round 1 frees
+    // every block, each emptied NON-current segment is DECOMMITTED (its payload
+    // returned to the OS) and reset to a blank with an EMPTY free list. Round 2
+    // therefore does NOT reuse those segments' free lists — it carves fresh (or
+    // recommits). That is correct (the memory WAS returned to the OS), so the
+    // strict "zero fresh segments" invariant no longer holds. The weaker
+    // invariant that still must hold — and that this test now guards — is that
+    // the footprint stays BOUNDED: round 2 re-allocating the same working set
+    // must not blow the segment count far past round 1's span (no unbounded
+    // growth, no per-alloc fresh segment). We allow up to round-1's span again
+    // (decommit-then-recarve can touch a comparable number of fresh segments)
+    // plus headroom, but not the pathological "every block a new segment".
+    #[cfg(feature = "alloc-decommit")]
+    {
+        // The block writes above already proved no fault / no overlap (a corrupt
+        // post-decommit reuse would fault on the readback-by-write here).
+        let bound = bases1.len() + 3; // round-1 span + small headroom
+        assert!(
+            new_bases.len() <= bound,
+            "alloc-decommit footprint regression: round 2 touched {} fresh \
+             segments (> bound {bound}); round 1 spanned {} — decommit/recommit \
+             must not grow the footprint unboundedly",
+            new_bases.len(),
+            bases1.len()
+        );
+    }
 }
