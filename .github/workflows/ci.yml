@@ -54,6 +54,11 @@ jobs:
           - "" # default: the safe core + SyncRegion
           - "--features experimental" # adds LockFreeRegion + EpochRegion
           - "--features byte" # adds ByteRegion + ByteAllocator
+          # Phases 8–13 allocator descent. Without these, CI never exercised
+          # alloc-core/alloc/alloc-global/alloc-xthread/alloc-decommit.
+          - "--features alloc-core" # Phase 8 segment substrate (AllocCore)
+          - "--features \"alloc-global alloc-xthread\"" # Phases 9–11: per-thread Heap + SeferMalloc + cross-thread free
+          - "--features \"alloc-global alloc-xthread alloc-decommit\"" # + Phase 35 M6 decommit
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -92,12 +97,51 @@ jobs:
           - "region_invariants"
           # The byte test binary needs the `byte` feature.
           - "--features byte --test byte"
+          # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
+          # (zero-crossing of payload pages) over the segment substrate.
+          - "--features \"alloc-core alloc-decommit\" --test decommit_miri_cycle"
+          # Phase 9–11 reclaim-offset arithmetic (cross-thread free placement)
+          # under miri's strict provenance — UB-free pointer math in the
+          # ring/reclaim path.
+          - "--features \"alloc-global alloc-xthread\" --test reclaim_offset_unit"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
       - run: cargo miri test ${{ matrix.test }}
+
+  tsan:
+    # ThreadSanitizer (weak-memory / data-race detector) gate for the
+    # cross-thread allocator path. TSan catches missing-synchronization /
+    # data-race bugs in the ring/reclaim/owner-stamp protocol (Phases 9–11)
+    # that pure functional tests on x86_64 can hide. Requires nightly +
+    # rust-src (for `-Zbuild-std`, since TSan must instrument the std/core it
+    # links against). Linux-only; not runnable on the Windows dev host.
+    name: thread-sanitizer
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Zsanitizer=thread"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      # The race-prone cross-thread tests: the reproduction harnesses
+      # (race_repro / race_norecycle), the multi-threaded global-alloc churn
+      # (global_alloc_mt), and the cross-thread heap dealloc routing
+      # (heap_cross_thread). `-Zbuild-std` rebuilds std with TSan
+      # instrumentation so the detector sees inside the standard library too.
+      - name: Run race-prone tests under ThreadSanitizer
+        run: >-
+          cargo +nightly test
+          -Zbuild-std
+          --target x86_64-unknown-linux-gnu
+          --features "alloc-global alloc-xthread"
+          --test race_repro
+          --test race_norecycle
+          --test global_alloc_mt
+          --test heap_cross_thread
 
   multi-arch:
     # x86 is a strong-memory model; aarch64 is weak-memory and can surface
@@ -126,9 +170,26 @@ jobs:
       - name: Run tests (native)
         if: ${{ !matrix.use_cross }}
         run: cargo test --target ${{ matrix.target }} --features experimental
+      # Weak-memory coverage for the allocator's cross-thread ordering: the
+      # ring/reclaim/owner-stamp (Phases 9–11) and the M6 decommit/recommit
+      # zero-crossing (Phase 35). aarch64 is the load-bearing run here (weak
+      # memory model can expose ordering bugs x86_64 hides); x86_64 is the
+      # strong-memory baseline.
+      - name: Run cross-thread tests (native)
+        if: ${{ !matrix.use_cross }}
+        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread"
+      - name: Run cross-thread + decommit tests (native)
+        if: ${{ !matrix.use_cross }}
+        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
       - name: Run tests (cross)
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features experimental
+      - name: Run cross-thread tests (cross)
+        if: ${{ matrix.use_cross }}
+        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread"
+      - name: Run cross-thread + decommit tests (cross)
+        if: ${{ matrix.use_cross }}
+        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
 
   docs:
     name: rustdoc

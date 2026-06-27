@@ -13,8 +13,11 @@ description = "libFuzzer target for sefer-alloc's Region op-stream invariants (P
 [workspace]
 
 [dependencies]
-# The crate under test, with its default features (the single-threaded core).
-sefer-alloc = { path = ".." }
+# The crate under test. `alloc-core` enables the Phase 8 segment substrate
+# (`AllocCore`) that the `global_alloc_ops` target fuzzes; the default
+# single-threaded core (`Region` / `Handle`) the `region_ops` target uses is
+# always available. Both targets share this one dependency.
+sefer-alloc = { path = "..", features = ["alloc-core"] }
 
 # libFuzzer harness + `arbitrary` op derivation. Pinned to the versions that
 # `cargo-fuzz` scaffolds; both are fuzz-only deps and do NOT touch the main
@@ -25,5 +28,11 @@ libfuzzer-sys = "0.4"
 [[bin]]
 name = "region_ops"
 path = "fuzz_targets/region_ops.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "global_alloc_ops"
+path = "fuzz_targets/global_alloc_ops.rs"
 test = false
 doc = false

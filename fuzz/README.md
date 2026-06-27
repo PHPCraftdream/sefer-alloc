@@ -24,6 +24,34 @@ Interprets the fuzz input as a bounded sequence of ops (`insert` / `get` /
 input cannot OOM the fuzzer. Any invariant violation panics, which libFuzzer
 reports as a finding.
 
+## The target: `global_alloc_ops`
+
+Fuzzes the Phase 8–11 allocator descent. Interprets the input as a bounded
+stream of `alloc` / `alloc_zeroed` / `dealloc` / `realloc` ops of random sizes
+(1 B .. ~2 MiB, spanning the small free-list classes and the large
+dedicated-segment path) and random power-of-two alignments (1 .. 4096) against
+[`sefer_alloc::AllocCore`](../src/alloc_core/alloc_core.rs) — the single-threaded
+segment substrate the `SeferMalloc` / `GlobalAlloc` face is built on. It checks
+the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
+
+- **M1** every returned pointer is non-null, aligned, and writable for its size
+  (pattern write + read-back).
+- **M2** double-free / use-after-free never corrupts the allocator (a second
+  `dealloc` is a no-op).
+- **M3** two live allocations never share a byte (overlap check + per-block fill
+  so contamination is detected at run end).
+- **M4** the chosen size class always satisfies the requested size and align.
+- `alloc_zeroed` returns all-zero memory; `realloc` preserves the
+  `min(old, new)` prefix.
+
+It targets `AllocCore` (owned, single-threaded, drops cleanly per input) rather
+than the installed `SeferMalloc` `#[global_allocator]`: installing it process-wide
+would route libFuzzer's own allocations through the not-yet-hardened TLS init
+(see [`tests/global_alloc.rs`](../tests/global_alloc.rs)). The cross-thread
+ordering path is covered instead by the TSan + aarch64 CI gates and the loom
+harnesses. The run length is capped at 2048 ops; any invariant violation panics
+and is reported as a finding.
+
 ## Prerequisites
 
 ```sh
@@ -36,8 +64,9 @@ cargo +nightly install cargo-fuzz
 From this `fuzz/` directory:
 
 ```sh
-# Quick smoke run.
+# Quick smoke run (swap in `global_alloc_ops` for the allocator target).
 cargo +nightly fuzz run region_ops
+cargo +nightly fuzz run global_alloc_ops
 
 # Long overnight run (wall-clock bounded, libFuzzer picks the time budget).
 cargo +nightly fuzz run region_ops -- -max_total_time=3600
