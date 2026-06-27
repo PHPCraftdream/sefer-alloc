@@ -303,13 +303,32 @@ enum Workload {
 /// ops/sec. `A` is a ZST `GlobalAlloc` constructed fresh per thread via
 /// `ZstAlloc::default_zst` (all three of our allocators are ZSTs).
 ///
+/// `pinned`: when `true` (only reachable under the `pinning` feature), worker
+/// *i* is pinned to core *i* via the Phase-7c `core_affinity` organ (reused
+/// through `PinnedRunner::pin_current_thread_to_core`). Because a heap is bound
+/// to its thread through TLS (`current_for_alloc`), pinning the thread keeps the
+/// heap's segments warm in one core's cache — the per-thread-heap analogue of
+/// the sharded-region thread-per-core topology. Best-effort: if the OS refuses
+/// the affinity the worker still runs (just unpinned). When `false`, behaviour
+/// is identical to the pre-pinning baseline (no affinity calls at all).
+///
 /// # Safety
 /// `A` is a valid `GlobalAlloc`; the closure body upholds the per-block
 /// free-exactly-once discipline documented at module level.
-fn run_config<A>(workload: Workload, threads: usize, steps_per_thread: usize) -> f64
+fn run_config<A>(workload: Workload, threads: usize, steps_per_thread: usize, pinned: bool) -> f64
 where
     A: ZstAlloc + GlobalAlloc + Send + 'static,
 {
+    // Resolve the host core ids once (only when pinning is requested). Passed
+    // by value (Copy) into each worker so worker `i` pins to `cores[i]`.
+    #[cfg(feature = "pinning")]
+    let cores = if pinned {
+        sefer_alloc::PinnedRunner::available_cores()
+    } else {
+        None
+    };
+    #[cfg(not(feature = "pinning"))]
+    let _ = pinned; // baseline build: no affinity path exists.
     // Per-thread cross-thread mailboxes.
     let mut senders: Vec<Sender<Block>> = Vec::with_capacity(threads);
     let mut receivers: Vec<Option<Receiver<Block>>> = Vec::with_capacity(threads);
@@ -336,7 +355,19 @@ where
             .wrapping_mul(t as u64 + 1)
             .wrapping_add(0xDEAD_BEEF);
         let alloc = A::default_zst();
+        // Pick this worker's target core (round-robin over available cores) so
+        // worker `i` lands on a distinct core when possible. Resolved on the
+        // main thread; moved into the worker (CoreId is Copy).
+        #[cfg(feature = "pinning")]
+        let core = cores.as_ref().and_then(|cs| cs.get(t % cs.len()).copied());
         let handle = thread::spawn(move || {
+            // Best-effort pin BEFORE any allocation, so this thread's heap and
+            // its segments are faulted in / stay resident on the chosen core.
+            // Ignored if the OS refuses (the worker still runs, just unpinned).
+            #[cfg(feature = "pinning")]
+            if let Some(core) = core {
+                let _ = sefer_alloc::PinnedRunner::pin_current_thread_to_core(core);
+            }
             // Each worker waits at the barrier so all start together.
             barrier.wait();
             // SAFETY: `alloc` is a valid GlobalAlloc; workers uphold the
@@ -411,6 +442,35 @@ impl ZstAlloc for System {
     }
 }
 
+/// Run the full workload × T sweep for one pinning mode and print a table.
+fn run_sweep(steps_per_thread: usize, thread_sweep: &[usize], pinned: bool) {
+    for &workload in &[Workload::Larson, Workload::Mstress] {
+        let name = match workload {
+            Workload::Larson => "larson",
+            Workload::Mstress => "mstress",
+        };
+        let mode = if pinned { "pinned" } else { "unpinned" };
+        println!("--- workload: {name}  (mode: {mode}) ---");
+        println!(
+            "{:>3}  {:>16}  {:>16}  {:>16}",
+            "T", "SeferMalloc", "mimalloc", "System"
+        );
+        for &t in thread_sweep {
+            let sefer = run_config::<SeferMalloc>(workload, t, steps_per_thread, pinned);
+            let mi = run_config::<mimalloc::MiMalloc>(workload, t, steps_per_thread, pinned);
+            let sys = run_config::<System>(workload, t, steps_per_thread, pinned);
+            println!(
+                "{:>3}  {:>14.2} M  {:>14.2} M  {:>14.2} M",
+                t,
+                sefer / 1e6,
+                mi / 1e6,
+                sys / 1e6
+            );
+        }
+        println!();
+    }
+}
+
 fn main() {
     println!("== sefer-alloc MT macro-benchmark ==");
     println!("Deterministic xorshift PRNG (fixed seeds); aggregate ops/sec.");
@@ -421,29 +481,26 @@ fn main() {
     let steps_per_thread = 400_000usize;
     let thread_sweep = [1usize, 2, 4];
 
-    for &workload in &[Workload::Larson, Workload::Mstress] {
-        let name = match workload {
-            Workload::Larson => "larson",
-            Workload::Mstress => "mstress",
-        };
-        println!("--- workload: {name} ---");
-        println!(
-            "{:>3}  {:>16}  {:>16}  {:>16}",
-            "T", "SeferMalloc", "mimalloc", "System"
-        );
-        for &t in &thread_sweep {
-            let sefer = run_config::<SeferMalloc>(workload, t, steps_per_thread);
-            let mi = run_config::<mimalloc::MiMalloc>(workload, t, steps_per_thread);
-            let sys = run_config::<System>(workload, t, steps_per_thread);
-            println!(
-                "{:>3}  {:>14.2} M  {:>14.2} M  {:>14.2} M",
-                t,
-                sefer / 1e6,
-                mi / 1e6,
-                sys / 1e6
-            );
+    #[cfg(feature = "pinning")]
+    {
+        // Phase 13.6: run TWO modes so pinned vs unpinned is directly comparable
+        // in one process (same warm caches, same machine state).
+        let cores = sefer_alloc::PinnedRunner::available_cores();
+        match &cores {
+            Some(cs) => println!("[pinning] host reports {} core id(s); worker i pinned to core i (round-robin).\n", cs.len()),
+            None => println!("[pinning] host refused core enumeration; pinned mode falls back to unpinned.\n"),
         }
-        println!();
+        println!("===== BASELINE (unpinned) =====\n");
+        run_sweep(steps_per_thread, &thread_sweep, false);
+        println!("===== PINNED (heap == core) =====\n");
+        run_sweep(steps_per_thread, &thread_sweep, true);
+    }
+
+    #[cfg(not(feature = "pinning"))]
+    {
+        // Default build: single (unpinned) sweep, byte-for-byte the pre-13.6
+        // behaviour. Build with `--features pinning` for the pinned comparison.
+        run_sweep(steps_per_thread, &thread_sweep, false);
     }
 
     println!("(M = million ops/sec. RSS is not measured here — no portable,");

@@ -118,6 +118,67 @@ OS, feature `alloc-decommit`/#35, so a fair RSS comparison must wait for that.)
   constant is a real gap, but it does **not** compound under contention, so by a
   handful of threads the safe-by-construction allocator is competitive-to-ahead.
 
+### Heap == core pinning (Phase 13.6) — honest verdict: no win on this host
+
+A heap is bound to its thread via TLS (`current_for_alloc`), so pinning the
+**worker thread** to a fixed core keeps that heap's segments warm in one core's
+cache without the allocator having to change anything — the per-thread-heap
+analogue of the Phase-7c sharded thread-per-core topology. The macro-bench grew
+an opt-in **pinned mode** (feature `pinning`; reuses the Phase-7c
+`core_affinity` organ through `PinnedRunner::pin_current_thread_to_core` /
+`available_cores` — no new dependency, no `unsafe`). Run:
+
+```
+cargo run --release --example malloc_macro \
+  --features "alloc-global alloc-xthread pinning"
+```
+
+It runs the **whole sweep twice in one process** (unpinned baseline, then
+pinned) so the two modes see the same warm machine state. Without the `pinning`
+feature the example is byte-for-byte the pre-13.6 single (unpinned) sweep.
+
+Measured on this host (**Windows 10, 16 logical cores**, 1/2/4 workers,
+representative of two consecutive runs; M ops/sec, higher better):
+
+**larson — SeferMalloc**
+
+| T | unpinned | pinned |
+| -: | -------: | -----: |
+| 1 |   ~19 M  | ~20 M  |
+| 2 | **~24 M**| ~21 M  |
+| 4 | **~42 M**| ~32 M  |
+
+**mstress — SeferMalloc**
+
+| T | unpinned | pinned |
+| -: | -------: | -----: |
+| 1 |   ~25 M  | ~23 M  |
+| 2 | **~41 M**| ~27 M  |
+| 4 | **~63 M**| ~48 M  |
+
+**Pinning does NOT help here — it hurts, the more so as T grows** (the same
+trend holds for mimalloc and System in the pinned tables). This is the expected
+outcome on a **16-core box running only 1–4 workers**: the OS scheduler has
+plenty of idle cores and places the few hot threads well on its own. Forcing
+worker *i* onto a fixed core id removes that freedom — round-robin from core 0
+on an SMT machine can co-schedule two workers on the two hyperthreads of one
+physical core (sharing its L1/L2), and pinning also blocks the scheduler from
+migrating a worker off a core that the OS or another process is using. The
+"keep the heap cache-warm" benefit a pinned topology *can* give (many workers,
+core-count-saturated, cache-hot per-thread working sets) is simply not the
+regime a 16-core dev box with ≤4 workers is in.
+
+**Decision (honest keep-or-document):** the pinned mode is **kept as an opt-in
+tool**, not made the default — exactly because the measurement says it does not
+help *on this machine*. It is the right primitive to reach for on a
+**core-saturated** deployment (workers ≈ cores, thread-per-core executors like
+glommio/monoio, NUMA boxes) where keeping a heap's segments resident on one
+core's cache and avoiding cross-NUMA migration genuinely pays — but that regime
+must be measured on the target host, not assumed. On this 16-core Windows dev
+machine with few workers, leaving the OS scheduler in charge (the default,
+unpinned path) is the faster choice. No numbers were tuned to flatter the
+feature; the slowdown is reported as found.
+
 ## Honest verdict
 
 **The architecture delivers: `SeferMalloc` is competitive with `mimalloc` and
