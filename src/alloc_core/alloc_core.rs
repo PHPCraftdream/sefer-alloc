@@ -968,6 +968,7 @@ impl AllocCore {
     /// after any in-progress ring drain for `base` has completed, so that
     /// stale ring entries can still read the (still-committed) metadata.
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
         let mut meta = SegmentMeta::new(base);
         let live = meta.dec_live();

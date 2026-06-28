@@ -67,6 +67,7 @@ impl AllocBitmap {
     /// bootstrap calls this AFTER zeroing the bytes via [`init_in_place`].
     ///
     /// [`init_in_place`]: Self::init_in_place
+    #[inline(always)]
     pub(crate) fn new(bits: *mut u8) -> Self {
         Self { bits }
     }
@@ -87,7 +88,7 @@ impl AllocBitmap {
     /// Whether the block at segment offset `off` is currently marked FREE
     /// (its bit is set). O(1): one byte load + one mask. This is the M2
     /// double-free test — `true` means the block is already on a free list.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn is_free(&self, off: u32) -> bool {
         let (byte_idx, mask) = Self::locate(off);
         let byte = Node::read_u8(Node::offset(self.bits, byte_idx));
@@ -96,7 +97,7 @@ impl AllocBitmap {
 
     /// Mark the block at segment offset `off` as FREE (set its bit). Called when
     /// the block is pushed onto a free list. O(1): byte load + OR + store.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn mark_free(&mut self, off: u32) {
         let (byte_idx, mask) = Self::locate(off);
         let p = Node::offset(self.bits, byte_idx);
@@ -107,7 +108,7 @@ impl AllocBitmap {
     /// Mark the block at segment offset `off` as ALLOCATED (clear its bit).
     /// Called when the block is popped from a free list and handed out. O(1):
     /// byte load + AND + store.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn mark_alloc(&mut self, off: u32) {
         let (byte_idx, mask) = Self::locate(off);
         let p = Node::offset(self.bits, byte_idx);
@@ -118,7 +119,7 @@ impl AllocBitmap {
     /// Map a segment offset to `(byte_index, bit_mask)` within the bitmap. The
     /// bit index is `off >> MIN_BLOCK_SHIFT` (the `MIN_BLOCK`-slot number);
     /// byte = bit / 8, mask = 1 << (bit % 8). Pure arithmetic.
-    #[inline]
+    #[inline(always)]
     fn locate(off: u32) -> (usize, u8) {
         let bit = (off >> MIN_BLOCK_SHIFT) as usize;
         debug_assert!(bit < Self::FOOTPRINT * 8, "bitmap bit index out of range");

@@ -70,7 +70,7 @@ impl Node {
     /// not handed to the user). The block MUST lie within a segment owned by
     /// this allocator. `next` is either null (tail) or another such free
     /// block's address.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn write_next(block: NonNull<u8>, next: *mut u8) {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: `block` is non-null (from `NonNull`), aligned to at least the
@@ -90,7 +90,7 @@ impl Node {
     /// Returns the address previously stored by [`write_next`](Self::write_next),
     /// or null if none. The block MUST currently be a free-list node (caller's
     /// invariant).
-    #[inline]
+    #[inline(always)]
     pub(crate) fn read_next(block: NonNull<u8>) -> *mut u8 {
         let ptr = block.as_ptr() as *mut *mut u8;
         // SAFETY: same bounds/alignment/exclusivity proof as `write_next`. The
@@ -110,7 +110,7 @@ impl Node {
     /// MUST be `< segment_len` (the caller — the safe Cartographer — guarantees
     /// this by construction). The resulting pointer is valid for whatever block
     /// size the Cartographer carved at that offset.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn deref(segment_base: *mut u8, offset: usize) -> *mut u8 {
         // SAFETY: `segment_base` is the start of an OS-reserved span owned by
         // this allocator (the `Segment` is alive — the safe Cartographer holds
@@ -157,6 +157,7 @@ impl Node {
     /// exclusively own the target range (single-threaded Phase 8 guarantees
     /// this for any metadata write). `T: Copy` so the write is a pure bit
     /// pattern (no drop glue to mis-handle).
+    #[inline(always)]
     pub(crate) fn write_struct<T: Copy>(dst: *mut T, value: T) {
         // SAFETY: caller guarantees `dst` is valid for `size_of::<T>()` bytes,
         // properly aligned, and exclusively owned. `T: Copy` means the write
@@ -169,6 +170,7 @@ impl Node {
     /// Write a single byte `value` at `dst`. Used by the page map init.
     ///
     /// `dst` MUST be a valid writable byte inside a segment owned by us.
+    #[inline(always)]
     pub(crate) fn write_u8(dst: *mut u8, value: u8) {
         // SAFETY: caller guarantees `dst` is a valid, exclusively-owned byte.
         // One-byte write, no alignment requirement.
@@ -177,6 +179,7 @@ impl Node {
 
     /// Write a single `u32` `value` at `dst` (unaligned-tolerant). Used by the
     /// bin table init.
+    #[inline(always)]
     pub(crate) fn write_u32_unaligned(dst: *mut u32, value: u32) {
         // SAFETY: caller guarantees `dst` is valid for 4 bytes and exclusively
         // owned. `write_unaligned` tolerates any address; one 4-byte write.
@@ -184,6 +187,7 @@ impl Node {
     }
 
     /// Read a single byte from `src`. Used by the page map lookup.
+    #[inline(always)]
     pub(crate) fn read_u8(src: *const u8) -> u8 {
         // SAFETY: caller guarantees `src` is a valid readable byte in a live
         // segment. Single-threaded → no racing write.
@@ -192,6 +196,7 @@ impl Node {
 
     /// Read a single `u32` from `src` (unaligned-tolerant). Used by the bin
     /// table head lookup.
+    #[inline(always)]
     pub(crate) fn read_u32_unaligned(src: *const u32) -> u32 {
         // SAFETY: caller guarantees `src` is valid for 4 bytes in a live
         // segment. `read_unaligned` tolerates any address.
@@ -200,6 +205,7 @@ impl Node {
 
     /// Read a typed value `*src`. The generalised hand-discipline primitive
     /// for reading metadata from segment memory.
+    #[inline(always)]
     pub(crate) fn read_struct<T: Copy>(src: *const T) -> T {
         // SAFETY: caller guarantees `src` is valid for `size_of::<T>()` bytes,
         // properly aligned, in a live segment. `T: Copy` → plain bit copy.
@@ -214,6 +220,7 @@ impl Node {
     ///
     /// `src` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
     /// `usize`, in a live segment.
+    #[inline(always)]
     pub(crate) fn read_usize(src: *const usize) -> usize {
         // SAFETY: caller guarantees `src` is valid, aligned, in a live segment.
         // One word load.
@@ -228,6 +235,7 @@ impl Node {
     /// `dst` MUST be valid for `size_of::<usize>()` bytes, properly aligned for
     /// `usize`, and (for fields read cross-thread under the single-writer
     /// discipline) the field must be owner-only or atomic.
+    #[inline(always)]
     pub(crate) fn write_usize(dst: *mut usize, value: usize) {
         // SAFETY: caller guarantees `dst` is valid, aligned, exclusively owned
         // (single-writer: the owning thread is the sole writer of its segments'
@@ -244,6 +252,7 @@ impl Node {
     // Used by the alloc-xthread cross-thread path; under `alloc-core` alone
     // (no xthread) the call sites are gated out and these helpers look dead.
     #[allow(dead_code)]
+    #[inline(always)]
     pub(crate) fn read_u32(src: *const u32) -> u32 {
         // SAFETY: caller guarantees `src` is valid, 4-byte aligned, in a live
         // segment. One 4-byte load.
@@ -258,6 +267,7 @@ impl Node {
     /// `src` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
     /// for a pointer, in a live segment.
     #[allow(dead_code)]
+    #[inline(always)]
     pub(crate) fn read_ptr<T>(src: *const *const T) -> *const T {
         // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
         // segment. One word load.
@@ -274,6 +284,7 @@ impl Node {
     /// `dst` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
     /// for a pointer, and exclusively owned.
     #[allow(dead_code)]
+    #[inline(always)]
     pub(crate) fn write_ptr<T>(dst: *mut *const T, value: *const T) {
         // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
         // exclusively owned (single-writer: the stamping path runs on the
@@ -293,6 +304,7 @@ impl Node {
     /// segment owned by this allocator. The Cartographer only ever passes
     /// offsets derived from the fixed [`super::segment_header::Layout`] or the
     /// bump cursor (both bounded by `SEGMENT`), so this holds by construction.
+    #[inline(always)]
     pub(crate) fn offset(base: *mut u8, off: usize) -> *mut u8 {
         // SAFETY: caller guarantees `off <= SEGMENT` and `base` is the start of
         // a segment of `>= SEGMENT` bytes, so `base + off` is in-bounds and

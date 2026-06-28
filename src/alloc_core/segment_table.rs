@@ -304,6 +304,7 @@ impl SegmentTable {
     ///
     /// Recycled (NULL) slots are NOT considered as matching any base, so a
     /// use-after-recycle pointer is correctly treated as foreign.
+    #[inline(always)]
     pub(crate) fn contains_base(&self, base: *mut u8) -> bool {
         self.hash_contains(base)
     }
@@ -358,13 +359,13 @@ impl SegmentTable {
     /// Right-shifting by `SEGMENT_SHIFT` gives a dense integer key (one key
     /// per segment in the virtual address space). We mask to `HASH_CAPACITY - 1`
     /// for a fast modulo (power-of-two capacity).
-    #[inline]
+    #[inline(always)]
     fn hash_index(base: *mut u8) -> usize {
         (base as usize >> SEGMENT_SHIFT) & (HASH_CAPACITY - 1)
     }
 
     /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
-    #[inline]
+    #[inline(always)]
     fn hash_slot_ptr(&self, i: usize) -> *mut *mut u8 {
         super::node::Node::offset(
             self.hash_slots as *mut u8,
@@ -373,7 +374,7 @@ impl SegmentTable {
     }
 
     /// Read the value stored at hash slot `i`.
-    #[inline]
+    #[inline(always)]
     fn hash_slot_read(&self, i: usize) -> *mut u8 {
         super::node::Node::read_struct::<*mut u8>(self.hash_slot_ptr(i))
     }
@@ -447,6 +448,7 @@ impl SegmentTable {
     /// - `base` is found → returns `true`
     /// - an empty slot (`null_mut()`) is reached → returns `false`
     /// - a tombstone is encountered → skips it (probe chain continues)
+    #[inline(always)]
     fn hash_contains(&self, base: *mut u8) -> bool {
         let start = Self::hash_index(base);
         let mut i = start;

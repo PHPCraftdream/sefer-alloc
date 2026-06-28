@@ -537,6 +537,7 @@ impl BinTable {
     pub(crate) const FOOTPRINT: usize = SMALL_CLASS_COUNT * size_of::<u32>();
 
     /// Construct the view over an already-laid-down bin table at `heads`.
+    #[inline(always)]
     pub(crate) fn new(heads: *mut u32) -> Self {
         Self { heads }
     }
@@ -555,19 +556,20 @@ impl BinTable {
 
     /// The segment-relative offset of the head free block of class `c`, or
     /// `FREE_LIST_NULL` if empty.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn head(&self, c: usize) -> u32 {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
         Node::read_u32_unaligned(self.heads_at_const(c))
     }
 
     /// Set the head of class `c`'s free list to `off`.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn set_head(&mut self, c: usize, off: u32) {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
         Node::write_u32_unaligned(self.heads_at_const(c), off);
     }
 
+    #[inline(always)]
     fn heads_at_const(&self, c: usize) -> *mut u32 {
         Node::offset(self.heads as *mut u8, c * size_of::<u32>()) as *mut u32
     }
@@ -666,6 +668,7 @@ impl SegmentMeta {
     /// Construct the metadata view for a small/primordial segment whose base
     /// is `base` and whose header / page map / bin table are laid down at
     /// their [`Layout`] offsets.
+    #[inline(always)]
     pub(crate) fn new(base: *mut u8) -> Self {
         Self { base }
     }
@@ -703,6 +706,7 @@ impl SegmentMeta {
     /// Read the owner-only `bump` cursor (the next uncarved payload byte
     /// offset). Owner-only: the owning thread is the sole reader/writer of
     /// `bump`; a plain field read is race-free (no Remote ever reads it).
+    #[inline(always)]
     pub(crate) fn bump_of(&self) -> usize {
         let off = core::mem::offset_of!(SegmentHeader, bump);
         Node::read_usize(Node::offset(self.base, off) as *const usize)
@@ -713,6 +717,7 @@ impl SegmentMeta {
     /// avoids rewriting the cross-thread-read header fields, so it cannot race
     /// with a Remote's field read of `magic`/`kind`/`owner_thread_free`.
     /// Owner-only (the Owner is the sole writer of `bump`).
+    #[inline(always)]
     pub(crate) fn set_bump(&mut self, value: usize) {
         let off = core::mem::offset_of!(SegmentHeader, bump);
         Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
@@ -731,6 +736,7 @@ impl SegmentMeta {
 
     /// Read the owner-only `live_count` (number of carved-and-not-free blocks).
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     pub(crate) fn live_count_of(&self) -> u32 {
         let off = core::mem::offset_of!(SegmentHeader, live_count);
         Node::read_u32(Node::offset(self.base, off) as *const u32)
@@ -738,6 +744,7 @@ impl SegmentMeta {
 
     /// Write the owner-only `live_count`.
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     fn set_live_count(&mut self, value: u32) {
         let off = core::mem::offset_of!(SegmentHeader, live_count);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
@@ -748,6 +755,7 @@ impl SegmentMeta {
     /// a decommit of a non-empty segment (defence-in-depth; a real `live_count`
     /// is bounded by `SEGMENT / MIN_BLOCK` ≪ `u32::MAX`).
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     pub(crate) fn inc_live(&mut self) {
         let v = self.live_count_of();
         self.set_live_count(v.saturating_add(1));
@@ -759,6 +767,7 @@ impl SegmentMeta {
     /// `is_free` first), but saturating keeps the counter sane rather than
     /// wrapping to `u32::MAX` and permanently suppressing decommit.
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     pub(crate) fn dec_live(&mut self) -> u32 {
         let v = self.live_count_of();
         let new = v.saturating_sub(1);
@@ -769,6 +778,7 @@ impl SegmentMeta {
     /// Read the owner-only `decommitted` flag (true ⟺ payload pages are
     /// currently returned to the OS).
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     pub(crate) fn is_decommitted(&self) -> bool {
         let off = core::mem::offset_of!(SegmentHeader, decommitted);
         Node::read_u32(Node::offset(self.base, off) as *const u32) != 0
@@ -776,6 +786,7 @@ impl SegmentMeta {
 
     /// Set/clear the owner-only `decommitted` flag.
     #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
     pub(crate) fn set_decommitted(&mut self, value: bool) {
         let off = core::mem::offset_of!(SegmentHeader, decommitted);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
@@ -838,6 +849,7 @@ impl SegmentMeta {
     }
 
     /// The bin-table view.
+    #[inline(always)]
     pub(crate) fn bin_table(&self) -> BinTable {
         BinTable::new(Node::offset(self.base, Layout::bin_table_off()) as *mut u32)
     }
@@ -845,6 +857,7 @@ impl SegmentMeta {
     /// The alloc-bitmap view (the Phase 13.4a O(1) double-free guard). The
     /// bitmap bytes are carved at [`Layout::alloc_bitmap_off`] and zeroed at
     /// bootstrap; this returns the typed view over them.
+    #[inline(always)]
     pub(crate) fn alloc_bitmap(&self) -> super::alloc_bitmap::AllocBitmap {
         super::alloc_bitmap::AllocBitmap::new(Node::offset(self.base, Layout::alloc_bitmap_off()))
     }
