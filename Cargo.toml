@@ -152,6 +152,11 @@ core_affinity = { version = "0.8", optional = true }
 # Phase 0 dependency: property-based differential testing against a reference
 # model. This is the heart of the verification-first build — see docs/PLAN.md.
 proptest = "1"
+# Task #52: tokio burn-in example — async runtime driving SeferMalloc as
+# #[global_allocator].  Minimal feature set: rt-multi-thread (multi-thread
+# scheduler), macros (#[tokio::main]), sync (mpsc channel), time (sleep /
+# timeout / interval).  No fs/net/signal/process — not needed for the harness.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 # Phase 2: criterion benches that empirically choose the single-threaded
 # backing container (SlotMap vs DenseSlotMap vs HashMap vs Vec<Box<T>>) across
 # the iterate / lookup / churn axes. See docs/BENCHMARKS.md for the verdict.
@@ -226,8 +231,55 @@ name = "global_alloc"
 harness = false
 required-features = ["alloc-global"]
 
+# Task #54: large-block and realloc-heavy profiling — SeferMalloc vs mimalloc
+# vs System across three groups: single-shot alloc+free of multi-MiB blocks,
+# geometric grow via GlobalAlloc::realloc, and realloc under adversarial
+# neighbour pressure. Quick criterion profile. Requires `alloc-global`.
+[[bench]]
+name = "large_realloc"
+harness = false
+required-features = ["alloc-global"]
+
 # Phase 11: minimal example installing `SeferMalloc` as the `#[global_allocator]`.
 # Gated so the default build does not try to compile it without the feature.
 [[example]]
 name = "global_allocator"
 required-features = ["alloc-global"]
+
+# Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
+# The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
+# registration `cargo build` / `cargo test` (without `--tests`) tries to compile
+# it under the default feature set and fails with E0601 (no `main`).
+[[example]]
+name = "malloc_macro"
+required-features = ["alloc-global", "alloc-xthread"]
+
+# Soak harness: high-load multi-thread stability test (32/64/128 threads, hours).
+# NOT a throughput benchmark — a correctness + stability harness that detects
+# panics, deadlocks, and accounting mismatches at scale.
+# Run: `cargo run --release --example soak_xthread --features "alloc-global alloc-xthread"`
+# Configure via SEFER_SOAK_THREADS=N and SEFER_SOAK_SECONDS=N (default: avail_par × 5s).
+[[example]]
+name = "soak_xthread"
+required-features = ["alloc-global", "alloc-xthread"]
+
+# Task #53: RSS-probe harness — measures resident-set-size and in-flight block
+# count under asymmetric cross-thread free pressure (producers allocate only;
+# 1 consumer frees only).  Designed to stress RemoteFreeRing and show the
+# alloc-decommit recovery ratio.  NOT a throughput benchmark.
+# Run: `cargo run --release --example rss_probe --features "alloc-global alloc-xthread"`
+# With decommit: add `alloc-decommit` to the features list.
+# Tune via env: SEFER_RSS_PRODUCERS, SEFER_RSS_SECONDS, SEFER_RSS_LARGE_FRACTION.
+[[example]]
+name = "rss_probe"
+required-features = ["alloc-global", "alloc-xthread"]
+
+# Task #52: tokio async burn-in — SeferMalloc as #[global_allocator] under a
+# real tokio multi-thread runtime with a СУБД-pipeline-like async workload.
+# All tokio-internal allocations also go through SeferMalloc.
+# Run: `SEFER_BURNIN_SECONDS=10 SEFER_TOKIO_WORKERS=4 SEFER_BURNIN_TASKS=256 \
+#        cargo run --release --example tokio_burn_in \
+#        --features "alloc-global alloc-xthread"`
+[[example]]
+name = "tokio_burn_in"
+required-features = ["alloc-global", "alloc-xthread"]
