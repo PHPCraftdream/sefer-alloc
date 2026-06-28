@@ -107,7 +107,7 @@ to you (cross-compilation, audit perimeter, supply-chain surface),
 `unsafe` smeared across their hot paths and ask auditors to trust the
 narrative. `sefer-alloc` makes the claim compiler-enforced: the default
 build is `#![forbid(unsafe_code)]` at the top;
-the moment any allocator feature (`experimental`, `byte`, `alloc-core` and
+the moment any allocator feature (`experimental`, `alloc-core` and
 above) is on, the crate switches to `#![deny(unsafe_code)]` and the
 confined seams lift it with `#![allow(unsafe_code)]` only inside named
 files. The compiler enforces it — a stray `unsafe` outside a named seam is
@@ -255,10 +255,7 @@ these named files is a hard compile error in every configuration):
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
 | [`src/registry/heap_registry.rs`](src/registry/heap_registry.rs) | The global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, used by every cross-thread routing decision | `alloc-global` |
-| [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path) | `experimental` |
-| [`src/byte/byte_region.rs`](src/byte/byte_region.rs) | Research-tier size-classed byte arena | `byte` |
-| [`src/byte/byte_allocator.rs`](src/byte/byte_allocator.rs) | The Phase-4 experimental `unsafe impl GlobalAlloc` over `byte_region.rs` (superseded by `alloc-global` for production) | `byte` |
-| [`src/byte/sharded_byte_arena.rs`](src/byte/sharded_byte_arena.rs) | N-way sharded byte arena for parallel raw allocation (research; superseded by `alloc-xthread`) | `byte-sharded` |
+| [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit`) the active internal seams
@@ -268,9 +265,9 @@ fallback}` plus `registry::{heap_slot, heap_registry}`. `alloc-xthread` and
 existing safe code paths.
 
 `numa-aware` adds one more internal seam (`alloc_core::numa`), which in turn
-delegates to the independently-auditable `numa-shim` crate. `experimental` and
-`byte` / `byte-sharded` open the older research-tier seams; the production
-build does not pull them in.
+delegates to the independently-auditable `numa-shim` crate. `experimental`
+opens the older research-tier concurrent seam (now deprecated); the production
+build does not pull it in.
 
 That's the full list. Everywhere else in the crate is forbidden / denied
 `unsafe`; a stray `unsafe` outside these files is a hard compile error in
@@ -413,10 +410,10 @@ cargo run --release --example malloc_macro --features "alloc-global alloc-xthrea
 This is a verification-first build. Every claim above is backed by a tool,
 a test file, and a reproducible command. **51 integration test files** ship
 in `tests/` (45 conventional + 6 loom models — counted separately below);
-**5 example binaries** in `examples/`; **10 benches** in `benches/`
-(`byte_alloc`, `byte_sharded`, `global_alloc`, `heap_alloc`,
-`heap_async_pattern`, `heap_xthread`, `large_realloc`, `locality`,
-`pinned_write`, `sharded_write`); **2 libFuzzer targets** in `fuzz/`
+**5 example binaries** in `examples/`; **8 benches** in `benches/`
+(`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
+`large_realloc`, `locality`, `pinned_write`, `sharded_write`);
+**2 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`).
 
 | Tool | What it proves | Where in repo |
@@ -424,7 +421,7 @@ in `tests/` (45 conventional + 6 loom models — counted separately below);
 | Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (51 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) | `tests/loom_xthread_protocol.rs`, `loom_remote_ring.rs`, `loom_thread_free.rs`, `loom_registry.rs`, `loom_sharded.rs`, `loom_epoch.rs` (6 models) |
-| `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit`, `byte` |
+| `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |
 | aarch64 via `qemu-user` | Code-gen + relaxed-memory smoke on ARM | CI job + manual 13/13 tests pass. Honest caveat: TCG translation does not fully model ARM's weak-memory; real ARM hardware verification is a follow-up. |
@@ -457,10 +454,8 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | **`production`** | `alloc-global + alloc-xthread + alloc-decommit` | **The recommended combo for long-running multi-thread workloads.** | off | **DBMS, async runtimes, anything that allocates over hours.** |
-| `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (older tier) | off | RCU / epoch experiments |
-| `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` | off | `shard == core` workloads |
-| `byte` | `std` | Research-tier byte arena (older, superseded by `alloc-core+`) | off | rarely; legacy |
-| `byte-sharded` | `byte` | Sharded byte arena (research) | off | rarely; legacy |
+| `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
+| `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 
 `production` is the right starting point for almost any multi-thread or
 async use of `SeferMalloc`. Without `alloc-decommit` the `SegmentTable`
@@ -530,7 +525,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md) | The §13 / §14 race investigation (the four "peelings") |
 | [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md) | Full benchmark results, OPT-E numbers, honest verdicts |
 | [`docs/PROFILE_FLAMEGRAPHS.md`](docs/PROFILE_FLAMEGRAPHS.md) | Flamegraph profiling report (4 scenarios, 6 optimisation candidates) |
-| [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md), [`docs/BYTE_BENCH.md`](docs/BYTE_BENCH.md), [`docs/BYTE_SHARDED_BENCH.md`](docs/BYTE_SHARDED_BENCH.md) | Per-tier bench writeups |
+| [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/MALLOC_PLAN_PHASE12-13.md`](docs/MALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 
 ---

@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`EpochHandle`] — the typed, copyable reference into an [`EpochRegion`].
 //!
 //! [`EpochRegion`]: crate::concurrent::EpochRegion
@@ -17,6 +18,10 @@ use core::marker::PhantomData;
 /// [`Handle<T>`](crate::Handle): this indexes the epoch tier's own fixed slot
 /// table (see [`EpochRegion`](crate::concurrent::EpochRegion)), so the handle
 /// types are intentionally distinct.
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct EpochHandle<T> {
     /// Crate-visible so [`EpochRegion`](crate::concurrent::EpochRegion) can
     /// build and read a handle. Index into the boxed slot slice.

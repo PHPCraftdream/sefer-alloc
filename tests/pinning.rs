@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Phase 7c pinning tests (`pinning` feature).
 //!
 //! FAST tests per the short-scenario policy. These assert the **routing

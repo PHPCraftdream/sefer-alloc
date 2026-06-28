@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`PinnedRunner`] — a thread-per-core driver for [`ShardedRegion<T>`]
 //! (Phase 7c, `pinning`), plus the OS-affinity helpers it wraps.
 //!

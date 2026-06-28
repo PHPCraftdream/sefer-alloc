@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`ShardedRegion<T>`] — N-way parallel writes via thread-local shard binding,
 //! with **lock-free cross-thread removal** and a **shard lifecycle** (Phase 7b,
 //! `experimental`; supersedes 7a's claim-and-never-release model).
@@ -163,6 +164,10 @@ const MAX_SHARDS: usize = u16::MAX as usize;
 ///
 /// See the [module docs](self) for the design, the router, the lock-free
 /// cross-thread removal, and the shard lifecycle.
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct ShardedRegion<T> {
     inner: Arc<ShardedInner<T>>,
     /// Per-shard `occupied` tokens, `Arc`-shared with every live

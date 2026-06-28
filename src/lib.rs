@@ -23,9 +23,8 @@
 //!
 //! ## Scope (honest)
 //!
-//! This is an *application-level* store, not a drop-in global allocator. The
-//! global-allocator descent (`ByteRegion` + `GlobalAlloc`) is a later,
-//! research-flagged phase; see `docs/PLAN.md`. For a process-wide allocator,
+//! This is an *application-level* store, not a drop-in global allocator. For a
+//! process-wide allocator, use `SeferMalloc` (opt-in `production` feature) or
 //! reach for `mimalloc`.
 //!
 //! See `docs/INVARIANTS.md` for the safety invariants this crate upholds and
@@ -84,9 +83,7 @@
 //  With NO features (or only `std`): `#![forbid(unsafe_code)]` — no `unsafe`
 //  is possible anywhere in the crate.
 //
-//  With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
-//  (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
-//  the Phase 7d parallel `ShardedByteArena`) and/or `alloc-core`
+//  With `experimental` (3b-II `crossbeam-epoch` tier) and/or `alloc-core`
 //  (Phase 8 self-hosted segment substrate) and/or `alloc-global`
 //  (Phase 11 `SeferMalloc` `GlobalAlloc` face): the crate is
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
@@ -117,20 +114,12 @@
 //                             (under `numa-aware`)
 //
 //    Research / older tiers (not in production build):
-//      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`)
-//      * `byte::byte_region`        — size-classed byte arena.   (under `byte`)
-//      * `byte::byte_allocator`     — experimental GlobalAlloc over byte_region.
-//                                     (under `byte`)
-//      * `byte::sharded_byte_arena` — N-way sharded byte arena.  (under `byte-sharded`)
+//      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
 //  EVERY configuration. Verifiable: `grep -rln 'allow(unsafe_code)' src/ crates/`
 #![cfg_attr(
-    not(any(
-        feature = "experimental",
-        feature = "byte",
-        feature = "alloc-core"
-    )),
+    not(any(feature = "experimental", feature = "alloc-core")),
     forbid(unsafe_code)
 )]
 #![deny(unsafe_code)]
@@ -147,9 +136,6 @@ extern crate alloc;
 
 #[cfg(feature = "experimental")]
 mod concurrent;
-
-#[cfg(feature = "byte")]
-mod byte;
 
 // `alloc_core` is the Phase 8+ segment substrate. Its public surface is
 // `AllocCore` / `SegmentLayout` (re-exported below). The module itself is also
@@ -177,15 +163,13 @@ pub use sefer_region::{Handle, Region};
 pub use sefer_region::SyncRegion;
 
 #[cfg(feature = "experimental")]
+#[allow(deprecated)]
 pub use concurrent::{
     EpochHandle, EpochRegion, LockFreeHandle, LockFreeRegion, ShardedHandle, ShardedRegion,
 };
 
 #[cfg(feature = "pinning")]
 pub use concurrent::PinnedRunner;
-
-#[cfg(feature = "byte")]
-pub use byte::{ByteAllocator, ByteRegion};
 
 #[cfg(feature = "alloc-core")]
 pub use alloc_core::{AllocCore, SegmentLayout};
@@ -195,6 +179,3 @@ pub use heap::{with_heap, Heap};
 
 #[cfg(feature = "alloc-global")]
 pub use global::SeferMalloc;
-
-#[cfg(feature = "byte-sharded")]
-pub use byte::ShardedByteArena;

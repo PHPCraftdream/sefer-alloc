@@ -124,8 +124,8 @@ Under the recommended `production` feature
 **eight** — the first two `alloc_core::*` rows plus the five `global::*` /
 `registry::*` rows. `numa-aware` adds one more (`alloc_core::numa`), which
 in turn delegates to the independently-auditable `numa-shim` crate.
-The `experimental` and `byte` / `byte-sharded` tiers open the older
-research-tier seams; the production build does not pull them in.
+The `experimental` tier opens the older research-tier concurrent seam (now
+deprecated); the production build does not pull it in.
 `alloc-xthread` and `alloc-decommit` do **not** add new `unsafe` seams —
 they extend existing safe paths.
 
@@ -139,10 +139,7 @@ they extend existing safe paths.
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
 | [`src/registry/heap_registry.rs`](../src/registry/heap_registry.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision. | `alloc-global` |
 | [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
-| [`src/concurrent/hand.rs`](../src/concurrent/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator). | `experimental` |
-| [`src/byte/byte_region.rs`](../src/byte/byte_region.rs) | Research-tier size-classed byte arena (Phase 4). | `byte` |
-| [`src/byte/byte_allocator.rs`](../src/byte/byte_allocator.rs) | Phase-4 experimental `unsafe impl GlobalAlloc` over `byte_region.rs` (superseded by `alloc-global`). | `byte` |
-| [`src/byte/sharded_byte_arena.rs`](../src/byte/sharded_byte_arena.rs) | N-way sharded byte arena for parallel raw allocation (research; superseded by `alloc-xthread`). | `byte-sharded` |
+| [`src/concurrent/hand.rs`](../src/concurrent/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
 
 Outside these modules, `unsafe` is a hard compile error
 (`#![deny(unsafe_code)]` when any of those features are active;
@@ -388,7 +385,7 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 |---|---|---|
 | Unit tests | Construction, edge cases, invariants | `tests/*.rs` (51 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
-| miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs`, `tests/byte.rs` |
+| miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs` |
 | loom | Cross-thread protocol correctness under bounded interleavings | `tests/loom_epoch.rs`, `tests/loom_registry.rs`, `tests/loom_remote_ring.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |

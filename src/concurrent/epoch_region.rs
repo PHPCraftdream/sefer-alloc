@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`EpochRegion<T>`] — fixed-capacity, lock-free reads, writer-serialised
 //! writes, with `crossbeam-epoch` reclamation (Phase 3b-II), extended in
 //! Phase 7b with a **lock-free cross-thread removal** path.
@@ -114,6 +115,10 @@ struct FreeState {
 /// Writers' free-list/install bookkeeping is serialised by an internal
 /// `Mutex`; the eviction itself is a lock-free CAS. Readers never contend on
 /// the mutex; they pin an epoch guard and read a slot atomically.
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct EpochRegion<T> {
     slots: Box<[AtomicSlot<T>]>,
     /// Writer-only bookkeeping (free list). The eviction and the live count

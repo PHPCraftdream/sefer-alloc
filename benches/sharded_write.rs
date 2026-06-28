@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Phase 7a — sharded write-scaling benches (criterion).
 //!
 //! Compares write throughput of `ShardedRegion<T>` (thread-local shard binding,
@@ -20,7 +21,7 @@
 #![cfg(feature = "experimental")]
 // Benches are not shipped code. Pedantic lints that flag intentional patterns
 // here (fixed-N truncation casts, criterion closure formatting) are allowed at
-// the file level, mirroring `benches/byte_alloc.rs` / `benches/locality.rs`.
+// the file level, mirroring `benches/locality.rs`.
 // The library itself stays fully pedantic-clean.
 #![allow(
     clippy::cast_possible_truncation,

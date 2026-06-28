@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Phase 7c — pinned thread-per-core write bench (criterion).
 //!
 //! Compares write throughput of `ShardedRegion<T>` when each worker is **pinned

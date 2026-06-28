@@ -52,27 +52,6 @@ std = ["sefer-region/std"]
 #   confined `unsafe` Hand organ (src/concurrent/hand.rs), the only module with
 #   `#![allow(unsafe_code)]`. See docs/PLAN.md.
 experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
-# Phase 4: the byte / global-allocator descent ("the tzimtzum"). A
-# size-classed free-list byte arena (`ByteRegion`) plus an experimental
-# `unsafe impl GlobalAlloc` (`ByteAllocator`). It is honest research, NOT a
-# production allocator — it is not expected to beat the system allocator or
-# mimalloc. Adds a SECOND confined-unsafe module (`src/byte/*`), so the crate
-# switches from `forbid(unsafe_code)` to `deny(unsafe_code)` with this feature
-# on; `unsafe` outside `src/byte/*` (and `src/concurrent/hand.rs` under
-# `experimental`) stays a hard error. Requires `std`. See docs/PLAN.md and
-# docs/BYTE_BENCH.md.
-byte = ["std"]
-# Phase 7d: the sharded byte arena — parallel raw allocation via N per-thread
-# `ByteRegion` shards. Additive over `byte`: it pulls in NO new dependency and
-# adds NO new `unsafe` site — the new module is plain safe composition over
-# `Mutex<ByteRegion>` (one per shard) plus a minimal TLS router, and the
-# cross-thread `dealloc` owner lookup reuses `ByteRegion::contains_ptr` (a safe
-# pointer-comparison). The default, `byte`, and `experimental` builds are
-# byte-for-byte unchanged. Honest research: not a mimalloc competitor — the
-# per-shard arena never returns memory to the OS until drop, and cross-thread
-# dealloc routing has O(shards) scan overhead. See docs/PLAN.md §7d and
-# docs/BYTE_SHARDED_BENCH.md.
-byte-sharded = ["byte"]
 # Phase 7c: thread-per-core pinning. Additive over `experimental` — pulls in
 # `core_affinity` (a safe wrapper over the OS affinity syscalls; zero `unsafe`
 # of our own) and exposes an explicit shard-binding API plus a thread-per-core
@@ -217,11 +196,6 @@ loom = "0.7"
 name = "locality"
 harness = false
 
-[[bench]]
-name = "byte_alloc"
-harness = false
-required-features = ["byte"]
-
 # Phase 7a: sharded write-scaling bench — `ShardedRegion` vs `SyncRegion` /
 # `Arc<Mutex<Region>>` across thread counts. Quick criterion profile. Requires
 # `experimental` (for `ShardedRegion`) and the default `std` (for `SyncRegion`).
@@ -240,17 +214,6 @@ required-features = ["experimental"]
 name = "pinned_write"
 harness = false
 required-features = ["pinning"]
-
-# Phase 7d: sharded byte arena — parallel alloc throughput of
-# `ShardedByteArena` (N per-thread shards) vs the single-`Mutex`
-# `ByteAllocator` baseline across thread counts. Quick criterion profile.
-# Honest verdict: it parallelizes across shards but is NOT a mimalloc
-# competitor; see the bench module docs and docs/BYTE_SHARDED_BENCH.md.
-# Requires `byte-sharded` (which brings `byte`).
-[[bench]]
-name = "byte_sharded"
-harness = false
-required-features = ["byte-sharded"]
 
 # Phase 9: per-thread heap alloc/dealloc hot path vs mimalloc and the system
 # allocator. Quick criterion profile (sample_size 10, short warm-up). Honest

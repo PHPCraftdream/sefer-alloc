@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Sharded tier tests over `ShardedRegion<T>` (Phase 7a, `experimental`).
 //!
 //! FAST tests per the short-scenario policy:

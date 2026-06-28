@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Epoch tier tests over `EpochRegion<T>` (Phase 3b-II, `experimental`).
 //!
 //! FAST tests per the short-scenario policy:

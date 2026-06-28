@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Lock-free tier tests over `LockFreeRegion<T>` (Phase 3b-I, `experimental`).
 //!
 //! Two FAST tests per the short-scenario policy:

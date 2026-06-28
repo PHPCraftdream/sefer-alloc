@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`LockFreeHandle`] — the typed, copyable reference into a [`LockFreeRegion`].
 //!
 //! [`LockFreeRegion`]: crate::concurrent::LockFreeRegion
@@ -16,6 +17,10 @@ use core::marker::PhantomData;
 /// Unlike the slotmap-backed `Handle<T>`, the index/generation here index into
 /// this tier's own paged slot table (see [`LockFreeRegion`](crate::concurrent::LockFreeRegion)),
 /// so the two handle types are intentionally distinct.
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct LockFreeHandle<T> {
     /// Crate-visible so [`LockFreeRegion`](crate::concurrent::LockFreeRegion)
     /// can build and read a handle. Global slot index into the page table.

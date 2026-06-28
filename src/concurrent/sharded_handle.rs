@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`ShardedHandle<T>`] — the typed, copyable reference into a
 //! [`ShardedRegion<T>`] (Phase 7a, `experimental`).
 //!
@@ -27,6 +28,10 @@ use crate::concurrent::EpochHandle;
 /// is routed exclusively to shard A, so it can never resolve against shard B's
 /// slot table (the multi-shard differential property asserted in
 /// `tests/sharded.rs`).
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct ShardedHandle<T> {
     /// Crate-visible so [`ShardedRegion`](crate::concurrent::ShardedRegion)
     /// can build a handle on insert and route on read/remove.

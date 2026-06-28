@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! [`LockFreeRegion`] — lock-free reads via RCU with page-granularity copy-on-write.
 //!
 //! The crate's differentiated value (Phase 3b-I): concurrent handle-addressed
@@ -143,6 +144,10 @@ impl<T> Clone for Snapshot<T> {
 /// Writers are serialised by an internal `Mutex`. Under a read-mostly workload
 /// (the target — per-packet lookups vastly outnumber connect/disconnect) this
 /// is not on the hot path. Readers never contend on the mutex.
+#[deprecated(
+    since = "0.1.0",
+    note = "concurrent regions are legacy/research-tier; use the production allocator stack (`alloc-xthread`) for cross-thread allocation needs"
+)]
 pub struct LockFreeRegion<T> {
     /// The atomically-published snapshot. `load` is lock-free; `store` is a
     /// single Release swap.

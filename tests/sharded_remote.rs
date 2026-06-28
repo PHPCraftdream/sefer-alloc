@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Phase 7b integration tests: **cross-thread removal** and **shard lifecycle**
 //! over `ShardedRegion<T>` (`experimental`).
 //!

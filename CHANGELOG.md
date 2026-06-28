@@ -47,6 +47,21 @@ each be audited in complete isolation with `cargo test` confirming green.
 
 ## [0.1.0] - 2026-06-28
 
+### Removed
+
+- **`byte` / `byte-sharded` features** — research-tier `ByteRegion` /
+  `ByteAllocator` / `ShardedByteArena` removed. They were never expected to
+  compete with mimalloc (see the BYTE_BENCH / BYTE_SHARDED_BENCH writeups in
+  git history) and are fully superseded by the production stack (`alloc-global`
+  + `alloc-xthread` + `alloc-decommit`). Old Phase 4 / Phase 7d log entries
+  below are intentionally left intact as historical record.
+
+### Deprecated
+
+- **`experimental` concurrent regions** (`EpochRegion`, `LockFreeRegion`,
+  `ShardedRegion`) — marked `#[deprecated]`. Superseded by the production
+  `alloc-xthread` cross-thread free path. `PinnedRunner` is NOT deprecated.
+
 ### Summary
 
 The initial public release.
