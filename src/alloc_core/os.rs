@@ -197,15 +197,16 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     unsafe { vmem::recommit(base, start_offset, end_offset) };
 }
 
-/// Read the `SEFER_LARGE_CACHE_BUDGET` environment variable into `buf` WITHOUT
-/// performing any heap allocation. Returns the number of bytes written into
-/// `buf` (excluding any NUL terminator), or 0 if the variable is unset or if
-/// `buf` is too small.
+/// Read a named environment variable into `buf` WITHOUT performing any heap
+/// allocation. Returns the number of bytes written into `buf` (excluding any
+/// NUL terminator), or 0 if the variable is unset or if `buf` is too small.
 ///
-/// This is the allocation-free OS seam used by `parse_env_budget` so that
-/// `AllocCore::new` can read the env var without triggering a re-entrant call
-/// into the global allocator (which would cause a stack overflow when
-/// `SeferMalloc` is installed as `#[global_allocator]`).
+/// `name_nul` MUST be a NUL-terminated ASCII string (e.g. `b"MY_VAR\0"`).
+///
+/// This is the allocation-free OS seam used by the env-var parsers in
+/// `alloc_core.rs` so that `AllocCore::new` can read configuration without
+/// triggering a re-entrant call into the global allocator (which would cause a
+/// stack overflow when `SeferMalloc` is installed as `#[global_allocator]`).
 ///
 /// ## Platform notes
 /// - **Windows** (native): calls `GetEnvironmentVariableA`.
@@ -214,14 +215,21 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 ///   `std::env::var`; this is safe because miri's allocator is not SeferMalloc
 ///   and no reentrancy is possible.
 #[cfg(feature = "alloc-decommit")]
-pub(crate) fn read_env_budget_raw(buf: &mut [u8]) -> usize {
-    const NAME_BYTES: &[u8] = b"SEFER_LARGE_CACHE_BUDGET\0";
-
+pub(crate) fn read_env_var_raw(name_nul: &[u8], buf: &mut [u8]) -> usize {
     if buf.is_empty() {
         return 0;
     }
+    cfg_if_env_read(name_nul, buf)
+}
 
-    cfg_if_env_read(NAME_BYTES, buf)
+/// Read the `SEFER_LARGE_CACHE_BUDGET` environment variable into `buf` WITHOUT
+/// performing any heap allocation. Thin wrapper over [`read_env_var_raw`].
+///
+/// Returns the number of bytes written into `buf` (excluding any NUL
+/// terminator), or 0 if the variable is unset or if `buf` is too small.
+#[cfg(feature = "alloc-decommit")]
+pub(crate) fn read_env_budget_raw(buf: &mut [u8]) -> usize {
+    read_env_var_raw(b"SEFER_LARGE_CACHE_BUDGET\0", buf)
 }
 
 /// Actual platform dispatch, isolated so each branch compiles cleanly.

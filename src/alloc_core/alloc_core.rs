@@ -120,6 +120,125 @@ fn parse_env_budget() -> Option<usize> {
     n.checked_mul(multiplier)
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2 — lazy exponential decay of the large-cache excess
+// (feature = "alloc-decommit")
+//
+// Strategy: on each large alloc or free, check if enough wall-clock time has
+// elapsed since the last decay tick. If so, compute the excess over the
+// configurable headroom target and FIFO-evict a fraction (decay_rate_bp /
+// 10 000) of that excess back to the OS. This keeps the cache from
+// accumulating unbounded RSS between allocations while remaining "lazy" —
+// no background thread is needed (Phase 3 will add one opt-in).
+//
+// Parameters (env-overridable, set once at AllocCore::new):
+//   SEFER_LARGE_CACHE_DECAY_RATE       integer percent (1–100), default 10
+//   SEFER_LARGE_CACHE_DECAY_INTERVAL_MS integer ms, default 1000
+//   SEFER_LARGE_CACHE_HEADROOM_BYTES   K/M/G bytes, default 256 MiB
+// ---------------------------------------------------------------------------
+
+/// Parse `SEFER_LARGE_CACHE_DECAY_RATE` as an integer percent (e.g. `"10"`
+/// → 1000 basis points). Accepts `"10"` or `"10%"`. Returns `None` on unset
+/// / empty / invalid. Range-clamped to [1, 100] percent → [100, 10000] bp.
+///
+/// We deliberately accept ONLY integer percent (no floats) to avoid any
+/// floating-point dependency. This matches the documented env-var contract.
+/// **Reentrancy safety**: uses `os::read_env_var_raw` (allocation-free).
+#[cfg(feature = "alloc-decommit")]
+fn parse_env_decay_rate_bp() -> Option<u32> {
+    let mut buf = [0u8; 16];
+    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_DECAY_RATE\0", &mut buf);
+    if n == 0 {
+        return None;
+    }
+    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if val.is_empty() {
+        return None;
+    }
+    // Strip optional trailing '%'.
+    let digits = val.strip_suffix('%').unwrap_or(val);
+    let pct: u32 = digits.trim().parse().ok()?;
+    if pct == 0 || pct > 100 {
+        return None; // Out of [1, 100] range — ignore.
+    }
+    Some(pct * 100) // percent → basis points
+}
+
+/// Parse `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS` as an integer millisecond
+/// count (e.g. `"1000"` → 1 000 ms). Returns `None` on unset / invalid.
+/// A value of 0 is accepted (means: always decay on every call, useful for
+/// testing). **Reentrancy safety**: allocation-free via `read_env_var_raw`.
+#[cfg(feature = "alloc-decommit")]
+fn parse_env_decay_interval_ms() -> Option<u64> {
+    let mut buf = [0u8; 24];
+    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_DECAY_INTERVAL_MS\0", &mut buf);
+    if n == 0 {
+        return None;
+    }
+    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if val.is_empty() {
+        return None;
+    }
+    val.parse().ok()
+}
+
+/// Parse `SEFER_LARGE_CACHE_HEADROOM_BYTES` with K/M/G suffix support.
+/// Same logic as `parse_env_budget`. Returns `None` on unset / invalid.
+/// **Reentrancy safety**: allocation-free via `read_env_var_raw`.
+#[cfg(feature = "alloc-decommit")]
+fn parse_env_headroom_bytes() -> Option<usize> {
+    let mut buf = [0u8; 64];
+    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_HEADROOM_BYTES\0", &mut buf);
+    if n == 0 {
+        return None;
+    }
+    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if val.is_empty() {
+        return None;
+    }
+    let (digits, multiplier) = if val.ends_with(['k', 'K']) {
+        (&val[..val.len() - 1], 1024usize)
+    } else if val.ends_with(['m', 'M']) {
+        (&val[..val.len() - 1], 1024 * 1024)
+    } else if val.ends_with(['g', 'G']) {
+        (&val[..val.len() - 1], 1024 * 1024 * 1024)
+    } else {
+        (val, 1usize)
+    };
+    let n: usize = digits.trim().parse().ok()?;
+    n.checked_mul(multiplier)
+}
+
+/// Immutable decay configuration, computed once at `AllocCore::new` from env
+/// vars (or defaults). Kept in its own struct to make the intent clear and to
+/// allow `dbg_set_decay_config` to swap it atomically in tests.
+#[cfg(feature = "alloc-decommit")]
+struct LargeCacheDecayConfig {
+    /// Fraction of the excess to release per tick, in basis points.
+    /// 1000 = 10%, 5000 = 50%, 10000 = 100%.
+    decay_rate_bp: u32,
+    /// Minimum wall-clock interval between consecutive decay ticks.
+    decay_interval: core::time::Duration,
+    /// Target cache size in bytes. The "excess" above this level is subject
+    /// to decay. On Phase 2 we treat `live_bytes = 0`; the target is just
+    /// `headroom_bytes`. A future phase can add explicit live-count tracking.
+    headroom_bytes: usize,
+}
+
+#[cfg(feature = "alloc-decommit")]
+impl LargeCacheDecayConfig {
+    /// Build the config from env vars, falling back to sensible defaults.
+    fn from_env_or_default() -> Self {
+        Self {
+            decay_rate_bp: parse_env_decay_rate_bp().unwrap_or(1000),
+            decay_interval: core::time::Duration::from_millis(
+                parse_env_decay_interval_ms().unwrap_or(1000),
+            ),
+            headroom_bytes: parse_env_headroom_bytes().unwrap_or(256 * 1024 * 1024),
+        }
+    }
+}
+
 /// One entry in the large-segment free-cache.
 ///
 /// Invariant: `base` is SEGMENT-aligned, `reservation` was returned by the OS,
@@ -205,6 +324,21 @@ pub struct AllocCore {
     /// (the field is dead at that point).
     #[cfg(feature = "alloc-decommit")]
     large_cache_used_bytes: usize,
+
+    // ── Phase 2 — lazy decay ─────────────────────────────────────────────────
+
+    /// Immutable decay parameters: rate, interval, headroom. Set once at
+    /// `AllocCore::new` from env vars (or defaults); overridable in tests via
+    /// `dbg_set_decay_config`.
+    #[cfg(feature = "alloc-decommit")]
+    decay_config: LargeCacheDecayConfig,
+
+    /// Wall-clock time of the last decay tick. `None` = never ticked yet (the
+    /// first call to `maybe_decay_large_cache` primes the timer without
+    /// releasing anything). Stored as `Option<std::time::Instant>` so the very
+    /// first call does not accidentally release half the cache at process start.
+    #[cfg(feature = "alloc-decommit")]
+    last_decay_tick: Option<std::time::Instant>,
 }
 
 impl AllocCore {
@@ -246,6 +380,10 @@ impl AllocCore {
             large_cache_budget_bytes: parse_env_budget(),
             #[cfg(feature = "alloc-decommit")]
             large_cache_used_bytes: 0,
+            #[cfg(feature = "alloc-decommit")]
+            decay_config: LargeCacheDecayConfig::from_env_or_default(),
+            #[cfg(feature = "alloc-decommit")]
+            last_decay_tick: None,
         })
     }
 
@@ -348,6 +486,12 @@ impl AllocCore {
                 // magic) so `Drop` knows its reservation should be released.
                 // We do NOT release eagerly here — that would unmap the header
                 // before `Drop` can read it to discover the reservation info.
+                //
+                // Phase 2: run a lazy decay tick on large free (same cheap
+                // Instant check as on the alloc path).
+                #[cfg(feature = "alloc-decommit")]
+                self.maybe_decay_large_cache();
+
                 let stale = SegmentHeader::read_at(base);
 
                 #[cfg(feature = "alloc-decommit")]
@@ -1456,7 +1600,16 @@ impl AllocCore {
     /// satisfy the request. A cache hit avoids the full OS round-trip
     /// (mmap/VirtualAlloc + registration) at the cost of one recommit call
     /// (Windows only; unix is a no-op after MADV_DONTNEED).
+    ///
+    /// **Phase 2 (alloc-decommit):** runs one lazy decay tick before serving
+    /// the request. Cost: one `Instant::now()` + one duration compare on the
+    /// common path; actual eviction only when the interval has elapsed AND the
+    /// cache is over the headroom target.
     fn alloc_large(&mut self, size: usize, align: usize) -> *mut u8 {
+        // Phase 2: lazy decay tick on every large allocation.
+        #[cfg(feature = "alloc-decommit")]
+        self.maybe_decay_large_cache();
+
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
         let hdr_aligned = align_up(
@@ -1602,6 +1755,145 @@ impl AllocCore {
 
         Node::deref(base, hdr_aligned)
     }
+
+    // ── Phase 2 — lazy decay helpers ─────────────────────────────────────────
+
+    /// Check whether enough wall-clock time has elapsed since the last decay
+    /// tick; if so, run one decay step. Called at the top of both
+    /// `alloc_large` and the large-dealloc branch so the "tax" on each large
+    /// operation is a single `Instant::now()` comparison — nanosecond-range
+    /// overhead, negligible against OS reservation costs.
+    #[cfg(feature = "alloc-decommit")]
+    fn maybe_decay_large_cache(&mut self) {
+        let now = std::time::Instant::now();
+        let elapsed = match self.last_decay_tick {
+            Some(t) => now.duration_since(t),
+            None => {
+                // First call ever: prime the timer but do not decay yet.
+                // Without this guard the first alloc_large after a cold start
+                // would decay with an arbitrarily large "elapsed" (since the
+                // epoch), potentially flushing the cache unnecessarily.
+                self.last_decay_tick = Some(now);
+                return;
+            }
+        };
+        if elapsed < self.decay_config.decay_interval {
+            return;
+        }
+        self.last_decay_tick = Some(now);
+        self.run_decay_step();
+    }
+
+    /// Compute the excess over `headroom_bytes` and release `decay_rate_bp /
+    /// 10 000` of it back to the OS via FIFO eviction.
+    ///
+    /// Phase 2 simplification: `live_bytes = 0` (we do not track outstanding
+    /// large allocations explicitly). The target is therefore simply
+    /// `headroom_bytes`. A future phase can add live-count tracking to tighten
+    /// the target when many large blocks are outstanding.
+    #[cfg(feature = "alloc-decommit")]
+    fn run_decay_step(&mut self) {
+        let target = self.decay_config.headroom_bytes; // live = 0 in Phase 2
+        let excess = self.large_cache_used_bytes.saturating_sub(target);
+        if excess == 0 {
+            return; // Cache is at or below target — nothing to release.
+        }
+        // release = excess * rate_bp / 10_000.  We use saturating_mul to
+        // guard against an absurdly large excess (> usize::MAX / 10_000 on
+        // 32-bit — pathological but safe).
+        let release = excess
+            .saturating_mul(self.decay_config.decay_rate_bp as usize)
+            / 10_000;
+        if release == 0 {
+            return;
+        }
+        self.evict_at_least(release);
+    }
+
+    /// FIFO-evict cached spans until at least `min_bytes` of cache have been
+    /// released to the OS, or the cache is empty. Slots are scanned from index
+    /// 0 upward (slot 0 = "oldest", the FIFO invariant for `LARGE_CACHE_SLOTS
+    /// == 2`). The OS reservation of each evicted span is released immediately.
+    #[cfg(feature = "alloc-decommit")]
+    fn evict_at_least(&mut self, min_bytes: usize) {
+        let mut released = 0usize;
+        while released < min_bytes {
+            // Find the next occupied slot (lowest index = oldest, FIFO).
+            let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+                break; // Cache is empty.
+            };
+            let victim = self.large_cache[victim_idx].take().unwrap();
+            self.large_cache_used_bytes =
+                self.large_cache_used_bytes.saturating_sub(victim.usable_size);
+            // Release the OS reservation. The slot was unregistered from the
+            // table on deposit (same as `try_evict_to_fit`), so we release
+            // directly without touching the table.
+            os::release_segment(victim.reservation, victim.reservation_len);
+            released += victim.usable_size;
+        }
+    }
+
+    // ── Phase 2 test seams ────────────────────────────────────────────────────
+
+    /// TEST-ONLY (Phase 2): force a decay tick by rewinding `last_decay_tick`
+    /// to be exactly `decay_interval` in the past, then calling
+    /// `maybe_decay_large_cache`. This causes the interval check to pass
+    /// unconditionally on the very next call, without sleeping. Safe to call
+    /// multiple times — each call produces exactly one decay step.
+    ///
+    /// Concretely: for a test with `decay_interval = 10s` this makes it
+    /// appear as if 10 s have elapsed since the last tick, so the subsequent
+    /// `maybe_decay_large_cache` fires immediately.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_force_decay_tick(&mut self) {
+        // Rewind last_decay_tick by the full interval so the elapsed check
+        // passes.  `checked_sub` returns None if the duration is longer than
+        // the time since the epoch (impossible in practice); in that edge case
+        // we fall back to `now` which will prime the timer without decaying.
+        let interval = self.decay_config.decay_interval;
+        self.last_decay_tick = Some(
+            std::time::Instant::now()
+                .checked_sub(interval)
+                .unwrap_or_else(std::time::Instant::now),
+        );
+        self.maybe_decay_large_cache();
+    }
+
+    /// TEST-ONLY (Phase 2): override the decay configuration at runtime.
+    /// Lets tests specify exact parameters without relying on env vars
+    /// (which are process-global and therefore flaky in parallel runs).
+    ///
+    /// - `rate_bp`: decay rate in basis points (100 = 1%, 1000 = 10%).
+    /// - `interval_ms`: minimum ms between ticks (0 = fire on every call).
+    /// - `headroom`: target cache size in bytes.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_set_decay_config(&mut self, rate_bp: u32, interval_ms: u64, headroom: usize) {
+        self.decay_config = LargeCacheDecayConfig {
+            decay_rate_bp: rate_bp,
+            decay_interval: core::time::Duration::from_millis(interval_ms),
+            headroom_bytes: headroom,
+        };
+        // Reset the tick timer so the new interval is observed from this
+        // moment forward (avoids a stale timer confusing the first post-config
+        // call).
+        self.last_decay_tick = None;
+    }
+
+    /// TEST-ONLY (Phase 2): return the current decay configuration as
+    /// `(decay_rate_bp, decay_interval_ms, headroom_bytes)`.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_decay_config(&self) -> (u32, u64, usize) {
+        (
+            self.decay_config.decay_rate_bp,
+            self.decay_config.decay_interval.as_millis() as u64,
+            self.decay_config.headroom_bytes,
+        )
+    }
+
+    // ── end Phase 2 ──────────────────────────────────────────────────────────
 
     /// Release the oldest occupied large-cache slot to the OS until the
     /// byte-budget constraint `large_cache_used_bytes + needed <= budget` is

@@ -47,6 +47,39 @@ each be audited in complete isolation with `cargo test` confirming green.
 
 ## [0.1.0] - 2026-06-28
 
+### Changed — large-cache redesign Phase 2 (alloc-decommit)
+
+- **Lazy exponential decay**: large-cache excess over the headroom target
+  decays toward the OS at 10 %/tick by default. On every large `alloc` or
+  `free`, a single `Instant::now()` comparison checks whether
+  `decay_interval` has elapsed; if so, `excess = used - headroom` and
+  `release = excess × rate` bytes are FIFO-evicted to the OS. No background
+  thread — the decay is fully inline, paying nothing while the process is idle
+  (mobile/embedded friendly). Phase 3 will add an optional background thread.
+
+- **Three new env vars** (all read once at `AllocCore::new`, allocation-free):
+  - `SEFER_LARGE_CACHE_DECAY_RATE` — integer percent (`"10"`, `"10%"`;
+    default 10). Parsed without floats to avoid any floating-point dependency.
+  - `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS` — integer ms (default 1000).
+  - `SEFER_LARGE_CACHE_HEADROOM_BYTES` — bytes with K/M/G suffix (default
+    256 MiB). The cache is allowed to hold up to this many bytes; only the
+    excess above it is subject to decay.
+
+- **Generalized `os::read_env_var_raw(name_nul, buf)`**: the allocation-free
+  env-var reader is now parameterized on the variable name (NUL-terminated
+  `&[u8]`). `read_env_budget_raw` is kept as a thin backward-compatible
+  wrapper. This lets all three decay env parsers share the same reentrancy-safe
+  pattern without duplicating the Windows/Unix platform dispatch.
+
+- **Test seams** (`dbg_set_decay_config`, `dbg_force_decay_tick`,
+  `dbg_decay_config`): deterministic test control without sleep or real
+  wall-clock advances. `dbg_force_decay_tick` rewinds `last_decay_tick` by
+  `decay_interval` and immediately invokes one decay step.
+
+- **`tests/large_cache_decay.rs`**: 5 new tests covering excess release,
+  headroom invariant, no-op when under target, interval guard, and env-var
+  parsing.
+
 ### Changed — large-cache redesign Phase 1 (alloc-decommit)
 
 - **Removed `MAX_CACHED_LARGE_BYTES`** (was 64 MiB per-span cap). Spans of
