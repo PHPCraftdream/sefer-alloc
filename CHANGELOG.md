@@ -47,6 +47,28 @@ each be audited in complete isolation with `cargo test` confirming green.
 
 ## [0.1.0] - 2026-06-28
 
+### Changed — large-cache redesign Phase 1 (alloc-decommit)
+
+- **Removed `MAX_CACHED_LARGE_BYTES`** (was 64 MiB per-span cap). Spans of
+  any size can now enter the large-cache, removing the arbitrary ceiling that
+  prevented caching of 100 MiB+ allocations.
+
+- **Per-shard byte-budget admission** replaces the old per-span cap. A new
+  `AllocCore::large_cache_budget_bytes: Option<usize>` field (under
+  `alloc-decommit`) tracks the total bytes of all cached spans. When the
+  budget would be exceeded, the oldest cached slot (FIFO: lowest index) is
+  evicted to the OS before the new span is admitted. `None` = unbounded
+  (default when the env var is not set).
+
+- **`SEFER_LARGE_CACHE_BUDGET` environment variable** is read once at
+  `AllocCore::new()` via a raw OS call (no heap allocation — safe even when
+  `SeferMalloc` is the `#[global_allocator]`). Accepted formats: `"64M"`,
+  `"2G"`, `"1024"` (raw bytes), etc. Parsed case-insensitively.
+
+- **`large_cache_used_bytes` invariant counter**: maintained on every deposit
+  and every eviction / cache hit. Verified by new tests via
+  `dbg_large_cache_used()` / `dbg_large_cache_slot_sizes()` test seams.
+
 ### Removed
 
 - **`byte` / `byte-sharded` features** — research-tier `ByteRegion` /

@@ -63,19 +63,62 @@ use super::size_classes::{AllocKind, SizeClasses};
 #[cfg(feature = "alloc-decommit")]
 const LARGE_CACHE_SLOTS: usize = 2;
 
-/// Maximum size of a single cached large reservation, in bytes. Segments larger
-/// than this are released immediately to the OS rather than cached.
-/// 64 MiB: covers the 4 MiB / 16 MiB typical workloads without holding an
-/// enormous reservation when a one-off 100 MiB+ allocation is freed.
-#[cfg(feature = "alloc-decommit")]
-const MAX_CACHED_LARGE_BYTES: usize = 64 * 1024 * 1024;
-
 /// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
-/// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a 64 MiB cached segment
-/// would be permanently reused for every 4 MiB request — wasting 60 MiB of
-/// RSS during the cache lifetime.
+/// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a very large cached segment
+/// would be permanently reused for every small large-request — wasting RSS
+/// during the cache lifetime. Kept at 2 (as before): a 2× size tolerance is
+/// tight enough to avoid gross RSS waste while still allowing minor rounding
+/// differences between consecutive large allocations of "the same" size.
 #[cfg(feature = "alloc-decommit")]
 const LARGE_CACHE_SIZE_FACTOR: usize = 2;
+
+/// Parse the `SEFER_LARGE_CACHE_BUDGET` environment variable into a byte count.
+///
+/// Accepted formats (case-insensitive suffix):
+///   - `"1024"` → 1 024 bytes (no suffix = raw bytes)
+///   - `"64K"` / `"64k"` → 65 536 bytes
+///   - `"256M"` / `"256m"` → 268 435 456 bytes
+///   - `"2G"` / `"2g"` → 2 147 483 648 bytes
+///
+/// Returns `None` if the variable is unset, empty, or malformed (unknown
+/// suffix, non-numeric body). Malformed values are silently ignored so a
+/// mis-typed env var degrades to the unbounded default rather than aborting.
+///
+/// **Reentrancy safety**: this function MUST NOT allocate through the global
+/// allocator, because it is called from `AllocCore::new()` which may itself
+/// be called during the TLS bind of `SeferMalloc` (the installed global
+/// allocator). Any allocation on this path would call the global allocator
+/// re-entrantly, causing infinite recursion / stack overflow. We therefore
+/// use `os::read_env_budget_raw` (a raw OS call into a stack buffer) instead
+/// of `std::env::var` (which returns an allocating `String`).
+#[cfg(feature = "alloc-decommit")]
+fn parse_env_budget() -> Option<usize> {
+    // Stack buffer: 64 bytes is enough for even the largest representable
+    // budget string (e.g. "18446744073709551615") plus a K/M/G suffix.
+    let mut buf = [0u8; 64];
+    let n = os::read_env_budget_raw(&mut buf);
+    if n == 0 {
+        return None;
+    }
+    // `buf[..n]` contains the raw ASCII value (without NUL).
+    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
+    if val.is_empty() {
+        return None;
+    }
+    // Detect optional trailing suffix (K / M / G, case-insensitive).
+    let (digits, multiplier) = if val.ends_with(['k', 'K']) {
+        (&val[..val.len() - 1], 1024usize)
+    } else if val.ends_with(['m', 'M']) {
+        (&val[..val.len() - 1], 1024 * 1024)
+    } else if val.ends_with(['g', 'G']) {
+        (&val[..val.len() - 1], 1024 * 1024 * 1024)
+    } else {
+        // No suffix — raw bytes.
+        (val, 1usize)
+    };
+    let n: usize = digits.trim().parse().ok()?;
+    n.checked_mul(multiplier)
+}
 
 /// One entry in the large-segment free-cache.
 ///
@@ -128,13 +171,40 @@ pub struct AllocCore {
     /// large/huge segments whose OS reservations are still live. `alloc_large`
     /// checks this array first; a size-matched entry is reused without a new
     /// OS reservation. `dealloc` on the large path deposits the segment here
-    /// (if a slot is free and the segment is small enough) instead of releasing
+    /// (if a slot is free and the budget permits) instead of releasing
     /// the OS reservation immediately. Pages are kept committed between uses so
     /// no recommit syscall is needed on a cache hit. The cache is gated on
     /// `alloc-decommit` for consistency with the small-segment recycle path
     /// (both operate in the regime where empty slots are recyclable).
     #[cfg(feature = "alloc-decommit")]
     large_cache: [Option<CachedLarge>; LARGE_CACHE_SLOTS],
+
+    /// Per-shard byte budget for the large-cache. `None` = unbounded (any span
+    /// may be admitted as long as a free slot exists). When set, the sum of
+    /// `usable_size` across all occupied slots is kept `<= large_cache_budget_bytes`;
+    /// an incoming span that would exceed the budget triggers FIFO eviction of
+    /// the oldest slot before admission.
+    ///
+    /// Configurable via the `SEFER_LARGE_CACHE_BUDGET` environment variable
+    /// (read once at `AllocCore::new`; supports K/M/G suffixes). Clients can
+    /// also construct `AllocCore` and set the budget directly for deterministic
+    /// tests (see `dbg_set_large_cache_budget`).
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_budget_bytes: Option<usize>,
+
+    /// Running sum of `usable_size` across all currently occupied slots in
+    /// `large_cache`.
+    ///
+    /// Invariant:
+    /// ```text
+    /// large_cache_used_bytes ==
+    ///     large_cache.iter().filter_map(|s| s.as_ref().map(|c| c.usable_size)).sum()
+    /// ```
+    /// Maintained on every deposit (`+= usable_size`) and every eviction /
+    /// cache-hit (`-= slot.usable_size`). NOT decremented on `AllocCore::drop`
+    /// (the field is dead at that point).
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_used_bytes: usize,
 }
 
 impl AllocCore {
@@ -172,6 +242,10 @@ impl AllocCore {
             small_cur,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_budget_bytes: parse_env_budget(),
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_used_bytes: 0,
         })
     }
 
@@ -278,9 +352,8 @@ impl AllocCore {
 
                 #[cfg(feature = "alloc-decommit")]
                 {
-                    // Try to cache the segment. Conditions for caching:
-                    //   1. usable_size <= MAX_CACHED_LARGE_BYTES.
-                    //   2. There is a free (None) slot in large_cache.
+                    // Compute the usable size for this span (same arithmetic as
+                    // `alloc_large`).
                     let hdr_aligned = align_up(
                         core::mem::size_of::<SegmentHeader>(),
                         stale.large_align.max(super::os::PAGE),
@@ -289,13 +362,46 @@ impl AllocCore {
                         .div_ceil(SEGMENT);
                     let usable_size = n_segments * SEGMENT;
 
-                    let free_slot = if usable_size <= MAX_CACHED_LARGE_BYTES {
-                        self.large_cache.iter().position(|s| s.is_none())
+                    // Phase 1 large-cache admission: byte-budget enforcement.
+                    //
+                    // Strategy:
+                    //   1. Find a free slot (None). If none is free, try FIFO eviction.
+                    //   2. Check that depositing this span would not exceed the budget
+                    //      (if one is set). If the budget would overflow, evict the
+                    //      oldest occupied slot to make room. If eviction still can't
+                    //      satisfy the budget (budget < usable_size), skip caching.
+                    //   3. Deposit into the (now-free) slot.
+                    //
+                    // FIFO definition: slot 0 is "oldest" in this minimal Phase-1
+                    // implementation (the invariant: slot 0 is filled before slot 1,
+                    // so evicting 0 first is correct for LARGE_CACHE_SLOTS=2). Phase 2
+                    // may improve with timestamps / LRU.
+                    let admitted = if let Some(slot_idx) = self.large_cache.iter().position(|s| s.is_none()) {
+                        // A free slot exists. Check byte budget.
+                        let fits = self
+                            .large_cache_budget_bytes
+                            .map_or(true, |budget| self.large_cache_used_bytes + usable_size <= budget);
+                        if fits {
+                            Some(slot_idx)
+                        } else {
+                            // Budget would overflow even with a free slot — evict to
+                            // bring used_bytes down, then re-check.
+                            if self.try_evict_to_fit(usable_size) {
+                                self.large_cache.iter().position(|s| s.is_none())
+                            } else {
+                                None
+                            }
+                        }
                     } else {
-                        None
+                        // All slots occupied. Attempt FIFO eviction to free a slot.
+                        if self.try_evict_to_fit(usable_size) {
+                            self.large_cache.iter().position(|s| s.is_none())
+                        } else {
+                            None
+                        }
                     };
 
-                    if let Some(slot_idx) = free_slot {
+                    if let Some(slot_idx) = admitted {
                         // We keep the pages COMMITTED in the cache (no decommit
                         // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
                         // followed immediately by `VirtualAlloc(MEM_COMMIT)` on
@@ -317,16 +423,18 @@ impl AllocCore {
                         let mut hdr_zero = stale;
                         hdr_zero.magic = 0;
                         Node::write_struct(base as *mut SegmentHeader, hdr_zero);
-                        // Deposit into cache.
+                        // Deposit into cache and update the byte-budget counter.
                         self.large_cache[slot_idx] = Some(CachedLarge {
                             reservation: stale.reservation,
                             reservation_len: stale.reservation_len,
                             base,
                             usable_size,
                         });
+                        self.large_cache_used_bytes += usable_size;
                         return;
                     }
-                    // No free slot or too large: fall through to immediate release.
+                    // Not admitted (no free slot after eviction, or budget too small):
+                    // fall through to immediate OS release.
                     // NULL the magic so Drop frees the reservation via the header.
                     let mut stale2 = stale;
                     stale2.magic = 0;
@@ -1387,6 +1495,9 @@ impl AllocCore {
             }
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache[idx].take().unwrap();
+                // Update the byte-budget counter: this slot is leaving the cache.
+                self.large_cache_used_bytes =
+                    self.large_cache_used_bytes.saturating_sub(slot.usable_size);
                 // Re-register the base in the segment table. Under
                 // alloc-decommit, recycle() left a NULL slot that register()
                 // will reuse — so this should not fail. If it does (table is
@@ -1490,6 +1601,78 @@ impl AllocCore {
         SegmentMeta::new(base).set_node_id(my_node);
 
         Node::deref(base, hdr_aligned)
+    }
+
+    /// Release the oldest occupied large-cache slot to the OS until the
+    /// byte-budget constraint `large_cache_used_bytes + needed <= budget` is
+    /// satisfied, then return `true`. If no budget is set (`None`) the
+    /// constraint is trivially satisfied and the function returns `true`
+    /// immediately. Returns `false` only when the cache is already fully empty
+    /// but the budget is still too small to hold `needed` bytes (i.e. the
+    /// budget itself is smaller than `needed` — not a common case, but handled
+    /// gracefully: the span is simply not cached).
+    ///
+    /// FIFO order: slot 0 is treated as "oldest" (it is always filled before
+    /// slot 1 for `LARGE_CACHE_SLOTS == 2`). Phase 2/3 may improve this with
+    /// insertion timestamps or an LRU bit.
+    #[cfg(feature = "alloc-decommit")]
+    fn try_evict_to_fit(&mut self, needed: usize) -> bool {
+        let Some(budget) = self.large_cache_budget_bytes else {
+            // No budget configured — unconditionally accept.
+            return true;
+        };
+        loop {
+            if self.large_cache_used_bytes.saturating_add(needed) <= budget {
+                return true;
+            }
+            // Find the "oldest" non-None slot (lowest index first = FIFO).
+            let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+                // Cache is empty but budget < needed: cannot cache this span.
+                return false;
+            };
+            let victim = self.large_cache[victim_idx].take().unwrap();
+            self.large_cache_used_bytes =
+                self.large_cache_used_bytes.saturating_sub(victim.usable_size);
+            // The victim is unregistered from the table already (it was done on
+            // deposit — the table slot was NULLed at that time). Release the OS
+            // reservation directly.
+            os::release_segment(victim.reservation, victim.reservation_len);
+        }
+    }
+
+    /// TEST-ONLY (Phase 1 large-cache budget): return the current running sum
+    /// of `usable_size` across all occupied large-cache slots. The test
+    /// `large_cache_used_bytes_invariant` compares this against the manual sum
+    /// to verify the invariant is maintained.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_large_cache_used(&self) -> usize {
+        self.large_cache_used_bytes
+    }
+
+    /// TEST-ONLY (Phase 1 large-cache budget): return the `usable_size` of
+    /// each large-cache slot as an array of `Option<usize>` (None = empty slot,
+    /// Some(sz) = occupied with that many bytes). Lets tests verify the
+    /// invariant `sum(Some values) == dbg_large_cache_used()` without exposing
+    /// the private `CachedLarge` type.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_large_cache_slot_sizes(&self) -> [Option<usize>; LARGE_CACHE_SLOTS] {
+        let mut out = [None; LARGE_CACHE_SLOTS];
+        for (i, slot) in self.large_cache.iter().enumerate() {
+            out[i] = slot.as_ref().map(|c| c.usable_size);
+        }
+        out
+    }
+
+    /// TEST-ONLY (Phase 1 large-cache budget): override the byte-budget at
+    /// runtime for deterministic tests that do not want to rely on the
+    /// `SEFER_LARGE_CACHE_BUDGET` env var (env vars are process-global and
+    /// therefore flaky in parallel test runs). Pass `None` for unbounded.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
+        self.large_cache_budget_bytes = budget;
     }
 
     /// Reserve a fresh small segment, initialise its metadata, register it,
