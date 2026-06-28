@@ -436,13 +436,137 @@ claim: атомарное slot_state FREE→LIVE без blocking mutex.
 
 ---
 
+---
+
+## §6 — Low-noise bench profiles (task #62)
+
+Задача #62 добавила два новых criterion-бенча специально для низкошумного
+профилирования аллокатора, обходя проблемы §1/§3 (84–85% на criterion KDE) и
+§4 (8 сэмплов).
+
+### §6.1 — `heap_xthread` (push→drain ring cycle)
+
+**SVG:** `/tmp/sefer-fg-v3a/heap_xthread.svg`
+**Сэмплов:** 4 654 (cycles:u). Потери сэмплов: 0.
+
+**Команды воспроизведения:**
+```bash
+export PATH=/usr/lib/linux-tools/6.8.0-124-generic:$HOME/.cargo/bin:$PATH
+mkdir -p /tmp/sefer-fg-v3a
+
+CARGO_PROFILE_BENCH_DEBUG=line-tables-only CARGO_TARGET_DIR=/tmp/sefer-fg-v3a \
+  cargo build --bench heap_xthread \
+  --features 'alloc-core alloc-xthread' --profile bench
+
+perf record -F 99 -e cycles:u --call-graph dwarf,16384 \
+  -o /tmp/sefer-fg-v3a/perf_xthread.data \
+  /tmp/sefer-fg-v3a/release/deps/heap_xthread-<hash> --bench
+
+perf script -i /tmp/sefer-fg-v3a/perf_xthread.data --no-inline 2>/dev/null \
+  | inferno-collapse-perf 2>/dev/null \
+  | inferno-flamegraph --title 'heap_xthread — push/drain ring (task #62)' \
+    > /tmp/sefer-fg-v3a/heap_xthread.svg
+```
+
+**Top-3 по self-time:**
+
+| Функция | Self-time |
+|---|---|
+| criterion KDE `bridge_producer_consumer_helper` | **42.65%** |
+| `AllocCore::dbg_push_to_ring` | **13.01%** |
+| criterion `join_context` (rayon) | ~8% |
+
+**Результаты бенча:**
+- `push_drain_256` (только push+drain, без alloc): **6.7–6.9 µs** на 256 итераций
+- `alloc_push_drain_256` (alloc+push+drain): **30–40 µs** на 256 итераций
+
+**Вывод:** criterion overhead снизился с 84% (§1) до **43%** — улучшение в 2×.
+Аллокатор (`dbg_push_to_ring`) теперь виден с **13%** self-time против 1.7% в §1.
+Функция `dbg_drain_all_rings` была полностью inlined оптимизатором — её стоимость
+растворена в итерирующем коде (это ожидаемо: drain — это tight loop с Relaxed
+атомными stores).
+
+---
+
+### §6.2 — `heap_async_pattern` (СУБД-pipeline mixed alloc)
+
+**SVG:** `/tmp/sefer-fg-v3a/heap_async_pattern.svg`
+**Сэмплов:** 1 632 (cycles:u). Потери сэмплов: 0.
+
+**Команды воспроизведения:**
+```bash
+CARGO_PROFILE_BENCH_DEBUG=line-tables-only CARGO_TARGET_DIR=/tmp/sefer-fg-v3a \
+  cargo build --bench heap_async_pattern \
+  --features 'alloc-global' --profile bench
+
+perf record -F 99 -e cycles:u --call-graph dwarf,16384 \
+  -o /tmp/sefer-fg-v3a/perf_async.data \
+  /tmp/sefer-fg-v3a/release/deps/heap_async_pattern-<hash> --bench
+
+perf script -i /tmp/sefer-fg-v3a/perf_async.data --no-inline 2>/dev/null \
+  | inferno-collapse-perf 2>/dev/null \
+  | inferno-flamegraph --title 'heap_async_pattern — mixed alloc pipeline (task #62)' \
+    > /tmp/sefer-fg-v3a/heap_async_pattern.svg
+```
+
+**Top-3 по self-time:**
+
+| Функция | Self-time |
+|---|---|
+| criterion KDE `bridge_producer_consumer_helper` | **39.64%** |
+| `AllocCore::alloc` | **12.25%** |
+| criterion rayon helpers | ~8% |
+
+**Результаты бенча:**
+- `SeferMalloc/pipeline` (40 small + 1 grow + 16 medium allocs): **1.6–2.1 µs** на итерацию
+
+**Вывод:** criterion overhead **40%** против 85% в §3 (large_realloc) — улучшение в 2.1×.
+`AllocCore::alloc` виден с **12.25%** против 1.72% в §1 (без фильтра SeferMalloc).
+Realloc (`HeapCore::realloc`) виден с ~0.56%, что честно отражает малую долю rowtargets
+с grow-операциями относительно plain alloc+free.
+
+---
+
+### §6.3 — Сравнительная таблица: criterion overhead до и после
+
+| Профиль | Бенч | Сэмплов | criterion KDE self-time | allocator self-time |
+|---|---|---|---|---|
+| §1 | `global_alloc` (small churn) | 9 463 | **84%** | 1.72% (AllocCore::alloc) |
+| §3 | `large_realloc` (realloc-heavy) | 8 648 | **85%** | 6.74% (AllocCore::alloc) |
+| §4 | `tokio_burn_in` | 8 | ~50% (ненадёжно) | 24% (ненадёжно) |
+| **§6.1** | **heap_xthread** (ring push+drain) | **4 654** | **43%** | **13.01%** (dbg_push_to_ring) |
+| **§6.2** | **heap_async_pattern** (pipeline) | **1 632** | **40%** | **12.25%** (AllocCore::alloc) |
+
+**Итог:** criterion overhead фундаментально связан с размером сэмплов измерения.
+Если inner loop выполняется за < 10 µs, criterion берёт 10 сэмплов и тратит
+~3 секунды на статистику — за которые функция KDE делает n² сравнений.
+При **7 µs** (push_drain_256) за 3 секунды accumulates ~430 000 итераций →
+10 точек → KDE по 10 числам = минимальная работа, но она всё равно занимает ~43% CPU.
+
+Выигрыш новых бенчей: **2× снижение criterion overhead (84% → 43%)** при той же
+продолжительности, плюс **7–10× увеличение видимости allocator-функций** (1.7% → 13%).
+Это достаточно для идентификации hot paths, но не для точного изоляционного
+профилирования.
+
+**Рекомендация:** для глубокого изоляционного профиля (ожидаемый allocator
+share > 60%):
+1. **`samply`**: `cargo install samply` + `samply record cargo bench --bench heap_xthread ...`
+   — macOS/Linux profiler с низким overhead, лучшим call-graph и flame chart UI.
+   На WSL2 поддерживается с ограничениями (нет kernel symbols, но user-space работает).
+2. **Standalone tight-loop binary**: написать `examples/bench_ring_tight.rs` без criterion —
+   `loop { push 256 + drain }` с wall-clock timing в начале/конце. Без KDE overhead.
+   Профилировать этот binary напрямую через `perf record -F 999`. Allocator share > 90%.
+
+---
+
 ## Итоги profiling session
 
 ### Что сработало
 
 - `perf record -F 99 --call-graph dwarf,16384` с явным путём к perf 6.8 на WSL2 — работает.
 - `inferno-collapse-perf | inferno-flamegraph` — хорошо демангируют Rust symbols.
-- Все 4 SVG сгенерированы и содержат читаемые stack traces с символами.
+- Все 4+2 SVG сгенерированы и содержат читаемые stack traces с символами.
+- Новые бенчи §6.1/§6.2 снизили criterion overhead с 84–85% до 40–43%.
 
 ### Что не сработало / ограничения
 
@@ -461,4 +585,10 @@ claim: атомарное slot_state FREE→LIVE без blocking mutex.
    время измерения.
 
 5. **WSL2 PMU трассировки** — kernel tracepoints недоступны (ожидаемо для WSL2).
-   User-space sampling (cycles:Pu) работает корректно.
+   User-space sampling (cycles:u) работает корректно. (`cycles:Pu` недоступен
+   на этом WSL2 ядре — использован `cycles:u`.)
+
+6. **criterion overhead фундаментален:** даже с новыми бенчами §6.1/§6.2 критерий
+   занимает 40–43% CPU. Это не баг новых бенчей — это структурное свойство criterion
+   при малых inner loops (< 10 µs). Для полного изоляционного профиля нужен samply
+   или standalone binary (см. §6.3 Рекомендация).
