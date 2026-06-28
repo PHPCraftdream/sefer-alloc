@@ -16,6 +16,14 @@ pub(crate) mod alloc_bitmap;
 mod bootstrap;
 pub(crate) mod node;
 pub(crate) mod os;
+/// NUMA OS-seam: NUMA-node detection and segment binding.
+/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
+/// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
+/// `#[doc(hidden)]` re-export), reachable by the isolated NUMA unit test.
+/// Nothing here is stable public API.
+#[cfg(feature = "numa-aware")]
+#[doc(hidden)]
+pub mod numa;
 /// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
 /// unconditionally so the segment [`Layout`](segment_header::Layout) (which
 /// always reserves the ring's bytes to keep the byte layout uniform across

@@ -119,6 +119,11 @@ alloc-global = ["alloc"]
 # decommit point in `alloc_core` and `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
 # Requires `alloc-core`. Default OFF.
 alloc-decommit = ["alloc-core"]
+# NUMA-aware segment reservation: when a new segment is reserved, pages are
+# steered to the NUMA node of the calling thread
+# (Linux: mbind(2), Windows: VirtualAllocExNuma).
+# macOS: no-op (no public NUMA API). Default OFF. Requires `alloc-core`.
+numa-aware = ["alloc-core"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
