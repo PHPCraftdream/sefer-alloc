@@ -682,31 +682,33 @@ impl AllocCore {
                     // implementation (the invariant: slot 0 is filled before slot 1,
                     // so evicting 0 first is correct for LARGE_CACHE_SLOTS=2). Phase 2
                     // may improve with timestamps / LRU.
-                    let admitted =
-                        if let Some(slot_idx) = self.large_cache.iter().position(|s| s.is_none()) {
-                            // A free slot exists. Check byte budget.
-                            let fits = self.large_cache_budget_bytes.map_or(true, |budget| {
-                                self.large_cache_used_bytes + usable_size <= budget
-                            });
-                            if fits {
-                                Some(slot_idx)
-                            } else {
-                                // Budget would overflow even with a free slot — evict to
-                                // bring used_bytes down, then re-check.
-                                if self.try_evict_to_fit(usable_size) {
-                                    self.large_cache.iter().position(|s| s.is_none())
-                                } else {
-                                    None
-                                }
+                    // Two independent admission constraints: (1) there must be a
+                    // free slot, (2) the byte-budget (if set) must accommodate
+                    // `usable_size`. Either failing means we evict the oldest and
+                    // retry. Bug #94 history: an earlier version short-circuited
+                    // `try_evict_to_fit` to `true` when budget=None and missed
+                    // the "slots full" case entirely, silently releasing every
+                    // span beyond the first two to the OS. The loop below treats
+                    // both constraints uniformly.
+                    let mut admitted: Option<usize> = None;
+                    loop {
+                        let free_slot = self.large_cache.iter().position(|s| s.is_none());
+                        let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
+                            self.large_cache_used_bytes + usable_size <= budget
+                        });
+                        if let Some(idx) = free_slot {
+                            if budget_ok {
+                                admitted = Some(idx);
+                                break;
                             }
-                        } else {
-                            // All slots occupied. Attempt FIFO eviction to free a slot.
-                            if self.try_evict_to_fit(usable_size) {
-                                self.large_cache.iter().position(|s| s.is_none())
-                            } else {
-                                None
-                            }
-                        };
+                        }
+                        // Either no free slot, or budget would overflow → evict
+                        // the oldest entry and retry. If the cache is already
+                        // empty there is nothing more we can do.
+                        if !self.evict_one_oldest() {
+                            break;
+                        }
+                    }
 
                     if let Some(slot_idx) = admitted {
                         // We keep the pages COMMITTED in the cache (no decommit
@@ -2097,20 +2099,32 @@ impl AllocCore {
             if self.large_cache_used_bytes.saturating_add(needed) <= budget {
                 return true;
             }
-            // Find the "oldest" non-None slot (lowest index first = FIFO).
-            let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+            if !self.evict_one_oldest() {
                 // Cache is empty but budget < needed: cannot cache this span.
                 return false;
-            };
-            let victim = self.large_cache[victim_idx].take().unwrap();
-            self.large_cache_used_bytes = self
-                .large_cache_used_bytes
-                .saturating_sub(victim.usable_size);
-            // The victim is unregistered from the table already (it was done on
-            // deposit — the table slot was NULLed at that time). Release the OS
-            // reservation directly.
-            os::release_segment(victim.reservation, victim.reservation_len);
+            }
         }
+    }
+
+    /// Evict the FIFO-oldest cached entry (slot 0 first, then slot 1) and
+    /// release its OS reservation. Returns `true` if an entry was evicted,
+    /// `false` if the cache was already empty.
+    ///
+    /// Shared between admission-path slot-freeing (deposit when slots full)
+    /// and budget-bound eviction (`try_evict_to_fit`). The victim was
+    /// unregistered from the segment table on deposit, so this function
+    /// only releases the OS reservation and updates the byte-budget counter.
+    #[cfg(feature = "alloc-decommit")]
+    fn evict_one_oldest(&mut self) -> bool {
+        let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+            return false;
+        };
+        let victim = self.large_cache[victim_idx].take().unwrap();
+        self.large_cache_used_bytes = self
+            .large_cache_used_bytes
+            .saturating_sub(victim.usable_size);
+        os::release_segment(victim.reservation, victim.reservation_len);
+        true
     }
 
     /// TEST-ONLY (Phase 1 large-cache budget): return the current running sum
