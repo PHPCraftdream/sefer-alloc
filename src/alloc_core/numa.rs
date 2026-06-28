@@ -43,6 +43,14 @@ pub fn current_node() -> u32 {
 /// established by the callers (`reserve_small_segment` / `alloc_large_slow`).
 ///
 /// No-op when `node == NO_NODE`, `len == 0`, or `base` is null.
+// Currently exercised only by `tests/numa_seam.rs` (NO_NODE / zero-len no-op
+// invariants) — `reserve_aligned_on_node` binds at reservation time. Kept
+// pub so the seam stays callable, with the SAFETY proof intact.
+// `not_unsafe_ptr_arg_deref` is conservative here: this function never
+// dereferences `base`; it forwards it to `numa_shim::bind_range` (an unsafe
+// fn) whose entire safety story is about an OS reservation existing, not
+// about Rust-level UB.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn bind_segment(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 || base.is_null() {
         return;

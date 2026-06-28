@@ -1,3 +1,11 @@
+// The ring's full surface (offsets, head/tail, slots, atomic helpers) is only
+// reached on builds that actually exercise cross-thread free — the production
+// stack pulls `alloc-xthread` for that. Under `--features alloc-core` alone the
+// module compiles but several items remain unused; suppress the lints there
+// rather than tangle the module in feature-cfg branches that would make the
+// hot-path reading harder.
+#![allow(dead_code, unused_imports)]
+
 //! [`RemoteFreeRing`] — a per-segment, bounded, **non-intrusive** MPSC queue
 //! of freed-block **offsets** (`u32`), carved from segment metadata.
 //!

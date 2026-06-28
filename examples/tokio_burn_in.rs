@@ -1,3 +1,11 @@
+// Burn-in harness — readability of the async pipeline matters more than
+// clippy style nits here.
+#![allow(
+    clippy::manual_is_multiple_of,
+    clippy::manual_str_repeat,
+    clippy::manual_repeat_n
+)]
+
 //! Tokio async burn-in for `SeferMalloc` — installs the allocator as
 //! `#[global_allocator]` and exercises it under a real async multi-thread
 //! runtime with a СУБД-подобной (database-pipeline-like) workload.

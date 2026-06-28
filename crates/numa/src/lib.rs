@@ -150,8 +150,10 @@ mod platform {
     }
 
     pub(super) fn bind_range_impl(base: *mut u8, len: usize, node: u32) {
-        // SAFETY: caller of bind_range guarantees [base, base+len) is valid.
-        bind_range_impl_linux(base, len, node);
+        // SAFETY: caller of bind_range is `unsafe fn` and guarantees
+        // `[base, base+len)` is a live OS reservation owned by it. mbind only
+        // sets kernel page-policy metadata, never reads/writes payload bytes.
+        unsafe { bind_range_impl_linux(base, len, node) };
     }
 
     #[cfg(feature = "vmem-integration")]

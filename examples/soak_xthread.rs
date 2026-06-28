@@ -1,3 +1,12 @@
+// Stress harness — readability of the long-running churn logic matters more
+// than clippy style nits here.
+#![allow(
+    clippy::too_many_arguments,
+    clippy::manual_is_multiple_of,
+    clippy::manual_clamp,
+    clippy::let_and_return
+)]
+
 //! High-load multi-thread soak harness for `SeferMalloc`.
 //!
 //! Run (smoke — ~5 s):

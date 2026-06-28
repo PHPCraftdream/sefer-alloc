@@ -87,8 +87,7 @@ pub(crate) const SEGMENT_SHIFT: usize = 22;
 /// - `null_mut()` → empty (never occupied)
 /// - `TOMBSTONE`  → was occupied, now removed (probe chain intact)
 /// - other        → live entry (a real SEGMENT-aligned base pointer)
-#[allow(clippy::as_conversions)]
-const TOMBSTONE: *mut u8 = 1 as *mut u8;
+const TOMBSTONE: *mut u8 = core::ptr::without_provenance_mut::<u8>(1);
 
 /// A self-hosted segment registry: a fixed-capacity array of segment-base
 /// pointers plus a high-water count, carved from the primordial segment.

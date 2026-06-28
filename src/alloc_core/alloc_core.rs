@@ -487,7 +487,7 @@ impl AllocCore {
         // Returns true if decommit fired (caller should call recycle after drain).
         #[cfg(feature = "alloc-decommit")]
         {
-            return Self::dec_live_and_maybe_decommit(base, small_cur);
+            Self::dec_live_and_maybe_decommit(base, small_cur)
         }
         #[cfg(not(feature = "alloc-decommit"))]
         false

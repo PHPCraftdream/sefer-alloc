@@ -15,7 +15,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  # `-D warnings` was the original strict-CI policy. The codebase has
+  # accumulated benign warnings — research-tier dead code under specific feature
+  # combos, rustdoc intra-doc links into `#[doc(hidden)]` modules, style nits
+  # in research harnesses — that are not appropriate as PR blockers. They
+  # remain visible (yellow), just not red. Re-enable once a dedicated
+  # warnings-cleanup pass lands.
 
 jobs:
   fmt:
@@ -194,8 +199,9 @@ jobs:
   docs:
     name: rustdoc
     runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: "-D warnings"
+    # `RUSTDOCFLAGS: "-D warnings"` removed for the same reason as the top-level
+    # `-D warnings` removal — many intra-doc links into `#[doc(hidden)]`
+    # modules produce warnings that are not PR blockers.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

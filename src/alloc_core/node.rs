@@ -241,6 +241,9 @@ impl Node {
     /// the owner's `bump` field writes because they touch disjoint bytes).
     ///
     /// `src` MUST be valid for 4 bytes, 4-byte aligned, in a live segment.
+    // Used by the alloc-xthread cross-thread path; under `alloc-core` alone
+    // (no xthread) the call sites are gated out and these helpers look dead.
+    #[allow(dead_code)]
     pub(crate) fn read_u32(src: *const u32) -> u32 {
         // SAFETY: caller guarantees `src` is valid, 4-byte aligned, in a live
         // segment. One 4-byte load.
@@ -254,6 +257,7 @@ impl Node {
     ///
     /// `src` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
     /// for a pointer, in a live segment.
+    #[allow(dead_code)]
     pub(crate) fn read_ptr<T>(src: *const *const T) -> *const T {
         // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
         // segment. One word load.
@@ -269,6 +273,7 @@ impl Node {
     ///
     /// `dst` MUST be valid for `size_of::<*const T>()` bytes, properly aligned
     /// for a pointer, and exclusively owned.
+    #[allow(dead_code)]
     pub(crate) fn write_ptr<T>(dst: *mut *const T, value: *const T) {
         // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
         // exclusively owned (single-writer: the stamping path runs on the
