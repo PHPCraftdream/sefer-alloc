@@ -126,6 +126,13 @@ the override on certain CPU families.
 **Verdict:** **EXPERIMENT in Phase 3.** If it works → becomes the
 Windows manual gate. If Hyper-V refuses → fall back to (D) or (E).
 
+**Status (task #98):** draft recipe lives in
+[`NUMA_WINDOWS_DEV_RECIPE.md`](NUMA_WINDOWS_DEV_RECIPE.md) — PowerShell
+commands for VM creation, virtual NUMA topology, in-guest verification,
+test run, and troubleshooting. End-to-end verification on a real Hyper-V
+host is **pending**; whoever runs the recipe first should fill in the
+"Verification log" table at the bottom of that file.
+
 ### D) QEMU with Windows guest + `-numa`
 
 **What:** run a full Windows image under QEMU/KVM (host: Linux/WSL2)
