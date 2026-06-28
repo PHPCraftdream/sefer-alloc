@@ -144,6 +144,35 @@ impl SegmentTable {
         Some(idx as u32)
     }
 
+    /// NULL the table slot for `base` WITHOUT releasing the OS reservation.
+    ///
+    /// Used by the OPT-E large-segment free-cache: when a freed large segment
+    /// is deposited into `large_cache`, we remove it from the active table so
+    /// `drop` / `find_segment_with_free` / `contains_base` do not see it as a
+    /// live registered segment. The OS reservation stays alive (the cache owns
+    /// it) and will be released either on cache re-use or in `AllocCore::drop`.
+    ///
+    /// **Contract (caller's invariant):**
+    /// - `base` MUST be currently registered as a non-NULL slot.
+    /// - The caller takes full ownership of the OS reservation for `base`;
+    ///   `drop` will NOT release it (the slot is NULL, so `bases()` skips it).
+    /// - The caller MUST ensure the reservation is eventually released (via
+    ///   `os::release_segment` in the cache or `Drop` walk).
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn unregister(&mut self, base: *mut u8) {
+        let count = self.count as usize;
+        for i in 0..count {
+            let slot = Self::slot_ptr(self.slots, i);
+            let current = super::node::Node::read_struct::<*mut u8>(slot);
+            if current == base {
+                // NULL the slot — the OS reservation is NOT released here.
+                super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+                return;
+            }
+        }
+        // Defensive: base was not found in the table. No-op.
+    }
+
     /// Mark the slot for `base` as recyclable (NULL) and release the segment's
     /// OS reservation. Called from `decommit_empty_segment` AFTER the segment's
     /// payload has been decommitted and its metadata reset.

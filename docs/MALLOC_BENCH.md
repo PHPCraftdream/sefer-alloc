@@ -368,6 +368,82 @@ migration (e.g. long-lived worker threads, СУБД executors) but is not a
 guarantee.  With `pinning`, locality is guaranteed for the lifetime of the
 pinned run.
 
+---
+
+## Large-cache (OPT-E) — `alloc-decommit` required
+
+### What was added
+
+Feature-gated on `alloc-decommit`, `AllocCore` now holds a small fixed-size
+free-cache for large segments (`LARGE_CACHE_SLOTS = 2`, max entry size
+`MAX_CACHED_LARGE_BYTES = 64 MiB`). When a large allocation is freed, instead
+of releasing the OS reservation immediately the segment is deposited into the
+cache (reservation stays live, pages stay committed — no decommit on deposit, so
+no recommit is needed on hit). The next `alloc_large` of a compatible size
+(`needed <= cached_size <= needed * 2`) hits the cache, skipping the OS
+mmap/VirtualAlloc entirely.
+
+The OS reservation is released either on the next `Drop` of `AllocCore` (if the
+cached segment is never reused) or when a cache-miss evicts the slot (future
+work — currently a 2-slot cache; any third eviction goes to the OS). Segments
+larger than `MAX_CACHED_LARGE_BYTES` are released to the OS immediately as
+before.
+
+### Numbers — `benches/large_realloc.rs`, `large_alloc_free` group
+
+Run: `cargo bench --bench large_realloc --features "alloc-global alloc-decommit" -- large_alloc_free`
+
+Host: Windows 10, dev machine. Numbers are medians from criterion `sample_size(10)`.
+
+**Before OPT-E** (`--features alloc-global`, no cache):
+
+| size  | SeferMalloc | mimalloc  | System    |
+| ----- | ----------: | --------: | --------: |
+| 4 MiB |   ~237 µs   |  ~753 ns  |  ~18.7 µs |
+| 16 MiB|   ~657 µs   |  ~851 ns  |  ~17.5 µs |
+| 64 MiB|  ~1.97 ms   |  ~2.0 µs  |  ~18.3 µs |
+
+**After OPT-E** (`--features "alloc-global alloc-decommit"`, cache active):
+
+| size  | SeferMalloc (cache) | mimalloc | System   | speedup vs before |
+| ----- | ------------------: | -------: | -------: | ----------------: |
+| 4 MiB |           **~45 ns** | ~718 ns  | ~16.7 µs |       **~5,300×** |
+| 16 MiB|           **~48 ns** | ~869 ns  | ~17.6 µs |      **~13,700×** |
+| 64 MiB|          ~2.0–2.4 ms | ~2.1 µs  | ~19 µs   | (not cached — 64 MiB + header overhead > 64 MiB cache limit) |
+
+At 4 MiB and 16 MiB the cache eliminates the OS round-trip entirely. The
+cached path is: scan 2 slots (O(1)), call `table.register` (O(live segments),
+typically O(1) for the recycled NULL slot), write a 96-byte `SegmentHeader`
+struct, return a pointer. No syscall, no page-table work.
+
+SeferMalloc with cache is now **~16× faster than mimalloc** on 4 MiB and
+**~18× faster** on 16 MiB (steady-state alloc+free churn, same size). mimalloc
+also holds a page-cache but incurs more bookkeeping per hit; our fixed 2-slot
+array with a direct index scan is minimal.
+
+### Why 64 MiB is not cached
+
+A 64 MiB user allocation requires a header at offset 0, so the OS reservation
+must span `ceil((PAGE + 64 MiB) / 4 MiB) * 4 MiB = 17 × 4 MiB = 68 MiB`.
+This exceeds `MAX_CACHED_LARGE_BYTES = 64 MiB`, so the segment is released
+immediately. The limit can be raised if the workload needs larger cached spans.
+
+### Why pages are kept committed (no decommit on deposit)
+
+An earlier version decommitted the payload pages on cache deposit
+(`VirtualFree(MEM_DECOMMIT)`) and recommitted on cache hit
+(`VirtualAlloc(MEM_COMMIT)`). On Windows, committing 8 MiB of pages costs
+~50 µs regardless of the warm/cold state — essentially the same as a full
+mmap round-trip. Removing the decommit/recommit pair dropped the 4 MiB hit
+from ~50 µs to ~45 ns: a 1,100× additional improvement.
+
+Trade-off: cached segments hold their pages committed between uses, increasing
+RSS by `usable_size` per cached slot (max 2 × 64 MiB = 128 MiB with current
+constants). For workloads that alloc/free large blocks infrequently, the
+`alloc-decommit` feature without OPT-E (or a future time-based eviction) is
+preferable. OPT-E is optimal for workloads with repeated large-allocation churn
+at the same size class.
+
 ### Known limitation — `MPOL_PREFERRED` not `MPOL_BIND`
 
 The current Linux implementation uses `MPOL_PREFERRED` (mode 1): the kernel

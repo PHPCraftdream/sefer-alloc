@@ -43,6 +43,65 @@ use super::size_classes::{AllocKind, SizeClasses};
 #[cfg(feature = "numa-aware")]
 use super::numa;
 
+// ---------------------------------------------------------------------------
+// OPT-E — large-segment free-cache (feature = "alloc-decommit")
+//
+// The hot path for `alloc_large` / `dealloc` large is a full OS round-trip
+// (mmap/VirtualAlloc + munmap/VirtualFree). mimalloc avoids this by keeping a
+// per-allocator page-cache of recently-freed large spans so the next alloc of
+// the same size hits the cache instead of the OS (~800 ns vs ~8–240 µs).
+//
+// We implement a MINIMAL version: a fixed array of LARGE_CACHE_SLOTS entries.
+// The cache is ONLY active under `alloc-decommit` (it uses `table.recycle` for
+// the slot-NULL step, which is only compiled with that feature; this keeps the
+// logic consistent with the decommit-gate on the small-segment recycle path).
+// ---------------------------------------------------------------------------
+
+/// Maximum number of large segments held in the free-cache between uses.
+/// 2 slots is enough to eliminate the OS round-trip for the common alloc→free→
+/// alloc pattern, without holding significant unreachable virtual memory.
+#[cfg(feature = "alloc-decommit")]
+const LARGE_CACHE_SLOTS: usize = 2;
+
+/// Maximum size of a single cached large reservation, in bytes. Segments larger
+/// than this are released immediately to the OS rather than cached.
+/// 64 MiB: covers the 4 MiB / 16 MiB typical workloads without holding an
+/// enormous reservation when a one-off 100 MiB+ allocation is freed.
+#[cfg(feature = "alloc-decommit")]
+const MAX_CACHED_LARGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
+/// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a 64 MiB cached segment
+/// would be permanently reused for every 4 MiB request — wasting 60 MiB of
+/// RSS during the cache lifetime.
+#[cfg(feature = "alloc-decommit")]
+const LARGE_CACHE_SIZE_FACTOR: usize = 2;
+
+/// One entry in the large-segment free-cache.
+///
+/// Invariant: `base` is SEGMENT-aligned, `reservation` was returned by the OS,
+/// `usable_size` equals the `usable` computed in `alloc_large` at the time the
+/// segment was first reserved (i.e. `n_segments * SEGMENT`). The segment's OS
+/// reservation is still live (not yet released to the OS). Pages are kept
+/// COMMITTED (no decommit on deposit) so that a cache hit requires no recommit.
+///
+/// When a cache hit occurs, the caller MUST:
+///   1. Re-register `base` in the `SegmentTable`.
+///   2. Write a fresh `SegmentHeader` over the old one (pages already committed).
+///   3. Return `Node::deref(base, hdr_aligned)` to the caller.
+#[cfg(feature = "alloc-decommit")]
+struct CachedLarge {
+    /// Start of the original OS reservation.
+    reservation: *mut u8,
+    /// Total size of the OS reservation.
+    reservation_len: usize,
+    /// SEGMENT-aligned base of the segment (the "usable" start).
+    base: *mut u8,
+    /// The `usable` bytes this reservation covers — `n_segments * SEGMENT` for
+    /// the original allocation. Used to match incoming requests.
+    usable_size: usize,
+}
+
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// [`AllocCore::decommit_empty_segment`]; read by the soak test via
 /// [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
@@ -65,6 +124,17 @@ pub struct AllocCore {
     ///
     /// [`alloc_small`]: Self::alloc_small
     small_cur: *mut u8,
+    /// OPT-E — large-segment free-cache. A small fixed array of recently-freed
+    /// large/huge segments whose OS reservations are still live. `alloc_large`
+    /// checks this array first; a size-matched entry is reused without a new
+    /// OS reservation. `dealloc` on the large path deposits the segment here
+    /// (if a slot is free and the segment is small enough) instead of releasing
+    /// the OS reservation immediately. Pages are kept committed between uses so
+    /// no recommit syscall is needed on a cache hit. The cache is gated on
+    /// `alloc-decommit` for consistency with the small-segment recycle path
+    /// (both operate in the regime where empty slots are recyclable).
+    #[cfg(feature = "alloc-decommit")]
+    large_cache: [Option<CachedLarge>; LARGE_CACHE_SLOTS],
 }
 
 impl AllocCore {
@@ -100,6 +170,8 @@ impl AllocCore {
         Some(Self {
             table: prim.table,
             small_cur,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache: [const { None }; LARGE_CACHE_SLOTS],
         })
     }
 
@@ -189,20 +261,83 @@ impl AllocCore {
         // race-free against the owner's disjoint `bump` writes.
         match SegmentHeader::kind_at(base) {
             SegmentKind::Large => {
-                // Large/huge: mark the segment as freed (zero the magic) so
-                // `Drop` knows its reservation should be released. We do NOT
-                // release eagerly here — that would unmap the header before
-                // `Drop` can read it to discover the reservation info. (M6 —
-                // eager decommit / OS return — is a Phase 10 deliverable; for
-                // Phase 8 correctness, all segment freeing happens at `Drop`.)
+                // Large/huge: the segment is being freed. The full header read
+                // here is on the cold Large path (one allocation per segment,
+                // rare), so the dependent-load cost does not matter.
                 //
-                // The full header read here is on the cold Large path (one
-                // allocation per segment, rare), so the dependent-load cost
-                // does not matter; correctness requires reading + rewriting
-                // the header to flag the segment for `Drop`.
-                let mut stale = SegmentHeader::read_at(base);
-                stale.magic = 0;
-                Node::write_struct(base as *mut SegmentHeader, stale);
+                // OPT-E (alloc-decommit): if the segment is small enough to
+                // cache AND a free slot exists, decommit its payload pages and
+                // deposit it into the large_cache so the next alloc_large of a
+                // compatible size can reuse it without an OS round-trip.
+                //
+                // Without alloc-decommit: mark the segment as freed (zero the
+                // magic) so `Drop` knows its reservation should be released.
+                // We do NOT release eagerly here — that would unmap the header
+                // before `Drop` can read it to discover the reservation info.
+                let stale = SegmentHeader::read_at(base);
+
+                #[cfg(feature = "alloc-decommit")]
+                {
+                    // Try to cache the segment. Conditions for caching:
+                    //   1. usable_size <= MAX_CACHED_LARGE_BYTES.
+                    //   2. There is a free (None) slot in large_cache.
+                    let hdr_aligned = align_up(
+                        core::mem::size_of::<SegmentHeader>(),
+                        stale.large_align.max(super::os::PAGE),
+                    );
+                    let n_segments = (hdr_aligned + align_up(stale.large_size, stale.large_align))
+                        .div_ceil(SEGMENT);
+                    let usable_size = n_segments * SEGMENT;
+
+                    let free_slot = if usable_size <= MAX_CACHED_LARGE_BYTES {
+                        self.large_cache.iter().position(|s| s.is_none())
+                    } else {
+                        None
+                    };
+
+                    if let Some(slot_idx) = free_slot {
+                        // We keep the pages COMMITTED in the cache (no decommit
+                        // on deposit). On Windows, `VirtualAlloc(MEM_DECOMMIT)`
+                        // followed immediately by `VirtualAlloc(MEM_COMMIT)` on
+                        // the next cache hit costs more than just leaving the
+                        // pages mapped — the entire purpose of the cache is to
+                        // amortise the OS round-trip cost. Decommitting here
+                        // would reduce RSS by the usable payload size, but at the
+                        // cost of an expensive recommit on every hit, negating
+                        // the speedup. We intentionally trade RSS for latency:
+                        // a cached large segment keeps its pages warm between uses.
+                        //
+                        // NULL the table slot WITHOUT releasing the OS reservation.
+                        // The cached entry owns the reservation; AllocCore::drop
+                        // releases it explicitly from the large_cache array.
+                        self.table.unregister(base);
+                        // Zero the magic so that if something reads the header
+                        // while it's in the cache, it won't be confused as a
+                        // live registered segment.
+                        let mut hdr_zero = stale;
+                        hdr_zero.magic = 0;
+                        Node::write_struct(base as *mut SegmentHeader, hdr_zero);
+                        // Deposit into cache.
+                        self.large_cache[slot_idx] = Some(CachedLarge {
+                            reservation: stale.reservation,
+                            reservation_len: stale.reservation_len,
+                            base,
+                            usable_size,
+                        });
+                        return;
+                    }
+                    // No free slot or too large: fall through to immediate release.
+                    // NULL the magic so Drop frees the reservation via the header.
+                    let mut stale2 = stale;
+                    stale2.magic = 0;
+                    Node::write_struct(base as *mut SegmentHeader, stale2);
+                }
+                #[cfg(not(feature = "alloc-decommit"))]
+                {
+                    let mut stale2 = stale;
+                    stale2.magic = 0;
+                    Node::write_struct(base as *mut SegmentHeader, stale2);
+                }
             }
             SegmentKind::Small | SegmentKind::Primordial => {
                 // Derive the class from the caller's `Layout` (pure
@@ -1191,6 +1326,12 @@ impl AllocCore {
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
     /// place the allocation at the first page-aligned offset past the header,
     /// register the segment, and return the allocation pointer.
+    ///
+    /// **OPT-E (alloc-decommit):** before going to the OS, check the
+    /// `large_cache` for a previously-freed segment that is large enough to
+    /// satisfy the request. A cache hit avoids the full OS round-trip
+    /// (mmap/VirtualAlloc + registration) at the cost of one recommit call
+    /// (Windows only; unix is a no-op after MADV_DONTNEED).
     fn alloc_large(&mut self, size: usize, align: usize) -> *mut u8 {
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
@@ -1206,6 +1347,83 @@ impl AllocCore {
         let n_segments = needed.div_ceil(SEGMENT);
         let usable = n_segments * SEGMENT;
 
+        // OPT-E: try the large-segment cache first.
+        // Scan all slots for a compatible entry: usable_size >= usable (the
+        // cached segment is big enough) AND usable_size <= usable *
+        // LARGE_CACHE_SIZE_FACTOR (not so big we waste RSS). The size-ratio
+        // bound prevents a 64 MiB cached segment from permanently absorbing
+        // every 4 MiB request.
+        #[cfg(feature = "alloc-decommit")]
+        {
+            let mut hit_idx: Option<usize> = None;
+            for i in 0..LARGE_CACHE_SLOTS {
+                if let Some(ref slot) = self.large_cache[i] {
+                    if slot.usable_size >= usable
+                        && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
+                    {
+                        hit_idx = Some(i);
+                        break;
+                    }
+                }
+            }
+            if let Some(idx) = hit_idx {
+                let slot = self.large_cache[idx].take().unwrap();
+                // Re-register the base in the segment table. Under
+                // alloc-decommit, recycle() left a NULL slot that register()
+                // will reuse — so this should not fail. If it does (table is
+                // genuinely full) we cannot reuse this slot; release it and
+                // fall through to the slow OS path.
+                let id = match self.table.register(slot.base) {
+                    Some(id) => id,
+                    None => {
+                        // Table still full: release the cached reservation and
+                        // fall through to the slow path.
+                        os::release_segment(slot.reservation, slot.reservation_len);
+                        // Fall through to OS path below.
+                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
+                    }
+                };
+                // Pages are kept committed in the cache (no decommit on deposit,
+                // no recommit needed on hit — they are already mapped and
+                // accessible). Just write a fresh header and return.
+                // Write a fresh header over the old one. The allocation lives
+                // at hdr_aligned (same computation as the slow path).
+                let bump = hdr_aligned + align_up(size, align);
+                let hdr = SegmentHeader::large(
+                    id,
+                    size,
+                    align,
+                    bump,
+                    slot.reservation,
+                    slot.reservation_len,
+                );
+                Node::write_struct(slot.base as *mut SegmentHeader, hdr);
+                // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
+                // node. The thread may have migrated since the segment was cached;
+                // updating the tag reflects the current physical binding.
+                #[cfg(feature = "numa-aware")]
+                {
+                    let my_node = numa::current_node();
+                    SegmentMeta::new(slot.base).set_node_id(my_node);
+                }
+                return Node::deref(slot.base, hdr_aligned);
+            }
+        }
+
+        self.alloc_large_slow(size, align, usable, hdr_aligned)
+    }
+
+    /// The slow (OS round-trip) path for `alloc_large` — called when the
+    /// `large_cache` has no matching entry. Factored out so the cache-hit path
+    /// can call `return self.alloc_large_slow(...)` cleanly when the table is
+    /// full (avoiding a goto / code-duplication).
+    fn alloc_large_slow(
+        &mut self,
+        size: usize,
+        align: usize,
+        usable: usize,
+        hdr_aligned: usize,
+    ) -> *mut u8 {
         // Phase C (numa-aware): steer the large segment to the calling thread's
         // NUMA node, same as for small segments.
         #[cfg(feature = "numa-aware")]
@@ -1348,6 +1566,18 @@ impl Default for AllocCore {
 
 impl Drop for AllocCore {
     fn drop(&mut self) {
+        // OPT-E (alloc-decommit): release any large segments held in the
+        // free-cache BEFORE walking the segment table. The cached entries are
+        // NOT in the table (they were unregistered on deposit), so the normal
+        // `table.bases()` walk below won't see them. We must release them
+        // explicitly here or they would leak.
+        #[cfg(feature = "alloc-decommit")]
+        for slot in &mut self.large_cache {
+            if let Some(cached) = slot.take() {
+                os::release_segment(cached.reservation, cached.reservation_len);
+            }
+        }
+
         // Collect every live segment's `(reservation, reservation_len)` into a
         // fixed-size stack array FIRST, then free them all. We must NOT free
         // the primordial segment while still reading the registry — the
