@@ -6,10 +6,13 @@ edition = "2021"
 # build on much older toolchains, but we pin a known-good MSRV from day one.
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "A safe, handle-addressed region store: generational handles instead of pointers, a dense cache-friendly core with zero unsafe, and a verification-first build."
+description = "A safe-by-construction memory toolkit: a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferMalloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
 readme = "README.md"
-keywords = ["arena", "slotmap", "generational", "handle", "allocator"]
-categories = ["data-structures", "memory-management"]
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc"
+documentation = "https://docs.rs/sefer-alloc"
+keywords = ["allocator", "arena", "generational", "handle", "lock-free"]
+categories = ["data-structures", "memory-management", "concurrency", "no-std"]
 
 # Standalone workspace root — prevents accidental capture by an ancestor
 # workspace if this repo is ever nested under one.

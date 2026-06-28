@@ -7,7 +7,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+(No unreleased changes — next entries land here.)
+
+## [0.1.0] - 2026-06-28
+
+### Summary
+
+The initial public release. Two faces on one verified substrate:
+
+- **`Region<T>` / `Handle<T>`** — a safe-by-construction handle store
+  (default `std`, also `no_std` + `alloc`). `#![forbid(unsafe_code)]`
+  at the top — the only `unsafe` is `slotmap`'s audited core wrapped
+  by a typed membrane.
+
+- **`SeferMalloc`** — a drop-in `#[global_allocator]` (opt-in
+  `production` feature = `alloc-global + alloc-xthread +
+  alloc-decommit`). **18× faster than `mimalloc` on large alloc/free**
+  after the OPT-E large-cache (4 MiB: 42 ns vs 788 ns); competitive
+  with `mimalloc` on multi-thread cross-thread paths
+  (`examples/malloc_macro.rs`). Three confined-`unsafe` seams: `os`
+  (OS aperture), `node` (intrusive free-list r/w), `numa`
+  (NUMA-aware reservations, opt-in `numa-aware`).
+
+Verification stack: 51 integration test files, 6 loom models
+(`tests/loom_*.rs`), proptest differential vs reference model, miri
+with strict-provenance (CI gate), ThreadSanitizer (×3 verified
+clean on cross-thread + decommit), Valgrind memcheck clean,
+aarch64 13/13 under qemu-user, libFuzzer (`region_ops`,
+`global_alloc_ops`), soak / RSS / tokio-burn-in harnesses,
+criterion benches with flamegraph profiling. Full details in
+`docs/ARCHITECTURE.md` and `docs/MALLOC_BENCH.md`.
+
 ### Added
+
+- **OPT-B (#67) — O(1) `SegmentTable::contains_base`**: a self-hosted
+  open-addressing hash (2048 slots, 16 KiB in the primordial segment)
+  replaces the O(count) linear scan. Tombstone encoding for removed
+  entries keeps probe chains intact under recycle/decommit churn.
+  Matters at DBMS scale (50–100+ live segments).
+- **OPT-C (#66) — lazy `stamp_segment_owner`**: `HeapCore` caches the
+  last-stamped segment base; cache-hit fast path is a single Relaxed
+  load + ownership compare (no Release-store), skipping the costly
+  MFENCE on 99 % of hot-segment allocations.
+- **OPT-E (#65) — large-segment free-cache** (the headline win):
+  1-2 fixed slots per `AllocCore` hold freed OS reservations; the
+  next similarly-sized `alloc_large` reuses without mmap.
+  **Measured: 4 MiB from 254 µs to 42 ns (~6,000× speedup, 18× faster
+  than mimalloc 788 ns); 16 MiB from 701 µs to 48 ns.** Pages stay
+  committed inside the cache (eliminates Windows
+  `VirtualAlloc(MEM_COMMIT)` cost on hit). Bounded RSS at
+  `LARGE_CACHE_SLOTS × MAX_CACHED_LARGE_BYTES = 2 × 64 MiB =
+  128 MiB`. Gated on `alloc-decommit` for `SegmentTable` `unregister`
+  consistency.
+- **OPT-F (#64) — in-place small→small realloc**:
+  `AllocCore::realloc` short-circuits when `new_size` resolves to the
+  same or smaller size class as `old_size` — returns the same pointer,
+  no copy, no alloc, no dealloc. Bench `realloc_in_place_unfavorable`
+  improved 28.6 %.
+- **OPT-G (#63) — `production` feature alias** + README guidance:
+  `production = ["alloc-global", "alloc-xthread", "alloc-decommit"]`
+  is the recommended set for long-running multi-thread workloads
+  (DBMS, async runtimes); without `alloc-decommit` the
+  `SegmentTable` slot-recycle path is disabled and the 1024-slot
+  table is a hard ceiling.
+- **NUMA-aware path** (Phases A–E of #58): opt-in `numa-aware`
+  feature, default OFF. New confined-`unsafe` module
+  `src/alloc_core/numa.rs` (Linux `mbind(2)` via `syscall(2)` —
+  avoids `libnuma` dep — `MPOL_PREFERRED`; Windows
+  `VirtualAllocExNuma`; macOS / miri no-op). Layout-stable
+  `SegmentHeader::node_id` (present in every build).
+  `reserve_small_segment` / `alloc_large` stamp the current thread's
+  NUMA node; `find_segment_with_free` prefers local-node segments
+  with foreign-node fallback. Tests: `numa_seam` (5),
+  `numa_segment_id` (2), env-guarded `numa_alloc` (3, run with
+  `SEFER_NUMA_TEST=1` under multi-NUMA topology). Honest caveat:
+  QEMU verifies correctness, not latency-asymmetry; real measurement
+  requires 2-socket hardware. See `docs/PHASE_NUMA_DESIGN.md`.
+- **SegmentTable slot-recycle** (#60): under `alloc-decommit`, an
+  empty decommitted segment NULLs its table slot for future
+  re-registration, lifting the hard `MAX_SEGMENTS = 1024` cumulative
+  ceiling. Found by the #52 tokio burn-in hitting OOM at >512
+  concurrent tasks. New `recycle` (atomic NULL + `release_segment`)
+  and partner `unregister` (NULL without release; used by OPT-E
+  cache deposit).
+- **strict-provenance miri fix** (#59): converted 11 sites of the
+  `os::segment_base_of(ptr as usize) as *mut u8` idiom to the
+  provenance-preserving `os::segment_base_of_ptr(ptr) =
+  ptr.map_addr(|a| a & !(SEGMENT - 1))`. The CI miri job (which
+  runs with `-Zmiri-strict-provenance`) now passes
+  `decommit_miri_cycle` and `reclaim_offset_unit`.
+- **Highload-hardening harnesses**:
+  - `examples/soak_xthread.rs` (#51) — N-thread × hours stability
+    test (32 / 64 / 128 workers); end-of-run invariant
+    `total_alloc == total_free`.
+  - `examples/rss_probe.rs` (#53) — measures peak / final RSS under
+    sustained asymmetric cross-thread free; smoke: `alloc-decommit`
+    keeps peak 13 % lower (91 → 79 MB).
+  - `examples/tokio_burn_in.rs` (#52) — SeferMalloc installed as
+    `#[global_allocator]` under tokio multi-thread runtime with a
+    DBMS-pipeline-shaped workload.
+  - `benches/large_realloc.rs` (#54) — three groups (large
+    alloc+free, geometric realloc grow, realloc under neighbour
+    pressure) comparing SeferMalloc, mimalloc, System through their
+    `GlobalAlloc` traits.
+- **Low-noise criterion benches** (#62): `benches/heap_xthread.rs`
+  (direct ring push/drain, no channels) and
+  `benches/heap_async_pattern.rs` (synthetic async-like pattern
+  without tokio) — allocator visibility rises from 1.7 % to 13 % of
+  self-time vs the noisier `global_alloc` / `large_realloc` benches.
+- **Comprehensive verification runs** (one-off, evidence preserved
+  in `docs/`):
+  - ThreadSanitizer ×3 clean on `race_repro`, `race_norecycle`,
+    `global_alloc_mt`, `heap_cross_thread`; ×3 clean on
+    `decommit_stale_ring`, `decommit_soak`.
+  - aarch64 (qemu-user 8.2.2) 13/13 tests pass, with honest caveat
+    about TCG vs real ARM weak-memory.
+  - Valgrind memcheck clean on three cross-thread test binaries;
+    helgrind / DRD inapplicable to lock-free atomic code (known
+    Valgrind limitation — TSan is the right tool).
+  - Full Linux feature-matrix (6 combos × 248 tests) all green.
+- **Documentation**:
+  - `docs/ARCHITECTURE.md` — compact technical overview (synthesis
+    of design memos).
+  - `docs/PHASE_NUMA_DESIGN.md` (#55) — full NUMA design.
+  - `docs/PROFILE_FLAMEGRAPHS.md` (#61) — flamegraph profiling
+    report on 4 scenarios with 6 prioritised optimisation
+    candidates (OPT-B/C/E/F/G all realised in this release; OPT-H
+    documented but deferred as low impact).
+  - `docs/MALLOC_BENCH.md` — extensive update with OPT-E large-cache
+    numbers, NUMA section, honest verdicts.
+- **OSS infrastructure** (preparing for crates.io publication):
+  `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
+  `.github/ISSUE_TEMPLATE/*`, `.github/PULL_REQUEST_TEMPLATE.md`.
+  `Cargo.toml` metadata refreshed for crates.io (description
+  mentions both faces, `keywords` rebalanced to `["allocator",
+  "arena", "generational", "handle", "lock-free"]`, `categories`
+  extended with `concurrency` and `no-std`, `repository` /
+  `homepage` / `documentation` URLs added).
+- **Build infrastructure**: `cargo-fuzz` metadata fix to enable
+  `cargo fuzz build` (#56); `region_ops.rs` idiom corrected to match
+  `arbitrary` 1.4.2 (#56); `malloc_macro` registered as
+  `[[example]]` with `required-features` (was missing, causing CI
+  `cargo test` without `--tests` to fail with E0601).
 
 - **Phase 35 — M6 decommit: return empty segments to the OS** (behind a new
   opt-in `alloc-decommit = ["alloc-core"]` feature; **default OFF — the default
