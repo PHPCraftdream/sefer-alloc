@@ -540,3 +540,25 @@ cargo bench --bench global_alloc --features "alloc-global" -- --quick "global_al
 # Larson+mstress (MT macro, ~seconds):
 cargo run --release --example malloc_macro --features "alloc-global alloc-xthread"
 ```
+
+### P1 measurement (after AllocCore::refill_class + flush_class)
+
+P1 adds batch APIs to AllocCore — NOT yet called from any production path,
+so no real perf change is possible. Single-run snapshot (numbers shift ±30-50%
+between runs on Windows desktop; ratios are the reliable signal). Documenting
+the methodology of measurement-between-phases, not the deltas.
+
+|        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
+|--------|------------|------------|------------|-------------|-------------|------------|
+| P0     | 1.65× slow | 1.24× fast | 1.31× fast | 1.24× slow  | 1.24× slow  | 1.1-1.34× slow |
+| P1     | 1.38× slow | 1.19× fast | 1.38× fast | 1.19× slow  | 1.18× fast  | 1.46× slow |
+
+**Interpretation:** all within run-to-run noise (P1 cannot cause real change).
+The relative ordering vs mimalloc holds within ±0.2× on most cells — that is
+the noise floor of this measurement methodology. The tcache phases (P2+) need
+to clear that floor by a wide margin to count as a real win.
+
+**Practice for P2-P6:** capture this 6-cell table after each commit. A cell
+that moves by less than ±0.3× ratio is noise; ≥0.3× is signal. Headline
+targets remain larson T=1 (eliminate the 1.4-1.7× single-thread slow) and
+churn 256B (fix the regression zone).
