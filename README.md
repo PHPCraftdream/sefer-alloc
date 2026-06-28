@@ -8,20 +8,26 @@
 
 > A safe-by-construction Rust memory toolkit: a single-threaded handle store
 > and a drop-in `#[global_allocator]` over **one verified segment substrate**,
-> with `#![forbid(unsafe_code)]` at the top — and **18× faster than `mimalloc`
-> on large alloc/free** after the OPT-E large-cache.
+> compiler-enforced unsafe-confinement — and **up to ~18× faster than
+> `mimalloc`** on cached large alloc/free after the OPT-E large-cache.
 
 `sefer-alloc` ships two faces over one substrate:
 
 - **`Region<T>` / `Handle<T>`** — a safe-by-construction handle store. Generational
   handles instead of pointers; a stale handle returns `None`, never UB. Default
-  feature `std`; also builds `no_std` + `alloc`. The top of the crate is
-  `#![forbid(unsafe_code)]`; the only `unsafe` comes from `slotmap`'s audited
-  core, wrapped by a thin typed membrane.
+  feature `std`; also builds `no_std` + `alloc`. The default build is
+  `#![forbid(unsafe_code)]` at the top; the only `unsafe` comes from
+  `slotmap`'s audited core, wrapped by a thin typed membrane.
 - **`SeferMalloc`** — a drop-in `#[global_allocator]` over the same segment
-  substrate (opt-in `production` feature). All `unsafe` lives in **three
-  confined seams** (`os`, `node`, `numa`) — never in the alloc-path body. Every
-  unsafe block carries a `// SAFETY:` proof.
+  substrate (opt-in `production` feature). Under the recommended `production`
+  feature the crate becomes `#![deny(unsafe_code)]` and every `unsafe` lives
+  in **seven named confined seams** (`alloc_core::{os, node}` +
+  `global::{sefer_malloc, tls_heap, fallback}` +
+  `registry::{heap_slot, heap_registry}`) — never in the alloc-path body
+  outside them. Every `unsafe` block carries a `// SAFETY:` proof. The
+  compiler enforces the confinement; a stray `unsafe` outside a named seam
+  is a hard error. The complete inventory by feature is in
+  [Where unsafe lives](#where-unsafe-lives-the-complete-list) below.
 
 The substrate is the same for both faces: SEGMENT-aligned (4 MiB) OS-backed
 spans, self-hosted metadata (no `Vec`/`HashSet`/`std::alloc` on any alloc path),
@@ -81,18 +87,27 @@ off and the 1024-segment ceiling becomes a hard cap). See
 
 Most Rust allocators are crates with `unsafe` smeared across their hot paths;
 auditors are asked to trust prose. `sefer-alloc` makes the safety claim
-**structural**: the top of the crate is `#![forbid(unsafe_code)]`, every
-feature except the OS / node / numa seams is `#![deny(unsafe_code)]`, and the
-compiler enforces it. The intelligence (placement, free lists, page maps,
-segment registries, bin tables, alloc bitmaps, owner stamping, recycle
-policy) lives in pure safe integer arithmetic; the hand (OS aperture,
-intrusive free-list r/w, NUMA syscalls) is mechanical and tiny.
+**structural**: the default build is `#![forbid(unsafe_code)]` at the top;
+the moment any allocator feature (`experimental`, `byte`, `alloc-core` and
+above) is on, the crate switches to `#![deny(unsafe_code)]` and the
+confined seams lift it with `#![allow(unsafe_code)]` only inside named
+files. The compiler enforces it — a stray `unsafe` outside a named seam is
+a hard error in every configuration. The intelligence (placement, free
+lists, page maps, segment registries, bin tables, alloc bitmaps, owner
+stamping, recycle policy) lives in pure safe integer arithmetic; the hand
+(OS aperture, intrusive free-list r/w, NUMA syscalls, the
+`unsafe impl GlobalAlloc` trait obligation, the TLS-binding raw-pointer
+handoff, the heap-slot table) is split across small audited files. The
+complete inventory by feature is in
+[Where unsafe lives](#where-unsafe-lives-the-complete-list) below.
 
-The performance is honest:
+The performance is honest (numbers from a single Windows dev host with
+criterion `sample_size(10)` — see [Performance](#performance) for the
+disclaimer):
 
 - On **large alloc/free** (`alloc_large` / `dealloc_large`) sefer-alloc is
-  **18× faster than `mimalloc`** after the OPT-E large-segment cache
-  (4 MiB cycle: 42 ns vs 788 ns).
+  **~16× faster than `mimalloc` on 4 MiB and ~18× faster on 16 MiB** after
+  the OPT-E large-segment cache (4 MiB cycle: ~45 ns vs ~718 ns).
 - On **MT cross-thread** (`malloc_macro` larson/mstress at T=4) it is
   competitive with `mimalloc`.
 - On **realloc-grow under neighbour pressure** it improved **−28.6 %** with
@@ -156,18 +171,41 @@ and an integer algorithm, not a tangle of pointer math.
 
 ### Where `unsafe` lives (the complete list)
 
+Twelve confined-`unsafe` module files, each gated by a specific feature
+and each carrying a `#![allow(unsafe_code)]` opt-out from the crate-level
+`#![deny(unsafe_code)]`. Source-of-truth listing lives in
+[`src/lib.rs`](src/lib.rs) and is verifiable with one command:
+`grep -l 'allow(unsafe_code)' src/`.
+
 | Module | What it owns | Loaded under |
 |---|---|---|
-| [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | `mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/`VirtualFree` on Windows, the over-reserve+trim for SEGMENT alignment | `alloc-core` |
-| [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline) | `alloc-core` |
-| [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | NUMA syscalls: Linux `mbind(2)` via `syscall(2)`, Windows `VirtualAllocExNuma` (macOS / miri no-op) | `numa-aware` |
-| [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental tier) | `experimental` |
-| [`src/byte/*`](src/byte) | Research-tier byte arena (superseded by `alloc-core+`; kept for compatibility) | `byte` |
+| [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | `mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/`VirtualFree` on Windows, the over-reserve+trim for SEGMENT alignment, decommit/recommit | `alloc-core` |
+| [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
+| [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | NUMA syscalls: Linux `mbind(2)` via `syscall(2)`, Windows `VirtualAllocExNuma`, sched_getcpu, sysfs cpumap reader (macOS / miri no-op) | `numa-aware` |
+| [`src/global/sefer_malloc.rs`](src/global/sefer_malloc.rs) | The `unsafe impl GlobalAlloc` malloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
+| [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop | `alloc-global` |
+| [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
+| [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
+| [`src/registry/heap_registry.rs`](src/registry/heap_registry.rs) | The global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, used by every cross-thread routing decision | `alloc-global` |
+| [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path) | `experimental` |
+| [`src/byte/byte_region.rs`](src/byte/byte_region.rs) | Research-tier size-classed byte arena | `byte` |
+| [`src/byte/byte_allocator.rs`](src/byte/byte_allocator.rs) | The Phase-4 experimental `unsafe impl GlobalAlloc` over `byte_region.rs` (superseded by `alloc-global` for production) | `byte` |
+| [`src/byte/sharded_byte_arena.rs`](src/byte/sharded_byte_arena.rs) | N-way sharded byte arena for parallel raw allocation (research; superseded by `alloc-xthread`) | `byte-sharded` |
 
-That's it. Everywhere else in the crate is `#![forbid(unsafe_code)]` (or
-`#![deny(unsafe_code)]` once any feature opens a confined seam); a stray
-`unsafe` outside these files is a compile error. The list is short and
-auditable.
+Under the recommended `production` feature
+(`alloc-global + alloc-xthread + alloc-decommit`) the active seams are the
+first eight rows — `alloc_core::{os, node}` plus `global::{sefer_malloc,
+tls_heap, fallback}` plus `registry::{heap_slot, heap_registry}`.
+`alloc-xthread` and `alloc-decommit` themselves do **not** open new
+`unsafe` seams — they extend existing safe code paths.
+
+`numa-aware` adds one more seam (`alloc_core::numa`). `experimental` and
+`byte` / `byte-sharded` open the older research-tier seams; the production
+build does not pull them in.
+
+That's the full list. Everywhere else in the crate is forbidden / denied
+`unsafe`; a stray `unsafe` outside these files is a hard compile error in
+every configuration.
 
 ### The segment substrate (Phase 8)
 
@@ -235,22 +273,30 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 
 ## Performance
 
-Numbers from the criterion benches on Windows, sefer-alloc 0.1.0 vs
-`mimalloc 0.1` vs `System`. **Higher is better** for throughput rows,
-**lower is better** for latency rows.
+Numbers from the criterion benches on a single Windows dev host,
+sefer-alloc 0.1.0 vs `mimalloc 0.1` vs `System`. Per
+[CLAUDE.md](CLAUDE.md) the project's bench profile is the quick one —
+`sample_size(10)`, short warm-up — so these are honest comparative
+measurements, **not** a rigorous statistical benchmark suite. Treat the
+multipliers as "order of magnitude correct" rather than exact. The
+source-of-truth tables (and the longer commentary on what each bench
+exercises) live in [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md).
+**Higher is better** for throughput rows, **lower is better** for latency
+rows.
 
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
 | Workload | SeferMalloc | mimalloc | System | vs mimalloc |
 |---|---|---|---|---|
-| `alloc(4 MiB) + free` | **42 ns** | 788 ns | 19.1 µs | **18× faster** |
-| `alloc(16 MiB) + free` | **48 ns** | 1.55 µs | 20.9 µs | **30× faster** |
-| `alloc(64 MiB) + free` | 2.0 ms | 2.4 µs | 19.9 µs | not cached |
+| `alloc(4 MiB) + free` | **~45 ns** | ~718 ns | ~16.7 µs | **~16× faster** |
+| `alloc(16 MiB) + free` | **~48 ns** | ~869 ns | ~17.6 µs | **~18× faster** |
+| `alloc(64 MiB) + free` | ~2.0 ms | ~2.4 µs | ~19.9 µs | not cached |
 
 The 64 MiB case is uncached by design (`MAX_CACHED_LARGE_BYTES = 64 MiB`)
 so the cache cannot pin more than `2 × 64 MiB = 128 MiB` of unused RSS.
 4 MiB and 16 MiB stay in the cache and pay only the `register`-plus-
-header-rewrite cost.
+header-rewrite cost (the cache-hit path is dominated by ~40 ns of header
+fixup).
 
 ### Realloc grow under adversarial neighbour pressure
 
@@ -297,8 +343,12 @@ cargo run --release --example malloc_macro --features "alloc-global alloc-xthrea
 
 This is a verification-first build. Every claim above is backed by a tool,
 a test file, and a reproducible command. **51 integration test files** ship
-in `tests/`; **5 example binaries** in `examples/`; **9 benches** in
-`benches/`; **2 libFuzzer targets** in `fuzz/`.
+in `tests/` (45 conventional + 6 loom models — counted separately below);
+**5 example binaries** in `examples/`; **10 benches** in `benches/`
+(`byte_alloc`, `byte_sharded`, `global_alloc`, `heap_alloc`,
+`heap_async_pattern`, `heap_xthread`, `large_realloc`, `locality`,
+`pinned_write`, `sharded_write`); **2 libFuzzer targets** in `fuzz/`
+(`region_ops`, `global_alloc_ops`).
 
 | Tool | What it proves | Where in repo |
 |---|---|---|

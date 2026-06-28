@@ -60,6 +60,9 @@
 //      * `alloc_core::os` (the OS segment aperture) and `alloc_core::node`
 //        (the intrusive free-list node seam — the generalized `hand`
 //        discipline) (both under `alloc-core`), and
+//      * `alloc_core::numa` (the NUMA OS-seam — Linux `mbind(2)` via
+//        `syscall(2)`, Windows `VirtualAllocExNuma`; no-op on macOS / miri)
+//        (under `numa-aware`), and
 //      * `global::sefer_malloc` (the `unsafe impl GlobalAlloc` malloc-face
 //        seam — the trait obligation + pointer handoff to the Heap),
 //        `global::tls_heap` (the Phase 12.3 raw-pointer TLS binding +

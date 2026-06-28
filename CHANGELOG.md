@@ -22,12 +22,18 @@ The initial public release. Two faces on one verified substrate:
 
 - **`SeferMalloc`** — a drop-in `#[global_allocator]` (opt-in
   `production` feature = `alloc-global + alloc-xthread +
-  alloc-decommit`). **18× faster than `mimalloc` on large alloc/free**
-  after the OPT-E large-cache (4 MiB: 42 ns vs 788 ns); competitive
-  with `mimalloc` on multi-thread cross-thread paths
-  (`examples/malloc_macro.rs`). Three confined-`unsafe` seams: `os`
-  (OS aperture), `node` (intrusive free-list r/w), `numa`
-  (NUMA-aware reservations, opt-in `numa-aware`).
+  alloc-decommit`). Up to **~18× faster than `mimalloc` on cached
+  large alloc/free** after the OPT-E large-cache (4 MiB cycle ≈ 45 ns
+  vs ~718 ns ≈ **~16×**; 16 MiB ≈ 48 ns vs ~869 ns ≈ **~18×** — single
+  Windows dev host, criterion `sample_size(10)`, see
+  `docs/MALLOC_BENCH.md`); competitive with `mimalloc` on multi-thread
+  cross-thread paths (`examples/malloc_macro.rs`). Confined-`unsafe`
+  inventory under `production` (eight files): `alloc_core::{os, node}`
+  + `global::{sefer_malloc, tls_heap, fallback}` +
+  `registry::{heap_slot, heap_registry}`. `numa-aware` adds one more
+  (`alloc_core::numa`). The crate is `#![deny(unsafe_code)]` (or
+  `#![forbid]` in the default `std`-only build) and every `unsafe`
+  block carries a `// SAFETY:` proof; compile-enforced.
 
 Verification stack: 51 integration test files, 6 loom models
 (`tests/loom_*.rs`), proptest differential vs reference model, miri
