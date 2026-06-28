@@ -81,6 +81,25 @@ pub(crate) const fn segment_base_of(addr: usize) -> usize {
     addr & !(SEGMENT - 1)
 }
 
+/// Convert a raw pointer to the SEGMENT-aligned base pointer it falls within,
+/// **preserving provenance**.
+///
+/// This is the strict-provenance–clean equivalent of the old
+/// `segment_base_of(ptr as usize) as *mut u8` idiom: `ptr as usize` strips
+/// provenance (exposed-address cast, forbidden under `-Zmiri-strict-provenance`),
+/// while `ptr.map_addr(|a| a & !(SEGMENT - 1))` rounds the address down within
+/// the same provenance domain — sound under both permissive and strict-provenance
+/// models. The returned pointer carries the same provenance as `ptr` and points
+/// to the SEGMENT-aligned base of the segment that contains `ptr`.
+///
+/// `ptr` MUST lie within a segment owned by this allocator (the Cartographer's
+/// invariant); the result is the base of that segment.
+#[must_use]
+#[inline]
+pub(crate) fn segment_base_of_ptr(ptr: *mut u8) -> *mut u8 {
+    ptr.map_addr(|a| a & !(SEGMENT - 1))
+}
+
 /// A owning handle to one SEGMENT-aligned span of raw memory.
 ///
 /// `base` is non-null, aligned to `SEGMENT`, and valid for `len` bytes for the

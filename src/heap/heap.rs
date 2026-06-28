@@ -228,7 +228,7 @@ impl Heap {
         // Find the owning segment. Field-specific reads (task #33 / §11): read
         // ONLY `magic` / `kind` / `owner_thread_free`, never a full-struct
         // `read_at` that races the owner's `bump` writes.
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
             return; // Foreign pointer.
         }
@@ -341,7 +341,7 @@ impl Heap {
             // Field-specific reads (task #33 / §11): read ONLY `magic` and
             // `owner_thread_free` via their `offset_of!` offsets, never a
             // full-struct `read_at` that would race the owner's `bump` writes.
-            let base = os::segment_base_of(ptr as usize) as *mut u8;
+            let base = os::segment_base_of_ptr(ptr);
             if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
                 return; // Foreign pointer -- no-op.
             }
@@ -385,7 +385,7 @@ impl Heap {
     /// Only compiled with `alloc-xthread`.
     #[cfg(feature = "alloc-xthread")]
     fn stamp_owner(&mut self, ptr: *mut u8) {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         let mut meta = SegmentMeta::new(base);
         // Field-specific read + write (task #33 / §11): a full-struct
         // `header()` + `write_header(hdr)` here rewrites EVERY header field

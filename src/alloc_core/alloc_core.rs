@@ -159,7 +159,7 @@ impl AllocCore {
         if ptr.is_null() {
             return;
         }
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         // Foreign-pointer check: if the computed segment base is NOT one of our
         // registered segments, this pointer is not one of ours — no-op (do not
         // touch foreign memory, do not even read a header that may be unmapped).
@@ -414,7 +414,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base(base) {
             return None;
         }
@@ -429,7 +429,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base(base) {
             return None;
         }
@@ -501,7 +501,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base(base) {
             return false;
         }
@@ -538,7 +538,7 @@ impl AllocCore {
     /// `#[doc(hidden)] pub` per the established test-only surface.
     #[doc(hidden)]
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base(base) {
             return None;
         }
@@ -742,7 +742,7 @@ impl AllocCore {
             let Some(extra) = self.carve_block(class_idx, block_size) else {
                 break;
             };
-            let base = os::segment_base_of(extra as usize) as *mut u8;
+            let base = os::segment_base_of_ptr(extra);
             self.dealloc_small(base, extra, class_idx);
         }
         Some(first)

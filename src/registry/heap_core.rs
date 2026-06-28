@@ -313,7 +313,7 @@ impl HeapCore {
 
     #[cfg(feature = "alloc-xthread")]
     fn dealloc_routing(&mut self, ptr: *mut u8, layout: Layout) {
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         // Field-specific reads (task #33 root-cause fix): read ONLY `magic`,
         // `kind`, `owner_thread_free` — the cross-thread-read fields written
         // once at init/stamp time and only read thereafter. A full-struct
@@ -372,7 +372,7 @@ impl HeapCore {
     /// `owner_state` store is race-free.
     fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
-        let base = os::segment_base_of(ptr as usize) as *mut u8;
+        let base = os::segment_base_of_ptr(ptr);
         // `mut` is needed under `alloc-xthread` (the stamp branch below calls
         // `meta.stamp_owner_thread_free(&mut self)`). Silence the unused-mut
         // warning under plain `alloc-global` where the branch is absent.
