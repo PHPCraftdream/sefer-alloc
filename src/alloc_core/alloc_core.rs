@@ -1928,6 +1928,24 @@ impl AllocCore {
     /// overhead, negligible against OS reservation costs.
     #[cfg(feature = "alloc-decommit")]
     fn maybe_decay_large_cache(&mut self) {
+        // FAST-PATH EARLY EXIT — avoid `Instant::now()` (a `QueryPerformanceCounter`
+        // syscall on Windows, ~50-100 ns) when there is provably no work to do.
+        // The decay can only ever release bytes when `cached > headroom`. If the
+        // cache is at or below the headroom, `run_decay_step` would compute
+        // `excess = 0` and bail anyway, so we skip the wall-clock read entirely.
+        //
+        // This covers the dominant benchmark workload (alloc+free cycle with one
+        // cached span at ~4-16 MiB, far below the 256 MiB default headroom) and
+        // restores the ~45 ns cache-hit timing that the unconditional clock read
+        // had regressed to ~150 ns. See task #95.
+        //
+        // Correctness: a true decay opportunity (cached > headroom) only arises
+        // *after* a `dealloc` deposit grows `large_cache_used_bytes` past
+        // `headroom_bytes`; we then hit this path on the next op and do the
+        // proper time-based decision.
+        if self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
+            return;
+        }
         let now = std::time::Instant::now();
         let elapsed = match self.last_decay_tick {
             Some(t) => now.duration_since(t),
