@@ -2077,43 +2077,20 @@ impl AllocCore {
 
     // ── end Phase 2 ──────────────────────────────────────────────────────────
 
-    /// Release the oldest occupied large-cache slot to the OS until the
-    /// byte-budget constraint `large_cache_used_bytes + needed <= budget` is
-    /// satisfied, then return `true`. If no budget is set (`None`) the
-    /// constraint is trivially satisfied and the function returns `true`
-    /// immediately. Returns `false` only when the cache is already fully empty
-    /// but the budget is still too small to hold `needed` bytes (i.e. the
-    /// budget itself is smaller than `needed` — not a common case, but handled
-    /// gracefully: the span is simply not cached).
-    ///
-    /// FIFO order: slot 0 is treated as "oldest" (it is always filled before
-    /// slot 1 for `LARGE_CACHE_SLOTS == 2`). Phase 2/3 may improve this with
-    /// insertion timestamps or an LRU bit.
-    #[cfg(feature = "alloc-decommit")]
-    fn try_evict_to_fit(&mut self, needed: usize) -> bool {
-        let Some(budget) = self.large_cache_budget_bytes else {
-            // No budget configured — unconditionally accept.
-            return true;
-        };
-        loop {
-            if self.large_cache_used_bytes.saturating_add(needed) <= budget {
-                return true;
-            }
-            if !self.evict_one_oldest() {
-                // Cache is empty but budget < needed: cannot cache this span.
-                return false;
-            }
-        }
-    }
-
     /// Evict the FIFO-oldest cached entry (slot 0 first, then slot 1) and
     /// release its OS reservation. Returns `true` if an entry was evicted,
     /// `false` if the cache was already empty.
     ///
-    /// Shared between admission-path slot-freeing (deposit when slots full)
-    /// and budget-bound eviction (`try_evict_to_fit`). The victim was
-    /// unregistered from the segment table on deposit, so this function
-    /// only releases the OS reservation and updates the byte-budget counter.
+    /// Used by the admission policy when either the byte-budget would
+    /// overflow or all slots are occupied (the loop in the large-`dealloc`
+    /// branch evicts-and-retries until both constraints hold or the cache is
+    /// empty). The victim was unregistered from the segment table on
+    /// deposit, so this function only releases the OS reservation and
+    /// updates the byte-budget counter.
+    ///
+    /// FIFO order: slot 0 is treated as "oldest" (it is always filled before
+    /// slot 1 for `LARGE_CACHE_SLOTS == 2`). A future phase may improve this
+    /// with insertion timestamps or an LRU bit.
     #[cfg(feature = "alloc-decommit")]
     fn evict_one_oldest(&mut self) -> bool {
         let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
