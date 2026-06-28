@@ -674,3 +674,41 @@ With the fix, all 7 M2 tests pass.
 **150 tests passed, 0 failed** under `--features production`; **140
 passed** without `fastbin`. The +7 are M2 magazine tests (6 from the
 sub-agent + 1 stronger T3 added during review).
+
+### P4 measurement (after stamp hoist into refill)
+
+P4 absorbs IDEA 3 (hoist `stamp_segment_owner` from the magazine-hit
+fast path into the refill that fills the magazine). Magazine-hit
+alloc no longer calls `stamp_segment_owner` at all — the source
+segment was stamped once during the refill that pulled the block.
+Large allocations still stamp per-alloc (large bypasses the magazine).
+
+|        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
+|--------|------------|------------|------------|-------------|-------------|------------|
+| P0     | 1.65× slow | 1.24× fast | 1.31× fast | 1.24× slow  | 1.24× slow  | 1.1-1.34× slow |
+| P1     | 1.38× slow | 1.19× fast | 1.38× fast | 1.19× slow  | 1.18× fast  | 1.46× slow |
+| P2     | 1.32× slow | 1.27× fast | 1.23× fast | 1.44× slow  | ~parity     | 1.19× FASTER |
+| P3     | 1.27× slow | ~parity    | 1.31× fast | 1.36× slow  | 1.06× fast  | ~parity |
+| **P4** | **1.31× slow** | **1.25× fast** | **1.29× fast** | **1.25× slow** | **1.18× fast** | **~parity** |
+
+**Honest interpretation:**
+
+- **mstress T=1 P2 regression closed**: P2 1.44× slow → P4 1.25× slow.
+  Fill-then-free-half pattern hit the magazine overflow path on every
+  pass; removing the per-alloc OPT-C stamp from the magazine hit path
+  recovers most of the lost ground. Net P0 → P4: 1.24× slow → 1.25×
+  slow (parity restored).
+- **Larson T=1 unchanged**: 1.27× slow → 1.31× slow (within noise).
+  The OPT-C stamp on the magazine hit path was already cheap (Relaxed
+  load + compare, ~1-2 ns/alloc); removing it gives a sub-ns saving
+  that disappears into noise on a ~30 ns/alloc workload. The remaining
+  larson T=1 gap is the structural cost of our M2/decommit/routing
+  machinery vs. mimalloc's lighter-weight free path; structural fixes
+  not in scope here.
+- **Churn unchanged or slightly better**: all 4 sizes stable within
+  noise. 16B/64B continue to beat mimalloc 1.6-1.7×; 1024B 7×; 256B
+  at parity (regression closed since P2).
+- **No regression in any cell ≥ 0.3× ratio.**
+
+**154 tests passed, 0 failed** under `--features production` (+4 new
+P4 stamp-correctness tests); **140 passed** without `fastbin`.

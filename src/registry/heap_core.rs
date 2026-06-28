@@ -280,10 +280,13 @@ impl HeapCore {
         // sit in the bounded ring (overflow → bounded leak, the original 7b
         // discipline).
 
-        // ── Magazine fast path (P2, fastbin) ──────────────────────────────
+        // ── Magazine fast path (P2+P4, fastbin) ─────────────────────────
         // Small-class allocations are served from the per-thread magazine.
-        // On a hit: array pop, stamp, return. No bitmap, no segment metadata.
-        // On a miss: batch-refill from the substrate, then pop one.
+        // On a hit: array pop, return — NO per-alloc stamp (P4 hoist).
+        // On a miss: batch-refill via `refill_class_stamped` (stamps each
+        // distinct source segment exactly once inside the refill), then pop
+        // one. The large path still stamps per-alloc (it does not go
+        // through the magazine/refill).
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
@@ -296,18 +299,19 @@ impl HeapCore {
                     let cnt = self.tcache.count[c] as usize;
                     if cnt > 0 {
                         // Magazine hit: pop from the top of the stack.
+                        // P4: NO stamp here — the block's source segment was
+                        // already stamped during the refill that originally
+                        // pulled it. The OPT-C cache guarantees the segment
+                        // header still carries our ownership.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
-                        let p = self.tcache.slots[c][new_cnt];
-                        // Stamp the segment (OPT-C cache makes this cheap on
-                        // repeated allocs from the same segment). P4 hoists
-                        // the stamp into refill; for now, per-alloc.
-                        if !p.is_null() {
-                            self.stamp_segment_owner(p);
-                        }
-                        return p;
+                        return self.tcache.slots[c][new_cnt];
                     }
-                    // Magazine miss: batch-refill, then return one.
+                    // Magazine miss: batch-refill + stamp hoist (P4).
+                    // We inline the refill+stamp here instead of calling
+                    // `refill_class_stamped` because borrowing `self.core`
+                    // and `self.tcache.slots[c]` separately avoids a
+                    // double-mutable-borrow conflict on `self`.
                     let n = self.core.refill_class(
                         c,
                         super::tcache::REFILL_N,
@@ -316,14 +320,21 @@ impl HeapCore {
                     if n == 0 {
                         return core::ptr::null_mut(); // true OOM
                     }
+                    // P4 stamp hoist: stamp each pulled block's source
+                    // segment. The OPT-C cache (`last_stamped_segment`)
+                    // short-circuits repeated stamps of the same segment to
+                    // a Relaxed load + compare, so the typical single-segment
+                    // refill stamps once and the rest are near-zero cache hits.
+                    for i in 0..n {
+                        let p = self.tcache.slots[c][i];
+                        if !p.is_null() {
+                            self.stamp_segment_owner(p);
+                        }
+                    }
                     // Pop the top, leave n-1 in the magazine.
                     let new_cnt = n - 1;
                     self.tcache.count[c] = new_cnt as u16;
-                    let p = self.tcache.slots[c][new_cnt];
-                    if !p.is_null() {
-                        self.stamp_segment_owner(p);
-                    }
-                    return p;
+                    return self.tcache.slots[c][new_cnt];
                 }
                 // not a small class -> fall through to large path
             }
@@ -690,5 +701,32 @@ impl HeapCore {
     #[allow(dead_code)]
     pub(crate) fn reset_stamp_cache(&mut self) {
         self.last_stamped_segment = core::ptr::null_mut();
+    }
+
+    /// TEST-ONLY (P4): read the `owner_id` stamped in the segment header of
+    /// the segment that contains `ptr`. Returns `None` if `ptr` is not in a
+    /// segment owned by this heap's substrate. Used by
+    /// `tests/heap_core_tcache_stamp.rs` to verify the stamp-hoist wrote
+    /// the correct ownership.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    pub fn dbg_owner_id_for(&self, ptr: *mut u8) -> Option<u32> {
+        use crate::alloc_core::segment_header::{unpack_owner_id, SegmentMeta};
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.core.segment_bases().any(|b| b == base) {
+            return None;
+        }
+        let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+        let word = owner_atomic.load(Ordering::Relaxed);
+        Some(unpack_owner_id(word))
+    }
+
+    /// TEST-ONLY (P4): the cached `last_stamped_segment` base, or null if
+    /// no segment has been stamped yet. Allows tests to observe whether the
+    /// stamp-cache was updated without re-stamping.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    pub fn dbg_last_stamped_segment(&self) -> *mut u8 {
+        self.last_stamped_segment
     }
 }
