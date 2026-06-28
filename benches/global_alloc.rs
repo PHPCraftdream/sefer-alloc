@@ -38,6 +38,31 @@ const SIZES: &[usize] = &[16, 64, 256, 1024];
 /// Number of alloc/dealloc pairs per iteration.
 const OPS: usize = 1024;
 
+/// Working-set size for the churn bench: how many live blocks are maintained.
+/// 256 is small enough to fit in a future tcache, large enough to be meaningful.
+const CHURN_WORKING_SET: usize = 256;
+
+/// Deterministic, dependency-free PRNG (xorshift64*). Fixed seed for
+/// reproducible benchmark runs. No external `rand` crate needed.
+struct XorShift64(u64);
+
+impl XorShift64 {
+    const fn new(seed: u64) -> Self {
+        // Avoid the all-zero fixed point.
+        Self(seed | 1)
+    }
+
+    #[inline]
+    fn next_usize(&mut self) -> usize {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D) as usize
+    }
+}
+
 /// Direct-alloc bench: alloc + dealloc OPS blocks of `layout` through `alloc`.
 /// This bypasses Vec overhead and measures the raw hot path.
 fn bench_direct_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout) {
@@ -51,6 +76,45 @@ fn bench_direct_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout) {
         // SAFETY: ptr was allocated by `alloc` with the same layout.
         if !ptr.is_null() {
             unsafe { alloc.dealloc(ptr, layout) };
+        }
+    }
+}
+
+/// Churn bench: maintain a working set of `working_set` live blocks; each of
+/// `ops` iterations frees a pseudo-random block and allocates a replacement.
+/// This is the steady-state pattern a per-thread magazine (tcache) wins on:
+/// freed blocks re-enter the cache and are re-allocated without round-tripping
+/// the BinTable. Fixed PRNG seed = 0xCAFE for reproducibility.
+fn bench_churn_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usize, ops: usize) {
+    let mut rng = XorShift64::new(0xCAFE);
+
+    // Pre-fill the working set.
+    let mut live: Vec<*mut u8> = Vec::with_capacity(working_set);
+    for _ in 0..working_set {
+        // SAFETY: layout has non-zero size and valid alignment.
+        let p = unsafe { alloc.alloc(layout) };
+        live.push(p);
+    }
+
+    // Churn: free a random slot, alloc a replacement.
+    for _ in 0..ops {
+        let idx = rng.next_usize() % working_set;
+        let old = live[idx];
+        if !old.is_null() {
+            // SAFETY: `old` was allocated by `alloc` with the same layout.
+            unsafe { alloc.dealloc(old, layout) };
+        }
+        // SAFETY: layout has non-zero size and valid alignment.
+        live[idx] = unsafe { alloc.alloc(layout) };
+    }
+
+    black_box(&live);
+
+    // Teardown: free everything.
+    for &p in &live {
+        if !p.is_null() {
+            // SAFETY: `p` was allocated by `alloc` with the same layout.
+            unsafe { alloc.dealloc(p, layout) };
         }
     }
 }
@@ -205,5 +269,34 @@ fn bench_global_alloc(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_global_alloc);
+fn bench_global_alloc_churn(c: &mut Criterion) {
+    let mut group = c.benchmark_group("global_alloc_churn");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferMalloc::new();
+    let mi = mimalloc::MiMalloc;
+    let sys = System;
+
+    for &size in SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+
+        group.bench_function(format!("SeferMalloc/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc(&sefer, layout, CHURN_WORKING_SET, OPS))
+        });
+
+        group.bench_function(format!("mimalloc/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc(&mi, layout, CHURN_WORKING_SET, OPS))
+        });
+
+        group.bench_function(format!("System/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc(&sys, layout, CHURN_WORKING_SET, OPS))
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_global_alloc, bench_global_alloc_churn);
 criterion_main!(benches);
