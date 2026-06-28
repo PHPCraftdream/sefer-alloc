@@ -120,7 +120,8 @@ alloc-decommit = ["alloc-core"]
 # (1024 slots, append-only) is the hard ceiling on cumulative segment
 # allocations; `alloc-decommit` lets empty segments be recycled (#60),
 # lifting that ceiling. Add this feature for any long-running deployment.
-production = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+fastbin = ["alloc-global"]
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).

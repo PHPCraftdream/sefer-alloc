@@ -98,6 +98,12 @@ pub struct HeapCore {
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
 
+    /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
+    /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
+    /// only the owning thread touches it. See `registry::tcache`.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) tcache: super::tcache::Tcache,
+
     /// OPT-C (task #66): lazy stamp cache.
     ///
     /// The base address of the last segment for which this heap successfully
@@ -156,6 +162,8 @@ impl HeapCore {
             core,
             #[cfg(feature = "alloc-xthread")]
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache: super::tcache::Tcache::new(),
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
         })
@@ -271,6 +279,57 @@ impl HeapCore {
         // moment it needs a free block from it; until then cross-thread frees
         // sit in the bounded ring (overflow → bounded leak, the original 7b
         // discipline).
+
+        // ── Magazine fast path (P2, fastbin) ──────────────────────────────
+        // Small-class allocations are served from the per-thread magazine.
+        // On a hit: array pop, stamp, return. No bitmap, no segment metadata.
+        // On a miss: batch-refill from the substrate, then pop one.
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        {
+            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
+            let size = layout
+                .size()
+                .max(crate::alloc_core::size_classes::MIN_BLOCK);
+            let align = layout.align();
+            if align <= SMALL_ALIGN_MAX {
+                if let Some(c) = SizeClasses::class_for(size, align) {
+                    let cnt = self.tcache.count[c] as usize;
+                    if cnt > 0 {
+                        // Magazine hit: pop from the top of the stack.
+                        let new_cnt = cnt - 1;
+                        self.tcache.count[c] = new_cnt as u16;
+                        let p = self.tcache.slots[c][new_cnt];
+                        // Stamp the segment (OPT-C cache makes this cheap on
+                        // repeated allocs from the same segment). P4 hoists
+                        // the stamp into refill; for now, per-alloc.
+                        if !p.is_null() {
+                            self.stamp_segment_owner(p);
+                        }
+                        return p;
+                    }
+                    // Magazine miss: batch-refill, then return one.
+                    let n = self.core.refill_class(
+                        c,
+                        super::tcache::REFILL_N,
+                        &mut self.tcache.slots[c],
+                    );
+                    if n == 0 {
+                        return core::ptr::null_mut(); // true OOM
+                    }
+                    // Pop the top, leave n-1 in the magazine.
+                    let new_cnt = n - 1;
+                    self.tcache.count[c] = new_cnt as u16;
+                    let p = self.tcache.slots[c][new_cnt];
+                    if !p.is_null() {
+                        self.stamp_segment_owner(p);
+                    }
+                    return p;
+                }
+                // not a small class -> fall through to large path
+            }
+        }
+
+        // Existing path: reclaim+alloc through AllocCore (large, or non-fastbin).
         let ptr = self.core.alloc(layout);
         if !ptr.is_null() {
             self.stamp_segment_owner(ptr);
@@ -313,8 +372,47 @@ impl HeapCore {
         }
         #[cfg(not(feature = "alloc-xthread"))]
         {
-            self.core.dealloc(ptr, layout);
+            self.dealloc_own_thread(ptr, layout);
         }
+    }
+
+    /// Own-thread dealloc: small frees go to the magazine (under fastbin),
+    /// everything else to `core.dealloc`. Called from the `!alloc-xthread`
+    /// path (no routing needed) and from `dealloc_routing` after confirming
+    /// the block is ours.
+    #[inline(always)]
+    fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        {
+            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX, MIN_BLOCK};
+            use super::tcache::{TCACHE_CAP, FLUSH_N};
+            let size = layout.size().max(MIN_BLOCK);
+            let align = layout.align();
+            if align <= SMALL_ALIGN_MAX {
+                if let Some(c) = SizeClasses::class_for(size, align) {
+                    let cnt = self.tcache.count[c] as usize;
+                    if cnt < TCACHE_CAP {
+                        // Room in the magazine: push.
+                        self.tcache.slots[c][cnt] = ptr;
+                        self.tcache.count[c] = (cnt + 1) as u16;
+                        return;
+                    }
+                    // Overflow: half-flush, then push.
+                    self.core
+                        .flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
+                    // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
+                    let remaining = TCACHE_CAP - FLUSH_N;
+                    for i in 0..remaining {
+                        self.tcache.slots[c][i] = self.tcache.slots[c][i + FLUSH_N];
+                    }
+                    self.tcache.slots[c][remaining] = ptr;
+                    self.tcache.count[c] = (remaining + 1) as u16;
+                    return;
+                }
+            }
+        }
+        // Large / non-small / non-fastbin: delegate to core.
+        self.core.dealloc(ptr, layout);
     }
 
     /// Shrink/grow an allocation via alloc + copy + dealloc. Returns null on
@@ -367,7 +465,9 @@ impl HeapCore {
         let our_head = self.thread_free_head();
         let owner_tf = SegmentHeader::owner_thread_free_at(base);
         if owner_tf.is_null() || owner_tf == our_head {
-            self.core.dealloc(ptr, layout);
+            // Own-thread free: route through magazine (under fastbin) or
+            // directly to core.dealloc (without fastbin).
+            self.dealloc_own_thread(ptr, layout);
             return;
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {
