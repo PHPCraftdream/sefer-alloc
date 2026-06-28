@@ -58,9 +58,37 @@ use core::mem::size_of;
 /// is the hard cap (append-only).
 pub(crate) const MAX_SEGMENTS: usize = 1024;
 
-/// The footprint of the registry array in the primordial segment. Fixed and
-/// known at compile time so the bootstrap can carve it deterministically.
+/// The footprint of the registry (slots) array in the primordial segment. Fixed
+/// and known at compile time so the bootstrap can carve it deterministically.
 pub(crate) const REGISTRY_FOOTPRINT: usize = MAX_SEGMENTS * size_of::<*mut u8>();
+
+/// Capacity of the open-addressing hash table (OPT-B). Load factor ≤ 50%
+/// so `HASH_CAPACITY = 2 * MAX_SEGMENTS`. Power of two for cheap modulo via
+/// bitmasking.
+pub(crate) const HASH_CAPACITY: usize = 2 * MAX_SEGMENTS; // 2048
+
+/// Footprint of the hash table in the primordial segment.
+/// `HASH_CAPACITY` entries × `sizeof(*mut u8)` = 16 KiB.
+pub(crate) const HASH_FOOTPRINT: usize = HASH_CAPACITY * size_of::<*mut u8>();
+
+/// Bit-shift of the segment size (log₂(SEGMENT = 4 MiB) = 22). Used by the
+/// hash function to convert a segment base into a table index. Exposed as
+/// `pub(crate)` so the bootstrap can seed the primordial hash entry before
+/// the `SegmentTable` struct exists (the bootstrap must not call any
+/// `SegmentTable` methods before `from_primordial`).
+pub(crate) const SEGMENT_SHIFT: usize = 22;
+
+/// Tombstone marker for hash slots that held a base which was subsequently
+/// removed (unregister/recycle). Must be a value that can never be a real
+/// segment base: real bases are SEGMENT-aligned (aligned to 4 MiB = 1 << 22),
+/// so the value `1` (= 0x0000_0001) is unambiguously not a valid base.
+///
+/// Rule:
+/// - `null_mut()` → empty (never occupied)
+/// - `TOMBSTONE`  → was occupied, now removed (probe chain intact)
+/// - other        → live entry (a real SEGMENT-aligned base pointer)
+#[allow(clippy::as_conversions)]
+const TOMBSTONE: *mut u8 = 1 as *mut u8;
 
 /// A self-hosted segment registry: a fixed-capacity array of segment-base
 /// pointers plus a high-water count, carved from the primordial segment.
@@ -81,25 +109,34 @@ pub(crate) struct SegmentTable {
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
     count: u32,
+    /// OPT-B: open-addressing hash table for O(1) `contains_base`. Lives in
+    /// the primordial segment immediately after the slots array. Capacity is
+    /// `HASH_CAPACITY` entries. Encoding:
+    /// - `null_mut()` → empty (never occupied)
+    /// - `TOMBSTONE`  → removed entry (probe chain must be preserved)
+    /// - other        → live segment base (SEGMENT-aligned pointer)
+    hash_slots: *mut *mut u8,
 }
 
 impl SegmentTable {
     /// Construct the registry view over an already-laid-down array in the
     /// primordial segment. Used by the bootstrap after it has carved the slot
-    /// array (the bootstrap writes slot 0 through the `node` seam BEFORE
-    /// calling this — this constructor performs NO memory operation, it just
-    /// wraps the pointer + count).
+    /// array and the hash table (the bootstrap writes slot 0 and clears the
+    /// hash array through the `node` seam BEFORE calling this — this
+    /// constructor performs NO memory operation, it just wraps the pointers +
+    /// count).
     ///
     /// # Caller's contract
     ///
     /// `slots` must point to `REGISTRY_FOOTPRINT` bytes inside the primordial
-    /// segment, with slot 0 already set to the primordial base. `count` is the
-    /// current live count (1 for just the primordial). This method is safe
-    /// because it does not touch memory — it only stores the pointer; the
-    /// contract is the caller's invariant, enforced by the bootstrap being the
-    /// sole caller.
-    pub(crate) fn from_primordial(slots: *mut *mut u8, count: u32) -> Self {
-        Self { slots, count }
+    /// segment, with slot 0 already set to the primordial base. `hash_slots`
+    /// must point to `HASH_FOOTPRINT` bytes (all zeroed / `null_mut()`) for the
+    /// open-addressing hash table. `count` is the current live count (1 for
+    /// just the primordial). This method is safe because it does not touch
+    /// memory — it only stores the pointers; the contract is the caller's
+    /// invariant, enforced by the bootstrap being the sole caller.
+    pub(crate) fn from_primordial(slots: *mut *mut u8, count: u32, hash_slots: *mut *mut u8) -> Self {
+        Self { slots, count, hash_slots }
     }
 
     /// Register a new segment base. Returns its assigned `segment_id` (the
@@ -130,6 +167,8 @@ impl SegmentTable {
                 // Reuse this slot: write the new base, return the index without
                 // bumping count (the slot is already in the live window).
                 super::node::Node::write_struct::<*mut u8>(slot, base);
+                // OPT-B: also insert into the hash table so `contains_base` is O(1).
+                self.hash_insert(base);
                 return Some(i as u32);
             }
         }
@@ -141,6 +180,8 @@ impl SegmentTable {
         let slot = Self::slot_ptr(self.slots, idx);
         super::node::Node::write_struct::<*mut u8>(slot, base);
         self.count += 1;
+        // OPT-B: also insert into the hash table so `contains_base` is O(1).
+        self.hash_insert(base);
         Some(idx as u32)
     }
 
@@ -167,6 +208,8 @@ impl SegmentTable {
             if current == base {
                 // NULL the slot — the OS reservation is NOT released here.
                 super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+                // OPT-B: remove from hash table (tombstone the entry).
+                self.hash_remove(base);
                 return;
             }
         }
@@ -215,6 +258,11 @@ impl SegmentTable {
             let slot = Self::slot_ptr(self.slots, i);
             let current = super::node::Node::read_struct::<*mut u8>(slot);
             if current == base {
+                // OPT-B: tombstone the hash entry BEFORE releasing the OS
+                // reservation. After `release_segment` the pointer value `base`
+                // remains valid as a key (we compare values, not dereference),
+                // but doing the hash update first is cleaner.
+                self.hash_remove(base);
                 // Release the OS reservation. After this, `base` is invalid
                 // (unmapped). We do NOT dereference `base` after this point.
                 super::os::release_segment(reservation, reservation_len);
@@ -240,19 +288,17 @@ impl SegmentTable {
     /// Whether `base` is one of our registered, LIVE (non-NULL) segment bases.
     /// Used by the defensive foreign-pointer check in `dealloc`: a pointer
     /// whose computed segment base is NOT in this set is foreign (not one of
-    /// our allocations) and is treated as a no-op. O(segments) — acceptable
-    /// for the defensive path; the hot path (known-live pointer) skips this
-    /// via the magic check.
+    /// our allocations) and is treated as a no-op.
+    ///
+    /// OPT-B: now O(1) average via the open-addressing hash table. Tombstone
+    /// entries are skipped (the probe chain must not stop at a tombstone).
+    /// The only time a result is `false` is when the probe chain reaches an
+    /// empty slot (`null_mut()`), meaning `base` was never inserted here.
     ///
     /// Recycled (NULL) slots are NOT considered as matching any base, so a
     /// use-after-recycle pointer is correctly treated as foreign.
     pub(crate) fn contains_base(&self, base: *mut u8) -> bool {
-        for b in self.bases() {
-            if b == base {
-                return true;
-            }
-        }
-        false
+        self.hash_contains(base)
     }
 
     /// Iterate over all **live** (non-NULL) registered segment bases
@@ -284,5 +330,135 @@ impl SegmentTable {
     fn slot_ptr(slots: *mut *mut u8, i: usize) -> *mut *mut u8 {
         super::node::Node::offset(slots as *mut u8, i * core::mem::size_of::<*mut u8>())
             as *mut *mut u8
+    }
+
+    // -------------------------------------------------------------------
+    // OPT-B — open-addressing hash table helpers
+    //
+    // The hash table lives in the primordial segment immediately after the
+    // slots array. Capacity = HASH_CAPACITY (a power of two). Encoding:
+    //   - null_mut()  → empty  (never occupied; stops a probe chain)
+    //   - TOMBSTONE   → removed (probe chain must skip over this)
+    //   - other       → live segment base (SEGMENT-aligned, never null)
+    //
+    // All reads/writes go through the `node` seam, keeping this file
+    // safe while meeting the crate's unsafe-confinement requirement.
+    // -------------------------------------------------------------------
+
+    /// Hash a segment base to an initial slot index.
+    ///
+    /// `base` is SEGMENT-aligned, so its low `SEGMENT_SHIFT` bits are zero.
+    /// Right-shifting by `SEGMENT_SHIFT` gives a dense integer key (one key
+    /// per segment in the virtual address space). We mask to `HASH_CAPACITY - 1`
+    /// for a fast modulo (power-of-two capacity).
+    #[inline]
+    fn hash_index(base: *mut u8) -> usize {
+        (base as usize >> SEGMENT_SHIFT) & (HASH_CAPACITY - 1)
+    }
+
+    /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
+    #[inline]
+    fn hash_slot_ptr(&self, i: usize) -> *mut *mut u8 {
+        super::node::Node::offset(self.hash_slots as *mut u8, i * core::mem::size_of::<*mut u8>())
+            as *mut *mut u8
+    }
+
+    /// Read the value stored at hash slot `i`.
+    #[inline]
+    fn hash_slot_read(&self, i: usize) -> *mut u8 {
+        super::node::Node::read_struct::<*mut u8>(self.hash_slot_ptr(i))
+    }
+
+    /// Write `value` into hash slot `i`.
+    #[inline]
+    fn hash_slot_write(&mut self, i: usize, value: *mut u8) {
+        super::node::Node::write_struct::<*mut u8>(self.hash_slot_ptr(i), value);
+    }
+
+    /// Insert `base` into the hash table using linear probing.
+    ///
+    /// Scans forward from `hash_index(base)` (with wrap-around) until an
+    /// empty slot OR a tombstone slot is found, then writes `base` there.
+    ///
+    /// **Precondition:** the caller guarantees `base` is not already in the
+    /// table AND at least one empty/tombstone slot exists (load factor ≤ 50%).
+    fn hash_insert(&mut self, base: *mut u8) {
+        let start = Self::hash_index(base);
+        let mut i = start;
+        loop {
+            let entry = self.hash_slot_read(i);
+            if entry.is_null() || entry == TOMBSTONE {
+                // Empty or tombstone: this slot is available.
+                self.hash_slot_write(i, base);
+                return;
+            }
+            i = (i + 1) & (HASH_CAPACITY - 1);
+            // Under the load-factor ≤ 50% guarantee we will always find a
+            // free slot before wrapping all the way around. The loop must
+            // terminate: at least HASH_CAPACITY/2 slots are empty/tombstone.
+            debug_assert!(i != start, "hash table full — load factor exceeded");
+        }
+    }
+
+    /// Remove `base` from the hash table (replace the entry with a tombstone).
+    ///
+    /// Scans forward from `hash_index(base)` until `base` is found (replaced
+    /// with `TOMBSTONE`) or an empty slot is reached (base was never inserted;
+    /// defensive no-op). Tombstone slots are skipped during the probe.
+    ///
+    /// Only called under `alloc-decommit` (from `recycle` and `unregister`);
+    /// the lint is suppressed for non-decommit builds to keep the code uniform.
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
+    fn hash_remove(&mut self, base: *mut u8) {
+        let start = Self::hash_index(base);
+        let mut i = start;
+        loop {
+            let entry = self.hash_slot_read(i);
+            if entry.is_null() {
+                // Empty slot: probe chain terminates; base is not present.
+                // This indicates a caller bug (removing a non-inserted entry).
+                // Defensive no-op — do not corrupt the table.
+                return;
+            }
+            if entry == base {
+                // Found the live entry: replace with tombstone so probe chains
+                // for other keys that passed through this slot remain intact.
+                self.hash_slot_write(i, TOMBSTONE);
+                return;
+            }
+            // TOMBSTONE or different live entry: skip and continue probing.
+            i = (i + 1) & (HASH_CAPACITY - 1);
+            debug_assert!(i != start, "hash_remove looped without finding base");
+        }
+    }
+
+    /// Check whether `base` is present in the hash table (O(1) average).
+    ///
+    /// Scans forward from `hash_index(base)` until:
+    /// - `base` is found → returns `true`
+    /// - an empty slot (`null_mut()`) is reached → returns `false`
+    /// - a tombstone is encountered → skips it (probe chain continues)
+    fn hash_contains(&self, base: *mut u8) -> bool {
+        let start = Self::hash_index(base);
+        let mut i = start;
+        loop {
+            let entry = self.hash_slot_read(i);
+            if entry.is_null() {
+                // Empty slot: the probe chain ends here; base is not present.
+                return false;
+            }
+            if entry == base {
+                return true;
+            }
+            // TOMBSTONE or a different live entry: skip and continue.
+            i = (i + 1) & (HASH_CAPACITY - 1);
+            if i == start {
+                // Wrapped all the way around without finding base or an empty
+                // slot. This can only happen if the table has no empty slots at
+                // all (all entries are live or tombstone). Under the guaranteed
+                // ≤ 50% load factor this cannot occur, but handle it defensively.
+                return false;
+            }
+        }
     }
 }

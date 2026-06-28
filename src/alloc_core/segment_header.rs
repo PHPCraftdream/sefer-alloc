@@ -627,10 +627,18 @@ impl Layout {
             PAGE,
         )
     }
-    /// End of the primordial metadata (page-aligned past the registry).
-    pub(crate) const fn primordial_meta_end() -> usize {
+    /// Offset of the open-addressing hash table in the primordial segment
+    /// (immediately after the registry array, 8-byte aligned).
+    pub(crate) const fn primordial_hash_off() -> usize {
         align_up_const(
             Self::primordial_registry_off() + super::segment_table::REGISTRY_FOOTPRINT,
+            8,
+        )
+    }
+    /// End of the primordial metadata (page-aligned past the hash table).
+    pub(crate) const fn primordial_meta_end() -> usize {
+        align_up_const(
+            Self::primordial_hash_off() + super::segment_table::HASH_FOOTPRINT,
             PAGE,
         )
     }

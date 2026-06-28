@@ -18,7 +18,7 @@
 
 use super::os::Segment;
 use super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
-use super::segment_table::SegmentTable;
+use super::segment_table::{self, SegmentTable};
 
 /// The bootstrap outcome: the primordial [`Segment`] (owned) and the
 /// [`SegmentTable`] view over the registry carved in its payload. The
@@ -94,6 +94,34 @@ pub(crate) fn primordial() -> Option<Primordial> {
     let reg_slots = base_plus(base, reg_off) as *mut *mut u8;
     super::node::Node::write_struct::<*mut u8>(reg_slots, base);
 
+    // 4b. OPT-B: Initialise the open-addressing hash table at `hash_off`.
+    //     Zero-fill all HASH_CAPACITY slots (null_mut() = empty). Then insert
+    //     the primordial base (slot 0's value) so `contains_base` works from
+    //     the very first allocation.
+    let hash_off = Layout::primordial_hash_off();
+    let hash_slots = base_plus(base, hash_off) as *mut *mut u8;
+    // Zero-fill: each slot must start as null_mut() (= "empty").
+    for i in 0..segment_table::HASH_CAPACITY {
+        let slot = super::node::Node::offset(
+            hash_slots as *mut u8,
+            i * core::mem::size_of::<*mut u8>(),
+        ) as *mut *mut u8;
+        super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+    }
+    // Insert the primordial base into the hash table (mirrors slot 0 write).
+    // The hash table starts empty, so we hand-probe: start at hash_index(base),
+    // find the first empty slot, and write `base`. Since the table is freshly
+    // zeroed, slot hash_index(base) is guaranteed empty.
+    {
+        let start_idx =
+            (base as usize >> segment_table::SEGMENT_SHIFT) & (segment_table::HASH_CAPACITY - 1);
+        let hash_slot = super::node::Node::offset(
+            hash_slots as *mut u8,
+            start_idx * core::mem::size_of::<*mut u8>(),
+        ) as *mut *mut u8;
+        super::node::Node::write_struct::<*mut u8>(hash_slot, base);
+    }
+
     // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
     //    carving begins). Mark the page map / bin table / registry pages Meta
     //    in the page map we just wrote.
@@ -105,7 +133,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
-    let table = SegmentTable::from_primordial(reg_slots, 1);
+    let table = SegmentTable::from_primordial(reg_slots, 1, hash_slots);
 
     Some(Primordial { segment, table })
 }
