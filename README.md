@@ -463,6 +463,30 @@ slot-recycle is off and the 1024-segment ceiling is a hard cap — a tokio
 server with hundreds of tasks will eventually OOM. For embedded / `no_std`
 use, stay with the default `std` feature.
 
+### Tuning the large-segment cache (`alloc-decommit`)
+
+The `alloc-decommit` feature carries a per-thread large-segment free-cache.
+The default policy is **"client controls the RSS, we ship sane defaults"**:
+five environment variables (all read once at first `AllocCore::new()`,
+allocation-free, safe even with `SeferMalloc` as the `#[global_allocator]`)
+let the operator pick the trade-off without a recompile.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SEFER_LARGE_CACHE_BUDGET` | (unset — **unbounded**) | Per-shard ceiling on total cached bytes. Accepts `64M`, `2G`, raw bytes. **Unset = no admission limit** (any size span can enter the cache); FIFO eviction kicks in only when this is set and the budget would be exceeded. OS-OOM is propagated as `null` per the `GlobalAlloc` contract regardless. |
+| `SEFER_LARGE_CACHE_DECAY_RATE` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS each decay tick. Float-free parser; `7.5%` is **not** accepted — use a finer interval instead. |
+| `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS` | `1000` (1 s) | Wall-clock ms between decay ticks. Lazy: a tick only fires inline on the next large alloc/free after the interval elapsed. Idle process pays nothing. |
+| `SEFER_LARGE_CACHE_HEADROOM_BYTES` | `256M` | Floor below which the decay does **not** push (anti-thrashing pad). Accepts K/M/G suffix. |
+| `SEFER_LARGE_CACHE_MODE` | `lazy` | `lazy` (default) / `background` / `both`. **Phase 3 stub:** `background` currently prints a one-time warning and falls back to lazy; the mode-selector plumbing is in place for a future background scavenger thread. |
+
+The model is "**allocate fast, release slowly**": on a large `free`, the
+span is admitted to the cache (subject to budget); on each subsequent large
+op, the excess over `headroom` exponentially decays to the OS at the chosen
+rate. Self-damping: aggressive far from target, gentle near target, no
+oscillation. The default `BUDGET=unbounded` makes the cache willing to
+hold any single span; if you want a hard RSS ceiling (containers, mobile),
+set `SEFER_LARGE_CACHE_BUDGET=512M` (or whatever fits).
+
 ---
 
 ## Quick start

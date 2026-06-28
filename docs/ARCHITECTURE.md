@@ -326,14 +326,47 @@ decommitted) and never dereferences the block. Safety argument:
 
 Full argument: [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) §1.
 
-### OPT-E: large-segment free-cache (#65)
+### OPT-E: large-segment free-cache (#65) + Phase 1-3 adaptive policy (#90-#92)
 
 `alloc_large` returns dedicated segments (one per large allocation). Without a
 cache, every large alloc+free round-trips through the OS. OPT-E adds a
 1-2-slot per-`AllocCore` free-cache: a freed large segment is held committed
 rather than munmapped. On a cache hit, the next large alloc reuses it with no
-OS call. Measured speedup on 4 MiB alloc+free: **42 ns vs 788 ns for mimalloc
-(18x faster)**. See [MALLOC_BENCH.md](MALLOC_BENCH.md) OPT-E section.
+OS call. Measured speedup on 4 MiB alloc+free: **~150 ns vs ~760 ns for
+mimalloc (~5x faster)** and ~150 ns vs ~910 ns at 16 MiB (~6x faster). See
+[MALLOC_BENCH.md](MALLOC_BENCH.md) OPT-E section.
+
+**Adaptive policy** (tasks #90-#92, the "client controls / we ship sane
+defaults" model):
+
+- *Phase 1 — byte-budget admission.* The old per-span cap
+  (`MAX_CACHED_LARGE_BYTES = 64 MiB`) was an artificial disability — a span
+  larger than the cap could never be cached, so a process churning 100 MiB+
+  buffers paid the full OS round-trip every cycle. Replaced with a
+  per-shard byte budget (`SEFER_LARGE_CACHE_BUDGET`, default unbounded);
+  any size span can enter the cache, FIFO eviction releases the oldest if
+  the budget would be exceeded. OS-OOM is propagated as `null` per the
+  `GlobalAlloc` contract (audited end-to-end).
+
+- *Phase 2 — lazy exponential decay.* "Allocate fast, release slowly":
+  on every large op a single `Instant::now()` comparison checks whether
+  `decay_interval` (default 1 s) has elapsed; if so, `excess = cached
+  − headroom` (default 256 MiB) is multiplied by `decay_rate` (default
+  10 %) and that many bytes are FIFO-evicted to the OS. Self-damping (no
+  oscillation), no background thread (idle process pays nothing —
+  mobile-friendly), every knob env-overridable.
+
+- *Phase 3 — mode selector (background-thread stub).* `LargeCacheMode
+  { Lazy, Background, Both }` enum and `SEFER_LARGE_CACHE_MODE` env var
+  are wired through. Default `lazy` preserves Phase 2 behaviour bit-for-bit;
+  `background` currently prints a one-time warning and falls back to lazy
+  while the full background scavenger thread (Mutex refactor + registry
+  iteration + safe spawn timing + TSan validation) is deferred to a
+  follow-up. The mode-selector plumbing means flipping the switch later is
+  a non-breaking change.
+
+Full configuration table is in the README "Tuning the large-segment cache"
+section.
 
 ---
 

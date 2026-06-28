@@ -47,6 +47,25 @@ each be audited in complete isolation with `cargo test` confirming green.
 
 ## [0.1.0] - 2026-06-28
 
+### Added — large-cache redesign Phase 3 (alloc-decommit, mode-selector + future stub)
+
+- **`LargeCacheMode { Lazy, Background, Both }`** enum, re-exported from
+  `sefer_alloc::` under `alloc-core + alloc-decommit`. The mode is selected
+  via the new `SEFER_LARGE_CACHE_MODE` env var (case-insensitive: `lazy` /
+  `background` / `both`; unrecognised values fall back to `Lazy`).
+
+- **Default = `Lazy`** — Phase 2 behaviour is preserved bit-for-bit. Setting
+  `SEFER_LARGE_CACHE_MODE=background` currently prints a one-time process
+  warning ("background mode requested but not yet implemented — falling back
+  to lazy") and continues with lazy decay. The full background-thread
+  implementation has identified risks documented inline (Mutex refactor +
+  HeapRegistry iteration API + safe spawn timing + TSan validation) and is
+  intentionally deferred to a follow-up; the mode-selector plumbing lets a
+  future commit turn it on without any user-facing API change.
+
+- **`tests/large_cache_mode.rs`** — 3 new tests covering default-Lazy,
+  per-shard mode storage, and env-var parsing.
+
 ### Changed — large-cache redesign Phase 2 (alloc-decommit)
 
 - **Lazy exponential decay**: large-cache excess over the headroom target
