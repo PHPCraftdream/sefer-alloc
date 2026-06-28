@@ -1,8 +1,11 @@
 # malloc-bench-rs
 
-Portable, generic-over-`GlobalAlloc` multi-threaded allocator benchmark
-harness for Rust. The Rust answer to
-[mimalloc-bench](https://github.com/daanx/mimalloc-bench) (which is C-only).
+Portable, **100 % Rust**, generic-over-`GlobalAlloc` multi-threaded allocator
+benchmark harness. The pure-Rust answer to
+[mimalloc-bench](https://github.com/daanx/mimalloc-bench) (which is C-only)
+— zero runtime dependencies (xorshift64 PRNG is inlined); comparison crates
+like `mimalloc` / `jemalloc` / `snmalloc` stay **dev-only at the consumer's
+discretion**, so this crate itself never links any C / C++ library.
 
 ## Features
 

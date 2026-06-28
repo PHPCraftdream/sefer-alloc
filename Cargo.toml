@@ -6,7 +6,7 @@ edition = "2021"
 # build on much older toolchains, but we pin a known-good MSRV from day one.
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "A safe-by-construction memory toolkit: a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferMalloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
+description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferMalloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc"

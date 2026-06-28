@@ -6,10 +6,12 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![MSRV: 1.88](https://img.shields.io/badge/MSRV-1.88-blue.svg)](https://www.rust-lang.org/)
 
-> A safe-by-construction Rust memory toolkit: a single-threaded handle store
-> and a drop-in `#[global_allocator]` over **one verified segment substrate**,
-> compiler-enforced unsafe-confinement — and **up to ~18× faster than
-> `mimalloc`** on cached large alloc/free after the OPT-E large-cache.
+> A safe-by-construction, **100 % Rust** memory toolkit: a single-threaded
+> handle store and a drop-in `#[global_allocator]` over **one verified segment
+> substrate**, compiler-enforced unsafe-confinement, **no C / C++ libraries
+> pulled in** (no `libnuma`, no `mimalloc`, no `jemalloc`, no `snmalloc` /
+> `tcmalloc`) — and **up to ~18× faster than `mimalloc`** on cached large
+> alloc/free after the OPT-E large-cache.
 
 `sefer-alloc` ships two faces over one substrate:
 
@@ -85,9 +87,24 @@ off and the 1024-segment ceiling becomes a hard cap). See
 
 ## Why bother
 
-Most Rust allocators are crates with `unsafe` smeared across their hot paths;
-auditors are asked to trust prose. `sefer-alloc` makes the safety claim
-**structural**: the default build is `#![forbid(unsafe_code)]` at the top;
+Two things, both rare in the same crate.
+
+**Pure Rust, no C / C++ libraries pulled in.** Every comparable allocator in
+the ecosystem wraps a C or C++ codebase: `mimalloc` (C++), `jemalloc`
+(C, via `tikv-jemallocator`), `snmalloc` (C++), `tcmalloc` (C++). The most
+common NUMA crates wrap `libnuma` (C). `sefer-alloc` is 100 % Rust — it
+calls into the OS directly (`mmap` / `VirtualAlloc` / `mbind` etc. — the
+same syscalls every allocator uses), but it does not link a single C or
+C++ library. The only C dependency anywhere in this repository is the
+optional `mimalloc` *dev*-dependency used as a baseline in benchmarks; it
+is never on a consumer's runtime path. If a Rust-only build matrix matters
+to you (cross-compilation, audit perimeter, supply-chain surface),
+`sefer-alloc` is one of the few production-track choices.
+
+**Safety claim is structural, not prose.** Most Rust allocators have
+`unsafe` smeared across their hot paths and ask auditors to trust the
+narrative. `sefer-alloc` makes the claim compiler-enforced: the default
+build is `#![forbid(unsafe_code)]` at the top;
 the moment any allocator feature (`experimental`, `byte`, `alloc-core` and
 above) is on, the crate switches to `#![deny(unsafe_code)]` and the
 confined seams lift it with `#![allow(unsafe_code)]` only inside named

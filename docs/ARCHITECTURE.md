@@ -5,6 +5,14 @@ how the crate is structured in 30 minutes, without reading the full set of
 phase-by-phase design documents. This file synthesizes key ideas and points to
 the authoritative sources.
 
+**One-line positioning.** `sefer-alloc` is a safe-by-construction, **100 %
+Rust** memory toolkit (no C / C++ libraries pulled in — no `libnuma`, no
+`mimalloc`, no `jemalloc`, no `snmalloc` / `tcmalloc`; it calls the OS
+directly via `mmap` / `VirtualAlloc` / `mbind` etc., same as any allocator
+does). The only C dependency in the repository is the optional `mimalloc`
+dev-dependency used as a baseline in benchmarks — never on a consumer's
+runtime path.
+
 **Date:** 2026-06-28. Current mainline: commit 4e034e5.
 
 ---

@@ -6,8 +6,10 @@
 
 Cross-platform **aligned anonymous virtual memory** — reserve a span whose base
 is aligned to an arbitrary power of two, commit/decommit its pages, release it.
-Directly through the OS, no file-mapping machinery, **zero dependencies**,
-miri-friendly.
+Directly through the OS, no file-mapping machinery, **zero dependencies, 100 %
+Rust** (no C / C++ libraries pulled in — the OS syscalls are declared locally
+through `extern "system"` / `extern "C"`, the same way `std` itself links
+`kernel32` / `libc`), miri-friendly.
 
 ```toml
 [dependencies]

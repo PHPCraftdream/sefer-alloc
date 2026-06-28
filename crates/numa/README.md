@@ -1,8 +1,10 @@
 # numa-shim
 
-**Dependency-free NUMA detection and binding for Rust.**
+**100 % Rust NUMA detection and binding — no C / C++ libraries.**
 
-The key differentiator: **zero C library dependencies** beyond the system libc.
+The key differentiator: **zero C / C++ crate dependencies** — no `libnuma`, no
+`hwloc`, no `libcuda`. Only the system libc / `kernel32` syscalls that any
+Rust program already links to.
 
 | Platform | Node detection | Memory binding |
 |----------|---------------|----------------|

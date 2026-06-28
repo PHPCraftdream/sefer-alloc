@@ -13,7 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Summary
 
-The initial public release. Two faces on one verified substrate:
+The initial public release.
+
+**Pure Rust, no C / C++ libraries.** Unlike `mimalloc` (C++), `jemalloc`
+(C), `snmalloc` (C++), `tcmalloc` (C++), or the typical `libnuma`-wrapping
+NUMA crates, `sefer-alloc` is 100 % Rust — it calls into the OS directly
+(`mmap` / `VirtualAlloc` / `mbind` etc.), but does not link a single C or
+C++ library. The only C dependency in the repository is the optional
+`mimalloc` dev-dependency used as a baseline in benchmarks (never on a
+consumer's runtime path).
+
+Two faces on one verified substrate:
 
 - **`Region<T>` / `Handle<T>`** — a safe-by-construction handle store
   (default `std`, also `no_std` + `alloc`). `#![forbid(unsafe_code)]`
