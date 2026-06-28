@@ -12,6 +12,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'   # NUMA real-kernel job (weekly Monday 06:00 UTC)
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -207,6 +210,61 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
+
+  numa-real-kernel:
+    # NUMA Phase 2: validate the real-kernel Linux integration path on every
+    # scheduled run (weekly) and on-demand (workflow_dispatch).  The GitHub
+    # Actions runner is single-NUMA, so the env-guarded tests in numa_alloc.rs
+    # (SEFER_NUMA_TEST=1) run through their full code path — including mbind(2)
+    # and sysfs reads — but on a kernel that only has one node.  That is still
+    # far more coverage than Phase 1's pure-Rust mock: we prove that the
+    # production feature combo compiles, links, and runs on a real Linux kernel
+    # without panicking or hitting UB.
+    #
+    # Phase 2.1 follow-up (NOT done here): boot a QEMU guest with
+    # `-numa node,nodeid=0,...  -numa node,nodeid=1,...` so the guest actually
+    # shows two NUMA nodes and mbind steers pages between them.  The complexity
+    # of reliably booting a QEMU guest in Actions (image download, KVM
+    # availability, cloud-image driver quirks) warrants its own task.  For now,
+    # `numactl --hardware` is informational only; `kvm-ok` is a soft probe
+    # (`|| true`) so the job does not fail on hypervisors that block KVM.
+    #
+    # NOT per-push (too heavy for an allocator repo change): the `if:` guard
+    # below keeps all other jobs unaffected.
+    name: NUMA on real Linux kernel (numactl smoke + env-guarded tests)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install numactl
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y numactl
+      - name: Probe host NUMA topology (informational)
+        run: |
+          numactl --hardware
+          echo "---"
+          # On a single-NUMA Actions runner this shows 1 node.  That is expected
+          # and correct: the goal of this job is real-kernel compilation + runtime
+          # coverage, not multi-node correctness (Phase 2.1 follow-up handles that).
+          kvm-ok || true
+      - name: Build (production + numa-aware)
+        run: cargo build --features "production numa-aware"
+      - name: Compile numa_alloc tests
+        run: cargo test --features "production numa-aware" --test numa_alloc --no-run
+      - name: Compile numa_segment_id tests
+        run: cargo test --features "production numa-aware" --test numa_segment_id --no-run
+      - name: Compile numa_seam tests
+        run: cargo test --features "production numa-aware" --test numa_seam --no-run
+      - name: Run numa_alloc tests (env-guarded)
+        env:
+          SEFER_NUMA_TEST: "1"
+        run: cargo test --features "production numa-aware" --test numa_alloc -- --nocapture
+      - name: Run numa_segment_id tests
+        run: cargo test --features "production numa-aware" --test numa_segment_id -- --nocapture
+      - name: Run numa_seam tests
+        run: cargo test --features "production numa-aware" --test numa_seam -- --nocapture
 
   docs:
     name: rustdoc
