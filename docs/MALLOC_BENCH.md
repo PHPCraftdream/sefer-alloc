@@ -275,3 +275,113 @@ every target" is not yet claimed — though the cross-thread reclaim path is now
 ThreadSanitizer-verified on Linux. For a process-wide allocator right now,
 `SeferMalloc` is a viable MT choice; the remaining gap to `mimalloc` is the
 multi-arch / CPU-hours hardening gate, not a known correctness or RSS issue.
+
+---
+
+## NUMA — opt-in locality steering (Phase B–E of #58)
+
+### What was added
+
+Feature flag `numa-aware = ["alloc-core"]`, **default OFF**.  Enabling it
+steers new segment reservations to the NUMA node of the calling thread:
+
+- **Linux**: `mbind(2)` with `MPOL_PREFERRED` — called after `mmap`, before
+  first page access, so page-faults bring physical pages from the preferred
+  node.
+- **Windows**: `VirtualAllocExNuma` replaces `VirtualAlloc` — the preferred
+  node is passed at reservation time (Windows has no `mbind` equivalent for
+  already-reserved ranges).
+- **macOS / miri**: no-op — Apple Silicon is UMA; there is no public NUMA
+  syscall.  `current_node()` returns `NO_NODE` (`u32::MAX`), `bind_segment`
+  is a no-op compile-time constant.
+
+Without the flag the build is **byte-for-byte unchanged** — no new code
+executes, no layout shifts (the `node_id: u32` field in `SegmentHeader` is
+always compiled in to keep the struct layout stable across feature configs, but
+is initialised to `NO_NODE` and never read without `numa-aware`).
+
+### Integration points
+
+| Location | Change |
+|---|---|
+| `src/alloc_core/numa.rs` | Confined-`unsafe` OS seam: `current_node()`, `bind_segment()`, `reserve_aligned_on_node()` |
+| `src/alloc_core/segment_header.rs` | `node_id: u32` field (+4 bytes; still ≪ PAGE) |
+| `src/alloc_core/alloc_core.rs` | `reserve_small_segment` stamps `node_id`; `find_segment_with_free` prefers same-node segments; `alloc_large` steers large segments |
+
+### What is verified
+
+| Test file | What it checks |
+|---|---|
+| `tests/numa_seam.rs` | `current_node()` returns `NO_NODE` or `< 64`; `bind_segment` with `NO_NODE` / zero len is a no-op; `reserve_aligned_on_node` returns a SEGMENT-aligned pointer |
+| `tests/numa_segment_id.rs` | Small and large `AllocCore` allocations carry `node_id == current_node()` at allocation time |
+| `tests/numa_alloc.rs` | Integration: same-thread segments share `node_id`; cross-thread free across potential node boundaries does not panic or corrupt; two-thread consistency of `stamped == observed` |
+
+`tests/numa_alloc.rs` is **ENV-guarded** (`SEFER_NUMA_TEST=1`) — without the
+variable every test body returns immediately (passes on CI single-NUMA
+machines).  To execute the full test:
+
+```sh
+SEFER_NUMA_TEST=1 \
+  cargo test \
+    --features "alloc-core alloc-global alloc-xthread alloc-decommit numa-aware" \
+    --test numa_alloc
+```
+
+Run inside a QEMU VM with `-numa node,...` or on a kernel booted with
+`numa=fake=N` to exercise a real multi-node topology.
+
+### What is NOT verified — honest N/A
+
+**Latency-reduction numbers are not in this table.** The benefit of local-node
+page allocation is a *memory-access latency* reduction — measurable only when
+the workload's data fits in a NUMA node's local DRAM and accesses to remote
+DRAM are the bottleneck.  That regime requires **real multi-socket hardware**:
+
+- AWS `c5n.metal` / `i3.metal` (Xeon, 2 physical sockets)
+- AWS `r6g.metal` (Graviton 2, multiple NUMA domains)
+- Dual-socket development box
+
+QEMU `-numa` / `numa=fake` verify correctness of the `mbind` / stamping path
+but cannot reproduce the physical latency asymmetry (all "nodes" share the same
+physical socket and DRAM controllers).  Until measurements on real hardware are
+available the NUMA latency column is **N/A**.
+
+### Synergy with the `pinning` feature
+
+`numa-aware` alone is **best-effort**: if the OS migrates a thread to a
+different NUMA node after its initial segment was reserved, subsequent accesses
+to that segment will be cross-node.  The allocator uses strategy (a) — ignore
+migration, steer only NEW reservations — as the MVP policy.
+
+Combining `numa-aware + pinning` makes the locality **deterministic**: the
+`pinning` feature (via `core_affinity`) pins each worker thread to a specific
+core for the duration of its run.  A pinned thread on core *k* always resides
+on the same NUMA node, so every new segment it reserves is local.
+
+```sh
+cargo run --release --example malloc_macro \
+  --features "alloc-global alloc-xthread pinning numa-aware"
+```
+
+Without `pinning`, `numa-aware` helps under workloads with low thread
+migration (e.g. long-lived worker threads, СУБД executors) but is not a
+guarantee.  With `pinning`, locality is guaranteed for the lifetime of the
+pinned run.
+
+### Known limitation — `MPOL_PREFERRED` not `MPOL_BIND`
+
+The current Linux implementation uses `MPOL_PREFERRED` (mode 1): the kernel
+*prefers* to allocate physical pages from the requested node but falls back to
+any available node under memory pressure.  This avoids OOM-abort on saturated
+NUMA nodes at the cost of occasional cross-node pages.
+
+If strict binding (`MPOL_BIND`, mode 2 — pages must come from the requested
+node or OOM) is needed, switching is a one-line change in `numa.rs` and is a
+planned follow-up, not part of this phase.
+
+### RSS impact
+
+NUMA steering does not increase or decrease the number of segments reserved —
+it only influences *which physical pages* back those segments.  The RSS profile
+is unchanged.  The `alloc-decommit` feature (Phase 35) remains the correct
+lever for RSS reduction.
