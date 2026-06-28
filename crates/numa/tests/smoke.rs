@@ -72,11 +72,14 @@ fn bind_range_zero_len_is_noop() {
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_on_node_returns_valid_span() {
-    use aligned_vmem::PAGE;
     use numa_shim::reserve_on_node;
 
-    let size = PAGE * 4;
-    let align = PAGE;
+    // Use runtime page size: macOS aarch64 (Apple Silicon) uses 16 KiB pages,
+    // not the 4 KiB constant `aligned_vmem::PAGE`. mmap rejects sizes/aligns
+    // that are not a multiple of the kernel's actual page granule.
+    let page = aligned_vmem::page_size();
+    let size = page * 4;
+    let align = page;
     let node = current_node().unwrap_or(0);
 
     let r = reserve_on_node(size, align, node)
@@ -110,11 +113,13 @@ fn reserve_on_node_returns_valid_span() {
 #[cfg(feature = "vmem-integration")]
 #[test]
 fn reserve_on_node_large_align_round_trip() {
-    use aligned_vmem::PAGE;
     use numa_shim::reserve_on_node;
 
     // 4 MiB span aligned to 4 MiB — a realistic allocator-segment size that
     // exercises the over-reserve (size + align = 8 MiB on Windows) path.
+    // 4 MiB is a multiple of both the 4 KiB and 16 KiB page granules, so this
+    // works on all targets including macOS aarch64.
+    let page = aligned_vmem::page_size();
     let span = 4 * 1024 * 1024;
     let align = span;
     let node = current_node().unwrap_or(0);
@@ -132,11 +137,11 @@ fn reserve_on_node_large_align_round_trip() {
     // Page-stride write/readback fault-in: catches a wrong `len` (would SEGV
     // before the page-stride loop ends) and a wrong `align` (would mis-align
     // the writes).
-    let pages = span / PAGE;
+    let pages = span / page;
     // SAFETY: r owns `span` bytes at r.as_ptr(); we touch one byte per page.
     unsafe {
         for i in 0..pages {
-            let p = r.as_ptr().add(i * PAGE);
+            let p = r.as_ptr().add(i * page);
             p.write(i as u8);
             assert_eq!(p.read(), i as u8);
         }
