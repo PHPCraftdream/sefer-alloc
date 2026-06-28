@@ -206,7 +206,7 @@ pub enum CurrentHeap {
 /// fallback, in one pass. Used by [`SeferMalloc`](super::SeferMalloc) to
 /// avoid a redundant `fallback::heap_ptr()` comparison (which would
 /// needlessly initialise the fallback on every alloc).
-#[inline]
+#[inline(always)]
 pub fn current_for_alloc() -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         Ok(p) if !p.is_null() => CurrentHeap::Own(p),

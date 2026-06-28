@@ -129,7 +129,7 @@ impl Default for SeferMalloc {
 // sound under the fallback's spinlock. M10 (never-null for serviceable
 // requests) is upheld: the only null return is true OOM.
 unsafe impl GlobalAlloc for SeferMalloc {
-    #[inline]
+    #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match current_for_alloc() {
             // Fallback path (TLS torn down, registry exhausted, or true
@@ -148,7 +148,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;

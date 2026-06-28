@@ -96,6 +96,7 @@ pub(crate) const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
 /// documented above the [`OWNER_STATE_LIVE`] constant). `const` so the header
 /// constructors can build the initial packed word at compile time.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[inline(always)]
 pub(crate) const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u64 {
     (state & OWNER_STATE_MASK)
         | ((owner_id as u64) << OWNER_ID_SHIFT)
@@ -104,12 +105,14 @@ pub(crate) const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u6
 
 /// Unpack the state bit (0 = LIVE, 1 = ABANDONED) from an owner-state word.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[inline(always)]
 pub(crate) const fn unpack_owner_state(word: u64) -> u64 {
     word & OWNER_STATE_MASK
 }
 
 /// Unpack the owner heap id from an owner-state word.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+#[inline(always)]
 pub(crate) const fn unpack_owner_id(word: u64) -> u32 {
     ((word & OWNER_ID_MASK) >> OWNER_ID_SHIFT) as u32
 }
@@ -389,6 +392,7 @@ impl SegmentHeader {
     /// field read of any of them does not race with the owner's `bump` writes
     /// on a disjoint field).
     #[allow(dead_code)] // Used by Phase 9+ cross-thread routing; kept for that.
+    #[inline(always)]
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {
         let off = core::mem::offset_of!(SegmentHeader, kind);
         // The `SegmentKind` discriminant is one byte at `base + off`; read it
@@ -415,6 +419,7 @@ impl SegmentHeader {
     /// with the owner's `bump` field writes.
     #[cfg(feature = "alloc-xthread")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    #[inline(always)]
     pub(crate) fn magic_at(base: *mut u8) -> u32 {
         let off = core::mem::offset_of!(SegmentHeader, magic);
         Node::read_u32(Node::offset(base, off) as *const u32)
@@ -428,6 +433,7 @@ impl SegmentHeader {
     /// `bump` writes on a disjoint field.
     #[cfg(feature = "alloc-xthread")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    #[inline(always)]
     pub(crate) fn owner_thread_free_at(base: *mut u8) -> *const core::sync::atomic::AtomicPtr<u8> {
         let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
         Node::read_ptr(Node::offset(base, off) as *const *const core::sync::atomic::AtomicPtr<u8>)
@@ -892,6 +898,7 @@ impl SegmentMeta {
     /// header at offset 0 (the caller — the abandon/adopt path — guarantees
     /// this; the segment is registered and has a valid header).
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    #[inline(always)]
     pub(crate) fn owner_state_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
         // `offset_of!` is a safe macro (address arithmetic on a
         // `#[repr(C)]` type); the atomic-view dereference is delegated to

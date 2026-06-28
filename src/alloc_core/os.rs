@@ -72,7 +72,7 @@ pub(crate) const fn segment_base_of(addr: usize) -> usize {
 /// `ptr` MUST lie within a segment owned by this allocator (the Cartographer's
 /// invariant); the result is the base of that segment.
 #[must_use]
-#[inline]
+#[inline(always)]
 pub(crate) fn segment_base_of_ptr(ptr: *mut u8) -> *mut u8 {
     ptr.map_addr(|a| a & !(SEGMENT - 1))
 }

@@ -230,6 +230,7 @@ impl HeapCore {
     /// this heap's segments are a safe no-op). Used by the drain / routing
     /// paths on the owning thread.
     #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
     pub(crate) fn thread_free_head(&self) -> *const AtomicPtr<u8> {
         &self.thread_free as *const AtomicPtr<u8>
     }

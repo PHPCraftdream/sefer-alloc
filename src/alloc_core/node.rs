@@ -321,6 +321,7 @@ impl Node {
     /// reasoning applies, only the field width is 4 bytes and the alignment
     /// requirement is 4 (not 8).
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    #[inline(always)]
     pub(crate) fn atomic_u32_at(
         base: *mut u8,
         off: usize,
@@ -368,6 +369,7 @@ impl Node {
     /// freed while adoption may be in flight (the abandon/adopt protocol
     /// completes before `AllocCore::drop`).
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    #[inline(always)]
     pub(crate) fn atomic_u64_at(
         base: *mut u8,
         off: usize,
