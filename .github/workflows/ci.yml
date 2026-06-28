@@ -211,6 +211,39 @@ jobs:
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
 
+  numa-shim-windows:
+    # Run the numa-shim real-syscall path on a real Windows kernel.
+    # `windows-latest` is single-NUMA (node=0), but that exercises the
+    # FULL VirtualAllocExNuma + Reservation::from_raw_parts code path:
+    # if alignment math, over-reserve sizing, or release_len is wrong,
+    # the smoke test fault-ins, drops, or 8x repeat loop will SEGV / leak
+    # / abort on ANY node — multi-node topology is not needed to catch
+    # memory-safety bugs.  This closes the per-PR coverage gap for the
+    # Windows VirtualAllocExNuma path (task #83).
+    name: numa-shim real Windows kernel (correctness, not perf)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p numa-shim
+      - run: cargo test -p numa-shim --features vmem-integration
+      - run: cargo test -p numa-shim --features mock
+      - run: cargo test -p numa-shim --features "mock vmem-integration"
+
+  numa-shim-macos:
+    # macOS NUMA support is a documented no-op (no public NUMA API), but
+    # we still exercise the smoke tests + mock dispatch to ensure the
+    # cross-platform compile + the API contract (None / NO_NODE returns)
+    # don't regress.  Lightweight per-PR coverage.
+    name: numa-shim real macOS kernel (no-op contract)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p numa-shim
+      - run: cargo test -p numa-shim --features vmem-integration
+      - run: cargo test -p numa-shim --features mock
+
   numa-real-kernel:
     # NUMA Phase 2: validate the real-kernel Linux integration path on every
     # scheduled run (weekly) and on-demand (workflow_dispatch).  The GitHub
