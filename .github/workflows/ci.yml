@@ -196,6 +196,18 @@ jobs:
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
 
+  numa-shim-mock:
+    # NUMA Phase 1: verify wrapping logic on every CI run without real
+    # multi-NUMA hardware.  Runs on Linux; the mock is platform-agnostic
+    # but Linux is the cheapest runner and covers the most-used NUMA path.
+    name: numa-shim mock dispatch tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p numa-shim --features mock
+      - run: cargo test -p numa-shim --features "mock vmem-integration"
+
   docs:
     name: rustdoc
     runs-on: ubuntu-latest

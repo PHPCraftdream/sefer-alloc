@@ -15,6 +15,10 @@ categories = ["os", "memory-management", "no-std::no-alloc"]
 [features]
 default = []
 vmem-integration = ["dep:aligned-vmem"]
+# Test-only: replace platform syscalls with a recording mock.  Lets every
+# CI run (any target) assert the wrapping logic without touching the real
+# kernel.  See docs/NUMA_TESTING_OPTIONS.md Phase 1.
+mock = []
 
 [dependencies]
 aligned-vmem = { version = "0.1", path = "../vmem", optional = true }

@@ -54,6 +54,70 @@
 /// provided for interop with code that uses the sentinel pattern.
 pub const NO_NODE: u32 = u32::MAX;
 
+/// Test-only mock state replacing platform NUMA syscalls.  Records every
+/// invocation into a thread-local buffer so unit tests can assert the
+/// wrapping logic is correct on any target (including macOS and miri,
+/// where real NUMA syscalls are absent).
+///
+/// Enabled by feature `mock`.  When enabled, the public NUMA functions
+/// dispatch into this module instead of the platform implementations.
+#[cfg(feature = "mock")]
+pub mod mock {
+    use core::cell::RefCell;
+
+    /// One recorded invocation of a public NUMA function.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum MockCall {
+        /// `current_node()` was called; the inner value is what was returned.
+        CurrentNode(u32),
+        /// `bind_range(base, len, node)` was called (past the short-circuit).
+        BindRange {
+            /// Base address passed to `bind_range`, as `usize`.
+            base: usize,
+            /// Length in bytes passed to `bind_range`.
+            len: usize,
+            /// NUMA node id passed to `bind_range`.
+            node: u32,
+        },
+        /// `reserve_on_node(size, align, node)` was called.
+        ReserveOnNode {
+            /// Requested reservation size in bytes.
+            size: usize,
+            /// Required alignment in bytes.
+            align: usize,
+            /// NUMA node id passed to `reserve_on_node`.
+            node: u32,
+        },
+    }
+
+    std::thread_local! {
+        /// Calls recorded since the last `drain()`.
+        pub static CALLS: RefCell<Vec<MockCall>> = const { RefCell::new(Vec::new()) };
+        /// Value returned by `current_node()` under the mock.  Default 0.
+        pub static CURRENT_NODE_SLOT: RefCell<u32> = const { RefCell::new(0) };
+    }
+
+    /// Drain every recorded call since the last drain (or test start).
+    pub fn drain() -> Vec<MockCall> {
+        CALLS.with(|c| c.borrow_mut().drain(..).collect())
+    }
+
+    /// Set the value the next `current_node()` call will return.
+    pub fn set_current_node(node: u32) {
+        CURRENT_NODE_SLOT.with(|c| *c.borrow_mut() = node);
+    }
+
+    /// Internal: read the scripted current_node value.
+    pub(crate) fn current_node_slot() -> u32 {
+        CURRENT_NODE_SLOT.with(|c| *c.borrow())
+    }
+
+    /// Internal: record a call.
+    pub(crate) fn record(call: MockCall) {
+        CALLS.with(|c| c.borrow_mut().push(call));
+    }
+}
+
 /// Return the NUMA node id of the calling thread, or `None` if not
 /// determinable.
 ///
@@ -67,11 +131,20 @@ pub const NO_NODE: u32 = u32::MAX;
 /// function returns `Some(0)` (all CPUs are on node 0).
 #[must_use]
 pub fn current_node() -> Option<u32> {
-    let raw = platform::current_node_impl();
-    if raw == NO_NODE {
-        None
-    } else {
-        Some(raw)
+    #[cfg(feature = "mock")]
+    {
+        let n = mock::current_node_slot();
+        mock::record(mock::MockCall::CurrentNode(n));
+        return Some(n);
+    }
+    #[cfg(not(feature = "mock"))]
+    {
+        let raw = platform::current_node_impl();
+        if raw == NO_NODE {
+            None
+        } else {
+            Some(raw)
+        }
     }
 }
 
@@ -102,8 +175,20 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 {
         return;
     }
-    // SAFETY: caller guarantees [base, base+len) is a valid OS reservation.
-    platform::bind_range_impl(base, len, node);
+    #[cfg(feature = "mock")]
+    {
+        mock::record(mock::MockCall::BindRange {
+            base: base as usize,
+            len,
+            node,
+        });
+        return;
+    }
+    #[cfg(not(feature = "mock"))]
+    {
+        // SAFETY: caller guarantees [base, base+len) is a valid OS reservation.
+        platform::bind_range_impl(base, len, node);
+    }
 }
 
 /// Reserve `size` bytes of anonymous virtual memory with a NUMA preference for
@@ -127,7 +212,26 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
 #[cfg(feature = "vmem-integration")]
 #[must_use]
 pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation> {
-    platform::reserve_on_node_impl(size, align, node)
+    #[cfg(feature = "mock")]
+    {
+        mock::record(mock::MockCall::ReserveOnNode { size, align, node });
+        // Still chain to aligned_vmem so the test can verify the Reservation works.
+        let r = aligned_vmem::reserve_aligned(size, align)?;
+        if node != NO_NODE {
+            let base = r.as_ptr();
+            let len = r.len();
+            mock::record(mock::MockCall::BindRange {
+                base: base as usize,
+                len,
+                node,
+            });
+        }
+        return Some(r);
+    }
+    #[cfg(not(feature = "mock"))]
+    {
+        platform::reserve_on_node_impl(size, align, node)
+    }
 }
 
 // ---------------------------------------------------------------------------
