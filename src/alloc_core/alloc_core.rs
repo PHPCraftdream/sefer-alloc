@@ -655,12 +655,60 @@ impl AllocCore {
 
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
+    /// **OPT-F — in-place small→small realloc:** when both the old and new
+    /// sizes resolve to the same size class (or the new class is smaller —
+    /// i.e. `new_class_idx <= old_class_idx`), the block physically fits the
+    /// new size without any data movement. In that case we return the original
+    /// pointer unchanged: no alloc, no copy, no dealloc. The block's live-count
+    /// and alloc-bitmap stay intact (the block is still "live" under the same
+    /// segment, just now described by a smaller `Layout`).
+    ///
+    /// The short-circuit applies ONLY to small (non-large) segments. Large
+    /// blocks occupy a dedicated segment and there is no class to compare
+    /// against, so they always take the full alloc+copy+dealloc path.
+    ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
     /// Returns null on failure, leaving the old allocation intact. Safe: a
     /// null `ptr` returns null without touching state.
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
+        }
+        // OPT-F: in-place short-circuit for small→small realloc.
+        //
+        // Preconditions (all must hold to take the fast path):
+        //   1. The pointer lives in one of OUR segments (registered in the table).
+        //   2. The segment kind is Small or Primordial (has a BinTable / class).
+        //   3. Both the old layout and the new size classify as Small (not Large).
+        //   4. new_class_idx <= old_class_idx → the block's physical storage
+        //      already fits `new_size` bytes.
+        //
+        // When all four hold we return `ptr` unchanged. No copy is needed
+        // because the block has not moved; no dealloc because we are reusing it.
+        // The alloc-bitmap and live-count are unaffected (the block stays live).
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if self.table.contains_base(base)
+                && matches!(
+                    SegmentHeader::kind_at(base),
+                    SegmentKind::Small | SegmentKind::Primordial
+                )
+            {
+                let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
+                let align = old_layout.align();
+                let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
+                if let (Some(old_class), Some(new_class)) = (
+                    super::size_classes::SizeClasses::class_for(old_size, align),
+                    super::size_classes::SizeClasses::class_for(clamped_new, align),
+                ) {
+                    if new_class <= old_class {
+                        // The new size fits inside the existing block.
+                        return ptr;
+                    }
+                }
+                // Falls through: new_class > old_class (growth into a larger class),
+                // OR one of them is Large (class_for returned None). Take slow path.
+            }
         }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
             Ok(l) => l,
