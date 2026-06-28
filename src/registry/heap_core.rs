@@ -101,6 +101,18 @@ pub struct HeapCore {
     /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
     /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
     /// only the owning thread touches it. See `registry::tcache`.
+    ///
+    /// ## D1 invariant (Phase 5/P5)
+    ///
+    /// A magazine-resident block COUNTS AS LIVE for the purposes of
+    /// `live_count` / decommit. The invariant chain:
+    ///   - refill_class pulls via alloc_small → inc_live per block.
+    ///   - magazine push/pop do NOT touch live_count.
+    ///   - magazine flush calls dealloc_small → dec_live → maybe_decommit.
+    /// So `live_count` = blocks carved AND not on a BinTable free list
+    /// = (blocks handed out to user) + (blocks in our magazine). Decommit
+    /// fires only when a segment's blocks are ALL on the BinTable free
+    /// list (none handed out, none in magazine).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache: super::tcache::Tcache,
 
@@ -728,5 +740,28 @@ impl HeapCore {
     #[cfg(feature = "alloc-global")]
     pub fn dbg_last_stamped_segment(&self) -> *mut u8 {
         self.last_stamped_segment
+    }
+
+    /// TEST-ONLY (P5): force-flush every class's magazine back to the
+    /// substrate. Used by decommit-soak tests to drain magazine-buffered
+    /// blocks before asserting decommit invariants.
+    ///
+    /// After this call, every magazine slot is empty (`count[c] == 0` for
+    /// all classes) and the blocks have been returned to their owning
+    /// segments via `flush_class` → `dealloc_small` → `dec_live` →
+    /// `maybe_decommit`. If any segment reaches `live_count == 0` during
+    /// the flush, decommit fires.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_flush_all(&mut self) {
+        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+        for c in 0..SMALL_CLASS_COUNT {
+            let n = self.tcache.count[c] as usize;
+            if n == 0 {
+                continue;
+            }
+            self.core.flush_class(c, &self.tcache.slots[c][0..n]);
+            self.tcache.count[c] = 0;
+        }
     }
 }

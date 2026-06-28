@@ -712,3 +712,62 @@ Large allocations still stamp per-alloc (large bypasses the magazine).
 
 **154 tests passed, 0 failed** under `--features production` (+4 new
 P4 stamp-correctness tests); **140 passed** without `fastbin`.
+
+### P5 measurement (after decommit / live_count reconciliation)
+
+P5 is mostly invariant verification + test-seam + counterfactual test.
+The hot path is UNCHANGED. The D1 invariant (magazine-resident block
+COUNTS AS LIVE) is documented as a comment on the `tcache` field; the
+chain refill_class→inc_live, magazine push/pop=noop, flush_class→
+dealloc_small→dec_live→maybe_decommit was verified by reading the
+existing code (no changes needed). A `dbg_flush_all` test seam
+(`#[doc(hidden)] pub` on HeapCore) lets tests drain the magazine
+before asserting decommit invariants.
+
+|        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
+|--------|------------|------------|------------|-------------|-------------|------------|
+| P0     | 1.65× slow | 1.24× fast | 1.31× fast | 1.24× slow  | 1.24× slow  | 1.1-1.34× slow |
+| P1     | 1.38× slow | 1.19× fast | 1.38× fast | 1.19× slow  | 1.18× fast  | 1.46× slow |
+| P2     | 1.32× slow | 1.27× fast | 1.23× fast | 1.44× slow  | ~parity     | 1.19× FASTER |
+| P3     | 1.27× slow | ~parity    | 1.31× fast | 1.36× slow  | 1.06× fast  | ~parity |
+| P4     | 1.31× slow | 1.25× fast | 1.29× fast | 1.25× slow  | 1.18× fast  | ~parity |
+| **P5** | **1.35× slow** | **1.34× fast** | **1.36× fast** | **1.25× slow** | **1.20× fast** | **~parity** |
+
+**Honest interpretation:**
+
+- All cells within noise band (P5 hot path unchanged, observed deltas
+  are run-to-run variance).
+- Stable result: SeferMalloc beats mimalloc on larson T≥2, mstress
+  T≥2, churn 16B/64B/1024B. Loses on larson T=1 (~1.3×) and
+  mstress T=1 (~1.25×) — the structural cost of safety guarantees
+  on single-thread workloads where mimalloc's lighter free path wins.
+
+**Soak validation:**
+- `cargo run --release --example soak_xthread`: 40M alloc/free pairs
+  across 16 threads in 5 seconds. `alloc == free` balanced; no panic,
+  no leak. This is the strongest empirical confirmation that D1 does
+  not cause UAF in the cross-thread interleaving.
+
+**T4 counterfactual analysis** (reasoned, not executed — would
+require breaking the invariant in production code):
+- If D1 were broken (magazine push dec'd live_count), decommit would
+  fire DURING user frees (live_count drops to 0 while blocks still
+  in magazine), then `dbg_flush_all`'s subsequent dealloc_small
+  would try to operate on a decommitted segment — dec_live would
+  underflow via saturating_sub, maybe_decommit would skip on the
+  is_decommitted guard, and `dbg_decommit_count` would NOT increase
+  on flush. Test assertion `decommit_after_flush > decommit_after_free`
+  would FAIL. ✓ T4 is non-vacuous.
+
+**156 tests passed, 0 failed** under `--features production` (+2 new
+P5 T4 tests); **140 passed** without `fastbin` (T4 cfg-gated out).
+
+**Known trade-off** (flagged, not a bug): a working set that fits
+entirely in the magazine (< TCACHE_CAP = 16 blocks per class) and
+never overflows will keep those segments' live_count > 0 indefinitely
+even though the user has freed everything. The segments will not
+decommit until thread teardown or a working-set shift triggers
+overflow. RSS impact is bounded: at most CAP × SMALL_CLASS_COUNT ×
+max_small_block_size per thread (~5 MiB worst case). Acceptable for
+P5; if it becomes a problem, a periodic decay-style flush (analogous
+to the large-cache decay) can be added later.
