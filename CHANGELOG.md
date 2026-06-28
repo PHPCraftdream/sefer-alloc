@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(No unreleased changes — next entries land here.)
+### Changed — workspace extraction (tasks #74–#86)
+
+Four independently-publishable companion crates extracted from sefer-alloc
+into `crates/`. Each is a real crates.io package someone can `cargo add`
+on its own:
+
+- **`sefer-region`** (`crates/region/`) — typed handle store
+  (`Handle<T>` / `Region<T>` / `SyncRegion<T>`). `#![forbid(unsafe_code)]`.
+  ([docs.rs/sefer-region](https://docs.rs/sefer-region) — link live after publish.)
+
+- **`aligned-vmem`** (`crates/vmem/`) — OS virtual-memory aperture:
+  SEGMENT-aligned `mmap`/`VirtualAlloc` + page decommit/recommit.
+  `#![allow(unsafe_code)]` — sole purpose IS the OS unsafe, single
+  responsibility, small codebase, independently auditable.
+  ([docs.rs/aligned-vmem](https://docs.rs/aligned-vmem) — link live after publish.)
+
+- **`numa-shim`** (`crates/numa/`) — dependency-free NUMA detection and
+  binding. Linux `mbind(2)` via `syscall(2)` (no `libnuma`), Windows
+  `VirtualAllocExNuma`. `#![allow(unsafe_code)]` — sole purpose IS the NUMA
+  syscall unsafe, single responsibility, independently auditable.
+  ([docs.rs/numa-shim](https://docs.rs/numa-shim) — link live after publish.)
+
+- **`malloc-bench-rs`** (`crates/malloc-bench/`) — portable `GlobalAlloc`
+  benchmark harness (larson + mstress). Callable against any allocator without
+  installing it as `#[global_allocator]`. Not in sefer-alloc's runtime dep
+  tree.
+  ([docs.rs/malloc-bench-rs](https://docs.rs/malloc-bench-rs) — link live after publish.)
+
+**sefer-alloc itself** re-exports `sefer-region`'s surface for backward
+compatibility — existing `use sefer_alloc::{Region, Handle, SyncRegion}` code
+compiles unchanged. `alloc_core::os` and `alloc_core::numa` are now thin
+interop wrappers that delegate to `aligned-vmem` and `numa-shim` respectively.
+
+**Audit story improved:** an auditor no longer has to navigate the full
+allocator codebase to verify the OS-memory unsafe. `aligned-vmem` (~few hundred
+lines, single purpose) and `numa-shim` (~few hundred lines, single purpose) can
+each be audited in complete isolation with `cargo test` confirming green.
 
 ## [0.1.0] - 2026-06-28
 

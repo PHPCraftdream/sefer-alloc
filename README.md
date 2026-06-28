@@ -114,8 +114,16 @@ lists, page maps, segment registries, bin tables, alloc bitmaps, owner
 stamping, recycle policy) lives in pure safe integer arithmetic; the hand
 (OS aperture, intrusive free-list r/w, NUMA syscalls, the
 `unsafe impl GlobalAlloc` trait obligation, the TLS-binding raw-pointer
-handoff, the heap-slot table) is split across small audited files. The
-complete inventory by feature is in
+handoff, the heap-slot table) is split across small audited files.
+
+The workspace extraction **improved the audit story** further: the two
+OS-unsafe sub-problems (virtual-memory aperture and NUMA syscalls) are now
+independently-publishable crates (`aligned-vmem` and `numa-shim`), each with
+a single responsibility, a small line count, and their own `cargo test`. An
+auditor who wants to verify the OS-memory unsafe can read those two crates
+in isolation — they do not have to navigate the full allocator codebase.
+
+The complete inventory by feature is in
 [Where unsafe lives](#where-unsafe-lives-the-complete-list) below.
 
 The performance is honest (numbers from a single Windows dev host with
@@ -186,19 +194,51 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
+### Workspace: four independently-publishable companion crates
+
+The workspace extracted four building blocks. Each is a real crates.io crate
+someone can `cargo add` on its own — they are not internal implementation
+details but independently useful libraries:
+
+```
+sefer-alloc
+ ├── sefer-region    (crates/region)       — typed handle store (Handle<T>/Region<T>)
+ ├── aligned-vmem    (crates/vmem)         — OS virtual-memory aperture  (feature: alloc-core)
+ ├── numa-shim       (crates/numa)         — NUMA detection + binding    (feature: numa-aware)
+ └── malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc bench harness (standalone)
+```
+
+`malloc-bench-rs` is not in sefer-alloc's runtime dependency tree — it exists
+for anyone who wants to benchmark their own `GlobalAlloc` implementation.
+
 ### Where `unsafe` lives (the complete list)
 
-Twelve confined-`unsafe` module files, each gated by a specific feature
-and each carrying a `#![allow(unsafe_code)]` opt-out from the crate-level
-`#![deny(unsafe_code)]`. Source-of-truth listing lives in
-[`src/lib.rs`](src/lib.rs) and is verifiable with one command:
-`grep -l 'allow(unsafe_code)' src/`.
+The extraction **improved the audit story**, not just reorganised code.
+An auditor who wants to verify the OS-memory unsafe no longer has to read
+through a large general-purpose allocator crate — they can audit `aligned-vmem`
+(~400 lines, sole purpose: OS aperture) and `numa-shim` (~300 lines, sole
+purpose: NUMA syscalls) in complete isolation. Each has one responsibility,
+one reason to have `unsafe`, and its own `cargo test`.
+
+Source of truth: `grep -rln 'allow(unsafe_code)' src/ crates/`
+
+**External publishable crates (each independently auditable):**
+
+| Crate | Path | Unsafe story |
+|---|---|---|
+| `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
+| `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
+| `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s audited core owns the generational layout |
+
+**Internal sefer-alloc seams** (compiler-enforced — a stray `unsafe` outside
+these named files is a hard compile error in every configuration):
 
 | Module | What it owns | Loaded under |
 |---|---|---|
-| [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | `mmap`/`munmap`/`madvise` on Unix, `VirtualAlloc`/`VirtualFree` on Windows, the over-reserve+trim for SEGMENT alignment, decommit/recommit | `alloc-core` |
+| [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
-| [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | NUMA syscalls: Linux `mbind(2)` via `syscall(2)`, Windows `VirtualAllocExNuma`, sched_getcpu, sysfs cpumap reader (macOS / miri no-op) | `numa-aware` |
+| [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
 | [`src/global/sefer_malloc.rs`](src/global/sefer_malloc.rs) | The `unsafe impl GlobalAlloc` malloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -210,13 +250,14 @@ and each carrying a `#![allow(unsafe_code)]` opt-out from the crate-level
 | [`src/byte/sharded_byte_arena.rs`](src/byte/sharded_byte_arena.rs) | N-way sharded byte arena for parallel raw allocation (research; superseded by `alloc-xthread`) | `byte-sharded` |
 
 Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit`) the active seams are the
-first eight rows — `alloc_core::{os, node}` plus `global::{sefer_malloc,
-tls_heap, fallback}` plus `registry::{heap_slot, heap_registry}`.
-`alloc-xthread` and `alloc-decommit` themselves do **not** open new
-`unsafe` seams — they extend existing safe code paths.
+(`alloc-global + alloc-xthread + alloc-decommit`) the active internal seams
+are eight — `alloc_core::{os, node}` plus `global::{sefer_malloc, tls_heap,
+fallback}` plus `registry::{heap_slot, heap_registry}`. `alloc-xthread` and
+`alloc-decommit` themselves do **not** open new `unsafe` seams — they extend
+existing safe code paths.
 
-`numa-aware` adds one more seam (`alloc_core::numa`). `experimental` and
+`numa-aware` adds one more internal seam (`alloc_core::numa`), which in turn
+delegates to the independently-auditable `numa-shim` crate. `experimental` and
 `byte` / `byte-sharded` open the older research-tier seams; the production
 build does not pull them in.
 

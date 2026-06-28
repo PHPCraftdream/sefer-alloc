@@ -1,0 +1,20 @@
+[package]
+name = "sefer-region"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "100% Rust typed handle-addressed store — Region<T> + generational Handle<T> + thread-safe SyncRegion<T> over the audited `slotmap` crate. The single-threaded face of sefer-alloc, extracted as a standalone crate: zero own unsafe (#![forbid(unsafe_code)]), no C/C++ libraries pulled in, no_std + alloc capable. For users who want a typed slotmap-like handle store WITHOUT pulling a full allocator stack."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/region"
+documentation = "https://docs.rs/sefer-region"
+keywords = ["slotmap", "arena", "handle", "generational", "no-std"]
+categories = ["data-structures", "memory-management", "no-std::no-alloc"]
+
+[features]
+default = ["std"]
+std = ["slotmap/std"]
+
+[dependencies]
+slotmap = { version = "1", default-features = false }

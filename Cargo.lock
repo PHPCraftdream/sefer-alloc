@@ -739,8 +739,15 @@ dependencies = [
  "mimalloc",
  "numa-shim",
  "proptest",
- "slotmap",
+ "sefer-region",
  "tokio",
+]
+
+[[package]]
+name = "sefer-region"
+version = "0.1.0"
+dependencies = [
+ "slotmap",
 ]
 
 [[package]]

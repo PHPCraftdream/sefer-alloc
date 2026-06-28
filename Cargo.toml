@@ -16,13 +16,19 @@ categories = ["data-structures", "memory-management", "concurrency", "no-std"]
 
 # Workspace root. `sefer-alloc` is the root crate AND the workspace; the
 # extracted, independently-publishable building blocks live under `crates/`:
-#   - aligned-vmem  (crates/vmem)  — the OS virtual-memory aperture
-#   - numa-shim     (crates/numa)  — dependency-free NUMA detection + binding
+#   - sefer-region    (crates/region)       — typed handle store (Handle<T>/Region<T>)
+#                                             #![forbid(unsafe_code)]
+#   - aligned-vmem    (crates/vmem)         — OS virtual-memory aperture
+#                                             #![allow(unsafe_code)], single-purpose, audit-friendly
+#   - numa-shim       (crates/numa)         — dependency-free NUMA detection + binding
+#                                             #![allow(unsafe_code)], single-purpose, audit-friendly
 #   - malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc benchmark harness
+#                                             standalone, not in sefer-alloc runtime dep tree
 # Each is a real crates.io crate someone can `cargo add` on its own; sefer-alloc
-# depends on them and re-exports nothing of their surface (they are internal seams).
+# re-exports sefer-region's surface for backward compatibility, and delegates its
+# OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region"]
 resolver = "2"
 
 [lints.rust]
@@ -36,7 +42,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 # (it wraps `std::sync::RwLock`) and the concurrent/byte tiers. Disable default
 # features to get the bare `no_std` + `alloc` core.
 default = ["std"]
-std = ["slotmap/std"]
+std = ["sefer-region/std"]
 # Phase 3b: lock-free reads. The concurrent tier is opt-in; it requires `std`
 # (its deps need it) and pulls in only `arc-swap` + `crossbeam-epoch` beyond the
 # core.
@@ -143,16 +149,17 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 numa-aware = ["alloc-core", "dep:numa-shim"]
 
 [dependencies]
-# Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
-# years of production exposure and fuzzing. Our crate wraps it in a thin typed
-# membrane and stays `#![forbid(unsafe_code)]`; slotmap's internal `unsafe`
-# does the Cartographer/Hand job for the single-threaded core. See docs/PLAN.md.
+# Phase 1: typed handle store (Region<T> + Handle<T> + SyncRegion<T>), extracted
+# from sefer-alloc into a standalone, independently-publishable crate alongside
+# aligned-vmem / numa-shim / malloc-bench-rs. sefer-alloc re-exports its surface
+# for backward compatibility — existing users of `use sefer_alloc::{Region,
+# Handle, SyncRegion}` continue to work unchanged. New consumers who want ONLY
+# the handle store (no allocator stack) should depend on `sefer-region` directly.
 #
-# `default-features = false`: slotmap supports `no_std` + `alloc` (it gates
-# `#![no_std]` on `not(feature = "std")`). We re-enable its `std` feature via
-# our own `std` feature so the core compiles under `no_std` when defaults are
-# off, and behaves identically to before when `std` is on (the default).
-slotmap = { version = "1", default-features = false }
+# `default-features = false`: sefer-region gates its std-dependent SyncRegion on
+# its own `std` feature, which we re-enable via our own `std` feature so the
+# no_std core compiles without it and the default build gets SyncRegion as before.
+sefer-region = { path = "crates/region", version = "0.1", default-features = false }
 # Phase 3b-I: atomic snapshot publication for lock-free reads. Optional — only
 # the `experimental` concurrent tier pulls it in. Its internal `unsafe` is the
 # dependency's, not ours; our crate stays `#![forbid(unsafe_code)]` with it on.

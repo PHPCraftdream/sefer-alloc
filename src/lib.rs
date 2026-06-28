@@ -17,6 +17,10 @@
 //! remove, and version-saturation retirement; this crate adds the typed
 //! boundary and stays `#![forbid(unsafe_code)]`.
 //!
+//! [`Region`], [`Handle`], and [`SyncRegion`] now live in the `sefer-region`
+//! crate alongside `aligned-vmem` / `numa-shim` / `malloc-bench-rs`. They are
+//! re-exported here for backward compatibility.
+//!
 //! ## Scope (honest)
 //!
 //! This is an *application-level* store, not a drop-in global allocator. The
@@ -43,43 +47,84 @@
 //! assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 //! ```
 
-// Structural confinement of `unsafe` (compiler-checked, not prose):
-//  - With NO features (or only `std`): `#![forbid(unsafe_code)]` — no `unsafe`
-//    is possible anywhere in the crate.
-//  - With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
-//    (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
-//    the Phase 7d parallel `ShardedByteArena`) and/or `alloc-core`
-//    (Phase 8 self-hosted segment substrate) and/or `alloc-global`
-//    (Phase 11 `SeferMalloc` `GlobalAlloc` face): the crate is
-//    `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
-//    error), and the confined modules lift this with `#![allow(unsafe_code)]`:
-//      * `concurrent::hand` (under `experimental`), and
-//      * `byte::byte_region` / `byte::byte_allocator`
-//        / `byte::sharded_byte_arena` (under `byte`; the last only with
-//        `byte-sharded`), and
-//      * `alloc_core::os` (the OS segment aperture) and `alloc_core::node`
-//        (the intrusive free-list node seam — the generalized `hand`
-//        discipline) (both under `alloc-core`), and
-//      * `alloc_core::numa` (the NUMA OS-seam — Linux `mbind(2)` via
-//        `syscall(2)`, Windows `VirtualAllocExNuma`; no-op on macOS / miri)
-//        (under `numa-aware`), and
-//      * `global::sefer_malloc` (the `unsafe impl GlobalAlloc` malloc-face
-//        seam — the trait obligation + pointer handoff to the Heap),
-//        `global::tls_heap` (the Phase 12.3 raw-pointer TLS binding +
-//        `AbandonGuard` seam — the `*mut HeapCore` handoff under the
-//        single-writer invariant, and the `unsafe fn recycle`/
-//        `abandon_segments` calls in the guard's drop), and
-//        `global::fallback` (the Phase 12.3 primordial fallback heap seam —
-//        the `static mut MaybeUninit<HeapCore>` + atomic-init state-machine
-//        + spinlock-guarded `&mut` handout) (all under `alloc-global`), and
-//      * `registry::heap_slot` + `registry::heap_registry` (the Phase 12.2
-//        global heap slot-table seam — the `Sync`/`Send` impls on `HeapSlot`
-//        under the atomic single-writer protocol, and the `*mut HeapCore`
-//        pointer handoff out of a slot's `UnsafeCell`) (under `alloc-global`).
-//    So "the `unsafe` lives in named modules" is enforced by the compiler in
-//    EVERY configuration. See `src/concurrent/hand.rs`, `src/byte/*`,
-//    `src/alloc_core/{os,node}.rs`, `src/global/sefer_malloc.rs`, and
-//    `src/registry/{heap_slot,heap_registry}.rs`.
+// ── Workspace: four independently-publishable companion crates ────────────────
+//
+// The workspace extracted four building blocks that can also be used standalone:
+//
+//   sefer-region    (crates/region)       — typed handle store (this re-export)
+//   aligned-vmem    (crates/vmem)         — OS virtual-memory aperture
+//   numa-shim       (crates/numa)         — NUMA detection + binding
+//   malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc bench harness
+//
+// ── Unsafe inventory — the complete, verifiable picture ───────────────────────
+//
+// Source of truth: `grep -rln 'allow(unsafe_code)' src/ crates/`
+//
+// EXTERNAL publishable crates (each independently auditable):
+//
+//   aligned-vmem  (crates/vmem/src/lib.rs)         — #![allow(unsafe_code)]
+//     Sole purpose: SEGMENT-aligned mmap/VirtualAlloc + page decommit/recommit.
+//     Entire crate = OS aperture. Small, single-responsibility. Audit in isolation.
+//
+//   numa-shim     (crates/numa/src/lib.rs)         — #![allow(unsafe_code)]
+//     Sole purpose: Linux mbind(2) via syscall(2), Windows VirtualAllocExNuma.
+//     No libnuma dep. Small, single-responsibility. Audit in isolation.
+//
+//   malloc-bench-rs (crates/malloc-bench/src/lib.rs) — #![allow(unsafe_code)]
+//     Confined to alloc_block / free_block / drain_mailbox helpers only;
+//     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
+//
+//   sefer-region  (crates/region/src/lib.rs)       — #![forbid(unsafe_code)]
+//     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
+//     audited unsafe owns the generational layout.
+//
+// INTERNAL sefer-alloc seams (compiler-enforced — a stray `unsafe` outside
+// these named modules is a hard compile error in every configuration):
+//
+//  With NO features (or only `std`): `#![forbid(unsafe_code)]` — no `unsafe`
+//  is possible anywhere in the crate.
+//
+//  With `experimental` (3b-II `crossbeam-epoch` tier) and/or `byte`
+//  (Phase 4 `ByteRegion` + `GlobalAlloc`, optionally + `byte-sharded` for
+//  the Phase 7d parallel `ShardedByteArena`) and/or `alloc-core`
+//  (Phase 8 self-hosted segment substrate) and/or `alloc-global`
+//  (Phase 11 `SeferMalloc` `GlobalAlloc` face): the crate is
+//  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
+//  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
+//
+//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit):
+//      * `alloc_core::os`   — thin interop wrapper around aligned-vmem; any
+//                             additional unsafe blocks carry `// SAFETY:` proof.
+//                             (under `alloc-core`)
+//      * `alloc_core::node` — intrusive free-list node r/w through raw pointers;
+//                             the generalized `hand` discipline. (under `alloc-core`)
+//      * `global::sefer_malloc` — the `unsafe impl GlobalAlloc` malloc-face seam
+//                             (trait obligation + pointer handoff). (under `alloc-global`)
+//      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
+//                             (under `alloc-global`)
+//      * `global::fallback`     — primordial fallback heap seam —
+//                             `static mut MaybeUninit<HeapCore>` + atomic-init
+//                             state-machine + spinlock-guarded `&mut` handout.
+//                             (under `alloc-global`)
+//      * `registry::heap_slot`     — `Sync`/`Send` impls + `UnsafeCell` hand-off.
+//                             (under `alloc-global`)
+//      * `registry::heap_registry` — `*mut HeapCore` pointer handoff out of a slot.
+//                             (under `alloc-global`)
+//
+//    Optional `numa-aware` path:
+//      * `alloc_core::numa` — thin interop wrapper around numa-shim; any
+//                             additional unsafe blocks carry `// SAFETY:` proof.
+//                             (under `numa-aware`)
+//
+//    Research / older tiers (not in production build):
+//      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`)
+//      * `byte::byte_region`        — size-classed byte arena.   (under `byte`)
+//      * `byte::byte_allocator`     — experimental GlobalAlloc over byte_region.
+//                                     (under `byte`)
+//      * `byte::sharded_byte_arena` — N-way sharded byte arena.  (under `byte-sharded`)
+//
+//  So "the `unsafe` lives in named modules" is enforced by the compiler in
+//  EVERY configuration. Verifiable: `grep -rln 'allow(unsafe_code)' src/ crates/`
 #![cfg_attr(
     not(any(
         feature = "experimental",
@@ -95,11 +140,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
-mod handle;
-mod region;
-
-#[cfg(feature = "std")]
-mod sync_region;
+// Phase 1: typed handle store, extracted to `sefer-region`. Re-exported here
+// for backward compatibility — existing users of `sefer_alloc::{Region, Handle,
+// SyncRegion}` continue to work unchanged. New consumers who want ONLY the
+// handle store (no allocator stack) should depend on `sefer-region` directly.
 
 #[cfg(feature = "experimental")]
 mod concurrent;
@@ -127,11 +171,10 @@ mod global;
 #[doc(hidden)]
 pub mod registry;
 
-pub use handle::Handle;
-pub use region::Region;
+pub use sefer_region::{Handle, Region};
 
 #[cfg(feature = "std")]
-pub use sync_region::SyncRegion;
+pub use sefer_region::SyncRegion;
 
 #[cfg(feature = "experimental")]
 pub use concurrent::{

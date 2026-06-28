@@ -89,27 +89,56 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 | **Membrane** | Typed API: `Handle<T>`, generation checks, lifetimes; `AllocCore::alloc` / `SeferMalloc::alloc` -- total, cannot express UB. | `safe` |
 | **Hand** | Confined `unsafe` seams that touch raw memory or issue OS syscalls. | `confined unsafe` |
 
-### Confined unsafe seams (current inventory — verifiable with `grep -l 'allow(unsafe_code)' src/`)
+### Workspace: four independently-publishable companion crates
 
-Twelve modules total. Under the recommended `production` feature
+Before discussing the internal seams, the workspace structure matters for the
+audit story. Four building blocks were extracted as standalone crates:
+
+```
+sefer-alloc
+ ├── sefer-region    (crates/region)       — Handle<T>/Region<T>/SyncRegion<T>
+ ├── aligned-vmem    (crates/vmem)         — OS virtual-memory aperture  (feature: alloc-core)
+ ├── numa-shim       (crates/numa)         — NUMA detection + binding    (feature: numa-aware)
+ └── malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc bench harness (standalone)
+```
+
+Each is a real crates.io crate (`cargo add aligned-vmem`, etc.). The
+extraction **improved the audit story**: the two OS-unsafe sub-problems are now
+small, single-responsibility crates that can be audited in complete isolation.
+
+### Confined unsafe seams (current inventory — verifiable with `grep -rln 'allow(unsafe_code)' src/ crates/`)
+
+**External publishable crates** (independently auditable):
+
+| Crate | Path | Unsafe story |
+|---|---|---|
+| `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
+| `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
+| `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe; slotmap's audited core owns the generational layout. |
+
+**Internal sefer-alloc seams** (twelve modules total; compiler-enforced):
+
+Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit`) the active seams are
 **eight** — the first two `alloc_core::*` rows plus the five `global::*` /
-`registry::*` rows in the middle. `numa-aware` adds one more
-(`alloc_core::numa`). The `experimental` and `byte` / `byte-sharded`
-tiers open the older research-tier seams; the production build does
-not pull them in. `alloc-xthread` and `alloc-decommit` themselves
-do **not** add new `unsafe` seams — they extend existing safe paths.
+`registry::*` rows. `numa-aware` adds one more (`alloc_core::numa`), which
+in turn delegates to the independently-auditable `numa-shim` crate.
+The `experimental` and `byte` / `byte-sharded` tiers open the older
+research-tier seams; the production build does not pull them in.
+`alloc-xthread` and `alloc-decommit` do **not** add new `unsafe` seams —
+they extend existing safe paths.
 
 | Module | Role | Feature gate |
 |---|---|---|
-| [`src/alloc_core/os.rs`](../src/alloc_core/os.rs) | OS aperture: `mmap`/`munmap`/`madvise` (Linux), `VirtualAlloc`/`VirtualFree`/decommit (Windows). | `alloc-core` |
+| [`src/alloc_core/os.rs`](../src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
 | [`src/alloc_core/node.rs`](../src/alloc_core/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
 | [`src/global/sefer_malloc.rs`](../src/global/sefer_malloc.rs) | The `unsafe impl GlobalAlloc` malloc-face seam — the trait obligation + pointer handoff to the `Heap`. | `alloc-global` |
 | [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop. | `alloc-global` |
 | [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
 | [`src/registry/heap_registry.rs`](../src/registry/heap_registry.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision. | `alloc-global` |
-| [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | NUMA syscalls: Linux `mbind(2)` via `syscall(2)`, Windows `VirtualAllocExNuma`, `sched_getcpu`, sysfs cpumap reader. No-op on macOS / miri. | `numa-aware` |
+| [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
 | [`src/concurrent/hand.rs`](../src/concurrent/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator). | `experimental` |
 | [`src/byte/byte_region.rs`](../src/byte/byte_region.rs) | Research-tier size-classed byte arena (Phase 4). | `byte` |
 | [`src/byte/byte_allocator.rs`](../src/byte/byte_allocator.rs) | Phase-4 experimental `unsafe impl GlobalAlloc` over `byte_region.rs` (superseded by `alloc-global`). | `byte` |
@@ -119,7 +148,7 @@ Outside these modules, `unsafe` is a hard compile error
 (`#![deny(unsafe_code)]` when any of those features are active;
 `#![forbid(unsafe_code)]` with only the default `std` feature). The
 source-of-truth catalogue is in [`src/lib.rs`](../src/lib.rs) at the
-top-level doc comment.
+top-level comment.
 
 ---
 
