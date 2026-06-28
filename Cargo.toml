@@ -140,7 +140,7 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
 # macOS: no-op (no public NUMA API). Default OFF. Requires `alloc-core`.
-numa-aware = ["alloc-core"]
+numa-aware = ["alloc-core", "dep:numa-shim"]
 
 [dependencies]
 # Phase 1: the single-threaded engine — an audited, battle-tested slotmap with
@@ -174,6 +174,10 @@ core_affinity = { version = "0.8", optional = true }
 # crate so it can be used and published independently. Pulled in ONLY by the
 # `alloc-core` feature (and every feature that depends on it).
 aligned-vmem = { path = "crates/vmem", version = "0.1", optional = true }
+# Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
+# extracted from sefer-alloc into a standalone crate so it can be published
+# independently. Pulled in ONLY by the `numa-aware` feature.
+numa-shim = { path = "crates/numa", version = "0.1", features = ["vmem-integration"], optional = true }
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference
