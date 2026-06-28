@@ -124,7 +124,10 @@ fn reserve_on_node_large_align_round_trip() {
 
     assert_eq!(r.as_ptr() as usize % align, 0, "base must be 4 MiB-aligned");
     assert_eq!(r.len(), span);
-    assert!(r.reservation_len() >= span, "reservation_len must cover the span");
+    assert!(
+        r.reservation_len() >= span,
+        "reservation_len must cover the span"
+    );
 
     // Page-stride write/readback fault-in: catches a wrong `len` (would SEGV
     // before the page-stride loop ends) and a wrong `align` (would mis-align

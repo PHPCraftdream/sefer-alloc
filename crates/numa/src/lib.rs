@@ -643,11 +643,7 @@ mod platform {
         node: u32,
     ) -> Option<aligned_vmem::Reservation> {
         use aligned_vmem::PAGE;
-        if size == 0
-            || !align.is_power_of_two()
-            || align < PAGE
-            || size % PAGE != 0
-        {
+        if size == 0 || !align.is_power_of_two() || align < PAGE || size % PAGE != 0 {
             return None;
         }
         let over = size.checked_add(align)?;
@@ -685,13 +681,7 @@ mod platform {
         // - The reservation was created with `MEM_RESERVE | MEM_COMMIT` →
         //   `VirtualFree(MEM_RELEASE)` will accept it.
         let r = unsafe {
-            aligned_vmem::Reservation::from_raw_parts(
-                base,
-                size,
-                raw as *mut u8,
-                over,
-                align,
-            )
+            aligned_vmem::Reservation::from_raw_parts(base, size, raw as *mut u8, over, align)
         };
         Some(r)
     }

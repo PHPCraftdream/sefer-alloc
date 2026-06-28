@@ -208,8 +208,8 @@ impl Reservation {
         // `Drop` path which would then call `release_reservation(null, ...)`.
         // In a well-formed call this branch is dead.
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
-        let res_nn = NonNull::new(reservation)
-            .expect("from_raw_parts: reservation must be non-null");
+        let res_nn =
+            NonNull::new(reservation).expect("from_raw_parts: reservation must be non-null");
         Self {
             base: base_nn,
             len,
