@@ -10,6 +10,18 @@
 
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
+/// Magic constant for tcache-resident block marker (M2 double-free guard, P3).
+///
+/// Non-zero so an all-zero freshly-carved block does not collide. The actual
+/// key written into a block's word1 is `TCACHE_KEY ^ (heap.id as usize)` so
+/// different heaps have different keys (defence against confusion across
+/// registry slots).
+///
+/// Value: ASCII bytes "SEFERCAC" packed into a `usize`. On 32-bit targets
+/// only the low 4 bytes ("SEFE") are used, which is still non-zero and
+/// distinctive.
+pub(crate) const TCACHE_KEY: usize = 0x53_45_46_45_52_43_41_43;
+
 /// Magazine capacity per size class. Start: 16. Tuned in P6.
 pub(crate) const TCACHE_CAP: usize = 16;
 

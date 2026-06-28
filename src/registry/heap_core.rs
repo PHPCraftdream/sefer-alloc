@@ -385,14 +385,73 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX, MIN_BLOCK};
-            use super::tcache::{TCACHE_CAP, FLUSH_N};
+            use super::tcache::{TCACHE_CAP, FLUSH_N, TCACHE_KEY};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
             if align <= SMALL_ALIGN_MAX {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
+
+                    // ── M2 double-free guard (P3) ────────────────────────
+                    // Two-layer guard. word1 carries a per-heap "tcache key"
+                    // marker while a block is in the magazine; flush leaves
+                    // the key in place (we do not clear word1 on flush).
+                    //
+                    //   word1 != key  →  fast path, push.
+                    //   word1 == key  →  SLOW path:
+                    //     1. Bounded scan of the magazine. If `ptr` is
+                    //        found here, this is an in-magazine double-free
+                    //        (the block is still queued in our magazine
+                    //        from a prior free) → no-op (M2 upheld).
+                    //     2. Scan miss → either a `~2^-64` random user-data
+                    //        false positive, OR a "flushed-then-double-freed"
+                    //        case where `ptr` is on a BinTable free list AND
+                    //        word1 still carries our stale key. Check the
+                    //        BinTable bitmap (the authoritative M2 oracle
+                    //        for flushed blocks): `bm.is_free(off)` true →
+                    //        block is on a free list → no-op (M2 upheld).
+                    //        bitmap-allocated → genuine false positive →
+                    //        fall through to normal push.
+                    //
+                    // Without step 2 there was a real hole: a block that
+                    // had been in the magazine and then half-flushed
+                    // retained `word1 == key`; a subsequent double-free
+                    // would hit the slow path, miss the magazine scan
+                    // (block no longer there), and fall through to push —
+                    // resulting in `ptr` being present BOTH in the
+                    // magazine AND on the BinTable free list. The next
+                    // refill would pull it off the BinTable while a
+                    // separate alloc popped it from the magazine, issuing
+                    // the same pointer twice. The bitmap check closes
+                    // that window.
+                    let key = TCACHE_KEY ^ (self.id as usize);
+                    let word1_ptr = Node::offset(ptr, core::mem::size_of::<usize>())
+                        as *mut usize;
+                    let word1 = Node::read_usize(word1_ptr as *const usize);
+                    if word1 == key {
+                        // (1) bounded magazine scan
+                        let n = self.tcache.count[c] as usize;
+                        for i in 0..n {
+                            if self.tcache.slots[c][i] == ptr {
+                                return; // in-magazine DF
+                            }
+                        }
+                        // (2) bitmap check — authoritative for flushed blocks
+                        let base = os::segment_base_of_ptr(ptr);
+                        let off = (ptr as usize - base as usize) as u32;
+                        let bm = SegmentMeta::new(base).alloc_bitmap();
+                        if bm.is_free(off) {
+                            return; // flushed-then-double-freed
+                        }
+                        // Bitmap says alloc → block was carved or refilled
+                        // for legitimate use and still carries an old key
+                        // in word1 the user did not overwrite. Fall through
+                        // to a normal push (re-stamps the key).
+                    }
+
                     if cnt < TCACHE_CAP {
-                        // Room in the magazine: push.
+                        // Room in the magazine: stamp the key and push.
+                        Node::write_usize(word1_ptr, key);
                         self.tcache.slots[c][cnt] = ptr;
                         self.tcache.count[c] = (cnt + 1) as u16;
                         return;
@@ -405,6 +464,8 @@ impl HeapCore {
                     for i in 0..remaining {
                         self.tcache.slots[c][i] = self.tcache.slots[c][i + FLUSH_N];
                     }
+                    // Stamp the key and push.
+                    Node::write_usize(word1_ptr, key);
                     self.tcache.slots[c][remaining] = ptr;
                     self.tcache.count[c] = (remaining + 1) as u16;
                     return;

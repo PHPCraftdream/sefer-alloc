@@ -622,3 +622,55 @@ within ±10% of these).
 **Non-fastbin path:** verified byte-for-byte equivalent (all magazine code
 is `#[cfg]`-gated). 140 tests green without `fastbin`; 143 tests green
 with it (the +3 are the new tcache tests).
+
+### P3 measurement (after M2 magazine double-free guard)
+
+P3 RISK PHASE — adds two-layer safety guard to the magazine push path:
+
+1. **Per-heap tcache key in word1** + **bounded magazine scan** on key
+   match → catches in-magazine double-free (block still queued).
+2. **BinTable bitmap check** on scan miss → catches
+   flushed-then-double-freed (block on a BinTable free list, word1 still
+   carries stale key from prior magazine residency).
+
+**Hole found in zero-trust review.** The sub-agent's initial submission
+implemented only layer (1). My review identified a real M2 violation
+window: a block that had been in the magazine and got half-flushed
+retained `word1 == key` on the BinTable; a subsequent double-free hit
+the slow path, missed the magazine scan, and fell through to push —
+ending up in the magazine AND on the BinTable simultaneously. Next two
+allocs (one from magazine pop, one from refill's pop_free of the
+BinTable) returned the SAME pointer, an M2 violation. The agent's
+`t3_double_free_flushed_block_still_caught_by_bitmap` passed by
+insufficient depth — it only allocated 20 follow-up blocks, not enough
+to reach the deeply-flushed `ptrs[0]` on the BinTable LIFO. Added
+`t3_flushed_double_free_does_not_double_issue` which forces the
+hazardous interleaving (200 allocs + 200 frees + double-free of
+`ptrs[0]` + 400 allocs to drain BinTable to bottom). Counterfactually
+verified: with the bitmap check removed, the new test fails with
+`"target pointer issued 2 times"` — exactly the predicted violation.
+With the fix, all 7 M2 tests pass.
+
+|        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
+|--------|------------|------------|------------|-------------|-------------|------------|
+| P0     | 1.65× slow | 1.24× fast | 1.31× fast | 1.24× slow  | 1.24× slow  | 1.1-1.34× slow |
+| P1     | 1.38× slow | 1.19× fast | 1.38× fast | 1.19× slow  | 1.18× fast  | 1.46× slow |
+| P2     | 1.32× slow | 1.27× fast | 1.23× fast | 1.44× slow  | ~parity     | 1.19× FASTER |
+| **P3** | **1.27× slow** | **~parity** | **1.31× fast** | **1.36× slow** | **1.06× fast** | **~parity** |
+
+**Honest interpretation:**
+
+- M2 hole closed (the real win of this phase).
+- Larson T=1 continues to close — P0 1.65× → P3 1.27× slow. P4 stamp
+  hoist should bring it further.
+- Fast path correctness: bench workloads write to user data, not to
+  word1, so the bitmap check (on slow path only) almost never fires.
+- Churn 256B: P2 1.19× faster → P3 ~parity. Within the ±0.3× noise
+  band; needs more runs to know if real.
+- Bulk numbers shifted noticeably between P2 and P3 runs (e.g. mimalloc
+  16B went from 14.2µs to 10.3µs without any code change to mimalloc) —
+  that is machine variance, not a P3 effect.
+
+**150 tests passed, 0 failed** under `--features production`; **140
+passed** without `fastbin`. The +7 are M2 magazine tests (6 from the
+sub-agent + 1 stronger T3 added during review).
