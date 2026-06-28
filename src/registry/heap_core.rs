@@ -99,6 +99,39 @@ pub struct HeapCore {
     /// Only present under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
+
+    /// OPT-C (task #66): lazy stamp cache.
+    ///
+    /// The base address of the last segment for which this heap successfully
+    /// ran `stamp_segment_owner`. On the next alloc from the SAME segment the
+    /// cache-hit fast path performs only a Relaxed load of `owner_state` (to
+    /// confirm ownership is still ours) instead of a full Acquire-load +
+    /// conditional Release-store. This eliminates the costly Release-store on
+    /// the 99 % of allocations that stay in the hot segment.
+    ///
+    /// **Null** means "no segment cached yet" (initial state, or after
+    /// [`reset_stamp_cache`](Self::reset_stamp_cache) was called).
+    ///
+    /// **Cache invalidation safety:**
+    /// - *Segment migration* — when the active segment changes (new small
+    ///   segment carved, large-segment alloc) `base != last_stamped_segment`
+    ///   → cache miss → slow path stamps and updates the cache.
+    /// - *Segment recycle / decommit* — a recycled segment may reuse the same
+    ///   base address. The Relaxed-load in the fast path re-reads `owner_state`
+    ///   and compares against `self.id`; if the segment was recycled and its
+    ///   `owner_state` reset to `OWNER_ID_NONE`, the comparison fails → slow
+    ///   path re-stamps.
+    /// - *Abandoned-heap adoption* — if a future phase introduces inter-heap
+    ///   segment transfer, the code that adopts foreign segments MUST call
+    ///   `reset_stamp_cache()` so the stale cache entry is cleared before the
+    ///   next alloc. Currently no such path exists (the shard model: each
+    ///   segment stays with its original heap forever). See the TODO in
+    ///   `reset_stamp_cache`.
+    ///
+    /// Only present under `alloc-global` (the feature that enables
+    /// `stamp_segment_owner`).
+    #[cfg(feature = "alloc-global")]
+    last_stamped_segment: *mut u8,
 }
 
 impl HeapCore {
@@ -125,6 +158,8 @@ impl HeapCore {
             core,
             #[cfg(feature = "alloc-xthread")]
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(feature = "alloc-global")]
+            last_stamped_segment: core::ptr::null_mut(),
         })
     }
 
@@ -370,9 +405,56 @@ impl HeapCore {
     /// Called on the alloc path after a successful allocation. The segment is
     /// exclusively ours (single-writer invariant from the claim CAS), so the
     /// `owner_state` store is race-free.
+    ///
+    /// ## OPT-C fast path (task #66)
+    ///
+    /// `last_stamped_segment` caches the base of the most recently stamped
+    /// segment. On a cache hit the function performs only a **Relaxed** load
+    /// of `owner_state` and compares it with `self.id`. If they match, we
+    /// know the segment is already stamped → return immediately with NO
+    /// Release-store (the expensive part on x86 — an `MFENCE`-equivalent).
+    /// On a miss or on a ownership mismatch the original slow path runs.
+    ///
+    /// The Relaxed load is safe because:
+    /// - This is the **owning thread** — the single writer of `owner_state`
+    ///   on this segment. A Relaxed load cannot race with our own prior
+    ///   Release-store (same thread → SC-in-program-order).
+    /// - A cache miss (base changed or Relaxed-load mismatch) falls through
+    ///   to the slow path which restores the Acquire/Release protocol.
     fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of_ptr(ptr);
+
+        // -----------------------------------------------------------------------
+        // OPT-C fast path: cache-hit check.
+        //
+        // If the cached segment base matches the current allocation's segment
+        // base, do a cheap Relaxed load of `owner_state` to confirm ownership.
+        // If ownership is confirmed → early return (no Release-store, no memory
+        // fence). If ownership is not confirmed (e.g., segment was recycled and
+        // reset to OWNER_ID_NONE) → fall through to the slow path below.
+        // -----------------------------------------------------------------------
+        if base == self.last_stamped_segment && !self.last_stamped_segment.is_null() {
+            // Cache hit: re-check ownership with a cheaper Relaxed load.
+            // Owner-only read (we are the sole writer of owner_state on OUR
+            // segments), so Relaxed ordering is race-free here.
+            let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+            let cur = owner_atomic.load(Ordering::Relaxed);
+            if unpack_owner_id(cur) == self.id {
+                // Still our segment, already stamped. Skip the Release-store.
+                // The alloc-xthread TFS stamp is also idempotent (once
+                // stamped it stays); if `last_stamped_segment` is set then
+                // the TFS was already written on the slow path below.
+                return;
+            }
+            // Ownership mismatch (e.g., recycled segment): clear the cache
+            // and run the slow path.
+            self.last_stamped_segment = core::ptr::null_mut();
+        }
+
+        // -----------------------------------------------------------------------
+        // Slow path: full Acquire-load + conditional Release-store.
+        // -----------------------------------------------------------------------
         // `mut` is needed under `alloc-xthread` (the stamp branch below calls
         // `meta.stamp_owner_thread_free(&mut self)`). Silence the unused-mut
         // warning under plain `alloc-global` where the branch is absent.
@@ -415,5 +497,34 @@ impl HeapCore {
                 );
             }
         }
+
+        // Slow path succeeded: cache the segment base so the next alloc from
+        // the same segment takes the fast path.
+        self.last_stamped_segment = base;
+    }
+
+    /// OPT-C (task #66): reset the stamp cache.
+    ///
+    /// Sets `last_stamped_segment` to null, forcing the next call to
+    /// `stamp_segment_owner` to take the slow path (Acquire-load +
+    /// conditional Release-store).
+    ///
+    /// Call this whenever segment ownership may have changed out of band —
+    /// specifically if a future phase introduces inter-heap segment adoption
+    /// (e.g., `try_adopt` transferring a segment from an abandoned heap into
+    /// this heap). Without a reset, the cache might hit on a segment whose
+    /// `owner_state` has already been updated by the adopter's CAS, and the
+    /// Relaxed-load fast-path check would detect the mismatch and fall
+    /// through correctly — but defensive reset is cleaner.
+    ///
+    /// **Current status:** In the shard model (Phase 12.5+) segments never
+    /// leave their original heap, so this method is not called from any
+    /// production path. It is provided as a safety hook for future phases.
+    /// TODO: call from `try_adopt` / `reclaim_abandoned` if those paths are
+    /// ever wired to transfer segments across heaps.
+    #[cfg(feature = "alloc-global")]
+    #[allow(dead_code)]
+    pub(crate) fn reset_stamp_cache(&mut self) {
+        self.last_stamped_segment = core::ptr::null_mut();
     }
 }
