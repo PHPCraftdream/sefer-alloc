@@ -14,9 +14,16 @@ documentation = "https://docs.rs/sefer-alloc"
 keywords = ["allocator", "arena", "generational", "handle", "lock-free"]
 categories = ["data-structures", "memory-management", "concurrency", "no-std"]
 
-# Standalone workspace root — prevents accidental capture by an ancestor
-# workspace if this repo is ever nested under one.
+# Workspace root. `sefer-alloc` is the root crate AND the workspace; the
+# extracted, independently-publishable building blocks live under `crates/`:
+#   - aligned-vmem  (crates/vmem)  — the OS virtual-memory aperture
+#   - numa-shim     (crates/numa)  — dependency-free NUMA detection + binding
+#   - malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc benchmark harness
+# Each is a real crates.io crate someone can `cargo add` on its own; sefer-alloc
+# depends on them and re-exports nothing of their surface (they are internal seams).
 [workspace]
+members = ["crates/vmem"]
+resolver = "2"
 
 [lints.rust]
 # `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that gates the
