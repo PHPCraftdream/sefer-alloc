@@ -42,4 +42,6 @@ pub(crate) mod segment_table;
 pub(crate) mod size_classes;
 
 pub use alloc_core::AllocCore;
+#[cfg(feature = "alloc-decommit")]
+pub use alloc_core::LargeCacheMode;
 pub use segment_layout::SegmentLayout;

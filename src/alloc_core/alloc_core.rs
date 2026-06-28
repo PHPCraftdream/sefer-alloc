@@ -121,6 +121,145 @@ fn parse_env_budget() -> Option<usize> {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3 — optional background scavenger mode (feature = "alloc-decommit")
+//
+// This phase adds the `SEFER_LARGE_CACHE_MODE` environment variable that
+// selects one of three cache operating modes:
+//
+//   lazy       (default) — Phase 2 lazy decay only; no background thread.
+//   background           — opt-in background scavenger thread (see note below).
+//   both                 — alias for `background`.
+//
+// **Why the background thread is a stub in Phase 3:**
+//
+// A real background thread that calls `run_decay_step` on every shard's
+// large-cache would require:
+//
+//   1. Wrapping all large-cache fields (`large_cache`, `large_cache_used_bytes`,
+//      `last_decay_tick`) in a `std::sync::Mutex<LargeCacheState>` — a
+//      non-trivial invasive refactor of the hot alloc/dealloc path (Phase 1+2
+//      code that currently uses `&mut self` throughout).
+//
+//   2. A `HeapRegistry::for_each_shard` iteration API that yields mutable
+//      access to each live shard's large-cache — not present in the current
+//      registry (it exposes only claim/recycle/abandon/adopt).
+//
+//   3. Careful `thread::spawn` timing: `spawn` allocates through
+//      `#[global_allocator]` (i.e. through us), so spawning from inside
+//      `alloc_large` / `AllocCore::new` causes reentrancy / stack overflow.
+//      The safe spawn point must be OUTSIDE any in-flight alloc/dealloc.
+//
+//   4. Test isolation: a process-global thread active during `cargo test
+//      --test-threads=N` creates a race-detection surface across all concurrent
+//      test processes. This conflicts with the "tests must be isolated" rule.
+//
+// Given these risks, Phase 3 ships:
+//   - Full `SEFER_LARGE_CACHE_MODE` parsing (allocation-free, via `read_env_var_raw`).
+//   - Storage of the mode in `AllocCore` (per-shard, zero-cost when `lazy`).
+//   - A once-per-process warning printed to stderr when `background`/`both` is
+//     requested, explaining that the background thread is not yet wired.
+//   - Test-seam `dbg_large_cache_mode()` for deterministic verification.
+//
+// Phase 3 stub → full implementation path (future work):
+//   a. Introduce `LargeCacheState { slots, used_bytes, decay_config, last_tick }`
+//      behind a `std::sync::Mutex` in `AllocCore`.
+//   b. Add `HeapRegistry::for_each_live(|&mut AllocCore| ...)` iteration.
+//   c. Spawn scavenger via `std::sync::Once` + `std::thread::Builder` at the
+//      first `with_heap` entry AFTER primordial bootstrap (to avoid reentrancy).
+//   d. Add TSan/loom coverage for the new Mutex contention path.
+//
+// ---------------------------------------------------------------------------
+
+/// The three large-cache operating modes selectable via `SEFER_LARGE_CACHE_MODE`.
+///
+/// `Lazy` is the default (Phase 2 behaviour); the others are opt-in. The value
+/// is computed ONCE at `AllocCore::new` from the environment and stored in the
+/// shard for use by future infrastructure (scavenger loop wiring, diagnostic
+/// tools).
+#[cfg(feature = "alloc-decommit")]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum LargeCacheMode {
+    /// Default: Phase 2 lazy decay only. No background thread. Identical to
+    /// pre-Phase-3 behaviour; all existing tests continue to pass unchanged.
+    Lazy,
+    /// Opt-in: a background scavenger thread visits idle shards and calls
+    /// `run_decay_step()` on their large-caches, catching shards that are
+    /// quiescent (no large alloc/dealloc activity) and therefore never trigger
+    /// the Phase 2 lazy hooks.
+    ///
+    /// **Phase 3 stub:** the thread is not yet spawned. A once-per-process
+    /// warning is printed to stderr.
+    Background,
+    /// Alias for `Background` (concept-only distinction preserved for future
+    /// differentiation: `both` = lazy hooks AND background thread active,
+    /// `background` = background thread only, lazy hooks remain but are
+    /// harmlessly redundant).
+    Both,
+}
+
+/// Parse `SEFER_LARGE_CACHE_MODE` from the environment.
+///
+/// Accepted values (case-insensitive): `"lazy"`, `"background"`, `"both"`.
+/// Any unrecognised value, or an unset variable, falls back to `Lazy`.
+///
+/// **Reentrancy safety**: allocation-free via `read_env_var_raw`.
+#[cfg(feature = "alloc-decommit")]
+fn parse_env_cache_mode() -> LargeCacheMode {
+    let mut buf = [0u8; 16];
+    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_MODE\0", &mut buf);
+    if n == 0 {
+        return LargeCacheMode::Lazy;
+    }
+    // Compare bytes directly (allocation-free). Accept case-insensitive ASCII.
+    // We lowercase in-place: only A–Z bytes are affected (bit 5 set = lowercase).
+    let slice = &mut buf[..n];
+    for b in slice.iter_mut() {
+        if b.is_ascii_uppercase() {
+            *b |= 0x20;
+        }
+    }
+    match &*slice {
+        b"lazy" => LargeCacheMode::Lazy,
+        b"background" => LargeCacheMode::Background,
+        b"both" => LargeCacheMode::Both,
+        _ => LargeCacheMode::Lazy, // unknown → safe fallback
+    }
+}
+
+/// Process-wide flag: have we already emitted the "background mode stub"
+/// warning? Prevents spam when multiple shards are created.
+///
+/// `Relaxed` is sufficient: the only invariant is "print at most once"; a
+/// missed first-print due to a race is acceptable (the second thread will
+/// print instead). There is no data ordering dependency on this flag.
+#[cfg(feature = "alloc-decommit")]
+static BACKGROUND_WARN_ONCE: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Emit a once-per-process diagnostic when the user has requested
+/// `SEFER_LARGE_CACHE_MODE=background` (or `both`) but the background thread
+/// is not yet implemented. Uses `AtomicBool` + relaxed semantics to avoid
+/// spam across shards.
+#[cfg(feature = "alloc-decommit")]
+fn maybe_warn_background_stub(mode: LargeCacheMode) {
+    if mode == LargeCacheMode::Lazy {
+        return;
+    }
+    // Swap false→true. If we observe `false` (were the first), print the
+    // warning. If `true` (already printed), skip. Relaxed: no ordering required
+    // beyond "print at most once" (a duplicate on a strict race is harmless).
+    if !BACKGROUND_WARN_ONCE.swap(true, core::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "sefer-alloc: SEFER_LARGE_CACHE_MODE={:?} requested, \
+             but the background scavenger thread is not yet implemented \
+             in Phase 3 (stub). Falling back to lazy decay (Phase 2 behaviour). \
+             See Phase 3 design notes in alloc_core.rs for the implementation path.",
+            mode
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — lazy exponential decay of the large-cache excess
 // (feature = "alloc-decommit")
 //
@@ -339,6 +478,17 @@ pub struct AllocCore {
     /// first call does not accidentally release half the cache at process start.
     #[cfg(feature = "alloc-decommit")]
     last_decay_tick: Option<std::time::Instant>,
+
+    // ── Phase 3 — cache operating mode ───────────────────────────────────────
+
+    /// The large-cache operating mode, parsed once at `AllocCore::new` from
+    /// `SEFER_LARGE_CACHE_MODE`. Stored for diagnostic/test access and as the
+    /// anchor for future scavenger-thread wiring (Phase 3 full).
+    ///
+    /// `Lazy` (default): Phase 2 lazy decay, no background thread.
+    /// `Background` / `Both`: reserved for the future background scavenger.
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_mode: LargeCacheMode,
 }
 
 impl AllocCore {
@@ -371,6 +521,18 @@ impl AllocCore {
             let my_node = numa::current_node();
             SegmentMeta::new(primordial_base).set_node_id(my_node);
         }
+        // Phase 3: parse the cache operating mode once. The mode is stored in
+        // the shard and may emit a once-per-process stub warning if `background`
+        // or `both` was requested. This is allocation-free (uses `read_env_var_raw`
+        // under the hood), so it is safe to call from within `AllocCore::new`
+        // even when `SeferMalloc` is the installed global allocator.
+        #[cfg(feature = "alloc-decommit")]
+        let large_cache_mode = {
+            let mode = parse_env_cache_mode();
+            maybe_warn_background_stub(mode);
+            mode
+        };
+
         Some(Self {
             table: prim.table,
             small_cur,
@@ -384,6 +546,8 @@ impl AllocCore {
             decay_config: LargeCacheDecayConfig::from_env_or_default(),
             #[cfg(feature = "alloc-decommit")]
             last_decay_tick: None,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_mode,
         })
     }
 
@@ -1966,6 +2130,23 @@ impl AllocCore {
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
         self.large_cache_budget_bytes = budget;
     }
+
+    // ── Phase 3 test seams ────────────────────────────────────────────────────
+
+    /// TEST-ONLY (Phase 3): return the `LargeCacheMode` parsed from
+    /// `SEFER_LARGE_CACHE_MODE` at construction time. Lets tests verify that
+    /// the environment variable is parsed correctly without relying on
+    /// side-effects (the warning) or implementation internals.
+    ///
+    /// Returns `LargeCacheMode::Lazy` when the variable was unset, empty, or
+    /// contained an unrecognised value (the safe fallback).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_large_cache_mode(&self) -> LargeCacheMode {
+        self.large_cache_mode
+    }
+
+    // ── end Phase 3 ──────────────────────────────────────────────────────────
 
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
