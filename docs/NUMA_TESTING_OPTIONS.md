@@ -163,6 +163,14 @@ hold an AWS account), needs manual recipe.
 **Verdict:** **PRE-RELEASE GATE only.** Document the recipe in
 `docs/`, run before every release that touches NUMA code.
 
+**Status (task #99):** documented in
+[`NUMA_RELEASE_GATE.md`](NUMA_RELEASE_GATE.md) — AWS `c5n.metal` recipe
+(primary, ~$0.15 / ~8 minutes scripted), Azure `HBv4` alternative,
+explicit "GCP not recommended" note, and a budget breakdown. Run the
+recipe before any release tagged `0.x.y` whose diff touches
+`crates/numa/**`, `src/alloc_core/numa.rs`, or
+`segment_header::node_id`.
+
 ### F) Larger GitHub Actions runners
 
 **What:** `ubuntu-latest-16-core` and similar paid runners. **Most are
