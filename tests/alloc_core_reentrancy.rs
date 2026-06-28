@@ -38,26 +38,47 @@
 #![cfg(feature = "alloc-core")]
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 use sefer_alloc::AllocCore;
 
 /// A counting wrapper around the system allocator. Installed as the test's
 /// global allocator so we can observe any re-entrant allocation from inside
 /// `AllocCore`.
+///
+/// **Counter scope is thread-local, not process-wide.** Earlier versions used
+/// a process-global `AtomicUsize`, which made the test flaky on CI: the Rust
+/// test harness, libstd, and libc background work (e.g. glibc's lazy
+/// `getenv`-style init, panic-runtime setup, thread-local bootstrap on first
+/// access from a background thread) can all touch the global allocator on
+/// threads OTHER than the test thread, contaminating the delta. The whole
+/// point of M5 is "AllocCore's own thread never re-enters the global
+/// allocator", so a per-thread counter is the correct scope — what AllocCore
+/// is doing on a *different* thread is irrelevant to this invariant.
 struct Counting;
 
-static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
-static DEALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
+std::thread_local! {
+    static ALLOC_COUNT: Cell<usize> = const { Cell::new(0) };
+    static DEALLOC_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+fn alloc_count() -> usize {
+    ALLOC_COUNT.with(|c| c.get())
+}
+fn dealloc_count() -> usize {
+    DEALLOC_COUNT.with(|c| c.get())
+}
 
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        System.alloc(layout)
+        // `Cell::set` does not allocate; thread-local key lookup with `const`
+        // init is allocation-free in Rust 1.59+.
+        let _ = ALLOC_COUNT.try_with(|c| c.set(c.get() + 1));
+        unsafe { System.alloc(layout) }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        DEALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-        System.dealloc(ptr, layout);
+        let _ = DEALLOC_COUNT.try_with(|c| c.set(c.get() + 1));
+        unsafe { System.dealloc(ptr, layout) };
     }
 }
 
@@ -89,8 +110,8 @@ fn m5_alloc_path_does_not_touch_global_allocator() {
     let mut live_n: usize = 0;
 
     // Snapshot the counters IMMEDIATELY before the pure-AllocCore workload.
-    let alloc_before = ALLOC_COUNT.load(Ordering::Relaxed);
-    let dealloc_before = DEALLOC_COUNT.load(Ordering::Relaxed);
+    let alloc_before = alloc_count();
+    let dealloc_before = dealloc_count();
 
     // A representative churn: small allocs, large allocs, zeroed, realloc.
     for cycle in 0..20 {
@@ -142,8 +163,8 @@ fn m5_alloc_path_does_not_touch_global_allocator() {
     // through the global allocator across the entire workload. This is M5.
     // (We check BEFORE dropping `a` and the stack arrays, since the harness's
     // own teardown may legitimately allocate.)
-    let alloc_delta = ALLOC_COUNT.load(Ordering::Relaxed) - alloc_before;
-    let dealloc_delta = DEALLOC_COUNT.load(Ordering::Relaxed) - dealloc_before;
+    let alloc_delta = alloc_count() - alloc_before;
+    let dealloc_delta = dealloc_count() - dealloc_before;
     assert_eq!(
         alloc_delta, 0,
         "AllocCore allocated {alloc_delta} times through the global allocator (M5 violation)"
