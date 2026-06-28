@@ -36,7 +36,7 @@ use super::segment_header::{
     align_up, BinTable, FREE_LIST_NULL, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind,
     SegmentMeta,
 };
-use super::segment_table::SegmentTable;
+use super::segment_table::{SegmentTable, MAX_SEGMENTS};
 use super::size_classes::{AllocKind, SizeClasses};
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
@@ -249,7 +249,7 @@ impl AllocCore {
     // `small_cur` is consumed only by the `alloc-decommit` dec-then-decommit
     // step; without that feature the reclaim path does no live-count bookkeeping.
     #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
-    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32, small_cur: *mut u8) {
+    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32, small_cur: *mut u8) -> bool {
         // Unpack the offset and the class the cross-thread freer stamped.
         let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
         let off = off as usize;
@@ -262,10 +262,10 @@ impl AllocCore {
         // fields via their offsets touches bytes disjoint from any racing
         // writer, so there is no data race.
         if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
-            return;
+            return false;
         }
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
-            return;
+            return false;
         }
         // Sanity: the offset must be a whole number of `block_size` units. carve
         // aligns the bump to `block_size`, so a real block offset is always a
@@ -276,7 +276,7 @@ impl AllocCore {
         // defensive `dealloc` contract).
         let bs = SizeClasses::block_size(class_idx) as u32;
         if !(off as u32).is_multiple_of(bs) {
-            return;
+            return false;
         }
         let meta = SegmentMeta::new(base);
         // Phase 35 (M6 decommit) — the STALE-RING-INTO-DECOMMITTED-SEGMENT guard.
@@ -295,7 +295,7 @@ impl AllocCore {
         // gated to the feature that resets the bump.
         #[cfg(feature = "alloc-decommit")]
         if off >= meta.bump_of() {
-            return;
+            return false;
         }
         // Inline of `dealloc_small` (self-less): double-free guard + push to
         // BinTable. We cannot call the `&mut self` method from here (this fn is
@@ -310,11 +310,11 @@ impl AllocCore {
         // as own-thread free.
         let mut bm = meta.alloc_bitmap();
         if bm.is_free(off as u32) {
-            return; // Already on a free list (M2 double-free): no-op.
+            return false; // Already on a free list (M2 double-free): no-op.
         }
         let block_nn = match NonNull::new(ptr) {
             Some(nn) => nn,
-            None => return,
+            None => return false,
         };
         let old_head = bt.head(class_idx);
         let old_head_ptr = if old_head == FREE_LIST_NULL {
@@ -330,8 +330,13 @@ impl AllocCore {
         // owner-only counter is single-writer (the cross-thread freer NEVER
         // touched it — it only pushed the offset into the ring). If the segment
         // is now empty AND not the carve target, return its payload to the OS.
+        // Returns true if decommit fired (caller should call recycle after drain).
         #[cfg(feature = "alloc-decommit")]
-        Self::dec_live_and_maybe_decommit(base, small_cur);
+        {
+            return Self::dec_live_and_maybe_decommit(base, small_cur);
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        false
     }
 
     /// Phase 35 (M6 decommit) — the shared dec-then-maybe-decommit step, called
@@ -339,10 +344,13 @@ impl AllocCore {
     /// or owner-side `reclaim_offset`). It decrements the owner-only `live_count`
     /// and, if the segment just went empty (`live_count == 0`) AND is not the
     /// current carve target (`base != small_cur`), returns the segment's payload
-    /// pages to the OS and resets the segment to a clean-empty blank for reuse.
+    /// pages to the OS, resets the segment, releases the OS reservation, and
+    /// recycles the table slot (task #60, variant B).
     ///
     /// **Self-less** (associated fn) so the self-less `reclaim_offset` can call
-    /// it; the `small_cur` snapshot is threaded in from the owner.
+    /// it; the `small_cur` snapshot and `table` raw pointer are threaded in from
+    /// the owner. The raw pointer is sound because `AllocCore` is single-owner
+    /// (owner thread is the sole writer of its segments' metadata and table).
     ///
     /// ## Why M6 is decommit-safe WITHOUT an M11 epoch barrier (design §1)
     ///
@@ -372,15 +380,30 @@ impl AllocCore {
     ///
     /// ⇒ No UAF, no write to decommitted memory. `crossbeam-epoch` is NOT needed;
     /// none is added. (Full argument: `docs/PHASE35_DECOMMIT_DESIGN.md` §1.)
+    ///
+    /// ## Slot recycle (task #60)
+    ///
+    /// After decommit + reset, [`decommit_empty_segment`] also releases the OS
+    /// reservation for the segment and NULLs the table slot (via `table`). This
+    /// lifts the 1024-segment hard cap: the freed slot can be reused immediately
+    /// by the next `register` call, so long-running workloads never exhaust the
+    /// table. Both the OS release and the slot NULL happen atomically inside
+    /// `decommit_empty_segment`; there is no window where the OS segment is
+    /// released but the slot is still non-NULL.
+    /// Returns `true` if decommit fired (the segment became empty, was
+    /// decommitted, and needs slot recycling). The caller is responsible for
+    /// calling `self.table.recycle(base)` when `true` is returned — but ONLY
+    /// after any in-progress ring drain for `base` has completed, so that
+    /// stale ring entries can still read the (still-committed) metadata.
     #[cfg(feature = "alloc-decommit")]
-    fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) {
+    fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
         let mut meta = SegmentMeta::new(base);
         let live = meta.dec_live();
         // Only an empty, non-current, not-already-decommitted segment is
         // returned to the OS. The current carve target stays committed (we are
         // about to bump-allocate into it); already-decommitted is idempotent.
         if live != 0 || base == small_cur || meta.is_decommitted() {
-            return;
+            return false;
         }
         // NEVER decommit the PRIMORDIAL segment: its metadata extends to
         // `primordial_meta_end()` (it hosts the self-hosted registry between
@@ -392,9 +415,10 @@ impl AllocCore {
         // eligible. A field-specific `kind` read (disjoint from the owner's
         // `bump`/`live_count` writes; race-free like the other `kind_at` reads).
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
-            return;
+            return false;
         }
         Self::decommit_empty_segment(&mut meta, base);
+        true
     }
 
     /// TEST-ONLY (Phase 35): the process-wide count of M6 decommit invocations
@@ -446,12 +470,20 @@ impl AllocCore {
     /// Steps (design §3):
     ///   1. Return the payload pages `[small_meta_end, SEGMENT)` to the OS. The
     ///      metadata pages (header / page-map / bin-table / alloc-bitmap / ring)
-    ///      stay committed — cross-thread readers touch them.
+    ///      stay committed — cross-thread readers touch them, and `recycle` will
+    ///      read the header reservation info AFTER this function returns.
     ///   2. Reset the segment to clean-empty: `bump = small_meta_end`, every
     ///      `BinTable` head = `FREE_LIST_NULL`, every payload page-map entry =
     ///      `Free`, the alloc bitmap = all-zeros. Safe because `live_count == 0`:
     ///      no block is live, every free-list node we are dropping is itself free.
     ///   3. Set the `decommitted` flag so the next carve recommits first.
+    ///
+    /// **Slot recycle** (task #60) is NOT done here — it happens after the
+    /// drain loop that called `reclaim_offset` finishes (so that subsequent
+    /// stale ring entries for the same segment still find the metadata
+    /// readable). The caller is responsible for calling `self.table.recycle(base)`
+    /// once no further `reclaim_offset` calls will target `base`. See
+    /// `dealloc_small` and `find_segment_with_free` for the two call sites.
     #[cfg(feature = "alloc-decommit")]
     fn decommit_empty_segment(meta: &mut SegmentMeta, base: *mut u8) {
         // Test seam: count the invocation (diagnostic; relaxed).
@@ -516,14 +548,37 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_drain_all_rings(&mut self) {
+        // Collect bases first so we can call `self.table.recycle` after each
+        // drain without conflicting with a concurrent bases() iterator borrow.
+        let mut bases_buf = [core::ptr::null_mut::<u8>(); MAX_SEGMENTS];
+        let mut n = 0usize;
         for base in self.table.bases() {
+            if n < MAX_SEGMENTS {
+                bases_buf[n] = base;
+                n += 1;
+            }
+        }
+        for &base in &bases_buf[..n] {
             let hdr = SegmentHeader::read_at(base);
             if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
                 continue;
             }
             let ring = SegmentMeta::new(base).remote_ring();
             let small_cur = self.small_cur;
-            ring.drain(|off| Self::reclaim_offset(base, off, small_cur));
+            #[cfg(feature = "alloc-decommit")]
+            let mut decommit_happened = false;
+            ring.drain(|off| {
+                #[cfg(feature = "alloc-decommit")]
+                if Self::reclaim_offset(base, off, small_cur) {
+                    decommit_happened = true;
+                }
+                #[cfg(not(feature = "alloc-decommit"))]
+                { let _ = Self::reclaim_offset(base, off, small_cur); }
+            });
+            #[cfg(feature = "alloc-decommit")]
+            if decommit_happened {
+                self.table.recycle(base);
+            }
         }
     }
 
@@ -762,12 +817,38 @@ impl AllocCore {
     /// non-small/primordial segments.
     ///
     /// Returns `None` if no owned small segment has a free block of this
-    /// class. Pure safe composition: iterates `self.table.bases()` (read-only)
-    /// and reads each segment's header kind + `BinTable` head through the
-    /// `node` seam. No allocation, no mutation — M5 (reentrancy-freedom)
-    /// upheld.
-    pub(crate) fn find_segment_with_free(&self, class_idx: usize) -> Option<*mut u8> {
+    /// class.
+    ///
+    /// ## Slot recycle integration (task #60, `alloc-decommit`)
+    ///
+    /// Under `alloc-xthread` + `alloc-decommit`, the ring drain inside this
+    /// function may trigger `dec_live_and_maybe_decommit` (via `reclaim_offset`)
+    /// which decommits an empty segment. Slot recycling — `self.table.recycle(base)`
+    /// — is deferred until AFTER the drain for that `base` is complete. This is
+    /// critical: a partially-drained ring still has ring entries that
+    /// `reclaim_offset` processes by reading the segment's metadata (which stays
+    /// committed). Recycling before the drain ends would release the OS
+    /// reservation prematurely — the metadata read in `magic_at` / `kind_at`
+    /// would UAF. By recycling after the drain, we ensure:
+    ///   a. All ring entries for `base` are processed (or safely skipped via
+    ///      the `off >= bump` guard — bump was reset by decommit).
+    ///   b. The OS release + slot NULL happen atomically in `recycle`, with no
+    ///      window where the slot is non-NULL but the OS segment is gone.
+    pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+        // Collect all registered live segment bases FIRST (into a fixed-size
+        // stack array) so we can iterate without holding a `&self.table` borrow —
+        // which would block the `&mut self.table.recycle(...)` call needed for
+        // slot recycle under `alloc-decommit`. MAX_SEGMENTS is the capacity bound;
+        // only live (non-NULL) bases are stored, so `n <= live_count <= MAX_SEGMENTS`.
+        let mut bases_buf = [core::ptr::null_mut::<u8>(); MAX_SEGMENTS];
+        let mut n = 0usize;
         for base in self.table.bases() {
+            if n < MAX_SEGMENTS {
+                bases_buf[n] = base;
+                n += 1;
+            }
+        }
+        for &base in &bases_buf[..n] {
             // Skip large/huge segments: they have no BinTable. Field-specific
             // `kind` read (task #33): this is the Owner's alloc path,
             // concurrent with a Remote's `dealloc_routing` field reads — a
@@ -780,15 +861,37 @@ impl AllocCore {
             // inspecting its BinTable. Cross-thread frees that targeted THIS
             // segment (a segment we own but are not currently allocating from)
             // are sitting in its ring; without this drain they would never
-            // reach the BinTable and the scan would miss them. The drain uses
-            // the self-less `reclaim_offset` (it touches only segment metadata
-            // via `SegmentMeta`, never `self`), so the immutable `bases()`
-            // iterator borrow is not aliased. M5-clean.
+            // reach the BinTable and the scan would miss them.
+            //
+            // Under `alloc-decommit`, if draining empties the segment it is
+            // decommitted inside `reclaim_offset`. We track whether a decommit
+            // fired via the `decommit_happened` flag, then recycle the slot
+            // AFTER the drain completes — not during — so that any remaining
+            // ring entries for `base` can still safely read the (still-committed)
+            // metadata via `magic_at`/`kind_at`/`bump_of`.
             #[cfg(feature = "alloc-xthread")]
             {
                 let ring = SegmentMeta::new(base).remote_ring();
                 let small_cur = self.small_cur;
-                ring.drain(|off| Self::reclaim_offset(base, off, small_cur));
+                #[cfg(feature = "alloc-decommit")]
+                let mut decommit_happened = false;
+                ring.drain(|off| {
+                    #[cfg(feature = "alloc-decommit")]
+                    if Self::reclaim_offset(base, off, small_cur) {
+                        decommit_happened = true;
+                    }
+                    #[cfg(not(feature = "alloc-decommit"))]
+                    { let _ = Self::reclaim_offset(base, off, small_cur); }
+                });
+                // Slot recycle: now that the drain is complete, it is safe to
+                // release the OS reservation and NULL the slot. Any stale ring
+                // entries have already been processed (and guarded by `off >= bump`).
+                #[cfg(feature = "alloc-decommit")]
+                if decommit_happened {
+                    self.table.recycle(base);
+                    // This base is now recycled; skip the BinTable check.
+                    continue;
+                }
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
@@ -947,8 +1050,15 @@ impl AllocCore {
         // Phase 35 (M6): one fewer live block in this segment; decommit if it
         // just emptied and is not the current carve target. Own-thread free runs
         // on the owner, so the counter stays single-writer.
+        // Task #60 (slot recycle): if decommit fired, recycle the table slot
+        // immediately — `dealloc_small` is NOT inside a ring drain (no stale
+        // ring entries arrive here for `base` on the own-thread path), so the
+        // metadata is readable, the slot can be NULLed, and the OS reservation
+        // can be released right away.
         #[cfg(feature = "alloc-decommit")]
-        Self::dec_live_and_maybe_decommit(base, self.small_cur);
+        if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
+            self.table.recycle(base);
+        }
     }
 
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
@@ -1043,17 +1153,17 @@ impl Default for AllocCore {
 
 impl Drop for AllocCore {
     fn drop(&mut self) {
-        // Collect every segment's `(reservation, reservation_len)` into a
+        // Collect every live segment's `(reservation, reservation_len)` into a
         // fixed-size stack array FIRST, then free them all. We must NOT free
         // the primordial segment while still reading the registry — the
         // registry lives IN the primordial's payload, so freeing it would
         // unmap the array we're iterating over. Collecting up front (into a
         // stack array, no global-allocator involvement) breaks that aliasing.
         //
-        // All registered segments are still mapped at drop time (Phase 8 does
-        // not eagerly release in `dealloc` — see M6 / the Large branch). So
-        // reading every header is safe. We free every registered reservation
-        // exactly once.
+        // `self.table.bases()` already filters NULL (recycled) slots — those
+        // segments were released by `recycle()` during their decommit cycle and
+        // must NOT be freed again. Only non-NULL (live) segments are collected
+        // and freed here.
         //
         // The array is bounded by MAX_SEGMENTS (1024 × 16 B = 16 KiB stack —
         // fine; a deeply-nested drop chain would be the only concern, and
