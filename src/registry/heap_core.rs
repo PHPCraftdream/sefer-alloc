@@ -255,7 +255,7 @@ impl HeapCore {
     /// shard-reuse discipline; everything else is single-writer (this thread
     /// owns the slot, ergo its segments).
     #[must_use]
-    #[inline]
+    #[inline(always)]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         // Cross-thread-freed blocks are reclaimed LAZILY, inside
         // `AllocCore::find_segment_with_free` (the alloc-slow-path drains each
@@ -301,7 +301,7 @@ impl HeapCore {
     /// head, route cross-thread via the TFS (the §2.2 protocol re-based on
     /// the registry). Foreign pointers (not a sefer segment) are a safe
     /// no-op.
-    #[inline]
+    #[inline(always)]
     pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
@@ -350,6 +350,7 @@ impl HeapCore {
     // -----------------------------------------------------------------------
 
     #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
     fn dealloc_routing(&mut self, ptr: *mut u8, layout: Layout) {
         let base = os::segment_base_of_ptr(ptr);
         // Field-specific reads (task #33 root-cause fix): read ONLY `magic`,
@@ -422,6 +423,7 @@ impl HeapCore {
     ///   Release-store (same thread → SC-in-program-order).
     /// - A cache miss (base changed or Relaxed-load mismatch) falls through
     ///   to the slow path which restores the Acquire/Release protocol.
+    #[inline(always)]
     fn stamp_segment_owner(&mut self, ptr: *mut u8) {
         use crate::alloc_core::segment_header::{unpack_owner_id, OWNER_STATE_LIVE};
         let base = os::segment_base_of_ptr(ptr);

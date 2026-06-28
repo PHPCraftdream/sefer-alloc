@@ -558,6 +558,7 @@ impl AllocCore {
     /// Zero-size layouts are not supported (they violate the `GlobalAlloc`
     /// contract; we round up to `MIN_BLOCK` and serve normally).
     #[must_use]
+    #[inline(always)]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
         let size = layout.size().max(super::size_classes::MIN_BLOCK);
         let align = layout.align();
@@ -1351,6 +1352,7 @@ impl AllocCore {
     /// OWN segments only. Cross-thread frees arrive via the inline TFS and are
     /// drained by `HeapCore::alloc` BEFORE this runs, so they are already on
     /// the per-segment BinTables by the time we scan.
+    #[inline(always)]
     fn alloc_small(&mut self, class_idx: usize) -> *mut u8 {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
@@ -1600,7 +1602,7 @@ impl AllocCore {
     /// Pop a free block of `class_idx` from `segment`'s bin table. Returns
     /// null if the free list is empty. Writes the block's `next` word to null
     /// (it becomes the new head) via the node seam.
-    #[inline]
+    #[inline(always)]
     fn pop_free(&self, segment: *mut u8, class_idx: usize, block_size: usize) -> Option<*mut u8> {
         #[cfg(feature = "alloc-decommit")]
         let mut meta = SegmentMeta::new(segment);
@@ -1704,7 +1706,7 @@ impl AllocCore {
     /// `free_list_contains` walk — which made own-thread free O(N²) under churn
     /// (#41) — with an O(1) exact bit test. The bitmap is single-writer (owner
     /// only), so the read/modify/write needs no atomics.
-    #[inline]
+    #[inline(always)]
     fn dealloc_small(&mut self, base: *mut u8, ptr: *mut u8, class_idx: usize) {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
