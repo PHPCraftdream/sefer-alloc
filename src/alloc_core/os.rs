@@ -244,18 +244,14 @@ fn cfg_if_env_read(name_nul: &[u8], buf: &mut [u8]) -> usize {
         // We use `extern "system"` (stdcall on x86, same as C on x86_64/ARM).
         #[allow(non_snake_case)]
         extern "system" {
-            fn GetEnvironmentVariableA(
-                lpName: *const u8,
-                lpBuffer: *mut u8,
-                nSize: u32,
-            ) -> u32;
+            fn GetEnvironmentVariableA(lpName: *const u8, lpBuffer: *mut u8, nSize: u32) -> u32;
         }
-        let n = GetEnvironmentVariableA(
-            name_nul.as_ptr(),
-            buf.as_mut_ptr(),
-            buf.len() as u32,
-        );
-        if n == 0 || n as usize >= buf.len() { 0 } else { n as usize }
+        let n = GetEnvironmentVariableA(name_nul.as_ptr(), buf.as_mut_ptr(), buf.len() as u32);
+        if n == 0 || n as usize >= buf.len() {
+            0
+        } else {
+            n as usize
+        }
     };
 
     #[cfg(not(target_os = "windows"))]

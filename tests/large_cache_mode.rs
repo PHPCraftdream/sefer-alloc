@@ -22,52 +22,14 @@
 
 use sefer_alloc::{AllocCore, LargeCacheMode};
 
+// `lazy_mode_default_no_env` removed: its "default = Lazy" half raced fatally
+// with `env_mode_parsing_sequential` on Linux (CI run 28325919514) because
+// `std::env::set_var` is process-global and the harness runs tests in parallel.
+// The "default" assertion is covered by the `""` case inside
+// `env_mode_parsing_sequential` below; the alloc/dealloc round-trip half is
+// covered by `tests/large_cache.rs`.
+
 // ── test 1 ───────────────────────────────────────────────────────────────────
-
-/// When `SEFER_LARGE_CACHE_MODE` is unset, the mode defaults to `Lazy` and
-/// alloc/dealloc behave identically to the pre-Phase-3 implementation.
-/// This is the zero-overhead guarantee: `Lazy` mode adds no runtime cost.
-#[test]
-fn lazy_mode_default_no_env() {
-    // Remove the variable so we start from a clean slate, then verify the
-    // default.  Do NOT set it — we rely on the absence of the variable.
-    // This test is safe to run in parallel with non-env tests because it
-    // only reads (after removing) the variable.
-    //
-    // NOTE: if another parallel test in THIS PROCESS happens to have set
-    // SEFER_LARGE_CACHE_MODE concurrently, this remove+construct window
-    // could race. We accept that risk since env-mutating tests in this file
-    // are all inside the single sequential bundle below.
-    unsafe {
-        std::env::remove_var("SEFER_LARGE_CACHE_MODE");
-    }
-    let mut ac = AllocCore::new().expect("primordial");
-    assert_eq!(
-        ac.dbg_large_cache_mode(),
-        LargeCacheMode::Lazy,
-        "unset SEFER_LARGE_CACHE_MODE must default to Lazy"
-    );
-
-    // Verify that alloc/dealloc behave identically to pre-Phase-3 behaviour
-    // (mode field is zero-cost in Lazy mode).
-    let layout = core::alloc::Layout::from_size_align(4 * 1024 * 1024, 8).unwrap();
-    let ptr = ac.alloc(layout);
-    if ptr.is_null() {
-        eprintln!("OOM — skipping alloc/dealloc verification in lazy_mode_default_no_env");
-        return;
-    }
-    ac.dealloc(ptr, layout);
-
-    let ptr2 = ac.alloc(layout);
-    assert!(!ptr2.is_null(), "re-alloc after cache deposit must succeed");
-    unsafe {
-        ptr2.write(0xAB);
-        assert_eq!(ptr2.read(), 0xAB, "re-allocated memory must be usable");
-    }
-    ac.dealloc(ptr2, layout);
-}
-
-// ── test 2 ───────────────────────────────────────────────────────────────────
 
 /// All env-var mode-parsing cases run sequentially in a single test to avoid
 /// the TOCTOU races that occur when multiple tests in the same process modify

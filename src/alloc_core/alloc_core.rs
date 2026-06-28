@@ -465,7 +465,6 @@ pub struct AllocCore {
     large_cache_used_bytes: usize,
 
     // ── Phase 2 — lazy decay ─────────────────────────────────────────────────
-
     /// Immutable decay parameters: rate, interval, headroom. Set once at
     /// `AllocCore::new` from env vars (or defaults); overridable in tests via
     /// `dbg_set_decay_config`.
@@ -480,7 +479,6 @@ pub struct AllocCore {
     last_decay_tick: Option<std::time::Instant>,
 
     // ── Phase 3 — cache operating mode ───────────────────────────────────────
-
     /// The large-cache operating mode, parsed once at `AllocCore::new` from
     /// `SEFER_LARGE_CACHE_MODE`. Stored for diagnostic/test access and as the
     /// anchor for future scavenger-thread wiring (Phase 3 full).
@@ -684,30 +682,31 @@ impl AllocCore {
                     // implementation (the invariant: slot 0 is filled before slot 1,
                     // so evicting 0 first is correct for LARGE_CACHE_SLOTS=2). Phase 2
                     // may improve with timestamps / LRU.
-                    let admitted = if let Some(slot_idx) = self.large_cache.iter().position(|s| s.is_none()) {
-                        // A free slot exists. Check byte budget.
-                        let fits = self
-                            .large_cache_budget_bytes
-                            .map_or(true, |budget| self.large_cache_used_bytes + usable_size <= budget);
-                        if fits {
-                            Some(slot_idx)
+                    let admitted =
+                        if let Some(slot_idx) = self.large_cache.iter().position(|s| s.is_none()) {
+                            // A free slot exists. Check byte budget.
+                            let fits = self.large_cache_budget_bytes.map_or(true, |budget| {
+                                self.large_cache_used_bytes + usable_size <= budget
+                            });
+                            if fits {
+                                Some(slot_idx)
+                            } else {
+                                // Budget would overflow even with a free slot — evict to
+                                // bring used_bytes down, then re-check.
+                                if self.try_evict_to_fit(usable_size) {
+                                    self.large_cache.iter().position(|s| s.is_none())
+                                } else {
+                                    None
+                                }
+                            }
                         } else {
-                            // Budget would overflow even with a free slot — evict to
-                            // bring used_bytes down, then re-check.
+                            // All slots occupied. Attempt FIFO eviction to free a slot.
                             if self.try_evict_to_fit(usable_size) {
                                 self.large_cache.iter().position(|s| s.is_none())
                             } else {
                                 None
                             }
-                        }
-                    } else {
-                        // All slots occupied. Attempt FIFO eviction to free a slot.
-                        if self.try_evict_to_fit(usable_size) {
-                            self.large_cache.iter().position(|s| s.is_none())
-                        } else {
-                            None
-                        }
-                    };
+                        };
 
                     if let Some(slot_idx) = admitted {
                         // We keep the pages COMMITTED in the cache (no decommit
@@ -1965,9 +1964,7 @@ impl AllocCore {
         // release = excess * rate_bp / 10_000.  We use saturating_mul to
         // guard against an absurdly large excess (> usize::MAX / 10_000 on
         // 32-bit — pathological but safe).
-        let release = excess
-            .saturating_mul(self.decay_config.decay_rate_bp as usize)
-            / 10_000;
+        let release = excess.saturating_mul(self.decay_config.decay_rate_bp as usize) / 10_000;
         if release == 0 {
             return;
         }
@@ -1987,8 +1984,9 @@ impl AllocCore {
                 break; // Cache is empty.
             };
             let victim = self.large_cache[victim_idx].take().unwrap();
-            self.large_cache_used_bytes =
-                self.large_cache_used_bytes.saturating_sub(victim.usable_size);
+            self.large_cache_used_bytes = self
+                .large_cache_used_bytes
+                .saturating_sub(victim.usable_size);
             // Release the OS reservation. The slot was unregistered from the
             // table on deposit (same as `try_evict_to_fit`), so we release
             // directly without touching the table.
@@ -2087,8 +2085,9 @@ impl AllocCore {
                 return false;
             };
             let victim = self.large_cache[victim_idx].take().unwrap();
-            self.large_cache_used_bytes =
-                self.large_cache_used_bytes.saturating_sub(victim.usable_size);
+            self.large_cache_used_bytes = self
+                .large_cache_used_bytes
+                .saturating_sub(victim.usable_size);
             // The victim is unregistered from the table already (it was done on
             // deposit — the table slot was NULLed at that time). Release the OS
             // reservation directly.

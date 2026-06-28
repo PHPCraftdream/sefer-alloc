@@ -166,7 +166,7 @@ fn budget_set_evicts_when_full() {
 #[test]
 fn budget_too_small_releases_immediately() {
     const BUDGET: usize = 10 * MIB; // 10 MiB
-    const SPAN: usize = 100;        // 100 MiB — larger than the budget
+    const SPAN: usize = 100; // 100 MiB — larger than the budget
 
     let mut ac = AllocCore::new().expect("primordial");
     ac.dbg_set_large_cache_budget(Some(BUDGET));
