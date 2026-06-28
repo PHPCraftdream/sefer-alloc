@@ -35,7 +35,7 @@
 //! |----------|-----------------|----------------|-------------------------------|
 //! | Linux x86_64/aarch64 (non-miri) | sched_getcpu + sysfs cpumap | `mbind(2)` via syscall | mmap then mbind |
 //! | Linux other arch (non-miri) | sched_getcpu + sysfs cpumap | no-op | mmap (no mbind) |
-//! | Windows (non-miri) | `GetCurrentProcessorNumberEx` | no-op | `VirtualAllocExNuma` |
+//! | Windows (non-miri) | `GetCurrentProcessorNumberEx` | no-op (use `reserve_on_node`) | `VirtualAllocExNuma` (direct, via `Reservation::from_raw_parts`) |
 //! | macOS | `None` | no-op | `reserve_aligned` (no binding) |
 //! | miri | `None` | no-op | `reserve_aligned` (no binding) |
 //! | other | `None` | no-op | `reserve_aligned` (no binding) |
@@ -622,27 +622,78 @@ mod platform {
     }
 
     /// Reserve `size` bytes aligned to `align` with a NUMA preference for `node`
-    /// via `VirtualAllocExNuma`.
+    /// via `VirtualAllocExNuma` directly. This is the **only** way to bind
+    /// memory to a NUMA node on Windows — there is no post-reservation
+    /// equivalent to Linux `mbind(2)`.
     ///
-    /// `aligned-vmem::Reservation` does not expose a `from_raw_parts` constructor
-    /// so we cannot wrap a `VirtualAllocExNuma` handle in it directly. Instead
-    /// we perform the NUMA reservation to assert NUMA preference, then release
-    /// it and fall back to `reserve_aligned`. This is best-effort on Windows:
-    /// the physical placement is done by the kernel heuristic at the
-    /// `reserve_aligned` call; NUMA affinity is not strictly guaranteed.
-    /// For strict Windows NUMA binding, callers should use the raw
-    /// `VirtualAllocExNuma` Win32 API directly with their own handle type.
+    /// Strategy (mirrors `aligned-vmem`'s own Windows reservation): over-reserve
+    /// `size + align` bytes via `VirtualAllocExNuma`, find the aligned chunk
+    /// inside, and adopt the WHOLE reservation into an `aligned_vmem::Reservation`
+    /// via [`aligned_vmem::Reservation::from_raw_parts`]. The handle's `Drop` /
+    /// release path will `VirtualFree(MEM_RELEASE)` the entire over-reserved
+    /// span exactly once.
+    ///
+    /// Returns `None` on contract violation (`align` not a power of two `>= PAGE`,
+    /// `size` zero or not a multiple of `PAGE`) or when the OS refuses the
+    /// reservation (OOM / no memory on the requested node).
     #[cfg(feature = "vmem-integration")]
     fn reserve_aligned_numa(
         size: usize,
         align: usize,
         node: u32,
     ) -> Option<aligned_vmem::Reservation> {
-        // aligned-vmem's Reservation has no public from_raw_parts constructor,
-        // so we fall back to a plain aligned reservation. This is documented
-        // as best-effort on Windows — see function-level doc above.
-        let _ = node; // node preference acknowledged; can't enforce via Reservation RAII
-        aligned_vmem::reserve_aligned(size, align)
+        use aligned_vmem::PAGE;
+        if size == 0
+            || !align.is_power_of_two()
+            || align < PAGE
+            || size % PAGE != 0
+        {
+            return None;
+        }
+        let over = size.checked_add(align)?;
+
+        // SAFETY: `VirtualAllocExNuma(GetCurrentProcess(), NULL, over,
+        // MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE, node)` reserves+commits
+        // `over` bytes on (preferred) `node`, returning the base or NULL.
+        // We treat NULL as OOM and bail.
+        let raw = unsafe {
+            VirtualAllocExNuma(
+                GetCurrentProcess(),
+                core::ptr::null_mut(),
+                over,
+                MEM_RESERVE | MEM_COMMIT,
+                PAGE_READWRITE,
+                node,
+            )
+        };
+        if raw.is_null() {
+            return None;
+        }
+        let raw_u = raw as usize;
+        let base_u = (raw_u + align - 1) & !(align - 1);
+        let base = base_u as *mut u8;
+
+        // SAFETY of from_raw_parts:
+        // - `base` is non-null, valid for `size` bytes (it's inside the
+        //   `over`-byte reservation since `align <= over - size`), aligned
+        //   to `align` (by construction above).
+        // - `raw` is the start of the OS reservation, non-null.
+        // - `over = size + align` is the full reservation length, multiple of PAGE.
+        // - `align` was just used to align `base` — same value.
+        // - The reservation will be released exactly once when the returned
+        //   handle's `Drop` fires (or via `release` after `into_parts`).
+        // - The reservation was created with `MEM_RESERVE | MEM_COMMIT` →
+        //   `VirtualFree(MEM_RELEASE)` will accept it.
+        let r = unsafe {
+            aligned_vmem::Reservation::from_raw_parts(
+                base,
+                size,
+                raw as *mut u8,
+                over,
+                align,
+            )
+        };
+        Some(r)
     }
 
     /// Mirrors `PROCESSOR_NUMBER` from the Windows SDK.
@@ -656,7 +707,32 @@ mod platform {
     extern "system" {
         fn GetCurrentProcessorNumberEx(proc_number: *mut ProcessorNumber);
         fn GetNumaProcessorNodeEx(processor: *const ProcessorNumber, node_number: *mut u16) -> i32;
+        fn GetCurrentProcess() -> *mut core::ffi::c_void;
     }
+
+    // `VirtualAllocExNuma` is the load-bearing call: it is the ONLY way to
+    // bind a reservation to a NUMA node on Windows (`VirtualAlloc` chooses
+    // the node by kernel heuristic; there is no `mbind`-equivalent for
+    // post-reservation binding). Declared locally to avoid pulling
+    // `windows-sys` / `winapi` just for one syscall.
+    #[cfg(feature = "vmem-integration")]
+    extern "system" {
+        fn VirtualAllocExNuma(
+            h_process: *mut core::ffi::c_void,
+            lp_address: *mut core::ffi::c_void,
+            dw_size: usize,
+            fl_allocation_type: u32,
+            fl_protect: u32,
+            nnd_preferred: u32,
+        ) -> *mut core::ffi::c_void;
+    }
+
+    #[cfg(feature = "vmem-integration")]
+    const MEM_RESERVE: u32 = 0x0000_2000;
+    #[cfg(feature = "vmem-integration")]
+    const MEM_COMMIT: u32 = 0x0000_1000;
+    #[cfg(feature = "vmem-integration")]
+    const PAGE_READWRITE: u32 = 0x04;
 }
 
 // ---- macOS stub -----------------------------------------------------------

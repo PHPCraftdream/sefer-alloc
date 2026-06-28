@@ -151,6 +151,73 @@ impl Reservation {
         core::mem::forget(self);
         parts
     }
+
+    /// Wrap a pre-existing OS reservation (e.g. one obtained from
+    /// `VirtualAllocExNuma` or another platform-specific allocator that
+    /// `reserve_aligned` does not call directly) in a [`Reservation`] handle.
+    ///
+    /// The handle then participates in the normal RAII lifecycle: on `Drop`
+    /// (or via [`release`]) the underlying reservation is returned to the OS
+    /// using the platform-appropriate release routine
+    /// (`VirtualFree(MEM_RELEASE)` on Windows, `munmap` on Unix,
+    /// `std::alloc::dealloc` on miri).
+    ///
+    /// This is the inverse of [`into_parts`](Self::into_parts) and exists for
+    /// the cross-crate handoff pattern: a sibling crate (`numa-shim` on
+    /// Windows) issues a platform-specific reservation call that `aligned-vmem`
+    /// itself does not wrap, then adopts the result via this constructor so
+    /// downstream code can hold a uniform [`Reservation`] regardless of which
+    /// syscall produced it.
+    ///
+    /// # Safety
+    ///
+    /// All five values must describe a **live, exclusively-owned OS
+    /// reservation** compatible with `aligned-vmem`'s release path:
+    ///
+    /// - `base` is the *aligned usable* start; non-null, valid for `len` bytes,
+    ///   aligned to `align`.
+    /// - `len` is the usable span size, a non-zero multiple of [`PAGE`].
+    /// - `reservation` is the *underlying OS reservation* start (often equal
+    ///   to `base`, but may be lower under the over-reserve + trim technique).
+    /// - `reservation_len` is the full size of the OS reservation, a non-zero
+    ///   multiple of [`PAGE`], `reservation_len >= len + (base - reservation)`.
+    /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
+    ///   reservation was created with. The native release paths
+    ///   (`VirtualFree` / `munmap`) ignore it; the miri fallback uses it to
+    ///   reconstruct the exact `Layout`.
+    ///
+    /// The reservation must be released **exactly once** — by dropping this
+    /// handle, or by extracting via `into_parts` and calling [`release`]
+    /// manually. Constructing two `Reservation` handles over the same OS
+    /// reservation is undefined behaviour (double release).
+    ///
+    /// On Windows specifically, the reservation MUST have been created with
+    /// `MEM_RESERVE | MEM_COMMIT` so `VirtualFree(MEM_RELEASE)` accepts it.
+    /// (`VirtualAllocExNuma(..., MEM_RESERVE | MEM_COMMIT, ...)` satisfies
+    /// this — that is the intended call site.)
+    #[must_use]
+    pub unsafe fn from_raw_parts(
+        base: *mut u8,
+        len: usize,
+        reservation: *mut u8,
+        reservation_len: usize,
+        align: usize,
+    ) -> Self {
+        // The contract is enforced by the caller's `unsafe`. We only assert
+        // the non-null invariant: a null pointer here would corrupt the
+        // `Drop` path which would then call `release_reservation(null, ...)`.
+        // In a well-formed call this branch is dead.
+        let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
+        let res_nn = NonNull::new(reservation)
+            .expect("from_raw_parts: reservation must be non-null");
+        Self {
+            base: base_nn,
+            len,
+            reservation: res_nn,
+            reservation_len,
+            align,
+        }
+    }
 }
 
 impl Drop for Reservation {
