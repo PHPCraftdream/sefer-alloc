@@ -96,16 +96,13 @@ pub fn target(data: &[u8]) {
     // Cap the op stream so a single input can't OOM the fuzzer with a giant
     // sequence. 4096 ops is plenty to exercise deep churn and reuse.
     let mut decoder = arbitrary::Unstructured::new(data);
-    let ops: Vec<Op> = match decoder
-        .arbitrary_iter::<Op>()
-        .ok()
-        .flatten()
-        .take(4096)
-        .collect()
-    {
-        Ok(ops) => ops,
-        Err(_) => return, // not enough bytes to derive a usable stream; skip.
+    let iter = match decoder.arbitrary_iter::<Op>() {
+        Ok(iter) => iter,
+        Err(_) => return, // could not start a stream; skip.
     };
+    // Each item is itself a `Result<Op>`; stop at the first decode error and cap
+    // the length so a single input can't OOM the fuzzer with a giant sequence.
+    let ops: Vec<Op> = iter.take(4096).filter_map(Result::ok).collect();
 
     let mut region: Region<Payload> = Region::new();
     // The reference model: every currently-live (handle, value).

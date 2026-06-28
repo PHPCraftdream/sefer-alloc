@@ -7,6 +7,11 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "libFuzzer target for sefer-alloc's Region op-stream invariants (Phase 5 hardening)."
 
+# Marker required by `cargo-fuzz` to recognise this as a fuzz harness crate.
+# Without it `cargo fuzz build` / `cargo fuzz run` refuse to proceed.
+[package.metadata]
+cargo-fuzz = true
+
 # This crate is its OWN workspace root so it is never pulled into the parent
 # `sefer-alloc` workspace — the main `cargo build` / `cargo test` are completely
 # unaffected by it. Run targets from inside this directory.
