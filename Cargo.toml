@@ -22,7 +22,7 @@ categories = ["data-structures", "memory-management", "concurrency", "no-std"]
 # Each is a real crates.io crate someone can `cargo add` on its own; sefer-alloc
 # depends on them and re-exports nothing of their surface (they are internal seams).
 [workspace]
-members = ["crates/vmem"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench"]
 resolver = "2"
 
 [lints.rust]
@@ -87,7 +87,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/MALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std"]
+alloc-core = ["std", "dep:aligned-vmem"]
 # Phase 9: per-thread heap + intrusive free lists -- the lock-free fast path.
 # A thread allocates from its own heap with no lock and no atomic on the common
 # case. Single-owner still (cross-thread free is Phase 10). Builds on the
@@ -169,6 +169,11 @@ crossbeam-epoch = { version = "0.9", optional = true }
 # in. Pinning is best-effort on some OSes; the runner still runs correctly if
 # the host refuses the affinity. See docs/PLAN.md §7c.
 core_affinity = { version = "0.8", optional = true }
+# Phase 8 (alloc-core) OS aperture: SEGMENT-aligned anonymous virtual memory,
+# page-level decommit/recommit. Extracted from sefer-alloc into a standalone
+# crate so it can be used and published independently. Pulled in ONLY by the
+# `alloc-core` feature (and every feature that depends on it).
+aligned-vmem = { path = "crates/vmem", version = "0.1", optional = true }
 
 [dev-dependencies]
 # Phase 0 dependency: property-based differential testing against a reference

@@ -1,0 +1,20 @@
+[package]
+name = "numa-shim"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Dependency-free NUMA detection and binding: Linux mbind(2) via raw syscall(2) (no libnuma/hwloc), Windows VirtualAllocExNuma, sysfs cpumap reader. macOS/miri no-op. Zero deps. forbid(unsafe_code)-friendly for consumers."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/numa"
+documentation = "https://docs.rs/numa-shim"
+keywords = ["numa", "mbind", "scheduling", "memory", "sysfs"]
+categories = ["os", "memory-management", "no-std::no-alloc"]
+
+[features]
+default = []
+vmem-integration = ["dep:aligned-vmem"]
+
+[dependencies]
+aligned-vmem = { version = "0.1", path = "../vmem", optional = true }

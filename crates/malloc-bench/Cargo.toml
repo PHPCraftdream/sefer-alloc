@@ -1,0 +1,20 @@
+[package]
+name = "malloc-bench-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Portable, generic-over-GlobalAlloc multi-threaded allocator benchmark harness (larson + mstress workloads with cross-thread handoff). The Rust answer to mimalloc-bench (which is C-only)."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/malloc-bench"
+documentation = "https://docs.rs/malloc-bench-rs"
+keywords = ["benchmark", "allocator", "globalalloc", "larson", "mstress"]
+categories = ["development-tools::profiling", "memory-management"]
+
+[dependencies]
+# Zero non-std deps (PRNG is xorshift internal).
+
+[dev-dependencies]
+# Optional: comparison with mimalloc in the example.
+mimalloc = "0.1"
