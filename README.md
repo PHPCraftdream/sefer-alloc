@@ -109,6 +109,24 @@ keeps these *fast* (short proptest, tiny miri scope); the heavy CPU-hour
 campaigns live in CI / nightly fuzz, not the tight cycle. See
 [`docs/PLAN.md`](docs/PLAN.md) and the fuzz target at [`fuzz/`](fuzz/).
 
+## Recommended feature set
+
+For long-running multi-thread workloads (DBMS, async runtimes, anything that
+allocates and frees segments continuously), enable the `production` feature:
+
+```toml
+[dependencies]
+sefer-alloc = { version = "0.1", features = ["production"] }
+```
+
+This is shorthand for `alloc-global + alloc-xthread + alloc-decommit`. The
+`alloc-decommit` component is critical at scale: it lets the allocator recycle
+empty segment slots, lifting the hard 1024-segment ceiling that the
+append-only `SegmentTable` would otherwise impose. Without it, long-running
+processes (e.g. a tokio server with hundreds of tasks) will eventually OOM.
+
+For embedded / `no_std` use, stay with the default `std` feature.
+
 ## MSRV
 
 **1.88.** The core is plain safe Rust and will build on much older toolchains,

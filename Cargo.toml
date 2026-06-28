@@ -119,6 +119,13 @@ alloc-global = ["alloc"]
 # decommit point in `alloc_core` and `docs/PHASE35_DECOMMIT_DESIGN.md` §1.
 # Requires `alloc-core`. Default OFF.
 alloc-decommit = ["alloc-core"]
+# Convenience alias: the recommended feature set for long-running multi-thread
+# workloads (DBMS-style, async runtimes, anything that creates and frees many
+# segments over time). Without `alloc-decommit` the per-process SegmentTable
+# (1024 slots, append-only) is the hard ceiling on cumulative segment
+# allocations; `alloc-decommit` lets empty segments be recycled (#60),
+# lifting that ceiling. Add this feature for any long-running deployment.
+production = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
