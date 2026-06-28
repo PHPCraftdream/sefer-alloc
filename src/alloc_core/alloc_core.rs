@@ -31,13 +31,17 @@ use core::ptr::NonNull;
 
 use super::bootstrap;
 use super::node::{Node, NODE_SIZE};
-use super::os::{self, Segment, SEGMENT};
+use super::os::{self, SEGMENT};
+#[cfg(not(feature = "numa-aware"))]
+use super::os::Segment;
 use super::segment_header::{
     align_up, BinTable, FREE_LIST_NULL, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind,
     SegmentMeta,
 };
 use super::segment_table::{SegmentTable, MAX_SEGMENTS};
 use super::size_classes::{AllocKind, SizeClasses};
+#[cfg(feature = "numa-aware")]
+use super::numa;
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
 /// [`AllocCore::decommit_empty_segment`]; read by the soak test via
@@ -81,6 +85,18 @@ impl AllocCore {
         // (the registry records the reservation pointers, so we do not need
         // the Rust `Segment` handle to free it).
         core::mem::forget(prim.segment);
+        // Phase C (numa-aware): the primordial segment was reserved by
+        // `bootstrap::primordial()` via the plain OS path (it predates NUMA
+        // awareness). Stamp the current thread's NUMA node into its header NOW
+        // so that `find_segment_with_free` can treat it as a local segment.
+        // On platforms without NUMA `current_node()` returns `NO_NODE`; the
+        // field already holds `NO_NODE_RAW` (same value), so this is a no-op
+        // in terms of visible effect — but it makes the invariant explicit.
+        #[cfg(feature = "numa-aware")]
+        {
+            let my_node = numa::current_node();
+            SegmentMeta::new(primordial_base).set_node_id(my_node);
+        }
         Some(Self {
             table: prim.table,
             small_cur,
@@ -522,6 +538,23 @@ impl AllocCore {
         meta.set_decommitted(true);
     }
 
+    /// TEST-ONLY (Phase B/C): the NUMA `node_id` stored in `ptr`'s segment
+    /// header, or `None` if `ptr` is foreign. Returns `u32::MAX` (`NO_NODE_RAW`)
+    /// for a segment that was not bound to a specific NUMA node (e.g. on a
+    /// non-NUMA platform, or when `numa-aware` is off). The field is present in
+    /// EVERY build's layout (layout-stable across feature configs); this accessor
+    /// is only compiled under `numa-aware` because the test that reads it is also
+    /// gated on that feature.
+    #[doc(hidden)]
+    #[cfg(feature = "numa-aware")]
+    pub fn dbg_node_id_for(&self, ptr: *mut u8) -> Option<u32> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base(base) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).node_id_of())
+    }
+
     /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
     /// `class_idx` in the high bits — into its segment's `RemoteFreeRing`,
     /// exactly as a cross-thread freer would. Lets a single-threaded test
@@ -848,6 +881,25 @@ impl AllocCore {
                 n += 1;
             }
         }
+
+        // Phase C (numa-aware): on the first pass we prefer segments whose
+        // node_id matches the calling thread's NUMA node; we collect segments
+        // from foreign nodes in `fallback` and return the first one only if
+        // the first pass found nothing.
+        //
+        // Strategy (a) — "ignore migration": we call current_node() once per
+        // find_segment_with_free invocation (not per allocation). If the thread
+        // migrated between nodes mid-scan, we may prefer a now-wrong segment —
+        // that is the accepted MVP trade-off (§4 of PHASE_NUMA_DESIGN.md).
+        #[cfg(feature = "numa-aware")]
+        let my_node = numa::current_node();
+        // A single fallback slot: the first segment from a foreign node that has
+        // a free block.  On a single-NUMA machine (or when numa-aware is off)
+        // this path is never taken — all segments have node_id == my_node (or
+        // NO_NODE_RAW, which is treated as "acceptable" / unknown).
+        #[cfg(feature = "numa-aware")]
+        let mut fallback: Option<*mut u8> = None;
+
         for &base in &bases_buf[..n] {
             // Skip large/huge segments: they have no BinTable. Field-specific
             // `kind` read (task #33): this is the Owner's alloc path,
@@ -896,9 +948,36 @@ impl AllocCore {
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
             if bt.head(class_idx) != FREE_LIST_NULL {
+                // Phase C (numa-aware): check whether this segment belongs to
+                // our NUMA node.  Segments with node_id == NO_NODE_RAW are
+                // "unknown" — treat them as local (no penalty, and on platforms
+                // without NUMA they all carry NO_NODE_RAW so this degrades
+                // gracefully to the pre-NUMA single-pass behaviour).
+                #[cfg(feature = "numa-aware")]
+                {
+                    let seg_node = meta.node_id_of();
+                    if seg_node != my_node && seg_node != super::segment_header::NO_NODE_RAW {
+                        // Foreign-node segment with a free block.  Remember as
+                        // fallback if we find nothing local, then keep scanning.
+                        if fallback.is_none() {
+                            fallback = Some(base);
+                        }
+                        continue;
+                    }
+                    // Local or unknown node — use it immediately.
+                    return Some(base);
+                }
+                // Without numa-aware: same as before — return the first match.
+                #[cfg(not(feature = "numa-aware"))]
                 return Some(base);
             }
         }
+        // First pass found no local segment with a free block; fall back to
+        // the first foreign-node segment we recorded (or None if everything is
+        // empty / all recycled).
+        #[cfg(feature = "numa-aware")]
+        return fallback;
+        #[cfg(not(feature = "numa-aware"))]
         None
     }
 
@@ -1069,21 +1148,49 @@ impl AllocCore {
         // to a whole number of segments. `Segment::reserve` does the rounding.
         let hdr_aligned = align_up(core::mem::size_of::<SegmentHeader>(), align.max(super::os::PAGE));
         let needed = hdr_aligned + align_up(size, align);
-        let segment = match Segment::reserve(needed) {
-            Some(s) => s,
-            None => return core::ptr::null_mut(),
+        // Round up to a whole number of SEGMENT-sized spans — the same rounding
+        // `Segment::reserve` does internally.  `reserve_aligned_on_node` (like
+        // the OS `mmap`/`VirtualAlloc` path) requires the usable size to be an
+        // exact multiple of SEGMENT so the over-reserve + trim arithmetic holds:
+        //   base_addr + usable <= region_addr + over   (over = usable * 2)
+        // With an un-rounded `needed` this can fail if `needed < SEGMENT` and
+        // `align_up(region_addr, SEGMENT)` skips a large head region.
+        let n_segments = needed.div_ceil(SEGMENT);
+        let usable = n_segments * SEGMENT;
+
+        // Phase C (numa-aware): steer the large segment to the calling thread's
+        // NUMA node, same as for small segments.
+        #[cfg(feature = "numa-aware")]
+        let my_node = numa::current_node();
+
+        #[cfg(feature = "numa-aware")]
+        let (base, reservation, reservation_len) = {
+            match numa::reserve_aligned_on_node(usable, my_node) {
+                Some((b, r, rl)) => (b.as_ptr(), r, rl),
+                None => return core::ptr::null_mut(),
+            }
         };
-        let base = segment.as_ptr();
-        let reservation = segment.reservation();
-        let reservation_len = segment.reservation_len();
+        #[cfg(not(feature = "numa-aware"))]
+        let (base, reservation, reservation_len) = {
+            let segment = match Segment::reserve(usable) {
+                Some(s) => s,
+                None => return core::ptr::null_mut(),
+            };
+            let b = segment.as_ptr();
+            let r = segment.reservation();
+            let rl = segment.reservation_len();
+            core::mem::forget(segment);
+            (b, r, rl)
+        };
+
         // no-panic: register returns None if the segment table is full (too many
-        // live large allocations). We release the segment and return null
+        // live large allocations). We release the reservation and return null
         // (graceful OOM) rather than panicking.
         let id = match self.table.register(base) {
             Some(id) => id,
             None => {
-                // Release the segment we just reserved (drop releases it).
-                drop(segment);
+                // Release the reservation we own.
+                os::release_segment(reservation.as_ptr(), reservation_len);
                 return core::ptr::null_mut();
             }
         };
@@ -1098,20 +1205,53 @@ impl AllocCore {
             reservation_len,
         );
         Node::write_struct(base as *mut SegmentHeader, hdr);
-        core::mem::forget(segment);
+        // Phase C (numa-aware): stamp the NUMA node into the header after
+        // writing it (the constructor sets node_id to NO_NODE_RAW).
+        #[cfg(feature = "numa-aware")]
+        SegmentMeta::new(base).set_node_id(my_node);
+
         Node::deref(base, hdr_aligned)
     }
 
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
     fn reserve_small_segment(&mut self) -> Option<*mut u8> {
-        let segment = Segment::reserve(SEGMENT)?;
-        let base = segment.as_ptr();
-        let reservation = segment.reservation();
-        let reservation_len = segment.reservation_len();
+        // Phase C (numa-aware): determine the calling thread's NUMA node
+        // BEFORE the reservation so we can pass it to `reserve_aligned_on_node`
+        // (Windows requires the node at reserve-time via VirtualAllocExNuma;
+        // Linux can bind post-mmap, but we unify the paths here).
+        #[cfg(feature = "numa-aware")]
+        let my_node = numa::current_node();
+
+        // Reserve one SEGMENT's worth of virtual address space.
+        // Under numa-aware we call the NUMA-steering path; otherwise the plain
+        // OS path.  The returned triple always provides (base, reservation,
+        // reservation_len) with the same semantics as Segment::reserve.
+        #[cfg(feature = "numa-aware")]
+        let (base, reservation, reservation_len) = {
+            let (b, r, rl) = numa::reserve_aligned_on_node(SEGMENT, my_node)?;
+            (b.as_ptr(), r, rl)
+        };
+        #[cfg(not(feature = "numa-aware"))]
+        let (base, reservation, reservation_len) = {
+            let segment = Segment::reserve(SEGMENT)?;
+            let b = segment.as_ptr();
+            let r = segment.reservation();
+            let rl = segment.reservation_len();
+            core::mem::forget(segment);
+            (b, r, rl)
+        };
+
         // no-panic: register returns None if the segment table is full. We
-        // release the segment and return None (graceful OOM).
-        let id = self.table.register(base)?;
+        // must release the reservation we just made before returning None.
+        let id = match self.table.register(base) {
+            Some(id) => id,
+            None => {
+                // Release the reservation we just made (we own it now).
+                os::release_segment(reservation.as_ptr(), reservation_len);
+                return None;
+            }
+        };
         // Lay down the small header + page map + bin table at the fixed
         // offsets. `bump` starts at the small-meta end (past the metadata).
         let meta_end = SegLayout::small_meta_end();
@@ -1123,6 +1263,14 @@ impl AllocCore {
             reservation.as_ptr(),
             reservation_len,
         ));
+        // Phase C (numa-aware): stamp the NUMA node into the header NOW,
+        // immediately after writing it. The header constructor set node_id to
+        // NO_NODE_RAW; we overwrite it with the actual node. This must happen
+        // BEFORE any carve/alloc so that find_segment_with_free sees the real
+        // node on the very first scan that includes this segment.
+        #[cfg(feature = "numa-aware")]
+        meta.set_node_id(my_node);
+
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
         // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
@@ -1139,7 +1287,6 @@ impl AllocCore {
                 SegLayout::remote_ring_off(),
             );
         }
-        core::mem::forget(segment);
         self.small_cur = base;
         Some(base)
     }

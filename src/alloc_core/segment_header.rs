@@ -262,6 +262,30 @@ pub(crate) struct SegmentHeader {
     /// recommitted. Like `live_count`, present in every layout, used only under
     /// `alloc-decommit`.
     pub decommitted: u32,
+    /// Phase B (numa-aware): the NUMA node on which this segment's physical
+    /// pages were allocated. `NO_NODE_RAW` (`u32::MAX`) means "unknown / not
+    /// bound to any NUMA node" (the sentinel used on all platforms and when
+    /// `numa-aware` is OFF).
+    ///
+    /// **Present in EVERY build's layout** — the byte layout of `SegmentHeader`
+    /// is identical regardless of feature config (same discipline as
+    /// `live_count`/`decommitted`). The field is READ and WRITTEN only under
+    /// `#[cfg(feature = "numa-aware")]`; without that feature it is inert dead
+    /// data (lint silenced below). This keeps the header's `size_of` — and all
+    /// downstream offsets (`page_map_off`, `bin_table_off`, etc.) — feature-
+    /// invariant, so serialised segment headers can be re-read regardless of
+    /// which feature set was active when they were written.
+    ///
+    /// **Not atomic — owner-only.** Written once at segment-init time
+    /// (`reserve_small_segment` / `alloc_large`), never mutated thereafter.
+    /// Cross-thread readers never touch this field (it is not part of the
+    /// dealloc-routing hot path); the `decommit_empty_segment` reset also
+    /// leaves it intact (the physical NUMA binding does not change on
+    /// decommit/recommit). Accessed via the field-specific `node_id_of` /
+    /// `set_node_id` accessor pair (same `offset_of!` discipline as `bump` and
+    /// `live_count`).
+    #[cfg_attr(not(feature = "numa-aware"), allow(dead_code))]
+    pub node_id: u32,
 }
 
 /// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
@@ -270,6 +294,14 @@ pub(crate) struct SegmentHeader {
 /// is unambiguous.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 pub(crate) const ABANDONED_TAIL: u64 = u64::MAX;
+
+/// Sentinel for `SegmentHeader::node_id`: "no NUMA node / feature disabled /
+/// unsupported platform". Mirrors `alloc_core::numa::NO_NODE` (`u32::MAX`),
+/// but declared here (safe code) so the constructors can use it without a
+/// conditional import of the `numa` module (which only compiles under
+/// `feature = "numa-aware"`). The two constants are by definition equal; a
+/// compile-time assert in `SegmentMeta::node_id_of` enforces this.
+pub(crate) const NO_NODE_RAW: u32 = u32::MAX;
 
 impl SegmentHeader {
     /// Build a fresh small-segment header value (does NOT write it — the
@@ -300,6 +332,10 @@ impl SegmentHeader {
             // A fresh small segment has no live blocks and a committed payload.
             live_count: 0,
             decommitted: 0,
+            // Phase B: NUMA node is unknown at construction time; the caller
+            // (reserve_small_segment under numa-aware) stamps the real value
+            // immediately after writing the header via set_node_id.
+            node_id: NO_NODE_RAW,
         }
     }
 
@@ -330,6 +366,9 @@ impl SegmentHeader {
             // are inert for a Large header.
             live_count: 0,
             decommitted: 0,
+            // Phase B: same sentinel as small(); the caller (alloc_large under
+            // numa-aware) stamps the real value after writing the header.
+            node_id: NO_NODE_RAW,
         }
     }
 
@@ -731,6 +770,37 @@ impl SegmentMeta {
         Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
     }
 
+    // -------------------------------------------------------------------
+    // Phase B (numa-aware) — field-specific owner-only accessor for the
+    // `node_id` field. Identical discipline to `live_count`/`decommitted`:
+    // a single-word load/store at the field's `offset_of!` offset through
+    // the `node` seam, keeping this file `unsafe`-free. Owner-only (written
+    // once at segment init, never mutated thereafter; no cross-thread reader
+    // ever touches it). Both accessors are gated on `numa-aware` — without
+    // the feature the field is inert dead data.
+    //
+    // The sentinel value (`NO_NODE_RAW`) matches `numa::NO_NODE` (both are
+    // `u32::MAX`); the compile-time assert below enforces this identity so
+    // callers can compare `node_id_of(base) != numa::NO_NODE` without risk
+    // of the two constants diverging.
+    // -------------------------------------------------------------------
+
+    /// Read the NUMA node stored in this segment's header (`NO_NODE_RAW` if
+    /// the segment was not bound to a specific node).
+    #[cfg(feature = "numa-aware")]
+    pub(crate) fn node_id_of(&self) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, node_id);
+        Node::read_u32(Node::offset(self.base, off) as *const u32)
+    }
+
+    /// Write the NUMA node into this segment's header.  Called once, at
+    /// segment-init time, immediately after the full header is written.
+    #[cfg(feature = "numa-aware")]
+    pub(crate) fn set_node_id(&mut self, node: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, node_id);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, node);
+    }
+
     /// Stamp the `owner_thread_free` field ONLY (not a full-struct
     /// `write_header`). The stamping path runs on the owning thread and writes
     /// the field at most once per segment (when it transitions null → the
@@ -831,3 +901,8 @@ const _: () = assert!(super::size_classes::MIN_BLOCK >= super::node::NODE_SIZE);
 // header's existing sub-page padding).
 const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
+// Phase B: `NO_NODE_RAW` (declared here, in safe code) and `numa::NO_NODE`
+// (declared in the confined-unsafe seam) must be identical so comparisons
+// like `node_id_of(base) != numa::NO_NODE` are consistent without coupling
+// this safe file to the conditionally-compiled `numa` module.
+const _: () = assert!(NO_NODE_RAW == u32::MAX);
