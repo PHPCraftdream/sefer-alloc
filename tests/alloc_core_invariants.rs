@@ -143,7 +143,11 @@ fn m3_simultaneous_allocations_do_not_overlap() {
         // SAFETY: same validity.
         unsafe {
             for b in 0..256 {
-                assert_eq!((p as *const u8).add(b).read(), i as u8, "alloc {i} byte {b} clobbered");
+                assert_eq!(
+                    (p as *const u8).add(b).read(),
+                    i as u8,
+                    "alloc {i} byte {b} clobbered"
+                );
             }
         }
     }

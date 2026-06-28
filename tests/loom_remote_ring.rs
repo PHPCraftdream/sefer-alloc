@@ -199,9 +199,7 @@ fn correct_ring_never_loses_or_duplicates() {
             while ring_a.push(10).is_err() {}
         });
         let ring_b = Arc::clone(&ring);
-        let tb = thread::spawn(move || {
-            while ring_b.push(20).is_err() {}
-        });
+        let tb = thread::spawn(move || while ring_b.push(20).is_err() {});
 
         ta.join().unwrap();
         tb.join().unwrap();
@@ -359,8 +357,7 @@ fn counterfactual_drain_without_clear_duplicates_on_wrap() {
             for _ in 0..8 {
                 ring_c.drain_broken_no_clear(|off| {
                     if off >= 100 && off < 200 {
-                        reclaimed_c[off as usize - 100]
-                            .fetch_add(1, Ordering::Relaxed);
+                        reclaimed_c[off as usize - 100].fetch_add(1, Ordering::Relaxed);
                     }
                 });
                 thread::yield_now();

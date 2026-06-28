@@ -51,7 +51,8 @@ impl PartialEq for Payload {
 
 impl Drop for Payload {
     fn drop(&mut self) {
-        self.drops.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.drops
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -390,7 +391,11 @@ fn router_uses_handle_shard_and_handles_from_distinct_shards_are_distinct() {
     // Claim shard 0 and shard 1 in turn (reset TLS binding between inserts so
     // the round-robin advances from this single thread).
     let h0 = region.insert(111).expect("insert into shard 0");
-    assert_eq!(h0.shard(), 0, "first insert from this thread claims shard 0");
+    assert_eq!(
+        h0.shard(),
+        0,
+        "first insert from this thread claims shard 0"
+    );
     ShardedRegion::<u64>::_reset_my_shard_binding_for_tests();
     let h1 = region.insert(222).expect("insert into shard 1");
     assert_eq!(h1.shard(), 1, "after reset, next insert claims shard 1");
@@ -418,6 +423,10 @@ fn router_uses_handle_shard_and_handles_from_distinct_shards_are_distinct() {
     // Removing h0 affects ONLY shard 0; h1 (shard 1) is untouched.
     assert!(region.remove(h0));
     assert_eq!(region.get_cloned(h0), None, "h0 removed");
-    assert_eq!(region.get_cloned(h1), Some(222), "h1 in a different shard is unaffected");
+    assert_eq!(
+        region.get_cloned(h1),
+        Some(222),
+        "h1 in a different shard is unaffected"
+    );
     assert_eq!(region.len(), 1);
 }

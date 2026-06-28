@@ -60,16 +60,26 @@ fn decommit_recommit_roundtrip() {
         aligned_vmem::decommit(base, span / 2, span);
         recommit(base, span / 2, span);
         // After recommit the page reads as zero (fresh OS page).
-        assert_eq!(base.add(span / 2).read(), 0, "recommitted page must be zeroed");
+        assert_eq!(
+            base.add(span / 2).read(),
+            0,
+            "recommitted page must be zeroed"
+        );
     }
 }
 
 #[test]
 fn rejects_bad_contracts() {
     assert!(reserve_aligned(0, PAGE).is_none(), "zero size rejected");
-    assert!(reserve_aligned(PAGE, 3).is_none(), "non-pow2 align rejected");
+    assert!(
+        reserve_aligned(PAGE, 3).is_none(),
+        "non-pow2 align rejected"
+    );
     assert!(reserve_aligned(PAGE, 64).is_none(), "align < PAGE rejected");
-    assert!(reserve_aligned(PAGE + 1, PAGE).is_none(), "non-page-multiple size rejected");
+    assert!(
+        reserve_aligned(PAGE + 1, PAGE).is_none(),
+        "non-page-multiple size rejected"
+    );
 }
 
 #[test]

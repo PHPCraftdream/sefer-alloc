@@ -83,11 +83,7 @@ fn reserve_on_node_returns_valid_span() {
         .expect("reserve_on_node returned None — OOM or contract violation");
 
     // Check alignment and size.
-    assert_eq!(
-        r.as_ptr() as usize % align,
-        0,
-        "base is not align-aligned"
-    );
+    assert_eq!(r.as_ptr() as usize % align, 0, "base is not align-aligned");
     assert_eq!(r.len(), size);
 
     // Write and read back to confirm the memory is accessible.

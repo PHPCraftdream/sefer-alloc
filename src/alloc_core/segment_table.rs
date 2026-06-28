@@ -135,8 +135,16 @@ impl SegmentTable {
     /// just the primordial). This method is safe because it does not touch
     /// memory — it only stores the pointers; the contract is the caller's
     /// invariant, enforced by the bootstrap being the sole caller.
-    pub(crate) fn from_primordial(slots: *mut *mut u8, count: u32, hash_slots: *mut *mut u8) -> Self {
-        Self { slots, count, hash_slots }
+    pub(crate) fn from_primordial(
+        slots: *mut *mut u8,
+        count: u32,
+        hash_slots: *mut *mut u8,
+    ) -> Self {
+        Self {
+            slots,
+            count,
+            hash_slots,
+        }
     }
 
     /// Register a new segment base. Returns its assigned `segment_id` (the
@@ -359,8 +367,10 @@ impl SegmentTable {
     /// Address of hash slot `i`. Pure pointer arithmetic through the `node` seam.
     #[inline]
     fn hash_slot_ptr(&self, i: usize) -> *mut *mut u8 {
-        super::node::Node::offset(self.hash_slots as *mut u8, i * core::mem::size_of::<*mut u8>())
-            as *mut *mut u8
+        super::node::Node::offset(
+            self.hash_slots as *mut u8,
+            i * core::mem::size_of::<*mut u8>(),
+        ) as *mut *mut u8
     }
 
     /// Read the value stored at hash slot `i`.

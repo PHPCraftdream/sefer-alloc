@@ -232,7 +232,6 @@ fn global_allocator_cross_thread_free() {
     );
 }
 
-
 /// Repeated alloc/dealloc on the SAME installed global allocator across many
 /// sizes — catches free-list corruption (a freed block landing on the wrong
 /// class list would manifest as a wrong-size read-back).
@@ -252,7 +251,10 @@ fn global_allocator_multithreaded_size_class_churn() {
                         let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
                         // SAFETY: valid layout; GLOBAL is the installed allocator.
                         let p = unsafe { GLOBAL.alloc(layout) };
-                        assert!(!p.is_null(), "alloc({size}) returned null on t{t}/iter{iter}");
+                        assert!(
+                            !p.is_null(),
+                            "alloc({size}) returned null on t{t}/iter{iter}"
+                        );
                         // SAFETY: p is valid for `size` bytes.
                         unsafe {
                             std::ptr::write_bytes(p, 0xAB, size);

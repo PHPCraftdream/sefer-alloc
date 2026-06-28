@@ -166,6 +166,11 @@ aligned-vmem = { path = "crates/vmem", version = "0.1", optional = true }
 numa-shim = { path = "crates/numa", version = "0.1", features = ["vmem-integration"], optional = true }
 
 [dev-dependencies]
+# Phase 2 dependency: the locality bench compares `Region` against raw
+# `slotmap::SlotMap` / `DenseSlotMap`. slotmap is no longer a direct production
+# dep (it lives in `sefer-region`), but the bench still needs it for the head-
+# to-head numbers. Dev-only.
+slotmap = "1"
 # Phase 0 dependency: property-based differential testing against a reference
 # model. This is the heart of the verification-first build — see docs/PLAN.md.
 proptest = "1"

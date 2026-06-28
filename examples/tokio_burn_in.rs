@@ -77,8 +77,8 @@
 )]
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, Semaphore};
@@ -216,7 +216,9 @@ async fn run_query(
         let row_len = rng.range(20, 200) as usize;
         // Build a string of the form "row-<id>-<j>-<padding...>"
         let base = format!("task-{task_id}-row-{j}-");
-        let padding: String = std::iter::repeat('x').take(row_len.saturating_sub(base.len())).collect();
+        let padding: String = std::iter::repeat('x')
+            .take(row_len.saturating_sub(base.len()))
+            .collect();
         rows.push(format!("{base}{padding}"));
         alloc_estimate += 2; // format + padding string
     }
@@ -288,10 +290,7 @@ async fn run_query(
 /// The drop-half pattern maximises the chance that allocations made on one
 /// tokio worker thread are freed on a *different* worker thread — the key
 /// cross-thread-free scenario that exercises the xthread path in `SeferMalloc`.
-async fn coordinator(
-    mut rx: mpsc::Receiver<QueryResult>,
-    fwd_tx: mpsc::Sender<QueryResult>,
-) {
+async fn coordinator(mut rx: mpsc::Receiver<QueryResult>, fwd_tx: mpsc::Sender<QueryResult>) {
     let mut seq: u64 = 0;
     while let Some(result) = rx.recv().await {
         seq += 1;
@@ -309,10 +308,7 @@ async fn coordinator(
 // ── aggregator task ───────────────────────────────────────────────────────────
 
 /// Accumulates totals from coordinator-forwarded results.
-async fn aggregator(
-    mut rx: mpsc::Receiver<QueryResult>,
-    total_allocs: Arc<AtomicU64>,
-) -> u64 {
+async fn aggregator(mut rx: mpsc::Receiver<QueryResult>, total_allocs: Arc<AtomicU64>) -> u64 {
     let mut tasks_seen: u64 = 0;
     while let Some(result) = rx.recv().await {
         total_allocs.fetch_add(result.alloc_estimate, Ordering::Relaxed);
@@ -362,7 +358,9 @@ fn main() {
 
     println!("== sefer-alloc tokio burn-in ==");
     println!("global_allocator: SeferMalloc (ALL allocs — including tokio internals)");
-    println!("workers={workers}  tasks={n_tasks}  concurrency={concurrency}  duration={burn_secs}s");
+    println!(
+        "workers={workers}  tasks={n_tasks}  concurrency={concurrency}  duration={burn_secs}s"
+    );
     println!("(SEFER_TOKIO_WORKERS / SEFER_BURNIN_TASKS / SEFER_BURNIN_CONCURRENCY / SEFER_BURNIN_SECONDS)");
     println!();
 
@@ -458,9 +456,7 @@ fn main() {
                 let elapsed = wall_start_inner.elapsed().as_secs_f64();
                 let done = hb_completed.load(Ordering::Relaxed);
                 let fly = hb_in_flight.load(Ordering::Relaxed);
-                println!(
-                    "[T+{elapsed:.0}s] alive: {done} tasks completed, {fly} in flight"
-                );
+                println!("[T+{elapsed:.0}s] alive: {done} tasks completed, {fly} in flight");
             }
         });
 
@@ -509,7 +505,9 @@ fn main() {
         println!("  tasks_spawned:       {n_tasks}");
         println!("  tasks_completed:     {done}");
         println!("  agg_results_seen:    {agg_seen}  (coordinator forwarded ~half)");
-        println!("  total_allocs_est:    {alloc_est}  (per-task estimate; excludes tokio internals)");
+        println!(
+            "  total_allocs_est:    {alloc_est}  (per-task estimate; excludes tokio internals)"
+        );
 
         match result {
             Ok(code) => code as i32,
@@ -525,7 +523,10 @@ fn main() {
     let elapsed = wall_start.elapsed();
     println!();
     if exit_code == 0 {
-        println!("[burn-in] exit 0 — no panics, no deadlocks detected ({:.2}s)", elapsed.as_secs_f64());
+        println!(
+            "[burn-in] exit 0 — no panics, no deadlocks detected ({:.2}s)",
+            elapsed.as_secs_f64()
+        );
     } else {
         eprintln!("[burn-in] exit {exit_code} — see errors above");
         std::process::exit(exit_code);

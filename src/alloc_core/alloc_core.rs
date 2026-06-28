@@ -31,17 +31,17 @@ use core::ptr::NonNull;
 
 use super::bootstrap;
 use super::node::{Node, NODE_SIZE};
-use super::os::{self, SEGMENT};
+#[cfg(feature = "numa-aware")]
+use super::numa;
 #[cfg(not(feature = "numa-aware"))]
 use super::os::Segment;
+use super::os::{self, SEGMENT};
 use super::segment_header::{
-    align_up, BinTable, FREE_LIST_NULL, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind,
-    SegmentMeta,
+    align_up, BinTable, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind, SegmentMeta,
+    FREE_LIST_NULL,
 };
 use super::segment_table::{SegmentTable, MAX_SEGMENTS};
 use super::size_classes::{AllocKind, SizeClasses};
-#[cfg(feature = "numa-aware")]
-use super::numa;
 
 // ---------------------------------------------------------------------------
 // OPT-E — large-segment free-cache (feature = "alloc-decommit")
@@ -415,7 +415,10 @@ impl AllocCore {
         if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
             return false;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
             return false;
         }
         // Sanity: the offset must be a whole number of `block_size` units. carve
@@ -593,7 +596,10 @@ impl AllocCore {
         if !self.table.contains_base(base) {
             return None;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
             return None;
         }
         Some(SegmentMeta::new(base).live_count_of())
@@ -608,7 +614,10 @@ impl AllocCore {
         if !self.table.contains_base(base) {
             return None;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
             return None;
         }
         Some(SegmentMeta::new(base).is_decommitted())
@@ -666,9 +675,10 @@ impl AllocCore {
         // 2d. Zero the alloc bitmap (every slot "allocated / not-a-block" — the
         //     init state; with no live blocks and an empty free list this is the
         //     correct clean state). Re-init in place over the bitmap bytes.
-        super::alloc_bitmap::AllocBitmap::init_in_place(
-            Node::offset(base, SegLayout::alloc_bitmap_off()),
-        );
+        super::alloc_bitmap::AllocBitmap::init_in_place(Node::offset(
+            base,
+            SegLayout::alloc_bitmap_off(),
+        ));
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);
     }
@@ -741,7 +751,9 @@ impl AllocCore {
                     decommit_happened = true;
                 }
                 #[cfg(not(feature = "alloc-decommit"))]
-                { let _ = Self::reclaim_offset(base, off, small_cur); }
+                {
+                    let _ = Self::reclaim_offset(base, off, small_cur);
+                }
             });
             #[cfg(feature = "alloc-decommit")]
             if decommit_happened {
@@ -765,7 +777,10 @@ impl AllocCore {
         if !self.table.contains_base(base) {
             return None;
         }
-        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
             return None;
         }
         let meta = SegmentMeta::new(base);
@@ -983,11 +998,7 @@ impl AllocCore {
     /// Returns the first carved block (for the caller), or `None` if the
     /// current segment cannot fit even one block (caller reserves a fresh
     /// segment and retries).
-    fn carve_block_with_refill(
-        &mut self,
-        class_idx: usize,
-        block_size: usize,
-    ) -> Option<*mut u8> {
+    fn carve_block_with_refill(&mut self, class_idx: usize, block_size: usize) -> Option<*mut u8> {
         // Carve the caller's block first.
         let first = self.carve_block(class_idx, block_size)?;
         // Refill batch: carve extra blocks and push each into its OWN segment.
@@ -1089,7 +1100,10 @@ impl AllocCore {
             // concurrent with a Remote's `dealloc_routing` field reads — a
             // full-struct `read_at` here would race them. `kind_at` reads only
             // the `kind` byte, disjoint from any writer.
-            if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small | SegmentKind::Primordial) {
+            if !matches!(
+                SegmentHeader::kind_at(base),
+                SegmentKind::Small | SegmentKind::Primordial
+            ) {
                 continue;
             }
             // Variant-2: lazily drain this segment's remote-free ring before
@@ -1116,7 +1130,9 @@ impl AllocCore {
                         decommit_happened = true;
                     }
                     #[cfg(not(feature = "alloc-decommit"))]
-                    { let _ = Self::reclaim_offset(base, off, small_cur); }
+                    {
+                        let _ = Self::reclaim_offset(base, off, small_cur);
+                    }
                 });
                 // Slot recycle: now that the drain is complete, it is safe to
                 // release the OS reservation and NULL the slot. Any stale ring
@@ -1335,7 +1351,10 @@ impl AllocCore {
     fn alloc_large(&mut self, size: usize, align: usize) -> *mut u8 {
         // The segment must hold: header + alignment padding + size, rounded up
         // to a whole number of segments. `Segment::reserve` does the rounding.
-        let hdr_aligned = align_up(core::mem::size_of::<SegmentHeader>(), align.max(super::os::PAGE));
+        let hdr_aligned = align_up(
+            core::mem::size_of::<SegmentHeader>(),
+            align.max(super::os::PAGE),
+        );
         let needed = hdr_aligned + align_up(size, align);
         // Round up to a whole number of SEGMENT-sized spans — the same rounding
         // `Segment::reserve` does internally.  `reserve_aligned_on_node` (like
@@ -1462,14 +1481,8 @@ impl AllocCore {
         };
         // Lay down the large header. The allocation lives at `hdr_aligned`.
         let bump = hdr_aligned + align_up(size, align);
-        let hdr = SegmentHeader::large(
-            id,
-            size,
-            align,
-            bump,
-            reservation.as_ptr(),
-            reservation_len,
-        );
+        let hdr =
+            SegmentHeader::large(id, size, align, bump, reservation.as_ptr(), reservation_len);
         Node::write_struct(base as *mut SegmentHeader, hdr);
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
@@ -1541,9 +1554,10 @@ impl AllocCore {
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
         // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
         // guard) to all-zeros; bits flip to FREE as blocks are pushed.
-        super::alloc_bitmap::AllocBitmap::init_in_place(
-            base_add(base, SegLayout::alloc_bitmap_off()),
-        );
+        super::alloc_bitmap::AllocBitmap::init_in_place(base_add(
+            base,
+            SegLayout::alloc_bitmap_off(),
+        ));
         // Initialise the per-segment remote-free ring (Variant-2 fix). Only
         // under `alloc-xthread`; the Layout always reserves the bytes.
         #[cfg(feature = "alloc-xthread")]

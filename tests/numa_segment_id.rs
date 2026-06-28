@@ -72,7 +72,10 @@ fn large_segment_carries_node_id() {
     // Allocate a large block (2 MiB, align 4096 — well above all small classes).
     let layout = Layout::from_size_align(2 * 1024 * 1024, 4096).unwrap();
     let ptr = core.alloc(layout);
-    assert!(!ptr.is_null(), "AllocCore::alloc returned null for large block");
+    assert!(
+        !ptr.is_null(),
+        "AllocCore::alloc returned null for large block"
+    );
 
     let stamped_node = core
         .dbg_node_id_for(ptr)

@@ -285,7 +285,8 @@ fn correct_adopt_direct_contention_is_exactly_once() {
     builder.check(|| {
         // Start the segment ABANDONED (pre-abandoned by a prior owner).
         let seg = Arc::new(Segment::new());
-        seg.owner_state.store(pack(STATE_ABANDONED, 5), Ordering::Release);
+        seg.owner_state
+            .store(pack(STATE_ABANDONED, 5), Ordering::Release);
 
         let adopted = Arc::new(AtomicUsize::new(0));
 
@@ -337,7 +338,8 @@ fn counterfactual_naive_adopt_double_owns() {
     builder.check(|| {
         // Start the segment ABANDONED.
         let seg = Arc::new(Segment::new());
-        seg.owner_state.store(pack(STATE_ABANDONED, 5), Ordering::Release);
+        seg.owner_state
+            .store(pack(STATE_ABANDONED, 5), Ordering::Release);
 
         let adopted = Arc::new(AtomicUsize::new(0));
 
@@ -383,7 +385,8 @@ fn reader_observes_consistent_state() {
     builder.preemption_bound = Some(3);
     builder.check(|| {
         let seg = Arc::new(Segment::new());
-        seg.owner_state.store(pack(STATE_ABANDONED, 1), Ordering::Release);
+        seg.owner_state
+            .store(pack(STATE_ABANDONED, 1), Ordering::Release);
 
         let seg_r = Arc::clone(&seg);
         let reader = thread::spawn(move || {

@@ -183,10 +183,12 @@ const fn build_size2class() -> [u8; (SMALL_MAX / MIN_BLOCK) + 1] {
     // The `u8` entry type is sound only while SMALL_CLASS_COUNT < 256; pin that
     // invariant at compile time (a future table growth beyond 255 classes would
     // fail to compile here, rather than silently truncate).
-    const { assert!(
-        SMALL_CLASS_COUNT < 256,
-        "SIZE2CLASS entries are u8; SMALL_CLASS_COUNT must stay below 256"
-    ) };
+    const {
+        assert!(
+            SMALL_CLASS_COUNT < 256,
+            "SIZE2CLASS entries are u8; SMALL_CLASS_COUNT must stay below 256"
+        )
+    };
     let len = SMALL_MAX / MIN_BLOCK + 1;
     let mut out = [0u8; (SMALL_MAX / MIN_BLOCK) + 1];
     let mut k = 0;

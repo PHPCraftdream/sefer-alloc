@@ -313,8 +313,7 @@ impl<T> EpochRegion<T> {
         // they are owner-only bookkeeping (a remote remover uses
         // `remote_evict`, which enqueues to the remote-free queue instead).
         let reusable = matches!(outcome, EvictOutcome::Evicted { reusable: true });
-        self.len
-            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.len.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         let mut state = self.state.lock().expect("writer mutex poisoned");
         // Drain remote frees opportunistically (cheap if empty) so the owner's
         // free list stays current even under cross-thread churn.
@@ -358,8 +357,7 @@ impl<T> EpochRegion<T> {
         }
         // We won the CAS uniquely. Decrement len (races the owner's fetch_add
         // and other removers' fetch_sub correctly — both are atomic).
-        self.len
-            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        self.len.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         // Enqueue the freed index for the owner to drain. Push even if the slot
         // saturated — `try_evict_at` reports reusable:false for saturation,
         // and the owner re-checks on drain (a saturated slot is dropped from

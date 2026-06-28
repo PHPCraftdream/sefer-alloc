@@ -47,7 +47,11 @@ fn reclaim_offset_single_threaded_roundtrip() {
         }
         // Distinct.
         let set: HashSet<usize> = ptrs.iter().map(|&p| p as usize).collect();
-        assert_eq!(set.len(), K, "alloc handed out a duplicate in round {round}");
+        assert_eq!(
+            set.len(),
+            K,
+            "alloc handed out a duplicate in round {round}"
+        );
 
         // 2. Simulate cross-thread free: push each offset (with its size class)
         //    into its segment ring. The test allocates only `layout` (8/8) →

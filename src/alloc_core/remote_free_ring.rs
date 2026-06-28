@@ -263,8 +263,8 @@ impl RemoteFreeRing {
         Node::write_u32(Node::offset(ring.base, OVERFLOW_OFF) as *mut u32, 0);
         // Every slot empty.
         for i in 0..RING_CAP {
-            let slot = Node::offset(ring.base, SLOTS_OFF + i * core::mem::size_of::<u32>())
-                as *mut u32;
+            let slot =
+                Node::offset(ring.base, SLOTS_OFF + i * core::mem::size_of::<u32>()) as *mut u32;
             Node::write_u32(slot, RING_SLOT_EMPTY);
         }
     }
@@ -309,9 +309,7 @@ impl RemoteFreeRing {
             let h = self.head().load(Ordering::Acquire);
             if t.wrapping_sub(h) >= RING_CAP as u32 {
                 // Ring full: bounded leak. Count it (diagnostic) and bail.
-                let _ = self
-                    .overflow()
-                    .fetch_add(1, Ordering::Relaxed);
+                let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
                 return Err(PushOverflow);
             }
             // Reserve slot `t`: CAS tail t → t+1. AcqRel on success — the

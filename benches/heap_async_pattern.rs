@@ -44,9 +44,8 @@ use sefer_alloc::SeferMalloc;
 /// boundary to touch the pages (non-vacuous), return the pointer.
 #[inline]
 fn alloc_touch<A: GlobalAlloc>(a: &A, size: usize) -> *mut u8 {
-    let layout = Layout::from_size_align(size, 8).unwrap_or_else(|_| {
-        Layout::from_size_align(8, 8).unwrap()
-    });
+    let layout =
+        Layout::from_size_align(size, 8).unwrap_or_else(|_| Layout::from_size_align(8, 8).unwrap());
     // SAFETY: layout has non-zero size and valid alignment.
     let ptr = unsafe { a.alloc(layout) };
     if !ptr.is_null() {
@@ -66,9 +65,8 @@ fn free_touched<A: GlobalAlloc>(a: &A, ptr: *mut u8, size: usize) {
     if ptr.is_null() {
         return;
     }
-    let layout = Layout::from_size_align(size, 8).unwrap_or_else(|_| {
-        Layout::from_size_align(8, 8).unwrap()
-    });
+    let layout =
+        Layout::from_size_align(size, 8).unwrap_or_else(|_| Layout::from_size_align(8, 8).unwrap());
     // SAFETY: ptr was returned by the same `a` with the same `layout`.
     unsafe { a.dealloc(ptr, layout) };
 }
@@ -79,9 +77,8 @@ fn grow<A: GlobalAlloc>(a: &A, ptr: *mut u8, old_size: usize, new_size: usize) -
     if ptr.is_null() || old_size == 0 {
         return alloc_touch(a, new_size);
     }
-    let old_layout = Layout::from_size_align(old_size, 8).unwrap_or_else(|_| {
-        Layout::from_size_align(8, 8).unwrap()
-    });
+    let old_layout = Layout::from_size_align(old_size, 8)
+        .unwrap_or_else(|_| Layout::from_size_align(8, 8).unwrap());
     // SAFETY: ptr was returned by `a` with `old_layout`; `new_size` is non-zero.
     let new_ptr = unsafe { a.realloc(ptr, old_layout, new_size) };
     if new_ptr.is_null() {

@@ -190,21 +190,15 @@ fn bench_large_alloc_free(c: &mut Criterion) {
     for &(size, label) in LARGE_SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        group.bench_with_input(
-            BenchmarkId::new("SeferMalloc", label),
-            &layout,
-            |b, &l| b.iter(|| alloc_free_one(&sefer, l)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("mimalloc", label),
-            &layout,
-            |b, &l| b.iter(|| alloc_free_one(&mi, l)),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("System", label),
-            &layout,
-            |b, &l| b.iter(|| alloc_free_one(&sys, l)),
-        );
+        group.bench_with_input(BenchmarkId::new("SeferMalloc", label), &layout, |b, &l| {
+            b.iter(|| alloc_free_one(&sefer, l))
+        });
+        group.bench_with_input(BenchmarkId::new("mimalloc", label), &layout, |b, &l| {
+            b.iter(|| alloc_free_one(&mi, l))
+        });
+        group.bench_with_input(BenchmarkId::new("System", label), &layout, |b, &l| {
+            b.iter(|| alloc_free_one(&sys, l))
+        });
     }
 
     group.finish();

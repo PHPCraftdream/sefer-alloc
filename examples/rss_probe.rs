@@ -89,11 +89,7 @@ mod rss {
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("VmRSS:") {
                 // rest is like "   123456 kB"
-                let kb: u64 = rest
-                    .split_whitespace()
-                    .next()?
-                    .parse()
-                    .ok()?;
+                let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
                 return Some(kb * 1024);
             }
         }
@@ -114,12 +110,12 @@ mod rss {
         // We use usize for SIZE_T fields (matches pointer width).
         #[repr(C)]
         struct ProcessMemoryCounters {
-            cb: c_ulong,           // 0: struct size (DWORD)
-            page_fault_count: c_ulong, // 4
-            peak_working_set_size: usize, // 8 (SIZE_T)
-            working_set_size: usize,     // 16 (SIZE_T) ← RSS
-            quota_peak_paged_pool_usage: usize, // 24
-            quota_paged_pool_usage: usize,      // 32
+            cb: c_ulong,                            // 0: struct size (DWORD)
+            page_fault_count: c_ulong,              // 4
+            peak_working_set_size: usize,           // 8 (SIZE_T)
+            working_set_size: usize,                // 16 (SIZE_T) ← RSS
+            quota_peak_paged_pool_usage: usize,     // 24
+            quota_paged_pool_usage: usize,          // 32
             quota_peak_non_paged_pool_usage: usize, // 40
             quota_non_paged_pool_usage: usize,      // 48
             pagefile_usage: usize,                  // 56
@@ -215,7 +211,6 @@ impl Xorshift64 {
         self.0 = x;
         x.wrapping_mul(0x2545_F491_4F6C_DD1D)
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -422,9 +417,7 @@ fn main() {
         "Asymmetric scenario: {n_producers} producer thread(s) allocate ONLY; \
          1 consumer thread frees ONLY."
     );
-    println!(
-        "All cross-thread frees route through RemoteFreeRing (one ring per segment)."
-    );
+    println!("All cross-thread frees route through RemoteFreeRing (one ring per segment).");
     println!();
 
     // Check RSS availability before starting threads

@@ -740,6 +740,7 @@ dependencies = [
  "numa-shim",
  "proptest",
  "sefer-region",
+ "slotmap",
  "tokio",
 ]
 

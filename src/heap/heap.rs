@@ -121,7 +121,9 @@ impl Heap {
     /// remotely-freed blocks are reused first.
     #[must_use]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        let size = layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
         let align = layout.align();
         match classify(size, align) {
             Some(class_idx) => self.alloc_small(class_idx),
@@ -145,7 +147,9 @@ impl Heap {
         if !ptr.is_null() {
             crate::alloc_core::node::Node::zero(
                 ptr,
-                layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK),
+                layout
+                    .size()
+                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
             );
         }
         ptr
@@ -169,7 +173,9 @@ impl Heap {
         if ptr.is_null() {
             return;
         }
-        let size = layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
         let align = layout.align();
         match classify(size, align) {
             Some(class_idx) => self.dealloc_small(ptr, class_idx),
@@ -251,14 +257,14 @@ impl Heap {
         // `reclaim_offset`, which trusts the carried class rather than the
         // unreliable `page_map` of a mixed-class page (§13). A Large `layout`
         // on a small segment is a contract violation — drop (no-op).
-        let size = layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK);
-        let class_idx = match crate::alloc_core::size_classes::SizeClasses::class_for(
-            size,
-            layout.align(),
-        ) {
-            Some(c) => c as u32,
-            None => return,
-        };
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let class_idx =
+            match crate::alloc_core::size_classes::SizeClasses::class_for(size, layout.align()) {
+                Some(c) => c as u32,
+                None => return,
+            };
         let off = (ptr as usize - base as usize) as u32;
         let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
         let ring = SegmentMeta::new(base).remote_ring();
@@ -289,8 +295,7 @@ impl Heap {
         // BinTable via `segment_base_of(ptr)` (defect A fix). No heap-layer
         // free-list state — defect B fix (no captured `bins` array that would
         // bypass non-current segments).
-        let block_size =
-            crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+        let block_size = crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
         let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
             Ok(l) => l,
             Err(_) => return core::ptr::null_mut(),
@@ -326,8 +331,7 @@ impl Heap {
         {
             // Phase 9 single-owner: route to the owning segment's BinTable via
             // the substrate (which uses segment_base_of + double-free guard).
-            let block_size =
-                crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
+            let block_size = crate::alloc_core::size_classes::SizeClasses::block_size(class_idx);
             let layout = match Layout::from_size_align(block_size, block_size.min(16)) {
                 Ok(l) => l,
                 Err(_) => return,
@@ -368,10 +372,7 @@ impl Heap {
                 // Cross-thread dealloc: push (offset, class) to the owning
                 // segment's RemoteFreeRing (the block's bytes are NOT touched).
                 let off = (ptr as usize - base as usize) as u32;
-                let packed = crate::alloc_core::remote_free_ring::pack_entry(
-                    off,
-                    class_idx as u32,
-                );
+                let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx as u32);
                 let ring = SegmentMeta::new(base).remote_ring();
                 let _ = ring.push(packed);
             }

@@ -34,17 +34,17 @@
 
 use core::sync::atomic::Ordering;
 
-use crate::alloc_core::segment_header::{
-    pack_owner, unpack_owner_gen, unpack_owner_id, unpack_owner_state, SegmentMeta, ABANDONED_TAIL,
-    OWNER_ID_NONE, OWNER_STATE_ABANDONED,
-};
 use super::bootstrap::{
-    abandoned_head_is_empty, ensure, pack_abandoned_head, unpack_abandoned_head, ABANDONED_HEAD_EMPTY,
-    Registry, MAX_HEAPS,
+    abandoned_head_is_empty, ensure, pack_abandoned_head, unpack_abandoned_head, Registry,
+    ABANDONED_HEAD_EMPTY, MAX_HEAPS,
 };
 use super::heap_core::HeapCore;
 use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL, STATE_FREE, STATE_LIVE};
 use super::tagged_ptr::TaggedPtr;
+use crate::alloc_core::segment_header::{
+    pack_owner, unpack_owner_gen, unpack_owner_id, unpack_owner_state, SegmentMeta, ABANDONED_TAIL,
+    OWNER_ID_NONE, OWNER_STATE_ABANDONED,
+};
 
 /// The global heap slot table. All methods operate on the process-global
 /// [`Registry`] returned by [`ensure`]; the type itself carries no state (it
@@ -90,12 +90,8 @@ impl HeapRegistry {
         //    Single-thread (Phase 12.2) the CAS trivially succeeds. Under
         //    concurrency (12.3+) an `Err(LIVE)` means another thread won THIS
         //    slot; we restart `claim` to obtain a fresh candidate.
-        if slot.cas_state(
-            STATE_FREE,
-            STATE_LIVE,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) == Err(STATE_LIVE)
+        if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+            == Err(STATE_LIVE)
         {
             // Lost the race to another claimer for THIS index. This cannot
             // happen single-threaded; under concurrency (12.3+) it means
@@ -416,12 +412,8 @@ impl HeapRegistry {
             // ABANDONED store + BinTable state; Release so a later freer's
             // Acquire read of owner_state sees our LIVE stamp). Relaxed on
             // failure (we discard this segment).
-            match owner_atomic.compare_exchange(
-                cur,
-                new_word,
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-            ) {
+            match owner_atomic.compare_exchange(cur, new_word, Ordering::AcqRel, Ordering::Relaxed)
+            {
                 Ok(_) => {
                     // We won the segment. Register it in the adopter's
                     // AllocCore segment table (so alloc/dealloc routing finds
@@ -497,12 +489,10 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
         };
         // CAS the head to `new_head`. Acquire on success (see the push's
         // Release store of `next_free`); Relaxed on failure (retry).
-        match reg.free_slots.compare_exchange(
-            head,
-            new_head,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ) {
+        match reg
+            .free_slots
+            .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Relaxed)
+        {
             Ok(_) => return Some(idx as usize),
             Err(actual) => head = actual, // retry with the new head
         }
@@ -539,12 +529,10 @@ fn push_free_slot(reg: &Registry, idx: u32) {
         let new_head = TaggedPtr::pack(idx as u64, new_tag);
         // CAS: Release on success so a pop's Acquire sees the `next_free`
         // link we just wrote. Relaxed on failure (retry).
-        match reg.free_slots.compare_exchange(
-            head,
-            new_head,
-            Ordering::Release,
-            Ordering::Relaxed,
-        ) {
+        match reg
+            .free_slots
+            .compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed)
+        {
             Ok(_) => return,
             Err(actual) => head = actual,
         }
@@ -667,12 +655,7 @@ fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
             return;
         }
         let new_word = pack_owner(OWNER_STATE_ABANDONED, owner_id, cur_gen);
-        match owner_atomic.compare_exchange(
-            cur,
-            new_word,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        ) {
+        match owner_atomic.compare_exchange(cur, new_word, Ordering::AcqRel, Ordering::Relaxed) {
             Ok(_) => break,
             Err(_) => continue, // retry the load+CAS
         }

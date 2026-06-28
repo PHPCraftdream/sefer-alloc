@@ -47,21 +47,19 @@
 //! registry. The eventual collapse of `Heap` into `HeapCore` is later work.
 
 use core::alloc::Layout;
-use core::sync::atomic::Ordering;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
+use core::sync::atomic::Ordering;
 
-use crate::alloc_core::{node::Node, AllocCore};
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::os;
-#[cfg(feature = "alloc-xthread")]
-use crate::alloc_core::segment_header::{
-    SegmentHeader, SegmentKind, SEGMENT_MAGIC,
-};
-#[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
-use crate::alloc_core::segment_header::SegmentMeta;
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::segment_header::pack_owner;
+#[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+use crate::alloc_core::segment_header::SegmentMeta;
+#[cfg(feature = "alloc-xthread")]
+use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SEGMENT_MAGIC};
+use crate::alloc_core::{node::Node, AllocCore};
 
 /// The thin, slot-resident heap value.
 ///
@@ -285,7 +283,12 @@ impl HeapCore {
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
         let ptr = self.alloc(layout);
         if !ptr.is_null() {
-            Node::zero(ptr, layout.size().max(crate::alloc_core::size_classes::MIN_BLOCK));
+            Node::zero(
+                ptr,
+                layout
+                    .size()
+                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
+            );
         }
         ptr
     }
@@ -379,13 +382,11 @@ impl HeapCore {
         let size = layout
             .size()
             .max(crate::alloc_core::size_classes::MIN_BLOCK);
-        let class_idx = match crate::alloc_core::size_classes::SizeClasses::class_for(
-            size,
-            layout.align(),
-        ) {
-            Some(c) => c as u32,
-            None => return, // Large layout on a small segment: contract violation; drop.
-        };
+        let class_idx =
+            match crate::alloc_core::size_classes::SizeClasses::class_for(size, layout.align()) {
+                Some(c) => c as u32,
+                None => return, // Large layout on a small segment: contract violation; drop.
+            };
         let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
         let ring = SegmentMeta::new(base).remote_ring();
         let _ = ring.push(packed);
@@ -490,11 +491,10 @@ impl HeapCore {
         // of its segments' headers) makes the plain field write race-free.
         #[cfg(feature = "alloc-xthread")]
         {
-            let cur_head = crate::alloc_core::segment_header::SegmentHeader::owner_thread_free_at(base);
+            let cur_head =
+                crate::alloc_core::segment_header::SegmentHeader::owner_thread_free_at(base);
             if cur_head.is_null() {
-                meta.stamp_owner_thread_free(
-                    &self.thread_free as *const AtomicPtr<u8> as *const _,
-                );
+                meta.stamp_owner_thread_free(&self.thread_free as *const AtomicPtr<u8> as *const _);
             }
         }
 

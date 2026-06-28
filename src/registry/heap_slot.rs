@@ -117,8 +117,7 @@ impl HeapSlot {
         success: core::sync::atomic::Ordering,
         failure: core::sync::atomic::Ordering,
     ) -> Result<u8, u8> {
-        self.state
-            .compare_exchange(expected, new, success, failure)
+        self.state.compare_exchange(expected, new, success, failure)
     }
 }
 

@@ -126,11 +126,7 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
 /// behaves like plain [`aligned_vmem::reserve_aligned`].
 #[cfg(feature = "vmem-integration")]
 #[must_use]
-pub fn reserve_on_node(
-    size: usize,
-    align: usize,
-    node: u32,
-) -> Option<aligned_vmem::Reservation> {
+pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_vmem::Reservation> {
     platform::reserve_on_node_impl(size, align, node)
 }
 
@@ -293,10 +289,7 @@ mod platform {
 
     fn trim_end(data: &[u8]) -> &[u8] {
         let mut end = data.len();
-        while end > 0
-            && (data[end - 1] == b'\n'
-                || data[end - 1] == b'\r'
-                || data[end - 1] == b' ')
+        while end > 0 && (data[end - 1] == b'\n' || data[end - 1] == b'\r' || data[end - 1] == b' ')
         {
             end -= 1;
         }
@@ -556,10 +549,7 @@ mod platform {
 
     extern "system" {
         fn GetCurrentProcessorNumberEx(proc_number: *mut ProcessorNumber);
-        fn GetNumaProcessorNodeEx(
-            processor: *const ProcessorNumber,
-            node_number: *mut u16,
-        ) -> i32;
+        fn GetNumaProcessorNodeEx(processor: *const ProcessorNumber, node_number: *mut u16) -> i32;
     }
 }
 
@@ -611,12 +601,7 @@ mod platform {
 }
 
 // ---- Fallback: unsupported platform (e.g. FreeBSD, other Unix) ------------
-#[cfg(not(any(
-    target_os = "linux",
-    windows,
-    target_os = "macos",
-    miri,
-)))]
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos", miri,)))]
 mod platform {
     use super::NO_NODE;
 

@@ -13,8 +13,8 @@
 //! (modest sizes, bounded ops).
 #![cfg(feature = "alloc")]
 
-use std::alloc::Layout;
 use sefer_alloc::Heap;
+use std::alloc::Layout;
 
 struct Live {
     ptr: *mut u8,
@@ -82,7 +82,12 @@ fn run(seed: u64, with_large: bool, ops_n: usize, label: &str) {
                     ptr.add(b).write(fill);
                 }
             }
-            live.push(Live { ptr, size, align, fill });
+            live.push(Live {
+                ptr,
+                size,
+                align,
+                fill,
+            });
         } else if choice < 70 && !live.is_empty() {
             let i = lcg(&mut st) as usize % live.len();
             let l = live.swap_remove(i);
@@ -93,14 +98,21 @@ fn run(seed: u64, with_large: bool, ops_n: usize, label: &str) {
             let old = Layout::from_size_align(live[i].size, live[i].align).unwrap();
             let np = heap.realloc(live[i].ptr, old, new_size);
             assert!(!np.is_null(), "{label}: realloc null op#{op}");
-            assert_eq!((np as usize) % live[i].align, 0, "{label}: realloc misaligned op#{op}");
+            assert_eq!(
+                (np as usize) % live[i].align,
+                0,
+                "{label}: realloc misaligned op#{op}"
+            );
             let keep = live[i].size.min(new_size);
             let fill = live[i].fill;
             // SAFETY: np valid for new_size; first `keep` bytes preserved from old.
             unsafe {
                 for b in 0..keep {
                     let v = np.add(b).read();
-                    assert_eq!(v, fill, "{label}: realloc lost byte op#{op} b{b}={v:#x} want {fill:#x}");
+                    assert_eq!(
+                        v, fill,
+                        "{label}: realloc lost byte op#{op} b{b}={v:#x} want {fill:#x}"
+                    );
                 }
                 for b in 0..new_size {
                     np.add(b).write(fill);

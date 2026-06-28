@@ -369,18 +369,15 @@ fn main() {
     let run_duration = Duration::from_secs(soak_seconds);
 
     println!("== sefer-alloc soak harness ==");
-    println!(
-        "threads={n_threads}  duration={soak_seconds}s  working_set/thread={WORKING_SET}"
-    );
+    println!("threads={n_threads}  duration={soak_seconds}s  working_set/thread={WORKING_SET}");
     println!("(set SEFER_SOAK_THREADS=N  SEFER_SOAK_SECONDS=N to override)\n");
 
     // ── shared state ─────────────────────────────────────────────────────
 
     let stop = Arc::new(AtomicBool::new(false));
     // Per-thread ops counter for heartbeat throughput display.
-    let ops_counters: Arc<Vec<AtomicU64>> = Arc::new(
-        (0..n_threads).map(|_| AtomicU64::new(0)).collect(),
-    );
+    let ops_counters: Arc<Vec<AtomicU64>> =
+        Arc::new((0..n_threads).map(|_| AtomicU64::new(0)).collect());
 
     // Per-thread MPSC mailboxes for cross-thread block handoff.
     let mut senders: Vec<Sender<Block>> = Vec::with_capacity(n_threads);
@@ -423,14 +420,7 @@ fn main() {
             // discipline is upheld by `soak_worker` (see fn docs).
             let counts = unsafe {
                 soak_worker(
-                    &alloc,
-                    seed,
-                    t,
-                    n_threads,
-                    &senders_t,
-                    &rx,
-                    &stop_t,
-                    &ops_t[t],
+                    &alloc, seed, t, n_threads, &senders_t, &rx, &stop_t, &ops_t[t],
                 )
             };
             counts
@@ -456,10 +446,7 @@ fn main() {
         let now = Instant::now();
         let since_last = now.duration_since(last_heartbeat);
         if since_last >= Duration::from_secs(HEARTBEAT_SECS) {
-            let total_ops: u64 = ops_counters
-                .iter()
-                .map(|c| c.load(Ordering::Relaxed))
-                .sum();
+            let total_ops: u64 = ops_counters.iter().map(|c| c.load(Ordering::Relaxed)).sum();
             let delta = total_ops.saturating_sub(last_ops);
             let rate = delta as f64 / since_last.as_secs_f64() / 1_000_000.0;
             println!(
@@ -510,10 +497,7 @@ fn main() {
 
     // ── print summary ─────────────────────────────────────────────────────
 
-    let total_ops: u64 = ops_counters
-        .iter()
-        .map(|c| c.load(Ordering::Relaxed))
-        .sum();
+    let total_ops: u64 = ops_counters.iter().map(|c| c.load(Ordering::Relaxed)).sum();
     let rate = total_ops as f64 / elapsed.as_secs_f64() / 1_000_000.0;
 
     println!();

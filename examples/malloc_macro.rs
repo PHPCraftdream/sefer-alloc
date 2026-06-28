@@ -329,7 +329,7 @@ where
     };
     #[cfg(not(feature = "pinning"))]
     let _ = pinned; // baseline build: no affinity path exists.
-    // Per-thread cross-thread mailboxes.
+                    // Per-thread cross-thread mailboxes.
     let mut senders: Vec<Sender<Block>> = Vec::with_capacity(threads);
     let mut receivers: Vec<Option<Receiver<Block>>> = Vec::with_capacity(threads);
     for _ in 0..threads {
@@ -487,8 +487,13 @@ fn main() {
         // in one process (same warm caches, same machine state).
         let cores = sefer_alloc::PinnedRunner::available_cores();
         match &cores {
-            Some(cs) => println!("[pinning] host reports {} core id(s); worker i pinned to core i (round-robin).\n", cs.len()),
-            None => println!("[pinning] host refused core enumeration; pinned mode falls back to unpinned.\n"),
+            Some(cs) => println!(
+                "[pinning] host reports {} core id(s); worker i pinned to core i (round-robin).\n",
+                cs.len()
+            ),
+            None => println!(
+                "[pinning] host refused core enumeration; pinned mode falls back to unpinned.\n"
+            ),
         }
         println!("===== BASELINE (unpinned) =====\n");
         run_sweep(steps_per_thread, &thread_sweep, false);

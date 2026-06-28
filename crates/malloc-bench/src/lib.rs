@@ -53,8 +53,9 @@
 //! assert!(ops > 0.0, "expected non-zero ops/sec");
 //! ```
 
-#![allow(unsafe_code)] // Confined to alloc_block / free_block / drain_mailbox helpers.
-                        // Each unsafe call is individually justified with a // SAFETY: comment.
+#![allow(unsafe_code)]
+// Confined to alloc_block / free_block / drain_mailbox helpers.
+// Each unsafe call is individually justified with a // SAFETY: comment.
 #![deny(missing_docs)]
 #![allow(
     clippy::cast_possible_truncation,
@@ -446,15 +447,9 @@ where
             // free-exactly-once invariant (see module docs).
             let ops = unsafe {
                 match workload {
-                    Workload::Larson => larson_worker(
-                        &alloc,
-                        seed,
-                        steps,
-                        working_set,
-                        &senders,
-                        &rx,
-                        t,
-                    ),
+                    Workload::Larson => {
+                        larson_worker(&alloc, seed, steps, working_set, &senders, &rx, t)
+                    }
                     Workload::Mstress => mstress_worker(
                         &alloc,
                         seed,

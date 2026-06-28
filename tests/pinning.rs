@@ -83,7 +83,11 @@ fn bind_routes_per_thread() {
     // rather than assuming index == shard.
     let mut shards: Vec<u16> = handles.iter().map(|h| h.shard()).collect();
     shards.sort_unstable();
-    assert_eq!(shards, vec![0, 1, 2, 3], "each worker bound a distinct shard");
+    assert_eq!(
+        shards,
+        vec![0, 1, 2, 3],
+        "each worker bound a distinct shard"
+    );
     // Each handle resolves to its worker's value (value == shard id here).
     for h in handles.iter() {
         assert_eq!(region.get_cloned(*h), Some(u64::from(h.shard())));
@@ -163,14 +167,22 @@ fn pinned_runner_inserts_resolve_and_accounting_holds() {
 
     // Accounting: every insert is live, none lost across the join.
     assert_eq!(inserted.load(Ordering::Relaxed), workers * cap);
-    assert_eq!(region.len(), workers * cap, "len must equal total live inserts");
+    assert_eq!(
+        region.len(),
+        workers * cap,
+        "len must equal total live inserts"
+    );
 
     // Every handle minted by a worker still resolves after the join (the shard
     // lifecycle keeps a dead thread's live slots resolvable — 7b).
     let all = per_worker_values.lock().unwrap();
     for (shard_id, v, h) in all.iter() {
         assert_eq!(h.shard(), *shard_id);
-        assert_eq!(region.get_cloned(*h), Some(*v), "live value must resolve post-join");
+        assert_eq!(
+            region.get_cloned(*h),
+            Some(*v),
+            "live value must resolve post-join"
+        );
     }
 }
 
@@ -208,6 +220,9 @@ fn pinned_runner_then_cross_thread_remove() {
         // Second remove is a no-op (I2).
         assert!(!region.remove(*h), "double remove must be a no-op false");
     }
-    assert_eq!(removed, workers, "every worker's value was live and removable");
+    assert_eq!(
+        removed, workers,
+        "every worker's value was live and removable"
+    );
     assert_eq!(region.len(), 0, "all removed → region empty");
 }

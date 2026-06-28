@@ -222,8 +222,8 @@ fn dead_thread_live_slots_stay_resolvable_and_removable_cross_thread() {
             }
             hs
         })
-            .join()
-            .expect("owner thread panicked")
+        .join()
+        .expect("owner thread panicked")
     });
     // The spawned thread is now DEAD. Its shard is abandoned (occupied → false).
 
@@ -329,7 +329,10 @@ fn concurrent_cross_thread_remove_never_double_frees_and_accounts() {
             s.spawn(move || {
                 for seq in 0..VALS_PER_INSERTER as u64 {
                     let id = u64::try_from(inserter_tid).unwrap() * 1_000_000 + seq;
-                    let v = Counted { v: id, drops: Arc::clone(&drops) };
+                    let v = Counted {
+                        v: id,
+                        drops: Arc::clone(&drops),
+                    };
                     if let Ok(h) = region.insert(v) {
                         queue.lock().unwrap().push((h, id));
                         total_inserted.fetch_add(1, Ordering::Relaxed);

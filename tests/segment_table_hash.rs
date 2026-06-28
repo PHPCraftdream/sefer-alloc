@@ -39,7 +39,10 @@ fn register_many_then_contains_each() {
     // broken, segments are leaked and we run out before reaching 50 000.
     for i in 0..50_000_usize {
         let p = ac.alloc(layout);
-        assert!(!p.is_null(), "alloc returned null at i={i} (pass 2, after dealloc)");
+        assert!(
+            !p.is_null(),
+            "alloc returned null at i={i} (pass 2, after dealloc)"
+        );
         ptrs.push(p);
     }
     for p in ptrs.drain(..) {

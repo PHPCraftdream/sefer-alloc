@@ -86,11 +86,7 @@ fn slot_recycle_lifts_cap() {
             unsafe {
                 let b = (i & 0xFF) as u8;
                 p.write(b);
-                assert_eq!(
-                    p.read(),
-                    b,
-                    "write/readback failed at round={round} i={i}"
-                );
+                assert_eq!(p.read(), b, "write/readback failed at round={round} i={i}");
             }
         }
         // Free all — non-current Small segments empty → decommit → recycle.

@@ -131,7 +131,10 @@ impl PinnedRunner {
     #[must_use]
     pub fn with_workers<T>(region: &ShardedRegion<T>, max_workers: usize) -> Option<Self> {
         let cores = core_affinity::get_core_ids()?;
-        let n = cores.len().min(region.shard_count()).min(max_workers.max(1));
+        let n = cores
+            .len()
+            .min(region.shard_count())
+            .min(max_workers.max(1));
         let cores = cores.into_iter().take(n.max(1)).collect();
         Some(Self { cores })
     }

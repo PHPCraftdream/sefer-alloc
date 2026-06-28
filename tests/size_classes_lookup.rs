@@ -142,7 +142,10 @@ fn boundary_size_just_above_a_class_uses_next_class() {
     let table = SegmentLayout::SIZE_CLASS_TABLE;
     let just_over = table[0] + 1; // MIN_BLOCK + 1
     assert_eq!(o1_class_for(just_over, 1), Some(1));
-    assert_eq!(o1_class_for(just_over, 1), linear_scan_class_for(just_over, 1));
+    assert_eq!(
+        o1_class_for(just_over, 1),
+        linear_scan_class_for(just_over, 1)
+    );
     // And sitting exactly on a class boundary returns that class (not the next).
     let on_boundary = table[5]; // an interior class
     let idx = o1_class_for(on_boundary, 1).expect("interior class is small");
@@ -155,7 +158,10 @@ fn boundary_size_small_max_is_small_not_large() {
     let smax = SegmentLayout::SMALL_MAX;
     let last = SegmentLayout::SIZE_CLASS_TABLE.len() - 1;
     assert_eq!(o1_class_for(smax, 1), Some(last));
-    assert_eq!(o1_class_for(smax, SegmentLayout::SMALL_ALIGN_MAX), Some(last));
+    assert_eq!(
+        o1_class_for(smax, SegmentLayout::SMALL_ALIGN_MAX),
+        Some(last)
+    );
 }
 
 #[test]
@@ -163,7 +169,10 @@ fn boundary_size_above_small_max_is_large() {
     // size == SMALL_MAX + 1 → large path (None), even with small align.
     let smax = SegmentLayout::SMALL_MAX;
     assert_eq!(o1_class_for(smax + 1, 1), None);
-    assert_eq!(o1_class_for(smax + 1, 1), linear_scan_class_for(smax + 1, 1));
+    assert_eq!(
+        o1_class_for(smax + 1, 1),
+        linear_scan_class_for(smax + 1, 1)
+    );
 }
 
 #[test]

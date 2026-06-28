@@ -546,7 +546,10 @@ impl BinTable {
     /// `Self::FOOTPRINT` writable bytes.
     pub(crate) fn init_in_place(heads: *mut u32) {
         for c in 0..SMALL_CLASS_COUNT {
-            Node::write_u32_unaligned(Node::offset(heads as *mut u8, c * size_of::<u32>()) as *mut u32, FREE_LIST_NULL);
+            Node::write_u32_unaligned(
+                Node::offset(heads as *mut u8, c * size_of::<u32>()) as *mut u32,
+                FREE_LIST_NULL,
+            );
         }
     }
 
@@ -818,7 +821,10 @@ impl SegmentMeta {
     /// a disjoint header field.
     #[cfg(feature = "alloc-xthread")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    pub(crate) fn stamp_owner_thread_free(&mut self, head: *const core::sync::atomic::AtomicPtr<u8>) {
+    pub(crate) fn stamp_owner_thread_free(
+        &mut self,
+        head: *const core::sync::atomic::AtomicPtr<u8>,
+    ) {
         let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
         Node::write_ptr(
             Node::offset(self.base, off) as *mut *const core::sync::atomic::AtomicPtr<u8>,

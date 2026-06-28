@@ -16,19 +16,13 @@ fn small_cfg() -> Config {
 #[test]
 fn larson_system_returns_positive_ops() {
     let ops = run(Workload::Larson, &small_cfg(), || System);
-    assert!(
-        ops > 0.0,
-        "larson ops/sec should be positive, got {ops}"
-    );
+    assert!(ops > 0.0, "larson ops/sec should be positive, got {ops}");
 }
 
 #[test]
 fn mstress_system_returns_positive_ops() {
     let ops = run(Workload::Mstress, &small_cfg(), || System);
-    assert!(
-        ops > 0.0,
-        "mstress ops/sec should be positive, got {ops}"
-    );
+    assert!(ops > 0.0, "mstress ops/sec should be positive, got {ops}");
 }
 
 #[test]

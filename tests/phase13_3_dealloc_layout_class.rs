@@ -85,23 +85,20 @@ fn dealloc_uses_layout_class_not_page_map_on_mixed_class_page() {
     let seed_layout = Layout::from_size_align(16, 16).unwrap();
     let probe_layout = Layout::from_size_align(48, 16).unwrap();
 
-    let (block, layout_class, page_map_class, block_layout) = match exhibit_mixed_class_page(
-        &mut a,
-        seed_layout,
-        probe_layout,
-    ) {
-        Some(x) => x,
-        None => {
-            // No mixed-class page arose in this run. That itself is a problem
-            // for the gate (a non-vacuous test needs the precondition to hold
-            // reliably); fail loudly so the test is not silently vacuous.
-            panic!(
-                "test precondition failed: no mixed-class page exhibited; \
+    let (block, layout_class, page_map_class, block_layout) =
+        match exhibit_mixed_class_page(&mut a, seed_layout, probe_layout) {
+            Some(x) => x,
+            None => {
+                // No mixed-class page arose in this run. That itself is a problem
+                // for the gate (a non-vacuous test needs the precondition to hold
+                // reliably); fail loudly so the test is not silently vacuous.
+                panic!(
+                    "test precondition failed: no mixed-class page exhibited; \
                  the counterfactual cannot be exercised. The bump/refill \
                  geometry changed and this test needs a new seeding strategy."
-            );
-        }
-    };
+                );
+            }
+        };
     assert_ne!(
         layout_class, page_map_class,
         "vacuous: page_map class matches Layout class"

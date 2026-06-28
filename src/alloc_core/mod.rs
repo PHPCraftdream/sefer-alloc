@@ -10,12 +10,11 @@
 
 // The file `alloc_core.rs` carries the same name as this module per the
 // crate's one-export-per-file convention; silence clippy's module_inception.
+pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
-pub(crate) mod alloc_bitmap;
 mod bootstrap;
 pub(crate) mod node;
-pub(crate) mod os;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is
 /// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
@@ -24,6 +23,7 @@ pub(crate) mod os;
 #[cfg(feature = "numa-aware")]
 #[doc(hidden)]
 pub mod numa;
+pub(crate) mod os;
 /// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
 /// unconditionally so the segment [`Layout`](segment_header::Layout) (which
 /// always reserves the ring's bytes to keep the byte layout uniform across

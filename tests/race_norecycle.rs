@@ -51,7 +51,10 @@ impl Watchdog {
                 std::process::abort();
             })
             .expect("spawn watchdog");
-        Watchdog { done, handle: Some(handle) }
+        Watchdog {
+            done,
+            handle: Some(handle),
+        }
     }
 }
 impl Drop for Watchdog {
@@ -107,7 +110,10 @@ fn cross_thread_reclaim_no_recycle() {
                 for i in 0..ALLOCS {
                     let ptr = unsafe { GLOBAL.alloc(layout) };
                     assert!(!ptr.is_null(), "alloc null");
-                    let val = (p as u64).wrapping_mul(0x9E37).wrapping_add(i as u64).max(1);
+                    let val = (p as u64)
+                        .wrapping_mul(0x9E37)
+                        .wrapping_add(i as u64)
+                        .max(1);
                     unsafe { std::ptr::write(ptr as *mut u64, val) };
                     local = local.wrapping_add(val);
                     if tx.send((SendPtr(ptr), val)).is_err() {

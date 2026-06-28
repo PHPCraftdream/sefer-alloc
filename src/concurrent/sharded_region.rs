@@ -291,9 +291,8 @@ impl<T> ShardedRegion<T> {
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
             {
-                claimed_exclusively = Some(
-                    u16::try_from(i).expect("shard index fits u16: n <= u16::MAX"),
-                );
+                claimed_exclusively =
+                    Some(u16::try_from(i).expect("shard index fits u16: n <= u16::MAX"));
                 break;
             }
         }

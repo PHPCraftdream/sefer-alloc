@@ -322,7 +322,12 @@ unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) {
     // reservation owned by them; `MEM_COMMIT` re-commits the physical pages.
     let addr = unsafe { base.add(start) };
     unsafe {
-        VirtualAlloc(addr as *mut core::ffi::c_void, len, MEM_COMMIT, PAGE_READWRITE);
+        VirtualAlloc(
+            addr as *mut core::ffi::c_void,
+            len,
+            MEM_COMMIT,
+            PAGE_READWRITE,
+        );
     }
 }
 
@@ -524,8 +529,7 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
     // `Layout::from_size_align(reservation_len, align)` in `reserve_aligned_raw`
     // (the `align` is threaded through `Reservation`/`into_parts`/`release` so
     // the reconstructed layout matches the allocation), and is freed once.
-    let layout = Layout::from_size_align(reservation_len, align)
-        .expect("release: invalid layout");
+    let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
     std::alloc::dealloc(reservation.as_ptr(), layout);
 }
 

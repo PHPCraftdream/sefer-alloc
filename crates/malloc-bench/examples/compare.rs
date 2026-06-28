@@ -28,12 +28,7 @@ fn main() {
         let mi_results = sweep(workload, &cfg, &thread_sweep, || mimalloc::MiMalloc);
 
         for ((t, sys), (_, mi)) in sys_results.iter().zip(mi_results.iter()) {
-            println!(
-                "{:>3}  {:>14.2} M  {:>14.2} M",
-                t,
-                sys / 1e6,
-                mi / 1e6,
-            );
+            println!("{:>3}  {:>14.2} M  {:>14.2} M", t, sys / 1e6, mi / 1e6,);
         }
         println!();
     }

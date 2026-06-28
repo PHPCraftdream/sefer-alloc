@@ -54,7 +54,9 @@ fn alloc_too_large_not_cached() {
         eprintln!("OOM allocating 100 MiB — skip test (machine too small)");
         return;
     }
-    unsafe { ptr.write(0xCD); }
+    unsafe {
+        ptr.write(0xCD);
+    }
     ac.dealloc(ptr, layout);
     // No way to assert "not cached" through public API; this test mostly
     // proves the path doesn't crash. The smoke is meaningful.

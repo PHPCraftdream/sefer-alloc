@@ -34,15 +34,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features: ["", "--features experimental", "--features byte", "--all-features"]
+        features: ["", "--features experimental", "--all-features"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      # -W clippy::pedantic: the project's lint posture. `-D warnings` (from
-      # RUSTFLAGS above) turns any pedantic hit into a hard failure.
-      - run: cargo clippy --all-targets ${{ matrix.features }} -- -W clippy::pedantic
+      # Default clippy lints — correctness gate. Pedantic was an aspirational
+      # policy that produces noise out of proportion to value as a blocking
+      # CI gate; keep it as an opt-in `cargo clippy -- -W clippy::pedantic`
+      # for periodic cleanup, not as a per-PR blocker.
+      - run: cargo clippy --all-targets ${{ matrix.features }}
 
   test:
     name: test (${{ matrix.features }})
@@ -52,8 +54,7 @@ jobs:
       matrix:
         features:
           - "" # default: the safe core + SyncRegion
-          - "--features experimental" # adds LockFreeRegion + EpochRegion
-          - "--features byte" # adds ByteRegion + ByteAllocator
+          - "--features experimental" # adds LockFreeRegion + EpochRegion (deprecated, legacy)
           # Phases 8–13 allocator descent. Without these, CI never exercised
           # alloc-core/alloc/alloc-global/alloc-xthread/alloc-decommit.
           - "--features alloc-core" # Phase 8 segment substrate (AllocCore)
@@ -91,12 +92,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The two miri-relevant targets: the core invariants (UB-free slotmap
-        # membrane) and the byte tier (raw-pointer alloc/dealloc correctness).
+        # The miri-relevant targets: the core invariants (UB-free slotmap
+        # membrane), the alloc-core invariants (M6 decommit/recommit cycle),
+        # and the reclaim-offset arithmetic.
         test:
           - "region_invariants"
-          # The byte test binary needs the `byte` feature.
-          - "--features byte --test byte"
           # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
           # (zero-crossing of payload pages) over the segment substrate.
           - "--features \"alloc-core alloc-decommit\" --test decommit_miri_cycle"

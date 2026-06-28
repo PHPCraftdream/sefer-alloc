@@ -16,6 +16,7 @@
 //!     X.next = old TFS head), and
 //!   - the slot's current owner B (drained X, popped X from the BinTable,
 //!     handed X to the app, which writes user data into X.first),
+//!
 //! across the release→claim boundary (the slot's TFS head address is stable,
 //! so a push by C after B died lands on the SAME head the new owner D reads).
 //!
@@ -90,7 +91,10 @@ impl Watchdog {
                 std::process::abort();
             })
             .expect("spawn watchdog");
-        Watchdog { done, handle: Some(handle) }
+        Watchdog {
+            done,
+            handle: Some(handle),
+        }
     }
 }
 impl Drop for Watchdog {
@@ -154,9 +158,7 @@ fn drain_reclaim_uaf_repro_tight_handoff() {
                     for i in 0..BOXES_PER_PRODUCER {
                         // Each box is allocated on THIS producer's heap. The
                         // segment header is stamped with this slot's TFS head.
-                        let val = worker_id
-                            .wrapping_mul(1_000_003)
-                            .wrapping_add(i as u64);
+                        let val = worker_id.wrapping_mul(1_000_003).wrapping_add(i as u64);
                         let b = Box::new(val);
                         local_sent = local_sent.wrapping_add(val);
                         // Send; ignore closed-channel (consumer died).

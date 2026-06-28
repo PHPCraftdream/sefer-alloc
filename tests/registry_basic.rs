@@ -29,9 +29,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{
-    bootstrap, heap_slot::STATE_LIVE, HeapRegistry, HeapSlot,
-};
+use sefer_alloc::registry::{bootstrap, heap_slot::STATE_LIVE, HeapRegistry, HeapSlot};
 
 // The registry is a process-global static; tests that touch it MUST run
 // serially (a parallel claim race makes absolute-slot-index assertions
@@ -103,7 +101,10 @@ fn claim_yields_distinct_live_slots() {
     let a = HeapRegistry::claim();
     let b = HeapRegistry::claim();
     let c = HeapRegistry::claim();
-    assert!(!a.is_null(), "claim must not return null on a fresh registry");
+    assert!(
+        !a.is_null(),
+        "claim must not return null on a fresh registry"
+    );
     assert!(!b.is_null(), "second claim must not return null");
     assert!(!c.is_null(), "third claim must not return null");
     assert_ne!(a, b, "claim must hand out DISTINCT slots (a vs b)");
@@ -116,7 +117,10 @@ fn claim_yields_distinct_live_slots() {
     let id_a = unsafe { (*a).id() } as usize;
     let id_b = unsafe { (*b).id() } as usize;
     let id_c = unsafe { (*c).id() } as usize;
-    assert_eq!(id_a, base as usize, "first claim mints the next count index");
+    assert_eq!(
+        id_a, base as usize,
+        "first claim mints the next count index"
+    );
     assert_eq!(id_b, base as usize + 1);
     assert_eq!(id_c, base as usize + 2);
     assert_eq!(slot_state(id_a), STATE_LIVE, "claimed slot must be LIVE");
@@ -190,8 +194,14 @@ fn free_slots_is_lifo() {
     assert!(!c.is_null() && !d.is_null());
     let id_c = unsafe { (*c).id() } as usize;
     let id_d = unsafe { (*d).id() } as usize;
-    assert_eq!(id_c, id_b, "LIFO: first re-claim must pop the last recycled (B)");
-    assert_eq!(id_d, id_a, "LIFO: second re-claim must pop the earlier recycled (A)");
+    assert_eq!(
+        id_c, id_b,
+        "LIFO: first re-claim must pop the last recycled (B)"
+    );
+    assert_eq!(
+        id_d, id_a,
+        "LIFO: second re-claim must pop the earlier recycled (A)"
+    );
 }
 
 /// `push_abandoned_segment` → `pop_abandoned_segment` round-trip returns the
@@ -228,14 +238,10 @@ fn abandon_pop_round_trip() {
         .segment_bases()
         .next()
         .expect("a fresh heap owns at least its primordial segment");
-    assert!(
-        !base.is_null(),
-        "segment base must be non-null"
-    );
+    assert!(!base.is_null(), "segment base must be non-null");
 
     HeapRegistry::push_abandoned_segment(base);
-    let popped =
-        HeapRegistry::pop_abandoned_segment().expect("pop must return the pushed base");
+    let popped = HeapRegistry::pop_abandoned_segment().expect("pop must return the pushed base");
     assert_eq!(
         popped, base,
         "pop must return the exact base that was pushed (no address truncation)"
@@ -263,8 +269,8 @@ fn abandoned_head_packing_preserves_high_address() {
     use sefer_alloc::registry::bootstrap::*;
 
     const SEGMENT: u64 = 1 << 22; // matches os::SEGMENT
-    // A realistic ASLR-style address: ~127 GiB into the address space, well
-    // above 4 GiB. Masked to SEGMENT alignment.
+                                  // A realistic ASLR-style address: ~127 GiB into the address space, well
+                                  // above 4 GiB. Masked to SEGMENT alignment.
     let high = 0x7f_0123_4000_u64;
     let base = (high & !(SEGMENT - 1)) as *mut u8;
     assert_eq!(
@@ -284,10 +290,7 @@ fn abandoned_head_packing_preserves_high_address() {
         recovered_base, base,
         "pack/unpack must preserve the full >4 GiB base (FINDINGS №1 fix)"
     );
-    assert_eq!(
-        recovered_tag, 0x123456,
-        "pack/unpack must preserve the tag"
-    );
+    assert_eq!(recovered_tag, 0x123456, "pack/unpack must preserve the tag");
 
     // The empty sentinel round-trips as empty.
     assert!(
@@ -381,8 +384,7 @@ fn recycle_null_is_noop() {
     assert!(!a.is_null());
     let id_a = unsafe { (*a).id() } as usize;
     assert_eq!(
-        id_a,
-        base as usize,
+        id_a, base as usize,
         "after a null recycle, the first real claim mints the next count index"
     );
 }

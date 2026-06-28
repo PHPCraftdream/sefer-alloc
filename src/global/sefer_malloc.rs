@@ -186,10 +186,8 @@ unsafe impl GlobalAlloc for SeferMalloc {
             return core::ptr::null_mut();
         }
         match current_for_alloc() {
-            CurrentHeap::Fallback => {
-                fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
-                    .unwrap_or(core::ptr::null_mut())
-            }
+            CurrentHeap::Fallback => fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
+                .unwrap_or(core::ptr::null_mut()),
             // SAFETY: as in `alloc`; `realloc` is alloc-new + copy +
             // dealloc-old, leaving the old allocation intact on OOM.
             CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },

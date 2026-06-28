@@ -45,9 +45,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use sefer_alloc::alloc_core::remote_free_ring::{
-    RemoteFreeRing, FOOTPRINT,
-};
+use sefer_alloc::alloc_core::remote_free_ring::{RemoteFreeRing, FOOTPRINT};
 
 /// A `Send` + `Sync` wrapper for a `RemoteFreeRing` view. The view is a thin
 /// pointer into a shared buffer (an `Arc<Box<[u8]>>` whose storage outlives all
@@ -96,7 +94,10 @@ impl Watchdog {
                 std::process::abort();
             })
             .expect("spawn watchdog");
-        WatchdogHandle { done, handle: Some(handle) }
+        WatchdogHandle {
+            done,
+            handle: Some(handle),
+        }
     }
 }
 struct WatchdogHandle {
@@ -220,31 +221,33 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
         // accesses are race-free atomics. The buffer outlives all producers
         // (held by the main thread's `Arc`).
         let ring_p = Arc::clone(&ring);
-        producers.push(std::thread::Builder::new()
-            .name(format!("ring-producer-{p}"))
-            .spawn(move || {
-                // Each producer's offsets are in its own disjoint band:
-                // producer p owns [p*BAND, (p+1)*BAND). No two producers push
-                // the same offset → a double-reclaim can ONLY come from the
-                // ring re-emitting, not from two producers pushing the same.
-                let band_base = (p as u32) * (OFFSETS_PER_PRODUCER as u32) * OFFSET_STRIDE;
-                for i in 0..OFFSETS_PER_PRODUCER {
-                    let off = band_base + (i as u32) * OFFSET_STRIDE;
-                    assert_ne!(off, u32::MAX, "offset must not equal the sentinel");
-                    attempted.fetch_add(1, Ordering::Relaxed);
-                    match ring_p.0.push(off) {
-                        Ok(()) => {
-                            succeeded.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(_) => {
-                            // Overflow: the consumer will not reclaim this
-                            // offset (it was discarded). Counted via the ring's
-                            // overflow counter.
+        producers.push(
+            std::thread::Builder::new()
+                .name(format!("ring-producer-{p}"))
+                .spawn(move || {
+                    // Each producer's offsets are in its own disjoint band:
+                    // producer p owns [p*BAND, (p+1)*BAND). No two producers push
+                    // the same offset → a double-reclaim can ONLY come from the
+                    // ring re-emitting, not from two producers pushing the same.
+                    let band_base = (p as u32) * (OFFSETS_PER_PRODUCER as u32) * OFFSET_STRIDE;
+                    for i in 0..OFFSETS_PER_PRODUCER {
+                        let off = band_base + (i as u32) * OFFSET_STRIDE;
+                        assert_ne!(off, u32::MAX, "offset must not equal the sentinel");
+                        attempted.fetch_add(1, Ordering::Relaxed);
+                        match ring_p.0.push(off) {
+                            Ok(()) => {
+                                succeeded.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(_) => {
+                                // Overflow: the consumer will not reclaim this
+                                // offset (it was discarded). Counted via the ring's
+                                // overflow counter.
+                            }
                         }
                     }
-                }
-            })
-            .expect("spawn producer"));
+                })
+                .expect("spawn producer"),
+        );
     }
 
     for h in producers {
@@ -304,7 +307,8 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
 
     // 3. The master identity: reclaimed + overflow == attempted.
     assert_eq!(
-        reclaimed + overflow, attempted,
+        reclaimed + overflow,
+        attempted,
         "RING IDENTITY BROKEN: reclaimed({reclaimed}) + overflow({overflow}) \
          != attempted({attempted}) — an offset vanished into the ring (neither \
          reclaimed nor overflowed)"
@@ -333,7 +337,11 @@ fn ring_isolated_single_thread_basic() {
         let r = ring.push(off);
         assert!(r.is_ok(), "push of {off} failed inside RING_CAP");
     }
-    assert_eq!(ring.overflow_count(), 0, "no overflow expected below RING_CAP");
+    assert_eq!(
+        ring.overflow_count(),
+        0,
+        "no overflow expected below RING_CAP"
+    );
 
     let mut reclaimed = Vec::new();
     ring.drain(|off| reclaimed.push(off));

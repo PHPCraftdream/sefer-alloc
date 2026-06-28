@@ -102,10 +102,9 @@ pub(crate) fn primordial() -> Option<Primordial> {
     let hash_slots = base_plus(base, hash_off) as *mut *mut u8;
     // Zero-fill: each slot must start as null_mut() (= "empty").
     for i in 0..segment_table::HASH_CAPACITY {
-        let slot = super::node::Node::offset(
-            hash_slots as *mut u8,
-            i * core::mem::size_of::<*mut u8>(),
-        ) as *mut *mut u8;
+        let slot =
+            super::node::Node::offset(hash_slots as *mut u8, i * core::mem::size_of::<*mut u8>())
+                as *mut *mut u8;
         super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
     }
     // Insert the primordial base into the hash table (mirrors slot 0 write).
