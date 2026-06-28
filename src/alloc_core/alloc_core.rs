@@ -1325,6 +1325,69 @@ impl AllocCore {
     }
 
     // -----------------------------------------------------------------------
+    // Batch APIs (Phase 103 / P1 — fastbin / tcache substrate)
+    //
+    // Thin wrappers around the existing `alloc_small` / `dealloc_small`
+    // primitives, called in a loop. NO new placement logic, NO new
+    // invariants — the audited M2 / decommit / cross-thread paths run
+    // UNCHANGED, just grouped into batches for the magazine layer (P2+).
+    // -----------------------------------------------------------------------
+
+    /// Pull up to `want` free blocks of class `class_idx` out of the segment
+    /// substrate into `out`. Returns how many were written (0 on true OOM,
+    /// else `> 0` and `<= want`).
+    ///
+    /// Each pulled block undergoes EXACTLY the same transition as a single
+    /// `alloc_small`: bitmap `mark_alloc` + `inc_live` (under alloc-decommit).
+    /// So a magazine-resident block will be "live + bitmap-allocated",
+    /// identical to a handed-out block.
+    #[doc(hidden)]
+    #[inline]
+    pub fn refill_class(
+        &mut self,
+        class_idx: usize,
+        want: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        debug_assert!(
+            out.len() >= want,
+            "refill_class: out.len() ({}) < want ({})",
+            out.len(),
+            want,
+        );
+        for i in 0..want {
+            let ptr = self.alloc_small(class_idx);
+            if ptr.is_null() {
+                return i; // OOM or no more capacity
+            }
+            out[i] = ptr;
+        }
+        want
+    }
+
+    /// Push a batch of blocks of class `class_idx` back onto their owning
+    /// segments' `BinTable`s.
+    ///
+    /// Each block undergoes EXACTLY the same transition as a single
+    /// `dealloc_small`: off>=bump guard + `is_free` (M2 double-free) +
+    /// `write_next`/`set_head` + `mark_free` + `dec_live_and_maybe_decommit`
+    /// (+ `table.recycle` on decommit if fired).
+    ///
+    /// Per-block base is derived per-block via `os::segment_base_of_ptr`
+    /// (the magazine CAN hold blocks from multiple segments).
+    #[doc(hidden)]
+    #[inline]
+    pub fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        for &ptr in blocks {
+            if ptr.is_null() {
+                continue; // defensive: skip nulls
+            }
+            let base = os::segment_base_of_ptr(ptr);
+            self.dealloc_small(base, ptr, class_idx);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Internals — the safe Cartographer. All raw memory touches go through
     // `Node`; no `Vec`/`Box`/`HashSet`/`std::alloc`.
     // -----------------------------------------------------------------------
