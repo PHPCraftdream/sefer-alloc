@@ -1,0 +1,138 @@
+name: Release
+
+# Publish a crate from the workspace to crates.io.
+#
+# ## Two triggers
+#
+# **Tag push (automatic)** — push a tag matching `<crate-name>-v<version>`,
+# e.g. `sefer-alloc-v0.1.0`, `aligned-vmem-v0.2.0`. The workflow parses the
+# tag, picks the matching crate, and publishes it.
+#
+# ```sh
+# # bump the version in crates/foo/Cargo.toml + commit + push, then:
+# git tag sefer-alloc-v0.1.1
+# git push origin sefer-alloc-v0.1.1
+# ```
+#
+# **Manual dispatch (interactive)** — open Actions → Release → Run workflow,
+# pick the crate from the dropdown, optionally tick "dry-run" to test the
+# publish path without pushing to crates.io.
+#
+# ## Prerequisites
+#
+# - Repository secret **`CARGO_REGISTRY_TOKEN`** is set with a crates.io API
+#   token that has at least `publish-update` scope on every crate listed
+#   below (and `publish-new` for the first-time publish of any crate that is
+#   not yet on crates.io). Set it once:
+#
+#   ```sh
+#   echo <TOKEN> | gh secret set CARGO_REGISTRY_TOKEN --repo PHPCraftdream/sefer-alloc
+#   ```
+#
+# - The version in `Cargo.toml` of the target crate matches the tag (the
+#   workflow does NOT auto-bump versions — it publishes whatever the crate's
+#   Cargo.toml currently declares; mismatches are a manual mistake).
+#
+# - For sub-crates that depend on each other (`numa-shim` depends on
+#   `aligned-vmem`, `sefer-alloc` depends on `sefer-region` + `aligned-vmem`
+#   + `numa-shim`), the upstream version MUST already be on crates.io
+#   before the dependent crate's publish is triggered. Standard
+#   `cargo publish` validation will fail loudly if not.
+#
+# ## Future improvements
+#
+# - Move to crates.io **trusted publishing** (OIDC) — removes the
+#   long-lived `CARGO_REGISTRY_TOKEN` secret. Requires configuring the
+#   trust relationship on crates.io UI per crate. Tracked as a follow-up.
+
+on:
+  push:
+    tags:
+      - 'aligned-vmem-v*'
+      - 'sefer-region-v*'
+      - 'malloc-bench-rs-v*'
+      - 'numa-shim-v*'
+      - 'sefer-alloc-v*'
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: 'Crate to publish'
+        type: choice
+        required: true
+        options:
+          - aligned-vmem
+          - sefer-region
+          - malloc-bench-rs
+          - numa-shim
+          - sefer-alloc
+      dry-run:
+        description: 'Dry-run only (do not push to crates.io)'
+        type: boolean
+        default: false
+
+# Serialise simultaneous publishes for the same crate / tag. crates.io itself
+# rejects double-publish of an existing version, so this is belt-and-braces:
+# it keeps the Actions UI cleaner when a tag is re-pushed.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve target crate
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CRATE='${{ inputs.crate }}'
+            DRY_RUN='${{ inputs.dry-run }}'
+          else
+            # Tag form: <crate>-v<version>. Strip the trailing `-v*` suffix.
+            REF='${{ github.ref_name }}'
+            CRATE="${REF%-v*}"
+            DRY_RUN='false'
+          fi
+          echo "name=$CRATE" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "Target crate: $CRATE  (dry-run: $DRY_RUN)"
+
+      - name: Show version that will be published
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip everything up to and including the '#' separator. `cargo pkgid`
+          # output is of the form `path+file:///path#crate-name@1.2.3`.
+          PKGID=$(cargo pkgid -p '${{ steps.target.outputs.name }}')
+          VERSION="${PKGID##*@}"
+          echo "Crate ${{ steps.target.outputs.name }} version: $VERSION"
+          # Surface in the job summary too.
+          echo "## Release target" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- crate: \`${{ steps.target.outputs.name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- version: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- dry-run: \`${{ steps.target.outputs.dry_run }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(publish -p '${{ steps.target.outputs.name }}')
+          if [[ '${{ steps.target.outputs.dry_run }}' == 'true' ]]; then
+            ARGS+=(--dry-run)
+          fi
+          # Verify is ON (CI runner has a fresh target dir; no lock contention
+          # like a local workspace target). This re-builds the packaged crate
+          # standalone — catches packaging mistakes (missing files in `include`,
+          # unresolved deps, etc.) before the upload is final.
+          cargo "${ARGS[@]}"
