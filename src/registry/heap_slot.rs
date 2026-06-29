@@ -93,11 +93,16 @@ pub struct HeapSlot {
 
 impl HeapSlot {
     /// Construct a slot in its bootstrap state: `FREE`, generation 0,
-    /// `next_free = NEXT_FREE_TAIL`, heap uninitialised. The bootstrap lays
-    /// down one of these per slot in the primordial segment's slot array
-    /// (via raw writes through the `node` seam — see [`bootstrap`](super::bootstrap)).
+    /// `next_free = NEXT_FREE_TAIL`, heap uninitialised.
+    ///
+    /// Previously used by `Registry::new_zeroed()` to populate a `static`
+    /// initialiser. Now retained as a self-documenting spec of the slot's
+    /// initial state; the actual in-place initialisation of the heap-allocated
+    /// registry (see [`super::bootstrap::ensure`]) writes the same values
+    /// directly via `addr_of_mut!` field writes.
     ///
     /// This does NOT allocate a `HeapCore` — that is deferred to `claim`.
+    #[allow(dead_code)]
     pub(crate) const fn new_uninit() -> Self {
         Self {
             state: AtomicU8::new(STATE_FREE),

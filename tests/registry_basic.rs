@@ -335,11 +335,15 @@ fn abandon_segments_walks_owned_segments() {
     while HeapRegistry::pop_abandoned_segment().is_some() {}
 }
 
-/// Bootstrap idempotency: a second `ensure` returns the SAME static and does
-/// NOT re-initialise. We observe this by claiming a slot (advancing `count`),
-/// then resetting ONLY the init-state, then re-calling `ensure`: `count` must
-/// be unchanged (the registry state survived), proving it was not
-/// reconstructed.
+/// Bootstrap idempotency: every call to `ensure` returns the SAME pointer and
+/// does NOT re-initialise the registry. With the lazy-allocation design the
+/// registry is allocated exactly once (via `aligned_vmem::reserve_aligned`)
+/// and the pointer is published with Release; every subsequent call observes
+/// the same pointer under Acquire and returns immediately.
+///
+/// We verify: (a) two consecutive `ensure` calls return the SAME pointer
+/// (identity), and (b) a `claim` that advanced `count` is visible after the
+/// second `ensure` (no re-init zeroed `count`).
 #[test]
 fn bootstrap_is_idempotent() {
     serial!();
@@ -353,10 +357,9 @@ fn bootstrap_is_idempotent() {
         "claim must advance count by exactly 1"
     );
 
-    // Reset ONLY the init-state word (simulate a re-entry of ensure) but
-    // leave the dynamic atomics intact. A correct bootstrap must NOT zero
-    // `count`.
-    bootstrap::reset_for_test();
+    // Call ensure() again — with the lazy-allocation design, this must return
+    // the SAME pointer (the fast path: Acquire load of REGISTRY_PTR, non-null
+    // non-sentinel → return immediately). The registry is NOT reconstructed.
     let reg_after = bootstrap::ensure();
     let count_after = reg_after.count.load(Ordering::Acquire);
     assert_eq!(
@@ -364,7 +367,7 @@ fn bootstrap_is_idempotent() {
         "a second ensure must not re-initialise the registry (count preserved)"
     );
 
-    // The slot array is the SAME static (identity check).
+    // The slot array is the SAME heap allocation (identity check).
     assert!(
         std::ptr::eq(reg_before, reg_after),
         "ensure must return the SAME &'static Registry on every call"

@@ -8,61 +8,99 @@
 //! hand-carves the `SegmentTable` from a freshly-reserved segment: one OS
 //! reservation, then safe composition over its bytes via the `node` seam. The
 //! registry reuses that discipline's SHAPE — allocation-free init guarded by
-//! an atomic state-machine — but stores its slot array in a process-global
-//! `static` rather than inside a segment.
+//! an atomic state-machine — but NOW stores the slot array in a
+//! HEAP-ALLOCATED reservation obtained via `aligned_vmem::reserve_aligned`
+//! (a direct OS syscall, NOT `std::alloc`) rather than a `static`.
 //!
-//! Why a `static` (not a primordial segment)?
-//! - The slot array holds Rust values with drop glue and atomic fields
-//!   (`AtomicU8`, `AtomicU32`, `UnsafeCell<MaybeUninit<HeapCore>>`). Laying
-//!   those down via raw `Node::write_struct` byte writes (as the segment
-//!   substrate does for its plain-data `SegmentHeader`) is unsound for types
-//!   with non-trivial validity invariants. A `static` initialiser constructs
-//!   them properly.
-//! - The `static` is still **M5-clean**: it is a linker-provided `.bss`
-//!   slot, allocated by the loader, NOT by `std::alloc`/`Vec`/`Box`. The
-//!   registry path can never recurse into the global allocator via its
-//!   storage — same property the segment path provides, achieved differently.
-//! - The slot array is `pub(crate)` and lives for the process lifetime
-//!   (never dropped), matching the "the primordial segment is never freed"
-//!   invariant the segment substrate relies on.
+//! ## Why lazy heap-allocation instead of a `static`?
 //!
-//! ## The state-machine
+//! The original design used `static REGISTRY: Registry = Registry::new_zeroed()`.
+//! `HeapSlot::new_uninit()` initialises `next_free` to `u32::MAX` (NEXT_FREE_TAIL),
+//! a non-zero value, which forces the ENTIRE 22 MB slot array into `.data`
+//! instead of `.bss`. With `MAX_HEAPS = 4096` and ~5 KiB per `HeapCore` slot,
+//! this added ~22 MB to every binary that linked sefer-alloc with the
+//! `production` feature.
 //!
-//! `AtomicU8` `STATE_UNINIT → STATE_INITIALIZING → STATE_READY`:
+//! The fix: replace the `static` with an `AtomicPtr<Registry>` (8 bytes of
+//! `.data`). On first call to [`ensure`], the winner of a CAS race allocates
+//! `size_of::<Registry>()` bytes via `aligned_vmem::reserve_aligned` (a direct
+//! OS `VirtualAlloc`/`mmap` syscall — M5-clean, no `std::alloc`) and writes
+//! `Registry::new_zeroed()` into it in place, then publishes the pointer with
+//! a Release store. The reservation is leaked for the process lifetime (the
+//! registry is process-global, never torn down). After that, every call is a
+//! single Acquire load + non-null, non-sentinel check — branch-light and
+//! allocation-free.
 //!
-//! 1. The first caller of [`ensure`] observes `UNINIT` and CASes to
-//!    `INITIALIZING`. The winner constructs the `Registry` value in place
-//!    (a `const`-initialisable array — no allocation), then publishes `READY`
-//!    with `Release`.
-//! 2. Concurrent losers observe `INITIALIZING` (or `UNINIT` then fail the
-//!    CAS) and `spin_loop` until they observe `READY` (loaded `Acquire`).
-//! 3. After `READY`, every subsequent call is a single `Acquire` load +
-//!    return — branch-light, allocation-free.
+//! ## The pointer state-machine
 //!
-//! `Release`/`Acquire` pair on the UNINIT→READY transition establishes
-//! happens-before from the initialising thread's writes (the slot array
-//! fields) to every reader that observes `READY`, so readers see a fully
-//! constructed registry.
+//! `AtomicPtr<Registry>` drives the `UNINIT → INITIALIZING → READY` transition
+//! via pointer values:
 //!
-//! ## This file is PURE SAFE COMPOSITION
+//! | Pointer value | Meaning |
+//! |---|---|
+//! | `null` | `UNINIT` — not yet initialised |
+//! | `SENTINEL_INITIALIZING` (`1 as *mut`) | `INITIALIZING` — one thread won the CAS and is allocating |
+//! | real `*mut Registry` | `READY` — fully initialised; safe to dereference |
 //!
-//! No `unsafe`: the `static` is constructed by a `const fn`, atomics are
-//! safe to use, and `spin_loop` is a safe intrinsic. The `unsafe` (`Sync`
-//! impl on `HeapSlot`, the `*mut HeapCore` handout) lives in
-//! [`heap_slot`](super::heap_slot) and [`heap_registry`](super::heap_registry)
-//! respectively.
+//! 1. The first caller observes `null` and CASes it to `SENTINEL_INITIALIZING`.
+//!    The CAS winner:
+//!    a. Calls `aligned_vmem::reserve_aligned(SIZE, ALIGN)` — direct OS syscall,
+//!       no `std::alloc`, no registry dependency.
+//!    b. Field-by-field in-place initialisation (OS zeroed-pages + fix-up of
+//!       non-zero fields: `next_free` per slot and `free_slots`).
+//!    c. `REGISTRY_PTR.store(base, Release)` — publishes the ready pointer.
+//!    d. `mem::forget(reservation)` — leaks the reservation intentionally; the
+//!       registry lives for the process lifetime.
+//! 2. Concurrent losers observe `SENTINEL_INITIALIZING` (or `null`, then fail
+//!    the CAS) and spin until they observe a non-null, non-sentinel pointer
+//!    under `Acquire`. The spin window is tiny (one OS page allocation).
+//! 3. After `READY`, every subsequent call is a single `Acquire` load + two
+//!    cheap comparisons + return.
+//!
+//! `Release`/`Acquire` on the pointer transition establishes happens-before
+//! from the initialising thread's `ptr::write` (the registry fields) to every
+//! reader that observes the real pointer, so readers see a fully constructed
+//! registry.
+//!
+//! ## M5 (reentrancy-free) — CANNOT BE VIOLATED
+//!
+//! `aligned_vmem::reserve_aligned` is a direct OS syscall (`VirtualAlloc` /
+//! `mmap`) — it does NOT call `std::alloc`, `Box`, `Vec`, or any other
+//! Rust allocator entry point. Its dependency graph (verified by reading
+//! `crates/vmem/src/lib.rs` in full):
+//!
+//! - Windows: `extern "system" { fn VirtualAlloc(...) }` — no std alloc.
+//! - Unix: `extern "C" { fn mmap(...) }` — no std alloc.
+//! - Miri: `std::alloc` — but under miri we are NOT the global allocator
+//!   (the host miri allocator backs the harness), so no reentrancy.
+//!
+//! No path from `ensure_slow` touches `sefer_alloc::registry::*` — confirmed
+//! by inspection. The reservation call chain is a straight line to a kernel
+//! syscall boundary.
+
+// This file uses `unsafe` for two operations:
+//  1. Field-by-field in-place initialisation of the `Registry` object in
+//     freshly reserved OS memory (pointer arithmetic + writes through
+//     `addr_of_mut!`).
+//  2. `unsafe { &*p }` — dereferencing the published pointer after observing
+//     it under `Acquire` (sound because the initialiser's `Release` store
+//     establishes happens-before).
+// Every `unsafe` block carries a `// SAFETY:` proof below.
+#![allow(unsafe_code)]
 
 use core::hint::spin_loop;
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 
-use super::heap_slot::HeapSlot;
+use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL};
 use super::tagged_ptr::TaggedPtr;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
 /// slot for its heap; `recycle` returns it. 4096 is generous for realistic
 /// thread counts (a process with > 4096 simultaneous threads is pathological
 /// for an allocator; the cap can be raised if a measured workload needs it).
-/// At ~64 B per slot this is ~256 KiB of `.bss` — negligible.
+/// With lazy allocation this is now a runtime cap (size of the heap-allocated
+/// slot array), NOT a `.data`/`.bss` cost — the array is allocated on first
+/// use via `aligned_vmem::reserve_aligned`.
 pub const MAX_HEAPS: usize = 4096;
 
 /// The segment size used for the abandoned-segment address packing. Mirrors
@@ -126,26 +164,24 @@ pub fn abandoned_head_is_empty(word: u64) -> bool {
     (word & !ABANDON_TAG_MASK) == 0
 }
 
-/// Bootstrap-state values stored in the init atomic.
-const STATE_UNINIT: u8 = 0;
-const STATE_INITIALIZING: u8 = 1;
-const STATE_READY: u8 = 2;
-
 /// The bootstrap outcome: the fixed slot array plus the dynamic atomics that
-/// drive `claim`/`recycle`/`abandon`. Lives in a process-global `static`
-/// (allocated by the loader in `.bss`, never by `std::alloc`), initialised
-/// once via [`ensure`].
+/// drive `claim`/`recycle`/`abandon`. Allocated via `aligned_vmem::reserve_aligned`
+/// on first call to [`ensure`] (NOT by `std::alloc` — M5-clean). Lives for
+/// the process lifetime (the reservation is leaked after init via `mem::forget`).
+///
+/// The struct is constructed in-place (via `ptr::write`) inside the OS
+/// reservation; this is the same discipline as the primordial segment bootstrap.
 pub struct Registry {
     /// The fixed slot array. Indexed by slot id; `MAX_HEAPS` entries. Lives
-    /// for the process lifetime (the `static` is never dropped).
+    /// for the process lifetime (the reservation is never dropped).
     pub slots: [HeapSlot; MAX_HEAPS],
     /// High-water mark of allocated slots (the next unused slot index). A
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
-    pub count: AtomicU32,
+    pub count: core::sync::atomic::AtomicU32,
     /// Tagged-Treiber head of the `free_slots` stack: low 32 = slot index,
     /// high 32 = tag (bumped per push). Initialised empty.
-    pub free_slots: AtomicU64,
+    pub free_slots: core::sync::atomic::AtomicU64,
     /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
     /// the full 64-bit segment base (in the high bits, since bases are
     /// `SEGMENT`-aligned → low [`ABANDON_SEG_SHIFT`] bits are zero) with an
@@ -153,94 +189,223 @@ pub struct Registry {
     /// `next_abandoned` header field chains to the next base. This fixes
     /// FINDINGS №1 (the old `AtomicU64` packing truncated bases >4 GiB);
     /// the full base is now preserved.
-    pub abandoned_segs: AtomicU64,
+    pub abandoned_segs: core::sync::atomic::AtomicU64,
 }
 
-impl Registry {
-    /// Construct the registry in its bootstrap state: every slot `FREE`,
-    /// generation 0, `next_free = NEXT_FREE_TAIL`, heap uninitialised;
-    /// `count = 0`, both stacks empty. `const` so it can initialise a
-    /// `static` (no runtime code, no allocation — the loader zeros `.bss`).
-    const fn new_zeroed() -> Self {
-        Self {
-            // `[expr; N]` for a non-`Copy` type requires a `const` block on
-            // stable Rust (1.88). `HeapSlot::new_uninit` is `const fn`, so the
-            // block is a compile-time array literal — the loader materialises
-            // it in `.bss`.
-            slots: [const { HeapSlot::new_uninit() }; MAX_HEAPS],
-            count: AtomicU32::new(0),
-            free_slots: AtomicU64::new(TaggedPtr::empty()),
-            abandoned_segs: AtomicU64::new(ABANDONED_HEAD_EMPTY),
-        }
-    }
-}
+// SAFETY (Sync): `Registry` is shared across threads via the `AtomicPtr`. All
+// mutable access to its fields goes through atomics (`count`, `free_slots`,
+// `abandoned_segs`) or the slot-level single-writer protocol (`slots`). The
+// same argument that made the old `static REGISTRY` sound applies here.
+unsafe impl Sync for Registry {}
 
-/// The process-global registry. Allocated by the loader in `.bss` (NOT by
-/// `std::alloc` — M5-clean). Constructed once via its `const` initialiser,
-/// never dropped.
-static REGISTRY: Registry = Registry::new_zeroed();
+// -------------------------------------------------------------------------
+// Lazy pointer: replaces the 22 MB `static REGISTRY: Registry`.
+// -------------------------------------------------------------------------
 
-/// The bootstrap state-machine word: `UNINIT → INITIALIZING → READY`.
-static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+/// Sentinel: a non-null, non-real address that means "one thread is currently
+/// initialising the registry". Aligned to 1 (the raw integer 1 is not a valid
+/// `Registry` pointer — `Registry` has alignment ≥ 4). Any real `*mut Registry`
+/// will differ from this value and from null.
+const SENTINEL_INITIALIZING: usize = 1;
+
+/// The process-global registry pointer. Starts null (`UNINIT`).
+/// Transitions: `null → SENTINEL_INITIALIZING → real *mut Registry`.
+/// After the final store (Release), every subsequent load (Acquire) sees a
+/// valid, fully-constructed `Registry`.
+///
+/// BINARY SIZE: this is 8 bytes of `.data` (one pointer). The old
+/// `static REGISTRY: Registry = Registry::new_zeroed()` was ~22 MB of `.data`
+/// because `HeapSlot::new_uninit()` sets `next_free = u32::MAX` (NEXT_FREE_TAIL),
+/// a non-zero value that forced the full slot array into `.data` instead of `.bss`.
+static REGISTRY_PTR: AtomicPtr<Registry> = AtomicPtr::new(core::ptr::null_mut());
+
+/// Size of `Registry` rounded up to a multiple of `aligned_vmem::PAGE` (4 KiB).
+/// `reserve_aligned` requires `size` to be a non-zero multiple of `PAGE`.
+const REGISTRY_SIZE: usize = {
+    let raw = core::mem::size_of::<Registry>();
+    let page = aligned_vmem::PAGE;
+    // Round up to the next page boundary.
+    (raw + page - 1) & !(page - 1)
+};
+
+/// Alignment for the `reserve_aligned` call. `Registry`'s natural alignment is
+/// at most 8 bytes (its largest-aligned field is `AtomicU64`). `reserve_aligned`
+/// requires `align >= PAGE` (4 KiB), so we use `PAGE` — the registry occupies
+/// whole pages anyway.
+const REGISTRY_ALIGN: usize = aligned_vmem::PAGE;
 
 /// Ensure the registry is initialised, then return a `&'static` reference to
-/// it. The first call performs the (allocation-free) construction
-/// publication; concurrent and later calls observe `READY` and return
-/// immediately.
+/// it. The first call performs the (M5-clean, `std::alloc`-free) OS-reservation
+/// init and publication; concurrent and later calls observe the real pointer
+/// under `Acquire` and return immediately.
 ///
-/// This is the analogue of `AllocCore::new`'s call to
-/// `bootstrap::primordial()`: a one-shot, OS-allocation-free init guarded by
-/// an atomic state-machine. Unlike `std::sync::Once`, it touches NO
-/// `std::alloc` path (Once's internal `Mutex` may allocate on some platforms).
+/// ## Fast path (typical: already initialised)
+///
+/// One `Acquire` load of `REGISTRY_PTR`. If the pointer is non-null AND not the
+/// sentinel, return `&*p` immediately (branch-light, allocation-free).
+///
+/// ## Slow path (first call or race)
+///
+/// See [`ensure_slow`].
+#[inline]
 pub fn ensure() -> &'static Registry {
-    // Fast path: already READY. Acquire to see the registry's constructed
-    // state (the initialising thread's Release store).
-    if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
-        // SAFETY: we observed READY under Acquire, which synchronises with the
-        // initialiser's Release store of READY. The `REGISTRY` static is
-        // fully constructed (its `const` initialiser ran at load time) and
-        // lives for the process lifetime; returning a `&'static` reference is
-        // sound.
-        return &REGISTRY;
+    let p = REGISTRY_PTR.load(Ordering::Acquire);
+    let p_usize = p as usize;
+    if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
+        // SAFETY: we observed a real non-null non-sentinel pointer under
+        // Acquire. The initialising thread stored this pointer with Release
+        // AFTER completing the field-by-field in-place initialisation of the
+        // `Registry`, so this Acquire load sees all the bytes written. The
+        // pointer remains valid for the process lifetime (the OS reservation
+        // is leaked via `mem::forget`). Casting to `&'static` is sound because
+        // the allocation outlives any reference derived from it.
+        return unsafe { &*p };
     }
-    // Slow path: race to initialise.
-    let won = INIT_STATE.compare_exchange(
-        STATE_UNINIT,
-        STATE_INITIALIZING,
-        // Acquire on success: pairs with our later Release store of READY so
-        // later Acquire readers see the constructed state.
-        Ordering::Acquire,
-        // Relaxed on failure: we re-load below; no side-effect on failure.
-        Ordering::Relaxed,
-    ) == Ok(STATE_UNINIT);
-    if won {
-        // We are the sole initialiser. `REGISTRY` is already constructed by
-        // its `const` initialiser (the loader placed it in `.bss`); there is
-        // nothing to write except to publish READY. (Future hook: if the
-        // registry ever needs runtime init — e.g. seeding `free_slots` with
-        // the initial slot chain — it goes here, before the Release store.)
-        INIT_STATE.store(STATE_READY, Ordering::Release);
-    } else {
-        // We lost the race. Spin until the winner publishes READY. `spin_loop`
-        // emits a PAUSE/YIELD hint; the window is tiny (the initialiser does
-        // no allocation, so READY follows within microseconds).
-        while INIT_STATE.load(Ordering::Acquire) != STATE_READY {
-            spin_loop();
-        }
-    }
-    // SAFETY: as above — READY observed under Acquire synchronises with the
-    // initialiser's Release store.
-    &REGISTRY
+    ensure_slow()
 }
 
-/// Reset the bootstrap state back to `UNINIT`. **Test-only**: lets
-/// `registry_basic` exercise the bootstrap idempotently (re-run `ensure` and
-/// assert it does not re-initialise). Production code NEVER calls this.
-pub fn reset_for_test() {
-    // Safe ONLY because the tests are single-threaded and the registry is
-    // otherwise quiescent when called. Lets a test observe the
-    // UNINIT→READY transition more than once across the suite.
-    INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+/// Slow path for [`ensure`]: race to initialise the registry via a CAS on
+/// `REGISTRY_PTR`. Exactly one caller wins, allocates via
+/// `aligned_vmem::reserve_aligned`, constructs the `Registry` in-place, and
+/// publishes the pointer. All others spin-wait on a tiny window.
+#[cold]
+fn ensure_slow() -> &'static Registry {
+    // Race: try to acquire the INITIALIZING sentinel via CAS(null, SENTINEL).
+    // Only ONE thread wins this CAS; the rest observe SENTINEL (or null then
+    // fail the CAS) and fall into the spin branch.
+    let sentinel = SENTINEL_INITIALIZING as *mut Registry;
+    match REGISTRY_PTR.compare_exchange(
+        core::ptr::null_mut(),
+        sentinel,
+        // Acquire on success: pairs with our later Release store of the real
+        // pointer, establishing the happens-before for future Acquire readers.
+        Ordering::Acquire,
+        // Relaxed on failure: we re-load below in the spin loop.
+        Ordering::Relaxed,
+    ) {
+        Ok(_) => {
+            // ── Winner branch ─────────────────────────────────────────────
+            // We are the SOLE initialiser. Allocate the registry from OS VM.
+            //
+            // M5 (reentrancy-free) proof: `aligned_vmem::reserve_aligned` is a
+            // direct OS syscall (`VirtualAlloc` on Windows, `mmap` on Unix).
+            // It does NOT call `std::alloc`, `Box`, `Vec`, or any other Rust
+            // allocator entry point. Its source (`crates/vmem/src/lib.rs`) was
+            // verified to have no transitive dependency on
+            // `sefer_alloc::registry::*`. Under miri it falls back to
+            // `std::alloc`, but under miri we are NOT the global allocator
+            // (the host miri allocator handles the harness), so no reentrancy.
+            let reservation = aligned_vmem::reserve_aligned(REGISTRY_SIZE, REGISTRY_ALIGN)
+                .expect("sefer-alloc: failed to reserve virtual memory for Registry");
+
+            let base = reservation.as_ptr() as *mut Registry;
+
+            // In-place initialisation of the Registry — field by field.
+            //
+            // We do NOT use `ptr::write(base, Registry::new_zeroed())` because
+            // `Registry` is ~22 MB (4096 × HeapSlot each ~5 KiB). Creating that
+            // value as a `const fn` result and passing it to `ptr::write` would
+            // either: (a) put 22 MB in `.rodata` (defeating the binary-size goal)
+            // or (b) create a 22 MB stack temporary in debug builds (stack
+            // overflow). Instead we initialise each field in-place through raw
+            // pointer arithmetic, exploiting two facts:
+            //
+            //  1. OS-allocated pages are zero-initialised (both `VirtualAlloc`
+            //     on Windows and anonymous `mmap` on Linux guarantee this). Most
+            //     fields start at zero: `state = 0 = STATE_FREE`, `generation =
+            //     0`, `heap = MaybeUninit::uninit()` (unspecified bits, zeroes
+            //     are fine), `count = 0`, `abandoned_segs = 0`.
+            //
+            //  2. The only non-zero initial values are `HeapSlot::next_free =
+            //     u32::MAX` (NEXT_FREE_TAIL) and `Registry::free_slots =
+            //     TaggedPtr::empty() = 0x0000_0000_FFFF_FFFF`. We write those
+            //     in-place using `addr_of_mut!` + `write`.
+            //
+            // `AtomicU32` and `AtomicU64` are `#[repr(transparent)]` over their
+            // inner `UnsafeCell<u32/u64>`, which is `#[repr(transparent)]` over
+            // the integer. So writing a `u32`/`u64` to the byte address of the
+            // atomic is equivalent to constructing `AtomicU32::new(val)` there
+            // and is fully defined.
+
+            // SAFETY: `base` is non-null, aligned to `REGISTRY_ALIGN` (PAGE =
+            // 4096, which is >= `align_of::<Registry>()` — at most 8 bytes), and
+            // valid for `REGISTRY_SIZE` bytes (>= `size_of::<Registry>()`). We
+            // are the sole writer (only one CAS winner can reach this branch).
+            // The memory is OS-provided zero-initialised pages; we write the
+            // non-zero fields below. After all writes the `Registry` at `base`
+            // is fully initialised and valid.
+            unsafe {
+                // Write each slot's `next_free` to NEXT_FREE_TAIL (u32::MAX).
+                // Everything else in each slot starts at zero, which is correct:
+                //   state      = 0 = STATE_FREE
+                //   generation = 0
+                //   heap       = MaybeUninit::uninit() (unspecified, zero is fine)
+                let slots_base: *mut HeapSlot =
+                    core::ptr::addr_of_mut!((*base).slots).cast();
+                for i in 0..MAX_HEAPS {
+                    // SAFETY: `i < MAX_HEAPS`, so `slots_base.add(i)` is within
+                    // the allocation. `next_free` is the last field of `HeapSlot`
+                    // (#[repr(C)]); its byte offset is stable. `AtomicU32` is
+                    // repr(transparent) over `UnsafeCell<u32>` which is
+                    // repr(transparent) over `u32`, so writing a `u32` at the
+                    // address of the `AtomicU32` is sound.
+                    let slot_ptr = slots_base.add(i);
+                    // Use addr_of_mut! to address the `next_free` field directly.
+                    core::ptr::addr_of_mut!((*slot_ptr).next_free)
+                        .cast::<u32>()
+                        .write(NEXT_FREE_TAIL);
+                }
+
+                // Write `free_slots = TaggedPtr::empty()`.
+                // `count` and `abandoned_segs` start at zero (already correct).
+                core::ptr::addr_of_mut!((*base).free_slots)
+                    .cast::<u64>()
+                    .write(TaggedPtr::empty());
+                // `count` is already 0. `abandoned_segs` is already 0.
+                // The `Registry` at `base` is now fully initialised.
+            }
+
+            // Publish the real pointer with Release so every subsequent
+            // Acquire load in `ensure` (fast path) sees the fully written
+            // registry. This pairs with the Acquire load in `ensure`'s fast
+            // path and with the Acquire loads in the spin loop below.
+            REGISTRY_PTR.store(base, Ordering::Release);
+
+            // Leak the reservation intentionally. The registry lives for the
+            // process lifetime and is never dropped. `mem::forget` suppresses
+            // the `Drop` impl that would call `VirtualFree`/`munmap`, which
+            // would be catastrophic (a live `'static` reference would dangle).
+            core::mem::forget(reservation);
+
+            // SAFETY: we fully initialised the `Registry` at `base` (all fields
+            // written above — zero-init from OS + explicit non-zero field
+            // writes) and published it with Release. The allocation outlives any
+            // reference derived from it (leaked via `mem::forget`). Dereferencing
+            // `base` as `&'static Registry` is sound.
+            unsafe { &*base }
+        }
+        Err(_) => {
+            // ── Loser branch ─────────────────────────────────────────────
+            // Another thread is (or was) initialising. Spin until we observe
+            // a real (non-null, non-sentinel) pointer. This window is tiny:
+            // the winner does one OS page reservation + 4096 field writes for
+            // `next_free` (~16 KiB) + one store. On the first call this may
+            // take a few microseconds; on any subsequent call to `ensure`, the
+            // fast path in `ensure()` returns before reaching here.
+            loop {
+                let p = REGISTRY_PTR.load(Ordering::Acquire);
+                let p_usize = p as usize;
+                if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
+                    // SAFETY: same argument as the fast path in `ensure()`.
+                    // We observed the real pointer under Acquire, which pairs
+                    // with the winner's Release store of the pointer after
+                    // `ptr::write`. The `Registry` is fully initialised.
+                    return unsafe { &*p };
+                }
+                spin_loop();
+            }
+        }
+    }
 }
 
 /// The current high-water `count` (test introspection). Each test claims
@@ -249,5 +414,5 @@ pub fn reset_for_test() {
 /// `HeapCore`s), a test derives its expected slot indices relative to the
 /// count it observed at entry.
 pub fn count_for_test() -> u32 {
-    REGISTRY.count.load(Ordering::Acquire)
+    ensure().count.load(Ordering::Acquire)
 }
