@@ -1,59 +1,59 @@
-# sefer-alloc — конвенции проекта
+# sefer-alloc — project conventions
 
-Главные инструкции, обязательные для всего кода в этом репозитории. Они
-**переопределяют** поведение по умолчанию.
+Core instructions, mandatory for all code in this repository. They
+**override** default behavior.
 
-## Структура файлов и модулей
+## File and module structure
 
-- **Один файл — один экспорт.** Каждый файл исходника определяет ровно один
-  публичный элемент (тип, трейт, функцию). Имя файла соответствует экспорту.
-- **`mod.rs` — только реэкспорты, без кода.** Файл `mod.rs` содержит
-  исключительно `mod`/`pub mod`/`pub use`-объявления. Никакой логики, типов,
-  функций или тестов в `mod.rs` быть не должно — он только связывает модули.
+- **One file — one export.** Each source file defines exactly one public item
+  (type, trait, function). The file name matches the export.
+- **`mod.rs` — reexports only, no code.** The `mod.rs` file contains
+  exclusively `mod`/`pub mod`/`pub use` declarations. No logic, types,
+  functions, or tests belong in `mod.rs` — it only wires modules together.
 
-## Тесты
+## Tests
 
-- **Тесты сразу складываем в отдельную папку.** Не оставляем тесты инлайн в
-  файле модуля (`#[cfg(test)] mod tests` внутри `src/*.rs`). Тесты живут в
-  `tests/` (интеграционные) с зеркальной структурой; новый код пишется с
-  тестами в отдельных файлах с самого начала, а не выносится потом.
+- **Put tests in a separate folder from the start.** Do not leave tests inline
+  in the module file (`#[cfg(test)] mod tests` inside `src/*.rs`). Tests live in
+  `tests/` (integration) with a mirrored structure; new code is written with
+  tests in separate files from the very beginning, not extracted later.
 
-## Поставка по этапам
+## Phased delivery
 
-- **Каждый этап (фаза) поставляется с тестами** — код без тестов не считается
-  готовым этапом.
-- **Между этапами: прогон тестов и коммит.** Перед переходом к следующей фазе
-  прогнать `cargo test` (и miri/loom где применимо), убедиться что зелено, и
-  сделать коммит этого этапа. Это явно санкционированные коммиты между фазами
-  (общий запрет «не коммить без просьбы» здесь снят пользователем для границ
-  фаз). Пуш — только по отдельной явной просьбе.
-- **После каждого этапа — ревью с НУЛЕВЫМ ДОВЕРИЕМ.** Перед коммитом этапа
-  (особенно если код писал суб-агент): лично прочитать весь diff построчно;
-  перезапустить тесты своими руками (не верить заявлению агента «тесты прошли»);
-  проверить, что тесты не вакуозны (упадут ли они без фикса — counterfactual);
-  прогнать адверсариальный разбор по rust-intel-категориям (rust-cc-audit /
-  code-review); искать out-of-scope правки, TODO/placeholder, полу-подключённые
-  фичи. Коммит — только после личной верификации. Заявление агента — это claim,
-  а не receipt.
+- **Every phase is delivered with tests** — code without tests is not considered
+  a completed phase.
+- **Between phases: run tests and commit.** Before moving to the next phase,
+  run `cargo test` (and miri/loom where applicable), confirm everything is
+  green, and commit that phase. These are explicitly sanctioned commits between
+  phases (the general prohibition "do not commit without being asked" is lifted
+  by the user for phase boundaries). Push — only on a separate explicit request.
+- **After each phase — ZERO-TRUST review.** Before committing a phase
+  (especially if the code was written by a sub-agent): personally read the
+  entire diff line by line; rerun the tests yourself (do not trust the agent's
+  claim "tests passed"); verify the tests are not vacuous (would they fail
+  without the fix — counterfactual); run an adversarial audit by rust-intel
+  categories (rust-cc-audit / code-review); look for out-of-scope edits,
+  TODO/placeholder, half-wired features. Commit — only after personal
+  verification. An agent's statement is a claim, not a receipt.
 
-## Скорость: короткий сценарий по умолчанию
+## Speed: short scenario by default
 
-- **Тесты и бенчи должны отрабатывать максимально быстро.** Долгие прогоны
-  слишком сильно тормозят цикл.
-- **Бенчи (criterion):** быстрый профиль — `sample_size(10)` + короткие
-  `warm_up_time`/`measurement_time` (вся сюита за несколько секунд). Числа
-  грубые, но относительный порядок контейнеров виден.
-- **proptest:** скромное число кейсов по умолчанию (порядка 64) — это
-  smoke-проверка соответствия, не исчерпывающий фаззинг.
-- **miri:** гонять на концретных инвариант-тестах (`region_invariants`) и
-  крошечном bounded proptest, не на полном.
-- **Тяжёлый/исчерпывающий прогон (большие N, много кейсов, CPU-часы fuzz,
-  multi-arch) — это Фаза 5 hardening**, а не повседневный цикл.
+- **Tests and benchmarks must run as fast as possible.** Long runs slow down
+  the cycle too much.
+- **Benchmarks (criterion):** fast profile — `sample_size(10)` + short
+  `warm_up_time`/`measurement_time` (the entire suite in a few seconds). Numbers
+  are rough, but the relative order of containers is visible.
+- **proptest:** modest number of cases by default (around 64) — this is a
+  smoke-check for conformance, not exhaustive fuzzing.
+- **miri:** run on specific invariant tests (`region_invariants`) and a tiny
+  bounded proptest, not the full suite.
+- **Heavy/exhaustive runs (large N, many cases, CPU-hours of fuzz,
+  multi-arch) — that is Phase 5 hardening**, not the everyday cycle.
 
-## Действующие правила (из плана/методологии)
+## Active rules (from the plan/methodology)
 
-- `#![forbid(unsafe_code)]` для верхнего мира; `unsafe` допускается только в
-  одном документированном модуле `hand` (фазы 3b/4) за фичефлагом.
-- Версии проекта и зависимостей не поднимаем без явной просьбы.
-- Verification-first: каждый инвариант (I1–I6) закрыт proptest'ом и/или unit'ом;
-  ядро прогоняется под miri.
+- `#![forbid(unsafe_code)]` for the upper world; `unsafe` is allowed only in
+  one documented module `hand` (phases 3b/4) behind a feature flag.
+- Do not bump project or dependency versions without an explicit request.
+- Verification-first: every invariant (I1–I6) is covered by proptest and/or
+  unit test; the core is run under miri.

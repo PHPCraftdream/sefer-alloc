@@ -435,7 +435,7 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 proptest runs a modest default case count (~64) as a smoke check -- not
 exhaustive fuzzing. miri runs on specific bounded tests (not the full suite).
 Heavy / exhaustive multi-arch runs are CI jobs (the Phase 32 hardening gate,
-commit 4e034e5), not the everyday cycle. See CLAUDE.md "Скорость" section.
+commit 4e034e5), not the everyday cycle. See CLAUDE.md "Speed" section.
 
 ---
 

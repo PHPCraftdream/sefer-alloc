@@ -1,127 +1,134 @@
-# Phase 13.4 — dealloc набело: O(1) double-free guard + two-list
+# Phase 13.4 — dealloc clean rewrite: O(1) double-free guard + two-list
 
-Дизайн-спека (пишется до реализации; реализацию ведёт под-агент по этому
-документу). Закрывает регрессию O(N²) (бывш. #41) и поставляет two-list (13.4).
+Design spec (written before implementation; implementation is driven by a
+sub-agent following this document). Closes the O(N²) regression (formerly #41)
+and delivers two-list (13.4).
 
-## 0. Проблема (подтверждена counterfactual'ом)
+## 0. Problem (confirmed by counterfactual)
 
-`AllocCore::dealloc_small` (src/alloc_core/alloc_core.rs) на каждом own-thread
-free зовёт `free_list_contains` — **O(длины free-list)** walk (M2 double-free
-guard). На фазе освобождения бенча (1024 блока одного класса в один сегмент)
-free-list растёт 0→1024 → **O(N²)** ≈ 524k разыменований с cache-miss'ами =
-~1.9 ms (vs mimalloc ~11 µs). Доказано: `free_list_contains → return false` ⇒
-16B churn **1.9 ms → 16.5 µs** (~115×). Тот же инлайн-walk сидит в
-`AllocCore::reclaim_offset` (cross-thread reclaim).
+`AllocCore::dealloc_small` (src/alloc_core/alloc_core.rs) on every own-thread
+free calls `free_list_contains` — **O(free-list length)** walk (M2 double-free
+guard). During the bench deallocation phase (1024 blocks of one class into a
+single segment) the free-list grows 0→1024 → **O(N²)** ≈ 524k dereferences with
+cache-misses = ~1.9 ms (vs mimalloc ~11 µs). Proven: `free_list_contains →
+return false` ⇒ 16B churn **1.9 ms → 16.5 µs** (~115×). The same inline-walk
+sits in `AllocCore::reclaim_offset` (cross-thread reclaim).
 
-`free_list_contains` — это Phase-8 placeholder (его комментарий: «Phase 9 заменит
-дешёвым cookie-guard'ом»). Phase 12.1 завёл malloc-лицо на `dealloc_small` с этим
-guard'ом → реинтродукция O(N²).
+`free_list_contains` is a Phase-8 placeholder (its comment: "Phase 9 will
+replace with a cheap cookie-guard"). Phase 12.1 wired the malloc face to
+`dealloc_small` with this guard → reintroduction of O(N²).
 
-## 1. Решение: O(1) точный double-free guard через per-segment alloc-bitmap
+## 1. Solution: O(1) exact double-free guard via per-segment alloc-bitmap
 
-**Почему bitmap, а не canary/энкодинг:** M2 требует ТОЧНОГО «double-free = no-op,
-никогда не коррупция». Canary в блоке даёт ложные срабатывания (данные юзера ==
-canary) → не точно. Незащищённый double-free создаёт self-loop в free-list →
-двойная выдача блока → коррупция. Bitmap — точный, O(1), стандартный (TLSF и др.).
+**Why bitmap, not canary/encoding:** M2 requires EXACT "double-free = no-op,
+never corruption". An in-block canary gives false positives (user data ==
+canary) → not exact. Unprotected double-free creates a self-loop in free-list →
+double-issuance of a block → corruption. Bitmap — exact, O(1), standard (TLSF
+et al.).
 
-### 1.1 Структура `AllocBitmap`
+### 1.1 Structure `AllocBitmap`
 
-Новая metadata-область в КАЖДОМ small/primordial сегменте: 1 бит на
-MIN_BLOCK-слот сегмента.
+New metadata area in EVERY small/primordial segment: 1 bit per MIN_BLOCK-slot
+of the segment.
 
-- `FOOTPRINT = SEGMENT / MIN_BLOCK / 8` байт. Для 4 МиБ/16 = 32768 байт = 32 КиБ
-  = 8 страниц. **Вычислять из констант**, не хардкодить.
-- Семантика бита: `1` = блок СВОБОДЕН (лежит в каком-то free-list этого
-  сегмента: `free` ИЛИ `local_free`); `0` = занят / не-старт-блока.
-- Индекс: `bit_index = (ptr - base) >> MIN_BLOCK_SHIFT`. Старты блоков всегда
-  MIN_BLOCK-выровнены (carve выравнивает bump к block_size ≥ MIN_BLOCK, а
-  block_size кратен MIN_BLOCK) → бит уникален на блок. Покрываем ВЕСЬ сегмент
-  (включая метаданные) — биты метаданных просто никогда не трогаются (там нет
-  стартов блоков); это убирает арифметику вычитания payload-начала.
-- Инициализация: все нули (всё «занято/не-блок»). `init_in_place` через
-  `Node::write_u8` (как PageMap/BinTable).
-- API (всё O(1), через `node` seam, БЕЗ atomics — single-writer: сегмент пишет
-  только его owner; cross-thread free идёт через ring, дренится owner'ом):
-  - `is_free(off: u32) -> bool` — тест бита.
-  - `mark_free(off: u32)` — установить бит (вызывается при пуше в free-list).
-  - `mark_alloc(off: u32)` — снять бит (вызывается при выдаче блока).
-- Файл: `src/alloc_core/alloc_bitmap.rs` (один экспорт `AllocBitmap`), как
-  PageMap/BinTable. `mod.rs` — только реэкспорт.
+- `FOOTPRINT = SEGMENT / MIN_BLOCK / 8` bytes. For 4 MiB/16 = 32768 bytes =
+  32 KiB = 8 pages. **Compute from constants**, do not hardcode.
+- Bit semantics: `1` = block is FREE (resides in some free-list of this
+  segment: `free` OR `local_free`); `0` = allocated / not-a-block-start.
+- Index: `bit_index = (ptr - base) >> MIN_BLOCK_SHIFT`. Block starts are always
+  MIN_BLOCK-aligned (carve aligns bump to block_size ≥ MIN_BLOCK, and
+  block_size is a multiple of MIN_BLOCK) → the bit is unique per block. We
+  cover the ENTIRE segment (including metadata) — metadata bits are simply never
+  touched (no block starts there); this eliminates payload-start subtraction
+  arithmetic.
+- Initialization: all zeros (everything "allocated/not-a-block"). `init_in_place`
+  via `Node::write_u8` (like PageMap/BinTable).
+- API (all O(1), via `node` seam, WITHOUT atomics — single-writer: the segment
+  is written only by its owner; cross-thread free goes through the ring, drained
+  by the owner):
+  - `is_free(off: u32) -> bool` — test the bit.
+  - `mark_free(off: u32)` — set the bit (called on push to free-list).
+  - `mark_alloc(off: u32)` — clear the bit (called on block issuance).
+- File: `src/alloc_core/alloc_bitmap.rs` (single export `AllocBitmap`), like
+  PageMap/BinTable. `mod.rs` — reexport only.
 
-### 1.2 Раскладка (`segment_header::Layout`)
+### 1.2 Layout (`segment_header::Layout`)
 
-Вставить bitmap в metadata-цепочку. ВНИМАНИЕ к порядку (ring и registry-offset
-зависят от предыдущих). Предлагаемый порядок: header → page_map → bin_table →
-**alloc_bitmap** → remote_ring → (primordial: registry). Обновить:
-- `Layout::alloc_bitmap_off()` (новый) = `align_up_const(bin_table_off() +
-  BinTable::FOOTPRINT, 8)` (или 2× если two-list расширит BinTable — см. §2;
-  учесть это СРАЗУ, чтобы не сдвигать раскладку дважды).
-- `Layout::remote_ring_off()` = после bitmap.
+Insert bitmap into the metadata chain. CAREFUL with ordering (ring and
+registry-offset depend on predecessors). Proposed order: header → page_map →
+bin_table → **alloc_bitmap** → remote_ring → (primordial: registry). Update:
+- `Layout::alloc_bitmap_off()` (new) = `align_up_const(bin_table_off() +
+  BinTable::FOOTPRINT, 8)` (or 2× if two-list expands BinTable — see §2;
+  account for this IMMEDIATELY to avoid shifting layout twice).
+- `Layout::remote_ring_off()` = after bitmap.
 - `SegmentMeta::alloc_bitmap()` view.
 - Compile-time asserts (`small_meta_end + PAGE <= SEGMENT`,
-  `primordial_meta_end + PAGE <= SEGMENT`) — должны держаться (+8 страниц из
-  1024). Bootstrap (`bootstrap.rs`) — carve+init bitmap, обновить `meta_pages`.
+  `primordial_meta_end + PAGE <= SEGMENT`) — must hold (+8 pages out of
+  1024). Bootstrap (`bootstrap.rs`) — carve+init bitmap, update `meta_pages`.
 
-### 1.3 Интеграция в alloc/dealloc
+### 1.3 Integration into alloc/dealloc
 
-- `dealloc_small(base, ptr, class)`: заменить `free_list_contains` на
-  `bitmap.is_free(off)` → если true, no-op return (double-free, M2). Иначе
-  `bitmap.mark_free(off)` + пуш в free-list.
-- `pop_free` / выдача блока: `bitmap.mark_alloc(off)` перед возвратом.
-- `carve_block` (свежий блок): бит уже 0 (init) — выдаём как занятый; на всякий
-  случай НЕ трогаем (он 0). refill-блоки пушатся через `dealloc_small` →
-  `mark_free` корректно.
-- `reclaim_offset` (cross-thread reclaim): тот же guard — заменить инлайн-walk на
-  `is_free`/`mark_free`. Owner — единственный писатель bitmap'а (reclaim бежит на
-  owner'е), atomics не нужны.
-- **Удалить** `free_list_contains` (и инлайн-копию walk в `reclaim_offset`).
+- `dealloc_small(base, ptr, class)`: replace `free_list_contains` with
+  `bitmap.is_free(off)` → if true, no-op return (double-free, M2). Otherwise
+  `bitmap.mark_free(off)` + push to free-list.
+- `pop_free` / block issuance: `bitmap.mark_alloc(off)` before return.
+- `carve_block` (fresh block): bit is already 0 (init) — issued as allocated;
+  as a precaution, do NOT touch (it is 0). Refill-blocks are pushed via
+  `dealloc_small` → `mark_free` works correctly.
+- `reclaim_offset` (cross-thread reclaim): same guard — replace inline-walk with
+  `is_free`/`mark_free`. The owner is the sole bitmap writer (reclaim runs on
+  the owner), atomics are not needed.
+- **Remove** `free_list_contains` (and the inline-copy walk in `reclaim_offset`).
 
-## 2. two-list (`free` + `local_free`) — слой локальности (13.4)
+## 2. two-list (`free` + `local_free`) — locality layer (13.4)
 
-mimalloc: own-thread free пушит в `local_free`; alloc попит из `free`; при
-опустошении `free` переносит `local_free`→`free` (collect). Снижает ветвления и
-отделяет own/remote очереди. cross-thread (ring) — третья очередь, уже есть.
+mimalloc: own-thread free pushes to `local_free`; alloc pops from `free`; when
+`free` is exhausted, transplant `local_free`→`free` (collect). Reduces branching
+and separates own/remote queues. cross-thread (ring) — a third queue, already
+exists.
 
-- BinTable: второй массив u32-голов `local_free` (FOOTPRINT × 2 = 320 Б). Учесть
-  в раскладке §1.2 СРАЗУ.
-- own-thread `dealloc_small`: `mark_free` + пуш в `local_free` (НЕ в `free`).
-- `pop_free`: если `free` пуст — `free_head = local_free_head; local_free_head =
-  NULL` (O(1) transplant, порядок не важен), затем поп из `free`.
-- double-free guard (bitmap) одинаково покрывает оба списка — `is_free` истинно,
-  если блок в любом из них. Поэтому two-list не усложняет guard.
+- BinTable: second array of u32 heads `local_free` (FOOTPRINT × 2 = 320 B).
+  Account for in layout §1.2 IMMEDIATELY.
+- own-thread `dealloc_small`: `mark_free` + push to `local_free` (NOT to `free`).
+- `pop_free`: if `free` is empty — `free_head = local_free_head; local_free_head =
+  NULL` (O(1) transplant, order does not matter), then pop from `free`.
+- double-free guard (bitmap) covers both lists equally — `is_free` is true
+  if the block is in either list. Therefore two-list does not complicate the
+  guard.
 
-**Честность (план §3.4):** two-list принять, ТОЛЬКО если бенч покажет выигрыш.
-Поэтому реализовать в ДВА коммита:
-- **13.4a (bitmap guard)** — сам по себе убивает регрессию (ожидаем ~16 µs),
-  M2-точный. Замерить.
-- **13.4b (two-list)** — поверх; замерить дельту; оставить, если помогает.
+**Honesty (plan §3.4):** accept two-list ONLY if the bench shows improvement.
+Therefore implement in TWO commits:
+- **13.4a (bitmap guard)** — by itself kills the regression (expected ~16 µs),
+  M2-exact. Benchmark.
+- **13.4b (two-list)** — on top; measure the delta; keep if it helps.
 
-Раскладку bitmap считать сразу с учётом удвоенного BinTable (чтобы 13.4b не
-сдвигал метаданные повторно).
+Compute bitmap layout immediately accounting for doubled BinTable (so that 13.4b
+does not shift metadata a second time).
 
-## 3. Регресс-гейт (обязателен)
+## 3. Regression gate (mandatory)
 
-Тест `tests/dealloc_sublinear.rs` (или в существующем): освободить N и 2N блоков
-одного класса, измерить работу (счётчик node-reads ИЛИ грубое время) — рост
-должен быть ~линейным, не квадратичным. Counterfactual: КРАСНЕЕТ на старом O(N)
-walk. Без гейта O(N²) вернётся молча.
+Test `tests/dealloc_sublinear.rs` (or in an existing one): free N and 2N blocks
+of one class, measure work (node-reads counter OR rough time) — growth
+must be ~linear, not quadratic. Counterfactual: FAILS on the old O(N) walk.
+Without the gate, O(N²) will silently return.
 
-Дополнительно: убедиться, что есть unit на M2 double-free (блок, освобождённый
-дважды, не выдаётся двум вызывающим / free-list не зацикливается). Если нет —
-добавить; он должен пройти и со старым, и с новым guard'ом (инвариант сохранён).
+Additionally: ensure there is a unit test for M2 double-free (a block freed
+twice is not issued to two callers / free-list does not cycle). If missing —
+add; it must pass with both old and new guard (invariant preserved).
 
-## 4. Верификация (zero-trust, руками)
+## 4. Verification (zero-trust, by hand)
 
-- Вся сюита зелёная: `alloc-core`, `alloc-global`, `alloc-global alloc-xthread`.
-- race_repro / race_norecycle / global_alloc_mt ×5 — без флака.
-- `clippy --all-targets` (те же фичи) — 0 новых.
-- Бенч `global_alloc` 16/64/256/1024B: 16B возвращается к ~16 µs (от 1.9 ms).
-- miri на bitmap-инварианте (маленький bounded), если дёшево.
-- Коммит на границе фазы (13.4a отдельно, 13.4b отдельно).
+- Full suite green: `alloc-core`, `alloc-global`, `alloc-global alloc-xthread`.
+- race_repro / race_norecycle / global_alloc_mt ×5 — no flakes.
+- `clippy --all-targets` (same features) — 0 new warnings.
+- Bench `global_alloc` 16/64/256/1024B: 16B returns to ~16 µs (from 1.9 ms).
+- miri on bitmap invariant (small bounded), if cheap.
+- Commit at phase boundary (13.4a separately, 13.4b separately).
 
-## 5. Вне области (отдельные задачи)
+## 5. Out of scope (separate tasks)
 
-- **Per-class bump cursors** (истинная page-dedication, как mimalloc): убрал бы
-  §13 в корне (page_map стал бы надёжен → carry-class в ring не нужен, #40
-  растворяется). Больше и рискованнее — отдельная будущая задача, НЕ здесь.
-- #40 (латентный §13 на drain) — после/в свете 13.4 (тот же dealloc/drain-код).
+- **Per-class bump cursors** (true page-dedication, like mimalloc): would
+  eliminate §13 at its root (page_map would become reliable → carry-class in
+  ring not needed, #40 dissolves). Larger and riskier — a separate future task,
+  NOT here.
+- #40 (latent §13 on drain) — after/in light of 13.4 (same dealloc/drain code).

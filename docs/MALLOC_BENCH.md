@@ -391,7 +391,7 @@ cargo run --release --example malloc_macro \
 ```
 
 Without `pinning`, `numa-aware` helps under workloads with low thread
-migration (e.g. long-lived worker threads, СУБД executors) but is not a
+migration (e.g. long-lived worker threads, DBMS executors) but is not a
 guarantee.  With `pinning`, locality is guaranteed for the lifetime of the
 pinned run.
 

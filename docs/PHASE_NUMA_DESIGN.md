@@ -1,241 +1,241 @@
-# NUMA-aware путь в sefer-alloc — дизайн-спека
+# NUMA-aware path in sefer-alloc — design spec
 
-Исследовательский документ (пишется до реализации). Закрывает пробел #7
-«нет осознания NUMA-узлов» в MALLOC_BENCH. Под фичфлагом `numa-aware`
-(default off — поведение по умолчанию не меняется).
+Research document (written before implementation). Closes gap #7
+"no awareness of NUMA nodes" in MALLOC_BENCH. Behind the feature flag `numa-aware`
+(default off — default behavior does not change).
 
 ---
 
-## §0. Что уже есть — NUMA-релевантные точки
+## §0. What already exists — NUMA-relevant points
 
 ### OS-seam (`src/alloc_core/os.rs`)
 
-Файл содержит единственный confined-`unsafe` блок резервирования памяти
-через `mmap`/`VirtualAlloc`. Сейчас НИГДЕ не используются NUMA-специфичные
-флаги или вызовы:
+The file contains the single confined-`unsafe` block for memory reservation
+via `mmap`/`VirtualAlloc`. Currently NO NUMA-specific flags or calls are used
+anywhere:
 
-- **Linux**: `mmap` вызывается с `MAP_PRIVATE | MAP_ANON`, без `mbind(2)` и
-  без `set_mempolicy(2)`. Страницы распределяются по политике процесса по
-  умолчанию (обычно «local» на NUMA-системе, но не гарантировано).
+- **Linux**: `mmap` is called with `MAP_PRIVATE | MAP_ANON`, without `mbind(2)` and
+  without `set_mempolicy(2)`. Pages are allocated according to the default process
+  policy (usually "local" on a NUMA system, but not guaranteed).
 - **Windows**: `VirtualAlloc(..., MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)` —
-  нет `VirtualAllocExNuma`, узел не указывается.
-- **macOS**: публичного NUMA API нет (Apple Silicon — SoC без классической
-  NUMA-топологии, публичных syscall для `mbind`/`set_mempolicy` нет).
-  **Статус: `unsupported`.** Фича компилируется как no-op на Darwin.
+  no `VirtualAllocExNuma`, no node specified.
+- **macOS**: no public NUMA API (Apple Silicon is a SoC without classical
+  NUMA topology; no public syscalls for `mbind`/`set_mempolicy`).
+  **Status: `unsupported`.** The feature compiles as a no-op on Darwin.
 
-`decommit_pages`/`recommit_pages` уже существуют и корректно обёрнуты.
-NUMA-вызовы должны встроиться рядом — в отдельный файл
-`src/alloc_core/numa.rs`, аналогичным образом `cfg`-гейтованный.
+`decommit_pages`/`recommit_pages` already exist and are properly wrapped.
+NUMA calls should be placed alongside — in a separate file
+`src/alloc_core/numa.rs`, similarly `cfg`-gated.
 
-### Сегментный заголовок (`src/alloc_core/segment_header.rs`)
+### Segment header (`src/alloc_core/segment_header.rs`)
 
-`SegmentHeader` — `#[repr(C)]`, копия, чисто безопасный код. Сейчас
-содержит: `magic`, `kind`, `segment_id`, `bump`, `large_size/align`,
+`SegmentHeader` — `#[repr(C)]`, Copy, purely safe code. Currently
+contains: `magic`, `kind`, `segment_id`, `bump`, `large_size/align`,
 `reservation`, `reservation_len`, `owner_thread_free`, `owner_state`,
 `next_abandoned`, `live_count`, `decommitted`.
 
-**Ключевое ограничение (из compile-time assert):**
+**Key constraint (from compile-time assert):**
 ```
 const _: () = assert!(size_of::<SegmentHeader>() <= PAGE);
 const _: () = assert!(Layout::page_map_off() == PAGE);
 ```
-Заголовок должен вписаться в одну страницу (4 KiB). Сейчас он ~96 байт;
-поле `node_id: u32` добавит 4 байта — ≪ PAGE. Безопасно.
+The header must fit within a single page (4 KiB). Currently it is ~96 bytes;
+a `node_id: u32` field adds 4 bytes — much less than PAGE. Safe.
 
 ### AllocCore (`src/alloc_core/alloc_core.rs`)
 
-Точки резервирования сегментов:
-- `reserve_small_segment` (строки 997–1034): вызывает `Segment::reserve(SEGMENT)`,
-  затем инициализирует метаданные и выбирает сегмент как `small_cur`.
-- `alloc_large` (строки 957–993): вызывает `Segment::reserve(needed)` для
-  каждой крупной аллокации.
+Segment reservation points:
+- `reserve_small_segment` (lines 997–1034): calls `Segment::reserve(SEGMENT)`,
+  then initializes metadata and selects the segment as `small_cur`.
+- `alloc_large` (lines 957–993): calls `Segment::reserve(needed)` for
+  each large allocation.
 
-**Оба места — точки встройки NUMA-политики**. После `Segment::reserve` и до
-записи заголовка нужно вызвать `numa::bind_segment(base, len, node_id)`.
+**Both locations are NUMA policy insertion points**. After `Segment::reserve` and before
+writing the header, `numa::bind_segment(base, len, node_id)` must be called.
 
-Выбор «текущего» сегмента на пути `alloc_small`:
-1. `pop_free` из `small_cur`
-2. `find_segment_with_free` — сканирует все сегменты
-3. `carve_block_with_refill` → `carve_block` (bump из `small_cur`)
-4. `reserve_small_segment` (новый сегмент)
+Selecting the "current" segment on the `alloc_small` path:
+1. `pop_free` from `small_cur`
+2. `find_segment_with_free` — scans all segments
+3. `carve_block_with_refill` → `carve_block` (bump from `small_cur`)
+4. `reserve_small_segment` (new segment)
 
-NUMA-предпочтение — на шаге 2 и 4: сначала ищем сегмент с `node_id == my_node`,
-потом зарезервируем новый на `my_node`.
+NUMA preference — at steps 2 and 4: first look for a segment with `node_id == my_node`,
+then reserve a new one on `my_node`.
 
 ### Heap (`src/heap/heap.rs`)
 
-`Heap` — per-thread, создаётся через TLS-ленивую инициализацию (см. `heap_tls`
-и `SeferMalloc`). Привязка к потоку — через TLS, а не к CPU или NUMA-узлу.
+`Heap` is per-thread, created via TLS lazy initialization (see `heap_tls`
+and `SeferMalloc`). Binding is to the thread via TLS, not to a CPU or NUMA node.
 
-Если поток мигрирует между узлами — `Heap` не знает об этом. Сегменты
-остаются «принадлежащими» тому узлу, с которого создавались. Это MVP-допущение
-(стратегия «игнорируем» — см. §4).
+If a thread migrates between nodes — `Heap` is unaware of it. Segments
+remain "owned by" the node on which they were created. This is an MVP assumption
+(the "ignore" strategy — see §4).
 
-### Фичи (`Cargo.toml`)
+### Features (`Cargo.toml`)
 
-Образец для нового флага — `alloc-decommit`:
+The pattern for a new flag follows `alloc-decommit`:
 ```toml
 alloc-decommit = ["alloc-core"]
 ```
-Аналогично:
+Similarly:
 ```toml
-# NUMA-aware segment reservation: при выделении нового сегмента запрашивает
-# страницы у NUMA-узла, на котором работает вызывающий поток
+# NUMA-aware segment reservation: when allocating a new segment, requests
+# pages from the NUMA node on which the calling thread is running
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
-# macOS: no-op (нет публичного NUMA API). Default OFF.
+# macOS: no-op (no public NUMA API). Default OFF.
 # Requires `alloc-core`.
 numa-aware = ["alloc-core"]
 ```
 
 ---
 
-## §1. API цели — NUMA OS-интерфейс
+## §1. API targets — NUMA OS interface
 
 ### Linux
 
 ```c
-// Привязать уже замапленные страницы к узлу:
+// Bind already-mapped pages to a node:
 int mbind(void *addr, unsigned long len,
           int mode,                      // MPOL_BIND = 2
           const unsigned long *nodemask,
           unsigned long maxnode,
-          unsigned int flags);           // 0 для жёсткой привязки
+          unsigned int flags);           // 0 for hard binding
 ```
 
-- `mode = MPOL_BIND` — страницы обязаны приходить с конкретного узла.
-- `mode = MPOL_PREFERRED` — предпочесть узел, допустить другой при нехватке.
-- `nodemask` — битовая маска узлов; для одного узла `n`: `1UL << n`.
-- Вызвать ПОСЛЕ `mmap`, ДО первого обращения к страницам (тогда страницы
-  «цепляются» к нужному узлу при page-fault'е).
+- `mode = MPOL_BIND` — pages must come from a specific node.
+- `mode = MPOL_PREFERRED` — prefer a node, allow another if memory is insufficient.
+- `nodemask` — bitmask of nodes; for a single node `n`: `1UL << n`.
+- Call AFTER `mmap`, BEFORE the first access to the pages (then pages
+  "attach" to the desired node on page-fault).
 
-Опционально — `set_mempolicy(2)` на поток (меняет политику для всех
-последующих `mmap` в потоке), но это глобально для потока и опасно.
-Лучше per-mapping `mbind`.
+Optionally — `set_mempolicy(2)` per-thread (changes the policy for all
+subsequent `mmap` calls in the thread), but this is thread-global and dangerous.
+Per-mapping `mbind` is preferable.
 
-Источник информации о топологии (без внешних зависимостей):
+Topology information source (no external dependencies):
 ```
-/sys/devices/system/node/node<N>/cpumap   — маска CPU, принадлежащих узлу N
-/sys/devices/system/node/online           — список active-узлов
-/proc/self/status → Cpus_allowed          — допустимые CPU для процесса
-/proc/self/task/<tid>/stat → поле[38]     — текущий CPU потока
+/sys/devices/system/node/node<N>/cpumap   — CPU mask belonging to node N
+/sys/devices/system/node/online           — list of active nodes
+/proc/self/status → Cpus_allowed          — allowed CPUs for the process
+/proc/self/task/<tid>/stat → field[38]    — current CPU of the thread
 ```
-Для MVP достаточно: прочитать текущий CPU (`sched_getcpu(3)` — оболочка над
-`getcpu(2)`), потом найти узел по `/sys/devices/system/node/node*/cpumap`.
+For MVP it is sufficient to: read the current CPU (`sched_getcpu(3)` — a wrapper over
+`getcpu(2)`), then find the node via `/sys/devices/system/node/node*/cpumap`.
 
 ### Windows
 
 ```c
 LPVOID VirtualAllocExNuma(
     HANDLE hProcess,     // GetCurrentProcess()
-    LPVOID lpAddress,    // NULL — ОС выбирает адрес
+    LPVOID lpAddress,    // NULL — OS chooses address
     SIZE_T dwSize,
     DWORD  flAllocationType,  // MEM_RESERVE | MEM_COMMIT
     DWORD  flProtect,         // PAGE_READWRITE
-    DWORD  nndPreferred       // номер узла
+    DWORD  nndPreferred       // node number
 );
 ```
 
-Обнаружение узлов:
+Node discovery:
 ```c
 UCHAR  node_count;
-GetNumaHighestNodeNumber(&node_count);  // число NUMA-узлов - 1
+GetNumaHighestNodeNumber(&node_count);  // number of NUMA nodes - 1
 
 PROCESSOR_NUMBER proc;
-GetCurrentProcessorNumberEx(&proc);     // текущий логический процессор
+GetCurrentProcessorNumberEx(&proc);     // current logical processor
 
 USHORT node_number;
-GetNumaProcessorNodeEx(&proc, &node_number);  // узел этого процессора
+GetNumaProcessorNodeEx(&proc, &node_number);  // node of this processor
 ```
 
-**Внимание**: на Windows нет эквивалента `mbind` для уже зарезервированной
-памяти. Поэтому на Windows нет разделения резервирования и привязки — нужно
-вызывать `VirtualAllocExNuma` вместо `VirtualAlloc`. Это меняет точку
-встройки: нужно передать `node_id` в `reserve_aligned`.
+**Note**: on Windows there is no equivalent of `mbind` for already-reserved
+memory. Therefore on Windows there is no separation between reservation and binding —
+`VirtualAllocExNuma` must be called instead of `VirtualAlloc`. This changes the
+insertion point: `node_id` must be passed to `reserve_aligned`.
 
 ### macOS
 
-Публичного NUMA API нет. Apple Silicon — архитектура UMA (Unified Memory
-Architecture) без физической NUMA-асимметрии в публичной модели. Фича
-`numa-aware` на Darwin компилируется как no-op: детекция возвращает узел 0,
-`bind_segment` — no-op.
+No public NUMA API. Apple Silicon is a UMA (Unified Memory Architecture)
+without physical NUMA asymmetry in the public model. The `numa-aware` feature
+on Darwin compiles as a no-op: detection returns node 0,
+`bind_segment` is a no-op.
 
 ---
 
-## §2. Точки встройки в наш код
+## §2. Insertion points in our code
 
-### Новый файл `src/alloc_core/numa.rs`
+### New file `src/alloc_core/numa.rs`
 
-По образцу `src/alloc_core/os.rs`:
+Following the pattern of `src/alloc_core/os.rs`:
 
 ```rust
-//! NUMA-seam: определение текущего NUMA-узла и привязка сегмента к узлу.
-//! Confined-`unsafe` модуль (единственное место для NUMA-syscalls).
-//! Gated под `#[cfg(all(feature = "numa-aware", not(miri)))]`.
-#![allow(unsafe_code)]  // аналог os.rs
+//! NUMA-seam: detect current NUMA node and bind a segment to a node.
+//! Confined-`unsafe` module (the only place for NUMA syscalls).
+//! Gated under `#[cfg(all(feature = "numa-aware", not(miri)))]`.
+#![allow(unsafe_code)]  // analogous to os.rs
 
-/// Нет узла / фича выключена. Sentinel.
+/// No node / feature disabled. Sentinel.
 pub const NO_NODE: u32 = u32::MAX;
 
-/// Определить NUMA-узел текущего потока.
-/// Возвращает `NO_NODE`, если API недоступен или фича выключена.
+/// Detect the NUMA node of the current thread.
+/// Returns `NO_NODE` if the API is unavailable or the feature is disabled.
 pub fn current_node() -> u32 { ... }
 
-/// Привязать `[base, base+len)` к NUMA-узлу `node`.
-/// Вызывать ПОСЛЕ mmap/VirtualAlloc, до первого обращения к страницам.
-/// На Windows: не применимо (привязка происходит при резервировании);
-/// no-op при `node == NO_NODE` или на macOS.
+/// Bind `[base, base+len)` to NUMA node `node`.
+/// Call AFTER mmap/VirtualAlloc, before the first access to the pages.
+/// On Windows: not applicable (binding happens at reservation time);
+/// no-op when `node == NO_NODE` or on macOS.
 pub fn bind_segment(base: *mut u8, len: usize, node: u32) { ... }
 
-/// Версия `reserve_aligned` с NUMA-предпочтением (для Windows,
-/// где нужен `VirtualAllocExNuma` вместо `VirtualAlloc`).
-/// На не-Windows: резервирует обычным способом, затем вызывает `bind_segment`.
+/// Version of `reserve_aligned` with NUMA preference (for Windows,
+/// where `VirtualAllocExNuma` is needed instead of `VirtualAlloc`).
+/// On non-Windows: reserves the usual way, then calls `bind_segment`.
 pub fn reserve_aligned_on_node(usable: usize, node: u32)
     -> Option<(NonNull<u8>, NonNull<u8>, usize)> { ... }
 ```
 
-Все `unsafe`-блоки — с `// SAFETY:` комментарием. Полная аналогия `os.rs`.
+All `unsafe` blocks have a `// SAFETY:` comment. Full analogy with `os.rs`.
 
-### `src/alloc_core/segment_header.rs` — новое поле
+### `src/alloc_core/segment_header.rs` — new field
 
 ```rust
 #[repr(C)]
 pub(crate) struct SegmentHeader {
-    // ... существующие поля ...
+    // ... existing fields ...
     pub live_count: u32,
     pub decommitted: u32,
-    /// NUMA-узел, на котором были выделены страницы этого сегмента.
-    /// `NO_NODE` (u32::MAX) означает «неизвестен / не используется».
-    /// Присутствует в КАЖДОЙ сборке (layout стабилен); читается/используется
-    /// только под `#[cfg(feature = "numa-aware")]`.
+    /// NUMA node on which the pages of this segment were allocated.
+    /// `NO_NODE` (u32::MAX) means "unknown / not used".
+    /// Present in EVERY build (layout is stable); read/used
+    /// only under `#[cfg(feature = "numa-aware")]`.
     pub node_id: u32,
 }
 ```
 
-Аналогично `live_count`/`decommitted` — поле присутствует всегда, чтобы
-layout заголовка был стабилен вне зависимости от набора фичей. Доступ — через
-`offset_of!` по той же дисциплине, что `bump_of`/`set_bump`.
+Similarly to `live_count`/`decommitted` — the field is always present so that
+the header layout is stable regardless of the feature set. Access is via
+`offset_of!` following the same discipline as `bump_of`/`set_bump`.
 
-**Проверка размера**: добавление `u32` не нарушит assert `size_of::<SegmentHeader>() <= PAGE` — текущий размер ~96 байт, останется ~100 байт ≪ 4096.
+**Size check**: adding a `u32` will not violate the assert `size_of::<SegmentHeader>() <= PAGE` — the current size is ~96 bytes, it will remain ~100 bytes, much less than 4096.
 
-### `src/alloc_core/alloc_core.rs` — изменение `reserve_small_segment`
+### `src/alloc_core/alloc_core.rs` — changing `reserve_small_segment`
 
 ```rust
 fn reserve_small_segment(&mut self) -> Option<*mut u8> {
-    // Новый код под numa-aware:
+    // New code under numa-aware:
     #[cfg(feature = "numa-aware")]
     let my_node = numa::current_node();
 
-    // Сначала проверить: есть ли уже пустой (decommitted) сегмент
-    // на нужном узле? (переиспользование вместо нового резервирования)
+    // First check: is there already an empty (decommitted) segment
+    // on the desired node? (reuse instead of new reservation)
 
     #[cfg(feature = "numa-aware")]
     let segment = numa::reserve_aligned_on_node(SEGMENT, my_node)?;
     #[cfg(not(feature = "numa-aware"))]
     let segment = Segment::reserve(SEGMENT)?;
 
-    // ... остальной код без изменений ...
+    // ... rest of the code unchanged ...
 
-    // Записать node_id в заголовок:
+    // Write node_id to the header:
     #[cfg(feature = "numa-aware")]
     {
         let off = core::mem::offset_of!(SegmentHeader, node_id);
@@ -245,7 +245,7 @@ fn reserve_small_segment(&mut self) -> Option<*mut u8> {
 }
 ```
 
-### NUMA-предпочтение в `find_segment_with_free`
+### NUMA preference in `find_segment_with_free`
 
 ```rust
 pub(crate) fn find_segment_with_free(&self, class_idx: usize) -> Option<*mut u8> {
@@ -261,75 +261,75 @@ pub(crate) fn find_segment_with_free(&self, class_idx: usize) -> Option<*mut u8>
         {
             let seg_node = segment_node_id(base);
             if seg_node != my_node && seg_node != numa::NO_NODE {
-                // Не наш узел — запомним как fallback, продолжим поиск
+                // Not our node — remember as fallback, continue searching
                 if fallback.is_none() { /* store */ }
                 continue;
             }
         }
         let bt = SegmentMeta::new(base).bin_table();
         if bt.head(class_idx) != FREE_LIST_NULL {
-            return Some(base);  // локальный узел — берём сразу
+            return Some(base);  // local node — take immediately
         }
     }
-    // fallback: сегмент другого узла, если локального нет
+    // fallback: segment from another node, if no local one found
     fallback
 }
 ```
 
 ---
 
-## §3. Per-node сегментные пулы
+## §3. Per-node segment pools
 
-**Нужны ли отдельные BinTable / free-list по узлам?** — Нет, для MVP.
+**Are separate BinTable / free-lists per node needed?** — No, for MVP.
 
-Обоснование:
-- `Heap` уже per-thread. В типичной рабочей нагрузке СУБД поток живёт на
-  одном ядре и одном узле (особенно с `pinning`-фичей, которая уже есть).
-- Сегменты уже per-heap (не разделяются между потоками в steady-state, только
-  через cross-thread free).
-- Разделение BinTable по узлам означало бы удвоение/утроение метаданных
-  внутри каждого сегмента и усложнение `find_segment_with_free` — без выгоды
-  при `pin`.
+Rationale:
+- `Heap` is already per-thread. In a typical DBMS workload, the thread lives on
+  a single core and a single node (especially with the `pinning` feature, which already exists).
+- Segments are already per-heap (not shared between threads in steady-state, only
+  via cross-thread free).
+- Splitting BinTable by node would mean doubling/tripling metadata
+  inside each segment and complicating `find_segment_with_free` — with no benefit
+  when `pin` is used.
 
-**Достаточно**: тег `node_id` в заголовке + предпочтение локальных сегментов
-в `find_segment_with_free` + выделение новых сегментов на `my_node`.
+**Sufficient**: a `node_id` tag in the header + preference for local segments
+in `find_segment_with_free` + allocating new segments on `my_node`.
 
-Если нагрузка покажет, что межузловые сегменты преобладают (например, при
-heap-balancing или adoption), — тогда рассмотреть разделение, НО это фаза N+1.
-
----
-
-## §4. Миграция потока
-
-**Проблема**: если ОС переселила поток на другой NUMA-узел, `current_node()`
-вернёт новый узел, а все существующие сегменты этого heap'а будут со старым
-`node_id`. Аллокации будут по-прежнему выдаваться из «дальних» сегментов.
-
-**Стратегии:**
-
-| Вариант | Описание | Сложность | Выбор |
-|---------|----------|-----------|-------|
-| (a) Игнорируем | Поток работает со старыми сегментами; `current_node()` влияет только на НОВЫЕ резервирования | Минимальная | **MVP** |
-| (b) Периодическая переподписка | На каждый `alloc` проверять `current_node()` vs `segment node_id`; при расхождении — мигрировать | Высокая, без выигрыша | Нет |
-| (c) Pinning пользователем | Пин потока через фичу `pinning` (`core_affinity`) — тогда миграции нет | Минимальная (уже есть) | **Рекомендация** |
-
-**Решение для MVP**: стратегия (a) + рекомендация в документации использовать
-`pinning`-фичу. Это честно: NUMA-выигрыш проявляется именно там, где поток
-пинован к ядру узла. Без пиннинга NUMA — best-effort оптимизация, не гарантия.
-
-**Синергия с `pinning`**: фича `pinning` уже подключает `core_affinity`
-(безопасная обёртка над `sched_setaffinity`/`SetThreadAffinityMask`).
-Документировать: `numa-aware + pinning` — рекомендуемая комбинация.
-Только `numa-aware` без `pinning` даёт best-effort (помогает при низкой
-миграции, не помогает при высокой).
+If workload shows that cross-node segments dominate (for example, during
+heap-balancing or adoption), — then consider splitting, BUT that is phase N+1.
 
 ---
 
-## §5. Тестирование без реального железа
+## §4. Thread migration
+
+**Problem**: if the OS migrates a thread to another NUMA node, `current_node()`
+returns the new node, but all existing segments of that heap retain the old
+`node_id`. Allocations will still be served from "remote" segments.
+
+**Strategies:**
+
+| Variant | Description | Complexity | Choice |
+|---------|-------------|------------|--------|
+| (a) Ignore | Thread works with old segments; `current_node()` affects only NEW reservations | Minimal | **MVP** |
+| (b) Periodic re-subscription | On every `alloc` check `current_node()` vs `segment node_id`; on mismatch — migrate | High, no benefit | No |
+| (c) User-side pinning | Pin thread via the `pinning` feature (`core_affinity`) — then migration does not occur | Minimal (already exists) | **Recommendation** |
+
+**MVP decision**: strategy (a) + documentation recommending use of the
+`pinning` feature. This is honest: NUMA benefit manifests precisely where the thread
+is pinned to a core on the node. Without pinning, NUMA is a best-effort optimization, not a guarantee.
+
+**Synergy with `pinning`**: the `pinning` feature already pulls in `core_affinity`
+(a safe wrapper over `sched_setaffinity`/`SetThreadAffinityMask`).
+Document: `numa-aware + pinning` is the recommended combination.
+`numa-aware` alone without `pinning` gives best-effort (helps under low
+migration, does not help under high migration).
+
+---
+
+## §5. Testing without real hardware
 
 ### QEMU fake-NUMA (Linux)
 
-Запустить Linux VM с поддельной NUMA-топологией:
+Run a Linux VM with a fake NUMA topology:
 
 ```sh
 qemu-system-x86_64 \
@@ -341,186 +341,185 @@ qemu-system-x86_64 \
   ...
 ```
 
-Внутри VM:
-- `numactl --hardware` показывает 2 узла.
-- `numactl --cpunodebind=0 ./sefer_test` — прогнать тест на узле 0.
-- Проверить, что наш код запрашивает узел 0 для потока 0, узел 1 для потока 1.
-- `/proc/<pid>/maps` + `numastat -m` — проверить, откуда физически пришли
-  страницы.
+Inside the VM:
+- `numactl --hardware` shows 2 nodes.
+- `numactl --cpunodebind=0 ./sefer_test` — run the test on node 0.
+- Verify that our code requests node 0 for thread 0, node 1 for thread 1.
+- `/proc/<pid>/maps` + `numastat -m` — verify where pages physically came from.
 
-Альтернатива без QEMU — загрузочный параметр ядра `numa=fake=4` (4 виртуальных
-NUMA-узла на одном физическом сокете). Не требует VM.
+Alternative without QEMU — kernel boot parameter `numa=fake=4` (4 virtual
+NUMA nodes on a single physical socket). Does not require a VM.
 
-### Тест `tests/numa_seam.rs`
+### Test `tests/numa_seam.rs`
 
-Юнит-тест для `src/alloc_core/numa.rs`:
+Unit test for `src/alloc_core/numa.rs`:
 
 ```rust
 #[test]
 #[cfg(feature = "numa-aware")]
 fn current_node_returns_valid_value() {
     let node = numa::current_node();
-    // Либо NO_NODE (unsupported), либо < 64 (разумная граница)
+    // Either NO_NODE (unsupported) or < 64 (reasonable bound)
     assert!(node == numa::NO_NODE || node < 64);
 }
 
 #[test]
 #[cfg(all(feature = "numa-aware", target_os = "linux"))]
 fn bind_segment_does_not_panic() {
-    // Резервировать сегмент, привязать к узлу 0, освободить.
-    // Проверяет, что mbind не падает (EINVAL etc.)
+    // Reserve a segment, bind to node 0, free.
+    // Verifies that mbind does not fail (EINVAL etc.)
     ...
 }
 ```
 
-### Тест `tests/numa_alloc.rs`
+### Test `tests/numa_alloc.rs`
 
-Интеграционный тест под `alloc-global + alloc-xthread + numa-aware`:
+Integration test under `alloc-global + alloc-xthread + numa-aware`:
 
 ```rust
 #[test]
 #[cfg(all(feature = "numa-aware", feature = "alloc-global"))]
 fn alloc_from_local_node() {
-    // Запустить 2 потока, пинованных к разным NUMA-узлам.
-    // Каждый выделяет N блоков.
-    // Проверить: segment.node_id == thread_numa_node для большинства сегментов.
+    // Launch 2 threads pinned to different NUMA nodes.
+    // Each allocates N blocks.
+    // Verify: segment.node_id == thread_numa_node for the majority of segments.
     ...
 }
 ```
 
-### ВАЖНО — честность об ограничениях
+### IMPORTANT — honesty about limitations
 
-QEMU / `numa=fake` проверяют КОРРЕКТНОСТЬ привязки (верный `mbind`/
-`VirtualAllocExNuma` вызван, `node_id` записан правильно). Они НЕ верифицируют
-latency-выигрыш: на одном физическом сокете все «узлы» имеют одинаковую
-задержку доступа.
+QEMU / `numa=fake` verify CORRECTNESS of binding (the right `mbind`/
+`VirtualAllocExNuma` call is made, `node_id` is recorded correctly). They DO NOT verify
+the latency benefit: on a single physical socket all "nodes" have the same
+access latency.
 
-**Цифра прироста производительности требует реального 2-сокетного железа:**
-- AWS c5n.metal, i3.metal (Xeon, 2 сокета)
-- AWS r6g.metal (Graviton 2, несколько NUMA-доменов)
+**A performance improvement figure requires real 2-socket hardware:**
+- AWS c5n.metal, i3.metal (Xeon, 2 sockets)
+- AWS r6g.metal (Graviton 2, multiple NUMA domains)
 - Dual-socket dev box
 
-Это ограничение MVP — зафиксировать в MALLOC_BENCH и в рамках этапа E
-реализации.
+This is an MVP limitation — record it in MALLOC_BENCH and as part of implementation
+phase E.
 
 ---
 
-## §6. Риск и область
+## §6. Risk and scope
 
 ### Safety
 
-Новый confined-`unsafe` блок `src/alloc_core/numa.rs`:
-- `mbind` syscall: не изменяет данных сегмента, только политику выделения
-  физических страниц. Основной риск: передать неверный `addr`/`len` или узел.
-  Защита: вызывать ТОЛЬКО на live-сегменте сразу после `mmap`, до любого
-  использования; `len` берётся из `Segment::len()` (кратно `SEGMENT`);
-  `node` — из `current_node()`, который ограничен системным `node_count`.
-- `VirtualAllocExNuma`: та же семантика, что `VirtualAlloc`, + параметр узла.
-  Если узел недоступен — возвращает NULL (OOM path, штатно обрабатывается).
-- `// SAFETY:` на каждый `unsafe`-блок — обязательно.
+New confined-`unsafe` block `src/alloc_core/numa.rs`:
+- `mbind` syscall: does not modify segment data, only the physical page
+  allocation policy. Primary risk: passing an incorrect `addr`/`len` or node.
+  Protection: call ONLY on a live segment immediately after `mmap`, before any
+  use; `len` comes from `Segment::len()` (a multiple of `SEGMENT`);
+  `node` comes from `current_node()`, which is bounded by the system `node_count`.
+- `VirtualAllocExNuma`: same semantics as `VirtualAlloc`, plus a node parameter.
+  If the node is unavailable — returns NULL (OOM path, handled normally).
+- `// SAFETY:` on every `unsafe` block — mandatory.
 
-### Регресс
+### Regression
 
-- Feature default OFF (`numa-aware` без `= default`).
-- Без флага: byte-for-byte старое поведение. `Segment::reserve` не изменяется.
-- Новое поле `SegmentHeader::node_id` инициализируется в `NO_NODE` в
-  конструкторах `small()` и `large()` — layout стабилен.
-- Compile-time assert `size_of::<SegmentHeader>() <= PAGE` по-прежнему
-  выполняется.
+- Feature default OFF (`numa-aware` without `= default`).
+- Without the flag: byte-for-byte old behavior. `Segment::reserve` is unchanged.
+- New field `SegmentHeader::node_id` is initialized to `NO_NODE` in
+  constructors `small()` and `large()` — layout is stable.
+- Compile-time assert `size_of::<SegmentHeader>() <= PAGE` still
+  holds.
 
-### Совместимость с `alloc-decommit`
+### Compatibility with `alloc-decommit`
 
-`decommit_empty_segment` сбрасывает `live_count`, `decommitted`, `bump`.
-Поле `node_id` НЕ сбрасывается — оно отражает физическую привязку сегмента,
-которая не меняется при decommit/recommit. После recommit сегмент возвращается
-к тому же узлу.
+`decommit_empty_segment` resets `live_count`, `decommitted`, `bump`.
+The `node_id` field is NOT reset — it reflects the physical binding of the segment,
+which does not change on decommit/recommit. After recommit the segment returns
+to the same node.
 
-### Объём
+### Scope
 
-| Артефакт | Ориентировочно |
-|----------|---------------|
-| `src/alloc_core/numa.rs` | 250–400 строк |
-| `src/alloc_core/segment_header.rs` | +8 строк (поле + конструкторы) |
-| `src/alloc_core/alloc_core.rs` | +30–50 строк (`#[cfg(feature)]`-блоки) |
-| `src/alloc_core/mod.rs` | +1 строка (`pub(crate) mod numa;`) |
-| `tests/numa_seam.rs` | ~60 строк |
-| `tests/numa_alloc.rs` | ~120 строк |
-| `Cargo.toml` | +6 строк |
+| Artifact | Estimate |
+|----------|----------|
+| `src/alloc_core/numa.rs` | 250–400 lines |
+| `src/alloc_core/segment_header.rs` | +8 lines (field + constructors) |
+| `src/alloc_core/alloc_core.rs` | +30–50 lines (`#[cfg(feature)]` blocks) |
+| `src/alloc_core/mod.rs` | +1 line (`pub(crate) mod numa;`) |
+| `tests/numa_seam.rs` | ~60 lines |
+| `tests/numa_alloc.rs` | ~120 lines |
+| `Cargo.toml` | +6 lines |
 
 ---
 
-## §7. Вне области
+## §7. Out of scope
 
-- **Tuning политик** (MPOL_INTERLEAVE vs MPOL_BIND vs MPOL_PREFERRED): только
-  MPOL_BIND для MVP. Interleave — для HPC-нагрузок, preferred — мягче; по
-  результатам замера.
-- **NUMA-aware pinning runner**: синергия с `pinning`-фичей (уже есть
-  `core_affinity`); API-расширение для явной привязки потока к NUMA-узлу +
-  шарду — отдельная задача.
-- **Latency-asymmetry замер**: невозможен без реального 2-сокетного железа.
-  Заглушка в MALLOC_BENCH «NUMA: opt-in, верифицировано под QEMU, latency
-  требует hardware».
-- **Per-node free-list шардирование** внутри сегмента: не нужно для MVP;
-  рассмотреть, если данные покажут высокое межузловое «загрязнение» при heap
+- **Policy tuning** (MPOL_INTERLEAVE vs MPOL_BIND vs MPOL_PREFERRED): only
+  MPOL_BIND for MVP. Interleave is for HPC workloads, preferred is softer; to be decided
+  based on measurement results.
+- **NUMA-aware pinning runner**: synergy with the `pinning` feature (already has
+  `core_affinity`); API extension for explicit binding of a thread to a NUMA node +
+  shard — separate task.
+- **Latency-asymmetry measurement**: impossible without real 2-socket hardware.
+  Placeholder in MALLOC_BENCH: "NUMA: opt-in, verified under QEMU, latency
+  requires hardware".
+- **Per-node free-list sharding** inside a segment: not needed for MVP;
+  consider if data shows high cross-node "pollution" during heap
   adoption.
-- **Large-block NUMA**: `alloc_large` создаёт dedicated-сегмент; привязка
-  там полезна, но менее критична (большие блоки реже). Включить на том же
-  этапе A (единственный `reserve_aligned_on_node`-вызов).
+- **Large-block NUMA**: `alloc_large` creates a dedicated segment; binding
+  there is useful but less critical (large blocks are rarer). Include in the same
+  phase A (a single `reserve_aligned_on_node` call).
 
 ---
 
-## §8. Шаги реализации
+## §8. Implementation steps
 
 ### Phase A — `src/alloc_core/numa.rs` (OS-seam)
 
-Новый confined-`unsafe` модуль с детекцией топологии и `bind_segment` /
-`reserve_aligned_on_node`. Покрыт юнит-тестами в `tests/numa_seam.rs`.
+New confined-`unsafe` module with topology detection and `bind_segment` /
+`reserve_aligned_on_node`. Covered by unit tests in `tests/numa_seam.rs`.
 
-Платформы:
+Platforms:
 - `#[cfg(all(target_os = "linux", not(miri)))]`: `mbind` + `sched_getcpu`
 - `#[cfg(all(windows, not(miri)))]`: `VirtualAllocExNuma` +
   `GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx`
-- `#[cfg(target_os = "macos")]` + `#[cfg(miri)]`: no-op, возвращает `NO_NODE`
+- `#[cfg(target_os = "macos")]` + `#[cfg(miri)]`: no-op, returns `NO_NODE`
 
 ### Phase B — `SegmentHeader.node_id` (layout)
 
-Новое поле `u32` с `NO_NODE` в обоих конструкторах. Compile-time assert, что
-`size_of::<SegmentHeader>() <= PAGE` — всё ещё выполняется. Field-specific
-accessor `node_id_of` / `set_node_id` через `offset_of!`.
+New `u32` field with `NO_NODE` in both constructors. Compile-time assert that
+`size_of::<SegmentHeader>() <= PAGE` still holds. Field-specific
+accessor `node_id_of` / `set_node_id` via `offset_of!`.
 
-### Phase C — NUMA-выбор в `reserve_small_segment` + `find_segment_with_free`
+### Phase C — NUMA selection in `reserve_small_segment` + `find_segment_with_free`
 
-Встройка `current_node()` и `reserve_aligned_on_node()` в
-`reserve_small_segment`. NUMA-предпочтение в `find_segment_with_free` —
-сначала сегменты с `node_id == my_node`, потом остальные. Аналогично
-`alloc_large` для крупных аллокаций.
+Insertion of `current_node()` and `reserve_aligned_on_node()` into
+`reserve_small_segment`. NUMA preference in `find_segment_with_free` —
+first segments with `node_id == my_node`, then the rest. Similarly
+`alloc_large` for large allocations.
 
-### Phase D — QEMU-тест корректности
+### Phase D — QEMU correctness test
 
-`tests/numa_alloc.rs`: запускать только при `SEFER_NUMA_TEST=1` (guard env
-var), т.к. требует реальной NUMA-топологии или QEMU. Документировать в README
+`tests/numa_alloc.rs`: run only when `SEFER_NUMA_TEST=1` (guard env
+var), since it requires a real NUMA topology or QEMU. Document in README
 (`numactl --hardware` prerequisite).
 
-### Phase E — MALLOC_BENCH обновление
+### Phase E — MALLOC_BENCH update
 
-Добавить раздел «NUMA» с честным описанием: opt-in под `numa-aware`,
-корректность верифицирована под QEMU/fake-NUMA, latency-выигрыш измерим
-только на реальном multi-socket железе. RSS-метрика не затрагивается
-(NUMA-привязка не меняет количество выделяемых сегментов).
+Add a "NUMA" section with an honest description: opt-in under `numa-aware`,
+correctness verified under QEMU/fake-NUMA, latency benefit is measurable
+only on real multi-socket hardware. RSS metric is not affected
+(NUMA binding does not change the number of segments allocated).
 
 ---
 
-## Сводная таблица точек кода
+## Summary table of code points
 
-| Файл | Действие |
-|------|----------|
-| `src/alloc_core/numa.rs` | Новый confined-`unsafe` NUMA-seam |
-| `src/alloc_core/os.rs` | Без изменений (только читаем) |
-| `src/alloc_core/segment_header.rs` | + поле `node_id: u32`, accessor'ы |
-| `src/alloc_core/alloc_core.rs` | + `#[cfg(numa-aware)]` в `reserve_small_segment`, `alloc_large`, `find_segment_with_free` |
+| File | Action |
+|------|--------|
+| `src/alloc_core/numa.rs` | New confined-`unsafe` NUMA-seam |
+| `src/alloc_core/os.rs` | No changes (read only) |
+| `src/alloc_core/segment_header.rs` | + field `node_id: u32`, accessors |
+| `src/alloc_core/alloc_core.rs` | + `#[cfg(numa-aware)]` in `reserve_small_segment`, `alloc_large`, `find_segment_with_free` |
 | `src/alloc_core/mod.rs` | + `pub(crate) mod numa;` |
-| `src/heap/heap.rs` | Без изменений (NUMA-логика ниже, в AllocCore) |
-| `Cargo.toml` | + фича `numa-aware = ["alloc-core"]` |
-| `tests/numa_seam.rs` | Новый тест OS-seam |
-| `tests/numa_alloc.rs` | Новый интеграционный тест |
-| `docs/MALLOC_BENCH.md` | + раздел «NUMA» |
+| `src/heap/heap.rs` | No changes (NUMA logic is below, in AllocCore) |
+| `Cargo.toml` | + feature `numa-aware = ["alloc-core"]` |
+| `tests/numa_seam.rs` | New OS-seam test |
+| `tests/numa_alloc.rs` | New integration test |
+| `docs/MALLOC_BENCH.md` | + "NUMA" section |
