@@ -228,16 +228,21 @@ pub fn current_for_alloc() -> CurrentHeap {
 /// (TLS pointer already set) the fast path returns the cached pointer
 /// without touching the config.
 ///
+/// **Config is taken by reference** so the hot fast path (TLS pointer
+/// cached) never materialises the ~40-byte `LargeCacheConfig` value on the
+/// stack. The 40-byte copy happens only on the cold `bind_slow` branch,
+/// where it is amortised across the thread's lifetime.
+///
 /// Only present under `alloc-decommit` — without that feature the config
 /// concept does not exist and [`current_for_alloc`] is used directly.
 #[cfg(feature = "alloc-decommit")]
 #[inline(always)]
 pub fn current_for_alloc_with_config(
-    config: crate::alloc_core::LargeCacheConfig,
+    config: &crate::alloc_core::LargeCacheConfig,
 ) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         Ok(p) if !p.is_null() => CurrentHeap::Own(p),
-        Ok(_) => bind_slow_tagged_with_config(config),
+        Ok(_) => bind_slow_tagged_with_config(*config),
         Err(_) => CurrentHeap::Fallback,
     }
 }
