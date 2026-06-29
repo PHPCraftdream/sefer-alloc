@@ -294,7 +294,7 @@ required-features = ["alloc-core", "alloc-xthread"]
 # Task #62 §A-2: synthetic async-like allocation pattern — mixed-size
 # alloc/dealloc/realloc (row buffers, accumulators, medium blobs) via
 # SeferMalloc::GlobalAlloc called directly. No tokio runtime noise, no
-# channels, no spawns. Single-threaded СУБД-pipeline simulation.
+# channels, no spawns. Single-threaded DBMS-pipeline simulation.
 # Documented in docs/PROFILE_FLAMEGRAPHS.md §6.
 [[bench]]
 name = "heap_async_pattern"
@@ -302,7 +302,7 @@ harness = false
 required-features = ["alloc-global"]
 
 # Task #52: tokio async burn-in — SeferMalloc as #[global_allocator] under a
-# real tokio multi-thread runtime with a СУБД-pipeline-like async workload.
+# real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
 # All tokio-internal allocations also go through SeferMalloc.
 # Run: `SEFER_BURNIN_SECONDS=10 SEFER_TOKIO_WORKERS=4 SEFER_BURNIN_TASKS=256 \
 #        cargo run --release --example tokio_burn_in \

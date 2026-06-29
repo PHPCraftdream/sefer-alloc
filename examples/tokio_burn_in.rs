@@ -8,7 +8,7 @@
 
 //! Tokio async burn-in for `SeferMalloc` — installs the allocator as
 //! `#[global_allocator]` and exercises it under a real async multi-thread
-//! runtime with a СУБД-подобной (database-pipeline-like) workload.
+//! runtime with a database-pipeline-like workload.
 //!
 //! ## Purpose (task #52)
 //!
@@ -19,7 +19,7 @@
 //! and the cross-task free path that fires when allocations made on one worker
 //! are dropped on another (the tokio scheduler migrates tasks freely).
 //!
-//! ## СУБД-pipeline workload
+//! ## DBMS-pipeline workload
 //!
 //! ```text
 //!  [query tasks] ──► [coordinator task] ──► [aggregator task]

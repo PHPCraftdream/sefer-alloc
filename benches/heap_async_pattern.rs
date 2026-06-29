@@ -1,7 +1,7 @@
 //! Synthetic async-like allocation pattern (task #62) — low-noise profile
 //! target.
 //!
-//! Mimics a СУБД-pipeline workload — mixed-size alloc/dealloc/realloc-grow —
+//! Mimics a DBMS-pipeline workload — mixed-size alloc/dealloc/realloc-grow —
 //! WITHOUT tokio runtime or scheduler noise, WITHOUT channels, WITHOUT spawns.
 //! The "two roles" (producer allocates, consumer releases) are simulated in a
 //! single-threaded loop that switches between accumulating allocations and
