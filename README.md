@@ -352,17 +352,23 @@ rows.
 
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
+`alloc(N) + free` round-trip with the OPT-E large-cache (`alloc-decommit`):
+the freed segment is parked in a 2-slot cache with pages kept committed;
+the next alloc of a compatible size returns it without any OS round-trip.
+
 | Workload | SeferMalloc | mimalloc | System | vs mimalloc |
 |---|---|---|---|---|
-| `alloc(4 MiB) + free` | **~45 ns** | ~718 ns | ~16.7 µs | **~16× faster** |
-| `alloc(16 MiB) + free` | **~48 ns** | ~869 ns | ~17.6 µs | **~18× faster** |
-| `alloc(64 MiB) + free` | ~2.0 ms | ~2.4 µs | ~19.9 µs | not cached |
+| `alloc(4 MiB) + free` | **~46 ns** | ~743 ns | ~17.5 µs | **~16× faster** |
+| `alloc(16 MiB) + free` | **~46 ns** | ~861 ns | ~14.6 µs | **~19× faster** |
+| `alloc(64 MiB) + free` | **~63 ns** | ~2.43 µs | ~16.9 µs | **~39× faster** |
 
-The 64 MiB case is uncached by design (`MAX_CACHED_LARGE_BYTES = 64 MiB`)
-so the cache cannot pin more than `2 × 64 MiB = 128 MiB` of unused RSS.
-4 MiB and 16 MiB stay in the cache and pay only the `register`-plus-
-header-rewrite cost (the cache-hit path is dominated by ~40 ns of header
-fixup).
+vs `System`: roughly **270–380× faster** at all three sizes. The cache
+is byte-budget'd (per-shard, default unbounded — clients set
+`SEFER_LARGE_CACHE_BUDGET=…` to cap it), with lazy 10 %/sec exponential
+decay back to `live + headroom`. There is no per-span size cap — a 30 GB
+segment on a 64 GB box is cacheable now (the old `MAX_CACHED_LARGE_BYTES =
+64 MiB` was removed in #90 — see `docs/MALLOC_BENCH.md` "Large-cache
+(OPT-E)").
 
 ### Realloc grow under adversarial neighbour pressure
 
@@ -371,37 +377,101 @@ fixup).
 | `realloc_grow_geometric` | 173 µs | 368 µs | sefer-alloc 2.1× faster |
 | `realloc_in_place_unfavorable` | **125 µs** | 1.31 ms | sefer-alloc 10.5× faster (OPT-F in-place realloc skip-copy) |
 
+### Small-class steady-state churn (`benches/global_alloc.rs::global_alloc_churn`)
+
+Steady-state churn over a working set of 256 live blocks: each iteration
+frees a pseudo-random slot and allocates a replacement (xorshift seed,
+deterministic). This is the pattern the `fastbin` per-thread magazine
+(P0–P6 of [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets and
+the common shape of real allocation workloads.
+
+| Size | SeferMalloc | mimalloc | vs mimalloc |
+|---|---|---|---|
+|   16 B | ~21.8 µs | ~36.9 µs | **1.7× faster** |
+|   64 B | ~22.3 µs | ~37.2 µs | **1.7× faster** |
+|  256 B | ~21.9 µs | ~22.1 µs | parity |
+| 1024 B | ~21.9 µs | ~159 µs | **7.3× faster** |
+
 ### MT cross-thread (`examples/malloc_macro.rs`, larson + mstress)
 
-Aggregate ops/sec at T=4 worker threads:
+Aggregate million-ops/sec (op = one alloc + one free), T = 1 / 2 / 4
+worker threads, unpinned.
 
-| Workload | SeferMalloc | mimalloc | System |
+**larson** (server-churn, working-set + occasional cross-thread free):
+
+| T | SeferMalloc | mimalloc | System | vs mimalloc |
+|--:|-----------:|---------:|-------:|------------:|
+| 1 | ~20.5 M | ~27.9 M | ~6.9 M | **1.36× slower** |
+| 2 | ~23.2 M | ~18.2 M | ~6.8 M | **1.28× faster** |
+| 4 | ~39.4 M | ~32.5 M | ~13.4 M | **1.21× faster** |
+
+**mstress** (rounds of fill → free-half → refill, with cross-thread):
+
+| T | SeferMalloc | mimalloc | System | vs mimalloc |
+|--:|-----------:|---------:|-------:|------------:|
+| 1 | ~26.6 M | ~34.0 M | ~4.1 M | **1.28× slower** |
+| 2 | ~44.7 M | ~37.6 M | ~6.2 M | **1.19× faster** |
+| 4 | ~84.1 M | ~64.0 M | ~13.5 M | **1.31× faster** |
+
+`SeferMalloc` overtakes `mimalloc` at T ≥ 2 on both workloads (the
+per-thread heap takes no shared lock; cross-thread frees route through
+the lock-free Phase-10/12.6 remote path). Single-thread (T = 1) `mimalloc`
+leads — see the verdict below.
+
+### Synthetic bulk worst case (`benches/global_alloc.rs::global_alloc`)
+
+`alloc 1024 → free 1024` — the documented worst case for any per-thread
+magazine (every free overflows; every alloc empties and refills). Kept as
+a regression guard, **not** a representative workload.
+
+| Size | SeferMalloc | mimalloc | vs mimalloc |
 |---|---|---|---|
-| larson | 40 M | 32 M | ~6 M |
-| mstress | ~65 M | ~65 M | ~6 M |
+|   16 B | ~29.4 µs | ~10.3 µs | 2.87× slower |
+|   64 B | ~30.3 µs | ~13.7 µs | 2.21× slower |
+|  256 B | ~30.8 µs | ~16.8 µs | 1.83× slower |
+| 1024 B | ~32.0 µs | ~33.3 µs | parity |
 
-Competitive with `mimalloc` on the multi-thread cross-thread path; single-
-thread small-class hot path is still ~1.2–2× behind `mimalloc` (see
-[`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md) for the full table).
+A bulk-mode bypass (detect alloc-without-free streak, skip the magazine)
+would close this; for now it is the documented design trade-off of
+`fastbin` (default-on in `production`). Disable `fastbin` if your primary
+workload is arena-style bulk alloc-then-bulk-free.
 
 Reproduce with:
 
 ```bash
-cargo bench --bench large_realloc --features "alloc-global alloc-decommit"
-cargo run --release --example malloc_macro --features "alloc-global alloc-xthread"
+cargo bench --bench large_realloc --features "alloc-global alloc-decommit" -- large_alloc_free
+cargo bench --bench global_alloc  --features production -- global_alloc_churn
+cargo bench --bench global_alloc  --features production -- "^global_alloc/"
+cargo run   --release --example malloc_macro --features "alloc-global alloc-xthread"
 ```
 
 ### Honest verdict
 
-- **Where sefer-alloc wins:** large alloc / free (OPT-E cache), realloc
-  in-place small→small (OPT-F), DBMS-scale long-running multi-thread
-  workloads (no SegmentTable ceiling under `alloc-decommit`).
-- **Where it ties:** MT cross-thread macro-bench at typical T=4.
-- **Where it loses:** single-thread small-class fixed-size churn — ~1.2–2×
-  behind `mimalloc`. The flamegraph at
-  [`docs/PROFILE_FLAMEGRAPHS.md §1`](docs/PROFILE_FLAMEGRAPHS.md) shows the
-  remaining hot path; OPT-C lazy-stamp shaves ~1 % of it, the structural
-  gap remains.
+- **Where sefer-alloc wins big:**
+  - **Large alloc/free OPT-E:** 16–39× faster than `mimalloc`, 270–380× faster
+    than `System`. The headline.
+  - **Real-world churn (the common shape):** 1.7× on 16/64 B, parity on 256 B,
+    **7.3× on 1024 B**.
+  - **Realloc** (`realloc_in_place_unfavorable`): 10.5× via OPT-F skip-copy.
+  - **MT macro at T ≥ 2:** larson 1.21–1.28×, mstress 1.19–1.31× faster.
+- **Where it ties:** churn 256 B; bulk 1024 B; MT mstress T = 2 within noise.
+- **Where it loses:**
+  - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`.
+    Structural cost of our safety machinery (M2 double-free guard on the
+    bitmap, `contains_base` foreign-pointer hash probe, cross-thread routing
+    reads on every `dealloc`) — the inline-seam (#101/#102) is fully exhausted;
+    closing further requires changing M2 mechanics. See
+    [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) §0 and the "what's left"
+    section.
+  - **Synthetic bulk (16–256 B alloc-1024-then-free-1024):** 1.8–2.9× slower —
+    the magazine's design worst case (every free overflows, every alloc
+    empties and refills). Documented trade-off; not a real-world pattern.
+
+Every loss above is the price of a safety guarantee `mimalloc` does not
+provide (double-free = no-op, never UB; foreign pointer = safe no-op;
+forbid(unsafe) at the top level with one audited `unsafe` aperture). On
+real workloads — churn, MT, large-alloc — we are net faster while keeping
+those guarantees.
 
 ---
 
@@ -548,6 +618,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/CROSS_THREAD_STATE_MACHINES.md`](docs/CROSS_THREAD_STATE_MACHINES.md) | The cross-thread-free state-machine spec |
 | [`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md) | The §13 / §14 race investigation (the four "peelings") |
 | [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md) | Full benchmark results, OPT-E numbers, honest verdicts |
+| [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) | Per-thread tcache magazine design (P0–P6), full sweep, win/loss ledger, production decision |
 | [`docs/PROFILE_FLAMEGRAPHS.md`](docs/PROFILE_FLAMEGRAPHS.md) | Flamegraph profiling report (4 scenarios, 6 optimisation candidates) |
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/MALLOC_PLAN_PHASE12-13.md`](docs/MALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
