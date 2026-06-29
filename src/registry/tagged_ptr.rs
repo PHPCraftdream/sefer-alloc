@@ -24,7 +24,7 @@
 //! victim thread frozen. That is far beyond any realistic allocator churn
 //! (heaps are claimed/recycled on thread spawn/exit, not per-allocation).
 //! This matches the judgement recorded in §2.1 / risk-register of
-//! `MALLOC_PLAN_PHASE12-13.md`: "document the tag-width vs realistic churn".
+//! `ALLOC_PLAN_PHASE12-13.md`: "document the tag-width vs realistic churn".
 //! Loom (`tests/loom_registry.rs`, Phase 12.4) must exercise a push-pop-repush
 //! sequence to confirm the CAS catches the ABA.
 //!

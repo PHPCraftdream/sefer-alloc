@@ -1,11 +1,11 @@
 //! The primordial fallback heap (Phase 12.3, §2.3 of
-//! `MALLOC_PLAN_PHASE12-13.md`).
+//! `ALLOC_PLAN_PHASE12-13.md`).
 //!
 //! A process-global, always-live [`HeapCore`] for the **pre-TLS** (very
 //! early runtime init, before any thread's TLS is set up) and **post-TLS-
-//! teardown** windows. The malloc face routes here when [`tls_heap::current`]
+//! teardown** windows. The alloc face routes here when [`tls_heap::current`]
 //! cannot serve a thread-local heap; the fallback is therefore the
-//! embodiment of **M10 — never-null when serviceable**: the malloc face
+//! embodiment of **M10 — never-null when serviceable**: the alloc face
 //! returns null only on true OOM, never because "no heap is bound right
 //! now".
 //!
@@ -45,7 +45,7 @@
 //! as the registry bootstrap. Under `alloc-xthread`, [`HeapCore::install_thread_free`]
 //! allocates a `Box` (via `std::alloc`); this happens on the FIRST fallback
 //! allocation, which is by definition not inside the registry bootstrap (it
-//! is inside the malloc face's alloc path). If that `Box` fails (global OOM
+//! is inside the alloc face's alloc path). If that `Box` fails (global OOM
 //! during the first fallback alloc), the fallback proceeds without a TFS —
 //! own-thread allocs still work, cross-thread frees are a safe no-op. M10
 //! is preserved.
@@ -102,7 +102,7 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 /// immediately.
 ///
 /// Returns a non-null pointer unless the OS refuses the primordial
-/// reservation (true OOM) — in which case the caller (the malloc face) is
+/// reservation (true OOM) — in which case the caller (the alloc face) is
 /// genuinely out of memory and returns null. This is the ONLY path that can
 /// yield null, and it is the correct M10 outcome (true OOM, not a missing
 /// heap).
@@ -147,7 +147,7 @@ pub fn heap_ptr() -> *mut HeapCore {
             None => {
                 // Primordial OOM. Roll back to UNINIT so a later caller can
                 // retry (the OS may have freed memory by then). Return null
-                // — the malloc face will surface this as true OOM.
+                // — the alloc face will surface this as true OOM.
                 INIT_STATE.store(STATE_UNINIT, Ordering::Release);
                 return core::ptr::null_mut();
             }
@@ -166,12 +166,12 @@ pub fn heap_ptr() -> *mut HeapCore {
 }
 
 /// Execute `f` with `&mut` access to the fallback heap, under the spinlock.
-/// Used by the malloc face when it routes to the fallback (TLS unavailable,
+/// Used by the alloc face when it routes to the fallback (TLS unavailable,
 /// registry exhausted). The spinlock makes the `&mut` handout sound — at
 /// most one thread is inside `with_heap` at a time.
 ///
 /// Returns `f`'s result, or `None` if the fallback heap could not be
-/// initialised (true OOM — the malloc face surfaces this as null).
+/// initialised (true OOM — the alloc face surfaces this as null).
 pub fn with_heap<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut HeapCore) -> R,

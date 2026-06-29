@@ -1,4 +1,4 @@
-//! RSS-probe harness for `SeferMalloc` — measures resident-set-size over time
+//! RSS-probe harness for `SeferAlloc` — measures resident-set-size over time
 //! under a sustained, **asymmetric** cross-thread free pattern designed to
 //! stress the [`RemoteFreeRing`](sefer_alloc::alloc_core::remote_free_ring).
 //!
@@ -52,14 +52,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // ---------------------------------------------------------------------------
 // Global allocator
 // ---------------------------------------------------------------------------
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // ---------------------------------------------------------------------------
 // mod rss — platform-specific RSS query, no external deps
@@ -268,7 +268,7 @@ fn producer_thread(
     seed: u64,
     large_frac: f64,
 ) {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     let mut rng = Xorshift64::new(seed);
 
     loop {
@@ -313,7 +313,7 @@ fn consumer_thread(
     counters: Arc<Counters>,
     cooldown: Duration,
 ) {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
 
     // Phase 1: run until producers signal stop AND channel is drained
     loop {

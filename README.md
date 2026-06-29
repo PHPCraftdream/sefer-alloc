@@ -21,7 +21,7 @@
 
 ```toml
 [dependencies]
-sefer-alloc = { version = "0.1", features = ["production"] }
+sefer-alloc = { version = "0.2", features = ["production"] }
 ```
 
 Or via cargo:
@@ -52,10 +52,10 @@ Drop-in `#[global_allocator]` — three lines, zero configuration. Every
 through `sefer-alloc`.
 
 ```rust
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 fn main() {
     let v: Vec<u8> = (0..1024).map(|i| i as u8).collect();
@@ -63,7 +63,7 @@ fn main() {
 }
 ```
 
-`SeferMalloc::new()` uses defaults tuned for throughput-first workloads
+`SeferAlloc::new()` uses defaults tuned for throughput-first workloads
 (unbounded large-cache, 256 MiB headroom, 1 s decay interval, 10 %
 decay rate, event-driven mode). For RSS-sensitive or container
 deployments, see [Configuration](#configuration) below.
@@ -74,12 +74,12 @@ deployments, see [Configuration](#configuration) below.
 
 For RSS-bounded servers, containers, or any deployment where you want
 to cap how much memory the allocator holds onto, use
-`SeferMalloc::with_config(...)`. Every builder method is `const fn`,
+`SeferAlloc::with_config(...)`. Every builder method is `const fn`,
 so the config lives in a `static` initialiser and is resolved at
 compile time — zero runtime overhead, no env vars, no parse errors.
 
 ```rust
-use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
 const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .budget_bytes(512 * 1024 * 1024)      // 512 MiB hard ceiling per shard
@@ -89,7 +89,7 @@ const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .mode(LargeCacheMode::Lazy);          // event-driven (no background thread)
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 ```
 
 ### Parameters
@@ -108,8 +108,8 @@ headroom aggressively when far above it and gently when near it —
 self-damping, no oscillation. An idle process pays nothing (the tick
 is gated by the very next large alloc/free).
 
-`SeferMalloc::new()` is equivalent to
-`SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`. Want to set
+`SeferAlloc::new()` is equivalent to
+`SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`. Want to set
 values from env / CLI / a config file? Read them in your own code and
 pass to the builder — the allocator is intentionally agnostic.
 
@@ -140,7 +140,7 @@ assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 ```
 
 For `no_std` + `alloc` targets, disable the `std` feature:
-`sefer-alloc = { version = "0.1", default-features = false }`. The
+`sefer-alloc = { version = "0.2", default-features = false }`. The
 default build is `#![forbid(unsafe_code)]` at the top; the only
 `unsafe` comes from `slotmap`'s audited core wrapped by a thin typed
 membrane.
@@ -153,7 +153,7 @@ through a per-segment MPSC ring. See
 
 Under `production`, the crate becomes `#![deny(unsafe_code)]` and every
 `unsafe` lives in **seven named confined seams** (`alloc_core::{os,
-node}` + `global::{sefer_malloc, tls_heap, fallback}` +
+node}` + `global::{sefer_alloc, tls_heap, fallback}` +
 `registry::{heap_slot, heap_registry}`) — never in the alloc-path body
 outside them. Each `unsafe` block carries a `// SAFETY:` proof; the
 compiler enforces the confinement (a stray `unsafe` outside a named
@@ -216,7 +216,7 @@ disclaimer):
   OPT-F in-place realloc.
 - On **single-thread small-class churn** it is roughly 1.2–2× behind
   `mimalloc` — the remaining gap, called out honestly in
-  [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md).
+  [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 
 The verification stack is also honest: 51 integration tests, 6 loom models,
 proptest differential against a reference model, miri with strict-provenance,
@@ -233,7 +233,7 @@ one actually proves.
 
 ```
          ┌───────────────────┐         ┌────────────────────────┐
-         │  Region<T>        │         │  SeferMalloc           │
+         │  Region<T>        │         │  SeferAlloc           │
          │  Handle<T>        │         │  #[global_allocator]   │
          │  (safe membrane)  │         │  (unsafe trait impl)   │
          └─────────┬─────────┘         └──────────┬─────────────┘
@@ -264,7 +264,7 @@ no second copy of `mmap` somewhere else in the crate.
 | Organ | Responsibility | Safety |
 |---|---|---|
 | **Cartographer** | All placement / free-list / page-map / segment-registry / bin-table / alloc-bitmap / decommit-policy / NUMA-preference logic. Pure integer arithmetic over indices and offsets. Never touches raw memory. | safe |
-| **Membrane** | The typed APIs (`Handle<T>`, `Region<T>`, `AllocCore::alloc`, `SeferMalloc::alloc`). Total — cannot express UB at the type level. | safe |
+| **Membrane** | The typed APIs (`Handle<T>`, `Region<T>`, `AllocCore::alloc`, `SeferAlloc::alloc`). Total — cannot express UB at the type level. | safe |
 | **Hand** | The confined-`unsafe` seams that touch raw memory. Each is a single audited file; every `unsafe { ... }` block carries a `// SAFETY:` proof. | confined |
 
 The deliberate inversion: all the intelligence lives in the safe Cartographer,
@@ -325,7 +325,7 @@ these named files is a hard compile error in every configuration):
 | [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
-| [`src/global/sefer_malloc.rs`](src/global/sefer_malloc.rs) | The `unsafe impl GlobalAlloc` malloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
+| [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
@@ -334,7 +334,7 @@ these named files is a hard compile error in every configuration):
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit`) the active internal seams
-are eight — `alloc_core::{os, node}` plus `global::{sefer_malloc, tls_heap,
+are eight — `alloc_core::{os, node}` plus `global::{sefer_alloc, tls_heap,
 fallback}` plus `registry::{heap_slot, heap_registry}`. `alloc-xthread` and
 `alloc-decommit` themselves do **not** open new `unsafe` seams — they extend
 existing safe code paths.
@@ -415,13 +415,13 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 ## Performance
 
 Numbers from the criterion benches on a single Windows dev host,
-sefer-alloc 0.1.0 vs `mimalloc 0.1` vs `System`. Per
+sefer-alloc 0.2.0 vs `mimalloc 0.1` vs `System`. Per
 [CLAUDE.md](CLAUDE.md) the project's bench profile is the quick one —
 `sample_size(10)`, short warm-up — so these are honest comparative
 measurements, **not** a rigorous statistical benchmark suite. Treat the
 multipliers as "order of magnitude correct" rather than exact. The
 source-of-truth tables (and the longer commentary on what each bench
-exercises) live in [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md).
+exercises) live in [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 **Higher is better** for throughput rows, **lower is better** for latency
 rows.
 
@@ -431,7 +431,7 @@ rows.
 the freed segment is parked in a 2-slot cache with pages kept committed;
 the next alloc of a compatible size returns it without any OS round-trip.
 
-| Workload | SeferMalloc | mimalloc | System | vs mimalloc |
+| Workload | SeferAlloc | mimalloc | System | vs mimalloc |
 |---|---|---|---|---|
 | `alloc(4 MiB) + free` | **~46 ns** | ~743 ns | ~17.5 µs | **~16× faster** |
 | `alloc(16 MiB) + free` | **~46 ns** | ~861 ns | ~14.6 µs | **~19× faster** |
@@ -439,15 +439,15 @@ the next alloc of a compatible size returns it without any OS round-trip.
 
 vs `System`: roughly **270–380× faster** at all three sizes. The cache
 is byte-budget'd (per-shard, default unbounded — set via
-`LargeCacheConfig::new().budget_bytes(n)` in `SeferMalloc::with_config`
+`LargeCacheConfig::new().budget_bytes(n)` in `SeferAlloc::with_config`
 to cap it), with lazy 10 %/sec exponential decay back to `live + headroom`.
 There is no per-span size cap — a 30 GB segment on a 64 GB box is cacheable
 now (the old `MAX_CACHED_LARGE_BYTES = 64 MiB` was removed in #90 — see
-`docs/MALLOC_BENCH.md` "Large-cache (OPT-E)").
+`docs/ALLOC_BENCH.md` "Large-cache (OPT-E)").
 
 ### Realloc grow under adversarial neighbour pressure
 
-| Bench | SeferMalloc | mimalloc | Notes |
+| Bench | SeferAlloc | mimalloc | Notes |
 |---|---|---|---|
 | `realloc_grow_geometric` | 173 µs | 368 µs | sefer-alloc 2.1× faster |
 | `realloc_in_place_unfavorable` | **125 µs** | 1.31 ms | sefer-alloc 10.5× faster (OPT-F in-place realloc skip-copy) |
@@ -460,7 +460,7 @@ deterministic). This is the pattern the `fastbin` per-thread magazine
 (P0–P6 of [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets and
 the common shape of real allocation workloads.
 
-| Size | SeferMalloc | mimalloc | vs mimalloc |
+| Size | SeferAlloc | mimalloc | vs mimalloc |
 |---|---|---|---|
 |   16 B | ~21.8 µs | ~36.9 µs | **1.7× faster** |
 |   64 B | ~22.3 µs | ~37.2 µs | **1.7× faster** |
@@ -474,7 +474,7 @@ worker threads, unpinned.
 
 **larson** (server-churn, working-set + occasional cross-thread free):
 
-| T | SeferMalloc | mimalloc | System | vs mimalloc |
+| T | SeferAlloc | mimalloc | System | vs mimalloc |
 |--:|-----------:|---------:|-------:|------------:|
 | 1 | ~20.5 M | ~27.9 M | ~6.9 M | **1.36× slower** |
 | 2 | ~23.2 M | ~18.2 M | ~6.8 M | **1.28× faster** |
@@ -482,13 +482,13 @@ worker threads, unpinned.
 
 **mstress** (rounds of fill → free-half → refill, with cross-thread):
 
-| T | SeferMalloc | mimalloc | System | vs mimalloc |
+| T | SeferAlloc | mimalloc | System | vs mimalloc |
 |--:|-----------:|---------:|-------:|------------:|
 | 1 | ~26.6 M | ~34.0 M | ~4.1 M | **1.28× slower** |
 | 2 | ~44.7 M | ~37.6 M | ~6.2 M | **1.19× faster** |
 | 4 | ~84.1 M | ~64.0 M | ~13.5 M | **1.31× faster** |
 
-`SeferMalloc` overtakes `mimalloc` at T ≥ 2 on both workloads (the
+`SeferAlloc` overtakes `mimalloc` at T ≥ 2 on both workloads (the
 per-thread heap takes no shared lock; cross-thread frees route through
 the lock-free Phase-10/12.6 remote path). Single-thread (T = 1) `mimalloc`
 leads — see the verdict below.
@@ -499,7 +499,7 @@ leads — see the verdict below.
 magazine (every free overflows; every alloc empties and refills). Kept as
 a regression guard, **not** a representative workload.
 
-| Size | SeferMalloc | mimalloc | vs mimalloc |
+| Size | SeferAlloc | mimalloc | vs mimalloc |
 |---|---|---|---|
 |   16 B | ~29.4 µs | ~10.3 µs | 2.87× slower |
 |   64 B | ~30.3 µs | ~13.7 µs | 2.21× slower |
@@ -595,7 +595,7 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-core` | `std` | The segment substrate (`AllocCore`) | off | building on `AllocCore` directly |
 | `alloc` | `alloc-core` | Per-thread `Heap` + intrusive free lists | off | single-thread allocator |
 | `alloc-xthread` | `alloc` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator |
-| `alloc-global` | `alloc` | The `SeferMalloc` `#[global_allocator]` face | off | process-wide allocator |
+| `alloc-global` | `alloc` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | **`production`** | `alloc-global + alloc-xthread + alloc-decommit` | **The recommended combo for long-running multi-thread workloads.** | off | **DBMS, async runtimes, anything that allocates over hours.** |
@@ -603,7 +603,7 @@ The full safety stack and the relationship between layers is documented in
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 
 `production` is the right starting point for almost any multi-thread or
-async use of `SeferMalloc`. Without `alloc-decommit` the `SegmentTable`
+async use of `SeferAlloc`. Without `alloc-decommit` the `SegmentTable`
 slot-recycle is off and the 1024-segment ceiling is a hard cap — a tokio
 server with hundreds of tasks will eventually OOM. For embedded / `no_std`
 use, stay with the default `std` feature.
@@ -666,16 +666,16 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 30-minute end-to-end technical tour |
 | [`docs/INVARIANTS.md`](docs/INVARIANTS.md) | The I1–I6 (Region) and M1–M8 (Malloc) invariants |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Cartographer / Membrane / Hand model for `Region<T>` |
-| [`docs/MALLOC_PLAN.md`](docs/MALLOC_PLAN.md) | Detailed Phase 8+ allocator plan |
+| [`docs/ALLOC_PLAN.md`](docs/ALLOC_PLAN.md) | Detailed Phase 8+ allocator plan |
 | [`docs/PHASE35_DECOMMIT_DESIGN.md`](docs/PHASE35_DECOMMIT_DESIGN.md) | M6 decommit + why no epoch reclamation is needed |
 | [`docs/PHASE_NUMA_DESIGN.md`](docs/PHASE_NUMA_DESIGN.md) | NUMA-aware path design |
 | [`docs/CROSS_THREAD_STATE_MACHINES.md`](docs/CROSS_THREAD_STATE_MACHINES.md) | The cross-thread-free state-machine spec |
 | [`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md) | The §13 / §14 race investigation (the four "peelings") |
-| [`docs/MALLOC_BENCH.md`](docs/MALLOC_BENCH.md) | Full benchmark results, OPT-E numbers, honest verdicts |
+| [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) | Full benchmark results, OPT-E numbers, honest verdicts |
 | [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) | Per-thread tcache magazine design (P0–P6), full sweep, win/loss ledger, production decision |
 | [`docs/PROFILE_FLAMEGRAPHS.md`](docs/PROFILE_FLAMEGRAPHS.md) | Flamegraph profiling report (4 scenarios, 6 optimisation candidates) |
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
-| [`docs/PLAN.md`](docs/PLAN.md), [`docs/MALLOC_PLAN_PHASE12-13.md`](docs/MALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
+| [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 
 ---
 

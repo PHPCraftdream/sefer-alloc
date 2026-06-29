@@ -26,7 +26,7 @@
 //! - **t_bulk_then_drain_then_churn**: alloc 64 (bulk mode) -> free all
 //!   -> 1024 churn iters. Allocator healthy, no leaks, no double-issue.
 //!
-//! - **t_cross_thread_unaffected**: 2 threads via SeferMalloc. Thread A
+//! - **t_cross_thread_unaffected**: 2 threads via SeferAlloc. Thread A
 //!   allocs in bulk-mode volume, sends one ptr to thread B, B frees it.
 //!   No panic, no leak.
 //!
@@ -310,18 +310,18 @@ fn t_bulk_then_drain_then_churn() {
 
 // ── t_cross_thread_unaffected ──────────────────────────────────────────────
 
-/// Two threads via SeferMalloc's GlobalAlloc interface: thread A allocs
+/// Two threads via SeferAlloc's GlobalAlloc interface: thread A allocs
 /// blocks in bulk-mode volume (64 consecutive allocs), sends one to thread
 /// B via channel, thread B frees it. Verify no panic, no leak. The freer's
 /// (thread B's) streak is independent and does not interfere with the
 /// allocator's (thread A's) bulk mode.
 ///
-/// Uses `SeferMalloc` directly (not HeapCore) because cross-thread routing
+/// Uses `SeferAlloc` directly (not HeapCore) because cross-thread routing
 /// requires the TLS binding to set up `install_thread_free` automatically.
 #[test]
 #[cfg(feature = "alloc-xthread")]
 fn t_cross_thread_unaffected() {
-    use sefer_alloc::SeferMalloc;
+    use sefer_alloc::SeferAlloc;
     use std::alloc::GlobalAlloc;
     use std::sync::mpsc;
 
@@ -331,7 +331,7 @@ fn t_cross_thread_unaffected() {
 
     let _serial = SerialGuard::acquire();
 
-    static ALLOC: SeferMalloc = SeferMalloc::new();
+    static ALLOC: SeferAlloc = SeferAlloc::new();
     let layout = Layout::from_size_align(16, 8).unwrap();
 
     let (tx, rx) = mpsc::channel::<SendPtr>();

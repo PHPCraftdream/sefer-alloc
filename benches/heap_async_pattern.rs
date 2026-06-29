@@ -17,8 +17,8 @@
 //!   - HashMaps (`HashMap<u64, u64>`): simulate per-row lookup tables; each
 //!     insertion may trigger a realloc.
 //!
-//! The bench calls `GlobalAlloc` methods DIRECTLY on `SeferMalloc` (no
-//! `#[global_allocator]` install) so the timing captures only SeferMalloc's
+//! The bench calls `GlobalAlloc` methods DIRECTLY on `SeferAlloc` (no
+//! `#[global_allocator]` install) so the timing captures only SeferAlloc's
 //! hot path, not the system allocator that backs `criterion`, `Vec`, etc.
 //! This mirrors `global_alloc.rs` and `large_realloc.rs`.
 //!
@@ -36,7 +36,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -173,12 +173,12 @@ fn bench_async_pattern(c: &mut Criterion) {
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(3));
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
 
     // Warm up: one pipeline pass to seed free lists before the timing loop.
     pipeline_iteration(&sefer);
 
-    group.bench_function("SeferMalloc/pipeline", |b| {
+    group.bench_function("SeferAlloc/pipeline", |b| {
         b.iter(|| pipeline_iteration(&sefer))
     });
 

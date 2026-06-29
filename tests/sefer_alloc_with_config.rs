@@ -1,7 +1,7 @@
-//! Gap 1: end-to-end test for `SeferMalloc::with_config`.
+//! Gap 1: end-to-end test for `SeferAlloc::with_config`.
 //!
 //! Proves that the full plumbing chain
-//! `SeferMalloc.config → current_for_alloc_with_config → bind_slow_tagged_with_config
+//! `SeferAlloc.config → current_for_alloc_with_config → bind_slow_tagged_with_config
 //!  → claim_with_config → HeapCore::new_with_config → AllocCore::new_with_config`
 //! is wired correctly. If any link is broken, either compilation fails (const fn
 //! not wired) or the test panics/segfaults at runtime.
@@ -11,7 +11,7 @@
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
 
-use sefer_alloc::{LargeCacheConfig, LargeCacheMode, SeferMalloc};
+use sefer_alloc::{LargeCacheConfig, LargeCacheMode, SeferAlloc};
 
 const MIB: usize = 1024 * 1024;
 
@@ -24,7 +24,7 @@ const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .mode(LargeCacheMode::Lazy);
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 
 // ── test 1 ──────────────────────────────────────────────────────────────────
 

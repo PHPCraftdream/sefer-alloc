@@ -1,12 +1,12 @@
 [package]
 name = "sefer-alloc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # Matches the resocks5 ecosystem floor; the core is plain safe Rust and will
 # build on much older toolchains, but we pin a known-good MSRV from day one.
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferMalloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
+description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferAlloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc"
@@ -71,7 +71,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # `alloc_core::node` (the intrusive free-list node seam, the generalized `hand`
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
-# syscalls are std-gated). See `docs/MALLOC_PLAN.md` §5 P8 and §6.
+# syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
 alloc-core = ["std", "dep:aligned-vmem"]
 # Phase 9: per-thread heap + intrusive free lists -- the lock-free fast path.
 # A thread allocates from its own heap with no lock and no atomic on the common
@@ -87,7 +87,7 @@ alloc = ["alloc-core"]
 # `alloc` feature provides the Phase 9 single-thread-only allocator (sound:
 # single owner, no cross-thread refs). Requires `alloc` (and thus `alloc-core`).
 alloc-xthread = ["alloc"]
-# Phase 11: the drop-in `GlobalAlloc` face -- `SeferMalloc`. Installs over the
+# Phase 11: the drop-in `GlobalAlloc` face -- `SeferAlloc`. Installs over the
 # per-thread `Heap` substrate via the TLS `with_heap` binding (allocation-free
 # lazy init). The `unsafe impl GlobalAlloc` is the single new `unsafe` surface
 # of this phase -- it is the documented malloc-face seam (the trait is `unsafe`;
@@ -175,7 +175,7 @@ slotmap = "1"
 # Phase 0 dependency: property-based differential testing against a reference
 # model. This is the heart of the verification-first build — see docs/PLAN.md.
 proptest = "1"
-# Task #52: tokio burn-in example — async runtime driving SeferMalloc as
+# Task #52: tokio burn-in example — async runtime driving SeferAlloc as
 # #[global_allocator].  Minimal feature set: rt-multi-thread (multi-thread
 # scheduler), macros (#[tokio::main]), sync (mpsc channel), time (sleep /
 # timeout / interval).  No fs/net/signal/process — not needed for the harness.
@@ -229,16 +229,16 @@ name = "heap_alloc"
 harness = false
 required-features = ["alloc"]
 
-# Phase 11: `SeferMalloc` installed as `#[global_allocator]` vs `mimalloc` and
+# Phase 11: `SeferAlloc` installed as `#[global_allocator]` vs `mimalloc` and
 # the system allocator, exercising real Rust allocation patterns (Vec/Box churn).
 # Quick criterion profile (sample_size 10, short warm-up). Honest verdict in
-# docs/MALLOC_BENCH.md. Requires `alloc-global` (which brings `alloc`).
+# docs/ALLOC_BENCH.md. Requires `alloc-global` (which brings `alloc`).
 [[bench]]
 name = "global_alloc"
 harness = false
 required-features = ["alloc-global"]
 
-# Task #54: large-block and realloc-heavy profiling — SeferMalloc vs mimalloc
+# Task #54: large-block and realloc-heavy profiling — SeferAlloc vs mimalloc
 # vs System across three groups: single-shot alloc+free of multi-MiB blocks,
 # geometric grow via GlobalAlloc::realloc, and realloc under adversarial
 # neighbour pressure. Quick criterion profile. Requires `alloc-global`.
@@ -247,7 +247,7 @@ name = "large_realloc"
 harness = false
 required-features = ["alloc-global"]
 
-# Phase 11: minimal example installing `SeferMalloc` as the `#[global_allocator]`.
+# Phase 11: minimal example installing `SeferAlloc` as the `#[global_allocator]`.
 # Gated so the default build does not try to compile it without the feature.
 [[example]]
 name = "global_allocator"
@@ -293,7 +293,7 @@ required-features = ["alloc-core", "alloc-xthread"]
 
 # Task #62 §A-2: synthetic async-like allocation pattern — mixed-size
 # alloc/dealloc/realloc (row buffers, accumulators, medium blobs) via
-# SeferMalloc::GlobalAlloc called directly. No tokio runtime noise, no
+# SeferAlloc::GlobalAlloc called directly. No tokio runtime noise, no
 # channels, no spawns. Single-threaded DBMS-pipeline simulation.
 # Documented in docs/PROFILE_FLAMEGRAPHS.md §6.
 [[bench]]
@@ -301,9 +301,9 @@ name = "heap_async_pattern"
 harness = false
 required-features = ["alloc-global"]
 
-# Task #52: tokio async burn-in — SeferMalloc as #[global_allocator] under a
+# Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
-# All tokio-internal allocations also go through SeferMalloc.
+# All tokio-internal allocations also go through SeferAlloc.
 # Run: `SEFER_BURNIN_SECONDS=10 SEFER_TOKIO_WORKERS=4 SEFER_BURNIN_TASKS=256 \
 #        cargo run --release --example tokio_burn_in \
 #        --features "alloc-global alloc-xthread"`

@@ -1,16 +1,16 @@
-//! Phase 11 — correctness of the `SeferMalloc` `GlobalAlloc` face, exercised via
+//! Phase 11 — correctness of the `SeferAlloc` `GlobalAlloc` face, exercised via
 //! its `GlobalAlloc` API directly (NOT installed as this test binary's
 //! `#[global_allocator]`).
 //!
 //! ## Why direct-API and not `#[global_allocator]` here
 //!
-//! Installing `SeferMalloc` as the *process-wide* allocator for a libtest binary
+//! Installing `SeferAlloc` as the *process-wide* allocator for a libtest binary
 //! subjects it to libtest's harness allocations (parallel test threads, panic
 //! hooks, capture buffers, thread teardown) — a hostile, reentrancy-heavy
 //! pattern that the current TLS binding does not yet serve robustly (it returns
 //! null under reentrant/early-init access, which aborts the process). That
 //! robustness is part of the **remaining hardening** documented in
-//! `docs/MALLOC_BENCH.md` and `docs/MALLOC_PLAN.md` (Phase 11 hardening gate),
+//! `docs/ALLOC_BENCH.md` and `docs/ALLOC_PLAN.md` (Phase 11 hardening gate),
 //! NOT yet production-trusted.
 //!
 //! What DOES work and is proven here + by `examples/global_allocator.rs` (a
@@ -24,7 +24,7 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
     !(a + asize <= b || b + bsize <= a)
@@ -32,7 +32,7 @@ fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
 
 #[test]
 fn alloc_dealloc_roundtrip_is_valid_and_aligned() {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     for &(size, align) in &[(1usize, 1usize), (8, 8), (64, 16), (1000, 8), (4096, 4096)] {
         let layout = Layout::from_size_align(size, align).unwrap();
         // SAFETY: layout has non-zero size and valid power-of-two alignment.
@@ -54,7 +54,7 @@ fn alloc_dealloc_roundtrip_is_valid_and_aligned() {
 
 #[test]
 fn alloc_zeroed_is_zero() {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     let layout = Layout::from_size_align(777, 8).unwrap();
     // SAFETY: valid layout.
     let p = unsafe { a.alloc_zeroed(layout) };
@@ -70,7 +70,7 @@ fn alloc_zeroed_is_zero() {
 
 #[test]
 fn many_live_allocations_do_not_overlap() {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     let layout = Layout::from_size_align(128, 8).unwrap();
     let mut live: Vec<(usize, u8)> = Vec::new();
     for i in 0..256u32 {
@@ -110,7 +110,7 @@ fn many_live_allocations_do_not_overlap() {
 
 #[test]
 fn realloc_grows_and_preserves_prefix() {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     let layout = Layout::from_size_align(64, 8).unwrap();
     // SAFETY: valid layout.
     let p = unsafe { a.alloc(layout) };
@@ -139,7 +139,7 @@ fn realloc_grows_and_preserves_prefix() {
 
 #[test]
 fn churn_reuses_without_growth() {
-    let a = SeferMalloc::new();
+    let a = SeferAlloc::new();
     let layout = Layout::from_size_align(48, 8).unwrap();
     // Many alloc/dealloc cycles — would corrupt or exhaust if state were
     // mishandled. (Same-thread, so no cross-thread routing involved.)

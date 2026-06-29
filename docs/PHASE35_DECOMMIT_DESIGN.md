@@ -1,7 +1,7 @@
 # Phase 35 — M6 decommit (return empty segments to the OS), M11-free
 
 Design spec (written before implementation). Closes the only honest gap in
-MALLOC_BENCH: RSS is unbounded (empty segments are not returned to the OS).
+ALLOC_BENCH: RSS is unbounded (empty segments are not returned to the OS).
 Under feature flag `alloc-decommit` (default off — default behavior unchanged).
 
 ## 0. What already exists
@@ -98,4 +98,4 @@ risk.
   conservative (decommit at live==0 non-current), tuning — later by RSS
   measurement.
 - RSS metric in macro-bench — separate (requires a platform probe); after that,
-  update the MALLOC_BENCH RSS section (currently N/A).
+  update the ALLOC_BENCH RSS section (currently N/A).

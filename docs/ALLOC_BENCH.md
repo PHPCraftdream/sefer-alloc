@@ -238,7 +238,7 @@ only in the two audited seams + the `GlobalAlloc` impl).
 
 ## NOT yet production-trusted — the remaining hardening gate
 
-Per `MALLOC_PLAN.md` §5 P11 / §8, production trust is earned only after the full
+Per `ALLOC_PLAN.md` §5 P11 / §8, production trust is earned only after the full
 hardening gate. What works today and what remains:
 
 **Works and is verified:**
@@ -267,7 +267,7 @@ hardening gate. What works today and what remains:
   reentrant/teardown access" caveat. **Caveat that REMAINS:** the heavy
   hardening gate (fuzz / aarch64 weak-memory CI / TSan) has not been run, so
   "production-trusted on every target" is still pending that gate (§4 of
-  `MALLOC_PLAN_PHASE12-13.md`).
+  `ALLOC_PLAN_PHASE12-13.md`).
 - Cross-thread free requires the `alloc-xthread` feature. Phase 12.5 ships the
   shard model (a heap is a shard; thread death releases the slot, the HeapCore
   stays whole for the next claimant); **Phase 12.6 makes cross-thread free
@@ -454,7 +454,7 @@ pointer. No syscall, no page-table work.
 **64 MiB is now cached** (it was not under the original per-span cap;
 #90 removed the cap). The per-shard byte budget admits any single span
 as long as the budget allows it; clients who want a hard cap can set
-`SEFER_LARGE_CACHE_BUDGET`. See [`MALLOC_PLAN_PHASE12-13.md`] /
+`SEFER_LARGE_CACHE_BUDGET`. See [`ALLOC_PLAN_PHASE12-13.md`] /
 checkpoint notes for the redesign rationale.
 
 ### Why pages are kept committed (no decommit on deposit)

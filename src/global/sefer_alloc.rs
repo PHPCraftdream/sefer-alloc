@@ -1,10 +1,10 @@
-//! Phase 12.3 -- the `malloc` face: [`SeferMalloc`], an `unsafe impl GlobalAlloc`
+//! Phase 12.3 -- the alloc face: [`SeferAlloc`], an `unsafe impl GlobalAlloc`
 //! over the global heap registry (Phase 12.2) via raw-pointer TLS (Phase 12.3).
 //!
 //! This is the **drop-in face** -- the campaign's victory deliverable. One
 //! substrate (the segment-backed, self-hosted, registry-resident heap
 //! allocator), two faces: the `Handle` face (typed, generational,
-//! relocatable) and this `malloc` face (raw `*mut u8`, drop-in
+//! relocatable) and this `alloc` face (raw `*mut u8`, drop-in
 //! `#[global_allocator]` replacement).
 //!
 //! ## Phase 12.3 rewiring
@@ -12,20 +12,20 @@
 //! Previously (Phase 11) this face routed through
 //! `RefCell<Option<Heap>>` via `with_heap_try`. That binding ABORTED under
 //! libtest's reentrant harness: `RefCell::try_borrow_mut` returns `Err` on
-//! a reentrant borrow → the malloc face returned null → std aborted.
+//! a reentrant borrow → the alloc face returned null → std aborted.
 //!
 //! Phase 12.3 replaces that with [`tls_heap::current`](super::tls_heap::current):
 //! a raw `Cell<*mut HeapCore>` TLS cache (no borrow state to fail) over the
 //! global [`HeapRegistry`](crate::registry::HeapRegistry). The heap lives in
 //! a registry slot (not in TLS); thread exit abandons + recycles the slot
-//! (not drops the heap). The malloc face is therefore **reentrancy-safe**
+//! (not drops the heap). The alloc face is therefore **reentrancy-safe**
 //! (M5) and **never-null** (M10): [`current`] returns a non-null pointer in
 //! every case (cached slot, fresh claim, or the process-global fallback
 //! heap).
 //!
 //! ## M5 (reentrancy-freedom) -- how it is upheld
 //!
-//! The whole point (§4 M5, §8 of `MALLOC_PLAN.md`): when WE are the global
+//! The whole point (§4 M5, §8 of `ALLOC_PLAN.md`): when WE are the global
 //! allocator, ANY use of `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
 //! alloc path would recurse infinitely. This module contains NONE of those.
 //! `current()` is a plain thread-local load + null check. `bind_slow` claims
@@ -38,7 +38,7 @@
 //!
 //! ## No-panic -- how it is upheld
 //!
-//! A panic in `#[global_allocator]` aborts the process (§8 of `MALLOC_PLAN.md`).
+//! A panic in `#[global_allocator]` aborts the process (§8 of `ALLOC_PLAN.md`).
 //! Every entry point here returns null on failure and NEVER panics:
 //! - `alloc`: `current()` → `&mut HeapCore` → `HeapCore::alloc` (returns
 //!   null on OOM). If `current()` itself yields the fallback (TLS teardown),
@@ -53,7 +53,7 @@
 //! [`current`]: super::tls_heap::current
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see `src/lib.rs`);
-// this is the documented malloc-face seam. `allow` lifts the crate-level
+// this is the documented alloc-face seam. `allow` lifts the crate-level
 // deny for this file only -- `unsafe` anywhere else in the crate is a hard
 // error. The ONLY `unsafe` here is the `unsafe impl GlobalAlloc` (the trait
 // is `unsafe`) plus the `// SAFETY:`-annotated pointer handoff to HeapCore.
@@ -78,10 +78,10 @@ use super::tls_heap::CurrentHeap;
 /// ```no_run
 /// # #[cfg(feature = "alloc-global")]
 /// # {
-/// use sefer_alloc::SeferMalloc;
+/// use sefer_alloc::SeferAlloc;
 ///
 /// #[global_allocator]
-/// static A: SeferMalloc = SeferMalloc::new();
+/// static A: SeferAlloc = SeferAlloc::new();
 /// # }
 /// ```
 ///
@@ -91,7 +91,7 @@ use super::tls_heap::CurrentHeap;
 /// ```no_run
 /// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
 /// # {
-/// use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+/// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 ///
 /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
 ///     .budget_bytes(512 * 1024 * 1024)
@@ -101,7 +101,7 @@ use super::tls_heap::CurrentHeap;
 ///     .mode(LargeCacheMode::Lazy);
 ///
 /// #[global_allocator]
-/// static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+/// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 /// # }
 /// ```
 ///
@@ -119,10 +119,10 @@ use super::tls_heap::CurrentHeap;
 /// the pre-TLS / post-teardown windows, so the face is **never-null for a
 /// serviceable request** (M10).
 ///
-/// This is the **malloc face** of one substrate; the **handle face**
+/// This is the **alloc face** of one substrate; the **handle face**
 /// (`Region<T>` / `Handle<T>`) is the typed, generational view over the same
-/// governed memory. See `docs/MALLOC_PLAN.md` §3 "The two faces".
-pub struct SeferMalloc {
+/// governed memory. See `docs/ALLOC_PLAN.md` §3 "The two faces".
+pub struct SeferAlloc {
     /// Large-cache configuration stored at static-init time. Plumbed into
     /// each per-thread `AllocCore` on the first TLS bind for that thread.
     ///
@@ -132,13 +132,13 @@ pub struct SeferMalloc {
     config: crate::alloc_core::LargeCacheConfig,
 }
 
-impl SeferMalloc {
+impl SeferAlloc {
     /// Construct the allocator with default large-cache settings. This is a
     /// zero-cost `const` constructor — the per-thread heaps are lazily
     /// claimed on first use (not here), so this can be used in `static`
     /// initialisers without any allocation or OS calls.
     ///
-    /// Equivalent to `SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`.
+    /// Equivalent to `SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`.
     #[must_use]
     pub const fn new() -> Self {
         #[cfg(feature = "alloc-decommit")]
@@ -160,7 +160,7 @@ impl SeferMalloc {
     /// ```no_run
     /// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
     /// # {
-    /// use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+    /// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
     ///
     /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     ///     .budget_bytes(512 * 1024 * 1024)
@@ -170,11 +170,11 @@ impl SeferMalloc {
     ///     .mode(LargeCacheMode::Lazy);
     ///
     /// #[global_allocator]
-    /// static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+    /// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
     /// # }
     /// ```
     ///
-    /// The config is stored in the `SeferMalloc` struct and plumbed into
+    /// The config is stored in the `SeferAlloc` struct and plumbed into
     /// each per-thread `AllocCore` when its TLS slot is first claimed.
     /// Threads created before the static is initialised will receive the
     /// default config — in practice this cannot happen because the `static`
@@ -186,13 +186,13 @@ impl SeferMalloc {
     }
 }
 
-impl Default for SeferMalloc {
+impl Default for SeferAlloc {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SeferMalloc {
+impl SeferAlloc {
     /// Resolve the current heap for an allocation, threading the config into
     /// the TLS bind slow path when `alloc-decommit` is active.
     ///
@@ -227,7 +227,7 @@ impl SeferMalloc {
 // process-global fallback heap (never null); `dealloc` on the fallback is
 // sound under the fallback's spinlock. M10 (never-null for serviceable
 // requests) is upheld: the only null return is true OOM.
-unsafe impl GlobalAlloc for SeferMalloc {
+unsafe impl GlobalAlloc for SeferAlloc {
     #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match self.current_heap() {

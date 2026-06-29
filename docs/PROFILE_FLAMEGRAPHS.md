@@ -239,7 +239,7 @@ allocators (SeferMalloc, mimalloc, System) in parallel.*
    alloc + memcpy + dealloc at each step. SeferMalloc `realloc` always
    does a new alloc + copy (no in-place growth) — each step = 2 mmap + 1 memcpy.
    mimalloc has slab-growth with partial in-place — significantly wins
-   (documented as "300x+ lag in MALLOC_BENCH.md").
+   (documented as "300x+ lag in ALLOC_BENCH.md").
 
 3. **`AllocCore::alloc` takes 6.74%** vs 1.72% in the small-class bench. The proportion
    increased because we profiled only SeferMalloc (filter `--bench 'SeferMalloc'`),

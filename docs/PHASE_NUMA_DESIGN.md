@@ -1,7 +1,7 @@
 # NUMA-aware path in sefer-alloc — design spec
 
 Research document (written before implementation). Closes gap #7
-"no awareness of NUMA nodes" in MALLOC_BENCH. Behind the feature flag `numa-aware`
+"no awareness of NUMA nodes" in ALLOC_BENCH. Behind the feature flag `numa-aware`
 (default off — default behavior does not change).
 
 ---
@@ -399,7 +399,7 @@ access latency.
 - AWS r6g.metal (Graviton 2, multiple NUMA domains)
 - Dual-socket dev box
 
-This is an MVP limitation — record it in MALLOC_BENCH and as part of implementation
+This is an MVP limitation — record it in ALLOC_BENCH and as part of implementation
 phase E.
 
 ---
@@ -457,7 +457,7 @@ to the same node.
   `core_affinity`); API extension for explicit binding of a thread to a NUMA node +
   shard — separate task.
 - **Latency-asymmetry measurement**: impossible without real 2-socket hardware.
-  Placeholder in MALLOC_BENCH: "NUMA: opt-in, verified under QEMU, latency
+  Placeholder in ALLOC_BENCH: "NUMA: opt-in, verified under QEMU, latency
   requires hardware".
 - **Per-node free-list sharding** inside a segment: not needed for MVP;
   consider if data shows high cross-node "pollution" during heap
@@ -500,7 +500,7 @@ first segments with `node_id == my_node`, then the rest. Similarly
 var), since it requires a real NUMA topology or QEMU. Document in README
 (`numactl --hardware` prerequisite).
 
-### Phase E — MALLOC_BENCH update
+### Phase E — ALLOC_BENCH update
 
 Add a "NUMA" section with an honest description: opt-in under `numa-aware`,
 correctness verified under QEMU/fake-NUMA, latency benefit is measurable
@@ -522,4 +522,4 @@ only on real multi-socket hardware. RSS metric is not affected
 | `Cargo.toml` | + feature `numa-aware = ["alloc-core"]` |
 | `tests/numa_seam.rs` | New OS-seam test |
 | `tests/numa_alloc.rs` | New integration test |
-| `docs/MALLOC_BENCH.md` | + "NUMA" section |
+| `docs/ALLOC_BENCH.md` | + "NUMA" section |

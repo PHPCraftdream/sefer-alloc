@@ -24,7 +24,7 @@
 //! ## Scope (honest)
 //!
 //! This is an *application-level* store, not a drop-in global allocator. For a
-//! process-wide allocator, use `SeferMalloc` (opt-in `production` feature) or
+//! process-wide allocator, use `SeferAlloc` (opt-in `production` feature) or
 //! reach for `mimalloc`.
 //!
 //! See `docs/INVARIANTS.md` for the safety invariants this crate upholds and
@@ -85,7 +85,7 @@
 //
 //  With `experimental` (3b-II `crossbeam-epoch` tier) and/or `alloc-core`
 //  (Phase 8 self-hosted segment substrate) and/or `alloc-global`
-//  (Phase 11 `SeferMalloc` `GlobalAlloc` face): the crate is
+//  (Phase 11 `SeferAlloc` `GlobalAlloc` face): the crate is
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
@@ -95,7 +95,7 @@
 //                             (under `alloc-core`)
 //      * `alloc_core::node` — intrusive free-list node r/w through raw pointers;
 //                             the generalized `hand` discipline. (under `alloc-core`)
-//      * `global::sefer_malloc` — the `unsafe impl GlobalAlloc` malloc-face seam
+//      * `global::sefer_alloc` — the `unsafe impl GlobalAlloc` alloc-face seam
 //                             (trait obligation + pointer handoff). (under `alloc-global`)
 //      * `global::tls_heap`     — raw-pointer TLS binding + `AbandonGuard` seam.
 //                             (under `alloc-global`)
@@ -182,4 +182,4 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 pub use heap::{with_heap, Heap};
 
 #[cfg(feature = "alloc-global")]
-pub use global::SeferMalloc;
+pub use global::SeferAlloc;

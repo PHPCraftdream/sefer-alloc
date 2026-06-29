@@ -1,7 +1,7 @@
 //! Reentrancy audit for the Phase 8 segment substrate (`alloc-core`) — M5.
 //!
 //! This is the **load-bearing** invariant of the substrate (§4 M5, §2 of
-//! `MALLOC_PLAN.md`): NO entry point on the alloc/dealloc path may allocate
+//! `ALLOC_PLAN.md`): NO entry point on the alloc/dealloc path may allocate
 //! through the global allocator, take a global lock that could deadlock against
 //! itself, or panic. The whole point of the self-hosted substrate is that when
 //! `AllocCore` (or its Phase 11 `GlobalAlloc` face) IS the global allocator, a

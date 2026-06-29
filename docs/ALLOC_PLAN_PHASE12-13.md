@@ -1,8 +1,8 @@
 # Implementation plan — Phases 12–13 (detailed): production trust + speed parity
 
-The continuation of [`MALLOC_PLAN.md`](MALLOC_PLAN.md) (Phases 8–11, shipped +
+The continuation of [`ALLOC_PLAN.md`](ALLOC_PLAN.md) (Phases 8–11, shipped +
 pushed). Phases 8–11 produced a **working, safe, fast allocator**: honest verdict
-(`docs/MALLOC_BENCH.md`) — competitive with `mimalloc` (wins at 1024 B churn and
+(`docs/ALLOC_BENCH.md`) — competitive with `mimalloc` (wins at 1024 B churn and
 on realistic `Vec` push/grow; ~1.2–2× behind on small fixed-size churn) and
 **~2.5–5× faster than the Windows system allocator**.
 
@@ -223,7 +223,7 @@ fn current() -> *mut HeapCore {           // the hot accessor — branch-light
   configs; default `alloc` path unchanged; `unsafe` still only in
   `os`/`node`/`global` (+ the registry's atomic seam, documented).
 - Removes the "NOT production-trusted (process-wide MT)" caveat from
-  `MALLOC_BENCH.md`.
+  `ALLOC_BENCH.md`.
 
 ### 2.8 Sequencing within Phase 12 (each a reviewable sub-commit)
 
@@ -242,7 +242,7 @@ fn current() -> *mut HeapCore {           // the hot accessor — branch-light
 
 We already beat mimalloc at 1024 B and on `Vec` push/grow; the gap is small
 fixed-size churn (16–256 B). Highest leverage first; each step is independently
-measurable against `docs/MALLOC_BENCH.md`.
+measurable against `docs/ALLOC_BENCH.md`.
 
 ### 3.1 O(1) size-class lookup (biggest small-size win)
 
@@ -301,12 +301,12 @@ measurable against `docs/MALLOC_BENCH.md`.
   `mstress` (many threads, mixed sizes, cross-thread free), `larson` (server
   churn), `rptest` (round-trip), `cfrac`/`xmalloc`-style — instead of the
   criterion micro-loop (whose per-iteration overhead muddies small-size numbers).
-  Single- and multi-thread, RSS-over-time. Refresh `docs/MALLOC_BENCH.md`.
+  Single- and multi-thread, RSS-over-time. Refresh `docs/ALLOC_BENCH.md`.
 
 ### 3.8 Gate
 
 - Within a small constant factor of mimalloc on `mstress`/`larson` (single- and
-  multi-thread); refreshed honest `MALLOC_BENCH.md`; **no correctness
+  multi-thread); refreshed honest `ALLOC_BENCH.md`; **no correctness
   regression** (all Phase 8–12 gates — proptest, loom, miri, soak — still green);
   `clippy -D warnings` clean.
 
@@ -321,7 +321,7 @@ measurable against `docs/MALLOC_BENCH.md`.
   is the metal).
 - **ThreadSanitizer** under stress (Linux).
 - Only after all green is the `malloc` face called **production-trusted** on every
-  target. `docs/MALLOC_BENCH.md` states the final verdict.
+  target. `docs/ALLOC_BENCH.md` states the final verdict.
 
 ---
 

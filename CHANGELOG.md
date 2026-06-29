@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-29
+
+### Changed — BREAKING: `SeferMalloc` renamed to `SeferAlloc`
+
+The headline `#[global_allocator]` type is renamed from `SeferMalloc` to
+`SeferAlloc`. The "malloc" suffix was a libc convention inherited from
+C-wrapper allocators (`mimalloc`, `jemalloc`, `tcmalloc`) and clashed
+with sefer-alloc's positioning as a pure-Rust allocator with no C deps.
+The new name aligns the type with the crate name and the Rust ecosystem's
+modern `*-alloc` convention.
+
+**Migration:** rename every occurrence of `SeferMalloc` in your code to
+`SeferAlloc`. The constructors (`new()`, `with_config(...)`) and the
+public API surface are otherwise unchanged.
+
+```rust
+// Before (0.1.x):
+use sefer_alloc::SeferMalloc;
+#[global_allocator]
+static GLOBAL: SeferMalloc = SeferMalloc::new();
+
+// After (0.2.0):
+use sefer_alloc::SeferAlloc;
+#[global_allocator]
+static GLOBAL: SeferAlloc = SeferAlloc::new();
+```
+
+`LargeCacheConfig`, `LargeCacheMode`, `Region`, `Handle`, `SyncRegion`,
+`AllocCore`, and every other public type are unchanged.
+
+Internal: `src/global/sefer_malloc.rs` → `src/global/sefer_alloc.rs`
+(module file rename). User-facing docs (`README.md`, `docs/INTEGRATION.md`,
+`docs/ARCHITECTURE.md`) updated to use "alloc face" terminology consistently;
+historical / planning docs (`ALLOC_PLAN.md`, `FINDINGS_PHASE12.md`, etc.)
+keep their original "malloc face" language as historical record.
+
+`0.1.0` is yanked from crates.io to direct fresh installs to `0.2.0`;
+existing `Cargo.lock` references continue to work.
+
 ### Changed — const-builder config API replaces env vars (alloc-decommit)
 
 - **`LargeCacheConfig` const builder** — new type (re-exported from
@@ -206,7 +245,7 @@ Two faces on one verified substrate:
   large alloc/free** after the OPT-E large-cache (4 MiB cycle ≈ 45 ns
   vs ~718 ns ≈ **~16×**; 16 MiB ≈ 48 ns vs ~869 ns ≈ **~18×** — single
   Windows dev host, criterion `sample_size(10)`, see
-  `docs/MALLOC_BENCH.md`); competitive with `mimalloc` on multi-thread
+  `docs/ALLOC_BENCH.md`); competitive with `mimalloc` on multi-thread
   cross-thread paths (`examples/malloc_macro.rs`). Confined-`unsafe`
   inventory under `production` (eight files): `alloc_core::{os, node}`
   + `global::{sefer_malloc, tls_heap, fallback}` +
@@ -222,7 +261,7 @@ clean on cross-thread + decommit), Valgrind memcheck clean,
 aarch64 13/13 under qemu-user, libFuzzer (`region_ops`,
 `global_alloc_ops`), soak / RSS / tokio-burn-in harnesses,
 criterion benches with flamegraph profiling. Full details in
-`docs/ARCHITECTURE.md` and `docs/MALLOC_BENCH.md`.
+`docs/ARCHITECTURE.md` and `docs/ALLOC_BENCH.md`.
 
 ### Added
 
@@ -320,7 +359,7 @@ criterion benches with flamegraph profiling. Full details in
     report on 4 scenarios with 6 prioritised optimisation
     candidates (OPT-B/C/E/F/G all realised in this release; OPT-H
     documented but deferred as low impact).
-  - `docs/MALLOC_BENCH.md` — extensive update with OPT-E large-cache
+  - `docs/ALLOC_BENCH.md` — extensive update with OPT-E large-cache
     numbers, NUMA section, honest verdicts.
 - **OSS infrastructure** (preparing for crates.io publication):
   `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`,
@@ -345,7 +384,7 @@ criterion benches with flamegraph profiling. Full details in
   clean blank (`bump = small_meta_end`, `BinTable` heads = NULL, payload
   page-map = Free, alloc-bitmap = 0, `decommitted` flag set); the payload is
   recommitted on the first reuse. This bounds steady-state RSS under churn (the
-  one honest gap in `MALLOC_BENCH`). Bookkeeping: a new **owner-only** `u32`
+  one honest gap in `ALLOC_BENCH`). Bookkeeping: a new **owner-only** `u32`
   `live_count` field in `SegmentHeader` (present in every build's layout so the
   byte layout is stable; mutated only under the feature) — `+1` on
   `pop_free`/`carve_block` hand-out, `−1` on `dealloc_small`/`reclaim_offset`;
@@ -405,7 +444,7 @@ criterion benches with flamegraph profiling. Full details in
   (null on failure, never `assert!`-panic). **Reentrancy-freedom (M5)** holds on
   the malloc path (no `Vec`/`Box`/`std::alloc`/`format!`). The `unsafe impl
   GlobalAlloc` is the documented malloc-face seam (every method `// SAFETY:`);
-  `unsafe` stays confined. **Honest verdict (`docs/MALLOC_BENCH.md`):** on the
+  `unsafe` stays confined. **Honest verdict (`docs/ALLOC_BENCH.md`):** on the
   alloc/dealloc hot path `SeferMalloc` is competitive with `mimalloc` (faster at
   1024 B and on realistic `Vec` push/grow churn; ~1.2-2x behind on small
   fixed-size churn) and consistently **~2.5-5x faster than the Windows system
@@ -500,7 +539,7 @@ criterion benches with flamegraph profiling. Full details in
   primordial `bootstrap`, the ~40-class size scheme, and `AllocCore`'s
   single-threaded `alloc`/`dealloc`/`realloc`/`alloc_zeroed` — is pure safe
   integer arithmetic (the Cartographer). Invariants **M1–M8** documented
-  (`docs/INVARIANTS.md`, spec in `docs/MALLOC_PLAN.md` §4) and encoded as a
+  (`docs/INVARIANTS.md`, spec in `docs/ALLOC_PLAN.md` §4) and encoded as a
   differential proptest (M1–M4 vs a reference model), targeted unit tests, and a
   **runtime reentrancy audit (M5)** — a counting global allocator proves the
   alloc path never recurses into `std::alloc`. The core is **miri-clean**:

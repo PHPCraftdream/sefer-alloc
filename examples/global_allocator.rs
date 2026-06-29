@@ -1,4 +1,4 @@
-//! Minimal example: install `SeferMalloc` as the process's `#[global_allocator]`
+//! Minimal example: install `SeferAlloc` as the process's `#[global_allocator]`
 //! and run a small workload through it.
 //!
 //! Run with:  `cargo run --example global_allocator --features alloc-global`
@@ -9,10 +9,10 @@
 
 use std::collections::HashMap;
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 fn main() {
     // A growing Vec (alloc + realloc churn).
@@ -34,7 +34,7 @@ fn main() {
 
     println!(
         "sefer-alloc global allocator OK — summed {} ints (={sum}) and stored {} map entries, \
-         all through SeferMalloc.",
+         all through SeferAlloc.",
         v.len(),
         m.len(),
     );

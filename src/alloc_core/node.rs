@@ -27,7 +27,7 @@
 //! soundness (the span was reserved by the kernel and is owned by us); `node`
 //! proves bounds + alignment soundness (the offset is within a live segment and
 //! the write does not escape the block). Keeping them separate keeps each proof
-//! small and auditable, and matches §6 of `MALLOC_PLAN.md` which names exactly
+//! small and auditable, and matches §6 of `ALLOC_PLAN.md` which names exactly
 //! these two seams.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-core` on; this is one of the

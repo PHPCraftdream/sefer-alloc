@@ -11,7 +11,7 @@ If you are new to the codebase, start with:
   rationale
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the formal invariants (I1–I6)
   that every PR must preserve
-- [`docs/MALLOC_PLAN.md`](docs/MALLOC_PLAN.md) — byte-allocator roadmap
+- [`docs/ALLOC_PLAN.md`](docs/ALLOC_PLAN.md) — byte-allocator roadmap
 
 For security issues, do **not** open a public issue — see
 [`SECURITY.md`](SECURITY.md) instead.

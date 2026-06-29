@@ -122,7 +122,7 @@ decommit-safety (#35).
 - `loom` counterfactual: the guard-less drain double-owns / reads a stale word →
   loom catches it; the guarded drain does not.
 - After green: remove the discard, drop the "bounded leak under cross-thread
-  churn" caveat from `docs/MALLOC_BENCH.md` and mark the FINDINGS remainder
+  churn" caveat from `docs/ALLOC_BENCH.md` and mark the FINDINGS remainder
   resolved.
 
 ## 6. Do NOT

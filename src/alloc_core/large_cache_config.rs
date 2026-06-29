@@ -5,7 +5,7 @@
 //! `alloc_core.rs`. The caller constructs a `LargeCacheConfig` value at
 //! compile time (or at runtime — the builder is `const` but not *required*
 //! to be) and passes it to [`AllocCore::new_with_config`] or
-//! [`SeferMalloc::with_config`]. If the caller wants to read from the
+//! [`SeferAlloc::with_config`]. If the caller wants to read from the
 //! environment, a CLI flag, or a config file, they do that themselves and
 //! pass the resolved values here.
 //!
@@ -57,7 +57,7 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 /// ```rust
 /// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit", feature = "alloc-global"))]
 /// # {
-/// use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+/// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 ///
 /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
 ///     .budget_bytes(512 * 1024 * 1024)
@@ -67,13 +67,13 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 ///     .mode(LargeCacheMode::Lazy);
 ///
 /// #[global_allocator]
-/// static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+/// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 /// # }
 /// ```
 ///
 /// Passing `LargeCacheConfig::DEFAULT` (= `LargeCacheConfig::new()`) to
-/// [`SeferMalloc::with_config`] produces byte-identical behaviour to
-/// [`SeferMalloc::new`].
+/// [`SeferAlloc::with_config`] produces byte-identical behaviour to
+/// [`SeferAlloc::new`].
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, Debug)]
 pub struct LargeCacheConfig {

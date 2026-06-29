@@ -1,5 +1,5 @@
 //! [`HeapSlot`] — one entry of the registry's slot array (the "fractal slot
-//! table" of §1 of `MALLOC_PLAN_PHASE12-13.md`: the heap pool itself becomes a
+//! table" of §1 of `ALLOC_PLAN_PHASE12-13.md`: the heap pool itself becomes a
 //! slot table).
 //!
 //! Each slot is a fixed-size record carved from the registry's primordial

@@ -1,6 +1,6 @@
 //! Phase 12.2 — the global heap registry (§2.1 of
-//! `MALLOC_PLAN_PHASE12-13.md`): a self-hosting slot table of heaps, gated
-//! behind `alloc-global` (it becomes the substrate of `SeferMalloc` in 12.3).
+//! `ALLOC_PLAN_PHASE12-13.md`): a self-hosting slot table of heaps, gated
+//! behind `alloc-global` (it becomes the substrate of `SeferAlloc` in 12.3).
 //!
 //! The registry is the keystone inversion of Phase 12: heaps become SLOTS in
 //! a global, self-hosting table (the `Region` slot-table discipline, reflected
@@ -12,7 +12,7 @@
 //! ## `#[doc(hidden)]` — not public API
 //!
 //! The registry module is `pub` only so integration tests in `tests/` can
-//! exercise it before 12.3 wires it into `SeferMalloc`. It is NOT part of the
+//! exercise it before 12.3 wires it into `SeferAlloc`. It is NOT part of the
 //! crate's supported public surface; every item is `#[doc(hidden)]` and may
 //! change in any Phase 12.x sub-commit. Once 12.3 caches the registry pointer
 //! inside the TLS binding, the test-only pub surface here shrinks (or moves

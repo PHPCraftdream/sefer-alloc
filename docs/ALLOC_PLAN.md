@@ -267,7 +267,7 @@ hardening gate.
   - Security hardening: free-list integrity (encoded/`debug`-checked next
     pointers), double-free no-op (M2), guard policy for huge allocations,
     graceful OOM (null, never panic).
-  - **`docs/MALLOC_BENCH.md`** — the honest head-to-head vs `mimalloc`/system:
+  - **`docs/ALLOC_BENCH.md`** — the honest head-to-head vs `mimalloc`/system:
     mimalloc-bench-style workloads (mstress, rptest, larson, cfrac), single- and
     multi-thread, RSS-over-time. Stated plainly, win or lose.
   - `cargo-fuzz` over adversarial alloc/free/realloc streams (CPU-hours);

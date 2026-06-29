@@ -7,7 +7,7 @@
     clippy::let_and_return
 )]
 
-//! High-load multi-thread soak harness for `SeferMalloc`.
+//! High-load multi-thread soak harness for `SeferAlloc`.
 //!
 //! Run (smoke — ~5 s):
 //!   `cargo run --release --example soak_xthread --features "alloc-global alloc-xthread"`
@@ -55,12 +55,12 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // ── global allocator ────────────────────────────────────────────────────────
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -419,8 +419,8 @@ fn main() {
 
         let handle = thread::spawn(move || {
             // Grab a ZST handle to our global allocator (matching malloc_macro
-            // pattern: SeferMalloc is a ZST, so this is a no-op at runtime).
-            let alloc = SeferMalloc::new();
+            // pattern: SeferAlloc is a ZST, so this is a no-op at runtime).
+            let alloc = SeferAlloc::new();
 
             // Wait for all workers to be ready before starting.
             barrier_t.wait();

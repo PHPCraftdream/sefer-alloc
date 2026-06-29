@@ -1,7 +1,7 @@
 //! [`HeapCore`] — the thin heap value that lives inside a registry slot.
 //!
 //! This is the type the Phase 12.3 raw-pointer TLS caches as
-//! `*mut HeapCore`. Per §2.0 of `MALLOC_PLAN_PHASE12-13.md` the heap is now
+//! `*mut HeapCore`. Per §2.0 of `ALLOC_PLAN_PHASE12-13.md` the heap is now
 //! thin (segment-centric free state lives in each segment's `BinTable`, not
 //! in a heap-local array), so the per-slot heap needs to carry only:
 //!
@@ -14,7 +14,7 @@
 //! ## Phase 12.3 — allocation routes through `HeapCore`
 //!
 //! 12.3 wires `HeapCore::alloc`/`dealloc`/`realloc`/`alloc_zeroed` as the
-//! entry points the raw-pointer TLS binding hands to the malloc face. They
+//! entry points the raw-pointer TLS binding hands to the alloc face. They
 //! delegate to the [`AllocCore`] (own-thread path). Under `alloc-xthread`,
 //! [`HeapCore`] also carries the cross-thread [`ThreadFreeStack`] handle and
 //! stamps `owner_thread_free` on segment headers so remote threads can route
@@ -43,7 +43,7 @@
 //! `HeapCore` is the *slot-resident* value the registry stores and the 12.3
 //! raw-pointer TLS caches. They coexist in 12.3: the explicit-`Heap`-API
 //! (`with_heap`) keeps serving the `alloc` feature and its tests; the malloc
-//! face (`SeferMalloc`) is rewired to route through `HeapCore` via the
+//! face (`SeferAlloc`) is rewired to route through `HeapCore` via the
 //! registry. The eventual collapse of `Heap` into `HeapCore` is later work.
 
 use core::alloc::Layout;
@@ -86,7 +86,7 @@ pub struct HeapCore {
     /// `std::alloc` — it is a no-op (the field is initialised to null in
     /// [`new`](Self::new), which is M5-clean). This is load-bearing for the
     /// `alloc-global + alloc-xthread` combo: under `#[global_allocator]`, a
-    /// `Box::new` on the TLS bind path would recurse into `SeferMalloc::alloc`
+    /// `Box::new` on the TLS bind path would recurse into `SeferAlloc::alloc`
     /// → `current_for_alloc` → `bind_slow` → `install_thread_free` → `Box::new`
     /// → infinite recursion → stack overflow. The inline field breaks that
     /// cycle: the head's address is `&self.thread_free`, stable for the
@@ -186,7 +186,7 @@ impl HeapCore {
     ///
     /// Identical to [`new`](Self::new) except it calls
     /// [`AllocCore::new_with_config`] so per-thread large-cache behaviour
-    /// matches the compile-time `SeferMalloc::with_config(...)` choice.
+    /// matches the compile-time `SeferAlloc::with_config(...)` choice.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub(crate) fn new_with_config(

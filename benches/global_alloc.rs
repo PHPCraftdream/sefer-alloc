@@ -1,20 +1,20 @@
-//! Phase 11 -- `SeferMalloc` as `#[global_allocator]` vs `mimalloc` and the
+//! Phase 11 -- `SeferAlloc` as `#[global_allocator]` vs `mimalloc` and the
 //! system allocator. Quick criterion profile per the short-scenario policy:
 //! `sample_size(10)` and short warm/measurement times. Honest verdict in
-//! `docs/MALLOC_BENCH.md`.
+//! `docs/ALLOC_BENCH.md`.
 //!
 //! This bench exercises REAL Rust allocation patterns through the
 //! `#[global_allocator]` face: `Vec` push/grow churn (which calls
 //! `alloc`/`dealloc`/`realloc` under the hood), `Box` new/drop, and varied
 //! sizes. We compare three configurations:
 //!
-//! 1. **SeferMalloc** (installed as the process's `#[global_allocator]`).
+//! 1. **SeferAlloc** (installed as the process's `#[global_allocator]`).
 //! 2. **mimalloc** (via the `mimalloc` crate's `GlobalAlloc` impl, called
 //!    directly -- NOT installed globally, to allow a head-to-head in one binary).
 //! 3. **System** allocator (called directly).
 //!
 //! For (2) and (3) we call the `GlobalAlloc` methods directly to avoid
-//! replacing the global allocator mid-process (which SeferMalloc already
+//! replacing the global allocator mid-process (which SeferAlloc already
 //! occupies). This is an honest apples-to-apples comparison of the alloc/dealloc
 //! hot path.
 
@@ -30,7 +30,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 /// Representative small-to-medium sizes for the churn bench.
 const SIZES: &[usize] = &[16, 64, 256, 1024];
@@ -125,18 +125,18 @@ fn bench_global_alloc(c: &mut Criterion) {
     group.warm_up_time(Duration::from_millis(150));
     group.measurement_time(Duration::from_millis(600));
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        // --- SeferMalloc (called directly through its GlobalAlloc impl, exactly
+        // --- SeferAlloc (called directly through its GlobalAlloc impl, exactly
         // like mimalloc and System below — a true apples-to-apples comparison of
-        // the alloc/dealloc hot path; SeferMalloc is NOT installed as the bench
+        // the alloc/dealloc hot path; SeferAlloc is NOT installed as the bench
         // binary's global allocator, so we must call it directly) ---
-        group.bench_function(format!("SeferMalloc/{size}B"), |b| {
+        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
             b.iter(|| bench_direct_alloc(&sefer, layout))
         });
 
@@ -154,10 +154,10 @@ fn bench_global_alloc(c: &mut Criterion) {
     // --- Real-world pattern: Vec<i64> push/grow churn ---
     // This exercises realloc + many small allocs as the Vec grows.
     const VEC_PUSHES: usize = 512;
-    group.bench_function("Vec_push/SeferMalloc", |b| {
+    group.bench_function("Vec_push/SeferAlloc", |b| {
         b.iter(|| {
-            // Manual Vec growth through SeferMalloc's GlobalAlloc directly, so
-            // the measurement is SeferMalloc (not the bench binary's default
+            // Manual Vec growth through SeferAlloc's GlobalAlloc directly, so
+            // the measurement is SeferAlloc (not the bench binary's default
             // global allocator) — symmetric with the mimalloc/System arms below.
             let mut ptr: *mut i64 = core::ptr::null_mut();
             let mut cap: usize = 0;
@@ -167,7 +167,7 @@ fn bench_global_alloc(c: &mut Criterion) {
                 if len == cap {
                     let new_cap = if cap == 0 { 4 } else { cap * 2 };
                     let new_layout = Layout::array::<i64>(new_cap.max(VEC_PUSHES)).unwrap();
-                    // SAFETY: realloc-like growth through SeferMalloc.
+                    // SAFETY: realloc-like growth through SeferAlloc.
                     let new_ptr = unsafe { sefer.alloc(new_layout) };
                     if !new_ptr.is_null() && !ptr.is_null() {
                         unsafe {
@@ -195,7 +195,7 @@ fn bench_global_alloc(c: &mut Criterion) {
 
     group.bench_function("Vec_push/mimalloc", |b| {
         b.iter(|| {
-            // mimalloc is NOT the global allocator here (SeferMalloc is), so we
+            // mimalloc is NOT the global allocator here (SeferAlloc is), so we
             // manually replicate Vec growth via mimalloc's GlobalAlloc.
             let mut ptr: *mut i64 = core::ptr::null_mut();
             let mut cap: usize = 0;
@@ -275,14 +275,14 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     group.warm_up_time(Duration::from_millis(150));
     group.measurement_time(Duration::from_millis(600));
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        group.bench_function(format!("SeferMalloc/{size}B"), |b| {
+        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
             b.iter(|| bench_churn_alloc(&sefer, layout, CHURN_WORKING_SET, OPS))
         });
 

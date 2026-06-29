@@ -3,7 +3,7 @@
 //! descriptors and per-size-class free bins, all carved from segment memory.
 //!
 //! These structures are the **self-hosted metadata** of the Phase 8 substrate
-//! (§3 / §5 P8 of `MALLOC_PLAN.md`): they live INSIDE the segments they
+//! (§3 / §5 P8 of `ALLOC_PLAN.md`): they live INSIDE the segments they
 //! describe, not in a `Vec`/`HashSet` on the global allocator. This is the
 //! Membrane Inversion — the safe slot-table discipline governs OS memory
 //! instead of consuming `std` collections.

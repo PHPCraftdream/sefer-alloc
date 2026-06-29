@@ -1,5 +1,5 @@
-//! Raw-pointer TLS binding for the malloc face (Phase 12.3, §2.2 of
-//! `MALLOC_PLAN_PHASE12-13.md`).
+//! Raw-pointer TLS binding for the alloc face (Phase 12.3, §2.2 of
+//! `ALLOC_PLAN_PHASE12-13.md`).
 //!
 //! This is the reentrancy-safe TLS routing that replaces the Phase 11
 //! `RefCell<Option<Heap>>` binding for the global face. The keystone move:
@@ -14,7 +14,7 @@
 //! `RefCell<Option<Heap>>` turns reentrancy into a refusal: under libtest's
 //! parallel harness the global allocator is called while a borrow is already
 //! held (e.g. panic infrastructure, capture buffers) → `try_borrow_mut`
-//! returns `Err` → the malloc face returns null → the process aborts. The
+//! returns `Err` → the alloc face returns null → the process aborts. The
 //! raw-pointer `Cell` has no borrow state: reading it is always a single
 //! load, never fails. Reentrancy is structurally excluded by M5 (no
 //! `Vec`/`Box`/`std::alloc` on the alloc path), so there is no reentrant
@@ -53,7 +53,7 @@
 //! - the TLS slot is destroyed (thread teardown) → [`fallback_ptr`] returns
 //!   the always-live process-global fallback heap.
 //!
-//! So the malloc face never returns null for a serviceable request (M10).
+//! So the alloc face never returns null for a serviceable request (M10).
 //!
 //! [`HeapRegistry`]: crate::registry::HeapRegistry
 //! [`ThreadFreeStack`]: crate::heap::thread_free::ThreadFreeStack
@@ -167,14 +167,14 @@ impl Drop for AbandonGuard {
 /// null.
 ///
 /// This is the un-tagged variant, for callers that do not need to
-/// distinguish own-thread vs fallback (the malloc face uses
+/// distinguish own-thread vs fallback (the alloc face uses
 /// [`current_for_alloc`] instead). Kept `pub` as the canonical accessor for
 /// future direct-API consumers and tests.
 ///
 /// Inlined so the fast path collapses to a TLS-get + branch in the callers.
 #[must_use]
 #[inline]
-#[allow(dead_code)] // The malloc face uses `current_for_alloc` (tagged). Kept for direct API.
+#[allow(dead_code)] // The alloc face uses `current_for_alloc` (tagged). Kept for direct API.
 pub fn current() -> *mut HeapCore {
     match LOCAL.try_with(|c| c.get()) {
         Ok(p) if !p.is_null() => p,
@@ -185,7 +185,7 @@ pub fn current() -> *mut HeapCore {
     }
 }
 
-/// Which heap [`current_for_alloc`] resolved to. The malloc face uses this to
+/// Which heap [`current_for_alloc`] resolved to. The alloc face uses this to
 /// decide whether to take the lock-free own-thread fast path ([`Own`]) or
 /// the spinlock-guarded fallback path ([`Fallback`]). Carrying the tag in
 /// the return value avoids a second `fallback::heap_ptr()` call (which would
@@ -202,8 +202,8 @@ pub enum CurrentHeap {
     Fallback,
 }
 
-/// The malloc-face entry: resolve the current heap AND whether it is the
-/// fallback, in one pass. Used by [`SeferMalloc`](super::SeferMalloc) to
+/// The alloc-face entry: resolve the current heap AND whether it is the
+/// fallback, in one pass. Used by [`SeferAlloc`](super::SeferAlloc) to
 /// avoid a redundant `fallback::heap_ptr()` comparison (which would
 /// needlessly initialise the fallback on every alloc).
 ///
@@ -252,7 +252,7 @@ pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfi
 ///
 /// On registry exhaustion (every slot is LIVE and the free pool is empty —
 /// pathological: > `MAX_HEAPS` simultaneous threads), returns
-/// [`CurrentHeap::Fallback`] (the malloc face then routes through the
+/// [`CurrentHeap::Fallback`] (the alloc face then routes through the
 /// always-live primordial heap — never null, M10).
 #[cold]
 fn bind_slow() -> *mut HeapCore {
@@ -266,7 +266,7 @@ fn bind_slow() -> *mut HeapCore {
 }
 
 /// The tagged variant of [`bind_slow`], used by [`current_for_alloc`] so the
-/// malloc face knows whether it got an own-thread slot or the fallback (and
+/// alloc face knows whether it got an own-thread slot or the fallback (and
 /// therefore whether to take the lock-free path or the spinlock path).
 #[cold]
 fn bind_slow_tagged() -> CurrentHeap {

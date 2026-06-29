@@ -1,4 +1,4 @@
-//! Multi-threaded macro-benchmark for `SeferMalloc` vs `mimalloc` vs `System`.
+//! Multi-threaded macro-benchmark for `SeferAlloc` vs `mimalloc` vs `System`.
 //!
 //! Run with:
 //!   `cargo run --release --example malloc_macro --features "alloc-global alloc-xthread"`
@@ -48,7 +48,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Instant;
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 /// A live allocation: raw pointer plus the exact layout it was allocated with
 /// (needed for a correct `dealloc`). `Send` is asserted explicitly below — the
@@ -426,9 +426,9 @@ where
 trait ZstAlloc {
     fn default_zst() -> Self;
 }
-impl ZstAlloc for SeferMalloc {
+impl ZstAlloc for SeferAlloc {
     fn default_zst() -> Self {
-        SeferMalloc::new()
+        SeferAlloc::new()
     }
 }
 impl ZstAlloc for mimalloc::MiMalloc {
@@ -453,10 +453,10 @@ fn run_sweep(steps_per_thread: usize, thread_sweep: &[usize], pinned: bool) {
         println!("--- workload: {name}  (mode: {mode}) ---");
         println!(
             "{:>3}  {:>16}  {:>16}  {:>16}",
-            "T", "SeferMalloc", "mimalloc", "System"
+            "T", "SeferAlloc", "mimalloc", "System"
         );
         for &t in thread_sweep {
-            let sefer = run_config::<SeferMalloc>(workload, t, steps_per_thread, pinned);
+            let sefer = run_config::<SeferAlloc>(workload, t, steps_per_thread, pinned);
             let mi = run_config::<mimalloc::MiMalloc>(workload, t, steps_per_thread, pinned);
             let sys = run_config::<System>(workload, t, steps_per_thread, pinned);
             println!(

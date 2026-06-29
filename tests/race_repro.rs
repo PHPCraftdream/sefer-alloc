@@ -48,11 +48,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // Install sefer-alloc as the process-wide global allocator for this binary.
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // Serialise against the other registry-touching tests (the registry is a
 // process-global static; reset_for_test in sibling tests would interfere).
@@ -275,7 +275,7 @@ fn drain_reclaim_uaf_repro_long_lived_consumer() {
     );
 }
 
-/// Direct-API variant (NOT installed as global_allocator): drives SeferMalloc
+/// Direct-API variant (NOT installed as global_allocator): drives SeferAlloc
 /// via its GlobalAlloc trait directly with a tight 2-thread producer/consumer
 /// and explicit Layout. This avoids libtest's harness allocations entirely —
 /// a cleaner signal if the installed-global variant is noisy. It also lets us
@@ -291,9 +291,9 @@ fn drain_reclaim_uaf_repro_direct_api() {
 
     // A dedicated static instance (separate from GLOBAL) so this test drives
     // the API directly without disturbing the installed global allocator's
-    // registry state. SeferMalloc is zero-sized; the static is just a vtable
+    // registry state. SeferAlloc is zero-sized; the static is just a vtable
     // anchor for the `GlobalAlloc` calls.
-    static DIRECT: SeferMalloc = SeferMalloc::new();
+    static DIRECT: SeferAlloc = SeferAlloc::new();
     let layout = std::alloc::Layout::from_size_align(SIZE, 8).unwrap();
     let total_sent = Arc::new(AtomicU64::new(0));
     let total_recv = Arc::new(AtomicU64::new(0));
@@ -301,7 +301,7 @@ fn drain_reclaim_uaf_repro_direct_api() {
     for wave in 0..WAVES {
         // Wrap the raw pointer so it can cross the thread boundary via the
         // channel. SAFETY of the Send impl: the pointer is a freshly-allocated
-        // block from SeferMalloc; ownership is transferred to exactly one
+        // block from SeferAlloc; ownership is transferred to exactly one
         // consumer which frees it exactly once (no concurrent access).
         struct SendPtr(*mut u8);
         unsafe impl Send for SendPtr {}
@@ -315,7 +315,7 @@ fn drain_reclaim_uaf_repro_direct_api() {
                 std::thread::spawn(move || {
                     let mut local: u64 = 0;
                     for i in 0..ALLOCS_PER_PRODUCER {
-                        // SAFETY: SeferMalloc implements GlobalAlloc; layout is valid.
+                        // SAFETY: SeferAlloc implements GlobalAlloc; layout is valid.
                         let ptr = unsafe { DIRECT.alloc(layout) };
                         assert!(!ptr.is_null(), "alloc returned null");
                         let val = wid.wrapping_mul(31).wrapping_add(i as u64);

@@ -3,7 +3,7 @@
 //! Tests that the `last_stamped_segment` fast path in `HeapCore::stamp_segment_owner`
 //! is transparent to callers: correctness is identical with and without the
 //! cache. All tests exercise `HeapCore` through `HeapRegistry::claim` (the
-//! same path `SeferMalloc` uses) so the stamp-cache code is exercised directly.
+//! same path `SeferAlloc` uses) so the stamp-cache code is exercised directly.
 //!
 //! Three tests:
 //!

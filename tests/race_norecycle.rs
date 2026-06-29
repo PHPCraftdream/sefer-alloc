@@ -22,10 +22,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 const DEADLINE_SECS: u64 = 30;
 

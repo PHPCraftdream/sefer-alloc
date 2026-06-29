@@ -17,7 +17,7 @@ for multi-thread / long-running processes is `production`:
 
 ```toml
 [dependencies]
-sefer-alloc = { version = "0.1", features = ["production"] }
+sefer-alloc = { version = "0.2", features = ["production"] }
 ```
 
 `production` is an alias for `alloc-global + alloc-xthread + alloc-decommit
@@ -43,10 +43,10 @@ Full feature matrix: [`README.md`](../README.md#features-matrix).
 One declaration at the crate root (binary or library top-level):
 
 ```rust
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 fn main() {
     // Every Vec/Box/String/HashMap allocation in this process — including
@@ -68,7 +68,7 @@ The large-segment cache is the only piece of the allocator with tunable
 policy. It governs **how aggressively empty large blocks are returned to
 the OS** versus held in a per-shard free-list for reuse. Configuration is
 via `LargeCacheConfig` — a `Copy + Clone + const fn` builder — passed to
-`SeferMalloc::with_config(...)`. All methods are `const fn`, so the config
+`SeferAlloc::with_config(...)`. All methods are `const fn`, so the config
 lives in a `static` initialiser and is resolved at compile time (zero
 runtime overhead, no env reads, no parse errors).
 
@@ -139,13 +139,13 @@ trimming every 200 ms:
 ```toml
 # Cargo.toml
 [dependencies]
-sefer-alloc = { version = "0.1", features = ["production"] }
+sefer-alloc = { version = "0.2", features = ["production"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
 ```rust
 // src/main.rs
-use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 
 const CACHE_CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .budget_bytes(512 * 1024 * 1024)      // hard ceiling: 512 MiB per shard
@@ -155,7 +155,7 @@ const CACHE_CONFIG: LargeCacheConfig = LargeCacheConfig::new()
     .mode(LargeCacheMode::Lazy);          // event-driven (no background thread)
 
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::with_config(CACHE_CONFIG);
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(CACHE_CONFIG);
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
@@ -171,8 +171,8 @@ What this means in practice:
 - Idle process → no ticks, no work, no syscalls.
 
 For a desktop / dev profile that retains memory more aggressively for
-throughput, use `SeferMalloc::new()` (equivalent to
-`SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`): the defaults
+throughput, use `SeferAlloc::new()` (equivalent to
+`SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`): the defaults
 (`headroom=256 MiB`, `interval=1 s`, `rate=10 %/tick`, unbounded budget)
 are already tuned for the throughput-first case.
 
@@ -224,12 +224,12 @@ work unchanged.
 
 - **Wrong feature set.** `cargo add sefer-alloc` without
   `--features production` (or at least `--features alloc-global`) gives
-  you the handle store only — `SeferMalloc` is not exported.
+  you the handle store only — `SeferAlloc` is not exported.
 
 - **`with_config` only available under `alloc-decommit`.** The
-  `LargeCacheConfig` type and `SeferMalloc::with_config` are only
+  `LargeCacheConfig` type and `SeferAlloc::with_config` are only
   compiled when the `alloc-decommit` feature is on (included in
-  `production`). Without it, use `SeferMalloc::new()` (the only
+  `production`). Without it, use `SeferAlloc::new()` (the only
   constructor).
 
 - **Expecting `LargeCacheMode::Background` to spawn a thread.** Today

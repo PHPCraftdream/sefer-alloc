@@ -1,5 +1,5 @@
 //! libFuzzer target for the Phase 8–11 allocator descent — exercises
-//! `sefer_alloc::AllocCore` (the segment substrate that `SeferMalloc` /
+//! `sefer_alloc::AllocCore` (the segment substrate that `SeferAlloc` /
 //! `GlobalAlloc` is built on) with an `arbitrary`-derived stream of
 //! alloc / dealloc / realloc / alloc_zeroed ops of random sizes and
 //! alignments, checking the M-invariants from `docs/INVARIANTS.md`:
@@ -18,11 +18,11 @@
 //! - **alloc_zeroed contract:** every byte of a zeroed allocation reads as 0.
 //! - **realloc:** the `min(old, new)` prefix is preserved.
 //!
-//! ## Why `AllocCore`, not the installed `SeferMalloc` global allocator
+//! ## Why `AllocCore`, not the installed `SeferAlloc` global allocator
 //!
 //! `AllocCore` is the single-threaded engine under the `GlobalAlloc` face; it
 //! has a plain owned API (`new` / `alloc` / `dealloc` / `realloc` /
-//! `alloc_zeroed`) that drops cleanly per fuzz input. Installing `SeferMalloc`
+//! `alloc_zeroed`) that drops cleanly per fuzz input. Installing `SeferAlloc`
 //! as the process `#[global_allocator]` would subject the libFuzzer harness's
 //! own allocations to the not-yet-hardened TLS init (see `tests/global_alloc.rs`
 //! for that caveat), which is out of scope for op-stream invariant fuzzing.

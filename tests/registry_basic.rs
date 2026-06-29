@@ -1,6 +1,6 @@
 //! Phase 12.2 — single-thread unit tests for the global heap registry.
 //!
-//! Covers the §2.1 API contract of `MALLOC_PLAN_PHASE12-13.md`:
+//! Covers the §2.1 API contract of `ALLOC_PLAN_PHASE12-13.md`:
 //! - `claim` hands out distinct slots.
 //! - `recycle` → `claim` reuses a slot and BUMPS its generation.
 //! - `push_abandoned_segment` → `pop_abandoned_segment` round-trip.
@@ -10,7 +10,7 @@
 //! NON-VACUOUS: every assertion is built so that flipping the implementation
 //! (e.g. claim not bumping generation, recycle not pushing, pop returning the
 //! wrong slot) makes the test FAIL. The registry is exercised only by these
-//! tests in Phase 12.2 — it is not yet wired into `SeferMalloc`/TLS (12.3).
+//! tests in Phase 12.2 — it is not yet wired into `SeferAlloc`/TLS (12.3).
 //!
 //! Single-threaded by design (the concurrent case is Phase 12.4's loom). The
 //! orderings are written for the concurrent case from day one; these tests

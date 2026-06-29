@@ -1,5 +1,5 @@
 //! [`HeapRegistry`] — the global self-hosting heap slot table (§2.1 of
-//! `MALLOC_PLAN_PHASE12-13.md`): claim/recycle/abandon over the process-global
+//! `ALLOC_PLAN_PHASE12-13.md`): claim/recycle/abandon over the process-global
 //! [`Registry`](super::bootstrap::Registry) slot array.
 //!
 //! This is the lock-free fundament of Phase 12: every thread's heap is a SLOT

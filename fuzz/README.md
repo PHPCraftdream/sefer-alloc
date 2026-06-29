@@ -31,7 +31,7 @@ stream of `alloc` / `alloc_zeroed` / `dealloc` / `realloc` ops of random sizes
 (1 B .. ~2 MiB, spanning the small free-list classes and the large
 dedicated-segment path) and random power-of-two alignments (1 .. 4096) against
 [`sefer_alloc::AllocCore`](../src/alloc_core/alloc_core.rs) — the single-threaded
-segment substrate the `SeferMalloc` / `GlobalAlloc` face is built on. It checks
+segment substrate the `SeferAlloc` / `GlobalAlloc` face is built on. It checks
 the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
 
 - **M1** every returned pointer is non-null, aligned, and writable for its size
@@ -45,7 +45,7 @@ the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
   `min(old, new)` prefix.
 
 It targets `AllocCore` (owned, single-threaded, drops cleanly per input) rather
-than the installed `SeferMalloc` `#[global_allocator]`: installing it process-wide
+than the installed `SeferAlloc` `#[global_allocator]`: installing it process-wide
 would route libFuzzer's own allocations through the not-yet-hardened TLS init
 (see [`tests/global_alloc.rs`](../tests/global_alloc.rs)). The cross-thread
 ordering path is covered instead by the TSan + aarch64 CI gates and the loom

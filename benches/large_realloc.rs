@@ -1,4 +1,4 @@
-//! Large-block and realloc-heavy profiling — SeferMalloc vs mimalloc vs System.
+//! Large-block and realloc-heavy profiling — SeferAlloc vs mimalloc vs System.
 //!
 //! Targets three gaps identified in task #54:
 //!
@@ -33,7 +33,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -167,7 +167,7 @@ fn realloc_unfavorable<A: GlobalAlloc>(
 
 /// Group 1: single large alloc+free for 4 MiB, 16 MiB, 64 MiB.
 ///
-/// SeferMalloc routes each of these through a dedicated OS segment
+/// SeferAlloc routes each of these through a dedicated OS segment
 /// (`alloc_large`). This measures the round-trip mmap/VirtualAlloc cost
 /// per allocator.
 fn bench_large_alloc_free(c: &mut Criterion) {
@@ -183,14 +183,14 @@ fn bench_large_alloc_free(c: &mut Criterion) {
         (64 * 1024 * 1024, "64MiB"),
     ];
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
     for &(size, label) in LARGE_SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        group.bench_with_input(BenchmarkId::new("SeferMalloc", label), &layout, |b, &l| {
+        group.bench_with_input(BenchmarkId::new("SeferAlloc", label), &layout, |b, &l| {
             b.iter(|| alloc_free_one(&sefer, l))
         });
         group.bench_with_input(BenchmarkId::new("mimalloc", label), &layout, |b, &l| {
@@ -220,11 +220,11 @@ fn bench_realloc_grow_geometric(c: &mut Criterion) {
     const START: usize = 64;
     const DOUBLINGS: u32 = 16;
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
-    group.bench_function("SeferMalloc", |b| {
+    group.bench_function("SeferAlloc", |b| {
         b.iter(|| black_box(realloc_grow(&sefer, START, DOUBLINGS)))
     });
     group.bench_function("mimalloc", |b| {
@@ -256,11 +256,11 @@ fn bench_realloc_in_place_unfavorable(c: &mut Criterion) {
     const STEPS: usize = 8; // up to 512 KiB + 8 × 256 KiB = 2.5 MiB
     const NEIGHBOURS: usize = 32; // noise allocs to pin address space
 
-    let sefer = SeferMalloc::new();
+    let sefer = SeferAlloc::new();
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
-    group.bench_function("SeferMalloc", |b| {
+    group.bench_function("SeferAlloc", |b| {
         b.iter(|| realloc_unfavorable(&sefer, START, STEP, STEPS, NEIGHBOURS))
     });
     group.bench_function("mimalloc", |b| {

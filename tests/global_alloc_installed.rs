@@ -1,4 +1,4 @@
-//! Phase 12.3 — the headline proof: install `SeferMalloc` as this test
+//! Phase 12.3 — the headline proof: install `SeferAlloc` as this test
 //! binary's `#[global_allocator]` and run a single-threaded
 //! `Vec`/`String`/`Box`/`HashMap` churn through it.
 //!
@@ -10,7 +10,7 @@
 //! buffers), and a null from `#[global_allocator]` aborts the process. The
 //! reentrancy failure was the documented "NOT production-trusted" caveat.
 //!
-//! Phase 12.3 rewires `SeferMalloc` through the raw-pointer TLS
+//! Phase 12.3 rewires `SeferAlloc` through the raw-pointer TLS
 //! (`Cell<*mut HeapCore>`, no `RefCell` → no borrow state to fail) over the
 //! global registry (Phase 12.2), with a never-null primordial fallback heap
 //! (M10). This test proves the rewiring: every allocation here (and every
@@ -20,7 +20,7 @@
 //! ## Single-threaded scope
 //!
 //! The churn itself runs on ONE test thread. The libtest harness may spawn
-//! sibling test threads (which also allocate through `SeferMalloc`); that is
+//! sibling test threads (which also allocate through `SeferAlloc`); that is
 //! the normal libtest environment, NOT a multi-threaded stress of the
 //! allocator's concurrency paths (those are exercised by `heap_cross_thread`
 //! and will be the 12.4/12.5 loom + soak). The point is: the
@@ -44,13 +44,13 @@ use std::alloc::GlobalAlloc;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // Install sefer-alloc as the process-wide global allocator for this test
 // binary. Every allocation in this binary — including libtest's harness
-// allocations — now routes through `SeferMalloc`.
+// allocations — now routes through `SeferAlloc`.
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // Serialise this test against the other registry-touching tests
 // (`registry_basic`). The registry is a process-global static; while the

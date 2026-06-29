@@ -55,7 +55,7 @@ where
 /// return `None` if the heap cannot be accessed right now WITHOUT panicking.
 ///
 /// This was the **no-panic** variant for the Phase 11 `GlobalAlloc` face.
-/// Phase 12.3 rewired `SeferMalloc` to route through the registry-backed
+/// Phase 12.3 rewired `SeferAlloc` to route through the registry-backed
 /// raw-pointer TLS ([`crate::global::tls_heap`]) instead of this `RefCell`
 /// binding, so `with_heap_try` is no longer on the malloc path. It is
 /// retained as a documented part of the explicit-`Heap` API surface (and a

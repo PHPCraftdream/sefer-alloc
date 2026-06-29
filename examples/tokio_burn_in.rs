@@ -6,7 +6,7 @@
     clippy::manual_repeat_n
 )]
 
-//! Tokio async burn-in for `SeferMalloc` — installs the allocator as
+//! Tokio async burn-in for `SeferAlloc` — installs the allocator as
 //! `#[global_allocator]` and exercises it under a real async multi-thread
 //! runtime with a database-pipeline-like workload.
 //!
@@ -51,7 +51,7 @@
 //! `JoinSet` pair.  This caps the number of simultaneously live task cells
 //! and prevents segment-table pressure under large `SEFER_BURNIN_TASKS` values.
 //!
-//! **Known constraint:** `SeferMalloc`'s segment table is currently
+//! **Known constraint:** `SeferAlloc`'s segment table is currently
 //! append-only (`MAX_SEGMENTS = 1024`; Phase 8 design — Phase 9+ will allow
 //! dynamic growth).  Each new 4 MiB segment consumes a permanent slot even
 //! after its blocks are freed back to the free list.  After 1024 segments have
@@ -92,14 +92,14 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::{sleep, timeout};
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // ── global allocator ────────────────────────────────────────────────────────
 
 /// ALL allocations in this process — including tokio's internal ones — are
-/// served by `SeferMalloc`.  This is the central claim of task #52.
+/// served by `SeferAlloc`.  This is the central claim of task #52.
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // ── tuning constants / env vars ─────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ const HEARTBEAT_SECS: u64 = 5;
 const CHAN_CAPACITY: usize = 512;
 
 /// Maximum number of query tasks alive concurrently.  `SEFER_BURNIN_CONCURRENCY`
-/// overrides.  Caps segment-table pressure: `SeferMalloc` has
+/// overrides.  Caps segment-table pressure: `SeferAlloc` has
 /// `MAX_SEGMENTS = 1024`; without a cap, 1024 simultaneously live task cells
 /// (~768 B each) plus tokio internals can exhaust the table.
 const DEFAULT_CONCURRENCY: usize = 256;
@@ -177,7 +177,7 @@ impl Xrs64 {
 /// `_permit` is a `Semaphore` permit held for the lifetime of the task; it is
 /// dropped when the task completes, releasing a slot for the next task.  This
 /// caps the number of concurrently live task allocations and prevents the
-/// `SeferMalloc` segment table (`MAX_SEGMENTS = 1024`) from exhausting under
+/// `SeferAlloc` segment table (`MAX_SEGMENTS = 1024`) from exhausting under
 /// large `SEFER_BURNIN_TASKS` values.
 async fn run_query(
     task_id: usize,
@@ -297,7 +297,7 @@ async fn run_query(
 ///
 /// The drop-half pattern maximises the chance that allocations made on one
 /// tokio worker thread are freed on a *different* worker thread — the key
-/// cross-thread-free scenario that exercises the xthread path in `SeferMalloc`.
+/// cross-thread-free scenario that exercises the xthread path in `SeferAlloc`.
 async fn coordinator(mut rx: mpsc::Receiver<QueryResult>, fwd_tx: mpsc::Sender<QueryResult>) {
     let mut seq: u64 = 0;
     while let Some(result) = rx.recv().await {
@@ -365,7 +365,7 @@ fn main() {
         .max(1);
 
     println!("== sefer-alloc tokio burn-in ==");
-    println!("global_allocator: SeferMalloc (ALL allocs — including tokio internals)");
+    println!("global_allocator: SeferAlloc (ALL allocs — including tokio internals)");
     println!(
         "workers={workers}  tasks={n_tasks}  concurrency={concurrency}  duration={burn_secs}s"
     );
@@ -404,7 +404,7 @@ fn main() {
 
         // ── concurrency semaphore ─────────────────────────────────────
         // Caps the number of simultaneously live query tasks to avoid
-        // exhausting SeferMalloc's MAX_SEGMENTS = 1024 table when
+        // exhausting SeferAlloc's MAX_SEGMENTS = 1024 table when
         // SEFER_BURNIN_TASKS > concurrency.
         let sem = Arc::new(Semaphore::new(concurrency));
 
@@ -414,7 +414,7 @@ fn main() {
         // `tokio::spawn`; the permit lives inside the task and is released on
         // task completion.  `JoinSet` collects results as tasks finish, so the
         // set never holds more than `concurrency` live task cells simultaneously
-        // — preventing the `SeferMalloc` segment table from exhausting.
+        // — preventing the `SeferAlloc` segment table from exhausting.
         let launcher = {
             let sem = Arc::clone(&sem);
             let query_tx = query_tx.clone();

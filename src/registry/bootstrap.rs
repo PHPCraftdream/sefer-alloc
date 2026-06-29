@@ -106,7 +106,7 @@ pub const MAX_HEAPS: usize = 4096;
 /// The segment size used for the abandoned-segment address packing. Mirrors
 /// [`crate::alloc_core::os::SEGMENT`] (kept as a literal here to avoid a
 /// cross-feature dependency from the registry bootstrap — the value is
-/// structural, set in `MALLOC_PLAN.md`, and a `const _: () = assert!` below
+/// structural, set in `ALLOC_PLAN.md`, and a `const _: () = assert!` below
 /// ties them together so they cannot drift).
 const ABANDON_SEG_SHIFT: u32 = 22; // log2(4 MiB)
 const ABANDON_SEG_SIZE: u64 = 1u64 << ABANDON_SEG_SHIFT;

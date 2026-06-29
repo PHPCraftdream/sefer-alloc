@@ -2,7 +2,7 @@
 //!
 //! Tests the per-thread, per-class magazine cache wired into `HeapCore` under
 //! the `fastbin` feature. All tests exercise `HeapCore` through
-//! `HeapRegistry::claim` (the same path `SeferMalloc` uses).
+//! `HeapRegistry::claim` (the same path `SeferAlloc` uses).
 //!
 //! ## Tests
 //!

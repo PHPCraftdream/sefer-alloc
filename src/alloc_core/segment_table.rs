@@ -3,7 +3,7 @@
 //! allocator).
 //!
 //! This is the keystone of the Phase 8 Membrane Inversion (§1 of
-//! `MALLOC_PLAN.md`): the safe slot-table discipline stops *consuming* memory
+//! `ALLOC_PLAN.md`): the safe slot-table discipline stops *consuming* memory
 //! (via `Vec`/`HashSet`) and starts *governing* it. The registry lives inside
 //! the very segments it tracks, so the alloc path can mutate it without ever
 //! calling the global allocator (M5 — reentrancy-freedom).

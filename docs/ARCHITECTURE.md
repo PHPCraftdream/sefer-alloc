@@ -38,8 +38,8 @@ runtime path.
   +-----------------------------------------------------------------+
   |  MEMBRANE -- two faces (safe API surface)                        |
   |                                                                  |
-  |   Handle face          |   malloc face                          |
-  |   Region<T>/Handle<T>  |   SeferMalloc                          |
+  |   Handle face          |   alloc face                           |
+  |   Region<T>/Handle<T>  |   SeferAlloc                          |
   |   typed, generational  |   unsafe impl GlobalAlloc              |
   |   single-threaded core |   MT, production-ready (feature:       |
   |   or concurrent tier   |   alloc-global + alloc-xthread)        |
@@ -64,14 +64,14 @@ API surface:
   wraps the audited `slotmap` crate and is `#![forbid(unsafe_code)]`. The
   concurrent tier (feature `experimental`) adds lock-free reads via `arc-swap`
   (RCU, zero own `unsafe`) or `crossbeam-epoch` (one confined `unsafe` module).
-- `SeferMalloc` -- `unsafe impl GlobalAlloc` over the per-thread segment heap.
+- `SeferAlloc` -- `unsafe impl GlobalAlloc` over the per-thread segment heap.
   Enabled by feature `alloc-global`; cross-thread `dealloc` requires
   `alloc-xthread`. The `production` alias bundles
   `alloc-global + alloc-xthread + alloc-decommit` as the recommended
   long-running deployment set.
 
 Full safety invariants for both faces: [INVARIANTS.md](INVARIANTS.md)
-(I1-I6 for the Handle face, M1-M8 for the malloc face).
+(I1-I6 for the Handle face, M1-M8 for the alloc face).
 
 ---
 
@@ -86,7 +86,7 @@ The founding principle (from [DESIGN.md](DESIGN.md)):
 | Organ | Responsibility | Safety |
 |---|---|---|
 | **Cartographer** | All placement / free-list / compaction / decommit logic -- pure integer arithmetic over indices. Never touches memory directly. | `safe` |
-| **Membrane** | Typed API: `Handle<T>`, generation checks, lifetimes; `AllocCore::alloc` / `SeferMalloc::alloc` -- total, cannot express UB. | `safe` |
+| **Membrane** | Typed API: `Handle<T>`, generation checks, lifetimes; `AllocCore::alloc` / `SeferAlloc::alloc` -- total, cannot express UB. | `safe` |
 | **Hand** | Confined `unsafe` seams that touch raw memory or issue OS syscalls. | `confined unsafe` |
 
 ### Workspace: four independently-publishable companion crates
@@ -133,7 +133,7 @@ they extend existing safe paths.
 |---|---|---|
 | [`src/alloc_core/os.rs`](../src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
 | [`src/alloc_core/node.rs`](../src/alloc_core/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
-| [`src/global/sefer_malloc.rs`](../src/global/sefer_malloc.rs) | The `unsafe impl GlobalAlloc` malloc-face seam — the trait obligation + pointer handoff to the `Heap`. | `alloc-global` |
+| [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap`. | `alloc-global` |
 | [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop. | `alloc-global` |
 | [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
@@ -192,7 +192,7 @@ Before Phase 8, the safe `Region<T>` was a *consumer* of the global allocator
 (`Vec<T>` backing). The Membrane Inversion makes the safe slot-table discipline
 a *governor* of OS memory: the allocator's own metadata is carved from
 segments, so no `Vec` / `Box` / `std::alloc` appears on any alloc/dealloc
-path. This is M5 (reentrancy-freedom). See [MALLOC_PLAN.md](MALLOC_PLAN.md) §1.
+path. This is M5 (reentrancy-freedom). See [ALLOC_PLAN.md](ALLOC_PLAN.md) §1.
 
 ---
 
@@ -202,7 +202,7 @@ path. This is M5 (reentrancy-freedom). See [MALLOC_PLAN.md](MALLOC_PLAN.md) §1.
 
 Each thread owns a `Heap` (or uses `AllocCore` directly for single-thread
 mode). The `Heap` holds a `HeapCore` bound via raw-pointer TLS with a
-reentrancy fallback (introduced in Phase 11.5 hardening). On `SeferMalloc`,
+reentrancy fallback (introduced in Phase 11.5 hardening). On `SeferAlloc`,
 `current_for_alloc()` performs a registry hop to find or create the per-thread
 `HeapCore`.
 
@@ -227,7 +227,7 @@ batches hurt locality with no throughput gain.
 
 ### TLS heap binding
 
-`SeferMalloc::alloc` calls `current_for_alloc()`, which loads a thread-local
+`SeferAlloc::alloc` calls `current_for_alloc()`, which loads a thread-local
 raw pointer to the current `HeapCore`. On first call per thread the pointer is
 null, triggering a one-time `HeapRegistry::claim()` (a `Mutex`-protected slot
 claim). After init the TLS pointer is stable for the thread's lifetime;
@@ -334,7 +334,7 @@ cache, every large alloc+free round-trips through the OS. OPT-E adds a
 rather than munmapped. On a cache hit, the next large alloc reuses it with no
 OS call. Measured speedup on 4 MiB alloc+free: **~150 ns vs ~760 ns for
 mimalloc (~5x faster)** and ~150 ns vs ~910 ns at 16 MiB (~6x faster). See
-[MALLOC_BENCH.md](MALLOC_BENCH.md) OPT-E section.
+[ALLOC_BENCH.md](ALLOC_BENCH.md) OPT-E section.
 
 **Adaptive policy** (tasks #90-#92, the "client controls / we ship sane
 defaults" model):
@@ -441,15 +441,15 @@ commit 4e034e5), not the everyday cycle. See CLAUDE.md "Speed" section.
 
 ## 9. Performance summary
 
-Full measurements and OPT candidates: [MALLOC_BENCH.md](MALLOC_BENCH.md) and
+Full measurements and OPT candidates: [ALLOC_BENCH.md](ALLOC_BENCH.md) and
 [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md).
 
 ### Single-thread small-class churn
 
-`SeferMalloc` is approximately 1.2-2x behind mimalloc on small classes
+`SeferAlloc` is approximately 1.2-2x behind mimalloc on small classes
 (16-256 B). The gap is a constant per-call overhead from the TLS registry hop
 (`current_for_alloc`) and the `stamp_segment_owner` Acquire load on every
-`alloc`. At 1024 B `SeferMalloc` equals or leads mimalloc.
+`alloc`. At 1024 B `SeferAlloc` equals or leads mimalloc.
 
 Flamegraph hot paths (small-class, single-thread):
 1. `SegmentTable::contains_base` -- O(segments) scan per `dealloc` (now O(1)
@@ -461,19 +461,19 @@ Flamegraph hot paths (small-class, single-thread):
 
 | Workload | T=1 | T=2 | T=4 |
 |---|---|---|---|
-| larson SeferMalloc | ~21 M ops/s | ~25 M | **~40 M** |
+| larson SeferAlloc | ~21 M ops/s | ~25 M | **~40 M** |
 | larson mimalloc    | ~27 M ops/s | ~19 M | ~32 M |
-| mstress SeferMalloc | ~25 M ops/s | ~43 M | ~65 M |
+| mstress SeferAlloc | ~25 M ops/s | ~43 M | ~65 M |
 | mstress mimalloc    | ~33 M ops/s | ~43 M | ~65 M |
 
-At T=4 (larson) `SeferMalloc` passes mimalloc. The per-thread heap means the
+At T=4 (larson) `SeferAlloc` passes mimalloc. The per-thread heap means the
 fast path takes no shared lock; cross-thread frees route through the per-segment
 ring without contending the producer. mimalloc shows a dip at T=2 (larson) on
-this host that `SeferMalloc` does not exhibit.
+this host that `SeferAlloc` does not exhibit.
 
 ### Large alloc / free (after OPT-E large-segment cache)
 
-`SeferMalloc` 4 MiB alloc+free: **42 ns** vs mimalloc 788 ns -- **18x faster**.
+`SeferAlloc` 4 MiB alloc+free: **42 ns** vs mimalloc 788 ns -- **18x faster**.
 The cache eliminates the OS round-trip on repeated large alloc+free cycles.
 Without the cache (before #65) every large `dealloc` called `munmap`/
 `VirtualFree`, making large allocs significantly slower than mimalloc.
@@ -489,7 +489,7 @@ pattern: -28.6% time (alloc avoided entirely).
 The single-thread small-class hot path remains the performance gap relative to
 mimalloc. OPT-C (stamp cache) and OPT-B (hash lookup) are 1-2% polish items.
 The multi-thread story is competitive-to-ahead. These numbers are from a
-Windows 10 dev machine; see [MALLOC_BENCH.md](MALLOC_BENCH.md) for the full
+Windows 10 dev machine; see [ALLOC_BENCH.md](ALLOC_BENCH.md) for the full
 context and caveats.
 
 ---
@@ -499,11 +499,11 @@ context and caveats.
 | Document | What it covers |
 |---|---|
 | [DESIGN.md](DESIGN.md) | Cartographer / Membrane / Hand model; the Region<T> dense generational layout; where `unsafe` lives and why |
-| [MALLOC_PLAN.md](MALLOC_PLAN.md) | Phase 8-13 spec: the four showstoppers and how they are dissolved; architecture descent diagram; per-phase contracts |
-| [INVARIANTS.md](INVARIANTS.md) | I1-I6 (Region/Handle face) and M1-M8 (malloc face); why handles, not pointers |
+| [ALLOC_PLAN.md](ALLOC_PLAN.md) | Phase 8-13 spec: the four showstoppers and how they are dissolved; architecture descent diagram; per-phase contracts |
+| [INVARIANTS.md](INVARIANTS.md) | I1-I6 (Region/Handle face) and M1-M8 (alloc face); why handles, not pointers |
 | [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) | M6 decommit policy; the proof that epoch reclamation (M11) is not needed under Variant-2 cross-thread free |
 | [PHASE_NUMA_DESIGN.md](PHASE_NUMA_DESIGN.md) | NUMA OS seam; integration points; migration strategy; testing without real multi-socket hardware |
 | [CROSS_THREAD_STATE_MACHINES.md](CROSS_THREAD_STATE_MACHINES.md) | Formal state-machine spec for SM-BLOCK and SM-SEGMENT; actor rules; loom verification target |
 | [RACE_DRAIN_RECLAIM.md](RACE_DRAIN_RECLAIM.md) | Full diagnostic trail of the drain-reclaim UAF (§1-§14); the true root cause (class derivation §13); the shipped fix |
-| [MALLOC_BENCH.md](MALLOC_BENCH.md) | Single-thread and MT benchmark results; OPT-E large cache; heap-core pinning honest verdict; all numbers in context |
+| [ALLOC_BENCH.md](ALLOC_BENCH.md) | Single-thread and MT benchmark results; OPT-E large cache; heap-core pinning honest verdict; all numbers in context |
 | [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md) | Flamegraph analysis across 4 workloads; 6 OPT candidates (A-H) with estimated impact |

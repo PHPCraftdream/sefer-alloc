@@ -1,4 +1,4 @@
-//! Phase 12.5 — the **headline gate**: install `SeferMalloc` as the process's
+//! Phase 12.5 — the **headline gate**: install `SeferAlloc` as the process's
 //! `#[global_allocator]` and run a **multithreaded** `Vec`/`String`/`HashMap`/`Box`
 //! churn where worker threads **spawn AND exit mid-allocation**.
 //!
@@ -16,7 +16,7 @@
 //!
 //! ## What it forces
 //!
-//! - Workers allocate through `SeferMalloc` (the installed global allocator):
+//! - Workers allocate through `SeferAlloc` (the installed global allocator):
 //!   every `Vec`/`String`/`Box`/`HashMap` op routes through the registry-backed
 //!   heap via raw-pointer TLS.
 //! - Workers SPAWN and EXIT mid-allocation: on exit the `AbandonGuard::drop`
@@ -49,14 +49,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use sefer_alloc::SeferMalloc;
+use sefer_alloc::SeferAlloc;
 
 // Install sefer-alloc as the process-wide global allocator for this test
 // binary. Every allocation in this binary — including libtest's harness
 // allocations and every worker thread's `Vec`/`String` — routes through
-// `SeferMalloc` and the registry.
+// `SeferAlloc` and the registry.
 #[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
+static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // Serialise against the other registry-touching tests (`registry_basic`,
 // `global_alloc_installed`). The registry is a process-global static; its

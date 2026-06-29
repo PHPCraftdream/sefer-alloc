@@ -24,7 +24,7 @@ and form the spec that every future change must keep green.
 
 These hold for the segment substrate / allocator faces (`AllocCore` and the
 future `GlobalAlloc` face). I1–I6 continue to hold for the Handle face. Spec
-source: `docs/MALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
+source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
 
 - **M1 — validity.** Every pointer returned by `alloc(layout)` is non-null
   (unless OOM), valid for `layout.size()` bytes, and aligned to `layout.align()`.
