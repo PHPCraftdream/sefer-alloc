@@ -8,42 +8,122 @@
 [![100% Rust](https://img.shields.io/badge/100%25%20Rust-no%20C%2FC%2B%2B%20deps-orange.svg)](#why-bother)
 [![unsafe: confined](https://img.shields.io/badge/unsafe-confined%20to%20named%20seams-yellow.svg)](#where-unsafe-lives-the-complete-list)
 
-> A safe-by-construction, **100 % Rust** memory toolkit: a single-threaded
-> handle store and a drop-in `#[global_allocator]` over **one verified segment
-> substrate**, compiler-enforced unsafe-confinement, **no C / C++ libraries
+> A safe-by-construction, **100 % Rust** memory toolkit: a drop-in
+> `#[global_allocator]` and a typed handle store over one verified segment
+> substrate. Compiler-enforced `unsafe` confinement, **no C / C++ libraries
 > pulled in** (no `libnuma`, no `mimalloc`, no `jemalloc`, no `snmalloc` /
 > `tcmalloc`) — and **up to ~18× faster than `mimalloc`** on cached large
-> alloc/free after the OPT-E large-cache.
-
-`sefer-alloc` ships two faces over one substrate:
-
-- **`Region<T>` / `Handle<T>`** — a safe-by-construction handle store. Generational
-  handles instead of pointers; a stale handle returns `None`, never UB. Default
-  feature `std`; also builds `no_std` + `alloc`. The default build is
-  `#![forbid(unsafe_code)]` at the top; the only `unsafe` comes from
-  `slotmap`'s audited core, wrapped by a thin typed membrane.
-- **`SeferMalloc`** — a drop-in `#[global_allocator]` over the same segment
-  substrate (opt-in `production` feature). Under the recommended `production`
-  feature the crate becomes `#![deny(unsafe_code)]` and every `unsafe` lives
-  in **seven named confined seams** (`alloc_core::{os, node}` +
-  `global::{sefer_malloc, tls_heap, fallback}` +
-  `registry::{heap_slot, heap_registry}`) — never in the alloc-path body
-  outside them. Every `unsafe` block carries a `// SAFETY:` proof. The
-  compiler enforces the confinement; a stray `unsafe` outside a named seam
-  is a hard error. The complete inventory by feature is in
-  [Where unsafe lives](#where-unsafe-lives-the-complete-list) below.
-
-The substrate is the same for both faces: SEGMENT-aligned (4 MiB) OS-backed
-spans, self-hosted metadata (no `Vec`/`HashSet`/`std::alloc` on any alloc path),
-per-thread heaps, non-intrusive cross-thread free through a per-segment MPSC
-ring. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute
-end-to-end tour.
+> alloc/free.
 
 ---
 
-## Quick demo
+## Install
 
-### Single-threaded handle store
+```toml
+[dependencies]
+sefer-alloc = { version = "0.1", features = ["production"] }
+```
+
+Or via cargo:
+
+```sh
+cargo add sefer-alloc --features production
+```
+
+The `production` feature is the recommended set for any long-running
+multi-thread or async workload. It is shorthand for
+`alloc-global + alloc-xthread + alloc-decommit + fastbin` — the drop-in
+`GlobalAlloc` face, lock-free cross-thread free, OS page decommit, and
+the per-thread fast-bin magazine. Without `alloc-decommit` the
+`SegmentTable`'s slot-recycle is off and the 1024-segment ceiling
+becomes a hard cap.
+
+For the bare `no_std` + `alloc` handle-store core, see
+[Two faces](#two-faces) below; for the full feature matrix, see
+[Features matrix](#features-matrix).
+
+---
+
+## Basic usage
+
+Drop-in `#[global_allocator]` — three lines, zero configuration. Every
+`Vec` / `Box` / `String` / `HashMap` allocation in your process
+(including those made by `tokio`, `rayon`, `serde_json`, etc.) goes
+through `sefer-alloc`.
+
+```rust
+use sefer_alloc::SeferMalloc;
+
+#[global_allocator]
+static GLOBAL: SeferMalloc = SeferMalloc::new();
+
+fn main() {
+    let v: Vec<u8> = (0..1024).map(|i| i as u8).collect();
+    println!("vector of {} bytes", v.len());
+}
+```
+
+`SeferMalloc::new()` uses defaults tuned for throughput-first workloads
+(unbounded large-cache, 256 MiB headroom, 1 s decay interval, 10 %
+decay rate, event-driven mode). For RSS-sensitive or container
+deployments, see [Configuration](#configuration) below.
+
+---
+
+## Configuration
+
+For RSS-bounded servers, containers, or any deployment where you want
+to cap how much memory the allocator holds onto, use
+`SeferMalloc::with_config(...)`. Every builder method is `const fn`,
+so the config lives in a `static` initialiser and is resolved at
+compile time — zero runtime overhead, no env vars, no parse errors.
+
+```rust
+use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+
+const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+    .budget_bytes(512 * 1024 * 1024)      // 512 MiB hard ceiling per shard
+    .headroom_bytes(64 * 1024 * 1024)     //  64 MiB anti-thrash floor
+    .decay_interval_ms(200)               // 200 ms between decay ticks
+    .decay_rate_percent(25)               //  25 % of excess released per tick
+    .mode(LargeCacheMode::Lazy);          // event-driven (no background thread)
+
+#[global_allocator]
+static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+```
+
+### Parameters
+
+| Method | Default | What it does |
+|---|---|---|
+| `.budget_bytes(N)` | `None` (unbounded) | Per-shard hard ceiling on total cached bytes. Set to your container's RSS limit. FIFO eviction fires before admitting a new span that would exceed the limit. `0` ⇒ unbounded. |
+| `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
+| `.decay_interval_ms(N)` | `1000` ms | Minimum wall-clock interval between consecutive decay ticks. A tick computes `excess = cached − headroom` and releases `excess × rate` back to the OS. |
+| `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
+| `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — event-driven: each large alloc/free checks if the interval has elapsed; if so, one decay step runs inline. No background thread, idle process pays nothing. **`Background` / `Both`** — reserved for a future background scavenger; in 0.1 they fall back to `Lazy`. |
+
+The model is **"allocate fast, release slowly"**: each tick removes a
+constant fraction of the current excess, so the cache approaches the
+headroom aggressively when far above it and gently when near it —
+self-damping, no oscillation. An idle process pays nothing (the tick
+is gated by the very next large alloc/free).
+
+`SeferMalloc::new()` is equivalent to
+`SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`. Want to set
+values from env / CLI / a config file? Read them in your own code and
+pass to the builder — the allocator is intentionally agnostic.
+
+Full reference + a worked tokio server example + how to verify the
+config is live: **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)**.
+
+---
+
+## Two faces
+
+`sefer-alloc` ships a second face over the same substrate — a typed
+handle store for slot-storage use cases. Generational handles instead
+of pointers; a stale handle returns `None`, never UB. This face needs
+no features beyond the default:
 
 ```rust
 use sefer_alloc::Region;
@@ -59,59 +139,26 @@ assert_eq!(region.get(a), None);          // stale handle → None, never UB
 assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 ```
 
-### Drop-in global allocator
+For `no_std` + `alloc` targets, disable the `std` feature:
+`sefer-alloc = { version = "0.1", default-features = false }`. The
+default build is `#![forbid(unsafe_code)]` at the top; the only
+`unsafe` comes from `slotmap`'s audited core wrapped by a thin typed
+membrane.
 
-```rust
-use sefer_alloc::SeferMalloc;
+The two faces share one substrate: SEGMENT-aligned (4 MiB) OS-backed
+spans, self-hosted metadata (no `Vec` / `HashSet` / `std::alloc` on
+any alloc path), per-thread heaps, non-intrusive cross-thread free
+through a per-segment MPSC ring. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute tour.
 
-#[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::new();
-
-fn main() {
-    let v: Vec<u8> = (0..1024).map(|i| i as u8).collect();
-    let s = format!("vector of {} bytes", v.len());
-    println!("{s}");
-}
-```
-
-```toml
-[dependencies]
-sefer-alloc = { version = "0.1", features = ["production"] }
-```
-
-The `production` feature is shorthand for `alloc-global + alloc-xthread +
-alloc-decommit` — the recommended set for any long-running multi-thread or
-async workload (without `alloc-decommit` the `SegmentTable`'s slot-recycle is
-off and the 1024-segment ceiling becomes a hard cap). See
-[Features matrix](#features-matrix) below.
-
-### Tune at compile time (const builder API)
-
-The large-segment cache exposes five knobs via the `LargeCacheConfig`
-builder — all `const fn`, so the config lives in a `static` initialiser
-and is resolved at compile time (zero overhead, no env reads, no parse
-errors at runtime). A typical RSS-bounded server profile:
-
-```rust
-use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
-
-const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
-    .budget_bytes(512 * 1024 * 1024)      // hard ceiling on cached bytes
-    .headroom_bytes(64 * 1024 * 1024)     // floor — decay is a no-op below this
-    .decay_interval_ms(200)               // ms between decay ticks
-    .decay_rate_percent(25)               // % of excess released per tick
-    .mode(LargeCacheMode::Lazy);          // event-driven (default)
-
-#[global_allocator]
-static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
-```
-
-Defaults (`headroom=256 MiB`, `interval=1 s`, `rate=10 %`, `budget=unbounded`,
-`mode=Lazy`) are tuned for throughput-first; the snippet above tightens
-them for a container with a strict RSS limit. `SeferMalloc::new()` is
-equivalent to `SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`.
-Full reference, including how each knob composes and a worked tokio
-example, lives in **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)**.
+Under `production`, the crate becomes `#![deny(unsafe_code)]` and every
+`unsafe` lives in **seven named confined seams** (`alloc_core::{os,
+node}` + `global::{sefer_malloc, tls_heap, fallback}` +
+`registry::{heap_slot, heap_registry}`) — never in the alloc-path body
+outside them. Each `unsafe` block carries a `// SAFETY:` proof; the
+compiler enforces the confinement (a stray `unsafe` outside a named
+seam is a hard error). Complete inventory:
+[Where unsafe lives](#where-unsafe-lives-the-complete-list).
 
 ---
 
@@ -586,37 +633,11 @@ want a hard RSS ceiling (containers, mobile), add
 
 ---
 
-## Quick start
+## Run the examples
 
-> Need the full step-by-step for a real project, including the three
-> runtime knobs (size limit / release period / release trigger)?
-> See **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)** — consolidated
-> integration guide with worked examples.
-
-### Add to `Cargo.toml`
-
-Application-level handle store (single-threaded core):
-
-```toml
-[dependencies]
-sefer-alloc = "0.1"
-```
-
-`no_std` + `alloc`:
-
-```toml
-[dependencies]
-sefer-alloc = { version = "0.1", default-features = false }
-```
-
-Drop-in global allocator for a long-running multi-thread workload:
-
-```toml
-[dependencies]
-sefer-alloc = { version = "0.1", features = ["production"] }
-```
-
-### Run the examples
+See [Install](#install) above for the Cargo dependency. The repository
+ships several runnable examples that exercise the allocator under real
+workloads:
 
 ```bash
 # Single-threaded handle store
