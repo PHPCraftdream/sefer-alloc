@@ -592,3 +592,175 @@ share > 60%):
    занимает 40–43% CPU. Это не баг новых бенчей — это структурное свойство criterion
    при малых inner loops (< 10 µs). Для полного изоляционного профиля нужен samply
    или standalone binary (см. §6.3 Рекомендация).
+
+---
+
+## §7 — Post-fastbin re-investigation: где сидит реальный потолок (2026-06-29)
+
+После завершения проекта fast-bin/tcache (P0–P7, см.
+[`FASTBIN_DESIGN.md`](FASTBIN_DESIGN.md)) и доинлайна всего seam'а (#101/#102)
+single-thread larson/mstress T=1 остаются **~1.3× медленнее mimalloc**. Чтобы
+понять, можно ли это закрыть и где, был проведён повторный flamegraph на
+финальном коде. Это исследование — методологически важная глава: оно показывает,
+почему наивная гипотеза «8.5% бита → если убрать = 8.5% выигрыш» не сработала
+и где находится **реальный потолок** для следующих оптимизаций.
+
+### §7.0 — Воспроизведение
+
+```bash
+# WSL Ubuntu 24.04
+export PATH=/usr/lib/linux-tools/6.8.0-124-generic:$HOME/.cargo/bin:$PATH
+
+# Build with line-tables (so srcline resolution maps through inlining)
+CARGO_PROFILE_RELEASE_DEBUG=line-tables-only CARGO_TARGET_DIR=/tmp/sefer-p8 \
+  cargo build --release --example malloc_macro --features "alloc-global alloc-xthread"
+
+# Full sweep (larson + mstress, T=1/2/4, all three allocators)
+perf record -F 2000 -g --call-graph dwarf,8192 \
+  -o /tmp/sefer-p8/p.data \
+  /tmp/sefer-p8/release/examples/malloc_macro
+
+# Source-line resolution (maps through inlining; sefer-alloc functions are
+# fully inlined into the worker body, so symbol-level resolution misses them)
+perf report --stdio -i /tmp/sefer-p8/p.data -g none \
+  --sort=srcline --percent-limit 0.5 --full-source-path
+```
+
+### §7.1 — Where the cycles ACTUALLY go (larson + mstress)
+
+| % | Layer | Notes |
+|---|-------|-------|
+| **21.5%** | `libc malloc.c` (`malloc/free`) | System-arm sampling (slowest arm, gets most samples by elapsed-time-share) |
+| **18.8%** | `examples/malloc_macro.rs:188` (worker body) | xorshift PRNG + array indexing + branch — common to all three arms |
+| **15.9%** | `std/sync/mpmc/mod.rs:948` | **Cross-thread mpmc channel coordination** — bench harness handoff overhead |
+| **9.3%** | `core/sync/atomic.rs:3899` | Atomic operations — half ours (stamp_segment_owner Relaxed-load, owner_state CAS), half bench's |
+| 8.6% | `libc malloc.c:4649` (`_int_free`) | System arm |
+| 7.4% | `libc malloc.c:3347` (`_int_malloc`) | System arm |
+| 5.9% | bench worker body (mstress branch) | |
+| 5.7% | `std/sync/mpmc/mod.rs:397` | More channel coordination |
+| ~3-5% | mimalloc internals (`free.c:209`, `alloc.c:120`) | mimalloc-arm cost |
+| **0.23%** | `src/alloc_core/alloc_bitmap.rs:126` (`mark_alloc`/`mark_free`) | **OUR M2 bitmap** |
+| **0.05%** | `src/alloc_core/alloc_bitmap.rs:116` (`locate`) | **Bit-position math** |
+
+**Total Sefer-alloc own-code: < 1% of MT runtime.**
+
+The sefer functions are fully inlined into the bench worker body by the
+`#[inline(always)]` campaign (#101/#102). At the sample level they show up as
+the inlined call sites in `bench_direct_alloc`'s body (the 18.8% line), not as
+separate symbols. So this 18.8% is "worker harness body + inlined sefer-alloc".
+
+### §7.2 — The hypothesis that died
+
+The single-thread BULK microbench profile (`SeferMalloc/16B` from §1 here)
+showed:
+- 8.5% `alloc_bitmap::locate` (bit addressing)
+- 3.8% `is_free` (M2 double-free check)
+- 5.9% `contains_base` hash probe
+- … etc.
+
+Naive reading: if we remove these on the dealloc fast path, we save 12-18%.
+
+That informed the [P8 design](FASTBIN_DESIGN.md#p8-investigation--idea-2-bintable-bitmap--in-block-key-reverted):
+replace `AllocBitmap::is_free` in `dealloc_small` with an in-block key in word1.
+P8 was implemented cleanly (correctness preserved, 165/0 tests, 43M-op
+cross-thread soak balanced) — but **failed to deliver the expected larson T=1
+improvement**.
+
+**Why:** the MT macro-bench profile above is fundamentally different from the
+single-thread bulk microbench. On MT:
+- The bench harness's mpmc channel coordination is **16%** of runtime alone.
+- libc malloc dominates (the System arm bench is slow; gets sampled most).
+- Our entire allocator + its bitmap is **< 1%** of MT runtime.
+
+The 8.5% bitmap-locate cost from §1 was an artifact of a tight microbench
+where everything else was fast. On a real MT workload with thread
+coordination, channel overhead, and atomics, the bitmap is a rounding error.
+
+**Lesson: profile the workload you're trying to optimize, not a different one
+that happens to be available.** The §1 microbench was useful for finding
+small-class hot paths under the inline campaign (#101/#102 — where the entire
+hot path is one fused function and every nanosecond matters); it is **NOT**
+the right profile for guiding cross-thread MT optimizations.
+
+### §7.3 — Where the larson T=1 gap REALLY sits
+
+Subtracting overhead that isn't ours:
+- libc/System arm: not our problem.
+- bench worker body: common to all arms.
+- mpmc channel: bench harness.
+
+What's left of "us" in the larson workload:
+1. **Atomic operations ~4-5%** (half of the 9.3% atomics line is ours):
+   `stamp_segment_owner` Relaxed-load + compare on every alloc (the OPT-C
+   cache already reduced this from Acquire+Release to Relaxed; further
+   reduction would require eliminating the per-alloc stamp entirely — P4
+   hoisted it into refill on the magazine hit path, but the **large path**
+   and the **bulk-bypass path** still per-alloc stamp).
+2. **`dealloc_routing` reads on every dealloc**: `magic_at`, `owner_thread_free_at`,
+   `kind_at`. Required for safe cross-thread routing. Per the §0 microbench
+   ~5%, on MT roughly similar.
+3. **`contains_base` hash probe on every dealloc**: ~3-5% on the dealloc
+   side. Required as the M2 foreign-pointer guard (catches frees of pointers
+   not allocated by us).
+4. **Inline TLS resolution**: `current_for_alloc()` does a `try_with`-based
+   safe TLS read on every alloc + dealloc. Some unavoidable cost.
+
+The total bottom-up Sefer-attributable cost on MT is roughly 8-12% of bench
+runtime. mimalloc's equivalent is lower because:
+- mimalloc has no foreign-pointer guard (`contains_base` equivalent doesn't exist
+  on its fast path — a free of a non-mimalloc pointer is UB in their model).
+- mimalloc has no M2 double-free guard on the fast path (double-free = UB).
+- mimalloc inlines a more compact hot path (their alloc fast-path is ~11 asm
+  instructions on x86_64; ours is closer to 25-30 due to safety checks).
+
+**The ~1.3× T=1 gap is the integrated cost of all these guards.** It is NOT
+located in any one function we can profile out — that was the P8 lesson.
+
+### §7.4 — What COULD close the gap (and what costs it)
+
+Three remaining levers, ranked by EV per risk:
+
+1. **IDEA 4 — `contains_base` elision on proven-own dealloc**
+   (`docs/FASTBIN_DESIGN.md` §9). Estimated: ~3-6% on dealloc path. Risk:
+   medium (weakens the foreign-pointer M2 guarantee from "exhaustive registry
+   check" to "magic + owner_tf compare"). Effort: 1-2 days.
+
+2. **Per-thread inline TLS pointer to bypass routing on proven-own free**.
+   Cache `owner_thread_free_head_address` in TLS; on dealloc compare directly
+   to TLS cache instead of reading the segment header. Estimated: ~5-8%. Risk:
+   high (TLS lifetime + cross-thread visibility require careful audit; the
+   #100 TLS-flake taught us this). Effort: ~5-day project.
+
+3. **Accept the ~1.3× single-thread gap** as the documented cost of:
+   - M2 double-free safety (vs mimalloc UB)
+   - Foreign-pointer free safety (vs mimalloc UB)
+   - Cross-thread routing readiness (mimalloc has its own but we audit ours)
+   - `#![forbid(unsafe_code)]` at the top level (one audited aperture)
+
+   And focus future perf work on the workloads where we already win:
+   - **Large alloc/free (OPT-E):** 16-39× faster than mimalloc.
+   - **MT T≥2 (larson/mstress):** 1.2-1.3× faster.
+   - **Churn 16-1024B:** 1.7-7.3× faster.
+
+Option 3 is the most honest given the project's safety-first stance. Options 1
+and 2 are viable if a specific deployment needs the single-thread perf and is
+willing to accept the safety trade-off.
+
+### §7.5 — Methodological lesson (the meta finding)
+
+**Re-profile the workload you're optimizing for.** A profile is a tool, not a
+universal truth. The §1 single-thread bulk profile and the §2/§7 MT profile
+look completely different despite measuring "the same" allocator, because:
+
+- Single-thread bulk: tight loop, no thread coordination, no cross-thread paths
+  taken → bitmap addressing dominates the % share.
+- MT macro: thread coordination, channel overhead, atomics dominate; our
+  allocator is < 1% of runtime.
+
+The P8 hypothesis was constructed from the §1 profile and applied to a goal
+defined by §2 numbers. That mismatch is what killed it.
+
+**Practical rule for future fastbin / hot-path work:** before designing a
+"replace X with Y" optimization, re-profile the *specific* benchmark you want
+to improve. If the function you're targeting isn't in the top of *that*
+benchmark's profile, the change won't move *that* number.
