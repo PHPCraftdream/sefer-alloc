@@ -321,9 +321,9 @@ fn t_bulk_then_drain_then_churn() {
 #[test]
 #[cfg(feature = "alloc-xthread")]
 fn t_cross_thread_unaffected() {
+    use sefer_alloc::SeferMalloc;
     use std::alloc::GlobalAlloc;
     use std::sync::mpsc;
-    use sefer_alloc::SeferMalloc;
 
     // Wrap raw pointer for Send.
     struct SendPtr(*mut u8);

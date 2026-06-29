@@ -237,9 +237,7 @@ pub fn current_for_alloc() -> CurrentHeap {
 /// concept does not exist and [`current_for_alloc`] is used directly.
 #[cfg(feature = "alloc-decommit")]
 #[inline(always)]
-pub fn current_for_alloc_with_config(
-    config: &crate::alloc_core::LargeCacheConfig,
-) -> CurrentHeap {
+pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
         Ok(p) if !p.is_null() => CurrentHeap::Own(p),
         Ok(_) => bind_slow_tagged_with_config(*config),

@@ -340,8 +340,7 @@ fn ensure_slow() -> &'static Registry {
                 //   state      = 0 = STATE_FREE
                 //   generation = 0
                 //   heap       = MaybeUninit::uninit() (unspecified, zero is fine)
-                let slots_base: *mut HeapSlot =
-                    core::ptr::addr_of_mut!((*base).slots).cast();
+                let slots_base: *mut HeapSlot = core::ptr::addr_of_mut!((*base).slots).cast();
                 for i in 0..MAX_HEAPS {
                     // SAFETY: `i < MAX_HEAPS`, so `slots_base.add(i)` is within
                     // the allocation. `next_free` is the last field of `HeapSlot`

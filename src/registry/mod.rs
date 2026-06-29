@@ -36,8 +36,6 @@
 
 #[doc(hidden)]
 pub mod bootstrap;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-pub(crate) mod tcache;
 #[doc(hidden)]
 pub mod heap_core;
 #[doc(hidden)]
@@ -45,6 +43,8 @@ pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
 mod tagged_ptr;
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+pub(crate) mod tcache;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;

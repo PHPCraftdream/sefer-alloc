@@ -169,7 +169,10 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
     let mut check: Vec<*mut u8> = Vec::with_capacity(20);
     for _ in 0..20 {
         let p = unsafe { (*heap).alloc(layout) };
-        assert!(!p.is_null(), "alloc returned null after flushed double-free");
+        assert!(
+            !p.is_null(),
+            "alloc returned null after flushed double-free"
+        );
         check.push(p);
     }
     let set: HashSet<usize> = check.iter().map(|&p| p as usize).collect();
@@ -300,7 +303,10 @@ fn t_false_positive_handled() {
 
     // Alloc again: should return p (LIFO from the magazine).
     let p2 = unsafe { (*heap).alloc(layout) };
-    assert!(!p2.is_null(), "alloc returned null after false-positive free");
+    assert!(
+        !p2.is_null(),
+        "alloc returned null after false-positive free"
+    );
 
     // The block should be reusable.
     unsafe { core::ptr::write_bytes(p2, 0xBB, 16) };

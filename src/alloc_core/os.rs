@@ -196,4 +196,3 @@ pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
     // `aligned_vmem::recommit` validates the range and is a no-op under miri.
     unsafe { vmem::recommit(base, start_offset, end_offset) };
 }
-

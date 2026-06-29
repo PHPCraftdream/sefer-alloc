@@ -152,10 +152,7 @@ fn t7_conservation() {
         let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
         for i in 0..N {
             let p = unsafe { (*heap).alloc(layout) };
-            assert!(
-                !p.is_null(),
-                "alloc returned null at round {round}, i={i}"
-            );
+            assert!(!p.is_null(), "alloc returned null at round {round}, i={i}");
             // Write pattern to verify usability.
             unsafe { core::ptr::write_bytes(p, (round & 0xFF) as u8, 32) };
             ptrs.push(p);
@@ -168,7 +165,10 @@ fn t7_conservation() {
 
     // Final sanity: allocate one more and verify it works.
     let p = unsafe { (*heap).alloc(layout) };
-    assert!(!p.is_null(), "final alloc returned null after conservation loop");
+    assert!(
+        !p.is_null(),
+        "final alloc returned null after conservation loop"
+    );
     unsafe {
         core::ptr::write_bytes(p, 0x55, 32);
         assert_eq!(p.read(), 0x55, "final read-back mismatch");

@@ -293,9 +293,7 @@ impl AllocCore {
     /// ```
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
-    pub fn new_with_config(
-        config: super::large_cache_config::LargeCacheConfig,
-    ) -> Option<Self> {
+    pub fn new_with_config(config: super::large_cache_config::LargeCacheConfig) -> Option<Self> {
         let mut core = Self::new_inner()?;
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
@@ -1147,12 +1145,7 @@ impl AllocCore {
     /// identical to a handed-out block.
     #[doc(hidden)]
     #[inline]
-    pub fn refill_class(
-        &mut self,
-        class_idx: usize,
-        want: usize,
-        out: &mut [*mut u8],
-    ) -> usize {
+    pub fn refill_class(&mut self, class_idx: usize, want: usize, out: &mut [*mut u8]) -> usize {
         debug_assert!(
             out.len() >= want,
             "refill_class: out.len() ({}) < want ({})",

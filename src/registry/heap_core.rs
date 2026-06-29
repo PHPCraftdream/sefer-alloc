@@ -326,8 +326,8 @@ impl HeapCore {
         // through the magazine/refill).
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
-            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
             use super::tcache::BULK_THRESHOLD;
+            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
             let size = layout
                 .size()
                 .max(crate::alloc_core::size_classes::MIN_BLOCK);
@@ -396,8 +396,7 @@ impl HeapCore {
                     }
                     // P7: bump refill streak. Each refill = REFILL_N allocs
                     // without a free for this class (magazine was empty).
-                    self.tcache.alloc_streak[c] =
-                        self.tcache.alloc_streak[c].saturating_add(1);
+                    self.tcache.alloc_streak[c] = self.tcache.alloc_streak[c].saturating_add(1);
 
                     // P7: if streak just reached BULK_THRESHOLD, flush the
                     // magazine. The refill pulled n blocks into the magazine;
@@ -408,10 +407,7 @@ impl HeapCore {
                     if self.tcache.alloc_streak[c] == BULK_THRESHOLD {
                         let new_cnt = n - 1;
                         if new_cnt > 0 {
-                            self.core.flush_class(
-                                c,
-                                &self.tcache.slots[c][0..new_cnt],
-                            );
+                            self.core.flush_class(c, &self.tcache.slots[c][0..new_cnt]);
                         }
                         self.tcache.count[c] = 0;
                         return self.tcache.slots[c][new_cnt];
@@ -481,8 +477,8 @@ impl HeapCore {
     fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
-            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX, MIN_BLOCK};
-            use super::tcache::{TCACHE_CAP, FLUSH_N, TCACHE_KEY};
+            use super::tcache::{FLUSH_N, TCACHE_CAP, TCACHE_KEY};
+            use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK, SMALL_ALIGN_MAX};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
             if align <= SMALL_ALIGN_MAX {
@@ -522,8 +518,7 @@ impl HeapCore {
                     // the same pointer twice. The bitmap check closes
                     // that window.
                     let key = TCACHE_KEY ^ (self.id as usize);
-                    let word1_ptr = Node::offset(ptr, core::mem::size_of::<usize>())
-                        as *mut usize;
+                    let word1_ptr = Node::offset(ptr, core::mem::size_of::<usize>()) as *mut usize;
                     let word1 = Node::read_usize(word1_ptr as *const usize);
                     if word1 == key {
                         // (1) bounded magazine scan
@@ -566,9 +561,7 @@ impl HeapCore {
                     // alloc side stays in bypass mode. Under churn,
                     // overflow is rare (alloc pops keep cnt < CAP), so
                     // this check adds zero overhead.
-                    if self.tcache.alloc_streak[c]
-                        >= super::tcache::BULK_THRESHOLD
-                    {
+                    if self.tcache.alloc_streak[c] >= super::tcache::BULK_THRESHOLD {
                         // Flush the full magazine to the substrate.
                         self.core
                             .flush_class(c, &self.tcache.slots[c][0..TCACHE_CAP]);
@@ -578,8 +571,7 @@ impl HeapCore {
                         return;
                     }
                     // Normal overflow: half-flush, then push.
-                    self.core
-                        .flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
+                    self.core.flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
                     let remaining = TCACHE_CAP - FLUSH_N;
                     for i in 0..remaining {

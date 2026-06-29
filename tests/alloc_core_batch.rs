@@ -70,11 +70,7 @@ fn t_refill_equiv_inner(size: usize, align: usize, n: usize) {
 
     // Every pointer is distinct (conservation: no duplicates).
     let unique: HashSet<usize> = buf.iter().map(|p| *p as usize).collect();
-    assert_eq!(
-        unique.len(),
-        n,
-        "refill_class returned duplicate pointers"
-    );
+    assert_eq!(unique.len(), n, "refill_class returned duplicate pointers");
 
     // Round-trip: dealloc each individually through the public API.
     let layout = Layout::from_size_align(size, align).unwrap();
@@ -168,7 +164,11 @@ fn t_refill_spans_segments() {
         assert!(!ptr.is_null(), "buf[{i}] is null");
     }
     let unique: HashSet<usize> = buf.iter().map(|p| *p as usize).collect();
-    assert_eq!(unique.len(), n, "duplicate pointers in multi-segment refill");
+    assert_eq!(
+        unique.len(),
+        n,
+        "duplicate pointers in multi-segment refill"
+    );
 
     // At least 2 distinct segment bases.
     let bases: HashSet<usize> = buf.iter().map(|&p| seg_base(p)).collect();

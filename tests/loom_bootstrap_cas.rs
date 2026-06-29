@@ -60,10 +60,7 @@ struct Registry {
 ///
 /// Returns the pointer to the (model) Registry that was initialised and
 /// published by the single winning thread.
-fn ensure_modeled(
-    ptr: &Arc<AtomicPtr<Registry>>,
-    alloc_count: &Arc<AtomicU32>,
-) -> *mut Registry {
+fn ensure_modeled(ptr: &Arc<AtomicPtr<Registry>>, alloc_count: &Arc<AtomicU32>) -> *mut Registry {
     // Fast path: already READY.
     let p = ptr.load(Ordering::Acquire);
     let p_usize = p as usize;
@@ -223,17 +220,20 @@ fn lazy_init_exactly_once_two_threads() {
         let r2 = t2.join().unwrap();
 
         // Property 1: same pointer
-        assert_eq!(
-            r1, r2,
-            "all threads must observe the SAME final pointer"
-        );
+        assert_eq!(r1, r2, "all threads must observe the SAME final pointer");
         // Property 2: not null, not sentinel
         assert!(!r1.is_null(), "returned pointer must not be null");
-        assert_ne!(r1 as usize, SENTINEL, "returned pointer must not be sentinel");
+        assert_ne!(
+            r1 as usize, SENTINEL,
+            "returned pointer must not be sentinel"
+        );
 
         // Property 3: exactly one winner
         let count = alloc_count.load(Ordering::Relaxed);
-        assert_eq!(count, 1, "exactly ONE thread must execute the winner branch (got {count})");
+        assert_eq!(
+            count, 1,
+            "exactly ONE thread must execute the winner branch (got {count})"
+        );
 
         // Property 4: Release/Acquire synchronisation — loser sees init_marker.
         // SAFETY: r1 is the pointer published by the winner; it came from
@@ -286,13 +286,25 @@ fn lazy_init_exactly_once_three_threads() {
         let r2 = t2.join().unwrap();
 
         // All three must agree on the same pointer.
-        assert_eq!(r1, r_main, "thread 1 and main must observe the same pointer");
-        assert_eq!(r2, r_main, "thread 2 and main must observe the same pointer");
+        assert_eq!(
+            r1, r_main,
+            "thread 1 and main must observe the same pointer"
+        );
+        assert_eq!(
+            r2, r_main,
+            "thread 2 and main must observe the same pointer"
+        );
         assert!(!r_main.is_null(), "returned pointer must not be null");
-        assert_ne!(r_main as usize, SENTINEL, "returned pointer must not be sentinel");
+        assert_ne!(
+            r_main as usize, SENTINEL,
+            "returned pointer must not be sentinel"
+        );
 
         let count = alloc_count.load(Ordering::Relaxed);
-        assert_eq!(count, 1, "exactly ONE thread must execute the winner branch (got {count})");
+        assert_eq!(
+            count, 1,
+            "exactly ONE thread must execute the winner branch (got {count})"
+        );
 
         // SAFETY: same justification as the 2-thread test.
         unsafe {
@@ -328,7 +340,10 @@ fn fast_path_reentry_returns_same_pointer() {
             let first = ensure_modeled(&p2, &a2);
             // Second call in the same thread — must hit the fast path.
             let second = ensure_modeled(&p2, &a2);
-            assert_eq!(first, second, "fast-path re-entry must return the same pointer");
+            assert_eq!(
+                first, second,
+                "fast-path re-entry must return the same pointer"
+            );
             first
         });
 

@@ -13,9 +13,9 @@
 pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
+mod bootstrap;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
-mod bootstrap;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is
