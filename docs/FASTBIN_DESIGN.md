@@ -1002,3 +1002,86 @@ The structural cost of magazine fill on the first 48 allocs remains —
 closing further would require detecting bulk patterns from the FIRST
 alloc (e.g. via a heuristic on alloc size + free history), which adds
 branch complexity without a clear payoff on real workloads.
+
+### P8 investigation — IDEA 2 (BinTable bitmap → in-block key): REVERTED
+
+P8 was an attempted optimization to remove the `AllocBitmap` M2 guard
+calls from `dealloc_small`'s hot path, replacing them with an in-block
+`BINTABLE_KEY ^ segment_base` marker in `word1` (analogous to the
+magazine P3 mechanism). Hypothesis from §0: removing the ~8.5%
+`alloc_bitmap::locate` + ~3.8% `is_free` per-line cost would close
+~10-15% of the larson T=1 gap.
+
+The implementation was completed and tested (165 tests pass, soak
+xthread 43M ops alloc=free balanced — full M2 + cross-thread + decommit
+correctness preserved). The false-positive trade-off was documented (a
+user writing the key value into `word1` before freeing would leak the
+block — 2⁻⁶⁴ chance under non-adversarial use, M2 "never corrupt" still
+upheld). The implementation was clean.
+
+**The measurement refuted the hypothesis.** Re-profiling the larson +
+mstress workload after P8 was applied:
+
+| Layer | % of runtime |
+|-------|--------------|
+| `libc malloc` (System arm) | 21.5% |
+| Bench worker loop body | 18.8% |
+| `std::sync::mpmc` (cross-thread channel) | 15.9% |
+| `core::sync::atomic` | 9.3% |
+| `libc free` | 8.6% |
+| mimalloc internals | 3-5% |
+| **Sefer `alloc_bitmap.rs:126` (mark_alloc/mark_free)** | **0.23%** |
+| **Sefer `alloc_bitmap.rs:116` (locate)** | **0.05%** |
+
+The bitmap cost on the MT macro-bench is **under 1% of total runtime**,
+not the 8.5+3.8% seen in the single-thread bulk microbench from §0.
+Different profile dominates on MT: channel coordination, atomics, and
+bench-harness overhead, not our dealloc bitmap.
+
+P8 also could not remove the bitmap entirely — `reclaim_offset` (the
+cross-thread ring drain) uses `is_free` as its own M2 guard, so
+`mark_free` had to stay maintained. Net mechanical change: replaced
+1 bitmap-byte-read + 1 bitmap-RMW with 1 word1-read + 1 word1-RMW.
+**Roughly equivalent cost, no improvement.**
+
+Honest measured result (P7 → P8 ratios):
+
+|        | larson T=1 | mstress T=1 | bulk 16B | churn 16B |
+|--------|------------|-------------|----------|-----------|
+| P7     | 1.34× slow | 1.33× slow  | 2.25× slow | 1.90× fast |
+| P8     | 1.32-1.60× slow (noisy) | 1.12-1.65× slow (noisy) | 1.80× slow | 1.78× fast |
+
+- larson T=1 / mstress T=1: within noise, no significant change.
+- bulk 16B: 0.45× ratio improvement (a real but small bonus).
+- churn: slightly worse (within noise; the extra word1 writes on
+  `pop_free` + `dealloc_small` may add a touch of work).
+
+**Decision: REVERT P8.** Net analysis: marginal bulk bonus +
+unchanged main target + new false-positive surface + added complexity
+(two-key system: TCACHE_KEY for magazine, BINTABLE_KEY for BinTable).
+Negative-value trade-off.
+
+**What this means for further perf work:** the larson T=1 / mstress T=1
+gap is NOT in the bitmap or in any single piece of our code we can
+profile out. It's distributed across:
+
+1. **Atomic operations 9.3%** — `stamp_segment_owner` Relaxed-load
+   already optimized via OPT-C; the remaining atomic cost is structural
+   (cross-thread coherence cannot be eliminated for free).
+2. **`dealloc_routing` reads** (magic_at, owner_thread_free_at, kind_at)
+   on every dealloc — required for safe cross-thread routing.
+3. **mimalloc's compact inline hot path** — they have less work per
+   call inherently.
+
+Closing the larson T=1 gap meaningfully requires either:
+- IDEA 4 (`contains_base` elision on proven-own free path) — small,
+  medium risk; would remove ~3-6%.
+- A structural rework of cross-thread routing (e.g. inline TLS pointer
+  to skip routing reads on proven-own frees) — high effort, high risk.
+- Accept the 1.3× single-thread gap as the price of our safety
+  guarantees vs mimalloc's looser model.
+
+The flamegraph evidence supports the third option: **the gap is real
+but bounded, and the next 5-10% requires investments that may not be
+worth the risk for our project's actual workload (MT, large allocs,
+churn — all of which we already win on by significant margins).**
