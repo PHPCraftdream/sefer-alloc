@@ -119,6 +119,46 @@ jobs:
           components: miri
       - run: cargo miri test ${{ matrix.test }}
 
+  loom:
+    # Loom model-checking of every concurrency protocol in the crate:
+    # the bootstrap-CAS state-machine (Registry lazy init), the adopt
+    # protocol (HeapRegistry.owner_state), cross-thread protocol
+    # (xthread / remote_ring / thread_free), and the deprecated
+    # experimental tier (sharded / epoch). Every protocol's loom file
+    # ships with a `should_panic` counterfactual that proves the harness
+    # is non-vacuous.
+    #
+    # Loom does NOT compose with the real allocator (it replaces atomics
+    # + threads + the global allocator), so these tests model each
+    # protocol's atomics in isolation against loom's harness — they are
+    # NOT integration tests that run the production code paths.
+    name: loom (${{ matrix.test }})
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg loom"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test: loom_bootstrap_cas
+            features: "alloc-global"
+          - test: loom_registry
+            features: "alloc-global"
+          - test: loom_xthread_protocol
+            features: "alloc-core alloc-xthread"
+          - test: loom_remote_ring
+            features: "alloc-core alloc-xthread"
+          - test: loom_thread_free
+            features: "alloc"
+          - test: loom_sharded
+            features: "experimental"
+          - test: loom_epoch
+            features: "experimental"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --release --features "${{ matrix.features }}" --test ${{ matrix.test }}
+
   tsan:
     # ThreadSanitizer (weak-memory / data-race detector) gate for the
     # cross-thread allocator path. TSan catches missing-synchronization /
