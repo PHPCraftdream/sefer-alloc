@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-28
+
 ### Changed — workspace extraction (tasks #74–#86)
 
 Four independently-publishable companion crates extracted from sefer-alloc
@@ -44,8 +46,6 @@ interop wrappers that delegate to `aligned-vmem` and `numa-shim` respectively.
 allocator codebase to verify the OS-memory unsafe. `aligned-vmem` (~few hundred
 lines, single purpose) and `numa-shim` (~few hundred lines, single purpose) can
 each be audited in complete isolation with `cargo test` confirming green.
-
-## [0.1.0] - 2026-06-28
 
 ### Added — large-cache redesign Phase 3 (alloc-decommit, mode-selector + future stub)
 
