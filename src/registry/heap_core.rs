@@ -302,6 +302,7 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
+            use super::tcache::BULK_THRESHOLD;
             let size = layout
                 .size()
                 .max(crate::alloc_core::size_classes::MIN_BLOCK);
@@ -315,10 +316,35 @@ impl HeapCore {
                         // already stamped during the refill that originally
                         // pulled it. The OPT-C cache guarantees the segment
                         // header still carries our ownership.
+                        //
+                        // P7: NO streak touch here. The streak counts refill
+                        // misses, not individual allocs. This keeps the
+                        // magazine-hit path (the churn hot path) completely
+                        // streak-free — no read, no write of alloc_streak.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
                         return self.tcache.slots[c][new_cnt];
                     }
+
+                    // Magazine miss — check P7 bulk-mode bypass before
+                    // attempting a refill. If this class has hit
+                    // BULK_THRESHOLD consecutive refills without intervening
+                    // frees, skip the magazine and go straight to the
+                    // substrate. This avoids the per-free overflow flush
+                    // cost on alloc-without-free streaks (the bulk pattern).
+                    //
+                    // The check is AFTER the magazine-hit test so the
+                    // churn hot path (magazine hit) never reads
+                    // alloc_streak — zero overhead.
+                    let streak = self.tcache.alloc_streak[c];
+                    if streak >= BULK_THRESHOLD {
+                        let ptr = self.core.alloc(layout);
+                        if !ptr.is_null() {
+                            self.stamp_segment_owner(ptr);
+                        }
+                        return ptr;
+                    }
+
                     // Magazine miss: batch-refill + stamp hoist (P4).
                     // We inline the refill+stamp here instead of calling
                     // `refill_class_stamped` because borrowing `self.core`
@@ -343,6 +369,29 @@ impl HeapCore {
                             self.stamp_segment_owner(p);
                         }
                     }
+                    // P7: bump refill streak. Each refill = REFILL_N allocs
+                    // without a free for this class (magazine was empty).
+                    self.tcache.alloc_streak[c] =
+                        self.tcache.alloc_streak[c].saturating_add(1);
+
+                    // P7: if streak just reached BULK_THRESHOLD, flush the
+                    // magazine. The refill pulled n blocks into the magazine;
+                    // we're about to enter bulk mode on the NEXT alloc, so
+                    // drain everything now to keep M2 invariants clean (no
+                    // blocks stranded in the magazine during bulk mode, so
+                    // live_count accurately reflects handed-out blocks only).
+                    if self.tcache.alloc_streak[c] == BULK_THRESHOLD {
+                        let new_cnt = n - 1;
+                        if new_cnt > 0 {
+                            self.core.flush_class(
+                                c,
+                                &self.tcache.slots[c][0..new_cnt],
+                            );
+                        }
+                        self.tcache.count[c] = 0;
+                        return self.tcache.slots[c][new_cnt];
+                    }
+
                     // Pop the top, leave n-1 in the magazine.
                     let new_cnt = n - 1;
                     self.tcache.count[c] = new_cnt as u16;
@@ -456,7 +505,7 @@ impl HeapCore {
                         let n = self.tcache.count[c] as usize;
                         for i in 0..n {
                             if self.tcache.slots[c][i] == ptr {
-                                return; // in-magazine DF
+                                return; // in-magazine DF — no streak change
                             }
                         }
                         // (2) bitmap check — authoritative for flushed blocks
@@ -464,7 +513,7 @@ impl HeapCore {
                         let off = (ptr as usize - base as usize) as u32;
                         let bm = SegmentMeta::new(base).alloc_bitmap();
                         if bm.is_free(off) {
-                            return; // flushed-then-double-freed
+                            return; // flushed-then-double-freed — no streak change
                         }
                         // Bitmap says alloc → block was carved or refilled
                         // for legitimate use and still carries an old key
@@ -479,7 +528,31 @@ impl HeapCore {
                         self.tcache.count[c] = (cnt + 1) as u16;
                         return;
                     }
-                    // Overflow: half-flush, then push.
+                    // ── P7 bulk-mode bypass on dealloc overflow ────────
+                    // Magazine is full (cnt == TCACHE_CAP). If the alloc
+                    // side is in bulk mode (streak >= BULK_THRESHOLD),
+                    // skip the expensive half-flush + compact + push
+                    // cycle and free directly via core.dealloc. Also
+                    // flush the entire magazine: the blocks in it were
+                    // pushed during the current free batch and should be
+                    // returned to the substrate for clean live_count
+                    // accounting (D1). Streak is NOT modified — it stays
+                    // high so subsequent overflows also bypass, and the
+                    // alloc side stays in bypass mode. Under churn,
+                    // overflow is rare (alloc pops keep cnt < CAP), so
+                    // this check adds zero overhead.
+                    if self.tcache.alloc_streak[c]
+                        >= super::tcache::BULK_THRESHOLD
+                    {
+                        // Flush the full magazine to the substrate.
+                        self.core
+                            .flush_class(c, &self.tcache.slots[c][0..TCACHE_CAP]);
+                        self.tcache.count[c] = 0;
+                        // Free this block directly.
+                        self.core.dealloc(ptr, layout);
+                        return;
+                    }
+                    // Normal overflow: half-flush, then push.
                     self.core
                         .flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
@@ -740,6 +813,20 @@ impl HeapCore {
     #[cfg(feature = "alloc-global")]
     pub fn dbg_last_stamped_segment(&self) -> *mut u8 {
         self.last_stamped_segment
+    }
+
+    /// TEST-ONLY (P7): read the magazine count for class `c`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_tcache_count(&self, c: usize) -> u16 {
+        self.tcache.count[c]
+    }
+
+    /// TEST-ONLY (P7): read the alloc streak counter for class `c`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_alloc_streak(&self, c: usize) -> u8 {
+        self.tcache.alloc_streak[c]
     }
 
     /// TEST-ONLY (P5): force-flush every class's magazine back to the

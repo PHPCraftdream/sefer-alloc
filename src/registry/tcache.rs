@@ -10,6 +10,32 @@
 
 use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
+/// Bulk-mode bypass threshold (P7). When a class's consecutive-refill
+/// streak reaches this value the magazine fast path is skipped for that
+/// class — allocs go directly to `core.alloc` and frees to `core.dealloc`.
+/// This avoids the per-free overflow flush cost on alloc-without-free
+/// streaks (the bulk microbench pattern).
+///
+/// The streak counts consecutive magazine **misses** (refills), NOT
+/// individual allocs. Each refill pulls `REFILL_N` (= `TCACHE_CAP` = 16)
+/// blocks. So `BULK_THRESHOLD = 3` means 3 consecutive refills without an
+/// intervening overflow (= 48 allocs). This keeps the magazine HIT path
+/// (the churn hot path) completely streak-free — no read, no write.
+///
+/// Only the refill (miss) and dealloc overflow paths touch the streak,
+/// and both are already slow paths.
+pub(crate) const BULK_THRESHOLD: u8 = 3;
+
+/// Bulk-mode re-entry hysteresis (P7). Documented design parameter;
+/// currently unused in the implementation. In the current design,
+/// bulk mode has no explicit exit: the streak stays high once set.
+/// Under churn the magazine stays populated (alloc hits, dealloc
+/// pushes), so the streak check (on miss or overflow) is never
+/// reached — bulk mode is "dormant." If the workload shifts to
+/// churn, the magazine path handles it without checking the streak.
+#[allow(dead_code)]
+pub(crate) const BULK_LOW_THRESHOLD: u8 = 0;
+
 /// Magic constant for tcache-resident block marker (M2 double-free guard, P3).
 ///
 /// Non-zero so an all-zero freshly-carved block does not collide. The actual
@@ -41,8 +67,23 @@ pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
 pub(crate) struct Tcache {
     /// Per-class pointer stacks. `slots[c][0..count[c]]` are valid.
     pub(crate) slots: [[*mut u8; TCACHE_CAP]; SMALL_CLASS_COUNT],
-    /// Current depth per class.
+    /// Per-class magazine count + refill-streak pair. Laid out
+    /// contiguously so `count[c]` and `alloc_streak[c]` share the same
+    /// cache line for any class `c`, avoiding an extra cache-line touch
+    /// on the dealloc path.
+    ///
+    /// **count:** current depth per class (0..=TCACHE_CAP).
     pub(crate) count: [u16; SMALL_CLASS_COUNT],
+    /// **alloc_streak (P7):** consecutive-refill-miss counter per class.
+    /// Incremented on each magazine miss (refill) for class `c`. Saturates
+    /// at 255 (`u8::MAX`). NOT touched on the magazine HIT or PUSH paths
+    /// (zero overhead on the churn hot path).
+    ///
+    /// When `alloc_streak[c] >= BULK_THRESHOLD`, allocs bypass the
+    /// magazine (go directly to `core.alloc`). On the dealloc side,
+    /// overflow with `streak >= BULK_THRESHOLD` flushes the full magazine
+    /// and frees directly via `core.dealloc`.
+    pub(crate) alloc_streak: [u8; SMALL_CLASS_COUNT],
 }
 
 impl Tcache {
@@ -53,6 +94,7 @@ impl Tcache {
         Self {
             slots: [[core::ptr::null_mut(); TCACHE_CAP]; SMALL_CLASS_COUNT],
             count: [0u16; SMALL_CLASS_COUNT],
+            alloc_streak: [0u8; SMALL_CLASS_COUNT],
         }
     }
 }

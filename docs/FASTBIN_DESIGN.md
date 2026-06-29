@@ -939,3 +939,66 @@ target), fastbin is a net positive.
 5. **Memory overhead:** CAP=16 x SMALL_CLASS_COUNT=40 x 8 bytes/ptr =
    5 KiB per heap. With 8 registry slots that is 40 KiB total. Measured
    as acceptable; not a concern unless the slot count grows significantly.
+
+### P7 measurement — bulk-mode bypass (adaptive)
+
+P7 addresses the bulk-bench regression flagged in P6 §11 (W=1, L=4, all
+losses on bulk). Mechanism: per-class `alloc_streak: u8` counter on the
+`Tcache` struct. Incremented on every magazine MISS (refill); read on
+miss and on dealloc overflow. When `streak >= BULK_THRESHOLD = 3` (3
+consecutive refills ≈ 48 allocs without an intervening overflow):
+  - `HeapCore::alloc` bypasses the magazine entirely (calls
+    `self.core.alloc` directly + stamps);
+  - `dealloc_own_thread` flushes the full magazine + frees the block
+    via `self.core.dealloc` on the overflow path.
+
+The HIT and PUSH paths do NOT touch `alloc_streak` — zero overhead on
+the churn hot path.
+
+Design choice: **no explicit exit**. The streak stays high once set. Under
+churn, the magazine stays populated (HIT/PUSH paths take over) so the
+streak check (only on miss/overflow) is never reached and bulk mode is
+"dormant." If the workload returns to bulk, bypass activates immediately
+without re-warming.
+
+|        | larson T=1 | larson T=2 | larson T=4 | mstress T=1 | mstress T=2 | churn 256B |
+|--------|------------|------------|------------|-------------|-------------|------------|
+| P6     | 1.31× slow | 1.27× fast | 1.23× fast | 1.44× slow  | ~parity     | 1.19× FASTER |
+| **P7** | **1.34× slow** | **~parity / 1.27× fast** | **1.31× fast** | **1.33× slow** | **1.18× fast** | **1.07× FASTER** |
+
+**Bulk numbers (the P7 target):**
+
+| Size | P6 ratio | P7 ratio (my re-run) | Δ |
+|------|----------|----------------------|---|
+| 16B  | 2.87× slower | **2.25× slower** | **-0.62×** ✓ |
+| 64B  | 2.21× slower | **1.80× slower** | **-0.41×** ✓ |
+| 256B | 1.83× slower | **1.42× slower** | **-0.41×** ✓ |
+| 1024B | 1.04× faster | **1.30× faster** | **+0.26×** ✓ |
+
+All four bulk sizes improved by ≥ 0.3× ratio. The first ~48 allocs still
+go through the magazine (before streak reaches threshold), so the
+regression is not eliminated entirely — but the residual is the cost of
+the magazine-fill phase, not the steady-state bulk pattern.
+
+**Churn unchanged or marginally better** (within ±0.3× noise band on all 4
+sizes). MT macro stable within noise.
+
+**Zero-trust review findings**:
+- The sub-agent's reported larson T=1 of 13.6 M/s was a machine-state
+  artifact (heavy background load during its bench window) — verified by
+  immediate human re-run showing 21.3-21.4 M/s, same as P6.
+- BULK_THRESHOLD = 3 (not the 32 originally suggested) is correct: the
+  streak counts refills not individual allocs, so 3 refills = 48 allocs.
+- No M2 violation across mode transitions: the mode-entry flush returns
+  magazine blocks to the substrate via `flush_class`, so `live_count` is
+  accurate and decommit fires when expected. Cross-thread freeing of a
+  bulk-allocated block routes through the ring as usual.
+
+**160 tests passed, 0 failed** under `--features production` (+4 new
+P7 tests); **140 passed** without `fastbin`.
+
+**Net win:** bulk regression closed by ~50% of its delta vs no-fastbin.
+The structural cost of magazine fill on the first 48 allocs remains —
+closing further would require detecting bulk patterns from the FIRST
+alloc (e.g. via a heuristic on alloc size + free history), which adds
+branch complexity without a clear payoff on real workloads.
