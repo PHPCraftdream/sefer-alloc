@@ -517,8 +517,27 @@ const PROT_READ: i32 = 0x1;
 const PROT_WRITE: i32 = 0x2;
 #[cfg(all(unix, not(miri)))]
 const MAP_PRIVATE: i32 = 0x02;
-#[cfg(all(unix, not(miri)))]
+// MAP_ANON value differs across BSD vs Linux. macOS / *BSD use 0x1000,
+// Linux uses 0x20. Wrong value silently turns mmap into a file-backed
+// mapping attempt (with fd=-1 → EBADF → MAP_FAILED → reserve_aligned
+// returns None). Tested in CI's macOS job.
+#[cfg(all(unix, not(miri), target_os = "linux"))]
 const MAP_ANON: i32 = 0x20;
+#[cfg(all(
+    unix,
+    not(miri),
+    any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly",
+    )
+))]
+const MAP_ANON: i32 = 0x1000;
 #[cfg(all(unix, not(miri)))]
 const MAP_FAILED: usize = usize::MAX;
 #[cfg(all(unix, not(miri)))]
