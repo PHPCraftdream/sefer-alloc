@@ -181,6 +181,31 @@ impl HeapCore {
         })
     }
 
+    /// Construct a fresh heap value bound to slot `id`, using `config` to
+    /// tune the large-segment free-cache. Only present under `alloc-decommit`.
+    ///
+    /// Identical to [`new`](Self::new) except it calls
+    /// [`AllocCore::new_with_config`] so per-thread large-cache behaviour
+    /// matches the compile-time `SeferMalloc::with_config(...)` choice.
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub(crate) fn new_with_config(
+        id: u32,
+        config: crate::alloc_core::LargeCacheConfig,
+    ) -> Option<Self> {
+        let core = AllocCore::new_with_config(config)?;
+        Some(Self {
+            id,
+            core,
+            #[cfg(feature = "alloc-xthread")]
+            thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache: super::tcache::Tcache::new(),
+            #[cfg(feature = "alloc-global")]
+            last_stamped_segment: core::ptr::null_mut(),
+        })
+    }
+
     /// The slot index this heap is bound to. Read by `recycle`/`abandon` to
     /// locate the owning slot from a `*mut HeapCore`.
     #[must_use]

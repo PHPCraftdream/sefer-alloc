@@ -172,6 +172,8 @@ pub use concurrent::{
 pub use concurrent::PinnedRunner;
 
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+pub use alloc_core::LargeCacheConfig;
+#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 pub use alloc_core::LargeCacheMode;
 #[cfg(feature = "alloc-core")]
 pub use alloc_core::{AllocCore, SegmentLayout};

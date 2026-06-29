@@ -2,8 +2,8 @@
 //!
 //! These tests verify the decay policy: an excess over the headroom target is
 //! gradually released to the OS via FIFO eviction, at a configurable rate and
-//! interval. All tests use `dbg_set_decay_config` rather than env vars (except
-//! `env_override_decay_rate`) to avoid flakiness in parallel test runs.
+//! interval. Tests use either `dbg_set_decay_config` (for dynamic overrides) or
+//! `AllocCore::new_with_config` (to set the decay config at construction time).
 //!
 //! Gated on `alloc-core` + `alloc-decommit` (the same gate as the cache itself).
 
@@ -248,30 +248,21 @@ fn decay_interval_respected() {
 
 // ── test 5 ───────────────────────────────────────────────────────────────────
 
-/// `env_override_decay_rate`
+/// `config_decay_rate_percent`
 ///
-/// Set `SEFER_LARGE_CACHE_DECAY_RATE=25` before constructing an AllocCore.
-/// The resulting config must have `decay_rate_bp == 2500` (25%).
-///
-/// NOTE: `std::env::set_var` is not thread-safe. This test is the sole writer
-/// of `SEFER_LARGE_CACHE_DECAY_RATE`; it restores the env immediately. If this
-/// becomes flaky in a highly-parallel test run, mark it `#[ignore]`.
+/// Build a `LargeCacheConfig` with `decay_rate_percent(25)` and verify the
+/// resulting `AllocCore` has `decay_rate_bp == 2500` (25 % → 2500 basis
+/// points).
 #[test]
-fn env_override_decay_rate() {
-    // SAFETY: documented pattern in the test suite (same as env_var_sets_budget
-    // in large_cache_budget.rs). The env key is unique to this test.
-    unsafe {
-        std::env::set_var("SEFER_LARGE_CACHE_DECAY_RATE", "25");
-    }
-    let ac = AllocCore::new().expect("primordial");
-    // Restore immediately so other concurrent AllocCore::new calls are not affected.
-    unsafe {
-        std::env::remove_var("SEFER_LARGE_CACHE_DECAY_RATE");
-    }
+fn config_decay_rate_percent() {
+    use sefer_alloc::LargeCacheConfig;
+
+    let cfg = LargeCacheConfig::new().decay_rate_percent(25);
+    let ac = AllocCore::new_with_config(cfg).expect("primordial");
 
     let (rate_bp, _interval_ms, _headroom) = ac.dbg_decay_config();
     assert_eq!(
         rate_bp, 2500,
-        "SEFER_LARGE_CACHE_DECAY_RATE=25 must parse to 2500 bp; got {rate_bp}"
+        "decay_rate_percent(25) must produce 2500 bp; got {rate_bp}"
     );
 }

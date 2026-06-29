@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — const-builder config API replaces env vars (alloc-decommit)
+
+- **`LargeCacheConfig` const builder** — new type (re-exported from
+  `sefer_alloc::` under `alloc-core + alloc-decommit`). All five knobs
+  that were previously set via environment variables are now expressed at
+  compile time via a `const fn` builder chain:
+
+  ```rust
+  use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+
+  const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+      .budget_bytes(512 * 1024 * 1024)
+      .headroom_bytes(64 * 1024 * 1024)
+      .decay_interval_ms(200)
+      .decay_rate_percent(25)
+      .mode(LargeCacheMode::Lazy);
+
+  #[global_allocator]
+  static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+  ```
+
+- **`SeferMalloc::with_config(config: LargeCacheConfig) -> Self`** (`const fn`,
+  only under `alloc-decommit`) — constructs the allocator with a custom
+  large-cache config. The config is plumbed into each per-thread `AllocCore`
+  on first TLS bind.
+
+- **`SeferMalloc::new()`** unchanged — equivalent to
+  `SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`.
+
+- **`AllocCore::new_with_config(config: LargeCacheConfig) -> Option<Self>`**
+  (`alloc-decommit` only) — new constructor for direct `AllocCore` users.
+
+- **Env vars removed entirely** — `SEFER_LARGE_CACHE_BUDGET`,
+  `SEFER_LARGE_CACHE_HEADROOM_BYTES`, `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS`,
+  `SEFER_LARGE_CACHE_DECAY_RATE`, `SEFER_LARGE_CACHE_MODE` are no longer read.
+  The allocation-free env-var parser in `src/alloc_core/os.rs` is deleted.
+  Default values are byte-identical to what the parsers produced when no variable
+  was set (headroom=256 MiB, interval=1000 ms, rate=10 %, budget=unbounded,
+  mode=Lazy).
+
+- **Tests updated** — `tests/large_cache_budget.rs`, `tests/large_cache_decay.rs`,
+  and `tests/large_cache_mode.rs` no longer use `std::env::set_var`. The
+  env-var test cases are replaced with equivalent `AllocCore::new_with_config`
+  tests that are deterministic and safe to run in parallel.
+
 ## [0.1.0] - 2026-06-28
 
 ### Changed — workspace extraction (tasks #74–#86)

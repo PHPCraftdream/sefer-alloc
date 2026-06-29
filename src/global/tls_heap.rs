@@ -206,6 +206,11 @@ pub enum CurrentHeap {
 /// fallback, in one pass. Used by [`SeferMalloc`](super::SeferMalloc) to
 /// avoid a redundant `fallback::heap_ptr()` comparison (which would
 /// needlessly initialise the fallback on every alloc).
+///
+/// Under `alloc-decommit`, [`current_for_alloc_with_config`] is used
+/// instead (it threads the config into the TLS bind). This function is
+/// kept for `not(alloc-decommit)` builds and direct-API consumers.
+#[cfg_attr(feature = "alloc-decommit", allow(dead_code))]
 #[inline(always)]
 pub fn current_for_alloc() -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
@@ -214,6 +219,25 @@ pub fn current_for_alloc() -> CurrentHeap {
         // an Own pointer or, on registry exhaustion, the fallback marker.
         Ok(_) => bind_slow_tagged(),
         // TLS destroyed: fall back, never null.
+        Err(_) => CurrentHeap::Fallback,
+    }
+}
+
+/// Like [`current_for_alloc`] but plumbs `config` into the newly claimed
+/// `HeapCore` on first call (the TLS bind slow path). On subsequent calls
+/// (TLS pointer already set) the fast path returns the cached pointer
+/// without touching the config.
+///
+/// Only present under `alloc-decommit` — without that feature the config
+/// concept does not exist and [`current_for_alloc`] is used directly.
+#[cfg(feature = "alloc-decommit")]
+#[inline(always)]
+pub fn current_for_alloc_with_config(
+    config: crate::alloc_core::LargeCacheConfig,
+) -> CurrentHeap {
+    match LOCAL.try_with(|c| c.get()) {
+        Ok(p) if !p.is_null() => CurrentHeap::Own(p),
+        Ok(_) => bind_slow_tagged_with_config(config),
         Err(_) => CurrentHeap::Fallback,
     }
 }
@@ -244,6 +268,27 @@ fn bind_slow() -> *mut HeapCore {
 #[cold]
 fn bind_slow_tagged() -> CurrentHeap {
     let heap = HeapRegistry::claim();
+    finish_bind(heap)
+}
+
+/// Like [`bind_slow_tagged`] but uses [`HeapRegistry::claim_with_config`] so
+/// the newly materialised `HeapCore` is configured with `config`. On a
+/// re-claim the existing `HeapCore` is reused as-is.
+///
+/// Only present under `alloc-decommit`.
+#[cfg(feature = "alloc-decommit")]
+#[cold]
+fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
+    let heap = HeapRegistry::claim_with_config(config);
+    finish_bind(heap)
+}
+
+/// Shared post-claim logic: install the cross-thread TFS (under
+/// `alloc-xthread`), publish the pointer into `LOCAL`, arm the
+/// `AbandonGuard`, and return the tagged result. Called from both
+/// [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
+#[cold]
+fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     let heap = if heap.is_null() {
         // Registry exhausted or primordial OOM: fall back, never null.
         return CurrentHeap::Fallback;
@@ -259,9 +304,10 @@ fn bind_slow_tagged() -> CurrentHeap {
     // segments are a safe no-op (unstamped). M10 (never null) is preserved.
     #[cfg(feature = "alloc-xthread")]
     {
-        // SAFETY: `heap` was returned by `claim` and is the slot's sole
-        // writer (the CAS won). We have exclusive `&mut` access by the
-        // single-writer invariant. `install_thread_free` is idempotent.
+        // SAFETY: `heap` was returned by `claim`/`claim_with_config` and is
+        // the slot's sole writer (the CAS won). We have exclusive `&mut`
+        // access by the single-writer invariant. `install_thread_free` is
+        // idempotent.
         let heap_ref: &mut HeapCore = unsafe { &mut *heap };
         heap_ref.install_thread_free();
     }

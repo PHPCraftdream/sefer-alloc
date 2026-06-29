@@ -62,13 +62,18 @@
 use core::alloc::{GlobalAlloc, Layout};
 
 use super::fallback;
-use super::tls_heap::{current_for_alloc, CurrentHeap};
+#[cfg(not(feature = "alloc-decommit"))]
+use super::tls_heap::current_for_alloc;
+#[cfg(feature = "alloc-decommit")]
+use super::tls_heap::current_for_alloc_with_config;
+use super::tls_heap::CurrentHeap;
 
 /// The drop-in `GlobalAlloc` face over the `sefer-alloc` segment substrate,
 /// routed through the global heap registry (Phase 12.2) via raw-pointer TLS
 /// (Phase 12.3).
 ///
-/// Install it as your process's global allocator:
+/// Install it as your process's global allocator (simple form — uses all
+/// large-cache defaults):
 ///
 /// ```no_run
 /// # #[cfg(feature = "alloc-global")]
@@ -77,6 +82,26 @@ use super::tls_heap::{current_for_alloc, CurrentHeap};
 ///
 /// #[global_allocator]
 /// static A: SeferMalloc = SeferMalloc::new();
+/// # }
+/// ```
+///
+/// Or configure the large-cache knobs at compile time (requires the
+/// `alloc-decommit` feature):
+///
+/// ```no_run
+/// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
+/// # {
+/// use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+///
+/// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+///     .budget_bytes(512 * 1024 * 1024)
+///     .headroom_bytes(64 * 1024 * 1024)
+///     .decay_interval_ms(200)
+///     .decay_rate_percent(25)
+///     .mode(LargeCacheMode::Lazy);
+///
+/// #[global_allocator]
+/// static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
 /// # }
 /// ```
 ///
@@ -97,22 +122,93 @@ use super::tls_heap::{current_for_alloc, CurrentHeap};
 /// This is the **malloc face** of one substrate; the **handle face**
 /// (`Region<T>` / `Handle<T>`) is the typed, generational view over the same
 /// governed memory. See `docs/MALLOC_PLAN.md` §3 "The two faces".
-pub struct SeferMalloc;
+pub struct SeferMalloc {
+    /// Large-cache configuration stored at static-init time. Plumbed into
+    /// each per-thread `AllocCore` on the first TLS bind for that thread.
+    ///
+    /// Only present under `alloc-decommit`; without that feature the struct
+    /// remains a ZST.
+    #[cfg(feature = "alloc-decommit")]
+    config: crate::alloc_core::LargeCacheConfig,
+}
 
 impl SeferMalloc {
-    /// Construct the allocator. This is a zero-cost `const` constructor -- the
-    /// per-thread heaps are lazily claimed on first use (not here), so this
-    /// can be used in `static` initialisers without any allocation or OS
-    /// calls.
+    /// Construct the allocator with default large-cache settings. This is a
+    /// zero-cost `const` constructor — the per-thread heaps are lazily
+    /// claimed on first use (not here), so this can be used in `static`
+    /// initialisers without any allocation or OS calls.
+    ///
+    /// Equivalent to `SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`.
     #[must_use]
     pub const fn new() -> Self {
-        Self
+        #[cfg(feature = "alloc-decommit")]
+        {
+            Self {
+                config: crate::alloc_core::LargeCacheConfig::DEFAULT,
+            }
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        {
+            Self {}
+        }
+    }
+
+    /// Construct the allocator with a user-supplied large-cache configuration.
+    ///
+    /// This is a `const fn` so it can be used in a `static` initialiser:
+    ///
+    /// ```no_run
+    /// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
+    /// # {
+    /// use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+    ///
+    /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+    ///     .budget_bytes(512 * 1024 * 1024)
+    ///     .headroom_bytes(64 * 1024 * 1024)
+    ///     .decay_interval_ms(200)
+    ///     .decay_rate_percent(25)
+    ///     .mode(LargeCacheMode::Lazy);
+    ///
+    /// #[global_allocator]
+    /// static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+    /// # }
+    /// ```
+    ///
+    /// The config is stored in the `SeferMalloc` struct and plumbed into
+    /// each per-thread `AllocCore` when its TLS slot is first claimed.
+    /// Threads created before the static is initialised will receive the
+    /// default config — in practice this cannot happen because the `static`
+    /// initialiser runs before any thread is started.
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {
+        Self { config }
     }
 }
 
 impl Default for SeferMalloc {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl SeferMalloc {
+    /// Resolve the current heap for an allocation, threading the config into
+    /// the TLS bind slow path when `alloc-decommit` is active.
+    ///
+    /// Under `not(alloc-decommit)` this delegates to the config-free
+    /// [`current_for_alloc`]; under `alloc-decommit` it calls
+    /// [`current_for_alloc_with_config`] with `self.config`.
+    #[inline(always)]
+    fn current_heap(&self) -> CurrentHeap {
+        #[cfg(feature = "alloc-decommit")]
+        {
+            current_for_alloc_with_config(self.config)
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        {
+            current_for_alloc()
+        }
     }
 }
 
@@ -131,7 +227,7 @@ impl Default for SeferMalloc {
 unsafe impl GlobalAlloc for SeferMalloc {
     #[inline(always)]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        match current_for_alloc() {
+        match self.current_heap() {
             // Fallback path (TLS torn down, registry exhausted, or true
             // fallback OOM): route through the fallback's spinlock-guarded
             // `with_heap`. `with_heap` returns `None` only on true OOM → we
@@ -140,9 +236,9 @@ unsafe impl GlobalAlloc for SeferMalloc {
                 fallback::with_heap(|h| h.alloc(layout)).unwrap_or(core::ptr::null_mut())
             }
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in
-            // a registry slot. `current_for_alloc` returned it for THIS
-            // thread; the single-writer invariant (the CAS-won slot owner)
-            // makes `&mut` access exclusive. `HeapCore::alloc` upholds the
+            // a registry slot. `current_heap` returned it for THIS thread;
+            // the single-writer invariant (the CAS-won slot owner) makes
+            // `&mut` access exclusive. `HeapCore::alloc` upholds the
             // GlobalAlloc contract (returns valid memory or null).
             CurrentHeap::Own(heap) => unsafe { (*heap).alloc(layout) },
         }
@@ -153,7 +249,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
         if ptr.is_null() {
             return;
         }
-        match current_for_alloc() {
+        match self.current_heap() {
             CurrentHeap::Fallback => {
                 // Fallback path: dealloc under the spinlock. A failure here
                 // (true OOM at fallback init) is a safe no-op — the block
@@ -171,7 +267,7 @@ unsafe impl GlobalAlloc for SeferMalloc {
 
     #[inline]
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        match current_for_alloc() {
+        match self.current_heap() {
             CurrentHeap::Fallback => {
                 fallback::with_heap(|h| h.alloc_zeroed(layout)).unwrap_or(core::ptr::null_mut())
             }
@@ -185,9 +281,11 @@ unsafe impl GlobalAlloc for SeferMalloc {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
-        match current_for_alloc() {
-            CurrentHeap::Fallback => fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
-                .unwrap_or(core::ptr::null_mut()),
+        match self.current_heap() {
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
+                    .unwrap_or(core::ptr::null_mut())
+            }
             // SAFETY: as in `alloc`; `realloc` is alloc-new + copy +
             // dealloc-old, leaving the old allocation intact on OOM.
             CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },

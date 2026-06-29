@@ -4,11 +4,11 @@
 //!   - Spans of any size can enter the cache when no budget is set.
 //!   - The per-shard byte-budget is enforced; FIFO eviction fires when needed.
 //!   - A budget that is too small for an individual span causes immediate OS release.
-//!   - `SEFER_LARGE_CACHE_BUDGET` env var is parsed and applied on construction.
+//!   - `LargeCacheConfig::budget_bytes` is applied at `AllocCore::new_with_config`.
 //!   - The `large_cache_used_bytes` invariant is maintained across alloc/dealloc.
 //!
-//! All tests use `dbg_set_large_cache_budget` rather than the env var (except
-//! `env_var_sets_budget`) to avoid flakiness in parallel test runs.
+//! All tests use `dbg_set_large_cache_budget` for dynamic overrides or
+//! `AllocCore::new_with_config` to set the budget at construction time.
 
 #![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 
@@ -194,41 +194,26 @@ fn budget_too_small_releases_immediately() {
 
 // ── test 4 ───────────────────────────────────────────────────────────────────
 
-/// `SEFER_LARGE_CACHE_BUDGET` env var is parsed and applied at `AllocCore::new`.
+/// `LargeCacheConfig::budget_bytes` is applied at construction time.
 ///
-/// Strategy: set a large budget (256M), alloc+dealloc a 4 MiB span, and verify
-/// it is cached (proving the env var was parsed as non-None and the budget was
-/// applied). The usable_size of a 4 MiB span is ~8 MiB (2 segments), which is
-/// comfortably under 256 MiB.
-///
-/// NOTE: `std::env::set_var` is process-global. This test is the sole writer
-/// of `SEFER_LARGE_CACHE_BUDGET` in the test suite. We set the var, create the
-/// AllocCore (which reads it once in `new`), then immediately restore the env.
-/// If the test suite ever runs tests in parallel threads this should be moved
-/// to a serial harness.
+/// Strategy: build a config with `budget_bytes(256 * MIB)`, construct an
+/// `AllocCore` via `new_with_config`, alloc+dealloc a 4 MiB span, and verify
+/// it ends up in the cache (i.e. the budget was actually applied).
+/// The usable_size of a 4 MiB span is ~8 MiB (2 segments), comfortably under
+/// the 256 MiB budget.
 #[test]
-fn env_var_sets_budget() {
-    // Safety note: set_var is documented as not thread-safe, but this test is
-    // the only writer of this key and restores it before any concurrent test
-    // could observe it (Rust test threads run after we drop the AllocCore).
-    unsafe {
-        std::env::set_var("SEFER_LARGE_CACHE_BUDGET", "256M");
-    }
-    let mut ac = AllocCore::new().expect("primordial");
-    // Restore the env immediately so other concurrent AllocCore::new calls are
-    // not affected (other tests in this file use dbg_set_large_cache_budget
-    // and do NOT call AllocCore::new after this point).
-    unsafe {
-        std::env::remove_var("SEFER_LARGE_CACHE_BUDGET");
-    }
+fn config_sets_budget() {
+    use sefer_alloc::LargeCacheConfig;
 
-    // AllocCore::new parsed "256M" → budget = 256 MiB.
+    let cfg = LargeCacheConfig::new().budget_bytes(256 * MIB);
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
+
     // A 4 MiB alloc produces a span of ~8 MiB usable (2 segments), well
     // under the budget. Dealloc → the span should be cached.
     let l = layout(4); // 4 MiB
     let p1 = ac.alloc(l);
     if p1.is_null() {
-        eprintln!("OOM — skip env_var_sets_budget");
+        eprintln!("OOM — skip config_sets_budget");
         return;
     }
     ac.dealloc(p1, l);
@@ -243,7 +228,7 @@ fn env_var_sets_budget() {
     // Second alloc at the same size → hits the cache.
     let p2 = ac.alloc(l);
     assert!(!p2.is_null());
-    // After cache hit, used_bytes drops by one span.
+    // After cache hit, used_bytes drops back to 0.
     assert_eq!(
         ac.dbg_large_cache_used(),
         0,

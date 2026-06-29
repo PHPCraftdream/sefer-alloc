@@ -85,6 +85,34 @@ async workload (without `alloc-decommit` the `SegmentTable`'s slot-recycle is
 off and the 1024-segment ceiling becomes a hard cap). See
 [Features matrix](#features-matrix) below.
 
+### Tune at compile time (const builder API)
+
+The large-segment cache exposes five knobs via the `LargeCacheConfig`
+builder — all `const fn`, so the config lives in a `static` initialiser
+and is resolved at compile time (zero overhead, no env reads, no parse
+errors at runtime). A typical RSS-bounded server profile:
+
+```rust
+use sefer_alloc::{SeferMalloc, LargeCacheConfig, LargeCacheMode};
+
+const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+    .budget_bytes(512 * 1024 * 1024)      // hard ceiling on cached bytes
+    .headroom_bytes(64 * 1024 * 1024)     // floor — decay is a no-op below this
+    .decay_interval_ms(200)               // ms between decay ticks
+    .decay_rate_percent(25)               // % of excess released per tick
+    .mode(LargeCacheMode::Lazy);          // event-driven (default)
+
+#[global_allocator]
+static GLOBAL: SeferMalloc = SeferMalloc::with_config(CONFIG);
+```
+
+Defaults (`headroom=256 MiB`, `interval=1 s`, `rate=10 %`, `budget=unbounded`,
+`mode=Lazy`) are tuned for throughput-first; the snippet above tightens
+them for a container with a strict RSS limit. `SeferMalloc::new()` is
+equivalent to `SeferMalloc::with_config(LargeCacheConfig::DEFAULT)`.
+Full reference, including how each knob composes and a worked tokio
+example, lives in **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)**.
+
 ---
 
 ## Why bother
@@ -363,12 +391,12 @@ the next alloc of a compatible size returns it without any OS round-trip.
 | `alloc(64 MiB) + free` | **~63 ns** | ~2.43 µs | ~16.9 µs | **~39× faster** |
 
 vs `System`: roughly **270–380× faster** at all three sizes. The cache
-is byte-budget'd (per-shard, default unbounded — clients set
-`SEFER_LARGE_CACHE_BUDGET=…` to cap it), with lazy 10 %/sec exponential
-decay back to `live + headroom`. There is no per-span size cap — a 30 GB
-segment on a 64 GB box is cacheable now (the old `MAX_CACHED_LARGE_BYTES =
-64 MiB` was removed in #90 — see `docs/MALLOC_BENCH.md` "Large-cache
-(OPT-E)").
+is byte-budget'd (per-shard, default unbounded — set via
+`LargeCacheConfig::new().budget_bytes(n)` in `SeferMalloc::with_config`
+to cap it), with lazy 10 %/sec exponential decay back to `live + headroom`.
+There is no per-span size cap — a 30 GB segment on a 64 GB box is cacheable
+now (the old `MAX_CACHED_LARGE_BYTES = 64 MiB` was removed in #90 — see
+`docs/MALLOC_BENCH.md` "Large-cache (OPT-E)").
 
 ### Realloc grow under adversarial neighbour pressure
 
@@ -536,30 +564,34 @@ use, stay with the default `std` feature.
 ### Tuning the large-segment cache (`alloc-decommit`)
 
 The `alloc-decommit` feature carries a per-thread large-segment free-cache.
-The default policy is **"client controls the RSS, we ship sane defaults"**:
-five environment variables (all read once at first `AllocCore::new()`,
-allocation-free, safe even with `SeferMalloc` as the `#[global_allocator]`)
-let the operator pick the trade-off without a recompile.
+Configuration is via the `LargeCacheConfig` const builder — all knobs are
+set at compile time in a `static` initialiser; no environment reads, no
+runtime parse errors.
 
-| Variable | Default | Meaning |
+| Builder method | Default | Meaning |
 |---|---|---|
-| `SEFER_LARGE_CACHE_BUDGET` | (unset — **unbounded**) | Per-shard ceiling on total cached bytes. Accepts `64M`, `2G`, raw bytes. **Unset = no admission limit** (any size span can enter the cache); FIFO eviction kicks in only when this is set and the budget would be exceeded. OS-OOM is propagated as `null` per the `GlobalAlloc` contract regardless. |
-| `SEFER_LARGE_CACHE_DECAY_RATE` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS each decay tick. Float-free parser; `7.5%` is **not** accepted — use a finer interval instead. |
-| `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS` | `1000` (1 s) | Wall-clock ms between decay ticks. Lazy: a tick only fires inline on the next large alloc/free after the interval elapsed. Idle process pays nothing. |
-| `SEFER_LARGE_CACHE_HEADROOM_BYTES` | `256M` | Floor below which the decay does **not** push (anti-thrashing pad). Accepts K/M/G suffix. |
-| `SEFER_LARGE_CACHE_MODE` | `lazy` | `lazy` (default) / `background` / `both`. **Phase 3 stub:** `background` currently prints a one-time warning and falls back to lazy; the mode-selector plumbing is in place for a future background scavenger thread. |
+| `budget_bytes(n)` | `None` (**unbounded**) | Per-shard ceiling on total cached bytes. `0` = unbounded. **Unset = no admission limit**; FIFO eviction fires only when this is set and the new span would exceed it. |
+| `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS per tick. Range `[1, 100]`, clamped. |
+| `decay_interval_ms(n)` | `1000` (1 s) | Minimum wall-clock ms between two consecutive decay ticks. A tick fires inline on the next large alloc/free after the interval elapsed. Idle processes pay nothing. |
+| `headroom_bytes(n)` | `256 MiB` | Floor below which the decay is a no-op (anti-thrashing pad). |
+| `mode(m)` | `LargeCacheMode::Lazy` | `Lazy` (default) / `Background` / `Both`. `Background` and `Both` are reserved for a future background scavenger thread; currently behave identically to `Lazy`. |
 
 The model is "**allocate fast, release slowly**": on a large `free`, the
 span is admitted to the cache (subject to budget); on each subsequent large
 op, the excess over `headroom` exponentially decays to the OS at the chosen
 rate. Self-damping: aggressive far from target, gentle near target, no
-oscillation. The default `BUDGET=unbounded` makes the cache willing to
-hold any single span; if you want a hard RSS ceiling (containers, mobile),
-set `SEFER_LARGE_CACHE_BUDGET=512M` (or whatever fits).
+oscillation. The default `budget=None` (unbounded) admits any span; if you
+want a hard RSS ceiling (containers, mobile), add
+`.budget_bytes(512 * 1024 * 1024)` to your config (or whatever fits).
 
 ---
 
 ## Quick start
+
+> Need the full step-by-step for a real project, including the three
+> runtime knobs (size limit / release period / release trigger)?
+> See **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)** — consolidated
+> integration guide with worked examples.
 
 ### Add to `Cargo.toml`
 
@@ -609,6 +641,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 
 | Doc | What it covers |
 |---|---|
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How to attach the allocator to a project + the three runtime knobs (size / period / trigger) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 30-minute end-to-end technical tour |
 | [`docs/INVARIANTS.md`](docs/INVARIANTS.md) | The I1–I6 (Region) and M1–M8 (Malloc) invariants |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Cartographer / Membrane / Hand model for `Region<T>` |

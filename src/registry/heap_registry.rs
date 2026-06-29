@@ -65,83 +65,26 @@ impl HeapRegistry {
     /// primordial heap).
     #[must_use]
     pub fn claim() -> *mut HeapCore {
-        let reg = ensure();
-        // 1. Obtain a candidate slot index: pop from free_slots, or bump count.
-        let idx = match pop_free_slot(reg) {
+        let idx = match Self::pick_slot() {
             Some(i) => i,
-            None => match bump_count(reg) {
-                Some(i) => i,
-                None => return core::ptr::null_mut(), // registry exhausted
-            },
+            None => return core::ptr::null_mut(),
         };
-        // SAFETY: `idx < MAX_HEAPS` (guaranteed by both pop_free_slot's range
-        // check and bump_count's cap). The slot array is `'static` (lives in
-        // the `REGISTRY` bootstrap static for the process lifetime), so the
-        // reference is valid for as long as the registry exists.
+        let reg = ensure();
+        // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
         let slot = unsafe { reg.slots.get_unchecked(idx) };
 
-        // 2. CAS FREE → LIVE. This is the claim's linearization point: the
-        //    single atomic step that establishes this thread as the slot's
-        //    sole writer. AcqRel: Acquire to see the slot's prior state
-        //    (generation, heap-init flag) written by a previous recycler;
-        //    Release so a later recycler's Acquire sees our generation bump +
-        //    heap materialisation.
-        //
-        //    Single-thread (Phase 12.2) the CAS trivially succeeds. Under
-        //    concurrency (12.3+) an `Err(LIVE)` means another thread won THIS
-        //    slot; we restart `claim` to obtain a fresh candidate.
         if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
             == Err(STATE_LIVE)
         {
-            // Lost the race to another claimer for THIS index. This cannot
-            // happen single-threaded; under concurrency (12.3+) it means
-            // another thread won this slot. We restart `claim` to obtain a
-            // fresh candidate slot.
-            return Self::claim();
+            return Self::claim(); // lost the slot race — retry
         }
-
-        // 3. Bump the generation (the M8/M9 coherence key). A later
-        //    stale-TLS-pointer check (12.3) compares a cached
-        //    `(idx, generation)` against the slot's current generation; a
-        //    mismatch means the slot was recycled + reclaimed by another
-        //    thread, and the cached pointer is stale.
-        //
-        //    `fetch_add(Release)` under our exclusive writer status (the CAS
-        //    above won) pairs with the 12.3 reader's Acquire load of
-        //    generation after observing state == LIVE. We read the NEW value
-        //    (fetch_add returns the OLD) so the "first claim" detection below
-        //    sees generation == 1.
         let new_gen = slot.generation.fetch_add(1, Ordering::Release) + 1;
-
-        // 4. Lazily materialise the HeapCore if this is the slot's first
-        //    claim (heap is uninitialised). On a later reclaim we reuse the
-        //    already-live HeapCore as-is. We track "first claim" via the
-        //    generation: `new_gen == 1` means this is the slot's first-ever
-        //    claim (it started at 0 and the bump just produced 1).
         if new_gen == 1 {
-            // SAFETY: we are the slot's sole writer (CAS FREE→LIVE won), and
-            // the slot is uninitialised on its first claim. `HeapCore::new`
-            // bootstraps a segment substrate (OS aperture, no std::alloc);
-            // on failure we leave the slot uninitialised and fall back to
-            // re-claiming (the slot stays LIVE but its heap is null — the
-            // 12.3 fallback-heap path handles this). For 12.2 we propagate
-            // null on OOM.
             let heap_ptr = slot.heap.get();
-            // SAFETY: `heap_ptr` is valid for writes (the slot owns the
-            // `MaybeUninit<HeapCore>` and we are its sole writer). `write`
-            // initialises the value, transferring ownership of the new
-            // `HeapCore` into the slot.
             match HeapCore::new(idx as u32) {
-                // SAFETY: `heap_ptr` is `*mut MaybeUninit<HeapCore>` obtained
-                // from the slot's `UnsafeCell`; casting to `*mut HeapCore`
-                // and `write`-ing initialises the value in place. We are the
-                // slot's sole writer (the CAS won) and the slot was
-                // uninitialised (first claim, generation == 1). `write`
-                // transfers ownership of the new `HeapCore` into the slot.
+                // SAFETY: sole writer, uninitialised slot, first claim.
                 Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
                 None => {
-                    // Primordial OOM. Roll the slot back to FREE so it can be
-                    // re-claimed, and report OOM to the caller.
                     let _ = slot.cas_state(
                         STATE_LIVE,
                         STATE_FREE,
@@ -152,15 +95,60 @@ impl HeapRegistry {
                 }
             }
         }
-
-        // 5. Hand out `*mut HeapCore`. The pointer is valid for the slot's
-        //    lifetime (the `'static` slot array), under the single-writer
-        //    invariant the CAS established.
-        // SAFETY: the slot is LIVE and (now) initialised; we are its sole
-        // writer. The pointer stays valid until the slot is recycled (which
-        // only this thread can do, since it owns the LIVE state). The slot
-        // array is `'static`, so the pointer outlives any borrowing scope.
+        // SAFETY: slot is LIVE and initialised; we are sole writer.
         slot.heap.get().cast::<HeapCore>()
+    }
+
+    /// Like [`claim`](Self::claim) but plumbs `config` into the newly
+    /// materialised `HeapCore` (first claim only — generation == 1). On
+    /// re-claim the existing `HeapCore` is reused as-is; its large-cache
+    /// config was set at first claim and persists.
+    ///
+    /// Only present under `alloc-decommit`.
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
+        let idx = match Self::pick_slot() {
+            Some(i) => i,
+            None => return core::ptr::null_mut(),
+        };
+        let reg = ensure();
+        // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
+        let slot = unsafe { reg.slots.get_unchecked(idx) };
+
+        if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+            == Err(STATE_LIVE)
+        {
+            return Self::claim_with_config(config); // lost the slot race — retry
+        }
+        let new_gen = slot.generation.fetch_add(1, Ordering::Release) + 1;
+        if new_gen == 1 {
+            let heap_ptr = slot.heap.get();
+            // First claim: materialise using the caller's config.
+            match HeapCore::new_with_config(idx as u32, config) {
+                // SAFETY: sole writer, uninitialised slot, first claim.
+                Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
+                None => {
+                    let _ = slot.cas_state(
+                        STATE_LIVE,
+                        STATE_FREE,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    );
+                    return core::ptr::null_mut();
+                }
+            }
+        }
+        // SAFETY: slot is LIVE and initialised; we are sole writer.
+        slot.heap.get().cast::<HeapCore>()
+    }
+
+    /// Pick a candidate slot index: pop from `free_slots` (recycled slot)
+    /// or mint a fresh one by bumping `count`. Returns `None` on registry
+    /// exhaustion (`count >= MAX_HEAPS` AND free stack empty).
+    fn pick_slot() -> Option<usize> {
+        let reg = ensure();
+        pop_free_slot(reg).or_else(|| bump_count(reg))
     }
 
     /// Recycle a live slot back to the free pool. Called by the owning

@@ -72,191 +72,26 @@ const LARGE_CACHE_SLOTS: usize = 2;
 #[cfg(feature = "alloc-decommit")]
 const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 
-/// Parse the `SEFER_LARGE_CACHE_BUDGET` environment variable into a byte count.
+/// The three large-cache operating modes.
 ///
-/// Accepted formats (case-insensitive suffix):
-///   - `"1024"` → 1 024 bytes (no suffix = raw bytes)
-///   - `"64K"` / `"64k"` → 65 536 bytes
-///   - `"256M"` / `"256m"` → 268 435 456 bytes
-///   - `"2G"` / `"2g"` → 2 147 483 648 bytes
+/// `Lazy` is the default; the others are reserved for a future background
+/// scavenger thread (not yet implemented — they currently behave identically
+/// to `Lazy`). Set via [`LargeCacheConfig::mode`].
 ///
-/// Returns `None` if the variable is unset, empty, or malformed (unknown
-/// suffix, non-numeric body). Malformed values are silently ignored so a
-/// mis-typed env var degrades to the unbounded default rather than aborting.
-///
-/// **Reentrancy safety**: this function MUST NOT allocate through the global
-/// allocator, because it is called from `AllocCore::new()` which may itself
-/// be called during the TLS bind of `SeferMalloc` (the installed global
-/// allocator). Any allocation on this path would call the global allocator
-/// re-entrantly, causing infinite recursion / stack overflow. We therefore
-/// use `os::read_env_budget_raw` (a raw OS call into a stack buffer) instead
-/// of `std::env::var` (which returns an allocating `String`).
-#[cfg(feature = "alloc-decommit")]
-fn parse_env_budget() -> Option<usize> {
-    // Stack buffer: 64 bytes is enough for even the largest representable
-    // budget string (e.g. "18446744073709551615") plus a K/M/G suffix.
-    let mut buf = [0u8; 64];
-    let n = os::read_env_budget_raw(&mut buf);
-    if n == 0 {
-        return None;
-    }
-    // `buf[..n]` contains the raw ASCII value (without NUL).
-    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
-    if val.is_empty() {
-        return None;
-    }
-    // Detect optional trailing suffix (K / M / G, case-insensitive).
-    let (digits, multiplier) = if val.ends_with(['k', 'K']) {
-        (&val[..val.len() - 1], 1024usize)
-    } else if val.ends_with(['m', 'M']) {
-        (&val[..val.len() - 1], 1024 * 1024)
-    } else if val.ends_with(['g', 'G']) {
-        (&val[..val.len() - 1], 1024 * 1024 * 1024)
-    } else {
-        // No suffix — raw bytes.
-        (val, 1usize)
-    };
-    let n: usize = digits.trim().parse().ok()?;
-    n.checked_mul(multiplier)
-}
-
-// ---------------------------------------------------------------------------
-// Phase 3 — optional background scavenger mode (feature = "alloc-decommit")
-//
-// This phase adds the `SEFER_LARGE_CACHE_MODE` environment variable that
-// selects one of three cache operating modes:
-//
-//   lazy       (default) — Phase 2 lazy decay only; no background thread.
-//   background           — opt-in background scavenger thread (see note below).
-//   both                 — alias for `background`.
-//
-// **Why the background thread is a stub in Phase 3:**
-//
-// A real background thread that calls `run_decay_step` on every shard's
-// large-cache would require:
-//
-//   1. Wrapping all large-cache fields (`large_cache`, `large_cache_used_bytes`,
-//      `last_decay_tick`) in a `std::sync::Mutex<LargeCacheState>` — a
-//      non-trivial invasive refactor of the hot alloc/dealloc path (Phase 1+2
-//      code that currently uses `&mut self` throughout).
-//
-//   2. A `HeapRegistry::for_each_shard` iteration API that yields mutable
-//      access to each live shard's large-cache — not present in the current
-//      registry (it exposes only claim/recycle/abandon/adopt).
-//
-//   3. Careful `thread::spawn` timing: `spawn` allocates through
-//      `#[global_allocator]` (i.e. through us), so spawning from inside
-//      `alloc_large` / `AllocCore::new` causes reentrancy / stack overflow.
-//      The safe spawn point must be OUTSIDE any in-flight alloc/dealloc.
-//
-//   4. Test isolation: a process-global thread active during `cargo test
-//      --test-threads=N` creates a race-detection surface across all concurrent
-//      test processes. This conflicts with the "tests must be isolated" rule.
-//
-// Given these risks, Phase 3 ships:
-//   - Full `SEFER_LARGE_CACHE_MODE` parsing (allocation-free, via `read_env_var_raw`).
-//   - Storage of the mode in `AllocCore` (per-shard, zero-cost when `lazy`).
-//   - A once-per-process warning printed to stderr when `background`/`both` is
-//     requested, explaining that the background thread is not yet wired.
-//   - Test-seam `dbg_large_cache_mode()` for deterministic verification.
-//
-// Phase 3 stub → full implementation path (future work):
-//   a. Introduce `LargeCacheState { slots, used_bytes, decay_config, last_tick }`
-//      behind a `std::sync::Mutex` in `AllocCore`.
-//   b. Add `HeapRegistry::for_each_live(|&mut AllocCore| ...)` iteration.
-//   c. Spawn scavenger via `std::sync::Once` + `std::thread::Builder` at the
-//      first `with_heap` entry AFTER primordial bootstrap (to avoid reentrancy).
-//   d. Add TSan/loom coverage for the new Mutex contention path.
-//
-// ---------------------------------------------------------------------------
-
-/// The three large-cache operating modes selectable via `SEFER_LARGE_CACHE_MODE`.
-///
-/// `Lazy` is the default (Phase 2 behaviour); the others are opt-in. The value
-/// is computed ONCE at `AllocCore::new` from the environment and stored in the
-/// shard for use by future infrastructure (scavenger loop wiring, diagnostic
-/// tools).
+/// [`LargeCacheConfig::mode`]: super::large_cache_config::LargeCacheConfig::mode
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum LargeCacheMode {
     /// Default: Phase 2 lazy decay only. No background thread. Identical to
     /// pre-Phase-3 behaviour; all existing tests continue to pass unchanged.
     Lazy,
-    /// Opt-in: a background scavenger thread visits idle shards and calls
-    /// `run_decay_step()` on their large-caches, catching shards that are
-    /// quiescent (no large alloc/dealloc activity) and therefore never trigger
-    /// the Phase 2 lazy hooks.
-    ///
-    /// **Phase 3 stub:** the thread is not yet spawned. A once-per-process
-    /// warning is printed to stderr.
+    /// Reserved for a future background scavenger thread that visits idle
+    /// shards and calls `run_decay_step()` on their large-caches. Currently
+    /// behaves identically to `Lazy`.
     Background,
-    /// Alias for `Background` (concept-only distinction preserved for future
-    /// differentiation: `both` = lazy hooks AND background thread active,
-    /// `background` = background thread only, lazy hooks remain but are
-    /// harmlessly redundant).
+    /// Alias for `Background`. Reserved for the future distinction "lazy hooks
+    /// AND background thread active" vs "background thread only".
     Both,
-}
-
-/// Parse `SEFER_LARGE_CACHE_MODE` from the environment.
-///
-/// Accepted values (case-insensitive): `"lazy"`, `"background"`, `"both"`.
-/// Any unrecognised value, or an unset variable, falls back to `Lazy`.
-///
-/// **Reentrancy safety**: allocation-free via `read_env_var_raw`.
-#[cfg(feature = "alloc-decommit")]
-fn parse_env_cache_mode() -> LargeCacheMode {
-    let mut buf = [0u8; 16];
-    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_MODE\0", &mut buf);
-    if n == 0 {
-        return LargeCacheMode::Lazy;
-    }
-    // Compare bytes directly (allocation-free). Accept case-insensitive ASCII.
-    // We lowercase in-place: only A–Z bytes are affected (bit 5 set = lowercase).
-    let slice = &mut buf[..n];
-    for b in slice.iter_mut() {
-        if b.is_ascii_uppercase() {
-            *b |= 0x20;
-        }
-    }
-    match &*slice {
-        b"lazy" => LargeCacheMode::Lazy,
-        b"background" => LargeCacheMode::Background,
-        b"both" => LargeCacheMode::Both,
-        _ => LargeCacheMode::Lazy, // unknown → safe fallback
-    }
-}
-
-/// Process-wide flag: have we already emitted the "background mode stub"
-/// warning? Prevents spam when multiple shards are created.
-///
-/// `Relaxed` is sufficient: the only invariant is "print at most once"; a
-/// missed first-print due to a race is acceptable (the second thread will
-/// print instead). There is no data ordering dependency on this flag.
-#[cfg(feature = "alloc-decommit")]
-static BACKGROUND_WARN_ONCE: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
-
-/// Emit a once-per-process diagnostic when the user has requested
-/// `SEFER_LARGE_CACHE_MODE=background` (or `both`) but the background thread
-/// is not yet implemented. Uses `AtomicBool` + relaxed semantics to avoid
-/// spam across shards.
-#[cfg(feature = "alloc-decommit")]
-fn maybe_warn_background_stub(mode: LargeCacheMode) {
-    if mode == LargeCacheMode::Lazy {
-        return;
-    }
-    // Swap false→true. If we observe `false` (were the first), print the
-    // warning. If `true` (already printed), skip. Relaxed: no ordering required
-    // beyond "print at most once" (a duplicate on a strict race is harmless).
-    if !BACKGROUND_WARN_ONCE.swap(true, core::sync::atomic::Ordering::Relaxed) {
-        eprintln!(
-            "sefer-alloc: SEFER_LARGE_CACHE_MODE={:?} requested, \
-             but the background scavenger thread is not yet implemented \
-             in Phase 3 (stub). Falling back to lazy decay (Phase 2 behaviour). \
-             See Phase 3 design notes in alloc_core.rs for the implementation path.",
-            mode
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -268,89 +103,17 @@ fn maybe_warn_background_stub(mode: LargeCacheMode) {
 // configurable headroom target and FIFO-evict a fraction (decay_rate_bp /
 // 10 000) of that excess back to the OS. This keeps the cache from
 // accumulating unbounded RSS between allocations while remaining "lazy" —
-// no background thread is needed (Phase 3 will add one opt-in).
+// no background thread is needed.
 //
-// Parameters (env-overridable, set once at AllocCore::new):
-//   SEFER_LARGE_CACHE_DECAY_RATE       integer percent (1–100), default 10
-//   SEFER_LARGE_CACHE_DECAY_INTERVAL_MS integer ms, default 1000
-//   SEFER_LARGE_CACHE_HEADROOM_BYTES   K/M/G bytes, default 256 MiB
+// Parameters are supplied via `LargeCacheConfig` (set once at
+// `AllocCore::new_with_config`; defaults match the old env-var defaults when
+// no variable was set).
 // ---------------------------------------------------------------------------
 
-/// Parse `SEFER_LARGE_CACHE_DECAY_RATE` as an integer percent (e.g. `"10"`
-/// → 1000 basis points). Accepts `"10"` or `"10%"`. Returns `None` on unset
-/// / empty / invalid. Range-clamped to [1, 100] percent → [100, 10000] bp.
-///
-/// We deliberately accept ONLY integer percent (no floats) to avoid any
-/// floating-point dependency. This matches the documented env-var contract.
-/// **Reentrancy safety**: uses `os::read_env_var_raw` (allocation-free).
-#[cfg(feature = "alloc-decommit")]
-fn parse_env_decay_rate_bp() -> Option<u32> {
-    let mut buf = [0u8; 16];
-    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_DECAY_RATE\0", &mut buf);
-    if n == 0 {
-        return None;
-    }
-    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
-    if val.is_empty() {
-        return None;
-    }
-    // Strip optional trailing '%'.
-    let digits = val.strip_suffix('%').unwrap_or(val);
-    let pct: u32 = digits.trim().parse().ok()?;
-    if pct == 0 || pct > 100 {
-        return None; // Out of [1, 100] range — ignore.
-    }
-    Some(pct * 100) // percent → basis points
-}
-
-/// Parse `SEFER_LARGE_CACHE_DECAY_INTERVAL_MS` as an integer millisecond
-/// count (e.g. `"1000"` → 1 000 ms). Returns `None` on unset / invalid.
-/// A value of 0 is accepted (means: always decay on every call, useful for
-/// testing). **Reentrancy safety**: allocation-free via `read_env_var_raw`.
-#[cfg(feature = "alloc-decommit")]
-fn parse_env_decay_interval_ms() -> Option<u64> {
-    let mut buf = [0u8; 24];
-    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_DECAY_INTERVAL_MS\0", &mut buf);
-    if n == 0 {
-        return None;
-    }
-    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
-    if val.is_empty() {
-        return None;
-    }
-    val.parse().ok()
-}
-
-/// Parse `SEFER_LARGE_CACHE_HEADROOM_BYTES` with K/M/G suffix support.
-/// Same logic as `parse_env_budget`. Returns `None` on unset / invalid.
-/// **Reentrancy safety**: allocation-free via `read_env_var_raw`.
-#[cfg(feature = "alloc-decommit")]
-fn parse_env_headroom_bytes() -> Option<usize> {
-    let mut buf = [0u8; 64];
-    let n = os::read_env_var_raw(b"SEFER_LARGE_CACHE_HEADROOM_BYTES\0", &mut buf);
-    if n == 0 {
-        return None;
-    }
-    let val = core::str::from_utf8(&buf[..n]).ok()?.trim();
-    if val.is_empty() {
-        return None;
-    }
-    let (digits, multiplier) = if val.ends_with(['k', 'K']) {
-        (&val[..val.len() - 1], 1024usize)
-    } else if val.ends_with(['m', 'M']) {
-        (&val[..val.len() - 1], 1024 * 1024)
-    } else if val.ends_with(['g', 'G']) {
-        (&val[..val.len() - 1], 1024 * 1024 * 1024)
-    } else {
-        (val, 1usize)
-    };
-    let n: usize = digits.trim().parse().ok()?;
-    n.checked_mul(multiplier)
-}
-
-/// Immutable decay configuration, computed once at `AllocCore::new` from env
-/// vars (or defaults). Kept in its own struct to make the intent clear and to
-/// allow `dbg_set_decay_config` to swap it atomically in tests.
+/// Immutable decay configuration, computed once at `AllocCore::new_with_config`
+/// from a [`LargeCacheConfig`](super::large_cache_config::LargeCacheConfig).
+/// Kept in its own struct to make the intent clear and to allow
+/// `dbg_set_decay_config` to swap it in tests.
 #[cfg(feature = "alloc-decommit")]
 struct LargeCacheDecayConfig {
     /// Fraction of the excess to release per tick, in basis points.
@@ -366,14 +129,14 @@ struct LargeCacheDecayConfig {
 
 #[cfg(feature = "alloc-decommit")]
 impl LargeCacheDecayConfig {
-    /// Build the config from env vars, falling back to sensible defaults.
-    fn from_env_or_default() -> Self {
+    /// Build the decay config from a resolved [`LargeCacheConfig`].
+    ///
+    /// [`LargeCacheConfig`]: super::large_cache_config::LargeCacheConfig
+    fn from_config(cfg: &super::large_cache_config::LargeCacheConfig) -> Self {
         Self {
-            decay_rate_bp: parse_env_decay_rate_bp().unwrap_or(1000),
-            decay_interval: core::time::Duration::from_millis(
-                parse_env_decay_interval_ms().unwrap_or(1000),
-            ),
-            headroom_bytes: parse_env_headroom_bytes().unwrap_or(256 * 1024 * 1024),
+            decay_rate_bp: cfg.resolved_decay_rate_bp(),
+            decay_interval: cfg.resolved_decay_interval(),
+            headroom_bytes: cfg.resolved_headroom_bytes(),
         }
     }
 }
@@ -443,10 +206,10 @@ pub struct AllocCore {
     /// an incoming span that would exceed the budget triggers FIFO eviction of
     /// the oldest slot before admission.
     ///
-    /// Configurable via the `SEFER_LARGE_CACHE_BUDGET` environment variable
-    /// (read once at `AllocCore::new`; supports K/M/G suffixes). Clients can
-    /// also construct `AllocCore` and set the budget directly for deterministic
-    /// tests (see `dbg_set_large_cache_budget`).
+    /// Set via [`LargeCacheConfig::budget_bytes`] passed to
+    /// [`AllocCore::new_with_config`].
+    ///
+    /// [`LargeCacheConfig::budget_bytes`]: super::large_cache_config::LargeCacheConfig::budget_bytes
     #[cfg(feature = "alloc-decommit")]
     large_cache_budget_bytes: Option<usize>,
 
@@ -466,8 +229,8 @@ pub struct AllocCore {
 
     // ── Phase 2 — lazy decay ─────────────────────────────────────────────────
     /// Immutable decay parameters: rate, interval, headroom. Set once at
-    /// `AllocCore::new` from env vars (or defaults); overridable in tests via
-    /// `dbg_set_decay_config`.
+    /// `AllocCore::new_with_config` from a `LargeCacheConfig`; overridable in
+    /// tests via `dbg_set_decay_config`.
     #[cfg(feature = "alloc-decommit")]
     decay_config: LargeCacheDecayConfig,
 
@@ -479,9 +242,9 @@ pub struct AllocCore {
     last_decay_tick: Option<std::time::Instant>,
 
     // ── Phase 3 — cache operating mode ───────────────────────────────────────
-    /// The large-cache operating mode, parsed once at `AllocCore::new` from
-    /// `SEFER_LARGE_CACHE_MODE`. Stored for diagnostic/test access and as the
-    /// anchor for future scavenger-thread wiring (Phase 3 full).
+    /// The large-cache operating mode, set once at `AllocCore::new_with_config`
+    /// from a `LargeCacheConfig`. Stored for diagnostic/test access and as the
+    /// anchor for future scavenger-thread wiring.
     ///
     /// `Lazy` (default): Phase 2 lazy decay, no background thread.
     /// `Background` / `Both`: reserved for the future background scavenger.
@@ -490,13 +253,60 @@ pub struct AllocCore {
 }
 
 impl AllocCore {
-    /// Bootstrap the allocator: reserve the primordial segment and hand-carve
-    /// its self-hosted metadata. See [`bootstrap`].
+    /// Bootstrap the allocator using default large-cache configuration.
     ///
-    /// Returns `None` only if the OS refuses the primordial reservation
-    /// (OOM at startup).
+    /// Equivalent to `AllocCore::new_with_config(LargeCacheConfig::DEFAULT)`.
+    /// Returns `None` only if the OS refuses the primordial reservation (OOM at
+    /// startup).
     #[must_use]
     pub fn new() -> Option<Self> {
+        #[cfg(feature = "alloc-decommit")]
+        return Self::new_with_config(super::large_cache_config::LargeCacheConfig::DEFAULT);
+        #[cfg(not(feature = "alloc-decommit"))]
+        return Self::new_inner();
+    }
+
+    /// Bootstrap the allocator with a user-supplied large-cache configuration.
+    ///
+    /// All `LargeCacheConfig` fields use their documented defaults when `None`.
+    /// Returns `None` only if the OS refuses the primordial reservation (OOM at
+    /// startup).
+    ///
+    /// Use this when you want to set the cache knobs at compile time without
+    /// environment variables:
+    ///
+    /// ```rust
+    /// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+    /// # {
+    /// use sefer_alloc::{AllocCore, LargeCacheConfig, LargeCacheMode};
+    ///
+    /// let cfg = LargeCacheConfig::new()
+    ///     .budget_bytes(512 * 1024 * 1024)
+    ///     .headroom_bytes(64 * 1024 * 1024)
+    ///     .decay_interval_ms(200)
+    ///     .decay_rate_percent(25)
+    ///     .mode(LargeCacheMode::Lazy);
+    ///
+    /// let ac = AllocCore::new_with_config(cfg).expect("primordial");
+    /// drop(ac);
+    /// # }
+    /// ```
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn new_with_config(
+        config: super::large_cache_config::LargeCacheConfig,
+    ) -> Option<Self> {
+        let mut core = Self::new_inner()?;
+        core.large_cache_budget_bytes = config.resolved_budget_bytes();
+        core.decay_config = LargeCacheDecayConfig::from_config(&config);
+        core.large_cache_mode = config.resolved_mode();
+        Some(core)
+    }
+
+    /// Inner bootstrap: reserve the primordial segment and hand-carve its
+    /// self-hosted metadata. All feature-gated fields are set to their
+    /// defaults here; `new_with_config` then overwrites the decommit knobs.
+    fn new_inner() -> Option<Self> {
         let prim = bootstrap::primordial()?;
         let primordial_base = prim.segment.as_ptr();
         // The primordial segment hosts the registry AND serves as the first
@@ -519,33 +329,27 @@ impl AllocCore {
             let my_node = numa::current_node();
             SegmentMeta::new(primordial_base).set_node_id(my_node);
         }
-        // Phase 3: parse the cache operating mode once. The mode is stored in
-        // the shard and may emit a once-per-process stub warning if `background`
-        // or `both` was requested. This is allocation-free (uses `read_env_var_raw`
-        // under the hood), so it is safe to call from within `AllocCore::new`
-        // even when `SeferMalloc` is the installed global allocator.
-        #[cfg(feature = "alloc-decommit")]
-        let large_cache_mode = {
-            let mode = parse_env_cache_mode();
-            maybe_warn_background_stub(mode);
-            mode
-        };
-
         Some(Self {
             table: prim.table,
             small_cur,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
             #[cfg(feature = "alloc-decommit")]
-            large_cache_budget_bytes: parse_env_budget(),
+            large_cache_budget_bytes: None,
             #[cfg(feature = "alloc-decommit")]
             large_cache_used_bytes: 0,
             #[cfg(feature = "alloc-decommit")]
-            decay_config: LargeCacheDecayConfig::from_env_or_default(),
+            decay_config: LargeCacheDecayConfig {
+                decay_rate_bp: super::large_cache_config::DEFAULT_DECAY_RATE_PERCENT * 100,
+                decay_interval: core::time::Duration::from_millis(
+                    super::large_cache_config::DEFAULT_DECAY_INTERVAL_MS,
+                ),
+                headroom_bytes: super::large_cache_config::DEFAULT_HEADROOM_BYTES,
+            },
             #[cfg(feature = "alloc-decommit")]
             last_decay_tick: None,
             #[cfg(feature = "alloc-decommit")]
-            large_cache_mode,
+            large_cache_mode: LargeCacheMode::Lazy,
         })
     }
 
@@ -2196,9 +2000,9 @@ impl AllocCore {
     }
 
     /// TEST-ONLY (Phase 1 large-cache budget): override the byte-budget at
-    /// runtime for deterministic tests that do not want to rely on the
-    /// `SEFER_LARGE_CACHE_BUDGET` env var (env vars are process-global and
-    /// therefore flaky in parallel test runs). Pass `None` for unbounded.
+    /// runtime. Allows a test to set a different budget after calling
+    /// `AllocCore::new_with_config`, without constructing a new instance.
+    /// Pass `None` for unbounded.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
@@ -2207,13 +2011,14 @@ impl AllocCore {
 
     // ── Phase 3 test seams ────────────────────────────────────────────────────
 
-    /// TEST-ONLY (Phase 3): return the `LargeCacheMode` parsed from
-    /// `SEFER_LARGE_CACHE_MODE` at construction time. Lets tests verify that
-    /// the environment variable is parsed correctly without relying on
-    /// side-effects (the warning) or implementation internals.
+    /// TEST-ONLY: return the `LargeCacheMode` set at construction time via
+    /// [`LargeCacheConfig::mode`]. Lets tests verify the mode stored in the
+    /// shard without relying on implementation internals.
     ///
-    /// Returns `LargeCacheMode::Lazy` when the variable was unset, empty, or
-    /// contained an unrecognised value (the safe fallback).
+    /// Returns `LargeCacheMode::Lazy` when `LargeCacheConfig::DEFAULT` was
+    /// used (or no `.mode()` call was made on the config).
+    ///
+    /// [`LargeCacheConfig::mode`]: super::large_cache_config::LargeCacheConfig::mode
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_mode(&self) -> LargeCacheMode {

@@ -13,6 +13,8 @@
 pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
+#[cfg(feature = "alloc-decommit")]
+pub mod large_cache_config;
 mod bootstrap;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
@@ -44,4 +46,6 @@ pub(crate) mod size_classes;
 pub use alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 pub use alloc_core::LargeCacheMode;
+#[cfg(feature = "alloc-decommit")]
+pub use large_cache_config::LargeCacheConfig;
 pub use segment_layout::SegmentLayout;
