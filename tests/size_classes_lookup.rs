@@ -232,7 +232,11 @@ fn tokio_task_cell_shape_resolves_to_small_class_not_large() {
             .unwrap_or_else(|| panic!("(640, {align}) should resolve to small"));
         let block = SegmentLayout::SIZE_CLASS_TABLE[idx];
         assert!(block >= 640.max(align));
-        assert_eq!(block % align, 0, "block {block} not multiple of align={align}");
+        assert_eq!(
+            block % align,
+            0,
+            "block {block} not multiple of align={align}"
+        );
     }
 }
 

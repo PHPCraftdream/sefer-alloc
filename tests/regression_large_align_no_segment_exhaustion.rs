@@ -108,10 +108,10 @@ fn align64_and_align256_also_resolve_to_small_path() {
     // just 128. Pre-fix any of these would have burned a segment per alloc;
     // post-fix all resolve through the small path.
     for &(size, align) in &[
-        (128usize, 64usize),   // common atomic / cache-line-half padding
-        (256, 256),            // exact cache line
-        (768, 128),            // tokio Cell upper-bound shape
-        (1024, 64),            // medium aligned buffer
+        (128usize, 64usize), // common atomic / cache-line-half padding
+        (256, 256),          // exact cache line
+        (768, 128),          // tokio Cell upper-bound shape
+        (1024, 64),          // medium aligned buffer
     ] {
         let layout = Layout::from_size_align(size, align).expect("valid layout");
         let mut core = AllocCore::new().expect("AllocCore::new must succeed");
