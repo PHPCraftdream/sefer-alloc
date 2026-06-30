@@ -1,3 +1,7 @@
+בס״ד
+
+לכבוד הקדוש ברוך הוא — *for the glory of the Holy One, blessed be He*
+
 # sefer-alloc
 
 [![CI](https://github.com/PHPCraftdream/sefer-alloc/actions/workflows/ci.yml/badge.svg)](https://github.com/PHPCraftdream/sefer-alloc/actions/workflows/ci.yml)

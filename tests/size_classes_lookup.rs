@@ -18,19 +18,19 @@
 
 use sefer_alloc::SegmentLayout;
 
-/// The reference classifier — a faithful re-implementation of the *old* linear
-/// scan, rebuilt here over the public `SIZE_CLASS_TABLE` so the test does not
-/// trust the crate's own `class_for`. Returns the smallest class index whose
-/// block size fits `(size, align)`, or `None` for the large path.
+/// The reference classifier — a faithful re-implementation of the current
+/// contract, rebuilt here over the public `SIZE_CLASS_TABLE` so the test does
+/// not trust the crate's own `class_for`. Returns the smallest class index
+/// whose `block_size >= max(size, align)` AND `block_size % align == 0`
+/// (the divisibility predicate established in task #114 — without it any
+/// `align > MIN_BLOCK` request would burn a full Large segment, exhausting
+/// `SegmentTable` under concurrent task-spawning workloads).
 fn linear_scan_class_for(size: usize, align: usize) -> Option<usize> {
-    if align > SegmentLayout::SMALL_ALIGN_MAX {
-        return None;
-    }
     let need = if size > align { size } else { align };
     let table = SegmentLayout::SIZE_CLASS_TABLE;
     let mut i = 0;
     while i < table.len() {
-        if table[i] >= need {
+        if table[i] >= need && table[i] % align == 0 {
             return Some(i);
         }
         i += 1;
@@ -176,12 +176,64 @@ fn boundary_size_above_small_max_is_large() {
 }
 
 #[test]
-fn boundary_align_above_small_align_max_is_large_even_for_tiny_size() {
-    // align > SMALL_ALIGN_MAX forces the large path regardless of size.
+fn boundary_align_above_small_align_max_resolves_to_divisible_class() {
+    // Task #114: align > SMALL_ALIGN_MAX no longer unconditionally forces the
+    // Large path. The new contract is "smallest class with block_size
+    // >= max(size, align) AND block_size % align == 0".
+    //
+    // For align=32, size=1: need=32, and every class block_size is a
+    // multiple of MIN_BLOCK=16, so the smallest class with block ≥ 32 AND
+    // divisible by 32 must exist — and it must equal the linear-scan result
+    // (the reference impl in this file mirrors the new contract).
     let over = SegmentLayout::SMALL_ALIGN_MAX * 2; // 32
-    assert_eq!(o1_class_for(1, over), None);
-    assert_eq!(o1_class_for(SegmentLayout::SMALL_MAX, over), None);
-    assert_eq!(o1_class_for(1, over), linear_scan_class_for(1, over));
+    let got = o1_class_for(1, over);
+    let want = linear_scan_class_for(1, over);
+    assert_eq!(got, want, "o1 vs scan drift at size=1 align={over}");
+    // It must actually resolve (Some), not fall through to Large — class 1
+    // has block_size = 32 which fits both the size and the divisibility
+    // predicate. (If `build_table` ever changes the geometry such that
+    // there is no align-32-divisible class ≤ SMALL_MAX, this assertion
+    // becomes the canary.)
+    let idx = got.expect("a class with block_size divisible by 32 must exist");
+    let block = SegmentLayout::SIZE_CLASS_TABLE[idx];
+    assert!(block >= over);
+    assert_eq!(block % over, 0, "block {block} not divisible by {over}");
+}
+
+#[test]
+fn tokio_task_cell_shape_resolves_to_small_class_not_large() {
+    // Task #114 regression — the OOM shape that motivated the fix.
+    //
+    // `tokio::runtime::task::core::Cell<T,S>` is `#[repr(align(128))]` against
+    // false sharing and lays out ~640 B per task. Pre-fix, every `tokio::spawn`
+    // burned one whole 4 MiB Large segment (align=128 > SMALL_ALIGN_MAX=16 →
+    // Large path), and under a concurrent spawn workload the `SegmentTable`
+    // (MAX_SEGMENTS=1024) exhausted, then `alloc_large_slow → register` returned
+    // None → the `GlobalAlloc` face returned null → `handle_alloc_error` aborted
+    // the process with "memory allocation of 640 bytes failed".
+    //
+    // Post-fix: (640, 128) must resolve to a small class whose block_size is
+    // ≥ 640 AND a multiple of 128. The small path serves it from a normal
+    // per-segment free list — no per-spawn 4 MiB segment, no `SegmentTable`
+    // pressure.
+    //
+    // Counterfactual: reverting `class_for` to the pre-fix "if align >
+    // SMALL_ALIGN_MAX → None" gate makes this test fail with `got=None`.
+    let got = o1_class_for(640, 128);
+    let idx = got.expect("(size=640, align=128) must resolve to a small class");
+    let block = SegmentLayout::SIZE_CLASS_TABLE[idx];
+    assert!(block >= 640, "block {block} too small for size=640");
+    assert_eq!(block % 128, 0, "block {block} not divisible by align=128");
+    // Same property for adjacent async-runtime alignments (32 / 64 / 256):
+    // a small class with the right divisibility must exist and the resolver
+    // must find it (not fall through to Large).
+    for &align in &[32usize, 64, 128, 256] {
+        let idx = o1_class_for(640, align)
+            .unwrap_or_else(|| panic!("(640, {align}) should resolve to small"));
+        let block = SegmentLayout::SIZE_CLASS_TABLE[idx];
+        assert!(block >= 640.max(align));
+        assert_eq!(block % align, 0, "block {block} not multiple of align={align}");
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-30
+
+### Fixed — `align > 16` allocations no longer burn a dedicated segment each
+
+`SizeClasses::class_for(size, align)` unconditionally returned `None` for
+any `align > SMALL_ALIGN_MAX` (= `MIN_BLOCK` = 16). Every allocation with
+a larger alignment — including the `tokio::runtime::task::core::Cell<T,S>`
+shape (≈640 B, `#[repr(align(128))]` against false sharing) — was routed
+to the dedicated-segment Large path, consuming a full ~4 MiB segment and
+one `SegmentTable` slot per request.
+
+Under concurrent task-spawning workloads (canonical reproducer: the
+shamir-db `duplex_throughput/duplex_cap32/32` bench — 32 in-flight
+tokio tasks × 55 iterations), cumulative live segments exceeded
+`MAX_SEGMENTS = 1024`, then `alloc_large_slow → SegmentTable::register`
+returned `None`, then the `GlobalAlloc` face returned null, then
+`std::alloc::handle_alloc_error` aborted the process with
+`memory allocation of 640 bytes failed`.
+
+`class_for` now searches for the smallest small class whose
+`block_size >= max(size, align)` AND `block_size % align == 0`. M4
+(alignment fidelity) is preserved: the segment base is `SEGMENT`-aligned,
+the offset within is a multiple of `block_size`, and `block_size` is a
+multiple of `align`, so the returned pointer is naturally `align`-aligned
+without any per-block padding. The fast path for `align ≤ MIN_BLOCK = 16`
+(the typical case) is byte-identical to the previous behaviour — one
+`SIZE2CLASS` load. The slow path is a forward walk over at most
+`SMALL_CLASS_COUNT = 40` entries; in practice it settles in 0–3 steps
+for power-of-two alignments common in async runtimes (32 / 64 / 128 / 256).
+
+For `(640, align=128)` the resolver picks the existing class with
+`block_size = 768` (768 % 128 == 0). Per-allocation memory cost drops
+from ~4 MiB to ~768 B, and the per-process `SegmentTable` is no longer
+touched on the hot path.
+
+Regression test: `tests/regression_large_align_no_segment_exhaustion.rs`
+(2048 sequential `(640, 128)` allocations + 1500 sequential allocations
+each for 4 representative `(size, align)` shapes). Counterfactual
+verified — reverting the fix makes the test fail on iteration 1023
+(= `MAX_SEGMENTS − 1`, primordial segment holds the first slot).
+
+Single-threaded substrate change; no concurrency-protocol or wire-format
+implications. Full test suite under `features = ["production"]` —
+including loom (`loom_bootstrap_cas`, `loom_xthread_protocol`,
+`loom_thread_free`) — green.
+
 ## [0.2.0] - 2026-06-29
 
 ### Changed — BREAKING: `SeferMalloc` renamed to `SeferAlloc`

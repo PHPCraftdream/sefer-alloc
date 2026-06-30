@@ -99,27 +99,57 @@ pub(crate) struct SizeClasses;
 impl SizeClasses {
     /// Resolve `(size, align)` to a small-class index, or `None` for large.
     ///
-    /// A small class fits iff its `block_size >= max(size, align)` AND
-    /// `align <= SMALL_ALIGN_MAX`. Returns the index of the smallest such
-    /// class. The small path is **O(1)** — two comparisons plus one
-    /// [`SIZE2CLASS`] load (no loop) — using the compile-time-derived lookup
-    /// table. `size` here is already clamped to `>= MIN_BLOCK` by the only
-    /// caller ([`super::alloc_core::AllocCore::alloc`]); the `(size-1) >>
-    /// MIN_BLOCK_SHIFT` index maps a 1-based size onto its bucket exactly as
-    /// the former linear scan did (verified by `tests/size_classes_lookup.rs`).
+    /// A small class fits iff:
+    ///   * its `block_size >= max(size, align)` (M4: size & align fidelity), AND
+    ///   * its `block_size % align == 0` (so the natural offset within a
+    ///     SEGMENT-aligned segment is a multiple of `align`, hence the returned
+    ///     pointer is `align`-aligned without any per-block alignment padding).
+    ///
+    /// Returns the index of the smallest such class, or `None` (→ Large path)
+    /// when no small class satisfies the two predicates above (the typical
+    /// case is `align > SMALL_MAX` or a large page-aligned request).
+    ///
+    /// **Fast path (`align <= SMALL_ALIGN_MAX`, i.e. ≤ MIN_BLOCK = 16):** every
+    /// small block is `MIN_BLOCK`-aligned by construction, so the divisibility
+    /// check is trivially satisfied and we resolve in O(1) via the
+    /// compile-time-derived [`SIZE2CLASS`] table — the original behaviour,
+    /// untouched.
+    ///
+    /// **Slow path (`align > SMALL_ALIGN_MAX`):** we still seed at the
+    /// `SIZE2CLASS` entry that covers `max(size, align)`, then walk forward at
+    /// most a handful of classes to find one whose `block_size` is divisible
+    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (= 40), and in
+    /// practice settles in 0–3 steps for the typical async-runtime alignments
+    /// (32, 64, 128, 256 — `Cell<T,S>` etc.). Without this path EVERY alloc
+    /// with `align > 16` would go to the dedicated-segment Large path,
+    /// burning a full ~4 MiB segment + a SegmentTable slot per request — an
+    /// architectural OOM source under concurrent task-spawning workloads
+    /// (see task #114).
+    ///
+    /// `size` here is already clamped to `>= MIN_BLOCK` by the only caller
+    /// ([`super::alloc_core::AllocCore::alloc`]).
     #[must_use]
     pub(crate) const fn class_for(size: usize, align: usize) -> Option<usize> {
-        if align > SMALL_ALIGN_MAX || size > SMALL_MAX {
+        let need = if size > align { size } else { align };
+        if need > SMALL_MAX {
             return None;
         }
-        // `(size - 1) >> MIN_BLOCK_SHIFT`: 1-based size → 0-based MIN_BLOCK-unit
-        // index. size==1 → 0, size==MIN_BLOCK → 0 (same class), size==MIN_BLOCK+1
-        // → 1, … size==SMALL_MAX → SMALL_MAX/MIN_BLOCK. This is exactly the
-        // smallest class `>= size`, because SIZE2CLASS was built so that entry
-        // `k` is the smallest class whose block_size covers `k*MIN_BLOCK` bytes,
-        // and `(size-1) >> shift` is the `k` for which `k*MIN_BLOCK < size <=
-        // (k+1)*MIN_BLOCK` — i.e. the first class that can hold `size`.
-        Some(SIZE2CLASS[(size - 1) >> MIN_BLOCK_SHIFT] as usize)
+        let seed = SIZE2CLASS[(need - 1) >> MIN_BLOCK_SHIFT] as usize;
+        // Fast path: align ≤ MIN_BLOCK ⇒ every small block satisfies divisibility.
+        if align <= SMALL_ALIGN_MAX {
+            return Some(seed);
+        }
+        // Slow path: walk forward to find a class whose block_size is a
+        // multiple of `align`. Bounded by SMALL_CLASS_COUNT; typically 0–3
+        // iterations for power-of-two `align` ≤ 256.
+        let mut i = seed;
+        while i < SMALL_CLASS_COUNT {
+            if SIZE_CLASS_TABLE[i] % align == 0 {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
     }
 
     /// The block size of class `idx`. Panics (debug) if out of range — the
