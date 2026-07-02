@@ -190,13 +190,30 @@ struct CachedLarge {
 #[cfg(feature = "alloc-decommit")]
 static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-/// TEST/DIAGNOSTIC-ONLY (task D1): process-wide large-cache HIT counter.
-/// Bumped once per `alloc_large` call that is served from `large_cache`
-/// instead of a fresh OS reservation. Read by
-/// [`AllocCore::dbg_large_cache_hits`]. Relaxed — diagnostic only, no
-/// synchronisation is implied or required.
+// TEST/DIAGNOSTIC-ONLY (task D1 → 0.4.x task #133): large-cache HIT
+// counter. Originally a single process-wide `static AtomicU64`, bumped by
+// EVERY heap's `alloc_large` cache-hit path — a contended `lock xadd` on a
+// path that is architecturally per-heap (each `AllocCore` lives inside one
+// `HeapCore`, which lives on one thread's registry slot). Under MT this
+// counter's cache line ping-ponged across cores on every large-cache hit —
+// directly on the hot path of the crate's flagship workload (large-object
+// churn, e.g. shamir-db), perf regression #133.
+//
+// Fix: the counter is now a PER-HEAP field (`AllocCore::large_cache_hits`,
+// see below), incremented only by its owning `AllocCore`'s (and therefore
+// that heap's owning thread's) own calls — never shared with another
+// heap's cache line. It stays an `AtomicU64` (Relaxed) rather than a plain
+// `u64` because the process-global VIEW
+// (`registry::heap_registry::large_cache_hits_total`, aggregated into
+// `SeferAlloc::stats()`) reads every live heap's counter from whatever
+// thread calls `stats()` — a plain `u64` written by the owner and read by
+// a different thread without synchronisation would be a data race (UB);
+// `Relaxed` on both sides is sound for a diagnostic counter with no
+// ordering requirement (the same pattern as `DBG_LARGE_XTHREAD_RECLAIMED`
+// and the new `HeapCore::tcache_hits`), and needs no `unsafe` — safe-Rust
+// atomics all the way, consistent with `#![forbid(unsafe_code)]`.
 #[cfg(feature = "alloc-decommit")]
-static LARGE_CACHE_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
 
 /// A single-threaded allocator over the self-hosted segment substrate.
 ///
@@ -285,6 +302,16 @@ pub struct AllocCore {
     /// `Background` / `Both`: reserved for the future background scavenger.
     #[cfg(feature = "alloc-decommit")]
     large_cache_mode: LargeCacheMode,
+
+    /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): this `AllocCore`'s own
+    /// large-cache hit count. See the doc comment on
+    /// [`LargeCacheHitCounter`] above for why this is a per-heap field
+    /// (perf regression #133) instead of the old process-wide `static`.
+    /// Bumped (Relaxed) in `alloc_large`'s cache-hit branch, always by this
+    /// `AllocCore`'s owning thread. Read cross-thread only by the
+    /// aggregating `large_cache_hits_total` (diagnostics / `stats()`).
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_hits: LargeCacheHitCounter,
 }
 
 impl AllocCore {
@@ -385,6 +412,8 @@ impl AllocCore {
             last_decay_tick: None,
             #[cfg(feature = "alloc-decommit")]
             large_cache_mode: LargeCacheMode::Lazy,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits: LargeCacheHitCounter::new(0),
         })
     }
 
@@ -1796,7 +1825,8 @@ impl AllocCore {
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache[idx].take().unwrap();
                 // Diagnostic (task D1): count this as a cache hit.
-                LARGE_CACHE_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                self.large_cache_hits
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
@@ -2199,14 +2229,20 @@ impl AllocCore {
         self.large_cache_used_bytes
     }
 
-    /// TEST/DIAGNOSTIC-ONLY (task D1): process-wide count of `alloc_large`
-    /// calls served from `large_cache` (cache hits) since process start.
-    /// Relaxed load of [`LARGE_CACHE_HITS`] — diagnostic only.
+    /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): count of `alloc_large` calls
+    /// served from `large_cache` (cache hits) for THIS `AllocCore` since it
+    /// was constructed. Relaxed load of `large_cache_hits` — diagnostic
+    /// only. Task #133 moved this from a process-wide `static` to a
+    /// per-heap instance field (see its doc comment); callers that need the
+    /// process-wide total should use
+    /// `registry::heap_registry::large_cache_hits_total`, which sums this
+    /// method's result across every live registry slot.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
-    pub fn dbg_large_cache_hits() -> u64 {
-        LARGE_CACHE_HITS.load(core::sync::atomic::Ordering::Relaxed)
+    pub fn dbg_large_cache_hits(&self) -> u64 {
+        self.large_cache_hits
+            .load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// TEST-ONLY (Phase 1 large-cache budget): return the `usable_size` of

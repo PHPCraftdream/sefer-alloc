@@ -50,7 +50,7 @@ fn multi_size_cycle_produces_cache_hits() {
     let sizes = [4usize, 16, 64, 256];
     let layouts: Vec<Layout> = sizes.iter().map(|&m| layout(m)).collect();
 
-    let hits_before = AllocCore::dbg_large_cache_hits();
+    let hits_before = ac.dbg_large_cache_hits();
 
     const ROUNDS: usize = 6;
     for round in 0..ROUNDS {
@@ -68,7 +68,7 @@ fn multi_size_cycle_produces_cache_hits() {
         }
     }
 
-    let hits_after = AllocCore::dbg_large_cache_hits();
+    let hits_after = ac.dbg_large_cache_hits();
     let hits = hits_after - hits_before;
 
     // Theoretical max: every alloc from round 1 onward hits (all 4 distinct

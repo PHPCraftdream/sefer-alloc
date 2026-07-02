@@ -284,7 +284,7 @@ impl SeferAlloc {
     pub fn stats(&self) -> AllocStats {
         AllocStats {
             #[cfg(feature = "alloc-decommit")]
-            large_cache_hits: crate::alloc_core::AllocCore::dbg_large_cache_hits(),
+            large_cache_hits: crate::registry::large_cache_hits_total(),
             #[cfg(not(feature = "alloc-decommit"))]
             large_cache_hits: 0,
 
@@ -300,8 +300,7 @@ impl SeferAlloc {
             large_xthread_reclaimed: 0,
 
             #[cfg(feature = "fastbin")]
-            tcache_hits: crate::registry::DBG_TCACHE_HITS
-                .load(core::sync::atomic::Ordering::Relaxed),
+            tcache_hits: crate::registry::tcache_hits_total(),
             #[cfg(not(feature = "fastbin"))]
             tcache_hits: 0,
 

@@ -94,6 +94,16 @@ impl HeapRegistry {
                     return core::ptr::null_mut();
                 }
             }
+            // Publish readiness: Release-store `initialised = true` ONLY
+            // now that `heap_ptr.write(hc)` has fully completed (task #133
+            // hardening — see `HeapSlot::initialised`'s doc comment for the
+            // UB window this closes: `count`/`generation` alone are bumped
+            // BEFORE `HeapCore::new()` runs and are NOT safe gates for a
+            // cross-thread reader to dereference `heap`). This Release
+            // store is the publish half of the HB pair; diagnostic
+            // aggregation readers (`tcache_hits_total`,
+            // `large_cache_hits_total`) pair it with an Acquire load.
+            slot.initialised.store(true, Ordering::Release);
         }
         // SAFETY: slot is LIVE and initialised; we are sole writer.
         slot.heap.get().cast::<HeapCore>()
@@ -138,6 +148,9 @@ impl HeapRegistry {
                     return core::ptr::null_mut();
                 }
             }
+            // Publish readiness — see the identical store in `claim` above
+            // for the full rationale (task #133 hardening).
+            slot.initialised.store(true, Ordering::Release);
         }
         // SAFETY: slot is LIVE and initialised; we are sole writer.
         slot.heap.get().cast::<HeapCore>()
@@ -703,4 +716,148 @@ fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
 #[must_use]
 pub fn heaps_claimed_high_water() -> u32 {
     ensure().count.load(Ordering::Relaxed)
+}
+
+/// DIAGNOSTIC (task #133): process-wide magazine (tcache) hit total —
+/// aggregated across every slot ever minted, summing each slot's
+/// [`HeapCore::tcache_hits`]. Replaces the pre-#133 single global `static`
+/// counter (`DBG_TCACHE_HITS`), which was bumped by every thread's alloc
+/// fast path and therefore a contended `lock xadd` on an otherwise
+/// per-thread hot path (the regression this function's introduction fixes —
+/// see the doc comment on [`HeapCore`]'s `tcache_hits` field).
+///
+/// ## Soundness of reading a foreign slot's counter
+///
+/// This walks slot indices `0..count` (the high-water mark of minted
+/// slots — [`heaps_claimed_high_water`]) and, for each, performs a Relaxed
+/// load of that slot's `HeapCore::tcache_hits` — but ONLY after first
+/// checking [`HeapSlot::initialised`] with an `Acquire` load.
+///
+/// **This gate is load-bearing, not defensive.** `count` (bumped by
+/// `bump_count`, called from `pick_slot` BEFORE the slot's `FREE → LIVE`
+/// CAS) and `generation` (bumped to 1 by `claim` BEFORE `HeapCore::new()`
+/// runs, which reserves an OS segment — not fast) are BOTH insufficient:
+/// a slot index can be `< count` — and even have `generation == 1` — while
+/// `HeapCore::new()` is still executing on the claiming thread and
+/// `heap_ptr.write(hc)` has not yet run. `heap`'s storage is still
+/// `MaybeUninit::uninit()` bytes at that point. Reading it from THIS
+/// function (a different thread, e.g. via `SeferAlloc::stats()` called
+/// concurrently with another thread's first-ever `claim`) would be a read
+/// of uninitialised memory racing a concurrent non-atomic
+/// `MaybeUninit::write` — undefined behaviour, not merely a stale value.
+/// (This was a real defect caught in zero-trust review of the initial
+/// #133 patch — see `HeapSlot::initialised`'s doc comment for the full
+/// writeup, and `tests/regression_registry_initialised_gate.rs` for the
+/// regression coverage.)
+///
+/// The fix: [`HeapRegistry::claim`] (and `claim_with_config`) Release-store
+/// `true` into `HeapSlot::initialised` ONLY after `heap_ptr.write(hc)` has
+/// fully completed. This function's Acquire load of `initialised`, when it
+/// observes `true`, is guaranteed by the C++/Rust memory model to
+/// happens-after that Release store — which is itself sequenced-after the
+/// `write(hc)` on the same (claiming) thread — so observing `true` here
+/// establishes happens-before from the write of `hc` into the
+/// `UnsafeCell` to this function's subsequent dereference of `heap_ptr`.
+/// That is the standard "publish a fully-constructed value via a
+/// Release-store flag" pattern, and it is what makes the dereference below
+/// sound. A slot observed with `initialised == false` is skipped entirely:
+/// it has never been claimed (or is mid-claim), so it has never
+/// incremented `tcache_hits` either — contributing 0 to the sum is correct,
+/// not merely safe.
+///
+/// Once `initialised` is `true` it stays `true` for the process lifetime of
+/// the slot (per the slot-reuse discipline documented on [`HeapSlot::heap`]
+/// — a minted `HeapCore` is reused as-is across `recycle`/re-`claim`
+/// cycles, never dropped or reset), so a slot that was `true` on a prior
+/// observation can only still be `true` (or `true` with a newer,
+/// larger-or-equal counter value) on a later one — no ABA hazard on this
+/// flag itself.
+///
+/// No `unsafe` beyond what this module's header comment already documents
+/// as its seam: `MaybeUninit::assume_init_ref` would be new `unsafe`, but
+/// we avoid it entirely by going through the same raw-pointer path `claim`
+/// already uses (`heap.get().cast::<HeapCore>()`).
+///
+/// Only present under `alloc-global + fastbin` (mirrors
+/// `HeapCore::tcache_hits`'s cfg-gate).
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[doc(hidden)]
+#[must_use]
+pub fn tcache_hits_total() -> u64 {
+    let reg = ensure();
+    let count = reg.count.load(Ordering::Acquire) as usize;
+    let mut total: u64 = 0;
+    for idx in 0..count.min(MAX_HEAPS) {
+        // SAFETY: `idx < count <= MAX_HEAPS`, so this is in range of the
+        // `'static` slot array.
+        let slot = unsafe { reg.slots.get_unchecked(idx) };
+        // The load-bearing gate: skip any slot whose `HeapCore` is not yet
+        // (or not ever) materialised. See the doc comment above for why
+        // `idx < count` alone does NOT imply this.
+        if !slot.initialised.load(Ordering::Acquire) {
+            continue;
+        }
+        let heap_ptr = slot.heap.get().cast::<HeapCore>();
+        // SAFETY: we just observed `slot.initialised == true` under
+        // Acquire, which happens-after the claimer's Release store of that
+        // same flag (issued only once `heap_ptr.write(hc)` completed) —
+        // establishing happens-before to the write of `hc`. `heap_ptr`
+        // therefore points at a live, fully-initialised `HeapCore`.
+        // `tcache_hits()` performs only a Relaxed atomic load, sound to
+        // call via a shared reference from any thread.
+        total = total.saturating_add(unsafe { (*heap_ptr).tcache_hits() });
+    }
+    total
+}
+
+/// DIAGNOSTIC (task #133): process-wide large-cache hit total — aggregated
+/// across every slot ever minted, summing each slot's
+/// `AllocCore::dbg_large_cache_hits()`. Replaces the pre-#133 single global
+/// `static` counter (`LARGE_CACHE_HITS` in `alloc_core.rs`), which was
+/// bumped by every heap's `alloc_large` cache-hit path and therefore a
+/// contended `lock xadd` on an otherwise per-heap hot path.
+///
+/// Soundness of walking foreign slots and reading their `AllocCore` field
+/// cross-thread: identical argument to [`tcache_hits_total`] above,
+/// including the SAME load-bearing gate — `idx < count` alone does NOT
+/// imply the slot's `HeapCore` is materialised (see that function's doc
+/// comment for the exact UB window this closes: `count` is bumped by
+/// `bump_count` before the claiming thread even starts `HeapCore::new()`).
+/// This function gates every slot on an `Acquire` load of
+/// [`HeapSlot::initialised`] before dereferencing `heap`, pairing with the
+/// `Release` store `claim`/`claim_with_config` perform immediately after
+/// `heap_ptr.write(hc)` completes — establishing happens-before to the
+/// write. A slot observed `initialised == false` is skipped (never
+/// claimed, or mid-claim — either way it has never incremented
+/// `large_cache_hits`, so contributing 0 is correct).
+///
+/// Only present under `alloc-decommit` (mirrors
+/// `AllocCore::dbg_large_cache_hits`'s cfg-gate).
+#[cfg(feature = "alloc-decommit")]
+#[doc(hidden)]
+#[must_use]
+pub fn large_cache_hits_total() -> u64 {
+    let reg = ensure();
+    let count = reg.count.load(Ordering::Acquire) as usize;
+    let mut total: u64 = 0;
+    for idx in 0..count.min(MAX_HEAPS) {
+        // SAFETY: `idx < count <= MAX_HEAPS` is in range of the `'static`
+        // slot array.
+        let slot = unsafe { reg.slots.get_unchecked(idx) };
+        // The load-bearing gate — see the doc comment above and
+        // `tcache_hits_total`'s (identical rationale).
+        if !slot.initialised.load(Ordering::Acquire) {
+            continue;
+        }
+        let heap_ptr = slot.heap.get().cast::<HeapCore>();
+        // SAFETY: we just observed `slot.initialised == true` under
+        // Acquire, happens-after the claimer's Release store issued only
+        // once `heap_ptr.write(hc)` completed — establishing
+        // happens-before to that write. `heap_ptr` therefore points at a
+        // live, fully-initialised `HeapCore` (and thus `AllocCore`).
+        // `dbg_large_cache_hits()` performs only a Relaxed atomic load,
+        // sound to call via a shared reference from any thread.
+        total = total.saturating_add(unsafe { (*heap_ptr).core.dbg_large_cache_hits() });
+    }
+    total
 }

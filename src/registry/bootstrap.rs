@@ -337,9 +337,13 @@ fn ensure_slow() -> &'static Registry {
             unsafe {
                 // Write each slot's `next_free` to NEXT_FREE_TAIL (u32::MAX).
                 // Everything else in each slot starts at zero, which is correct:
-                //   state      = 0 = STATE_FREE
-                //   generation = 0
-                //   heap       = MaybeUninit::uninit() (unspecified, zero is fine)
+                //   state       = 0 = STATE_FREE
+                //   generation  = 0
+                //   heap        = MaybeUninit::uninit() (unspecified, zero is fine)
+                //   initialised = 0 = false (AtomicBool::new(false) is a
+                //     zero byte -- correct starting value, see its doc
+                //     comment on HeapSlot for why a reader must never
+                //     dereference `heap` before observing this as `true`)
                 let slots_base: *mut HeapSlot = core::ptr::addr_of_mut!((*base).slots).cast();
                 for i in 0..MAX_HEAPS {
                     // SAFETY: `i < MAX_HEAPS`, so `slots_base.add(i)` is within

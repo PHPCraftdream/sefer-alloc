@@ -77,20 +77,35 @@ use crate::alloc_core::{node::Node, AllocCore};
 pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// TEST-ONLY (0.3.0, task C1): process-wide count of magazine (tcache) HITS
-/// on the [`HeapCore::alloc`] fast path — i.e. every time an alloc was served
-/// by popping the per-thread magazine instead of falling through to the
-/// substrate. Bumped once per hit, regardless of the request's alignment.
-///
-/// Diagnostic only (relaxed, like [`DBG_LARGE_XTHREAD_RECLAIMED`]), `pub`
-/// so `tests/regression_fastbin_aligned_roundtrip.rs` can assert the
-/// magazine actually served align>16 requests (the C1 fix: before it, the
-/// magazine fast path was gated on `align <= SMALL_ALIGN_MAX` and every
-/// align>16 alloc/dealloc bypassed it entirely — this counter stayed zero
-/// for such a workload; the counterfactual is restoring that gate).
+// TEST-ONLY (0.3.0, task C1 → 0.4.x task #133): magazine (tcache) HIT
+// counter. Originally a single process-wide `static AtomicU64`, bumped by
+// EVERY thread's alloc fast path — a contended `lock xadd` on an otherwise
+// fully per-thread hot path (the "churn hot path": pop from the magazine).
+// Under MT this counter's cache line ping-pongs across cores on every
+// magazine hit, adding cross-core traffic to a path that is architecturally
+// per-thread (each `HeapCore` lives on one thread's registry slot — see the
+// module doc). Perf regression #133.
+//
+// Fix: the counter is now a PER-HEAP field (`HeapCore::tcache_hits`, see
+// below), incremented by its own owning thread only. Two threads' counters
+// never share a cache line (each lives inside its own slot in the
+// `'static` registry array), so the increment is a plain (uncontended)
+// atomic RMW on ST and has NO cross-core traffic on MT — the contention is
+// eliminated, not just made cheaper.
+//
+// It stays an `AtomicU64` (not a plain `u64`) because the process-global
+// VIEW (`tcache_hits()` below, and `SeferAlloc::stats().tcache_hits`) reads
+// EVERY live heap's counter from whatever thread calls `stats()` — a
+// different thread than the owner in general. A plain `u64` written by one
+// thread and read by another without synchronisation is a data race (UB,
+// caught by TSan); `Relaxed` on both sides keeps this sound (no ordering
+// requirement on a diagnostic counter — see the crate's existing
+// `DBG_LARGE_XTHREAD_RECLAIMED` for the same relaxed-diagnostic pattern)
+// while remaining `#![forbid(unsafe_code)]`-clean (no seam module needed —
+// `AtomicU64` is safe-Rust top to bottom).
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
-pub static DBG_TCACHE_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 
 /// 0.3.0 hardening (post-A1): the **on-this-stack** tail sentinel for
 /// [`HeapCore`]'s deferred-free Treiber stack (the `thread_free` field
@@ -238,6 +253,22 @@ pub struct HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache: super::tcache::Tcache,
 
+    /// TEST/DIAGNOSTIC-ONLY (task C1 → #133): per-heap magazine HIT counter.
+    /// See the module-level comment above [`TcacheHitCounter`] for why this
+    /// moved from a single process-wide `static` to a per-heap field (perf
+    /// regression #133 — the global counter's `lock xadd` contended and
+    /// cache-line-ping-ponged across every thread's magazine-hit fast path).
+    /// Bumped (Relaxed) by [`HeapCore::alloc`]'s magazine-hit branch — always
+    /// by THIS heap's owning thread, so the increment itself is never
+    /// contended by another thread. Read cross-thread only by the
+    /// aggregating [`tcache_hits_total`] (diagnostics / `stats()`), which is
+    /// why this stays an `AtomicU64` (Relaxed load) rather than a plain
+    /// `u64` — a plain field read from a non-owning thread without
+    /// synchronisation would be a data race (UB) despite `#![forbid(unsafe_code)]`
+    /// never being violated by the *type itself*.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) tcache_hits: TcacheHitCounter,
+
     /// OPT-C (task #66): lazy stamp cache.
     ///
     /// The base address of the last segment for which this heap successfully
@@ -298,6 +329,8 @@ impl HeapCore {
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache_hits: TcacheHitCounter::new(0),
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
         })
@@ -323,6 +356,8 @@ impl HeapCore {
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache_hits: TcacheHitCounter::new(0),
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
         })
@@ -347,6 +382,18 @@ impl HeapCore {
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.core.segment_bases()
+    }
+
+    /// TEST/DIAGNOSTIC-ONLY (task #133): this heap's own magazine-hit count.
+    /// Relaxed load of [`tcache_hits`](Self::tcache_hits) — sound for a
+    /// cross-thread diagnostic read (see the field's doc comment). Used by
+    /// [`super::heap_registry::tcache_hits_total`] to aggregate across every
+    /// LIVE slot into the process-wide view `stats()` exposes.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn tcache_hits(&self) -> u64 {
+        self.tcache_hits.load(Ordering::Relaxed)
     }
 
     /// Phase 12.4 adoption substrate: register an adopted segment base into
@@ -689,7 +736,7 @@ impl HeapCore {
                         // streak-free — no read, no write of alloc_streak.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
-                        DBG_TCACHE_HITS.fetch_add(1, Ordering::Relaxed);
+                        self.tcache_hits.fetch_add(1, Ordering::Relaxed);
                         return self.tcache.slots[c][new_cnt];
                     }
 

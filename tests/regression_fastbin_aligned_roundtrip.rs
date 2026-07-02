@@ -23,7 +23,7 @@
 //!
 //! 1. **Hit-counter check**: drive an alloc/dealloc/alloc cycle at two
 //!    align>16 shapes ((640,128) and (256,64)) and assert
-//!    `DBG_TCACHE_HITS` increased — i.e. the magazine actually served at
+//!    `tcache_hits_total()` increased — i.e. the magazine actually served at
 //!    least one of these requests. This is the counterfactual-checked half
 //!    (see the doc comment on `main` below for how it was verified).
 //! 2. **Correctness**: allocate many blocks at several align>16 shapes,
@@ -37,11 +37,11 @@ use std::alloc::Layout;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{bootstrap, HeapRegistry, DBG_TCACHE_HITS};
+use sefer_alloc::registry::{bootstrap, tcache_hits_total, HeapRegistry};
 
 // Serialise all tests in this file: the registry is a process-global static,
-// and DBG_TCACHE_HITS is a process-global counter (matching the discipline
-// in `heap_core_tcache.rs`).
+// and `tcache_hits_total()` aggregates a process-wide total (matching the
+// discipline in `heap_core_tcache.rs`).
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
 struct SerialGuard;
@@ -69,7 +69,7 @@ impl Drop for SerialGuard {
 /// `align <= SMALL_ALIGN_MAX` gate restored (the pre-fix code), this same
 /// alloc/dealloc/alloc sequence at (640,128) and (256,64) produces ZERO
 /// magazine hits for those two shapes — every request falls straight
-/// through to `AllocCore::alloc`/`dealloc`, so `DBG_TCACHE_HITS` does not
+/// through to `AllocCore::alloc`/`dealloc`, so `tcache_hits_total()` does not
 /// move. With the gate removed (post-fix, the code under test here), the
 /// second `alloc` of each shape is served by the magazine (the first
 /// `dealloc` pushed the block into the now-unblocked magazine slot), so the
@@ -83,7 +83,7 @@ fn c1_align_over_16_hits_magazine() {
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
 
-    let before = DBG_TCACHE_HITS.load(Ordering::Relaxed);
+    let before = tcache_hits_total();
 
     let shapes = [(640usize, 128usize), (256usize, 64usize)];
     for &(size, align) in &shapes {
@@ -101,10 +101,10 @@ fn c1_align_over_16_hits_magazine() {
         unsafe { (*heap).dealloc(p2, layout) };
     }
 
-    let after = DBG_TCACHE_HITS.load(Ordering::Relaxed);
+    let after = tcache_hits_total();
     assert!(
         after > before,
-        "DBG_TCACHE_HITS did not increase for align>16 requests \
+        "tcache_hits_total() did not increase for align>16 requests \
          (before={before}, after={after}) -- the magazine gate regressed"
     );
 

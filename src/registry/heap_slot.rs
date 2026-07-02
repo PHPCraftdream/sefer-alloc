@@ -43,7 +43,7 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicU32, AtomicU8};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use super::heap_core::HeapCore;
 
@@ -89,6 +89,42 @@ pub struct HeapSlot {
     /// is FREE. Read/written by the registry only while the slot is FREE (no
     /// concurrent LIVE access).
     pub next_free: AtomicU32,
+    /// Release-published "heap is materialised" flag (task #133 hardening).
+    ///
+    /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
+    /// slot's first `claim` (`new_gen == 1` branch, immediately after
+    /// `heap_ptr.write(hc)` completes) — see `HeapRegistry::claim` /
+    /// `claim_with_config`. NEVER reset back to `false` afterwards: once a
+    /// slot's `HeapCore` is materialised it is reused as-is across every
+    /// later `recycle` → `claim` cycle (it is never dropped or
+    /// re-`MaybeUninit`'d — see `heap`'s doc comment above), so once this
+    /// flag is `true` it stays `true` for the process lifetime of the slot.
+    ///
+    /// **Why this exists — the bug it fixes:** `count` (bumped by
+    /// `bump_count`, BEFORE the CAS to LIVE and BEFORE `HeapCore::new()`
+    /// runs) and `generation` (bumped to 1 by `claim` BEFORE
+    /// `heap_ptr.write(hc)`) are both insufficient gates for a reader that
+    /// wants to safely dereference `heap` from a DIFFERENT thread than the
+    /// claimer: a diagnostic walk (`tcache_hits_total` /
+    /// `large_cache_hits_total`) that used `idx < count` or `generation >=
+    /// 1` as its "safe to read" condition could observe a slot mid-claim —
+    /// `count` already bumped, generation already 1, but `HeapCore::new()`
+    /// (which reserves an OS segment — not fast) still in flight and
+    /// `heap_ptr.write(hc)` not yet executed. Reading `heap` in that window
+    /// is a read of `MaybeUninit::uninit()` racing a concurrent non-atomic
+    /// write — undefined behaviour, not merely stale data.
+    ///
+    /// **The fix:** the writer publishes readiness with a `Release` store
+    /// to this flag ONLY after `heap_ptr.write(hc)` returns; the reader
+    /// gates its dereference of `heap` on an `Acquire` load observing
+    /// `true`. This Release/Acquire pair establishes happens-before from
+    /// the write of `hc` into the `UnsafeCell` to the reader's subsequent
+    /// access — the standard "publish a fully-constructed value" pattern.
+    /// A reader that observes `false` skips the slot entirely (treats it as
+    /// "not yet materialised, contributes nothing to the aggregate" — sound
+    /// because a slot that has never been claimed has never incremented any
+    /// per-heap counter either).
+    pub initialised: AtomicBool,
 }
 
 impl HeapSlot {
@@ -109,6 +145,7 @@ impl HeapSlot {
             generation: AtomicU32::new(0),
             heap: UnsafeCell::new(MaybeUninit::uninit()),
             next_free: AtomicU32::new(NEXT_FREE_TAIL),
+            initialised: AtomicBool::new(false),
         }
     }
 
