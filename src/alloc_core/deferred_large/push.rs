@@ -75,65 +75,64 @@ use crate::alloc_core::segment_header::{SegmentMeta, ABANDONED_TAIL};
 pub(crate) fn push_large_deferred_free(head: &AtomicPtr<u8>, base: *mut u8) {
     let next_atomic = SegmentMeta::new(base).next_abandoned_atomic();
     let mut cur = head.load(Ordering::Acquire);
+    // Link `base` to the current head (or the "empty" sentinel,
+    // `core::ptr::null_mut()`, encoded as `DEFERRED_LARGE_TAIL` — THIS stack's
+    // own tail marker, distinct from `ABANDONED_TAIL` — so a later pop can
+    // distinguish "no next" from a real base, and so the double-push guard
+    // below can distinguish "on this stack" from "not on any stack" even when
+    // the stack was empty at push time).
+    //
+    // EXPOSED-PROVENANCE STORE SITE (see `drain_large_deferred_free`'s paired
+    // `with_exposed_provenance_mut` load): a non-null `cur` is the owner's
+    // real, dereferenceable stack-head pointer being packed into a plain
+    // `u64` link word.
+    let next_link = if cur.is_null() {
+        DEFERRED_LARGE_TAIL
+    } else {
+        cur.expose_provenance() as u64
+    };
+    // Double-push guard — claim `base`'s link word from the "not on any stack"
+    // sentinel (`ABANDONED_TAIL`) EXACTLY ONCE, before the `head`-CAS retry
+    // loop. If another pusher already won this race for the SAME `base` (a
+    // double-free), `next_atomic` no longer reads `ABANDONED_TAIL` and we bail
+    // out — a sound no-op (the base is already queued for reclaim).
+    //
+    // CRUCIAL (task #143): this claim MUST NOT live inside the retry loop. It
+    // succeeds from `ABANDONED_TAIL` on the first attempt and moves the link
+    // word to a real value; a second attempt (after losing the `head` CAS to a
+    // concurrent pusher of a DIFFERENT base) would ALWAYS fail its
+    // `ABANDONED_TAIL` claim and `return` early — WITHOUT ever winning `head`,
+    // silently dropping `base` from the stack (an A1-class permanent leak).
+    // That leak was found by `tests/loom_deferred_large.rs`. Claiming once and
+    // then looping only on the `head` CAS is correct: the claim already
+    // secured EXCLUSIVE ownership of this base's link word for the rest of the
+    // call, so no other pusher of THIS base can race the plain `store`s below.
+    if next_atomic
+        .compare_exchange(
+            ABANDONED_TAIL,
+            next_link,
+            Ordering::Release,
+            Ordering::Relaxed,
+        )
+        .is_err()
+    {
+        return;
+    }
     loop {
-        // Link `base` to the current head (or the "empty" sentinel,
-        // `core::ptr::null_mut()`, encoded as `DEFERRED_LARGE_TAIL` — THIS
-        // stack's own tail marker, distinct from `ABANDONED_TAIL` — so a
-        // later pop can distinguish "no next" from a real base, and so the
-        // double-push guard below can distinguish "on this stack" from "not
-        // on any stack" even when the stack was empty at push time).
-        let next_link = if cur.is_null() {
-            DEFERRED_LARGE_TAIL
-        } else {
-            // EXPOSED-PROVENANCE STORE SITE: `cur` is the owner's real,
-            // dereferenceable stack-head pointer (a Large segment base),
-            // about to be packed into a plain `u64` link word inside
-            // `next_abandoned`. `expose_provenance` explicitly registers
-            // `cur`'s provenance so the paired load site —
-            // `drain_large_deferred_free`'s `next_link as *mut u8`
-            // reconstruction — may validly re-derive a dereferenceable
-            // pointer via `with_exposed_provenance_mut`.
-            cur.expose_provenance() as u64
-        };
-        // Double-push guard: claim `base`'s link word from the "not on any
-        // stack" sentinel (`ABANDONED_TAIL`). If another pusher already won
-        // this race for the SAME `base` (a double-free), `next_atomic` no
-        // longer reads `ABANDONED_TAIL` (it now reads either
-        // `DEFERRED_LARGE_TAIL` or a real link) and we bail out — `base` is
-        // already queued for reclaim, so this push is a sound no-op. Only
-        // the winner of this CAS may proceed to contest `head` below, so
-        // `base`'s link word is exclusively ours for the remainder of this
-        // call (a plain `store` on a lost `head` CAS retry, below, is
-        // therefore safe: no other pusher can be touching this same
-        // `base`'s link concurrently).
-        if next_atomic
-            .compare_exchange(
-                ABANDONED_TAIL,
-                next_link,
-                Ordering::Release,
-                Ordering::Relaxed,
-            )
-            .is_err()
-        {
-            return;
-        }
         match head.compare_exchange(cur, base, Ordering::Release, Ordering::Relaxed) {
             Ok(_) => return,
             Err(actual) => {
                 // Lost the head CAS to a concurrent pusher of a DIFFERENT
-                // base. We already own this base's link word (guard CAS
-                // above succeeded and is exclusive to us — no other pusher
-                // of THIS base can be racing us), so a plain store retargets
-                // the link to the fresh head before retrying the head CAS.
+                // base. We already own this base's link word (the claim CAS
+                // above succeeded and is exclusive to us), so a plain store
+                // retargets the link to the fresh head before retrying the
+                // head CAS — we do NOT re-run the claim (see the #143 note).
+                //
+                // EXPOSED-PROVENANCE STORE SITE: same rationale as `cur` above.
                 next_atomic.store(
                     if actual.is_null() {
                         DEFERRED_LARGE_TAIL
                     } else {
-                        // EXPOSED-PROVENANCE STORE SITE: same rationale as
-                        // the `cur.expose_provenance()` site above — `actual`
-                        // is the fresh head pointer this retry lost to, being
-                        // packed into the link word for the same paired load
-                        // in `drain_large_deferred_free`.
                         actual.expose_provenance() as u64
                     },
                     Ordering::Release,

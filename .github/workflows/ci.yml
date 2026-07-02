@@ -178,6 +178,16 @@ jobs:
             features: "alloc-core alloc-xthread"
           - test: loom_remote_ring
             features: "alloc-core alloc-xthread"
+          # #141: A1 deferred_large push/drain Treiber-stack model (the
+          # double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL sentinel
+          # split from `src/alloc_core/deferred_large/push.rs`/`drain.rs`).
+          - test: loom_deferred_large
+            features: "alloc-core alloc-xthread"
+          # #141: Registry `free_slots` Treiber stack + `TaggedPtr` ABA-tag
+          # model (`src/registry/heap_registry.rs` pop_free_slot/push_free_slot
+          # + `src/registry/tagged_ptr.rs`).
+          - test: loom_free_slots_aba
+            features: "alloc-global"
           - test: loom_thread_free
             features: "alloc"
           - test: loom_sharded

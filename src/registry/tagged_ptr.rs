@@ -26,17 +26,21 @@
 //! This matches the judgement recorded in §2.1 / risk-register of
 //! `ALLOC_PLAN_PHASE12-13.md`: "document the tag-width vs realistic churn".
 //!
-//! **0.3.0 (task #138) — honest status:** the push-pop-repush ABA loom model
-//! for THIS `TaggedPtr`/`free_slots` protocol referenced above was never
-//! actually written. `tests/loom_registry.rs` (Phase 12.4) models a
-//! DIFFERENT protocol — the segment `owner_state` adoption CAS, which does
-//! not use `TaggedPtr` at all (and is itself unreachable from any production
-//! path today — see that file's own honesty note). No loom file exercises
-//! `free_slots`'/`TaggedPtr`'s push-pop-repush ABA sequence. This is tracked
-//! as follow-up debt (not written in task #138: the `free_slots` stack
-//! lives in `src/registry/bootstrap.rs`/`heap_registry.rs`, both real
-//! `core::sync::atomic` — modelling it would need a new loom harness,
-//! judged out of scope for this hardening pass; see the task #138 report).
+//! **0.3.0 (task #141) — resolved:** the push-pop-repush ABA loom model for
+//! THIS `TaggedPtr`/`free_slots` protocol is now `tests/loom_free_slots_aba.rs`
+//! (`RUSTFLAGS="--cfg loom" cargo test --release --features alloc-global
+//! --test loom_free_slots_aba`, wired into the CI `loom` matrix). It
+//! transcribes `pop_free_slot`/`push_free_slot`
+//! (`src/registry/heap_registry.rs`) and `TaggedPtr::pack`/`unpack` verbatim
+//! and models the classic ABA race (thread A reads a stale `(index, tag)`
+//! head while thread B pops-then-repushes the SAME index, bumping the tag),
+//! asserting the tag guard forces A's stale CAS to fail/retry and that the
+//! free-list stays loss/duplication-free. A counterfactual with the tag
+//! removed (bare `AtomicU32` head) proves the harness is non-vacuous: loom
+//! finds the same interleaving corrupting the untagged free-list.
+//! `tests/loom_registry.rs` (Phase 12.4) remains a model of a DIFFERENT,
+//! unreachable protocol (the segment `owner_state` adoption CAS) — see that
+//! file's own honesty note; it is untouched by this resolution.
 //!
 //! ## This file is pure safe arithmetic
 //!
