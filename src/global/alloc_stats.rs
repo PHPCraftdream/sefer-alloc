@@ -71,10 +71,15 @@ pub struct AllocStats {
     pub tcache_hits: u64,
 
     /// Number of times a cross-thread free could not be pushed onto a
-    /// segment's remote-free ring because the ring was full (the free then
-    /// falls back to the slower Treiber-stack path — no memory is lost, but
-    /// a high rate here indicates ring-capacity pressure worth tuning).
-    /// Requires the `alloc-xthread` feature; `0` otherwise.
+    /// segment's remote-free ring because the ring was full. On overflow the
+    /// freed block is **discarded** (it stays mapped and unused — a bounded
+    /// leak; see "Overflow semantics" in
+    /// [`remote_free_ring`](crate::alloc_core::remote_free_ring)'s module
+    /// docs). This is sound (no UAF, no corruption) but is NOT free — a
+    /// sustained high rate here means blocks are actually being leaked and
+    /// indicates ring-capacity pressure worth tuning (e.g. a larger ring, or
+    /// more frequent owner-side drains). Requires the `alloc-xthread`
+    /// feature; `0` otherwise.
     pub ring_overflows: u64,
 
     /// Cumulative count of successful OS segment reservations since process
@@ -100,5 +105,9 @@ pub struct AllocStats {
     /// process has needed simultaneously-or-sequentially. This is **not** a
     /// live count: a claimed-then-recycled slot is still counted (recycled
     /// slots are reused for new threads, never un-minted). Always available.
-    pub heaps_claimed_high_water: u32,
+    ///
+    /// `u64` for consistency with every other field on this struct (the
+    /// underlying registry counter is a `u32`; widened here via `as u64` —
+    /// see `SeferAlloc::stats()`).
+    pub heaps_claimed_high_water: u64,
 }

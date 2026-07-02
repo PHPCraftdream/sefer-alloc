@@ -51,19 +51,32 @@ jobs:
 
       - name: Install iai-callgrind-runner
         # The runner binary's version MUST match the `iai-callgrind` library
-        # version pinned in Cargo.toml (0.14) — mismatches fail fast with a
-        # clear error rather than silently misbehaving.
-        run: cargo install iai-callgrind-runner --version 0.14 --locked
+        # version pinned in Cargo.toml (0.14 — a caret requirement, "^0.14",
+        # per Cargo's default). `--version 0.14` risks being parsed by cargo
+        # as an exact-version pin (there is no crates.io release literally
+        # named "0.14", only "0.14.x" patches), so the install could fail;
+        # use the same explicit caret syntax as Cargo.toml so both pins are
+        # consistent and unambiguous.
+        run: cargo install iai-callgrind-runner --version "^0.14" --locked
 
       - name: Run perf-gate benchmarks (instruction counts)
-        # `--features alloc-global` matches the bench's `required-features`.
+        # `--features production` (alloc-global + alloc-xthread +
+        # alloc-decommit + fastbin) — NOT just `alloc-global`. The whole
+        # point of this gate is to catch regressions in the optimizations
+        # task #127 was built to guard (C1's magazine/fastbin fast path, D1's
+        # large-segment cache under alloc-decommit): benching with only
+        # `alloc-global` exercises the substrate path AROUND those features,
+        # so a regression in the magazine or the large-cache would sail
+        # through this gate silently — exactly the blind spot this workflow
+        # exists to close. `production` is the same feature set the crate's
+        # own release/benchmark tooling treats as the real-world default.
         # No committed baseline exists yet (task #127 initial cut): this run
         # establishes the first recorded summary. Once a baseline exists
         # (via `--save-baseline` on a prior run, cached across scheduled
         # runs), a follow-up should add `--baseline=<name>` here so
         # iai-callgrind actually fails the job on a >5-10% instruction-count
         # regression instead of only reporting numbers.
-        run: cargo bench --bench perf_gate_iai --features alloc-global
+        run: cargo bench --bench perf_gate_iai --features production
 
       - name: Upload Callgrind artifacts
         if: always()

@@ -92,6 +92,25 @@ pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
 #[doc(hidden)]
 pub static DBG_TCACHE_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// 0.3.0 hardening (post-A1): the **on-this-stack** tail sentinel for
+/// [`HeapCore`]'s deferred-free Treiber stack (the `thread_free` field
+/// reused as a stack head — see its doc comment). This MUST be distinct from
+/// [`ABANDONED_TAIL`](crate::alloc_core::segment_header::ABANDONED_TAIL)
+/// (`u64::MAX`), which this same `next_abandoned` field uses to mean "not
+/// linked into ANY stack" (the value every fresh/reclaimed segment header
+/// starts with). If the two sentinels were the same value, a `base` pushed
+/// onto an EMPTY deferred-free stack would end this push with
+/// `next_abandoned == ABANDONED_TAIL` — indistinguishable from "never
+/// pushed" — silently defeating the double-push guard in
+/// [`push_large_deferred_free`](HeapCore::push_large_deferred_free) for the
+/// common case (an idle heap, empty stack) the very first time it's used.
+/// `u64::MAX - 1` is never a valid link value either way: a real "has next"
+/// link is a `SEGMENT`-aligned base address cast to `u64`, and no platform
+/// this crate targets produces `usize::MAX - 1` as a valid, aligned
+/// pointer.
+#[cfg(feature = "alloc-xthread")]
+const DEFERRED_LARGE_TAIL: u64 = u64::MAX - 1;
+
 /// The thin, slot-resident heap value.
 ///
 /// Lives inside a [`HeapSlot`](super::heap_slot::HeapSlot)'s `UnsafeCell` and
@@ -407,6 +426,51 @@ impl HeapCore {
     /// every call). `base` must be a currently-registered `Large`-kind
     /// segment base (guaranteed by the caller: only reached after
     /// `kind_at(base) == SegmentKind::Large`).
+    ///
+    /// ## Double-push guard (0.3.0 hardening, post-A1)
+    ///
+    /// `base`'s `next_abandoned` field starts life as [`ABANDONED_TAIL`]
+    /// (both `SegmentHeader::small`/`large` constructors set it, and a
+    /// segment reclaimed via `AllocCore::reclaim_large_segment` is either
+    /// unmapped or has its header zeroed/rewritten before any future reuse —
+    /// so a `base` that is NOT currently linked into some Treiber stack
+    /// always reads back `ABANDONED_TAIL` here). A **double-free of the same
+    /// `base` from remote thread(s)** (already UB under the `GlobalAlloc`
+    /// contract, but one this allocator otherwise degrades safely on via the
+    /// M2 double-free guard everywhere else) used to be able to push `base`
+    /// onto this stack TWICE before a drain: the second push would read
+    /// `head == base` (the result of the first push's CAS) and write
+    /// `base.next_abandoned = base` — a self-loop. A drain would then pop
+    /// `base` once, reclaim it (unregister the slot + hand the segment to
+    /// `os::release_segment`/the large-cache — i.e. UNMAP or recycle it),
+    /// and, because the self-loop pop never advanced `head` away from
+    /// `base`, the *next* loop iteration would read `next_abandoned` off the
+    /// now-unmapped memory (a use-after-free) and could reclaim the same
+    /// `base` a second time (a double-unmap).
+    ///
+    /// The fix has two parts:
+    ///
+    /// 1. **A dedicated on-this-stack tail sentinel,
+    ///    [`DEFERRED_LARGE_TAIL`], distinct from [`ABANDONED_TAIL`].** This
+    ///    stack's "no next" link value can no longer be the SAME word as "not
+    ///    on any stack" — see [`DEFERRED_LARGE_TAIL`]'s doc comment for why
+    ///    conflating the two defeats the guard the very first time it's used
+    ///    (pushing onto an empty stack).
+    /// 2. **A claim `compare_exchange`** on `next_atomic` from
+    ///    `ABANDONED_TAIL` to the (now correctly tail-sentinel-aware) encoded
+    ///    link value, BEFORE contesting `head`. Only the pusher that wins
+    ///    this CAS may proceed; every other concurrent pusher of the SAME
+    ///    `base` observes `next_atomic` already `!= ABANDONED_TAIL` and
+    ///    returns immediately (a no-op — sound, matching the M2 double-free
+    ///    discipline used elsewhere: a redundant free of an already-queued
+    ///    pointer is silently dropped rather than corrupting state).
+    ///
+    /// This guard is scoped to a single `base`'s link word — it does NOT
+    /// block concurrent pushes of DIFFERENT bases (`base1 != base2`): each
+    /// has its own `next_abandoned` field, so two remote threads freeing two
+    /// distinct Large segments still race only on the shared `head` CAS,
+    /// exactly as before. Lock-free multi-producer push (for distinct bases)
+    /// is preserved.
     #[cfg(feature = "alloc-xthread")]
     fn push_large_deferred_free(head: *const AtomicPtr<u8>, base: *mut u8) {
         let next_atomic = SegmentMeta::new(base).next_abandoned_atomic();
@@ -418,18 +482,59 @@ impl HeapCore {
         let mut cur = head_ref.load(Ordering::Acquire);
         loop {
             // Link `base` to the current head (or the "empty" sentinel,
-            // `core::ptr::null_mut()`, encoded as `ABANDONED_TAIL` in the
-            // link word so a later pop can distinguish "no next" from a real
-            // base — a real base is never null).
+            // `core::ptr::null_mut()`, encoded as `DEFERRED_LARGE_TAIL` —
+            // THIS stack's own tail marker, distinct from `ABANDONED_TAIL` —
+            // so a later pop can distinguish "no next" from a real base, and
+            // so the double-push guard below can distinguish "on this stack"
+            // from "not on any stack" even when the stack was empty at push
+            // time).
             let next_link = if cur.is_null() {
-                crate::alloc_core::segment_header::ABANDONED_TAIL
+                DEFERRED_LARGE_TAIL
             } else {
                 cur as u64
             };
-            next_atomic.store(next_link, Ordering::Release);
+            // Double-push guard: claim `base`'s link word from the
+            // "not on any stack" sentinel (`ABANDONED_TAIL`). If another
+            // pusher already won this race for the SAME `base` (a
+            // double-free), `next_atomic` no longer reads `ABANDONED_TAIL`
+            // (it now reads either `DEFERRED_LARGE_TAIL` or a real link) and
+            // we bail out — `base` is already queued for reclaim, so this
+            // push is a sound no-op. Only the winner of this CAS may
+            // proceed to contest `head` below, so `base`'s link word is
+            // exclusively ours for the remainder of this call (a plain
+            // `store` on a lost `head` CAS retry, below, is therefore safe:
+            // no other pusher can be touching this same `base`'s link
+            // concurrently).
+            if next_atomic
+                .compare_exchange(
+                    crate::alloc_core::segment_header::ABANDONED_TAIL,
+                    next_link,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                return;
+            }
             match head_ref.compare_exchange(cur, base, Ordering::Release, Ordering::Relaxed) {
                 Ok(_) => return,
-                Err(actual) => cur = actual,
+                Err(actual) => {
+                    // Lost the head CAS to a concurrent pusher of a
+                    // DIFFERENT base. We already own this base's link word
+                    // (guard CAS above succeeded and is exclusive to us — no
+                    // other pusher of THIS base can be racing us), so a
+                    // plain store retargets the link to the fresh head
+                    // before retrying the head CAS.
+                    next_atomic.store(
+                        if actual.is_null() {
+                            DEFERRED_LARGE_TAIL
+                        } else {
+                            actual as u64
+                        },
+                        Ordering::Release,
+                    );
+                    cur = actual;
+                }
             }
         }
     }
@@ -456,7 +561,10 @@ impl HeapCore {
             }
             let meta = SegmentMeta::new(cur);
             let next_link = meta.next_abandoned_atomic().load(Ordering::Acquire);
-            let next = if next_link == crate::alloc_core::segment_header::ABANDONED_TAIL {
+            // `DEFERRED_LARGE_TAIL` (not `ABANDONED_TAIL`) is this stack's
+            // own "no next" encoding — see `push_large_deferred_free`'s doc
+            // comment on why the two sentinels must differ.
+            let next = if next_link == DEFERRED_LARGE_TAIL {
                 core::ptr::null_mut()
             } else {
                 next_link as *mut u8

@@ -180,6 +180,145 @@ fn xthread_large_free_reclaims_segments_no_leak() {
     unsafe { HeapRegistry::recycle(heap) };
 }
 
+/// Regression test (0.3.0 hardening, post-A1) — double-push guard in
+/// [`HeapCore::push_large_deferred_free`].
+///
+/// ## What this guards against
+///
+/// A1 gave `push_large_deferred_free` no protection against pushing the SAME
+/// `base` twice. A **double-free of the same Large pointer from remote
+/// thread(s)** — already UB under the `GlobalAlloc` contract, but a case this
+/// allocator otherwise degrades SAFELY on (a no-op) via the M2 double-free
+/// guard used everywhere else — used to corrupt this particular stack: the
+/// second push would read `head == base` (from the first push's CAS) and
+/// write `base.next_abandoned = base`, a self-loop. A drain would pop `base`
+/// once, reclaim it (unregister + unmap/recycle), and then — because the
+/// self-loop pop never advanced `head` away from `base` — read
+/// `next_abandoned` off the now-unmapped memory on the NEXT loop iteration
+/// (a use-after-free) and could reclaim the same segment a second time (a
+/// double-unmap).
+///
+/// The fix (see the doc comment on `push_large_deferred_free` in
+/// `src/registry/heap_core.rs`) makes the push idempotent per-`base` via a
+/// `compare_exchange` on the link word from `ABANDONED_TAIL`: only the first
+/// pusher of a given `base` may link it; a second push of the SAME `base`
+/// observes the link word already claimed and returns as a no-op.
+///
+/// ## What this test checks
+///
+/// This test does not assert on a defined "correct" result for a double-free
+/// (there is none — it's UB by contract). It asserts on the OBSERVABLE
+/// SYMPTOM the fix eliminates: after a remote thread double-frees the SAME
+/// large pointer for every block in a batch, the process does not
+/// crash/hang, `DBG_LARGE_XTHREAD_RECLAIMED` advances by EXACTLY one per
+/// distinct segment (never double-counted — a doubled count would indicate
+/// the same segment was reclaimed twice, the double-unmap symptom), and the
+/// owner heap remains fully usable afterward (it can keep allocating and
+/// freeing normally — the allocator stays sound).
+///
+/// ## Counterfactual (honesty about UB limits)
+///
+/// With the guard temporarily removed (reverting to an unconditional
+/// `next_atomic.store` before the head CAS, i.e. the pre-hardening A1 code),
+/// this test's `reclaimed == N` assertion fails deterministically on this
+/// author's dev machine and in CI runs performed during development: the
+/// self-loop causes `drain_large_deferred_free` to reclaim fewer THAN `N`
+/// distinct segments while double-counting others, so
+/// `DBG_LARGE_XTHREAD_RECLAIMED`'s delta no longer equals `N` (the corrupted
+/// chain drops some segments off the tail entirely — those slots leak instead
+/// of double-free crashing, since a self-loop pop terminates the drain loop
+/// at that node). Whether a GIVEN run additionally segfaults on the
+/// use-after-free read of `next_abandoned` on now-unmapped memory is
+/// UB-dependent (page reuse timing, allocator-internal unmap granularity) —
+/// this repo does not rely on a guaranteed crash to prove the bug; the
+/// `reclaimed == N` symptom is the deterministic, portable oracle used here.
+#[test]
+fn xthread_large_double_free_no_double_reclaim() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    const N: usize = 50;
+    const SIZE: usize = 512 * 1024;
+    let layout = Layout::from_size_align(SIZE, 8).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    let baseline = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+
+    // Owner allocates N large blocks.
+    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "alloc[{i}] returned null");
+        ptrs.push(p);
+    }
+
+    // A REMOTE thread double-frees every block: two `dealloc` calls per
+    // pointer, back-to-back, with no drain in between (this is the exact
+    // "two consecutive pushes of the same base" race the guard closes).
+    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    thread::spawn(move || {
+        let _ = bootstrap::ensure();
+        let remote_heap = HeapRegistry::claim();
+        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        for &addr in &addrs {
+            let p = addr as *mut u8;
+            unsafe { (*remote_heap).dealloc(p, layout) };
+            // Second free of the SAME pointer: a double-free (UB by
+            // `GlobalAlloc` contract). With the guard, this must be a sound
+            // no-op — it must NOT queue `base` a second time.
+            unsafe { (*remote_heap).dealloc(p, layout) };
+        }
+        unsafe { HeapRegistry::recycle(remote_heap) };
+    })
+    .join()
+    .unwrap();
+
+    // Owner allocates N more large blocks, forcing `alloc_large`'s slow path
+    // (and therefore `drain_large_deferred_free`) to run repeatedly.
+    let mut ptrs2: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "post-double-free alloc[{i}] returned null");
+        unsafe {
+            std::ptr::write_bytes(p, 0xAB, SIZE);
+            assert_eq!(
+                p.read(),
+                0xAB,
+                "post-double-free alloc[{i}] read-back mismatch — heap corrupted"
+            );
+        }
+        ptrs2.push(p);
+    }
+
+    // The key assertion: every distinct segment was reclaimed EXACTLY once
+    // (never zero — that would mean the corrupted chain dropped it, a leak;
+    // never more than N — that would mean a segment was double-reclaimed,
+    // the double-unmap symptom the guard prevents).
+    let reclaimed = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed) - baseline;
+    assert_eq!(
+        reclaimed, N as u64,
+        "expected exactly {N} reclaims (one per distinct double-freed segment), \
+         got {reclaimed} — a double-push corrupted the deferred-free stack \
+         (either a leaked segment, if < N, or a double-reclaim, if > N)."
+    );
+
+    // Sanity: the owner heap remains fully usable after the double-free —
+    // no corruption bled into the substrate.
+    for &p in &ptrs2 {
+        unsafe { (*heap).dealloc(p, layout) };
+    }
+    let p_final = unsafe { (*heap).alloc(layout) };
+    assert!(
+        !p_final.is_null(),
+        "heap unusable after double-free double-push scenario"
+    );
+    unsafe { (*heap).dealloc(p_final, layout) };
+
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
 /// Sister check: the reclaim counter is monotonically non-decreasing and
 /// genuinely reflects NEW reclaims (not a stuck/saturating counter that
 /// would pass the primary test vacuously). Runs a second independent heap +

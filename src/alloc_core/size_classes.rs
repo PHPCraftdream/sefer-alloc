@@ -87,8 +87,9 @@ pub(crate) const SMALL_MAX: usize = *SIZE_CLASS_TABLE.last().unwrap();
 ///
 /// Length is `(SMALL_MAX / MIN_BLOCK) + 1`: every `MIN_BLOCK`-aligned size bucket
 /// from `0` (sentinel, unused on the live path) up to and including `SMALL_MAX`.
-/// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (40) is far below 256; a
-/// compile-time assertion in [`build_size2class`] makes that invariant explicit.
+/// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (currently 48; grows as
+/// the table gains classes) is far below 256; a compile-time assertion in
+/// [`build_size2class`] makes that invariant explicit.
 pub(crate) const SIZE2CLASS: [u8; (SMALL_MAX / MIN_BLOCK) + 1] = build_size2class();
 
 /// The huge threshold: allocations of this size or larger are flagged "huge"
@@ -129,7 +130,7 @@ impl SizeClasses {
     /// **Slow path (`align > SMALL_ALIGN_MAX`):** we still seed at the
     /// `SIZE2CLASS` entry that covers `max(size, align)`, then walk forward at
     /// most a handful of classes to find one whose `block_size` is divisible
-    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (= 40), and in
+    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (currently 48), and in
     /// practice settles in 0–3 steps for the typical async-runtime alignments
     /// (32, 64, 128, 256 — `Cell<T,S>` etc.). Without this path EVERY alloc
     /// with `align > 16` would go to the dedicated-segment Large path,

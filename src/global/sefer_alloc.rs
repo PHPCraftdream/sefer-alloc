@@ -314,7 +314,7 @@ impl SeferAlloc {
             segments_reserved_total: crate::alloc_core::AllocCore::dbg_segments_reserved_total(),
             segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
 
-            heaps_claimed_high_water: crate::registry::heaps_claimed_high_water(),
+            heaps_claimed_high_water: crate::registry::heaps_claimed_high_water() as u64,
         }
     }
 }
