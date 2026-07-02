@@ -85,7 +85,15 @@ pub(crate) fn push_large_deferred_free(head: &AtomicPtr<u8>, base: *mut u8) {
         let next_link = if cur.is_null() {
             DEFERRED_LARGE_TAIL
         } else {
-            cur as u64
+            // EXPOSED-PROVENANCE STORE SITE: `cur` is the owner's real,
+            // dereferenceable stack-head pointer (a Large segment base),
+            // about to be packed into a plain `u64` link word inside
+            // `next_abandoned`. `expose_provenance` explicitly registers
+            // `cur`'s provenance so the paired load site —
+            // `drain_large_deferred_free`'s `next_link as *mut u8`
+            // reconstruction — may validly re-derive a dereferenceable
+            // pointer via `with_exposed_provenance_mut`.
+            cur.expose_provenance() as u64
         };
         // Double-push guard: claim `base`'s link word from the "not on any
         // stack" sentinel (`ABANDONED_TAIL`). If another pusher already won
@@ -121,7 +129,12 @@ pub(crate) fn push_large_deferred_free(head: &AtomicPtr<u8>, base: *mut u8) {
                     if actual.is_null() {
                         DEFERRED_LARGE_TAIL
                     } else {
-                        actual as u64
+                        // EXPOSED-PROVENANCE STORE SITE: same rationale as
+                        // the `cur.expose_provenance()` site above — `actual`
+                        // is the fresh head pointer this retry lost to, being
+                        // packed into the link word for the same paired load
+                        // in `drain_large_deferred_free`.
+                        actual.expose_provenance() as u64
                     },
                     Ordering::Release,
                 );

@@ -77,6 +77,63 @@
 //! No path from `ensure_slow` touches `sefer_alloc::registry::*` — confirmed
 //! by inspection. The reservation call chain is a straight line to a kernel
 //! syscall boundary.
+//!
+//! ## Provenance model (task #140)
+//!
+//! This module's int↔pointer conversions fall into two DIFFERENT provenance
+//! classes; conflating them was the source of the "just cast" style this
+//! task replaced with explicit APIs.
+//!
+//! **1. The `REGISTRY_PTR` sentinel is STRICT-provenance-clean.**
+//! `SENTINEL_INITIALIZING` is a bare marker value living inside
+//! `AtomicPtr<Registry>` — it is compared for equality (in the CAS operand
+//! and in `ensure`'s/the spin loop's `.addr()` checks) but is NEVER
+//! dereferenced. [`core::ptr::without_provenance_mut`] constructs it as a
+//! pointer that carries no provenance at all, which is exactly right for a
+//! value that must never be read through — and it passes
+//! `-Zmiri-strict-provenance` cleanly, because strict provenance only
+//! objects to DEREFERENCING a pointer whose provenance doesn't cover the
+//! memory it points at; a pointer that is only ever compared is fine.
+//!
+//! **2. `abandoned_segs` (this module) and the A1 deferred-large-free stack
+//! (`alloc_core::deferred_large`) are, by design, EXPOSED-provenance-only —
+//! full strict-provenance conformance is unreachable for them.** Both are
+//! cross-allocation intrusive Treiber stacks: the "next" link for segment
+//! `A` is stored INSIDE segment `A`'s own header, but the VALUE of that link
+//! is the address of a DIFFERENT segment `B`, which came from a distinct OS
+//! reservation with its own, unrelated provenance. A single `u64`/`AtomicU64`
+//! word (the stack head, or a header's link field) can carry only an
+//! address, not a provenance token, and there is no way to smuggle segment
+//! `B`'s provenance into a slot owned by segment `A`. This is a structural
+//! property of ANY tagged/intrusive lock-free stack that chains
+//! cross-allocation nodes through packed integer words — not a gap specific
+//! to this codebase.
+//!
+//! The sanctioned fallback for this shape is Rust's **exposed-provenance**
+//! model: every store site that packs a real pointer's address into such a
+//! word calls [`<*mut T>::expose_provenance`] first (explicitly registering
+//! that pointer's provenance in the global exposed-provenance table); every
+//! load site that reconstructs a dereferenceable pointer from such a word
+//! calls [`core::ptr::with_exposed_provenance_mut`] (validly re-deriving a
+//! pointer with the previously-exposed provenance for that address). Every
+//! `expose_provenance` store site in this crate is paired with a
+//! `with_exposed_provenance_mut` load site — see [`pack_abandoned_head`]/
+//! [`unpack_abandoned_head`] below, `HeapRegistry::pop_abandoned_segment`/
+//! `push_abandoned_segment_into` in `heap_registry.rs`, and
+//! `push_large_deferred_free`/`drain_large_deferred_free` in
+//! `alloc_core::deferred_large`.
+//!
+//! **Consequence for miri:** the registry (and the A1 deferred-large stack)
+//! validate cleanly under plain `cargo +nightly miri test` (the
+//! exposed-provenance model, miri's default) but are NOT expected to pass
+//! `-Zmiri-strict-provenance` — that flag will flag the
+//! `with_exposed_provenance_mut` reconstructions in `unpack_abandoned_head`/
+//! `pop_abandoned_segment`/`drain_large_deferred_free` as provenance
+//! violations, which is miri correctly reporting the documented structural
+//! limit above, not a bug. The `REGISTRY_PTR` sentinel handling (class 1) is
+//! the one part of this module's provenance story that DOES pass
+//! `-Zmiri-strict-provenance` — see the sentinel construction in
+//! `ensure_slow`/`dbg_rollback_sentinel_reenterable`.
 
 // This file uses `unsafe` for two operations:
 //  1. Field-by-field in-place initialisation of the `Registry` object in
@@ -137,7 +194,18 @@ const _: () = assert!(
 /// `const_raw_ptr_to_int_transmute`, unstable). Runtime-only use.
 #[doc(hidden)]
 pub fn pack_abandoned_head(base: *mut u8, tag: u64) -> u64 {
-    let addr = base as u64;
+    // EXPOSED-PROVENANCE STORE SITE: `base` is a real, dereferenceable
+    // segment pointer whose address is about to be packed into a plain
+    // `u64` word (the Treiber head, later CASed into `Registry::abandoned_segs`
+    // and — after unpacking — dereferenced again by a popper, possibly on a
+    // different thread). `expose_provenance` is the explicit, sanctioned
+    // exposed-provenance API for exactly this pattern: it records `base`'s
+    // provenance in the global exposed-provenance table so that a LATER
+    // `with_exposed_provenance_mut` call on the same address can validly
+    // reconstruct a dereferenceable pointer. Paired load site:
+    // `unpack_abandoned_head` below (and every popper that dereferences the
+    // reconstructed base). See the module "Provenance model" section.
+    let addr = base.expose_provenance() as u64;
     // The tag lives in the low ABANDON_TAG_BITS (which are zero in `addr`
     // because `base` is SEGMENT-aligned). OR them together.
     (addr & !ABANDON_TAG_MASK) | (tag & ABANDON_TAG_MASK)
@@ -147,7 +215,17 @@ pub fn pack_abandoned_head(base: *mut u8, tag: u64) -> u64 {
 /// low `ABANDON_TAG_BITS` are restored to zero.
 #[doc(hidden)]
 pub fn unpack_abandoned_head(word: u64) -> (*mut u8, u64) {
-    let base = (word & !ABANDON_TAG_MASK) as *mut u8;
+    // EXPOSED-PROVENANCE LOAD SITE: reconstructs a dereferenceable pointer
+    // from a plain integer address under the exposed-provenance model.
+    // Sound ONLY because every producer of an `abandoned_segs` head word
+    // packed the address via `pack_abandoned_head`, which calls
+    // `expose_provenance` on the real segment pointer before storing it (see
+    // that function's doc comment) — `with_exposed_provenance_mut` may
+    // legally "re-derive" a pointer with that exposed provenance from a
+    // matching address. The empty-stack sentinel (address 0) is also a valid
+    // input: `with_exposed_provenance_mut(0)` yields a null pointer, which
+    // `abandoned_head_is_empty`/callers check for before any dereference.
+    let base = core::ptr::with_exposed_provenance_mut::<u8>((word & !ABANDON_TAG_MASK) as usize);
     let tag = word & ABANDON_TAG_MASK;
     (base, tag)
 }
@@ -250,7 +328,11 @@ const REGISTRY_ALIGN: usize = aligned_vmem::PAGE;
 #[inline]
 pub fn ensure() -> &'static Registry {
     let p = REGISTRY_PTR.load(Ordering::Acquire);
-    let p_usize = p as usize;
+    // `.addr()` reads the pointer's address for a pure integer comparison
+    // (against `0`/`SENTINEL_INITIALIZING`); it does not strip or use
+    // provenance, so this is strict-provenance-clean — `p` itself (not an
+    // integer reconstructed from `p_usize`) is what gets dereferenced below.
+    let p_usize = p.addr();
     if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
         // SAFETY: we observed a real non-null non-sentinel pointer under
         // Acquire. The initialising thread stored this pointer with Release
@@ -291,7 +373,18 @@ fn ensure_slow() -> &'static Registry {
     // Race: try to acquire the INITIALIZING sentinel via CAS(null, SENTINEL).
     // Only ONE thread wins this CAS; the rest observe SENTINEL (or null then
     // fail the CAS) and fall into the spin branch.
-    let sentinel = SENTINEL_INITIALIZING as *mut Registry;
+    // SENTINEL_INITIALIZING is a bare marker address, NEVER dereferenced (only
+    // compared for pointer equality against `REGISTRY_PTR`'s CAS operand and
+    // the loads in `ensure`/the spin loop below). `without_provenance_mut`
+    // constructs a pointer that carries NO provenance at all — exactly the
+    // right semantics for a value that exists purely as an integer tag riding
+    // inside an `AtomicPtr<Registry>` and must never be read through. This is
+    // strict-provenance-clean: no `expose_provenance`/`with_exposed_provenance`
+    // pairing is needed because the value is never turned back into a
+    // dereferenceable pointer. Pointer equality (`==`, and `AtomicPtr`'s CAS)
+    // compares addresses regardless of provenance, so this is semantically
+    // identical to the old `SENTINEL_INITIALIZING as *mut Registry` cast.
+    let sentinel = core::ptr::without_provenance_mut::<Registry>(SENTINEL_INITIALIZING);
     match REGISTRY_PTR.compare_exchange(
         core::ptr::null_mut(),
         sentinel,
@@ -471,7 +564,9 @@ fn ensure_slow() -> &'static Registry {
             // fast path in `ensure()` returns before reaching here.
             loop {
                 let p = REGISTRY_PTR.load(Ordering::Acquire);
-                let p_usize = p as usize;
+                // See the identical `.addr()` rationale in `ensure`'s fast
+                // path above: pure integer comparison, no provenance use.
+                let p_usize = p.addr();
                 if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
                     // SAFETY: same argument as the fast path in `ensure()`.
                     // We observed the real pointer under Acquire, which pairs
@@ -536,7 +631,9 @@ fn ensure_slow() -> &'static Registry {
 /// `ensure()`/`ensure_slow()` while this hook is mutating `REGISTRY_PTR`.
 #[doc(hidden)]
 pub fn dbg_rollback_sentinel_reenterable() -> Option<bool> {
-    let sentinel = SENTINEL_INITIALIZING as *mut Registry;
+    // See the identical construction (and its SAFETY/provenance rationale) in
+    // `ensure_slow` above: a bare marker address, never dereferenced.
+    let sentinel = core::ptr::without_provenance_mut::<Registry>(SENTINEL_INITIALIZING);
 
     // Step 1: only proceed if the registry is still UNINIT (null). If it is
     // already real (or, impossibly under the serial guard, mid-init), do

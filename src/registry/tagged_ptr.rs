@@ -41,6 +41,20 @@
 //! ## This file is pure safe arithmetic
 //!
 //! No `unsafe`, no memory operations — only bit packing / unpacking on `u64`.
+//!
+//! ## Provenance model (task #140)
+//!
+//! `TaggedPtr` itself never casts a `*mut T` to/from its packed `u64` word —
+//! `free_slots` packs a plain `u32` SLOT INDEX (not a pointer), so there is
+//! no provenance to reason about here at all. It is strict-provenance-clean
+//! by construction, trivially. This is a DELIBERATE structural difference
+//! from `abandoned_segs` (see `super::bootstrap`'s "Provenance model"
+//! section): the doc comment above (§"For `abandoned_segs`...") describing
+//! bases packed via `TaggedPtr` is HISTORICAL — Phase 12.4 moved
+//! `abandoned_segs` off `TaggedPtr` onto the dedicated intrusive head+next
+//! layout in `bootstrap.rs` specifically because a raw pointer address does
+//! not fit this module's "pure integer, no provenance" contract cleanly.
+//! `TaggedPtr` remains `free_slots`-only, as the note above already states.
 
 /// Number of low bits reserved for the index/value. The high bits of the
 /// `u64` word carry the tag.

@@ -361,7 +361,16 @@ impl HeapRegistry {
             let new_head = if next_link == ABANDONED_TAIL {
                 ABANDONED_HEAD_EMPTY
             } else {
-                let next_base = next_link as *mut u8;
+                // EXPOSED-PROVENANCE LOAD SITE: `next_link` is the FULL 64-bit base of
+                // the next abandoned segment, stored as plain `u64` data by
+                // `push_abandoned_segment_into` below (which calls
+                // `expose_provenance` on the real segment pointer before
+                // writing it into `next_abandoned` — see that function). This
+                // reconstructs a dereferenceable pointer under the exposed
+                // model; `pack_abandoned_head` immediately re-exposes it when
+                // repacking into the head word (a redundant but harmless
+                // re-expose of an already-exposed address).
+                let next_base = core::ptr::with_exposed_provenance_mut::<u8>(next_link as usize);
                 // Preserve the tag (pop does not bump it). A concurrent
                 // re-push of `base` will bump the tag and fail our CAS.
                 pack_abandoned_head(next_base, tag)
@@ -624,7 +633,17 @@ fn push_abandoned_segment_into(reg: &Registry, base: *mut u8) {
             ABANDONED_TAIL
         } else {
             let (head_base, _tag) = unpack_abandoned_head(head);
-            head_base as u64
+            // EXPOSED-PROVENANCE STORE SITE: `head_base` was itself
+            // reconstructed by `unpack_abandoned_head` via
+            // `with_exposed_provenance_mut` (so it already carries exposed
+            // provenance from an earlier `expose_provenance` call), but we
+            // re-expose it here because it is about to be written into
+            // `next_abandoned` as a NEW plain-`u64` link — the paired load
+            // site is the `next_link as *mut u8`... reconstruction in
+            // `HeapRegistry::pop_abandoned_segment` above. `expose_provenance`
+            // on an already-exposed address is a harmless no-op re-registration,
+            // not a correctness issue.
+            head_base.expose_provenance() as u64
         };
         // Write the link under Release so a concurrent pop's Acquire read of
         // `next_abandoned` (after observing this segment as the head) sees it.

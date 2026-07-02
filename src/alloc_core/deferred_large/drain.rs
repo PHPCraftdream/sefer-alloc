@@ -59,7 +59,14 @@ pub(crate) fn drain_large_deferred_free(head: &AtomicPtr<u8>, core: &mut AllocCo
         let next = if next_link == DEFERRED_LARGE_TAIL {
             core::ptr::null_mut()
         } else {
-            next_link as *mut u8
+            // EXPOSED-PROVENANCE LOAD SITE: `next_link` is a plain `u64`
+            // address written by `push_large_deferred_free`'s
+            // `cur.expose_provenance()` / `actual.expose_provenance()` store
+            // sites (see that function). Reconstructing via
+            // `with_exposed_provenance_mut` is sound under the exposed model
+            // because the writer always exposed the real pointer's
+            // provenance before storing its address here.
+            core::ptr::with_exposed_provenance_mut::<u8>(next_link as usize)
         };
         match head.compare_exchange(cur, next, Ordering::Acquire, Ordering::Relaxed) {
             Ok(_) => {
