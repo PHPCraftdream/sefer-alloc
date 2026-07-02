@@ -1,17 +1,29 @@
-//! Phase OPT-F regression: in-place small→small realloc returns the same
-//! pointer when the new size fits in the old class (new_class_idx <= old_class_idx).
+//! Phase OPT-F regression: in-place small→small realloc returns the SAME
+//! pointer only when the new size stays in the SAME size class
+//! (`new_class_idx == old_class_idx`).
 //!
-//! **Adapted from the task spec** — the original spec used 64→96→128 B examples
-//! that happen to be *different* size classes in the actual `SIZE_CLASS_TABLE`
-//! (class[3]=64, class[5]=112). Tests have been corrected to use sizes that
-//! actually map to the same or smaller class:
+//! **The `==`-not-`<=` correctness rule (0.3.0):** OPT-F originally took the
+//! in-place fast path for `new_class_idx <= old_class_idx` — i.e. it also
+//! aliased a *cross-class shrink* (a shrink that lands in a strictly smaller
+//! class) in place. That is unsound: a block is carved at an offset that is a
+//! multiple of ITS class's `block_size`, which is not necessarily a multiple
+//! of a smaller class's `block_size`; and `dealloc` (post-#114) derives the
+//! class from the caller's `Layout` alone, so a later free of the reused
+//! pointer with the smaller layout would push the block onto the smaller
+//! class's free list at a misaligned offset — corrupting it. The fix
+//! restricts in-place to `==`; a cross-class shrink RELOCATES (alloc in the
+//! smaller class + copy + dealloc old). See
+//! `tests/regression_realloc_cross_class_shrink.rs` for the dedicated gate
+//! and its counterfactual.
 //!
+//! Size-class reference (actual `SIZE_CLASS_TABLE`):
 //! - class[3] block_size=64 covers sizes 49..=64
 //! - class[2] block_size=48 covers sizes 33..=48
 //! - class[1] block_size=32 covers sizes 17..=32
 //!
-//! The cross-class test grows 64→65 (class[3]→class[4]=80), which takes the
-//! alloc+copy+dealloc path.
+//! So: 64→56 stays in class[3] (in-place, same ptr); 64→32 crosses to
+//! class[1] (relocates, ptr may change, prefix preserved); 64→65 grows to
+//! class[4]=80 (relocates, prefix preserved).
 
 #![cfg(feature = "alloc-core")]
 
@@ -63,28 +75,61 @@ fn realloc_shrink_within_same_class_returns_same_ptr() {
     ac.dealloc(new_ptr, Layout::from_size_align(56, 8).unwrap());
 }
 
-/// Realloc that shrinks across classes: old class[3] (block_size=64),
-/// new size=32 → class[1] (block_size=32). new_class_idx < old_class_idx,
-/// so the block physically fits and must be reused in-place.
+/// Realloc that shrinks ACROSS classes: old class[3] (block_size=64),
+/// new size=32 → class[1] (block_size=32). `new_class_idx (1) !=
+/// old_class_idx (3)`, so — under the `==`-not-`<=` correctness rule
+/// (0.3.0) — this must RELOCATE (alloc a fresh block in the smaller class +
+/// copy + dealloc the old block), NOT alias the old block in place.
+///
+/// Aliasing it in place (the old `<=` behaviour) was unsound: a later free
+/// of the reused pointer with the 32-byte layout would push the block onto
+/// class[1]'s free list at an offset that is a multiple of 64 (class[3]'s
+/// block_size) but NOT of 32 — wait, 64 IS a multiple of 32, so this
+/// particular pair would not corrupt; the general defect (see the module
+/// doc and `regression_realloc_cross_class_shrink.rs`, e.g. the 6144→4096
+/// pair where `6144 % 4096 != 0`) does corrupt. We keep the invariant
+/// uniform — cross-class shrink ALWAYS relocates — rather than special-case
+/// the pairs that happen to divide, so the rule is simple and the free-list
+/// placement is always valid.
+///
+/// This test therefore asserts the block RELOCATES-or-stays but ALWAYS
+/// preserves the `min(old,new)` prefix; it no longer asserts pointer
+/// identity (that was the old bug's contract).
 #[test]
-fn realloc_shrink_cross_class_down_returns_same_ptr() {
+fn realloc_shrink_cross_class_down_relocates_and_preserves_data() {
     let mut ac = AllocCore::new().expect("primordial");
     let old_layout = Layout::from_size_align(64, 8).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
 
-    unsafe { ptr.write(0xCC) };
+    // Write a full-block pattern so a relocation's copy is verifiable across
+    // the whole preserved prefix (min(64, 32) = 32 bytes).
+    unsafe {
+        for i in 0..64usize {
+            ptr.add(i).write((i as u8).wrapping_add(0x11));
+        }
+    }
 
-    // 64 (class[3]) → 32 (class[1]): new_class_idx=1 < old_class_idx=3,
-    // so the new size fits inside the existing 64-byte block.
+    // 64 (class[3]) → 32 (class[1]): cross-class shrink → relocates under the
+    // `==` rule. We do NOT assert ptr identity (the old `<=` bug did).
     let new_ptr = ac.realloc(ptr, old_layout, 32);
-    assert!(!new_ptr.is_null());
-    assert_eq!(
-        ptr, new_ptr,
-        "realloc 64->32 must reuse the same block (shrink: class[1] <= class[3])"
-    );
-    assert_eq!(unsafe { new_ptr.read() }, 0xCC, "marker must survive");
+    assert!(!new_ptr.is_null(), "realloc 64->32 must not return null");
 
+    // The min(old,new)=32-byte prefix must be preserved regardless of whether
+    // the block moved.
+    unsafe {
+        for i in 0..32usize {
+            assert_eq!(
+                new_ptr.add(i).read(),
+                (i as u8).wrapping_add(0x11),
+                "prefix byte {i} lost during cross-class shrink 64->32"
+            );
+        }
+    }
+
+    // Free with the NEW (32-byte) layout — the GlobalAlloc contract. This
+    // must route to class[1]'s free list soundly (the whole point of the
+    // relocation: the block now genuinely lives in class[1]).
     ac.dealloc(new_ptr, Layout::from_size_align(32, 8).unwrap());
 }
 

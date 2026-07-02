@@ -177,20 +177,49 @@ fn dealloc_uses_layout_class_not_page_map_on_mixed_class_page() {
 /// page-dedication rule.
 #[test]
 fn dealloc_uses_layout_class_big_then_tiny_mixed_page() {
-    let mut a = AllocCore::new().unwrap();
-    // Big first dedicates pages to the big class; a later tiny block on one
-    // of those pages has page_map = big but Layout = tiny.
-    let (block, layout_class, page_map_class, block_layout) = match exhibit_mixed_class_page(
-        &mut a,
-        Layout::from_size_align(1024, 16).unwrap(),
-        Layout::from_size_align(16, 16).unwrap(),
-    ) {
-        Some(x) => x,
+    // A mixed-class page (big page_map, tiny Layout) can only arise when the
+    // big class's `block_size` does NOT evenly divide the page: only then is
+    // there a leftover < big-block gap at the end of a big-dedicated page for
+    // the shared bump cursor to place a later tiny block into. If the big
+    // block_size divides the page exactly, big blocks tile the page with zero
+    // remainder and the next (tiny) carve always starts a fresh page —
+    // page_map == Layout, no mixed page.
+    //
+    // Task B1 added exact page-divisor classes (512/1024/2048/4096), so a
+    // fixed `1024` seed (the pre-B1 choice) now tiles the 4096-byte page
+    // perfectly and can never produce a big→tiny mixed page. Rather than pin
+    // another magic size that a future table edit could again turn into a
+    // divisor, probe a spread of "big" seed sizes and use the first that
+    // actually yields a mixed page — the test self-adapts to the table
+    // geometry while still asserting the real §13 invariant. The candidates
+    // are deliberately non-power-of-two sizes likely to resolve to geometric
+    // (non-divisor) classes; if the geometry ever changes so NONE of them
+    // works, that is a real signal (fail loudly) rather than a silent pass.
+    let big_seed_candidates = [
+        700usize, 900, 1100, 1300, 1500, 1700, 2000, 2500, 3000, 3500,
+    ];
+    let tiny = Layout::from_size_align(16, 16).unwrap();
+
+    let mut found = None;
+    for &big in &big_seed_candidates {
+        // Fresh substrate per candidate so a failed probe's allocations do
+        // not perturb the next candidate's bump/page geometry.
+        let mut a = AllocCore::new().unwrap();
+        let big_layout = Layout::from_size_align(big, 16).unwrap();
+        if let Some(x) = exhibit_mixed_class_page(&mut a, big_layout, tiny) {
+            found = Some((a, x));
+            break;
+        }
+    }
+    let (mut a, (block, layout_class, page_map_class, block_layout)) = match found {
+        Some(v) => v,
         None => {
             panic!(
-                "test precondition failed: no mixed-class page exhibited \
-                 (big→tiny). The bump/refill geometry changed and this test \
-                 needs a new seeding strategy."
+                "test precondition failed: no big→tiny mixed-class page exhibited \
+                 across any candidate big size {big_seed_candidates:?}. The \
+                 bump/refill geometry changed and this test needs new seed \
+                 candidates (pick sizes that resolve to a class whose block_size \
+                 does NOT divide the page size)."
             );
         }
     };
