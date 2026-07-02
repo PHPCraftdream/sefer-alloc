@@ -264,6 +264,24 @@ pub fn ensure() -> &'static Registry {
     ensure_slow()
 }
 
+/// Roll `REGISTRY_PTR` back from `SENTINEL_INITIALIZING` to `null` (`UNINIT`).
+///
+/// Single point of truth for the anti-livelock rollback used by the
+/// OOM-bailout in [`ensure_slow`] (Task #131) — kept as its own function so
+/// the test-only hook below exercises EXACTLY the same code the production
+/// bailout runs, rather than a duplicated copy that could drift out of sync.
+///
+/// `Release` ordering: a thread that later retries `ensure_slow` performs
+/// `compare_exchange(null, SENTINEL, Acquire, ..)`; pairing that Acquire with
+/// this Release ensures the retrying thread does not need to observe
+/// anything about the failed attempt beyond "the slot is free again" — there
+/// is no partially-initialised `Registry` state to synchronise (the failed
+/// attempt never got past the VM reservation).
+#[cold]
+fn rollback_registry_sentinel() {
+    REGISTRY_PTR.store(core::ptr::null_mut(), Ordering::Release);
+}
+
 /// Slow path for [`ensure`]: race to initialise the registry via a CAS on
 /// `REGISTRY_PTR`. Exactly one caller wins, allocates via
 /// `aligned_vmem::reserve_aligned`, constructs the `Registry` in-place, and
@@ -295,8 +313,42 @@ fn ensure_slow() -> &'static Registry {
             // `sefer_alloc::registry::*`. Under miri it falls back to
             // `std::alloc`, but under miri we are NOT the global allocator
             // (the host miri allocator handles the harness), so no reentrancy.
-            let reservation = aligned_vmem::reserve_aligned(REGISTRY_SIZE, REGISTRY_ALIGN)
-                .expect("sefer-alloc: failed to reserve virtual memory for Registry");
+            let reservation = match aligned_vmem::reserve_aligned(REGISTRY_SIZE, REGISTRY_ALIGN) {
+                Some(r) => r,
+                None => {
+                    // Task #131: OOM during registry bootstrap. We already
+                    // published SENTINEL_INITIALIZING above (the CAS at the
+                    // top of this function), so if we bail out here WITHOUT
+                    // rolling it back, every loser thread spinning in the
+                    // `Err` branch below spins FOREVER (the sentinel is never
+                    // replaced by a real pointer), and every FUTURE call to
+                    // `ensure` (from any thread, including ones that have not
+                    // even called it yet) sees the non-null SENTINEL, falls
+                    // into `ensure_slow`, fails the
+                    // `compare_exchange(null, SENTINEL)` CAS (the current
+                    // value is SENTINEL, not null), and ALSO spins forever.
+                    // The whole process livelocks on the next registry touch.
+                    rollback_registry_sentinel();
+                    // Fail fast via `abort`, not `panic!`/`.expect(..)`. A
+                    // panic here would unwind, and unwinding formats the
+                    // panic message / captures a backtrace, which allocates
+                    // -- reentering the global allocator, which calls
+                    // `ensure()` again. Even with the rollback above in
+                    // place that reentrant call would itself race a fresh
+                    // bootstrap attempt (which would ALSO fail, since we are
+                    // still OOM), risking recursion/deadlock instead of a
+                    // clean exit. `std::process::abort` performs no unwind
+                    // and no allocation, so it cannot re-enter `ensure`. A
+                    // registry that cannot be backed by VM is unrecoverable
+                    // for this allocator (it cannot even materialise its own
+                    // core bookkeeping structure) -- exactly the situation
+                    // `handle_alloc_error` exists for on a normal allocation
+                    // failure; we take the analogous immediate-abort exit
+                    // here. See the module-level `std::process::abort`
+                    // availability note below.
+                    std::process::abort();
+                }
+            };
 
             let base = reservation.as_ptr() as *mut Registry;
 
@@ -409,6 +461,96 @@ fn ensure_slow() -> &'static Registry {
             }
         }
     }
+}
+
+/// Test-only hook (Task #131): proves the anti-livelock rollback in
+/// [`rollback_registry_sentinel`] actually clears the sentinel, without
+/// invoking `std::process::abort` (which would kill the test harness) and
+/// without racing any OTHER test that may concurrently be calling `ensure`
+/// on the real, possibly-already-initialised `REGISTRY_PTR`.
+///
+/// ## Why this operates on the LIVE `REGISTRY_PTR` (and how it stays safe)
+///
+/// The bug is specifically about the interaction between `REGISTRY_PTR`'s
+/// three-state protocol (`null` / `SENTINEL_INITIALIZING` / real pointer) and
+/// the rollback. A hook on a separate test-only atomic would only prove that
+/// a *copy* of the protocol works, not that `rollback_registry_sentinel`
+/// (the actual function the fix calls) restores the actual invariant the
+/// rest of `bootstrap.rs` depends on. So this hook drives the real
+/// `REGISTRY_PTR` through the fix's exact code path — but ONLY when it is
+/// safe to do so:
+///
+/// 1. It CAS-acquires `REGISTRY_PTR` from `null` to `SENTINEL_INITIALIZING`
+///    itself (the same transition the real `ensure_slow` winner performs).
+///    If the registry has ALREADY been initialised by an earlier test in
+///    this process (a real, non-null non-sentinel pointer), the CAS simply
+///    fails and this function returns `None` — it never disturbs a live
+///    registry. Callers must treat `None` as "inconclusive here" and are
+///    expected to run under the crate's usual registry `SERIAL` guard so no
+///    concurrent `ensure()` caller can be spinning on the sentinel while we
+///    hold it.
+/// 2. With the sentinel now in place (as if we were the real bootstrap
+///    winner that hit OOM), it calls [`rollback_registry_sentinel`] — the
+///    IDENTICAL function the production OOM-bailout calls before
+///    `std::process::abort()`.
+/// 3. It then verifies the anti-livelock postcondition directly: a
+///    subsequent `compare_exchange(null, SENTINEL, ..)` must SUCCEED,
+///    proving the rollback actually cleared the sentinel back to `null`
+///    (if the rollback were a no-op, this CAS would fail with `Err(SENTINEL)`
+///    and a real winner — or every future `ensure()` caller — would spin
+///    forever, which is exactly bug #131).
+/// 4. It immediately restores `REGISTRY_PTR` to the value observed on entry
+///    (`null`, since step 1 only proceeds when the initial load was `null`),
+///    leaving the process exactly as it found it.
+///
+/// Returns `Some(true)` if the rollback was proven to clear the sentinel,
+/// `Some(false)` if the postcondition CAS unexpectedly failed (rollback is
+/// broken — the counterfactual this test is designed to catch), or `None` if
+/// the registry was already initialised by another test and this check could
+/// not run (callers should treat that as "not applicable", never as failure).
+///
+/// Callers MUST hold the crate's registry-wide serial guard (as every other
+/// `tests/registry_*` file already does) so no concurrent thread is calling
+/// `ensure()`/`ensure_slow()` while this hook is mutating `REGISTRY_PTR`.
+#[doc(hidden)]
+pub fn dbg_rollback_sentinel_reenterable() -> Option<bool> {
+    let sentinel = SENTINEL_INITIALIZING as *mut Registry;
+
+    // Step 1: only proceed if the registry is still UNINIT (null). If it is
+    // already real (or, impossibly under the serial guard, mid-init), do
+    // not touch it -- leave any live registry completely undisturbed.
+    REGISTRY_PTR
+        .compare_exchange(
+            core::ptr::null_mut(),
+            sentinel,
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        )
+        .ok()?;
+
+    // Step 2: run the EXACT rollback the production OOM-bailout runs.
+    rollback_registry_sentinel();
+
+    // Step 3: prove the anti-livelock postcondition -- a fresh CAS(null,
+    // SENTINEL) must now succeed, meaning a real bootstrap winner (or any
+    // future `ensure_slow` caller) would NOT spin forever on a stuck
+    // sentinel.
+    let postcondition_holds = REGISTRY_PTR
+        .compare_exchange(
+            core::ptr::null_mut(),
+            sentinel,
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        )
+        .is_ok();
+
+    // Step 4: restore REGISTRY_PTR to null, exactly as observed on entry,
+    // regardless of the postcondition outcome, so the process is left
+    // exactly as this hook found it (no live registry was ever touched --
+    // we only ever entered this function with REGISTRY_PTR == null).
+    REGISTRY_PTR.store(core::ptr::null_mut(), Ordering::Release);
+
+    Some(postcondition_holds)
 }
 
 /// The current high-water `count` (test introspection). Each test claims
