@@ -484,10 +484,12 @@ impl AllocCore {
                 // deposit it into the large_cache so the next alloc_large of a
                 // compatible size can reuse it without an OS round-trip.
                 //
-                // Without alloc-decommit: mark the segment as freed (zero the
-                // magic) so `Drop` knows its reservation should be released.
-                // We do NOT release eagerly here — that would unmap the header
-                // before `Drop` can read it to discover the reservation info.
+                // Without alloc-decommit (or when the cache admission is
+                // declined): the OS reservation is released EAGERLY, right
+                // here — NOT deferred to `Drop` (task #125; see the release
+                // branches below for the full rationale). `unregister(base)`
+                // runs first so `Drop`'s `table.bases()` walk never sees
+                // `base` again — no double-free of the reservation.
                 //
                 // Phase 2: run a lazy decay tick on large free (same cheap
                 // Instant check as on the alloc path).
@@ -586,17 +588,32 @@ impl AllocCore {
                         return;
                     }
                     // Not admitted (no free slot after eviction, or budget too small):
-                    // fall through to immediate OS release.
-                    // NULL the magic so Drop frees the reservation via the header.
-                    let mut stale2 = stale;
-                    stale2.magic = 0;
-                    Node::write_struct(base as *mut SegmentHeader, stale2);
+                    // release the OS reservation EAGERLY right now rather than
+                    // deferring to `AllocCore::drop` (task #125 / same leak
+                    // class as A1/#114). In the Phase 12.5 shard model, the
+                    // per-thread `AllocCore` living in a registry slot is
+                    // effectively never dropped mid-process (the slot is
+                    // recycled between threads, but the `AllocCore` itself
+                    // persists) — "defer release to Drop" is therefore a
+                    // PERMANENT leak of both the OS reservation and the
+                    // `SegmentTable` slot on the own-thread admission-reject
+                    // path, eventually exhausting `MAX_SEGMENTS` and forcing
+                    // `alloc_large` to return null. `unregister` FIRST (frees
+                    // the slot for reuse; mirrors `reclaim_large_segment`'s
+                    // ordering), THEN release — Drop's `table.bases()` walk
+                    // will no longer see `base`, so there is no double-free.
+                    self.table.unregister(base);
+                    os::release_segment(stale.reservation, stale.reservation_len);
                 }
                 #[cfg(not(feature = "alloc-decommit"))]
                 {
-                    let mut stale2 = stale;
-                    stale2.magic = 0;
-                    Node::write_struct(base as *mut SegmentHeader, stale2);
+                    // No large-cache at all: every own-thread large free must
+                    // release eagerly for the same reason as the
+                    // admission-reject branch above (task #125) — deferring
+                    // to `Drop` leaks the reservation AND the `SegmentTable`
+                    // slot for the remaining process lifetime.
+                    self.table.unregister(base);
+                    os::release_segment(stale.reservation, stale.reservation_len);
                 }
             }
             SegmentKind::Small | SegmentKind::Primordial => {
