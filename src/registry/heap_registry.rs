@@ -21,7 +21,7 @@
 //! carry a monotonic tag in the high 32 bits of their `AtomicU64` head,
 //! bumped on every push. This defeats the classic ABA (pop-X, re-push-X
 //! while a racer is parked with head=X): the re-push bumps the tag, so the
-//! racer's CAS on `(X, old_tag)` fails. See [`super::tagged_ptr::TaggedPtr`]
+//! racer's CAS on `(X, old_tag)` fails. See `super::tagged_ptr::TaggedPtr`
 //! for the tag-width-vs-churn analysis.
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see

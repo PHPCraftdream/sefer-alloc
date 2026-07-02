@@ -184,7 +184,7 @@ pub struct Registry {
     pub free_slots: core::sync::atomic::AtomicU64,
     /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
     /// the full 64-bit segment base (in the high bits, since bases are
-    /// `SEGMENT`-aligned → low [`ABANDON_SEG_SHIFT`] bits are zero) with an
+    /// `SEGMENT`-aligned → low `ABANDON_SEG_SHIFT` bits are zero) with an
     /// ABA tag in those low bits. Each abandoned segment's
     /// `next_abandoned` header field chains to the next base. This fixes
     /// FINDINGS №1 (the old `AtomicU64` packing truncated bases >4 GiB);
@@ -246,7 +246,7 @@ const REGISTRY_ALIGN: usize = aligned_vmem::PAGE;
 ///
 /// ## Slow path (first call or race)
 ///
-/// See [`ensure_slow`].
+/// See `ensure_slow`.
 #[inline]
 pub fn ensure() -> &'static Registry {
     let p = REGISTRY_PTR.load(Ordering::Acquire);

@@ -30,7 +30,7 @@
 //! ## Monitoring `SeferAlloc` in production (`stats()`)
 //!
 //! `SeferAlloc` exposes a cheap, process-wide diagnostic snapshot via
-//! [`SeferAlloc::stats`](global::SeferAlloc::stats) → [`AllocStats`]: cache
+//! `SeferAlloc::stats` → `AllocStats`: cache
 //! hit rates, cross-thread reclaim/overflow counts, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
 //! is the live segment count — the field to alert on for a segment leak).
@@ -56,7 +56,7 @@
 //! **Multi-thread footgun:** `alloc-global` without `alloc-xthread` has no
 //! sound cross-thread free path — a block freed on a different thread than
 //! it was allocated on leaks (safely, but permanently) instead of racing.
-//! See [`SeferAlloc`](global::SeferAlloc)'s "Multi-thread safety" doc
+//! See `SeferAlloc`'s "Multi-thread safety" doc
 //! section for the full explanation. Use `["alloc-global", "alloc-xthread"]`
 //! (or the `production` bundle) for any real multi-threaded deployment.
 //!

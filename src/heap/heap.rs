@@ -55,11 +55,11 @@ use super::thread_free::ThreadFreeStack;
 /// `alloc-xthread`, also owns a cross-thread free stack (Phase 10).
 ///
 /// **Phase 12.1:** the heap holds NO free-list state of its own. Free-list
-/// state lives in each segment's [`BinTable`]; own-thread alloc/dealloc
+/// state lives in each segment's `BinTable`; own-thread alloc/dealloc
 /// delegate to `AllocCore`, which routes every block to its owning segment via
 /// `segment_base_of(ptr)` and scans owned segments for reusable free blocks on
 /// a miss. The heap layer's only extra state is the cross-thread
-/// [`ThreadFreeStack`] (Phase 10).
+/// `ThreadFreeStack` (Phase 10).
 pub struct Heap {
     /// The underlying single-threaded segment substrate. It owns the segments
     /// and performs all per-segment `BinTable` arithmetic; the heap layer is a

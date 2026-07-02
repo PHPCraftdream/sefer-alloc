@@ -10,8 +10,8 @@
 //! role: its ADDRESS is a stable per-heap identity (stamped into segment
 //! headers as `owner_thread_free`, compared by pointer to recognise
 //! ownership), and its VALUE is the head of this Treiber stack of Large
-//! segment bases deferred for cross-thread reclaim. See [`push`] and
-//! [`drain`] for the mechanism.
+//! segment bases deferred for cross-thread reclaim. See `push_large_deferred_free`
+//! and `drain_large_deferred_free` for the mechanism.
 
 #[cfg(feature = "alloc-xthread")]
 mod drain;

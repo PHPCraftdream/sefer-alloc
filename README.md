@@ -100,7 +100,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 
 | Method | Default | What it does |
 |---|---|---|
-| `.budget_bytes(N)` | `None` (unbounded) | Per-shard hard ceiling on total cached bytes. Set to your container's RSS limit. FIFO eviction fires before admitting a new span that would exceed the limit. `0` ⇒ unbounded. |
+| `.budget_bytes(N)` | `None` (unbounded) | Per-shard hard ceiling on total cached bytes. Set to your container's RSS limit. FIFO eviction fires before admitting a new span that would exceed the limit. `0` ⇒ cache disabled (nothing is cached). |
 | `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
 | `.decay_interval_ms(N)` | `1000` ms | Minimum wall-clock interval between consecutive decay ticks. A tick computes `excess = cached − headroom` and releases `excess × rate` back to the OS. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
@@ -621,7 +621,7 @@ runtime parse errors.
 
 | Builder method | Default | Meaning |
 |---|---|---|
-| `budget_bytes(n)` | `None` (**unbounded**) | Per-shard ceiling on total cached bytes. `0` = unbounded. **Unset = no admission limit**; FIFO eviction fires only when this is set and the new span would exceed it. |
+| `budget_bytes(n)` | `None` (**unbounded**) | Per-shard ceiling on total cached bytes. `0` = cache disabled (every span released to the OS immediately). **Unset = no admission limit**; FIFO eviction fires only when this is set and the new span would exceed it. |
 | `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS per tick. Range `[1, 100]`, clamped. |
 | `decay_interval_ms(n)` | `1000` (1 s) | Minimum wall-clock ms between two consecutive decay ticks. A tick fires inline on the next large alloc/free after the interval elapsed. Idle processes pay nothing. |
 | `headroom_bytes(n)` | `256 MiB` | Floor below which the decay is a no-op (anti-thrashing pad). |

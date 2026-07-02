@@ -22,13 +22,12 @@
 //!
 //! Per the one-export-per-file rule, no logic lives here. The files:
 //!
-//! - [`tagged_ptr`] — the packed `(value | tag)` ABA-defence word.
+//! - `tagged_ptr` — the packed `(value | tag)` ABA-defence word.
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
 //! - [`bootstrap`] — the process-global `Registry` + atomic state-machine.
 //! - [`heap_registry`] — the claim/recycle/abandon API.
 //!
-//! [`tagged_ptr`]: self::tagged_ptr
 //! [`heap_core`]: self::heap_core
 //! [`heap_slot`]: self::heap_slot
 //! [`bootstrap`]: self::bootstrap

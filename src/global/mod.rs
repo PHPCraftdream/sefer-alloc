@@ -8,18 +8,16 @@
 //!   `AbandonGuard`); the `unsafe` is the pointer handoff under the
 //!   single-writer invariant + the `unsafe fn recycle`/`abandon_segments`
 //!   calls in the guard's drop.
-//! - [`fallback`] -- the process-global always-live fallback heap; the
+//! - `fallback` -- the process-global always-live fallback heap; the
 //!   `unsafe` is the `static mut MaybeUninit<HeapCore>` + atomic-init
 //!   state-machine + spinlock-guarded `&mut` handout.
-//! - [`sefer_alloc`] -- the `unsafe impl GlobalAlloc` trait obligation +
+//! - `sefer_alloc` -- the `unsafe impl GlobalAlloc` trait obligation +
 //!   pointer handoff to `HeapCore`.
 //!
 //! See each seam file for the M5 (reentrancy-freedom), no-panic, and never-
 //! null (M10) proofs.
 //!
 //! [`tls_heap`]: self::tls_heap
-//! [`fallback`]: self::fallback
-//! [`sefer_alloc`]: self::sefer_alloc
 
 mod alloc_stats;
 mod fallback;

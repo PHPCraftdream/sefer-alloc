@@ -16,20 +16,20 @@
 //! 12.3 wires `HeapCore::alloc`/`dealloc`/`realloc`/`alloc_zeroed` as the
 //! entry points the raw-pointer TLS binding hands to the alloc face. They
 //! delegate to the [`AllocCore`] (own-thread path). Under `alloc-xthread`,
-//! [`HeapCore`] also carries the cross-thread [`ThreadFreeStack`] handle and
+//! [`HeapCore`] also carries the cross-thread `ThreadFreeStack` handle and
 //! stamps `owner_thread_free` on segment headers so remote threads can route
 //! cross-thread frees here (the §2.2 "owner stamping — 12.3" rule).
 //!
 //! ## M5-clean bootstrap invariant
 //!
-//! [`HeapCore::new`] bootstraps via [`AllocCore::new`] (OS aperture only —
+//! `HeapCore::new` bootstraps via [`AllocCore::new`] (OS aperture only —
 //! `mmap`/`VirtualAlloc`, **never** `std::alloc`). The cross-thread
-//! [`ThreadFreeStack`] is `Box`-allocated (goes through `std::alloc`), so it
-//! is **NOT** constructed in [`HeapCore::new`] — that would violate the
-//! M5-clean bootstrap of [`HeapRegistry::claim`] (which lazily materialises
+//! `ThreadFreeStack` is `Box`-allocated (goes through `std::alloc`), so it
+//! is **NOT** constructed in `HeapCore::new` — that would violate the
+//! M5-clean bootstrap of `HeapRegistry::claim` (which lazily materialises
 //! a `HeapCore` inside the slot and runs inside the registry's
 //! `ensure`/bootstrap path). Instead the TFS handle is installed lazily by
-//! [`HeapCore::install_thread_free`], called from the TLS bind-slow path
+//! `HeapCore::install_thread_free`, called from the TLS bind-slow path
 //! (outside the registry bootstrap). Until then `thread_free` is `None` and
 //! the heap serves only own-thread allocations (cross-thread frees to its
 //! segments are a safe no-op, matching the existing unstamped-segment

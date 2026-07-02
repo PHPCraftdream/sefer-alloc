@@ -1,4 +1,4 @@
-//! [`RemoteFreeRing`] — a per-segment, bounded, **non-intrusive** MPSC queue
+//! `RemoteFreeRing` — a per-segment, bounded, **non-intrusive** MPSC queue
 //! of freed-block **offsets** (`u32`), carved from segment metadata.
 //!
 //! ## Why this exists — the cross-thread-free drain-reclaim UAF fix
@@ -23,8 +23,8 @@
 //!
 //! ## What this module IS and is NOT
 //!
-//! - IS: pure safe data + arithmetic over the [`node`](super::node) seam. Every
-//!   atomic access goes through [`Node::atomic_u32_at`] (a confined-`unsafe`
+//! - IS: pure safe data + arithmetic over the `node` (`super::node`) seam. Every
+//!   atomic access goes through `Node::atomic_u32_at` (a confined-`unsafe`
 //!   primitive identical in spirit to `atomic_u64_at`). There is NO `unsafe`
 //!   here — the crate's structural promise ("`unsafe` lives ONLY in `os` +
 //!   `node`") is upheld by the compiler.

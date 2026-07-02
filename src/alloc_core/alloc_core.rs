@@ -90,6 +90,7 @@ const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 /// [`LargeCacheConfig::mode`]: super::large_cache_config::LargeCacheConfig::mode
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum LargeCacheMode {
     /// Default: Phase 2 lazy decay only. No background thread. Identical to
     /// pre-Phase-3 behaviour; all existing tests continue to pass unchanged.
@@ -221,7 +222,7 @@ type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
 /// large/huge segments). The registry of live segments lives in the
 /// primordial segment's payload (self-hosted) — there is NO `Vec<Segment>`:
 /// `AllocCore::drop` walks the registry and frees every reservation through
-/// the [`os`] seam.
+/// the `os` seam.
 pub struct AllocCore {
     /// The primordial segment registry (self-hosted in segment 0's payload).
     table: SegmentTable,
@@ -473,14 +474,14 @@ impl AllocCore {
     ///     race an owner write on the disjoint `bump` field (the §11
     ///     root-cause analysis).
     ///   - the size class is derived from the caller-supplied `Layout` via
-    ///     [`Self::classify`] — pure arithmetic, no `page_map` lookup (§13:
+    ///     `Self::classify` — pure arithmetic, no `page_map` lookup (§13:
     ///     `page_map` is unreliable for mixed-class pages, and own-thread
     ///     free HAS the `Layout`, so deriving from it is both cheaper AND
     ///     correct).
     ///
     /// The `SEGMENT_MAGIC` full-struct sanity check is intentionally absent
     /// here: it lives ONLY on the defensive cross-thread routing path
-    /// ([`HeapCore::dealloc_routing`] under `alloc-xthread`), where a foreign
+    /// (`HeapCore::dealloc_routing` under `alloc-xthread`), where a foreign
     /// pointer could in principle resolve to a registered-but-not-ours base.
     /// On the trusted own-thread path, `contains_base` is the sole guard and
     /// the `Layout` is authoritative for the class — a full header load would
@@ -1291,7 +1292,17 @@ impl AllocCore {
     /// Iterate over all registered segment bases (read-only). Exposed for the
     /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
     /// `abandon_segments`).
+    ///
+    /// `#[doc(hidden)]` (task #136): `AllocCore` itself is re-exported as
+    /// stable public API (unlike most of `alloc_core`), but this iterator is
+    /// an internal registry-walk primitive, not something an external
+    /// caller is expected to use directly — it leaked into the visible
+    /// public surface only because `AllocCore` is public. Kept `pub` (not
+    /// `pub(crate)`) because `registry::heap_core::HeapCore::segment_bases`
+    /// delegates to it across the crate boundary between `alloc_core` and
+    /// `registry`.
     #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.table.bases()
     }

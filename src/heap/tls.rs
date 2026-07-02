@@ -51,7 +51,7 @@ thread_local! {
 ///
 /// Implemented as a thin public wrapper over the same no-panic
 /// `try_with`/`try_borrow_mut` mechanics as the crate-internal
-/// [`with_heap_try`] (kept as a `pub(crate)` alias so existing internal call
+/// `with_heap_try` (kept as a `pub(crate)` alias so existing internal call
 /// sites are unaffected).
 pub fn with_heap<F, R>(f: F) -> Option<R>
 where

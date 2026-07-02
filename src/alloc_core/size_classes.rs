@@ -26,10 +26,16 @@
 //!   plain geometric progression is ever a multiple of 512, so every
 //!   `align >= 512` request fell through `class_for`'s divisibility walk to
 //!   `None`, i.e. Large, however small `size` was).
-//! - **Large:** allocations whose requested size exceeds `SMALL_MAX` (or whose
-//!   alignment exceeds `MIN_BLOCK`) get a dedicated whole-segment span — one
-//!   `Segment` per large allocation. No size class; the segment is sized to
-//!   fit. `segment_of(ptr)` still finds the owner in O(1).
+//! - **Large:** allocations whose requested size exceeds `SMALL_MAX` get a
+//!   dedicated whole-segment span — one `Segment` per large allocation. No
+//!   size class; the segment is sized to fit. `segment_of(ptr)` still finds
+//!   the owner in O(1). Alignment alone does **not** force the Large path:
+//!   `align > MIN_BLOCK` (16) is still served by a small class whenever one
+//!   exists whose `block_size` is a multiple of `align` (see
+//!   [`SizeClasses::class_for`]'s slow path, #114/B1) — an allocation only
+//!   falls through to Large on alignment grounds when `align` exceeds every
+//!   small class's block size (i.e. `align > SMALL_MAX`), since no small
+//!   block can then be a multiple of it.
 //! - **Huge:** allocations whose size is `>= HUGE_THRESHOLD` are also a single
 //!   dedicated segment (just a bigger one — `Segment::reserve` rounds up to
 //!   whole segments). Large and huge share the same path; the threshold is
@@ -57,11 +63,18 @@ pub(crate) const MIN_BLOCK: usize = 16;
 /// `build_table` and [`build_size2class`] rely on this).
 pub(crate) const MIN_BLOCK_SHIFT: u32 = MIN_BLOCK.trailing_zeros();
 
-/// The maximum alignment a small allocation may request and still be served by
-/// a small size class. Equal to `MIN_BLOCK` (every small block is
-/// `MIN_BLOCK`-aligned, so any alignment `<= MIN_BLOCK` is honoured). Larger
-/// alignments go through the large/huge path (a dedicated segment, which can
-/// honour arbitrary alignment up to `SEGMENT`).
+/// The alignment threshold below which a small allocation is served by the
+/// **fast** O(1) path. Equal to `MIN_BLOCK` (every small block is
+/// `MIN_BLOCK`-aligned, so any alignment `<= MIN_BLOCK` is trivially
+/// honoured — the fast path in [`SizeClasses::class_for`]). This is *not*
+/// the ceiling on alignments the small path can serve: `align >
+/// SMALL_ALIGN_MAX` (up to `SMALL_MAX`) still resolves to a small class via
+/// the bounded divisibility-walk slow path added by #114/B1 — only
+/// `align > SMALL_MAX` falls through to the dedicated-segment large/huge
+/// path (which can honour arbitrary alignment up to `SEGMENT`). The name
+/// predates #114/B1 and is kept for the existing `SegmentLayout` public
+/// constant; read it as "small-*fast*-path alignment ceiling", not
+/// "small-path alignment ceiling".
 pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 
 /// The table of fine small size classes, in strictly increasing order. Each

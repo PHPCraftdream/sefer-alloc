@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **#136 — public API polish before the first 0.3.0 publish (pre-release, not
+  a breaking change for any published version).**
+  - `SegmentLayout::SIZE_CLASS_TABLE` / `SIZE2CLASS` are now `&'static [..]`
+    slices instead of fixed-size arrays (`[usize; 48]` / `[u8; N]`). The
+    class-count grew silently 40→48 in 0.3.0; a fixed-length public type would
+    have made every future class re-tune a breaking change. A slice view has
+    no length in its type.
+  - `LargeCacheConfig::budget_bytes(0)` now means "cache disabled" (every
+    deposit released to the OS), stored verbatim as `Some(0)`. Previously `0`
+    was silently remapped to `None` ("unbounded") — the opposite of what `0`
+    intuitively suggests. Unbounded is still the default (don't call
+    `budget_bytes`).
+  - `LargeCacheMode` is now `#[non_exhaustive]` (adding a variant in a future
+    release is no longer breaking).
+  - Internal-but-`pub` items reachable only through `#[doc(hidden)]` modules
+    (e.g. `AllocCore::segment_bases`, `HeapCore::segment_bases`) are now
+    `#[doc(hidden)]`, and stale `SMALL_ALIGN_MAX`/`SMALL_MAX` docs were
+    corrected to match the #114/B1 divisibility-aware small path (align > 16
+    is served by the small path up to `SMALL_MAX`, not routed to Large).
+  - rustdoc builds clean (0 warnings) under both the default and `production`
+    feature sets; docs.rs is configured to render with `production`.
+
 ### Fixed
 
 - **#132 — the explicit `Heap`/`with_heap` public face lacked the A1

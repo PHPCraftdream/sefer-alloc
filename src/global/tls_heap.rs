@@ -6,7 +6,7 @@
 //! the heap is NOT owned by the TLS slot (RAII-dropped on thread exit); it
 //! is a slot in the global [`HeapRegistry`], and the TLS slot caches only a
 //! raw `*mut HeapCore` to it. Thread exit does NOT drop the heap; the
-//! [`AbandonGuard`] abandons its segments back to the registry and recycles
+//! `AbandonGuard` abandons its segments back to the registry and recycles
 //! the slot.
 //!
 //! ## Why raw `Cell<*mut HeapCore>` (no `RefCell`)
@@ -27,7 +27,7 @@
 //! owning thread (the one that won the `FREE → LIVE` CAS in `claim`).
 //! `current()` is called only on the owning thread (it reads its own TLS),
 //! so the `&mut HeapCore` it yields is exclusive. No other thread writes
-//! these bins; cross-thread frees go through the [`ThreadFreeStack`], not
+//! these bins; cross-thread frees go through the `ThreadFreeStack`, not
 //! the bins directly. The registry's atomic protocol (M5-clean bootstrap,
 //! claim/recycle CAS) establishes the single writer; this file relies on
 //! that, it does not re-establish it.
@@ -41,7 +41,7 @@
 //! not `LOCAL`'s destructor, it is `LOCAL` outliving `GUARD`'s destructor
 //! and being read again afterwards).
 //!
-//! The guard holds its OWN copy of the heap pointer (set in [`bind_slow`])
+//! The guard holds its OWN copy of the heap pointer (set in `bind_slow`)
 //! and never reads `LOCAL` to decide what to recycle — that part of the
 //! reasoning is unchanged. But `GUARD::drop` runs `HeapRegistry::recycle`,
 //! which releases the slot back to the free pool; another thread may then
@@ -53,7 +53,7 @@
 //! rule) and that happens to allocate/deallocate memory — would resolve
 //! back to the now-reclaimed-by-someone-else slot and hand out a second
 //! `&mut HeapCore` aliasing the new owner's. This is exactly the guard's
-//! job to prevent: it stamps `LOCAL` with the [`TORN`] sentinel BEFORE
+//! job to prevent: it stamps `LOCAL` with the `TORN` sentinel BEFORE
 //! calling `recycle`, i.e. while `LOCAL` is still guaranteed live (`GUARD`
 //! drops before `LOCAL` in the reverse-declaration order above). Every
 //! resolver ([`current`], [`current_for_alloc`],
@@ -66,16 +66,13 @@
 //!
 //! [`current()`] returns a non-null `*mut HeapCore` in every case:
 //! - the cached pointer is set → return it;
-//! - the cached pointer is null (first call) → [`bind_slow`] claims a slot
+//! - the cached pointer is null (first call) → `bind_slow` claims a slot
 //!   and publishes it, or on registry exhaustion falls back to the
 //!   primordial heap;
-//! - the TLS slot is destroyed (thread teardown) → [`fallback_ptr`] returns
+//! - the TLS slot is destroyed (thread teardown) → `fallback_ptr` returns
 //!   the always-live process-global fallback heap.
 //!
 //! So the alloc face never returns null for a serviceable request (M10).
-//!
-//! [`HeapRegistry`]: crate::registry::HeapRegistry
-//! [`ThreadFreeStack`]: crate::heap::thread_free::ThreadFreeStack
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented raw-pointer TLS seam (Phase 12.3).
@@ -230,8 +227,8 @@ impl Drop for AbandonGuard {
 /// The hot accessor: return the current thread's heap pointer, never null.
 ///
 /// Fast path: a single TLS load + null check. On first call (null) it calls
-/// [`bind_slow`] (cold); if the TLS is torn down (thread teardown) it calls
-/// [`fallback_ptr`] (cold) — the process-global fallback heap, also never
+/// `bind_slow` (cold); if the TLS is torn down (thread teardown) it calls
+/// `fallback_ptr` (cold) — the process-global fallback heap, also never
 /// null.
 ///
 /// This is the un-tagged variant, for callers that do not need to
@@ -260,8 +257,9 @@ pub fn current() -> *mut HeapCore {
 }
 
 /// Which heap [`current_for_alloc`] resolved to. The alloc face uses this to
-/// decide whether to take the lock-free own-thread fast path ([`Own`]) or
-/// the spinlock-guarded fallback path ([`Fallback`]). Carrying the tag in
+/// decide whether to take the lock-free own-thread fast path
+/// ([`Own`](Self::Own)) or the spinlock-guarded fallback path
+/// ([`Fallback`](Self::Fallback)). Carrying the tag in
 /// the return value avoids a second `fallback::heap_ptr()` call (which would
 /// needlessly initialise the fallback even when the fast path won).
 #[must_use]
@@ -270,7 +268,7 @@ pub enum CurrentHeap {
     /// is sound under the single-writer invariant.
     Own(*mut HeapCore),
     /// The process-global fallback heap. Access MUST go through
-    /// [`fallback::with_heap`] (spinlock-guarded) for mutual exclusion. The
+    /// `fallback::with_heap` (spinlock-guarded) for mutual exclusion. The
     /// fallback pointer itself is re-fetched inside `with_heap` (it is a
     /// stable `'static` once initialised), so this variant carries no data.
     Fallback,

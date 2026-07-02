@@ -67,15 +67,48 @@ fn decay_rate_percent_clamped_high() {
     );
 }
 
-// ── Gap 5: budget_bytes(0) → unbounded ──────────────────────────────────────
+// ── Gap 5: budget_bytes(0) → cache disabled (task #136 fix) ────────────────
+//
+// Before task #136, `.budget_bytes(0)` was silently remapped to `None`
+// (unbounded) — the opposite of what `0` intuitively means ("cache
+// nothing"). #136 fixed the inversion: `Some(0)` is now stored verbatim, so
+// every deposit immediately fails the budget admission check and the span
+// is released to the OS instead of entering the cache. Unbounded caching is
+// still available — it is simply the *default* (don't call `budget_bytes`
+// at all, or see `budget_bytes_absent_is_unbounded` below).
 
-/// `.budget_bytes(0)` means unbounded — a large span must be cached, not rejected.
+/// `.budget_bytes(0)` now means "cache disabled" — a large span must be
+/// released to the OS immediately, not cached (task #136: fixes the
+/// pre-#136 inversion where `0` silently meant "unbounded").
 #[test]
-fn budget_bytes_zero_is_unbounded() {
+fn budget_bytes_zero_disables_cache() {
     let cfg = LargeCacheConfig::new().budget_bytes(0);
     let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
 
-    // Alloc + dealloc a large span; it should enter the cache.
+    // Alloc + dealloc a large span; it must NOT enter the cache.
+    let layout = Layout::from_size_align(4 * MIB, 8).unwrap();
+    let ptr = ac.alloc(layout);
+    assert!(!ptr.is_null(), "allocation must succeed");
+    ac.dealloc(ptr, layout);
+
+    let used = ac.dbg_large_cache_used();
+    assert_eq!(
+        used, 0,
+        "budget_bytes(0) must disable the cache: span should be released, but used={used}"
+    );
+}
+
+/// Counterfactual companion: leaving `budget_bytes` unset (the default,
+/// `None`) is still unbounded — a large span is cached. This is the
+/// behaviour `budget_bytes_zero_disables_cache` would wrongly pass under if
+/// the admission check were broken in the other direction (e.g. always
+/// rejecting), so it pins down that only `Some(0)` disables the cache, not
+/// every config.
+#[test]
+fn budget_bytes_absent_is_unbounded() {
+    let cfg = LargeCacheConfig::new();
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
+
     let layout = Layout::from_size_align(4 * MIB, 8).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null(), "allocation must succeed");
@@ -84,7 +117,7 @@ fn budget_bytes_zero_is_unbounded() {
     let used = ac.dbg_large_cache_used();
     assert!(
         used > 0,
-        "budget_bytes(0) must be unbounded: span should be cached, but used={used}"
+        "default (unset) budget_bytes must be unbounded: span should be cached, but used={used}"
     );
 }
 

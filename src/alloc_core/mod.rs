@@ -2,11 +2,8 @@
 //! Inversion), behind the `alloc-core` feature.
 //!
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
-//! The two confined-`unsafe` seams are [`os`] and [`node`]; every other file
+//! The two confined-`unsafe` seams are `os` and `node`; every other file
 //! is pure safe code that composes them.
-//!
-//! [`os`]: self::os
-//! [`node`]: self::node
 
 // The file `alloc_core.rs` carries the same name as this module per the
 // crate's one-export-per-file convention; silence clippy's module_inception.
@@ -37,7 +34,7 @@ pub(crate) mod node;
 pub mod numa;
 pub(crate) mod os;
 /// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
-/// unconditionally so the segment [`Layout`](segment_header::Layout) (which
+/// unconditionally so the segment `Layout` (`segment_header::Layout`, which
 /// always reserves the ring's bytes to keep the byte layout uniform across
 /// feature configs) can reference `FOOTPRINT`; the `push`/`drain` methods are
 /// the only `alloc-xthread`-gated surface.

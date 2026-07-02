@@ -22,8 +22,9 @@
 //!
 //! ## Why `MaybeUninit` (not a live `HeapCore`)
 //!
-//! `HeapCore::new` bootstraps a full segment substrate ([`AllocCore::new`]
-//! reserves a 4 MiB primordial segment). We CANNOT materialise a live
+//! `HeapCore::new` bootstraps a full segment substrate
+//! ([`AllocCore::new`](crate::AllocCore::new) reserves a 4 MiB primordial
+//! segment). We CANNOT materialise a live
 //! `HeapCore` per slot at registry-init time: that would reserve
 //! `MAX_HEAPS × 4 MiB` of OS memory up front. Instead each slot holds a
 //! [`MaybeUninit<HeapCore>`]; the slot starts `FREE` with an *uninitialised*

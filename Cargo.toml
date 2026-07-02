@@ -23,6 +23,15 @@ exclude = [
     "docs/checkpoints/",
 ]
 
+# docs.rs: build the rendered documentation with the full `production` feature
+# bundle so the `SeferAlloc`/`AllocStats`/registry API pages (all gated on
+# `alloc-global` and friends) are present and their intra-doc links resolve.
+# A plain default-feature `cargo doc` does not compile those items, so the
+# crate-root overview refers to them as inline code rather than links to stay
+# warning-clean under every feature configuration (task #136).
+[package.metadata.docs.rs]
+features = ["production"]
+
 # Workspace root. `sefer-alloc` is the root crate AND the workspace; the
 # extracted, independently-publishable building blocks live under `crates/`:
 #   - sefer-region    (crates/region)       — typed handle store (Handle<T>/Region<T>)

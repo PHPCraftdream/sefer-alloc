@@ -4,8 +4,8 @@
 //! This replaces the environment-variable parsers that used to live in
 //! `alloc_core.rs`. The caller constructs a `LargeCacheConfig` value at
 //! compile time (or at runtime — the builder is `const` but not *required*
-//! to be) and passes it to [`AllocCore::new_with_config`] or
-//! [`SeferAlloc::with_config`]. If the caller wants to read from the
+//! to be) and passes it to [`AllocCore::new_with_config`](super::AllocCore::new_with_config) or
+//! [`SeferAlloc::with_config`](crate::SeferAlloc::with_config). If the caller wants to read from the
 //! environment, a CLI flag, or a config file, they do that themselves and
 //! pass the resolved values here.
 //!
@@ -72,12 +72,14 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 /// ```
 ///
 /// Passing `LargeCacheConfig::DEFAULT` (= `LargeCacheConfig::new()`) to
-/// [`SeferAlloc::with_config`] produces byte-identical behaviour to
-/// [`SeferAlloc::new`].
+/// [`SeferAlloc::with_config`](crate::SeferAlloc::with_config) produces
+/// byte-identical behaviour to [`SeferAlloc::new`](crate::SeferAlloc::new).
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, Debug)]
 pub struct LargeCacheConfig {
-    /// Per-shard hard ceiling on total cached bytes. `None` = unbounded.
+    /// Per-shard hard ceiling on total cached bytes. `None` = unbounded;
+    /// `Some(0)` = cache disabled (every deposit is released to the OS
+    /// immediately); `Some(n > 0)` = a finite ceiling.
     ///
     /// When set, FIFO eviction fires before admitting a new span that would
     /// push the total above this limit. If the limit is smaller than the span
@@ -152,13 +154,24 @@ impl LargeCacheConfig {
     /// is smaller than the incoming span's usable size, the span is released
     /// to the OS immediately.
     ///
-    /// Pass `0` to express "unlimited" — internally treated as `None`
-    /// (unbounded). Any non-zero value sets a finite ceiling.
+    /// `0` is a valid, least-surprising finite ceiling: it means "cache
+    /// nothing" — every deposit immediately fails the budget check and the
+    /// span is released to the OS instead of cached (large-cache disabled).
+    /// This is a stored `Some(0)`, distinct from the default `None`
+    /// (unbounded, any span admissible). If you want *unbounded* caching,
+    /// simply don't call `budget_bytes` (or don't call it with `0`) — the
+    /// default already is unbounded.
+    ///
+    /// (Before task #136 this method treated `0` as an alias for `None`
+    /// — i.e. "unlimited" — which is the opposite of what `0` intuitively
+    /// suggests. That inversion was fixed prior to the first publish of the
+    /// `LargeCacheConfig` API, so it is not a breaking change for any
+    /// released version.)
     ///
     /// Default: `None` (unbounded — any span is admissible).
     #[must_use]
     pub const fn budget_bytes(mut self, bytes: usize) -> Self {
-        self.budget_bytes = if bytes == 0 { None } else { Some(bytes) };
+        self.budget_bytes = Some(bytes);
         self
     }
 

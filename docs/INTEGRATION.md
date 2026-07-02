@@ -80,7 +80,7 @@ not pull memory back to the OS (anti-thrashing floor).
 
 | Builder method | Default | Meaning |
 |---|---|---|
-| `.budget_bytes(n)` | `None` (**unbounded**) | Per-shard hard ceiling on cached bytes. `0` = unbounded. No admission limit when unset; FIFO eviction fires only when this is set and the new span would exceed it. |
+| `.budget_bytes(n)` | `None` (**unbounded**) | Per-shard hard ceiling on cached bytes. `0` = cache disabled (every span released to the OS immediately). No admission limit when unset; FIFO eviction fires only when this is set and the new span would exceed it. |
 | `.headroom_bytes(n)` | `256 MiB` | Floor below which the periodic decay is a no-op. Above this, `excess = cached − headroom` is the amount eligible for release. |
 
 **Containers / RSS-sensitive deployments**: call `.budget_bytes(512 * 1024 * 1024)`

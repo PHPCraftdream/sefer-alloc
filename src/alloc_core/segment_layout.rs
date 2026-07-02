@@ -34,26 +34,43 @@ impl SegmentLayout {
     /// the lookup arithmetic independently of the crate internals.
     pub const MIN_BLOCK_SHIFT: u32 = super::size_classes::MIN_BLOCK_SHIFT;
 
-    /// The maximum alignment a small allocation may request and still be
-    /// served by the small free-list path. Larger alignments go through the
-    /// dedicated-segment (large) path.
+    /// The alignment threshold below which a small allocation is served by
+    /// the **fast** O(1) small-class lookup. This is *not* the ceiling on
+    /// alignments the small path can serve: an alignment above this value
+    /// (and up to [`SMALL_MAX`](Self::SMALL_MAX)) still resolves to a small
+    /// class via a bounded divisibility-walk slow path (see
+    /// [`class_for`](Self::class_for), #114/B1) — only an alignment greater
+    /// than `SMALL_MAX` falls through to the dedicated-segment large path.
     pub const SMALL_ALIGN_MAX: usize = super::size_classes::SMALL_ALIGN_MAX;
 
-    /// The largest small size class. Allocations larger than this (or with
-    /// alignment > `SMALL_ALIGN_MAX`) go through the large path.
+    /// The largest small size class. Allocations larger than this go through
+    /// the large path; so does an allocation whose alignment exceeds this
+    /// value, since no small class's block size can then be a multiple of
+    /// it (see [`class_for`](Self::class_for)).
     pub const SMALL_MAX: usize = super::size_classes::SMALL_MAX;
 
     /// The fine small size-class table — the single source of truth for the
     /// small-class geometry. `SIZE2CLASS` is derived from it at compile time.
     /// Exposed so tests can re-run the linear scan independently and assert the
     /// O(1) lookup never drifts from it.
-    pub const SIZE_CLASS_TABLE: [usize; 48] = super::size_classes::SIZE_CLASS_TABLE;
+    ///
+    /// Exposed as a slice (not a fixed-size array) so that tuning the number
+    /// of small classes stays semver-compatible: the array length grew
+    /// silently from 40 to 48 in 0.3.0, which — had this constant been public
+    /// at the time — would have been a breaking type change (`[usize; 40]` →
+    /// `[usize; 48]`). A slice view has no length in its type, so future
+    /// re-tuning of the class count is not a breaking change.
+    pub const SIZE_CLASS_TABLE: &'static [usize] = &super::size_classes::SIZE_CLASS_TABLE;
 
     /// The O(1) size→class lookup table (compile-time-derived from
     /// [`SIZE_CLASS_TABLE`](Self::SIZE_CLASS_TABLE)). `SIZE2CLASS[k]` is the
     /// smallest class index whose block size covers `k * MIN_BLOCK` bytes.
-    pub const SIZE2CLASS: [u8; (Self::SMALL_MAX / Self::MIN_BLOCK) + 1] =
-        super::size_classes::SIZE2CLASS;
+    ///
+    /// Exposed as a slice for the same semver reason as
+    /// [`SIZE_CLASS_TABLE`](Self::SIZE_CLASS_TABLE): its length is derived
+    /// from `SMALL_MAX`/`MIN_BLOCK` and would otherwise bake a fixed array
+    /// length into the public type.
+    pub const SIZE2CLASS: &'static [u8] = &super::size_classes::SIZE2CLASS;
 
     /// Resolve `(size, align)` to a small-class index, or `None` for the large
     /// path. `size` must be `>= MIN_BLOCK` (the caller's contract; the public
