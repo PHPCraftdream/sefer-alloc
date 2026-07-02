@@ -158,18 +158,25 @@ pub struct HeapCore {
     /// (`push_abandoned_segment_into`/`pop_abandoned_segment` in
     /// `heap_registry.rs`) — same push/CAS/pop shape — but PER-HEAP (this
     /// field, not the global registry head) and reusing each segment's
-    /// `next_abandoned` header field as the intrusive link. This is safe to
-    /// reuse: `next_abandoned` is otherwise only written by the global
-    /// abandon/adopt substrate, and Large segments are NEVER abandoned onto
-    /// that global stack (the shard model keeps large segments with their
-    /// allocating heap; `abandon_segments` only walks a heap's segments on
-    /// the now-dormant Phase 12.4 thread-exit path, and even there a Large
-    /// segment abandoned mid-flight would simply have its `next_abandoned`
-    /// overwritten again — no aliasing hazard, since a segment cannot be on
-    /// both stacks at once in the shard model's production path). No ABA tag
-    /// is needed here (unlike the global stack): only the OWNER thread ever
-    /// pops from this stack (single consumer), so the classic multi-popper
-    /// ABA race does not apply; multiple REMOTE threads may push
+    /// `next_abandoned` header field as the intrusive link.
+    ///
+    /// ⚠️ **This field-sharing is safe ONLY while `abandon_segments` stays
+    /// unreachable from production** (Phase 12.5's "release the slot only"
+    /// discipline — see its doc comment in `heap_registry.rs`). It is NOT a
+    /// structural guarantee: both this local stack and the global
+    /// abandoned-segs stack write the SAME `next_abandoned` field, and if the
+    /// global walk is ever reactivated (e.g. a future decommit-when-empty
+    /// policy — see the `⚠️ REACTIVATION HAZARD` note on
+    /// `HeapRegistry::abandon_segments`) without excluding Large segments, a
+    /// segment mid-flight on THIS stack can have its link silently
+    /// overwritten by that walk — corrupting this stack's chain (leak of
+    /// everything behind it, and a possible wild-pointer read on a later
+    /// local pop). Read that note in full before wiring `abandon_segments`
+    /// back onto any hot path.
+    ///
+    /// No ABA tag is needed here (unlike the global stack): only the OWNER
+    /// thread ever pops from this stack (single consumer), so the classic
+    /// multi-popper ABA race does not apply; multiple REMOTE threads may push
     /// concurrently (multi-producer), which a plain CAS-loop push handles
     /// without a tag.
     ///

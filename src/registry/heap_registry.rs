@@ -229,6 +229,38 @@ impl HeapRegistry {
     /// policy; when that is wired it must coordinate ownership with the new
     /// policy, but it does NOT clear the table here.
     ///
+    /// # ⚠️ REACTIVATION HAZARD (task A1, 0.3.0) — read before wiring this up
+    ///
+    /// `HeapCore::thread_free` (the per-heap cross-thread deferred-free stack
+    /// added in task A1 for Large-segment reclaim — see its field doc in
+    /// `heap_core.rs`) reuses each segment's `next_abandoned` header field as
+    /// its OWN intrusive link — the exact same field this global stack's
+    /// [`push_abandoned_segment_into`]/[`pop_abandoned_segment`] use.
+    ///
+    /// Today this is safe ONLY because `abandon_segments` is unreachable from
+    /// any production path (Phase 12.5 replaced thread-exit abandonment with
+    /// "release the slot only" — see the paragraph above). If a FUTURE
+    /// decommit-when-empty policy reactivates this walk, it MUST NOT walk a
+    /// `SegmentKind::Large` segment that could be concurrently linked into a
+    /// heap's local A1 deferred-free stack — doing so clobbers
+    /// `next_abandoned`, corrupting whichever stack loses the race:
+    /// - if the segment is mid-flight on the LOCAL (per-heap) stack when this
+    ///   global walk overwrites its link, the local stack's chain past that
+    ///   segment becomes unreachable (silent leak of everything behind it),
+    ///   and a later local `pop` may read a link that actually points into
+    ///   the GLOBAL stack's chain — a wild/foreign pointer read, not just a
+    ///   leak.
+    ///
+    /// Before reactivating: either (a) skip `SegmentKind::Large` segments in
+    /// this walk entirely (large segments are already reclaimed via the A1
+    /// path, which — unlike this global stack — does not require the
+    /// owning heap to be dying), or (b) give each stack its own dedicated
+    /// link field instead of sharing `next_abandoned`. Do not skip this
+    /// check — there is no test that would catch the corruption (both stacks
+    /// are exercised in isolation today; nothing exercises them
+    /// concurrently on the same segment, because this walk is currently
+    /// dead code on every reachable path).
+    ///
     /// # Safety
     ///
     /// `heap` must be either null (treated as a no-op) or a pointer
