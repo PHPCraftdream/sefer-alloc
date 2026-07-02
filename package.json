@@ -1,0 +1,13 @@
+{
+  "name": "sefer-alloc-dev-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev-only hardening-sweep runners for sefer-alloc (loom / miri / TSan-via-WSL). Not published; no runtime deps.",
+  "type": "module",
+  "scripts": {
+    "loom": "node scripts/loom.mjs",
+    "miri": "node scripts/miri.mjs",
+    "tsan": "node scripts/tsan.mjs",
+    "harden": "node scripts/loom.mjs && node scripts/miri.mjs && node scripts/tsan.mjs"
+  }
+}

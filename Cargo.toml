@@ -13,6 +13,15 @@ homepage = "https://github.com/PHPCraftdream/sefer-alloc"
 documentation = "https://docs.rs/sefer-alloc"
 keywords = ["allocator", "arena", "generational", "handle", "lock-free"]
 categories = ["data-structures", "memory-management", "concurrency", "no-std"]
+# Dev-only tooling excluded from the published crates.io tarball: the Node
+# hardening-sweep runners (loom/miri/TSan), CI workflows, and session
+# checkpoints are irrelevant to a downstream consumer of the library.
+exclude = [
+    "scripts/",
+    "package.json",
+    ".github/",
+    "docs/checkpoints/",
+]
 
 # Workspace root. `sefer-alloc` is the root crate AND the workspace; the
 # extracted, independently-publishable building blocks live under `crates/`:
