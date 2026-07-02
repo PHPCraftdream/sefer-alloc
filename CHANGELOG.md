@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#129 — BLOCKER: `tls_heap`'s stale-LOCAL TLS resolver could hand out two
+  `&mut HeapCore` for the same recycled registry slot.** `tls_heap`'s `LOCAL`
+  (a `Cell`, no `Drop`) and `GUARD` (`AbandonGuard`, has `Drop`) are declared
+  in an order where `GUARD` drops FIRST on thread teardown — recycling the
+  registry slot — while `LOCAL` survives holding its now-stale pre-recycle
+  pointer. Every resolver treated any non-null `LOCAL` as "my own live slot";
+  the documented generation-guard was never actually read on the alloc path.
+  Reachable from correct code: an application `thread_local` with a `Drop`
+  impl that allocates, first touched before the thread's first `sefer-alloc`
+  allocation, is destroyed after `GUARD` — its `Drop` could resolve to the
+  stale, already-recycled slot, handing out a second live `&mut HeapCore`
+  concurrently with whoever re-claimed it (a data race / UAF). Fixed with a
+  `TORN` sentinel (`usize::MAX`, never dereferenced): `AbandonGuard::drop`
+  stamps `LOCAL = TORN` before recycling; all three TLS resolvers check
+  `TORN` before treating a non-null `LOCAL` as live, and route post-teardown
+  deallocs through the always-live fallback heap instead.
+- **#130 — BLOCKER: `alloc_large` with `align >= SEGMENT` leaked to abort or
+  returned a misaligned pointer (UB).** `alloc_large` places a large block at
+  `base + align_up(header, align.max(PAGE))`, but `base` is only
+  `SEGMENT`-aligned (4 MiB). For `align == SEGMENT`, the block itself landed
+  `SEGMENT`-aligned at `base + SEGMENT` — an address `dealloc`'s
+  `base & !(SEGMENT-1)` computation never resolves back to the registered
+  `base`, so every such `dealloc` silently no-op'd, leaking the segment and
+  its `SegmentTable` slot until `MAX_SEGMENTS` (1024) exhausted and the
+  process aborted. For `align > SEGMENT`, the returned pointer inherited only
+  4 MiB alignment roughly half the time — violating the `GlobalAlloc`
+  contract (UB in the caller). Both reachable from a valid `Layout` (e.g.
+  `#[repr(align(4194304))]`, huge-page buffers). Fixed by rejecting
+  `align >= SEGMENT` up front with a null return (a legal, documented alloc
+  failure) — exotic alignments at or above the segment size are unsupported
+  by the dedicated-segment large path.
+- **#131 — `ensure_slow`'s OOM path panicked without rolling back the
+  bootstrap sentinel, livelocking every future registry access.** The CAS
+  winner publishes `SENTINEL_INITIALIZING` before reserving VM for the
+  `Registry`; on OOM the old code called `.expect(..)`, which panicked
+  without ever restoring a real pointer or rolling the sentinel back to
+  null. Every loser thread spinning on the sentinel spun forever, and every
+  future `ensure()` call also spun forever (CAS(null, SENTINEL) never
+  succeeds against a non-null stuck sentinel) — a process-wide livelock on
+  the next registry touch. Worse, unwinding the panic itself allocates,
+  reentering `ensure()` against the same stuck state before the panic even
+  finished. Fixed: on reservation failure, roll `REGISTRY_PTR` back to null
+  (Release) before terminating via `std::process::abort` (not `panic!` —
+  `abort` performs no unwind and no allocation, so it cannot reenter
+  `ensure()`).
+- **#134 — `large_cache`'s `usable_size` was recomputed from mutable header
+  fields, corrupting the RSS byte-budget.** At deposit time (both the
+  own-thread `dealloc` Large branch and `reclaim_large_segment`),
+  `usable_size` was recomputed from the header's `large_size`/`large_align`.
+  On a large-cache HIT, a larger cached span can be reused for a smaller
+  request, and the hit path rewrites the header's logical size/align to the
+  smaller request — so on the segment's NEXT free, the recomputed
+  `usable_size` under-reports the segment's true physical span. This let
+  `large_cache_used_bytes` under-count real RSS, admitting more spans than
+  the configured budget should allow (unbounded RSS amplification), and
+  corrupted the cache-hit size-ratio matching. Fixed by adding a new
+  `SegmentHeader::span_usable` field — the segment's PHYSICAL committed span,
+  set once at the original OS reservation and carried forward verbatim
+  (never recomputed) through every subsequent cache-hit reuse. Both deposit
+  sites now read `header.span_usable` instead of recomputing from
+  `large_size`/`large_align`.
+- **#139 — miri could not validate the `registry` module: the ~22 MB
+  `Registry` reservation was uninitialised under miri's `std::alloc`
+  fallback.** `bootstrap::ensure_slow` relies on OS zero-pages
+  (`VirtualAlloc`/`mmap`) for every `Registry` field it does not explicitly
+  write. Under miri, `aligned-vmem`'s reservation falls back to
+  `std::alloc`, which does NOT zero memory — so reads of `count`,
+  `abandoned_segs`, and friends hit uninitialised memory (UB), aborting miri
+  before it could validate anything in the registry module (including the
+  #133 per-heap-counter aggregation and the #131 sentinel rollback). Fixed
+  with a `#[cfg(miri)]`-only `write_bytes(base, 0, REGISTRY_SIZE)` right
+  after the reservation — compiled out entirely on real targets (zero
+  production cost). Full strict-provenance cleanliness of the tagged-pointer
+  infrastructure is separately tracked as #140.
+
+### Performance
+
+- **#133 — per-heap hit counters replace a contended global-lock `fetch_add`
+  on the hot path.** `DBG_TCACHE_HITS` (magazine-hit) and
+  `LARGE_CACHE_HITS` (large-cache-hit) were process-global `AtomicU64`s
+  bumped by every thread on otherwise fully-per-thread hot paths — a
+  contended cache line that ping-ponged across cores. Moved to per-heap
+  fields (`HeapCore::tcache_hits`, `AllocCore::large_cache_hits`),
+  incremented `Relaxed` by the owning thread only; the process-wide view
+  (`stats()`, tests) is reconstructed by summing every minted heap slot's
+  counter, gated by a new `HeapSlot::initialised: AtomicBool` (Release-set
+  after the heap is fully constructed; the aggregator Acquire-loads it to
+  avoid reading a not-yet-initialised slot). Measured: churn −20.9 % (16 B),
+  −19.6 % (64 B).
+- **#135 — `SegmentTable::register`/`unregister`/`recycle` and
+  `HeapCore::realloc`'s ownership test are now O(1), not O(segment count).**
+  `register` used to scan `[0, count)` for a NULL slot; `unregister`/
+  `recycle` scanned for a matching base. All three are now O(1) via a
+  free-list stack of recycled slot indices (carved in the primordial
+  segment) plus a field-specific `segment_id_at` header read that indexes
+  the slot directly. `HeapCore::realloc`'s ownership check switched from
+  `segment_bases().any(...)` (O(count)) to `AllocCore::contains_base` (O(1)
+  hash probe, same semantics). Also hardens `dealloc_routing`'s M2 routing:
+  `self.core.contains_base(base)` is now checked FIRST (O(1), reads only the
+  caller's own table, no cross-thread memory read) — proven equivalent to
+  the prior `owner_tf.is_null() || owner_tf == our_head` branch for every
+  segment the caller owns; only a miss falls through to the field-specific
+  cross-thread header reads.
+
 ### Changed
 
 - **#136 — public API polish before the first 0.3.0 publish (pre-release, not
@@ -31,8 +137,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - rustdoc builds clean (0 warnings) under both the default and `production`
     feature sets; docs.rs is configured to render with `production`.
 
-### Fixed
-
 - **#132 — the explicit `Heap`/`with_heap` public face lacked the A1
   cross-thread Large-segment reclaim fix.** `SeferAlloc` (via `HeapCore`) got
   the A1 fix in 0.3.0; `Heap::dealloc_any_thread` did not — a cross-thread
@@ -51,6 +155,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `try_with`/`try_borrow_mut` mechanics as the crate-internal
   `with_heap_try` and returns `None` (its signature has always been
   `Option<R>`) instead of panicking.
+- **#138 — A1 post-reuse defensive mitigation for cross-thread Large-segment
+  double-free.** A1's deferred-free stack fully closes the PRE-reuse
+  double-free window (a double-free of a Large segment not yet reclaimed is
+  a sound no-op, guarded by `push_large_deferred_free`'s double-push CAS
+  guard). The POST-reuse window remained: a stale free arriving after the
+  segment was already reclaimed and handed to a brand-new allocation is, by
+  address alone, indistinguishable from a legitimate free of that new
+  occupant. Both cross-thread Large-free routing paths
+  (`HeapCore::dealloc_routing`, `Heap::dealloc_any_thread`) now check that
+  the freeing `Layout`'s size matches the CURRENT occupant's `large_size`
+  header field (`alloc_core::deferred_large::large_layout_consistent`)
+  before queuing the segment for reclaim; a mismatch is dropped as a no-op
+  instead of corrupting the reused segment. **Honest scope: this is a
+  mitigation, not a full fix** — a reuse that happens to request the
+  bit-identical size is not caught (double-free remains UB by the
+  `GlobalAlloc` contract). New regression tests:
+  `tests/regression_xthread_large_free_layout_mismatch.rs`
+  (`xthread_large_free_mismatched_layout_is_dropped`,
+  `xthread_large_free_consistent_layout_is_reclaimed`, plus a `Heap`-face
+  counterpart), counterfactual-verified against both call sites.
+
+### Internal
+
+- **#137 — CI never exercised the `fastbin` (magazine/tcache) path or the
+  flagship `production` feature bundle**, and `loom_fallback_init` (the
+  fallback-heap lazy-init state machine) existed but was absent from the
+  loom CI matrix (model-checked locally, never gated in CI). Added
+  `--features "alloc-global alloc-xthread fastbin"` and
+  `--features production` to the test matrix, `--no-fail-fast` to the test
+  runner (a failure in one test binary no longer masks failures in later
+  ones), and `loom_fallback_init` to the loom matrix.
+- **#138 — loom-model honesty audit.** Every `tests/loom_*.rs` file's doc
+  comment now states whether it models a currently-live production code
+  path, a removed/superseded one, or a dead (currently-unreachable) one:
+  `loom_thread_free.rs` models the Phase 10 intrusive-TFS push/drain of
+  individual freed blocks, which was superseded by the non-intrusive
+  per-segment `RemoteFreeRing` (modelled separately, faithfully, in
+  `loom_remote_ring.rs`) — retained for its generic CAS-push counterfactual,
+  not as a validator of any current path. `loom_registry.rs` models the
+  Phase 12.4 segment-adoption CAS protocol, whose only producer
+  (`HeapRegistry::abandon_segments`) is unreachable from any production path
+  today (Phase 12.5 replaced thread-exit abandonment with whole-heap slot
+  reuse) — retained as a pre-validated substrate for a future
+  decommit-when-empty policy. `tagged_ptr.rs`'s doc comment referenced a
+  push-pop-repush ABA loom model in `loom_registry.rs` that was never
+  actually written (that file models a different protocol entirely); the
+  reference is corrected and the missing ABA model for the `free_slots`
+  `TaggedPtr` stack is tracked as follow-up debt, not written in this pass.
+  A loom model for the A1 `deferred_large` push/drain (Large-segment
+  reclaim) is also tracked as follow-up debt — judged out of scope for this
+  hardening pass (see the task report for the full audit table).
 
 ## [0.3.0] - 2026-06-30
 

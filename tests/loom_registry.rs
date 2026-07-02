@@ -1,6 +1,33 @@
 //! loom model-check of the **Phase 12.4 adoption protocol** (M9 —
 //! adopt-exactly-once).
 //!
+//! # ⚠️ 0.3.0 (task #138) — honest status: MODELS A DEAD (UNREACHABLE) PATH
+//!
+//! `HeapRegistry::abandon_segments` — the ONLY producer of an ABANDONED
+//! segment for `HeapRegistry::try_adopt` (the CAS protocol this file
+//! models) to adopt — is, by its OWN doc comment
+//! (`src/registry/heap_registry.rs`, "Phase 12.5 (shard model...)" section),
+//! **unreachable from any production path**: Phase 12.5 replaced
+//! thread-exit abandonment with whole-heap slot reuse (`AbandonGuard`
+//! releases the slot only; segments stay with the `HeapCore`, which the
+//! next claimer of the SAME slot reuses in full). `try_adopt` itself is
+//! `pub unsafe fn` but is never called from any `src/` production path
+//! (confirmed by grep — the only other reference is a comment in
+//! `tests/global_alloc_mt.rs` calling it "cold-path"). Nothing abandons a
+//! segment today, so nothing ever adopts one.
+//!
+//! This file is **retained** — per `abandon_segments`'s own doc comment,
+//! the whole `owner_state`/`abandoned_segs` substrate is kept, loom-proven,
+//! as the basis for a FUTURE decommit-when-empty policy, and that same doc
+//! comment flags a "REACTIVATION HAZARD" (a `next_abandoned` field-sharing
+//! conflict with the A1 `deferred_large` stack) that must be resolved
+//! BEFORE `abandon_segments` is ever wired back onto a live path — reading
+//! that hazard note before touching this code is required, not optional.
+//! This loom file proves the CAS protocol itself is sound (M9:
+//! adopt-exactly-once) so that if/when the path is reactivated, the
+//! concurrency primitive underneath it is already validated; it does NOT
+//! currently validate anything a running allocator exercises.
+//!
 //! # Scope — what loom covers
 //!
 //! This harness models the segment `owner_state` CAS protocol in isolation

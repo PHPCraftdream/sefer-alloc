@@ -16,6 +16,8 @@
 #[cfg(feature = "alloc-xthread")]
 mod drain;
 #[cfg(feature = "alloc-xthread")]
+mod layout_consistent;
+#[cfg(feature = "alloc-xthread")]
 mod push;
 #[cfg(feature = "alloc-xthread")]
 mod tail;
@@ -25,5 +27,7 @@ pub(crate) use drain::drain_large_deferred_free;
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
 pub use drain::DBG_LARGE_XTHREAD_RECLAIMED;
+#[cfg(feature = "alloc-xthread")]
+pub(crate) use layout_consistent::large_layout_consistent;
 #[cfg(feature = "alloc-xthread")]
 pub(crate) use push::push_large_deferred_free;

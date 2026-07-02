@@ -476,6 +476,34 @@ impl SegmentHeader {
         Node::read_ptr(Node::offset(base, off) as *const *const core::sync::atomic::AtomicPtr<u8>)
     }
 
+    /// Read the header's `large_size` field only (field-specific `usize`
+    /// load). 0.3.0 (task #138, A1 post-reuse mitigation): used by the
+    /// cross-thread Large-free routing paths (`HeapCore::dealloc_routing`,
+    /// `Heap::dealloc_any_thread`) to sanity-check that the freeing layout is
+    /// consistent with the CURRENT occupant of the segment before queuing it
+    /// onto the owner's deferred-free stack — see the mitigation's doc
+    /// comment on [`push_large_deferred_free`](crate::alloc_core::deferred_large::push_large_deferred_free)
+    /// for the full rationale and its documented residual limit.
+    ///
+    /// `large_size` is written once at segment construction
+    /// (`SegmentHeader::large`) and on every large-cache-hit reuse
+    /// (`AllocCore::alloc_large`'s hit path rewrites the WHOLE header via
+    /// `Node::write_struct` before the segment is handed to a new caller —
+    /// never mutated in place field-by-field), so a field-specific read here
+    /// does not race the owner's disjoint `bump` writes (same discipline as
+    /// `kind_at`/`magic_at`/`owner_thread_free_at`). It IS, by design, able to
+    /// observe a DIFFERENT value than the one the freeing thread's stale
+    /// `Layout` was allocated against, if the segment has already been
+    /// reclaimed and reused for a new allocation between the free and this
+    /// read — that race is exactly what this check exists to catch (a
+    /// mismatch here means "this is not a free of the CURRENT occupant").
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn large_size_at(base: *mut u8) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, large_size);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
     /// Read the header's `segment_id` field only (field-specific `u32` load).
     /// Used by [`SegmentTable::unregister`](super::segment_table::SegmentTable::unregister)
     /// / [`SegmentTable::recycle`](super::segment_table::SegmentTable::recycle)

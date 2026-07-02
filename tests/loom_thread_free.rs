@@ -1,6 +1,33 @@
 //! loom model-check of the **cross-thread free Treiber stack protocol**
 //! (Phase 10, M7).
 //!
+//! # ⚠️ 0.3.0 (task #138) — honest status: MODELS A REMOVED PATH
+//!
+//! The intrusive Treiber-stack push/drain of individual freed BLOCKS this
+//! file models (Phase 10) was **superseded** by the per-segment
+//! [`RemoteFreeRing`](crate::alloc_core::remote_free_ring) — a non-intrusive
+//! MPSC offset queue that never touches a block's bytes (see
+//! `src/alloc_core/remote_free_ring.rs`'s module doc for the full UAF
+//! root-cause this replacement fixed, and `src/heap/thread_free.rs`'s
+//! "History" section). No live code path pushes/drains individual freed
+//! blocks through an intrusive Treiber stack anymore.
+//!
+//! This file is **retained** for two reasons: (1) it still documents and
+//! proves the general CAS-push/Acquire-drain PROTOCOL SHAPE that both the
+//! live `RemoteFreeRing` push/drain (modelled separately, faithfully, in
+//! `tests/loom_remote_ring.rs`) and the live A1 `deferred_large`
+//! push/drain (Large-segment reclaim; NOT yet loom-modelled — see the
+//! task #138 report) both descend from — the counterfactual
+//! (`counterfactual_naive_push_loses_blocks`) is still a useful, generic
+//! demonstration that a non-CAS push loses blocks under concurrency; (2)
+//! deleting a passing test with no replacement risks losing that
+//! demonstration silently. It is **superseded by**
+//! `tests/loom_remote_ring.rs` for the actual live cross-thread-free-of-a-
+//! small-block path. Do not treat a green run of THIS file as validating
+//! any current production code path — it validates only the generic
+//! Treiber-push shape, in isolation, on a synthetic `Node` this crate no
+//! longer has.
+//!
 //! # Scope — what loom covers
 //!
 //! This harness models the Treiber stack push/drain protocol in isolation

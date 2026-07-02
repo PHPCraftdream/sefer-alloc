@@ -222,10 +222,10 @@ disclaimer):
   `mimalloc` — the remaining gap, called out honestly in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 
-The verification stack is also honest: 51 integration tests, 6 loom models,
-proptest differential against a reference model, miri with strict-provenance,
-ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean), aarch64 (qemu),
-libFuzzer, soak / RSS / tokio-burn-in harnesses. The
+The verification stack is also honest: 88 integration test files, 8 loom
+models, proptest differential against a reference model, miri with
+strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
+aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
 [Verification evidence](#verification-evidence) section spells out what each
 one actually proves.
 
@@ -396,9 +396,11 @@ the four-point safety argument is recorded in
 Variant-2 cross-thread free dissolves the only reason epoch was ever
 considered.
 
-`OPT-E` adds a small fixed-slot cache (2 slots × ≤ 64 MiB) inside each
-`AllocCore` that holds freed large-segment OS reservations and reuses them
-on the next `alloc_large` of comparable size — **without** decommitting and
+`OPT-E` adds a small fixed-slot cache (`LARGE_CACHE_SLOTS = 8` slots, no
+fixed per-span size cap — governed instead by the configurable
+`LargeCacheConfig::budget_bytes`, default unbounded) inside each `AllocCore`
+that holds freed large-segment OS reservations and reuses them on the next
+`alloc_large` of comparable size — **without** decommitting and
 re-committing pages, so the hit path is a `register` + header rewrite
 (~42 ns at 4 MiB instead of 254 µs).
 
@@ -418,22 +420,27 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 
 ## Performance
 
-Numbers from the criterion benches on a single Windows dev host,
-sefer-alloc 0.2.0 vs `mimalloc 0.1` vs `System`. Per
-[CLAUDE.md](CLAUDE.md) the project's bench profile is the quick one —
-`sample_size(10)`, short warm-up — so these are honest comparative
-measurements, **not** a rigorous statistical benchmark suite. Treat the
-multipliers as "order of magnitude correct" rather than exact. The
-source-of-truth tables (and the longer commentary on what each bench
-exercises) live in [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
+**Historical numbers from sefer-alloc 0.2.0** (criterion benches on a single
+Windows dev host, vs `mimalloc 0.1` vs `System`) — not re-measured against
+current `main`/0.3.0; treat as illustrative of the relative shape (large-cache
+win, MT crossover at T≥2, single-thread small-class gap), not as exact
+current-build numbers. Per [CLAUDE.md](CLAUDE.md) the project's bench profile
+is the quick one — `sample_size(10)`, short warm-up — so even at the time
+they were taken these were honest comparative measurements, **not** a
+rigorous statistical benchmark suite. Treat the multipliers as "order of
+magnitude correct" rather than exact. The source-of-truth tables (and the
+longer commentary on what each bench exercises) live in
+[`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) — re-run
+`cargo bench --features production` for current-build numbers.
 **Higher is better** for throughput rows, **lower is better** for latency
 rows.
 
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
 `alloc(N) + free` round-trip with the OPT-E large-cache (`alloc-decommit`):
-the freed segment is parked in a 2-slot cache with pages kept committed;
-the next alloc of a compatible size returns it without any OS round-trip.
+the freed segment is parked in the `LARGE_CACHE_SLOTS = 8` cache with pages
+kept committed; the next alloc of a compatible size returns it without any
+OS round-trip.
 
 | Workload | SeferAlloc | mimalloc | System | vs mimalloc |
 |---|---|---|---|---|
@@ -557,19 +564,19 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **51 integration test files** ship
-in `tests/` (45 conventional + 6 loom models — counted separately below);
-**5 example binaries** in `examples/`; **8 benches** in `benches/`
+a test file, and a reproducible command. **88 integration test files** ship
+in `tests/` (80 conventional + 8 loom models — counted separately below);
+**5 example binaries** in `examples/`; **9 benches** in `benches/`
 (`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
-`large_realloc`, `locality`, `pinned_write`, `sharded_write`);
+`large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
 **2 libFuzzer targets** in `fuzz/`
 (`region_ops`, `global_alloc_ops`).
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (51 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (88 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) | `tests/loom_xthread_protocol.rs`, `loom_remote_ring.rs`, `loom_thread_free.rs`, `loom_registry.rs`, `loom_sharded.rs`, `loom_epoch.rs` (6 models) |
+| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_xthread_protocol.rs`, `loom_remote_ring.rs`, `loom_thread_free.rs`, `loom_registry.rs`, `loom_sharded.rs`, `loom_epoch.rs`, `loom_bootstrap_cas.rs`, `loom_fallback_init.rs` (8 models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |
@@ -700,10 +707,12 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   false positives on legitimate lock-free atomic load/store pairs (Valgrind
   does not model Rust atomics). `ThreadSanitizer` is the right concurrency
   detector for this codebase. Valgrind `memcheck` is run and clean.
-- **`large_alloc_free/64 MiB` is uncached by design.** Cap at
-  `MAX_CACHED_LARGE_BYTES = 64 MiB` bounds the cache RSS to
-  `LARGE_CACHE_SLOTS × MAX = 128 MiB`. Workloads with sustained > 64 MiB
-  large allocations will not see the OPT-E speedup.
+- **The large-cache has no fixed per-span size cap.** The old
+  `MAX_CACHED_LARGE_BYTES = 64 MiB` ceiling was removed (#90); admission is
+  governed by `LargeCacheConfig::budget_bytes` (default `None` — unbounded)
+  and the fixed `LARGE_CACHE_SLOTS = 8` slot count, not by span size. A
+  workload with sustained multi-GB large allocations is cacheable subject to
+  the configured budget (or the process's available RSS, if unbounded).
 - **`alloc-decommit` is opt-in.** Without it, slot-recycle is off and the
   1024-segment cap is a hard ceiling for cumulative segment registrations.
   Use the `production` feature alias to avoid this.

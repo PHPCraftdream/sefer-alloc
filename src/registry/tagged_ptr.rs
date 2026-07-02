@@ -25,8 +25,18 @@
 //! (heaps are claimed/recycled on thread spawn/exit, not per-allocation).
 //! This matches the judgement recorded in §2.1 / risk-register of
 //! `ALLOC_PLAN_PHASE12-13.md`: "document the tag-width vs realistic churn".
-//! Loom (`tests/loom_registry.rs`, Phase 12.4) must exercise a push-pop-repush
-//! sequence to confirm the CAS catches the ABA.
+//!
+//! **0.3.0 (task #138) — honest status:** the push-pop-repush ABA loom model
+//! for THIS `TaggedPtr`/`free_slots` protocol referenced above was never
+//! actually written. `tests/loom_registry.rs` (Phase 12.4) models a
+//! DIFFERENT protocol — the segment `owner_state` adoption CAS, which does
+//! not use `TaggedPtr` at all (and is itself unreachable from any production
+//! path today — see that file's own honesty note). No loom file exercises
+//! `free_slots`'/`TaggedPtr`'s push-pop-repush ABA sequence. This is tracked
+//! as follow-up debt (not written in task #138: the `free_slots` stack
+//! lives in `src/registry/bootstrap.rs`/`heap_registry.rs`, both real
+//! `core::sync::atomic` — modelling it would need a new loom harness,
+//! judged out of scope for this hardening pass; see the task #138 report).
 //!
 //! ## This file is pure safe arithmetic
 //!

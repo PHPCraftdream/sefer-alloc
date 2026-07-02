@@ -180,19 +180,54 @@ are already tuned for the throughput-first case.
 
 ## 5. Verifying the configuration is live
 
-Use the in-process debug seam (tests / diagnostic builds). With the
-`alloc-decommit` feature on:
-- `AllocCore::dbg_decay_config()` returns the active
-  `(rate_bp, interval_ms, headroom_bytes)` tuple.
-- `AllocCore::dbg_large_cache_mode()` returns the active `LargeCacheMode`.
+**Honest scope:** the `dbg_*` config accessors (`dbg_decay_config`,
+`dbg_large_cache_mode`, `dbg_large_cache_used`, `dbg_large_cache_hits`, …)
+live on [`AllocCore`], the low-level per-thread segment substrate — **not**
+on [`SeferAlloc`] itself. There is currently no method on `SeferAlloc` (the
+type you actually hold as `#[global_allocator]`) that reaches into its
+internal per-thread `AllocCore` to read these back; the accessors are
+exercised directly against a standalone `AllocCore::new_with_config(cfg)`
+instance in the crate's own test suite (see `tests/large_cache_config_knobs.rs`,
+`tests/large_cache_mode.rs`), which is a **different, additional** `AllocCore`
+built purely to assert the config plumbing — not the one servicing your
+process's actual `#[global_allocator]` allocations.
 
-These are intended for tests but accessible from any caller of the public
-crate API. They are the canonical way to verify that a `LargeCacheConfig`
-was applied as expected.
+If you want to confirm your `LargeCacheConfig` is wired the way you expect
+**before** deploying it as `#[global_allocator]`, build the identical config
+against a standalone `AllocCore` in a unit test and read it back the same
+way the crate's own tests do:
 
-**Track RSS over time** with `ps`/`top`/`docker stats`. The decay
-profile becomes visible: aggressive settings produce a sawtooth that
-damps toward `headroom`; default settings produce a gentle slope.
+```rust
+# #[cfg(feature = "alloc-decommit")]
+# {
+use sefer_alloc::alloc_core::{AllocCore, LargeCacheConfig, LargeCacheMode};
+
+const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
+    .budget_bytes(512 * 1024 * 1024)
+    .decay_rate_percent(25)
+    .mode(LargeCacheMode::Lazy);
+
+let ac = AllocCore::new_with_config(CONFIG).expect("OS reservation failed");
+let (rate_bp, _interval_ms, _headroom) = ac.dbg_decay_config();
+assert_eq!(rate_bp, 2500); // dbg_decay_config's rate is in basis points (25% = 2500 bp)
+assert_eq!(ac.dbg_large_cache_mode(), LargeCacheMode::Lazy);
+# }
+```
+
+This verifies the `LargeCacheConfig` builder produced the values you
+intended — it does NOT verify the `#[global_allocator]` process's live
+per-thread heap, because that heap is not reachable from outside the crate.
+
+**Track RSS over time** with `ps`/`top`/`docker stats` against the REAL
+running process instead — this is the only externally-observable signal for
+the live `#[global_allocator]` configuration today. The decay profile
+becomes visible: aggressive settings produce a sawtooth that damps toward
+`headroom`; default settings produce a gentle slope. A follow-up
+improvement (not yet implemented) would be a public `SeferAlloc::dbg_*`
+passthrough for exactly this purpose.
+
+[`AllocCore`]: https://docs.rs/sefer-alloc/latest/sefer_alloc/alloc_core/struct.AllocCore.html
+[`SeferAlloc`]: https://docs.rs/sefer-alloc/latest/sefer_alloc/struct.SeferAlloc.html
 
 ---
 

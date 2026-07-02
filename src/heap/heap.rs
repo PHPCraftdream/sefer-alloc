@@ -231,6 +231,20 @@ impl Heap {
     /// ([`Heap::alloc`](Self::alloc)), reclaiming the segment for reuse or
     /// releasing it to the OS.
     ///
+    /// **Post-reuse double-free (0.3.0 task #138, honest limit):**
+    /// the PRE-reuse window is airtight (guard-CAS in `push_large_deferred_free`
+    /// plus the `magic == 0` check on a released segment). A double-free
+    /// whose segment has ALREADY been reclaimed and reused for a new
+    /// allocation is mitigated (a `layout`-vs-header size consistency check
+    /// drops an inconsistent free as a no-op — see
+    /// `alloc_core::deferred_large::large_layout_consistent`) but not fully
+    /// closed: a reuse that happens to request the bit-identical size is
+    /// indistinguishable from the legitimate free of the new occupant. This
+    /// is the same fundamental limit any allocator has for a
+    /// use-after-free-shaped double-free (`GlobalAlloc`'s contract already
+    /// makes double-free UB); this mitigation narrows the corruption window
+    /// without pretending to eliminate it.
+    ///
     /// **Unstamped segments:** if a segment's `owner_thread_free` is null (the
     /// segment was created by Phase 8 `AllocCore` standalone, or not yet
     /// stamped), the cross-thread free is a no-op. The block is leaked until
@@ -259,6 +273,16 @@ impl Heap {
             let owner_head = SegmentHeader::owner_thread_free_at(base);
             if owner_head.is_null() {
                 // Unstamped segment: safe no-op (see doc comment above).
+                return;
+            }
+            // 0.3.0 (task #138, A1 post-reuse mitigation): check that
+            // `layout`'s size matches the CURRENT occupant's `large_size` in
+            // the header before queuing — see
+            // `alloc_core::deferred_large::large_layout_consistent`'s doc
+            // comment for the full rationale and residual limit (this is a
+            // mitigation, not a full fix: double-free remains UB by
+            // contract).
+            if !crate::alloc_core::deferred_large::large_layout_consistent(base, layout.size()) {
                 return;
             }
             let owner_head_ref: &core::sync::atomic::AtomicPtr<u8> =

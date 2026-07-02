@@ -952,6 +952,13 @@ impl HeapCore {
         // live/mapped case, which is what M2 promises. See the module-level
         // note referenced from task #135's report for the full argument.
         //
+        // 0.3.0 (task #138): for the Large branch below, a further
+        // POST-reuse mitigation (layout-vs-header size consistency check,
+        // `large_layout_consistent`) narrows — but does not close — the
+        // remaining window where `base` WAS released and has since been
+        // reused for a new allocation before this stale free arrives. See
+        // that function's doc comment for the residual limit.
+        //
         // Field-specific reads (task #33 root-cause fix): read ONLY `magic`,
         // `kind`, `owner_thread_free` — the cross-thread-read fields written
         // once at init/stamp time and only read thereafter. A full-struct
@@ -986,7 +993,21 @@ impl HeapCore {
             // above — the owner's `thread_free_head()`); the owner reclaims
             // it lazily on its next `alloc_large` slow path (see
             // `drain_large_deferred_free`, called from `alloc`).
-            Self::push_large_deferred_free(owner_tf, base);
+            //
+            // 0.3.0 (task #138, A1 post-reuse mitigation): before queuing,
+            // check that `layout`'s size matches the CURRENT occupant's
+            // `large_size` in the header. A stale double-free whose segment
+            // was ALREADY reclaimed+reused between the original free and
+            // this call will, in the overwhelming majority of cases,
+            // observe a header describing a DIFFERENT allocation — this is
+            // NOT a full fix (a reuse that happens to request the
+            // bit-identical size is not caught; double-free is UB by
+            // contract) but narrows the post-reuse corruption window. See
+            // `alloc_core::deferred_large::large_layout_consistent`'s doc
+            // comment for the full rationale and residual limit.
+            if crate::alloc_core::deferred_large::large_layout_consistent(base, layout.size()) {
+                Self::push_large_deferred_free(owner_tf, base);
+            }
             return;
         }
         // Variant-2: push (offset, class) to the per-segment ring (block bytes
