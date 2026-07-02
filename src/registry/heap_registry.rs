@@ -691,3 +691,16 @@ fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
     // address is stable for the process lifetime — so it never needs clearing
     // or re-stamping across release→claim.
 }
+
+/// DIAGNOSTIC (task E1): the high-water mark of minted registry slots — the
+/// number of distinct heap slots ever claimed (via `bump_count`) since
+/// process start. This is a **high-water mark, not a live count**: a slot
+/// that was claimed and later recycled is still counted here (recycled slots
+/// are reused, not un-minted). Relaxed load of [`Registry::count`].
+/// `#[doc(hidden)]` — diagnostic-only surface, not part of the crate's
+/// supported public API; reached via `SeferAlloc::stats()`.
+#[doc(hidden)]
+#[must_use]
+pub fn heaps_claimed_high_water() -> u32 {
+    ensure().count.load(Ordering::Relaxed)
+}

@@ -67,6 +67,7 @@ use super::tls_heap::current_for_alloc;
 #[cfg(feature = "alloc-decommit")]
 use super::tls_heap::current_for_alloc_with_config;
 use super::tls_heap::CurrentHeap;
+use super::AllocStats;
 
 /// The drop-in `GlobalAlloc` face over the `sefer-alloc` segment substrate,
 /// routed through the global heap registry (Phase 12.2) via raw-pointer TLS
@@ -122,6 +123,38 @@ use super::tls_heap::CurrentHeap;
 /// This is the **alloc face** of one substrate; the **handle face**
 /// (`Region<T>` / `Handle<T>`) is the typed, generational view over the same
 /// governed memory. See `docs/ALLOC_PLAN.md` §3 "The two faces".
+///
+/// # Multi-thread safety — read this before enabling `alloc-global` alone
+///
+/// **`alloc-global` without `alloc-xthread` is a footgun in any
+/// multi-threaded program.** Without `alloc-xthread` there is no
+/// ownership-checked routing path for a cross-thread free (no owner stamp,
+/// no per-segment `RemoteFreeRing`): a block allocated on thread A and freed
+/// on thread B has nowhere sound to go. In this configuration a
+/// cross-thread `dealloc` degrades to a **leak of that block**, not a data
+/// race — the fallback/registry paths never write into a foreign thread's
+/// private free lists — but any workload that regularly frees on a
+/// different thread than it allocated (thread pools, work-stealing queues,
+/// producer/consumer channels) will leak monotonically under
+/// `alloc-global` alone. The companion `fastbin` feature *requires*
+/// `alloc-xthread` for exactly this reason (enforced by a `compile_error!`
+/// in `lib.rs` — see `Cargo.toml`'s `fastbin = ["alloc-global",
+/// "alloc-xthread"]`).
+///
+/// For any real multi-threaded deployment, build with at least
+/// `["alloc-global", "alloc-xthread"]`, or use the `production` feature
+/// bundle (`alloc-global + alloc-xthread + alloc-decommit + fastbin`), which
+/// is the combination this crate is tested and tuned for. See
+/// `docs/INTEGRATION.md` for the full feature matrix.
+///
+/// # `std`-only
+///
+/// `SeferAlloc` (and the whole `alloc-global` / `alloc-core` stack) requires
+/// `std`: it uses thread-local storage for the per-thread heap binding and
+/// `std::time::Instant` in the large-cache decay clock (`alloc-decommit`).
+/// It cannot be used in a `no_std` build. The `Region<T>` / `Handle<T>` core
+/// (this crate's other face) is `no_std` + `alloc`-only and unaffected by
+/// this restriction — see the crate-level docs.
 pub struct SeferAlloc {
     /// Large-cache configuration stored at static-init time. Plumbed into
     /// each per-thread `AllocCore` on the first TLS bind for that thread.
@@ -211,6 +244,77 @@ impl SeferAlloc {
         #[cfg(not(feature = "alloc-decommit"))]
         {
             current_for_alloc()
+        }
+    }
+
+    /// A cheap, process-wide diagnostic snapshot of this allocator's internal
+    /// counters — cache-hit rates, cross-thread reclaim/overflow counts, and
+    /// segment/heap totals. See [`AllocStats`] for what each field means and
+    /// which feature flags it depends on.
+    ///
+    /// `stats()` is a handful of relaxed atomic loads: no locks, no
+    /// allocation, no segment or heap walk. Safe to call on a metrics-scrape
+    /// hot path.
+    ///
+    /// The counters are **process-wide**, not per-`SeferAlloc`-instance: if a
+    /// process installs more than one `SeferAlloc` (unusual, but not
+    /// forbidden), every instance's `stats()` reads the same process-global
+    /// totals.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "alloc-global")]
+    /// # {
+    /// use sefer_alloc::SeferAlloc;
+    ///
+    /// #[global_allocator]
+    /// static A: SeferAlloc = SeferAlloc::new();
+    ///
+    /// fn report() {
+    ///     let stats = A.stats();
+    ///     println!(
+    ///         "segments live ~= {}, tcache hits = {}, ring overflows = {}",
+    ///         stats.segments_reserved_total.saturating_sub(stats.segments_released_total),
+    ///         stats.tcache_hits,
+    ///         stats.ring_overflows,
+    ///     );
+    /// }
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn stats(&self) -> AllocStats {
+        AllocStats {
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits: crate::alloc_core::AllocCore::dbg_large_cache_hits(),
+            #[cfg(not(feature = "alloc-decommit"))]
+            large_cache_hits: 0,
+
+            #[cfg(feature = "alloc-decommit")]
+            decommit_calls: crate::alloc_core::AllocCore::dbg_decommit_count(),
+            #[cfg(not(feature = "alloc-decommit"))]
+            decommit_calls: 0,
+
+            #[cfg(feature = "alloc-xthread")]
+            large_xthread_reclaimed: crate::registry::DBG_LARGE_XTHREAD_RECLAIMED
+                .load(core::sync::atomic::Ordering::Relaxed),
+            #[cfg(not(feature = "alloc-xthread"))]
+            large_xthread_reclaimed: 0,
+
+            #[cfg(feature = "fastbin")]
+            tcache_hits: crate::registry::DBG_TCACHE_HITS
+                .load(core::sync::atomic::Ordering::Relaxed),
+            #[cfg(not(feature = "fastbin"))]
+            tcache_hits: 0,
+
+            #[cfg(feature = "alloc-xthread")]
+            ring_overflows: crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW
+                .load(core::sync::atomic::Ordering::Relaxed),
+            #[cfg(not(feature = "alloc-xthread"))]
+            ring_overflows: 0,
+
+            segments_reserved_total: crate::alloc_core::AllocCore::dbg_segments_reserved_total(),
+            segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
+
+            heaps_claimed_high_water: crate::registry::heaps_claimed_high_water(),
         }
     }
 }

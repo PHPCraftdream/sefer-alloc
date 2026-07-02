@@ -98,5 +98,14 @@ pub fn reserve_aligned_on_node(
     let base = NonNull::new(base_ptr)?;
     let reservation = NonNull::new(reservation_ptr)?;
 
+    // This path bypasses `os::Segment::reserve` (it goes through
+    // `numa_shim::reserve_on_node` instead), so it must bump the same
+    // process-wide reservation counter directly — otherwise
+    // `segments_released_total` (which every release path funnels through
+    // `os::release_segment`, including NUMA-pinned segments) would outpace
+    // `segments_reserved_total` under `numa-aware`.
+    crate::alloc_core::os::SEGMENTS_RESERVED_TOTAL
+        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
     Some((base, reservation, reservation_len))
 }

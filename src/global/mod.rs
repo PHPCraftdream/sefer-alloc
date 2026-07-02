@@ -21,8 +21,10 @@
 //! [`fallback`]: self::fallback
 //! [`sefer_alloc`]: self::sefer_alloc
 
+mod alloc_stats;
 mod fallback;
 mod sefer_alloc;
 mod tls_heap;
 
+pub use alloc_stats::AllocStats;
 pub use sefer_alloc::SeferAlloc;

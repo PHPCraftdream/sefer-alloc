@@ -847,6 +847,27 @@ impl AllocCore {
         DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
+    /// reservations since process start (every `os::Segment::reserve`
+    /// success plus NUMA-pinned reservations). Monotonic, relaxed — pairs
+    /// with [`AllocCore::dbg_segments_released_total`]; the difference is
+    /// the current process-wide live segment count. Always compiled (not
+    /// feature-gated) — every build reserves segments via `os::Segment::reserve`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_reserved_total() -> u64 {
+        super::os::segments_reserved_total()
+    }
+
+    /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
+    /// releases since process start. Monotonic, relaxed. See
+    /// [`AllocCore::dbg_segments_reserved_total`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_released_total() -> u64 {
+        super::os::segments_released_total()
+    }
+
     /// TEST-ONLY (Phase 35): the owner-only `live_count` of `ptr`'s segment, or
     /// `None` if `ptr` is foreign / not small/primordial. Lets the soak test
     /// assert a segment reaches `live_count == 0` before decommit.

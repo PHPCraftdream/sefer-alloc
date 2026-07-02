@@ -27,6 +27,43 @@
 //! process-wide allocator, use `SeferAlloc` (opt-in `production` feature) or
 //! reach for `mimalloc`.
 //!
+//! ## Monitoring `SeferAlloc` in production (`stats()`)
+//!
+//! `SeferAlloc` exposes a cheap, process-wide diagnostic snapshot via
+//! [`SeferAlloc::stats`](global::SeferAlloc::stats) → [`AllocStats`]: cache
+//! hit rates, cross-thread reclaim/overflow counts, and cumulative
+//! segment/heap totals (`segments_reserved_total - segments_released_total`
+//! is the live segment count — the field to alert on for a segment leak).
+//! `stats()` is a handful of relaxed atomic loads (no locks, no allocation),
+//! safe to poll on a metrics-scrape timer:
+//!
+//! ```no_run
+//! # #[cfg(feature = "alloc-global")]
+//! # {
+//! use sefer_alloc::SeferAlloc;
+//!
+//! #[global_allocator]
+//! static GLOBAL: SeferAlloc = SeferAlloc::new();
+//!
+//! let stats = GLOBAL.stats();
+//! let segments_live = stats
+//!     .segments_reserved_total
+//!     .saturating_sub(stats.segments_released_total);
+//! println!("segments_live={segments_live} tcache_hits={}", stats.tcache_hits);
+//! # }
+//! ```
+//!
+//! **Multi-thread footgun:** `alloc-global` without `alloc-xthread` has no
+//! sound cross-thread free path — a block freed on a different thread than
+//! it was allocated on leaks (safely, but permanently) instead of racing.
+//! See [`SeferAlloc`](global::SeferAlloc)'s "Multi-thread safety" doc
+//! section for the full explanation. Use `["alloc-global", "alloc-xthread"]`
+//! (or the `production` bundle) for any real multi-threaded deployment.
+//!
+//! `SeferAlloc` (and the whole allocator stack) is **`std`-only** — it needs
+//! thread-local storage and `std::time::Instant`. `Region<T>` / `Handle<T>`
+//! (this crate's other face) are `no_std` + `alloc`-only and unaffected.
+//!
 //! See `docs/INVARIANTS.md` for the safety invariants this crate upholds and
 //! `docs/DESIGN.md` for the architecture.
 //!
@@ -203,4 +240,4 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 pub use heap::{with_heap, Heap};
 
 #[cfg(feature = "alloc-global")]
-pub use global::SeferAlloc;
+pub use global::{AllocStats, SeferAlloc};

@@ -55,6 +55,8 @@ pub use heap_core::DBG_LARGE_XTHREAD_RECLAIMED;
 #[doc(hidden)]
 pub use heap_core::DBG_TCACHE_HITS;
 #[doc(hidden)]
+pub use heap_registry::heaps_claimed_high_water;
+#[doc(hidden)]
 pub use heap_registry::HeapRegistry;
 #[doc(hidden)]
 pub use heap_slot::HeapSlot;

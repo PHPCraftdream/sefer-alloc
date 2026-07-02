@@ -28,8 +28,33 @@
 #![allow(unsafe_code)]
 
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use aligned_vmem as vmem;
+
+/// Process-wide count of successful OS segment reservations (every
+/// [`Segment::reserve`] success, plus NUMA-pinned reservations via
+/// `numa::reserve_aligned_on_node`, which bypasses `Segment::reserve` but
+/// still releases through [`release_segment`] below). Monotonic —
+/// increment-only, relaxed. Diagnostic only: exposed process-wide via
+/// `SeferAlloc::stats()` (`AllocStats::segments_reserved_total`) so a
+/// consumer can watch `segments_reserved_total - segments_released_total`
+/// (the live segment count) without walking any per-heap `SegmentTable`.
+///
+/// A monotonic pair (reserved/released totals) was chosen over a single
+/// balanced live-count atomic: every increment/decrement pair would need to
+/// be threaded through every segment-owning code path (small heap,
+/// large-cache, decommit recycle, cross-thread reclaim) and a single missed
+/// decrement anywhere silently desyncs the counter forever. Two
+/// increment-only counters can never desync — worst case a path is missed
+/// and BOTH totals under-count, which is self-evident (reserved stops
+/// growing while segments keep flowing) rather than silently wrong.
+pub(crate) static SEGMENTS_RESERVED_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+/// Process-wide count of successful OS segment releases (every
+/// [`release_segment`] call with a non-null reservation). Monotonic,
+/// relaxed. See [`SEGMENTS_RESERVED_TOTAL`].
+pub(crate) static SEGMENTS_RELEASED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 /// The segment size and alignment, in bytes. 4 MiB — mimalloc's default. Every
 /// [`Segment`] handed up by this module is aligned to a multiple of this value,
@@ -104,7 +129,9 @@ impl Segment {
         }
         let n_segments = len.div_ceil(SEGMENT);
         let usable = n_segments * SEGMENT;
-        vmem::reserve_aligned(usable, SEGMENT).map(Segment)
+        let reservation = vmem::reserve_aligned(usable, SEGMENT)?;
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
     }
 
     /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
@@ -169,6 +196,19 @@ pub(crate) fn release_segment(reservation: *mut u8, reservation_len: usize) {
     // was returned by `aligned_vmem::reserve_aligned(_, SEGMENT)` and is freed
     // exactly once. The `align` argument matches the original reservation.
     unsafe { vmem::release(reservation, reservation_len, SEGMENT) };
+    SEGMENTS_RELEASED_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Relaxed snapshot of [`SEGMENTS_RESERVED_TOTAL`]. Diagnostic only.
+#[must_use]
+pub(crate) fn segments_reserved_total() -> u64 {
+    SEGMENTS_RESERVED_TOTAL.load(Ordering::Relaxed)
+}
+
+/// Relaxed snapshot of [`SEGMENTS_RELEASED_TOTAL`]. Diagnostic only.
+#[must_use]
+pub(crate) fn segments_released_total() -> u64 {
+    SEGMENTS_RELEASED_TOTAL.load(Ordering::Relaxed)
 }
 
 /// Decommit the payload pages of a segment: return their physical backing to
