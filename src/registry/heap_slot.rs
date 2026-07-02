@@ -5,10 +5,20 @@
 //! Each slot is a fixed-size record carved from the registry's primordial
 //! segment. Its lifecycle is `FREE → LIVE → FREE → …`: a `claim` flips it
 //! `FREE → LIVE` and bumps `generation`; a `recycle` flips it back `FREE`.
-//! The `generation` is the M8/M9 coherence key — a stale TLS raw pointer
-//! (cached pre-recycle) reading a slot that has since been recycled + reclaimed
-//! by another thread will see a mismatched generation and refuse (the 12.3
-//! never-stale-pointer guard).
+//! The `generation` field is the M8/M9 coherence key used elsewhere in the
+//! registry (segment-header owner stamping) to distinguish successive
+//! occupants of the same slot index.
+//!
+//! **It is NOT read on the TLS alloc path.** The stale-TLS-pointer hazard
+//! (a thread's cached `*mut HeapCore` outliving its slot's `recycle`) is
+//! guarded by a different, cheaper mechanism: `global::tls_heap`'s `TORN`
+//! sentinel (task #129). The owning thread's `AbandonGuard::drop` stamps its
+//! OWN thread-local cache to `TORN` before it recycles the slot, and every
+//! resolver checks for `TORN` before dereferencing. This is a same-thread
+//! poison-then-check, not a cross-thread generation compare — it needs no
+//! read of this slot's `generation` at resolve time. See
+//! `global::tls_heap`'s "TLS destructor ordering" module doc for the full
+//! argument.
 //!
 //! ## Why `MaybeUninit` (not a live `HeapCore`)
 //!

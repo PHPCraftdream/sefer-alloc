@@ -24,7 +24,11 @@
 mod alloc_stats;
 mod fallback;
 mod sefer_alloc;
-mod tls_heap;
+// `pub` (not private) so the task #129 teardown-ordering test can reach the
+// `#[doc(hidden)]` test hook `tls_heap::dbg_teardown_then_resolve_is_fallback`
+// through `sefer_alloc::global::tls_heap` (this module itself is already
+// `#[doc(hidden)] pub` in `lib.rs` — see the comment there).
+pub mod tls_heap;
 
 pub use alloc_stats::AllocStats;
 pub use sefer_alloc::SeferAlloc;

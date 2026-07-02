@@ -208,8 +208,16 @@ pub mod alloc_core;
 #[cfg(feature = "alloc")]
 mod heap;
 
+// `#[doc(hidden)] pub` (not private `mod`) so the task #129 teardown-ordering
+// tests (`tests/tls_heap_teardown_torn_sentinel.rs`,
+// `tests/tls_heap_teardown_ordering_stress.rs`) can reach `global::tls_heap`'s
+// `#[doc(hidden)]` test hook `dbg_teardown_then_resolve_is_fallback` — the
+// same established test-only export pattern as `alloc_core`/`registry`
+// above. Nothing in `global` beyond `SeferAlloc`/`AllocStats` (re-exported
+// below) is stable public API.
 #[cfg(feature = "alloc-global")]
-mod global;
+#[doc(hidden)]
+pub mod global;
 
 #[cfg(feature = "alloc-global")]
 #[doc(hidden)]

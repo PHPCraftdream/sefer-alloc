@@ -34,14 +34,33 @@
 //!
 //! ## TLS destructor ordering
 //!
-//! `LOCAL` and `GUARD` are both `thread_local!`s. Rust destroys thread-locals
-//! in reverse-declaration order per-thread, but the standard does not
-//! guarantee cross-key ordering against arbitrary other TLS keys the runtime
-//! may have registered. The guard therefore holds its OWN copy of the heap
-//! pointer (set in [`bind_slow`]) and NEVER reads `LOCAL` in its `Drop`. If
-//! `LOCAL` is already torn down when the guard drops, the guard's copy still
-//! has the pointer it needs to abandon+recycle. (If the guard's OWN slot is
-//! torn down first, `LOCAL`'s drop is a no-op — `Cell` has no drop glue.)
+//! `LOCAL` and `GUARD` are both `thread_local!`s, declared in that order.
+//! Rust destroys thread-locals in REVERSE declaration order per-thread, so
+//! on this thread's teardown `GUARD` is dropped FIRST and `LOCAL` SECOND
+//! (`LOCAL` is a bare `Cell`, so its own "drop" is a no-op — the hazard is
+//! not `LOCAL`'s destructor, it is `LOCAL` outliving `GUARD`'s destructor
+//! and being read again afterwards).
+//!
+//! The guard holds its OWN copy of the heap pointer (set in [`bind_slow`])
+//! and never reads `LOCAL` to decide what to recycle — that part of the
+//! reasoning is unchanged. But `GUARD::drop` runs `HeapRegistry::recycle`,
+//! which releases the slot back to the free pool; another thread may then
+//! `claim` that exact slot before this thread finishes exiting. If `LOCAL`
+//! on the exiting thread still held its stale (pre-recycle) pointer at that
+//! point, ANY further use of `LOCAL` on this thread — for instance a `Drop`
+//! impl belonging to some OTHER thread-local that was declared before
+//! `LOCAL` (and therefore is destroyed after it, per the same reverse-order
+//! rule) and that happens to allocate/deallocate memory — would resolve
+//! back to the now-reclaimed-by-someone-else slot and hand out a second
+//! `&mut HeapCore` aliasing the new owner's. This is exactly the guard's
+//! job to prevent: it stamps `LOCAL` with the [`TORN`] sentinel BEFORE
+//! calling `recycle`, i.e. while `LOCAL` is still guaranteed live (`GUARD`
+//! drops before `LOCAL` in the reverse-declaration order above). Every
+//! resolver ([`current`], [`current_for_alloc`],
+//! [`current_for_alloc_with_config`]) checks for `TORN` before the
+//! non-null check and, on a match, routes to the always-live fallback heap
+//! instead of re-arming a new slot (which would leak the just-recycled one
+//! and could resurrect a slot that another thread already re-claimed).
 //!
 //! ## Never-null (M10)
 //!
@@ -75,13 +94,37 @@ use core::cell::Cell;
 use crate::global::fallback;
 use crate::registry::{HeapCore, HeapRegistry};
 
+/// Sentinel value stamped into [`LOCAL`] by [`mark_local_torn`] the instant
+/// this thread's [`AbandonGuard`] starts tearing down (before it recycles
+/// the slot). It is a "poison" marker, not a heap pointer: it is NEVER
+/// dereferenced, only compared against in the three resolvers below. Chosen
+/// as `usize::MAX` so it is:
+/// - distinct from `null` (the "never bound yet" state), and
+/// - distinct from any real `*mut HeapCore` (a live allocation can never sit
+///   at the top of the address space — the registry's slot array and every
+///   OS-backed segment are far below `usize::MAX`).
+///
+/// See the module doc's "TLS destructor ordering" section for why this is
+/// necessary: without it, a stale non-null `LOCAL` value would survive
+/// `GUARD`'s recycle of the slot, and a resolver reading `LOCAL` afterwards
+/// (e.g. from another thread-local's `Drop` that allocates, running after
+/// `GUARD` in the reverse-declaration teardown order) would hand out a
+/// `&mut HeapCore` into a slot some other thread may have already
+/// re-claimed — a second writer, i.e. a data race / UAF.
+const TORN: *mut HeapCore = usize::MAX as *mut HeapCore;
+
 thread_local! {
     /// The cached raw pointer to this thread's heap (a slot in the global
     /// [`HeapRegistry`]). `null` until the first call to [`current()`];
-    /// non-null thereafter (until the thread exits, at which point the
-    /// [`AbandonGuard`] recycles the slot and the pointer becomes stale —
-    /// but no one reads it after the guard drops, because the guard's drop
-    /// is the last thing the thread does).
+    /// non-null thereafter, until the thread exits — at which point the
+    /// [`AbandonGuard`] recycles the slot AND stamps this cell to [`TORN`]
+    /// (via [`mark_local_torn`]) BEFORE releasing it, so a post-teardown
+    /// read never observes the stale pre-recycle pointer. Some other
+    /// thread-local's `Drop` (declared before `LOCAL`, hence destroyed
+    /// after it — reverse declaration order) can legitimately still
+    /// allocate/deallocate after `GUARD` has dropped; every resolver checks
+    /// for `TORN` and routes such a call to the fallback heap instead of
+    /// dereferencing this stale slot.
     ///
     /// Stored as `Cell<*mut HeapCore>` (not `RefCell`) so there is no
     /// borrow state to fail under reentrancy: reading is a single load.
@@ -116,12 +159,37 @@ impl AbandonGuard {
     }
 }
 
+/// Stamp [`LOCAL`] with the [`TORN`] sentinel. The single choke point for
+/// poisoning `LOCAL` — [`AbandonGuard::drop`] and the `#[doc(hidden)]` test
+/// hook [`dbg_teardown_then_resolve_is_fallback`] both call this SAME
+/// function (rather than duplicating the `LOCAL.try_with(|c| c.set(TORN))`
+/// call), so the test hook exercises the exact poisoning logic the real
+/// teardown path uses — not a reimplementation of it that could drift.
+///
+/// A `try_with` `Err` (thread-local already torn down) is silently ignored:
+/// if `LOCAL` itself is gone, no resolver can read it again on this thread,
+/// so there is nothing left to protect.
+#[inline]
+fn mark_local_torn() {
+    let _ = LOCAL.try_with(|c| c.set(TORN));
+}
+
 impl Drop for AbandonGuard {
     fn drop(&mut self) {
         let heap = self.heap.get();
         if heap.is_null() {
             return; // This thread never bound a registry heap.
         }
+        // Stamp `LOCAL` as TORN *before* recycling the slot below. Ordering
+        // is load-bearing: `GUARD` (this `Drop`) runs BEFORE `LOCAL` is torn
+        // down, because thread-locals are destroyed in reverse declaration
+        // order and `LOCAL` is declared first, `GUARD` second (see the
+        // module doc's "TLS destructor ordering" section) — so `LOCAL` is
+        // still a live thread-local at this point and `try_with` succeeds.
+        // If it were somehow already gone (`Err`), there is nothing to poison
+        // and no post-teardown reader of `LOCAL` could run either, so the
+        // no-op is safe.
+        mark_local_torn();
         // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
         // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL
         // its segments + the inline TFS head) STAYS WHOLE in the slot — it is
@@ -177,6 +245,12 @@ impl Drop for AbandonGuard {
 #[allow(dead_code)] // The alloc face uses `current_for_alloc` (tagged). Kept for direct API.
 pub fn current() -> *mut HeapCore {
     match LOCAL.try_with(|c| c.get()) {
+        // This thread's GUARD has already recycled its slot (teardown is in
+        // progress, but LOCAL itself is still alive) — the cached pointer is
+        // stale and MUST NOT be dereferenced. Route to the fallback instead
+        // of `bind_slow` (which would re-arm the already-dropped GUARD and
+        // leak the freshly recycled slot). See "TLS destructor ordering".
+        Ok(p) if p == TORN => fallback_ptr(),
         Ok(p) if !p.is_null() => p,
         // First call on this thread (or LOCAL was reset): bind a slot.
         Ok(_) => bind_slow(),
@@ -214,6 +288,17 @@ pub enum CurrentHeap {
 #[inline(always)]
 pub fn current_for_alloc() -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
+        // Stale post-recycle pointer (this thread's GUARD already dropped) —
+        // see "TLS destructor ordering" in the module doc. MUST come before
+        // the `!is_null` arm below (TORN is non-null) and MUST route to
+        // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
+        // GUARD and leak the recycled slot).
+        // Stale post-recycle pointer (this thread's GUARD already dropped) —
+        // see "TLS destructor ordering" in the module doc. MUST come before
+        // the `!is_null` arm below (TORN is non-null) and MUST route to
+        // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
+        // GUARD and leak the recycled slot).
+        Ok(p) if p == TORN => CurrentHeap::Fallback,
         Ok(p) if !p.is_null() => CurrentHeap::Own(p),
         // First call on this thread: bind a slot. bind_slow returns either
         // an Own pointer or, on registry exhaustion, the fallback marker.
@@ -239,6 +324,9 @@ pub fn current_for_alloc() -> CurrentHeap {
 #[inline(always)]
 pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
+        // See `current_for_alloc` — same TORN-before-null-check ordering and
+        // the same reason to route to Fallback rather than re-arm the guard.
+        Ok(p) if p == TORN => CurrentHeap::Fallback,
         Ok(p) if !p.is_null() => CurrentHeap::Own(p),
         Ok(_) => bind_slow_tagged_with_config(*config),
         Err(_) => CurrentHeap::Fallback,
@@ -328,4 +416,31 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
 #[cold]
 fn fallback_ptr() -> *mut HeapCore {
     fallback::heap_ptr()
+}
+
+/// Test-only hook (task #129): deterministically exercises the TORN→Fallback
+/// mapping WITHOUT going through real thread teardown (which is
+/// non-deterministic to trigger on demand). It calls the exact same
+/// [`mark_local_torn`] function [`AbandonGuard::drop`] calls — not a
+/// reimplementation — so a pass here is evidence about the real teardown
+/// path, not a parallel code path that could drift from it.
+///
+/// Saves `LOCAL`'s current value, poisons it via `mark_local_torn`, resolves
+/// [`current_for_alloc`], restores the saved value, and reports whether the
+/// resolution was [`CurrentHeap::Fallback`]. `current_for_alloc` only reads
+/// `LOCAL` on the `TORN` arm (it never writes it), so restoring the saved
+/// value after the call fully undoes the poisoning for any subsequent
+/// allocation on this thread.
+///
+/// `#[doc(hidden)]` — not part of the public API; exists solely so the
+/// integration test in `tests/` can reach this otherwise-private teardown
+/// behaviour.
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_teardown_then_resolve_is_fallback() -> bool {
+    let saved = LOCAL.with(|c| c.get());
+    mark_local_torn();
+    let result = current_for_alloc();
+    LOCAL.with(|c| c.set(saved));
+    matches!(result, CurrentHeap::Fallback)
 }
