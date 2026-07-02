@@ -1,0 +1,74 @@
+name: perf-gate
+
+# Task #127 — instruction-count CI perf-gate. Guards against the class of
+# regression that shipped silently on task #114's const-builder change
+# (22-31% wall-clock regression on db_handler-shaped workloads, caught only
+# because the user profiled it manually — CI had no signal at all).
+#
+# Deliberately NOT wired into the default `ci.yml` PR path: perf benchmarks
+# (even instruction-count ones) add meaningful job time and are a bad fit for
+# "every push/PR" — this is a separate, non-blocking workflow that never
+# appears in required-checks for a normal merge.
+#
+# Trigger surface:
+#   - schedule: nightly, so drift is caught within 24h even if no one asks.
+#   - workflow_dispatch: on-demand, for "did my in-flight branch regress?"
+#     without waiting for the nightly cron.
+#   - pull_request (labeled): opt-in per-PR run for perf-sensitive changes —
+#     add the `perf` label to a PR to run the gate on it; unlabeled PRs never
+#     trigger this workflow at all.
+on:
+  schedule:
+    - cron: '30 3 * * *' # nightly, offset from ci.yml's weekly NUMA cron
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  iai-callgrind:
+    name: instruction-count regression gate
+    runs-on: ubuntu-latest
+    # Only actually run the label-triggered event when the 'perf' label is
+    # the one that was just added — `types: [labeled]` fires for ANY label
+    # add, so without this guard every unrelated label would also trigger a
+    # full Valgrind run. schedule/workflow_dispatch are unaffected (this
+    # condition only matters for the `pull_request` event).
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'perf'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Valgrind
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y valgrind
+
+      - name: Install iai-callgrind-runner
+        # The runner binary's version MUST match the `iai-callgrind` library
+        # version pinned in Cargo.toml (0.14) — mismatches fail fast with a
+        # clear error rather than silently misbehaving.
+        run: cargo install iai-callgrind-runner --version 0.14 --locked
+
+      - name: Run perf-gate benchmarks (instruction counts)
+        # `--features alloc-global` matches the bench's `required-features`.
+        # No committed baseline exists yet (task #127 initial cut): this run
+        # establishes the first recorded summary. Once a baseline exists
+        # (via `--save-baseline` on a prior run, cached across scheduled
+        # runs), a follow-up should add `--baseline=<name>` here so
+        # iai-callgrind actually fails the job on a >5-10% instruction-count
+        # regression instead of only reporting numbers.
+        run: cargo bench --bench perf_gate_iai --features alloc-global
+
+      - name: Upload Callgrind artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate-callgrind-${{ github.run_id }}
+          path: target/iai/
+          retention-days: 30

@@ -211,6 +211,15 @@ mimalloc = "0.1"
 [target.'cfg(loom)'.dev-dependencies]
 loom = "0.7"
 
+# Task #127: instruction-count CI perf-gate. `iai-callgrind` benchmarks run
+# under Valgrind/Callgrind, which is Linux-only — scoped as a target-specific
+# dev-dependency so it never affects the Windows/macOS build graph (the
+# `benches/perf_gate_iai.rs` harness itself is also `#![cfg(target_os =
+# "linux")]`-gated, so the crate is simply absent from non-Linux dep
+# resolution and compilation). Dev-only — NOT a runtime dependency.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+iai-callgrind = "0.14"
+
 [[bench]]
 name = "locality"
 harness = false
@@ -311,6 +320,22 @@ required-features = ["alloc-core", "alloc-xthread"]
 # Documented in docs/PROFILE_FLAMEGRAPHS.md §6.
 [[bench]]
 name = "heap_async_pattern"
+harness = false
+required-features = ["alloc-global"]
+
+# Task #127: CI perf-gate — instruction-count regression guard via
+# `iai-callgrind` (Callgrind emulation is deterministic run-to-run, unlike
+# wall-clock criterion, so it tolerates a tight ~5-10% threshold on a shared
+# CI runner without flaking). Linux-only: the harness is
+# `#![cfg(target_os = "linux")]`-gated and the `iai-callgrind` dev-dependency
+# is scoped to `cfg(target_os = "linux")` (see [target.'cfg(target_os =
+# "linux")'.dev-dependencies] above), so `cargo build --benches` on
+# Windows/macOS simply does not build this target's real body — `harness =
+# false` still lets Cargo probe/compile the (empty-on-non-Linux) crate.
+# Driven by `.github/workflows/perf-gate.yml`, NOT the default `cargo bench`
+# path (requires `cargo install iai-callgrind-runner` + valgrind).
+[[bench]]
+name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global"]
 
