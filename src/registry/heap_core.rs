@@ -77,6 +77,21 @@ use crate::alloc_core::{node::Node, AllocCore};
 pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// TEST-ONLY (0.3.0, task C1): process-wide count of magazine (tcache) HITS
+/// on the [`HeapCore::alloc`] fast path — i.e. every time an alloc was served
+/// by popping the per-thread magazine instead of falling through to the
+/// substrate. Bumped once per hit, regardless of the request's alignment.
+///
+/// Diagnostic only (relaxed, like [`DBG_LARGE_XTHREAD_RECLAIMED`]), `pub`
+/// so `tests/regression_fastbin_aligned_roundtrip.rs` can assert the
+/// magazine actually served align>16 requests (the C1 fix: before it, the
+/// magazine fast path was gated on `align <= SMALL_ALIGN_MAX` and every
+/// align>16 alloc/dealloc bypassed it entirely — this counter stayed zero
+/// for such a workload; the counterfactual is restoring that gate).
+#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[doc(hidden)]
+pub static DBG_TCACHE_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// The thin, slot-resident heap value.
 ///
 /// Lives inside a [`HeapSlot`](super::heap_slot::HeapSlot)'s `UnsafeCell` and
@@ -525,12 +540,31 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use super::tcache::BULK_THRESHOLD;
-            use crate::alloc_core::size_classes::{SizeClasses, SMALL_ALIGN_MAX};
+            use crate::alloc_core::size_classes::SizeClasses;
             let size = layout
                 .size()
                 .max(crate::alloc_core::size_classes::MIN_BLOCK);
             let align = layout.align();
-            if align <= SMALL_ALIGN_MAX {
+            // C1 (0.3.0): the magazine fast path used to be gated on
+            // `align <= SMALL_ALIGN_MAX` (16), so every align>16 request
+            // (tokio `Cell` at align=128, page-aligned buffers, etc.) fell
+            // through to the substrate on EVERY alloc/dealloc, bypassing the
+            // magazine entirely. This is unnecessary: `class_for(size, align)`
+            // already guarantees (for any `Some(c)` it returns) that
+            // `block_size(c) % align == 0` — see its divisibility-walk slow
+            // path in `size_classes.rs`. Every block carved for class `c` sits
+            // at an offset that is a multiple of `block_size(c)` (see
+            // `carve_block`'s `align_up(bump, block_size)`), and the segment
+            // itself is 4 MiB (SEGMENT)-aligned, so any block of class `c` is
+            // automatically `align`-aligned regardless of what `align` was —
+            // the SAME guarantee the substrate's own `alloc_small` relies on.
+            // Keying the magazine purely by `class_idx` (derived from the
+            // caller-supplied `Layout` on both alloc and dealloc, per the
+            // `GlobalAlloc` contract) is therefore sound for any align that
+            // `class_for` accepted. Cross-thread routing is unaffected: this
+            // whole block is the OWN-THREAD path (`dealloc_routing` decides
+            // ownership BEFORE reaching `dealloc_own_thread`/the magazine).
+            {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
                     if cnt > 0 {
@@ -546,6 +580,7 @@ impl HeapCore {
                         // streak-free — no read, no write of alloc_streak.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
+                        DBG_TCACHE_HITS.fetch_add(1, Ordering::Relaxed);
                         return self.tcache.slots[c][new_cnt];
                     }
 
@@ -676,10 +711,15 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use super::tcache::{FLUSH_N, TCACHE_CAP, TCACHE_KEY};
-            use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK, SMALL_ALIGN_MAX};
+            use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
-            if align <= SMALL_ALIGN_MAX {
+            // C1 (0.3.0): gate removed — see the matching comment in `alloc`'s
+            // magazine fast path above for the full soundness argument
+            // (`class_for` guarantees `block_size % align == 0` for any
+            // `Some(c)` it returns, so keying the magazine by class alone is
+            // sound for any align it accepted, not just align<=16).
+            {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
 
@@ -787,12 +827,60 @@ impl HeapCore {
         self.core.dealloc(ptr, layout);
     }
 
-    /// Shrink/grow an allocation via alloc + copy + dealloc. Returns null on
-    /// OOM (leaving the old allocation intact). Null `ptr` returns null.
+    /// Shrink/grow an allocation. Returns null on OOM (leaving the old
+    /// allocation intact). Null `ptr` returns null.
+    ///
+    /// ## C2 (0.3.0) — delegate own-thread reallocs to `AllocCore::realloc`
+    ///
+    /// This used to ALWAYS do alloc+copy+dealloc, even when `ptr` belongs to
+    /// one of our own segments — which meant the OPT-F in-place short-circuit
+    /// in [`AllocCore::realloc`] (same-class shrink/no-op — see its doc
+    /// comment, especially the `==` vs `<=` correctness note fixed alongside
+    /// #114) was dead code on the `HeapCore`/global-allocator face: nothing
+    /// ever called it. Every `realloc` through `SeferAlloc` paid a full
+    /// alloc+copy+dealloc even for a same-class resize that could have
+    /// returned the original pointer untouched.
+    ///
+    /// The fix: if `ptr` lives in one of OUR segments (`segment_bases()`
+    /// contains its base — the same ownership test `dbg_owner_id_for` already
+    /// uses), delegate to `self.core.realloc`, which performs the in-place
+    /// short-circuit for a same-class small→small resize and otherwise falls
+    /// back to alloc+copy+dealloc INTERNALLY (so behaviour for the
+    /// non-in-place cases is unchanged, just now funnelled through one
+    /// correct implementation instead of a second, redundant one here).
+    ///
+    /// We must NOT call `AllocCore::realloc` for a pointer we do not own
+    /// (e.g. under `alloc-xthread`, a block that lives in ANOTHER heap's
+    /// segment): `AllocCore::realloc`'s `self.table.contains_base` check
+    /// would correctly reject it and fall through to its own alloc+copy+
+    /// dealloc, but that alloc would happen on OUR heap while the dealloc of
+    /// the OLD block would go through OUR `core.dealloc` — which does not
+    /// know how to route a foreign pointer cross-thread (only `HeapCore`'s
+    /// `dealloc`/`dealloc_routing` does). So a foreign `ptr` takes the
+    /// original path here: alloc a new block on OUR heap, copy
+    /// `min(old, new)`, then free the OLD pointer via `self.dealloc` (which
+    /// DOES route cross-thread correctly under `alloc-xthread`).
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
+        #[cfg(feature = "alloc-global")]
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if self.core.segment_bases().any(|b| b == base) {
+                // Own-segment pointer: delegate to the substrate, which
+                // performs the in-place short-circuit (OPT-F) when possible
+                // and alloc+copy+dealloc otherwise -- entirely within
+                // `self.core`, so no cross-thread routing concern here (we
+                // own this segment).
+                return self.core.realloc(ptr, old_layout, new_size);
+            }
+        }
+        // Foreign pointer (not one of our segments) or `alloc-global` absent:
+        // alloc a fresh block on OUR heap, copy, then free the OLD pointer
+        // through `self.dealloc` (which routes cross-thread correctly under
+        // `alloc-xthread`; under plain own-thread builds this is `core.dealloc`,
+        // a safe no-op for a truly foreign pointer per its own contract).
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
             Ok(l) => l,
             Err(_) => return core::ptr::null_mut(),
