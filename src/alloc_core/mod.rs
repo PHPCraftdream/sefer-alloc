@@ -14,6 +14,16 @@ pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
 mod bootstrap;
+/// The cross-thread deferred-free Treiber stack for Large/huge segments
+/// (task A1, extracted for #132). Shared by both public allocator faces
+/// (`registry::heap_core::HeapCore` and `heap::Heap`) so the double-push-
+/// guarded push/drain logic is not duplicated.
+///
+/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
+/// `#[doc(hidden)]` (see `lib.rs`): `DBG_LARGE_XTHREAD_RECLAIMED` is
+/// re-exported (via `registry`) as a `#[doc(hidden)]` test-only diagnostic.
+#[doc(hidden)]
+pub mod deferred_large;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
 pub(crate) mod node;

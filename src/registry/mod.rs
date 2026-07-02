@@ -48,9 +48,13 @@ pub(crate) mod tcache;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
+// 0.3.x task #132: the reclaim counter moved to the shared
+// `alloc_core::deferred_large` module (both public faces bump the SAME
+// counter now); re-exported here for backward compatibility with existing
+// `sefer_alloc::registry::DBG_LARGE_XTHREAD_RECLAIMED` call sites/tests.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
-pub use heap_core::DBG_LARGE_XTHREAD_RECLAIMED;
+pub use crate::alloc_core::deferred_large::DBG_LARGE_XTHREAD_RECLAIMED;
 #[doc(hidden)]
 pub use heap_registry::heaps_claimed_high_water;
 #[cfg(feature = "alloc-decommit")]

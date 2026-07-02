@@ -395,17 +395,30 @@ impl Node {
     /// NOT one of the whitelisted seam modules in `src/lib.rs`), so the
     /// pointer-to-reference conversion is centralised here instead.
     ///
+    /// 0.3.x task #132: [`Heap::dealloc_any_thread`](crate::heap::Heap::dealloc_any_thread)
+    /// uses this SAME accessor for the identical purpose, deref'ing a REMOTE
+    /// `owner_thread_free_at(base)` stamp that points at another `Heap`'s
+    /// [`ThreadFreeStack`](crate::heap::thread_free::ThreadFreeStack) identity
+    /// atomic (a leaked `Box<AtomicPtr<u8>>`, per-heap-lifetime-static — see
+    /// its module doc) — `heap::heap` is likewise not a whitelisted `unsafe`
+    /// seam.
+    ///
     /// [`HeapCore::push_large_deferred_free`]: crate::registry::heap_core::HeapCore
     ///
     /// # Caller's contract
     ///
-    /// `ptr` MUST be the address of a live `AtomicPtr<u8>` field inside a
-    /// `HeapCore` that lives in the registry's `'static` slot array (the
-    /// caller derives it from `thread_free_head()`/`owner_thread_free_at`,
-    /// both of which only ever produce such addresses). The slot array is
-    /// `'static` for the process lifetime, so the returned reference's
-    /// lifetime is sound. `AtomicPtr` is `Sync`, so shared atomic access from
-    /// any thread is race-free.
+    /// `ptr` MUST be the address of a live `AtomicPtr<u8>` field inside EITHER
+    /// (a) a `HeapCore` that lives in the registry's `'static` slot array, or
+    /// (b) a `Heap`'s leaked (on `Drop`, under `alloc-xthread`)
+    /// `Box<AtomicPtr<u8>>` identity token — both callers derive `ptr`
+    /// exclusively from `thread_free_head()`/`owner_thread_free_at`, which
+    /// only ever produce such addresses. In both cases the pointee outlives
+    /// every reachable reference to it (the registry slot array is
+    /// `'static`; a `Heap`'s identity `Box` is intentionally leaked rather
+    /// than dropped, precisely so a late cross-thread reader never
+    /// dereferences freed memory — see `Heap::drop`'s doc comment), so the
+    /// returned `'static` reference's lifetime is sound. `AtomicPtr` is
+    /// `Sync`, so shared atomic access from any thread is race-free.
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn atomic_ptr_ref(

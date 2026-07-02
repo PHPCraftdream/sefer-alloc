@@ -128,6 +128,17 @@ impl Heap {
         match classify(size, align) {
             Some(class_idx) => self.alloc_small(class_idx),
             None => {
+                // 0.3.x task #132: drain this heap's own A1 deferred-free
+                // stack before a Large request reaches `AllocCore::alloc`'s
+                // slow path — mirrors `HeapCore::alloc`'s discipline (see
+                // `registry/heap_core.rs`) so cross-thread-freed Large
+                // segments are reclaimed here too, not just on the
+                // `HeapCore`/`SeferAlloc` face.
+                #[cfg(feature = "alloc-xthread")]
+                crate::alloc_core::deferred_large::drain_large_deferred_free(
+                    self.thread_free.head_atomic(),
+                    &mut self.core,
+                );
                 let ptr = self.core.alloc(layout);
                 #[cfg(feature = "alloc-xthread")]
                 if !ptr.is_null() {
@@ -210,16 +221,15 @@ impl Heap {
     /// Only available with the `alloc-xthread` feature. Without it, all
     /// deallocation must happen on the owning thread via [`dealloc`](Self::dealloc).
     ///
-    /// **Large blocks:** a cross-thread free of a large block (a block in a
-    /// `SegmentKind::Large` segment) is a no-op -- the large segment stays
-    /// mapped until its owning `Heap` drops (at which point the segments are
-    /// leaked under `alloc-xthread`). This is a bounded leak, not a
-    /// correctness violation: the block is not lost (it remains accessible to
-    /// the owning heap), and the segment is reclaimed when the owning thread
-    /// exits (or, under Phase 12.4 adoption, when another thread adopts the
-    /// abandoned heap). The alternative -- routing large cross-thread frees
-    /// through the ring -- would require the reclaim path to distinguish
-    /// large from small blocks, adding complexity for a rare case.
+    /// **Large blocks (0.3.x task #132):** a cross-thread free of a large
+    /// block (a block in a `SegmentKind::Large` segment) pushes the
+    /// segment's base onto the OWNING `Heap`'s A1 deferred-free stack (the
+    /// same mechanism [`HeapCore`](crate::registry::heap_core::HeapCore)
+    /// uses — see [`crate::alloc_core::deferred_large`]), instead of
+    /// leaking the segment until the owning `Heap` drops. The owner drains
+    /// that stack lazily on its own large-alloc slow path
+    /// ([`Heap::alloc`](Self::alloc)), reclaiming the segment for reuse or
+    /// releasing it to the OS.
     ///
     /// **Unstamped segments:** if a segment's `owner_thread_free` is null (the
     /// segment was created by Phase 8 `AllocCore` standalone, or not yet
@@ -239,9 +249,21 @@ impl Heap {
             return; // Foreign pointer.
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {
-            // Large segments: cross-thread free is a no-op. The large segment
-            // stays mapped until its owning Heap drops (leaked under
-            // alloc-xthread). See the doc comment above for the rationale.
+            // 0.3.x task #132 (A1 parity with `HeapCore`): push `base` onto
+            // the OWNING heap's deferred-free stack instead of leaking it
+            // permanently. `owner_thread_free_at(base)` gives the raw
+            // `*const AtomicPtr<u8>` head stamp of whichever `Heap` owns this
+            // segment (not necessarily any heap reachable from this thread);
+            // the identical push primitive `HeapCore` uses handles the
+            // pointer-to-reference deref via the `node` seam.
+            let owner_head = SegmentHeader::owner_thread_free_at(base);
+            if owner_head.is_null() {
+                // Unstamped segment: safe no-op (see doc comment above).
+                return;
+            }
+            let owner_head_ref: &core::sync::atomic::AtomicPtr<u8> =
+                crate::alloc_core::node::Node::atomic_ptr_ref(owner_head);
+            crate::alloc_core::deferred_large::push_large_deferred_free(owner_head_ref, base);
             return;
         }
         // Small segment: only route if the owner registered a thread-free head

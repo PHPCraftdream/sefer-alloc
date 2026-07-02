@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **#132 — the explicit `Heap`/`with_heap` public face lacked the A1
+  cross-thread Large-segment reclaim fix.** `SeferAlloc` (via `HeapCore`) got
+  the A1 fix in 0.3.0; `Heap::dealloc_any_thread` did not — a cross-thread
+  free of a Large/huge segment through the explicit `Heap` API still no-op'd
+  and leaked the segment permanently until the owning `Heap` dropped. Both
+  faces now share the same extracted deferred-free primitive
+  (`alloc_core::deferred_large`), including the double-push guard hardening,
+  so a remote free of a Large segment is reclaimed on the owner's next large
+  allocation regardless of which public face is used.
+- **#132 — `with_heap` panicked on a reentrant borrow or TLS teardown.**
+  `with_heap`'s documented `# Panics` behaviour (`RefCell::borrow_mut`
+  panicking on a reentrant call, or on TLS-destructor-already-ran) was a
+  footgun for a public allocator API — e.g. a `Drop` impl that allocates via
+  `with_heap` during thread teardown would abort instead of degrading
+  gracefully. `with_heap` now uses the same no-panic
+  `try_with`/`try_borrow_mut` mechanics as the crate-internal
+  `with_heap_try` and returns `None` (its signature has always been
+  `Option<R>`) instead of panicking.
+
 ## [0.3.0] - 2026-06-30
 
 Post-0.2.1 hardening pass — six phases (A–F), each independently reviewed,
