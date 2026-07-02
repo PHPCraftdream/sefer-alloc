@@ -200,6 +200,31 @@ pub(crate) struct SegmentHeader {
     pub large_size: usize,
     /// For large/huge segments: the alignment of the single allocation.
     pub large_align: usize,
+    /// For large/huge segments: the PHYSICAL committed usable span of this
+    /// segment (`n_segments * SEGMENT`, computed once from the ORIGINAL OS
+    /// reservation). Set exactly once — at the segment's initial OS
+    /// reservation (`alloc_large_slow`) or when a cached segment is reused
+    /// for a smaller request on a cache HIT (`alloc_large`'s hit path, where
+    /// it is carried forward verbatim from the cached slot's `usable_size`,
+    /// i.e. the physical span of the segment being reused) — and NEVER
+    /// recomputed from `large_size`/`large_align`.
+    ///
+    /// This exists because `large_size`/`large_align` describe the CURRENT
+    /// allocation living in the segment, which on a cache hit can be smaller
+    /// than the segment's actual physical footprint (the OS reservation is
+    /// reused as-is; only the header's logical size/align shrink to fit the
+    /// new request). Recomputing "usable size" from `large_size`/`large_align`
+    /// at deposit time (as an earlier version did — bug #134) therefore
+    /// UNDER-reports the physical span for a reused-and-shrunk segment,
+    /// corrupting the `large_cache` byte-budget accounting (`
+    /// large_cache_used_bytes` and the cache-hit size-ratio matching) and
+    /// causing unbounded RSS amplification. `span_usable` is the single
+    /// stable source of truth for "how many bytes of OS memory does this
+    /// segment actually occupy" across the segment's whole cache lifetime
+    /// (fresh-reserve → N× cache-hit-reuse → deposit).
+    ///
+    /// Unused for small/primordial (zero — inert, like `large_size`).
+    pub span_usable: usize,
     /// The start of the OS reservation that produced this segment (may differ
     /// from the segment base due to the over-reserve + trim technique — see
     /// [`super::os`]). Recorded so `AllocCore::drop` can release the WHOLE
@@ -327,6 +352,7 @@ impl SegmentHeader {
             bump,
             large_size: 0,
             large_align: 0,
+            span_usable: 0,
             reservation,
             reservation_len,
             owner_thread_free: core::ptr::null(),
@@ -344,10 +370,20 @@ impl SegmentHeader {
 
     /// Build a large/huge header value. The single allocation will live at
     /// the first page-aligned offset past the header.
+    ///
+    /// `span_usable` is the segment's PHYSICAL committed usable span
+    /// (`n_segments * SEGMENT`) — the caller MUST pass the true physical span
+    /// of the underlying OS reservation being used: for a freshly-reserved
+    /// segment this is the just-computed `usable`; for a cache-hit reuse of
+    /// an existing segment (a smaller request landing in a larger cached
+    /// span) this MUST be the cached slot's own `usable_size` (the ORIGINAL
+    /// physical span), never recomputed from `size`/`align` (see the field's
+    /// doc comment on `SegmentHeader` — bug #134).
     pub(crate) const fn large(
         segment_id: u32,
         size: usize,
         align: usize,
+        span_usable: usize,
         bump: usize,
         reservation: *mut u8,
         reservation_len: usize,
@@ -359,6 +395,7 @@ impl SegmentHeader {
             bump,
             large_size: size,
             large_align: align,
+            span_usable,
             reservation,
             reservation_len,
             owner_thread_free: core::ptr::null(),

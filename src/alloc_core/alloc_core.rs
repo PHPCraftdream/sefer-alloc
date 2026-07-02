@@ -529,15 +529,19 @@ impl AllocCore {
 
                 #[cfg(feature = "alloc-decommit")]
                 {
-                    // Compute the usable size for this span (same arithmetic as
-                    // `alloc_large`).
-                    let hdr_aligned = align_up(
-                        core::mem::size_of::<SegmentHeader>(),
-                        stale.large_align.max(super::os::PAGE),
-                    );
-                    let n_segments = (hdr_aligned + align_up(stale.large_size, stale.large_align))
-                        .div_ceil(SEGMENT);
-                    let usable_size = n_segments * SEGMENT;
+                    // The physical usable span is read from the header's
+                    // stable `span_usable` field — NOT recomputed from
+                    // `large_size`/`large_align`. Bug #134: on a cache-hit
+                    // reuse the header's logical size/align can be smaller
+                    // than the segment's actual physical footprint (the OS
+                    // reservation is reused as-is for a smaller request), so
+                    // recomputing "usable size" from size/align here
+                    // under-reports the true span and corrupts the
+                    // large-cache byte-budget accounting. `span_usable` is
+                    // set once at the segment's original OS reservation and
+                    // carried forward verbatim through every cache-hit reuse
+                    // (see `SegmentHeader::span_usable` doc).
+                    let usable_size = stale.span_usable;
 
                     // Phase 1 large-cache admission: byte-budget enforcement.
                     //
@@ -1861,10 +1865,15 @@ impl AllocCore {
                 // Write a fresh header over the old one. The allocation lives
                 // at hdr_aligned (same computation as the slow path).
                 let bump = hdr_aligned + align_up(size, align);
+                // `span_usable` is carried forward from the CACHED slot's own
+                // `usable_size` — the true physical span of the segment being
+                // reused — NOT recomputed from the new (possibly smaller)
+                // `size`/`align`. Bug #134.
                 let hdr = SegmentHeader::large(
                     id,
                     size,
                     align,
+                    slot.usable_size,
                     bump,
                     slot.reservation,
                     slot.reservation_len,
@@ -1934,8 +1943,18 @@ impl AllocCore {
         };
         // Lay down the large header. The allocation lives at `hdr_aligned`.
         let bump = hdr_aligned + align_up(size, align);
-        let hdr =
-            SegmentHeader::large(id, size, align, bump, reservation.as_ptr(), reservation_len);
+        // Fresh reservation: `span_usable` = the just-computed physical
+        // usable span (`usable`) — this is the ORIGINAL stamping that every
+        // later cache-hit reuse of this segment will carry forward verbatim.
+        let hdr = SegmentHeader::large(
+            id,
+            size,
+            align,
+            usable,
+            bump,
+            reservation.as_ptr(),
+            reservation_len,
+        );
         Node::write_struct(base as *mut SegmentHeader, hdr);
         // Phase C (numa-aware): stamp the NUMA node into the header after
         // writing it (the constructor sets node_id to NO_NODE_RAW).
@@ -1981,13 +2000,12 @@ impl AllocCore {
         #[cfg(feature = "alloc-decommit")]
         {
             self.maybe_decay_large_cache();
-            let hdr_aligned = align_up(
-                core::mem::size_of::<SegmentHeader>(),
-                hdr.large_align.max(super::os::PAGE),
-            );
-            let n_segments =
-                (hdr_aligned + align_up(hdr.large_size, hdr.large_align)).div_ceil(SEGMENT);
-            let usable_size = n_segments * SEGMENT;
+            // See the own-thread `dealloc` Large branch above (bug #134): the
+            // physical usable span is read from the header's stable
+            // `span_usable` field, not recomputed from `large_size`/
+            // `large_align` (which can be stale-small after a cache-hit
+            // reuse).
+            let usable_size = hdr.span_usable;
 
             let mut admitted: Option<usize> = None;
             loop {
