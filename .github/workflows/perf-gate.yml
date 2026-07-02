@@ -26,6 +26,19 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Task #128 — make the gate ENFORCING, not report-only. iai-callgrind reads
+  # a regression limit from this env var (equivalently the `--regression` CLI
+  # arg): any benchmarked EventKind that regresses beyond the limit vs the
+  # compared baseline makes the runner exit non-zero, failing the job. `Ir`
+  # (instructions retired) is the deterministic metric this gate is built on;
+  # 10% is the tight-but-not-flaky threshold the bench doc argues for (a
+  # wall-clock band would have to be ±15-20% and would have missed #114's
+  # 22-31%). NOTE: this only trips once a baseline exists to compare against
+  # (see the save/compare split below) — the first main-branch run merely
+  # records the baseline. The exact numbers, and that the limit actually
+  # fires, are confirmed on the first real Linux CI run (Valgrind is
+  # Linux-only, so this cannot be validated on a dev machine).
+  IAI_CALLGRIND_REGRESSION: 'Ir=10'
 
 jobs:
   iai-callgrind:
@@ -59,24 +72,52 @@ jobs:
         # consistent and unambiguous.
         run: cargo install iai-callgrind-runner --version "^0.14" --locked
 
+      # Task #128 — persist the `main` baseline across runs so PRs can be
+      # compared against it. GitHub Actions lets a PR restore a cache saved on
+      # its base branch (main), so a baseline recorded by the nightly/main run
+      # below is visible to labelled PR runs. `restore-keys` picks the most
+      # recent `iai-baseline-main-*` entry when there is no exact-SHA hit.
+      - name: Restore the main iai baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: target/iai
+          key: iai-baseline-main-${{ github.sha }}
+          restore-keys: |
+            iai-baseline-main-
+
       - name: Run perf-gate benchmarks (instruction counts)
         # `--features production` (alloc-global + alloc-xthread +
         # alloc-decommit + fastbin) — NOT just `alloc-global`. The whole
         # point of this gate is to catch regressions in the optimizations
         # task #127 was built to guard (C1's magazine/fastbin fast path, D1's
-        # large-segment cache under alloc-decommit): benching with only
-        # `alloc-global` exercises the substrate path AROUND those features,
-        # so a regression in the magazine or the large-cache would sail
-        # through this gate silently — exactly the blind spot this workflow
-        # exists to close. `production` is the same feature set the crate's
-        # own release/benchmark tooling treats as the real-world default.
-        # No committed baseline exists yet (task #127 initial cut): this run
-        # establishes the first recorded summary. Once a baseline exists
-        # (via `--save-baseline` on a prior run, cached across scheduled
-        # runs), a follow-up should add `--baseline=<name>` here so
-        # iai-callgrind actually fails the job on a >5-10% instruction-count
-        # regression instead of only reporting numbers.
-        run: cargo bench --bench perf_gate_iai --features production
+        # large-segment cache under alloc-decommit); benching with only
+        # `alloc-global` would let a magazine/large-cache regression sail
+        # through silently. `production` is the crate's real-world default.
+        #
+        # Task #128 (enforcing): a PR run COMPARES against the restored `main`
+        # baseline (`--baseline=main`); combined with the
+        # `IAI_CALLGRIND_REGRESSION` env above, a >10% `Ir` regression exits
+        # non-zero and FAILS the job. A main-branch / scheduled / dispatched
+        # run instead (re)RECORDS the baseline (`--save-baseline=main`), which
+        # the cache-save step below persists. The very first main run has no
+        # baseline to regress against — it only records one.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            cargo bench --bench perf_gate_iai --features production -- --baseline=main
+          else
+            cargo bench --bench perf_gate_iai --features production -- --save-baseline=main
+          fi
+
+      # Persist the freshly-recorded `main` baseline (main / scheduled /
+      # dispatched runs only — a PR must never overwrite the baseline it is
+      # judged against). A new key per SHA is required because GitHub cache
+      # entries are immutable; `restore-keys` above finds the newest.
+      - name: Save the main iai baseline
+        if: github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: target/iai
+          key: iai-baseline-main-${{ github.sha }}
 
       - name: Upload Callgrind artifacts
         if: always()

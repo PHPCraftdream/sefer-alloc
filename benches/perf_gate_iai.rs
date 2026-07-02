@@ -37,11 +37,15 @@
 //! (Windows/macOS included), so the fallback compiles everywhere while the
 //! real Callgrind body only exists — and only ever runs — on Linux CI.
 //!
-//! First-run behavior: `iai-callgrind` has no committed baseline in this
-//! repo. The first scheduled/dispatched run on CI establishes the baseline
-//! summary in the job log; there is nothing to regress against yet. Wiring
-//! up a persisted baseline (cache artifact across scheduled runs) is a
-//! follow-up once the initial numbers are observed on real CI hardware.
+//! First-run / enforcing behavior (task #128): the perf-gate workflow now
+//! PERSISTS a `main` baseline across runs (via `actions/cache`) and, on a
+//! labelled PR, compares against it with `--baseline=main` plus an
+//! `IAI_CALLGRIND_REGRESSION='Ir=10'` limit — so a >10% instruction-count
+//! regression FAILS the (non-blocking) job. The first main-branch run merely
+//! records the baseline (nothing to regress against yet). The exact numbers,
+//! and that the limit actually trips, are only observable on real Linux CI
+//! hardware (Valgrind is Linux-only); the threshold may be tuned once those
+//! first numbers are in.
 
 #![allow(clippy::missing_safety_doc)]
 
