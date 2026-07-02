@@ -475,6 +475,39 @@ impl SegmentHeader {
         let off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
         Node::read_ptr(Node::offset(base, off) as *const *const core::sync::atomic::AtomicPtr<u8>)
     }
+
+    /// Read the header's `segment_id` field only (field-specific `u32` load).
+    /// Used by [`SegmentTable::unregister`](super::segment_table::SegmentTable::unregister)
+    /// / [`SegmentTable::recycle`](super::segment_table::SegmentTable::recycle)
+    /// (task #135) to locate a segment's registry slot index in O(1), instead
+    /// of scanning the table for a matching base pointer. `segment_id` is
+    /// written ONCE, at registration time, as part of the freshly-built header
+    /// value passed to a full-struct `Node::write_struct` (`alloc_large_slow`,
+    /// the large-cache-hit path, `register_segment`'s caller) — never mutated
+    /// in place thereafter — so a field read here does not race with the
+    /// owner's `bump` field writes on a disjoint field (same discipline as
+    /// `magic_at`/`kind_at`). Present in EVERY build's layout (like `magic`),
+    /// so this accessor is not feature-gated.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    #[inline(always)]
+    pub(crate) fn segment_id_at(base: *mut u8) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, segment_id);
+        Node::read_u32(Node::offset(base, off) as *const u32)
+    }
+
+    /// TEST-ONLY (task #135): overwrite the header's `segment_id` field only
+    /// (field-specific write, mirroring `segment_id_at`'s read). Used by
+    /// `AllocCore::dbg_stamp_segment_id` to exercise `SegmentTable::unregister`'s
+    /// defensive `slots[id] == base` guard against a corrupted `segment_id`
+    /// (see `tests/segment_table_o1.rs`). Never called on any production path.
+    #[allow(dead_code)]
+    pub(crate) fn set_segment_id_at(base: *mut u8, id: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, segment_id);
+        Node::write_u32(Node::offset(base, off) as *mut u32, id);
+    }
 }
 
 /// Round `n` up to the next multiple of `a`. Works for ANY `a > 0` (not just
@@ -683,12 +716,24 @@ impl Layout {
             8,
         )
     }
-    /// End of the primordial metadata (page-aligned past the hash table).
-    pub(crate) const fn primordial_meta_end() -> usize {
+    /// Offset of the free-list index-stack array (task #135, Part 1) —
+    /// immediately after the hash table, 4-byte aligned (the array holds
+    /// `u32` indices).
+    pub(crate) const fn primordial_free_list_off() -> usize {
         align_up_const(
             Self::primordial_hash_off() + super::segment_table::HASH_FOOTPRINT,
-            PAGE,
+            4,
         )
+    }
+    /// Offset of the free-list top-of-stack counter (a single `u32`),
+    /// immediately after the free-list array.
+    pub(crate) const fn primordial_free_top_off() -> usize {
+        Self::primordial_free_list_off() + super::segment_table::FREE_LIST_FOOTPRINT
+    }
+    /// End of the primordial metadata (page-aligned past the free-list top
+    /// counter).
+    pub(crate) const fn primordial_meta_end() -> usize {
+        align_up_const(Self::primordial_free_top_off() + 4, PAGE)
     }
     /// Number of metadata pages in a small segment.
     pub(crate) const fn small_meta_pages() -> usize {

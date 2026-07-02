@@ -121,6 +121,25 @@ pub(crate) fn primordial() -> Option<Primordial> {
         super::node::Node::write_struct::<*mut u8>(hash_slot, base);
     }
 
+    // 4c. Task #135 (Part 1): initialise the free-list index-stack (recycled
+    //     slot indices) and its top-of-stack counter. The stack starts EMPTY
+    //     (top = 0) — slot 0 (primordial) is live and never recyclable, and
+    //     no other slot has been registered yet, so there is nothing to
+    //     recycle. Zero-fill the index array defensively (only entries
+    //     `[0, top)` are ever read, but a clean zero state keeps the layout
+    //     inspectable/debuggable).
+    let free_list_off = Layout::primordial_free_list_off();
+    let free_top_off = Layout::primordial_free_top_off();
+    let free_list_slots = base_plus(base, free_list_off) as *mut u32;
+    for i in 0..segment_table::FREE_LIST_CAPACITY {
+        let slot =
+            super::node::Node::offset(free_list_slots as *mut u8, i * core::mem::size_of::<u32>())
+                as *mut u32;
+        super::node::Node::write_u32(slot, 0);
+    }
+    let free_top_ptr = base_plus(base, free_top_off) as *mut u32;
+    super::node::Node::write_u32(free_top_ptr, 0);
+
     // 5. Fix up the header: kind = Primordial, bump = meta_end (where payload
     //    carving begins). Mark the page map / bin table / registry pages Meta
     //    in the page map we just wrote.
@@ -132,7 +151,8 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
-    let table = SegmentTable::from_primordial(reg_slots, 1, hash_slots);
+    let table =
+        SegmentTable::from_primordial(reg_slots, 1, hash_slots, free_list_slots, free_top_ptr);
 
     Some(Primordial { segment, table })
 }

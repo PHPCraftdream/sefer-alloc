@@ -1125,6 +1125,60 @@ impl AllocCore {
     /// compare the Layout-derived class against the `page_map`-derived class
     /// on a mixed-class page and prove the two genuinely differ (otherwise
     /// the test would be vacuous).
+    /// TEST-ONLY (task #135): the segment table's high-water slot count (see
+    /// `SegmentTable::count`). Used by `tests/segment_table_o1.rs` to verify
+    /// the O(1) free-list actually recycles vacated indices instead of
+    /// letting the high-water mark grow unbounded.
+    #[doc(hidden)]
+    pub fn dbg_table_count(&self) -> u32 {
+        self.table.count()
+    }
+
+    /// TEST-ONLY (task #135): public wrapper over `AllocCore::contains_base`
+    /// for integration tests (which cannot see the `pub(crate)` version, nor
+    /// the `pub(crate)` `os::segment_base_of_ptr` needed to derive a segment
+    /// base from an arbitrary in-segment pointer). Takes any pointer
+    /// previously returned by `alloc`/`alloc_large` (not necessarily the
+    /// segment base itself) and derives the base internally, matching the
+    /// convention of the other `dbg_*_for` accessors in this file.
+    #[doc(hidden)]
+    pub fn dbg_contains_base(&self, ptr: *mut u8) -> bool {
+        self.table.contains_base(os::segment_base_of_ptr(ptr))
+    }
+
+    /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
+    /// segment (field-specific read, mirrors what
+    /// `SegmentTable::unregister`/`recycle` now use internally for their O(1)
+    /// slot lookup).
+    #[doc(hidden)]
+    pub fn dbg_segment_id_of(&self, ptr: *mut u8) -> u32 {
+        SegmentHeader::segment_id_at(os::segment_base_of_ptr(ptr))
+    }
+
+    /// TEST-ONLY (task #135): overwrite the stamped `segment_id` field of
+    /// `ptr`'s segment (field-specific write). Used to construct the
+    /// corrupted-id scenario exercised by
+    /// `unregister_defends_against_mismatched_segment_id`.
+    #[doc(hidden)]
+    pub fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
+        SegmentHeader::set_segment_id_at(os::segment_base_of_ptr(ptr), id);
+    }
+
+    /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
+    /// `ptr`'s segment, for a public integration test (which cannot call the
+    /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed lookup
+    /// and its defensive `slots[id] == base` guard in isolation from any
+    /// surrounding dealloc bookkeeping (the caller is responsible for
+    /// whatever cleanup the test scenario needs afterwards).
+    #[doc(hidden)]
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    pub fn dbg_unregister(&mut self, ptr: *mut u8) {
+        self.table.unregister(os::segment_base_of_ptr(ptr));
+    }
+
     #[doc(hidden)]
     pub fn dbg_layout_class_for(&self, layout: Layout) -> Option<usize> {
         let size = layout.size().max(super::size_classes::MIN_BLOCK);
@@ -1240,6 +1294,28 @@ impl AllocCore {
     #[cfg(any(feature = "alloc-global", feature = "alloc-xthread"))]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.table.bases()
+    }
+
+    /// O(1) membership test: is `base` one of THIS substrate's registered,
+    /// LIVE (non-NULL) segment bases? Thin delegation to
+    /// `SegmentTable::contains_base` (the OPT-B open-addressing hash table).
+    ///
+    /// Task #135 (Part 2/3): exposes the table's existing O(1) check at the
+    /// `AllocCore` level so `HeapCore::realloc` (own-segment ownership test)
+    /// and `HeapCore::dealloc_routing` (M2 hardening — see its doc comment)
+    /// no longer need to fall back to the O(count) `segment_bases().any(...)`
+    /// scan.
+    ///
+    /// Gated on `alloc-global` only (not also `alloc-xthread`): both call
+    /// sites live in `registry::heap_core::HeapCore`, and the entire
+    /// `registry` module is itself `#[cfg(feature = "alloc-global")]`-gated
+    /// at the crate root (`src/lib.rs`) — `alloc-xthread` alone (without
+    /// `alloc-global`) does not compile `HeapCore` at all, so a wider gate
+    /// here would leave this method genuinely unused under that combination.
+    #[cfg(feature = "alloc-global")]
+    #[inline(always)]
+    pub(crate) fn contains_base(&self, base: *mut u8) -> bool {
+        self.table.contains_base(base)
     }
 
     /// Register an already-reserved segment base into this substrate's table

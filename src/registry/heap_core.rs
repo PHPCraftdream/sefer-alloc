@@ -863,7 +863,11 @@ impl HeapCore {
         #[cfg(feature = "alloc-global")]
         {
             let base = os::segment_base_of_ptr(ptr);
-            if self.core.segment_bases().any(|b| b == base) {
+            // Task #135 (Part 2): O(1) membership test (`AllocCore::contains_base`
+            // → the OPT-B hash table) replaces the O(segment count) linear scan
+            // `segment_bases().any(|b| b == base)`. Same semantics: `true` iff
+            // `base` is one of THIS heap's registered, live segments.
+            if self.core.contains_base(base) {
                 // Own-segment pointer: delegate to the substrate, which
                 // performs the in-place short-circuit (OPT-F) when possible
                 // and alloc+copy+dealloc otherwise -- entirely within
@@ -908,6 +912,46 @@ impl HeapCore {
     #[inline(always)]
     fn dealloc_routing(&mut self, ptr: *mut u8, layout: Layout) {
         let base = os::segment_base_of_ptr(ptr);
+
+        // Task #135 (Part 3, M2 hardening): check `self.core.contains_base(base)`
+        // FIRST, before touching any segment memory. `contains_base` is an O(1)
+        // lookup in OUR OWN `SegmentTable`'s open-addressing hash — it reads
+        // only our own primordial-segment-resident table, never `base`'s
+        // memory, so it is safe to call even if `base` is unmapped (a
+        // released/decommitted segment).
+        //
+        // `contains_base(base) == true` if and only if `base` is currently
+        // registered in OUR table — which happens exactly when we own a live
+        // (mapped) segment there (`register_segment`/`alloc_large*` register
+        // on creation; `unregister`/`recycle` remove on release — see
+        // `segment_table.rs`). So TRUE implies "our segment, definitely
+        // mapped" — equivalent to the old `owner_tf.is_null() || owner_tf ==
+        // our_head` condition for every segment WE registered (an unstamped
+        // own-segment has `owner_tf == null`; a stamped own-segment has
+        // `owner_tf == our_head` — both cases are covered by "it's in our
+        // table"), without reading `base`'s memory at all. Route it own-thread
+        // immediately — no magic/kind read needed.
+        if self.core.contains_base(base) {
+            self.dealloc_own_thread(ptr, layout);
+            return;
+        }
+
+        // `contains_base` is FALSE: `base` is not one of OUR segments. Two
+        // possibilities:
+        //   (a) a LIVE segment owned by ANOTHER heap — mapped, its owner's
+        //       table contains it (just not ours) — reading its header is
+        //       safe, and this cross-thread free must be routed to its owner.
+        //   (b) a segment WE (or someone) already released — decommitted +
+        //       unmapped, its table slot recycled — reading its header would
+        //       fault.
+        // We cannot O(1)-distinguish (a) from (b) without a global registry
+        // (out of scope here); this is the same limitation every allocator
+        // has for a double-free-after-full-release. A double-free of a
+        // released, unmapped segment is fundamentally UB (as with any
+        // allocator) and is NOT fixed by this change — only guarded for the
+        // live/mapped case, which is what M2 promises. See the module-level
+        // note referenced from task #135's report for the full argument.
+        //
         // Field-specific reads (task #33 root-cause fix): read ONLY `magic`,
         // `kind`, `owner_thread_free` — the cross-thread-read fields written
         // once at init/stamp time and only read thereafter. A full-struct
@@ -921,9 +965,15 @@ impl HeapCore {
         let our_head = self.thread_free_head();
         let owner_tf = SegmentHeader::owner_thread_free_at(base);
         if owner_tf.is_null() || owner_tf == our_head {
-            // Own-thread free: route through magazine (under fastbin) or
-            // directly to core.dealloc (without fastbin).
-            self.dealloc_own_thread(ptr, layout);
+            // `contains_base` was false, yet the header claims this segment is
+            // unstamped or stamped as ours — this can only happen for a
+            // segment that used to be ours and was released (case (b) above,
+            // reading now-decommitted-but-still-committed metadata pages of a
+            // NOT-YET-actually-unmapped segment is impossible in this
+            // process — metadata pages are only unmapped by `os::release_segment`,
+            // at which point this read would fault, not return a stale value).
+            // Defensive no-op: do NOT route to ourselves via a table state we
+            // just proved does not list this segment.
             return;
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {

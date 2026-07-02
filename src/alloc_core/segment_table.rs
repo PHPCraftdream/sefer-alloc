@@ -71,6 +71,17 @@ pub(crate) const HASH_CAPACITY: usize = 2 * MAX_SEGMENTS; // 2048
 /// `HASH_CAPACITY` entries × `sizeof(*mut u8)` = 16 KiB.
 pub(crate) const HASH_FOOTPRINT: usize = HASH_CAPACITY * size_of::<*mut u8>();
 
+/// Capacity of the free-list stack of recyclable slot indices (task #135,
+/// Part 1). One `u32` per possible slot — the free-list can never hold more
+/// entries than there are slots (`MAX_SEGMENTS`), so this bound is exact (no
+/// separate overflow path is needed).
+pub(crate) const FREE_LIST_CAPACITY: usize = MAX_SEGMENTS;
+
+/// Footprint of the free-list stack (the index array only; the top-of-stack
+/// counter is a separate `u32` field carved right after it — see
+/// `Layout::primordial_free_list_off` / `primordial_free_top_off`).
+pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32>();
+
 /// Bit-shift of the segment size (log₂(SEGMENT = 4 MiB) = 22). Used by the
 /// hash function to convert a segment base into a table index. Exposed as
 /// `pub(crate)` so the bootstrap can seed the primordial hash entry before
@@ -115,6 +126,16 @@ pub(crate) struct SegmentTable {
     /// - `TOMBSTONE`  → removed entry (probe chain must be preserved)
     /// - other        → live segment base (SEGMENT-aligned pointer)
     hash_slots: *mut *mut u8,
+    /// Task #135 (Part 1): a stack of recycled (NULL) slot indices, carved in
+    /// the primordial segment immediately after the hash table. `FREE_LIST_CAPACITY`
+    /// (= `MAX_SEGMENTS`) `u32` entries; only `[0, free_top)` are meaningful.
+    /// `unregister`/`recycle` push the just-vacated index here (O(1));
+    /// `register` pops from here first (O(1)) before falling back to append.
+    free_list: *mut u32,
+    /// Pointer to the free-list's top-of-stack counter (a single `u32` carved
+    /// right after `free_list`'s `FREE_LIST_CAPACITY` entries). The number of
+    /// valid (push-order) entries currently on the free-list stack.
+    free_top: *mut u32,
 }
 
 impl SegmentTable {
@@ -138,11 +159,15 @@ impl SegmentTable {
         slots: *mut *mut u8,
         count: u32,
         hash_slots: *mut *mut u8,
+        free_list: *mut u32,
+        free_top: *mut u32,
     ) -> Self {
         Self {
             slots,
             count,
             hash_slots,
+            free_list,
+            free_top,
         }
     }
 
@@ -151,36 +176,30 @@ impl SegmentTable {
     /// live and count == MAX_SEGMENTS — only possible without `alloc-decommit`
     /// or under an extreme large-allocation storm).
     ///
-    /// **Slot-recycle scan (task #60, variant B):** before appending, scans
-    /// slots `[0, count)` left-to-right for a NULL (recyclable) slot. If one
-    /// is found the new base is written there and that index is returned (NO
-    /// increment of `count` — the slot is already within the live window). This
-    /// lifts the 1024-segment cap under `alloc-decommit`: as long as some
-    /// slots are recycled, `register` never returns `None`.
+    /// **O(1) slot-recycle (task #135, Part 1 — supersedes the task #60 linear
+    /// scan):** pops a recyclable slot index off the free-list stack (O(1)) if
+    /// one is available; the new base is written there and that index is
+    /// returned (NO increment of `count` — the slot is already within the live
+    /// window). Only when the free-list is empty does `register` append past
+    /// the current high-water mark. This lifts the 1024-segment cap under
+    /// `alloc-decommit`: as long as some slots are recycled, `register` never
+    /// returns `None`.
     ///
     /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
     /// returns null (graceful OOM) rather than aborting.
     pub(crate) fn register(&mut self, base: *mut u8) -> Option<u32> {
-        // Phase 60 — scan for a recyclable (NULL) slot first.
-        // Linear scan through the live window; skips slot 0 (the primordial,
-        // never recycled) but searches the whole [0, count) range for any NULL
-        // left by a prior `recycle` call. The primordial base is never NULL so
-        // slot 0 is safely visited (the comparison fails quickly).
-        let count = self.count as usize;
-        for i in 0..count {
-            let slot = Self::slot_ptr(self.slots, i);
-            let current = super::node::Node::read_struct::<*mut u8>(slot);
-            if current.is_null() {
-                // Reuse this slot: write the new base, return the index without
-                // bumping count (the slot is already in the live window).
-                super::node::Node::write_struct::<*mut u8>(slot, base);
-                // OPT-B: also insert into the hash table so `contains_base` is O(1).
-                self.hash_insert(base);
-                return Some(i as u32);
-            }
+        // O(1): pop a recycled slot index, if the free-list has one.
+        if let Some(i) = self.free_list_pop() {
+            let slot = Self::slot_ptr(self.slots, i as usize);
+            // Defensive: the free-list invariant guarantees this slot is
+            // currently NULL (see `free_list_push`'s contract) — reuse it.
+            super::node::Node::write_struct::<*mut u8>(slot, base);
+            // OPT-B: also insert into the hash table so `contains_base` is O(1).
+            self.hash_insert(base);
+            return Some(i);
         }
-        // No recyclable slot found — try to append.
-        let idx = count;
+        // No recyclable slot — append.
+        let idx = self.count as usize;
         if idx >= MAX_SEGMENTS {
             return None;
         }
@@ -215,24 +234,46 @@ impl SegmentTable {
     /// pre-fix, the whole segment). The function body is pure safe pointer
     /// arithmetic through the `node`/hash seams — nothing decommit-specific —
     /// so lifting the gate is purely additive.
+    ///
+    /// **O(1) (task #135, Part 1 — supersedes the linear base-scan):** reads
+    /// `segment_id` directly out of the segment's own header (via the
+    /// field-specific `segment_id_at` accessor — a single `u32` load, disjoint
+    /// from the owner-mutated `bump` field, so this is race-free under the
+    /// same §11/§33 discipline as `magic_at`/`kind_at`) instead of scanning the
+    /// table for a matching base pointer. The header at `base` is still valid
+    /// here (this is the pre-decommit/pre-release call site — see the
+    /// contract above), so the read is safe.
+    ///
+    /// Defensive: if the slot at `segment_id` does not actually hold `base`
+    /// (a caller bug, or a stale/corrupt `segment_id`), this is a no-op — the
+    /// same defensive posture the old linear scan had for "base not found".
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
         allow(dead_code)
     )]
     pub(crate) fn unregister(&mut self, base: *mut u8) {
-        let count = self.count as usize;
-        for i in 0..count {
-            let slot = Self::slot_ptr(self.slots, i);
-            let current = super::node::Node::read_struct::<*mut u8>(slot);
-            if current == base {
-                // NULL the slot — the OS reservation is NOT released here.
-                super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
-                // OPT-B: remove from hash table (tombstone the entry).
-                self.hash_remove(base);
-                return;
-            }
+        let id = super::segment_header::SegmentHeader::segment_id_at(base);
+        if id as usize >= self.count as usize {
+            // Defensive: out-of-range id (corrupt header / caller bug). No-op.
+            return;
         }
-        // Defensive: base was not found in the table. No-op.
+        let slot = Self::slot_ptr(self.slots, id as usize);
+        let current = super::node::Node::read_struct::<*mut u8>(slot);
+        if current != base {
+            // Defensive: the slot at `id` does not hold `base` — no-op rather
+            // than corrupt the table.
+            return;
+        }
+        // NULL the slot — the OS reservation is NOT released here.
+        super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+        // OPT-B: remove from hash table (tombstone the entry).
+        self.hash_remove(base);
+        // Task #135: push the just-vacated index onto the free-list so a
+        // future `register` can reuse it in O(1). Guarded by `current != base`
+        // above (only a slot that WAS non-NULL and held `base` reaches here),
+        // so this can never push the same index twice for a single logical
+        // unregister/recycle (the free-list-duplicate invariant).
+        self.free_list_push(id);
     }
 
     /// Mark the slot for `base` as recyclable (NULL) and release the segment's
@@ -267,14 +308,15 @@ impl SegmentTable {
         let hdr = super::segment_header::SegmentHeader::read_at(base);
         let reservation = hdr.reservation;
         let reservation_len = hdr.reservation_len;
-        // Find the slot that holds `base` and write NULL. Linear scan O(count)
-        // — acceptable since this is the cold decommit path, not the hot alloc
-        // path. We compare pointer VALUES only; we never dereference `base`
-        // after the OS release below, so the order matters: NULL the slot
-        // AFTER reading the header and AFTER the OS release.
-        let count = self.count as usize;
-        for i in 0..count {
-            let slot = Self::slot_ptr(self.slots, i);
+        // Task #135 (Part 1): `segment_id` was already read as part of the
+        // full-struct header read above (the header is still fully valid at
+        // this point — only the PAYLOAD is decommitted by the caller before
+        // `recycle` runs, never the metadata page hosting the header), so no
+        // extra read is needed. O(1) slot lookup replaces the old O(count)
+        // linear scan.
+        let id = hdr.segment_id;
+        if (id as usize) < self.count as usize {
+            let slot = Self::slot_ptr(self.slots, id as usize);
             let current = super::node::Node::read_struct::<*mut u8>(slot);
             if current == base {
                 // OPT-B: tombstone the hash entry BEFORE releasing the OS
@@ -287,12 +329,17 @@ impl SegmentTable {
                 super::os::release_segment(reservation, reservation_len);
                 // NULL the slot so `register` can reuse it and `drop` skips it.
                 super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
+                // Push the vacated index onto the free-list (O(1) reuse by a
+                // future `register`). Guarded by `current == base` above, so
+                // this index is pushed at most once per logical recycle.
+                self.free_list_push(id);
                 return;
             }
         }
-        // Defensive: `base` was not found. This indicates a bug in the caller
-        // (double-recycle or never-registered). Release the OS reservation
-        // anyway to avoid a leak, but don't corrupt the table.
+        // Defensive: `base` was not found at its stamped `segment_id` slot
+        // (corrupt header / double-recycle / never-registered). This
+        // indicates a bug in the caller. Release the OS reservation anyway to
+        // avoid a leak, but don't corrupt the table.
         super::os::release_segment(reservation, reservation_len);
     }
 
@@ -377,6 +424,58 @@ impl SegmentTable {
     fn slot_ptr(slots: *mut *mut u8, i: usize) -> *mut *mut u8 {
         super::node::Node::offset(slots as *mut u8, i * core::mem::size_of::<*mut u8>())
             as *mut *mut u8
+    }
+
+    // -------------------------------------------------------------------
+    // Task #135 (Part 1) — O(1) free-list of recycled slot indices.
+    //
+    // A plain stack (LIFO) of `u32` slot indices, carved in the primordial
+    // segment right after the hash table. Invariant: an index is on the
+    // free-list IF AND ONLY IF the corresponding `slots[index]` is currently
+    // NULL. `unregister`/`recycle` push (after NULLing the slot); `register`
+    // pops (before writing the new base into the slot). Both call sites are
+    // guarded so an index is pushed at most once per NULL transition (see
+    // their `current == base` / `current != base` checks), so the free-list
+    // never holds a duplicate entry and never holds an index whose slot is
+    // actually live.
+    // -------------------------------------------------------------------
+
+    /// Address of free-list entry `i`. Pure pointer arithmetic through the
+    /// `node` seam.
+    #[inline(always)]
+    fn free_list_slot_ptr(&self, i: usize) -> *mut u32 {
+        super::node::Node::offset(self.free_list as *mut u8, i * core::mem::size_of::<u32>())
+            as *mut u32
+    }
+
+    /// Push `idx` onto the free-list stack. Caller's invariant: `idx`'s slot
+    /// was just NULLed (transitioned live → recyclable) and is not already on
+    /// the free-list — see the guarded call sites in `unregister`/`recycle`.
+    #[inline]
+    fn free_list_push(&mut self, idx: u32) {
+        let top = super::node::Node::read_u32(self.free_top as *const u32);
+        debug_assert!(
+            (top as usize) < FREE_LIST_CAPACITY,
+            "free-list overflow — more recycled slots than MAX_SEGMENTS"
+        );
+        let slot = self.free_list_slot_ptr(top as usize);
+        super::node::Node::write_u32(slot, idx);
+        super::node::Node::write_u32(self.free_top, top + 1);
+    }
+
+    /// Pop the most-recently-recycled index off the free-list, or `None` if
+    /// it is empty. O(1).
+    #[inline]
+    fn free_list_pop(&mut self) -> Option<u32> {
+        let top = super::node::Node::read_u32(self.free_top as *const u32);
+        if top == 0 {
+            return None;
+        }
+        let new_top = top - 1;
+        let slot = self.free_list_slot_ptr(new_top as usize);
+        let idx = super::node::Node::read_u32(slot);
+        super::node::Node::write_u32(self.free_top, new_top);
+        Some(idx)
     }
 
     // -------------------------------------------------------------------
