@@ -1,4 +1,4 @@
-//! [`SizeClasses`] — the size-class scheme (~40 fine classes to a threshold,
+//! [`SizeClasses`] — the size-class scheme (48 fine classes to a threshold,
 //! then large/huge direct segments), the safe Cartographer's classifier.
 //!
 //! This is **pure safe integer arithmetic** over a fixed table — it touches no
@@ -8,13 +8,24 @@
 //!
 //! ## Scheme
 //!
-//! - **Small classes (index `0..SMALL_CLASS_COUNT`):** ~40 fine classes from
-//!   `MIN_BLOCK` (16 B) up to `SMALL_MAX` (a few KiB). The spacing starts at
-//!   `MIN_BLOCK` and grows with a roughly 1.25× step (mimalloc's small-spacing
-//!   idea), rounded to a multiple of `MIN_BLOCK` so every block stays
+//! - **Small classes (index `0..SMALL_CLASS_COUNT`):** 48 fine classes from
+//!   `MIN_BLOCK` (16 B) up to `SMALL_MAX` (~253 KiB — before task B1 this was
+//!   the top of a 40-entry table; B1 kept that top entry but merged in 8 more
+//!   classes at the low end, so `SMALL_MAX` itself is unchanged). 40 of the
+//!   48 classes form the original geometric spacing: starting at `MIN_BLOCK`
+//!   and growing with a roughly 1.25× step (mimalloc's small-spacing idea),
+//!   rounded to a multiple of `MIN_BLOCK` so every block stays
 //!   `MIN_BLOCK`-aligned (which satisfies every alignment the small classes
 //!   advertise, since `align <= size <= block` and `block` is a multiple of
-//!   `MIN_BLOCK`).
+//!   `MIN_BLOCK`). The other 8 (task B1, the follow-up to #114) are explicit
+//!   "page-aligned" classes — 512, 1024, 2048, 4096, 6144, 8192, 12288,
+//!   16384 — merged into the sorted sequence so that typical page-aligned
+//!   requests (direct I/O buffers, `io_uring`, `#[repr(align(4096))]`) in the
+//!   512 B – 16 KiB range resolve to a small class instead of unconditionally
+//!   burning a whole ~4 MiB Large segment (the pre-B1 gap: no class in the
+//!   plain geometric progression is ever a multiple of 512, so every
+//!   `align >= 512` request fell through `class_for`'s divisibility walk to
+//!   `None`, i.e. Large, however small `size` was).
 //! - **Large:** allocations whose requested size exceeds `SMALL_MAX` (or whose
 //!   alignment exceeds `MIN_BLOCK`) get a dedicated whole-segment span — one
 //!   `Segment` per large allocation. No size class; the segment is sized to
@@ -58,7 +69,7 @@ pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 /// at compile time by [`build_table`] so the spacing is visible as code, not
 /// magic numbers. This is the **single source of truth** for the small-class
 /// geometry; [`SIZE2CLASS`] is derived from it by [`build_size2class`].
-pub(crate) const SIZE_CLASS_TABLE: [usize; 40] = build_table();
+pub(crate) const SIZE_CLASS_TABLE: [usize; 48] = build_table();
 
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
@@ -168,17 +179,45 @@ impl SizeClasses {
     }
 }
 
+/// Extra "page-aligned" classes merged into the geometric table by
+/// [`build_table`] — task B1 (2026-07), the follow-up to #114.
+///
+/// #114 fixed `class_for` to walk forward for `align > SMALL_ALIGN_MAX` and
+/// find a class whose `block_size` is divisible by `align`, closing the hole
+/// for alignments up to 256. But no class in the plain 1.25×-geometric
+/// progression (16, 32, 48, 64, 80, 112, 144, 192, 240, 304, ...) is ever a
+/// multiple of 512/1024/2048/4096, so every page-aligned request (`align` a
+/// multiple of 512 — the canonical shape for direct I/O buffers, `io_uring`,
+/// or `#[repr(align(4096))]` types) still fell through the walk to `None` and
+/// was routed to the dedicated-segment Large path, burning a whole ~4 MiB
+/// segment per allocation — the exact `SegmentTable`-exhaustion pattern #114
+/// fixed for smaller alignments, just not closed for this shape.
+///
+/// These 8 explicit classes plug that hole for the common small
+/// page-aligned sizes (512 B – 16 KiB, the direct-I/O / io_uring buffer
+/// range); requests needing bigger page-aligned blocks still go through
+/// Large, which is fine — Large exists precisely for less-common bulk sizes.
+const PAGE_ALIGNED_EXTRA: [usize; 8] = [512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
+
 /// Build the small size-class table at compile time. Spacing: start at
 /// `MIN_BLOCK`, then each next class is `round_up(prev * 5 / 4, MIN_BLOCK)`
 /// (a 1.25× geometric step rounded to the alignment), with a minimum step of
-/// `MIN_BLOCK` (so two adjacent classes never collide). Yields 40 classes from
-/// 16 B up to ~30 KiB.
-const fn build_table() -> [usize; 40] {
-    let mut t = [0usize; 40];
+/// `MIN_BLOCK` (so two adjacent classes never collide) — 40 classes from 16 B
+/// up to ~253 KiB. [`PAGE_ALIGNED_EXTRA`] (8 more classes, each a multiple of
+/// 512/1024/2048/4096 up to 16 KiB) is merged in sorted order, giving 48
+/// classes total. The merge keeps the table strictly increasing (a hard
+/// invariant both `SizeClasses::class_for`'s divisibility walk and
+/// [`build_size2class`]'s O(1) derivation rely on) and every entry stays a
+/// multiple of `MIN_BLOCK` (all `PAGE_ALIGNED_EXTRA` values are multiples of
+/// 512, hence of `MIN_BLOCK` = 16).
+const fn build_table() -> [usize; 48] {
+    // Build the 40-entry geometric progression first (unchanged from before
+    // task B1).
+    let mut geo = [0usize; 40];
     let mut cur = MIN_BLOCK;
     let mut i = 0;
     while i < 40 {
-        t[i] = cur;
+        geo[i] = cur;
         // Next: ceil(cur * 1.25), then round up to MIN_BLOCK, with a minimum
         // step of MIN_BLOCK.
         let next_raw = cur + cur.div_ceil(4);
@@ -192,7 +231,35 @@ const fn build_table() -> [usize; 40] {
         cur = next;
         i += 1;
     }
-    t
+
+    // Merge `geo` (40, sorted) with `PAGE_ALIGNED_EXTRA` (8, sorted, and
+    // known at construction time to be disjoint from `geo` — verified by the
+    // `no_duplicate_class_sizes` test) into one sorted 48-entry table. A
+    // plain sorted-merge (both inputs are already sorted), since `const fn`
+    // cannot call `slice::sort` (no heap, no trait objects in const
+    // context).
+    let mut out = [0usize; 48];
+    let mut gi = 0; // index into geo
+    let mut ei = 0; // index into PAGE_ALIGNED_EXTRA
+    let mut oi = 0; // index into out
+    while gi < 40 || ei < 8 {
+        let take_geo = if gi >= 40 {
+            false
+        } else if ei >= 8 {
+            true
+        } else {
+            geo[gi] < PAGE_ALIGNED_EXTRA[ei]
+        };
+        if take_geo {
+            out[oi] = geo[gi];
+            gi += 1;
+        } else {
+            out[oi] = PAGE_ALIGNED_EXTRA[ei];
+            ei += 1;
+        }
+        oi += 1;
+    }
+    out
 }
 
 /// Build the O(1) size→class lookup [`SIZE2CLASS`] **from
@@ -222,6 +289,17 @@ const fn build_size2class() -> [u8; (SMALL_MAX / MIN_BLOCK) + 1] {
     let len = SMALL_MAX / MIN_BLOCK + 1;
     let mut out = [0u8; (SMALL_MAX / MIN_BLOCK) + 1];
     let mut k = 0;
+    // `class_idx` persists across iterations of `k` (rather than restarting
+    // the scan from 0 every bucket) so the whole derivation is O(buckets +
+    // classes) total instead of O(buckets * classes). Both `need` (as a
+    // function of `k`) and `SIZE_CLASS_TABLE` are non-decreasing, so the
+    // smallest class satisfying an earlier (smaller) `need` is always a valid
+    // starting point for the next (>=) `need` — the monotone-pointer
+    // technique. This is purely a compile-time-cost fix (avoids tripping
+    // rustc's `long_running_const_eval` lint now that the table grew from 40
+    // to 48 classes); the resolved values are identical to a from-scratch
+    // linear scan per bucket.
+    let mut class_idx = 0;
     while k < len {
         // The largest size that maps to bucket k via (size-1)>>shift is
         // (k+1)*MIN_BLOCK; that is the size the resolved class must cover.
@@ -236,11 +314,11 @@ const fn build_size2class() -> [u8; (SMALL_MAX / MIN_BLOCK) + 1] {
         } else {
             SMALL_MAX
         };
-        // Find the smallest class whose block_size >= need. The table is sorted,
-        // so a linear walk settles it; this runs ONCE at compile time, not per
-        // alloc. need <= SMALL_MAX == table.last() always holds here, so the loop
-        // always breaks in-range (no panic).
-        let mut class_idx = 0;
+        // Find the smallest class whose block_size >= need. The table is
+        // sorted, so a forward walk from the previous bucket's answer
+        // settles it; this runs ONCE at compile time, not per alloc. need <=
+        // SMALL_MAX == table.last() always holds here, so the loop always
+        // breaks in-range (no panic).
         while class_idx < SIZE_CLASS_TABLE.len() {
             if SIZE_CLASS_TABLE[class_idx] >= need {
                 break;

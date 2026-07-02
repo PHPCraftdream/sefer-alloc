@@ -1045,18 +1045,45 @@ impl AllocCore {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
-        // OPT-F: in-place short-circuit for small→small realloc.
+        // OPT-F: in-place short-circuit for small→small realloc within the
+        // SAME size class.
         //
         // Preconditions (all must hold to take the fast path):
         //   1. The pointer lives in one of OUR segments (registered in the table).
         //   2. The segment kind is Small or Primordial (has a BinTable / class).
         //   3. Both the old layout and the new size classify as Small (not Large).
-        //   4. new_class_idx <= old_class_idx → the block's physical storage
-        //      already fits `new_size` bytes.
+        //   4. new_class_idx == old_class_idx → the block stays in EXACTLY the
+        //      same size class.
         //
-        // When all four hold we return `ptr` unchanged. No copy is needed
-        // because the block has not moved; no dealloc because we are reusing it.
-        // The alloc-bitmap and live-count are unaffected (the block stays live).
+        // Why `==` and NOT `<=` (the subtle correctness point): a caller that
+        // reallocs `ptr` then later frees it MUST, per the `GlobalAlloc`
+        // contract, pass the NEW layout (`new_size`, same align) to `dealloc`.
+        // Our `dealloc` (post-#114) derives the block's size class from that
+        // layout alone — NOT from where the block physically sits. A block is
+        // carved at an offset that is a multiple of ITS class's `block_size`;
+        // that offset is NOT necessarily a multiple of a *smaller* class's
+        // `block_size` (the class sizes are not divisors of one another —
+        // e.g. the 132464-byte class is not a multiple of the 4096-byte
+        // class). So if we returned `ptr` unchanged for a shrink that crosses
+        // into a smaller class (`new_class < old_class`), the eventual
+        // `dealloc` would push this block's offset onto the SMALLER class's
+        // free list, where the offset is misaligned — corrupting that free
+        // list so a later `alloc` from it returns a mis-placed pointer. This
+        // was latent until task B1 added page-aligned classes (512..16384):
+        // before B1 the shrink target for a page-aligned request classified
+        // to `None` (Large) and never hit this path, so the bug never
+        // manifested. `==` keeps the block in its own class, where the
+        // carved offset is valid for the free list `dealloc` will use.
+        //
+        // When the class matches we return `ptr` unchanged. No copy (the
+        // block has not moved), no dealloc (we reuse it); the alloc-bitmap
+        // and live-count are unaffected (the block stays live).
+        //
+        // A cross-class shrink (`new_class < old_class`) falls through to the
+        // slow path (alloc new block in the smaller class + copy + dealloc
+        // old block in its own class) — correct, just not zero-copy. Growth
+        // (`new_class > old_class`) and Large on either side also fall
+        // through.
         {
             let base = os::segment_base_of_ptr(ptr);
             if self.table.contains_base(base)
@@ -1072,13 +1099,15 @@ impl AllocCore {
                     super::size_classes::SizeClasses::class_for(old_size, align),
                     super::size_classes::SizeClasses::class_for(clamped_new, align),
                 ) {
-                    if new_class <= old_class {
-                        // The new size fits inside the existing block.
+                    if new_class == old_class {
+                        // Same class: the block's offset is valid for the
+                        // free list a later `dealloc(new_layout)` will use.
                         return ptr;
                     }
                 }
-                // Falls through: new_class > old_class (growth into a larger class),
-                // OR one of them is Large (class_for returned None). Take slow path.
+                // Falls through: new_class != old_class (grow, or cross-class
+                // shrink), OR one of them is Large (class_for returned None).
+                // Take the slow path.
             }
         }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {

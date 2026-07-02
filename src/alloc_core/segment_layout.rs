@@ -47,7 +47,7 @@ impl SegmentLayout {
     /// small-class geometry. `SIZE2CLASS` is derived from it at compile time.
     /// Exposed so tests can re-run the linear scan independently and assert the
     /// O(1) lookup never drifts from it.
-    pub const SIZE_CLASS_TABLE: [usize; 40] = super::size_classes::SIZE_CLASS_TABLE;
+    pub const SIZE_CLASS_TABLE: [usize; 48] = super::size_classes::SIZE_CLASS_TABLE;
 
     /// The O(1) size→class lookup table (compile-time-derived from
     /// [`SIZE_CLASS_TABLE`](Self::SIZE_CLASS_TABLE)). `SIZE2CLASS[k]` is the
