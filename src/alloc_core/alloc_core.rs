@@ -58,10 +58,19 @@ use super::size_classes::{AllocKind, SizeClasses};
 // ---------------------------------------------------------------------------
 
 /// Maximum number of large segments held in the free-cache between uses.
-/// 2 slots is enough to eliminate the OS round-trip for the common alloc→free→
-/// alloc pattern, without holding significant unreachable virtual memory.
+///
+/// Was 2 (Phase-1 minimal). Task D1: a workload that cycles through more than
+/// two distinct large sizes (e.g. a DBMS with several large-object classes)
+/// permanently evicted-and-recreated past 2 slots, forcing an OS round-trip
+/// on every alloc despite the cache existing. 8 slots gives real headroom for
+/// multi-size workloads while keeping the array (and the eviction scan, which
+/// is O(LARGE_CACHE_SLOTS) and only runs on the large-alloc/dealloc slow path,
+/// not the hot small-object path) cheap. The byte-budget
+/// (`large_cache_budget_bytes`) remains the primary control on total cached
+/// RSS; slot count only bounds how many *distinct* spans can be resident at
+/// once.
 #[cfg(feature = "alloc-decommit")]
-const LARGE_CACHE_SLOTS: usize = 2;
+const LARGE_CACHE_SLOTS: usize = 8;
 
 /// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
 /// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a very large cached segment
@@ -164,6 +173,15 @@ struct CachedLarge {
     /// The `usable` bytes this reservation covers — `n_segments * SEGMENT` for
     /// the original allocation. Used to match incoming requests.
     usable_size: usize,
+    /// Insertion sequence number (task D1). Monotonically increasing per
+    /// deposit, taken from `AllocCore::large_cache_seq`. The true FIFO-oldest
+    /// occupied slot is the one with the SMALLEST `seq` — NOT necessarily the
+    /// lowest array index once `LARGE_CACHE_SLOTS > 2` (with more than two
+    /// slots, hits and re-deposits no longer fill/empty strictly in index
+    /// order, so "lowest index = oldest" stops holding; see D1 in
+    /// `docs/checkpoints` history). This field restores a correct FIFO
+    /// ordering independent of slot count.
+    seq: u64,
 }
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
@@ -171,6 +189,14 @@ struct CachedLarge {
 /// [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
 #[cfg(feature = "alloc-decommit")]
 static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// TEST/DIAGNOSTIC-ONLY (task D1): process-wide large-cache HIT counter.
+/// Bumped once per `alloc_large` call that is served from `large_cache`
+/// instead of a fresh OS reservation. Read by
+/// [`AllocCore::dbg_large_cache_hits`]. Relaxed — diagnostic only, no
+/// synchronisation is implied or required.
+#[cfg(feature = "alloc-decommit")]
+static LARGE_CACHE_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// A single-threaded allocator over the self-hosted segment substrate.
 ///
@@ -226,6 +252,15 @@ pub struct AllocCore {
     /// (the field is dead at that point).
     #[cfg(feature = "alloc-decommit")]
     large_cache_used_bytes: usize,
+
+    /// Monotonic insertion-sequence counter for `large_cache` deposits (task
+    /// D1). Each deposit stamps the current value into `CachedLarge::seq` and
+    /// then increments this counter. FIFO eviction picks the occupied slot
+    /// with the smallest `seq` — the true "oldest" entry — rather than
+    /// assuming index order, which only happened to hold for the old
+    /// `LARGE_CACHE_SLOTS == 2` minimal implementation.
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_seq: u64,
 
     // ── Phase 2 — lazy decay ─────────────────────────────────────────────────
     /// Immutable decay parameters: rate, interval, headroom. Set once at
@@ -336,6 +371,8 @@ impl AllocCore {
             large_cache_budget_bytes: None,
             #[cfg(feature = "alloc-decommit")]
             large_cache_used_bytes: 0,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_seq: 0,
             #[cfg(feature = "alloc-decommit")]
             decay_config: LargeCacheDecayConfig {
                 decay_rate_bp: super::large_cache_config::DEFAULT_DECAY_RATE_PERCENT * 100,
@@ -536,11 +573,14 @@ impl AllocCore {
                         hdr_zero.magic = 0;
                         Node::write_struct(base as *mut SegmentHeader, hdr_zero);
                         // Deposit into cache and update the byte-budget counter.
+                        let seq = self.large_cache_seq;
+                        self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                         self.large_cache[slot_idx] = Some(CachedLarge {
                             reservation: stale.reservation,
                             reservation_len: stale.reservation_len,
                             base,
                             usable_size,
+                            seq,
                         });
                         self.large_cache_used_bytes += usable_size;
                         return;
@@ -1705,6 +1745,8 @@ impl AllocCore {
             }
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache[idx].take().unwrap();
+                // Diagnostic (task D1): count this as a cache hit.
+                LARGE_CACHE_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
@@ -1878,11 +1920,14 @@ impl AllocCore {
                 let mut hdr_zero = hdr;
                 hdr_zero.magic = 0;
                 Node::write_struct(base as *mut SegmentHeader, hdr_zero);
+                let seq = self.large_cache_seq;
+                self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                 self.large_cache[slot_idx] = Some(CachedLarge {
                     reservation: hdr.reservation,
                     reservation_len: hdr.reservation_len,
                     base,
                     usable_size,
+                    seq,
                 });
                 self.large_cache_used_bytes += usable_size;
                 return;
@@ -1967,15 +2012,18 @@ impl AllocCore {
     }
 
     /// FIFO-evict cached spans until at least `min_bytes` of cache have been
-    /// released to the OS, or the cache is empty. Slots are scanned from index
-    /// 0 upward (slot 0 = "oldest", the FIFO invariant for `LARGE_CACHE_SLOTS
-    /// == 2`). The OS reservation of each evicted span is released immediately.
+    /// released to the OS, or the cache is empty. Each iteration evicts the
+    /// occupied slot with the smallest `seq` (task D1: true insertion-order
+    /// FIFO, not array-index order — see the `CachedLarge::seq` doc comment
+    /// for why index order stopped being a valid proxy once
+    /// `LARGE_CACHE_SLOTS > 2`). The OS reservation of each evicted span is
+    /// released immediately.
     #[cfg(feature = "alloc-decommit")]
     fn evict_at_least(&mut self, min_bytes: usize) {
         let mut released = 0usize;
         while released < min_bytes {
-            // Find the next occupied slot (lowest index = oldest, FIFO).
-            let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+            // Find the occupied slot with the smallest seq (true FIFO-oldest).
+            let Some(victim_idx) = self.oldest_occupied_slot() else {
                 break; // Cache is empty.
             };
             let victim = self.large_cache[victim_idx].take().unwrap();
@@ -2052,9 +2100,25 @@ impl AllocCore {
 
     // ── end Phase 2 ──────────────────────────────────────────────────────────
 
-    /// Evict the FIFO-oldest cached entry (slot 0 first, then slot 1) and
-    /// release its OS reservation. Returns `true` if an entry was evicted,
-    /// `false` if the cache was already empty.
+    /// Find the occupied slot with the smallest `seq` — the true FIFO-oldest
+    /// entry (task D1). Returns `None` if the cache is empty. `O(LARGE_CACHE_SLOTS)`;
+    /// only called on the large-alloc/dealloc slow paths (never the small hot
+    /// path), so the linear scan is not performance-sensitive even with 8
+    /// slots.
+    #[cfg(feature = "alloc-decommit")]
+    fn oldest_occupied_slot(&self) -> Option<usize> {
+        self.large_cache
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.as_ref().map(|c| (i, c.seq)))
+            .min_by_key(|&(_, seq)| seq)
+            .map(|(i, _)| i)
+    }
+
+    /// Evict the FIFO-oldest cached entry (smallest `seq`, task D1 — see
+    /// [`oldest_occupied_slot`](Self::oldest_occupied_slot)) and release its
+    /// OS reservation. Returns `true` if an entry was evicted, `false` if the
+    /// cache was already empty.
     ///
     /// Used by the admission policy when either the byte-budget would
     /// overflow or all slots are occupied (the loop in the large-`dealloc`
@@ -2062,13 +2126,9 @@ impl AllocCore {
     /// empty). The victim was unregistered from the segment table on
     /// deposit, so this function only releases the OS reservation and
     /// updates the byte-budget counter.
-    ///
-    /// FIFO order: slot 0 is treated as "oldest" (it is always filled before
-    /// slot 1 for `LARGE_CACHE_SLOTS == 2`). A future phase may improve this
-    /// with insertion timestamps or an LRU bit.
     #[cfg(feature = "alloc-decommit")]
     fn evict_one_oldest(&mut self) -> bool {
-        let Some(victim_idx) = self.large_cache.iter().position(|s| s.is_some()) else {
+        let Some(victim_idx) = self.oldest_occupied_slot() else {
             return false;
         };
         let victim = self.large_cache[victim_idx].take().unwrap();
@@ -2087,6 +2147,16 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_used(&self) -> usize {
         self.large_cache_used_bytes
+    }
+
+    /// TEST/DIAGNOSTIC-ONLY (task D1): process-wide count of `alloc_large`
+    /// calls served from `large_cache` (cache hits) since process start.
+    /// Relaxed load of [`LARGE_CACHE_HITS`] — diagnostic only.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_large_cache_hits() -> u64 {
+        LARGE_CACHE_HITS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// TEST-ONLY (Phase 1 large-cache budget): return the `usable_size` of

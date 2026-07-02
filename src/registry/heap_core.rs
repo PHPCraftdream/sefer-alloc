@@ -608,11 +608,16 @@ impl HeapCore {
                     // `refill_class_stamped` because borrowing `self.core`
                     // and `self.tcache.slots[c]` separately avoids a
                     // double-mutable-borrow conflict on `self`.
-                    let n = self.core.refill_class(
-                        c,
-                        super::tcache::REFILL_N,
-                        &mut self.tcache.slots[c],
-                    );
+                    //
+                    // D3: the refill amount is now a per-class BYTE budget,
+                    // not the fixed `TCACHE_CAP` for every class — see
+                    // `refill_n_for_class`. Small classes still get the full
+                    // `TCACHE_CAP` (unchanged behaviour); large small-classes
+                    // (block_size approaching SMALL_MAX) get fewer blocks per
+                    // refill, so one magazine miss cannot park megabytes in a
+                    // single idle thread's cache.
+                    let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
+                    let n = self.core.refill_class(c, want, &mut self.tcache.slots[c]);
                     if n == 0 {
                         return core::ptr::null_mut(); // true OOM
                     }
@@ -627,8 +632,9 @@ impl HeapCore {
                             self.stamp_segment_owner(p);
                         }
                     }
-                    // P7: bump refill streak. Each refill = REFILL_N allocs
-                    // without a free for this class (magazine was empty).
+                    // P7: bump refill streak. Each refill = `want` allocs
+                    // (D3 per-class byte budget) without a free for this
+                    // class (magazine was empty).
                     self.tcache.alloc_streak[c] = self.tcache.alloc_streak[c].saturating_add(1);
 
                     // P7: if streak just reached BULK_THRESHOLD, flush the
@@ -1133,6 +1139,31 @@ impl HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub fn dbg_tcache_count(&self, c: usize) -> u16 {
         self.tcache.count[c]
+    }
+
+    /// TEST-ONLY (task D3): resolve the size class index for `layout`, the
+    /// same classification `alloc` uses to index `tcache.slots`/`count`.
+    /// Delegates to [`AllocCore::dbg_layout_class_for`]; exposed at the
+    /// `HeapCore` level because `core` is `pub(crate)` and external
+    /// integration tests only see `HeapCore`/`HeapRegistry`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_class_for(&self, layout: Layout) -> Option<usize> {
+        self.core.dbg_layout_class_for(layout)
+    }
+
+    /// TEST-ONLY (task D3): the per-class refill amount `alloc`'s
+    /// magazine-miss path actually uses for class `c` — i.e.
+    /// `super::tcache::refill_n_for_class(SizeClasses::block_size(c))`, the
+    /// exact expression `alloc` evaluates. Lets a test assert the byte-budget
+    /// clamp fired for a given class without duplicating (and risking
+    /// drifting from) the formula.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_refill_n_for_class(&self, c: usize) -> usize {
+        super::tcache::refill_n_for_class(crate::alloc_core::size_classes::SizeClasses::block_size(
+            c,
+        ))
     }
 
     /// TEST-ONLY (P7): read the alloc streak counter for class `c`.

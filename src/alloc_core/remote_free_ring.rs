@@ -127,6 +127,20 @@ use core::sync::atomic::Ordering;
 
 use super::node::Node;
 
+/// TEST/DIAGNOSTIC-ONLY (task D2): process-wide count of ring-push overflows
+/// (a cross-thread free that found its target segment's ring full and
+/// discarded the block — a sound but observable bounded leak; see "Overflow
+/// semantics" above). Bumped in [`RemoteFreeRing::push`] alongside the
+/// existing per-segment `overflow` cursor-block counter. The per-segment
+/// counter ([`RemoteFreeRing::overflow_count`]) is exact for one segment but
+/// requires the caller to already hold a `RemoteFreeRing` handle (i.e. know
+/// which segment to ask); this process-wide counter gives O(1) visibility
+/// into "did overflow happen anywhere, ever" without walking the segment
+/// table — the minimum bar for production observability (feeds Phase E
+/// stats). Relaxed: diagnostic only, no synchronisation implied.
+#[doc(hidden)]
+pub static DBG_RING_OVERFLOW: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// Sentinel slot value meaning "this slot carries no offset" (either
 /// not-yet-published by a producer, or already drained by the consumer). A real
 /// block offset is always `< SEGMENT` (`1 << 22`), so `u32::MAX` is unambiguous.
@@ -318,8 +332,11 @@ impl RemoteFreeRing {
             // slot freed by a drain becomes observable, opening space).
             let h = self.head().load(Ordering::Acquire);
             if t.wrapping_sub(h) >= RING_CAP as u32 {
-                // Ring full: bounded leak. Count it (diagnostic) and bail.
+                // Ring full: bounded leak. Count it (diagnostic, both the
+                // per-segment cursor-block counter AND the process-wide D2
+                // counter) and bail.
                 let _ = self.overflow().fetch_add(1, Ordering::Relaxed);
+                DBG_RING_OVERFLOW.fetch_add(1, Ordering::Relaxed);
                 return Err(PushOverflow);
             }
             // Reserve slot `t`: CAS tail t → t+1. AcqRel on success — the

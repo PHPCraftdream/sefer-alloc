@@ -17,10 +17,13 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 /// streaks (the bulk microbench pattern).
 ///
 /// The streak counts consecutive magazine **misses** (refills), NOT
-/// individual allocs. Each refill pulls `REFILL_N` (= `TCACHE_CAP` = 16)
-/// blocks. So `BULK_THRESHOLD = 3` means 3 consecutive refills without an
-/// intervening overflow (= 48 allocs). This keeps the magazine HIT path
-/// (the churn hot path) completely streak-free — no read, no write.
+/// individual allocs. Each refill pulls up to `TCACHE_CAP` (= 16) blocks for
+/// small classes, or fewer for large small-classes under the D3 per-class
+/// byte budget (see [`refill_n_for_class`]). So `BULK_THRESHOLD = 3` means 3
+/// consecutive refills without an intervening overflow (up to 48 allocs for
+/// small classes, fewer for byte-budget-limited large classes). This keeps
+/// the magazine HIT path (the churn hot path) completely streak-free — no
+/// read, no write.
 ///
 /// Only the refill (miss) and dealloc overflow paths touch the streak,
 /// and both are already slow paths.
@@ -49,10 +52,60 @@ pub(crate) const BULK_LOW_THRESHOLD: u8 = 0;
 pub(crate) const TCACHE_KEY: usize = 0x53_45_46_45_52_43_41_43;
 
 /// Magazine capacity per size class. Start: 16. Tuned in P6.
+///
+/// This is the physical size of the `slots[c]` array — a COMPILE-TIME bound,
+/// shared by every class regardless of `block_size`. It is NOT the per-class
+/// refill amount (see [`refill_n_for_class`], task D3): a class may use fewer
+/// than `TCACHE_CAP` slots on a given refill, but the array itself must be
+/// sized for the largest per-class refill (`TCACHE_CAP` itself, for the
+/// smallest classes) plus headroom for `push`-side accumulation up to a full
+/// magazine before an overflow flush.
 pub(crate) const TCACHE_CAP: usize = 16;
 
-/// Refill batch size (how many blocks refill_class pulls on a magazine miss).
-pub(crate) const REFILL_N: usize = TCACHE_CAP;
+/// Per-class byte budget for a magazine refill (task D3). mimalloc-style:
+/// cap the bytes a single refill parks in one thread's magazine, not just the
+/// block COUNT. With `SMALL_MAX` around 253 KiB, a large small-class refilled
+/// at a fixed `TCACHE_CAP` (= 16) block count would park up to
+/// `16 * ~253 KiB` ≈ 4 MiB in a single thread's magazine for ONE size class —
+/// real RSS parked in a per-thread cache that may sit idle. 64 KiB keeps a
+/// refill's footprint bounded while leaving small classes (whose blocks are
+/// tiny) at their old fixed-`TCACHE_CAP` behaviour (the byte budget for them
+/// comfortably exceeds `TCACHE_CAP * block_size`).
+///
+/// Task D3 replaced the former unconditional `REFILL_N = TCACHE_CAP` constant
+/// (used for every class regardless of `block_size`) with this budget, read
+/// through [`refill_n_for_class`].
+pub(crate) const REFILL_BYTE_BUDGET: usize = 64 * 1024;
+
+/// Compute the refill amount (number of blocks) for a class with the given
+/// `block_size`, honouring both `REFILL_BYTE_BUDGET` and the physical
+/// `TCACHE_CAP` array-size ceiling (task D3).
+///
+/// `refill_n = clamp(REFILL_BYTE_BUDGET / block_size, 1, TCACHE_CAP)`
+///
+/// - Never 0: even a class whose single block exceeds the byte budget still
+///   gets 1 block per refill (a magazine miss must make progress).
+/// - Never more than `TCACHE_CAP`: the physical `slots[c]` array bound.
+/// - Small classes (`block_size` small relative to the budget) get the full
+///   `TCACHE_CAP`, matching the pre-D3 behaviour exactly (no regression for
+///   the common small-object case).
+/// - Large small-classes (block_size approaching `SMALL_MAX`) get fewer
+///   blocks per refill, bounding the RSS a single magazine miss parks in one
+///   thread's cache.
+#[inline]
+pub(crate) const fn refill_n_for_class(block_size: usize) -> usize {
+    if block_size == 0 {
+        return TCACHE_CAP; // defensive; block_size is always > 0 in practice.
+    }
+    let by_budget = REFILL_BYTE_BUDGET / block_size;
+    if by_budget == 0 {
+        1
+    } else if by_budget > TCACHE_CAP {
+        TCACHE_CAP
+    } else {
+        by_budget
+    }
+}
 
 /// Flush batch size on magazine overflow. Half-flush hysteresis: leave
 /// `CAP - FLUSH_N` entries in the magazine after a flush, avoiding
