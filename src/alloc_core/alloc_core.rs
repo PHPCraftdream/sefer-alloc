@@ -1784,6 +1784,89 @@ impl AllocCore {
         Node::deref(base, hdr_aligned)
     }
 
+    /// Reclaim a Large/huge segment that was freed by a REMOTE thread (0.3.0,
+    /// task A1). `base` MUST be a currently-registered `Large`-kind segment
+    /// base owned by this `AllocCore` — its header's `magic`/`kind` are still
+    /// intact (a cross-thread free never zeroes them; only the OWNER's
+    /// own-thread `dealloc` does that, on the path this function replaces for
+    /// the remote case).
+    ///
+    /// Removes `base` from the segment table (freeing its slot for reuse —
+    /// this is the fix for the permanent `SegmentTable` slot pin described in
+    /// the A1 bug) and either:
+    /// - (`alloc-decommit`) deposits the reservation into `large_cache`, same
+    ///   admission policy as the own-thread large-dealloc path, so a
+    ///   same-size `alloc_large` can reuse it without an OS round-trip; or
+    /// - (no `alloc-decommit`) releases the OS reservation immediately via
+    ///   `os::release_segment`, matching the own-thread path's behaviour
+    ///   without the cache (own-thread `dealloc` there only zeroes the magic
+    ///   and defers the release to `Drop`; here there is no `Drop` moment to
+    ///   defer to mid-lifetime, and deferring would re-introduce the leak —
+    ///   the slot must be freed NOW so `SegmentTable` capacity is not
+    ///   permanently consumed by a segment nobody can address any more, since
+    ///   we already removed it from the table above).
+    ///
+    /// Called by [`drain_large_deferred_free`](super::super::registry::heap_core::HeapCore)
+    /// (via the `HeapCore` cross-thread reclaim path) on the owner's
+    /// `alloc_large` slow-path, once per queued base.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn reclaim_large_segment(&mut self, base: *mut u8) {
+        let hdr = SegmentHeader::read_at(base);
+        // Remove from the table FIRST (frees the slot for reuse regardless of
+        // which branch below runs) — mirrors the own-thread cache-deposit
+        // ordering in `dealloc`'s Large branch.
+        self.table.unregister(base);
+
+        #[cfg(feature = "alloc-decommit")]
+        {
+            self.maybe_decay_large_cache();
+            let hdr_aligned = align_up(
+                core::mem::size_of::<SegmentHeader>(),
+                hdr.large_align.max(super::os::PAGE),
+            );
+            let n_segments =
+                (hdr_aligned + align_up(hdr.large_size, hdr.large_align)).div_ceil(SEGMENT);
+            let usable_size = n_segments * SEGMENT;
+
+            let mut admitted: Option<usize> = None;
+            loop {
+                let free_slot = self.large_cache.iter().position(|s| s.is_none());
+                let budget_ok = self
+                    .large_cache_budget_bytes
+                    .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
+                if let Some(idx) = free_slot {
+                    if budget_ok {
+                        admitted = Some(idx);
+                        break;
+                    }
+                }
+                if !self.evict_one_oldest() {
+                    break;
+                }
+            }
+
+            if let Some(slot_idx) = admitted {
+                let mut hdr_zero = hdr;
+                hdr_zero.magic = 0;
+                Node::write_struct(base as *mut SegmentHeader, hdr_zero);
+                self.large_cache[slot_idx] = Some(CachedLarge {
+                    reservation: hdr.reservation,
+                    reservation_len: hdr.reservation_len,
+                    base,
+                    usable_size,
+                });
+                self.large_cache_used_bytes += usable_size;
+                return;
+            }
+        }
+
+        // No `alloc-decommit` cache (or cache admission declined): release
+        // the OS reservation immediately. The slot is already unregistered
+        // above, so there is no dangling table entry pointing at unmapped
+        // memory.
+        os::release_segment(hdr.reservation, hdr.reservation_len);
+    }
+
     // ── Phase 2 — lazy decay helpers ─────────────────────────────────────────
 
     /// Check whether enough wall-clock time has elapsed since the last decay

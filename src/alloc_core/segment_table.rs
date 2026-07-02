@@ -206,7 +206,19 @@ impl SegmentTable {
     ///   `drop` will NOT release it (the slot is NULL, so `bases()` skips it).
     /// - The caller MUST ensure the reservation is eventually released (via
     ///   `os::release_segment` in the cache or `Drop` walk).
-    #[cfg(feature = "alloc-decommit")]
+    ///
+    /// Un-gated from `alloc-decommit` (0.3.0, task A1): the cross-thread
+    /// large-segment reclaim path (`AllocCore::reclaim_large_segment`) needs
+    /// to free a table slot for reuse regardless of whether `alloc-decommit`
+    /// is enabled — without it, a segment freed by a remote thread could
+    /// never be unregistered, permanently pinning a `SegmentTable` slot (and,
+    /// pre-fix, the whole segment). The function body is pure safe pointer
+    /// arithmetic through the `node`/hash seams — nothing decommit-specific —
+    /// so lifting the gate is purely additive.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
     pub(crate) fn unregister(&mut self, base: *mut u8) {
         let count = self.count as usize;
         for i in 0..count {

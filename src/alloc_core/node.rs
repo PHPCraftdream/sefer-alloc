@@ -384,4 +384,36 @@ impl Node {
         // from any thread is race-free.
         unsafe { &*ptr }
     }
+
+    /// Return a `&'static AtomicPtr<u8>` view over the pointee of `ptr`.
+    /// 0.3.0 (task A1): used by [`HeapCore::push_large_deferred_free`]
+    /// (`registry::heap_core`) to deref a REMOTE `owner_thread_free_head()`
+    /// pointer (a `*const AtomicPtr<u8>` obtained from another heap's segment
+    /// header stamp) so the cross-thread Large-segment reclaim path can CAS
+    /// onto it without an `unsafe` block outside the allowed seam list —
+    /// `registry::heap_core` is `#![forbid]`/`#![deny(unsafe_code)]` (it is
+    /// NOT one of the whitelisted seam modules in `src/lib.rs`), so the
+    /// pointer-to-reference conversion is centralised here instead.
+    ///
+    /// [`HeapCore::push_large_deferred_free`]: crate::registry::heap_core::HeapCore
+    ///
+    /// # Caller's contract
+    ///
+    /// `ptr` MUST be the address of a live `AtomicPtr<u8>` field inside a
+    /// `HeapCore` that lives in the registry's `'static` slot array (the
+    /// caller derives it from `thread_free_head()`/`owner_thread_free_at`,
+    /// both of which only ever produce such addresses). The slot array is
+    /// `'static` for the process lifetime, so the returned reference's
+    /// lifetime is sound. `AtomicPtr` is `Sync`, so shared atomic access from
+    /// any thread is race-free.
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn atomic_ptr_ref(
+        ptr: *const core::sync::atomic::AtomicPtr<u8>,
+    ) -> &'static core::sync::atomic::AtomicPtr<u8> {
+        // SAFETY: caller's contract above — `ptr` is the stable address of a
+        // live `AtomicPtr<u8>` field inside a `'static`-lifetime `HeapCore`
+        // registry slot.
+        unsafe { &*ptr }
+    }
 }

@@ -120,7 +120,20 @@ alloc-decommit = ["alloc-core"]
 # (1024 slots, append-only) is the hard ceiling on cumulative segment
 # allocations; `alloc-decommit` lets empty segments be recycled (#60),
 # lifting that ceiling. Add this feature for any long-running deployment.
-fastbin = ["alloc-global"]
+# Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
+# `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
+# `alloc-xthread`, a cross-thread free of a small block still has to land
+# SOMEWHERE — with `fastbin` alone (the old feature set) there was no
+# ownership-checked routing path, so a naive cross-thread free would have
+# written directly into the magazine/free-list of a heap it does not own: an
+# unchecked, unsynchronised write into another thread's private data
+# structure — a genuine data race, not merely a missed optimisation.
+# `alloc-xthread` is what gives `dealloc_routing` the owner-identity stamp
+# (`owner_thread_free`) and the per-segment `RemoteFreeRing` that make a
+# cross-thread free safe to route at all; `fastbin` must never be built
+# without it. See also the `compile_error!` defence-in-depth guard in
+# `src/lib.rs`.
+fastbin = ["alloc-global", "alloc-xthread"]
 production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread

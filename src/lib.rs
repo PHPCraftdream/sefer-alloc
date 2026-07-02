@@ -129,6 +129,27 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
 
+// 0.3.0 (task A2) — defence-in-depth: `fastbin` is unsound without
+// `alloc-xthread`. `Cargo.toml`'s `fastbin = ["alloc-global", "alloc-xthread"]`
+// feature-unification is the primary fix (any normal `--features fastbin`
+// build pulls `alloc-xthread` in automatically); this `compile_error!` is a
+// belt-and-suspenders guard for the unlikely case someone builds with
+// `--no-default-features --features fastbin` against a stale `Cargo.toml` /
+// vendored copy, or a future edit accidentally drops the dependency again.
+// Without `alloc-xthread`, a cross-thread free of a small block has no
+// ownership-checked routing path (`dealloc_routing`'s owner-identity stamp
+// and the per-segment `RemoteFreeRing` both live behind `alloc-xthread`), so
+// a naive cross-thread free would write directly into another thread's
+// private magazine/free-list — an unsynchronised data race, not a
+// correctness nicety.
+#[cfg(all(feature = "fastbin", not(feature = "alloc-xthread")))]
+compile_error!(
+    "sefer-alloc: `fastbin` requires `alloc-xthread` (cross-thread free \
+     without it races the per-thread magazine/free-list — unsound). Enable \
+     both, e.g. `--features fastbin,alloc-xthread`, or use the `production` \
+     feature bundle."
+);
+
 // Phase 1: typed handle store, extracted to `sefer-region`. Re-exported here
 // for backward compatibility — existing users of `sefer_alloc::{Region, Handle,
 // SyncRegion}` continue to work unchanged. New consumers who want ONLY the

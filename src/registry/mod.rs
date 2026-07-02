@@ -48,6 +48,9 @@ pub(crate) mod tcache;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub use heap_core::DBG_LARGE_XTHREAD_RECLAIMED;
 #[doc(hidden)]
 pub use heap_registry::HeapRegistry;
 #[doc(hidden)]

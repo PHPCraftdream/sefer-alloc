@@ -61,6 +61,22 @@ use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SEGMENT_MAGIC};
 use crate::alloc_core::{node::Node, AllocCore};
 
+/// TEST-ONLY (0.3.0, task A1): process-wide count of Large/huge segments
+/// reclaimed via the cross-thread deferred-free path
+/// ([`HeapCore::drain_large_deferred_free`]). Bumped once per segment
+/// successfully drained and handed to
+/// [`AllocCore::reclaim_large_segment`](crate::alloc_core::AllocCore::reclaim_large_segment).
+///
+/// Diagnostic only (relaxed, like `DECOMMIT_CALLS` in `alloc_core.rs`), `pub`
+/// so `tests/regression_xthread_large_free_no_leak.rs` can assert reclaim
+/// actually happened (counterfactual: with the A1 fix reverted — `return` in
+/// `dealloc_routing`'s Large branch — this counter stays zero and the
+/// regression test goes red).
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// The thin, slot-resident heap value.
 ///
 /// Lives inside a [`HeapSlot`](super::heap_slot::HeapSlot)'s `UnsafeCell` and
@@ -95,6 +111,70 @@ pub struct HeapCore {
     /// it.
     ///
     /// Only present under `alloc-xthread` (the cross-thread feature).
+    /// 0.3.0 (task A1): ALSO doubles as the head of this heap's per-heap
+    /// deferred-free Treiber stack for Large/huge segments freed by a
+    /// REMOTE thread.
+    ///
+    /// **Background:** under the Phase 12.5 shard model the intrusive TFS
+    /// this field was originally built for is gone — cross-thread frees of
+    /// SMALL blocks route through each segment's `RemoteFreeRing`, not
+    /// through this head. `thread_free` therefore serves ONLY as an identity
+    /// stamp (`owner_thread_free_at(base) == &heap.thread_free` is how a
+    /// remote freer recognises "this segment belongs to that heap" — see
+    /// `dealloc_routing`); its `AtomicPtr<u8>` VALUE was otherwise always
+    /// null and unused.
+    ///
+    /// **The A1 leak this reuse fixes:** `dealloc_routing`'s Large branch
+    /// used to be a bare `return` (a permanent no-op) whenever a Large
+    /// segment was freed by a thread other than its owner — the segment
+    /// (whole 4+ MiB, or more for an oversized allocation) was never
+    /// released and its `SegmentTable` slot was never recycled: a silent,
+    /// permanent leak under any workload that allocates-here/frees-there for
+    /// large blocks (e.g. async runtimes migrating tasks across worker
+    /// threads).
+    ///
+    /// **The fix:** since `thread_free` is idle, we press it into service as
+    /// a SECOND role — a Treiber-stack head over segment BASES (not small
+    /// blocks). A remote free of a Large segment now pushes the segment's
+    /// `base` onto this stack (via
+    /// [`push_large_deferred_free`](Self::push_large_deferred_free)) instead
+    /// of no-op'ing. The OWNER thread drains the stack lazily, on its own
+    /// `alloc_large` slow path (via
+    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free)),
+    /// before reserving a fresh segment — so a cross-thread-freed large
+    /// segment is recycled (via `AllocCore::reclaim_large_segment`, which
+    /// either deposits it in the `alloc-decommit` large-cache or releases it
+    /// to the OS) the next time this heap does a large allocation.
+    ///
+    /// **No conflation with the identity-stamp role:** the identity check
+    /// (`owner_tf == our_head`, comparing the `*const AtomicPtr<u8>`
+    /// ADDRESS) never dereferences the pointed-to `AtomicPtr<u8>` VALUE, so
+    /// stuffing a segment base into that value cell does not corrupt the
+    /// stamp comparison — the two roles use disjoint parts of the same word
+    /// (the address is the identity; the pointee is the stack head).
+    ///
+    /// **Structurally identical to** the Phase 12.4
+    /// `Registry::abandoned_segs` intrusive Treiber stack
+    /// (`push_abandoned_segment_into`/`pop_abandoned_segment` in
+    /// `heap_registry.rs`) — same push/CAS/pop shape — but PER-HEAP (this
+    /// field, not the global registry head) and reusing each segment's
+    /// `next_abandoned` header field as the intrusive link. This is safe to
+    /// reuse: `next_abandoned` is otherwise only written by the global
+    /// abandon/adopt substrate, and Large segments are NEVER abandoned onto
+    /// that global stack (the shard model keeps large segments with their
+    /// allocating heap; `abandon_segments` only walks a heap's segments on
+    /// the now-dormant Phase 12.4 thread-exit path, and even there a Large
+    /// segment abandoned mid-flight would simply have its `next_abandoned`
+    /// overwritten again — no aliasing hazard, since a segment cannot be on
+    /// both stacks at once in the shard model's production path). No ABA tag
+    /// is needed here (unlike the global stack): only the OWNER thread ever
+    /// pops from this stack (single consumer), so the classic multi-popper
+    /// ABA race does not apply; multiple REMOTE threads may push
+    /// concurrently (multi-producer), which a plain CAS-loop push handles
+    /// without a tag.
+    ///
+    /// `null` = empty stack (steady state — most workloads never hit this
+    /// path).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
 
@@ -280,6 +360,97 @@ impl HeapCore {
         &self.thread_free as *const AtomicPtr<u8>
     }
 
+    /// 0.3.0 (task A1): push a Large/huge segment `base` onto the OWNING
+    /// heap's deferred-free stack, given `head` — the owner's
+    /// `thread_free_head()` (a `*const AtomicPtr<u8>`, obtained by a REMOTE
+    /// freer from `owner_thread_free_at(segment_base)`). Called from
+    /// [`dealloc_routing`](Self::dealloc_routing) in place of the old
+    /// permanent-leak no-op.
+    ///
+    /// Classic Treiber push: read `base`'s `next_abandoned` link (repurposed
+    /// here as this stack's intrusive link — see the field doc on
+    /// `thread_free`), point it at the current head, CAS the head to `base`.
+    /// Multi-producer (any number of remote threads may race this push);
+    /// single-consumer (only the owner ever pops, in
+    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free)), so no
+    /// ABA tag is needed — a pop can only be concurrent with OTHER pushes,
+    /// never with another pop.
+    ///
+    /// # Safety (informal — no `unsafe` used; documented for the concurrency
+    /// reasoning, not a soundness escape hatch)
+    ///
+    /// `head` must be a live owner's `thread_free_head()` (guaranteed by the
+    /// caller: `dealloc_routing` reads it fresh from the segment header on
+    /// every call). `base` must be a currently-registered `Large`-kind
+    /// segment base (guaranteed by the caller: only reached after
+    /// `kind_at(base) == SegmentKind::Large`).
+    #[cfg(feature = "alloc-xthread")]
+    fn push_large_deferred_free(head: *const AtomicPtr<u8>, base: *mut u8) {
+        let next_atomic = SegmentMeta::new(base).next_abandoned_atomic();
+        // `heap_core.rs` is NOT an allowed `unsafe` seam (see `src/lib.rs`'s
+        // seam whitelist), so the pointer-to-reference deref is delegated to
+        // `Node::atomic_ptr_ref` (the `alloc_core::node` seam), same
+        // discipline as `next_abandoned_atomic`/`owner_state_atomic`.
+        let head_ref: &AtomicPtr<u8> = Node::atomic_ptr_ref(head);
+        let mut cur = head_ref.load(Ordering::Acquire);
+        loop {
+            // Link `base` to the current head (or the "empty" sentinel,
+            // `core::ptr::null_mut()`, encoded as `ABANDONED_TAIL` in the
+            // link word so a later pop can distinguish "no next" from a real
+            // base — a real base is never null).
+            let next_link = if cur.is_null() {
+                crate::alloc_core::segment_header::ABANDONED_TAIL
+            } else {
+                cur as u64
+            };
+            next_atomic.store(next_link, Ordering::Release);
+            match head_ref.compare_exchange(cur, base, Ordering::Release, Ordering::Relaxed) {
+                Ok(_) => return,
+                Err(actual) => cur = actual,
+            }
+        }
+    }
+
+    /// 0.3.0 (task A1): drain this heap's deferred-free stack, reclaiming
+    /// every queued Large/huge segment base via
+    /// [`AllocCore::reclaim_large_segment`]. Called by the OWNER on its own
+    /// `alloc_large` slow path, before reserving a fresh segment, so a
+    /// cross-thread-freed large segment becomes available for reuse (via the
+    /// `alloc-decommit` large-cache) or is released to the OS immediately
+    /// (without `alloc-decommit`) — either way its `SegmentTable` slot is
+    /// freed for reuse (the fix for the A1 permanent-leak bug).
+    ///
+    /// Pop loop: single-consumer (only the owner calls this), so a plain pop
+    /// — no ABA tag, no CAS-retry-on-pop needed beyond racing concurrent
+    /// PUSHERS (remote frees can still be arriving concurrently; the CAS
+    /// handles that).
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn drain_large_deferred_free(&mut self) {
+        loop {
+            let cur = self.thread_free.load(Ordering::Acquire);
+            if cur.is_null() {
+                return;
+            }
+            let meta = SegmentMeta::new(cur);
+            let next_link = meta.next_abandoned_atomic().load(Ordering::Acquire);
+            let next = if next_link == crate::alloc_core::segment_header::ABANDONED_TAIL {
+                core::ptr::null_mut()
+            } else {
+                next_link as *mut u8
+            };
+            match self
+                .thread_free
+                .compare_exchange(cur, next, Ordering::Acquire, Ordering::Relaxed)
+            {
+                Ok(_) => {
+                    self.core.reclaim_large_segment(cur);
+                    DBG_LARGE_XTHREAD_RECLAIMED.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(_) => continue, // a concurrent push raced us — retry with fresh head
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Allocation entry points (12.3). Delegate to the substrate; under
     // `alloc-xthread` also drain the TFS and stamp segment ownership.
@@ -303,6 +474,26 @@ impl HeapCore {
     #[must_use]
     #[inline(always)]
     pub fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
+        // deferred-free stack before a Large-classified request reaches
+        // `AllocCore::alloc_large`'s slow path. Mirrors the RemoteFreeRing's
+        // lazy-drain discipline (see the comment block below) but is scoped
+        // to ONLY the Large-request case (checked here, not inside
+        // `AllocCore`, because `AllocCore` has no `HeapCore` back-reference
+        // to drain from) — small-classified requests pay zero cost for this
+        // check beyond the one `class_for` call already needed below.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            let size = layout
+                .size()
+                .max(crate::alloc_core::size_classes::MIN_BLOCK);
+            if crate::alloc_core::size_classes::SizeClasses::class_for(size, layout.align())
+                .is_none()
+            {
+                self.drain_large_deferred_free();
+            }
+        }
+
         // Cross-thread-freed blocks are reclaimed LAZILY, inside
         // `AllocCore::find_segment_with_free` (the alloc-slow-path drains each
         // owned segment's `RemoteFreeRing` → `reclaim_offset`). We do NOT drain
@@ -645,6 +836,16 @@ impl HeapCore {
             return;
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            // 0.3.0 (task A1): used to be a bare `return` here — a PERMANENT
+            // leak. The whole segment (4+ MiB, or more for an oversized
+            // allocation) was never released and its `SegmentTable` slot was
+            // never recycled, because no code path ever revisited a
+            // cross-thread-freed Large segment. Fix: push `base` onto the
+            // OWNING heap's deferred-free stack (`owner_tf`, already read
+            // above — the owner's `thread_free_head()`); the owner reclaims
+            // it lazily on its next `alloc_large` slow path (see
+            // `drain_large_deferred_free`, called from `alloc`).
+            Self::push_large_deferred_free(owner_tf, base);
             return;
         }
         // Variant-2: push (offset, class) to the per-segment ring (block bytes
