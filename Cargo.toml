@@ -1,6 +1,6 @@
 [package]
 name = "sefer-alloc"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 # Matches the resocks5 ecosystem floor; the core is plain safe Rust and will
 # build on much older toolchains, but we pin a known-good MSRV from day one.

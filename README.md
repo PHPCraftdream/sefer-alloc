@@ -25,7 +25,7 @@
 
 ```toml
 [dependencies]
-sefer-alloc = { version = "0.2", features = ["production"] }
+sefer-alloc = { version = "0.3", features = ["production"] }
 ```
 
 Or via cargo:
@@ -144,7 +144,7 @@ assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 ```
 
 For `no_std` + `alloc` targets, disable the `std` feature:
-`sefer-alloc = { version = "0.2", default-features = false }`. The
+`sefer-alloc = { version = "0.3", default-features = false }`. The
 default build is `#![forbid(unsafe_code)]` at the top; the only
 `unsafe` comes from `slotmap`'s audited core wrapped by a thin typed
 membrane.

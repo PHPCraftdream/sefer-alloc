@@ -17,7 +17,7 @@ for multi-thread / long-running processes is `production`:
 
 ```toml
 [dependencies]
-sefer-alloc = { version = "0.2", features = ["production"] }
+sefer-alloc = { version = "0.3", features = ["production"] }
 ```
 
 `production` is an alias for `alloc-global + alloc-xthread + alloc-decommit
@@ -139,7 +139,7 @@ trimming every 200 ms:
 ```toml
 # Cargo.toml
 [dependencies]
-sefer-alloc = { version = "0.2", features = ["production"] }
+sefer-alloc = { version = "0.3", features = ["production"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

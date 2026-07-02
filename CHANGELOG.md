@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-30
+
+Post-0.2.1 hardening pass — six phases (A–F), each independently reviewed,
+counterfactual-verified, and committed.
+
+### Fixed
+
+- **A1 — permanent leak: cross-thread free of a Large/huge segment.** A
+  remote free of a Large segment no-op'd instead of reclaiming it — the
+  segment (≥4 MiB) and its `SegmentTable` slot leaked forever under any
+  allocate-here/free-there workload (the canonical case: an async runtime
+  migrating a task holding a large buffer to a different worker thread). Now
+  reclaimed via a per-heap deferred-free stack, drained lazily on the
+  owner's next large allocation.
+- **A2 — `fastbin` buildable without `alloc-xthread` (unsound).** A
+  cross-thread free with `fastbin` alone had no ownership-checked routing
+  path — a data race into another thread's private magazine. `fastbin` now
+  requires `alloc-xthread` (Cargo feature unification + a `compile_error!`
+  guard).
+- **B1 — page-aligned allocations (512 B – 16 KiB, `align` a multiple of
+  512/1024/2048/4096) still burned a dedicated Large segment**, the last gap
+  in #114's fix. Eight page-aligned size classes added to the table.
+- **Latent `realloc` cross-class-shrink bug**, exposed by B1: `AllocCore::realloc`'s
+  in-place fast path aliased a shrink across size classes, corrupting the
+  smaller class's free list on a later layout-derived free. Restricted to
+  same-class in-place; a cross-class shrink now relocates.
+- **F1 — fallback-heap init livelock.** If the CAS winner initialising the
+  process-global fallback heap hit primordial OOM, every other thread
+  spun forever waiting for a `READY` that would never come. Losers now
+  observe the rollback and re-race the CAS.
+
+### Changed — performance
+
+- **C1 — the per-thread magazine (`fastbin`) now serves `align > 16`
+  requests** (tokio task cells, page-aligned buffers), not just the
+  historical `align <= 16` case — the main remaining hot-path gap for the
+  workload #114/B1 targeted.
+- **C2 — `realloc`'s in-place fast path is now reachable through the
+  `#[global_allocator]` face**, not just the lower-level `AllocCore` API; a
+  same-class resize through `SeferAlloc` no longer pays a redundant
+  alloc+copy+dealloc.
+- **D1 — `LARGE_CACHE_SLOTS` raised 2 → 8**, with a correctness fix: eviction
+  now uses a true insertion-order FIFO (a monotonic sequence number) instead
+  of an index-order assumption that only held at 2 slots. A workload cycling
+  more than two distinct large sizes now gets real cache reuse instead of
+  thrashing to an OS round-trip on every allocation.
+- **D3 — magazine refill is now a per-class byte budget** (≈64 KiB) instead
+  of a fixed 16-block count for every class; a large size class no longer
+  parks several MiB in one idle thread's cache after a single refill.
+
+### Added
+
+- **`SeferAlloc::stats() -> AllocStats`** — a cheap, lock-free, process-wide
+  diagnostic snapshot (cache hits, decommit calls, cross-thread reclaims,
+  ring overflows, segments reserved/released, heaps claimed). Previously
+  every one of these counters was crate-internal and invisible in
+  production; `segments_reserved_total - segments_released_total` is the
+  single most useful field for spotting a segment leak before it escalates
+  to an OOM abort. `#[non_exhaustive]`, stable field set across every
+  feature combination.
+- **D2 — process-wide `RemoteFreeRing` overflow counter**, feeding
+  `AllocStats::ring_overflows`.
+- Rustdoc: a "Multi-thread safety" section on `SeferAlloc` spelling out the
+  `alloc-global`-without-`alloc-xthread` footgun (cross-thread frees leak
+  monotonically), and a "std-only" note.
+
+### Internal
+
+- CI: `-D warnings` restored on the clippy gate after a warnings-cleanup
+  pass; miri matrix extended to the task-#114 align-regression tests; a
+  process-global-state test flake in `heap_core_bulk_bypass` fixed at its
+  real root cause (whole-heap slot reuse carrying stale P7 state across
+  tests in one binary).
+
 ## [0.2.1] - 2026-06-30
 
 ### Fixed — `align > 16` allocations no longer burn a dedicated segment each
