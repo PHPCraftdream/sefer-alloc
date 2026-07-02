@@ -352,6 +352,28 @@ fn ensure_slow() -> &'static Registry {
 
             let base = reservation.as_ptr() as *mut Registry;
 
+            // Task #139: under miri, `aligned_vmem::reserve_aligned` falls back
+            // to `std::alloc` (miri has no `VirtualAlloc`/`mmap`), which does
+            // NOT zero the bytes the way real OS pages do. The field-by-field
+            // init below relies on OS zero-pages for every field it does not
+            // explicitly write (see item 1 in the comment below): `state = 0`,
+            // `generation = 0`, `count = 0`, `abandoned_segs = 0`,
+            // `HeapSlot::initialised = 0`, etc. Under miri those reads would be
+            // uninitialised-memory UB, which blocked miri from validating the
+            // whole registry module (incl. the task #133 per-heap-counter
+            // aggregation). Zero the reservation ourselves under miri so the
+            // "OS zero-pages" assumption holds. Compiled out entirely on real
+            // targets — zero cost in production.
+            //
+            // SAFETY: `base` is a fresh `REGISTRY_SIZE`-byte reservation we
+            // solely own (the CAS winner), not yet published; zero is a valid
+            // bit-pattern for every field (`AtomicU8/U32/U64/Bool` = 0,
+            // `MaybeUninit<HeapCore>` = any bytes).
+            #[cfg(miri)]
+            unsafe {
+                core::ptr::write_bytes(base as *mut u8, 0, REGISTRY_SIZE);
+            }
+
             // In-place initialisation of the Registry — field by field.
             //
             // We do NOT use `ptr::write(base, Registry::new_zeroed())` because
