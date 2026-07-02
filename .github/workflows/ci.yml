@@ -74,10 +74,21 @@ jobs:
           - "--features alloc-core" # Phase 8 segment substrate (AllocCore)
           - "--features \"alloc-global alloc-xthread\"" # Phases 9–11: per-thread Heap + SeferMalloc + cross-thread free
           - "--features \"alloc-global alloc-xthread alloc-decommit\"" # + Phase 35 M6 decommit
+          # #137: the fastbin (magazine/tcache) path and the flagship
+          # `production` bundle were NOT exercised in CI — the entire magazine
+          # code path (the churn hot path) ran untested. Add both: `fastbin`
+          # in isolation (magazine without decommit) and the full `production`
+          # bundle (fastbin + decommit + everything).
+          - "--features \"alloc-global alloc-xthread fastbin\"" # #137: magazine/tcache path
+          - "--features production" # #137: the recommended flagship config (fastbin + decommit)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test ${{ matrix.features }}
+      # --no-fail-fast: run EVERY test binary even if an earlier one fails, so
+      # a failure in one binary never masks failures in later ones (a lesson
+      # from the 0.3.0 hardening pass — cargo's default fail-fast hid two red
+      # tests behind an earlier failure).
+      - run: cargo test ${{ matrix.features }} --no-fail-fast
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -155,6 +166,11 @@ jobs:
       matrix:
         include:
           - test: loom_bootstrap_cas
+            features: "alloc-global"
+          # #137: loom_fallback_init (the fallback-heap lazy-init state
+          # machine) existed but was never wired into the loom matrix — its
+          # model was checked locally but not gated in CI.
+          - test: loom_fallback_init
             features: "alloc-global"
           - test: loom_registry
             features: "alloc-global"
