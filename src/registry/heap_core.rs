@@ -1134,7 +1134,18 @@ impl HeapCore {
             let cur_head =
                 crate::alloc_core::segment_header::SegmentHeader::owner_thread_free_at(base);
             if cur_head.is_null() {
-                meta.stamp_owner_thread_free(&self.thread_free as *const AtomicPtr<u8> as *const _);
+                // Task #142: expose this atomic's provenance so a REMOTE
+                // freer can reconstruct a wildcard pointer to it (via
+                // `Node::atomic_ptr_ref` → `with_exposed_provenance_mut`)
+                // rather than inheriting this owner's `&mut self`-rooted
+                // reference provenance — which a concurrent remote write
+                // would disable, corrupting other remotes' access (see
+                // `Node::atomic_ptr_ref`). `addr_of!` takes the field address
+                // WITHOUT an intermediate `&` retag; `expose_provenance`
+                // registers it for the paired `with_exposed_provenance_mut`.
+                let tf_ptr = core::ptr::addr_of!(self.thread_free);
+                let _ = tf_ptr.expose_provenance();
+                meta.stamp_owner_thread_free(tf_ptr as *const _);
             }
         }
 

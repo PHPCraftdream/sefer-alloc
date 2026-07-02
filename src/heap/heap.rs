@@ -443,7 +443,13 @@ impl Heap {
         // every field a Remote reads/the owner's `bump` writes. Idempotent:
         // only when currently null (mirrors `HeapCore::stamp_segment_owner`).
         if SegmentHeader::owner_thread_free_at(base).is_null() {
-            meta.stamp_owner_thread_free(self.thread_free.head_ptr());
+            // Task #142: expose this atomic's provenance before stamping so a
+            // REMOTE freer reconstructs a wildcard pointer (not this owner's
+            // reference-rooted provenance) — see `Node::atomic_ptr_ref` and
+            // the identical stamp in `HeapCore::stamp_segment_owner`.
+            let hp = self.thread_free.head_ptr();
+            let _ = hp.expose_provenance();
+            meta.stamp_owner_thread_free(hp);
         }
     }
 }

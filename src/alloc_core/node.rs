@@ -424,9 +424,28 @@ impl Node {
     pub(crate) fn atomic_ptr_ref(
         ptr: *const core::sync::atomic::AtomicPtr<u8>,
     ) -> &'static core::sync::atomic::AtomicPtr<u8> {
-        // SAFETY: caller's contract above — `ptr` is the stable address of a
-        // live `AtomicPtr<u8>` field inside a `'static`-lifetime `HeapCore`
-        // registry slot.
-        unsafe { &*ptr }
+        // Task #142 (cross-thread aliasing soundness): materialize the shared
+        // atomic through EXPOSED provenance (a "wildcard" pointer), NOT the
+        // reference-derived provenance `ptr` inherited from the owner's stamp.
+        // `ptr` originates as `&owner.thread_free` on the OWNING thread — a
+        // provenance rooted in that thread's `&mut HeapCore`/`Box`. If a
+        // REMOTE thread reconstructs `&*ptr` and writes (the deferred-free
+        // Treiber `compare_exchange`), that write is "foreign" to the stamp's
+        // reference tag and DISABLES it, so a SECOND remote thread reading
+        // through a sibling `&*ptr` hits UB (Stacked/Tree Borrows). The stamp
+        // sites (`stamp_owner_thread_free` callers) now `expose_provenance()`
+        // the atomic; reconstructing here via `with_exposed_provenance_mut`
+        // yields a pointer that is NOT a child of the owner's borrow tree, so
+        // concurrent cross-thread interior-mutable access by multiple remotes
+        // no longer disables a shared parent tag. `AtomicPtr` is `Sync` +
+        // interior-mutable, so shared atomic writes through the resulting
+        // `&AtomicPtr` are sound.
+        let exposed =
+            core::ptr::with_exposed_provenance_mut::<core::sync::atomic::AtomicPtr<u8>>(ptr.addr());
+        // SAFETY: caller's contract above — `ptr`'s address is the stable
+        // address of a live `AtomicPtr<u8>` (a `'static` registry-slot field,
+        // or a leaked-on-drop `Box<AtomicPtr>`) whose provenance the stamp
+        // site exposed, so the wildcard pointer validly covers it.
+        unsafe { &*exposed }
     }
 }
