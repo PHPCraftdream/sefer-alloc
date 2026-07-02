@@ -111,7 +111,7 @@
 //!
 //! The sanctioned fallback for this shape is Rust's **exposed-provenance**
 //! model: every store site that packs a real pointer's address into such a
-//! word calls [`<*mut T>::expose_provenance`] first (explicitly registering
+//! word calls `<*mut T>::expose_provenance` first (explicitly registering
 //! that pointer's provenance in the global exposed-provenance table); every
 //! load site that reconstructs a dereferenceable pointer from such a word
 //! calls [`core::ptr::with_exposed_provenance_mut`] (validly re-deriving a
