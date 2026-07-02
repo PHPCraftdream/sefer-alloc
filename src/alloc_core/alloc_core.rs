@@ -40,7 +40,7 @@ use super::segment_header::{
     align_up, BinTable, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind, SegmentMeta,
     FREE_LIST_NULL,
 };
-use super::segment_table::{SegmentTable, MAX_SEGMENTS};
+use super::segment_table::SegmentTable;
 use super::size_classes::{AllocKind, SizeClasses};
 
 // ---------------------------------------------------------------------------
@@ -1025,17 +1025,16 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_drain_all_rings(&mut self) {
-        // Collect bases first so we can call `self.table.recycle` after each
-        // drain without conflicting with a concurrent bases() iterator borrow.
-        let mut bases_buf = [core::ptr::null_mut::<u8>(); MAX_SEGMENTS];
-        let mut n = 0usize;
-        for base in self.table.bases() {
-            if n < MAX_SEGMENTS {
-                bases_buf[n] = base;
-                n += 1;
+        // Index-driven scan (task #126), mirroring `find_segment_with_free`:
+        // `base_at(i)` is a self-contained read with no borrow tied to the
+        // loop, so it can be freely interleaved with `self.table.recycle`
+        // below without a pre-collect buffer.
+        let n = self.table.count() as usize;
+        for i in 0..n {
+            let base = self.table.base_at(i);
+            if base.is_null() {
+                continue;
             }
-        }
-        for &base in &bases_buf[..n] {
             let hdr = SegmentHeader::read_at(base);
             if !matches!(hdr.kind, SegmentKind::Small | SegmentKind::Primordial) {
                 continue;
@@ -1449,19 +1448,24 @@ impl AllocCore {
     ///   b. The OS release + slot NULL happen atomically in `recycle`, with no
     ///      window where the slot is non-NULL but the OS segment is gone.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
-        // Collect all registered live segment bases FIRST (into a fixed-size
-        // stack array) so we can iterate without holding a `&self.table` borrow —
-        // which would block the `&mut self.table.recycle(...)` call needed for
-        // slot recycle under `alloc-decommit`. MAX_SEGMENTS is the capacity bound;
-        // only live (non-NULL) bases are stored, so `n <= live_count <= MAX_SEGMENTS`.
-        let mut bases_buf = [core::ptr::null_mut::<u8>(); MAX_SEGMENTS];
-        let mut n = 0usize;
-        for base in self.table.bases() {
-            if n < MAX_SEGMENTS {
-                bases_buf[n] = base;
-                n += 1;
-            }
-        }
+        // Index-driven scan (task #126): walk slots `[0, count)` by index via
+        // `SegmentTable::base_at`, instead of pre-collecting every live base
+        // into an 8 KiB `[*mut u8; MAX_SEGMENTS]` stack buffer on every
+        // free-list miss. `base_at` performs a single self-contained pointer
+        // read (no borrow of `self.table` outlives the call), so it can be
+        // freely interleaved with `self.table.recycle(base)` below — unlike
+        // `self.table.bases()`, whose returned `impl Iterator` captures the
+        // elided `&self` lifetime and would keep `self.table` borrowed for the
+        // life of the loop, conflicting with the `&mut self.table.recycle`
+        // call needed when a segment empties out mid-scan.
+        //
+        // This makes recycle UNBOUNDED within a single scan: however many
+        // segments empty out (drained ring → decommit) during this call, each
+        // is recycled the moment it is discovered — there is no fixed-size
+        // buffer to overflow and no deferred/lost recycle (task #126 redo of
+        // the Phase C attempt, which used a CAP=32 deferred-recycle ring that
+        // silently dropped recycles for the 33rd+ emptied segment in one scan).
+        let n = self.table.count() as usize;
 
         // Phase C (numa-aware): on the first pass we prefer segments whose
         // node_id matches the calling thread's NUMA node; we collect segments
@@ -1481,7 +1485,15 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")]
         let mut fallback: Option<*mut u8> = None;
 
-        for &base in &bases_buf[..n] {
+        for i in 0..n {
+            let base = self.table.base_at(i);
+            if base.is_null() {
+                // Recycled (NULL) slot — skip. `base_at` also returns NULL for
+                // an out-of-range index, but `i < n == self.table.count()`
+                // here, so a NULL here always means "recycled slot", never
+                // "out of range".
+                continue;
+            }
             // Skip large/huge segments: they have no BinTable. Field-specific
             // `kind` read (task #33): this is the Owner's alloc path,
             // concurrent with a Remote's `dealloc_routing` field reads — a

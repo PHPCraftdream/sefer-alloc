@@ -340,6 +340,33 @@ impl SegmentTable {
             .filter(|&p| !p.is_null())
     }
 
+    /// Read the slot at index `i` directly, without going through the
+    /// `bases()` iterator. Returns `null_mut()` for a recycled (NULL) slot or
+    /// an out-of-range index — the caller distinguishes "recycled" from
+    /// "out of range" via `count()` if needed.
+    ///
+    /// **Why this exists (task #126):** `bases()`'s returned `impl Iterator`
+    /// captures the elided lifetime of `&self` (return-position `impl Trait`
+    /// lifetime-capture rule), even though the closure itself only closes over
+    /// `Copy` data (`slots`, `n`) and performs no actual borrow of `self`'s
+    /// fields after construction. That capture is enough to make the
+    /// borrow-checker treat a live `bases()` iterator as holding `&self.table`,
+    /// which conflicts with an interleaved `&mut self.table.recycle(...)` call
+    /// (needed by `find_segment_with_free` to recycle segments that empty out
+    /// mid-scan). `base_at` sidesteps this: each call is a self-contained
+    /// pointer read with no returned borrow, so the caller can freely
+    /// interleave `base_at(i)` reads with `recycle(...)` calls in the same
+    /// index-driven loop — no pre-collect buffer needed, and no bound on how
+    /// many segments can be recycled in one scan.
+    #[inline(always)]
+    pub(crate) fn base_at(&self, i: usize) -> *mut u8 {
+        if i >= self.count as usize {
+            return core::ptr::null_mut();
+        }
+        let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
+        super::node::Node::read_struct::<*mut u8>(slot)
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
