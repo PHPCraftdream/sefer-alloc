@@ -1782,6 +1782,16 @@ impl AllocCore {
     /// common path; actual eviction only when the interval has elapsed AND the
     /// cache is over the headroom target.
     fn alloc_large(&mut self, size: usize, align: usize) -> *mut u8 {
+        // align >= SEGMENT is not serviceable by the dedicated-segment large
+        // path: the block would land at base + SEGMENT-multiple (mis-registered
+        // → dealloc leak → eventual MAX_SEGMENTS abort) or, for align >
+        // SEGMENT, at a pointer only SEGMENT-aligned (GlobalAlloc contract
+        // violation → UB). Reject with null — a legal alloc-failure signal —
+        // rather than leak/misalign. (Task #130.)
+        if align >= SEGMENT {
+            return core::ptr::null_mut();
+        }
+
         // Phase 2: lazy decay tick on every large allocation.
         #[cfg(feature = "alloc-decommit")]
         self.maybe_decay_large_cache();
