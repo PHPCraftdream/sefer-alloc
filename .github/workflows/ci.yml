@@ -18,12 +18,18 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # `-D warnings` was the original strict-CI policy. The codebase has
-  # accumulated benign warnings — research-tier dead code under specific feature
-  # combos, rustdoc intra-doc links into `#[doc(hidden)]` modules, style nits
-  # in research harnesses — that are not appropriate as PR blockers. They
-  # remain visible (yellow), just not red. Re-enable once a dedicated
-  # warnings-cleanup pass lands.
+  # `-D warnings` is the strict-CI policy (Phase F3, task #124). Re-enabled
+  # after a dedicated warnings-cleanup pass: the 6 pre-existing lib findings
+  # (needless_range_loop in `refill_class`, manual_is_multiple_of in
+  # `class_for`, 4x doc_lazy_continuation in the `tcache` doc comment) plus
+  # a handful of test-file / sibling-crate findings (manual_is_multiple_of
+  # in `crates/numa`, manual_dangling_ptr in `tests/numa_seam.rs`,
+  # zero_repeat_side_effects / assertions_on_constants in two other test
+  # files, annotated `#[allow]` with rationale where the lint's suggested
+  # fix would have changed test semantics) were fixed or explicitly
+  # annotated. Verified clean under `cargo clippy --all-targets <features>
+  # -- -D warnings` for every feature combination in the `clippy` and
+  # `test` matrices below at the time this was re-enabled.
 
 jobs:
   fmt:
@@ -52,7 +58,7 @@ jobs:
       # policy that produces noise out of proportion to value as a blocking
       # CI gate; keep it as an opt-in `cargo clippy -- -W clippy::pedantic`
       # for periodic cleanup, not as a per-PR blocker.
-      - run: cargo clippy --all-targets ${{ matrix.features }}
+      - run: cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
 
   test:
     name: test (${{ matrix.features }})
@@ -112,6 +118,14 @@ jobs:
           # under miri's strict provenance — UB-free pointer math in the
           # ring/reclaim path.
           - "--features \"alloc-global alloc-xthread\" --test reclaim_offset_unit"
+          # Phase F5 (task #124): the task #114 align-regression tests.
+          # Single-threaded, `alloc-core`-only, no unsafe in the test bodies
+          # themselves — verified locally under
+          # `MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-disable-isolation"`
+          # before adding here (all three pass; ~99s/267s/3s respectively).
+          - "--features alloc-core --test regression_large_align_no_segment_exhaustion"
+          - "--features alloc-core --test regression_page_aligned_no_segment_exhaustion"
+          - "--features alloc-core --test regression_realloc_cross_class_shrink"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

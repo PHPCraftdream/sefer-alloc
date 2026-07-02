@@ -211,6 +211,7 @@ pub struct HeapCore {
     ///   - refill_class pulls via alloc_small → inc_live per block.
     ///   - magazine push/pop do NOT touch live_count.
     ///   - magazine flush calls dealloc_small → dec_live → maybe_decommit.
+    ///
     /// So `live_count` = blocks carved AND not on a BinTable free list
     /// = (blocks handed out to user) + (blocks in our magazine). Decommit
     /// fires only when a segment's blocks are ALL on the BinTable free
@@ -1193,6 +1194,31 @@ impl HeapCore {
             }
             self.core.flush_class(c, &self.tcache.slots[c][0..n]);
             self.tcache.count[c] = 0;
+        }
+    }
+
+    /// TEST-ONLY (Phase F4, task #124): reset the bulk-mode P7 state
+    /// (`alloc_streak` for every class, and the magazine via
+    /// [`dbg_flush_all`](Self::dbg_flush_all)) to a fresh-heap baseline.
+    ///
+    /// `HeapRegistry::recycle` deliberately does NOT reset a slot's
+    /// `HeapCore` — it is whole-heap reuse by design (the shard discipline;
+    /// see `HeapRegistry::recycle`'s doc). That means a test that `claim`s a
+    /// slot previously used (and left in bulk mode) by an EARLIER test in
+    /// the same process observes non-zero `alloc_streak` from alloc #0,
+    /// breaking any test that asserts "bulk mode has not yet triggered" near
+    /// the start of a fresh alloc sequence. This helper gives such tests an
+    /// explicit, honest way to start from a known-clean P7 state without
+    /// requiring `HeapRegistry` itself to pay a reset cost on every
+    /// recycle (which is not warranted outside tests — the production
+    /// bulk-mode invariants hold regardless of starting streak).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_reset_bulk_state(&mut self) {
+        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
+        self.dbg_flush_all();
+        for c in 0..SMALL_CLASS_COUNT {
+            self.tcache.alloc_streak[c] = 0;
         }
     }
 }

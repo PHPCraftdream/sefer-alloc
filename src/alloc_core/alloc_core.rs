@@ -1242,12 +1242,12 @@ impl AllocCore {
             out.len(),
             want,
         );
-        for i in 0..want {
+        for (i, slot) in out.iter_mut().take(want).enumerate() {
             let ptr = self.alloc_small(class_idx);
             if ptr.is_null() {
                 return i; // OOM or no more capacity
             }
-            out[i] = ptr;
+            *slot = ptr;
         }
         want
     }
@@ -2303,6 +2303,21 @@ impl AllocCore {
     }
 }
 
+/// `Default` is a construction-time convenience only — it is NOT on the
+/// alloc/dealloc/realloc hot path and no code in this crate currently calls
+/// it (verified: no `AllocCore::default()` / `Default::default()` callers
+/// under `src/` or `tests/` at the time of writing). It exists for callers
+/// who want the ergonomics of `AllocCore::default()` / a `Default` trait
+/// bound at construction time and are prepared to accept that construction
+/// can fail.
+///
+/// This panics ONLY on true primordial OOM (the OS refuses the very first
+/// segment reservation) — the same failure `AllocCore::new` already surfaces
+/// as `None`. It never panics after construction: `alloc`/`dealloc`/
+/// `realloc` are infallible with respect to panicking (OOM there returns a
+/// null pointer / `None`, per the crate's no-panic-on-the-alloc-path
+/// discipline). Callers who cannot tolerate a panic at construction should
+/// call `AllocCore::new()` directly and handle `None`.
 impl Default for AllocCore {
     fn default() -> Self {
         Self::new().expect("AllocCore::new: primordial segment reservation failed (OOM)")

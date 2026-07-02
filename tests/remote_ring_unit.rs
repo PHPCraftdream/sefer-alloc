@@ -125,7 +125,7 @@ fn ring_buffer() -> Box<[u8]> {
     // be safe.
     let mut buf: Vec<u8> = vec![0u8; FOOTPRINT];
     assert!(
-        buf.as_mut_ptr() as usize % core::mem::align_of::<u32>() == 0,
+        (buf.as_mut_ptr() as usize).is_multiple_of(core::mem::align_of::<u32>()),
         "ring buffer must be 4-byte aligned"
     );
     buf.into_boxed_slice()

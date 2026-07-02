@@ -36,7 +36,7 @@ fn current_node_returns_valid_value() {
 fn bind_segment_on_no_node_is_noop() {
     // A dummy non-null address; we pass NO_NODE so bind_segment short-circuits
     // before making any OS call and never dereferences the pointer.
-    let dummy: *mut u8 = 1usize as *mut u8;
+    let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
     // Must not panic or crash.
     numa::bind_segment(dummy, 4096, numa::NO_NODE);
 }
@@ -44,7 +44,7 @@ fn bind_segment_on_no_node_is_noop() {
 /// Calling `bind_segment` with `len == 0` must be a no-op regardless of node.
 #[test]
 fn bind_segment_zero_len_is_noop() {
-    let dummy: *mut u8 = 1usize as *mut u8;
+    let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
     // len == 0 early-return guard.
     numa::bind_segment(dummy, 0, 0);
 }

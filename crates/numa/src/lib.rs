@@ -643,7 +643,7 @@ mod platform {
         node: u32,
     ) -> Option<aligned_vmem::Reservation> {
         use aligned_vmem::PAGE;
-        if size == 0 || !align.is_power_of_two() || align < PAGE || size % PAGE != 0 {
+        if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
             return None;
         }
         let over = size.checked_add(align)?;

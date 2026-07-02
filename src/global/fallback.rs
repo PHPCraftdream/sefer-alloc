@@ -108,61 +108,71 @@ static LOCK: AtomicBool = AtomicBool::new(false);
 /// heap).
 #[must_use]
 pub fn heap_ptr() -> *mut HeapCore {
-    // Fast path: already READY. Acquire to see the init thread's writes.
-    if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
-        // SAFETY: we observed READY under Acquire, which synchronises with
-        // the initialising thread's Release store of READY. `FALLBACK` is
-        // fully initialised and never dropped; the pointer is valid for the
-        // process lifetime. We use `addr_of_mut!` to obtain the pointer
-        // WITHOUT creating a mutable reference to the `static mut` (which
-        // is UB under Rust 2024's `static_mut_refs` rule).
-        return addr_of_mut!(FALLBACK) as *mut HeapCore;
-    }
-    // Slow path: race to initialise.
-    let won = INIT_STATE
-        .compare_exchange(
-            STATE_UNINIT,
-            STATE_INITIALIZING,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        )
-        .is_ok();
-    if won {
-        // We are the sole initialiser. Construct the HeapCore in place.
-        // `HeapCore::new` uses the sentinel id `u32::MAX` ("not bound to a
-        // registry slot") — the fallback is NOT a registry slot; it is a
-        // standalone process-global heap.
-        match HeapCore::new(u32::MAX) {
-            Some(hc) => {
-                // SAFETY: we won the init race (STATE_INITIALIZING); no
-                // other thread can read `FALLBACK` until we publish READY.
-                // Writing a `HeapCore` into the `MaybeUninit` initialises
-                // it. `addr_of_mut!` gives us the `*mut MaybeUninit<HeapCore>`
-                // destination without creating a `&mut` to the `static mut`
-                // (Rust 2024 `static_mut_refs`); we cast to `*mut HeapCore`
-                // for the `write`.
-                unsafe { (addr_of_mut!(FALLBACK) as *mut HeapCore).write(hc) };
-                INIT_STATE.store(STATE_READY, Ordering::Release);
-            }
-            None => {
-                // Primordial OOM. Roll back to UNINIT so a later caller can
-                // retry (the OS may have freed memory by then). Return null
-                // — the alloc face will surface this as true OOM.
-                INIT_STATE.store(STATE_UNINIT, Ordering::Release);
-                return core::ptr::null_mut();
+    loop {
+        // Fast path: already READY. Acquire to see the init thread's writes.
+        if INIT_STATE.load(Ordering::Acquire) == STATE_READY {
+            // SAFETY: we observed READY under Acquire, which synchronises
+            // with the initialising thread's Release store of READY.
+            // `FALLBACK` is fully initialised and never dropped; the
+            // pointer is valid for the process lifetime. We use
+            // `addr_of_mut!` to obtain the pointer WITHOUT creating a
+            // mutable reference to the `static mut` (which is UB under
+            // Rust 2024's `static_mut_refs` rule).
+            return addr_of_mut!(FALLBACK) as *mut HeapCore;
+        }
+        // Slow path: race to initialise.
+        let won = INIT_STATE
+            .compare_exchange(
+                STATE_UNINIT,
+                STATE_INITIALIZING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok();
+        if won {
+            // We are the sole initialiser. Construct the HeapCore in place.
+            // `HeapCore::new` uses the sentinel id `u32::MAX` ("not bound to
+            // a registry slot") — the fallback is NOT a registry slot; it is
+            // a standalone process-global heap.
+            match HeapCore::new(u32::MAX) {
+                Some(hc) => {
+                    // SAFETY: we won the init race (STATE_INITIALIZING); no
+                    // other thread can read `FALLBACK` until we publish
+                    // READY. Writing a `HeapCore` into the `MaybeUninit`
+                    // initialises it. `addr_of_mut!` gives us the
+                    // `*mut MaybeUninit<HeapCore>` destination without
+                    // creating a `&mut` to the `static mut` (Rust 2024
+                    // `static_mut_refs`); we cast to `*mut HeapCore` for the
+                    // `write`.
+                    unsafe { (addr_of_mut!(FALLBACK) as *mut HeapCore).write(hc) };
+                    INIT_STATE.store(STATE_READY, Ordering::Release);
+                    // SAFETY: READY just published by us.
+                    return addr_of_mut!(FALLBACK) as *mut HeapCore;
+                }
+                None => {
+                    // Primordial OOM. Roll back to UNINIT so a later caller
+                    // can retry (the OS may have freed memory by then).
+                    // Return null — the alloc face will surface this as true
+                    // OOM. Crucially, the rollback to UNINIT (rather than
+                    // leaving the state stuck at INITIALIZING) is what lets
+                    // any thread currently spinning in the loser branch
+                    // below observe a state change and re-race the CAS
+                    // itself, instead of spinning forever waiting for a
+                    // READY that this failed winner will never publish.
+                    INIT_STATE.store(STATE_UNINIT, Ordering::Release);
+                    return core::ptr::null_mut();
+                }
             }
         }
-    } else {
-        // Lost the race: spin until READY.
-        while INIT_STATE.load(Ordering::Acquire) != STATE_READY {
+        // Lost the race: spin until the state leaves INITIALIZING. It may
+        // land on READY (winner published successfully — loop will hit the
+        // fast path) or UNINIT (winner hit primordial OOM and rolled back —
+        // loop back to the top and re-race the CAS ourselves, rather than
+        // spinning forever waiting for a READY that will never come).
+        while INIT_STATE.load(Ordering::Acquire) == STATE_INITIALIZING {
             core::hint::spin_loop();
         }
     }
-    // SAFETY: READY observed (we either just published it or spun until it
-    // appeared). `FALLBACK` is initialised and lives for the process
-    // lifetime. `addr_of_mut!` avoids creating a mutable reference to the
-    // `static mut` (Rust 2024 `static_mut_refs`).
-    addr_of_mut!(FALLBACK) as *mut HeapCore
 }
 
 /// Execute `f` with `&mut` access to the fallback heap, under the spinlock.

@@ -30,7 +30,7 @@ fn linear_scan_class_for(size: usize, align: usize) -> Option<usize> {
     let table = SegmentLayout::SIZE_CLASS_TABLE;
     let mut i = 0;
     while i < table.len() {
-        if table[i] >= need && table[i] % align == 0 {
+        if table[i] >= need && table[i].is_multiple_of(align) {
             return Some(i);
         }
         i += 1;

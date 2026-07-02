@@ -155,7 +155,7 @@ impl SizeClasses {
         // iterations for power-of-two `align` ≤ 256.
         let mut i = seed;
         while i < SMALL_CLASS_COUNT {
-            if SIZE_CLASS_TABLE[i] % align == 0 {
+            if SIZE_CLASS_TABLE[i].is_multiple_of(align) {
                 return Some(i);
             }
             i += 1;

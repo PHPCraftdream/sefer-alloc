@@ -89,6 +89,13 @@ fn t_bulk_pattern_triggers_bypass() {
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // `HeapRegistry::recycle` deliberately does NOT reset a slot's P7 bulk
+    // state (whole-heap reuse). Within one test binary the OS process (and
+    // hence the registry) is shared across all tests in this file, so a
+    // slot claimed here may be a RECYCLED slot left in bulk mode by an
+    // earlier test — start from a known-clean baseline explicitly rather
+    // than assuming a fresh heap. See `dbg_reset_bulk_state`'s doc.
+    unsafe { (*heap).dbg_reset_bulk_state() };
 
     const TOTAL: usize = 64;
     let layout = Layout::from_size_align(16, 8).unwrap();
@@ -166,6 +173,9 @@ fn t_churn_stays_in_magazine() {
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // See `t_bulk_pattern_triggers_bypass`'s comment: a recycled slot may
+    // carry bulk-mode state from an earlier test in this process.
+    unsafe { (*heap).dbg_reset_bulk_state() };
 
     // K < BULK_THRESHOLD so the initial fill does not trigger bulk mode.
     const K: usize = 24;
@@ -244,6 +254,9 @@ fn t_bulk_then_drain_then_churn() {
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    // See `t_bulk_pattern_triggers_bypass`'s comment: a recycled slot may
+    // carry bulk-mode state from an earlier test in this process.
+    unsafe { (*heap).dbg_reset_bulk_state() };
 
     let layout = Layout::from_size_align(16, 8).unwrap();
     let class_idx: usize = 0;

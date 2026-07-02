@@ -1,11 +1,3 @@
-// The ring's full surface (offsets, head/tail, slots, atomic helpers) is only
-// reached on builds that actually exercise cross-thread free — the production
-// stack pulls `alloc-xthread` for that. Under `--features alloc-core` alone the
-// module compiles but several items remain unused; suppress the lints there
-// rather than tangle the module in feature-cfg branches that would make the
-// hot-path reading harder.
-#![allow(dead_code, unused_imports)]
-
 //! [`RemoteFreeRing`] — a per-segment, bounded, **non-intrusive** MPSC queue
 //! of freed-block **offsets** (`u32`), carved from segment metadata.
 //!
@@ -123,6 +115,10 @@
 //! recycle) and, crucially, it is a *correctness-preserving* fallback, not a
 //! correctness violation — the race is gone.
 
+// Only reached by the ring's atomic push/drain methods, which are themselves
+// only reachable on builds that exercise cross-thread free
+// (`alloc-xthread`); unused under `--features alloc-core` alone.
+#[cfg_attr(not(feature = "alloc-xthread"), allow(unused_imports))]
 use core::sync::atomic::Ordering;
 
 use super::node::Node;
@@ -196,12 +192,19 @@ pub(crate) fn unpack_entry(packed: u32) -> (u32, u32) {
 const CURSOR_BLOCK: usize = 4 * core::mem::size_of::<u32>();
 
 /// Offset of the `head` cursor within the ring metadata.
+///
+/// Only read by the ring's push/drain methods, which are only reachable on
+/// builds that exercise cross-thread free (`alloc-xthread`); unused under
+/// `--features alloc-core` alone.
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const HEAD_OFF: usize = 0;
 /// Offset of the `tail` cursor within the ring metadata.
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const TAIL_OFF: usize = 4;
 /// Offset of the `overflow` counter within the ring metadata.
 const OVERFLOW_OFF: usize = 8;
 /// Offset of the first slot within the ring metadata.
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const SLOTS_OFF: usize = CURSOR_BLOCK;
 
 /// The per-segment non-intrusive cross-thread-free MPSC ring.

@@ -46,6 +46,13 @@
 #![cfg(feature = "fastbin")]
 
 #[test]
+// This assertion is intentionally over a `cfg!()` constant: the test exists
+// specifically to catch a Cargo.toml feature-unification regression (task
+// A2) where `fastbin` could be enabled without pulling in `alloc-xthread`.
+// The "constant value" IS the thing under test — clippy's lint assumes a
+// tautology is always a mistake, which is not the case for a feature-flag
+// invariant check.
+#[allow(clippy::assertions_on_constants)]
 fn fastbin_implies_xthread() {
     assert!(
         cfg!(feature = "alloc-xthread"),

@@ -266,6 +266,11 @@ fn t_flush_null_defensive() {
 // ---------------------------------------------------------------------------
 
 #[test]
+// The zero-sized array literal is intentional: `refill_class` must accept an
+// empty output slice when `want == 0` and do nothing. Clippy's lint flags
+// the repeat-expr-in-zero-len-array pattern generically, but there is no
+// side effect here to hoist — `null_mut()` is a pure const-like call.
+#[allow(clippy::zero_repeat_side_effects)]
 fn t_refill_zero() {
     let mut core = AllocCore::new().unwrap();
     let c = class_for(&core, 16, 8);
