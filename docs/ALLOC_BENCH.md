@@ -1,6 +1,7 @@
 # `SeferAlloc` — benchmark & honest verdict
 
 > ## 0.3.x re-measurement (2026-07-03) — after the P0–P5 perf arc
+> (256 B churn caveat below is superseded by P6 — see the "P5 → P6" section)
 >
 > Re-run on the post-P5 tree (perf campaign #144–#149, on top of the 0.3.0
 > post-review hardening #129–#143), same host and quick criterion profile
@@ -95,10 +96,99 @@
 > | `realloc_in_place_unfavorable` | ~1.68 ms (1.1× slower than mi, 4.9× faster than System) | ~1.55 ms | ~8.15 ms |
 > | `Vec_push` | ~547 ns (~par) | ~496 ns | ~535 ns |
 >
-> **Verdict:** large-object work is a decisive win (the shamir-db strength);
-> small-object *reuse* beats mimalloc except at 256 B; cold first-touch of
-> tiny blocks (16–64 B) is the documented worst-case where mimalloc's cheaper
-> first-touch path leads. `System` trails everywhere by 3–300×.
+> **Verdict (as of P5):** large-object work is a decisive win (the shamir-db
+> strength); small-object *reuse* beats mimalloc except at 256 B; cold
+> first-touch of tiny blocks (16–64 B) is the documented worst-case where
+> mimalloc's cheaper first-touch path leads. `System` trails everywhere by
+> 3–300×. **This 256 B churn caveat was overturned in P6 — see the next
+> section.**
+
+---
+
+## P5 → P6 — the Э6 magazine-oracle rewrite (#150–#152): the 256 B churn loss is eliminated
+
+Same host, same quick criterion profile (`sample_size(10)`, noisy Windows dev
+machine, ±15–20 %). Ratios within a run are the signal — host noise hits Sefer
+and mimalloc equally; absolute µs are rough. Ratio = Sefer/mimalloc; **< 1.0 =
+Sefer faster**.
+
+### Two churn patterns — non-writing vs writing
+
+Churn is now measured two ways:
+
+- **`global_alloc_churn` (non-writing)** — the original bench; blocks are
+  allocated and freed but **never written**. This is the artificial pattern
+  where the old stale-key slow path bit hardest (the per-heap key stamped into
+  the freed block's body survived untouched across the free).
+- **`global_alloc_churn_write` (writing, new in P6.0)** — each block is written
+  after alloc. This is **the realistic pattern**: real code writes to the
+  memory it allocates. The writing table is the headline.
+
+**Non-writing churn** (`global_alloc_churn`), median µs:
+
+| size | Sefer (Э6) | mimalloc | ratio | pre-Э6 was |
+|---|---|---|---|---|
+| 16 B   | ~27 | ~41  | ~1.5× faster | 1.26× faster (P0) / 1.63× (P5) |
+| 64 B   | ~37 | ~56  | ~1.5× faster | 1.23× faster (P0) |
+| 256 B  | ~27 | ~28  | **≈ parity (0.97×)** | **1.16–1.25× SLOWER** — loss GONE |
+| 1024 B | ~34 | ~232 | ~6.8× faster | 5.8× faster |
+
+**Writing churn** (`global_alloc_churn_write`), median µs — the realistic one:
+
+| size | Sefer (Э6) | mimalloc | ratio |
+|---|---|---|---|
+| 16 B   | ~25 | ~40  | **1.6× faster** |
+| 64 B   | ~36 | ~61  | **1.7× faster** |
+| 256 B  | ~31 | ~35  | **1.13× faster** |
+| 1024 B | ~33 | ~225 | **~6.8× faster** |
+
+On the realistic writing pattern sefer-alloc now **leads mimalloc at every
+size**; even the artificial non-writing 256 B reached parity (it was 1.16–1.25×
+slower through P5).
+
+**Cold direct** (`global_alloc`, alloc N then free N, no reuse) is **unchanged
+by Э6** — Э6 targets the churn free path; cold is carve / page-fault-bound.
+Noisy medians: 16 B ~17.7 / mi ~11.1 (~1.6× slower), 64 B ~24.7 / ~18.4
+(~1.3× slower), 256 B ~24–33 / ~26 (≈ parity, noisy), 1024 B ~26 / ~48
+(~1.8× faster). No claim of a cold improvement here.
+
+### The Э6 anatomy — what actually cost us the 256 B churn (the honest eureka)
+
+The P5 writeup above blamed the residual 256 B loss on "the M2 bitmap price".
+**That framing was incomplete.** The real cost was a stale per-heap key
+(`TCACHE_KEY`) stamped into the freed block's **body** (word1) and read back as
+a magazine double-free fast-path filter. Two consequences:
+
+1. **Block-body touch on every free.** Writing the key touched a cold / conflict
+   cache line at the 256 B stride — the "256 B churn loss". On a non-writing
+   bench the key survived across the free, so the fast-path filter matched and
+   forced a **slow-path scan on every free**.
+2. **Unsound under user writes.** A double-free after the user overwrote word1
+   could slip past the key filter and double-issue.
+
+**Э6 removes `TCACHE_KEY` entirely.** The two exact oracles — the in-magazine
+array scan and the `BinTable` `is_free` bitmap line, **both hot metadata** — now
+run unconditionally, and **the free path never touches the block body**. Net:
+
+- **The 256 B churn loss is eliminated** (parity non-writing, 1.13× lead
+  writing).
+- **M2 was STRENGTHENED, not traded.** The pre-Э6 flushed-double-free-after-
+  user-write hole is now CLOSED, because the oracle no longer depends on
+  block-body contents. Counterfactual proof:
+  `tests/regression_magazine_oracles.rs` test (c) is RED pre-Э6, GREEN on Э6.
+- **Our free path is now cheaper than mimalloc's** on this pattern — mimalloc
+  writes `next` into the block body on every free; we write nothing to it.
+
+Every P0–P6 speedup removed a tautology; here the guard got *stronger*, not
+weaker.
+
+### Caveat (unchanged)
+
+These are noisy single-host wall-clock numbers. The deterministic per-op proof
+is the `perf_gate_iai` instruction-count gate on Linux CI; the new
+`churn_write_256b` bench (#150) joins the P0 benches for the `Ir` baseline. The
+one remaining place mimalloc leads is **cold tiny (16–64 B)** — honest per-block
+page-fault work on the carve path, untouched by Э6.
 
 ---
 

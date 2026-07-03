@@ -7,20 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance — the P0–P5 "beat mimalloc on small/medium" arc (#144–#149)
+### Performance — the P0–P6 "beat mimalloc on small/medium" arc (#144–#152)
 
-A five-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
+A six-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
 lost: cold first-touch of tiny blocks (16–64 B) and 256 B churn. The governing
 rule was **every speedup removes a *tautology*, never a *guard*** — no
 correctness guarantee was surrendered (M2 exact double/foreign-free no-op, D1
 live-count accuracy, A1 cross-thread reclaim, `#![forbid(unsafe_code)]` at the
-top level all intact). Each phase was implemented, line-by-line zero-trust
-reviewed, counterfactually verified, and committed between phases. See
+top level all intact); in P6 the M2 guard was actually **strengthened** (see
+Э6 below). Each phase was implemented, line-by-line zero-trust reviewed,
+counterfactually verified, and committed between phases. See
 [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md)
 for the full diagnosis and
 [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) for the P0→P5 measurement tables.
 
-The five eurekas that landed (P1–P3):
+The six eurekas that landed (P1–P3, P6):
 
 - **Э1 (P3) — bump-direct batched carve — front A's main lever (#147).** A
   freshly bump-carved block already satisfies the M2 bitmap invariant
@@ -63,6 +64,25 @@ The five eurekas that landed (P1–P3):
   exact-256 B class (the public size-class type has been a `&'static [..]`
   slice since #136, so this is not a breaking change). This narrows — but does
   not close — the 256 B churn gap.
+- **Э6 (P6) — oracle-in-metadata: the 256 B churn loss is ELIMINATED, and M2
+  got STRONGER (#150–#152).** The P5 docs blamed the residual 256 B loss on
+  "the M2 bitmap price"; that framing was incomplete. The real cost was a
+  stale per-heap key (`TCACHE_KEY`) stamped into the freed block's **body**
+  (word1) and read back as a magazine double-free fast-path filter. On the
+  non-writing churn bench the key survived across the free, forcing a
+  slow-path scan on every free AND touching a cold/conflict cache line at the
+  256 B stride (the "256 B churn loss" — never the bitmap itself). Э6 removes
+  `TCACHE_KEY` entirely: the two exact oracles (in-magazine array scan + the
+  `BinTable` `is_free` bitmap line — both hot metadata) now run
+  unconditionally, and **the free path never touches the block body**. This
+  is not a trade — M2 is **strengthened**: the pre-Э6 flushed-double-free-
+  after-user-write hole (a double-free after the user overwrote word1 could
+  double-issue) is now CLOSED, because the oracle no longer depends on
+  block-body contents. Counterfactual proof: `tests/regression_magazine_oracles.rs`
+  test (c) is RED pre-Э6, GREEN on Э6. Bonus: our free path is now cheaper than
+  mimalloc's on this pattern — mimalloc writes `next` into the block body on
+  every free; we write nothing to it. Cold carve is untouched (Э6 targets only
+  the churn free path).
 
 Э3 (P2, own-segment cache) was implemented and gated but is honestly modest
 (the win is skipping the probe arithmetic + a likely L1 miss; `contains_base`
@@ -77,22 +97,30 @@ was already O(1)); it does not move the headline tables.
   on genuinely fresh pages).
 - **Churn tiny blocks — lead widened.** 16 B `1.26× → 1.63× faster`; 64 B
   `1.23× → 1.68× faster` (Э2 + Э4 + Э5 compounding on the hit path).
-- **256 B churn (front B) — improved but NOT overtaken.** The exact-256 B
-  class narrowed it from `1.25× → 1.16× slower`. **We still trail mimalloc by
-  ~16 % here, by design.** The residual is the M2 bitmap read-modify-write on
-  the real free path — the price of the exact double/foreign-free guarantee
-  mimalloc does not offer, paid in full and deliberately NOT removed. This is
-  the plan's honest ceiling.
+- **256 B churn (front B) — the loss is ELIMINATED (Э6, P6).** Through P5 the
+  exact-256 B class only narrowed this from `1.25× → 1.16× slower` and never
+  overtook. Э6 removed the real cause (the stale block-body key, not the
+  bitmap): on the artificial **non-writing** pattern 256 B churn reached
+  **≈ parity** (`~0.97×`, was 1.16–1.25× SLOWER), and on the realistic
+  **writing** pattern (`global_alloc_churn_write`, new in P6.0 — real code
+  writes to what it allocates) sefer-alloc now **leads at every size**:
+  16 B 1.6×, 64 B 1.7×, **256 B 1.13× faster**, 1024 B ~6.8× faster. The
+  earlier "honest ceiling" framing (256 B is the M2 bitmap price) is retired —
+  the price was a per-heap key in the block body, and it is gone.
+- **Cold tiny (16–64 B) — unchanged, still trails ~1.3–1.6×.** Э6 does not
+  touch the cold carve path (page-fault-bound honest per-block work); no claim
+  of improvement there.
 - **Large (≥1 KiB) — the crushing lead is retained.** Cold ~1.9× faster,
-  churn ~5.9× faster; the OPT-E large-cache headline (13–34× at 4/16/64 MiB)
-  is unchanged.
+  churn ~6.8× faster (writing) / retained; the OPT-E large-cache headline
+  (13–34× at 4/16/64 MiB) is unchanged.
 
 The rigorous, DETERMINISTIC proof is the `perf_gate_iai` instruction-count
 gate (Valgrind, Linux-only CI): the P0 benches
-(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144) exist for exactly
-this and confirm the per-op `Ir` deltas; their `Ir` baseline is captured on the
-first Linux perf-gate run. The wall-clock numbers above are noisy comparative
-measurements, not a statistical suite.
+(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144) plus the new
+`churn_write_256b` bench (#150) exist for exactly this and confirm the per-op
+`Ir` deltas; their `Ir` baseline is captured on the first Linux perf-gate run.
+The wall-clock numbers above are noisy comparative measurements from a single
+noisy Windows dev host, not a statistical suite.
 
 ## [0.3.0] - 2026-07-03
 
