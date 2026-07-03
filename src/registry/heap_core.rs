@@ -884,11 +884,45 @@ impl HeapCore {
                     // #[ignore]d) and modelled by
                     // `tests/loom_magazine_ring_compose.rs`.
                     //
-                    // (1) in-magazine DF oracle — ALWAYS
-                    for i in 0..cnt {
-                        if self.tcache.slots[c][i] == ptr {
+                    // (1) in-magazine DF oracle — ALWAYS. Э10 (P7.4): the
+                    // sequential early-exit scan above (`for i in 0..cnt`) does
+                    // not vectorize; in a free-storm `cnt` sits at TCACHE_CAP=16
+                    // right before every overflow, so this runs hot. Rewritten
+                    // branchless: process `floor(cnt/4)*4` entries in chunks of
+                    // 4 with an OR-combined equality (one branch per chunk),
+                    // then a scalar tail of the remaining `cnt%4` (0..3).
+                    //
+                    // CRITICAL — never compare an index >= cnt. `slots[c]` is a
+                    // fixed `[*mut u8; TCACHE_CAP]`; entries at `i >= cnt` are
+                    // STALE (the magazine is a stack — slots above `cnt` hold
+                    // old pointers of blocks since re-issued). A stale MATCH
+                    // would turn a legitimate free into a false double-free
+                    // no-op → a LEAK. So we scan EXACTLY `cnt` entries: the
+                    // chunk loop covers `0..(cnt/4)*4` and the tail covers
+                    // `(cnt/4)*4..cnt`. We do NOT round `cnt` up to a multiple
+                    // of 4 (that would read stale slots). Semantics are
+                    // byte-identical to the old loop: the tested set
+                    // `{slots[c][i] : i < cnt}` is unchanged; only the
+                    // evaluation order (chunked OR vs. sequential early-exit)
+                    // differs.
+                    let slots = &self.tcache.slots[c];
+                    let chunks = cnt & !3; // (cnt / 4) * 4
+                    let mut i = 0;
+                    while i < chunks {
+                        let hit = (slots[i] == ptr)
+                            | (slots[i + 1] == ptr)
+                            | (slots[i + 2] == ptr)
+                            | (slots[i + 3] == ptr);
+                        if hit {
                             return; // in-magazine double-free — no-op
                         }
+                        i += 4;
+                    }
+                    while i < cnt {
+                        if slots[i] == ptr {
+                            return; // in-magazine double-free — no-op
+                        }
+                        i += 1;
                     }
                     // (2) flushed DF oracle — ALWAYS. `base`/`off`/bitmap are
                     // read on a segment already PROVEN ours and mapped by
