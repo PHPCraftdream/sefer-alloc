@@ -126,8 +126,7 @@ fn bind_segment_with_real_node_does_not_panic() {
     // Allocate a small anonymous mapping via std to get a real OS page.
     // (We use Box::new to get a heap page rather than calling mmap directly,
     // since this is a test and we're not the global allocator here.)
-    let mut buf: Vec<u8> = Vec::with_capacity(4096);
-    buf.resize(4096, 0u8);
+    let mut buf: Vec<u8> = vec![0u8; 4096];
     let ptr = buf.as_mut_ptr();
 
     // Try to bind to node 0 (always exists, even on single-node machines).
