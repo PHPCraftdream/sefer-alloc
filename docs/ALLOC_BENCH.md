@@ -447,7 +447,7 @@ Host: Windows 10, dev machine. Numbers are medians from criterion `sample_size(1
 | 64 MiB|                **~63 ns** | ~2.43 µs | ~16.9 µs |  **~39× faster** |       **~31,300×** |
 
 At all three sizes the cache eliminates the OS round-trip entirely. The
-cached path is: scan 2 slots (O(1)), call `table.register` (O(1) for the
+cached path is: scan the `LARGE_CACHE_SLOTS` (8) cache slots (bounded, O(1)), call `table.register` (O(1) for the
 recycled NULL slot), write a 96-byte `SegmentHeader` struct, return a
 pointer. No syscall, no page-table work.
 

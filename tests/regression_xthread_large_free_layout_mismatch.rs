@@ -242,6 +242,91 @@ fn xthread_large_free_consistent_layout_is_reclaimed() {
     unsafe { HeapRegistry::recycle(heap) };
 }
 
+/// Review finding (full 0.3.0 review): a LEGITIMATE cross-thread free of a
+/// tiny-but-huge-aligned Large block (`size < MIN_BLOCK`, `align >
+/// SMALL_MAX` — a valid `Layout` via the raw alloc API; unreachable through
+/// `Box` since a type's size is a multiple of its align, but perfectly legal
+/// for direct `GlobalAlloc` users) must be RECLAIMED, not dropped.
+///
+/// The alloc path clamps every request to `MIN_BLOCK` before it reaches
+/// `alloc_large`, so the header's `large_size` stores the CLAMPED size (16),
+/// while the freeing caller passes back its original raw `layout.size()`
+/// (8). The mitigation used to compare raw-vs-clamped and therefore ALWAYS
+/// mismatched for `size < MIN_BLOCK` — silently dropping the legitimate free
+/// and permanently leaking the segment + its `SegmentTable` slot (the
+/// #114/#130 leak-to-abort class, narrow trigger). `large_layout_consistent`
+/// now clamps the caller's size symmetrically before comparing.
+///
+/// Counterfactual: with the clamp removed from `large_layout_consistent`
+/// (comparing the raw size again), this free is dropped and the reclaim
+/// delta stays 0 — this test fails.
+#[test]
+fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    const N: usize = 8;
+    // size 8 < MIN_BLOCK (16); align 32 KiB > SMALL_MAX (16 KiB) → the
+    // request is unambiguously routed to the Large path (class_for → None),
+    // with header.large_size = 16 (clamped) while the caller's layout.size()
+    // stays 8.
+    let layout = Layout::from_size_align(8, 32 * 1024).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    let baseline = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+
+    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "alloc[{i}] returned null");
+        assert_eq!(
+            (p as usize) % (32 * 1024),
+            0,
+            "alloc[{i}] not aligned to the requested 32 KiB"
+        );
+        ptrs.push(p);
+    }
+
+    // Remote thread frees each block with the SAME (original) layout — the
+    // legitimate cross-thread free A1 exists to reclaim.
+    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    thread::spawn(move || {
+        let _ = bootstrap::ensure();
+        let remote_heap = HeapRegistry::claim();
+        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        for addr in addrs {
+            unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+        }
+        unsafe { HeapRegistry::recycle(remote_heap) };
+    })
+    .join()
+    .unwrap();
+
+    // Force the owner's alloc_large slow path (the only drain site).
+    let mut ptrs2: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "round 2 alloc[{i}] returned null");
+        ptrs2.push(p);
+    }
+
+    let reclaimed = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed) - baseline;
+    assert!(
+        reclaimed > 0,
+        "a legitimate tiny-size/huge-align cross-thread free was NOT \
+         reclaimed (delta 0) — the mitigation compared the caller's raw \
+         layout.size() against the header's MIN_BLOCK-clamped large_size \
+         and over-rejected it (permanent segment leak)"
+    );
+
+    for &p in &ptrs2 {
+        unsafe { (*heap).dealloc(p, layout) };
+    }
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
 /// Sister coverage for the OTHER call site of the mitigation:
 /// `Heap::dealloc_any_thread` (the explicit `Heap`/`with_heap` public face,
 /// task #132's parity fix). Mirrors

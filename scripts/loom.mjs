@@ -12,8 +12,13 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 
 const ALL = [
   'loom_bootstrap_cas',
+  // #141: the A1 deferred-large push/drain model (found the #143 push leak)
+  // and the free_slots/TaggedPtr ABA model. Both gates are covered by the
+  // alloc-global,alloc-xthread feature superset used below.
+  'loom_deferred_large',
   'loom_epoch',
   'loom_fallback_init',
+  'loom_free_slots_aba',
   'loom_registry',
   'loom_remote_ring',
   'loom_sharded',

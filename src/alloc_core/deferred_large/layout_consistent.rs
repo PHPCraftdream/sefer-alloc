@@ -51,8 +51,21 @@ use crate::alloc_core::segment_header::SegmentHeader;
 /// already be confirmed live (`magic_at(base) == SEGMENT_MAGIC`) and
 /// `SegmentKind::Large` by the caller — this function only adds the
 /// size-consistency check on top of that.
+///
+/// `layout_size` is the caller's RAW `layout.size()`. The alloc path clamps
+/// every request to `MIN_BLOCK` before it reaches `alloc_large`
+/// (`AllocCore::alloc` does `layout.size().max(MIN_BLOCK)`), so the header's
+/// `large_size` is the CLAMPED size. The comparison must therefore clamp the
+/// caller's size the same way — otherwise a legitimate cross-thread free of a
+/// tiny-but-huge-aligned block (`size < MIN_BLOCK`, `align > SMALL_MAX` — a
+/// valid `Layout` via the raw alloc API) would compare `raw != clamped`,
+/// be dropped as "inconsistent", and permanently leak the segment + its
+/// `SegmentTable` slot (the #114/#130 leak-to-abort class). Found by the
+/// full 0.3.0 review; the clamp lives HERE (the single shared point) so both
+/// faces' call sites stay symmetric with the alloc path by construction.
 #[cfg(feature = "alloc-xthread")]
 #[inline(always)]
 pub(crate) fn large_layout_consistent(base: *mut u8, layout_size: usize) -> bool {
-    SegmentHeader::large_size_at(base) == layout_size
+    let clamped = layout_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
+    SegmentHeader::large_size_at(base) == clamped
 }

@@ -5,9 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-07-03
 
-### Fixed
+0.3.0 was hardened in two passes before its first publish: the phase A–F
+pass (2026-06-30) and a post-review pass (#129–#143, 2026-07-02/03) driven
+by a four-agent audit with per-fix counterfactual verification. Entries are
+grouped per pass below.
+
+### Post-review hardening pass (#129–#143)
+
+#### Fixed
 
 - **#129 — BLOCKER: `tls_heap`'s stale-LOCAL TLS resolver could hand out two
   `&mut HeapCore` for the same recycled registry slot.** `tls_heap`'s `LOCAL`
@@ -84,7 +91,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   production cost). Full strict-provenance cleanliness of the tagged-pointer
   infrastructure is separately tracked as #140.
 
-### Performance
+- **#142 — cross-thread `thread_free` access violated the aliasing model
+  (Stacked AND Tree Borrows).** Expanding miri to the A1 cross-thread path
+  showed the deferred-free push's `head.load` was UB under both experimental
+  borrow models: the `owner_thread_free` stamp inherited the owner's
+  `&mut self`-rooted reference provenance, so one remote thread's
+  `compare_exchange` through it was a "foreign write" that Disabled the
+  shared parent tag and forbade a second remote's read. Fixed with the same
+  exposed-provenance discipline as #140: the stamp sites `expose_provenance()`
+  the atomic's address (taken via `addr_of!`, no intermediate `&` retag) and
+  `Node::atomic_ptr_ref` reconstructs the remote's `&AtomicPtr` via
+  `with_exposed_provenance_mut` — a wildcard pointer outside the owner's
+  borrow tree. Verified under miri with BOTH models on both faces' A1 tests
+  and `heap_cross_thread` (all were UB before this fix).
+- **#143 — `push_large_deferred_free` silently dropped a push (permanent
+  leak) under concurrent head contention.** Found by the new
+  `loom_deferred_large` model (#141) and confirmed by a 2M-trial
+  `std::thread` reproduction: the double-push claim-CAS lived INSIDE the
+  head-CAS retry loop, so after losing the head CAS to a concurrent pusher
+  of a DIFFERENT base, the retry's claim always failed (the link word had
+  already left `ABANDONED_TAIL`) and the function returned through the guard
+  bail-out without ever winning `head` — the segment never entered the
+  deferred-free stack (an A1-class permanent leak). Fixed by hoisting the
+  claim CAS to run exactly once, before the head-CAS retry loop.
+- **Full-review follow-up — the #138 layout-consistency mitigation
+  over-rejected legitimate tiny-size frees.** The alloc path clamps every
+  request to `MIN_BLOCK` (16) before it reaches the header's `large_size`,
+  but the mitigation compared the freeing caller's RAW `layout.size()` — so
+  a legitimate cross-thread free of a `size < 16`, `align > SMALL_MAX` block
+  (a valid `Layout` via the raw alloc API) always mismatched, was dropped,
+  and permanently leaked the segment + its table slot (the #114/#130
+  leak-to-abort class, narrow trigger). `large_layout_consistent` now clamps
+  the caller's size symmetrically before comparing.
+
+#### Performance
 
 - **#133 — per-heap hit counters replace a contended global-lock `fetch_add`
   on the hot path.** `DBG_TCACHE_HITS` (magazine-hit) and
@@ -113,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   segment the caller owns; only a miss falls through to the field-specific
   cross-thread header reads.
 
-### Changed
+#### Changed
 
 - **#136 — public API polish before the first 0.3.0 publish (pre-release, not
   a breaking change for any published version).**
@@ -176,7 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `xthread_large_free_consistent_layout_is_reclaimed`, plus a `Heap`-face
   counterpart), counterfactual-verified against both call sites.
 
-### Internal
+#### Internal
 
 - **#137 — CI never exercised the `fastbin` (magazine/tcache) path or the
   flagship `production` feature bundle**, and `loom_fallback_init` (the
@@ -207,12 +247,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reclaim) is also tracked as follow-up debt — judged out of scope for this
   hardening pass (see the task report for the full audit table).
 
-## [0.3.0] - 2026-06-30
+- **#140 — explicit provenance APIs for the registry's lock-free stacks.**
+  The `REGISTRY_PTR` sentinel is now constructed with
+  `core::ptr::without_provenance_mut` (strict-provenance-clean; it is only
+  ever compared, never dereferenced), and every cross-allocation packed-word
+  store/load pair in `abandoned_segs` and the A1 deferred-large stack calls
+  `expose_provenance` / `with_exposed_provenance_mut` explicitly, with a
+  documented "Provenance model" section explaining why full
+  `-Zmiri-strict-provenance` is structurally unreachable for
+  cross-allocation intrusive stacks (an exposed-provenance shape by design,
+  not a bug). No lock-free semantics changed.
+- **#141 — the two missing loom models were written**, closing the debt the
+  #138 audit recorded above: `loom_deferred_large.rs` (the A1 push/drain
+  Treiber stack including the double-push guard — the model that found
+  #143) and `loom_free_slots_aba.rs` (the `free_slots`/`TaggedPtr`
+  push-pop-repush ABA scenario). Both ship `should_panic` counterfactuals
+  proving non-vacuity and are wired into the CI loom matrix.
+
+### Initial pass — phases A–F (2026-06-30)
 
 Post-0.2.1 hardening pass — six phases (A–F), each independently reviewed,
 counterfactual-verified, and committed.
 
-### Fixed
+#### Fixed
 
 - **A1 — permanent leak: cross-thread free of a Large/huge segment.** A
   remote free of a Large segment no-op'd instead of reclaiming it — the
@@ -238,7 +295,7 @@ counterfactual-verified, and committed.
   spun forever waiting for a `READY` that would never come. Losers now
   observe the rollback and re-race the CAS.
 
-### Changed — performance
+#### Changed — performance
 
 - **C1 — the per-thread magazine (`fastbin`) now serves `align > 16`
   requests** (tokio task cells, page-aligned buffers), not just the
@@ -257,7 +314,7 @@ counterfactual-verified, and committed.
   of a fixed 16-block count for every class; a large size class no longer
   parks several MiB in one idle thread's cache after a single refill.
 
-### Added
+#### Added
 
 - **`SeferAlloc::stats() -> AllocStats`** — a cheap, lock-free, process-wide
   diagnostic snapshot (cache hits, decommit calls, cross-thread reclaims,
@@ -273,7 +330,7 @@ counterfactual-verified, and committed.
   `alloc-global`-without-`alloc-xthread` footgun (cross-thread frees leak
   monotonically), and a "std-only" note.
 
-### Internal
+#### Internal
 
 - CI: `-D warnings` restored on the clippy gate after a warnings-cleanup
   pass; miri matrix extended to the task-#114 align-regression tests; a
