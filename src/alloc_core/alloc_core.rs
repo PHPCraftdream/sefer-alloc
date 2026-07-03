@@ -926,7 +926,7 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
         let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        if !self.table.contains_base_ro(base) {
             return None;
         }
         if !matches!(
@@ -944,7 +944,7 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_is_decommitted_for(&self, ptr: *mut u8) -> Option<bool> {
         let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        if !self.table.contains_base_ro(base) {
             return None;
         }
         if !matches!(
@@ -1027,7 +1027,7 @@ impl AllocCore {
     #[cfg(feature = "numa-aware")]
     pub fn dbg_node_id_for(&self, ptr: *mut u8) -> Option<u32> {
         let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        if !self.table.contains_base_ro(base) {
             return None;
         }
         Some(SegmentMeta::new(base).node_id_of())
@@ -1045,7 +1045,7 @@ impl AllocCore {
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
         let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        if !self.table.contains_base_ro(base) {
             return false;
         }
         let off = (ptr as usize - base as usize) as u32;
@@ -1106,7 +1106,7 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
         let base = os::segment_base_of_ptr(ptr);
-        if !self.table.contains_base(base) {
+        if !self.table.contains_base_ro(base) {
             return None;
         }
         if !matches!(
@@ -1144,7 +1144,7 @@ impl AllocCore {
     /// convention of the other `dbg_*_for` accessors in this file.
     #[doc(hidden)]
     pub fn dbg_contains_base(&self, ptr: *mut u8) -> bool {
-        self.table.contains_base(os::segment_base_of_ptr(ptr))
+        self.table.contains_base_ro(os::segment_base_of_ptr(ptr))
     }
 
     /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
@@ -1325,7 +1325,7 @@ impl AllocCore {
     /// here would leave this method genuinely unused under that combination.
     #[cfg(feature = "alloc-global")]
     #[inline(always)]
-    pub(crate) fn contains_base(&self, base: *mut u8) -> bool {
+    pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
         self.table.contains_base(base)
     }
 

@@ -82,6 +82,16 @@ pub(crate) const FREE_LIST_CAPACITY: usize = MAX_SEGMENTS;
 /// `Layout::primordial_free_list_off` / `primordial_free_top_off`).
 pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32>();
 
+/// PERF-P2 (eureka Э3) — number of slots in the direct-mapped own-segment
+/// cache. A power of two (indexed by masking) kept deliberately tiny (start
+/// small, measure before growing). The cache holds ONLY bases proven present
+/// by a won `hash_contains` probe (it *remembers proven*, never *asserts*),
+/// and every table-mutation path that can remove a base
+/// (`unregister`/`recycle`) clears the matching slot IN THE SAME FUNCTION that
+/// mutates the hash — so complete invalidation is structural, not a
+/// remember-to-invalidate discipline scattered across call sites.
+pub(crate) const OWN_CACHE_SIZE: usize = 4;
+
 /// Bit-shift of the segment size (log₂(SEGMENT = 4 MiB) = 22). Used by the
 /// hash function to convert a segment base into a table index. Exposed as
 /// `pub(crate)` so the bootstrap can seed the primordial hash entry before
@@ -115,6 +125,24 @@ pub(crate) struct SegmentTable {
     /// Pointer to the first slot of the registry array (lives in the
     /// primordial segment's payload). `MAX_SEGMENTS` entries.
     slots: *mut *mut u8,
+    /// PERF-P2 (Э3) — a tiny fixed-size direct-mapped cache of segment bases
+    /// that have been PROVEN present by a won `hash_contains` probe. It is an
+    /// inline struct field (NOT primordial-resident memory), zero-initialised
+    /// (all `null_mut()`) in `from_primordial`.
+    ///
+    /// ## Invariant (the correctness keystone — a stale hit is UB / M2 breach)
+    ///
+    /// `own_cache[i]` is either `null_mut()` (empty) or a base that is
+    /// CURRENTLY registered and live in the hash table. A cache HIT
+    /// (`own_cache[cache_index(base)] == base`, non-null) therefore carries the
+    /// exact same guarantee as `hash_contains(base) == true`: the segment is
+    /// registered, live, and mapped by us. This invariant is preserved
+    /// STRUCTURALLY: the ONLY places that fill the cache are won probes, and
+    /// the ONLY places that can remove a base from the hash (`unregister`,
+    /// `recycle`) clear the matching cache slot in the SAME function,
+    /// immediately after `hash_remove`. You cannot drop a base from the table
+    /// without passing through code that also evicts it from the cache.
+    own_cache: [*mut u8; OWN_CACHE_SIZE],
     /// High-water mark: the number of slots that have EVER been written
     /// (including currently-NULL recyclable slots). Segments 0 (the
     /// primordial) is always at index 0 and is never recycled.
@@ -164,6 +192,9 @@ impl SegmentTable {
     ) -> Self {
         Self {
             slots,
+            // PERF-P2: the direct-mapped own-segment cache starts EMPTY (all
+            // slots null). It only ever fills from a won `hash_contains` probe.
+            own_cache: [core::ptr::null_mut(); OWN_CACHE_SIZE],
             count,
             hash_slots,
             free_list,
@@ -268,6 +299,13 @@ impl SegmentTable {
         super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
         // OPT-B: remove from hash table (tombstone the entry).
         self.hash_remove(base);
+        // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
+        // cached. A stale cache slot surviving removal would let a future
+        // `contains_base` HIT on an unregistered/recycled/unmapped base and
+        // route a foreign or freed pointer as own-thread (UB / M2 breach).
+        // Co-located with `hash_remove` in the SAME function so invalidation
+        // is structurally complete.
+        self.own_cache_clear(base);
         // Task #135: push the just-vacated index onto the free-list so a
         // future `register` can reuse it in O(1). Guarded by `current != base`
         // above (only a slot that WAS non-NULL and held `base` reaches here),
@@ -324,6 +362,15 @@ impl SegmentTable {
                 // remains valid as a key (we compare values, not dereference),
                 // but doing the hash update first is cleaner.
                 self.hash_remove(base);
+                // PERF-P2 (Э3): evict `base` from the direct-mapped cache
+                // BEFORE releasing the OS reservation. After `release_segment`
+                // the virtual address `base` is unmapped; a stale cache slot
+                // still holding it would let a later free of a pointer whose
+                // computed base equals this recycled base HIT the cache and be
+                // (catastrophically) routed as own-thread → write to unmapped /
+                // recycled memory (UB / M2 breach). Co-located with
+                // `hash_remove` in the SAME function → structural invalidation.
+                self.own_cache_clear(base);
                 // Release the OS reservation. After this, `base` is invalid
                 // (unmapped). We do NOT dereference `base` after this point.
                 super::os::release_segment(reservation, reservation_len);
@@ -363,9 +410,95 @@ impl SegmentTable {
     ///
     /// Recycled (NULL) slots are NOT considered as matching any base, so a
     /// use-after-recycle pointer is correctly treated as foreign.
+    ///
+    /// PERF-P2 (Э3): checks the tiny direct-mapped own-segment cache FIRST. A
+    /// cache HIT (`own_cache[cache_index(base)] == base`, non-null) returns
+    /// `true` immediately — the cache holds ONLY bases proven present (filled
+    /// from a won probe) and is evicted in lockstep with every hash removal
+    /// (`unregister`/`recycle`), so a hit carries the exact `hash_contains ==
+    /// true` guarantee (registered + live + mapped). A MISS falls through to
+    /// the full `hash_contains`; on a probe hit we FILL the cache slot
+    /// (remember-proven) and return `true`; on a probe miss we return `false`
+    /// WITHOUT filling (the cache never holds an absent base). Requires `&mut
+    /// self` for the fill; all hot free-path callers (`dealloc`,
+    /// `dealloc_routing`, `realloc`) already hold `&mut`.
     #[inline(always)]
-    pub(crate) fn contains_base(&self, base: *mut u8) -> bool {
+    pub(crate) fn contains_base(&mut self, base: *mut u8) -> bool {
+        let idx = Self::cache_index(base);
+        // Fast path: proven-present cache hit.
+        if self.own_cache[idx] == base && !base.is_null() {
+            return true;
+        }
+        // Miss → full O(1) hash probe. Fill the cache only on a won probe.
+        if self.hash_contains(base) {
+            self.own_cache[idx] = base;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// PERF-P2 (Э3): read-only membership test that NEVER touches the cache
+    /// (no fill), for `&self` contexts (test-only `dbg_*` accessors, census).
+    /// Same result as `contains_base` — it just skips the remember-proven
+    /// fill. Kept separate so the read-only surface does not require `&mut`.
+    #[inline(always)]
+    pub(crate) fn contains_base_ro(&self, base: *mut u8) -> bool {
+        let idx = Self::cache_index(base);
+        if self.own_cache[idx] == base && !base.is_null() {
+            return true;
+        }
         self.hash_contains(base)
+    }
+
+    /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are
+    /// SEGMENT-aligned so the low `SEGMENT_SHIFT` bits are zero; shift them out
+    /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.
+    #[inline(always)]
+    fn cache_index(base: *mut u8) -> usize {
+        (base as usize >> SEGMENT_SHIFT) & (OWN_CACHE_SIZE - 1)
+    }
+
+    /// PERF-P2 (Э3): evict `base` from the direct-mapped cache if (and only if)
+    /// the slot for `base`'s index currently holds exactly `base`. Called from
+    /// `unregister`/`recycle` in lockstep with `hash_remove`. A slot holding a
+    /// DIFFERENT base (a collision) is left untouched — that other base is
+    /// still live, and evicting it would only cost a future miss, never
+    /// correctness; but we specifically do NOT clear it because doing so is
+    /// unnecessary.
+    ///
+    /// ## Register-reuse reasoning (why `register` does NOT touch the cache)
+    ///
+    /// The cache invariant is "a non-null cache slot holds a base currently
+    /// present in the hash". A newly-registered base `b` at index `i` finds
+    /// `own_cache[i]` either EMPTY (`null` — fine, no stale entry) or holding
+    /// some OTHER base `b' != b`. In the latter case `b'` can only be a base
+    /// that is ITSELF still live in the hash (every eviction path clears the
+    /// slot when its base leaves, so a surviving non-null slot is a live base):
+    /// `b'` is not `b`, so a lookup of `b` MISSES the cache and falls to the
+    /// hash (correct), and a lookup of `b'` still HITS correctly (b' is
+    /// genuinely live). Registering `b` neither creates nor removes a hash
+    /// entry for `b'`, so the invariant holds for both.
+    ///
+    /// It is IMPOSSIBLE for `own_cache[i]` to hold `b` itself at register time:
+    /// the cache only fills from a won probe, and `b` could only have won a
+    /// probe while previously registered; but between that registration and
+    /// this one `b` MUST have been removed via `unregister`/`recycle`, which
+    /// clears the slot for `b`. Hence no stale `b` can survive to this
+    /// `register`. Therefore `register` needs no cache write — the ONLY hazard
+    /// (a stale slot surviving removal) is fully handled by the eviction in
+    /// `unregister`/`recycle`. Verified: see the counterfactual regression test
+    /// `regression_own_segment_cache_invalidation`.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    #[inline]
+    fn own_cache_clear(&mut self, base: *mut u8) {
+        let idx = Self::cache_index(base);
+        if self.own_cache[idx] == base {
+            self.own_cache[idx] = core::ptr::null_mut();
+        }
     }
 
     /// Iterate over all **live** (non-NULL) registered segment bases
