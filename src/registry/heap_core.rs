@@ -494,14 +494,41 @@ impl HeapCore {
         // `AllocCore`, because `AllocCore` has no `HeapCore` back-reference
         // to drain from) — small-classified requests pay zero cost for this
         // check beyond the one `class_for` call already needed below.
+        // Э9 (P7.1, task #160): classify ONCE. `size`, `align` and
+        // `class_for(size, align)` are pure functions of `layout`; they were
+        // previously computed TWICE per alloc under production (once in the
+        // xthread Large-drain check, once in the fastbin magazine-routing
+        // block). We compute them a single time here and thread the result
+        // through both consumers. The binding is gated on `any(...)` so it
+        // exists whenever EITHER consumer is compiled in, and each consuming
+        // block stays behind its own cfg. Behaviour is byte-identical
+        // (`class_for` is pure → same index; the A1 Large-drain fires for
+        // exactly the same Large-classified layouts).
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        let align = layout.align();
+        #[cfg(any(
+            feature = "alloc-xthread",
+            all(feature = "alloc-global", feature = "fastbin")
+        ))]
+        let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
+
+        // 0.3.0 (task A1): drain this heap's cross-thread Large-segment
+        // deferred-free stack before a Large-classified request reaches
+        // `AllocCore::alloc_large`'s slow path. Uses the single `class`
+        // computed above (Large ⇔ `class.is_none()`).
         #[cfg(feature = "alloc-xthread")]
         {
-            let size = layout
-                .size()
-                .max(crate::alloc_core::size_classes::MIN_BLOCK);
-            if crate::alloc_core::size_classes::SizeClasses::class_for(size, layout.align())
-                .is_none()
-            {
+            if class.is_none() {
                 self.drain_large_deferred_free();
             }
         }
@@ -530,10 +557,8 @@ impl HeapCore {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
             use crate::alloc_core::size_classes::SizeClasses;
-            let size = layout
-                .size()
-                .max(crate::alloc_core::size_classes::MIN_BLOCK);
-            let align = layout.align();
+            // Э9 (P7.1): `size`, `align`, `class` come from the single
+            // classification hoisted above — no recompute here.
             // C1 (0.3.0): the magazine fast path used to be gated on
             // `align <= SMALL_ALIGN_MAX` (16), so every align>16 request
             // (tokio `Cell` at align=128, page-aligned buffers, etc.) fell
@@ -554,7 +579,7 @@ impl HeapCore {
             // whole block is the OWN-THREAD path (`dealloc_routing` decides
             // ownership BEFORE reaching `dealloc_own_thread`/the magazine).
             {
-                if let Some(c) = SizeClasses::class_for(size, align) {
+                if let Some(c) = class {
                     let cnt = self.tcache.count[c] as usize;
                     if cnt > 0 {
                         // Magazine hit: pop from the top of the stack.
@@ -702,9 +727,41 @@ impl HeapCore {
     /// everything else to `core.dealloc`. Called from the `!alloc-xthread`
     /// path (no routing needed) and from `dealloc_routing` after confirming
     /// the block is ours.
+    ///
+    /// Э9 (P7.1, task #160): under fastbin this delegates to
+    /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base),
+    /// computing `base = os::segment_base_of_ptr(ptr)` itself. The
+    /// Э9 (P7.1): under fastbin the magazine body lives in
+    /// [`dealloc_own_thread_with_base`](Self::dealloc_own_thread_with_base)
+    /// (which takes the pre-computed `base`), and BOTH callers of the
+    /// own-thread path under fastbin already hold `base` (the cross-thread
+    /// `dealloc_routing` from its `contains_base` check; there is no
+    /// `!alloc-xthread` caller under fastbin since `fastbin ⟹ alloc-xthread`).
+    /// So this own-arg wrapper is compiled ONLY when fastbin is OFF — where the
+    /// own-thread path has no magazine and simply delegates to `core.dealloc`.
+    /// Callers: the `!alloc-xthread` branch of [`dealloc`](Self::dealloc) and
+    /// the non-fastbin arm of `dealloc_routing`.
+    #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
     #[inline(always)]
     fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
-        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        // Non-fastbin own-thread free: no magazine — delegate to core.
+        self.core.dealloc(ptr, layout);
+    }
+
+    /// Э9 (P7.1, task #160): own-thread dealloc body, taking a pre-computed
+    /// `base = os::segment_base_of_ptr(ptr)` so the cross-thread
+    /// [`dealloc_routing`](Self::dealloc_routing) path — which already
+    /// computed `base` for its `contains_base` ownership check — does not
+    /// recompute it. Behaviour is byte-identical to the former inline body:
+    /// the R1 `off >= bump` stale-free guard and the Э6 magazine/bitmap M2
+    /// oracles all operate on this passed-in `base` (which equals what they
+    /// used to compute locally, `segment_base_of_ptr` being pure).
+    ///
+    /// Only compiled under fastbin (the only build with a magazine + the only
+    /// consumer of `base` on this path).
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    fn dealloc_own_thread_with_base(&mut self, ptr: *mut u8, layout: Layout, base: *mut u8) {
         {
             use super::tcache::{FLUSH_N, TCACHE_CAP};
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
@@ -818,8 +875,10 @@ impl HeapCore {
                     // read on a segment already PROVEN ours and mapped by
                     // `dealloc_routing`'s `contains_base` ownership check
                     // (fastbin ⇒ alloc-xthread structurally), exactly as
-                    // before.
-                    let base = os::segment_base_of_ptr(ptr);
+                    // before. Э9 (P7.1): `base` is the pre-computed argument
+                    // (same value `segment_base_of_ptr` would return — pure),
+                    // threaded in from `dealloc_routing` so it is computed
+                    // once on the own-thread free path.
                     let off = (ptr as usize - base as usize) as u32;
                     let meta = SegmentMeta::new(base);
                     // Stale-free guard, parity with `dealloc_small`
@@ -987,6 +1046,14 @@ impl HeapCore {
         // table"), without reading `base`'s memory at all. Route it own-thread
         // immediately — no magic/kind read needed.
         if self.core.contains_base(base) {
+            // Э9 (P7.1): `base` is already in hand from the `contains_base`
+            // ownership check above; under fastbin, hand it to the own-thread
+            // body directly so `segment_base_of_ptr` is not recomputed. Under
+            // non-fastbin `dealloc_own_thread` just delegates to `core.dealloc`
+            // (base unused there).
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            self.dealloc_own_thread_with_base(ptr, layout, base);
+            #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
             self.dealloc_own_thread(ptr, layout);
             return;
         }
