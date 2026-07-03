@@ -546,23 +546,31 @@ per-thread heap takes no shared lock; cross-thread frees route through
 the lock-free Phase-10/12.6 remote path). Single-thread (T = 1) `mimalloc`
 leads — see the verdict below.
 
-### Synthetic bulk worst case (`benches/global_alloc.rs::global_alloc`)
+### Cold first-touch (`benches/global_alloc.rs::global_alloc`)
 
-`alloc 1024 → free 1024` — the documented worst case for any per-thread
-magazine (every free overflows; every alloc empties and refills). Kept as
-a regression guard, **not** a representative workload.
+`alloc N → free N` — no working-set reuse, the "first touch" path (every
+block is a fresh carve). Historically the documented worst case for a
+per-thread magazine; the **P3 bump-direct batched carve (Э1)** removed the
+tautological `carve → BinTable → pop` round-trip that made every virgin
+block pay ~40 metadata-touch instructions, so this is no longer a dramatic
+loss — it is the same cold-direct measurement as the "Cold direct" column of
+the Performance table above.
 
-| Size | SeferAlloc | mimalloc | vs mimalloc |
-|---|---|---|---|
-|   16 B | ~29.4 µs | ~10.3 µs | 2.87× slower |
-|   64 B | ~30.3 µs | ~13.7 µs | 2.21× slower |
-|  256 B | ~30.8 µs | ~16.8 µs | 1.83× slower |
-| 1024 B | ~32.0 µs | ~33.3 µs | parity |
+| Size | SeferAlloc | mimalloc | vs mimalloc | (pre-P3 was) |
+|---|---|---|---|---|
+|   16 B | ~16–20 µs | ~12 µs    | ~1.5× slower | 2.6× slower |
+|   64 B | ~21–25 µs | ~17–19 µs | ~1.3× slower | 2.0× slower |
+|  256 B | ~24 µs    | ~24 µs    | ≈ parity     | 1.5× slower |
+| 1024 B | ~25–26 µs | ~46–49 µs | **~1.9× faster** | 1.2× faster |
 
-A bulk-mode bypass (detect alloc-without-free streak, skip the magazine)
-would close this; for now it is the documented design trade-off of
-`fastbin` (default-on in `production`). Disable `fastbin` if your primary
-workload is arena-style bulk alloc-then-bulk-free.
+The residual gap on the tiniest cold sizes is honest per-block work
+(page-map writes, page faults on genuinely fresh pages), not a tautology —
+the round-trip is gone. The old P7 alloc-side bulk-bypass was retired in P3
+(bump-direct IS the ideal bulk path, so the streak-detection heuristic no
+longer buys anything). `fastbin` remains default-on in `production`; the M2
+double-free guard it pays for on the *real free* path is the one place
+`mimalloc` still leads (256 B churn, ~16 %, by design — see the verdict
+below).
 
 Reproduce with:
 

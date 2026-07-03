@@ -942,6 +942,17 @@ target), fastbin is a net positive.
 
 ### P7 measurement — bulk-mode bypass (adaptive)
 
+> **⚠️ RETIRED in the 0.3.x P0–P5 perf arc (task #147, Э1 — see
+> [`perf/PERF_PLAN_beat_mimalloc_small_medium.md`](perf/PERF_PLAN_beat_mimalloc_small_medium.md)).**
+> The P3 *bump-direct batched carve* made a magazine miss carve straight into
+> the magazine at near-`memcpy` cost, so the "skip the magazine on an
+> alloc-without-free streak" heuristic no longer buys anything. Both the
+> alloc-side and dealloc-side bypasses, the `alloc_streak` counter, and the
+> `BULK_THRESHOLD` constant were removed (retiring one side without the other
+> would leave a permanently-dead branch). The section below is kept as the
+> historical measurement record that motivated P7; it does **not** describe
+> current code.
+
 P7 addresses the bulk-bench regression flagged in P6 §11 (W=1, L=4, all
 losses on bulk). Mechanism: per-class `alloc_streak: u8` counter on the
 `Tcache` struct. Incremented on every magazine MISS (refill); read on

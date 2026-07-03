@@ -695,7 +695,8 @@ What's left of "us" in the larson workload:
    cache already reduced this from Acquire+Release to Relaxed; further
    reduction would require eliminating the per-alloc stamp entirely — P4
    hoisted it into refill on the magazine hit path, but the **large path**
-   and the **bulk-bypass path** still per-alloc stamp).
+   still per-alloc stamps; the bulk-bypass path was retired in the 0.3.x
+   perf arc, task #147 — see `perf/PERF_PLAN_beat_mimalloc_small_medium.md`).
 2. **`dealloc_routing` reads on every dealloc**: `magic_at`, `owner_thread_free_at`,
    `kind_at`. Required for safe cross-thread routing. Per the §0 microbench
    ~5%, on MT roughly similar.
