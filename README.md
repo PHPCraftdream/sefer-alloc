@@ -216,9 +216,13 @@ disclaimer):
   cache — a 4 MiB cycle is ~58 ns vs mimalloc's ~779 ns, and ~309× faster than
   `System`.
 - On **single-thread small-class churn** (the reuse pattern) it **beats
-  `mimalloc`** at 16 B (1.26×), 64 B (1.23×), and 1024 B (5.8×); on cold
-  first-touch of tiny blocks (16–64 B) mimalloc still leads — the documented
-  worst-case, called out honestly in [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
+  `mimalloc`** at 16 B (1.63×), 64 B (1.68×), and 1024 B (~5.9×) after the
+  P0–P5 perf arc widened the lead; 256 B churn still trails ~16 % (the M2
+  double-free guard on the free path — by design). On cold first-touch of tiny
+  blocks the P3 bump-direct carve roughly halved the gap (16 B now ~1.5×, 64 B
+  ~1.3× slower) and brought cold 256 B to parity — the residual is honest
+  per-block page-fault work, called out in
+  [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc-grow under neighbour pressure** it is ~1.1× faster than
   `mimalloc` and ~8.8× faster than `System`.
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
@@ -422,15 +426,16 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 
 ## Performance
 
-**sefer-alloc 0.3.0, re-measured 2026-07-03** (criterion benches on a single
-Windows dev host, `SeferAlloc` called directly through its `GlobalAlloc` impl
-— apples-to-apples — vs `mimalloc 0.1` vs `System`). Per
-[CLAUDE.md](CLAUDE.md) the project's bench profile is the quick one —
-`sample_size(10)`, short warm-up — and the host is noisy (±15–20 %), so these
-are honest **comparative** measurements, **not** a rigorous statistical suite.
-Trust the relative shape and the order of magnitude, not the exact percentages;
-the rigorous, deterministic gate is the instruction-count `perf_gate_iai` bench
-(#127/#128) on Linux CI. Source-of-truth tables + per-bench commentary live in
+**sefer-alloc 0.3.x, re-measured 2026-07-03 after the P0–P5 perf arc**
+(criterion benches on a single Windows dev host, `SeferAlloc` called directly
+through its `GlobalAlloc` impl — apples-to-apples — vs `mimalloc 0.1` vs
+`System`). Per [CLAUDE.md](CLAUDE.md) the project's bench profile is the quick
+one — `sample_size(10)`, short warm-up — and the host is noisy (±15–20 %), so
+these are honest **comparative** measurements, **not** a rigorous statistical
+suite. Trust the relative shape and the order of magnitude, not the exact
+percentages; the rigorous, deterministic gate is the instruction-count
+`perf_gate_iai` bench (#127/#128/#144) on Linux CI. Source-of-truth tables +
+per-bench commentary live in
 [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md); re-run
 `cargo bench --features production` for your own numbers. **Lower is better**
 (latency).
@@ -467,21 +472,47 @@ keeps this win without unbounded RSS amplification across cache reuse.
 Two patterns. **Churn** (steady-state over a live working set — each iteration
 frees a pseudo-random slot and allocates a replacement) is the common shape of
 real workloads and what the `fastbin` per-thread magazine
-([`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets; the 0.3.0 #133
-fix (removing a contended global `lock xadd` from the hit path) lifted 16/64 B
-here ~20 %. **Cold direct** (no reuse, "first touch") is the documented
-worst-case where mimalloc's cheaper first-touch path leads at tiny sizes.
+([`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets. **Cold direct**
+(no reuse, "first touch") is the historically documented worst-case where
+mimalloc's cheaper first-touch path led at tiny sizes.
+
+The **P0–P5 perf arc** (below) attacked exactly these two fronts. On cold tiny
+blocks the P3 bump-direct batched carve (Э1) removed the tautological
+`carve → BinTable → pop` round-trip that made every virgin block pay ~40
+metadata-touch instructions: it roughly **halved the cold gap** (16 B from
+2.6× → ~1.5× slower, 64 B from 2.0× → ~1.3× slower) and brought **cold 256 B to
+parity**. On churn the one-branch resolver (Э2) + classify-once (Э4) +
+lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
+1.63× faster, 64 B 1.23× → 1.68× faster). Ranges below span two runs on a noisy
+host; the deterministic per-op proof is the iai gate (see below).
 
 | Size | Churn: Sefer | mimalloc | vs mi | Cold direct: Sefer | mimalloc | vs mi |
 |---|---|---|---|---|---|---|
-|   16 B | **~29 µs** | ~37 µs  | **1.26× faster** | ~28 µs | ~11 µs | 2.6× slower |
-|   64 B | **~31 µs** | ~38 µs  | **1.23× faster** | ~29 µs | ~14 µs | 2.0× slower |
-|  256 B | ~28 µs     | ~23 µs  | 1.25× slower     | ~28 µs | ~19 µs | 1.5× slower |
-| 1024 B | **~28 µs** | ~161 µs | **5.8× faster**  | ~29 µs | ~35 µs | **1.2× faster** |
+|   16 B | **~24 µs** | ~39 µs  | **1.63× faster** | ~16–20 µs | ~12 µs    | ~1.5× slower |
+|   64 B | **~32 µs** | ~53 µs  | **1.68× faster** | ~21–25 µs | ~17–19 µs | ~1.3× slower |
+|  256 B | ~32 µs     | ~28 µs  | 1.16× slower     | ~24 µs    | ~24 µs    | ≈ parity     |
+| 1024 B | **~33 µs** | ~196 µs | **~5.9× faster** | ~25–26 µs | ~46–49 µs | **~1.9× faster** |
 
 (All small-size rows are per-iteration batches; the same batch runs for all
 three allocators, so the ratios are the meaningful signal. vs `System`: 3–6×
 faster across the board.)
+
+**Where we still trail — 256 B churn, ~16 % behind mimalloc, by design.** The
+exact-256 B size class (P1) narrowed this front from 1.25× → 1.16× slower but
+did **not** overtake. The residual is the M2 alloc-bitmap read-modify-write on
+the *real* free path — the price of the exact double-free / foreign-free
+guarantee mimalloc does not offer, paid in full and deliberately **not** removed
+(every P0–P5 speedup deleted a tautology, never a guard). This is the honest
+ceiling documented in
+[`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md)
+§"Honest ceiling"; closing it further would require a feature-gated
+`fast`/`hardened` split, a separate product decision (0.4+).
+
+The DETERMINISTIC counterpart to these noisy wall-clock ratios is the
+instruction-count `perf_gate_iai` gate (Valgrind, Linux-only CI): the P0 benches
+(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`) exist to confirm the
+per-op `Ir` deltas of Э1–Э5; their `Ir` baseline is captured on the first Linux
+perf-gate run.
 
 ### MT cross-thread (`examples/malloc_macro.rs`, larson + mstress)
 
@@ -545,21 +576,34 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
 ### Honest verdict
 
 - **Where sefer-alloc wins big:**
-  - **Large alloc/free OPT-E:** 16–39× faster than `mimalloc`, 270–380× faster
+  - **Large alloc/free OPT-E:** 13–34× faster than `mimalloc`, ~240–310× faster
     than `System`. The headline.
-  - **Real-world churn (the common shape):** 1.7× on 16/64 B, parity on 256 B,
-    **7.3× on 1024 B**.
-  - **Realloc** (`realloc_in_place_unfavorable`): 10.5× via OPT-F skip-copy.
+  - **Real-world churn (the common shape):** ~1.63× on 16 B, ~1.68× on 64 B,
+    **~5.9× on 1024 B** (the P0–P5 arc widened the tiny-block lead).
+  - **Cold first-touch after P3 (Э1 bump-direct carve):** cold 256 B reached
+    parity; cold 1024 B ~1.9× faster; cold 16/64 B halved their gap (now ~1.5×
+    / ~1.3× slower, down from 2.6× / 2.0×).
+  - **Realloc** (`realloc_grow_geometric`): ~1.1× faster than `mimalloc`,
+    ~8.8× faster than `System`.
   - **MT macro at T ≥ 2:** larson 1.21–1.28×, mstress 1.19–1.31× faster.
-- **Where it ties:** churn 256 B; bulk 1024 B; MT mstress T = 2 within noise.
+- **Where it ties:** cold 256 B (parity after Э1); bulk 1024 B; MT mstress
+  T = 2 within noise.
 - **Where it loses:**
-  - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`.
-    Structural cost of our safety machinery (M2 double-free guard on the
-    bitmap, `contains_base` foreign-pointer hash probe, cross-thread routing
-    reads on every `dealloc`) — the inline-seam (#101/#102) is fully exhausted;
-    closing further requires changing M2 mechanics. See
-    [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) §0 and the "what's left"
-    section.
+  - **256 B churn: ~1.16× behind `mimalloc`, by design.** The exact-256 B
+    class (P1) narrowed it from 1.25× but did not overtake. The residual ~16 %
+    is the M2 alloc-bitmap read-modify-write on the real free path — the price
+    of the exact double-free / foreign-free guarantee mimalloc does not offer,
+    paid in full and deliberately not removed. See
+    [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md)
+    §"Honest ceiling".
+  - **Cold tiny blocks (16–64 B): ~1.3–1.5× behind `mimalloc`.** Halved by the
+    P3 bump-direct carve but not fully closed — what remains is honest per-block
+    work (page-map writes, page faults on genuinely fresh pages), not ceremony.
+  - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`
+    (historical 0.2.0 MT numbers, not re-run this pass). Structural cost of our
+    safety machinery; the per-thread architecture means it does not compound —
+    at T ≥ 2 sefer-alloc leads. See
+    [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) §0.
   - **Synthetic bulk (16–256 B alloc-1024-then-free-1024):** 1.8–2.9× slower —
     the magazine's design worst case (every free overflows, every alloc
     empties and refills). Documented trade-off; not a real-world pattern.

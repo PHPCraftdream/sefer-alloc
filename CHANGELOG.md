@@ -5,6 +5,95 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Performance — the P0–P5 "beat mimalloc on small/medium" arc (#144–#149)
+
+A five-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
+lost: cold first-touch of tiny blocks (16–64 B) and 256 B churn. The governing
+rule was **every speedup removes a *tautology*, never a *guard*** — no
+correctness guarantee was surrendered (M2 exact double/foreign-free no-op, D1
+live-count accuracy, A1 cross-thread reclaim, `#![forbid(unsafe_code)]` at the
+top level all intact). Each phase was implemented, line-by-line zero-trust
+reviewed, counterfactually verified, and committed between phases. See
+[`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md)
+for the full diagnosis and
+[`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) for the P0→P5 measurement tables.
+
+The five eurekas that landed (P1–P3):
+
+- **Э1 (P3) — bump-direct batched carve — front A's main lever (#147).** A
+  freshly bump-carved block already satisfies the M2 bitmap invariant
+  (`bit 0 = allocated`); the old refill drove every virgin block on a
+  `carve → write_next → bitmap RMW → head-store → pop → read_next → bitmap RMW`
+  round-trip through the `BinTable` only to move it to "free" and instantly
+  back to "allocated" — a tautology (~40 instructions/block). New
+  `AllocCore::refill_class_bump` carves a batch straight from the bump cursor
+  into the magazine (`bump += n·block_size`, `live_count += n`) **without
+  touching the bitmap** (bit 0 is already correct), ~6–8 instructions/block.
+  Source order preserved: freelist / cross-thread ring-drain are still tried
+  BEFORE bump-carve, so freed blocks never go stale (no RSS drift). M2
+  byte-identical (a double-free of such a block still `mark_free`s, and the
+  second free still sees "already free" → no-op); D1 exact (same batch inc).
+  The P7 alloc-side bulk-bypass became unnecessary and was retired (the
+  dealloc-side bulk-flush is kept). This roughly halved the cold tiny-block
+  gap and brought cold 256 B to parity.
+- **Э2 (P1) — one-branch teardown resolver (#145).** After #129 every alloc
+  compared `p == TORN` (`usize::MAX`) and `p == null` (`0`) — two branches on
+  the process's hottest path for a once-per-thread teardown case. Since the
+  two sentinels are the range ends, one compare
+  (`p.addr().wrapping_sub(1) < usize::MAX − 1`) catches both; the cold split
+  (`0 → bind_slow`, `MAX → Fallback`) only runs off the fast path. Semantics
+  identical (same #129 counterfactual test), minus a branch.
+- **Э4 (P1) — classify once (#145).** `class_for` was recomputed 2–3× per
+  alloc and 2× per free; the class `c` (a pure function of size+align) is now
+  threaded once through the path (the magazine miss resolves `c` and hands it
+  straight to `refill_class_bump(c, …)`; the dealloc overflow resolves `c` once
+  and passes it to `flush_class` / `dealloc_small(base, ptr, c)`), removing 1–2
+  loads from the 16 KiB `SIZE2CLASS` table plus branches per op. (P1 introduced
+  thin `alloc_small_class` / `dealloc_small_class` wrappers for the bulk-bypass
+  callers; P3 retired those wrappers with the P7 bypass, but the classify-once
+  threading they enabled survives on the live refill/dealloc paths.)
+- **Э5 (P1) — a counter that doesn't count (#145).** The per-hit
+  `tcache_hits.fetch_add` was a `lock xadd` even after #133 removed the
+  *contention* (the owner is the sole writer). Replaced with a
+  `load(Relaxed); store(+1, Relaxed)` pair — same atomic visibility for
+  `stats()`, no lock prefix. TSan/miri-clean.
+- **Exact 256 B size class (P1, #145).** `SMALL_CLASS_COUNT` 48 → 49 adds an
+  exact-256 B class (the public size-class type has been a `&'static [..]`
+  slice since #136, so this is not a breaking change). This narrows — but does
+  not close — the 256 B churn gap.
+
+Э3 (P2, own-segment cache) was implemented and gated but is honestly modest
+(the win is skipping the probe arithmetic + a likely L1 miss; `contains_base`
+was already O(1)); it does not move the headline tables.
+
+### Measured result (single noisy Windows dev host, criterion FAST profile — ratios are the signal)
+
+- **Cold tiny blocks (front A) — the big win.** 16 B `2.6× → ~1.5× slower`;
+  64 B `2.0× → ~1.3× slower`; cold 256 B reached **parity**. Not full parity
+  on the tiniest cold sizes, but the tautological carve→BinTable→pop round-trip
+  is gone — what remains is honest per-block work (page-map writes, page faults
+  on genuinely fresh pages).
+- **Churn tiny blocks — lead widened.** 16 B `1.26× → 1.63× faster`; 64 B
+  `1.23× → 1.68× faster` (Э2 + Э4 + Э5 compounding on the hit path).
+- **256 B churn (front B) — improved but NOT overtaken.** The exact-256 B
+  class narrowed it from `1.25× → 1.16× slower`. **We still trail mimalloc by
+  ~16 % here, by design.** The residual is the M2 bitmap read-modify-write on
+  the real free path — the price of the exact double/foreign-free guarantee
+  mimalloc does not offer, paid in full and deliberately NOT removed. This is
+  the plan's honest ceiling.
+- **Large (≥1 KiB) — the crushing lead is retained.** Cold ~1.9× faster,
+  churn ~5.9× faster; the OPT-E large-cache headline (13–34× at 4/16/64 MiB)
+  is unchanged.
+
+The rigorous, DETERMINISTIC proof is the `perf_gate_iai` instruction-count
+gate (Valgrind, Linux-only CI): the P0 benches
+(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144) exist for exactly
+this and confirm the per-op `Ir` deltas; their `Ir` baseline is captured on the
+first Linux perf-gate run. The wall-clock numbers above are noisy comparative
+measurements, not a statistical suite.
+
 ## [0.3.0] - 2026-07-03
 
 0.3.0 was hardened in two passes before its first publish: the phase A–F

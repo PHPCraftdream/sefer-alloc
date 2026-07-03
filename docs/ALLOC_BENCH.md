@@ -1,14 +1,15 @@
 # `SeferAlloc` — benchmark & honest verdict
 
-> ## 0.3.0 re-measurement (2026-07-03) — current-build numbers
+> ## 0.3.x re-measurement (2026-07-03) — after the P0–P5 perf arc
 >
-> Re-run on the final 0.3.0 tree (post-review hardening #129–#143), same host
-> and quick criterion profile (`sample_size(10)`, short warm-up), noisy
-> Windows dev machine (±15–20 %). `SeferAlloc` is called directly through its
-> `GlobalAlloc` impl — apples-to-apples with `mimalloc 0.1` and `System`.
-> Medians; trust the relative shape and order of magnitude, not exact
-> percentages. The rigorous deterministic gate is `perf_gate_iai`
-> (instruction counts, Linux CI — #127/#128). The detailed Phase-11/13
+> Re-run on the post-P5 tree (perf campaign #144–#149, on top of the 0.3.0
+> post-review hardening #129–#143), same host and quick criterion profile
+> (`sample_size(10)`, ~1 s warm-up / ~1 s measurement), noisy Windows dev
+> machine (±15–20 %). `SeferAlloc` is called directly through its `GlobalAlloc`
+> impl — apples-to-apples with `mimalloc 0.1` and `System`. Medians (two runs
+> where a range is shown); trust the relative shape and order of magnitude, not
+> exact percentages. The rigorous deterministic gate is `perf_gate_iai`
+> (instruction counts, Linux CI — #127/#128/#144). The detailed Phase-11/13
 > commentary below is retained for context; where it disagrees on absolute
 > numbers, THIS section is the current one.
 >
@@ -20,19 +21,71 @@
 > | 16 MiB | **~63 ns** | ~890 ns  | ~15.3 µs | ~14× | ~242× |
 > | 64 MiB | **~62 ns** | ~2.14 µs | ~18.3 µs | ~34× | ~295× |
 >
-> **Small class — churn (reuse) vs cold direct (first touch):**
+> **Small class — churn (reuse) vs cold direct (first touch), post-P5:**
 >
 > | Size | Churn: Sefer | mi | Cold: Sefer | mi |
 > |---|---|---|---|---|
-> | 16 B   | ~29 µs (**1.26× faster**) | ~37 µs  | ~28 µs (2.6× slower) | ~11 µs |
-> | 64 B   | ~31 µs (**1.23× faster**) | ~38 µs  | ~29 µs (2.0× slower) | ~14 µs |
-> | 256 B  | ~28 µs (1.25× slower)     | ~23 µs  | ~28 µs (1.5× slower) | ~19 µs |
-> | 1024 B | ~28 µs (**5.8× faster**)  | ~161 µs | ~29 µs (**1.2× faster**) | ~35 µs |
+> | 16 B   | ~24 µs (**1.63× faster**) | ~39 µs  | ~16–20 µs (~1.5× slower) | ~12 µs    |
+> | 64 B   | ~32 µs (**1.68× faster**) | ~53 µs  | ~21–25 µs (~1.3× slower) | ~17–19 µs |
+> | 256 B  | ~32 µs (1.16× slower)     | ~28 µs  | ~24 µs (≈ parity)        | ~24 µs    |
+> | 1024 B | ~33 µs (**~5.9× faster**) | ~196 µs | ~25–26 µs (**~1.9× faster**) | ~46–49 µs |
 >
 > (Small rows are per-iteration batches — identical batch for all three
 > allocators, so ratios are the signal. vs `System`: 3–6× faster throughout.)
-> The #133 fix (removing a contended global `lock xadd` from the magazine-hit
-> path) lifted 16/64 B churn ~20 %.
+>
+> **The P0 → P5 delta story (what moved and why):**
+>
+> | Front | P0 baseline gap | P5 gap | lever |
+> |---|---|---|---|
+> | cold 16 B  | 2.6× slower | ~1.5× slower | Э1 bump-direct carve (P3) |
+> | cold 64 B  | 2.0× slower | ~1.3× slower | Э1 bump-direct carve (P3) |
+> | cold 256 B | 1.5× slower | ≈ parity     | Э1 + exact-256 class |
+> | cold 1024 B | 1.2× faster | ~1.9× faster | (cold path, bytes-bound) |
+> | churn 16 B | 1.26× faster | **1.63× faster** | Э2 + Э4 + Э5 (P1) |
+> | churn 64 B | 1.23× faster | **1.68× faster** | Э2 + Э4 + Э5 (P1) |
+> | churn 256 B | 1.25× slower | 1.16× slower | exact-256 class (P1) — **not overtaken** |
+> | churn 1024 B | 5.8× faster | ~5.9× faster | (retained) |
+>
+> **What each eureka removed (all tautologies, never a guard):**
+>
+> - **Э1 (P3) — bump-direct batched carve, front A's main lever.** A freshly
+>   bump-carved block already satisfies the M2 bitmap invariant
+>   (`bit 0 = allocated`); the old refill drove every virgin block through a
+>   `carve → BinTable → pop` round-trip (~40 metadata-touch instructions) that
+>   moved it to "free" and instantly back to "allocated" — a tautology. The new
+>   `refill_class_bump` carves a batch straight from the bump cursor into the
+>   magazine (~6–8 instr/block) **without touching the bitmap** (bit 0 is
+>   already correct). Freelist / ring-drain are still tried BEFORE bump-carve,
+>   so freed blocks never go stale (no RSS drift). M2 byte-identical; D1 exact.
+>   This roughly **halved the cold tiny-block gap** and brought cold 256 B to
+>   parity. What remains on the tiniest cold sizes is honest per-block work —
+>   page-map writes and page faults on genuinely fresh pages — not ceremony.
+> - **Э2 / Э4 / Э5 (P1) — churn hit-path.** One-branch teardown resolver
+>   (collapsing the `TORN` + `null` compare), classify-once (thread the size
+>   class `c` through instead of recomputing `class_for` 2–3× per op), and a
+>   lock-free hit counter (`load;store` instead of `lock xadd`) together
+>   **widened the tiny-block churn lead** (16 B 1.26× → 1.63×, 64 B 1.23× →
+>   1.68×).
+> - **Exact-256 B class (P1).** `SMALL_CLASS_COUNT` 48 → 49 narrowed 256 B churn
+>   from 1.25× → 1.16× slower — but did **not** overtake (see the honest ceiling
+>   note below).
+>
+> **The honest ceiling — 256 B churn stays ~16 % behind mimalloc, by design.**
+> The residual is the M2 alloc-bitmap read-modify-write on the *real* free path
+> — the price of the exact double-free / foreign-free guarantee mimalloc does
+> not offer, paid in full and deliberately NOT removed. Fully catching
+> mimalloc's free path while keeping M2 on every substrate free would require a
+> feature-gated `fast`/`hardened` split — a separate product decision (0.4+),
+> not this arc. See
+> [`perf/PERF_PLAN_beat_mimalloc_small_medium.md`](perf/PERF_PLAN_beat_mimalloc_small_medium.md)
+> §"Honest ceiling".
+>
+> **Deterministic proof.** These are noisy single-host wall-clock numbers.
+> The per-op instruction-count deltas of Э1–Э5 are proven deterministically by
+> the `perf_gate_iai` gate (Valgrind, Linux-only CI): the P0 benches
+> (`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144) were added for
+> exactly this; their `Ir` baseline is captured on the first Linux perf-gate
+> run.
 >
 > **realloc / Vec:**
 >
