@@ -249,6 +249,33 @@ fn churn_256b() {
     }
 }
 
+// Writing-churn counterpart of `small_churn_16b` but at 256 B: after each
+// non-null alloc, write the first 16 bytes (two u64 words) of the block before
+// freeing it. This dirties word1 (bytes 8..16 — the magazine M2 double-free
+// guard key slot), reproducing the realistic write-to-what-you-allocate
+// pattern instead of leaving a stale key that forces a slow-path scan on free.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn churn_write_256b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(256, 8).unwrap();
+    for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { sefer.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr is a freshly allocated 256 B block; the first 16
+            // bytes are in bounds and writable. `write_volatile` prevents the
+            // stores being elided.
+            unsafe { core::ptr::write_volatile(ptr.cast::<u64>(), 0xA5A5_A5A5_A5A5_A5A5) };
+            unsafe { core::ptr::write_volatile(ptr.cast::<u64>().add(1), 0xA5A5_A5A5_A5A5_A5A5) };
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -260,6 +287,7 @@ library_benchmark_group!(
         cold_alloc_free_256x16b,
         cold_alloc_free_256x64b,
         churn_256b,
+        churn_write_256b,
 );
 
 #[cfg(target_os = "linux")]

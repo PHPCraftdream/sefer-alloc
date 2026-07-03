@@ -119,6 +119,68 @@ fn bench_churn_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usi
     }
 }
 
+/// Writing-churn bench: an EXACT clone of `bench_churn_alloc` except that
+/// immediately after every non-null `alloc` (both the pre-fill loop and the
+/// churn loop) it writes the first 16 bytes (two u64 words at offset 0 and 8)
+/// of the freshly allocated block. This dirties word1 (bytes 8..16 — the
+/// magazine M2 double-free-guard key location) so the realistic
+/// write-to-what-you-allocate pattern is measured, instead of leaving a stale
+/// key that forces a slow-path scan on every free. Fixed PRNG seed = 0xCAFE
+/// (identical to the non-writing bench) for reproducibility.
+fn bench_churn_alloc_write<A: GlobalAlloc>(
+    alloc: &A,
+    layout: Layout,
+    working_set: usize,
+    ops: usize,
+) {
+    let mut rng = XorShift64::new(0xCAFE);
+
+    // Pre-fill the working set.
+    let mut live: Vec<*mut u8> = Vec::with_capacity(working_set);
+    for _ in 0..working_set {
+        // SAFETY: layout has non-zero size and valid alignment.
+        let p = unsafe { alloc.alloc(layout) };
+        if !p.is_null() {
+            // SAFETY: `p` is a freshly allocated block of `layout` (size >= 16
+            // for every bench size), so the first 16 bytes are in bounds and
+            // writable. `write_volatile` prevents the store being elided.
+            unsafe { core::ptr::write_volatile(p.cast::<u64>(), 0xA5A5_A5A5_A5A5_A5A5) };
+            unsafe { core::ptr::write_volatile(p.cast::<u64>().add(1), 0xA5A5_A5A5_A5A5_A5A5) };
+        }
+        live.push(p);
+    }
+
+    // Churn: free a random slot, alloc a replacement, write into it.
+    for _ in 0..ops {
+        let idx = rng.next_usize() % working_set;
+        let old = live[idx];
+        if !old.is_null() {
+            // SAFETY: `old` was allocated by `alloc` with the same layout.
+            unsafe { alloc.dealloc(old, layout) };
+        }
+        // SAFETY: layout has non-zero size and valid alignment.
+        let p = unsafe { alloc.alloc(layout) };
+        if !p.is_null() {
+            // SAFETY: `p` is a freshly allocated block of `layout` (size >= 16
+            // for every bench size), so the first 16 bytes are in bounds and
+            // writable. `write_volatile` prevents the store being elided.
+            unsafe { core::ptr::write_volatile(p.cast::<u64>(), 0xA5A5_A5A5_A5A5_A5A5) };
+            unsafe { core::ptr::write_volatile(p.cast::<u64>().add(1), 0xA5A5_A5A5_A5A5_A5A5) };
+        }
+        live[idx] = p;
+    }
+
+    black_box(&live);
+
+    // Teardown: free everything.
+    for &p in &live {
+        if !p.is_null() {
+            // SAFETY: `p` was allocated by `alloc` with the same layout.
+            unsafe { alloc.dealloc(p, layout) };
+        }
+    }
+}
+
 fn bench_global_alloc(c: &mut Criterion) {
     let mut group = c.benchmark_group("global_alloc");
     group.sample_size(10);
@@ -298,5 +360,39 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_global_alloc, bench_global_alloc_churn);
+fn bench_global_alloc_churn_write(c: &mut Criterion) {
+    let mut group = c.benchmark_group("global_alloc_churn_write");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferAlloc::new();
+    let mi = mimalloc::MiMalloc;
+    let sys = System;
+
+    for &size in SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+
+        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc_write(&sefer, layout, CHURN_WORKING_SET, OPS))
+        });
+
+        group.bench_function(format!("mimalloc/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc_write(&mi, layout, CHURN_WORKING_SET, OPS))
+        });
+
+        group.bench_function(format!("System/{size}B"), |b| {
+            b.iter(|| bench_churn_alloc_write(&sys, layout, CHURN_WORKING_SET, OPS))
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_global_alloc,
+    bench_global_alloc_churn,
+    bench_global_alloc_churn_write
+);
 criterion_main!(benches);
