@@ -1570,15 +1570,176 @@ impl AllocCore {
     ///
     /// Per-block base is derived per-block via `os::segment_base_of_ptr`
     /// (the magazine CAN hold blocks from multiple segments).
+    ///
+    /// ## Э8 (task #162) — same-segment run batching, BYTE-IDENTICAL to the
+    /// per-block path
+    ///
+    /// The magazine holds blocks from possibly several segments, but a
+    /// cold-storm flush of consecutively-freed blocks is ~100% same-segment, so
+    /// scanning for RUNS of consecutive blocks with the same
+    /// `segment_base_of_ptr` (ONE mask-compare per block, NO sorting) yields
+    /// long runs; a scattered magazine degrades to runs of length 1 — still
+    /// correct. For each run (all sharing one `base`) we hoist the metadata
+    /// views (`SegmentMeta::new`, `bin_table`, `alloc_bitmap`, and — under
+    /// decommit — the `bump_of` LOAD) ONCE and write the freelist head ONCE,
+    /// instead of once per block.
+    ///
+    /// ### The TWO guards STAY per-block (they are NOT tautologies)
+    ///
+    /// 1. `is_free(off)` — a REAL guard: under the documented #164 residual, a
+    ///    cross-thread free of a magazine-resident block routes via the ring →
+    ///    `reclaim_offset` marks it FREE on the BinTable while it still sits in
+    ///    the magazine; this flush must then SKIP it (`is_free == true`) or the
+    ///    freelist gets a duplicate. So the run-local chain links ONLY blocks
+    ///    that PASS `is_free`.
+    /// 2. `off >= bump` (decommit stale-free) — the COMPARE stays per-block;
+    ///    only the `bump_of()` LOAD is hoisted. A flush never carves, so `bump`
+    ///    cannot advance during a flush; and a decommit-reset of `bump` can only
+    ///    happen at the LAST accepted block of a run (see the decommit proof
+    ///    below), after which there is no further block in the run to mis-judge.
+    ///
+    /// ### Splice — provably byte-identical to N sequential `dealloc_small`s
+    ///
+    /// A sequential run `dealloc_small(b0); …; dealloc_small(bk)` (accepted
+    /// blocks only; a rejected block never calls `set_head`, so it is simply
+    /// absent from the chain) builds a LIFO push: each accepted block becomes
+    /// the new head pointing at the prior head. Final state:
+    /// `head = off(b_last)`, `b_last.next = off(prev accepted)`, …,
+    /// `b_first.next = old_head` (the segment's head captured at run start).
+    /// The batch reproduces this EXACTLY: capture `old_head` once, then for each
+    /// ACCEPTED block in source order `write_next(b, prev_accepted_or_old_head)`
+    /// + `mark_free(off)`, remembering `b` as the new `prev_accepted`; after the
+    /// run, `set_head(off(last accepted))` ONCE (only if ≥1 accepted). Every
+    /// `write_next` writes the identical `next`, every `mark_free` sets the
+    /// identical bit, `set_head` lands on the identical value ⇒ byte-identical.
+    ///
+    /// ### Decommit — deferred `dec_live`/decommit is EQUIVALENT
+    ///
+    /// Within a same-segment run, `live_count` starts at the segment's current
+    /// count `L` and drops by one per accepted block. Every un-flushed
+    /// same-segment block (still handed out to the user, still in the magazine,
+    /// or later in this/another run) counts as live, so `live` reaches 0 iff the
+    /// run flushes ALL `L` remaining live blocks — and then ONLY at the LAST
+    /// accepted block. The per-block path likewise only decommits at the block
+    /// that brings `live` to 0. So running `dec_live_and_maybe_decommit`
+    /// per-accepted-block here (AFTER the run's `set_head`, matching the
+    /// sequential order where each block's dec-then-decommit follows its own
+    /// `set_head`) fires decommit on exactly the same block, exactly once, and
+    /// `table.recycle` exactly when it fired. If decommit DOES fire at the last
+    /// accepted block, `decommit_empty_segment` re-NULLs every class head
+    /// (including this one) and zeroes the bitmap — wiping the chain we just
+    /// spliced. That wipe is CORRECT and identical to the sequential path (whose
+    /// last block's decommit does the same after its own `set_head`); there is
+    /// no subsequent block in the run to be affected, since `live` can only reach
+    /// 0 at the last.
     #[doc(hidden)]
     #[inline]
     pub fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
-        for &ptr in blocks {
+        let mut i = 0;
+        while i < blocks.len() {
+            let ptr = blocks[i];
             if ptr.is_null() {
-                continue; // defensive: skip nulls
+                i += 1;
+                continue; // defensive: skip nulls (matches per-block path)
             }
             let base = os::segment_base_of_ptr(ptr);
-            self.dealloc_small(base, ptr, class_idx);
+            // Detect the run of consecutive same-segment blocks starting at `i`.
+            // Nulls terminate a run (they are handled by the outer loop as
+            // no-ops, exactly as the per-block path skips them).
+            let mut run_end = i + 1;
+            while run_end < blocks.len() {
+                let q = blocks[run_end];
+                if q.is_null() || os::segment_base_of_ptr(q) != base {
+                    break;
+                }
+                run_end += 1;
+            }
+            self.flush_run(class_idx, base, &blocks[i..run_end]);
+            i = run_end;
+        }
+    }
+
+    /// Flush ONE run of blocks that all share segment `base` (Э8). See
+    /// `flush_class` for the byte-identical / decommit-equivalence proofs. Every
+    /// block in `run` is non-null and has `segment_base_of_ptr(block) == base`.
+    #[inline]
+    fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) {
+        let meta = SegmentMeta::new(base);
+        let mut bt = meta.bin_table();
+        let mut bm = meta.alloc_bitmap();
+        // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
+        // never carves, so `bump` cannot advance during this run.
+        #[cfg(feature = "alloc-decommit")]
+        let bump = meta.bump_of();
+
+        // Capture the segment's CURRENT freelist head ONCE — the first accepted
+        // block links to this (matching the first sequential `dealloc_small`,
+        // whose `old_head` is exactly this value).
+        let old_head = bt.head(class_idx);
+        let mut prev_off = old_head; // next-target for the next accepted block
+        let mut last_accepted: Option<u32> = None;
+        // Track how many blocks were accepted, in source order, so the decommit
+        // step can run per accepted block AFTER the run's single `set_head`.
+        #[cfg(feature = "alloc-decommit")]
+        let mut accepted_count: usize = 0;
+
+        for &ptr in run {
+            let off = (ptr as usize - base as usize) as u32;
+            // Guard 1 (per-block): decommit stale-free `off >= bump`.
+            #[cfg(feature = "alloc-decommit")]
+            if (off as usize) >= bump {
+                continue;
+            }
+            // Guard 2 (per-block): M2 double-free — skip a block already free
+            // (e.g. a ring-DF'd magazine resident marked free by reclaim).
+            if bm.is_free(off) {
+                continue;
+            }
+            let block_nn = match NonNull::new(ptr) {
+                Some(nn) => nn,
+                None => continue,
+            };
+            // Link this accepted block at the head of the run-local chain: its
+            // `next` is the PRIOR accepted block's off (or the captured
+            // `old_head` for the first accepted). Byte-identical to the LIFO
+            // push each sequential `dealloc_small` performs.
+            let next_ptr = if prev_off == FREE_LIST_NULL {
+                core::ptr::null_mut()
+            } else {
+                Node::deref(base, prev_off as usize)
+            };
+            Node::write_next(block_nn, next_ptr);
+            bm.mark_free(off);
+            prev_off = off;
+            last_accepted = Some(off);
+            #[cfg(feature = "alloc-decommit")]
+            {
+                accepted_count += 1;
+            }
+        }
+
+        // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the
+        // final `set_head` of the last sequential `dealloc_small` in the run.
+        if let Some(off) = last_accepted {
+            bt.set_head(class_idx, off);
+        }
+
+        // Per accepted block: `dec_live_and_maybe_decommit` (AFTER `set_head`,
+        // matching the sequential ordering). `live` can only reach 0 at the
+        // LAST accepted block, so at most one decommit fires — identical to the
+        // per-block path. Recycle the slot if it fired.
+        #[cfg(feature = "alloc-decommit")]
+        {
+            let small_cur = self.small_cur;
+            let mut fired = false;
+            for _ in 0..accepted_count {
+                if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                    fired = true;
+                }
+            }
+            if fired {
+                self.table.recycle(base);
+            }
         }
     }
 
