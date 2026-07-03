@@ -216,12 +216,12 @@ disclaimer):
   cache — a 4 MiB cycle is ~58 ns vs mimalloc's ~779 ns, and ~309× faster than
   `System`.
 - On **single-thread small-class churn** (the reuse pattern) it **beats
-  `mimalloc` at every size** on the realistic writing pattern (16 B 1.6×, 64 B
-  1.7×, 256 B 1.13×, 1024 B ~6.8× faster) after the P0–P6 perf arc. The old
+  `mimalloc` at every size** on the realistic writing pattern (16 B 1.63×, 64 B
+  1.69×, 256 B 1.14×, 1024 B 5.42× faster) after the P0–P6 perf arc. The old
   256 B churn loss was **eliminated in P6 (Э6)** — its cause was a stale
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
-  bump-direct carve roughly halved the gap (16 B now ~1.6×, 64 B ~1.3× slower)
+  bump-direct carve roughly halved the gap (16 B now 1.60×, 64 B 1.15× slower)
   and brought cold 256 B to parity — the residual is honest per-block
   page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
@@ -482,10 +482,10 @@ The **P0–P6 perf arc** (below) attacked exactly these two fronts. On cold tiny
 blocks the P3 bump-direct batched carve (Э1) removed the tautological
 `carve → BinTable → pop` round-trip that made every virgin block pay ~40
 metadata-touch instructions: it roughly **halved the cold gap** (16 B from
-2.6× → ~1.5× slower, 64 B from 2.0× → ~1.3× slower) and brought **cold 256 B to
+2.6× → 1.60× slower, 64 B from 2.0× → 1.15× slower) and brought **cold 256 B to
 parity**. On churn the one-branch resolver (Э2) + classify-once (Э4) +
 lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
-1.63× faster, 64 B 1.23× → 1.68× faster); then **Э6 (P6) eliminated the 256 B
+1.63× faster, 64 B 1.23× → 1.69× faster); then **Э6 (P6) eliminated the 256 B
 churn loss entirely** by moving the M2 double-free oracle out of the block body
 and into hot metadata (see below). Ranges below span two runs on a noisy host;
 the deterministic per-op proof is the iai gate (see below).
@@ -497,12 +497,12 @@ new in P6.0 — each block is written after alloc; **the realistic pattern**,
 because real code writes to the memory it allocates). The writing row is the
 headline.
 
-| Size | Churn-write: Sefer | mimalloc | vs mi | Churn (non-writing) vs mi | Cold direct: Sefer | mimalloc | vs mi |
-|---|---|---|---|---|---|---|---|
-|   16 B | **~25 µs** | ~40 µs  | **1.6× faster** | 1.5× faster       | ~16–20 µs | ~12 µs    | ~1.6× slower |
-|   64 B | **~36 µs** | ~61 µs  | **1.7× faster** | 1.5× faster       | ~21–25 µs | ~17–19 µs | ~1.3× slower |
-|  256 B | **~31 µs** | ~35 µs  | **1.13× faster** | ≈ parity (0.97×) | ~24 µs    | ~24 µs    | ≈ parity     |
-| 1024 B | **~33 µs** | ~225 µs | **~6.8× faster** | ~6.8× faster     | ~25–26 µs | ~46–49 µs | **~1.9× faster** |
+| Size | Churn-write: Sefer | mimalloc | System | vs mi | Churn (non-writing) vs mi | Cold direct: Sefer | mimalloc | System | vs mi |
+|---|---|---|---|---|---|---|---|---|---|
+|   16 B | **~26 µs** | ~42 µs  | ~161 µs | **1.63× faster** | 1.70× faster       | ~17 µs | ~11 µs | ~111 µs | 1.60× slower |
+|   64 B | **~24 µs** | ~41 µs  | ~164 µs | **1.69× faster** | 1.57× faster       | ~22 µs | ~19 µs | ~160 µs | 1.15× slower |
+|  256 B | **~26 µs** | ~29 µs  | ~134 µs | **1.14× faster** | ≈ parity (1.03×)  | ~24 µs | ~23 µs | ~131 µs | ≈ parity (1.03×) |
+| 1024 B | **~38 µs** | ~207 µs | ~147 µs | **5.42× faster** | 6.24× faster      | ~24 µs | ~43 µs | ~138 µs | **1.84× faster** |
 
 (All small-size rows are per-iteration batches; the same batch runs for all
 three allocators, so the ratios are the meaningful signal. vs `System`: 3–6×
@@ -518,14 +518,14 @@ line touch at the 256 B stride. **Э6 removed the key entirely**: the two exact
 oracles (in-magazine scan + the `BinTable` `is_free` bitmap, both hot metadata)
 now run unconditionally and **the free path never touches the block body**. On
 the realistic writing pattern sefer-alloc now **leads at every size** (256 B
-1.13× faster); even the artificial non-writing pattern reached parity. This is
+1.14× faster); even the artificial non-writing pattern reached parity. This is
 not a trade for safety — M2 was **strengthened**: the pre-Э6
 flushed-double-free-after-user-write hole is now closed (the oracle no longer
 depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16–64 B), ~1.3–1.6× behind
+**Where we still trail — cold tiny blocks (16–64 B), 1.15–1.60× behind
 mimalloc.** This is the cold carve path (`global_alloc`, no reuse), unchanged
 by Э6 (which targets only the churn free path). The residual is honest
 per-block work — page-map writes and page faults on genuinely fresh pages, not
@@ -580,12 +580,12 @@ block pay ~40 metadata-touch instructions, so this is no longer a dramatic
 loss — it is the same cold-direct measurement as the "Cold direct" column of
 the Performance table above.
 
-| Size | SeferAlloc | mimalloc | vs mimalloc | (pre-P3 was) |
-|---|---|---|---|---|
-|   16 B | ~16–20 µs | ~12 µs    | ~1.6× slower | 2.6× slower |
-|   64 B | ~21–25 µs | ~17–19 µs | ~1.3× slower | 2.0× slower |
-|  256 B | ~24 µs    | ~24 µs    | ≈ parity     | 1.5× slower |
-| 1024 B | ~25–26 µs | ~46–49 µs | **~1.9× faster** | 1.2× faster |
+| Size | SeferAlloc | mimalloc | System | vs mimalloc | (pre-P3 was) |
+|---|---|---|---|---|---|
+|   16 B | ~17 µs | ~11 µs | ~111 µs | 1.60× slower | 2.6× slower |
+|   64 B | ~22 µs | ~19 µs | ~160 µs | 1.15× slower | 2.0× slower |
+|  256 B | ~24 µs | ~23 µs | ~131 µs | ≈ parity (1.03×) | 1.5× slower |
+| 1024 B | ~24 µs | ~43 µs | ~138 µs | **1.84× faster** | 1.2× faster |
 
 The residual gap on the tiniest cold sizes is honest per-block work
 (page-map writes, page faults on genuinely fresh pages), not a tautology —
@@ -614,13 +614,13 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
   - **Large alloc/free OPT-E:** 13–34× faster than `mimalloc`, ~240–310× faster
     than `System`. The headline.
   - **Real-world churn (the common shape) — leads at every size.** On the
-    realistic writing pattern: ~1.6× on 16 B, ~1.7× on 64 B, **~1.13× on
-    256 B**, **~6.8× on 1024 B**. The 256 B churn loss was eliminated in P6
+    realistic writing pattern: 1.63× on 16 B, 1.69× on 64 B, **1.14× on
+    256 B**, **5.42× on 1024 B**. The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
   - **Cold first-touch after P3 (Э1 bump-direct carve):** cold 256 B reached
-    parity; cold 1024 B ~1.9× faster; cold 16/64 B halved their gap (now ~1.5×
-    / ~1.3× slower, down from 2.6× / 2.0×).
+    parity; cold 1024 B 1.84× faster; cold 16/64 B halved their gap (now 1.60×
+    / 1.15× slower, down from 2.6× / 2.0×).
   - **Realloc** (`realloc_grow_geometric`): ~1.1× faster than `mimalloc`,
     ~8.8× faster than `System`.
   - **MT macro at T ≥ 2:** larson 1.21–1.28×, mstress 1.19–1.31× faster.
@@ -635,11 +635,11 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     metadata and stopped touching the block body; the free path is now cheaper
     than mimalloc's (mimalloc writes `next` into the block body on every free;
     we write nothing to it). On the realistic writing pattern we now lead 256 B
-    by ~1.13×, and M2 was **strengthened** (the flushed-double-free-after-user-
+    by 1.14×, and M2 was **strengthened** (the flushed-double-free-after-user-
     write hole is closed; `tests/regression_magazine_oracles.rs` test (c) is
     RED pre-Э6, GREEN on Э6).
 - **Where it loses:**
-  - **Cold tiny blocks (16–64 B): ~1.3–1.6× behind `mimalloc`.** Halved by the
+  - **Cold tiny blocks (16–64 B): 1.15–1.60× behind `mimalloc`.** Halved by the
     P3 bump-direct carve but not fully closed — what remains is honest per-block
     work (page-map writes, page faults on genuinely fresh pages), not ceremony.
   - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`

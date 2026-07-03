@@ -126,21 +126,21 @@ Churn is now measured two ways:
 
 **Non-writing churn** (`global_alloc_churn`), median µs:
 
-| size | Sefer (Э6) | mimalloc | ratio | pre-Э6 was |
-|---|---|---|---|---|
-| 16 B   | ~27 | ~41  | ~1.5× faster | 1.26× faster (P0) / 1.63× (P5) |
-| 64 B   | ~37 | ~56  | ~1.5× faster | 1.23× faster (P0) |
-| 256 B  | ~27 | ~28  | **≈ parity (0.97×)** | **1.16–1.25× SLOWER** — loss GONE |
-| 1024 B | ~34 | ~232 | ~6.8× faster | 5.8× faster |
+| size | Sefer (Э6) | mimalloc | System | ratio | pre-Э6 was |
+|---|---|---|---|---|---|
+| 16 B   | ~24 | ~41  | ~176 | 1.70× faster | 1.26× faster (P0) / 1.63× (P5) |
+| 64 B   | ~26 | ~41  | ~156 | 1.57× faster | 1.23× faster (P0) |
+| 256 B  | ~27 | ~28  | ~123 | **≈ parity (1.03× faster)** | **1.16–1.25× SLOWER** — loss GONE |
+| 1024 B | ~27 | ~166 | ~142 | 6.24× faster | 5.8× faster |
 
 **Writing churn** (`global_alloc_churn_write`), median µs — the realistic one:
 
-| size | Sefer (Э6) | mimalloc | ratio |
-|---|---|---|---|
-| 16 B   | ~25 | ~40  | **1.6× faster** |
-| 64 B   | ~36 | ~61  | **1.7× faster** |
-| 256 B  | ~31 | ~35  | **1.13× faster** |
-| 1024 B | ~33 | ~225 | **~6.8× faster** |
+| size | Sefer (Э6) | mimalloc | System | ratio |
+|---|---|---|---|---|
+| 16 B   | ~26 | ~42  | ~161 | **1.63× faster** |
+| 64 B   | ~24 | ~41  | ~164 | **1.69× faster** |
+| 256 B  | ~26 | ~29  | ~134 | **1.14× faster** |
+| 1024 B | ~38 | ~207 | ~147 | **5.42× faster** |
 
 On the realistic writing pattern sefer-alloc now **leads mimalloc at every
 size**; even the artificial non-writing 256 B reached parity (it was 1.16–1.25×
@@ -148,9 +148,9 @@ slower through P5).
 
 **Cold direct** (`global_alloc`, alloc N then free N, no reuse) is **unchanged
 by Э6** — Э6 targets the churn free path; cold is carve / page-fault-bound.
-Noisy medians: 16 B ~17.7 / mi ~11.1 (~1.6× slower), 64 B ~24.7 / ~18.4
-(~1.3× slower), 256 B ~24–33 / ~26 (≈ parity, noisy), 1024 B ~26 / ~48
-(~1.8× faster). No claim of a cold improvement here.
+Noisy medians: 16 B ~17.0 / mi ~10.6 (1.60× slower), 64 B ~22.1 / ~19.2
+(1.15× slower), 256 B ~24.1 / ~23.4 (≈ parity, 1.03×), 1024 B ~23.6 / ~43.3
+(1.84× faster). No claim of a cold improvement here.
 
 ### The Э6 anatomy — what actually cost us the 256 B churn (the honest eureka)
 
@@ -170,7 +170,7 @@ a magazine double-free fast-path filter. Two consequences:
 array scan and the `BinTable` `is_free` bitmap line, **both hot metadata** — now
 run unconditionally, and **the free path never touches the block body**. Net:
 
-- **The 256 B churn loss is eliminated** (parity non-writing, 1.13× lead
+- **The 256 B churn loss is eliminated** (parity non-writing, 1.14× lead
   writing).
 - **M2 was STRENGTHENED, not traded.** The pre-Э6 flushed-double-free-after-
   user-write hole is now CLOSED, because the oracle no longer depends on

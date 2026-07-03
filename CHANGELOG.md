@@ -90,28 +90,28 @@ was already O(1)); it does not move the headline tables.
 
 ### Measured result (single noisy Windows dev host, criterion FAST profile — ratios are the signal)
 
-- **Cold tiny blocks (front A) — the big win.** 16 B `2.6× → ~1.5× slower`;
-  64 B `2.0× → ~1.3× slower`; cold 256 B reached **parity**. Not full parity
+- **Cold tiny blocks (front A) — the big win.** 16 B `2.6× → 1.60× slower`;
+  64 B `2.0× → 1.15× slower`; cold 256 B reached **parity** (1.03×). Not full parity
   on the tiniest cold sizes, but the tautological carve→BinTable→pop round-trip
   is gone — what remains is honest per-block work (page-map writes, page faults
   on genuinely fresh pages).
 - **Churn tiny blocks — lead widened.** 16 B `1.26× → 1.63× faster`; 64 B
-  `1.23× → 1.68× faster` (Э2 + Э4 + Э5 compounding on the hit path).
+  `1.23× → 1.69× faster` (Э2 + Э4 + Э5 compounding on the hit path).
 - **256 B churn (front B) — the loss is ELIMINATED (Э6, P6).** Through P5 the
   exact-256 B class only narrowed this from `1.25× → 1.16× slower` and never
   overtook. Э6 removed the real cause (the stale block-body key, not the
   bitmap): on the artificial **non-writing** pattern 256 B churn reached
-  **≈ parity** (`~0.97×`, was 1.16–1.25× SLOWER), and on the realistic
+  **≈ parity** (`~1.03×`, was 1.16–1.25× SLOWER), and on the realistic
   **writing** pattern (`global_alloc_churn_write`, new in P6.0 — real code
   writes to what it allocates) sefer-alloc now **leads at every size**:
-  16 B 1.6×, 64 B 1.7×, **256 B 1.13× faster**, 1024 B ~6.8× faster. The
+  16 B 1.63×, 64 B 1.69×, **256 B 1.14× faster**, 1024 B 5.42× faster. The
   earlier "honest ceiling" framing (256 B is the M2 bitmap price) is retired —
   the price was a per-heap key in the block body, and it is gone.
-- **Cold tiny (16–64 B) — unchanged, still trails ~1.3–1.6×.** Э6 does not
+- **Cold tiny (16–64 B) — unchanged, still trails 1.15–1.60×.** Э6 does not
   touch the cold carve path (page-fault-bound honest per-block work); no claim
   of improvement there.
-- **Large (≥1 KiB) — the crushing lead is retained.** Cold ~1.9× faster,
-  churn ~6.8× faster (writing) / retained; the OPT-E large-cache headline
+- **Large (≥1 KiB) — the crushing lead is retained.** Cold 1.84× faster,
+  churn 5.42× faster (writing) / retained; the OPT-E large-cache headline
   (13–34× at 4/16/64 MiB) is unchanged.
 
 The rigorous, DETERMINISTIC proof is the `perf_gate_iai` instruction-count
