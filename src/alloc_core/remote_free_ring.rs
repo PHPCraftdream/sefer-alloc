@@ -376,6 +376,17 @@ impl RemoteFreeRing {
         // Acquire: see every producer's Release reservation (tail CAS) and
         // their Release publish (slot store).
         let t = self.tail().load(Ordering::Acquire);
+        // Relaxed is sound here despite `head` being written (below) with a
+        // Release store and read here without an Acquire: the ring has a SINGLE
+        // consumer, but consumer IDENTITY moves with slot ownership. A ring
+        // belongs to a segment; when that segment is recycled and re-claimed by
+        // a new owner thread, the registry recycle→claim handshake is itself a
+        // Release/Acquire pair that establishes happens-before between the
+        // previous owner's LAST `head` Release store and the new owner's first
+        // drain. So the new owner-consumer is guaranteed to observe the prior
+        // owner's final `head` value; no per-load Acquire on `head` is needed
+        // because there is never a concurrent writer to `head` — only a prior
+        // one, already fenced by the ownership transfer (review B, Finding 4).
         let mut h = self.head().load(Ordering::Relaxed);
         // Wrap-correct drain: both cursors are monotonic wrapping counters
         // (incremented by `wrapping_add(1)`), so the undrained count is

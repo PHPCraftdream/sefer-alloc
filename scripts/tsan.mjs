@@ -34,40 +34,71 @@ const tests = process.argv.slice(2).length
   : DEFAULT_TESTS;
 
 const wslRoot = winToWsl(REPO_ROOT);
-const testArgs = tests.map((t) => `--test ${t}`).join(' ');
 
-// One bash -lc line so the env scrubbing + cargo invocation share a shell.
-const bashCmd = [
-  `cd ${wslRoot}`,
-  'unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER',
-  [
-    // `unset` alone is not enough: WSL interop re-injects the Windows
-    // RUSTC_WRAPPER (sccache.exe) into child processes, and a `bash -lc`
-    // login shell may re-source it. Setting both to empty STRINGS directly on
-    // the cargo process is what actually disables the wrapper (cargo treats an
-    // empty RUSTC_WRAPPER as "no wrapper"); sccache.exe is a Windows binary
-    // that cannot drive the Linux rustc.
-    'RUSTC_WRAPPER=',
-    'CARGO_BUILD_RUSTC_WRAPPER=',
-    "RUSTFLAGS='-Zsanitizer=thread'",
-    "RUSTDOCFLAGS='-Zsanitizer=thread'",
-    'CARGO_TARGET_DIR=/tmp/sefer-tsan',
-    'cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu',
-    '--release',
-    "--features 'alloc-global alloc-xthread alloc-decommit'",
-    testArgs,
-  ].join(' '),
-].join(' && ');
+// R3 (#155): the production feature set (fastbin + decommit) covers the
+// magazine layer + the Э5 non-atomic per-heap counters + the #133 cross-heap
+// stats() aggregation that the `alloc-*` set alone leaves uninstrumented. These
+// two MT tests drive the teardown/recycle handshake and the remote-counter
+// read.
+const PROD_TESTS = [
+  'global_alloc_mt',
+  'heap_cross_thread',
+  'tls_heap_teardown_ordering_stress',
+  'regression_percounter_perheap_aggregation',
+];
 
-console.log(`[tsan] tests: ${tests.join(', ')}`);
+function bashCmd(features, testList) {
+  const testArgs = testList.map((t) => `--test ${t}`).join(' ');
+  // One bash -lc line so the env scrubbing + cargo invocation share a shell.
+  return [
+    `cd ${wslRoot}`,
+    'unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER',
+    [
+      // `unset` alone is not enough: WSL interop re-injects the Windows
+      // RUSTC_WRAPPER (sccache.exe) into child processes, and a `bash -lc`
+      // login shell may re-source it. Setting both to empty STRINGS directly on
+      // the cargo process is what actually disables the wrapper (cargo treats an
+      // empty RUSTC_WRAPPER as "no wrapper"); sccache.exe is a Windows binary
+      // that cannot drive the Linux rustc.
+      'RUSTC_WRAPPER=',
+      'CARGO_BUILD_RUSTC_WRAPPER=',
+      "RUSTFLAGS='-Zsanitizer=thread'",
+      "RUSTDOCFLAGS='-Zsanitizer=thread'",
+      'CARGO_TARGET_DIR=/tmp/sefer-tsan',
+      'cargo +nightly test -Zbuild-std --target x86_64-unknown-linux-gnu',
+      '--release',
+      `--features '${features}'`,
+      testArgs,
+    ].join(' '),
+  ].join(' && ');
+}
+
+// Pass 1: the cross-thread set (explicit args override the default set).
+// Pass 2 (only when running the default set): the production config over the
+// MT tests, so `npm run tsan` mirrors the CI `tsan` job's two steps.
+const passes = process.argv.slice(2).length
+  ? [['alloc-global alloc-xthread alloc-decommit', tests]]
+  : [
+      ['alloc-global alloc-xthread alloc-decommit', tests],
+      ['production', PROD_TESTS],
+    ];
+
 console.log(`[tsan] wsl: ${wslRoot}\n`);
 
-const { code, out } = await run('wsl', ['bash', '-lc', bashCmd]);
-
-// TSan reports races as warnings that do NOT fail the process exit code by
-// default, so scan for its markers explicitly.
-const ok = verdict('tsan', code, out, [
-  'WARNING: ThreadSanitizer',
-  'data race',
-]);
-process.exit(ok ? 0 : 1);
+let allOk = true;
+for (const [features, testList] of passes) {
+  console.log(`[tsan] features: ${features} | tests: ${testList.join(', ')}`);
+  const { code, out } = await run('wsl', [
+    'bash',
+    '-lc',
+    bashCmd(features, testList),
+  ]);
+  // TSan reports races as warnings that do NOT fail the process exit code by
+  // default, so scan for its markers explicitly.
+  const ok = verdict(`tsan:${features}`, code, out, [
+    'WARNING: ThreadSanitizer',
+    'data race',
+  ]);
+  allOk = ok && allOk;
+}
+process.exit(allOk ? 0 : 1);

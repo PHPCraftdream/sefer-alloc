@@ -20,6 +20,23 @@ const MATRIX = [
   ['alloc-core', 'regression_large_align_no_segment_exhaustion'],
   ['alloc-core', 'regression_page_aligned_no_segment_exhaustion'],
   ['alloc-core', 'regression_realloc_cross_class_shrink'],
+  // R3 (#155): fastbin / production-path miri coverage. The Э6 M2 oracle
+  // strict-provenance claim (free path never touches the block body), the Э1
+  // bump-direct carve pointer math (storm capped under cfg(miri)), and the Э3
+  // own-segment cache invalidation on decommit.
+  [
+    'alloc-global alloc-xthread alloc-decommit fastbin',
+    'regression_magazine_oracles',
+  ],
+  [
+    'alloc-global alloc-xthread alloc-decommit fastbin',
+    'regression_bump_direct_refill',
+  ],
+  // `regression_own_segment_cache_invalidation` deferred from the miri set
+  // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
+  // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not
+  // finish in a CI-acceptable time. Its UB surface is covered by
+  // `decommit_miri_cycle`.
 ];
 
 const filter = process.argv.slice(2);

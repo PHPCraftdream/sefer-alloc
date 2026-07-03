@@ -32,7 +32,10 @@
 use std::alloc::Layout;
 use std::collections::HashSet;
 
-use sefer_alloc::{AllocCore, SegmentLayout};
+use sefer_alloc::AllocCore;
+// Only used by `seg_base` (itself gated to the `cfg(not(miri))` d1 test).
+#[cfg(all(feature = "alloc-decommit", not(miri)))]
+use sefer_alloc::SegmentLayout;
 
 fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
     let layout = Layout::from_size_align(size, align).unwrap();
@@ -40,6 +43,10 @@ fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
         .expect("expected a small class")
 }
 
+// Only referenced by `d1_cold_storm_then_free_decommits`, which is
+// `cfg(not(miri))`; gate the helper the same way to avoid a dead-code warning
+// under miri (R3, #155).
+#[cfg(all(feature = "alloc-decommit", not(miri)))]
 fn seg_base(ptr: *mut u8) -> usize {
     SegmentLayout::segment_base_of(ptr as usize)
 }
@@ -64,7 +71,15 @@ fn cold_storm_free_storm_churn_inner(size: usize, align: usize) {
     // Cold storm: refill a big batch straight from bump. With a fresh core
     // and no free blocks, every one of these is a bump-carve (the free-drain
     // branch finds nothing) — this is precisely the bump-direct path.
+    //
+    // Under miri the pointer-math / strict-provenance coverage is identical at
+    // a small N, and the full 4096-block storm × 5 rounds is prohibitively slow
+    // (miri interprets every write). Cap the storm under `cfg(miri)` only — a
+    // test-only edit that does NOT change non-miri behavior (R3, #155).
+    #[cfg(not(miri))]
     const N: usize = 4096;
+    #[cfg(miri)]
+    const N: usize = 256;
     let mut buf = vec![core::ptr::null_mut::<u8>(); N];
     let got = core.refill_class_bump(c, &mut buf);
     assert_eq!(got, N, "cold-storm refill short: {got}/{N}");
@@ -111,7 +126,11 @@ fn cold_storm_free_storm_churn_inner(size: usize, align: usize) {
 // hook are gated on it).
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "alloc-decommit")]
+// Skipped under miri (R3, #155): the >=3-segment assertion needs N=12_000
+// (12 MiB of 1 KiB blocks), which is size-load-bearing and cannot be capped;
+// interpreting that under miri would run for many minutes. The decommit-cycle
+// UB coverage is already provided by the dedicated `decommit_miri_cycle` test.
+#[cfg(all(feature = "alloc-decommit", not(miri)))]
 #[test]
 fn d1_cold_storm_then_free_decommits() {
     let mut core = AllocCore::new().unwrap();

@@ -137,6 +137,27 @@ jobs:
           - "--features alloc-core --test regression_large_align_no_segment_exhaustion"
           - "--features alloc-core --test regression_page_aligned_no_segment_exhaustion"
           - "--features alloc-core --test regression_realloc_cross_class_shrink"
+          # R3 (#155): the fastbin M2 oracle path had ZERO miri coverage — the
+          # Э6 "free path never touches the block body" strict-provenance claim
+          # was never checked under miri. Single-threaded; the production
+          # feature set (fastbin + decommit).
+          - "--features \"alloc-global alloc-xthread alloc-decommit fastbin\" --test regression_magazine_oracles"
+          # The bump-direct carve path's pointer math under strict provenance
+          # (Э1). The cold-storm size is capped under `cfg(miri)` (256, from
+          # 4096) inside the test so the run fits miri's runtime; the pointer
+          # arithmetic / provenance coverage is identical at the smaller N. The
+          # decommit-heavy `d1_cold_storm_then_free_decommits` case is
+          # `cfg(not(miri))` (its N is size-load-bearing and cannot be capped).
+          - "--features \"alloc-global alloc-xthread alloc-decommit fastbin\" --test regression_bump_direct_refill"
+          # NOTE: `regression_own_segment_cache_invalidation` (the Э3 own-segment
+          # cache invalidation) was evaluated for miri and DEFERRED (R3, #155):
+          # its correctness assertion needs ROUND_BLOCKS=18_000 across
+          # TARGET_SEGMENTS=6 (~100k interpreted 256 B allocations), which did
+          # not even finish compiling+running under miri in ~9 min locally — it
+          # would time out CI. The block-count is invariant-load-bearing (it must
+          # span >= 6 real 4 MiB segments), so it cannot be `cfg(miri)`-capped
+          # without voiding the test. Its decommit/recommit UB surface is already
+          # covered by `decommit_miri_cycle`.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -230,6 +251,28 @@ jobs:
           --test race_norecycle
           --test global_alloc_mt
           --test heap_cross_thread
+      # R3 (#155): the `alloc-global alloc-xthread` step above leaves the whole
+      # magazine / fastbin production layer UNINSTRUMENTED by TSan. Add a second
+      # step over the flagship `production` feature set (fastbin + decommit) on
+      # the multi-threaded tests. This is the run that actually exercises the
+      # Э5 non-atomic per-heap counters (heap_core.rs `tcache_hits`,
+      # alloc_core.rs `large_cache_hits` — a split load+store the single-writer
+      # claim must justify) AND the `stats()` aggregation that reads REMOTE
+      # heaps' counters (the initialised-gate, #133) — the classic TSan target.
+      # `tls_heap_teardown_ordering_stress` and
+      # `regression_percounter_perheap_aggregation` are the MT tests that drive
+      # the teardown/recycle handshake and the cross-heap counter read. Verified
+      # locally via WSL: 0 data races reported.
+      - name: Run production-config tests under ThreadSanitizer
+        run: >-
+          cargo +nightly test
+          -Zbuild-std
+          --target x86_64-unknown-linux-gnu
+          --features "production"
+          --test global_alloc_mt
+          --test heap_cross_thread
+          --test tls_heap_teardown_ordering_stress
+          --test regression_percounter_perheap_aggregation
 
   multi-arch:
     # x86 is a strong-memory model; aarch64 is weak-memory and can surface
