@@ -212,6 +212,112 @@ virgin bump path and are blind to it. No P7 speedup is claimed yet — not measu
 
 ---
 
+## P6 → P7 — cold-recycle instruction batching (Э7–Э11): an instruction-count optimization, wall-clock modest on this host
+
+Same host, same quick criterion profile (`sample_size(10)`, noisy Windows dev
+machine, ±15–20 %). Ratios within a run are the signal.
+
+**Read this section for what it is.** P7 is an **instruction-count**
+optimization of the steady-state cold recycle path — the freelist round-trip
+P7.0's discovery isolated (NOT page faults: at criterion steady state the
+instance is reused, so after warm-up nothing faults; the cost is per-block
+metadata ceremony on the refill/flush path). It batches that ceremony,
+classifies once, and makes one scan branchless. **On this noisy single-host
+wall-clock the cold-tiny improvement is MODEST and within noise** — we do NOT
+claim the plan's projected ~1.1–1.2× as achieved. The deterministic proof is
+the iai-callgrind `Ir` gate on Linux CI, and the honest verdict is framed as
+**pending that gate**.
+
+### The five eurekas that landed (all counterfactually verified byte-identical)
+
+- **Э7 (P7.2) — batch freelist drain in `refill_class_bump`, the main cold
+  lever.** The freelist of a single segment is now drained in **one walk**:
+  the head-read, `set_head`, and `inc_live` are hoisted out of the per-block
+  loop (one head-store and one live-count update for the whole run instead of
+  per block). The genuinely per-block work — the dependent `read_next` load
+  and the `mark_alloc` bitmap RMW — **stays per block** (they are the M2/D1
+  guards, not ceremony). Instruction-count reduction on the recycle path; the
+  drained blocks are byte-identical to what the per-block loop produced.
+- **Э8 (P7.3) — batch flush in `flush_class`.** Symmetric to Э7 on the dealloc
+  side: same-segment runs flush in one pass with `set_head` and the bump-load
+  hoisted out of the loop. The per-block guards **stay per block**: `is_free`,
+  `off >= bump`, and `dec_live` all still run once per flushed block. No guard
+  was collapsed — only the shared head/bump bookkeeping was pulled out of the
+  loop.
+- **Э9 (P7.1) — classify-once + base-once on the `HeapCore` faces.** The
+  alloc/free faces recomputed `class_for` and `segment_base_of` once more than
+  necessary per op; those are now resolved once and threaded through. Same
+  values, fewer loads.
+- **Э10 (P7.4) — branchless chunked in-magazine M2 scan.** The in-magazine
+  double-free oracle (the Э6 array scan) is now a branchless chunked scan —
+  same exact membership test, no per-element branch. M2 membership is
+  byte-identical; the scan bounds are counterfactually pinned.
+- **Э11 (P7.2) — stamp-dedupe.** A redundant owner-stamp on the batched drain
+  path was de-duplicated (the segment is stamped once for the drained run, not
+  per block). Same stamp result.
+
+### Measured — cold direct (`global_alloc`, the steady-state recycle path Э7/Э8 target), median µs
+
+Ratio = Sefer/mimalloc; **< 1.0 = Sefer faster**. These are noisy medians —
+the 16 B row bounced 18–24 µs across samples on this host.
+
+| size   | Sefer (post-P7) | mimalloc | vs mimalloc | pre-P7 was |
+|---|---|---|---|---|
+| 16 B   | ~21 (noisy 18–24) | ~14   | ~1.5× slower | 1.60× slower |
+| 64 B   | ~23             | ~20     | ~1.16× slower | 1.15× slower |
+| 256 B  | ~25             | ~26.5   | **~1.06× faster** | ≈ parity |
+| 1024 B | ~34             | ~54     | **~1.6× faster** | 1.84× faster |
+
+**Honest reading:** cold 16 B moved from 1.60× → ~1.5× slower and cold 256 B
+from parity to a slight lead — but **both are within this host's run-to-run
+noise** (16 B alone spanned 18–24 µs). 64 B is unchanged (~1.15×). The
+wall-clock on this machine **cannot cleanly resolve** the per-op instruction
+savings Э7/Э8/Э9/Э10 make. We do NOT claim the projected ~1.1–1.2× cold-tiny
+figure as demonstrated by these numbers — it is not.
+
+### Churn (the won front) — UNREGRESSED (must-not-regress gate)
+
+Non-writing churn (`global_alloc_churn`), median µs, spot-checked post-P7:
+
+| size  | Sefer | mimalloc | ratio | was (P6) |
+|---|---|---|---|---|
+| 16 B  | ~26 | ~42 | **~1.64× faster** | 1.70× faster |
+| 256 B | ~34 | ~34 | ≈ parity | ≈ parity (1.03×) |
+
+Churn stands where P6 left it (16 B still ~1.6× faster, 256 B still ≈ parity) —
+P7 did not regress the front we already won.
+
+### The verdict — instruction-count win, deterministic proof PENDING the Linux Ir gate
+
+- **What P7 is:** an instruction-count reduction on the steady-state cold
+  recycle path (batch the freelist drain/flush, classify once, branchless
+  scan). Every change is proven **byte-identical** by counterfactual regression
+  tests — D1 exactness, M2 in-magazine guards, splice correctness, scan bounds.
+- **What the wall-clock shows on THIS host:** only a modest, within-noise
+  cold-tiny improvement (16 B 1.60× → ~1.5× slower; 256 B parity → slight lead;
+  64 B unchanged). Said plainly: **the noisy single-host wall-clock cannot
+  resolve the per-op savings.** No cold-tiny speedup is claimed as
+  demonstrated.
+- **The real proof is deterministic and pending.** The iai-callgrind `Ir` gate
+  on Linux CI, via the two-round `recycle_alloc_free_256x16b` / `_256x64b`
+  benches (P7.0), isolates exactly this path (round 2 drains what round 1
+  freed) and will show the per-op `Ir` delta after push. Frame the P7 verdict
+  as **"pending the Linux Ir gate"** — that is the honest state.
+- **Churn is unregressed** (16 B ~1.6× faster, 256 B ≈ parity, as above).
+- **Guarantees intact.** The batching removed only shared-bookkeeping
+  tautologies and kept every guard per-block: `is_free`, `off >= bump`,
+  `mark_alloc`, `dec_live` all still run once per block; M2 / D1 / A1 /
+  `#![forbid(unsafe_code)]` at the top level are all intact.
+
+### Caveat (unchanged)
+
+Noisy single-host wall-clock. The deterministic per-op proof is the
+`perf_gate_iai` instruction-count gate on Linux CI (the `recycle_*` benches
+above). No P7 wall-clock speedup is claimed on this host beyond "modest,
+within noise".
+
+---
+
 ## Historical detail (Phase 11 / 13.4a)
 
 `SeferMalloc` (feature `alloc-global`) is the **malloc face** of `sefer-alloc`:

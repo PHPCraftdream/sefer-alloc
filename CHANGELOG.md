@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Performance — the P0–P6 "beat mimalloc on small/medium" arc (#144–#152)
+### Performance — the P0–P7 "beat mimalloc on small/medium" arc (#144–#163)
 
-A six-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
+A seven-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
 lost: cold first-touch of tiny blocks (16–64 B) and 256 B churn. The governing
 rule was **every speedup removes a *tautology*, never a *guard*** — no
 correctness guarantee was surrendered (M2 exact double/foreign-free no-op, D1
@@ -94,6 +94,36 @@ The six eurekas that landed (P1–P3, P6):
   every free; we write nothing to it. Cold carve is untouched (Э6 targets only
   the churn free path).
 
+The P7 arc (P7.0–P7.4, #159–#163) — an **instruction-count** optimization of
+the steady-state cold recycle path (the freelist round-trip P7.0 isolated —
+NOT page faults; at criterion steady state the instance is reused, so the cost
+is per-block metadata ceremony on the refill/flush path). Five more eurekas,
+each proven **byte-identical** by counterfactual regression tests:
+
+- **Э7 (P7.2) — batch freelist drain in `refill_class_bump`, the main cold
+  lever (#161).** One segment's freelist is drained in a **single walk**: the
+  head-read, `set_head`, and `inc_live` are hoisted out of the per-block loop
+  (one head-store + one live-count update for the whole run). The genuinely
+  per-block work stays per block: the dependent `read_next` load and the
+  `mark_alloc` bitmap RMW (the M2/D1 guards) still run once per block. The
+  drained blocks are byte-identical to the per-block loop's output.
+- **Э8 (P7.3) — batch flush in `flush_class` (#162).** Symmetric on the dealloc
+  side: same-segment runs flush in one pass with `set_head` and the bump-load
+  hoisted out of the loop. Every guard stays per block: `is_free`, `off >= bump`,
+  and `dec_live` all still run once per flushed block — no guard collapsed,
+  only shared head/bump bookkeeping pulled out.
+- **Э9 (P7.1) — classify-once + base-once on the `HeapCore` alloc/free faces
+  (#160).** A duplicate `class_for` and `segment_base_of` per op were removed —
+  both are resolved once and threaded through. Same values, fewer loads; both
+  sides win, risk ~0.
+- **Э10 (P7.4) — branchless chunked in-magazine M2 scan (#163).** The
+  in-magazine double-free oracle (the Э6 array scan) is now a branchless
+  chunked scan — same exact membership test, no per-element branch. M2
+  membership is byte-identical; the scan bounds are counterfactually pinned.
+- **Э11 (P7.2) — stamp-dedupe (#161).** A redundant owner-stamp on the batched
+  drain path was de-duplicated (stamped once for the drained run, not per
+  block). Same stamp result.
+
 Э3 (P2, own-segment cache) was implemented and gated but is honestly modest
 (the win is skipping the probe arithmetic + a likely L1 miss; `contains_base`
 was already O(1)); it does not move the headline tables.
@@ -123,13 +153,33 @@ was already O(1)); it does not move the headline tables.
 - **Large (≥1 KiB) — the crushing lead is retained.** Cold 1.84× faster,
   churn 5.42× faster (writing) / retained; the OPT-E large-cache headline
   (13–34× at 4/16/64 MiB) is unchanged.
+- **P7 cold recycle — an instruction-count reduction; wall-clock MODEST and
+  within noise on this host (no overclaim).** P7 batches the freelist
+  drain/flush (Э7/Э8), classifies once (Э9), and makes the M2 scan branchless
+  (Э10) on the steady-state cold recycle path. On this noisy single-host
+  wall-clock the cold-tiny numbers moved only within run-to-run noise: 16 B
+  `1.60× → ~1.5× slower`, cold 256 B `parity → ~1.06× faster`, 64 B unchanged
+  (`~1.15×`) — the 16 B row alone spanned 18–24 µs across samples. **We do NOT
+  claim the plan's projected ~1.1–1.2× cold-tiny figure as achieved** — the
+  wall-clock on this machine cannot cleanly resolve the per-op instruction
+  savings. The real, DETERMINISTIC proof is the iai `Ir` gate on Linux CI (see
+  the `recycle_*` benches below); the P7 cold verdict is **pending that gate**.
+  Churn (the won front) is **UNREGRESSED** (16 B still ~1.6× faster, 256 B
+  still ≈ parity). Guarantees intact: the batching removed only shared-
+  bookkeeping tautologies and kept every per-block guard (`is_free`,
+  `off >= bump`, `mark_alloc`, `dec_live`); M2 / D1 / A1 /
+  `#![forbid(unsafe_code)]` at the top level all hold.
 
 The rigorous, DETERMINISTIC proof is the `perf_gate_iai` instruction-count
 gate (Valgrind, Linux-only CI): the P0 benches
-(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144) plus the new
-`churn_write_256b` bench (#150) exist for exactly this and confirm the per-op
+(`cold_alloc_free_256x16b` / `_256x64b`, `churn_256b`, #144), the P6
+`churn_write_256b` bench (#150), and the P7.0 two-round
+`recycle_alloc_free_256x16b` / `_256x64b` benches (#159 — round 2 drains what
+round 1 freed, isolating exactly the Э7/Э8 recycle path the single-round
+`cold_*` benches are blind to) exist for exactly this and confirm the per-op
 `Ir` deltas; their `Ir` baseline is captured on the first Linux perf-gate run.
-The wall-clock numbers above are noisy comparative measurements from a single
+The P7 cold verdict specifically is **pending this Linux Ir gate** — the
+wall-clock numbers above are noisy comparative measurements from a single
 noisy Windows dev host, not a statistical suite.
 
 ## [0.3.0] - 2026-07-03
