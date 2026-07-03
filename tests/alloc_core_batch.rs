@@ -85,6 +85,98 @@ fn t_refill_equiv_inner(size: usize, align: usize, n: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// T-refill-bump-equiv (P3, Э1): refill_class_bump produces the same
+// observable end-state as refill_class — N non-null, distinct pointers that
+// round-trip through dealloc — while skipping the BinTable carve→pop
+// tautology for freshly-carved blocks.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn t_refill_bump_equiv_class0_n8() {
+    t_refill_bump_equiv_inner(16, 8, 8);
+}
+
+#[test]
+fn t_refill_bump_equiv_class0_n64() {
+    t_refill_bump_equiv_inner(16, 8, 64);
+}
+
+#[test]
+fn t_refill_bump_equiv_medium_n16() {
+    t_refill_bump_equiv_inner(256, 8, 16);
+}
+
+fn t_refill_bump_equiv_inner(size: usize, align: usize, n: usize) {
+    let mut core = AllocCore::new().unwrap();
+    let c = class_for(&core, size, align);
+
+    let mut buf = vec![core::ptr::null_mut::<u8>(); n];
+    // NOTE: refill_class_bump fills up to out.len(); pass an exactly-sized
+    // slice so `want == n`.
+    let got = core.refill_class_bump(c, &mut buf);
+    assert_eq!(got, n, "refill_class_bump returned {got}, expected {n}");
+
+    for (i, &ptr) in buf.iter().enumerate() {
+        assert!(!ptr.is_null(), "buf[{i}] is null after bump refill");
+    }
+    let unique: HashSet<usize> = buf.iter().map(|p| *p as usize).collect();
+    assert_eq!(
+        unique.len(),
+        n,
+        "refill_class_bump returned duplicate pointers"
+    );
+
+    // Round-trip: every bump-carved block must free cleanly. If bump-direct
+    // had wrongly left a block bitmap-FREE, dealloc_small's is_free guard
+    // would no-op the free (M2), and a subsequent re-refill would hand back a
+    // DIFFERENT pointer (see the counterfactual in this file).
+    let layout = Layout::from_size_align(size, align).unwrap();
+    for &ptr in &buf {
+        core.dealloc(ptr, layout);
+    }
+
+    // Re-refill: the just-freed blocks (now on the BinTable) must be reused —
+    // free-drain runs BEFORE any new carve, so the SAME address set comes
+    // back (LIFO order aside).
+    let mut buf2 = vec![core::ptr::null_mut::<u8>(); n];
+    let got2 = core.refill_class_bump(c, &mut buf2);
+    assert_eq!(got2, n, "re-refill after free returned {got2}");
+    let reused: HashSet<usize> = buf2.iter().map(|p| *p as usize).collect();
+    assert_eq!(
+        reused, unique,
+        "bump refill did not reuse freed blocks (source order broken — \
+         carved fresh instead of draining the free list first)"
+    );
+
+    for &ptr in &buf2 {
+        core.dealloc(ptr, layout);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T-refill-bump-partial (P3): with a short OUT slice, refill_class_bump fills
+// exactly out.len() and no more; want==0 fills nothing.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn t_refill_bump_len_bound() {
+    let mut core = AllocCore::new().unwrap();
+    let c = class_for(&core, 16, 8);
+
+    let mut empty: [*mut u8; 0] = [];
+    assert_eq!(core.refill_class_bump(c, &mut empty), 0);
+
+    let mut buf = vec![core::ptr::null_mut::<u8>(); 5];
+    let got = core.refill_class_bump(c, &mut buf);
+    assert_eq!(got, 5, "expected exactly out.len() filled");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    for &p in &buf {
+        assert!(!p.is_null());
+        core.dealloc(p, layout);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // T-flush-equiv: refill N, then flush_class all N back. After flush, a
 // re-refill returns valid pointers (round-trip).
 // ---------------------------------------------------------------------------

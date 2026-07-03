@@ -1,36 +1,39 @@
-//! Phase P7 — adaptive bulk-mode bypass tests.
+//! P3 (task #147) — bulk-mode bypass RETIRED; magazine is the sole path.
 //!
-//! Tests the per-class `alloc_streak` counter and the bulk-mode bypass
-//! logic added to `HeapCore::alloc` and `dealloc_own_thread`.
+//! History: Phase P7 added a per-class `alloc_streak` counter and a
+//! bulk-mode bypass that skipped the magazine on alloc-without-free streaks
+//! (both an alloc-side branch in `HeapCore::alloc` and a dealloc-side
+//! full-flush branch in `dealloc_own_thread`). P3 (Э1 — bump-direct batched
+//! carve, `AllocCore::refill_class_bump`) makes a magazine miss carve
+//! straight into the magazine at near-`memcpy` cost, so the bypass buys
+//! nothing and BOTH sides were retired together (retiring one alone would
+//! leave a permanently-dead branch — a stuck-at-0 streak the survivor could
+//! never satisfy). The `alloc_streak` array and the `dbg_alloc_streak` /
+//! `dbg_reset_bulk_state` hooks were removed with it.
 //!
-//! The streak counts consecutive magazine MISSES (refills), not individual
-//! allocs. It is incremented on refill and checked only on miss (alloc) or
-//! overflow (dealloc). The magazine HIT and PUSH paths have zero streak
-//! overhead (no read, no write), keeping the churn hot path clean.
-//!
-//! When `alloc_streak[c] >= BULK_THRESHOLD` (= 3, i.e. 3 consecutive
-//! refills = 48 allocs without an intervening magazine overflow), allocs
-//! bypass the magazine (go directly to `core.alloc`). On the dealloc side,
-//! overflow with `streak >= BULK_THRESHOLD` flushes the full magazine and
-//! frees directly via `core.dealloc`.
+//! This file now asserts the NEW behavior: there is NO bypass — every
+//! magazine miss refills the magazine (via bump-direct carve or free-drain)
+//! and every alloc that finds blocks in the magazine pops from it. The
+//! correctness properties (distinct pointers, no double-issue, clean churn,
+//! cross-thread unaffected) hold with the magazine as the single path.
 //!
 //! ## Tests
 //!
-//! - **t_bulk_pattern_triggers_bypass**: 64 consecutive 16B allocs without
-//!   frees. After 3 refills (48 allocs), streak reaches BULK_THRESHOLD
-//!   and the magazine is flushed. Remaining allocs go through bypass.
+//! - **t_cold_storm_stays_in_magazine**: 64 consecutive 16B allocs without
+//!   frees. The magazine is refilled on each miss and popped on each hit —
+//!   it is NEVER force-emptied mid-stream by a bypass. All 64 pointers are
+//!   distinct and writable.
 //!
-//! - **t_churn_stays_in_magazine**: working-set 24, 1024 churn iters.
-//!   Streak stays low (magazine hits keep it from growing).
+//! - **t_churn_distinct_and_healthy**: working-set 24, 1024 churn iters.
+//!   Every live pointer stays distinct; the allocator never hands the same
+//!   block out twice.
 //!
-//! - **t_bulk_then_drain_then_churn**: alloc 64 (bulk mode) -> free all
-//!   -> 1024 churn iters. Allocator healthy, no leaks, no double-issue.
+//! - **t_bulk_then_drain_then_churn**: alloc 64 → free all → 1024 churn
+//!   iters. No leaks, no double-issue, allocator healthy throughout.
 //!
 //! - **t_cross_thread_unaffected**: 2 threads via SeferAlloc. Thread A
-//!   allocs in bulk-mode volume, sends one ptr to thread B, B frees it.
-//!   No panic, no leak.
-//!
-//! - **t_counterfactual** (DOCUMENTED, not run): perf claim only.
+//!   allocs in bulk volume, sends one ptr to thread B, B frees it
+//!   cross-thread. No panic, no leak.
 
 #![cfg(all(feature = "alloc-global", feature = "fastbin"))]
 
@@ -71,119 +74,78 @@ fn xorshift64(state: &mut u64) -> u64 {
     x
 }
 
-// ── t_bulk_pattern_triggers_bypass ─────────────────────────────────────────
+// ── t_cold_storm_stays_in_magazine ─────────────────────────────────────────
 
-/// Alloc 64 blocks of class 16B without any intervening frees. After
-/// 2 consecutive magazine refills (= BULK_THRESHOLD), the streak should
-/// be >= THRESHOLD and the magazine should be empty (flushed on mode
-/// entry). Subsequent allocs go through the bypass (core.alloc directly).
+/// Alloc 64 blocks of class 16B without any intervening frees (a cold
+/// alloc-storm — exactly the pattern the retired bypass targeted). The NEW
+/// behavior: each magazine miss refills via bump-direct carve and each hit
+/// pops from the magazine; there is NO bypass that force-empties the
+/// magazine mid-stream. We assert the observable invariants: every pointer
+/// is distinct and writable, and the magazine never yields a stale/duplicate
+/// block.
 ///
-/// With TCACHE_CAP=16 and BULK_THRESHOLD=3 (refill-based), the 3rd
-/// refill happens at alloc #48 (first 16 from initial refill, then
-/// 16 hits deplete the magazine twice more, triggering refills #2 and #3).
-/// At refill #3 the streak reaches 3 and bulk mode activates.
+/// Counterfactual (why this is not vacuous): 64 allocs of a 16B class with
+/// TCACHE_CAP=16 forces at least 4 refills. If bump-direct double-issued a
+/// carved block (e.g. carved into the magazine AND left it on a BinTable to
+/// be popped again), the distinct-pointer assertion would fail.
 #[test]
-fn t_bulk_pattern_triggers_bypass() {
+fn t_cold_storm_stays_in_magazine() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    // `HeapRegistry::recycle` deliberately does NOT reset a slot's P7 bulk
-    // state (whole-heap reuse). Within one test binary the OS process (and
-    // hence the registry) is shared across all tests in this file, so a
-    // slot claimed here may be a RECYCLED slot left in bulk mode by an
-    // earlier test — start from a known-clean baseline explicitly rather
-    // than assuming a fresh heap. See `dbg_reset_bulk_state`'s doc.
-    unsafe { (*heap).dbg_reset_bulk_state() };
+    // A recycled slot may carry a populated magazine from an earlier test in
+    // this process; flush to a known-clean baseline.
+    unsafe { (*heap).dbg_flush_all() };
 
     const TOTAL: usize = 64;
     let layout = Layout::from_size_align(16, 8).unwrap();
-    // class_for(16, 8) == Some(0)
-    let class_idx: usize = 0;
 
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(TOTAL);
-    let mut entered_bulk = false;
     for i in 0..TOTAL {
         let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null(), "alloc returned null at i={i}");
         unsafe { core::ptr::write_bytes(p, 0xBB, 16) };
         ptrs.push(p);
-
-        let streak = unsafe { (*heap).dbg_alloc_streak(class_idx) };
-
-        // After 3 refills (each pulls 16 blocks), streak reaches 3
-        // (= BULK_THRESHOLD). This happens around alloc #48.
-        if streak >= 3 && !entered_bulk {
-            entered_bulk = true;
-            // Magazine should be empty (flushed on mode entry).
-            let mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) };
-            assert_eq!(
-                mag_cnt, 0,
-                "expected empty magazine on bulk-mode entry at alloc {i}, got {mag_cnt}"
-            );
-        }
     }
 
-    assert!(
-        entered_bulk,
-        "expected bulk mode to activate during 64 consecutive allocs"
-    );
-
-    // In bulk mode, magazine stays empty (bypass).
-    let mag_cnt_final = unsafe { (*heap).dbg_tcache_count(class_idx) };
-    assert_eq!(
-        mag_cnt_final, 0,
-        "expected empty magazine after bulk allocs, got {mag_cnt_final}"
-    );
-
-    // All pointers must be distinct.
+    // All pointers must be distinct — no block issued twice.
     let set: HashSet<usize> = ptrs.iter().map(|&p| p as usize).collect();
-    assert_eq!(set.len(), TOTAL, "duplicate pointers in bulk alloc");
+    assert_eq!(set.len(), TOTAL, "duplicate pointers in cold alloc-storm");
 
-    // Free all. In P7, the streak stays high (frees do not decrement
-    // it). The streak measures refill misses (alloc side), not frees.
-    // The alloc bypass (streak >= 3) remains armed after the frees,
-    // which is correct: if the next phase is another bulk alloc, we
-    // skip the magazine immediately without needing to warm up again.
+    // Free all — no panic, no double-free trips.
     for &p in &ptrs {
         unsafe { (*heap).dealloc(p, layout) };
     }
 
-    // Streak is still >= BULK_THRESHOLD (frees don't change it).
-    let final_streak = unsafe { (*heap).dbg_alloc_streak(class_idx) };
-    assert!(
-        final_streak >= 3,
-        "expected streak >= BULK_THRESHOLD after frees, got {final_streak}"
-    );
+    // Allocator still serves after the storm.
+    let check = unsafe { (*heap).alloc(layout) };
+    assert!(!check.is_null(), "alloc after cold-storm returned null");
+    unsafe { (*heap).dealloc(check, layout) };
 
     unsafe { HeapRegistry::recycle(heap) };
 }
 
-// ── t_churn_stays_in_magazine ──────────────────────────────────────────────
+// ── t_churn_distinct_and_healthy ───────────────────────────────────────────
 
-/// Maintain a working set of 64 blocks with churn for 1024 iterations.
-/// Because each alloc is followed by a free (of the same class), the
-/// streak counter should never reach BULK_THRESHOLD (it oscillates
-/// around 0-1). The magazine should have blocks at the end.
+/// Maintain a working set of 24 blocks with churn for 1024 iterations.
+/// Every live pointer must stay distinct at every step — the magazine path
+/// (the sole path now) must never re-issue a block that is still live.
 #[test]
-fn t_churn_stays_in_magazine() {
+fn t_churn_distinct_and_healthy() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    // See `t_bulk_pattern_triggers_bypass`'s comment: a recycled slot may
-    // carry bulk-mode state from an earlier test in this process.
-    unsafe { (*heap).dbg_reset_bulk_state() };
+    unsafe { (*heap).dbg_flush_all() };
 
-    // K < BULK_THRESHOLD so the initial fill does not trigger bulk mode.
     const K: usize = 24;
     const OPS: usize = 1024;
     let layout = Layout::from_size_align(16, 8).unwrap();
-    let class_idx: usize = 0;
 
-    // Initial fill: alloc K blocks (K=24 < BULK_THRESHOLD=32).
+    // Initial fill.
     let mut live: Vec<*mut u8> = Vec::with_capacity(K);
     for i in 0..K {
         let p = unsafe { (*heap).alloc(layout) };
@@ -192,10 +154,8 @@ fn t_churn_stays_in_magazine() {
         live.push(p);
     }
 
-    // Churn: free one, alloc one (alternating). Streak should stay low
-    // because each free decrements it.
+    // Churn: free one, alloc one. Assert distinctness on every step.
     let mut rng: u64 = 0xDEAD;
-    let mut max_streak: u8 = 0;
     for _ in 0..OPS {
         let idx = (xorshift64(&mut rng) as usize) % K;
         unsafe { (*heap).dealloc(live[idx], layout) };
@@ -204,38 +164,10 @@ fn t_churn_stays_in_magazine() {
         unsafe { core::ptr::write_bytes(p, 0xDD, 16) };
         live[idx] = p;
 
-        let streak = unsafe { (*heap).dbg_alloc_streak(class_idx) };
-        if streak > max_streak {
-            max_streak = streak;
-        }
+        let set: HashSet<usize> = live.iter().map(|&q| q as usize).collect();
+        assert_eq!(set.len(), K, "duplicate live pointer during churn");
     }
 
-    // Streak should never have reached BULK_THRESHOLD under churn.
-    // The streak counts consecutive refill misses. Under churn with a
-    // small working set (K=24), the magazine stays populated after the
-    // initial fill so refills are rare. However, refills from the
-    // initial fill already set streak to 2, and an additional refill
-    // could bring it to BULK_THRESHOLD. The key correctness property
-    // is that churn WORKS correctly regardless of the streak value —
-    // even if streak >= BULK_THRESHOLD, churn allocs hit the magazine
-    // (magazine has blocks) and churn frees push to the magazine
-    // (magazine has room), so the streak check is never reached on
-    // the hot path.
-    //
-    // We assert streak stays reasonable but allow up to BULK_THRESHOLD
-    // since the initial fill contributes 2 refills.
-    assert!(
-        max_streak <= 3,
-        "streak reached {max_streak} under churn — unexpectedly high"
-    );
-
-    // Magazine may or may not have blocks depending on the exact churn
-    // sequence. The important assertion is the streak check above — under
-    // churn the streak never reaches BULK_THRESHOLD, so the magazine path
-    // was always taken (not bypassed). Read the count for diagnostic output.
-    let _mag_cnt = unsafe { (*heap).dbg_tcache_count(class_idx) };
-
-    // Cleanup.
     for &p in &live {
         unsafe { (*heap).dealloc(p, layout) };
     }
@@ -245,8 +177,9 @@ fn t_churn_stays_in_magazine() {
 
 // ── t_bulk_then_drain_then_churn ───────────────────────────────────────────
 
-/// Alloc 64 (enters bulk mode) → free all 64 (exits bulk mode) → 1024
-/// churn iterations → no leaks, allocator healthy, magazine still works.
+/// Alloc 64 (cold storm) → free all 64 → 1024 churn iterations → no leaks,
+/// allocator healthy, magazine still works. Exercises the full transition
+/// from cold bump-carve to steady-state churn.
 #[test]
 fn t_bulk_then_drain_then_churn() {
     let _serial = SerialGuard::acquire();
@@ -254,14 +187,11 @@ fn t_bulk_then_drain_then_churn() {
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    // See `t_bulk_pattern_triggers_bypass`'s comment: a recycled slot may
-    // carry bulk-mode state from an earlier test in this process.
-    unsafe { (*heap).dbg_reset_bulk_state() };
+    unsafe { (*heap).dbg_flush_all() };
 
     let layout = Layout::from_size_align(16, 8).unwrap();
-    let class_idx: usize = 0;
 
-    // Phase 1: bulk alloc → enters bulk mode.
+    // Phase 1: cold storm.
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(64);
     for i in 0..64 {
         let p = unsafe { (*heap).alloc(layout) };
@@ -269,20 +199,16 @@ fn t_bulk_then_drain_then_churn() {
         unsafe { core::ptr::write_bytes(p, 0xAA, 16) };
         ptrs.push(p);
     }
-    let streak_after_bulk = unsafe { (*heap).dbg_alloc_streak(class_idx) };
-    assert!(
-        streak_after_bulk >= 3,
-        "expected bulk mode (streak >= 3), got {streak_after_bulk}"
-    );
+    let set: HashSet<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    assert_eq!(set.len(), 64, "duplicate pointers in bulk alloc");
 
-    // Phase 2: free all. Streak stays high (frees don't modify it).
+    // Phase 2: free all.
     for &p in &ptrs {
         unsafe { (*heap).dealloc(p, layout) };
     }
     ptrs.clear();
 
-    // Phase 3: churn — should use magazine path normally.
-    // K < BULK_THRESHOLD so the fill doesn't re-enter bulk mode.
+    // Phase 3: churn — magazine path.
     const K: usize = 24;
     const OPS: usize = 1024;
     let mut live: Vec<*mut u8> = Vec::with_capacity(K);
@@ -303,17 +229,10 @@ fn t_bulk_then_drain_then_churn() {
         live[idx] = p;
     }
 
-    // After the churn phase, the allocator is healthy and all live
-    // pointers are distinct. The streak value is not asserted here
-    // because it depends on the prior history (if a bulk phase preceded
-    // this churn phase, streak stays high). The test's value is
-    // demonstrating that churn works correctly regardless of streak.
-
     // All live pointers are distinct.
     let set: HashSet<usize> = live.iter().map(|&p| p as usize).collect();
     assert_eq!(set.len(), K, "duplicate pointers after churn");
 
-    // Cleanup.
     for &p in &live {
         unsafe { (*heap).dealloc(p, layout) };
     }
@@ -324,13 +243,11 @@ fn t_bulk_then_drain_then_churn() {
 // ── t_cross_thread_unaffected ──────────────────────────────────────────────
 
 /// Two threads via SeferAlloc's GlobalAlloc interface: thread A allocs
-/// blocks in bulk-mode volume (64 consecutive allocs), sends one to thread
-/// B via channel, thread B frees it. Verify no panic, no leak. The freer's
-/// (thread B's) streak is independent and does not interfere with the
-/// allocator's (thread A's) bulk mode.
-///
-/// Uses `SeferAlloc` directly (not HeapCore) because cross-thread routing
-/// requires the TLS binding to set up `install_thread_free` automatically.
+/// blocks in bulk volume (64 consecutive allocs — the cold-carve path),
+/// sends one to thread B via channel, thread B frees it cross-thread.
+/// Verify no panic, no leak. Bump-direct's free-drain-before-carve source
+/// order keeps the cross-thread ring reclaim working (a freed remote block
+/// is reused, not stranded).
 #[test]
 #[cfg(feature = "alloc-xthread")]
 fn t_cross_thread_unaffected() {
@@ -392,21 +309,3 @@ fn t_cross_thread_unaffected() {
     alloc_thread.join().expect("alloc thread panicked");
     free_thread.join().expect("free thread panicked");
 }
-
-// ── t_counterfactual ───────────────────────────────────────────────────────
-//
-// DOCUMENTED, NOT RUN. This is a performance claim, not a correctness
-// invariant.
-//
-// If BULK_THRESHOLD were u8::MAX (effectively disabled), the bulk 16B
-// bench would stay at ~29us because every bulk free overflows the
-// magazine. With BULK_THRESHOLD = 3, the magazine is bypassed after 48
-// consecutive allocs (3 refills), and bulk 16B drops to ~24us (vs ~14us
-// no-fastbin baseline — residual overhead from the first 48 allocs
-// going through the magazine before bypass activates, plus stamp on
-// every bypass alloc).
-//
-// This is NOT enforced as a test because performance numbers are
-// platform-dependent and noisy. The correctness tests above verify the
-// mechanism (streak counting, mode transitions, magazine flush on entry);
-// the performance claim is verified by the human reviewer's bench runs.

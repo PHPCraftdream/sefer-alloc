@@ -529,7 +529,6 @@ impl HeapCore {
         // through the magazine/refill).
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
-            use super::tcache::BULK_THRESHOLD;
             use crate::alloc_core::size_classes::SizeClasses;
             let size = layout
                 .size()
@@ -563,11 +562,6 @@ impl HeapCore {
                         // already stamped during the refill that originally
                         // pulled it. The OPT-C cache guarantees the segment
                         // header still carries our ownership.
-                        //
-                        // P7: NO streak touch here. The streak counts refill
-                        // misses, not individual allocs. This keeps the
-                        // magazine-hit path (the churn hot path) completely
-                        // streak-free — no read, no write of alloc_streak.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
                         // Э5 (task #145): load+store instead of `fetch_add` — no
@@ -593,46 +587,46 @@ impl HeapCore {
                         return self.tcache.slots[c][new_cnt];
                     }
 
-                    // Magazine miss — check P7 bulk-mode bypass before
-                    // attempting a refill. If this class has hit
-                    // BULK_THRESHOLD consecutive refills without intervening
-                    // frees, skip the magazine and go straight to the
-                    // substrate. This avoids the per-free overflow flush
-                    // cost on alloc-without-free streaks (the bulk pattern).
-                    //
-                    // The check is AFTER the magazine-hit test so the
-                    // churn hot path (magazine hit) never reads
-                    // alloc_streak — zero overhead.
-                    let streak = self.tcache.alloc_streak[c];
-                    if streak >= BULK_THRESHOLD {
-                        // Э4 (task #145): class `c` is already resolved above —
-                        // call `alloc_small_class(c)` directly instead of
-                        // `self.core.alloc(layout)`, which would re-run
-                        // `class_for` on the same `Layout`. `c` came from
-                        // `SizeClasses::class_for(size, align)` (a pure fn), so
-                        // this is the identical block, minus one classify.
-                        let ptr = self.core.alloc_small_class(c);
-                        if !ptr.is_null() {
-                            self.stamp_segment_owner(ptr);
-                        }
-                        return ptr;
-                    }
-
                     // Magazine miss: batch-refill + stamp hoist (P4).
                     // We inline the refill+stamp here instead of calling
                     // `refill_class_stamped` because borrowing `self.core`
                     // and `self.tcache.slots[c]` separately avoids a
                     // double-mutable-borrow conflict on `self`.
                     //
-                    // D3: the refill amount is now a per-class BYTE budget,
-                    // not the fixed `TCACHE_CAP` for every class — see
+                    // P3 (Э1, task #147): the miss refills via
+                    // `refill_class_bump` — bump-direct batched carve. On a
+                    // cold miss it drains existing free blocks first
+                    // (pop_free / find_segment_with_free, which reclaims
+                    // cross-thread frees — source order preserved), then
+                    // bump-carves the remaining slots DIRECTLY into the
+                    // magazine, skipping the old carve→BinTable→pop_free
+                    // round-trip (a tautology on freshly-carved virgin
+                    // blocks — bit 0 is already "allocated", so setting it
+                    // free and immediately clearing it was pure overhead).
+                    // D1/M2 end-state is byte-identical to the former
+                    // `refill_class` (see `refill_class_bump`'s proofs).
+                    //
+                    // P3 (task #147): the P7 alloc-side bulk-bypass and the
+                    // `alloc_streak` counter are RETIRED. bump-direct IS the
+                    // ideal bulk path — a magazine miss now carves straight
+                    // into the magazine at near-`memcpy` cost, so the
+                    // "skip the magazine on an alloc-without-free streak"
+                    // heuristic no longer buys anything. Retiring the alloc
+                    // side also retires the dealloc-side companion flush
+                    // (see `dealloc_own_thread`): without a streak counter it
+                    // could never fire, so keeping it would be dead code.
+                    //
+                    // D3: the refill amount is a per-class BYTE budget, not
+                    // the fixed `TCACHE_CAP` for every class — see
                     // `refill_n_for_class`. Small classes still get the full
                     // `TCACHE_CAP` (unchanged behaviour); large small-classes
                     // (block_size approaching SMALL_MAX) get fewer blocks per
                     // refill, so one magazine miss cannot park megabytes in a
                     // single idle thread's cache.
                     let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
-                    let n = self.core.refill_class(c, want, &mut self.tcache.slots[c]);
+                    let n = self
+                        .core
+                        .refill_class_bump(c, &mut self.tcache.slots[c][0..want]);
                     if n == 0 {
                         return core::ptr::null_mut(); // true OOM
                     }
@@ -646,25 +640,6 @@ impl HeapCore {
                         if !p.is_null() {
                             self.stamp_segment_owner(p);
                         }
-                    }
-                    // P7: bump refill streak. Each refill = `want` allocs
-                    // (D3 per-class byte budget) without a free for this
-                    // class (magazine was empty).
-                    self.tcache.alloc_streak[c] = self.tcache.alloc_streak[c].saturating_add(1);
-
-                    // P7: if streak just reached BULK_THRESHOLD, flush the
-                    // magazine. The refill pulled n blocks into the magazine;
-                    // we're about to enter bulk mode on the NEXT alloc, so
-                    // drain everything now to keep M2 invariants clean (no
-                    // blocks stranded in the magazine during bulk mode, so
-                    // live_count accurately reflects handed-out blocks only).
-                    if self.tcache.alloc_streak[c] == BULK_THRESHOLD {
-                        let new_cnt = n - 1;
-                        if new_cnt > 0 {
-                            self.core.flush_class(c, &self.tcache.slots[c][0..new_cnt]);
-                        }
-                        self.tcache.count[c] = 0;
-                        return self.tcache.slots[c][new_cnt];
                     }
 
                     // Pop the top, leave n-1 in the magazine.
@@ -807,40 +782,18 @@ impl HeapCore {
                         self.tcache.count[c] = (cnt + 1) as u16;
                         return;
                     }
-                    // ── P7 bulk-mode bypass on dealloc overflow ────────
-                    // Magazine is full (cnt == TCACHE_CAP). If the alloc
-                    // side is in bulk mode (streak >= BULK_THRESHOLD),
-                    // skip the expensive half-flush + compact + push
-                    // cycle and free directly via core.dealloc. Also
-                    // flush the entire magazine: the blocks in it were
-                    // pushed during the current free batch and should be
-                    // returned to the substrate for clean live_count
-                    // accounting (D1). Streak is NOT modified — it stays
-                    // high so subsequent overflows also bypass, and the
-                    // alloc side stays in bypass mode. Under churn,
-                    // overflow is rare (alloc pops keep cnt < CAP), so
-                    // this check adds zero overhead.
-                    if self.tcache.alloc_streak[c] >= super::tcache::BULK_THRESHOLD {
-                        // Flush the full magazine to the substrate.
-                        self.core
-                            .flush_class(c, &self.tcache.slots[c][0..TCACHE_CAP]);
-                        self.tcache.count[c] = 0;
-                        // Free this block directly. Э4 (task #145): class `c`
-                        // is already resolved above — call `dealloc_small_class`
-                        // with the known `c` instead of `self.core.dealloc(ptr,
-                        // layout)`, which would re-derive the class via
-                        // `classify`/`class_for` on the same `Layout`. `c` is a
-                        // pure fn of `(size, align)`, so this is the identical
-                        // free (same Small/Primordial `dealloc_small` body, same
-                        // M2 `is_free` double-free guard), minus one classify.
-                        // This block is one of ours (we just resolved its class
-                        // and it was routed here as own-thread), so the
-                        // Large/foreign arms `dealloc` would branch on do not
-                        // apply.
-                        let base = os::segment_base_of_ptr(ptr);
-                        self.core.dealloc_small_class(base, ptr, c);
-                        return;
-                    }
+                    // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
+                    // P3 (task #147): the P7 dealloc-side bulk-mode bypass is
+                    // RETIRED together with the alloc-side bypass and the
+                    // `alloc_streak` counter. That branch fired only when the
+                    // alloc side had advanced the streak past BULK_THRESHOLD;
+                    // with the counter gone it could never fire, so keeping it
+                    // would be dead code guarded by a stuck-at-0 condition.
+                    // The always-taken half-flush + compact + push below is the
+                    // sole overflow policy now. D1/M2 unchanged: `flush_class`
+                    // returns blocks to the substrate via `dealloc_small`
+                    // (mark_free + dec_live) exactly as before.
+                    //
                     // Normal overflow: half-flush, then push.
                     self.core.flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
@@ -1275,13 +1228,6 @@ impl HeapCore {
         ))
     }
 
-    /// TEST-ONLY (P7): read the alloc streak counter for class `c`.
-    #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub fn dbg_alloc_streak(&self, c: usize) -> u8 {
-        self.tcache.alloc_streak[c]
-    }
-
     /// TEST-ONLY (P5): force-flush every class's magazine back to the
     /// substrate. Used by decommit-soak tests to drain magazine-buffered
     /// blocks before asserting decommit invariants.
@@ -1302,31 +1248,6 @@ impl HeapCore {
             }
             self.core.flush_class(c, &self.tcache.slots[c][0..n]);
             self.tcache.count[c] = 0;
-        }
-    }
-
-    /// TEST-ONLY (Phase F4, task #124): reset the bulk-mode P7 state
-    /// (`alloc_streak` for every class, and the magazine via
-    /// [`dbg_flush_all`](Self::dbg_flush_all)) to a fresh-heap baseline.
-    ///
-    /// `HeapRegistry::recycle` deliberately does NOT reset a slot's
-    /// `HeapCore` — it is whole-heap reuse by design (the shard discipline;
-    /// see `HeapRegistry::recycle`'s doc). That means a test that `claim`s a
-    /// slot previously used (and left in bulk mode) by an EARLIER test in
-    /// the same process observes non-zero `alloc_streak` from alloc #0,
-    /// breaking any test that asserts "bulk mode has not yet triggered" near
-    /// the start of a fresh alloc sequence. This helper gives such tests an
-    /// explicit, honest way to start from a known-clean P7 state without
-    /// requiring `HeapRegistry` itself to pay a reset cost on every
-    /// recycle (which is not warranted outside tests — the production
-    /// bulk-mode invariants hold regardless of starting streak).
-    #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub fn dbg_reset_bulk_state(&mut self) {
-        use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
-        self.dbg_flush_all();
-        for c in 0..SMALL_CLASS_COUNT {
-            self.tcache.alloc_streak[c] = 0;
         }
     }
 }

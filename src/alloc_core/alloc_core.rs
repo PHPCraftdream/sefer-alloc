@@ -1388,6 +1388,122 @@ impl AllocCore {
         want
     }
 
+    /// Э1 (task #147) — **bump-direct batched carve**. Fill `out` with up to
+    /// `out.len()` live, bitmap-allocated blocks of class `class_idx`, producing
+    /// the IDENTICAL end-state as `refill_class` (each block: `live_count += 1`,
+    /// bitmap "allocated", handed to the magazine) but SKIPPING the BinTable
+    /// round-trip for freshly-carved blocks. Returns the number of slots filled
+    /// (0 on true OOM, else `> 0` and `<= out.len()`).
+    ///
+    /// ## Source order — NON-NEGOTIABLE (free-drain BEFORE bump)
+    ///
+    /// For each wanted slot we prefer an EXISTING free block and bump-carve ONLY
+    /// when no free block remains:
+    ///   1. Drain free blocks first — `pop_free(small_cur)`, and on a miss
+    ///      `find_segment_with_free` (which lazily drains each owned segment's
+    ///      remote-free ring, reclaiming cross-thread frees). This MUST run
+    ///      before any bump-carve: if we carved first, freed blocks sitting in
+    ///      the per-segment rings/BinTables would go stale, the rings would back
+    ///      up (RSS drift), and the xthread ring-reclaim expectations (A1) would
+    ///      break — a freed remote block must be reused, not stranded while we
+    ///      grow the bump cursor.
+    ///   2. For the remaining slots, bump-carve DIRECTLY into `out` via
+    ///      `carve_block` — no `dealloc_small`, no BinTable push, no subsequent
+    ///      `pop_free`. `carve_block` already does `inc_live` + bump + page-map +
+    ///      recommit (under `alloc-decommit`) and leaves the alloc bitmap UNSET
+    ///      (= "allocated", the M2 convention), so a carved block is already in
+    ///      the exact "live, allocated" state a handed-out block must be in
+    ///      (see `carve_block` ~1783: it never touches `alloc_bitmap()`).
+    ///      On `carve_block` → `None` (current segment full) we
+    ///      `reserve_small_segment` and continue; if reserve fails we stop and
+    ///      return the count filled so far (graceful — the caller treats `0` as
+    ///      OOM and a partial fill as a normal short refill).
+    ///
+    /// ## D1 (live_count) — exact, per block +1, never double
+    ///
+    /// Each `out` block receives EXACTLY one `inc_live`: either from `pop_free`
+    /// (drain branch) OR from `carve_block` (bump branch), never both — a slot
+    /// is filled by exactly one of the two. This equals what `refill_class`
+    /// produced (its `alloc_small` did one `inc_live` per block). The removed
+    /// BinTable round-trip in the OLD path was net-zero on `live_count` anyway
+    /// (`carve_block` +1 then the immediate `dealloc_small` −1 for each refill
+    /// extra, then `pop_free` +1 when later re-popped); collapsing it changes
+    /// nothing about the final count, only the intermediate churn.
+    ///
+    /// ## M2 (double-free bitmap) — byte-identical
+    ///
+    /// Carved blocks keep their bitmap bit UNSET (allocated). They are returned
+    /// to the substrate later via `flush_class` → `dealloc_small`, which
+    /// `mark_free`s them THEN — the identical lifecycle as `refill_class`, minus
+    /// the redundant intermediate set-free-then-clear. A double-free of such a
+    /// block still hits `dealloc_small`'s `is_free` guard exactly as before.
+    #[doc(hidden)]
+    #[inline]
+    pub fn refill_class_bump(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize {
+        let block_size = SizeClasses::block_size(class_idx);
+        debug_assert!(block_size >= NODE_SIZE);
+        let want = out.len();
+        let mut filled = 0usize;
+        // Once the whole-heap free scan (`find_segment_with_free`) reports NO
+        // free block of this class anywhere AND has drained every owned
+        // segment's remote-free ring, there is nothing more to reclaim for the
+        // rest of THIS refill: our own frees cannot happen mid-refill, and
+        // remote frees that arrive now land in the (already-scanned) rings and
+        // are deferred to the NEXT refill's drain — exactly the amortisation
+        // the retired `carve_block_with_refill` used (it also drained/scanned
+        // once, then carved its whole batch). Latching this avoids re-running
+        // the O(segments) scan + ring drain on every carved block of a cold
+        // storm; correctness is unchanged because the drain still runs at
+        // least once BEFORE any carve (source order preserved).
+        let mut free_exhausted = false;
+        while filled < want {
+            // 1. FREE-DRAIN FIRST (order is non-negotiable — see doc). Prefer a
+            //    free block from the current segment, then from any owned
+            //    segment (which also drains remote rings → xthread reclaim).
+            if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+                out[filled] = ptr;
+                filled += 1;
+                continue;
+            }
+            if !free_exhausted {
+                if let Some(seg) = self.find_segment_with_free(class_idx) {
+                    if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                        out[filled] = ptr;
+                        filled += 1;
+                        continue;
+                    }
+                }
+                // Scan found nothing (and drained all rings): stop re-scanning
+                // for the remainder of this refill; carve from here on.
+                free_exhausted = true;
+            }
+            // 2. No free block anywhere: bump-carve DIRECTLY into `out`. No
+            //    BinTable round-trip — `carve_block` leaves the block live +
+            //    bitmap-allocated, exactly the handed-out state.
+            if let Some(ptr) = self.carve_block(class_idx, block_size) {
+                out[filled] = ptr;
+                filled += 1;
+                continue;
+            }
+            // 3. Current segment is full: reserve a fresh one and retry the
+            //    carve. If reserve fails, stop and return what we have.
+            match self.reserve_small_segment() {
+                Some(_) => {
+                    if let Some(ptr) = self.carve_block(class_idx, block_size) {
+                        out[filled] = ptr;
+                        filled += 1;
+                        continue;
+                    }
+                    // A fresh segment that cannot fit even one block indicates
+                    // metadata corruption; stop gracefully rather than loop.
+                    break;
+                }
+                None => break,
+            }
+        }
+        filled
+    }
+
     /// Push a batch of blocks of class `class_idx` back onto their owning
     /// segments' `BinTable`s.
     ///
@@ -1410,39 +1526,13 @@ impl AllocCore {
         }
     }
 
-    /// Э4 (task #145) — "classify once". Allocate one block of an
-    /// ALREADY-RESOLVED small class `class_idx`, skipping the redundant
-    /// `class_for` recomputation that `alloc(layout)` would do. The caller
-    /// (the P7 bulk-bypass path in `HeapCore::alloc`) has already computed
-    /// `class_idx` via `SizeClasses::class_for(size, align)` on the same
-    /// `Layout`; `class_for` is a PURE function of `(size, align)`, so
-    /// re-deriving it inside `alloc` yields the identical index. Passing the
-    /// resolved class through drops one SIZE2CLASS lookup + branch per alloc.
-    /// Semantics are identical to `self.alloc(layout)` for a small-classified
-    /// layout (same `alloc_small` body, same M2/D1 transitions).
-    #[doc(hidden)]
-    #[must_use]
-    #[inline]
-    pub fn alloc_small_class(&mut self, class_idx: usize) -> *mut u8 {
-        self.alloc_small(class_idx)
-    }
-
-    /// Э4 (task #145) — "classify once", dealloc side. Free one block of an
-    /// ALREADY-RESOLVED small class `class_idx`, skipping the `classify`
-    /// recomputation `dealloc(layout)` performs. The caller (the P7
-    /// bulk-bypass overflow path in `HeapCore::dealloc_own_thread`) has the
-    /// resolved `class_idx` in hand from the same `Layout`; `class_for` is a
-    /// pure fn so this is the identical index `dealloc` would derive. `base`
-    /// is the segment base of `ptr`. Semantics are identical to the
-    /// Small/Primordial arm of `dealloc(ptr, layout)`: same off>=bump guard +
-    /// M2 double-free `is_free` check + BinTable push inside `dealloc_small`.
-    /// (Foreign / Large layouts must NOT reach here — the caller only invokes
-    /// this after `class_for` returned `Some(c)` for an own-segment block.)
-    #[doc(hidden)]
-    #[inline]
-    pub fn dealloc_small_class(&mut self, base: *mut u8, ptr: *mut u8, class_idx: usize) {
-        self.dealloc_small(base, ptr, class_idx);
-    }
+    // Э4 (task #145) "classify once" wrappers `alloc_small_class` /
+    // `dealloc_small_class` were RETIRED in P3 (task #147): their only callers
+    // were the P7 alloc-side and dealloc-side bulk bypasses, both removed here.
+    // The classify-once win survives where it still has a live caller
+    // (`HeapCore::dealloc_own_thread` already resolves the class once); these
+    // one-line pass-throughs are trivially re-addable if a future path needs
+    // a class-resolved single-block primitive again.
 
     // -----------------------------------------------------------------------
     // Internals — the safe Cartographer. All raw memory touches go through
