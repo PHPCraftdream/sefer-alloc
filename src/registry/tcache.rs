@@ -18,17 +18,14 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 // nothing and both the alloc-side and dealloc-side bypasses were removed
 // (retiring one without the other would leave a permanently-dead branch).
 
-/// Magic constant for tcache-resident block marker (M2 double-free guard, P3).
-///
-/// Non-zero so an all-zero freshly-carved block does not collide. The actual
-/// key written into a block's word1 is `TCACHE_KEY ^ (heap.id as usize)` so
-/// different heaps have different keys (defence against confusion across
-/// registry slots).
-///
-/// Value: ASCII bytes "SEFERCAC" packed into a `usize`. On 32-bit targets
-/// only the low 4 bytes ("SEFE") are used, which is still non-zero and
-/// distinctive.
-pub(crate) const TCACHE_KEY: usize = 0x53_45_46_45_52_43_41_43;
+// TCACHE_KEY — REMOVED in P6.1 (Э6). The magazine double-free guard no longer
+// stamps a per-heap key into a block's word1 (block body). The two exact
+// oracles (in-magazine scan + BinTable `is_free` bitmap) are now consulted
+// unconditionally on every magazine free (see `HeapCore::dealloc_own_thread`),
+// so the free path never reads or writes the block body — cheaper on cold
+// working sets AND strictly stronger M2 (the old key filter was skipped once
+// the user overwrote word1, missing a flushed double-free; the bitmap oracle
+// now catches it unconditionally).
 
 /// Magazine capacity per size class. Start: 16. Tuned in P6.
 ///

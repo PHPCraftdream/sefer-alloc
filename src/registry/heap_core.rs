@@ -706,7 +706,7 @@ impl HeapCore {
     fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
-            use super::tcache::{FLUSH_N, TCACHE_CAP, TCACHE_KEY};
+            use super::tcache::{FLUSH_N, TCACHE_CAP};
             use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
             let size = layout.size().max(MIN_BLOCK);
             let align = layout.align();
@@ -719,65 +719,67 @@ impl HeapCore {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
 
-                    // ── M2 double-free guard (P3) ────────────────────────
-                    // Two-layer guard. word1 carries a per-heap "tcache key"
-                    // marker while a block is in the magazine; flush leaves
-                    // the key in place (we do not clear word1 on flush).
+                    // ── M2 double-free guard (Э6, P6.1) ──────────────────
+                    // The exact oracles are consulted UNCONDITIONALLY, and the
+                    // block body is never read or written on the free path.
                     //
-                    //   word1 != key  →  fast path, push.
-                    //   word1 == key  →  SLOW path:
-                    //     1. Bounded scan of the magazine. If `ptr` is
-                    //        found here, this is an in-magazine double-free
-                    //        (the block is still queued in our magazine
-                    //        from a prior free) → no-op (M2 upheld).
-                    //     2. Scan miss → either a `~2^-64` random user-data
-                    //        false positive, OR a "flushed-then-double-freed"
-                    //        case where `ptr` is on a BinTable free list AND
-                    //        word1 still carries our stale key. Check the
-                    //        BinTable bitmap (the authoritative M2 oracle
-                    //        for flushed blocks): `bm.is_free(off)` true →
-                    //        block is on a free list → no-op (M2 upheld).
-                    //        bitmap-allocated → genuine false positive →
-                    //        fall through to normal push.
+                    // The pre-Э6 design used a per-heap key stamped into the
+                    // block's word1 (bytes 8..16) as a fast-path FILTER:
+                    // `word1 != key` skipped the oracles and pushed directly.
+                    // That filter cost a read+write of the BLOCK BODY on every
+                    // push (a cold/conflict cache line at block stride — the
+                    // 256 B churn regression), and — worse — it was UNSOUND
+                    // under user writes: once the user wrote to bytes 8..16 of
+                    // a block (legitimate use of allocated memory), a later
+                    // double-free saw `word1 != key`, SKIPPED the oracles, and
+                    // fell through to push → the block landed BOTH in the
+                    // magazine AND on a BinTable free list → the same pointer
+                    // issued twice.
                     //
-                    // Without step 2 there was a real hole: a block that
-                    // had been in the magazine and then half-flushed
-                    // retained `word1 == key`; a subsequent double-free
-                    // would hit the slow path, miss the magazine scan
-                    // (block no longer there), and fall through to push —
-                    // resulting in `ptr` being present BOTH in the
-                    // magazine AND on the BinTable free list. The next
-                    // refill would pull it off the BinTable while a
-                    // separate alloc popped it from the magazine, issuing
-                    // the same pointer twice. The bitmap check closes
-                    // that window.
-                    let key = TCACHE_KEY ^ (self.id as usize);
-                    let word1_ptr = Node::offset(ptr, core::mem::size_of::<usize>()) as *mut usize;
-                    let word1 = Node::read_usize(word1_ptr as *const usize);
-                    if word1 == key {
-                        // (1) bounded magazine scan
-                        let n = self.tcache.count[c] as usize;
-                        for i in 0..n {
-                            if self.tcache.slots[c][i] == ptr {
-                                return; // in-magazine DF — no streak change
-                            }
+                    // Э6 removes the filter and always runs the two exact
+                    // oracles, in this exact order:
+                    //
+                    //   (1) in-magazine scan  — catches a block freed but not
+                    //       yet flushed (still queued in `slots`). Bounded by
+                    //       `cnt <= TCACHE_CAP` (16); in churn cnt is 1–3 and
+                    //       the array is hot/L1.
+                    //   (2) BinTable bitmap   — catches a block that was
+                    //       flushed to a free list (`is_free(off)` set). The
+                    //       bitmap line is shared by hundreds of blocks → hot.
+                    //
+                    // A genuinely live block is in neither → push. Order is
+                    // load-bearing: scan FIRST (unflushed), bitmap SECOND
+                    // (flushed); do NOT reorder.
+                    //
+                    // This STRENGTHENS M2: the pre-Э6 flushed-double-free hole
+                    // (user overwrote word1 → stale/garbage key → oracles
+                    // skipped → double-issue) is now closed unconditionally —
+                    // the bitmap oracle no longer depends on the block body
+                    // being pristine. Strict correctness improvement, not a
+                    // trade. The magazine free path now touches no block body
+                    // at all (mimalloc, by contrast, must write `next` into
+                    // the body on every free — we are structurally cheaper per
+                    // free on cold working sets).
+                    //
+                    // (1) in-magazine DF oracle — ALWAYS
+                    for i in 0..cnt {
+                        if self.tcache.slots[c][i] == ptr {
+                            return; // in-magazine double-free — no-op
                         }
-                        // (2) bitmap check — authoritative for flushed blocks
-                        let base = os::segment_base_of_ptr(ptr);
-                        let off = (ptr as usize - base as usize) as u32;
-                        let bm = SegmentMeta::new(base).alloc_bitmap();
-                        if bm.is_free(off) {
-                            return; // flushed-then-double-freed — no streak change
-                        }
-                        // Bitmap says alloc → block was carved or refilled
-                        // for legitimate use and still carries an old key
-                        // in word1 the user did not overwrite. Fall through
-                        // to a normal push (re-stamps the key).
+                    }
+                    // (2) flushed DF oracle — ALWAYS. `base`/`off`/bitmap are
+                    // read on a segment already PROVEN ours and mapped by
+                    // `dealloc_routing`'s `contains_base` ownership check
+                    // (fastbin ⇒ alloc-xthread structurally), exactly as
+                    // before.
+                    let base = os::segment_base_of_ptr(ptr);
+                    let off = (ptr as usize - base as usize) as u32;
+                    if SegmentMeta::new(base).alloc_bitmap().is_free(off) {
+                        return; // flushed-then-double-freed — no-op
                     }
 
                     if cnt < TCACHE_CAP {
-                        // Room in the magazine: stamp the key and push.
-                        Node::write_usize(word1_ptr, key);
+                        // Legit free → push. NO key stamp, NO block-body write.
                         self.tcache.slots[c][cnt] = ptr;
                         self.tcache.count[c] = (cnt + 1) as u16;
                         return;
@@ -801,8 +803,9 @@ impl HeapCore {
                     for i in 0..remaining {
                         self.tcache.slots[c][i] = self.tcache.slots[c][i + FLUSH_N];
                     }
-                    // Stamp the key and push.
-                    Node::write_usize(word1_ptr, key);
+                    // Push (Э6: NO key stamp, NO block-body write). The oracles
+                    // above already ran before this overflow branch, so a
+                    // double-free is caught even when the magazine is full.
                     self.tcache.slots[c][remaining] = ptr;
                     self.tcache.count[c] = (remaining + 1) as u16;
                     return;

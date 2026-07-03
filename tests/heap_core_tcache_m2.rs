@@ -1,10 +1,13 @@
-//! Phase P3 -- M2 magazine double-free guard tests.
+//! Phase P3 / P6.1 (Э6) -- M2 magazine double-free guard tests.
 //!
-//! Tests the per-heap key + bounded-scan guard that prevents a double-free of
-//! a magazine-resident block from corrupting the magazine (silently pushing
-//! the same pointer twice). The guard is the authoritative M2 guarantee for
-//! the magazine layer; the BinTable bitmap remains the authority for flushed
-//! blocks.
+//! Tests the magazine double-free guard that prevents a double-free of a
+//! magazine-resident block from corrupting the magazine (silently pushing the
+//! same pointer twice). Since Э6 (P6.1) the guard is two EXACT oracles run
+//! unconditionally on every magazine free — the in-magazine `slots` scan and
+//! the BinTable `is_free` bitmap — with NO per-heap key stamped in the block
+//! body. The scan is authoritative for unflushed blocks; the BinTable bitmap
+//! is authoritative for flushed blocks. (Pre-Э6 the guard used a word1 key as
+//! a fast-path filter; that filter was removed as unsound under user writes.)
 //!
 //! ## Tests
 //!
@@ -55,8 +58,8 @@ impl Drop for SerialGuard {
 /// ONCE, so the next two allocs return distinct pointers.
 ///
 /// COUNTERFACTUAL (do NOT enable in production): to verify T2 is not vacuous,
-/// temporarily comment out the `if word1 == key { ... return; }` guard in
-/// `heap_core.rs::dealloc_own_thread` and re-run this test. It MUST fail
+/// temporarily remove the in-magazine `slots` scan (`for i in 0..cnt { ... }`)
+/// in `heap_core.rs::dealloc_own_thread` and re-run this test. It MUST fail
 /// (`assert_ne!` on p1, p2 trips because the magazine pushes p twice).
 #[test]
 fn t2_double_free_magazine_block_is_noop() {
@@ -202,12 +205,10 @@ fn t3_double_free_flushed_block_still_caught_by_bitmap() {
 /// pointer is NEVER issued twice:
 ///   1. Alloc 200 × 16B — large enough that magazine half-flushes send
 ///      `ptrs[0]` to a BinTable free list (the first ~184 flushed).
-///   2. Free all 200 in order — `ptrs[0]` is flushed early; its word1
-///      still carries the stale tcache key (flush does NOT clear word1).
-///   3. Double-free `ptrs[0]` — slow path (key match) → magazine scan
-///      MISS (block is on BinTable, not magazine). Without the bitmap
-///      check (the P3 hole), this would fall through to `push` and
-///      put `ptrs[0]` in the magazine too.
+///   2. Free all 200 in order — `ptrs[0]` is flushed early.
+///   3. Double-free `ptrs[0]` — the in-magazine scan MISSES (block is on
+///      BinTable, not magazine). Without the bitmap oracle, this would
+///      fall through to `push` and put `ptrs[0]` in the magazine too.
 ///   4. Alloc 400 — deep enough to drain magazine + force refill that
 ///      pulls from the bottom of the BinTable free list, reaching
 ///      `ptrs[0]`. Count occurrences of `ptrs[0]` in the issued set.
@@ -268,10 +269,12 @@ fn t3_flushed_double_free_does_not_double_issue() {
 
 // ── T-false-positive: user data happens to equal our key ──────────────────
 
-/// Write the TCACHE_KEY value into word1 of a block while it is allocated
-/// (simulating user data that collides with our key). Freeing the block must
-/// still succeed -- the bounded scan sees the ptr is NOT in the magazine and
-/// falls through to a normal push. Then alloc returns the same block.
+/// Write an arbitrary value into word1 of a block while it is allocated
+/// (simulating user data — this used to collide with the old word1 key).
+/// Since Э6 the guard never reads word1, so this can never be a false
+/// positive; freeing the block must still succeed (the oracles see the ptr is
+/// NOT in the magazine and NOT flushed) and push normally. Then alloc returns
+/// the same block.
 #[test]
 fn t_false_positive_handled() {
     let _g = SerialGuard::acquire();
@@ -283,19 +286,12 @@ fn t_false_positive_handled() {
     let p = unsafe { (*heap).alloc(layout) };
     assert!(!p.is_null());
 
-    // Write TCACHE_KEY ^ 0 into word1 (offset size_of::<usize>()).
-    // This simulates user data that happens to equal the guard key for
-    // heap id=0. Even if our heap's id is not 0, writing any value into
-    // word1 exercises the "key matched but ptr not in magazine" path when
-    // it happens to collide.
-    //
-    // We write the raw TCACHE_KEY constant XOR'd with 0 (which is just
-    // TCACHE_KEY). If the heap id happens to be different, the key won't
-    // match and the fast path handles it. If it matches, the scan handles
-    // the false positive. Either way the free must succeed.
+    // Write an arbitrary value into word1 (offset size_of::<usize>()). Pre-Э6
+    // this specific value was the guard key and could cause a false positive;
+    // since Э6 word1 is never consulted, so no value here can. The free must
+    // succeed regardless.
     let word1_addr = unsafe { (p as *mut usize).add(1) };
-    // Use the TCACHE_KEY constant. We import it via the re-exported path.
-    let fake_key: usize = 0x53_45_46_45_52_43_41_43; // TCACHE_KEY value
+    let fake_key: usize = 0x53_45_46_45_52_43_41_43; // former TCACHE_KEY value
     unsafe { word1_addr.write(fake_key) };
 
     // Free the block. Must succeed (not silently dropped).
@@ -321,8 +317,9 @@ fn t_false_positive_handled() {
 // ── T-key-round-trip: key in word1 does not break alloc/free cycle ────────
 
 /// alloc -> free -> alloc -> free repeated many times for the same size class.
-/// The key left in word1 by free does not interfere with subsequent allocs or
-/// frees. This is a sanity check, not a counterfactual test.
+/// Since Э6 free leaves word1 untouched; this confirms the round-trip is clean
+/// regardless of block-body contents. This is a sanity check, not a
+/// counterfactual test.
 #[test]
 fn t_key_does_not_break_round_trip() {
     let _g = SerialGuard::acquire();
@@ -338,7 +335,7 @@ fn t_key_does_not_break_round_trip() {
         // Write user data (overwriting whatever is in word0/word1).
         unsafe { core::ptr::write_bytes(p, (round & 0xFF) as u8, 16) };
         unsafe { (*heap).dealloc(p, layout) };
-        // After free, word1 holds our key. Next alloc must still work.
+        // Э6: free leaves the block body untouched. Next alloc must still work.
         last_ptr = p;
     }
     // Final alloc should still work.
@@ -373,7 +370,7 @@ fn t2_double_free_64b_class() {
     // Write user data to the full 64 bytes (including word1).
     unsafe { core::ptr::write_bytes(p, 0xDD, 64) };
 
-    // First free -> pushes to magazine, stamps word1 with key.
+    // First free -> pushes to magazine (Э6: word1 left untouched).
     unsafe { (*heap).dealloc(p, layout) };
 
     // Second free of SAME ptr -> M2 guard must catch it.

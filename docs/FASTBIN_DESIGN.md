@@ -216,7 +216,19 @@ compare, key write, array store, count bump. No bitmap, no `contains_base`, no
 
 ## 6. Correctness integration (the hard part)
 
-### 6.1 M2 double-free of a magazine-resident block
+> **SUPERSEDED by P6.1 (Э6).** The word1 per-heap key described in §6.1 below
+> was REMOVED. The magazine free guard now runs the two exact oracles
+> unconditionally on every free — the in-magazine `slots` scan (unflushed
+> blocks) followed by the BinTable `is_free` bitmap (flushed blocks) — and
+> never reads or writes the block body. This is both cheaper (no cold
+> block-body cache line touched per free) and STRICTLY STRONGER: the old key
+> was only a fast-path filter, and once the user overwrote word1 a flushed
+> double-free would slip past it (double-issue). The bitmap oracle now catches
+> that unconditionally. See `HeapCore::dealloc_own_thread` and
+> `tests/regression_magazine_oracles.rs`. The §6.1 text below is retained for
+> historical context only.
+
+### 6.1 M2 double-free of a magazine-resident block (historical — see banner)
 Problem: a magazine-resident block is `bitmap = allocated` (it was
 `mark_alloc`'d during refill). The BinTable bitmap therefore CANNOT detect a
 double-free of a block currently sitting in the magazine — a naive second free
