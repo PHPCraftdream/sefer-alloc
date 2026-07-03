@@ -151,6 +151,68 @@ fn stats_reflects_activity() {
     );
 }
 
+/// Task #145 (Э5) — the tcache-hit counter is incremented on the magazine
+/// hot path with a non-atomic load+store (dropping the `lock xadd`) instead of
+/// `fetch_add`. This is sound ONLY because the owning thread is the sole
+/// writer of its own per-heap counter. This test is the counterfactual that
+/// the split RMW does not LOSE counts: it drives an EXACT, single-threaded
+/// number of guaranteed magazine hits and asserts the `tcache_hits` delta is
+/// at least that many. If the load+store ever dropped an increment (e.g. a
+/// mis-split that overwrote), the observed delta would fall short and this
+/// assertion would fail.
+///
+/// We assert `>= HITS` (a tight lower bound), not `== HITS`, because
+/// `stats().tcache_hits` reads a PROCESS-WIDE aggregate and other tests in
+/// this binary may run concurrently on other threads and add their own hits
+/// between our two snapshots — those can only INCREASE the delta, never
+/// decrease it. A dropped-count regression makes the delta smaller than the
+/// hits we provably generated on THIS thread, so the lower bound is the
+/// correct, race-robust oracle.
+#[cfg(feature = "fastbin")]
+#[test]
+fn tcache_hits_counter_does_not_drop_counts_under_load_store() {
+    let a = SeferAlloc::new();
+    // One fixed small class. First alloc a batch and free it so the magazine
+    // is primed; then every subsequent alloc of the same class that finds the
+    // magazine non-empty is a counted hit.
+    let small = Layout::from_size_align(32, 8).unwrap();
+
+    // Prime: fill and drain so the magazine holds blocks of this class.
+    let mut live = Vec::new();
+    for _ in 0..256 {
+        // SAFETY: valid non-zero layout.
+        let p = unsafe { a.alloc(small) };
+        assert!(!p.is_null());
+        live.push(p);
+    }
+    for p in live.drain(..) {
+        // SAFETY: p allocated with `small`, still live.
+        unsafe { a.dealloc(p, small) };
+    }
+
+    let before = a.stats().tcache_hits;
+
+    // Now do exactly HITS alloc/free single-block cycles. Each alloc pops one
+    // block from the primed magazine (a hit); the matching free pushes it back
+    // (magazine stays non-empty), so the NEXT alloc is again a guaranteed hit.
+    const HITS: u64 = 10_000;
+    for _ in 0..HITS {
+        // SAFETY: valid layout.
+        let p = unsafe { a.alloc(small) };
+        assert!(!p.is_null());
+        // SAFETY: p just allocated with `small`.
+        unsafe { a.dealloc(p, small) };
+    }
+
+    let after = a.stats().tcache_hits;
+    let delta = after.wrapping_sub(before);
+    assert!(
+        delta >= HITS,
+        "tcache_hits delta {delta} < the {HITS} magazine hits provably \
+         generated on this thread — the load+store increment dropped counts"
+    );
+}
+
 /// Without any of the counter-backing features enabled, every gated field of
 /// `stats()` reads back exactly `0` (never garbage, never panics) — the
 /// "stable shape across feature combinations" guarantee from `AllocStats`'s

@@ -1410,6 +1410,40 @@ impl AllocCore {
         }
     }
 
+    /// Э4 (task #145) — "classify once". Allocate one block of an
+    /// ALREADY-RESOLVED small class `class_idx`, skipping the redundant
+    /// `class_for` recomputation that `alloc(layout)` would do. The caller
+    /// (the P7 bulk-bypass path in `HeapCore::alloc`) has already computed
+    /// `class_idx` via `SizeClasses::class_for(size, align)` on the same
+    /// `Layout`; `class_for` is a PURE function of `(size, align)`, so
+    /// re-deriving it inside `alloc` yields the identical index. Passing the
+    /// resolved class through drops one SIZE2CLASS lookup + branch per alloc.
+    /// Semantics are identical to `self.alloc(layout)` for a small-classified
+    /// layout (same `alloc_small` body, same M2/D1 transitions).
+    #[doc(hidden)]
+    #[must_use]
+    #[inline]
+    pub fn alloc_small_class(&mut self, class_idx: usize) -> *mut u8 {
+        self.alloc_small(class_idx)
+    }
+
+    /// Э4 (task #145) — "classify once", dealloc side. Free one block of an
+    /// ALREADY-RESOLVED small class `class_idx`, skipping the `classify`
+    /// recomputation `dealloc(layout)` performs. The caller (the P7
+    /// bulk-bypass overflow path in `HeapCore::dealloc_own_thread`) has the
+    /// resolved `class_idx` in hand from the same `Layout`; `class_for` is a
+    /// pure fn so this is the identical index `dealloc` would derive. `base`
+    /// is the segment base of `ptr`. Semantics are identical to the
+    /// Small/Primordial arm of `dealloc(ptr, layout)`: same off>=bump guard +
+    /// M2 double-free `is_free` check + BinTable push inside `dealloc_small`.
+    /// (Foreign / Large layouts must NOT reach here — the caller only invokes
+    /// this after `class_for` returned `Some(c)` for an own-segment block.)
+    #[doc(hidden)]
+    #[inline]
+    pub fn dealloc_small_class(&mut self, base: *mut u8, ptr: *mut u8, class_idx: usize) {
+        self.dealloc_small(base, ptr, class_idx);
+    }
+
     // -----------------------------------------------------------------------
     // Internals — the safe Cartographer. All raw memory touches go through
     // `Node`; no `Vec`/`Box`/`HashSet`/`std::alloc`.
@@ -1926,8 +1960,21 @@ impl AllocCore {
             if let Some(idx) = hit_idx {
                 let slot = self.large_cache[idx].take().unwrap();
                 // Diagnostic (task D1): count this as a cache hit.
-                self.large_cache_hits
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                // Э5 (task #145): load+store instead of `fetch_add` — no
+                // `lock xadd`. SOUND for the same single-writer reason as
+                // `HeapCore::tcache_hits`: `large_cache_hits` is a per-heap
+                // field and `alloc_large` (its only incrementer) runs solely on
+                // the owning thread (the slot's claim-CAS winner). No other
+                // thread writes it, so splitting the atomic RMW into Relaxed
+                // load + Relaxed store cannot drop a count. The cross-thread
+                // `large_cache_hits_total` reader still does a Relaxed atomic
+                // load — identical visibility to the old `fetch_add(Relaxed)`.
+                self.large_cache_hits.store(
+                    self.large_cache_hits
+                        .load(core::sync::atomic::Ordering::Relaxed)
+                        .wrapping_add(1),
+                    core::sync::atomic::Ordering::Relaxed,
+                );
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);

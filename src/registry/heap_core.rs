@@ -570,7 +570,26 @@ impl HeapCore {
                         // streak-free — no read, no write of alloc_streak.
                         let new_cnt = cnt - 1;
                         self.tcache.count[c] = new_cnt as u16;
-                        self.tcache_hits.fetch_add(1, Ordering::Relaxed);
+                        // Э5 (task #145): load+store instead of `fetch_add` — no
+                        // `lock xadd` on the churn hot path. SOUND because this
+                        // thread is the SOLE WRITER of ITS OWN `tcache_hits`: the
+                        // counter is a per-heap field and this magazine-hit path
+                        // runs only on the owning thread (the single-writer
+                        // invariant `tls_heap.rs` establishes — `current_for_alloc`
+                        // yields `Own(&mut HeapCore)` only to the thread that won
+                        // the slot's claim CAS). No other thread ever increments
+                        // this field, so a non-atomic RMW split into a Relaxed
+                        // load + Relaxed store cannot lose an update. The remote
+                        // `stats()` reader (`tcache_hits_total`) still does a
+                        // Relaxed atomic load and observes a monotonically
+                        // non-decreasing value — identical visibility to the old
+                        // `fetch_add(Relaxed)` (Relaxed gives no ordering either
+                        // way; only atomicity of the single word, which `store`
+                        // preserves). Only the lock prefix is dropped.
+                        self.tcache_hits.store(
+                            self.tcache_hits.load(Ordering::Relaxed).wrapping_add(1),
+                            Ordering::Relaxed,
+                        );
                         return self.tcache.slots[c][new_cnt];
                     }
 
@@ -586,7 +605,13 @@ impl HeapCore {
                     // alloc_streak — zero overhead.
                     let streak = self.tcache.alloc_streak[c];
                     if streak >= BULK_THRESHOLD {
-                        let ptr = self.core.alloc(layout);
+                        // Э4 (task #145): class `c` is already resolved above —
+                        // call `alloc_small_class(c)` directly instead of
+                        // `self.core.alloc(layout)`, which would re-run
+                        // `class_for` on the same `Layout`. `c` came from
+                        // `SizeClasses::class_for(size, align)` (a pure fn), so
+                        // this is the identical block, minus one classify.
+                        let ptr = self.core.alloc_small_class(c);
                         if !ptr.is_null() {
                             self.stamp_segment_owner(ptr);
                         }
@@ -800,8 +825,20 @@ impl HeapCore {
                         self.core
                             .flush_class(c, &self.tcache.slots[c][0..TCACHE_CAP]);
                         self.tcache.count[c] = 0;
-                        // Free this block directly.
-                        self.core.dealloc(ptr, layout);
+                        // Free this block directly. Э4 (task #145): class `c`
+                        // is already resolved above — call `dealloc_small_class`
+                        // with the known `c` instead of `self.core.dealloc(ptr,
+                        // layout)`, which would re-derive the class via
+                        // `classify`/`class_for` on the same `Layout`. `c` is a
+                        // pure fn of `(size, align)`, so this is the identical
+                        // free (same Small/Primordial `dealloc_small` body, same
+                        // M2 `is_free` double-free guard), minus one classify.
+                        // This block is one of ours (we just resolved its class
+                        // and it was routed here as own-thread), so the
+                        // Large/foreign arms `dealloc` would branch on do not
+                        // apply.
+                        let base = os::segment_base_of_ptr(ptr);
+                        self.core.dealloc_small_class(base, ptr, c);
                         return;
                     }
                     // Normal overflow: half-flush, then push.

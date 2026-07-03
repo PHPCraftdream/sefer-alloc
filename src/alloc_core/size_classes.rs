@@ -1,4 +1,4 @@
-//! [`SizeClasses`] — the size-class scheme (48 fine classes to a threshold,
+//! [`SizeClasses`] — the size-class scheme (49 fine classes to a threshold,
 //! then large/huge direct segments), the safe Cartographer's classifier.
 //!
 //! This is **pure safe integer arithmetic** over a fixed table — it touches no
@@ -8,18 +8,22 @@
 //!
 //! ## Scheme
 //!
-//! - **Small classes (index `0..SMALL_CLASS_COUNT`):** 48 fine classes from
+//! - **Small classes (index `0..SMALL_CLASS_COUNT`):** 49 fine classes from
 //!   `MIN_BLOCK` (16 B) up to `SMALL_MAX` (~253 KiB — before task B1 this was
 //!   the top of a 40-entry table; B1 kept that top entry but merged in 8 more
-//!   classes at the low end, so `SMALL_MAX` itself is unchanged). 40 of the
-//!   48 classes form the original geometric spacing: starting at `MIN_BLOCK`
+//!   classes at the low end, and task #145 (P1) merged in one more — the exact
+//!   256 B class — so `SMALL_MAX` itself is unchanged). 40 of the 49 classes
+//!   form the original geometric spacing: starting at `MIN_BLOCK`
 //!   and growing with a roughly 1.25× step (mimalloc's small-spacing idea),
 //!   rounded to a multiple of `MIN_BLOCK` so every block stays
 //!   `MIN_BLOCK`-aligned (which satisfies every alignment the small classes
 //!   advertise, since `align <= size <= block` and `block` is a multiple of
-//!   `MIN_BLOCK`). The other 8 (task B1, the follow-up to #114) are explicit
+//!   `MIN_BLOCK`). Eight more (task B1, the follow-up to #114) are explicit
 //!   "page-aligned" classes — 512, 1024, 2048, 4096, 6144, 8192, 12288,
-//!   16384 — merged into the sorted sequence so that typical page-aligned
+//!   16384 — and one more (task #145) is the exact 256 B class (the geometric
+//!   progression skips 240 → 304, wasting ~18% on a 256 B request — the size
+//!   where mimalloc leads on churn). All are merged into the sorted sequence
+//!   so that typical page-aligned
 //!   requests (direct I/O buffers, `io_uring`, `#[repr(align(4096))]`) in the
 //!   512 B – 16 KiB range resolve to a small class instead of unconditionally
 //!   burning a whole ~4 MiB Large segment (the pre-B1 gap: no class in the
@@ -82,7 +86,7 @@ pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 /// at compile time by [`build_table`] so the spacing is visible as code, not
 /// magic numbers. This is the **single source of truth** for the small-class
 /// geometry; [`SIZE2CLASS`] is derived from it by [`build_size2class`].
-pub(crate) const SIZE_CLASS_TABLE: [usize; 48] = build_table();
+pub(crate) const SIZE_CLASS_TABLE: [usize; 49] = build_table();
 
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
@@ -100,7 +104,7 @@ pub(crate) const SMALL_MAX: usize = *SIZE_CLASS_TABLE.last().unwrap();
 ///
 /// Length is `(SMALL_MAX / MIN_BLOCK) + 1`: every `MIN_BLOCK`-aligned size bucket
 /// from `0` (sentinel, unused on the live path) up to and including `SMALL_MAX`.
-/// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (currently 48; grows as
+/// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (currently 49; grows as
 /// the table gains classes) is far below 256; a compile-time assertion in
 /// [`build_size2class`] makes that invariant explicit.
 pub(crate) const SIZE2CLASS: [u8; (SMALL_MAX / MIN_BLOCK) + 1] = build_size2class();
@@ -143,7 +147,7 @@ impl SizeClasses {
     /// **Slow path (`align > SMALL_ALIGN_MAX`):** we still seed at the
     /// `SIZE2CLASS` entry that covers `max(size, align)`, then walk forward at
     /// most a handful of classes to find one whose `block_size` is divisible
-    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (currently 48), and in
+    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (currently 49), and in
     /// practice settles in 0–3 steps for the typical async-runtime alignments
     /// (32, 64, 128, 256 — `Cell<T,S>` etc.). Without this path EVERY alloc
     /// with `align > 16` would go to the dedicated-segment Large path,
@@ -213,18 +217,31 @@ impl SizeClasses {
 /// Large, which is fine — Large exists precisely for less-common bulk sizes.
 const PAGE_ALIGNED_EXTRA: [usize; 8] = [512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
 
+/// The exact 256 B class (task #145, P1). The plain geometric progression
+/// jumps 240 → 304 (a 1.25× step rounded to `MIN_BLOCK`), so a 256 B request
+/// — the exact size where mimalloc leads on churn — resolved to the 304 B
+/// class: ~18% internal waste. 256 is disjoint from the geometric sequence
+/// (which never lands on 256) AND from [`PAGE_ALIGNED_EXTRA`] (all ≥ 512), so
+/// it merges cleanly into the sorted table as one new class, taking
+/// `SMALL_CLASS_COUNT` from 48 to 49. It is a multiple of `MIN_BLOCK` (256 =
+/// 16 × 16), so every table invariant (strictly increasing, each entry a
+/// multiple of `MIN_BLOCK`) still holds. `SMALL_MAX` is unchanged (256 is far
+/// below the top entry).
+const EXACT_EXTRA: [usize; 1] = [256];
+
 /// Build the small size-class table at compile time. Spacing: start at
 /// `MIN_BLOCK`, then each next class is `round_up(prev * 5 / 4, MIN_BLOCK)`
 /// (a 1.25× geometric step rounded to the alignment), with a minimum step of
 /// `MIN_BLOCK` (so two adjacent classes never collide) — 40 classes from 16 B
-/// up to ~253 KiB. [`PAGE_ALIGNED_EXTRA`] (8 more classes, each a multiple of
-/// 512/1024/2048/4096 up to 16 KiB) is merged in sorted order, giving 48
+/// up to ~253 KiB. [`EXACT_EXTRA`] (the exact 256 B class, task #145) and
+/// [`PAGE_ALIGNED_EXTRA`] (8 more classes, each a multiple of
+/// 512/1024/2048/4096 up to 16 KiB) are merged in sorted order, giving 49
 /// classes total. The merge keeps the table strictly increasing (a hard
 /// invariant both `SizeClasses::class_for`'s divisibility walk and
 /// [`build_size2class`]'s O(1) derivation rely on) and every entry stays a
-/// multiple of `MIN_BLOCK` (all `PAGE_ALIGNED_EXTRA` values are multiples of
-/// 512, hence of `MIN_BLOCK` = 16).
-const fn build_table() -> [usize; 48] {
+/// multiple of `MIN_BLOCK` (256 = 16×16, and all `PAGE_ALIGNED_EXTRA` values
+/// are multiples of 512, hence of `MIN_BLOCK` = 16).
+const fn build_table() -> [usize; 49] {
     // Build the 40-entry geometric progression first (unchanged from before
     // task B1).
     let mut geo = [0usize; 40];
@@ -246,29 +263,40 @@ const fn build_table() -> [usize; 48] {
         i += 1;
     }
 
-    // Merge `geo` (40, sorted) with `PAGE_ALIGNED_EXTRA` (8, sorted, and
-    // known at construction time to be disjoint from `geo` — verified by the
-    // `no_duplicate_class_sizes` test) into one sorted 48-entry table. A
-    // plain sorted-merge (both inputs are already sorted), since `const fn`
-    // cannot call `slice::sort` (no heap, no trait objects in const
-    // context).
-    let mut out = [0usize; 48];
+    // Build the sorted 9-entry `extra` sequence = EXACT_EXTRA (256, task #145)
+    // ∪ PAGE_ALIGNED_EXTRA (512..=16384, task B1). Both inputs are sorted and
+    // disjoint (256 < 512), and `EXACT_EXTRA` has a single element, so a plain
+    // prepend keeps `extra` strictly increasing.
+    let mut extra = [0usize; 9];
+    extra[0] = EXACT_EXTRA[0];
+    let mut xi = 0;
+    while xi < 8 {
+        extra[xi + 1] = PAGE_ALIGNED_EXTRA[xi];
+        xi += 1;
+    }
+
+    // Merge `geo` (40, sorted) with `extra` (9, sorted, and known at
+    // construction time to be disjoint from `geo` — verified by the
+    // `no_duplicate_class_sizes` test) into one sorted 49-entry table. A plain
+    // sorted-merge (both inputs are already sorted), since `const fn` cannot
+    // call `slice::sort` (no heap, no trait objects in const context).
+    let mut out = [0usize; 49];
     let mut gi = 0; // index into geo
-    let mut ei = 0; // index into PAGE_ALIGNED_EXTRA
+    let mut ei = 0; // index into extra
     let mut oi = 0; // index into out
-    while gi < 40 || ei < 8 {
+    while gi < 40 || ei < 9 {
         let take_geo = if gi >= 40 {
             false
-        } else if ei >= 8 {
+        } else if ei >= 9 {
             true
         } else {
-            geo[gi] < PAGE_ALIGNED_EXTRA[ei]
+            geo[gi] < extra[ei]
         };
         if take_geo {
             out[oi] = geo[gi];
             gi += 1;
         } else {
-            out[oi] = PAGE_ALIGNED_EXTRA[ei];
+            out[oi] = extra[ei];
             ei += 1;
         }
         oi += 1;

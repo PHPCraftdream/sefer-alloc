@@ -242,15 +242,25 @@ impl Drop for AbandonGuard {
 #[allow(dead_code)] // The alloc face uses `current_for_alloc` (tagged). Kept for direct API.
 pub fn current() -> *mut HeapCore {
     match LOCAL.try_with(|c| c.get()) {
-        // This thread's GUARD has already recycled its slot (teardown is in
-        // progress, but LOCAL itself is still alive) — the cached pointer is
-        // stale and MUST NOT be dereferenced. Route to the fallback instead
-        // of `bind_slow` (which would re-arm the already-dropped GUARD and
-        // leak the freshly recycled slot). See "TLS destructor ordering".
-        Ok(p) if p == TORN => fallback_ptr(),
-        Ok(p) if !p.is_null() => p,
-        // First call on this thread (or LOCAL was reset): bind a slot.
-        Ok(_) => bind_slow(),
+        // Э2 (task #145) — TWO SENTINELS, ONE BRANCH. `null = 0` and
+        // `TORN = usize::MAX` are the two ends of the address range; every
+        // REAL `*mut HeapCore` sits strictly between them. So a single
+        // unsigned compare separates "real pointer" (the hot path) from
+        // "either sentinel" (both cold):
+        //   real p (1..=MAX-1): p.addr()-1 ∈ 0..=MAX-2, all `< MAX-1` → fast
+        //   null (0):           0.wrapping_sub(1) = MAX,   NOT `< MAX-1` → cold
+        //   TORN (MAX):         MAX-1,                     NOT `< MAX-1` → cold
+        // The cold arm then splits on the exact value (0 → bind, MAX → torn),
+        // preserving the #129 mapping BYTE-for-BYTE (null → `bind_slow`,
+        // TORN → `fallback_ptr`).
+        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => p,
+        // Cold split: null (first call / reset) → bind a slot; TORN (this
+        // thread's GUARD already recycled its slot — the cached pointer is
+        // stale and MUST NOT be dereferenced) → route to the fallback rather
+        // than `bind_slow` (which would re-arm the dropped GUARD and leak the
+        // freshly recycled slot). See "TLS destructor ordering".
+        Ok(p) if p.is_null() => bind_slow(),
+        Ok(_) => fallback_ptr(), // p == TORN
         // TLS destroyed (thread teardown): fall back, never null.
         Err(_) => fallback_ptr(),
     }
@@ -286,21 +296,26 @@ pub enum CurrentHeap {
 #[inline(always)]
 pub fn current_for_alloc() -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
-        // Stale post-recycle pointer (this thread's GUARD already dropped) —
-        // see "TLS destructor ordering" in the module doc. MUST come before
-        // the `!is_null` arm below (TORN is non-null) and MUST route to
-        // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
-        // GUARD and leak the recycled slot).
-        // Stale post-recycle pointer (this thread's GUARD already dropped) —
-        // see "TLS destructor ordering" in the module doc. MUST come before
-        // the `!is_null` arm below (TORN is non-null) and MUST route to
-        // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
-        // GUARD and leak the recycled slot).
-        Ok(p) if p == TORN => CurrentHeap::Fallback,
-        Ok(p) if !p.is_null() => CurrentHeap::Own(p),
+        // Э2 (task #145) — TWO SENTINELS, ONE BRANCH on the process's hottest
+        // path. `null = 0` and `TORN = usize::MAX` are the range ends; every
+        // real `*mut HeapCore` lies strictly between, so one unsigned compare
+        // catches the hot "real pointer" case:
+        //   real p (1..=MAX-1): p.addr()-1 ∈ 0..=MAX-2 → `< MAX-1` → Own (fast)
+        //   null (0):           wraps to MAX → NOT `< MAX-1` → cold
+        //   TORN (MAX):         MAX-1        → NOT `< MAX-1` → cold
+        // Semantics are byte-identical to the previous TORN-then-null match
+        // (same #129 mapping): the cold arm below splits null → bind, TORN →
+        // Fallback. The `dbg_teardown_then_resolve_is_fallback` #129 hook
+        // relies on TORN → Fallback and is preserved.
+        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
         // First call on this thread: bind a slot. bind_slow returns either
         // an Own pointer or, on registry exhaustion, the fallback marker.
-        Ok(_) => bind_slow_tagged(),
+        Ok(p) if p.is_null() => bind_slow_tagged(),
+        // Stale post-recycle pointer (this thread's GUARD already dropped) —
+        // see "TLS destructor ordering" in the module doc. MUST route to
+        // Fallback, not `bind_slow_tagged` (which would re-arm the dropped
+        // GUARD and leak the recycled slot).
+        Ok(_) => CurrentHeap::Fallback, // p == TORN
         // TLS destroyed: fall back, never null.
         Err(_) => CurrentHeap::Fallback,
     }
@@ -322,11 +337,13 @@ pub fn current_for_alloc() -> CurrentHeap {
 #[inline(always)]
 pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfig) -> CurrentHeap {
     match LOCAL.try_with(|c| c.get()) {
-        // See `current_for_alloc` — same TORN-before-null-check ordering and
-        // the same reason to route to Fallback rather than re-arm the guard.
-        Ok(p) if p == TORN => CurrentHeap::Fallback,
-        Ok(p) if !p.is_null() => CurrentHeap::Own(p),
-        Ok(_) => bind_slow_tagged_with_config(*config),
+        // See `current_for_alloc` — same Э2 (task #145) one-branch collapse:
+        // real p → `< MAX-1` → Own (fast); null (0) → cold bind; TORN (MAX) →
+        // cold Fallback (must NOT re-arm the recycled guard). Byte-identical
+        // #129 mapping.
+        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeap::Own(p),
+        Ok(p) if p.is_null() => bind_slow_tagged_with_config(*config),
+        Ok(_) => CurrentHeap::Fallback, // p == TORN
         Err(_) => CurrentHeap::Fallback,
     }
 }
