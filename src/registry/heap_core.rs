@@ -720,8 +720,13 @@ impl HeapCore {
                     let cnt = self.tcache.count[c] as usize;
 
                     // ── M2 double-free guard (Э6, P6.1) ──────────────────
-                    // The exact oracles are consulted UNCONDITIONALLY, and the
-                    // block body is never read or written on the free path.
+                    // The two exact oracles are consulted on every free (no
+                    // block-body filter gates them), and the block body is never
+                    // read or written on the free path. They are EXACT for the
+                    // two own-thread resting places (this class's magazine + the
+                    // BinTable free list); see the RESIDUAL M2 LIMIT note below
+                    // for the cross-thread-double-free case (undrained
+                    // RemoteFreeRing entry) they do NOT cover — task #164.
                     //
                     // The pre-Э6 design used a per-heap key stamped into the
                     // block's word1 (bytes 8..16) as a fast-path FILTER:
@@ -751,15 +756,57 @@ impl HeapCore {
                     // load-bearing: scan FIRST (unflushed), bitmap SECOND
                     // (flushed); do NOT reorder.
                     //
-                    // This STRENGTHENS M2: the pre-Э6 flushed-double-free hole
-                    // (user overwrote word1 → stale/garbage key → oracles
-                    // skipped → double-issue) is now closed unconditionally —
-                    // the bitmap oracle no longer depends on the block body
-                    // being pristine. Strict correctness improvement, not a
-                    // trade. The magazine free path now touches no block body
-                    // at all (mimalloc, by contrast, must write `next` into
-                    // the body on every free — we are structurally cheaper per
-                    // free on cold working sets).
+                    // This STRENGTHENS M2 for the OWN-THREAD double-free: the
+                    // pre-Э6 flushed-double-free hole (user overwrote word1 →
+                    // stale/garbage key → oracles skipped → double-issue) is
+                    // now closed unconditionally — the bitmap oracle no longer
+                    // depends on the block body being pristine. That is a strict
+                    // correctness improvement, not a trade, and it is EXACT for
+                    // the two own-thread resting places a freed block can be in:
+                    // (1) this class's magazine (the scan), and (2) the segment's
+                    // BinTable free list (the bitmap). The magazine free path now
+                    // touches no block body at all (mimalloc, by contrast, must
+                    // write `next` into the body on every free — we are
+                    // structurally cheaper per free on cold working sets).
+                    //
+                    // ── RESIDUAL M2 LIMIT (cross-thread double-free) — task #164
+                    // ─────────────────────────────────────────────────────────
+                    // The two oracles are exact ONLY for those two resting
+                    // places. They are BLIND to a third, transient one: a block
+                    // whose CROSS-THREAD free is still in-flight — packed into
+                    // its segment's `RemoteFreeRing` (see
+                    // `crate::alloc_core::remote_free_ring::RemoteFreeRing` and
+                    // `dealloc_routing`'s Variant-2 push) but NOT YET DRAINED by
+                    // the owner. A ring entry sets NEITHER oracle: the in-magazine
+                    // scan cannot see it (it is not in `slots`), and the bitmap
+                    // still reads "allocated" (only the owner-side drain's
+                    // `reclaim_offset` → `mark_free` sets the bit; the ring push
+                    // deliberately leaves the bitmap untouched). So if a block P
+                    // is freed cross-thread (queued in the ring) AND ALSO freed
+                    // own-thread here before the owner drains that ring entry —
+                    // a genuine USER cross-thread double-free — both oracles pass
+                    // and P is pushed into the magazine. P is then BOTH
+                    // magazine-resident AND pending in the ring; a later drain's
+                    // `reclaim_offset` (which also passes its own is_free/bump
+                    // guards, P being still-carved) links P onto the BinTable and
+                    // `dec_live`s it, clobbering P's now-live user bytes if the
+                    // magazine already re-issued it → double-issue + freelist
+                    // corruption (and, under `alloc-decommit`, a possible
+                    // decommit+unmap of a magazine-resident segment).
+                    //
+                    // This is a PRE-EXISTING residual limit of the ring↔magazine
+                    // composition (present since fastbin; Э6 neither opened nor
+                    // closed it — it closed only the word1-overwrite hole above).
+                    // It is fundamentally UB as with any allocator for a
+                    // double-free (M2 promises an exact no-op only for the
+                    // live/mapped, single-legged case), mirroring the released-
+                    // Large-segment residual note in `dealloc_routing`. The real
+                    // fix (a drain-with-magazine-visibility / per-heap bloom /
+                    // conflict-list hybrid — ring-peek is rejected as 256 loads
+                    // per free) is tracked as task #164; pinned by
+                    // `tests/regression_xthread_double_free_residual.rs` (RED,
+                    // #[ignore]d) and modelled by
+                    // `tests/loom_magazine_ring_compose.rs`.
                     //
                     // (1) in-magazine DF oracle — ALWAYS
                     for i in 0..cnt {
@@ -1244,6 +1291,32 @@ impl HeapCore {
         super::tcache::refill_n_for_class(crate::alloc_core::size_classes::SizeClasses::block_size(
             c,
         ))
+    }
+
+    /// TEST-ONLY (task R2/#154): push `ptr`'s segment-relative offset — packed
+    /// with `class_idx` — into its segment's `RemoteFreeRing`, exactly as a
+    /// cross-thread freer's `dealloc_routing` Variant-2 push would. Thin
+    /// delegation to [`AllocCore::dbg_push_to_ring`]; exposed at the `HeapCore`
+    /// level so the ring↔magazine residual-limit pinning test
+    /// (`tests/regression_xthread_double_free_residual.rs`) can simulate a
+    /// remote free while driving the magazine through `HeapCore`. Returns
+    /// `false` if the ring was full or `ptr` is not one of this heap's segments.
+    /// Zero production impact: `#[doc(hidden)]`, test-only, delegates to an
+    /// existing hook.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-xthread")]
+    pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
+        self.core.dbg_push_to_ring(ptr, class_idx)
+    }
+
+    /// TEST-ONLY (task R2/#154): drain every owned segment's `RemoteFreeRing`
+    /// into its `BinTable`, exactly as the alloc slow path's lazy drain does,
+    /// but unconditionally. Thin delegation to
+    /// [`AllocCore::dbg_drain_all_rings`]. Zero production impact.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-xthread")]
+    pub fn dbg_drain_all_rings(&mut self) {
+        self.core.dbg_drain_all_rings();
     }
 
     /// TEST-ONLY (P5): force-flush every class's magazine back to the

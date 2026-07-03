@@ -14,8 +14,11 @@ lost: cold first-touch of tiny blocks (16–64 B) and 256 B churn. The governing
 rule was **every speedup removes a *tautology*, never a *guard*** — no
 correctness guarantee was surrendered (M2 exact double/foreign-free no-op, D1
 live-count accuracy, A1 cross-thread reclaim, `#![forbid(unsafe_code)]` at the
-top level all intact); in P6 the M2 guard was actually **strengthened** (see
-Э6 below). Each phase was implemented, line-by-line zero-trust reviewed,
+top level all intact — M2's exact-no-op scope being the live/mapped,
+single-legged free, with the cross-thread-double-free ring-in-flight case a
+pre-existing documented residual limit, #164); in P6 the M2 guard was
+**strengthened for the two own-thread resting places** (magazine + BinTable,
+see Э6 below). Each phase was implemented, line-by-line zero-trust reviewed,
 counterfactually verified, and committed between phases. See
 [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md)
 for the full diagnosis and
@@ -73,12 +76,19 @@ The six eurekas that landed (P1–P3, P6):
   slow-path scan on every free AND touching a cold/conflict cache line at the
   256 B stride (the "256 B churn loss" — never the bitmap itself). Э6 removes
   `TCACHE_KEY` entirely: the two exact oracles (in-magazine array scan + the
-  `BinTable` `is_free` bitmap line — both hot metadata) now run
-  unconditionally, and **the free path never touches the block body**. This
-  is not a trade — M2 is **strengthened**: the pre-Э6 flushed-double-free-
+  `BinTable` `is_free` bitmap line — both hot metadata) now run on every free
+  with no block-body filter, and **the free path never touches the block
+  body**. This is not a trade — M2 is **strengthened for the two own-thread
+  resting places (magazine + BinTable)**: the pre-Э6 flushed-double-free-
   after-user-write hole (a double-free after the user overwrote word1 could
   double-issue) is now CLOSED, because the oracle no longer depends on
-  block-body contents. Counterfactual proof: `tests/regression_magazine_oracles.rs`
+  block-body contents. **The cross-thread-double-free ring-in-flight case
+  remains a documented residual limit (#164):** the oracles are blind to a
+  block whose cross-thread free is still undrained in its segment's
+  `RemoteFreeRing` (the ring push sets neither oracle), so an own-thread free of
+  such a block still slips through — pre-existing since fastbin, neither opened
+  nor closed by Э6, pinned RED by
+  `tests/regression_xthread_double_free_residual.rs`. Counterfactual proof: `tests/regression_magazine_oracles.rs`
   test (c) is RED pre-Э6, GREEN on Э6. Bonus: our free path is now cheaper than
   mimalloc's on this pattern — mimalloc writes `next` into the block body on
   every free; we write nothing to it. Cold carve is untouched (Э6 targets only

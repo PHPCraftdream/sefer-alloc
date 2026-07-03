@@ -218,15 +218,32 @@ compare, key write, array store, count bump. No bitmap, no `contains_base`, no
 
 > **SUPERSEDED by P6.1 (Э6).** The word1 per-heap key described in §6.1 below
 > was REMOVED. The magazine free guard now runs the two exact oracles
-> unconditionally on every free — the in-magazine `slots` scan (unflushed
-> blocks) followed by the BinTable `is_free` bitmap (flushed blocks) — and
-> never reads or writes the block body. This is both cheaper (no cold
-> block-body cache line touched per free) and STRICTLY STRONGER: the old key
-> was only a fast-path filter, and once the user overwrote word1 a flushed
-> double-free would slip past it (double-issue). The bitmap oracle now catches
-> that unconditionally. See `HeapCore::dealloc_own_thread` and
-> `tests/regression_magazine_oracles.rs`. The §6.1 text below is retained for
-> historical context only.
+> on every free with no block-body filter gating them — the in-magazine
+> `slots` scan (unflushed blocks) followed by the BinTable `is_free` bitmap
+> (flushed blocks) — and never reads or writes the block body. This is both
+> cheaper (no cold block-body cache line touched per free) and STRONGER for the
+> own-thread double-free: the old key was only a fast-path filter, and once the
+> user overwrote word1 a flushed double-free would slip past it (double-issue).
+> The bitmap oracle now catches that regardless of block-body contents. See
+> `HeapCore::dealloc_own_thread` and `tests/regression_magazine_oracles.rs`.
+>
+> **RESIDUAL M2 LIMIT (cross-thread double-free) — task #164.** The two oracles
+> are exact ONLY for the two OWN-THREAD resting places (this class's magazine +
+> the BinTable free list). They are BLIND to a block whose cross-thread free is
+> still in-flight (undrained) in its segment's `RemoteFreeRing`: the ring push
+> sets neither oracle (it does not touch the bitmap; the block is not in
+> `slots`). A genuine USER cross-thread double-free — an own-thread free of a
+> block already queued in the ring, before the owner drains it — therefore
+> passes both oracles, lands in the magazine, and can later be double-issued /
+> freelist-corrupted when the owner's `reclaim_offset` drains the stale ring
+> entry (and, under `alloc-decommit`, can decommit+unmap a magazine-resident
+> segment). This is PRE-EXISTING (present since fastbin; Э6 neither opened nor
+> closed it — it closed only the word1-overwrite hole) and is UB-by-contract as
+> with any double-free (M2 promises an exact no-op only for the live/mapped,
+> single-legged case). Pinned by
+> `tests/regression_xthread_double_free_residual.rs` (RED, `#[ignore]`d) and
+> modelled by `tests/loom_magazine_ring_compose.rs`; the real fix is task #164.
+> The §6.1 text below is retained for historical context only.
 
 ### 6.1 M2 double-free of a magazine-resident block (historical — see banner)
 Problem: a magazine-resident block is `bitmap = allocated` (it was

@@ -20,12 +20,21 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 
 // TCACHE_KEY — REMOVED in P6.1 (Э6). The magazine double-free guard no longer
 // stamps a per-heap key into a block's word1 (block body). The two exact
-// oracles (in-magazine scan + BinTable `is_free` bitmap) are now consulted
-// unconditionally on every magazine free (see `HeapCore::dealloc_own_thread`),
-// so the free path never reads or writes the block body — cheaper on cold
-// working sets AND strictly stronger M2 (the old key filter was skipped once
-// the user overwrote word1, missing a flushed double-free; the bitmap oracle
-// now catches it unconditionally).
+// oracles (in-magazine scan + BinTable `is_free` bitmap) are now consulted on
+// every magazine free with no block-body filter gating them (see
+// `HeapCore::dealloc_own_thread`), so the free path never reads or writes the
+// block body — cheaper on cold working sets AND stronger M2 for the own-thread
+// double-free (the old key filter was skipped once the user overwrote word1,
+// missing a flushed double-free; the bitmap oracle now catches it regardless of
+// block-body contents). The two oracles are EXACT for the two own-thread
+// resting places (this class's magazine + the BinTable free list).
+//
+// RESIDUAL M2 LIMIT (task #164): they do NOT cover a block whose cross-thread
+// free is still in-flight (undrained) in its segment's `RemoteFreeRing` — the
+// ring push sets neither oracle. A cross-thread double-free (own-thread free of
+// a block already queued in the ring) therefore slips past both. Pre-existing
+// since fastbin; Э6 neither opened nor closed it. See the RESIDUAL M2 LIMIT
+// note in `HeapCore::dealloc_own_thread`.
 
 /// Magazine capacity per size class. Start: 16. Tuned in P6.
 ///
