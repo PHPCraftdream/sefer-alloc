@@ -554,10 +554,14 @@ impl AllocCore {
                     //      satisfy the budget (budget < usable_size), skip caching.
                     //   3. Deposit into the (now-free) slot.
                     //
-                    // FIFO definition: slot 0 is "oldest" in this minimal Phase-1
-                    // implementation (the invariant: slot 0 is filled before slot 1,
-                    // so evicting 0 first is correct for LARGE_CACHE_SLOTS=2). Phase 2
-                    // may improve with timestamps / LRU.
+                    // FIFO definition (task D1): the "oldest" slot is the
+                    // occupied one with the smallest insertion `seq`, found via
+                    // `oldest_occupied_slot` (a seq-based min-by scan) — NOT slot
+                    // index 0. Each deposit stamps `large_cache_seq` into
+                    // `CachedLarge::seq`, so eviction picks the true FIFO-oldest
+                    // entry regardless of slot order. This holds for any
+                    // LARGE_CACHE_SLOTS (currently 8), not just the old 2-slot
+                    // minimal implementation that happened to fill slots in order.
                     // Two independent admission constraints: (1) there must be a
                     // free slot, (2) the byte-budget (if set) must accommodate
                     // `usable_size`. Either failing means we evict the oldest and
@@ -702,7 +706,7 @@ impl AllocCore {
     ///
     /// `packed` layout: `off = packed & OFF_MASK` (low 22 bits, since
     /// `SEGMENT = 1 << 22` so every offset is `< 2^22`), `class_idx = packed >>
-    /// OFF_BITS` (high bits; `SMALL_CLASS_COUNT = 40 ≪ 2^10`, so it fits).
+    /// OFF_BITS` (high bits; `SMALL_CLASS_COUNT = 49 ≪ 2^10`, so it fits).
     ///
     /// Safe: a foreign segment (magic mismatch), a large segment, or an offset
     /// that is not `block_size`-aligned is a no-op (defence-in-depth). Applies

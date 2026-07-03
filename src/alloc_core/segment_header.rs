@@ -145,7 +145,7 @@ pub(crate) enum SegmentKind {
 }
 
 /// Per-page descriptor: which size class owns this page, or `Free` if the page
-/// is uncarved. Encoded as a `u8` (we have ~40 small classes + sentinel
+/// is uncarved. Encoded as a `u8` (we have ~49 small classes + sentinel
 /// values). Pages are dedicated to a single class once carved (simplifies
 /// free-list routing — a freed block returns to its page's class free list).
 /// This is mimalloc's "page is owned by one size class" rule, which keeps the

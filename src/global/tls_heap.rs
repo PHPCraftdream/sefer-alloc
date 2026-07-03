@@ -402,12 +402,13 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         heap
     };
 
-    // Under `alloc-xthread`: install the cross-thread TFS handle. This is
-    // the ONE `std::alloc` touch on the TLS path (a single `Box::new`); it
-    // is explicitly OUTSIDE the registry bootstrap (which is M5-clean). If
-    // the box alloc fails (the global OOM), we proceed without a TFS — the
-    // heap serves own-thread allocations only, and cross-thread frees to its
-    // segments are a safe no-op (unstamped). M10 (never null) is preserved.
+    // Under `alloc-xthread`: install the cross-thread TFS handle. Since Phase
+    // 12.5 this performs NO `std::alloc`: the TFS is an INLINE `AtomicPtr<u8>`
+    // field on `HeapCore` and `install_thread_free` is a no-op returning that
+    // field's stable address (a `Box::new` here would recurse into
+    // `SeferAlloc::alloc` → `bind_slow` → `install_thread_free` forever — see
+    // `registry::heap_core`). It cannot fail, so the TLS bind path stays
+    // M5-clean and M10 (never null) is preserved.
     #[cfg(feature = "alloc-xthread")]
     {
         // SAFETY: `heap` was returned by `claim`/`claim_with_config` and is

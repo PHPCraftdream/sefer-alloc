@@ -30,9 +30,12 @@
 //! alloc path would recurse infinitely. This module contains NONE of those.
 //! `current()` is a plain thread-local load + null check. `bind_slow` claims
 //! a registry slot (which bootstraps via the OS aperture, never `std::alloc`);
-//! the only `std::alloc` touch is the `Box<AtomicPtr<u8>>` TFS handle under
-//! `alloc-xthread`, installed on the bind path (outside the registry
-//! bootstrap). The `HeapCore` alloc/dealloc paths are pure safe integer
+//! since Phase 12.5 the bind path performs NO `std::alloc` at all: the
+//! cross-thread free head (TFS) is an INLINE `AtomicPtr<u8>` field on
+//! `HeapCore`, and `install_thread_free` is a no-op returning that field's
+//! address (a `Box` there would recurse into `SeferAlloc::alloc` →
+//! `bind_slow` → `install_thread_free` forever — see `registry::heap_core`).
+//! The `HeapCore` alloc/dealloc paths are pure safe integer
 //! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
 //! is reachable from here.
 //!
@@ -47,7 +50,10 @@
 //!   fallback's `with_heap` deallocs under the spinlock; a torn-down-TLS
 //!   dealloc still routes correctly (the segment's owner routes via the
 //!   header). On any failure this is a no-op (the block is leaked safely).
-//! - `realloc`: `alloc` + copy + `dealloc`, all null-returning.
+//! - `realloc`: an in-place fast path for same-class / compatible growth (C2:
+//!   own-thread reallocs delegate to `AllocCore::realloc`, which short-circuits
+//!   when the block can stay put), falling back to `alloc` + copy + `dealloc`
+//!   otherwise — all null-returning.
 //! - `alloc_zeroed`: `alloc` + zero-fill.
 //!
 //! [`current`]: super::tls_heap::current
@@ -390,8 +396,10 @@ unsafe impl GlobalAlloc for SeferAlloc {
         match self.current_heap() {
             CurrentHeap::Fallback => fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
                 .unwrap_or(core::ptr::null_mut()),
-            // SAFETY: as in `alloc`; `realloc` is alloc-new + copy +
-            // dealloc-old, leaving the old allocation intact on OOM.
+            // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
+            // for a same-class / compatible resize of an own-thread block, and
+            // otherwise falls back to alloc-new + copy + dealloc-old, leaving
+            // the old allocation intact on OOM.
             CurrentHeap::Own(heap) => unsafe { (*heap).realloc(ptr, old_layout, new_size) },
         }
     }

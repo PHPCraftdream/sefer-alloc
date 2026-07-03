@@ -106,14 +106,14 @@ load on the hit path.
 struct Tcache {
     // One stack per small size class. CAP entries each.
     // slots[c][0..count[c]] are valid free-block pointers of class c.
-    slots: [[*mut u8; TCACHE_CAP]; SMALL_CLASS_COUNT],   // 40 * CAP * 8 bytes
+    slots: [[*mut u8; TCACHE_CAP]; SMALL_CLASS_COUNT],   // 49 * CAP * 8 bytes (was 40)
     count: [u16; SMALL_CLASS_COUNT],                     // current depth per class
 }
 ```
 
 Sizing (initial; tune later with the churn bench):
 - `TCACHE_CAP`: start at 16. (glibc tcache uses 7; we have headroom.)
-- Memory: `40 * 16 * 8 = 5120` bytes of pointers + `40 * 2` counts ≈ 5.2 KiB
+- Memory: `49 * 16 * 8 = 6272` bytes of pointers + `49 * 2` counts ≈ 6.4 KiB
   per `HeapCore`. Heaps are bounded by `MAX_HEAPS`; acceptable. A `HeapCore`
   is already large; this is in-struct (no extra allocation — M5-clean).
 - We may restrict the magazine to the hot low classes (e.g. classes covering

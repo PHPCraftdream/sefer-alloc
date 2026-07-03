@@ -56,9 +56,9 @@ impl SegmentLayout {
     ///
     /// Exposed as a slice (not a fixed-size array) so that tuning the number
     /// of small classes stays semver-compatible: the array length grew
-    /// silently from 40 to 48 in 0.3.0, which — had this constant been public
+    /// silently from 40 to 49 in 0.3.0, which — had this constant been public
     /// at the time — would have been a breaking type change (`[usize; 40]` →
-    /// `[usize; 48]`). A slice view has no length in its type, so future
+    /// `[usize; 49]`). A slice view has no length in its type, so future
     /// re-tuning of the class count is not a breaking change.
     pub const SIZE_CLASS_TABLE: &'static [usize] = &super::size_classes::SIZE_CLASS_TABLE;
 

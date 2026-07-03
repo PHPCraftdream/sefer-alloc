@@ -2,8 +2,9 @@
 //! Inversion), behind the `alloc-core` feature.
 //!
 //! Re-exports only — no logic lives here (per the one-export-per-file rule).
-//! The two confined-`unsafe` seams are `os` and `node`; every other file
-//! is pure safe code that composes them.
+//! The confined-`unsafe` seams are `os` and `node`, plus `numa` (a third,
+//! feature-gated under `numa-aware`); every other file is pure safe code that
+//! composes them.
 
 // The file `alloc_core.rs` carries the same name as this module per the
 // crate's one-export-per-file convention; silence clippy's module_inception.

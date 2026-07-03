@@ -170,7 +170,7 @@ pub(crate) const ENTRY_OFF_BITS: u32 = 22;
 pub(crate) const ENTRY_OFF_MASK: u32 = (1 << ENTRY_OFF_BITS) - 1;
 
 /// Pack a `(offset, class_idx)` pair into a single `u32` ring entry.
-/// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 40)`,
+/// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 49)`,
 /// so the result is `< 2^32` and never collides with `RING_SLOT_EMPTY`
 /// (`u32::MAX`) for any real block.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]

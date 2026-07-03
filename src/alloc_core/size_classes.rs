@@ -339,7 +339,7 @@ const fn build_size2class() -> [u8; (SMALL_MAX / MIN_BLOCK) + 1] {
     // starting point for the next (>=) `need` — the monotone-pointer
     // technique. This is purely a compile-time-cost fix (avoids tripping
     // rustc's `long_running_const_eval` lint now that the table grew from 40
-    // to 48 classes); the resolved values are identical to a from-scratch
+    // to 49 classes); the resolved values are identical to a from-scratch
     // linear scan per bucket.
     let mut class_idx = 0;
     while k < len {
