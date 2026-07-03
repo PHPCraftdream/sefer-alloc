@@ -774,7 +774,22 @@ impl HeapCore {
                     // before.
                     let base = os::segment_base_of_ptr(ptr);
                     let off = (ptr as usize - base as usize) as u32;
-                    if SegmentMeta::new(base).alloc_bitmap().is_free(off) {
+                    let meta = SegmentMeta::new(base);
+                    // Stale-free guard, parity with `dealloc_small`
+                    // (alloc_core.rs). A block that was carved into a segment
+                    // later decommitted+reset has `off >= bump` (bump was reset
+                    // to small_meta_end and the bitmap zeroed = "allocated", so
+                    // the bitmap oracle below would NOT catch it); likewise a
+                    // never-carved in-segment address. A real, currently-carved
+                    // live block always has `off < bump`, so no false positive
+                    // on a legitimate free. Owner-only `bump` read
+                    // (single-writer), gated to the feature that resets the
+                    // bump — exactly as `dealloc_small`.
+                    #[cfg(feature = "alloc-decommit")]
+                    if (off as usize) >= meta.bump_of() {
+                        return;
+                    }
+                    if meta.alloc_bitmap().is_free(off) {
                         return; // flushed-then-double-freed — no-op
                     }
 
