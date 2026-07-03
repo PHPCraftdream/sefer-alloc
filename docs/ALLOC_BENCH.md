@@ -1,4 +1,55 @@
-# `SeferMalloc` — benchmark & honest verdict (Phase 11)
+# `SeferAlloc` — benchmark & honest verdict
+
+> ## 0.3.0 re-measurement (2026-07-03) — current-build numbers
+>
+> Re-run on the final 0.3.0 tree (post-review hardening #129–#143), same host
+> and quick criterion profile (`sample_size(10)`, short warm-up), noisy
+> Windows dev machine (±15–20 %). `SeferAlloc` is called directly through its
+> `GlobalAlloc` impl — apples-to-apples with `mimalloc 0.1` and `System`.
+> Medians; trust the relative shape and order of magnitude, not exact
+> percentages. The rigorous deterministic gate is `perf_gate_iai`
+> (instruction counts, Linux CI — #127/#128). The detailed Phase-11/13
+> commentary below is retained for context; where it disagrees on absolute
+> numbers, THIS section is the current one.
+>
+> **Large alloc+free — the flagship large-cache (`alloc-decommit`):**
+>
+> | Size | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> |---|---|---|---|---|---|
+> | 4 MiB  | **~58 ns** | ~779 ns  | ~18.0 µs | ~13× | ~309× |
+> | 16 MiB | **~63 ns** | ~890 ns  | ~15.3 µs | ~14× | ~242× |
+> | 64 MiB | **~62 ns** | ~2.14 µs | ~18.3 µs | ~34× | ~295× |
+>
+> **Small class — churn (reuse) vs cold direct (first touch):**
+>
+> | Size | Churn: Sefer | mi | Cold: Sefer | mi |
+> |---|---|---|---|---|
+> | 16 B   | ~29 µs (**1.26× faster**) | ~37 µs  | ~28 µs (2.6× slower) | ~11 µs |
+> | 64 B   | ~31 µs (**1.23× faster**) | ~38 µs  | ~29 µs (2.0× slower) | ~14 µs |
+> | 256 B  | ~28 µs (1.25× slower)     | ~23 µs  | ~28 µs (1.5× slower) | ~19 µs |
+> | 1024 B | ~28 µs (**5.8× faster**)  | ~161 µs | ~29 µs (**1.2× faster**) | ~35 µs |
+>
+> (Small rows are per-iteration batches — identical batch for all three
+> allocators, so ratios are the signal. vs `System`: 3–6× faster throughout.)
+> The #133 fix (removing a contended global `lock xadd` from the magazine-hit
+> path) lifted 16/64 B churn ~20 %.
+>
+> **realloc / Vec:**
+>
+> | Bench | SeferAlloc | mimalloc | System |
+> |---|---|---|---|
+> | `realloc_grow_geometric` (64 B→4 MiB) | ~323 µs (**1.1× faster than mi, 8.8× than System**) | ~360 µs | ~2.85 ms |
+> | `realloc_in_place_unfavorable` | ~1.68 ms (1.1× slower than mi, 4.9× faster than System) | ~1.55 ms | ~8.15 ms |
+> | `Vec_push` | ~547 ns (~par) | ~496 ns | ~535 ns |
+>
+> **Verdict:** large-object work is a decisive win (the shamir-db strength);
+> small-object *reuse* beats mimalloc except at 256 B; cold first-touch of
+> tiny blocks (16–64 B) is the documented worst-case where mimalloc's cheaper
+> first-touch path leads. `System` trails everywhere by 3–300×.
+
+---
+
+## Historical detail (Phase 11 / 13.4a)
 
 `SeferMalloc` (feature `alloc-global`) is the **malloc face** of `sefer-alloc`:
 an `unsafe impl GlobalAlloc` over the per-thread segment heap (Phase 8 segment

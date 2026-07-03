@@ -16,8 +16,8 @@
 > `#[global_allocator]` and a typed handle store over one verified segment
 > substrate. Compiler-enforced `unsafe` confinement, **no C / C++ libraries
 > pulled in** (no `libnuma`, no `mimalloc`, no `jemalloc`, no `snmalloc` /
-> `tcmalloc`) — and **up to ~18× faster than `mimalloc`** on cached large
-> alloc/free.
+> `tcmalloc`) — and **~13–34× faster than `mimalloc`** on cached large
+> alloc/free (0.3.0, single-host criterion — see [Performance](#performance)).
 
 ---
 
@@ -212,15 +212,17 @@ criterion `sample_size(10)` — see [Performance](#performance) for the
 disclaimer):
 
 - On **large alloc/free** (`alloc_large` / `dealloc_large`) sefer-alloc is
-  **~16× faster than `mimalloc` on 4 MiB and ~18× faster on 16 MiB** after
-  the OPT-E large-segment cache (4 MiB cycle: ~45 ns vs ~718 ns).
-- On **MT cross-thread** (`malloc_macro` larson/mstress at T=4) it is
-  competitive with `mimalloc`.
-- On **realloc-grow under neighbour pressure** it improved **−28.6 %** with
-  OPT-F in-place realloc.
-- On **single-thread small-class churn** it is roughly 1.2–2× behind
-  `mimalloc` — the remaining gap, called out honestly in
-  [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
+  **~13–34× faster than `mimalloc`** (4/16/64 MiB) via the OPT-E large-segment
+  cache — a 4 MiB cycle is ~58 ns vs mimalloc's ~779 ns, and ~309× faster than
+  `System`.
+- On **single-thread small-class churn** (the reuse pattern) it **beats
+  `mimalloc`** at 16 B (1.26×), 64 B (1.23×), and 1024 B (5.8×); on cold
+  first-touch of tiny blocks (16–64 B) mimalloc still leads — the documented
+  worst-case, called out honestly in [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
+- On **realloc-grow under neighbour pressure** it is ~1.1× faster than
+  `mimalloc` and ~8.8× faster than `System`.
+- On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
+  with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
 The verification stack is also honest: 88 integration test files, 8 loom
 models, proptest differential against a reference model, miri with
@@ -420,65 +422,74 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 
 ## Performance
 
-**Historical numbers from sefer-alloc 0.2.0** (criterion benches on a single
-Windows dev host, vs `mimalloc 0.1` vs `System`) — not re-measured against
-current `main`/0.3.0; treat as illustrative of the relative shape (large-cache
-win, MT crossover at T≥2, single-thread small-class gap), not as exact
-current-build numbers. Per [CLAUDE.md](CLAUDE.md) the project's bench profile
-is the quick one — `sample_size(10)`, short warm-up — so even at the time
-they were taken these were honest comparative measurements, **not** a
-rigorous statistical benchmark suite. Treat the multipliers as "order of
-magnitude correct" rather than exact. The source-of-truth tables (and the
-longer commentary on what each bench exercises) live in
-[`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) — re-run
-`cargo bench --features production` for current-build numbers.
-**Higher is better** for throughput rows, **lower is better** for latency
-rows.
+**sefer-alloc 0.3.0, re-measured 2026-07-03** (criterion benches on a single
+Windows dev host, `SeferAlloc` called directly through its `GlobalAlloc` impl
+— apples-to-apples — vs `mimalloc 0.1` vs `System`). Per
+[CLAUDE.md](CLAUDE.md) the project's bench profile is the quick one —
+`sample_size(10)`, short warm-up — and the host is noisy (±15–20 %), so these
+are honest **comparative** measurements, **not** a rigorous statistical suite.
+Trust the relative shape and the order of magnitude, not the exact percentages;
+the rigorous, deterministic gate is the instruction-count `perf_gate_iai` bench
+(#127/#128) on Linux CI. Source-of-truth tables + per-bench commentary live in
+[`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md); re-run
+`cargo bench --features production` for your own numbers. **Lower is better**
+(latency).
 
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
-`alloc(N) + free` round-trip with the OPT-E large-cache (`alloc-decommit`):
-the freed segment is parked in the `LARGE_CACHE_SLOTS = 8` cache with pages
-kept committed; the next alloc of a compatible size returns it without any
-OS round-trip.
+`alloc(N) + free` round-trip served by the OPT-E large-cache
+(`alloc-decommit`): the freed segment is parked in the `LARGE_CACHE_SLOTS = 8`
+cache with pages kept committed, so the next alloc of a compatible size
+returns it with **no OS round-trip**. This is the crate's flagship strength.
 
-| Workload | SeferAlloc | mimalloc | System | vs mimalloc |
-|---|---|---|---|---|
-| `alloc(4 MiB) + free` | **~46 ns** | ~743 ns | ~17.5 µs | **~16× faster** |
-| `alloc(16 MiB) + free` | **~46 ns** | ~861 ns | ~14.6 µs | **~19× faster** |
-| `alloc(64 MiB) + free` | **~63 ns** | ~2.43 µs | ~16.9 µs | **~39× faster** |
+| Workload | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+|---|---|---|---|---|---|
+| `alloc(4 MiB) + free`  | **~58 ns** | ~779 ns  | ~18.0 µs | **~13× faster** | **~309× faster** |
+| `alloc(16 MiB) + free` | **~63 ns** | ~890 ns  | ~15.3 µs | **~14× faster** | **~242× faster** |
+| `alloc(64 MiB) + free` | **~62 ns** | ~2.14 µs | ~18.3 µs | **~34× faster** | **~295× faster** |
 
-vs `System`: roughly **270–380× faster** at all three sizes. The cache
-is byte-budget'd (per-shard, default unbounded — set via
-`LargeCacheConfig::new().budget_bytes(n)` in `SeferAlloc::with_config`
-to cap it), with lazy 10 %/sec exponential decay back to `live + headroom`.
-There is no per-span size cap — a 30 GB segment on a 64 GB box is cacheable
-now (the old `MAX_CACHED_LARGE_BYTES = 64 MiB` was removed in #90 — see
-`docs/ALLOC_BENCH.md` "Large-cache (OPT-E)").
+The cache is byte-budget'd (per-shard, default unbounded — set via
+`LargeCacheConfig::new().budget_bytes(n)` in `SeferAlloc::with_config` to cap
+it, where `budget_bytes(0)` disables caching), with lazy 10 %/sec exponential
+decay back to `live + headroom`. There is no per-span size cap — a 30 GB
+segment on a 64 GB box is cacheable now. The 0.3.0 `span_usable` fix (#134)
+keeps this win without unbounded RSS amplification across cache reuse.
 
 ### Realloc grow under adversarial neighbour pressure
 
-| Bench | SeferAlloc | mimalloc | Notes |
-|---|---|---|---|
-| `realloc_grow_geometric` | 173 µs | 368 µs | sefer-alloc 2.1× faster |
-| `realloc_in_place_unfavorable` | **125 µs** | 1.31 ms | sefer-alloc 10.5× faster (OPT-F in-place realloc skip-copy) |
+| Bench | SeferAlloc | mimalloc | System | Notes |
+|---|---|---|---|---|
+| `realloc_grow_geometric` (64 B→4 MiB) | **~323 µs** | ~360 µs | ~2.85 ms | ~1.1× faster than mimalloc; **~8.8× faster than System** |
+| `realloc_in_place_unfavorable`        | ~1.68 ms   | ~1.55 ms | ~8.15 ms | ~1.1× slower than mimalloc; **~4.9× faster than System** |
 
-### Small-class steady-state churn (`benches/global_alloc.rs::global_alloc_churn`)
+### Small-class churn vs cold direct (`benches/global_alloc.rs`)
 
-Steady-state churn over a working set of 256 live blocks: each iteration
-frees a pseudo-random slot and allocates a replacement (xorshift seed,
-deterministic). This is the pattern the `fastbin` per-thread magazine
-(P0–P6 of [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets and
-the common shape of real allocation workloads.
+Two patterns. **Churn** (steady-state over a live working set — each iteration
+frees a pseudo-random slot and allocates a replacement) is the common shape of
+real workloads and what the `fastbin` per-thread magazine
+([`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md)) targets; the 0.3.0 #133
+fix (removing a contended global `lock xadd` from the hit path) lifted 16/64 B
+here ~20 %. **Cold direct** (no reuse, "first touch") is the documented
+worst-case where mimalloc's cheaper first-touch path leads at tiny sizes.
 
-| Size | SeferAlloc | mimalloc | vs mimalloc |
-|---|---|---|---|
-|   16 B | ~21.8 µs | ~36.9 µs | **1.7× faster** |
-|   64 B | ~22.3 µs | ~37.2 µs | **1.7× faster** |
-|  256 B | ~21.9 µs | ~22.1 µs | parity |
-| 1024 B | ~21.9 µs | ~159 µs | **7.3× faster** |
+| Size | Churn: Sefer | mimalloc | vs mi | Cold direct: Sefer | mimalloc | vs mi |
+|---|---|---|---|---|---|---|
+|   16 B | **~29 µs** | ~37 µs  | **1.26× faster** | ~28 µs | ~11 µs | 2.6× slower |
+|   64 B | **~31 µs** | ~38 µs  | **1.23× faster** | ~29 µs | ~14 µs | 2.0× slower |
+|  256 B | ~28 µs     | ~23 µs  | 1.25× slower     | ~28 µs | ~19 µs | 1.5× slower |
+| 1024 B | **~28 µs** | ~161 µs | **5.8× faster**  | ~29 µs | ~35 µs | **1.2× faster** |
+
+(All small-size rows are per-iteration batches; the same batch runs for all
+three allocators, so the ratios are the meaningful signal. vs `System`: 3–6×
+faster across the board.)
 
 ### MT cross-thread (`examples/malloc_macro.rs`, larson + mstress)
+
+**Historical 0.2.0 numbers** — the MT macro-benchmarks were NOT re-run for
+0.3.0 this pass (the single-thread criterion tables above were); the crossover
+shape (mimalloc leads at T=1, SeferAlloc leads at T≥2) is expected to hold but
+the exact figures are not current-build. Aggregate million-ops/sec (op = one
+alloc + one free), T = 1 / 2 / 4 worker threads, unpinned.
 
 Aggregate million-ops/sec (op = one alloc + one free), T = 1 / 2 / 4
 worker threads, unpinned.
