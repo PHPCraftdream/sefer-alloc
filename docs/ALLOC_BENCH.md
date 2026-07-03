@@ -59,8 +59,13 @@
 >   already correct). Freelist / ring-drain are still tried BEFORE bump-carve,
 >   so freed blocks never go stale (no RSS drift). M2 byte-identical; D1 exact.
 >   This roughly **halved the cold tiny-block gap** and brought cold 256 B to
->   parity. What remains on the tiniest cold sizes is honest per-block work —
->   page-map writes and page faults on genuinely fresh pages — not ceremony.
+>   parity. Э1 killed the carve→BinTable→pop round-trip for VIRGIN carves only;
+>   what remains on the tiniest cold sizes is honest per-block metadata work on
+>   the steady-state freelist-drain path (`pop_free`'s dependent `read_next` load
+>   + bitmap `mark_alloc` RMW + `inc_live` per block), not page faults — the
+>   criterion instance is reused across iterations, so after warm-up nothing
+>   faults; the gap is instruction/ceremony on the refill path, which is exactly
+>   why the P7 batch-drain (Э7) can still close it.
 > - **Э2 / Э4 / Э5 (P1) — churn hit-path.** One-branch teardown resolver
 >   (collapsing the `TORN` + `null` compare), classify-once (thread the size
 >   class `c` through instead of recomputing `class_for` 2–3× per op), and a
@@ -147,7 +152,11 @@ size**; even the artificial non-writing 256 B reached parity (it was 1.16–1.25
 slower through P5).
 
 **Cold direct** (`global_alloc`, alloc N then free N, no reuse) is **unchanged
-by Э6** — Э6 targets the churn free path; cold is carve / page-fault-bound.
+by Э6** — Э6 targets the churn free path. Note the criterion instance is reused
+across iterations, so at steady state this is the freelist-refill path
+(`pop_free`'s dependent `read_next` + `mark_alloc` RMW + `inc_live` per block),
+not page faults; that per-block refill ceremony is what P7's batch-drain (Э7)
+targets — see the two-round `recycle_*` iai benches.
 Noisy medians: 16 B ~17.0 / mi ~10.6 (1.60× slower), 64 B ~22.1 / ~19.2
 (1.15× slower), 256 B ~24.1 / ~23.4 (≈ parity, 1.03×), 1024 B ~23.6 / ~43.3
 (1.84× faster). No claim of a cold improvement here.
@@ -187,8 +196,19 @@ weaker.
 These are noisy single-host wall-clock numbers. The deterministic per-op proof
 is the `perf_gate_iai` instruction-count gate on Linux CI; the new
 `churn_write_256b` bench (#150) joins the P0 benches for the `Ir` baseline. The
-one remaining place mimalloc leads is **cold tiny (16–64 B)** — honest per-block
-page-fault work on the carve path, untouched by Э6.
+one remaining place mimalloc leads is **cold tiny (16–64 B)** — but that gap is
+per-block metadata ceremony on the steady-state freelist-drain path, NOT page
+faults. At criterion steady state the SeferAlloc instance is reused across
+iterations, so `bench_direct_alloc` (alloc N then free N per iteration) never
+faults after warm-up: each iteration's frees flush to the BinTable and the next
+iteration's allocs `pop_free` them back — the carve→BinTable→pop round-trip Э1
+killed for VIRGIN carves lives on in steady state as `pop_free`'s dependent
+`read_next` load + bitmap `mark_alloc` RMW + `inc_live` per block. Э6 targets the
+free path, so this refill-side ceremony is untouched by it — it is what the P7
+batch-drain (Э7/Э8/Э10) targets. The new two-round `recycle_alloc_free_256x16b` /
+`_256x64b` iai benches (P7.0) isolate exactly this freelist-drain path (round 2
+drains what round 1 freed); the single-round `cold_*` benches measure only the
+virgin bump path and are blind to it. No P7 speedup is claimed yet — not measured.
 
 ---
 

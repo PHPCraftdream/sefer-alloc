@@ -228,6 +228,67 @@ fn cold_alloc_free_256x64b() {
     }
 }
 
+// P7 Front — steady-state cold recycle of tiny 16 B blocks. Unlike the cold
+// benches above (which measure the VIRGIN bump/carve path — a fresh process, one
+// round, blind to what happens once blocks have been freed once), this bench runs
+// TWO rounds: allocate `COLD_BATCH` distinct blocks, free them ALL, then allocate
+// `COLD_BATCH` again + free them all again. Round 1's frees flush the drained
+// magazine's overflow into the BinTable freelist; round 2's allocs then DRAIN that
+// freelist (`pop_free` per block) instead of bump-carving virgin memory. That
+// freelist-refill round-trip — a dependent `read_next` load + `mark_alloc` bitmap
+// RMW + `inc_live` per block — is exactly the steady-state cold path P7's Э7/Э8/Э10
+// batch-drain optimizations target, and which the single-round `cold_*` benches and
+// the criterion steady-state numbers cannot isolate. Only round 2 is the signal;
+// round 1 exists solely to populate the freelist round 2 drains. `COLD_BATCH` (256)
+// is reused unchanged so the recycle op-count matches the virgin cold benches — the
+// virgin-vs-recycle instruction delta is then a clean apples-to-apples comparison.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn recycle_alloc_free_256x16b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for _round in 0..2 {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { sefer.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the same
+                // layout, and is freed exactly once per round.
+                unsafe { sefer.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
+// P7 Front — same two-round steady-state recycle shape as
+// `recycle_alloc_free_256x16b`, but with 64 B blocks (align 8). Second tiny size
+// class on the freelist-drain path; round 2 drains what round 1 freed.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn recycle_alloc_free_256x64b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(64, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for _round in 0..2 {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { sefer.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the same
+                // layout, and is freed exactly once per round.
+                unsafe { sefer.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
 // Front B — 256 B @ align(8) alloc+dealloc churn: the working-set reuse shape
 // of `small_churn_16b` (immediate alloc→dealloc, hitting the magazine), at the
 // size where mimalloc leads even on reuse. This is the hot-path counterpart to
@@ -286,6 +347,8 @@ library_benchmark_group!(
         realloc_grow,
         cold_alloc_free_256x16b,
         cold_alloc_free_256x64b,
+        recycle_alloc_free_256x16b,
+        recycle_alloc_free_256x64b,
         churn_256b,
         churn_write_256b,
 );
