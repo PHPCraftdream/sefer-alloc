@@ -87,12 +87,24 @@ fn canary_tail_byte(base: u64, off: usize) -> u8 {
 /// off-by-a-page short block / a tail overlap — the two failure shapes a Large
 /// block can have). Every SMALL class (block_size <= SMALL_MAX) is still filled
 /// end to end, so the exhaustive small-seam coverage is unchanged.
+#[cfg(not(miri))]
 const FULL_CANARY_MAX: usize = SMALL_MAX;
+/// Under miri, interpreting a full 253 KiB canary fill+read per SMALL_MAX block
+/// dominates the run for no extra provenance coverage — a small window at each
+/// end catches a too-small usable size / a tail-short block just as well. Cap
+/// the full-fill at 4 KiB so any block above that is head+tail windowed.
+/// Miri-gated ONLY; native fills every small class end to end (SMALL_MAX).
+#[cfg(miri)]
+const FULL_CANARY_MAX: usize = 4096;
 
 /// The window covered at each end of a large block (a couple of pages). A
 /// too-small usable size shows up as a fault/mismatch within the first page;
 /// a tail-short block within the last.
+#[cfg(not(miri))]
 const LARGE_WINDOW: usize = 8192;
+/// Miri: a single page at each end keeps the interpreted fill tiny. Miri-gated.
+#[cfg(miri)]
+const LARGE_WINDOW: usize = 4096;
 
 /// The set of byte ranges the canary covers for a block of `size` bytes: the
 /// whole thing when small, else a head + tail window (which may overlap into a
@@ -259,6 +271,39 @@ unsafe fn verify_survived(
 /// (> `SMALL_MAX`) sizes and a couple of huge (multi-segment) sizes. The set is
 /// deduplicated and sorted so the sweep order is fixed and reportable.
 fn size_grid() -> Vec<usize> {
+    // Under miri every memory access is interpreted, so the full ~200-size grid
+    // (× 14 aligns × the full canary fill) would run for many minutes. Miri only
+    // needs to prove the allocator's pointer math / provenance is UB-free on a
+    // REPRESENTATIVE set of seams — a handful of small class boundaries, the
+    // SMALL_MAX edge, and one Large size — not the exhaustive sweep. This is
+    // `cfg(miri)`-gated ONLY: a native build takes the exhaustive branch below,
+    // byte-identical to before.
+    #[cfg(miri)]
+    {
+        let mut v: Vec<usize> = vec![
+            16,            // MIN_BLOCK floor
+            255,           // just below the 256 class
+            256,           // the exact 256 class (task #145)
+            257,           // just above
+            304,           // the neighbour class
+            512,           // page-aligned class
+            4096,          // page-aligned class
+            SMALL_MAX,     // top small class
+            SMALL_MAX + 1, // first Large
+        ];
+        v.sort_unstable();
+        v.dedup();
+        return v;
+    }
+    #[cfg(not(miri))]
+    {
+        size_grid_full()
+    }
+}
+
+/// The exhaustive (native) size seam list. See [`size_grid`] for the miri path.
+#[cfg(not(miri))]
+fn size_grid_full() -> Vec<usize> {
     let mut sizes: HashSet<usize> = HashSet::new();
     for &bs in SegmentLayout::SIZE_CLASS_TABLE {
         sizes.insert(bs);
@@ -291,9 +336,15 @@ fn size_grid() -> Vec<usize> {
 /// the over-align → dedicated-segment Large path; `SEGMENT` itself (4 MiB) is
 /// handled by the dedicated `over_align_segment_returns_null` test, not the
 /// main sweep grid, since it is a legitimate-null case.
+#[cfg(not(miri))]
 const ALIGN_GRID: &[usize] = &[
     8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
 ];
+/// Miri align subset: the common cases (8/16), one small-align class (64), a
+/// page align (256), and a large align (4096) — enough to exercise the
+/// alignment pointer math without interpreting all 14 aligns. Miri-gated ONLY.
+#[cfg(miri)]
+const ALIGN_GRID: &[usize] = &[8, 16, 64, 256, 4096];
 
 /// How many blocks of a given (size, align) are kept simultaneously live to
 /// check intra-set distinctness. Kept tiny so over-aligned Large blocks (a whole
@@ -414,6 +465,15 @@ fn sweep1_size_align_grid() {
 /// fast path (same class), the alloc+copy+dealloc fallback (cross-class /
 /// Large), or the cross-class-shrink correctness path. Data survival + alignment
 /// are asserted on every step.
+/// Miri realloc subset: one 256-seam grow, one 256-seam shrink, one same-class,
+/// and one small↔Large round-trip (the alloc+copy+dealloc fallback) — the four
+/// realloc code paths, without the multi-segment (SEGMENT-sized) pairs whose
+/// multi-MiB copies would run for minutes under the interpreter. Miri-gated ONLY.
+#[cfg(miri)]
+const REALLOC_PAIRS: &[(usize, usize)] =
+    &[(240, 256), (256, 128), (256, 256), (1024, SMALL_MAX + 4096)];
+
+#[cfg(not(miri))]
 const REALLOC_PAIRS: &[(usize, usize)] = &[
     // Across the 256 seam (grow and shrink) — the exact-256 class (task #145).
     (240, 256),

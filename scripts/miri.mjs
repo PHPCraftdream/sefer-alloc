@@ -32,6 +32,12 @@ const MATRIX = [
     'alloc-global alloc-xthread alloc-decommit fastbin',
     'regression_bump_direct_refill',
   ],
+  // S3 (#168): the deterministic single-thread boundary sweep (S2) under miri —
+  // UB-free pointer math / provenance across the size×align seam grid + the
+  // realloc matrix. The grid is drastically shrunk under `cfg(miri)` inside the
+  // test (a representative size/align subset, 4 realloc pairs, windowed canary)
+  // so it finishes in ~40s; the native (non-miri) grid is exhaustive & unchanged.
+  ['alloc-core', 'stress_boundary_sweep'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not

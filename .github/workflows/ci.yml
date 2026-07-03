@@ -149,6 +149,14 @@ jobs:
           # decommit-heavy `d1_cold_storm_then_free_decommits` case is
           # `cfg(not(miri))` (its N is size-load-bearing and cannot be capped).
           - "--features \"alloc-global alloc-xthread alloc-decommit fastbin\" --test regression_bump_direct_refill"
+          # S3 (#168): the deterministic single-thread boundary sweep (S2) under
+          # miri — UB-free pointer math / provenance across the size×align seam
+          # grid + the realloc matrix. The grid is drastically shrunk under
+          # `cfg(miri)` INSIDE the test (a representative size/align subset, 4
+          # realloc pairs, a windowed canary instead of the full multi-hundred-KiB
+          # fill), so it finishes in ~40s here; the native (non-miri) grid is
+          # exhaustive and byte-identical to before. `alloc-core` is the gate.
+          - "--features alloc-core --test stress_boundary_sweep"
           # NOTE: `regression_own_segment_cache_invalidation` (the Э3 own-segment
           # cache invalidation) was evaluated for miri and DEFERRED (R3, #155):
           # its correctness assertion needs ROUND_BLOCKS=18_000 across
@@ -263,7 +271,20 @@ jobs:
       # `regression_percounter_perheap_aggregation` are the MT tests that drive
       # the teardown/recycle handshake and the cross-heap counter read. Verified
       # locally via WSL: 0 data races reported.
+      #
+      # S3 (#168): the concurrent boundary-stress hammer (S1,
+      # `stress_concurrent_boundaries`) is added to THIS production step — the
+      # magazine / RemoteFreeRing / Э5-counter race surface under boundary
+      # pressure is the highest-value TSan combination. Its per-thread op budget
+      # and thread cap are slashed for the sanitizer via the env below
+      # (`SEFER_STRESS_OPS` overrides the absolute budget; `SEFER_STRESS_MAX_THREADS`
+      # caps the workers at 4 to bound TSan's shadow memory) so the run stays
+      # ~sub-second. These env vars are read ONLY by that test and are UNSET in
+      # the native suite, so native behavior is byte-identical to before.
       - name: Run production-config tests under ThreadSanitizer
+        env:
+          SEFER_STRESS_OPS: "600"
+          SEFER_STRESS_MAX_THREADS: "4"
         run: >-
           cargo +nightly test
           -Zbuild-std
@@ -273,6 +294,7 @@ jobs:
           --test heap_cross_thread
           --test tls_heap_teardown_ordering_stress
           --test regression_percounter_perheap_aggregation
+          --test stress_concurrent_boundaries
 
   multi-arch:
     # x86 is a strong-memory model; aarch64 is weak-memory and can surface

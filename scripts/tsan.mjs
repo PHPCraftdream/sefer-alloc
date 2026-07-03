@@ -45,15 +45,28 @@ const PROD_TESTS = [
   'heap_cross_thread',
   'tls_heap_teardown_ordering_stress',
   'regression_percounter_perheap_aggregation',
+  // S3 (#168): the concurrent boundary-stress hammer (S1) under TSan — the
+  // highest-value race surface (magazine / RemoteFreeRing / Э5 counters under
+  // boundary pressure). Its per-thread op budget and thread cap are slashed for
+  // the sanitizer via SEFER_STRESS_OPS / SEFER_STRESS_MAX_THREADS (see
+  // STRESS_ENV) so the run stays ~sub-second; native behavior is unchanged.
+  'stress_concurrent_boundaries',
 ];
 
-function bashCmd(features, testList) {
+// S3 (#168): env that bounds the S1 stress test under the sanitizer. Unset in a
+// native run → the test keeps its full default budget. Harmless to the other
+// production TSan tests (they don't read these vars). Applied to the production
+// pass only.
+const STRESS_ENV = ['SEFER_STRESS_OPS=600', 'SEFER_STRESS_MAX_THREADS=4'];
+
+function bashCmd(features, testList, extraEnv = []) {
   const testArgs = testList.map((t) => `--test ${t}`).join(' ');
   // One bash -lc line so the env scrubbing + cargo invocation share a shell.
   return [
     `cd ${wslRoot}`,
     'unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER',
     [
+      ...extraEnv,
       // `unset` alone is not enough: WSL interop re-injects the Windows
       // RUSTC_WRAPPER (sccache.exe) into child processes, and a `bash -lc`
       // login shell may re-source it. Setting both to empty STRINGS directly on
@@ -76,22 +89,24 @@ function bashCmd(features, testList) {
 // Pass 1: the cross-thread set (explicit args override the default set).
 // Pass 2 (only when running the default set): the production config over the
 // MT tests, so `npm run tsan` mirrors the CI `tsan` job's two steps.
+// Each pass is [features, testList, extraEnv]. The production pass carries the
+// S1 stress-budget env (STRESS_ENV); the cross-thread pass needs none.
 const passes = process.argv.slice(2).length
-  ? [['alloc-global alloc-xthread alloc-decommit', tests]]
+  ? [['alloc-global alloc-xthread alloc-decommit', tests, []]]
   : [
-      ['alloc-global alloc-xthread alloc-decommit', tests],
-      ['production', PROD_TESTS],
+      ['alloc-global alloc-xthread alloc-decommit', tests, []],
+      ['production', PROD_TESTS, STRESS_ENV],
     ];
 
 console.log(`[tsan] wsl: ${wslRoot}\n`);
 
 let allOk = true;
-for (const [features, testList] of passes) {
+for (const [features, testList, extraEnv] of passes) {
   console.log(`[tsan] features: ${features} | tests: ${testList.join(', ')}`);
   const { code, out } = await run('wsl', [
     'bash',
     '-lc',
-    bashCmd(features, testList),
+    bashCmd(features, testList, extraEnv),
   ]);
   // TSan reports races as warnings that do NOT fail the process exit code by
   // default, so scan for its markers explicitly.

@@ -86,13 +86,27 @@ const DEFAULT_SEED: u64 = 0x5EFE_2A11_0C57_0165;
 /// Per-thread op budget in the DEFAULT (non-heavy) run. Multiplied by the
 /// `SEFER_STRESS_HEAVY` factor. Chosen so the whole default suite finishes well
 /// under ~2 s on a typical dev box.
+///
+/// This is the DEFAULT per-thread budget (env unset). It can be OVERRIDDEN to an
+/// absolute value by `SEFER_STRESS_OPS` (see [`ops_per_thread`]) — used by the CI
+/// ThreadSanitizer step to slash the budget (TSan+build-std is ~20-50× slower per
+/// access and its shadow memory grows with the live set, so the full hammer would
+/// run for minutes). `cfg(sanitize)` would be cleaner but is a nightly-only,
+/// feature-gated cfg — this test compiles on stable in the native suite, so a cfg
+/// gate would fail to build there; an env override works on every toolchain and
+/// leaves the default (env unset) byte-identical to before.
 const BASE_OPS_PER_THREAD: usize = 6_000;
 
 /// Maximum number of live slots a worker thread keeps simultaneously. Bounded
 /// so the live set stays small and the canary re-verify is cheap.
 const LIVE_SLOTS: usize = 384;
 
-/// Hard cap on thread count regardless of `available_parallelism`.
+/// Hard cap on thread count regardless of `available_parallelism`. Can be lowered
+/// by `SEFER_STRESS_MAX_THREADS` (see [`thread_count`]) — the CI TSan step caps it
+/// at 4 so TSan's shadow memory (which scales with concurrently-live threads ×
+/// accesses) stays bounded; 4 workers plus the consumer still contend the
+/// RemoteFreeRing and the per-heap counters, which is the race surface TSan
+/// checks. Env unset → the default 8, byte-identical to before.
 const MAX_THREADS: usize = 8;
 
 /// Deterministic, dependency-free PRNG (xorshift64*), copied from
@@ -498,11 +512,39 @@ fn heavy_multiplier() -> usize {
         .unwrap_or(1)
 }
 
+/// The per-thread op budget. When `SEFER_STRESS_OPS` is set to a positive
+/// integer it OVERRIDES the budget to that ABSOLUTE value (ignoring both the
+/// default and the `SEFER_STRESS_HEAVY` multiplier) — this is how the CI
+/// ThreadSanitizer step bounds the run to a couple of minutes without touching
+/// native behavior. When it is unset (the default, and the ENTIRE native suite)
+/// the budget is `BASE_OPS_PER_THREAD * SEFER_STRESS_HEAVY` exactly as before.
+fn ops_per_thread(mult: usize) -> usize {
+    if let Some(abs) = std::env::var("SEFER_STRESS_OPS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+    {
+        return abs;
+    }
+    BASE_OPS_PER_THREAD.saturating_mul(mult)
+}
+
+/// The thread cap. `SEFER_STRESS_MAX_THREADS`, when set to a value in `2..=8`,
+/// lowers the hard cap (the CI TSan step sets 4 to bound shadow memory). Env
+/// unset → the default `MAX_THREADS` (8), byte-identical to before.
+fn thread_cap() -> usize {
+    std::env::var("SEFER_STRESS_MAX_THREADS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&n| (2..=MAX_THREADS).contains(&n))
+        .unwrap_or(MAX_THREADS)
+}
+
 fn thread_count() -> usize {
     available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
-        .clamp(2, MAX_THREADS)
+        .clamp(2, thread_cap())
 }
 
 /// THE gate: many threads run the boundary op-mix concurrently against one
@@ -514,7 +556,7 @@ fn thread_count() -> usize {
 fn concurrent_boundary_stress() {
     let base_seed = base_seed();
     let mult = heavy_multiplier();
-    let ops = BASE_OPS_PER_THREAD.saturating_mul(mult);
+    let ops = ops_per_thread(mult);
     let n_threads = thread_count();
 
     if mult > 1 {
