@@ -333,8 +333,8 @@ mod platform {
             // Written in reverse; fix ordering.
             tmp[..digits].reverse();
         }
-        for i in 0..digits {
-            buf[pos] = tmp[i];
+        for &d in tmp.iter().take(digits) {
+            buf[pos] = d;
             pos += 1;
         }
         for &b in SUFFIX {
@@ -536,7 +536,7 @@ const SYS_MBIND: i64 = 237;
 #[cfg(all(target_os = "linux", not(miri), target_arch = "aarch64"))]
 const SYS_MBIND: i64 = 235;
 
-/// `syscall(2)` from glibc/musl — always present, does not require libnuma.
+// `syscall(2)` from glibc/musl — always present, does not require libnuma.
 #[cfg(all(
     target_os = "linux",
     not(miri),
