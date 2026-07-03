@@ -70,8 +70,8 @@ use sefer_alloc::SeferAlloc;
 #[cfg(target_os = "linux")]
 const CHURN_OPS: usize = 64;
 
-/// Small-block (16 B) alloc+dealloc churn — the magazine/tcache fast path
-/// exercised by every allocator-heavy workload (db_handler-shaped included).
+// Small-block (16 B) alloc+dealloc churn — the magazine/tcache fast path
+// exercised by every allocator-heavy workload (db_handler-shaped included).
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn small_churn_16b() {
@@ -89,10 +89,10 @@ fn small_churn_16b() {
     }
 }
 
-/// 640 B @ align(128) alloc+dealloc churn — the tokio-shaped over-alignment
-/// case at the center of the task #114 regression (align>16 previously
-/// burned a full 4 MiB segment per allocation instead of routing through
-/// the size-class path).
+// 640 B @ align(128) alloc+dealloc churn — the tokio-shaped over-alignment
+// case at the center of the task #114 regression (align>16 previously
+// burned a full 4 MiB segment per allocation instead of routing through
+// the size-class path).
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn aligned_churn_640b_a128() {
@@ -110,8 +110,8 @@ fn aligned_churn_640b_a128() {
     }
 }
 
-/// Single-shot 4 MiB alloc+free — the dedicated-segment / OS-round-trip path
-/// (D1 large_cache territory: `mmap`/`VirtualAlloc` cost per large block).
+// Single-shot 4 MiB alloc+free — the dedicated-segment / OS-round-trip path
+// (D1 large_cache territory: `mmap`/`VirtualAlloc` cost per large block).
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn large_alloc_free_cycle() {
@@ -127,9 +127,9 @@ fn large_alloc_free_cycle() {
     }
 }
 
-/// Geometric realloc growth: 64 B doubled 16x up to 4 MiB via
-/// `GlobalAlloc::realloc` (the C2 realloc-grow path; no `Vec` amortization
-/// hiding the per-step cost).
+// Geometric realloc growth: 64 B doubled 16x up to 4 MiB via
+// `GlobalAlloc::realloc` (the C2 realloc-grow path; no `Vec` amortization
+// hiding the per-step cost).
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn realloc_grow() {
