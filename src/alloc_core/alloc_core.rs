@@ -1193,6 +1193,46 @@ impl AllocCore {
         }
     }
 
+    /// TEST-ONLY (Э7, task #161): the segment-relative offset of the head of
+    /// `ptr`'s segment's `BinTable[class_idx]` free list, or `FREE_LIST_NULL`
+    /// (`u32::MAX`) if the list is empty. Lets the batch-drain regression test
+    /// observe `set_head`'s exact post-drain value directly (partial drain →
+    /// remaining head; full drain → NULL).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_freelist_head_for(&self, ptr: *mut u8, class_idx: usize) -> u32 {
+        let base = os::segment_base_of_ptr(ptr);
+        SegmentMeta::new(base).bin_table().head(class_idx)
+    }
+
+    /// TEST-ONLY (Э7, task #161): whether `ptr`'s block is currently marked FREE
+    /// (on a free list) in its segment's alloc bitmap — the M2 double-free bit.
+    /// `false` ⟺ the block is ALLOCATED (handed out). Lets the batch-drain test
+    /// assert every drained block ends bitmap-allocated, exactly as `pop_free`
+    /// leaves it.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
+        let base = os::segment_base_of_ptr(ptr);
+        let off = (ptr as usize - base as usize) as u32;
+        SegmentMeta::new(base).alloc_bitmap().is_free(off)
+    }
+
+    /// TEST-ONLY (Э7, task #161): drive `drain_freelist_batch` directly on
+    /// `ptr`'s segment so a regression test can observe partial/full-drain
+    /// behaviour (return count, resulting `set_head`, per-block bitmap state) in
+    /// isolation from the surrounding `refill_class_bump` carve logic.
+    #[doc(hidden)]
+    pub fn dbg_drain_freelist_batch(
+        &self,
+        ptr: *mut u8,
+        class_idx: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        self.drain_freelist_batch(base, class_idx, out)
+    }
+
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// **OPT-F — in-place small→small realloc:** when both the old and new
@@ -1461,19 +1501,31 @@ impl AllocCore {
         // least once BEFORE any carve (source order preserved).
         let mut free_exhausted = false;
         while filled < want {
-            // 1. FREE-DRAIN FIRST (order is non-negotiable — see doc). Prefer a
-            //    free block from the current segment, then from any owned
+            // 1. FREE-DRAIN FIRST (order is non-negotiable — see doc). Prefer
+            //    free blocks from the current segment, then from any owned
             //    segment (which also drains remote rings → xthread reclaim).
-            if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
-                out[filled] = ptr;
-                filled += 1;
+            //
+            //    Э7 (task #161): drain the segment's freelist in ONE walk via
+            //    `drain_freelist_batch` instead of one `pop_free` per block —
+            //    `set_head`/`head`-read/`inc_live` are hoisted out of the
+            //    per-block loop. The end-state (bitmap bits, live_count,
+            //    freelist head) is byte-identical to the per-block path. Source
+            //    order is UNCHANGED: current segment's freelist, then the
+            //    ring-draining whole-heap scan, then bump-carve.
+            let n = self.drain_freelist_batch(self.small_cur, class_idx, &mut out[filled..]);
+            if n != 0 {
+                filled += n;
                 continue;
             }
             if !free_exhausted {
+                // `find_segment_with_free` runs the A1 ring-drain (reclaiming
+                // cross-thread frees into the per-segment BinTables) BEFORE it
+                // returns a base — that ordering is preserved: we call the batch
+                // drain only on the base it hands back.
                 if let Some(seg) = self.find_segment_with_free(class_idx) {
-                    if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
-                        out[filled] = ptr;
-                        filled += 1;
+                    let n = self.drain_freelist_batch(seg, class_idx, &mut out[filled..]);
+                    if n != 0 {
+                        filled += n;
                         continue;
                     }
                 }
@@ -1867,6 +1919,115 @@ impl AllocCore {
         meta.inc_live();
         let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
+    }
+
+    /// Э7 (task #161) — **batch freelist drain**. Pop up to `out.len()` free
+    /// blocks of class `class_idx` from `segment`'s `BinTable[class_idx]` in ONE
+    /// walk, writing them into `out[..k]` and returning `k` (the number popped,
+    /// `0` if the free list was empty). Byte-identical end-state to calling
+    /// [`pop_free`] `k` times, but with the per-block round-trip HOISTED:
+    ///
+    ///   - `head` is read ONCE (not re-read from the `BinTable` per block).
+    ///   - `set_head` is written ONCE at the end, to the first UN-popped node
+    ///     (or `FREE_LIST_NULL` if the chain was exhausted before `out` filled).
+    ///   - `inc_live` is applied ONCE by `k` (under `alloc-decommit`), exactly
+    ///     equalling `k` individual `inc_live`s.
+    ///
+    /// The two per-block costs that MUST stay per-block are kept per-block:
+    ///
+    ///   - `read_next(block)` — the dependent load that walks the intrusive
+    ///     chain. mimalloc pays this too; there is no way to hoist it (each
+    ///     `next` lives in the previous block's body). We never WRITE the block
+    ///     body on this path (pop doesn't), so reading `next` before advancing
+    ///     is hazard-free: nothing overwrites a block between our read of its
+    ///     `next` and our recording it.
+    ///   - `mark_alloc(off)` — cleared per-block. **Decision: per-block, NOT
+    ///     merged.** A freelist is a LIFO push chain, so consecutive popped
+    ///     offsets are in general SCATTERED across the bitmap (they do not share
+    ///     a byte the way a flush batch of consecutive carves would). Merging
+    ///     the RMWs across blocks would only be byte-identical for offsets that
+    ///     share a bitmap byte, which is not guaranteed here — so we keep the
+    ///     per-block `mark_alloc`, which is trivially identical to `pop_free`'s.
+    ///     The batch win is the hoisted `set_head` / `head`-read / `inc_live`,
+    ///     NOT the bitmap RMW (which was never the expensive part).
+    ///
+    /// ## D1 / M2 / set_head correctness
+    ///
+    ///   - **D1:** exactly `k` blocks leave the free list and are handed out, so
+    ///     `inc_live` by `k` == `k` per-block `inc_live`s. No double, no
+    ///     under-count.
+    ///   - **M2:** every recorded block ends bitmap-ALLOCATED (bit cleared) via
+    ///     its own `mark_alloc`, exactly as `pop_free` leaves it. A later
+    ///     double-free still hits `is_free` correctly.
+    ///   - **set_head:** after the walk, `head` holds either the offset of the
+    ///     first un-popped node (chain longer than `out`) or `FREE_LIST_NULL`
+    ///     (chain exhausted). We `set_head` to that once. A subsequent
+    ///     `pop_free`/drain therefore yields exactly the remaining blocks in the
+    ///     same order.
+    ///
+    /// `&self` (not `&mut self`): identical borrow profile to `pop_free` — it
+    /// touches only `segment` metadata via `SegmentMeta`, never `self.table`,
+    /// so `refill_class_bump` can call it on a `find_segment_with_free`-returned
+    /// base without an aliasing conflict.
+    #[inline]
+    fn drain_freelist_batch(
+        &self,
+        segment: *mut u8,
+        class_idx: usize,
+        out: &mut [*mut u8],
+    ) -> usize {
+        if out.is_empty() {
+            return 0;
+        }
+        #[cfg(feature = "alloc-decommit")]
+        let mut meta = SegmentMeta::new(segment);
+        #[cfg(not(feature = "alloc-decommit"))]
+        let meta = SegmentMeta::new(segment);
+        let mut bt = meta.bin_table();
+        // Read the head ONCE.
+        let mut head_off = bt.head(class_idx);
+        if head_off == FREE_LIST_NULL {
+            return 0;
+        }
+        let mut bm = meta.alloc_bitmap();
+        let mut k = 0usize;
+        while k < out.len() && head_off != FREE_LIST_NULL {
+            let block_ptr = Node::deref(segment, head_off as usize);
+            let block_nn = match NonNull::new(block_ptr) {
+                Some(nn) => nn,
+                // A null-deref would only arise from a corrupt offset; stop the
+                // walk here and commit what we have (defence-in-depth). `head`
+                // is left pointing at this node so nothing is lost.
+                None => break,
+            };
+            // Dependent load: read this block's `next` BEFORE recording it. The
+            // block body is never written on the pop path, so this is race-free
+            // against ourselves.
+            let next = Node::read_next(block_nn);
+            // Clear this block's bitmap bit — it leaves the free list and is
+            // handed out (per-block, byte-identical to `pop_free`).
+            bm.mark_alloc(head_off);
+            out[k] = block_ptr;
+            k += 1;
+            head_off = if next.is_null() {
+                FREE_LIST_NULL
+            } else {
+                // `next` is an absolute pointer into the SAME segment (free
+                // lists are per-segment), so offset = next - segment.
+                (next as usize - segment as usize) as u32
+            };
+        }
+        // Write the new head ONCE: the first un-popped node, or NULL.
+        bt.set_head(class_idx, head_off);
+        // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
+        // popped block always comes from a COMMITTED payload (a decommitted
+        // segment was reset to an empty free list, so the drain finds nothing
+        // there), so no recommit is needed on this path.
+        #[cfg(feature = "alloc-decommit")]
+        for _ in 0..k {
+            meta.inc_live();
+        }
+        k
     }
 
     /// Carve a fresh `block_size`-aligned block from the current small

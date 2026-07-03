@@ -655,15 +655,34 @@ impl HeapCore {
                     if n == 0 {
                         return core::ptr::null_mut(); // true OOM
                     }
-                    // P4 stamp hoist: stamp each pulled block's source
-                    // segment. The OPT-C cache (`last_stamped_segment`)
-                    // short-circuits repeated stamps of the same segment to
-                    // a Relaxed load + compare, so the typical single-segment
-                    // refill stamps once and the rest are near-zero cache hits.
+                    // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
+                    // pulled block's source segment, but call
+                    // `stamp_segment_owner` only when the block's segment base
+                    // CHANGES from the previous block's. `stamp_segment_owner`
+                    // is idempotent per segment (it stamps the segment header,
+                    // not the block), so stamping once per DISTINCT source
+                    // segment is sufficient — every source segment is still
+                    // stamped before any of its blocks is handed out (the same
+                    // guarantee as the P4 hoist). The OPT-C cache already
+                    // fast-pathed repeated same-segment stamps to a
+                    // mask+compare+Relaxed-load; tracking `prev_base` here skips
+                    // even that per-block cost. A batch drain (Э7) yields long
+                    // same-segment runs, so this collapses to ~one stamp per
+                    // refill in the common single-segment case.
+                    //
+                    // `usize::MAX` is not a valid segment base (bases are
+                    // SEGMENT-aligned pointers ≪ usize::MAX), so it is a safe
+                    // "no previous segment" sentinel that forces the first
+                    // non-null block to stamp.
+                    let mut prev_base = usize::MAX;
                     for i in 0..n {
                         let p = self.tcache.slots[c][i];
                         if !p.is_null() {
-                            self.stamp_segment_owner(p);
+                            let base = os::segment_base_of_ptr(p) as usize;
+                            if base != prev_base {
+                                self.stamp_segment_owner(p);
+                                prev_base = base;
+                            }
                         }
                     }
 
