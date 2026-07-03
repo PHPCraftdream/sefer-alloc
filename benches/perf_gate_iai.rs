@@ -70,6 +70,17 @@ use sefer_alloc::SeferAlloc;
 #[cfg(target_os = "linux")]
 const CHURN_OPS: usize = 64;
 
+/// Batch size for the *cold* first-touch benches (front A). Unlike `CHURN_OPS`
+/// (which reuses one block via alloc→dealloc back-to-back, hitting the hot
+/// magazine path), the cold benches allocate a whole batch of DISTINCT blocks
+/// before freeing any — so the magazine drains and the carve/refill path (fresh
+/// segment) is exercised, not the magazine-hit path. 256 is chosen to force
+/// carve well past the first magazine fill while keeping callgrind job time
+/// bounded (4× `CHURN_OPS`, same order of magnitude). The bench names encode
+/// this actual op-count (`..._256x..`), not the historical criterion "1024".
+#[cfg(target_os = "linux")]
+const COLD_BATCH: usize = 256;
+
 // Small-block (16 B) alloc+dealloc churn — the magazine/tcache fast path
 // exercised by every allocator-heavy workload (db_handler-shaped included).
 #[cfg(target_os = "linux")]
@@ -169,6 +180,75 @@ fn realloc_grow() {
     unsafe { sefer.dealloc(ptr, final_layout) };
 }
 
+// Front A — cold first-touch of tiny 16 B blocks. Allocate a whole batch of
+// `COLD_BATCH` distinct blocks (no alloc↔dealloc reuse), THEN free them all in
+// a second pass. This drains the per-thread magazine and forces the
+// carve/refill path (magazine empty, fresh segment) rather than the hot
+// magazine-hit path that `small_churn_16b` measures. Op-count is encoded in
+// the name (256×16 B) per §F semantic conformance.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_free_256x16b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Front A — same cold first-touch shape as `cold_alloc_free_256x16b`, but with
+// 64 B blocks (align 8). Second tiny size class on the carve/refill path.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_free_256x64b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(64, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Front B — 256 B @ align(8) alloc+dealloc churn: the working-set reuse shape
+// of `small_churn_16b` (immediate alloc→dealloc, hitting the magazine), at the
+// size where mimalloc leads even on reuse. This is the hot-path counterpart to
+// the cold benches above.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn churn_256b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(256, 8).unwrap();
+    for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { sefer.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -177,6 +257,9 @@ library_benchmark_group!(
         aligned_churn_640b_a128,
         large_alloc_free_cycle,
         realloc_grow,
+        cold_alloc_free_256x16b,
+        cold_alloc_free_256x64b,
+        churn_256b,
 );
 
 #[cfg(target_os = "linux")]
