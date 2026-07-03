@@ -194,19 +194,37 @@ fn unbounded_recycle_within_single_scan() {
         .filter(|&&p| ac.dbg_live_count_for(p).is_none())
         .count();
 
-    // Exactly one of the TARGET_SEGMENTS survivor segments may legitimately
-    // be `small_cur` (the currently active carve target) at the moment of
-    // the drain — decommit (and therefore recycle) never fires for the
-    // current segment even when its live_count reaches zero (§M6: a segment
-    // that is still being carved from must stay committed). So the expected
-    // floor is TARGET_SEGMENTS - 1, not TARGET_SEGMENTS.
-    let min_expected = TARGET_SEGMENTS - 1;
+    // Up to TWO of the TARGET_SEGMENTS survivor segments may legitimately be
+    // excluded from recycling even at live_count == 0:
+    //   1. `small_cur` — the currently active carve target: decommit/recycle
+    //      never fires for it even when empty (§M6: a segment still being
+    //      carved from stays committed).
+    //   2. the PRIMORDIAL segment — never decommitted/recycled at all
+    //      (`dec_live_and_maybe_decommit` only recycles `SegmentKind::Small`;
+    //      the primordial hosts the self-hosted registry between
+    //      `small_meta_end()` and `primordial_meta_end()`, so returning its
+    //      pages to the OS would corrupt the substrate).
+    //
+    // Task #145 (P1) added the exact 256 B size class, repacking these 256 B
+    // blocks (~16 384/segment now, was ~13 791 at the old 304 B class). The
+    // repacking shifted survivor discovery so ONE survivor now lands in the
+    // primordial segment while `small_cur` is a DIFFERENT segment — so both
+    // exclusions above apply as two DISTINCT segments (before, they coincided
+    // and only one slot was excluded). Both excluded segments verifiably have
+    // live_count == 0, `is_decommitted == false`, and stay registered — i.e.
+    // committed-but-idle exactly like `small_cur`, NOT a pinned/leaked slot
+    // (the second-round reallocation below still succeeds without table
+    // exhaustion, proving no leak). So the floor is TARGET_SEGMENTS - 2. This
+    // still proves the load-bearing property: recycling is UNBOUNDED (148 ≫
+    // the rejected CAP=32), not capped at any fixed buffer size.
+    let min_expected = TARGET_SEGMENTS - 2;
     assert!(
         recycled_count >= min_expected,
         "only {recycled_count} of {TARGET_SEGMENTS} survivor segments were actually \
          SLOT-RECYCLED (unregistered from the table) after the single drain call \
-         (expected >= {min_expected}, allowing exactly one legitimately-current \
-         segment to be excluded). `dbg_decommit_count` advanced by {decommits_this_scan}, \
+         (expected >= {min_expected}, allowing the current carve segment and the \
+         never-recyclable primordial segment to be excluded). `dbg_decommit_count` \
+         advanced by {decommits_this_scan}, \
          so payload decommit fired for (nearly) every segment — but the table SLOT \
          recycle (`table.recycle(base)`) did not happen for all of them. This is \
          exactly the rejected Phase C CAP=32 bug: a bounded deferred-recycle buffer \
