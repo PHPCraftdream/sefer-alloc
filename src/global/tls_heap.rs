@@ -32,31 +32,40 @@
 //! claim/recycle CAS) establishes the single writer; this file relies on
 //! that, it does not re-establish it.
 //!
-//! ## TLS destructor ordering
+//! ## TLS teardown and the TORN sentinel
 //!
-//! `LOCAL` and `GUARD` are both `thread_local!`s, declared in that order.
-//! Rust destroys thread-locals in REVERSE declaration order per-thread, so
-//! on this thread's teardown `GUARD` is dropped FIRST and `LOCAL` SECOND
-//! (`LOCAL` is a bare `Cell`, so its own "drop" is a no-op — the hazard is
-//! not `LOCAL`'s destructor, it is `LOCAL` outliving `GUARD`'s destructor
-//! and being read again afterwards).
+//! `LOCAL` (the cached `*mut HeapCore`) and `GUARD` (the recycle-on-death
+//! guard) are both `thread_local!`s. The hazard at thread teardown is: once
+//! `GUARD::drop` runs `HeapRegistry::recycle`, the slot returns to the free
+//! pool and another thread may `claim` it. If a resolver on the *exiting*
+//! thread then read `LOCAL` and found its stale (pre-recycle) pointer, it
+//! would hand out a second `&mut HeapCore` aliasing the new owner's. The
+//! guard prevents this by stamping `LOCAL` with the `TORN` sentinel BEFORE
+//! it calls `recycle`.
 //!
-//! The guard holds its OWN copy of the heap pointer (set in `bind_slow`)
-//! and never reads `LOCAL` to decide what to recycle — that part of the
-//! reasoning is unchanged. But `GUARD::drop` runs `HeapRegistry::recycle`,
-//! which releases the slot back to the free pool; another thread may then
-//! `claim` that exact slot before this thread finishes exiting. If `LOCAL`
-//! on the exiting thread still held its stale (pre-recycle) pointer at that
-//! point, ANY further use of `LOCAL` on this thread — for instance a `Drop`
-//! impl belonging to some OTHER thread-local that was declared before
-//! `LOCAL` (and therefore is destroyed after it, per the same reverse-order
-//! rule) and that happens to allocate/deallocate memory — would resolve
-//! back to the now-reclaimed-by-someone-else slot and hand out a second
-//! `&mut HeapCore` aliasing the new owner's. This is exactly the guard's
-//! job to prevent: it stamps `LOCAL` with the `TORN` sentinel BEFORE
-//! calling `recycle`, i.e. while `LOCAL` is still guaranteed live (`GUARD`
-//! drops before `LOCAL` in the reverse-declaration order above). Every
-//! resolver ([`current`], [`current_for_alloc`],
+//! Note we do NOT rely on any thread-local destructor *ordering*: std makes
+//! no such guarantee (destructor order is unspecified and platform-dependent
+//! — ELF, for one, tears down in reverse *registration* order via
+//! `__cxa_thread_atexit`, not declaration order). The mechanism is sound
+//! regardless, for three independent reasons:
+//!
+//! (a) `LOCAL` is a `const`-initialised `Cell<*mut HeapCore>` with **no
+//!     `Drop` impl** — it has no destructor at all. On native-TLS platforms
+//!     it is therefore never "destroyed"; it simply stays readable (holding
+//!     whatever the guard last stamped) for the entire thread teardown, so
+//!     "`GUARD` runs before `LOCAL` becomes unreadable" holds trivially, no
+//!     ordering assumption required.
+//! (b) TLS accessibility is monotone within a single thread's program order:
+//!     if a post-recycle resolver's `LOCAL.try_with` returned `Ok`, then the
+//!     earlier-in-program-order `mark_local_torn` (run by `GUARD::drop`
+//!     before `recycle`) must ALSO have returned `Ok` and already written
+//!     `TORN`. So any resolver that can still read `LOCAL` reads `TORN`, never
+//!     the stale pre-recycle pointer — whatever the destructor order.
+//! (c) On os-keyed platforms where `LOCAL`'s storage may already be gone, the
+//!     resolvers' `try_with` returns `Err` → they route to the always-live
+//!     Fallback heap, which is likewise safe.
+//!
+//! Every resolver ([`current`], [`current_for_alloc`],
 //! [`current_for_alloc_with_config`]) checks for `TORN` before the
 //! non-null check and, on a match, routes to the always-live fallback heap
 //! instead of re-arming a new slot (which would leak the just-recycled one
@@ -177,15 +186,17 @@ impl Drop for AbandonGuard {
         if heap.is_null() {
             return; // This thread never bound a registry heap.
         }
-        // Stamp `LOCAL` as TORN *before* recycling the slot below. Ordering
-        // is load-bearing: `GUARD` (this `Drop`) runs BEFORE `LOCAL` is torn
-        // down, because thread-locals are destroyed in reverse declaration
-        // order and `LOCAL` is declared first, `GUARD` second (see the
-        // module doc's "TLS destructor ordering" section) — so `LOCAL` is
-        // still a live thread-local at this point and `try_with` succeeds.
-        // If it were somehow already gone (`Err`), there is nothing to poison
-        // and no post-teardown reader of `LOCAL` could run either, so the
-        // no-op is safe.
+        // Stamp `LOCAL` as TORN *before* recycling the slot below. This does
+        // NOT rely on thread-local destructor ordering (std does not specify
+        // it — see the module doc's "TLS teardown and the TORN sentinel"
+        // section). It is sound because: `LOCAL` is a `Drop`-less `const` Cell
+        // that (on native TLS) is never torn down, so it stays readable; and
+        // TLS access is monotone in program order, so any later resolver that
+        // still gets `Ok` from `LOCAL.try_with` runs AFTER this write and
+        // therefore observes `TORN`, never the stale pre-recycle pointer. If
+        // `try_with` here returns `Err` (`LOCAL` already gone on an os-keyed
+        // platform), no post-teardown reader of `LOCAL` can run either — those
+        // resolvers get `Err` too and route to Fallback — so the no-op is safe.
         mark_local_torn();
         // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
         // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL

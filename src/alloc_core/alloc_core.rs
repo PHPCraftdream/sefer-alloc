@@ -720,6 +720,18 @@ impl AllocCore {
         let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
         let off = off as usize;
         let class_idx = class_idx as usize;
+        // Contract (see this fn's docs: "defence-in-depth against a garbled ring
+        // value — no abort, just skip"): the ring entry's class field physically
+        // carries 10 bits (0..1023), but only `SMALL_CLASS_COUNT` classes exist.
+        // A garbled entry (e.g. a user heap-overflow writing into this segment's
+        // metadata region) can present `class_idx >= SMALL_CLASS_COUNT`, which
+        // would index `SIZE_CLASS_TABLE` out of bounds in `block_size` below and
+        // panic inside the global allocator → process abort. Bounds-check FIRST
+        // and no-op (return the skip signal) instead, honouring the no-panic
+        // alloc-path discipline.
+        if class_idx >= super::size_classes::SMALL_CLASS_COUNT {
+            return false;
+        }
         let ptr = Node::deref(base, off);
         // Field-specific reads: this runs on the Owner's alloc path
         // (find_segment_with_free's lazy ring drain), concurrent with a
