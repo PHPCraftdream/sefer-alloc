@@ -383,16 +383,25 @@ impl HeapCore {
         self.core.set_small_current(base);
     }
 
-    /// Lazily install the cross-thread free-stack handle on the TLS bind-slow
-    /// path. Allocates a single `Box<AtomicPtr<u8>>` (via `std::alloc`); this
-    /// is the ONLY `std::alloc` touch on the `HeapCore` path, and it is
-    /// explicitly outside the registry bootstrap (called from the TLS
-    /// binding, not from `HeapRegistry::claim`/`ensure`).
+    /// Lazily "install" the cross-thread free-stack handle on the TLS
+    /// bind-slow path.
     ///
-    /// Idempotent: a second call is a no-op (returns without re-allocating).
-    /// Returns the stable `*const AtomicPtr<u8>` head pointer that segment
-    /// headers store in `owner_thread_free` so cross-thread freers can route
-    /// to this heap.
+    /// Phase 12.5 redesign: this performs **NO allocation** — it is a no-op
+    /// that simply hands out the address of the INLINE
+    /// [`thread_free`](Self::thread_free) field (an `AtomicPtr<u8>` already
+    /// initialised to null in [`new`](Self::new)). It does NOT allocate a
+    /// `Box<AtomicPtr<u8>>` — an earlier design did, but that was removed
+    /// because a `Box::new` here would recurse through `SeferAlloc::alloc` →
+    /// `bind_slow` → `install_thread_free` → `Box::new` under a
+    /// `#[global_allocator]` build and self-deadlock/overflow (see the field
+    /// doc on `thread_free`). Because it allocates nothing, it is trivially
+    /// M5-clean and idempotent (every call returns the same address; there is
+    /// no per-call state to guard).
+    ///
+    /// Returns the stable `*const AtomicPtr<u8>` head pointer (the inline
+    /// field's address, stable for the slot's lifetime) that segment headers
+    /// store in `owner_thread_free` so cross-thread freers can route to this
+    /// heap.
     ///
     /// Only compiled under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]
@@ -1067,7 +1076,60 @@ impl HeapCore {
                 // and alloc+copy+dealloc otherwise -- entirely within
                 // `self.core`, so no cross-thread routing concern here (we
                 // own this segment).
-                return self.core.realloc(ptr, old_layout, new_size);
+                //
+                // MUST-1 (0.3.0, C2 regression fix): `AllocCore::realloc` may
+                // internally `alloc` a FRESH segment for the non-in-place
+                // cases (a large→large grow carves a new dedicated Large
+                // segment; a small→new resize carves a new small segment).
+                // That substrate alloc does NOT run the two ownership hooks
+                // `HeapCore::alloc` applies — segment-ownership stamping
+                // (`stamp_segment_owner`, which under `alloc-xthread` also
+                // writes `owner_thread_free`, the field that makes a remote
+                // free route back here instead of leaking) and the A1
+                // deferred-large drain (`drain_large_deferred_free`). Without
+                // them, a Vec grown via realloc on thread A lives in an
+                // UNSTAMPED (`owner_thread_free == null`) Large segment; when
+                // A hands it to thread B and B drops it, `dealloc_routing`
+                // sees not-ours + magic OK + `owner_tf == null` → silent
+                // no-op → the whole segment (4+ MiB) and its `SegmentTable`
+                // slot leak forever (the resurrected A1/#114 leak-to-abort).
+                //
+                // Fix: mirror `HeapCore::alloc`'s two hooks around the
+                // substrate realloc.
+                //
+                //   (1) A1 Large drain — BEFORE delegating, if the NEW request
+                //       classifies as Large (`class_for(...).is_none()`, the
+                //       exact predicate `alloc` uses), drain this heap's
+                //       deferred-free stack so a realloc-growth-only thread
+                //       still reclaims cross-thread-freed large segments
+                //       (otherwise its stack accumulates unboundedly — the
+                //       A1 drain-bypass leg of the bug).
+                #[cfg(feature = "alloc-xthread")]
+                {
+                    let class = crate::alloc_core::size_classes::SizeClasses::class_for(
+                        new_size.max(crate::alloc_core::size_classes::MIN_BLOCK),
+                        old_layout.align(),
+                    );
+                    if class.is_none() {
+                        self.drain_large_deferred_free();
+                    }
+                }
+                //   (2) Ownership stamp — stamp the RESULT so any fresh
+                //       segment the substrate carved gets `owner_state` +
+                //       `owner_thread_free` written (the latter is what makes
+                //       a later cross-thread free route back here). An
+                //       in-place realloc returns the SAME `ptr`, whose segment
+                //       was already stamped when it was first allocated, so we
+                //       skip re-stamping then (`stamp_segment_owner` is
+                //       idempotent via the OPT-C cache, so this is only an
+                //       optimisation). A null result is an OOM — nothing to
+                //       stamp.
+                let p = self.core.realloc(ptr, old_layout, new_size);
+                #[cfg(feature = "alloc-global")]
+                if !p.is_null() && p != ptr {
+                    self.stamp_segment_owner(p);
+                }
+                return p;
             }
         }
         // Foreign pointer (not one of our segments) or `alloc-global` absent:
