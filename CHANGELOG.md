@@ -5,7 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-07-04
+
+0.3.0 is the first `0.3.x` release (the current crates.io live version is
+`0.2.1`; see the yank notes below). It bundles four workstreams, each
+implemented with line-by-line zero-trust review, per-fix counterfactual
+verification, and a commit between phases: the **P0–P7 perf arc**
+(#144–#163, beat `mimalloc` on small/medium), a **reliability, stress &
+release-doc pass** (R1–R4 / S1–S3 / D1, #153–#168), the **post-review
+hardening pass** (#129–#143), and the **initial phase A–F pass**. Sections
+below are grouped per workstream.
 
 ### Performance — the P0–P7 "beat mimalloc on small/medium" arc (#144–#163)
 
@@ -184,14 +193,71 @@ The P7 cold verdict specifically is **pending this Linux Ir gate** — the
 wall-clock numbers above are noisy comparative measurements from a single
 noisy Windows dev host, not a statistical suite.
 
-## [0.3.0] - 2026-07-03
+### Reliability, stress & release-doc pass (R1–R4, S1–S3, D1 — #153–#168)
 
-0.3.0 was hardened in two passes before its first publish: the phase A–F
-pass (2026-06-30) and a post-review pass (#129–#143, 2026-07-02/03) driven
-by a four-agent audit with per-fix counterfactual verification. Entries are
-grouped per pass below.
+A post-perf pass that hardens the guarantees, adds adversarial boundary
+coverage, and reconciles the release docs — strictly from the safe
+`GlobalAlloc` envelope (each block freed exactly once, same layout; misuse
+from `unsafe` callers is out of scope). No correctness guarantee was
+weakened; M2 was *strengthened* in R1.
+
+#### Fixed
+
+- **R1 — the magazine-push `off >= bump` guard closes a real M2 gap.** The
+  Э6 in-magazine free path could push a not-yet-carved (`off >= bump`)
+  offset into the per-thread magazine, from which a later alloc could hand
+  out a block the substrate never carved. The push now rejects any
+  `off >= bump` offset (byte-identical to the flush-side guard).
+  Counterfactual-pinned by `tests/regression_magazine_bump_guard.rs` (RED
+  without the guard).
+
+#### Changed — honesty of the M2 scope
+
+- **R2 — the ring↔magazine cross-thread double-free residual is documented,
+  pinned, and modelled (real fix tracked as #164).** A block whose
+  cross-thread free is still in-flight in a segment's `RemoteFreeRing` (not
+  yet drained by the owner) sets neither own-thread oracle (it is in neither
+  the magazine `slots` scan nor the `BinTable` `is_free` bitmap), so a
+  concurrent own-thread double-free of it is not detected. This is a
+  pre-existing limit (present in the live 0.2.1 `fastbin` too), NOT
+  introduced by the perf arc. Pinned by
+  `tests/regression_xthread_double_free_residual.rs` (`#[ignore]`), modelled
+  by `tests/loom_magazine_ring_compose.rs` (loom also showed the naive
+  "own-free reads the ring" fix is itself holed — the real fix must let the
+  drain see the magazine, hence #164). `docs/INVARIANTS.md` / README now
+  qualify "never UB" to live/mapped memory and reference this residual.
+
+#### Internal — verification
+
+- **R3 — `production` is now covered by sanitizers in CI:** a ThreadSanitizer
+  job on the `production` feature set plus `miri` over the `fastbin` magazine
+  tests (and loom variants). Zero races, zero UB.
+- **R4 — code-doc hygiene:** stale `40`→`49` size-class counts, the slot-0
+  FIFO wording, the unsafe-seams comment, and stale `realloc` / no-`Box`-on-
+  bind notes corrected across the substrate source.
+- **S1 — bounded concurrent boundary-stress harness**
+  (`tests/stress_concurrent_boundaries.rs`): multi-thread hammering of the
+  class / align / segment seams with allocation canaries + distinctness +
+  M2/D1 assertions, all from the safe envelope. Bounded to ~1 s by default; a
+  heavier run is opt-in via `SEFER_STRESS_HEAVY` / `SEFER_STRESS_OPS` /
+  `SEFER_STRESS_MAX_THREADS`.
+- **S2 — deterministic single-thread exhaustive boundary sweep**
+  (`tests/stress_boundary_sweep.rs`): every class/align seam × a realloc
+  matrix (~2100 cases in ~0.5 s; the grid auto-reduces under `cfg(miri)`).
+- **S3 — the stress harnesses run under sanitizers in CI:** S1 under TSan,
+  S2 under miri, with reduced budgets so CI stays fast. Neither S1/S2 nor the
+  sanitizers found any new bug.
+- **D1 — release-doc accuracy pass** (docs-only): the unsafe-seam inventory
+  (+`registry::bootstrap`), the M2 scope, purged env-vars, `production` =
+  `+fastbin`, the 1024-segment-ceiling reframe, and every verification
+  counter were reconciled against verified ground truth before the tag.
 
 ### Post-review hardening pass (#129–#143)
+
+This and the phase A–F pass below hardened 0.3.0 before its first publish:
+the post-review pass (#129–#143, 2026-07-02/03) driven by a four-agent audit
+with per-fix counterfactual verification, and the phase A–F pass
+(2026-06-30). Entries are grouped per pass.
 
 #### Fixed
 
@@ -519,6 +585,14 @@ counterfactual-verified, and committed.
 
 ## [0.2.1] - 2026-06-30
 
+> ⚠️ **Superseded by `0.3.0`; to be yanked from crates.io once `0.3.0` is
+> published.** `0.2.1` ships `fastbin = ["alloc-global"]`, which is buildable
+> *without* `alloc-xthread` — a cross-thread free with `fastbin` alone has no
+> ownership-checked routing path and races into another thread's private
+> magazine (data race / UB). Fixed in `0.3.0` (phase A2: `fastbin` now
+> requires `alloc-xthread`, enforced by Cargo feature unification + a
+> `compile_error!` guard). Upgrade to `0.3.0`.
+
 ### Fixed — `align > 16` allocations no longer burn a dedicated segment each
 
 `SizeClasses::class_for(size, align)` unconditionally returned `None` for
@@ -564,6 +638,12 @@ including loom (`loom_bootstrap_cas`, `loom_xthread_protocol`,
 `loom_thread_free`) — green.
 
 ## [0.2.0] - 2026-06-29
+
+> ⚠️ **Yanked from crates.io.** Superseded by `0.2.1`, which fixes the #114
+> `align > 16` segment-exhaustion bug: an `align > 16` allocation (e.g. the
+> `tokio` task-cell shape, `#[repr(align(128))]`) burned a full ~4 MiB
+> segment each and could exhaust `MAX_SEGMENTS = 1024` and abort the process
+> under ordinary async workloads. Upgrade to `0.2.1` or later.
 
 ### Changed — BREAKING: `SeferMalloc` renamed to `SeferAlloc`
 
