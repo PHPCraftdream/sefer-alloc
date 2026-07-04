@@ -34,7 +34,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::registry::{bootstrap, HeapRegistry};
-use sefer_alloc::SegmentLayout;
+use sefer_alloc::{AllocCore, SegmentLayout};
 
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
@@ -125,4 +125,71 @@ fn interior_ptr_free_is_noop() {
         unsafe { (*heap).dealloc(p, layout) };
     }
     unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// The SUBSTRATE leg of the same guard (`AllocCore::dealloc_small`) — the path
+/// the explicit `Heap` face (`with_heap`) and any direct `AllocCore` user reach,
+/// which does NOT go through the per-thread magazine. Without the substrate
+/// guard an interior-pointer free here slips past the 16 B-granular `is_free`
+/// bitmap oracle and is pushed onto the BinTable free list → the next same-class
+/// alloc re-issues the mid-block address.
+///
+/// ## Counterfactual (verified RED without the guard)
+///
+/// Comment out the `#[cfg(feature = "hardened")]` interior-ptr block in
+/// `alloc_core.rs::dealloc_small` and re-run under `--features hardened`:
+/// `interior_ptr_free_substrate_is_noop` goes RED (the interior pointer is
+/// re-issued / a duplicate appears). Restoring the guard → GREEN.
+#[test]
+fn interior_ptr_free_substrate_is_noop() {
+    let _g = SerialGuard::acquire();
+    let mut core = AllocCore::new().expect("primordial reservation");
+
+    // 48 B class: block_size 48 (non-power-of-two, > 16 so a 16 B-aligned
+    // interior offset exists but is not a whole multiple of 48).
+    let layout = Layout::from_size_align(48, 8).unwrap();
+
+    let anchor = core.alloc(layout);
+    assert!(!anchor.is_null());
+    let interior = (anchor as usize + 16) as *mut u8;
+    assert_ne!(interior, anchor);
+
+    // Hazardous own-thread substrate free of the interior pointer — no-op.
+    core.dealloc(interior, layout);
+
+    // (i) The next alloc must NOT hand back the interior pointer.
+    let after = core.alloc(layout);
+    assert!(!after.is_null());
+    assert_ne!(
+        after, interior,
+        "SUBSTRATE INTERIOR-PTR GUARD BROKEN: an interior pointer was pushed \
+         onto the BinTable free list and re-issued by the next alloc."
+    );
+
+    // (ii) Cold-storm distinctness: an interior pointer that slipped onto the
+    // free list aliases the tail of the anchor block → a duplicate appears.
+    const N: usize = 4096;
+    let mut issued: Vec<*mut u8> = Vec::with_capacity(N + 2);
+    issued.push(anchor);
+    issued.push(after);
+    for _ in 0..N {
+        let p = core.alloc(layout);
+        assert!(!p.is_null(), "cold-storm alloc returned null");
+        issued.push(p);
+    }
+    let distinct: HashSet<usize> = issued.iter().map(|&p| p as usize).collect();
+    assert_eq!(
+        distinct.len(),
+        issued.len(),
+        "DUPLICATE POINTER: an interior pointer aliased a real block via the \
+         substrate free path (interior-ptr guard missing in dealloc_small)."
+    );
+    assert!(
+        !distinct.contains(&(interior as usize)),
+        "interior pointer was issued during the cold-storm"
+    );
+
+    for &p in &issued {
+        core.dealloc(p, layout);
+    }
 }

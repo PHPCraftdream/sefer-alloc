@@ -2261,6 +2261,26 @@ impl AllocCore {
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
         let off = (ptr as usize - base as usize) as u32;
+        // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
+        // The SAME guard as `HeapCore::dealloc_own_thread_with_base`'s magazine
+        // free path, here on the SUBSTRATE own-thread free — the path the
+        // explicit `Heap` face (`with_heap` → `Heap::dealloc_small` →
+        // `self.core.dealloc`) and any direct `AllocCore` user reach (the
+        // magazine guard only covers the `SeferAlloc` face). A real block start
+        // of class `class_idx` sits at an `off` that is a whole multiple of
+        // `block_size(class_idx)` (carve aligns the bump to `block_size`); an
+        // INTERIOR pointer has `off % block_size != 0` and would otherwise slip
+        // past the 16 B-granular `is_free` bitmap oracle below (it maps to a
+        // DIFFERENT bit that reads "allocated") → `write_next` into mid-block →
+        // free-list corruption. Rejected here as a no-op. A `%` by a
+        // non-power-of-two `block_size` per small free — a paid check, so
+        // `hardened`-gated (default OFF), never on the production hot path. The
+        // CROSS-THREAD leg is already covered UNCONDITIONALLY by
+        // `reclaim_offset`'s identical `off % block_size` defence-in-depth.
+        #[cfg(feature = "hardened")]
+        if !(off as usize).is_multiple_of(SizeClasses::block_size(class_idx)) {
+            return;
+        }
         // Phase 35 (M6 decommit) — the post-decommit stale-free guard. When a
         // segment empties it is decommitted AND reset: `bump` returns to
         // `small_meta_end()` and the alloc bitmap is zeroed. A late free / a

@@ -159,10 +159,14 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
 # NOT free enough to enable unconditionally. Default OFF; NOT part of
 # `production` (the fast default). Currently gates the interior-pointer free
-# guard: on a small own-thread free it verifies `off % block_size(class) == 0`
-# before touching the M2 oracles, turning a free of a pointer that is not the
-# block start (offset not a whole number of block_sizes) into a detected no-op
-# instead of a mis-indexed bitmap read → magazine double-issue / corruption.
+# guard on BOTH own-thread small-free faces — the `SeferAlloc` per-thread
+# magazine (`HeapCore`) AND the substrate (`AllocCore::dealloc_small`, which is
+# what the explicit `Heap`/`with_heap` face and any direct `AllocCore` user
+# reach): each verifies `off % block_size(class) == 0` before touching the M2
+# oracles, turning a free of a pointer that is not the block start (offset not a
+# whole number of block_sizes) into a detected no-op instead of a mis-indexed
+# bitmap read → double-issue / free-list corruption. (The cross-thread leg is
+# already covered UNCONDITIONALLY by `reclaim_offset`'s identical check.)
 # The check is a modulo by a non-power-of-two block_size (a real division, ~tens
 # of cycles) on EVERY small free, so it is honestly a paid check — hence gated
 # here, not on the production hot path. Additive over `fastbin` (the build that
