@@ -87,6 +87,12 @@ jobs:
           # would never RUN in CI — clippy's --all-features only compiles it.
           # Also covers the fastbin-without-decommit config with the guard on.
           - "--features hardened" # #167: paranoid tier (guard + its regression test)
+          # H1 follow-up: README calls `hardened` "additive over production", but
+          # no CI row built the two together — the paranoid guard tier was only
+          # ever exercised WITHOUT decommit (the `hardened` row above is
+          # fastbin-without-decommit). Add the flagship+paranoid combo so the
+          # misuse-guard runs alongside the decommit (M6) recommit cycle.
+          - "--features \"production hardened\"" # paranoid tier over the flagship bundle
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -95,6 +101,52 @@ jobs:
       # from the 0.3.0 hardening pass — cargo's default fail-fast hid two red
       # tests behind an earlier failure).
       - run: cargo test ${{ matrix.features }} --no-fail-fast
+
+  test-windows:
+    # Windows is the primary dev OS, yet only the numa-shim real-syscall path
+    # ran on a Windows kernel in CI — the ALLOCATOR itself (the aligned-vmem
+    # VirtualAlloc / MEM_DECOMMIT reserve/commit/decommit path) was only ever
+    # tested locally. Run the flagship `production` bundle on real Windows so a
+    # regression in the Windows vmem backend is caught per-PR. Kept minimal:
+    # checkout, stable toolchain, the two test runs.
+    name: test windows (production)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --features production --no-fail-fast
+      # The magazine-in-isolation config (fastbin without decommit) exercises the
+      # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
+      # production run above.
+      - run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
+
+  test-workspace:
+    # `cargo test` at the repo root tests ONLY the root package; the workspace
+    # member crates' own test suites (aligned-vmem — the most unsafe-critical
+    # crate — plus sefer-region and malloc-bench-rs) never ran in CI. Run each
+    # member's tests explicitly. Default features only: the feature flags are
+    # root-crate-scoped, so `--workspace` with `--features` would not apply
+    # cleanly to the members; the root feature matrix is covered by the `test`
+    # job above.
+    name: test workspace members
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
+
+  msrv:
+    # MSRV gate: `rust-version = "1.88"` is declared but never enforced, so an
+    # accidental use of a stdlib API / language feature stabilised after 1.88
+    # would slip through (stable CI runs a much newer toolchain). A build-only
+    # `cargo check --all-features` on the pinned 1.88 toolchain is sufficient
+    # evidence that the crate still compiles on its declared minimum.
+    name: MSRV 1.88 (cargo check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - run: cargo check --all-features
 
   no_std:
     # The single-threaded core (Region<T> / Handle<T>) builds under no_std +
@@ -356,6 +408,14 @@ jobs:
       - name: Run cross-thread + decommit tests (cross)
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
+      # Weak-memory coverage for the newest 0.3.0 magazine layer: the Э5 relaxed
+      # load/store per-heap counters and the P7 batching path (the `fastbin` /
+      # `production` bundle) were NEVER run on aarch64 — only the pre-magazine
+      # tiers above crossed onto weak memory. aarch64's weak model is exactly
+      # where a mis-ordered relaxed counter or batch drain would surface.
+      - name: Run production tests (cross)
+        if: ${{ matrix.use_cross }}
+        run: cross test --target ${{ matrix.target }} --features production
 
   numa-shim-mock:
     # NUMA Phase 1: verify wrapping logic on every CI run without real

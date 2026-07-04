@@ -106,13 +106,21 @@ jobs:
           echo "Target crate: $CRATE  (dry-run: $DRY_RUN)"
 
       - name: Show version that will be published
+        id: version
         shell: bash
         run: |
           set -euo pipefail
-          # Strip everything up to and including the '#' separator. `cargo pkgid`
-          # output is of the form `path+file:///path#crate-name@1.2.3`.
+          # `cargo pkgid` output has two shapes depending on the crate:
+          #   path+file:///path/to/crate#crate-name@1.2.3   (member crates)
+          #   path+file:///path/to/crate#1.2.3              (the root package,
+          #                                                  name implicit)
+          # First strip up to and including '#', then strip a leading `name@`
+          # if present. `${X##*@}` alone is WRONG for the root form (no '@',
+          # it would return the whole path).
           PKGID=$(cargo pkgid -p '${{ steps.target.outputs.name }}')
-          VERSION="${PKGID##*@}"
+          AFTER_HASH="${PKGID##*#}"
+          VERSION="${AFTER_HASH##*@}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Crate ${{ steps.target.outputs.name }} version: $VERSION"
           # Surface in the job summary too.
           echo "## Release target" >> "$GITHUB_STEP_SUMMARY"
@@ -120,6 +128,45 @@ jobs:
           echo "- crate: \`${{ steps.target.outputs.name }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- version: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- dry-run: \`${{ steps.target.outputs.dry_run }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guard — tag version must match Cargo.toml
+        # For a tag push, the tag encodes the version (`<crate>-v<version>`).
+        # The Cargo.toml version is NOT auto-bumped by this workflow, so a stale
+        # Cargo.toml would silently publish the wrong version (the comment at the
+        # top of this file flags this as a "manual mistake" risk). Fail loudly if
+        # the tag version and the resolved crate version disagree. Skipped for
+        # manual dispatch (no version-encoding tag exists there).
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF='${{ github.ref_name }}'
+          TAG_VERSION="${REF##*-v}"        # `<crate>-v<version>` -> `<version>`
+          CRATE_VERSION='${{ steps.version.outputs.version }}'
+          echo "tag version:   $TAG_VERSION"
+          echo "crate version: $CRATE_VERSION"
+          if [[ "$TAG_VERSION" != "$CRATE_VERSION" ]]; then
+            echo "::error::tag version ($TAG_VERSION) does not match Cargo.toml version ($CRATE_VERSION) for crate ${{ steps.target.outputs.name }}" >&2
+            exit 1
+          fi
+
+      - name: Test gate — do not publish a red tree
+        # A tag must never publish an untested tree. Run the default suite and
+        # the flagship `production` bundle for the target crate before the
+        # irreversible upload. Skipped on dry-run (the dry-run path is for
+        # exercising packaging, not a full pre-publish gate).
+        if: ${{ steps.target.outputs.dry_run != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME='${{ steps.target.outputs.name }}'
+          # Default-feature suite for whichever crate is being released.
+          cargo test -p "$NAME" --no-fail-fast
+          # `production` is a root-crate-only feature bundle; only add it when
+          # the target IS the root crate (member crates have no such feature).
+          if [[ "$NAME" == "sefer-alloc" ]]; then
+            cargo test -p "$NAME" --features production --no-fail-fast
+          fi
 
       - name: cargo publish
         env:
