@@ -29,8 +29,21 @@ source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
 - **M1 — validity.** Every pointer returned by `alloc(layout)` is non-null
   (unless OOM), valid for `layout.size()` bytes, and aligned to `layout.align()`.
 - **M2 — no double-free / no UAF.** A pointer is live from its `alloc` until its
-  `dealloc`; freeing twice, or freeing a foreign pointer, never corrupts the
-  allocator — it is detected and no-op'd, never UB.
+  `dealloc`; freeing twice against **LIVE/MAPPED** memory, or freeing a foreign
+  pointer, never corrupts the allocator — it is detected and no-op'd, never UB.
+  A double-free against memory that has already been decommitted (and thus
+  unmapped by the OS) is outside M2's scope: the pre-reuse `off >= bump`
+  stale-free guard (#138) is the substrate-level check that catches the common
+  reuse-window cases before the block can be handed out again. **Residual M2
+  limit — ring↔magazine cross-thread double-free residual limit of M2** (task
+  R2 / #154; real fix task #164): a block whose cross-thread free is still
+  in-flight (queued in a segment's `RemoteFreeRing`, not yet drained by the
+  owner) sets NEITHER own-thread oracle (it is not in the magazine's `slots`
+  scan and the BinTable `is_free` bitmap still reads it as allocated), so a
+  concurrent own-thread double-free of the same block is not detected.
+  Pinned by `tests/regression_xthread_double_free_residual.rs`; modelled by
+  `tests/loom_magazine_ring_compose.rs`. Full note in
+  `docs/FASTBIN_DESIGN.md`.
 - **M3 — no overlap.** Two simultaneously-live allocations never share a byte.
 - **M4 — alignment & size fidelity.** The class chosen always satisfies size and
   alignment; large/huge allocations honour arbitrary alignment via a dedicated

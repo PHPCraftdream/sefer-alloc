@@ -134,10 +134,12 @@ alloc-global = ["alloc"]
 alloc-decommit = ["alloc-core"]
 # Convenience alias: the recommended feature set for long-running multi-thread
 # workloads (DBMS-style, async runtimes, anything that creates and frees many
-# segments over time). Without `alloc-decommit` the per-process SegmentTable
-# (1024 slots, append-only) is the hard ceiling on cumulative segment
-# allocations; `alloc-decommit` lets empty segments be recycled (#60),
-# lifting that ceiling. Add this feature for any long-running deployment.
+# segments over time). Without `alloc-decommit` the SegmentTable free-list
+# still recycles freed large-segment slots unconditionally, but empty
+# small segments cannot be recycled until they are decommitted; long-running
+# processes with many small-segment carve/decay cycles will pin slots and
+# eventually hit the 1024 cap. `alloc-decommit` closes this by decommitting
+# empty small segments and freeing their slot (#60). Add this feature for any long-running deployment.
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
 # `alloc-xthread`, a cross-thread free of a small block still has to land

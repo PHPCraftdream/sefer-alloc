@@ -53,9 +53,14 @@ use core::mem::size_of;
 /// Maximum number of simultaneously live segments the registry can hold WITHOUT
 /// recycling. Each live large/huge allocation consumes one segment slot; each
 /// small segment can serve thousands of small allocations. Under `alloc-decommit`
-/// the effective limit is unbounded: empty segments are recycled (their slot is
-/// NULLed) and reused by future `register` calls. Without `alloc-decommit` this
-/// is the hard cap (append-only).
+/// the effective limit is unbounded: empty segments (including empty small
+/// segments) are recycled (their slot is NULLed) and reused by future
+/// `register` calls. Without `alloc-decommit`, only the EMPTY small-segment
+/// recycle path is disabled; the free-list still recycles any released segment
+/// slot (large allocations still recycle their slot on free via
+/// `unregister`/`recycle`, unconditionally). Long-running processes with many
+/// small-segment carve/decay cycles will pin small-segment slots and eventually
+/// hit this cap.
 pub(crate) const MAX_SEGMENTS: usize = 1024;
 
 /// The footprint of the registry (slots) array in the primordial segment. Fixed

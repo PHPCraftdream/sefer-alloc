@@ -443,8 +443,9 @@ representative run (run-to-run ±10%; the *ordering* is stable):
 **RSS:** not measured here. There is no portable, dependency-free peak-RSS probe
 across Windows/Linux/macOS without pulling in platform syscalls, so the harness
 honestly reports N/A rather than inventing a number. (RSS comparison is a
-hardening-gate item — `SeferMalloc` does not yet decommit empty segments to the
-OS, feature `alloc-decommit`/#35, so a fair RSS comparison must wait for that.)
+hardening-gate item. Note: as of 0.3.0 the `alloc-decommit` feature — included
+in the `production` set — DOES decommit empty small segments to the OS; the
+prose above is stale from 0.2.0 when decommit was not yet shipped.)
 
 ### Honest reading of the MT numbers
 
@@ -557,6 +558,13 @@ only in the two audited seams + the `GlobalAlloc` impl).
    `GlobalAlloc` face shows the true standing.
 
 ## NOT yet production-trusted — the remaining hardening gate
+
+> **Historical note (dated 2026-07, retained for context)** — this
+> section describes the Phase-12.5/12.6 hardening gate as it stood
+> in 0.2.0. As of 0.3.0 the gate is **closed** — fuzz, aarch64,
+> ThreadSanitizer, and miri are all wired in CI; the `production`
+> feature is the recommended set for long-running multi-thread
+> deployments. The historical body below is kept for context.
 
 Per `ALLOC_PLAN.md` §5 P11 / §8, production trust is earned only after the full
 hardening gate. What works today and what remains:
@@ -722,7 +730,7 @@ pinned run.
 ### What was added
 
 Feature-gated on `alloc-decommit`, `AllocCore` holds a small fixed-size
-free-cache for large segments (`LARGE_CACHE_SLOTS = 2`). When a large
+free-cache for large segments (`LARGE_CACHE_SLOTS = 8`). When a large
 allocation is freed, instead of releasing the OS reservation immediately
 the segment is deposited into the cache (reservation stays live, pages
 stay committed — no decommit on deposit, so no recommit is needed on hit).
@@ -734,9 +742,11 @@ mmap/VirtualAlloc entirely.
 per-span cap `MAX_CACHED_LARGE_BYTES = 64 MiB` was removed in #90 — it
 prevented caching large spans on machines that have the headroom. The
 cache is now byte-budget'd per shard (default unbounded — clients
-override with `SEFER_LARGE_CACHE_BUDGET=…` supporting `K`/`M`/`G`
-suffixes). Lazy 10 %/sec exponential decay back to `live + headroom`
-(headroom default 256 MiB, env-overridable) keeps the cache bounded
+override via the `LargeCacheConfig` const builder,
+`.budget_bytes(N)`, passed through `SeferAlloc::with_config(...)` /
+`AllocCore::new_with_config(...)`). Lazy 10 %/sec exponential decay
+back to `live + headroom` (headroom default 256 MiB, override via
+`.headroom_bytes(N)`) keeps the cache bounded
 without a background thread. FIFO eviction on budget overflow.
 
 The OS reservation is released either on the next `Drop` of `AllocCore`
@@ -774,7 +784,9 @@ pointer. No syscall, no page-table work.
 **64 MiB is now cached** (it was not under the original per-span cap;
 #90 removed the cap). The per-shard byte budget admits any single span
 as long as the budget allows it; clients who want a hard cap can set
-`SEFER_LARGE_CACHE_BUDGET`. See [`ALLOC_PLAN_PHASE12-13.md`] /
+`LargeCacheConfig::budget_bytes(N)` via
+`SeferAlloc::with_config(...)` (env vars were removed in 0.2.0).
+See [`ALLOC_PLAN_PHASE12-13.md`] /
 checkpoint notes for the redesign rationale.
 
 ### Why pages are kept committed (no decommit on deposit)
@@ -787,8 +799,10 @@ mmap round-trip. Removing the decommit/recommit pair dropped the 4 MiB hit
 from ~50 µs to ~45 ns: a 1,100× additional improvement.
 
 Trade-off: cached segments hold their pages committed between uses, increasing
-RSS by `usable_size` per cached slot (max 2 × 64 MiB = 128 MiB with current
-constants). For workloads that alloc/free large blocks infrequently, the
+RSS by `usable_size` per cached slot. There is no fixed per-span size cap:
+admission is governed by the configurable `LargeCacheConfig::budget_bytes`
+(default unbounded); the fixed count is the `LARGE_CACHE_SLOTS = 8` slot
+array. For workloads that alloc/free large blocks infrequently, the
 `alloc-decommit` feature without OPT-E (or a future time-based eviction) is
 preferable. OPT-E is optimal for workloads with repeated large-allocation churn
 at the same size class.

@@ -226,7 +226,7 @@ becomes visible: aggressive settings produce a sawtooth that damps toward
 improvement (not yet implemented) would be a public `SeferAlloc::dbg_*`
 passthrough for exactly this purpose.
 
-[`AllocCore`]: https://docs.rs/sefer-alloc/latest/sefer_alloc/alloc_core/struct.AllocCore.html
+[`AllocCore`]: https://docs.rs/sefer-alloc/latest/sefer_alloc/struct.AllocCore.html
 [`SeferAlloc`]: https://docs.rs/sefer-alloc/latest/sefer_alloc/struct.SeferAlloc.html
 
 ---

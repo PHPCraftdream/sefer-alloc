@@ -72,7 +72,7 @@ jobs:
           # Phases 8–13 allocator descent. Without these, CI never exercised
           # alloc-core/alloc/alloc-global/alloc-xthread/alloc-decommit.
           - "--features alloc-core" # Phase 8 segment substrate (AllocCore)
-          - "--features \"alloc-global alloc-xthread\"" # Phases 9–11: per-thread Heap + SeferMalloc + cross-thread free
+          - "--features \"alloc-global alloc-xthread\"" # Phases 9–11: per-thread Heap + SeferAlloc + cross-thread free
           - "--features \"alloc-global alloc-xthread alloc-decommit\"" # + Phase 35 M6 decommit
           # #137: the fastbin (magazine/tcache) path and the flagship
           # `production` bundle were NOT exercised in CI — the entire magazine

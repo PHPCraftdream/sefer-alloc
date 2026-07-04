@@ -39,8 +39,11 @@ multi-thread or async workload. It is shorthand for
 `alloc-global + alloc-xthread + alloc-decommit + fastbin` — the drop-in
 `GlobalAlloc` face, lock-free cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
-`SegmentTable`'s slot-recycle is off and the 1024-segment ceiling
-becomes a hard cap.
+`SegmentTable`'s free-list still recycles freed large-segment slots
+(large-alloc/free churn keeps working), but empty small segments cannot
+be recycled until they are decommitted; long-running processes with
+many small-segment carve/decay cycles will pin slots and eventually
+hit the 1024 cap.
 
 For the bare `no_std` + `alloc` handle-store core, see
 [Two faces](#two-faces) below; for the full feature matrix, see
@@ -156,10 +159,10 @@ through a per-segment MPSC ring. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the 30-minute tour.
 
 Under `production`, the crate becomes `#![deny(unsafe_code)]` and every
-`unsafe` lives in **seven named confined seams** (`alloc_core::{os,
+`unsafe` lives in **eight named confined seams** (`alloc_core::{os,
 node}` + `global::{sefer_alloc, tls_heap, fallback}` +
-`registry::{heap_slot, heap_registry}`) — never in the alloc-path body
-outside them. Each `unsafe` block carries a `// SAFETY:` proof; the
+`registry::{bootstrap, heap_slot, heap_registry}`) — never in the
+alloc-path body outside them. Each `unsafe` block carries a `// SAFETY:` proof; the
 compiler enforces the confinement (a stray `unsafe` outside a named
 seam is a hard error). Complete inventory:
 [Where unsafe lives](#where-unsafe-lives-the-complete-list).
@@ -230,7 +233,7 @@ disclaimer):
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
-The verification stack is also honest: 88 integration test files, 8 loom
+The verification stack is also honest: 103 integration test files, 11 loom
 models, proptest differential against a reference model, miri with
 strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
 aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
@@ -340,16 +343,18 @@ these named files is a hard compile error in every configuration):
 | [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
+| [`src/registry/bootstrap.rs`](src/registry/bootstrap.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol. | `alloc-global` |
 | [`src/registry/heap_slot.rs`](src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off | `alloc-global` |
 | [`src/registry/heap_registry.rs`](src/registry/heap_registry.rs) | The global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, used by every cross-thread routing decision | `alloc-global` |
 | [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit`) the active internal seams
-are eight — `alloc_core::{os, node}` plus `global::{sefer_alloc, tls_heap,
-fallback}` plus `registry::{heap_slot, heap_registry}`. `alloc-xthread` and
-`alloc-decommit` themselves do **not** open new `unsafe` seams — they extend
-existing safe code paths.
+(`alloc-global + alloc-xthread + alloc-decommit + fastbin`) the active
+internal seams are **eight** — `alloc_core::{os, node}` plus
+`global::{sefer_alloc, tls_heap, fallback}` plus
+`registry::{bootstrap, heap_slot, heap_registry}`. `alloc-xthread`,
+`alloc-decommit`, and `fastbin` themselves do **not** open new `unsafe`
+seams — they extend existing safe code paths.
 
 `numa-aware` adds one more internal seam (`alloc_core::numa`), which in turn
 delegates to the independently-auditable `numa-shim` crate. `experimental`
@@ -570,6 +575,14 @@ per-thread heap takes no shared lock; cross-thread frees route through
 the lock-free Phase-10/12.6 remote path). Single-thread (T = 1) `mimalloc`
 leads — see the verdict below.
 
+> Reconciliation note: the mstress rows above are **historical 0.2.0
+> macro-bench numbers** (this run's shape — the "faster at T ≥ 2"
+> verdict). `docs/ALLOC_BENCH.md`'s Phase-13.4a mstress table shows an
+> earlier snapshot where the T = 2 / T = 4 rows are within-noise
+> parity vs mimalloc; the ratios differ because the two runs are
+> different points in the 0.2.0 evolution, not different builds under
+> the current tree. Both are labelled with their origin run.
+
 ### Cold first-touch (`benches/global_alloc.rs::global_alloc`)
 
 `alloc N → free N` — no working-set reuse, the "first touch" path (every
@@ -652,8 +665,17 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     empties and refills). Documented trade-off; not a real-world pattern.
 
 Every loss above is the price of a safety guarantee `mimalloc` does not
-provide (double-free = no-op, never UB; foreign pointer = safe no-op;
-forbid(unsafe) at the top level with one audited `unsafe` aperture). On
+provide (double-free of LIVE/MAPPED memory = no-op, never UB, protected
+by the pre-reuse `off >= bump` stale-free guard (#138); foreign pointer =
+safe no-op; forbid(unsafe) by default at the top level with named
+audited seams under `production`). One documented residual: the
+**ring↔magazine cross-thread double-free residual limit of M2** (task
+R2 / #154; real fix #164) — a block whose cross-thread free is still
+in-flight in a segment's `RemoteFreeRing` (not yet drained) sets neither
+own-thread oracle (magazine `slots` scan nor BinTable `is_free` bitmap);
+pinned by `tests/regression_xthread_double_free_residual.rs`, modelled
+by `tests/loom_magazine_ring_compose.rs`; full note in
+`docs/FASTBIN_DESIGN.md`. On
 real workloads — churn, MT, large-alloc — we are net faster while keeping
 those guarantees.
 
@@ -662,8 +684,8 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **88 integration test files** ship
-in `tests/` (80 conventional + 8 loom models — counted separately below);
+a test file, and a reproducible command. **103 integration test files** ship
+in `tests/` (92 conventional + 11 loom models — counted separately below);
 **5 example binaries** in `examples/`; **9 benches** in `benches/`
 (`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
 `large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
@@ -672,9 +694,9 @@ in `tests/` (80 conventional + 8 loom models — counted separately below);
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (88 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (103 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
-| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_xthread_protocol.rs`, `loom_remote_ring.rs`, `loom_thread_free.rs`, `loom_registry.rs`, `loom_sharded.rs`, `loom_epoch.rs`, `loom_bootstrap_cas.rs`, `loom_fallback_init.rs` (8 models) |
+| `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_bootstrap_cas.rs`, `loom_deferred_large.rs`, `loom_epoch.rs`, `loom_fallback_init.rs`, `loom_free_slots_aba.rs`, `loom_magazine_ring_compose.rs`, `loom_registry.rs`, `loom_remote_ring.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (11 models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |
@@ -687,7 +709,7 @@ in `tests/` (80 conventional + 8 loom models — counted separately below);
 | Flamegraph profiling | Hot path identification per workload | `docs/PROFILE_FLAMEGRAPHS.md` (4 scenarios) |
 
 Every CI job is wired (`.github/workflows/ci.yml`) and runs on every push:
-test matrix on x86_64 + aarch64, six feature combinations, miri with
+test matrix on x86_64 + aarch64, 7 feature combinations, miri with
 strict-provenance, ThreadSanitizer, libFuzzer build, clippy, rustfmt.
 
 The full safety stack and the relationship between layers is documented in
@@ -707,15 +729,18 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-global` | `alloc` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit` | **The recommended combo for long-running multi-thread workloads.** | off | **DBMS, async runtimes, anything that allocates over hours.** |
+| `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin` | **The recommended combo for long-running multi-thread workloads.** | off | **DBMS, async runtimes, anything that allocates over hours.** |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 
 `production` is the right starting point for almost any multi-thread or
-async use of `SeferAlloc`. Without `alloc-decommit` the `SegmentTable`
-slot-recycle is off and the 1024-segment ceiling is a hard cap — a tokio
-server with hundreds of tasks will eventually OOM. For embedded / `no_std`
-use, stay with the default `std` feature.
+async use of `SeferAlloc`. Without `alloc-decommit`, unregister /
+free-list still runs unconditionally (freed large-segment slots recycle
+normally), but empty small segments are pinned — their slots cannot be
+recycled until they are decommitted; a long-running tokio server with
+many small-segment carve/decay cycles will eventually hit the 1024 cap.
+For embedded / `no_std` use, stay with the default `std` feature.
 
 ### Tuning the large-segment cache (`alloc-decommit`)
 
@@ -749,7 +774,7 @@ ships several runnable examples that exercise the allocator under real
 workloads:
 
 ```bash
-# Single-threaded handle store
+# Handle store / global allocator example
 cargo run --example global_allocator --features alloc-global
 
 # Multi-thread macro-benchmark (larson + mstress, T=1/2/4)
@@ -771,7 +796,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 
 | Doc | What it covers |
 |---|---|
-| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How to attach the allocator to a project + the three runtime knobs (size / period / trigger) |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How to attach the allocator to a project + the `LargeCacheConfig` builder (budget / decay period / decay rate / headroom / mode) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 30-minute end-to-end technical tour |
 | [`docs/INVARIANTS.md`](docs/INVARIANTS.md) | The I1–I6 (Region) and M1–M8 (Malloc) invariants |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Cartographer / Membrane / Hand model for `Region<T>` |
@@ -811,9 +836,12 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   and the fixed `LARGE_CACHE_SLOTS = 8` slot count, not by span size. A
   workload with sustained multi-GB large allocations is cacheable subject to
   the configured budget (or the process's available RSS, if unbounded).
-- **`alloc-decommit` is opt-in.** Without it, slot-recycle is off and the
-  1024-segment cap is a hard ceiling for cumulative segment registrations.
-  Use the `production` feature alias to avoid this.
+- **`alloc-decommit` is opt-in.** Without it, unregister and the
+  SegmentTable free-list still recycle freed large-segment slots
+  unconditionally, but empty small segments cannot be recycled (they
+  are recycled only when decommitted). Long-running processes with
+  many small-segment carve/decay cycles will pin slots and eventually
+  hit the 1024 cap. Use the `production` feature alias to avoid this.
 
 ---
 

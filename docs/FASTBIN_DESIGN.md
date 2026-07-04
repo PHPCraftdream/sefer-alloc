@@ -1,7 +1,9 @@
 # Fast-bin / tcache — design document (#103)
 
-**Status:** DRAFT for review. No code written yet. Implement only after this
-design is approved.
+**Status:** implemented and shipping under `fastbin` / `production`
+(0.3.0). Historical design document — retained for context; see §6.1
+SUPERSEDED banner for the current M2 magazine oracle, and the note at the
+top of §5 for the current fast-path shape.
 
 **Author:** session 2026-06-28, after the #101/#102 inline campaign and the
 instruction-level `perf` investigation.
@@ -157,6 +159,15 @@ grouped).
 ---
 
 ## 5. Fast paths (pseudocode)
+
+> **SUPERSEDED (see §6.1 SUPERSEDED banner).** The pseudocode below
+> retains the historical `word1`-key / `TCACHE_KEY` fast-path filter
+> for the magazine free path. **That filter has been REMOVED** — the
+> current magazine free path runs the Э6 in-magazine `slots` scan
+> plus the BinTable `is_free` bitmap oracles unconditionally and
+> **never touches the block body**. The `write_tcache_key(ptr)` line
+> in the pseudocode is retained for historical context only; ignore
+> it when reading against the current implementation.
 
 ### alloc (small)
 ```text

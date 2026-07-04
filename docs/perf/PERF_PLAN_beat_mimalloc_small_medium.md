@@ -3,7 +3,8 @@
 **Goal:** overtake `mimalloc` on the two fronts where 0.3.0 loses, **without
 surrendering a single correctness guarantee** (M2 exact double/foreign-free
 no-op, D1 live-count accuracy, A1 cross-thread reclaim, xthread soundness,
-`#![forbid(unsafe_code)]` top-level). Every speedup here removes a
+`#![forbid(unsafe_code)]` by default; `production` = `#![deny(unsafe_code)]`
++ 8 named seams). Every speedup here removes a
 *tautology*, never a *guard*.
 
 Tasks: **#144 (P0) → #145 (P1) → #146 (P2) → #147 (P3) → #148 (P4) →

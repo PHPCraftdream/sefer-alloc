@@ -126,7 +126,7 @@
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
-//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit):
+//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin):
 //      * `alloc_core::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)
@@ -139,6 +139,11 @@
 //      * `global::fallback`     — primordial fallback heap seam —
 //                             `static mut MaybeUninit<HeapCore>` + atomic-init
 //                             state-machine + spinlock-guarded `&mut` handout.
+//                             (under `alloc-global`)
+//      * `registry::bootstrap`     — primordial-segment carve / SegmentTable
+//                             bootstrap seam — raw-pointer footprint carving
+//                             of the metadata region under the atomic
+//                             single-writer bootstrap protocol.
 //                             (under `alloc-global`)
 //      * `registry::heap_slot`     — `Sync`/`Send` impls + `UnsafeCell` hand-off.
 //                             (under `alloc-global`)

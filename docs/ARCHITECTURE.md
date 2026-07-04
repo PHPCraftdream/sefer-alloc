@@ -117,17 +117,19 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
 | `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe; slotmap's audited core owns the generational layout. |
 
-**Internal sefer-alloc seams** (twelve modules total; compiler-enforced):
+**Internal sefer-alloc seams** (10 src modules total; compiler-enforced):
 
 Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit`) the active seams are
-**eight** — the first two `alloc_core::*` rows plus the five `global::*` /
-`registry::*` rows. `numa-aware` adds one more (`alloc_core::numa`), which
-in turn delegates to the independently-auditable `numa-shim` crate.
-The `experimental` tier opens the older research-tier concurrent seam (now
-deprecated); the production build does not pull it in.
-`alloc-xthread` and `alloc-decommit` do **not** add new `unsafe` seams —
-they extend existing safe paths.
+(`alloc-global + alloc-xthread + alloc-decommit + fastbin`) the active
+seams are **eight** — the first two `alloc_core::*` rows plus the three
+`global::*` rows plus the three `registry::*` rows
+(`bootstrap`/`heap_slot`/`heap_registry`). `numa-aware` adds one more
+(`alloc_core::numa`), which in turn delegates to the independently-
+auditable `numa-shim` crate. The `experimental` tier opens the older
+research-tier concurrent seam (now deprecated); the production build does
+not pull it in.
+`alloc-xthread`, `alloc-decommit`, and `fastbin` do **not** add new
+`unsafe` seams — they extend existing safe paths.
 
 | Module | Role | Feature gate |
 |---|---|---|
@@ -136,6 +138,7 @@ they extend existing safe paths.
 | [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap`. | `alloc-global` |
 | [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop. | `alloc-global` |
 | [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
+| [`src/registry/bootstrap.rs`](../src/registry/bootstrap.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol. | `alloc-global` |
 | [`src/registry/heap_slot.rs`](../src/registry/heap_slot.rs) | `Sync`/`Send` impls on `HeapSlot` under the atomic single-writer protocol; the slot's `UnsafeCell` hand-off. | `alloc-global` |
 | [`src/registry/heap_registry.rs`](../src/registry/heap_registry.rs) | Global heap slot-table — the `*mut HeapCore` pointer handoff out of a slot, consulted by every cross-thread routing decision. | `alloc-global` |
 | [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
@@ -212,8 +215,9 @@ reentrancy fallback (introduced in Phase 11.5 hardening). On `SeferAlloc`,
   alloc_small(layout):
     1. pop_free(class_idx) from BinTable  -- pure pointer read, no lock, no atomic
     2. if empty: carve_block_with_refill  -- bump REFILL_BATCH=31 blocks from
-                                             current segment, push 30 to BinTable,
-                                             return 1 to caller
+                                             current segment, push 31 to BinTable
+                                             (magazine / free-list), return one to
+                                             the caller
     3. if segment exhausted: find_segment_with_free -> reserve_small_segment
 
   dealloc_small(ptr):
@@ -224,6 +228,23 @@ reentrancy fallback (introduced in Phase 11.5 hardening). On `SeferAlloc`,
 The common case (steps 1 / dealloc step 1) has no lock and no atomic
 operation. The REFILL_BATCH of 31 was measured in commit 81fec54: larger
 batches hurt locality with no throughput gain.
+
+### 4.5 Per-thread magazine (tcache) fast path — `fastbin` / `production`
+
+Under `fastbin` (default on in `production`), a per-thread
+array-based magazine per size class is layered in `HeapCore` on top of
+the segment substrate. Alloc pops from `slots[c][count[c]-1]` (a
+pointer load + count decrement — no metadata touch); free pushes to the
+same array. Miss/overflow paths go through the per-class refill/flush
+batch APIs against the underlying `AllocCore`. The M2 double-free
+guarantee for the two own-thread resting places (this class's magazine
+and the BinTable free list) is enforced by two hot-metadata oracles run
+unconditionally on every free — an in-magazine `slots` scan and the
+BinTable `is_free` bitmap — with the free path **never touching the
+block body**. Stats (`tcache_hits`, refill/flush counts) are collected
+on the miss path. See `docs/FASTBIN_DESIGN.md` for the full design and
+the R2 residual note (ring↔magazine cross-thread double-free residual
+limit of M2 — task #164).
 
 ### TLS heap binding
 
@@ -330,10 +351,12 @@ Full argument: [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) §1.
 
 `alloc_large` returns dedicated segments (one per large allocation). Without a
 cache, every large alloc+free round-trips through the OS. OPT-E adds a
-1-2-slot per-`AllocCore` free-cache: a freed large segment is held committed
-rather than munmapped. On a cache hit, the next large alloc reuses it with no
-OS call. Measured speedup on 4 MiB alloc+free: **~150 ns vs ~760 ns for
-mimalloc (~5x faster)** and ~150 ns vs ~910 ns at 16 MiB (~6x faster). See
+per-`AllocCore` free-cache (`LARGE_CACHE_SLOTS = 8`): a freed large
+segment is held committed rather than munmapped. On a cache hit, the next
+large alloc reuses it with no OS call. Current-tree measurement on 4 MiB
+alloc+free: **~58 ns vs ~779 ns for mimalloc (~13× faster)**; 16 MiB
+~63 ns vs ~890 ns (~14× faster); 64 MiB ~62 ns vs ~2.14 µs (~34× faster)
+— see the current-tree numbers in the README Performance table. See
 [ALLOC_BENCH.md](ALLOC_BENCH.md) OPT-E section.
 
 **Adaptive policy** (tasks #90-#92, the "client controls / we ship sane
@@ -343,27 +366,32 @@ defaults" model):
   (`MAX_CACHED_LARGE_BYTES = 64 MiB`) was an artificial disability — a span
   larger than the cap could never be cached, so a process churning 100 MiB+
   buffers paid the full OS round-trip every cycle. Replaced with a
-  per-shard byte budget (`SEFER_LARGE_CACHE_BUDGET`, default unbounded);
-  any size span can enter the cache, FIFO eviction releases the oldest if
-  the budget would be exceeded. OS-OOM is propagated as `null` per the
-  `GlobalAlloc` contract (audited end-to-end).
+  per-shard byte budget set via `LargeCacheConfig::budget_bytes(N)`
+  (default unbounded when unset); any size span can enter the cache, FIFO
+  eviction releases the oldest if the budget would be exceeded. OS-OOM is
+  propagated as `null` per the `GlobalAlloc` contract (audited end-to-end).
 
 - *Phase 2 — lazy exponential decay.* "Allocate fast, release slowly":
   on every large op a single `Instant::now()` comparison checks whether
-  `decay_interval` (default 1 s) has elapsed; if so, `excess = cached
-  − headroom` (default 256 MiB) is multiplied by `decay_rate` (default
-  10 %) and that many bytes are FIFO-evicted to the OS. Self-damping (no
-  oscillation), no background thread (idle process pays nothing —
-  mobile-friendly), every knob env-overridable.
+  the configured `LargeCacheConfig::decay_interval_ms(N)` window
+  (default 1000 ms) has elapsed; if so, `excess = cached −
+  LargeCacheConfig::headroom_bytes(N)` (default 256 MiB) is multiplied by
+  `LargeCacheConfig::decay_rate_percent(N)` (default 10 %) and that
+  many bytes are FIFO-evicted to the OS. Self-damping (no oscillation),
+  no background thread (idle process pays nothing — mobile-friendly),
+  every knob resolved at compile time from the `const fn` builder — no
+  environment reads, no runtime parse errors (env vars
+  `SEFER_LARGE_CACHE_BUDGET` / `SEFER_LARGE_CACHE_MODE` were removed in
+  0.2.0).
 
 - *Phase 3 — mode selector (background-thread stub).* `LargeCacheMode
-  { Lazy, Background, Both }` enum and `SEFER_LARGE_CACHE_MODE` env var
-  are wired through. Default `lazy` preserves Phase 2 behaviour bit-for-bit;
-  `background` currently prints a one-time warning and falls back to lazy
-  while the full background scavenger thread (Mutex refactor + registry
-  iteration + safe spawn timing + TSan validation) is deferred to a
-  follow-up. The mode-selector plumbing means flipping the switch later is
-  a non-breaking change.
+  { Lazy, Background, Both }` enum is wired through the
+  `LargeCacheConfig::mode(m)` builder method. Default `Lazy` preserves
+  Phase 2 behaviour bit-for-bit; `Background` / `Both` currently fall
+  back to lazy while the full background scavenger thread (Mutex
+  refactor + registry iteration + safe spawn timing + TSan validation)
+  is deferred to a follow-up. The mode-selector plumbing means flipping
+  the switch later is a non-breaking change.
 
 Full configuration table is in the README "Tuning the large-segment cache"
 section.
@@ -416,10 +444,10 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (51 files) |
+| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (103 files) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs` |
-| loom | Cross-thread protocol correctness under bounded interleavings | `tests/loom_epoch.rs`, `tests/loom_registry.rs`, `tests/loom_remote_ring.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
+| loom | Cross-thread protocol correctness under bounded interleavings (11 models) | `tests/loom_bootstrap_cas.rs`, `tests/loom_deferred_large.rs`, `tests/loom_epoch.rs`, `tests/loom_fallback_init.rs`, `tests/loom_free_slots_aba.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_registry.rs`, `tests/loom_remote_ring.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |

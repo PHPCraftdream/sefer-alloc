@@ -13,8 +13,9 @@ A seven-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
 lost: cold first-touch of tiny blocks (16–64 B) and 256 B churn. The governing
 rule was **every speedup removes a *tautology*, never a *guard*** — no
 correctness guarantee was surrendered (M2 exact double/foreign-free no-op, D1
-live-count accuracy, A1 cross-thread reclaim, `#![forbid(unsafe_code)]` at the
-top level all intact — M2's exact-no-op scope being the live/mapped,
+live-count accuracy, A1 cross-thread reclaim, `#![forbid(unsafe_code)]` by
+default with `production` = `#![deny(unsafe_code)]` + 8 named seams — all
+intact — M2's exact-no-op scope being the live/mapped,
 single-legged free, with the cross-thread-double-free ring-in-flight case a
 pre-existing documented residual limit, #164); in P6 the M2 guard was
 **strengthened for the two own-thread resting places** (magazine + BinTable,
@@ -168,7 +169,8 @@ was already O(1)); it does not move the headline tables.
   still ≈ parity). Guarantees intact: the batching removed only shared-
   bookkeeping tautologies and kept every per-block guard (`is_free`,
   `off >= bump`, `mark_alloc`, `dec_live`); M2 / D1 / A1 /
-  `#![forbid(unsafe_code)]` at the top level all hold.
+  `#![forbid(unsafe_code)]` by default (`production` = `#![deny(unsafe_code)]`
+  + 8 named seams) all hold.
 
 The rigorous, DETERMINISTIC proof is the `perf_gate_iai` instruction-count
 gate (Valgrind, Linux-only CI): the P0 benches
