@@ -19,6 +19,11 @@ const ALL = [
   'loom_epoch',
   'loom_fallback_init',
   'loom_free_slots_aba',
+  // R2 (#154): the magazine↔RemoteFreeRing composition shadow model. Its
+  // primary test is a `#[should_panic]` counterfactual pinning the #164
+  // residual hole (green while the hole exists; flips to a green invariant
+  // test when #164 lands). Pure `cfg(loom)` — no feature gate of its own.
+  'loom_magazine_ring_compose',
   'loom_registry',
   'loom_remote_ring',
   'loom_sharded',

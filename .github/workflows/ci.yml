@@ -81,6 +81,12 @@ jobs:
           # bundle (fastbin + decommit + everything).
           - "--features \"alloc-global alloc-xthread fastbin\"" # #137: magazine/tcache path
           - "--features production" # #137: the recommended flagship config (fastbin + decommit)
+          # H1 (#167): the opt-in `hardened` misuse-guard tier. Without this
+          # row the interior-pointer guard and its counterfactual regression
+          # test (`regression_hardened_interior_ptr`, gated on the feature)
+          # would never RUN in CI — clippy's --all-features only compiles it.
+          # Also covers the fastbin-without-decommit config with the guard on.
+          - "--features hardened" # #167: paranoid tier (guard + its regression test)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -217,6 +223,13 @@ jobs:
           # + `src/registry/tagged_ptr.rs`).
           - test: loom_free_slots_aba
             features: "alloc-global"
+          # R2 (#154): magazine↔RemoteFreeRing composition shadow model. The
+          # primary test is a `#[should_panic]` counterfactual PINNING the
+          # #164 residual hole — it stays green exactly while the hole exists,
+          # and goes red the moment a fix (or a regression) changes the
+          # composition, forcing the model to be updated alongside #164.
+          - test: loom_magazine_ring_compose
+            features: "alloc-global alloc-xthread"
           - test: loom_thread_free
             features: "alloc"
           - test: loom_sharded
