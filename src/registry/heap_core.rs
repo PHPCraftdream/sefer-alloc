@@ -795,6 +795,33 @@ impl HeapCore {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
 
+                    // ── H1 (task #167): interior-pointer guard (HARDENED) ──
+                    // A block start of class `c` always sits at a segment
+                    // offset that is a whole multiple of `block_size(c)`
+                    // (carve aligns the bump to `block_size`). An INTERIOR
+                    // pointer (offset into a live block, not its start) has
+                    // `off % block_size(c) != 0`. The M2 oracles below are
+                    // BLIND to this: the alloc bitmap is indexed at
+                    // `off >> MIN_BLOCK_SHIFT` (16 B granularity), so an
+                    // interior offset that is still 16 B-aligned maps to a
+                    // DIFFERENT bit that reads "allocated" → the bogus pointer
+                    // falls through and is pushed into the magazine → a later
+                    // alloc hands out a mid-block address → silent aliasing /
+                    // corruption. This guard rejects it as a no-op.
+                    //
+                    // Cost: a `%` by a non-power-of-two `block_size` (a real
+                    // division, ~tens of cycles) on EVERY small free — NOT
+                    // free, so gated behind `hardened` (default OFF), never on
+                    // the production hot path. `block_size(c)` is a table load.
+                    #[cfg(feature = "hardened")]
+                    {
+                        let off_h = (ptr as usize).wrapping_sub(base as usize);
+                        let bs = SizeClasses::block_size(c);
+                        if !off_h.is_multiple_of(bs) {
+                            return; // interior-pointer free — no-op
+                        }
+                    }
+
                     // ── M2 double-free guard (Э6, P6.1) ──────────────────
                     // The two exact oracles are consulted on every free (no
                     // block-body filter gates them), and the block body is never

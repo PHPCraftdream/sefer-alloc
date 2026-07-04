@@ -155,6 +155,20 @@ alloc-decommit = ["alloc-core"]
 # `src/lib.rs`.
 fastbin = ["alloc-global", "alloc-xthread"]
 production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
+# H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
+# UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
+# NOT free enough to enable unconditionally. Default OFF; NOT part of
+# `production` (the fast default). Currently gates the interior-pointer free
+# guard: on a small own-thread free it verifies `off % block_size(class) == 0`
+# before touching the M2 oracles, turning a free of a pointer that is not the
+# block start (offset not a whole number of block_sizes) into a detected no-op
+# instead of a mis-indexed bitmap read → magazine double-issue / corruption.
+# The check is a modulo by a non-power-of-two block_size (a real division, ~tens
+# of cycles) on EVERY small free, so it is honestly a paid check — hence gated
+# here, not on the production hot path. Additive over `fastbin` (the build that
+# has the magazine free path this guards); enabling it without the magazine is a
+# no-op. See README "Hardened vs production".
+hardened = ["fastbin"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
