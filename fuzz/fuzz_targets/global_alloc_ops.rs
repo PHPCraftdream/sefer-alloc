@@ -22,10 +22,11 @@
 //!
 //! `AllocCore` is the single-threaded engine under the `GlobalAlloc` face; it
 //! has a plain owned API (`new` / `alloc` / `dealloc` / `realloc` /
-//! `alloc_zeroed`) that drops cleanly per fuzz input. Installing `SeferAlloc`
-//! as the process `#[global_allocator]` would subject the libFuzzer harness's
-//! own allocations to the not-yet-hardened TLS init (see `tests/global_alloc.rs`
-//! for that caveat), which is out of scope for op-stream invariant fuzzing.
+//! `alloc_zeroed`) that drops cleanly per fuzz input. Routing the libFuzzer
+//! harness's own allocations through the installed process-wide `SeferAlloc`
+//! `#[global_allocator]` is out of scope for op-stream invariant fuzzing (the
+//! installed path is proven separately by `tests/global_alloc_installed.rs`
+//! and `examples/tokio_burn_in.rs`).
 //! The cross-thread ordering path is covered by the TSan + aarch64 CI gates and
 //! the loom harnesses, not by this single-threaded structure-aware fuzzer.
 //!

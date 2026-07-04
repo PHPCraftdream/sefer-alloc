@@ -7,11 +7,15 @@
 //! Installing `SeferAlloc` as the *process-wide* allocator for a libtest binary
 //! subjects it to libtest's harness allocations (parallel test threads, panic
 //! hooks, capture buffers, thread teardown) — a hostile, reentrancy-heavy
-//! pattern that the current TLS binding does not yet serve robustly (it returns
-//! null under reentrant/early-init access, which aborts the process). That
-//! robustness is part of the **remaining hardening** documented in
-//! `docs/ALLOC_BENCH.md` and `docs/ALLOC_PLAN.md` (Phase 11 hardening gate),
-//! NOT yet production-trusted.
+//! pattern. Since Phase 12.3 the TLS binding DOES serve this robustly (the
+//! never-null primordial fallback heap, the no-panic entry points, and the
+//! `TORN` teardown discipline — M5/M10), and that installed path is proven
+//! separately by [`tests/global_alloc_installed.rs`](global_alloc_installed.rs)
+//! and `examples/tokio_burn_in.rs` (SeferAlloc as `#[global_allocator]` under a
+//! tokio multi-thread runtime). This file deliberately uses the DIRECT
+//! `GlobalAlloc` API instead so the correctness checks below stay targeted and
+//! deterministic (a libtest binary cannot cleanly vary its global allocator
+//! per-test); it is not a statement about production-readiness.
 //!
 //! What DOES work and is proven here + by `examples/global_allocator.rs` (a
 //! real `#[global_allocator]` running a single-threaded Vec/HashMap workload to

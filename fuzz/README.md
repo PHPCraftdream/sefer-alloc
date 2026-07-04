@@ -45,9 +45,11 @@ the **M-invariants** from [`docs/INVARIANTS.md`](../docs/INVARIANTS.md):
   `min(old, new)` prefix.
 
 It targets `AllocCore` (owned, single-threaded, drops cleanly per input) rather
-than the installed `SeferAlloc` `#[global_allocator]`: installing it process-wide
-would route libFuzzer's own allocations through the not-yet-hardened TLS init
-(see [`tests/global_alloc.rs`](../tests/global_alloc.rs)). The cross-thread
+than the installed `SeferAlloc` `#[global_allocator]`: routing libFuzzer's own
+harness allocations through the process-wide allocator is out of scope for
+op-stream invariant fuzzing (the installed path is proven separately by
+`tests/global_alloc_installed.rs` and `examples/tokio_burn_in.rs`). The
+cross-thread
 ordering path is covered instead by the TSan + aarch64 CI gates and the loom
 harnesses. The run length is capped at 2048 ops; any invariant violation panics
 and is reported as a finding.

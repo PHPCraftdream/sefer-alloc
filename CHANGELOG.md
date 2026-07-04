@@ -252,6 +252,63 @@ weakened; M2 was *strengthened* in R1.
   `+fastbin`, the 1024-segment-ceiling reframe, and every verification
   counter were reconciled against verified ground truth before the tag.
 
+### Post-tag-review pass (#167 H1, #164 design, C2-regression fix)
+
+A second four-agent review of the fully-composed 0.3.0 tree, each finding
+verified by a personal counterfactual before commit.
+
+#### Added
+
+- **`hardened` feature (#167 / H1) — opt-in defence-in-depth against
+  UNSAFE-CALLER misuse, default OFF, NOT in `production`.** Adds an
+  interior-pointer free guard on **both** own-thread free faces — the
+  `SeferAlloc` per-thread magazine (`HeapCore`) and the substrate
+  (`AllocCore::dealloc_small`, which the explicit `Heap`/`with_heap` face and
+  any direct `AllocCore` user reach): a free of a pointer that is not a block
+  start (`off % block_size(class) != 0`) becomes a detected no-op instead of a
+  mis-indexed bitmap read → magazine double-issue / free-list corruption. The
+  check is a modulo-per-free (a real division), so it is honestly a paid check
+  and stays behind the feature — the `production` hot path is byte-identical.
+  The cross-thread leg is already covered unconditionally by `reclaim_offset`.
+  Other misuse vectors were cost-evaluated and honestly rejected (mismatched-
+  layout free needs a per-block size word — reintroduces the block-body write
+  Э6 removed). Pinned by `regression_hardened_interior_ptr`.
+
+#### Fixed
+
+- **C2 realloc regression (a tag blocker, found by the review):
+  `HeapCore::realloc`'s own-segment branch bypassed segment-ownership stamping
+  and the A1 deferred-large drain.** The 0.3.0 C2 optimization delegated
+  own-thread realloc straight to `AllocCore::realloc`, so a Vec grown via
+  realloc lived in an UNSTAMPED Large segment (`owner_thread_free == null`); a
+  cross-thread free of it silently no-op'd → the 4+ MiB segment and its slot
+  leaked → cumulative `MAX_SEGMENTS` exhaustion → abort. The resurrected
+  A1/#114 leak-to-abort, on the everyday "Vec grows on one thread, freed on
+  another" pattern. Fixed by mirroring `alloc`'s two hooks (stamp the result
+  when it relocated; drain when the new size is Large). Pinned by
+  `regression_realloc_xthread_stamp`.
+- **`AllocCore::reclaim_offset` panicked instead of skipping on a garbled ring
+  entry.** The class field carries 10 bits (0..1023) while only 49 classes
+  exist; a corrupted entry indexed `SIZE_CLASS_TABLE` out of bounds → panic
+  inside the `#[global_allocator]` → abort, violating the function's own
+  documented "no abort — just skip" contract. Fixed with a class-bounds check.
+  Pinned by `regression_reclaim_offset_garbled_class`.
+
+#### Internal
+
+- **CI blind spots closed:** a `windows-latest` `production` job (the
+  aligned-vmem `VirtualAlloc`/`MEM_DECOMMIT` path was only tested locally),
+  the workspace member crates' own suites (`aligned-vmem` etc.), an MSRV
+  (1.88) `cargo check`, a `production hardened` matrix row, aarch64 gains a
+  `production` cross run, and `release.yml` gains a tag==version guard + a
+  pre-publish test gate (and a fix to the root-crate `cargo pkgid` version
+  parse). The `loom_magazine_ring_compose` model and the `hardened` row were
+  also wired into CI.
+- **SAFETY / doc-rot corrections** (docs-only): the `TORN` (#129) SAFETY
+  comment no longer rests on the false "reverse TLS declaration order"
+  guarantee (rewritten to the three real reasons); the stale
+  `install_thread_free` "Box-allocates" claim corrected.
+
 ### Post-review hardening pass (#129–#143)
 
 This and the phase A–F pass below hardened 0.3.0 before its first publish:

@@ -233,7 +233,7 @@ disclaimer):
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
-The verification stack is also honest: 103 integration test files, 11 loom
+The verification stack is also honest: 106 integration test files, 11 loom
 models, proptest differential against a reference model, miri with
 strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
 aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
@@ -684,8 +684,8 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **103 integration test files** ship
-in `tests/` (92 conventional + 11 loom models — counted separately below);
+a test file, and a reproducible command. **106 integration test files** ship
+in `tests/` (95 conventional + 11 loom models — counted separately below);
 **5 example binaries** in `examples/`; **9 benches** in `benches/`
 (`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
 `large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
@@ -694,7 +694,7 @@ in `tests/` (92 conventional + 11 loom models — counted separately below);
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (103 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (106 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_bootstrap_cas.rs`, `loom_deferred_large.rs`, `loom_epoch.rs`, `loom_fallback_init.rs`, `loom_free_slots_aba.rs`, `loom_magazine_ring_compose.rs`, `loom_registry.rs`, `loom_remote_ring.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (11 models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
@@ -709,8 +709,11 @@ in `tests/` (92 conventional + 11 loom models — counted separately below);
 | Flamegraph profiling | Hot path identification per workload | `docs/PROFILE_FLAMEGRAPHS.md` (4 scenarios) |
 
 Every CI job is wired (`.github/workflows/ci.yml`) and runs on every push:
-test matrix on x86_64 + aarch64, 7 feature combinations, miri with
-strict-provenance, ThreadSanitizer, libFuzzer build, clippy, rustfmt.
+test matrix on x86_64 + aarch64 (9 feature combinations), a `windows-latest`
+`production` run, the workspace member crates' own suites, miri with
+strict-provenance, ThreadSanitizer, an MSRV (1.88) check, clippy, rustfmt.
+(libFuzzer has its own nightly/manual cadence — see `fuzz/README.md` — not a
+per-push job.)
 
 The full safety stack and the relationship between layers is documented in
 [`docs/ARCHITECTURE.md §8`](docs/ARCHITECTURE.md) and
