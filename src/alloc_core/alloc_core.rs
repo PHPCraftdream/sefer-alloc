@@ -2655,9 +2655,7 @@ impl AllocCore {
                 // `alloc-stats` feature doc in Cargo.toml.
                 #[cfg(feature = "alloc-stats")]
                 {
-                    let ctr = self
-                        .large_cache_hits_sink
-                        .unwrap_or(&self.large_cache_hits);
+                    let ctr = self.large_cache_hits_sink.unwrap_or(&self.large_cache_hits);
                     ctr.store(
                         ctr.load(core::sync::atomic::Ordering::Relaxed)
                             .wrapping_add(1),

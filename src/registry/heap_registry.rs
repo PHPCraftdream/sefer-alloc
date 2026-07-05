@@ -521,7 +521,10 @@ impl HeapRegistry {
 /// hold a reference to it yet (the caller has not published `initialised`). We
 /// form a single `&mut HeapCore` for the duration of the bind calls only.
 #[cfg_attr(
-    not(any(all(feature = "alloc-global", feature = "fastbin"), feature = "alloc-decommit")),
+    not(any(
+        all(feature = "alloc-global", feature = "fastbin"),
+        feature = "alloc-decommit"
+    )),
     allow(unused_variables)
 )]
 unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {

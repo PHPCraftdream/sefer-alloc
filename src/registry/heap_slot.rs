@@ -54,9 +54,12 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
-#[cfg(any(all(feature = "alloc-global", feature = "fastbin"), feature = "alloc-decommit"))]
+#[cfg(any(
+    all(feature = "alloc-global", feature = "fastbin"),
+    feature = "alloc-decommit"
+))]
 use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use super::heap_core::HeapCore;
 

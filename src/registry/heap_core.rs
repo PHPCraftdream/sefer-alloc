@@ -401,8 +401,7 @@ impl HeapCore {
         // `&'static` handle planted by `claim`). Reads the SAME `AtomicU64`
         // the aggregator reads, so per-heap and process-wide views agree.
         // `None` only in the pre-bind window (never on an alloc path) — 0.
-        self.tcache_hits
-            .map_or(0, |c| c.load(Ordering::Relaxed))
+        self.tcache_hits.map_or(0, |c| c.load(Ordering::Relaxed))
     }
 
     /// W3: plant the stable handle to THIS heap's slot-resident magazine

@@ -49,7 +49,10 @@ fn reclaim_offset_skips_garbled_out_of_range_class_without_panic() {
     // `dbg_push_to_ring` packs the class verbatim, so this is a genuine garbled
     // packed value — exactly what a metadata-corrupting overflow could leave.
     let pushed = ac.dbg_push_to_ring(p, GARBLED_CLASS);
-    assert!(pushed, "failed to push the fabricated garbled entry into the ring");
+    assert!(
+        pushed,
+        "failed to push the fabricated garbled entry into the ring"
+    );
 
     // Drain. Pre-fix this panics (index OOB on SIZE_CLASS_TABLE[63]); post-fix
     // the garbled entry is skipped and this returns cleanly.
@@ -58,7 +61,10 @@ fn reclaim_offset_skips_garbled_out_of_range_class_without_panic() {
     // The allocator must remain fully usable after skipping the garbled entry
     // (no corruption, no poisoned free list). A fresh alloc must still succeed.
     let p2 = ac.alloc(layout);
-    assert!(!p2.is_null(), "alloc after garbled-entry drain returned null");
+    assert!(
+        !p2.is_null(),
+        "alloc after garbled-entry drain returned null"
+    );
 
     // The garbled entry was NOT reclaimed onto any free list (it was skipped),
     // so `p` was never returned to a bin as a class-0 block via the bad path.
