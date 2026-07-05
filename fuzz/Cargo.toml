@@ -18,11 +18,18 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
-# The crate under test. `alloc-core` enables the Phase 8 segment substrate
-# (`AllocCore`) that the `global_alloc_ops` target fuzzes; the default
-# single-threaded core (`Region` / `Handle`) the `region_ops` target uses is
-# always available. Both targets share this one dependency.
-sefer-alloc = { path = "..", features = ["alloc-core"] }
+# The crate under test. One shared dependency drives all three targets:
+#   * `region_ops`       — the always-available single-threaded core
+#                          (`Region` / `Handle`), no feature needed.
+#   * `global_alloc_ops` — the Phase 8 segment substrate (`AllocCore`),
+#                          `alloc-core`.
+#   * `heap_core_ops`    — the flagship `production` face (`SeferAlloc`) with
+#                          the fastbin magazine path, `production`.
+# Cargo unifies features across this single dependency; `production` is a
+# superset (it enables `alloc-core` transitively), so building any one target
+# builds them all with the union. That is intended — the fuzz crate is a
+# hardening harness, not a minimal-feature build.
+sefer-alloc = { path = "..", features = ["production"] }
 
 # libFuzzer harness + `arbitrary` op derivation. Pinned to the versions that
 # `cargo-fuzz` scaffolds; both are fuzz-only deps and do NOT touch the main
@@ -39,5 +46,11 @@ doc = false
 [[bin]]
 name = "global_alloc_ops"
 path = "fuzz_targets/global_alloc_ops.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "heap_core_ops"
+path = "fuzz_targets/heap_core_ops.rs"
 test = false
 doc = false

@@ -166,6 +166,14 @@ pub const MAX_HEAPS: usize = 4096;
 /// structural, set in `ALLOC_PLAN.md`, and a `const _: () = assert!` below
 /// ties them together so they cannot drift).
 const ABANDON_SEG_SHIFT: u32 = 22; // log2(4 MiB)
+/// Only exists to feed the `alloc-core`-gated `const _: ()` tie-assert below;
+/// gated with the SAME `cfg` so it is not a dead constant on non-`alloc-core`
+/// builds. The `#[allow(dead_code)]` is for MSRV 1.88 only: its dead-code
+/// analysis does not count the `const _: ()` assert reference as a use, so it
+/// false-positives here (newer rustc counts it and needs no allow — the allow
+/// is simply inert there, not a suppressed real signal).
+#[cfg(feature = "alloc-core")]
+#[allow(dead_code)]
 const ABANDON_SEG_SIZE: u64 = 1u64 << ABANDON_SEG_SHIFT;
 /// Number of low bits available for the ABA tag in the abandoned-segment head
 /// packing (a segment base is `ABANDON_SEG_SIZE`-aligned, so its low

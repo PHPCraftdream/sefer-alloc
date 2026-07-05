@@ -120,6 +120,24 @@ jobs:
       # production run above.
       - run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
 
+  test-macos:
+    # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
+    # decommit path (and the BSD `MAP_ANON = 0x1000` mmap constant) actually run
+    # here — neither the Linux nor the Windows jobs exercise the XNU vmem
+    # backend. Run the flagship `production` bundle plus the decommit-touching
+    # soak / stale-ring tests explicitly so a regression in the Darwin
+    # decommit/recommit path is caught per-PR. Kept minimal, matching
+    # `test-windows`: checkout, stable toolchain, the test runs.
+    name: test macos (production)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --features production --no-fail-fast
+      # The decommit path in isolation: MADV_DONTNEED on Darwin is advisory/lazy
+      # (no zero-fill guarantee); these tests assert correctness holds regardless.
+      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit" --test decommit_soak --test decommit_stale_ring --no-fail-fast
+
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
     # member crates' own test suites (aligned-vmem — the most unsafe-critical
@@ -516,6 +534,28 @@ jobs:
         run: cargo test --features "production numa-aware" --test numa_segment_id -- --nocapture
       - name: Run numa_seam tests
         run: cargo test --features "production numa-aware" --test numa_seam -- --nocapture
+
+  fuzz-build:
+    # BUILD-ONLY gate for the libFuzzer targets (`region_ops`,
+    # `global_alloc_ops`, `heap_core_ops`). Running the fuzzers is CPU-hour
+    # heavy and lives on a separate scheduled/manual cadence (see
+    # fuzz/README.md) — this job does NOT run them. It only compiles all three
+    # targets on nightly so fuzz-target bit-rot (an API change that breaks a
+    # harness) is caught per-push, not months later at the next campaign.
+    name: fuzz targets build (nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # `cargo fuzz build` compiles every registered target under the fuzz
+      # crate (its own workspace root); no target is executed.
+      - name: Build fuzz targets
+        working-directory: fuzz
+        run: cargo +nightly fuzz build
 
   docs:
     name: rustdoc

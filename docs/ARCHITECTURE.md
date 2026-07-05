@@ -326,6 +326,11 @@ Feature `alloc-decommit` is default-off. Without it the behavior is unchanged;
 no layout changes occur (all new fields are present in every build for layout
 stability).
 
+**Platform note (macOS/XNU):** on Darwin `madvise(MADV_DONTNEED)` is advisory
+and lazy — RSS reclamation is best-effort, not the prompt Linux behavior, and
+it carries no zero-fill-on-next-access guarantee. Correctness is unaffected
+(every `alloc_zeroed` zeroes explicitly), only the RSS-reclaim timing differs.
+
 ### Key insight: no epoch reclamation (M11) needed
 
 The original Phase 12 design assumed M11 (crossbeam-epoch) was required before
@@ -451,7 +456,7 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |
-| libFuzzer | Op-stream invariants under random input | `fuzz/fuzz_targets/region_ops.rs`, `fuzz/fuzz_targets/global_alloc_ops.rs` |
+| libFuzzer | Op-stream invariants under random input | `fuzz/fuzz_targets/region_ops.rs`, `fuzz/fuzz_targets/global_alloc_ops.rs`, `fuzz/fuzz_targets/heap_core_ops.rs` (fastbin magazine) |
 | Soak harness | N-thread x hours stability | [`examples/soak_xthread.rs`](../examples/soak_xthread.rs) |
 | tokio burn-in | Live `#[global_allocator]` under async runtime | [`examples/tokio_burn_in.rs`](../examples/tokio_burn_in.rs) |
 | Macro-bench (larson / mstress) | MT throughput vs mimalloc / System | [`examples/malloc_macro.rs`](../examples/malloc_macro.rs) |

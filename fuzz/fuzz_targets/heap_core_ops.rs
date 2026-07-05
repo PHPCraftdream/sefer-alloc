@@ -1,34 +1,36 @@
-//! libFuzzer target for the Phase 8–11 allocator descent — exercises
-//! `sefer_alloc::AllocCore` (the segment substrate that `SeferAlloc` /
-//! `GlobalAlloc` is built on) with an `arbitrary`-derived stream of
-//! alloc / dealloc / realloc / alloc_zeroed ops of random sizes and
-//! alignments, checking the M-invariants from `docs/INVARIANTS.md`:
+//! libFuzzer target for the **fastbin magazine** path — drives the flagship
+//! `production` allocator face (`sefer_alloc::SeferAlloc`, the installed
+//! `#[global_allocator]` type) with an `arbitrary`-derived stream of
+//! alloc / alloc_zeroed / dealloc / realloc ops of MIXED SMALL size-classes so
+//! the per-thread magazine (tcache) fill / flush / refill machinery and its M2
+//! oracles get random coverage. It checks the same M-invariants from
+//! `docs/INVARIANTS.md` as `global_alloc_ops`:
 //!
-//! - **M1 (validity):** every returned pointer is non-null (we never exhaust
-//!   memory in a bounded run), aligned to the requested align, and writable for
-//!   the requested size (write a pattern, read it back).
-//! - **M2 (no double-free / UAF):** the model only frees live pointers; a
-//!   second `dealloc` of the same pointer is a no-op that must not corrupt the
-//!   allocator.
+//! - **M1 (validity):** every returned pointer is non-null, aligned to the
+//!   requested align, and writable for the requested size (pattern write +
+//!   read-back).
+//! - **M2 (no double-free / UAF):** the model only frees live pointers.
 //! - **M3 (no overlap):** two simultaneously-live allocations never share a
-//!   byte (checked against every live block, plus a per-block fill that would
-//!   detect cross-contamination).
-//! - **M4 (alignment & size fidelity):** the class chosen always satisfies the
+//!   byte (overlap check + a per-block fill so contamination is caught).
+//! - **M4 (alignment & size fidelity):** the returned pointer satisfies the
 //!   requested size and align.
 //! - **alloc_zeroed contract:** every byte of a zeroed allocation reads as 0.
 //! - **realloc:** the `min(old, new)` prefix is preserved.
 //!
-//! ## Why `AllocCore`, not the installed `SeferAlloc` global allocator
+//! ## Why `SeferAlloc`, not `AllocCore`
 //!
-//! `AllocCore` is the single-threaded engine under the `GlobalAlloc` face; it
-//! has a plain owned API (`new` / `alloc` / `dealloc` / `realloc` /
-//! `alloc_zeroed`) that drops cleanly per fuzz input. Routing the libFuzzer
-//! harness's own allocations through the installed process-wide `SeferAlloc`
-//! `#[global_allocator]` is out of scope for op-stream invariant fuzzing (the
-//! installed path is proven separately by `tests/global_alloc_installed.rs`
-//! and `examples/tokio_burn_in.rs`).
-//! The cross-thread ordering path is covered by the TSan + aarch64 CI gates and
-//! the loom harnesses, not by this single-threaded structure-aware fuzzer.
+//! `AllocCore` (the `global_alloc_ops` target) is the segment substrate BELOW
+//! the magazine; it never touches the fastbin/tcache layer. `SeferAlloc` is the
+//! `GlobalAlloc` face that, under the `production` (`fastbin`) feature set,
+//! routes small allocations through the per-thread magazine — the churn hot
+//! path. We call its `GlobalAlloc` methods DIRECTLY (we do NOT install it as the
+//! process `#[global_allocator]`; the harness's own allocations keep flowing
+//! through the system allocator), so a fuzz input maps to a clean owned op
+//! stream against one thread's magazine + heap.
+//!
+//! This target is single-threaded on purpose: the cross-thread ordering path is
+//! covered by the TSan + aarch64 CI gates and the loom harnesses, not by this
+//! structure-aware fuzzer.
 //!
 //! # How to run (Linux only)
 //!
@@ -36,30 +38,30 @@
 //! the `fuzz/` directory:
 //!
 //! ```text
-//! cargo +nightly fuzz run global_alloc_ops
-//! cargo +nightly fuzz run global_alloc_ops -- -max_total_time=3600
-//! cargo +nightly fuzz run global_alloc_ops -- artifact.bin
+//! cargo +nightly fuzz run heap_core_ops
+//! cargo +nightly fuzz run heap_core_ops -- -max_total_time=3600
+//! cargo +nightly fuzz run heap_core_ops -- artifact.bin
 //! ```
 
-// This target drives the allocator's raw-pointer API; the writes/reads through
-// returned pointers are inherently `unsafe`. The crate-under-test keeps its own
-// `unsafe` confined; the harness only dereferences pointers the allocator just
-// handed out for the size it was asked for.
+// This target drives the allocator's raw-pointer `GlobalAlloc` API; the
+// writes/reads through returned pointers are inherently `unsafe`. The
+// crate-under-test keeps its own `unsafe` confined; the harness only
+// dereferences pointers the allocator just handed out for the size it asked.
 
-use std::alloc::Layout;
+use std::alloc::{GlobalAlloc, Layout};
 
 use arbitrary::Arbitrary;
-use sefer_alloc::AllocCore;
+use sefer_alloc::SeferAlloc;
 
 /// One operation against the allocator, derived from fuzzer bytes by
 /// `arbitrary`. `index` fields are reduced modulo the live count so they are
-/// always in range (mirrors `tests/alloc_core_differential.rs`).
+/// always in range (mirrors `global_alloc_ops`).
 #[derive(Arbitrary, Debug)]
 enum Op {
-    Alloc { size: u32, align_pow: u8 },
-    AllocZeroed { size: u32, align_pow: u8 },
+    Alloc { size: u16, align_pow: u8 },
+    AllocZeroed { size: u16, align_pow: u8 },
     Dealloc(usize),
-    Realloc { i: usize, new_size: u32 },
+    Realloc { i: usize, new_size: u16 },
 }
 
 /// A live allocation in the reference model.
@@ -77,27 +79,21 @@ fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
     !(a + asize <= b || b + bsize <= a)
 }
 
-/// Bound a fuzzer-derived size into the small/medium range so a single op can't
-/// ask the OS for gigabytes (which would just OOM the fuzzer, not find a bug).
-/// We span the small free-list classes and a bit past the large threshold.
-fn bound_size(raw: u32) -> usize {
-    // 1 ..= ~2 MiB: covers small classes and the dedicated-segment large path.
-    (raw as usize % (2 * 1024 * 1024)) + 1
+/// Bound a fuzzer-derived size into the SMALL / MEDIUM size-class range so the
+/// magazine (fastbin) path is the one actually exercised. `u16` input caps the
+/// raw value at 65535; we map it into `1 ..= 8192` so allocations span the
+/// magazine-managed small classes with a few just past into the medium range,
+/// where the fill / flush / refill of the tcache is the hot path under test.
+fn bound_size(raw: u16) -> usize {
+    (raw as usize % 8192) + 1
 }
 
-/// Derive a power-of-two alignment in `[1, SEGMENT/2]` from a fuzzer byte.
-///
-/// SEGMENT is `1 << 22` (4 MiB). We span `2^0 .. 2^21` — up to but NOT
-/// including SEGMENT. This exercises the full `align_up` / large-align
-/// arithmetic that #130 hardened: any `align > 4096` with a sub-SEGMENT size
-/// misses every small class (`class_for` returns `None`) and routes to
-/// `alloc_large`, whose over-reserve + trim math must land a correctly-aligned
-/// pointer. `align >= SEGMENT` is deliberately excluded — that is the rejected
-/// corridor (`alloc_large` returns null by contract), covered by the unit
-/// regression tests, not here (a bounded fuzz run should not spend inputs on a
-/// guaranteed null).
+/// Derive a power-of-two alignment in `[1, 4096]` from a fuzzer byte. Small
+/// allocs keep small alignments so the routing stays on the magazine path
+/// (large alignments would divert to the dedicated-segment large path, which is
+/// the `global_alloc_ops` target's job).
 fn bound_align(raw: u8) -> usize {
-    1usize << (raw % 22) // 2^0 .. 2^21 == 1 .. 2 MiB (< SEGMENT = 4 MiB)
+    1usize << (raw % 13) // 2^0 .. 2^12 == 1 .. 4096
 }
 
 #[export_name = "rust_fuzzer_test_input"]
@@ -109,14 +105,12 @@ pub fn target(data: &[u8]) {
         Ok(iter) => iter,
         Err(_) => return, // could not start a stream; skip.
     };
-    // Each item is itself a `Result<Op>`; stop at the first decode error and cap
-    // the length so a single input can't OOM the fuzzer with a giant sequence.
     let ops: Vec<Op> = iter.take(2048).filter_map(Result::ok).collect();
 
-    let mut alloc = match AllocCore::new() {
-        Some(a) => a,
-        None => return, // primordial bootstrap failed (OS refused mmap); skip.
-    };
+    // The GlobalAlloc face. We call its methods directly rather than installing
+    // it as the process allocator: a fuzz input becomes a clean owned op stream
+    // against THIS thread's magazine + heap.
+    let alloc = SeferAlloc::new();
     let mut live: Vec<Live> = Vec::new();
     let mut next_fill: u8 = 1;
 
@@ -126,8 +120,12 @@ pub fn target(data: &[u8]) {
                 let size = bound_size(size);
                 let align = bound_align(align_pow);
                 let layout = Layout::from_size_align(size, align).unwrap();
-                let ptr = alloc.alloc(layout);
-                assert!(!ptr.is_null(), "M1: alloc returned null");
+                // SAFETY: valid non-zero-size layout; the returned pointer (if
+                // non-null) is ours for `size` bytes.
+                let ptr = unsafe { alloc.alloc(layout) };
+                if ptr.is_null() {
+                    continue; // legal alloc-failure signal; skip.
+                }
                 assert_eq!((ptr as usize) % align, 0, "M1/M4: pointer not aligned");
                 // M3: no overlap with any live allocation.
                 for other in &live {
@@ -153,8 +151,11 @@ pub fn target(data: &[u8]) {
                 let size = bound_size(size);
                 let align = bound_align(align_pow);
                 let layout = Layout::from_size_align(size, align).unwrap();
-                let ptr = alloc.alloc_zeroed(layout);
-                assert!(!ptr.is_null(), "M1: alloc_zeroed returned null");
+                // SAFETY: as in `Alloc`.
+                let ptr = unsafe { alloc.alloc_zeroed(layout) };
+                if ptr.is_null() {
+                    continue;
+                }
                 assert_eq!((ptr as usize) % align, 0, "M1/M4: not aligned");
                 // zero contract: every byte is 0.
                 unsafe {
@@ -177,10 +178,10 @@ pub fn target(data: &[u8]) {
                     let i = i % live.len();
                     let l = live.swap_remove(i);
                     let layout = Layout::from_size_align(l.size, l.align).unwrap();
-                    alloc.dealloc(l.ptr, layout);
-                    // M2: a second dealloc of the same pointer must be a no-op
-                    // that does not corrupt the allocator.
-                    alloc.dealloc(l.ptr, layout);
+                    // SAFETY: `l.ptr` was returned by this allocator for exactly
+                    // `layout` and is freed once (the model removed it from
+                    // `live`, so it is never freed again).
+                    unsafe { alloc.dealloc(l.ptr, layout) };
                 }
             }
             Op::Realloc { i, new_size } => {
@@ -190,7 +191,9 @@ pub fn target(data: &[u8]) {
                     let l = &live[i];
                     let old_layout = Layout::from_size_align(l.size, l.align).unwrap();
                     let (old_ptr, old_size, align, old_fill) = (l.ptr, l.size, l.align, l.fill);
-                    let new_ptr = alloc.realloc(old_ptr, old_layout, new_size);
+                    // SAFETY: `old_ptr` was returned for `old_layout`; `new_size`
+                    // is non-zero and forms a valid layout with `align`.
+                    let new_ptr = unsafe { alloc.realloc(old_ptr, old_layout, new_size) };
                     if new_ptr.is_null() {
                         // Realloc failed: the old block is still live & valid.
                         continue;
@@ -208,8 +211,7 @@ pub fn target(data: &[u8]) {
                         }
                     }
                     // Re-establish a fresh fill across the whole new extent so
-                    // M3 contamination checks and later reallocs stay coherent
-                    // (the grown tail is legitimately uninitialised otherwise).
+                    // M3 contamination checks and later reallocs stay coherent.
                     let fill = next_fill;
                     next_fill = next_fill.wrapping_add(1).max(1);
                     unsafe {
@@ -233,12 +235,11 @@ pub fn target(data: &[u8]) {
         }
     }
 
-    // Free all survivors, then drop the allocator (M2: no double-free, no UAF
-    // in the registry walk on drop).
+    // Free all survivors (M2: no double-free — each survivor freed exactly once).
     for l in &live {
         let layout = Layout::from_size_align(l.size, l.align).unwrap();
-        alloc.dealloc(l.ptr, layout);
+        // SAFETY: `l.ptr` was returned for `layout` and is freed exactly once.
+        unsafe { alloc.dealloc(l.ptr, layout) };
     }
     drop(live);
-    drop(alloc);
 }

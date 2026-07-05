@@ -498,9 +498,18 @@ unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, 
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize) {
+    // PLATFORM NOTE (XNU/macOS honesty): on Linux `MADV_DONTNEED` is eager —
+    // pages are dropped immediately and the next access is guaranteed to
+    // zero-fill. On macOS/XNU (and the *BSDs) `MADV_DONTNEED` is ADVISORY and
+    // LAZY: it does NOT carry Linux's zero-fill-on-next-access guarantee, and
+    // RSS reclamation is best-effort, not prompt. sefer-alloc's CORRECTNESS is
+    // unaffected — every `alloc_zeroed` path zeroes explicitly (`Node::zero` in
+    // the callers), so nothing relies on the kernel zeroing decommitted pages.
+    // Only the RSS-reclaim timing differs on Darwin.
     let len = end - start;
     // SAFETY: caller guarantees `[base+start, +len)` is within a live mapping;
-    // `madvise(MADV_DONTNEED)` discards the backing pages (re-access zero-fills).
+    // `madvise(MADV_DONTNEED)` discards the backing pages (on Linux re-access
+    // zero-fills; on XNU/*BSD the hint is lazy — see the platform note above).
     let addr = unsafe { base.add(start) };
     unsafe { libc_madvise_dontneed(addr, len) };
 }
