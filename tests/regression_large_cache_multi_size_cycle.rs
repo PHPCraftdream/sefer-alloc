@@ -20,7 +20,14 @@
 //! makes the hit-rate assertion fail (0 or near-0 hits after warmup), because
 //! every round evicts both slots before the same size comes around again.
 
-#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+// Requires `alloc-stats` (task W3): the assertion rests on the per-hit
+// `large_cache_hits` increment (via `dbg_large_cache_hits`), gated behind
+// `alloc-stats` (default OFF). Without it the counter reads 0 by design.
+#![cfg(all(
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "alloc-stats"
+))]
 
 use core::alloc::Layout;
 use sefer_alloc::AllocCore;

@@ -213,6 +213,17 @@ static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::Atomi
 // ordering requirement (the same pattern as `DBG_LARGE_XTHREAD_RECLAIMED`
 // and the new `HeapCore::tcache_hits`), and needs no `unsafe` — safe-Rust
 // atomics all the way, consistent with `#![forbid(unsafe_code)]`.
+//
+// TASK W3 (0.3.0) — the counter STORAGE moved out of `AllocCore` and into the
+// owning `HeapSlot` (`HeapSlot::large_cache_hits`), closing a formal aliasing
+// gap: the process-wide aggregator (`large_cache_hits_total`) used to
+// materialise a shared `&HeapCore`/`&AllocCore` (`(*heap_ptr).core
+// .dbg_large_cache_hits()`) over a struct the OWNING thread concurrently holds
+// a protected `&mut` into — a foreign-read of a protected `Unique`, UB under
+// Stacked Borrows. The counter now lives in the `Sync` slot; the owner reaches
+// it through a SAFE `Option<&'static AtomicU64>` handle (a raw pointer would
+// be a hard error — this module is `#![forbid(unsafe_code)]`), planted by
+// `HeapRegistry::claim` at bind time. See `HeapSlot::large_cache_hits`.
 #[cfg(feature = "alloc-decommit")]
 type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
 
@@ -304,15 +315,37 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-decommit")]
     large_cache_mode: LargeCacheMode,
 
-    /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): this `AllocCore`'s own
-    /// large-cache hit count. See the doc comment on
-    /// [`LargeCacheHitCounter`] above for why this is a per-heap field
-    /// (perf regression #133) instead of the old process-wide `static`.
-    /// Bumped (Relaxed) in `alloc_large`'s cache-hit branch, always by this
-    /// `AllocCore`'s owning thread. Read cross-thread only by the
-    /// aggregating `large_cache_hits_total` (diagnostics / `stats()`).
+    /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): this `AllocCore`'s OWNED
+    /// large-cache hit counter — the fallback target used when this heap is
+    /// NOT bound to a registry slot (a STANDALONE `AllocCore` built directly by
+    /// tests via `AllocCore::new`). For a slot-bound heap this field is left
+    /// untouched after bind: the increment and the diagnostic read are both
+    /// redirected to the slot's counter via [`large_cache_hits_sink`](Self::large_cache_hits_sink).
+    ///
+    /// Kept as an owned `AtomicU64` (not removed) precisely so the standalone
+    /// path — which has no registry slot and no cross-thread aggregator reading
+    /// it, hence no aliasing gap — still counts hits for the `AllocCore`-level
+    /// large-cache regression tests.
     #[cfg(feature = "alloc-decommit")]
     large_cache_hits: LargeCacheHitCounter,
+
+    /// TEST/DIAGNOSTIC-ONLY (task W3): stable `&'static` handle to THIS heap's
+    /// SLOT-resident large-cache hit counter
+    /// ([`HeapSlot::large_cache_hits`](crate::registry::heap_slot::HeapSlot::large_cache_hits)),
+    /// planted by `HeapRegistry::claim` via
+    /// [`bind_large_cache_hits`](Self::bind_large_cache_hits) at bind time.
+    /// See [`LargeCacheHitCounter`] above for the aliasing-gap rationale.
+    ///
+    /// `Some` for a slot-bound heap → the increment and `dbg_large_cache_hits`
+    /// go to the slot's `AtomicU64` (the SAME one the cross-thread aggregator
+    /// reads, so the views agree — and NO `&AllocCore` is ever materialised by
+    /// the aggregator). `None` for a standalone `AllocCore` → both fall back to
+    /// the owned [`large_cache_hits`](Self::large_cache_hits) field above.
+    ///
+    /// Stored as a SAFE `Option<&'static _>` (this module is
+    /// `#![forbid(unsafe_code)]` — a raw pointer would be unusable).
+    #[cfg(feature = "alloc-decommit")]
+    large_cache_hits_sink: Option<&'static LargeCacheHitCounter>,
 }
 
 impl AllocCore {
@@ -415,6 +448,12 @@ impl AllocCore {
             large_cache_mode: LargeCacheMode::Lazy,
             #[cfg(feature = "alloc-decommit")]
             large_cache_hits: LargeCacheHitCounter::new(0),
+            // W3: unbound by default; `HeapRegistry::claim` redirects this to
+            // the owning slot's counter for a registry-bound heap. Standalone
+            // `AllocCore`s (tests) stay `None` and count into the owned field
+            // above.
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits_sink: None,
         })
     }
 
@@ -2427,19 +2466,34 @@ impl AllocCore {
                 // Diagnostic (task D1): count this as a cache hit.
                 // Э5 (task #145): load+store instead of `fetch_add` — no
                 // `lock xadd`. SOUND for the same single-writer reason as
-                // `HeapCore::tcache_hits`: `large_cache_hits` is a per-heap
-                // field and `alloc_large` (its only incrementer) runs solely on
-                // the owning thread (the slot's claim-CAS winner). No other
-                // thread writes it, so splitting the atomic RMW into Relaxed
-                // load + Relaxed store cannot drop a count. The cross-thread
+                // `HeapCore::tcache_hits`: the counter is per-heap and
+                // `alloc_large` (its only incrementer) runs solely on the
+                // owning thread (the slot's claim-CAS winner). No other thread
+                // writes it, so splitting the atomic RMW into Relaxed load +
+                // Relaxed store cannot drop a count. The cross-thread
                 // `large_cache_hits_total` reader still does a Relaxed atomic
                 // load — identical visibility to the old `fetch_add(Relaxed)`.
-                self.large_cache_hits.store(
-                    self.large_cache_hits
-                        .load(core::sync::atomic::Ordering::Relaxed)
-                        .wrapping_add(1),
-                    core::sync::atomic::Ordering::Relaxed,
-                );
+                //
+                // W3: increment the SLOT's counter when this heap is bound
+                // (`large_cache_hits_sink`), else the owned fallback (standalone
+                // `AllocCore`). Same 2 mem-ops either way. Safe references
+                // throughout (forbid-unsafe).
+                //
+                // W3 Part B: gated behind `alloc-stats` (default OFF, NOT in
+                // `production`) — when off it compiles OUT of the large-cache
+                // hit path and `stats().large_cache_hits` reads 0. See the
+                // `alloc-stats` feature doc in Cargo.toml.
+                #[cfg(feature = "alloc-stats")]
+                {
+                    let ctr = self
+                        .large_cache_hits_sink
+                        .unwrap_or(&self.large_cache_hits);
+                    ctr.store(
+                        ctr.load(core::sync::atomic::Ordering::Relaxed)
+                            .wrapping_add(1),
+                        core::sync::atomic::Ordering::Relaxed,
+                    );
+                }
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
@@ -2868,8 +2922,28 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn dbg_large_cache_hits(&self) -> u64 {
-        self.large_cache_hits
+        // W3: read the SLOT's counter when bound (the SAME `AtomicU64` the
+        // aggregator reads, so per-heap and process-wide agree), else the owned
+        // fallback (standalone `AllocCore`). Safe references throughout.
+        self.large_cache_hits_sink
+            .unwrap_or(&self.large_cache_hits)
             .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// W3: plant the stable `&'static` handle to THIS heap's SLOT-resident
+    /// large-cache hit counter. Called (via `HeapCore::bind_large_cache_hits`)
+    /// by `HeapRegistry::claim` right after the slot binds, before any alloc on
+    /// this heap. Redirects all subsequent increments and diagnostic reads to
+    /// the slot's `AtomicU64`, closing the aliasing gap (see
+    /// [`LargeCacheHitCounter`]). Idempotent — the slot counter is `'static`,
+    /// so re-planting on a re-claim is a harmless no-op.
+    ///
+    /// Only reachable via the registry (`HeapRegistry::claim`, `alloc-global`);
+    /// unused in an `alloc-decommit`-without-`alloc-global` build.
+    #[cfg(feature = "alloc-decommit")]
+    #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
+    pub(crate) fn bind_large_cache_hits(&mut self, counter: &'static LargeCacheHitCounter) {
+        self.large_cache_hits_sink = Some(counter);
     }
 
     /// TEST-ONLY (Phase 1 large-cache budget): return the `usable_size` of

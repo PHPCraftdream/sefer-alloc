@@ -42,7 +42,15 @@
 //! AT LEAST the sum of what both threads observed locally — i.e. the
 //! aggregation is not dropping either heap's contribution.
 
-#![cfg(all(feature = "alloc-global", feature = "fastbin"))]
+// Requires `alloc-stats` (task W3): every assertion here rests on the per-hit
+// `tcache_hits` increment, which is gated behind `alloc-stats` (default OFF,
+// not in `production`). Without the feature the counters read 0 by design and
+// the aggregation cannot be exercised — the file is skipped.
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "alloc-stats"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -122,7 +122,12 @@ fn stats_reflects_activity() {
     // large-object alloc/free/alloc cycle and the small-object second-wave
     // churn are architected to hit feature-gated caches, asserted below.
 
-    #[cfg(feature = "alloc-decommit")]
+    // The two HIT counters (`large_cache_hits` / `tcache_hits`) only advance
+    // when the per-hit increment is compiled in — gated behind `alloc-stats`
+    // (task W3, default OFF, not in `production`). Under `production` alone they
+    // read 0 by design, so these two assertions are themselves `alloc-stats`-
+    // gated. The rest of `stats()` (segments/high-water) is unaffected.
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-stats"))]
     {
         assert!(
             after.large_cache_hits > before.large_cache_hits,
@@ -132,7 +137,7 @@ fn stats_reflects_activity() {
         );
     }
 
-    #[cfg(feature = "fastbin")]
+    #[cfg(all(feature = "fastbin", feature = "alloc-stats"))]
     {
         assert!(
             after.tcache_hits > before.tcache_hits,
@@ -168,7 +173,9 @@ fn stats_reflects_activity() {
 /// decrease it. A dropped-count regression makes the delta smaller than the
 /// hits we provably generated on THIS thread, so the lower bound is the
 /// correct, race-robust oracle.
-#[cfg(feature = "fastbin")]
+// Requires `alloc-stats` (task W3): asserts the per-hit increment is not
+// dropped, which is only compiled in under `alloc-stats`.
+#[cfg(all(feature = "fastbin", feature = "alloc-stats"))]
 #[test]
 fn tcache_hits_counter_does_not_drop_counts_under_load_store() {
     let a = SeferAlloc::new();

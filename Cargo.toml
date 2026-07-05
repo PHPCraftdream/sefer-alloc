@@ -155,6 +155,19 @@ alloc-decommit = ["alloc-core"]
 # `src/lib.rs`.
 fastbin = ["alloc-global", "alloc-xthread"]
 production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
+# Task W3 (0.3.0): opt-in per-hit DIAGNOSTIC counters. When ON, the magazine
+# (tcache) and large-segment cache HIT fast paths each bump their heap's
+# slot-resident `AtomicU64` hit counter (a Relaxed load+store, ~2 mem-ops per
+# hit), and `SeferAlloc::stats().tcache_hits` / `.large_cache_hits` report the
+# real process-wide totals. When OFF (the default, and NOT part of
+# `production`), those increments are compiled OUT of the hit fast paths and the
+# two `stats()` fields read 0. This trades a small hot-path instruction saving
+# for the loss of the two production hit-rate diagnostics; enable `alloc-stats`
+# (e.g. `--features "production alloc-stats"`) when you want the counters. The
+# counter STORAGE (the slot fields + the aggregators) is always present — only
+# the per-hit WRITE is gated — so turning the feature on/off never changes the
+# ABI/layout, and a build with it off still safely reads 0 from every slot.
+alloc-stats = []
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
 # NOT free enough to enable unconditionally. Default OFF; NOT part of

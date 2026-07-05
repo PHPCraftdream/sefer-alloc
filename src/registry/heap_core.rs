@@ -87,6 +87,20 @@ use crate::alloc_core::{node::Node, AllocCore};
 // `DBG_LARGE_XTHREAD_RECLAIMED` for the same relaxed-diagnostic pattern)
 // while remaining `#![forbid(unsafe_code)]`-clean (no seam module needed —
 // `AtomicU64` is safe-Rust top to bottom).
+//
+// TASK W3 (0.3.0) — the counter STORAGE moved out of `HeapCore` and into the
+// owning `HeapSlot` (`HeapSlot::tcache_hits`), closing a formal aliasing gap.
+// The old design put the `AtomicU64` INSIDE `HeapCore`; the process-wide
+// aggregator (`tcache_hits_total`) then materialised a shared `&HeapCore`
+// (`(*heap_ptr).tcache_hits()`) over a struct the OWNING thread concurrently
+// holds a protected `&mut` into (the `alloc(&mut self, …)` protector) — a
+// foreign-read of a protected `Unique`, UB under Stacked Borrows. Storing the
+// counter in the `HeapSlot` (which is `Sync`, designed to be shared, and
+// already read by the aggregator via `&HeapSlot` for `initialised`) lets the
+// aggregator read it WITHOUT any `&HeapCore`. The owner reaches its slot's
+// counter through the stable `*const AtomicU64` in the field below, planted by
+// `HeapRegistry::claim` right after the slot is bound. See
+// `HeapSlot::tcache_hits`.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
@@ -218,21 +232,38 @@ pub struct HeapCore {
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub(crate) tcache: super::tcache::Tcache,
 
-    /// TEST/DIAGNOSTIC-ONLY (task C1 → #133): per-heap magazine HIT counter.
-    /// See the module-level comment above [`TcacheHitCounter`] for why this
-    /// moved from a single process-wide `static` to a per-heap field (perf
-    /// regression #133 — the global counter's `lock xadd` contended and
-    /// cache-line-ping-ponged across every thread's magazine-hit fast path).
-    /// Bumped (Relaxed) by [`HeapCore::alloc`]'s magazine-hit branch — always
-    /// by THIS heap's owning thread, so the increment itself is never
-    /// contended by another thread. Read cross-thread only by the
-    /// aggregating [`tcache_hits_total`] (diagnostics / `stats()`), which is
-    /// why this stays an `AtomicU64` (Relaxed load) rather than a plain
-    /// `u64` — a plain field read from a non-owning thread without
-    /// synchronisation would be a data race (UB) despite `#![forbid(unsafe_code)]`
-    /// never being violated by the *type itself*.
+    /// TEST/DIAGNOSTIC-ONLY (task C1 → #133 → W3): stable handle to THIS
+    /// heap's magazine HIT counter, which now lives in the owning
+    /// [`HeapSlot::tcache_hits`](super::heap_slot::HeapSlot::tcache_hits) — a
+    /// `Sync`, process-`'static` slot — rather than inline in this `HeapCore`.
+    /// See the module-level comment above [`TcacheHitCounter`] for the full
+    /// aliasing-gap rationale (task W3: an aggregator materialising a shared
+    /// `&HeapCore` over a struct another thread holds a protected `&mut` into
+    /// is UB under Stacked Borrows).
+    ///
+    /// Planted by [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// immediately after the slot is bound (`bind_counters`): it points at the
+    /// slot's `AtomicU64`. Because the slot lives in the `'static` registry
+    /// array, this pointer is sound for the slot's (process) lifetime and is
+    /// never re-pointed. `null` only in the transient window before the first
+    /// bind (never observed on any alloc path — `alloc` runs only after
+    /// `claim` planted it); the increment/read helpers treat `null` as "no
+    /// counter" defensively.
+    ///
+    /// The increment (owner-only, single writer) and the cross-thread
+    /// aggregate read both go through the SAME slot `AtomicU64` (Relaxed),
+    /// so `HeapCore::tcache_hits()` and `tcache_hits_total()` agree.
+    ///
+    /// Stored as a SAFE `Option<&'static _>` (not a raw pointer): this module
+    /// is `#![deny(unsafe_code)]` with no local `allow`, so a raw-pointer
+    /// deref would be a hard error. The `&'static` is minted by
+    /// `HeapRegistry::claim` (which lives in the unsafe-permitted registry
+    /// seam) from the slot's counter and planted here — a shared reference to
+    /// a process-`'static` atomic, entirely sound to hold and read/write from
+    /// the owning thread. `None` only in the transient pre-bind window (never
+    /// observed on an alloc path).
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub(crate) tcache_hits: TcacheHitCounter,
+    pub(crate) tcache_hits: Option<&'static TcacheHitCounter>,
 
     /// OPT-C (task #66): lazy stamp cache.
     ///
@@ -294,8 +325,12 @@ impl HeapCore {
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
+            // W3: the counter now lives in the owning HeapSlot; this handle
+            // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
+            // right after the slot binds. `None` until then (never observed on
+            // any alloc path — alloc runs only after claim planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache_hits: TcacheHitCounter::new(0),
+            tcache_hits: None,
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
         })
@@ -321,8 +356,12 @@ impl HeapCore {
             thread_free: AtomicPtr::new(core::ptr::null_mut()),
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
+            // W3: the counter now lives in the owning HeapSlot; this handle
+            // is planted by `HeapRegistry::claim` (via `bind_tcache_hits`)
+            // right after the slot binds. `None` until then (never observed on
+            // any alloc path — alloc runs only after claim planted it).
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache_hits: TcacheHitCounter::new(0),
+            tcache_hits: None,
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
         })
@@ -358,7 +397,38 @@ impl HeapCore {
     #[doc(hidden)]
     #[must_use]
     pub fn tcache_hits(&self) -> u64 {
-        self.tcache_hits.load(Ordering::Relaxed)
+        // W3: read THIS heap's counter out of its owning slot (via the stable
+        // `&'static` handle planted by `claim`). Reads the SAME `AtomicU64`
+        // the aggregator reads, so per-heap and process-wide views agree.
+        // `None` only in the pre-bind window (never on an alloc path) — 0.
+        self.tcache_hits
+            .map_or(0, |c| c.load(Ordering::Relaxed))
+    }
+
+    /// W3: plant the stable handle to THIS heap's slot-resident magazine
+    /// (tcache) hit counter. Called by
+    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim) once,
+    /// right after the slot is bound (and the `HeapCore` materialised), before
+    /// any allocation on this heap runs. `counter` is a `&'static` reference to
+    /// the owning slot's `tcache_hits`. Idempotent — on a slot re-claim the
+    /// handle already references the same `'static` slot counter, so
+    /// re-planting is a harmless no-op store.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) fn bind_tcache_hits(&mut self, counter: &'static TcacheHitCounter) {
+        self.tcache_hits = Some(counter);
+    }
+
+    /// W3: plant the stable handle to THIS heap's slot-resident large-segment
+    /// cache hit counter (forwarded into the inner `AllocCore`). Same contract
+    /// as [`bind_tcache_hits`](Self::bind_tcache_hits). Gated on
+    /// `alloc-decommit` (independent of `fastbin`), mirroring
+    /// `AllocCore::large_cache_hits`'s gate.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn bind_large_cache_hits(
+        &mut self,
+        counter: &'static core::sync::atomic::AtomicU64,
+    ) {
+        self.core.bind_large_cache_hits(counter);
     }
 
     /// Phase 12.4 adoption substrate: register an adopted segment base into
@@ -600,24 +670,44 @@ impl HeapCore {
                         self.tcache.count[c] = new_cnt as u16;
                         // Э5 (task #145): load+store instead of `fetch_add` — no
                         // `lock xadd` on the churn hot path. SOUND because this
-                        // thread is the SOLE WRITER of ITS OWN `tcache_hits`: the
-                        // counter is a per-heap field and this magazine-hit path
+                        // thread is the SOLE WRITER of ITS OWN counter: it is a
+                        // per-heap/per-slot counter and this magazine-hit path
                         // runs only on the owning thread (the single-writer
                         // invariant `tls_heap.rs` establishes — `current_for_alloc`
                         // yields `Own(&mut HeapCore)` only to the thread that won
                         // the slot's claim CAS). No other thread ever increments
-                        // this field, so a non-atomic RMW split into a Relaxed
-                        // load + Relaxed store cannot lose an update. The remote
+                        // it, so a non-atomic RMW split into a Relaxed load +
+                        // Relaxed store cannot lose an update. The remote
                         // `stats()` reader (`tcache_hits_total`) still does a
                         // Relaxed atomic load and observes a monotonically
                         // non-decreasing value — identical visibility to the old
                         // `fetch_add(Relaxed)` (Relaxed gives no ordering either
                         // way; only atomicity of the single word, which `store`
                         // preserves). Only the lock prefix is dropped.
-                        self.tcache_hits.store(
-                            self.tcache_hits.load(Ordering::Relaxed).wrapping_add(1),
-                            Ordering::Relaxed,
-                        );
+                        //
+                        // W3: the counter STORAGE lives in the owning `HeapSlot`
+                        // (closing the Stacked-Borrows aliasing gap — see the
+                        // `TcacheHitCounter` module comment); `self.tcache_hits`
+                        // is the stable `&'static AtomicU64` handle `claim`
+                        // planted at bind time. `Some` on every alloc path (alloc
+                        // only runs after `claim` bound it). Same 2 mem-ops as
+                        // before, now to the slot's field rather than an inline
+                        // one. Safe reference; no `unsafe` (deny-unsafe module).
+                        //
+                        // W3 Part B: the per-hit bump is gated behind
+                        // `alloc-stats` (default OFF, NOT in `production`) —
+                        // when off it compiles OUT of the churn hot path and
+                        // `stats().tcache_hits` reads 0; when on it costs ~2
+                        // mem-ops + one `Option` branch per hit. See the
+                        // `alloc-stats` feature doc in Cargo.toml and the Part-B
+                        // Ir measurement in the task W3 report.
+                        #[cfg(feature = "alloc-stats")]
+                        if let Some(hits) = self.tcache_hits {
+                            hits.store(
+                                hits.load(Ordering::Relaxed).wrapping_add(1),
+                                Ordering::Relaxed,
+                            );
+                        }
                         return self.tcache.slots[c][new_cnt];
                     }
 

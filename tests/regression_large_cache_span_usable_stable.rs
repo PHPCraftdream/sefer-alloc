@@ -88,11 +88,17 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
     let pb = ac.alloc(lb);
     assert!(!pb.is_null(), "OOM allocating B — cannot run test");
     let hits_after = ac.dbg_large_cache_hits();
+    // The hit-COUNT assertion needs the per-hit increment, which is gated
+    // behind `alloc-stats` (task W3, default OFF). The hit itself is proven
+    // feature-independently by the slot-vacated / usable-size checks below.
+    #[cfg(feature = "alloc-stats")]
     assert_eq!(
         hits_after - hits_before,
         1,
         "B must be served as a cache HIT against A's slot (verifies we exercise the buggy path)"
     );
+    #[cfg(not(feature = "alloc-stats"))]
+    let _ = (hits_before, hits_after);
     // A's slot must have been vacated by the hit.
     assert!(
         ac.dbg_large_cache_slot_sizes().iter().all(|s| s.is_none()),

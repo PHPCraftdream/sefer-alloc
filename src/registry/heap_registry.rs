@@ -94,6 +94,13 @@ impl HeapRegistry {
                     return core::ptr::null_mut();
                 }
             }
+            // W3: plant this heap's stable handles to its slot-resident
+            // diagnostic hit counters, now that the `HeapCore` is materialised
+            // in the slot. See `bind_slot_counters`.
+            // SAFETY: we just `write`(hc) into this slot's `UnsafeCell` and are
+            // its sole writer (the FREE→LIVE CAS winner); no other thread holds
+            // a reference to it yet (`initialised` not yet published).
+            unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
             // Publish readiness: Release-store `initialised = true` ONLY
             // now that `heap_ptr.write(hc)` has fully completed (task #133
             // hardening — see `HeapSlot::initialised`'s doc comment for the
@@ -148,6 +155,11 @@ impl HeapRegistry {
                     return core::ptr::null_mut();
                 }
             }
+            // W3: plant slot-counter handles — see `claim` above and
+            // `bind_slot_counters`.
+            // SAFETY: identical to `claim` — sole writer, just materialised,
+            // not yet published.
+            unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
             // Publish readiness — see the identical store in `claim` above
             // for the full rationale (task #133 hardening).
             slot.initialised.store(true, Ordering::Release);
@@ -486,6 +498,43 @@ impl HeapRegistry {
     }
 }
 
+/// W3: plant a freshly-materialised heap's stable handles to its OWNING
+/// slot's diagnostic hit counters (`HeapSlot::tcache_hits` /
+/// `HeapSlot::large_cache_hits`). Called by `claim` / `claim_with_config`
+/// exactly once, at the slot's first claim (`new_gen == 1`), AFTER
+/// `heap_ptr.write(hc)` and BEFORE the `initialised` Release publish.
+///
+/// This is the keystone of the W3 aliasing fix: the owner increments its hit
+/// counters through these `&'static` handles into the SLOT (which is `Sync`,
+/// designed to be shared), so the process-wide aggregators
+/// (`tcache_hits_total` / `large_cache_hits_total`) can read the SAME
+/// `AtomicU64`s directly off the `&HeapSlot` they already hold — WITHOUT ever
+/// materialising a shared `&HeapCore`/`&AllocCore` over a struct the owner
+/// concurrently holds a protected `&mut` into. The slot lives in the `'static`
+/// registry array, so `&slot.<counter>` is a sound `&'static` for the process
+/// lifetime.
+///
+/// # Safety
+///
+/// `heap` must point at the `HeapCore` just written into `slot`'s `UnsafeCell`
+/// by the caller (the FREE→LIVE CAS winner, sole writer); no other thread may
+/// hold a reference to it yet (the caller has not published `initialised`). We
+/// form a single `&mut HeapCore` for the duration of the bind calls only.
+#[cfg_attr(
+    not(any(all(feature = "alloc-global", feature = "fastbin"), feature = "alloc-decommit")),
+    allow(unused_variables)
+)]
+unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
+    // SAFETY: caller's contract — `heap` is the just-written, sole-writer,
+    // not-yet-published `HeapCore` in `slot`. This exclusive `&mut` is the only
+    // live reference to it.
+    let heap_ref: &mut HeapCore = unsafe { &mut *heap };
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    heap_ref.bind_tcache_hits(&slot.tcache_hits);
+    #[cfg(feature = "alloc-decommit")]
+    heap_ref.bind_large_cache_hits(&slot.large_cache_hits);
+}
+
 // ---------------------------------------------------------------------------
 // Treiber-stack primitives on the `free_slots` stack. Module-private.
 // ---------------------------------------------------------------------------
@@ -737,9 +786,11 @@ pub fn heaps_claimed_high_water() -> u32 {
     ensure().count.load(Ordering::Relaxed)
 }
 
-/// DIAGNOSTIC (task #133): process-wide magazine (tcache) hit total —
-/// aggregated across every slot ever minted, summing each slot's
-/// [`HeapCore::tcache_hits`]. Replaces the pre-#133 single global `static`
+/// DIAGNOSTIC (task #133 → W3): process-wide magazine (tcache) hit total —
+/// aggregated across every slot ever minted, summing each slot's own
+/// [`HeapSlot::tcache_hits`] (moved there from `HeapCore` in W3 to close a
+/// Stacked-Borrows aliasing gap — the aggregator no longer materialises any
+/// `&HeapCore`). Replaces the pre-#133 single global `static`
 /// counter (`DBG_TCACHE_HITS`), which was bumped by every thread's alloc
 /// fast path and therefore a contended `lock xadd` on an otherwise
 /// per-thread hot path (the regression this function's introduction fixes —
@@ -810,21 +861,23 @@ pub fn tcache_hits_total() -> u64 {
         // SAFETY: `idx < count <= MAX_HEAPS`, so this is in range of the
         // `'static` slot array.
         let slot = unsafe { reg.slots.get_unchecked(idx) };
-        // The load-bearing gate: skip any slot whose `HeapCore` is not yet
-        // (or not ever) materialised. See the doc comment above for why
-        // `idx < count` alone does NOT imply this.
+        // The `initialised` gate (task #133): keep it for the documented
+        // ordering. With the W3 move it is no longer load-bearing for SAFETY
+        // (the counter lives in the slot itself — an un-bound slot's
+        // `tcache_hits` is a zero `AtomicU64`, sound to read and contributing
+        // 0), but a mid-mint slot must still not be summed, and the Acquire
+        // here pairs with `claim`'s Release publish for that ordering.
         if !slot.initialised.load(Ordering::Acquire) {
             continue;
         }
-        let heap_ptr = slot.heap.get().cast::<HeapCore>();
-        // SAFETY: we just observed `slot.initialised == true` under
-        // Acquire, which happens-after the claimer's Release store of that
-        // same flag (issued only once `heap_ptr.write(hc)` completed) —
-        // establishing happens-before to the write of `hc`. `heap_ptr`
-        // therefore points at a live, fully-initialised `HeapCore`.
-        // `tcache_hits()` performs only a Relaxed atomic load, sound to
-        // call via a shared reference from any thread.
-        total = total.saturating_add(unsafe { (*heap_ptr).tcache_hits() });
+        // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
+        // `(*heap_ptr).…` deref, so NO shared `&HeapCore` is ever materialised
+        // over a struct the owning thread concurrently holds a protected `&mut`
+        // into. This closes the Stacked-Borrows aliasing gap the old
+        // `(*heap_ptr).tcache_hits()` read had. Relaxed load of a shared
+        // `Sync` atomic — sound from any thread; observes the owner's
+        // monotonic single-writer increments.
+        total = total.saturating_add(slot.tcache_hits.load(Ordering::Relaxed));
     }
     total
 }
@@ -863,20 +916,19 @@ pub fn large_cache_hits_total() -> u64 {
         // SAFETY: `idx < count <= MAX_HEAPS` is in range of the `'static`
         // slot array.
         let slot = unsafe { reg.slots.get_unchecked(idx) };
-        // The load-bearing gate — see the doc comment above and
-        // `tcache_hits_total`'s (identical rationale).
+        // The `initialised` gate — see `tcache_hits_total`'s (identical
+        // rationale): kept for the documented ordering, no longer load-bearing
+        // for safety after the W3 move (the counter is in the slot itself).
         if !slot.initialised.load(Ordering::Acquire) {
             continue;
         }
-        let heap_ptr = slot.heap.get().cast::<HeapCore>();
-        // SAFETY: we just observed `slot.initialised == true` under
-        // Acquire, happens-after the claimer's Release store issued only
-        // once `heap_ptr.write(hc)` completed — establishing
-        // happens-before to that write. `heap_ptr` therefore points at a
-        // live, fully-initialised `HeapCore` (and thus `AllocCore`).
-        // `dbg_large_cache_hits()` performs only a Relaxed atomic load,
-        // sound to call via a shared reference from any thread.
-        total = total.saturating_add(unsafe { (*heap_ptr).core.dbg_large_cache_hits() });
+        // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
+        // `(*heap_ptr).core.…` deref, so NO shared `&HeapCore`/`&AllocCore` is
+        // ever materialised over a struct the owning thread concurrently holds
+        // a protected `&mut` into. This closes the Stacked-Borrows aliasing gap
+        // the old `(*heap_ptr).core.dbg_large_cache_hits()` read had. Relaxed
+        // load of a shared `Sync` atomic — sound from any thread.
+        total = total.saturating_add(slot.large_cache_hits.load(Ordering::Relaxed));
     }
     total
 }

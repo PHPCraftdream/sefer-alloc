@@ -38,6 +38,13 @@ const MATRIX = [
   // test (a representative size/align subset, 4 realloc pairs, windowed canary)
   // so it finishes in ~40s; the native (non-miri) grid is exhaustive & unchanged.
   ['alloc-core', 'stress_boundary_sweep'],
+  // W3: the stats-aggregator Stacked-Borrows counterfactual. The default
+  // (non-ignored) test asserts the W3 shape — counter read off a shared
+  // `&Slot`, never forming `&HeapCore` over the owner's protected `&mut` — is
+  // SB-clean. The `#[ignore]`d `old_pattern_is_sb_ub` in the same file
+  // reproduces the pre-W3 UB on demand (run with `-- --ignored`). Tiny and
+  // fast under miri (no segment reservation — it models the aliasing shape).
+  ['std', 'regression_w3_stats_aliasing_miri'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not

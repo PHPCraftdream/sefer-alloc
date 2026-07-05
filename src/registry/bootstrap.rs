@@ -511,11 +511,17 @@ fn ensure_slow() -> &'static Registry {
                 //     zero byte -- correct starting value, see its doc
                 //     comment on HeapSlot for why a reader must never
                 //     dereference `heap` before observing this as `true`)
+                //   tcache_hits / large_cache_hits = 0 (task W3: the slot's
+                //     own hit counters, AtomicU64::new(0) is 8 zero bytes --
+                //     an un-bound slot reads 0 and contributes nothing to the
+                //     aggregate; no explicit write needed)
                 let slots_base: *mut HeapSlot = core::ptr::addr_of_mut!((*base).slots).cast();
                 for i in 0..MAX_HEAPS {
                     // SAFETY: `i < MAX_HEAPS`, so `slots_base.add(i)` is within
-                    // the allocation. `next_free` is the last field of `HeapSlot`
-                    // (#[repr(C)]); its byte offset is stable. `AtomicU32` is
+                    // the allocation. `next_free` is addressed by name via
+                    // `addr_of_mut!` (not a hard-coded offset), so its byte
+                    // offset is resolved by the compiler and stays correct even
+                    // as other `#[repr(C)]` fields are added around it. `AtomicU32` is
                     // repr(transparent) over `UnsafeCell<u32>` which is
                     // repr(transparent) over `u32`, so writing a `u32` at the
                     // address of the `AtomicU32` is sound.

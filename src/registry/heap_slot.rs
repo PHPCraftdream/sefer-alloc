@@ -55,6 +55,8 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
+#[cfg(any(all(feature = "alloc-global", feature = "fastbin"), feature = "alloc-decommit"))]
+use core::sync::atomic::AtomicU64;
 
 use super::heap_core::HeapCore;
 
@@ -136,6 +138,35 @@ pub struct HeapSlot {
     /// because a slot that has never been claimed has never incremented any
     /// per-heap counter either).
     pub initialised: AtomicBool,
+
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
+    /// HIT counter. Lives in the SLOT — which is `Sync` and designed to be
+    /// shared — rather than inside the owner's `HeapCore`, closing a formal
+    /// aliasing gap: the process-wide aggregator
+    /// ([`super::heap_registry::tcache_hits_total`]) reads this via the
+    /// `&HeapSlot` it already holds, WITHOUT ever materialising a shared
+    /// `&HeapCore` over a struct the owning thread concurrently holds a
+    /// protected `&mut` into (a foreign-read of a protected `Unique` — UB
+    /// under Stacked Borrows). The owning thread increments this through a
+    /// stable `&'static AtomicU64` handed to its `HeapCore` at
+    /// [`super::heap_registry::HeapRegistry::claim`] time (the slot lives in
+    /// the `'static` registry array, so the reference is sound for the
+    /// process lifetime).
+    ///
+    /// Zero-initialised: an un-bound slot reads 0, so it contributes nothing
+    /// to the aggregate even before `initialised` is published. Written only
+    /// by the slot's current owner (single writer); read Relaxed by that
+    /// owner and by the cross-thread aggregator.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub tcache_hits: AtomicU64,
+
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime large-segment cache
+    /// HIT counter. Same design and rationale as [`tcache_hits`](Self::tcache_hits)
+    /// (moved into the shared slot to close the Stacked-Borrows aliasing gap);
+    /// read by [`super::heap_registry::large_cache_hits_total`] from the
+    /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
+    #[cfg(feature = "alloc-decommit")]
+    pub large_cache_hits: AtomicU64,
 }
 
 impl HeapSlot {
@@ -157,6 +188,10 @@ impl HeapSlot {
             heap: UnsafeCell::new(MaybeUninit::uninit()),
             next_free: AtomicU32::new(NEXT_FREE_TAIL),
             initialised: AtomicBool::new(false),
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache_hits: AtomicU64::new(0),
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits: AtomicU64::new(0),
         }
     }
 

@@ -37,7 +37,10 @@ use std::alloc::Layout;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{bootstrap, tcache_hits_total, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapRegistry};
+// Only the `alloc-stats`-gated hit-count test uses the aggregator (task W3).
+#[cfg(feature = "alloc-stats")]
+use sefer_alloc::registry::tcache_hits_total;
 
 // Serialise all tests in this file: the registry is a process-global static,
 // and `tcache_hits_total()` aggregates a process-wide total (matching the
@@ -75,6 +78,13 @@ impl Drop for SerialGuard {
 /// `dealloc` pushed the block into the now-unblocked magazine slot), so the
 /// counter strictly increases. This test asserts the post-fix (increases)
 /// side; the pre-fix (stays flat) side was verified manually.
+///
+/// Requires `alloc-stats` (task W3): the per-hit `tcache_hits` increment is
+/// gated behind it, so without the feature `tcache_hits_total()` stays flat by
+/// design and this assertion could not hold. The align>16 magazine ROUTING
+/// itself (the actual C1 fix) is covered feature-independently by
+/// `c1_align_over_16_correctness` below.
+#[cfg(feature = "alloc-stats")]
 #[test]
 fn c1_align_over_16_hits_magazine() {
     let _serial = SerialGuard::acquire();

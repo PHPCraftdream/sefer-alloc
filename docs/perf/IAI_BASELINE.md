@@ -3,10 +3,15 @@
 Deterministic instruction-count (`Ir`) baseline for `benches/perf_gate_iai.rs`,
 the reference future perf work (e.g. W4 `carve_batch`) diffs against.
 
-- **Commit:** `4e139b0` (`4e139b00ffe7ce7c8f63d3a4a22c214c44d24e78`, `main`)
+- **Commit:** post-W3 (`alloc-stats` gating; the W2 tombstone-rebuild is
+  Ir-neutral). Original baseline was `4e139b0`; W3 gated the per-hit stats bump
+  out of `production`, moving every hit-heavy bench BELOW the original baseline
+  (small_churn −59, cold_16b −236, recycle_16b −477). W4 (`carve_batch`) diffs
+  against THIS table.
 - **Features:** `production` (`alloc-global` + `alloc-xthread` + `alloc-decommit`
   + `fastbin`) — the same set the CI perf-gate benches with, so these numbers
-  match `.github/workflows/perf-gate.yml`.
+  match `.github/workflows/perf-gate.yml`. (`stats` counters are OFF in
+  `production`; add `alloc-stats` to restore them at ~+59/+236/+477 Ir.)
 - **How to reproduce:** `npm run iai` (from repo root). Drives the Linux-only
   bench through WSL under `valgrind --tool=callgrind` (`scripts/iai.mjs`).
 - **Runner:** `iai-callgrind-runner 0.14.2` in WSL (pinned `^0.14`, matching
@@ -20,13 +25,13 @@ the reference future perf work (e.g. W4 `carve_batch`) diffs against.
 
 | bench function              |         Ir |
 | --------------------------- | ---------: |
-| small_churn_16b             |     81,229 |
-| aligned_churn_640b_a128     |     81,108 |
-| large_alloc_free_cycle      |     72,325 |
-| realloc_grow                |  1,520,382 |
-| cold_alloc_free_256x16b     |    130,099 |
-| cold_alloc_free_256x64b     |    129,609 |
-| recycle_alloc_free_256x16b  |    182,627 |
-| recycle_alloc_free_256x64b  |    182,155 |
-| churn_256b                  |     81,104 |
-| churn_write_256b            |     81,232 |
+| small_churn_16b             |     81,170 |
+| aligned_churn_640b_a128     |     81,049 |
+| large_alloc_free_cycle      |     72,345 |
+| realloc_grow                |  1,521,067 |
+| cold_alloc_free_256x16b     |    129,863 |
+| cold_alloc_free_256x64b     |    129,373 |
+| recycle_alloc_free_256x16b  |    182,150 |
+| recycle_alloc_free_256x64b  |    181,678 |
+| churn_256b                  |     81,045 |
+| churn_write_256b            |     81,173 |

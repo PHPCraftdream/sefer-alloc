@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Stats hit counters: closed a Stacked-Borrows aliasing gap (task W3).** The
+  process-wide `stats().tcache_hits` / `.large_cache_hits` aggregators used to
+  read each heap's counter through `(*heap_ptr).…` — materialising a shared
+  `&HeapCore`/`&AllocCore` over a struct the OWNING thread concurrently holds a
+  protected `&mut` into (the `alloc(&mut self, …)` protector). That is a
+  foreign-read of a protected `Unique`: UB under Stacked Borrows (miri's default
+  model), even though it is fine under Tree Borrows. The two hit counters now
+  live in the shared, `Sync` `HeapSlot` (which the aggregator already reads via
+  `&HeapSlot` for the `initialised` flag); the owning thread increments them
+  through a stable `&'static AtomicU64` handed to its `HeapCore` at
+  `HeapRegistry::claim` time, and the aggregators read the slot's atomic
+  directly — no `&HeapCore` is ever formed. No behaviour change: the counters
+  increment exactly as before and `stats()` returns the same values.
+
+### Changed
+
+- **New `alloc-stats` feature (default OFF, not in `production`) — task W3.**
+  The per-hit increments for `tcache_hits` / `large_cache_hits` are now gated
+  behind `alloc-stats`. With it off (the default, and the `production` set), the
+  magazine (churn) and large-cache hit fast paths carry no counter bookkeeping,
+  and those two `stats()` fields read `0`; all other `stats()` fields are
+  unaffected. Measured (W1 Ir judge, `--features production`): gating the bump
+  out brings `production` *below* the pre-W3 baseline on the hit-heavy benches
+  (`small_churn_16b` −59 Ir, `churn_256b` −59 Ir, `recycle_alloc_free_256b`
+  −477 Ir, `cold_alloc_free_256b` −236 Ir) — so closing the aliasing gap is a
+  net hot-path *win* for `production`, not a regression. Enable
+  `--features "production alloc-stats"` when you poll the two hit counters. The
+  counter storage is always present (in the slot), so toggling the feature never
+  changes layout/ABI.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is

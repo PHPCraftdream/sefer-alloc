@@ -52,6 +52,14 @@ pub struct AllocStats {
     /// large-object cache (a cache hit) since process start, summed as
     /// observed process-wide. Requires the `alloc-decommit` feature; `0`
     /// otherwise.
+    ///
+    /// **Also requires the `alloc-stats` feature (task W3).** The per-hit
+    /// increment is gated behind `alloc-stats` (default OFF, and NOT part of
+    /// `production`) so the large-cache hit fast path carries no counter
+    /// bookkeeping by default. Without `alloc-stats` this field reads `0` even
+    /// when large-cache hits are occurring; build with
+    /// `--features "production alloc-stats"` (or add `alloc-stats` to your
+    /// feature set) to get the real count.
     pub large_cache_hits: u64,
 
     /// Number of M6 "decommit an emptied segment's payload pages back to the
@@ -68,6 +76,14 @@ pub struct AllocStats {
     /// cache (`fastbin` tcache hit) since process start. Requires the
     /// `fastbin` feature (which implies `alloc-global` + `alloc-xthread`);
     /// `0` otherwise.
+    ///
+    /// **Also requires the `alloc-stats` feature (task W3).** The per-hit
+    /// increment is gated behind `alloc-stats` (default OFF, and NOT part of
+    /// `production`) so the magazine (churn) hot path carries no counter
+    /// bookkeeping by default — the measured saving is a few instructions per
+    /// hit on the hottest path in the allocator. Without `alloc-stats` this
+    /// field reads `0` even when magazine hits are occurring; build with
+    /// `--features "production alloc-stats"` to get the real count.
     pub tcache_hits: u64,
 
     /// Number of times a cross-thread free could not be pushed onto a
