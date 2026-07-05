@@ -201,3 +201,100 @@ arc revisits, the trigger should be a REAL-application cache profile (not
 microbenches) showing SIZE2CLASS lines contending; the clz implementation and
 the exhaustive differential test are recoverable from this ledger entry's
 description.
+
+## X5 honest-reject (2026-07-05) — per-class segment-queue bitmap (cheapest variant)
+
+**REJECT.** The cheapest sound variant of the X5 idea — a per-segment `u64`
+bitmap of non-empty classes (bit `c` set ⟺ `BinTable.head(c) != FREE_LIST_NULL`,
+maintained at every empty↔nonempty transition, consulted by
+`find_segment_with_free` instead of loading the BinTable head cache line) — was
+implemented, proven correct by 8 dedicated regression tests (counterfactual-
+verified: disabling any one transition makes the invariant test FAIL), and
+measured against the 11-bench reference. It regressed the designated judge AND
+the won front; declined per the decision rule.
+
+### The change (recoverable from this description)
+
+- `SegmentHeader` gains one owner-only `free_classes: u64` field (header stays
+  well under PAGE; `page_map_off` unchanged). `Node::read_u64`/`write_u64`
+  added to the seam. `SegmentMeta` gains `free_classes_of` /
+  `set_free_classes` / `mark_class_free(c)` / `clear_class_free(c)`.
+- All 7 `set_head` call sites maintain the bit:
+  - empty→nonempty SET: `dealloc_small`, `flush_run` (if `old_head==NULL`),
+    `reclaim_offset`, `reclaim_offset_checked`.
+  - nonempty→empty CLEAR: `pop_free` (if `new_head==NULL`),
+    `drain_freelist_batch` (if final `head_off==NULL`).
+  - full reset: `decommit_empty_segment` does `set_free_classes(0)`; both
+    header constructors (`small`/`large`) init to 0.
+- `find_segment_with_free` replaces `bt.head(class_idx) != FREE_LIST_NULL` with
+  `(meta.free_classes_of() & (1u64 << class_idx)) != 0`.
+- Magazine push/pop (the hot path) UNTOUCHED — every touched site is the
+  refill-miss / dealloc-slow path.
+
+### Correctness (verified before measuring)
+
+8 tests in `tests/regression_x5_free_classes_bitmap.rs` (cfg `alloc-decommit`):
+`own_free_sets_bit`, `pop_to_empty_clears_bit`, `flush_run_sets_bit`,
+`batch_drain_clears_bit`, `ring_drain_sets_bit` (xthread), `decommit_clears_all`,
+`invariant_holds_across_churn` (asserts bit⟺head for ALL 49 classes after every
+op), `segment_with_free_is_found` (behavioural: a segment with a free block is
+always found — no false-OOM, no unnecessary carve). **Counterfactual-verified:**
+commenting out the `dealloc_small` `mark_class_free` makes `own_free_sets_bit`
+FAIL (`X5 invariant violated at class 3: bit_set=false head_nonempty=true`) and
+`segment_with_free_is_found` FAIL (the scan skipped the segment). Full
+`cargo test --features production` green.
+
+### Measurement (vs the Post-X1+X2+X3 reference)
+
+| bench                       | base Ir |   X5 Ir |  Δ Ir | base EC |    X5 EC |   Δ EC |
+| --------------------------- | ------: | ------: | ----: | ------: | -------: | -----: |
+| small_churn_16b             |  81,396 |  81,405 |   +9  | 326,112 |  326,334 |  +222  |
+| aligned_churn_640b_a128     |  81,405 |  81,414 |   +9  | 326,193 |  326,347 |  +154  |
+| large_alloc_free_cycle      |  72,984 |  72,989 |   +5  | 316,107 |  316,257 |  +150  |
+| realloc_grow                | 561,912 | 562,012 | +100  |3,817,567|3,817,880 |  +313  |
+| cold_alloc_free_256x16b     | 125,215 | 125,634 | +419  | 382,711 |  383,040 |  +329  |
+| cold_alloc_free_256x64b     | 125,218 | 125,619 | +401  | 388,879 |  389,539 |  +660  |
+| recycle_alloc_free_256x16b  | 179,018 | 179,828 | +810  | 447,937 |  449,311 | +1,374 |
+| recycle_alloc_free_256x64b  | 179,021 | 179,831 | +810  | 454,513 |  455,853 | +1,340 |
+| churn_256b                  |  81,396 |  81,405 |   +9  | 326,112 |  326,266 |  +154  |
+| churn_write_256b            |  81,524 |  81,533 |   +9  | 326,402 |  326,556 |  +154  |
+| **multiseg_cold_256k**      | 111,642 | 111,915 |+273  | 383,061 |  383,547 |  +486  |
+
+### Why it regressed (the mechanism)
+
+The bitmap is a NET COST at n=3 segments because the maintenance (a
+read-modify-write on every empty↔nonempty transition: load `free_classes`, OR/
+AND a mask, store) runs on the DEALLOC slow path that these benches exercise on
+EVERY freed block whose segment's class list transitions, while the saving (one
+BinTable-head cache line replaced by one u64 load on the refill-miss scan) is
+collected only on `find_segment_with_free` — which at n=3 is a 3-iteration walk.
+The scan was never the bottleneck: the BinTable head load and the `free_classes`
+load sit in the SAME cache line as the header already read for `kind_at`, so the
+"avoid a BinTable-line load" premise DOES NOT HOLD here — there is no extra cache
+line to avoid (the header line is already hot). The +9 Ir on the churn benches
+(the won front, ±10 kill threshold) is the per-dealloc `old_head == FREE_LIST_NULL`
+branch + the `1u64 << class_idx` compute, paid even when the bit is already set
+(nonempty→nonempty, the common churn case). Recycle's +810 / cold's +400 is the
+RMW cost amplified across the many transitions those benches drive.
+
+### Why the real payoff needs 100+ segments (and no current bench models that)
+
+The O(n_segments) scan only hurts when `find_segment_with_free` walks MANY
+segments that DO NOT have the wanted class. At n=3 (the designated judge) the
+walk is 3 iterations and every segment's header line is already resident; the
+bitmap cannot win. The structural argument for X5 only materialises at
+n_segments ≫ 3, where (a) the scan cost grows linearly and (b) the BinTable
+heads of distant segments stop being in cache. A real server with 100+ long-
+lived small segments (the scenario the task names) is NOT modelled by any
+current bench; `multiseg_cold_256k` spans only 3. So this is an HONEST REJECT
+**for the measured regime**, not a refutation of the idea: the variant is
+correctness-proven and recoverable, and a future arc that adds a ≥64-segment
+bench (or profiles a real application) may flip the verdict. The shape to revisit
+is the FULL per-class queue (skip non-matching segments entirely, not just a
+per-segment bit probe), since the bitmap variant already loses to the BinTable
+load at n=3 and the queue's only extra cost is the linked-list link maintenance
+— which is the same RMW that already regressed here, so even the queue would need
+the large-n scan to amortise it. Recorded so the next reader does not re-run the
+same bitmap variant blind.
+
+Final tree after X5 = pristine `490974d` (zero diff; nothing shipped).
