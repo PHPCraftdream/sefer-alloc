@@ -120,7 +120,10 @@ fn full_ring_overflow_across_wrap() {
     let cap = RING_CAP as u32;
     let entries: Vec<u32> = (0..cap).map(entry_for).collect();
     for (i, &e) in entries.iter().enumerate() {
-        assert!(ring.push(e).is_ok(), "push {i} inside RING_CAP must succeed");
+        assert!(
+            ring.push(e).is_ok(),
+            "push {i} inside RING_CAP must succeed"
+        );
     }
     // Ring full: occupancy == RING_CAP.
     let (h, t) = ring.dbg_cursors();
@@ -133,7 +136,11 @@ fn full_ring_overflow_across_wrap() {
         ring.push(overflow_entry).is_err(),
         "push into a full ring must return Err(PushOverflow)"
     );
-    assert_eq!(ring.overflow_count(), 1, "overflow counter must bump exactly once");
+    assert_eq!(
+        ring.overflow_count(),
+        1,
+        "overflow counter must bump exactly once"
+    );
 
     // Drain fully — only the RING_CAP non-overflowed entries, in FIFO order.
     let mut got = Vec::new();
@@ -162,7 +169,11 @@ fn occupancy_across_wrap_is_wrapping_sub() {
     // Pure arithmetic invariant first (independent of the ring instance).
     let head: u32 = u32::MAX - 1;
     let tail: u32 = 3;
-    assert_eq!(tail.wrapping_sub(head), 5, "wrapping_sub occupancy must be 5");
+    assert_eq!(
+        tail.wrapping_sub(head),
+        5,
+        "wrapping_sub occupancy must be 5"
+    );
 
     // Now the real ring: preset head = u32::MAX-1, then push 5 (tail: MAX-1,
     // MAX, 0, 1, 2 → ends at 3, crossing the wrap). Occupancy reads 5 and a
@@ -292,7 +303,10 @@ fn concurrent_hammer_across_wrap() {
     // reclaimed count matches distinct entries seen (all counts == 1).
     assert_eq!(reclaimed as usize, map.len(), "reclaimed == distinct seen");
     // Every Ok push is eventually drained.
-    assert_eq!(succeeded, reclaimed, "every succeeded push must be reclaimed");
+    assert_eq!(
+        succeeded, reclaimed,
+        "every succeeded push must be reclaimed"
+    );
     // Master identity across the wrap.
     assert_eq!(
         reclaimed + overflow,
