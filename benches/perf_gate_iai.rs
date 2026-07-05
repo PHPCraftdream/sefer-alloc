@@ -337,6 +337,54 @@ fn churn_write_256b() {
     }
 }
 
+// X5 judge seed — multi-segment cold alloc/free. The future X5 work targets
+// per-class segment queues; this bench forces the allocator to REGISTER
+// MULTIPLE small segments for ONE size class and then scan them on the second
+// round's allocs (`find_segment_with_free` walks every registered segment of
+// the class when the magazine + primordial freelist are drained). Geometry:
+// the largest small size class is 258,752 B (≈253 KiB), and one 4 MiB segment
+// holds 16 such blocks; so `MULTISEG_BATCH` (34) allocations span 3 segments
+// (16 + 16 + 2). Round 1 allocates 34 distinct blocks — draining the magazine,
+// carving segment 1, then registering + carving segments 2 and 3 — and frees
+// them all. Round 2 allocates 34 again: with the magazine drained and every
+// block back on the segment freelists, each alloc's magazine-refill calls
+// `find_segment_with_free`, which must walk the 3 registered segments. This is
+// the exact path X5's segment-queue reordering will speed up; the cold
+// first-segment carve (round 1) is the floor X5 cannot beat. The block size
+// (256 KiB requests, served by the largest small class — NOT literal 16 B
+// blocks) is chosen so a handful of allocations span multiple segments; 16 B
+// blocks would need ~260k allocations to fill one segment, far too many for
+// callgrind's <1M-Ir budget. Kept FAST: 2 × 34 = 68 allocs + 68 frees of a
+// cache-cold large-small class — total work comparable to the existing cold
+// benches (well under 1M Ir; the per-alloc cost is dominated by the segment
+// scan, not a 253 KiB memcpy, since these are fresh freelist pops).
+#[cfg(target_os = "linux")]
+const MULTISEG_BLOCK: usize = 256 * 1024;
+#[cfg(target_os = "linux")]
+const MULTISEG_BATCH: usize = 34;
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn multiseg_cold_256k() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(MULTISEG_BLOCK, 8).unwrap();
+    let mut ptrs: [*mut u8; MULTISEG_BATCH] = [core::ptr::null_mut(); MULTISEG_BATCH];
+    for _round in 0..2 {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two)
+            // alignment.
+            *slot = unsafe { sefer.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the
+                // same layout, and is freed exactly once per round.
+                unsafe { sefer.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -351,6 +399,7 @@ library_benchmark_group!(
         recycle_alloc_free_256x64b,
         churn_256b,
         churn_write_256b,
+        multiseg_cold_256k,
 );
 
 #[cfg(target_os = "linux")]

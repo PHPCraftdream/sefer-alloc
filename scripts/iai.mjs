@@ -1,4 +1,5 @@
-// Deterministic instruction-count (Ir) perf judge via WSL + Valgrind/Callgrind.
+// Deterministic instruction-count (Ir) + cache-aware cycle perf judge via WSL
+// + Valgrind/Callgrind.
 //
 // Why this exists: the crate's `iai-callgrind` perf gate
 // (benches/perf_gate_iai.rs) is Linux-only — it compiles a normal binary, then
@@ -7,6 +8,23 @@
 // run-to-run on the same binary+input regardless of host contention, so on this
 // Windows dev host we can PROVE a perf change (via WSL) instead of waiting for
 // Linux CI. Wall-clock on Windows is noise; Ir is the judge.
+//
+// WHY CYCLES, NOT JUST Ir (task X3 / #184): Callgrind's cache simulation is ON,
+// so the runner also prints L1 Hits, L2 (last-level) Hits, RAM Hits, and
+// "Estimated Cycles" per bench (`= L1 + 5·L2 + 35·RAM`, callgrind's default
+// cost model). Ir alone is BLIND to a critical regression class: it counts a
+// `udiv` (a pure-ALU instruction) and a cache-MISSING load (a multi-hundred-
+// cycle stall) IDENTICALLY — both retire as exactly 1 Ir. A change that swaps
+// an in-register divide for an extra uncached memory access can be Ir-neutral
+// or even Ir-NEGATIVE while being a large real-world pessimization; conversely
+// a memcpy-elimination (X1's in-place Large realloc) can look modest in Ir but
+// collapse in cycles. Estimated Cycles surfaces exactly that: the X-arc's
+// memcpy floors show up as ~22× the cycle gap Ir alone reports (19×), because
+// the cache-miss cost of the copies is invisible to Ir but real in cycles. We
+// surface BOTH: Ir stays the PASS/FAIL judge (it is the deterministic,
+// threshold-friendly metric CI regresses on); the cache columns are best-effort
+// SIGNAL (a missing column must NOT fail the run — older callgrind builds, or a
+// bench run with `--cache-sim=no`, simply omit them; we print "-" instead).
 //
 // Usage (from repo root):
 //   node scripts/iai.mjs                          # all perf_gate benches
@@ -133,41 +151,91 @@ async function ensureRunner() {
 }
 
 /**
- * Parse iai-callgrind stdout into { benchName -> Ir }.
+ * Parse iai-callgrind stdout into per-bench metric rows.
  *
  * iai-callgrind prints one block per bench, headed by a line like
  *   `perf_gate_iai::perf_gate::cold_alloc_free_256x16b ...`
- * followed by an indented metrics table whose Instructions row looks like
+ * followed by an indented metrics table whose rows look like
  *   `  Instructions:              12345|N/A     (...)`   (first run, no baseline)
  *   `  Instructions:              12345|12345   (No change)` (with baseline)
- * The FUNCTION NAME is the last `::`-separated segment of the header. `Ir` is
- * the "Instructions" metric (callgrind's Ir event). We take the first numeric
- * column (the current run's absolute count), which is baseline-independent.
+ * With cache-sim ON (the runner default), the same block also emits rows right
+ * after `Instructions:`:
+ *   `  L1 Hits:                   141802|N/A    (...)`
+ *   `  L2 Hits:                   64|N/A        (...)`
+ *   `  RAM Hits:                  5201|N/A      (...)`
+ *   `  Estimated Cycles:          324157|N/A    (...)`
+ * The FUNCTION NAME is the last `::`-separated segment of the header. We take
+ * the first numeric column (the current run's absolute count) of each row,
+ * which is baseline-independent. `Ir` is the "Instructions" metric; the four
+ * cache rows are best-effort (older callgrind / `--cache-sim=no` omit them —
+ * the caller treats a missing cache field as "-" and must NOT fail on it).
+ *
+ * Returns an array of `{ name, ir, l1, l2, ram, cycles }` where the cache
+ * fields are `null` when the corresponding row was absent for that bench.
  */
-function parseIr(out) {
+function parseMetrics(out) {
   const lines = out.split(/\r?\n/);
   const results = [];
   let current = null;
   const headerRe = /^([A-Za-z_][\w]*::)+([A-Za-z_]\w*)\b/;
-  const instrRe = /^\s*Instructions:\s*([\d,]+)/;
+  // Each metric row: leading whitespace, a fixed label, then the first integer
+  // (with optional thousands separators) is the current-run absolute count.
+  const rowRe = (label) =>
+    new RegExp(`^\\s*${label}:\\s*([\\d,]+)`);
+  const instrRe = rowRe('Instructions');
+  const l1Re = rowRe('L1 Hits');
+  const l2Re = rowRe('L2 Hits');
+  const ramRe = rowRe('RAM Hits');
+  const cycRe = rowRe('Estimated Cycles');
+  const num = (m) => (m ? Number(m[1].replace(/,/g, '')) : null);
   for (const line of lines) {
     const h = headerRe.exec(line);
     if (h) {
+      // A new bench header finalizes any in-progress row that never saw an
+      // Instructions line (defensive — should not happen, but keeps a malformed
+      // block from corrupting the next one).
       current = h[2];
+      // Defer push until we see Instructions (the produced-signal gate).
       continue;
     }
     const im = instrRe.exec(line);
     if (im && current) {
       const ir = Number(im[1].replace(/,/g, ''));
       if (Number.isFinite(ir)) {
-        results.push({ name: current, ir });
-        current = null;
+        results.push({
+          name: current,
+          ir,
+          l1: null,
+          l2: null,
+          ram: null,
+          cycles: null,
+        });
+        // Keep `current` pointing at this bench so the cache rows that follow
+        // (no header between them and the Instructions row) attach to it. The
+        // next header line resets `current`.
+      }
+      continue;
+    }
+    // Cache rows attach to the most-recently produced bench.
+    if (current && results.length) {
+      const last = results[results.length - 1];
+      if (last.name === current) {
+        let m;
+        if ((m = l1Re.exec(line))) last.l1 = num(m);
+        else if ((m = l2Re.exec(line))) last.l2 = num(m);
+        else if ((m = ramRe.exec(line))) last.ram = num(m);
+        else if ((m = cycRe.exec(line))) last.cycles = num(m);
       }
     }
   }
-  // De-dupe by name, keep first occurrence (one Instructions row per bench).
+  // De-dupe by name, keep first occurrence (one block per bench).
   const seen = new Set();
   return results.filter((r) => (seen.has(r.name) ? false : seen.add(r.name)));
+}
+
+/** Format an integer with thousands separators, or "-" for null/undefined. */
+function fmt(n) {
+  return n == null || !Number.isFinite(n) ? '-' : n.toLocaleString('en-US');
 }
 
 function printTable(rows) {
@@ -176,10 +244,20 @@ function printTable(rows) {
     return;
   }
   const w = Math.max(...rows.map((r) => r.name.length), 'bench'.length);
-  console.log(`\n  ${'bench'.padEnd(w)}  ${'Ir'.padStart(14)}`);
-  console.log(`  ${'-'.repeat(w)}  ${'-'.repeat(14)}`);
+  // Column widths sized for the largest value seen (realloc_grow ~1.5M Ir,
+  // ~7.2M cycles) so the table stays aligned across all benches.
+  const cw = 12;
+  const head = (s) => s.padStart(cw);
+  console.log(
+    `\n  ${'bench'.padEnd(w)}  ${head('Ir')}  ${head('L1')}  ${head('L2')}  ${head('RAM')}  ${head('EstCycles')}`,
+  );
+  console.log(
+    `  ${'-'.repeat(w)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}`,
+  );
   for (const r of rows) {
-    console.log(`  ${r.name.padEnd(w)}  ${String(r.ir).padStart(14)}`);
+    console.log(
+      `  ${r.name.padEnd(w)}  ${fmt(r.ir).padStart(cw)}  ${fmt(r.l1).padStart(cw)}  ${fmt(r.l2).padStart(cw)}  ${fmt(r.ram).padStart(cw)}  ${fmt(r.cycles).padStart(cw)}`,
+    );
   }
 }
 
@@ -193,7 +271,7 @@ try {
   console.log('\n[iai] running benches...\n');
   const { code, out } = await run('wsl', ['bash', '-lc', benchCmd()]);
   const compileErr = /^error(\[|:)/m.test(out);
-  const allRows = parseIr(out);
+  const allRows = parseMetrics(out);
   const rows = allRows.filter((r) => wanted(r.name));
   printTable(rows);
 

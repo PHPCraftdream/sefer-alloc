@@ -114,3 +114,39 @@ than the 19× seen in `Ir` alone: the cache-miss cost of the copies is invisible
 to `Ir` but real in cycles. X1 (in-place growth within the already-mapped
 `span_usable`) removes the copy entirely on the fits-in-span path, so the cycle
 metric should collapse even harder than `Ir`.
+
+## Post-X1+X2+X3 reference (2026-07-05) — the CURRENT 11-bench table
+
+After X1 (OPT-G in-place Large realloc, `754eee5`), X2 (#164 drain-side
+magazine check, `7441dcc`) and X3 (judge upgrade: cache columns in
+`scripts/iai.mjs` + the new `multiseg_cold_256k` bench). **Future diffs are
+taken against THIS table** — adding the 11th bench fn shifted every old
+bench's Ir via pure binary layout (identical benches shifted identically:
+both cold +1,160, both recycle +2,066, small_churn/churn_256b both +321;
+`large`/`realloc_grow` only +2), so the 10-bench numbers above are retired
+as reference points.
+
+| bench                       |        Ir |    L1 hits | L2 hits | RAM hits | Est. Cycles |
+| --------------------------- | --------: | ---------: | ------: | -------: | ----------: |
+| small_churn_16b             |    81,396 |    142,717 |     160 |    5,217 |     326,112 |
+| aligned_churn_640b_a128     |    81,405 |    142,728 |     160 |    5,219 |     326,193 |
+| large_alloc_free_cycle      |    72,984 |    132,617 |     158 |    5,220 |     316,107 |
+| realloc_grow                |   561,912 |  1,173,997 |   3,973 |   74,963 |   3,817,567 |
+| cold_alloc_free_256x16b     |   125,215 |    195,546 |     172 |    5,323 |     382,711 |
+| cold_alloc_free_256x64b     |   125,218 |    195,369 |     174 |    5,504 |     388,879 |
+| recycle_alloc_free_256x16b  |   179,018 |    260,572 |     170 |    5,329 |     447,937 |
+| recycle_alloc_free_256x64b  |   179,021 |    260,383 |     172 |    5,522 |     454,513 |
+| churn_256b                  |    81,396 |    142,717 |     160 |    5,217 |     326,112 |
+| churn_write_256b            |    81,524 |    142,972 |     160 |    5,218 |     326,402 |
+| multiseg_cold_256k          |   111,642 |    189,151 |     184 |    5,514 |     383,061 |
+
+**The X-arc headline, in both judges:** `realloc_grow` Ir 1,520,714 →
+561,912 (**−63%**, X1 in-place growth + X2's magazine-routed realloc
+alloc-leg) and Estimated Cycles 7,206,236 → 3,817,567 (**−47%**; RAM hits
+92,240 → 74,963 — the memcpy floors are gone on every fits-in-span step).
+X2's accepted documented costs (see commit `7441dcc`): +~630 Ir one-time
+bootstrap per heap claim and ~+30 Ir per refill-miss; hot magazine push/pop
+untouched (churn per-op below the pre-X2 baseline once the one-time constant
+is excluded). `multiseg_cold_256k` (new, X3) is the designated judge for X5
+(per-class segment queues): 34 × 256 KiB allocations span 3 segments and the
+second round's refills walk all three via `find_segment_with_free`.
