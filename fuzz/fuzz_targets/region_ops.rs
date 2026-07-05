@@ -32,6 +32,9 @@
 
 #![forbid(unsafe_code)]
 
+#![no_main]
+
+use libfuzzer_sys::fuzz_target;
 use std::hint::black_box;
 
 use arbitrary::Arbitrary;
@@ -84,12 +87,11 @@ enum Op {
 // across runs, so instead we accumulate into a static and reset per call.
 static DROPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// The entry point: libFuzzer feeds raw `data`, `arbitrary` shapes it into a
-/// bounded `Vec<Op>`, and we replay it against a `Region<Payload>` checked
-/// against the reference model. Any invariant violation panics, which
-/// libFuzzer reports as a finding.
-#[export_name = "rust_fuzzer_test_input"]
-pub fn target(data: &[u8]) {
+// The entry point: libFuzzer feeds raw `data`, `arbitrary` shapes it into a
+// bounded `Vec<Op>`, and we replay it against a `Region<Payload>` checked
+// against the reference model. Any invariant violation panics, which
+// libFuzzer reports as a finding.
+fuzz_target!(|data: &[u8]| {
     // Reset the drop counter for this input's I5 accounting.
     DROPS.store(0, std::sync::atomic::Ordering::Relaxed);
 
@@ -211,4 +213,4 @@ pub fn target(data: &[u8]) {
 
     // Keep the optimizer from eliding the whole replay.
     black_box(());
-}
+});

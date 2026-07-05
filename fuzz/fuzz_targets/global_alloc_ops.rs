@@ -46,6 +46,9 @@
 // `unsafe` confined; the harness only dereferences pointers the allocator just
 // handed out for the size it was asked for.
 
+#![no_main]
+
+use libfuzzer_sys::fuzz_target;
 use std::alloc::Layout;
 
 use arbitrary::Arbitrary;
@@ -100,8 +103,7 @@ fn bound_align(raw: u8) -> usize {
     1usize << (raw % 22) // 2^0 .. 2^21 == 1 .. 2 MiB (< SEGMENT = 4 MiB)
 }
 
-#[export_name = "rust_fuzzer_test_input"]
-pub fn target(data: &[u8]) {
+fuzz_target!(|data: &[u8]| {
     // Shape the raw bytes into a bounded op stream. Cap the length so a single
     // input cannot OOM the fuzzer with a giant sequence.
     let mut decoder = arbitrary::Unstructured::new(data);
@@ -241,4 +243,4 @@ pub fn target(data: &[u8]) {
     }
     drop(live);
     drop(alloc);
-}
+});
