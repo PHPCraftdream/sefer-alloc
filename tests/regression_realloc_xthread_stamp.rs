@@ -84,13 +84,13 @@ fn realloc_growth_segment_is_stamped_and_reclaims_xthread() {
 
     const N: usize = 60;
     // Both sizes are comfortably above `SMALL_MAX`, so each is unambiguously
-    // routed to `AllocCore::alloc_large`. The grow from OLD to NEW is a
-    // large→large grow — it cannot resize the original dedicated Large
-    // segment in place, so `AllocCore::realloc` carves a fresh, larger
-    // dedicated Large segment for the result (the segment that pre-fix went
-    // un-stamped).
-    const OLD: usize = 512 * 1024;
-    const NEW: usize = 1024 * 1024;
+    // routed to `AllocCore::alloc_large`. The grow from OLD to NEW MUST cross
+    // segment boundaries (exceed `span_usable`) so OPT-G does NOT fire and
+    // `AllocCore::realloc` carves a FRESH, larger dedicated Large segment for
+    // the result (the segment that pre-fix went un-stamped). OLD occupies one
+    // 4 MiB segment; NEW at 5 MiB exceeds that span, forcing relocation.
+    const OLD: usize = 3 * 1024 * 1024; // 3 MiB — fits one 4 MiB segment
+    const NEW: usize = 5 * 1024 * 1024; // 5 MiB — exceeds one segment
     let old_layout = Layout::from_size_align(OLD, 8).unwrap();
     let new_layout = Layout::from_size_align(NEW, 8).unwrap();
 

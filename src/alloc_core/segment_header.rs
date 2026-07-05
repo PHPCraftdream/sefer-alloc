@@ -526,6 +526,38 @@ impl SegmentHeader {
         Node::read_u32(Node::offset(base, off) as *const u32)
     }
 
+    /// Read the header's `span_usable` field only (field-specific `usize`
+    /// load). For large segments this is the PHYSICAL committed usable span
+    /// (the full OS reservation rounded to whole segments). Used by
+    /// `AllocCore::realloc` to decide whether an in-place Large grow fits
+    /// without reallocation.
+    ///
+    /// `span_usable` is written once at segment construction
+    /// (`SegmentHeader::large`) or carried forward verbatim on a cache-hit
+    /// reuse — never mutated in place field-by-field — so a field-specific
+    /// read here does not race with the owner's disjoint `bump` writes (same
+    /// discipline as `kind_at`/`large_size_at`).
+    #[inline(always)]
+    pub(crate) fn span_usable_at(base: *mut u8) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, span_usable);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
+    /// Overwrite the header's `large_size` field only (field-specific `usize`
+    /// store, mirroring `large_size_at`'s read). Used by `AllocCore::realloc`
+    /// to update the logical allocation size after an in-place Large grow
+    /// (the segment's physical span is unchanged — only the recorded size
+    /// advances).
+    ///
+    /// Safety discipline: called ONLY by the owning thread's `realloc` path,
+    /// which is the single writer for this segment. The field sits at a fixed
+    /// offset disjoint from `bump` / `owner_state`, so no cross-field race.
+    #[inline(always)]
+    pub(crate) fn set_large_size_at(base: *mut u8, size: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, large_size);
+        Node::write_usize(Node::offset(base, off) as *mut usize, size);
+    }
+
     /// TEST-ONLY (task #135): overwrite the header's `segment_id` field only
     /// (field-specific write, mirroring `segment_id_at`'s read). Used by
     /// `AllocCore::dbg_stamp_segment_id` to exercise `SegmentTable::unregister`'s

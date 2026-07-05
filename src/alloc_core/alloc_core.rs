@@ -1277,6 +1277,17 @@ impl AllocCore {
         SegmentHeader::set_segment_id_at(os::segment_base_of_ptr(ptr), id);
     }
 
+    /// TEST-ONLY (OPT-G regression): read the `large_size` field from the
+    /// header of `ptr`'s segment. Uses a direct field read (same pattern as
+    /// `large_size_at` but without the `alloc-xthread` feature gate) so
+    /// integration tests can verify the stored value after an in-place realloc.
+    #[doc(hidden)]
+    pub fn dbg_large_size_of(&self, ptr: *mut u8) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        let off = core::mem::offset_of!(SegmentHeader, large_size);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
     /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
     /// `ptr`'s segment, for a public integration test (which cannot call the
     /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed lookup
@@ -1377,9 +1388,15 @@ impl AllocCore {
     /// and alloc-bitmap stay intact (the block is still "live" under the same
     /// segment, just now described by a smaller `Layout`).
     ///
-    /// The short-circuit applies ONLY to small (non-large) segments. Large
-    /// blocks occupy a dedicated segment and there is no class to compare
-    /// against, so they always take the full alloc+copy+dealloc path.
+    /// The small short-circuit applies ONLY to small (non-large) segments.
+    ///
+    /// **OPT-G — in-place Large→Large realloc:** when the block lives in a
+    /// Large segment and the grown size (clamped to `MIN_BLOCK`) still fits
+    /// the segment's `span_usable`, we update the header's `large_size` and
+    /// return the same pointer. Shrinks fall through to the slow path
+    /// (reclaims RSS). The stored size is clamped to `MIN_BLOCK` to stay
+    /// symmetric with the alloc path and the #138 cross-thread consistency
+    /// check (`large_layout_consistent`).
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
     /// Returns null on failure, leaving the old allocation intact. Safe: a
@@ -1387,6 +1404,67 @@ impl AllocCore {
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
+        }
+        // OPT-G: in-place short-circuit for Large→Large realloc when the
+        // grown size still fits the segment's already-committed physical span.
+        //
+        // Preconditions (all must hold to take the fast path):
+        //   1. The pointer lives in one of OUR segments (registered in the
+        //      table).
+        //   2. The segment kind is `Large` (dedicated single-allocation
+        //      segment). Huge is excluded conservatively — only Large segments
+        //      have a verified committed-span guarantee via `span_usable`.
+        //   3. GROW or SAME size only (clamped: `new_eff >= old_eff`). A
+        //      shrink falls through to the slow path, which reclaims RSS by
+        //      moving the payload to a smaller segment/class.
+        //   4. The grown payload fits the committed span:
+        //      `payload_offset + new_eff <= span_usable` (checked add to
+        //      guard against usize wrap on pathological sizes).
+        //
+        // MIN_BLOCK clamping: the alloc path clamps every request to
+        // `MIN_BLOCK` before storing `large_size` in the header. The #138
+        // cross-thread consistency check (`large_layout_consistent`) compares
+        // the header value against `layout_size.max(MIN_BLOCK)`. We must
+        // clamp identically here so a later cross-thread free does not see
+        // `raw != clamped` and silently drop the free — permanently leaking
+        // the segment + its SegmentTable slot (#114/#130 class).
+        //
+        // Soundness:
+        //   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
+        //       NOT by the passed layout. A grown-in-place block stays a Large
+        //       segment, so `dealloc(ptr, new_layout)` frees the whole segment
+        //       correctly regardless of `new_size`.
+        //   (b) `crates/vmem` reserves large segments with
+        //       `VirtualAlloc(MEM_RESERVE|MEM_COMMIT)` over the WHOLE span;
+        //       the large-cache keeps pages committed on deposit. The entire
+        //       `span_usable` region is committed and writable — growing into
+        //       it cannot fault.
+        //   (c) Large reservations round UP to whole SEGMENT (4 MiB) multiples,
+        //       so e.g. a 512 KiB large alloc owns a full 4 MiB committed span
+        //       and can grow to ~4 MiB in place.
+        //
+        // When all hold: update the header's `large_size` to the CLAMPED
+        // `new_eff` and return the SAME pointer. The grown tail is
+        // uninitialised (matching `GlobalAlloc`).
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if self.table.contains_base(base) && SegmentHeader::kind_at(base) == SegmentKind::Large
+            {
+                let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
+                let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
+                if new_eff >= old_eff {
+                    let payload_off = ptr as usize - base as usize;
+                    let span_usable = SegmentHeader::span_usable_at(base);
+                    if let Some(end) = payload_off.checked_add(new_eff) {
+                        if end <= span_usable {
+                            // Fits: update the logical size (clamped) and
+                            // return the same pointer.
+                            SegmentHeader::set_large_size_at(base, new_eff);
+                            return ptr;
+                        }
+                    }
+                }
+            }
         }
         // OPT-F: in-place short-circuit for small→small realloc within the
         // SAME size class.
