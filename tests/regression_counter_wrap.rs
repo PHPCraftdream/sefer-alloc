@@ -129,7 +129,10 @@ fn empty_sentinel_never_collides_with_a_live_index() {
     // The sentinel index (0xFFFF = 65535) is strictly above MAX_HEAPS (4096),
     // so it can never be a real slot index — no producer/consumer collision.
     const MAX_HEAPS: u64 = 4096;
-    assert!(
+    // Compile-time invariant (a runtime `assert!` on two consts trips
+    // clippy::assertions_on_constants): the empty sentinel index must be
+    // >= MAX_HEAPS so it can never be a real slot index.
+    const _: () = assert!(
         DBG_INDEX_MASK >= MAX_HEAPS,
         "the empty sentinel index must be >= MAX_HEAPS so it is a non-index"
     );
