@@ -18,6 +18,63 @@ W1–W6, both driven by fresh `/fxx` audits with per-fix counterfactuals), the
 **post-review hardening pass** (#129–#143), and the **initial phase A–F pass**.
 Sections below are grouped per workstream.
 
+### Performance & correctness — the X-arc (#182–#188, 2026-07-05/06)
+
+The post-W7 arc that attacked the last "cardinal" costs found by a fresh
+audit. Judge-driven end to end: every change was measured by the
+deterministic callgrind judge (`npm run iai`) against a pinned reference
+table, adversarially reviewed, and either kept with numbers or
+honest-rejected with numbers (four experiments were rejected — the ledger in
+[`docs/perf/IAI_BASELINE.md`](docs/perf/IAI_BASELINE.md) records all
+tables so no experiment is re-run blind).
+
+- **X1 — OPT-G in-place Large→Large realloc growth (#182).** When the grown
+  size (clamped to `MIN_BLOCK`, symmetric with the #138 consistency check)
+  still fits the segment's committed `span_usable`, `realloc` updates the
+  header's `large_size` and returns the SAME pointer — zero alloc/copy/
+  dealloc. Large reservations round up to whole 4 MiB segments and `vmem`
+  commits the entire span, so growth cannot fault; `dealloc` routes Large
+  frees by segment kind, so the grown block frees correctly. Shrinks still
+  take the slow path (RSS reclaim preserved). An adversarial review caught
+  (and a counterfactual test now pins) a MIN_BLOCK-clamp leak the first cut
+  had. `realloc_grow`: **1,520,714 → 617,859 Ir**.
+- **X2 — #164 narrowed: drain-side magazine check (#183).** The ring↔magazine
+  cross-thread double-free residual was closed on its *in-magazine leg*: the
+  owner's ring drain now consults an `is_in_magazine` predicate (generic
+  closure threaded from `HeapCore` via split borrows) immediately before
+  linking, on ALL production drains — refill-miss, the realloc alloc-leg
+  (rerouted through the magazine-aware `HeapCore::alloc`; the blind path was
+  found by adversarial review), and the dbg seam. A magazine-resident block's
+  ring entry is dropped; the magazine copy stays canonical. The *re-issue-
+  before-drain* leg is **proven** information-theoretically indistinguishable
+  from a delayed genuine cross-thread free (design doc §8 impossibility
+  postscript) — full closure needs generational ring entries (X7, hardened,
+  future arc). Costs accepted and documented: +~630 Ir one-time bootstrap
+  per heap claim, ~+30 Ir per refill-miss; hot magazine push/pop untouched.
+  Bonus: `realloc_grow` → **561,910 Ir** (the alloc-leg now hits the
+  magazine). loom green model + two new counterfactual regression tests.
+- **X3 — judge upgrade (#184).** `scripts/iai.mjs` now surfaces the full
+  callgrind metric set (Ir | L1 | L2 | RAM | Estimated Cycles) — Ir counts a
+  `udiv` and a cache-missing load identically, cycles do not; the X-arc's own
+  memcpy story is the proof (realloc_grow Ir −63% but cycles −47% with RAM
+  hits 92,240 → 74,963). New `multiseg_cold_256k` bench (3-segment scan
+  judge, seeded for future segment-queue work). `docs/perf/FAULT_PROBE.md`
+  records the honest negative verdict on a WSL2 page-fault judge.
+- **X4/X5/X6 — four honest-rejects with full tables (#185–#187).**
+  Magazine CAP 16→32 (every bench regressed, recycle +32,305 — the target
+  itself); a 64-bit bloom gating the M2 in-magazine scan (recycle −19k but
+  churn +980 — the won front is not traded); clz `class_for` vs the 16 KiB
+  SIZE2CLASS LUT (bitwise-identical over 8.28M pairs, but Estimated Cycles
+  regressed on 10/11 benches); a per-segment free-classes bitmap for the
+  segment scan (every bench regressed incl. the designated judge). All four
+  experiments' mechanisms and revisit-triggers are in the ledger.
+- **X-arc headline:** `realloc_grow` **1,520,714 → 561,912 Ir (−63 %)** and
+  **7,206,236 → 3,817,567 Estimated Cycles (−47 %)**; all other benches within
+  documented cold constants of their pre-arc values; every M2/D1 guarantee
+  intact and one double-free leg newly closed. X7 (hardened generational ring
+  entries — the only path to the remaining, proven-undetectable double-free
+  leg) is scoped in the design doc §8.4 as a future arc.
+
 ### Performance — the P0–P7 "beat mimalloc on small/medium" arc (#144–#163)
 
 A seven-phase perf campaign against `mimalloc` on the two fronts where 0.3.0
