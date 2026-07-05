@@ -406,6 +406,39 @@ change was verified by a personal counterfactual and committed between phases.
   (`regression_realloc_xthread_stamp`, `regression_heap_xthread_large_free_no_leak`)
   to the ThreadSanitizer list.
 
+### Long-run durability pass — counter-wrap hardening (W7)
+
+Auditing what happens on ultra-long runs (days/weeks of uptime, billions of
+ops): every monotonic/wrapping counter was enumerated and its wrap boundary
+either made unreachable (widen/repack, at proven-zero hot-path cost) or pinned
+and tested across the boundary. **Honest framing: none of these was a live bug
+today** — the pass makes long-run robustness auditable and future-proof. The
+full inventory is [`docs/DURABILITY.md`](docs/DURABILITY.md).
+
+- **W7a — `HeapSlot::generation` → `AtomicU64`; `TaggedPtr` repacked to
+  `index:16 | tag:48`.** Generation wrapped at 2^32 thread-deaths (reachable on
+  a thread-per-request server over months) — though it turned out to be consumed
+  only by a `== 1` first-materialise gate, with the stale-TLS hazard actually
+  guarded by the `TORN` sentinel, so the wrap was defence-in-depth, not a live
+  ABA. The `free_slots` ABA tag was 32-bit (the documented probabilistic wrap);
+  repacking the index half from 32 to 16 bits (MAX_HEAPS = 4096 needs 13, pinned
+  by a `const` assert) gives the tag 48 bits → wrap at ~89 years. Generation is
+  Ir byte-identical; the repack is a uniform −4 Ir (a *decrease*, from the
+  cheaper bootstrap `empty()` constant — cold path). Boundary tests in
+  `regression_counter_wrap` preset each counter near its limit and cross it.
+- **W7b — pinned the `RemoteFreeRing` u32 cursor wrap.** The per-segment ring's
+  `head`/`tail` genuinely wrap on a long run (2^32 cross-thread frees on one hot
+  segment — reachable), but the ring is wrap-SAFE by design (`wrapping_sub`
+  occupancy + `i % RING_CAP` indexing, whose continuity across `u32::MAX` needs
+  `2^32 % RING_CAP == 0`). That power-of-two dependency was unstated — now a
+  `const` assert — and `regression_ring_cursor_wrap` drives the real ring across
+  the boundary (FIFO order, full-ring overflow, occupancy, and a concurrent
+  hammer). Counterfactuals confirm both guards bite. Ir byte-identical.
+- **W7c — `docs/DURABILITY.md`.** The authoritative counter inventory (width /
+  wrap semantics / reachability arithmetic / verdict / covering test) and the
+  rule that a new monotonic counter lands only with a row here + a
+  boundary-crossing test, proven Ir-neutral.
+
 ### Post-review hardening pass (#129–#143)
 
 This and the phase A–F pass below hardened 0.3.0 before its first publish:

@@ -235,7 +235,7 @@ disclaimer):
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
-The verification stack is also honest: 109 integration test files, 11 loom
+The verification stack is also honest: 111 integration test files, 11 loom
 models, proptest differential against a reference model, miri with
 strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
 aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
@@ -686,8 +686,8 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **109 integration test files** ship
-in `tests/` (98 conventional + 11 loom models — counted separately below);
+a test file, and a reproducible command. **111 integration test files** ship
+in `tests/` (100 conventional + 11 loom models — counted separately below);
 **5 example binaries** in `examples/`; **9 benches** in `benches/`
 (`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
 `large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
@@ -696,7 +696,7 @@ in `tests/` (98 conventional + 11 loom models — counted separately below);
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (109 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (111 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_bootstrap_cas.rs`, `loom_deferred_large.rs`, `loom_epoch.rs`, `loom_fallback_init.rs`, `loom_free_slots_aba.rs`, `loom_magazine_ring_compose.rs`, `loom_registry.rs`, `loom_remote_ring.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (11 models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
@@ -811,6 +811,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/PHASE35_DECOMMIT_DESIGN.md`](docs/PHASE35_DECOMMIT_DESIGN.md) | M6 decommit + why no epoch reclamation is needed |
 | [`docs/PHASE_NUMA_DESIGN.md`](docs/PHASE_NUMA_DESIGN.md) | NUMA-aware path design |
 | [`docs/CROSS_THREAD_STATE_MACHINES.md`](docs/CROSS_THREAD_STATE_MACHINES.md) | The cross-thread-free state-machine spec |
+| [`docs/DURABILITY.md`](docs/DURABILITY.md) | Ultra-long-run counter inventory: every monotonic/wrapping cursor, its wrap arithmetic, verdict, and boundary test |
 | [`docs/RACE_DRAIN_RECLAIM.md`](docs/RACE_DRAIN_RECLAIM.md) | The §13 / §14 race investigation (the four "peelings") |
 | [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md) | Full benchmark results, OPT-E numbers, honest verdicts |
 | [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) | Per-thread tcache magazine design (P0–P6), full sweep, win/loss ledger, production decision |
