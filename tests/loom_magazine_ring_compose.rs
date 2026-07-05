@@ -22,57 +22,30 @@
 //!   `in_magazine` — the bug.
 //! - OWNER drain (`drain`): `ring` nonempty && !bitmap_free → set bitmap_free
 //!   (models `reclaim_offset` marking P free on the BinTable).
-//!
-//! # The invariant and the hole
-//!
-//! Safety invariant checked after each step:
-//!
-//! > `!(in_magazine && bitmap_free)`
-//!
-//! A block must never be simultaneously issuable from the magazine AND resting
-//! on the BinTable free list — that is exactly the double-issue / freelist-
-//! corruption state. Under TODAY's transition rules loom FINDS the interleaving
-//! that reaches `in_magazine && bitmap_free`:
-//!
-//!   REMOTE: ring.store(P)  →  OWNER own_free: bits clear → set in_magazine
-//!                          →  OWNER drain: ring nonempty & !bitmap_free → set bitmap_free
-//!   ⇒ in_magazine && bitmap_free — VIOLATION.
+//! - OWNER drain_checked (`drain_checked`, task #164): `ring` nonempty &&
+//!   !bitmap_free → IF `in_magazine` → DROP the ring entry (do NOT set
+//!   bitmap_free); ELSE → set bitmap_free (genuine xfree). Models the §5
+//!   fallback (a)-closure: the drain sees the magazine.
 //!
 //! # Test shape
 //!
-//! Because the model documents a hole that is REAL today, the primary test is a
-//! `#[should_panic]` COUNTERFACTUAL: it asserts loom DOES find the violation
-//! (proving the hole is present and the model is non-vacuous). If it ever stops
-//! panicking, either the hole was fixed (update the model per #164's new
-//! transition rules and flip this to the green invariant test) or the model
-//! went vacuous.
+//! - `compose_finds_double_issue_hole_pre164` (`#[should_panic]`): proves the
+//!   hole EXISTS under the old drain rules (ring NOT visible to own_free,
+//!   drain blind to magazine). Historical counterfactual — the model is
+//!   non-vacuous because loom finds the violating interleaving.
 //!
-//! A companion `#[ignore]`d test (`compose_naive_ring_check_still_holed`) shows
-//! WHY the fix is a genuine design task (#164) and not a one-line guard: the
-//! obvious "make `own_free` also consult the ring" patch (its `ring_visible`
-//! flag) does NOT close the hole. loom still finds a SYMMETRIC leg — the
-//! interleaving where the own-thread free runs BEFORE the remote free is even
-//! published (`own_free` sees an empty ring → sets `in_magazine`), then the
-//! remote publishes and the owner drains (→ sets `bitmap_free`) → the same
-//! `in_magazine && bitmap_free` violation. So this companion test is ALSO a
-//! `#[should_panic]` counterfactual (the naive fix is still holed), marked
-//! `#[ignore]` so it does not clutter the default run; it is the concrete
-//! evidence #164 must reason about (a correct fix needs the drain to also see
-//! the magazine, or a per-block conflict record — not merely a ring-read on the
-//! own-free path). When #164 lands, replace it with the green invariant test
-//! for whatever transition rules the real fix establishes.
+//! - `compose_drain_sees_magazine_invariant_holds` (GREEN, task #164): under
+//!   the FIXED drain rules (`drain_checked` — drain sees the magazine),
+//!   the invariant `!(in_magazine && bitmap_free)` HOLDS on both temporal
+//!   legs. This is the green invariant test that the file's own instructions
+//!   (lines 60-63) said to add when #164 lands.
 //!
 //! # How to run
 //!
 //! ```sh
 //! RUSTFLAGS="--cfg loom" cargo test --features alloc-global,alloc-xthread \
-//!   --test loom_magazine_ring_compose -- --ignored   # the should_panic ones run normally
+//!   --test loom_magazine_ring_compose
 //! ```
-//!
-//! NOTE (for the orchestrator): this file is intentionally NOT registered in
-//! `scripts/loom.mjs`'s runner list — its primary test PANICS BY DESIGN
-//! (documenting the #164 hole), which would turn `npm run loom` CI red. Wire it
-//! into the runner only once #164 flips it to the green invariant form.
 
 #![cfg(loom)]
 
@@ -105,11 +78,7 @@ impl Compose {
     }
 
     /// OWNER own-thread free of P — the Э6 two-oracle guard.
-    ///
-    /// `ring_visible` models the #164 FIX: when true, `own_free` also treats a
-    /// pending ring entry as "already freed" and no-ops (closing the hole).
-    /// Today (production) it is FALSE: the guard is blind to the ring.
-    fn own_free(&self, ring_visible: bool) {
+    fn own_free(&self) {
         // (1) in-magazine scan oracle.
         if self.in_magazine.load(Ordering::Acquire) {
             return; // in-magazine double-free — no-op
@@ -118,21 +87,37 @@ impl Compose {
         if self.bitmap_free.load(Ordering::Acquire) {
             return; // flushed double-free — no-op
         }
-        // (#164 fix) ring oracle — absent in production today.
-        if ring_visible && self.ring.load(Ordering::Acquire) == P_TOKEN {
-            return; // cross-thread free already pending — no-op
-        }
-        // Both (all) oracles clear → push into the magazine.
+        // Both oracles clear → push into the magazine.
         self.in_magazine.store(true, Ordering::Release);
     }
 
-    /// OWNER drain of the ring — models `reclaim_offset` marking P free on the
-    /// BinTable and consuming the ring entry.
+    /// OWNER drain of the ring — OLD rules (pre-#164): blind to the magazine.
+    /// Models `reclaim_offset` marking P free on the BinTable.
     fn drain(&self) {
         if self.ring.load(Ordering::Acquire) == P_TOKEN && !self.bitmap_free.load(Ordering::Acquire)
         {
             self.bitmap_free.store(true, Ordering::Release);
             self.ring.store(RING_EMPTY, Ordering::Release);
+        }
+    }
+
+    /// OWNER drain of the ring — FIXED rules (task #164, §5 fallback (a)):
+    /// the drain sees the magazine. When `ring` is nonempty AND `in_magazine`
+    /// is set, the ring entry is a duplicate free of a magazine-resident block
+    /// → DROP it (do NOT set `bitmap_free`). Only when `in_magazine` is false
+    /// does the drain mark `bitmap_free` (genuine cross-thread free).
+    fn drain_checked(&self) {
+        if self.ring.load(Ordering::Acquire) == P_TOKEN && !self.bitmap_free.load(Ordering::Acquire)
+        {
+            if self.in_magazine.load(Ordering::Acquire) {
+                // Magazine-resident: DROP the ring entry — the magazine copy
+                // is the sole canonical reference.
+                self.ring.store(RING_EMPTY, Ordering::Release);
+            } else {
+                // Genuine cross-thread free: link onto the BinTable.
+                self.bitmap_free.store(true, Ordering::Release);
+                self.ring.store(RING_EMPTY, Ordering::Release);
+            }
         }
     }
 
@@ -142,16 +127,16 @@ impl Compose {
     }
 }
 
-/// COUNTERFACTUAL / documentation test: under TODAY's rules (ring NOT visible
-/// to `own_free`) loom finds an interleaving that violates the invariant —
+/// HISTORICAL COUNTERFACTUAL (pre-#164): under the OLD drain rules (drain
+/// blind to magazine) loom finds an interleaving that violates the invariant —
 /// `in_magazine && bitmap_free` — the ring↔magazine double-issue state.
 ///
 /// `#[should_panic]` because loom explores the interleaving where the hole is
-/// hit. If this ever passes (no panic) WITHOUT a corresponding #164 fix, the
-/// model has gone vacuous — investigate before trusting it.
+/// hit. If this ever passes (no panic) WITHOUT a corresponding fix, the model
+/// has gone vacuous.
 #[test]
 #[should_panic(expected = "RING↔MAGAZINE HOLE")]
-fn compose_finds_double_issue_hole_today() {
+fn compose_finds_double_issue_hole_pre164() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
@@ -167,8 +152,8 @@ fn compose_finds_double_issue_hole_today() {
         // then drain the ring. Both orderings are explored by loom.
         let c_owner = Arc::clone(&c);
         let owner = thread::spawn(move || {
-            c_owner.own_free(false); // production: ring NOT visible
-            c_owner.drain();
+            c_owner.own_free(); // production: ring NOT visible
+            c_owner.drain(); // OLD: blind to magazine
         });
 
         remote.join().unwrap();
@@ -184,24 +169,20 @@ fn compose_finds_double_issue_hole_today() {
     });
 }
 
-/// WHY #164 is a design task, not a one-line guard: the obvious "make
-/// `own_free` also consult the ring" patch (`ring_visible = true`) does NOT
-/// close the hole. loom still finds a SYMMETRIC leg — the own-thread free runs
-/// BEFORE the remote free is published (`own_free` sees an empty ring → sets
-/// `in_magazine`), then the remote publishes and the owner drains (→ sets
-/// `bitmap_free`) → the same `in_magazine && bitmap_free` violation.
+/// GREEN invariant test (task #164): under the FIXED drain rules
+/// (`drain_checked` — drain sees the magazine), the invariant
+/// `!(in_magazine && bitmap_free)` HOLDS on BOTH temporal legs.
 ///
-/// So this is a `#[should_panic]` counterfactual (the NAIVE fix is still
-/// holed), `#[ignore]`d so it stays out of the default run. It is the concrete
-/// evidence #164 must reason about: a correct fix needs the DRAIN to also see
-/// the magazine (or a per-block conflict record), not merely a ring-read on the
-/// own-free path. When #164 lands, replace this with the green invariant test
-/// for the real fix's transition rules and retire
-/// `compose_finds_double_issue_hole_today`.
+/// Leg 1 (remote-before-own): `ring.store → own_free sets in_magazine →
+/// drain_checked sees in_magazine → DROP (no bitmap_free)` → invariant holds.
+///
+/// Leg 2 (own-before-remote): `own_free sets in_magazine → ring.store →
+/// drain_checked sees in_magazine → DROP (no bitmap_free)` → invariant holds.
+///
+/// This encodes DRAIN-SIDE resolution (the drain sees the magazine), not an
+/// own_free ring-read (which the companion counterfactual proved insufficient).
 #[test]
-#[ignore = "documents the #164 hole; naive ring-read fix is still holed — replaced by a green invariant test when #164 lands"]
-#[should_panic(expected = "RING↔MAGAZINE HOLE")]
-fn compose_naive_ring_check_still_holed() {
+fn compose_drain_sees_magazine_invariant_holds() {
     let mut builder = loom::model::Builder::new();
     builder.preemption_bound = Some(3);
     builder.check(|| {
@@ -214,8 +195,8 @@ fn compose_naive_ring_check_still_holed() {
 
         let c_owner = Arc::clone(&c);
         let owner = thread::spawn(move || {
-            c_owner.own_free(true); // NAIVE fix: ring visible to the guard
-            c_owner.drain();
+            c_owner.own_free();
+            c_owner.drain_checked(); // #164 FIX: drain sees the magazine
         });
 
         remote.join().unwrap();
@@ -223,9 +204,8 @@ fn compose_naive_ring_check_still_holed() {
 
         assert!(
             c.invariant_holds(),
-            "RING↔MAGAZINE HOLE (task #164): even with own_free reading the ring, \
-             the own-free-before-remote-publish leg still reaches \
-             in_magazine && bitmap_free — the naive ring-read fix is insufficient."
+            "RING↔MAGAZINE HOLE (task #164): invariant violated under the \
+             fixed drain_checked rules — the fix is broken."
         );
     });
 }

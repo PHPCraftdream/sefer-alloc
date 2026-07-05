@@ -355,6 +355,7 @@ impl AllocCore {
     /// Returns `None` only if the OS refuses the primordial reservation (OOM at
     /// startup).
     #[must_use]
+    #[inline]
     pub fn new() -> Option<Self> {
         #[cfg(feature = "alloc-decommit")]
         return Self::new_with_config(super::large_cache_config::LargeCacheConfig::DEFAULT);
@@ -389,6 +390,7 @@ impl AllocCore {
     /// ```
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
+    #[inline]
     pub fn new_with_config(config: super::large_cache_config::LargeCacheConfig) -> Option<Self> {
         let mut core = Self::new_inner()?;
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
@@ -400,6 +402,7 @@ impl AllocCore {
     /// Inner bootstrap: reserve the primordial segment and hand-carve its
     /// self-hosted metadata. All feature-gated fields are set to their
     /// defaults here; `new_with_config` then overwrites the decommit knobs.
+    #[inline]
     fn new_inner() -> Option<Self> {
         let prim = bootstrap::primordial()?;
         let primordial_base = prim.segment.as_ptr();
@@ -750,9 +753,89 @@ impl AllocCore {
     /// Safe: a foreign segment (magic mismatch), a large segment, or an offset
     /// that is not `block_size`-aligned is a no-op (defence-in-depth). Applies
     /// the M2 double-free guard.
+    /// Task #164: variant of `reclaim_offset` that consults an `is_in_magazine`
+    /// predicate AFTER all existing guards and BEFORE `write_next`. If the
+    /// predicate returns `true` (block is magazine-resident), the ring entry is
+    /// a duplicate free → return `false` without linking (no `write_next`, no
+    /// `mark_free`, no `dec_live`). The magazine copy remains the sole canonical
+    /// reference. Closes the in-magazine leg of the ring↔magazine cross-thread
+    /// double-free residual (task #164, §5 fallback (a)-closure).
+    ///
+    /// `F` receives `(ptr: *mut u8, class_idx: usize)` and must return `true`
+    /// if the block is currently resident in the owner's magazine for that class.
+    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
+    pub(crate) fn reclaim_offset_checked<F: Fn(*mut u8, usize) -> bool>(
+        base: *mut u8,
+        packed: u32,
+        small_cur: *mut u8,
+        is_in_magazine: &F,
+    ) -> bool {
+        let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
+        let off = off as usize;
+        let class_idx = class_idx as usize;
+        if class_idx >= super::size_classes::SMALL_CLASS_COUNT {
+            return false;
+        }
+        let ptr = Node::deref(base, off);
+        if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
+            return false;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return false;
+        }
+        let bs = SizeClasses::block_size(class_idx) as u32;
+        if !(off as u32).is_multiple_of(bs) {
+            return false;
+        }
+        let meta = SegmentMeta::new(base);
+        #[cfg(feature = "alloc-decommit")]
+        if off >= meta.bump_of() {
+            return false;
+        }
+        let mut bt = meta.bin_table();
+        let mut bm = meta.alloc_bitmap();
+        if bm.is_free(off as u32) {
+            return false;
+        }
+        // Task #164 (§5 fallback (a)-closure): the block's bitmap reads
+        // "allocated". Before linking it onto the freelist (which would
+        // clobber its word0 via `write_next`), consult the magazine. If the
+        // block IS magazine-resident, this ring entry is the duplicate leg of
+        // a cross-thread double-free — DROP it (keep the magazine copy, no
+        // link, no mark_free, no dec_live).
+        if is_in_magazine(ptr, class_idx) {
+            return false;
+        }
+        let block_nn = match NonNull::new(ptr) {
+            Some(nn) => nn,
+            None => return false,
+        };
+        let old_head = bt.head(class_idx);
+        let old_head_ptr = if old_head == FREE_LIST_NULL {
+            core::ptr::null_mut()
+        } else {
+            Node::deref(base, old_head as usize)
+        };
+        Node::write_next(block_nn, old_head_ptr);
+        bt.set_head(class_idx, off as u32);
+        bm.mark_free(off as u32);
+        #[cfg(feature = "alloc-decommit")]
+        {
+            Self::dec_live_and_maybe_decommit(base, small_cur)
+        }
+        #[cfg(not(feature = "alloc-decommit"))]
+        false
+    }
+
     #[cfg(feature = "alloc-xthread")]
     // `small_cur` is consumed only by the `alloc-decommit` dec-then-decommit
     // step; without that feature the reclaim path does no live-count bookkeeping.
+    // Under fastbin, `reclaim_offset_checked` is used instead (dead_code expected).
+    #[cfg_attr(feature = "fastbin", allow(dead_code))]
     #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
     pub(crate) fn reclaim_offset(base: *mut u8, packed: u32, small_cur: *mut u8) -> bool {
         // Unpack the offset and the class the cross-thread freer stamped.
@@ -1154,6 +1237,26 @@ impl AllocCore {
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_drain_all_rings(&mut self) {
+        // Default: no magazine predicate (non-fastbin callers, or
+        // AllocCore-level tests that have no magazine).
+        self.dbg_drain_all_rings_impl(&|_, _| false);
+    }
+
+    /// Task #164: variant with an explicit magazine predicate, called from
+    /// `HeapCore::dbg_drain_all_rings` to exercise the production decision path.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+    pub fn dbg_drain_all_rings_checked<F: Fn(*mut u8, usize) -> bool>(
+        &mut self,
+        is_in_magazine: &F,
+    ) {
+        self.dbg_drain_all_rings_impl(is_in_magazine);
+    }
+
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(not(feature = "fastbin"), allow(unused_variables))]
+    #[inline]
+    fn dbg_drain_all_rings_impl<F: Fn(*mut u8, usize) -> bool>(&mut self, is_in_magazine: &F) {
         // Index-driven scan (task #126), mirroring `find_segment_with_free`:
         // `base_at(i)` is a self-contained read with no borrow tied to the
         // loop, so it can be freely interleaved with `self.table.recycle`
@@ -1173,13 +1276,17 @@ impl AllocCore {
             #[cfg(feature = "alloc-decommit")]
             let mut decommit_happened = false;
             ring.drain(|off| {
+                #[cfg(feature = "fastbin")]
+                let reclaimed = Self::reclaim_offset_checked(base, off, small_cur, is_in_magazine);
+                #[cfg(not(feature = "fastbin"))]
+                let reclaimed = Self::reclaim_offset(base, off, small_cur);
                 #[cfg(feature = "alloc-decommit")]
-                if Self::reclaim_offset(base, off, small_cur) {
+                if reclaimed {
                     decommit_happened = true;
                 }
                 #[cfg(not(feature = "alloc-decommit"))]
                 {
-                    let _ = Self::reclaim_offset(base, off, small_cur);
+                    let _ = reclaimed;
                 }
             });
             #[cfg(feature = "alloc-decommit")]
@@ -1545,6 +1652,66 @@ impl AllocCore {
         new_ptr
     }
 
+    /// Task #164: try the two in-place realloc fast paths (Large grow-in-span,
+    /// Small same-class) WITHOUT falling through to `self.alloc` on miss. Returns
+    /// `Some(ptr)` on in-place success, `None` on fallthrough. `HeapCore::realloc`
+    /// uses this so the alloc leg routes through the magazine-aware
+    /// `HeapCore::alloc` (which drains via the checked predicate), closing the
+    /// unchecked drain path through `AllocCore::alloc` → `alloc_small`.
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn try_realloc_inplace(
+        &mut self,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        if ptr.is_null() {
+            return None;
+        }
+        // OPT-G: Large→Large in-place grow.
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if self.table.contains_base(base) && SegmentHeader::kind_at(base) == SegmentKind::Large
+            {
+                let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
+                let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
+                if new_eff >= old_eff {
+                    let payload_off = ptr as usize - base as usize;
+                    let span_usable = SegmentHeader::span_usable_at(base);
+                    if let Some(end) = payload_off.checked_add(new_eff) {
+                        if end <= span_usable {
+                            SegmentHeader::set_large_size_at(base, new_eff);
+                            return Some(ptr);
+                        }
+                    }
+                }
+            }
+        }
+        // OPT-F: Small→Small same-class in-place.
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if self.table.contains_base(base)
+                && matches!(
+                    SegmentHeader::kind_at(base),
+                    SegmentKind::Small | SegmentKind::Primordial
+                )
+            {
+                let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
+                let align = old_layout.align();
+                let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
+                if let (Some(old_class), Some(new_class)) = (
+                    super::size_classes::SizeClasses::class_for(old_size, align),
+                    super::size_classes::SizeClasses::class_for(clamped_new, align),
+                ) {
+                    if new_class == old_class {
+                        return Some(ptr);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Iterate over all registered segment bases (read-only). Exposed for the
     /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
     /// `abandon_segments`).
@@ -1696,6 +1863,35 @@ impl AllocCore {
     #[doc(hidden)]
     #[inline]
     pub fn refill_class_bump(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize {
+        self.refill_class_bump_impl(
+            class_idx,
+            out,
+            #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+            &|_, _| false,
+        )
+    }
+
+    /// Task #164: variant with magazine predicate.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+    pub fn refill_class_bump_checked<F: Fn(*mut u8, usize) -> bool>(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        is_in_magazine: &F,
+    ) -> usize {
+        self.refill_class_bump_impl(class_idx, out, is_in_magazine)
+    }
+
+    #[inline]
+    fn refill_class_bump_impl<
+        #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))] F: Fn(*mut u8, usize) -> bool,
+    >(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))] is_in_magazine: &F,
+    ) -> usize {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
         let want = out.len();
@@ -1745,7 +1941,11 @@ impl AllocCore {
                 // cross-thread frees into the per-segment BinTables) BEFORE it
                 // returns a base — that ordering is preserved: we call the batch
                 // drain only on the base it hands back.
-                if let Some(seg) = self.find_segment_with_free(class_idx) {
+                #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+                let found_seg = self.find_segment_with_free_checked(class_idx, is_in_magazine);
+                #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
+                let found_seg = self.find_segment_with_free(class_idx);
+                if let Some(seg) = found_seg {
                     let n = self.drain_freelist_batch(seg, class_idx, &mut out[filled..]);
                     if n != 0 {
                         filled += n;
@@ -2131,6 +2331,36 @@ impl AllocCore {
     ///   b. The OS release + slot NULL happen atomically in `recycle`, with no
     ///      window where the slot is non-NULL but the OS segment is gone.
     pub(crate) fn find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+        self.find_segment_with_free_impl(
+            class_idx,
+            #[cfg(feature = "alloc-xthread")]
+            &|_, _| false,
+        )
+    }
+
+    /// Task #164: variant with magazine predicate, called from
+    /// `refill_class_bump` when the magazine is accessible.
+    #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+    pub(crate) fn find_segment_with_free_checked<F: Fn(*mut u8, usize) -> bool>(
+        &mut self,
+        class_idx: usize,
+        is_in_magazine: &F,
+    ) -> Option<*mut u8> {
+        self.find_segment_with_free_impl(class_idx, is_in_magazine)
+    }
+
+    #[cfg_attr(
+        all(feature = "alloc-xthread", not(feature = "fastbin")),
+        allow(unused_variables)
+    )]
+    #[inline]
+    fn find_segment_with_free_impl<
+        #[cfg(feature = "alloc-xthread")] F: Fn(*mut u8, usize) -> bool,
+    >(
+        &mut self,
+        class_idx: usize,
+        #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
+    ) -> Option<*mut u8> {
         // Index-driven scan (task #126): walk slots `[0, count)` by index via
         // `SegmentTable::base_at`, instead of pre-collecting every live base
         // into an 8 KiB `[*mut u8; MAX_SEGMENTS]` stack buffer on every
@@ -2207,13 +2437,22 @@ impl AllocCore {
                 #[cfg(feature = "alloc-decommit")]
                 let mut decommit_happened = false;
                 ring.drain(|off| {
+                    // Task #164: when a magazine exists (fastbin), use the
+                    // checked variant that consults the magazine predicate
+                    // before `write_next`, closing the in-magazine leg of the
+                    // ring↔magazine cross-thread double-free residual.
+                    #[cfg(feature = "fastbin")]
+                    let reclaimed =
+                        Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
+                    #[cfg(not(feature = "fastbin"))]
+                    let reclaimed = Self::reclaim_offset(base, off, small_cur);
                     #[cfg(feature = "alloc-decommit")]
-                    if Self::reclaim_offset(base, off, small_cur) {
+                    if reclaimed {
                         decommit_happened = true;
                     }
                     #[cfg(not(feature = "alloc-decommit"))]
                     {
-                        let _ = Self::reclaim_offset(base, off, small_cur);
+                        let _ = reclaimed;
                     }
                 });
                 // Slot recycle: now that the drain is complete, it is safe to

@@ -25,10 +25,9 @@ const FEATURES = {
   loom_remote_ring: 'alloc-core,alloc-xthread',
   // #141: the A1 deferred-large push/drain model (found the #143 push leak).
   loom_deferred_large: 'alloc-core,alloc-xthread',
-  // R2 (#154): the magazine↔RemoteFreeRing composition shadow model. Its
-  // primary test is a `#[should_panic]` counterfactual pinning the #164
-  // residual hole (green while the hole exists; flips to a green invariant
-  // test when #164 lands).
+  // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.
+  // `compose_finds_double_issue_hole_pre164` (#[should_panic] counterfactual)
+  // + `compose_drain_sees_magazine_invariant_holds` (GREEN invariant, #164).
   loom_magazine_ring_compose: 'alloc-global,alloc-xthread',
   loom_thread_free: 'alloc',
   loom_sharded: 'experimental',

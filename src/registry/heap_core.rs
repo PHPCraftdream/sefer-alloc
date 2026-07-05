@@ -634,7 +634,6 @@ impl HeapCore {
         // through the magazine/refill).
         #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
         {
-            use crate::alloc_core::size_classes::SizeClasses;
             // Э9 (P7.1): `size`, `align`, `class` come from the single
             // classification hoisted above — no recompute here.
             // C1 (0.3.0): the magazine fast path used to be gated on
@@ -746,48 +745,10 @@ impl HeapCore {
                     // (block_size approaching SMALL_MAX) get fewer blocks per
                     // refill, so one magazine miss cannot park megabytes in a
                     // single idle thread's cache.
-                    let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
-                    let n = self
-                        .core
-                        .refill_class_bump(c, &mut self.tcache.slots[c][0..want]);
-                    if n == 0 {
-                        return core::ptr::null_mut(); // true OOM
-                    }
-                    // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
-                    // pulled block's source segment, but call
-                    // `stamp_segment_owner` only when the block's segment base
-                    // CHANGES from the previous block's. `stamp_segment_owner`
-                    // is idempotent per segment (it stamps the segment header,
-                    // not the block), so stamping once per DISTINCT source
-                    // segment is sufficient — every source segment is still
-                    // stamped before any of its blocks is handed out (the same
-                    // guarantee as the P4 hoist). The OPT-C cache already
-                    // fast-pathed repeated same-segment stamps to a
-                    // mask+compare+Relaxed-load; tracking `prev_base` here skips
-                    // even that per-block cost. A batch drain (Э7) yields long
-                    // same-segment runs, so this collapses to ~one stamp per
-                    // refill in the common single-segment case.
-                    //
-                    // `usize::MAX` is not a valid segment base (bases are
-                    // SEGMENT-aligned pointers ≪ usize::MAX), so it is a safe
-                    // "no previous segment" sentinel that forces the first
-                    // non-null block to stamp.
-                    let mut prev_base = usize::MAX;
-                    for i in 0..n {
-                        let p = self.tcache.slots[c][i];
-                        if !p.is_null() {
-                            let base = os::segment_base_of_ptr(p) as usize;
-                            if base != prev_base {
-                                self.stamp_segment_owner(p);
-                                prev_base = base;
-                            }
-                        }
-                    }
-
-                    // Pop the top, leave n-1 in the magazine.
-                    let new_cnt = n - 1;
-                    self.tcache.count[c] = new_cnt as u16;
-                    return self.tcache.slots[c][new_cnt];
+                    // Magazine miss: refill via the outlined slow path.
+                    // `#[cold] #[inline(never)]` keeps the closure/split-borrow
+                    // complexity out of `alloc`'s frame (task #164 Ir shaping).
+                    return self.refill_magazine_slow(c);
                 }
                 // not a small class -> fall through to large path
             }
@@ -970,44 +931,34 @@ impl HeapCore {
                     // write `next` into the body on every free — we are
                     // structurally cheaper per free on cold working sets).
                     //
-                    // ── RESIDUAL M2 LIMIT (cross-thread double-free) — task #164
+                    // ── RESIDUAL M2 LIMIT (cross-thread double-free) — #164 NARROWED
                     // ─────────────────────────────────────────────────────────
                     // The two oracles are exact ONLY for those two resting
                     // places. They are BLIND to a third, transient one: a block
                     // whose CROSS-THREAD free is still in-flight — packed into
-                    // its segment's `RemoteFreeRing` (see
-                    // `crate::alloc_core::remote_free_ring::RemoteFreeRing` and
-                    // `dealloc_routing`'s Variant-2 push) but NOT YET DRAINED by
-                    // the owner. A ring entry sets NEITHER oracle: the in-magazine
-                    // scan cannot see it (it is not in `slots`), and the bitmap
-                    // still reads "allocated" (only the owner-side drain's
-                    // `reclaim_offset` → `mark_free` sets the bit; the ring push
-                    // deliberately leaves the bitmap untouched). So if a block P
-                    // is freed cross-thread (queued in the ring) AND ALSO freed
-                    // own-thread here before the owner drains that ring entry —
-                    // a genuine USER cross-thread double-free — both oracles pass
-                    // and P is pushed into the magazine. P is then BOTH
-                    // magazine-resident AND pending in the ring; a later drain's
-                    // `reclaim_offset` (which also passes its own is_free/bump
-                    // guards, P being still-carved) links P onto the BinTable and
-                    // `dec_live`s it, clobbering P's now-live user bytes if the
-                    // magazine already re-issued it → double-issue + freelist
-                    // corruption (and, under `alloc-decommit`, a possible
-                    // decommit+unmap of a magazine-resident segment).
+                    // its segment's `RemoteFreeRing` but NOT YET DRAINED by the
+                    // owner.
                     //
-                    // This is a PRE-EXISTING residual limit of the ring↔magazine
-                    // composition (present since fastbin; Э6 neither opened nor
-                    // closed it — it closed only the word1-overwrite hole above).
-                    // It is fundamentally UB as with any allocator for a
-                    // double-free (M2 promises an exact no-op only for the
-                    // live/mapped, single-legged case), mirroring the released-
-                    // Large-segment residual note in `dealloc_routing`. The real
-                    // fix (a drain-with-magazine-visibility / per-heap bloom /
-                    // conflict-list hybrid — ring-peek is rejected as 256 loads
-                    // per free) is tracked as task #164; pinned by
-                    // `tests/regression_xthread_double_free_residual.rs` (RED,
-                    // #[ignore]d) and modelled by
-                    // `tests/loom_magazine_ring_compose.rs`.
+                    // Task #164 NARROWED the window: ALL production drain paths
+                    // now consult the magazine via `reclaim_offset_checked`'s
+                    // `is_in_magazine` predicate (refill via `refill_magazine_slow`,
+                    // realloc via `try_realloc_inplace` + `HeapCore::alloc`,
+                    // debug via `dbg_drain_all_rings_checked`). A block that is
+                    // simultaneously magazine-resident AND in the ring is detected
+                    // and the ring entry is dropped (the magazine copy stays
+                    // canonical). GREEN tests:
+                    // `drain_resident_xthread_double_free_no_corruption`,
+                    // `realloc_path_drain_respects_magazine`.
+                    //
+                    // REMAINING residual = re-issue-before-drain / delayed xfree
+                    // (one ABA class): if the block was popped (re-issued) before
+                    // the drain runs, the state is information-theoretically
+                    // identical to a genuine delayed cross-thread free (bitmap
+                    // allocated, not in magazine, (off,class)-only entry). Pinned
+                    // RED by `residual_xthread_double_free_no_corruption`
+                    // (#[ignore]d). Full fix: task X7 (hardened, generational
+                    // ring entry — see RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md
+                    // §8.4).
                     //
                     // (1) in-magazine DF oracle — ALWAYS. Э10 (P7.4): the
                     // sequential early-exit scan above (`for i in 0..cnt`) does
@@ -1213,12 +1164,33 @@ impl HeapCore {
                 //       idempotent via the OPT-C cache, so this is only an
                 //       optimisation). A null result is an OOM — nothing to
                 //       stamp.
-                let p = self.core.realloc(ptr, old_layout, new_size);
-                #[cfg(feature = "alloc-global")]
-                if !p.is_null() && p != ptr {
-                    self.stamp_segment_owner(p);
+                // Task #164: try the in-place fast paths first. If they
+                // succeed, return immediately (no drain needed — the block
+                // stays in place). If they fail, route the alloc leg through
+                // HeapCore::alloc (magazine-aware, checked drain), NOT through
+                // AllocCore::realloc's blind alloc→alloc_small path.
+                if let Some(p) = self.core.try_realloc_inplace(ptr, old_layout, new_size) {
+                    #[cfg(feature = "alloc-global")]
+                    if p != ptr {
+                        self.stamp_segment_owner(p);
+                    }
+                    return p;
                 }
-                return p;
+                // In-place failed: alloc+copy+dealloc through HeapCore (the
+                // same path the foreign-pointer branch below uses). This
+                // ensures the alloc leg drains via the checked predicate.
+                let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
+                    Ok(l) => l,
+                    Err(_) => return core::ptr::null_mut(),
+                };
+                let new_ptr = self.alloc(new_layout);
+                if new_ptr.is_null() {
+                    return core::ptr::null_mut();
+                }
+                let copy = old_layout.size().min(new_size);
+                crate::alloc_core::node::Node::copy_nonoverlapping(ptr, new_ptr, copy);
+                self.dealloc(ptr, old_layout);
+                return new_ptr;
             }
         }
         // Foreign pointer (not one of our segments) or `alloc-global` absent:
@@ -1382,6 +1354,69 @@ impl HeapCore {
         let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
         let ring = SegmentMeta::new(base).remote_ring();
         let _ = ring.push(packed);
+    }
+
+    /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow
+    /// and closure complexity lives here, behind a `#[cold] #[inline(never)]`
+    /// call boundary, so `alloc`'s own frame is not bloated by register spills
+    /// from the closure / `split_at_mut` machinery. Returns the popped pointer
+    /// (the block to hand out), or null on true OOM.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cold]
+    #[inline(never)]
+    fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
+        use crate::alloc_core::size_classes::SizeClasses;
+
+        let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
+        // Task #164: zero-copy split borrow. The refill writes DIRECTLY into
+        // `tcache.slots[c]` (no buffer, no copy). The magazine predicate
+        // closure reads OTHER classes' slots via `split_at_mut` halves and
+        // `tcache.count` (a disjoint field from `tcache.slots`).
+        //
+        // KEY INVARIANT (load-bearing): at refill time, `count[c] == 0` —
+        // the refill runs ONLY on a magazine miss (the pop in `alloc` failed
+        // because `cnt == 0`). So the predicate for class `c` itself is
+        // trivially false (0 slots to scan), and the mutable borrow of
+        // `slots[c]` (for the refill output) is never read by the closure.
+        let (before, rest) = self.tcache.slots.split_at_mut(c);
+        let (cur, after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
+        let counts = &self.tcache.count;
+        let n = self
+            .core
+            .refill_class_bump_checked(c, &mut cur[0..want], &|ptr, k| {
+                // count[c] == 0 during its own refill (invariant above) —
+                // the predicate is trivially false and we never touch the
+                // mutably-borrowed `cur` slice.
+                if k == c {
+                    return false;
+                }
+                let cnt = counts[k] as usize;
+                let arr: &[*mut u8; super::tcache::TCACHE_CAP] =
+                    if k < c { &before[k] } else { &after[k - c - 1] };
+                (0..cnt).any(|j| arr[j] == ptr)
+            });
+        if n == 0 {
+            return core::ptr::null_mut(); // true OOM
+        }
+        // P4 stamp hoist + Э11 (task #161) stamp-dedupe: stamp each
+        // pulled block's source segment, but call `stamp_segment_owner`
+        // only when the block's segment base CHANGES from the previous
+        // block's. Idempotent per segment; one stamp per distinct source.
+        let mut prev_base = usize::MAX;
+        for i in 0..n {
+            let p = self.tcache.slots[c][i];
+            if !p.is_null() {
+                let base = os::segment_base_of_ptr(p) as usize;
+                if base != prev_base {
+                    self.stamp_segment_owner(p);
+                    prev_base = base;
+                }
+            }
+        }
+        // Pop the top, leave n-1 in the magazine.
+        let new_cnt = n - 1;
+        self.tcache.count[c] = new_cnt as u16;
+        self.tcache.slots[c][new_cnt]
     }
 
     /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two
@@ -1609,11 +1644,23 @@ impl HeapCore {
 
     /// TEST-ONLY (task R2/#154): drain every owned segment's `RemoteFreeRing`
     /// into its `BinTable`, exactly as the alloc slow path's lazy drain does,
-    /// but unconditionally. Thin delegation to
-    /// [`AllocCore::dbg_drain_all_rings`]. Zero production impact.
+    /// but unconditionally. Task #164: routes through the same magazine
+    /// predicate as the production drain, so tests exercise the real
+    /// decision path.
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     pub fn dbg_drain_all_rings(&mut self) {
+        // Task #164: split borrow — `&self.tcache` (read) + `&mut self.core`
+        // (write) are disjoint fields of HeapCore.
+        #[cfg(feature = "fastbin")]
+        {
+            let tc = &self.tcache;
+            self.core.dbg_drain_all_rings_checked(&|ptr, class_idx| {
+                let cnt = tc.count[class_idx] as usize;
+                (0..cnt).any(|j| tc.slots[class_idx][j] == ptr)
+            });
+        }
+        #[cfg(not(feature = "fastbin"))]
         self.core.dbg_drain_all_rings();
     }
 

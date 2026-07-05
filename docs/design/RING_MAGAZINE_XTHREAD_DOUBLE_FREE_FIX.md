@@ -323,3 +323,89 @@ This is NOT a 0.3.0 release blocker. The residual is honestly documented in code
 via a genuine user cross-thread double-free (UB by contract for any allocator), and is
 mirrored by the released-Large-segment residual note in `dealloc_routing`. Ship 0.3.0;
 land this fix on its own arc.
+
+---
+
+## 8. Implementation postscript (2026-07-05)
+
+### 8.1 Two errors found in the design (sections 4(d) and 6)
+
+1. **"Conflicts are rare" is wrong.** Every genuine cross-thread free drains with
+   bitmap reading "allocated" — that is the NORMAL state (the ring push deliberately
+   leaves the bitmap untouched). Conflicts are not rare; they are universal. The cost
+   claim survives only because drains are cold (refill-miss path) and iai benches never
+   populate rings — so the per-entry predicate check adds zero Ir to every perf-gated
+   bench.
+
+2. **The pinned-test-goes-green claim (section 6) contradicts the test's own step 4.**
+   The test does alloc(P) -> ring_push -> dealloc(P) (enters magazine) -> alloc() (pops P)
+   -> drain. Section 6 says the drain "will find P resident" in the magazine — but P was
+   popped at step 4 (LIFO). At drain time P is NOT in the magazine; it is a live user
+   block. The magazine scan finds nothing; under (d)'s "if not found -> reclaim" rule the
+   drain would `write_next(P, ...)`, clobbering live data. The test STAYS RED.
+
+### 8.2 The impossibility: re-issue-before-drain
+
+The re-issue-before-drain state is information-theoretically identical to a delayed
+remote free of the current lifetime:
+
+| signal            | re-issue-before-drain (UB)     | delayed genuine xfree (correct) |
+|-------------------|--------------------------------|---------------------------------|
+| `bitmap`          | "allocated"                    | "allocated"                     |
+| `in_magazine`     | false (popped)                 | false (never pushed)            |
+| ring entry        | `(off, class)`                 | `(off, class)`                  |
+
+No distinguishing state exists without per-block generations.
+
+`mark_free`-on-push + `mark_alloc`-on-pop ALSO fails this case: the pop restores
+"allocated", making the drain state identical to a genuine free. It is strictly dominated
+by the zero-cost drain-side check (which covers the in-magazine leg for free and leaves
+the re-issue leg identically uncovered).
+
+### 8.3 Implemented shape: section 5's fallback (a)-closure, narrowed
+
+The implemented fix uses the section 5 fallback (a) shape: a `&dyn Fn(*mut u8, usize) ->
+bool` predicate is threaded from `HeapCore` (where `&self.tcache` is accessible via split
+borrows on disjoint fields `core` / `tcache`) down through `find_segment_with_free` /
+`dbg_drain_all_rings` into `reclaim_offset_checked`. The predicate scans
+`tcache.slots[class][0..count[class]]` (at most 16 compares, ~0 in practice).
+
+The predicate is consulted AFTER all existing guards (magic / kind / align / off<bump /
+is_free) and IMMEDIATELY BEFORE `write_next`. If the block IS magazine-resident, the ring
+entry is dropped (return false without linking). If NOT resident, the link proceeds exactly
+as before. All guard and link logic stays in one function (`reclaim_offset_checked`).
+
+**Coverage:** the in-magazine leg (P still in `tcache.slots` when drain runs) is closed
+on ALL production drain paths: (1) `refill_magazine_slow` via `refill_class_bump_checked`
+and `find_segment_with_free_checked`; (2) `HeapCore::realloc` via `try_realloc_inplace`
+miss routing through `HeapCore::alloc` (magazine-aware); (3) `dbg_drain_all_rings_checked`
+(test seam). `AllocCore::alloc_small`'s unchecked `find_segment_with_free` is unreachable
+from `HeapCore` under production features (fastbin routes small allocs through the
+magazine; the `self.core.alloc` fallthrough is Large-only; realloc's slow path routes
+through `HeapCore::alloc`). The re-issue-before-drain leg (P popped before drain) remains
+a documented UB residual.
+
+**Kill criterion:** ZERO new cost on the alloc/dealloc magazine hot path. The predicate is
+invoked only per ring entry during a drain (cold, refill-miss path), on the branch where
+bitmap reads "allocated". No per-push or per-pop write. iai Ir byte-identical.
+
+### 8.4 The costed full fix (task X7, hardened-only)
+
+The ring `u32` entry currently packs `off:22 + class:10` (22 offset bits, 10 class bits).
+Only 6 class bits are needed (`SMALL_CLASS_COUNT = 49 < 64`). This frees 4 bits. Combined
+with a 4-bit reduction in offset precision (storing `off / 16` instead of `off`, valid
+because block sizes are multiples of `MIN_BLOCK = 16`), 8 bits are available for a
+per-block generation counter:
+
+    off/16 : 18 bits  +  class : 6 bits  +  gen : 8 bits  =  32 bits
+
+A per-block generation side-table (~1 byte per block; at `MIN_BLOCK = 16`,
+`SEGMENT = 4 MiB`, that is `4 MiB / 16 = 256K` bytes = 6.25% per segment) bumps the
+generation on every alloc. The ring push captures the current gen; the drain compares. A
+mismatch (gen wrapped or advanced) means the block was re-allocated since the ring push —
+the entry is stale and must be dropped. Wrap-around at 256 (`2^8`) gives a false-negative
+window of 1/256 per block per ABA cycle — acceptable for a hardened-mode guard.
+
+Per-alloc cost: one byte load + increment + store (~1-3 Ir). This is the unavoidable
+minimum for per-block generation tracking. Gated behind the `hardened` feature so the
+production hot path is unaffected.

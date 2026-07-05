@@ -238,22 +238,26 @@ compare, key write, array store, count bump. No bitmap, no `contains_base`, no
 > The bitmap oracle now catches that regardless of block-body contents. See
 > `HeapCore::dealloc_own_thread` and `tests/regression_magazine_oracles.rs`.
 >
-> **RESIDUAL M2 LIMIT (cross-thread double-free) — task #164.** The two oracles
-> are exact ONLY for the two OWN-THREAD resting places (this class's magazine +
-> the BinTable free list). They are BLIND to a block whose cross-thread free is
-> still in-flight (undrained) in its segment's `RemoteFreeRing`: the ring push
-> sets neither oracle (it does not touch the bitmap; the block is not in
-> `slots`). A genuine USER cross-thread double-free — an own-thread free of a
-> block already queued in the ring, before the owner drains it — therefore
-> passes both oracles, lands in the magazine, and can later be double-issued /
-> freelist-corrupted when the owner's `reclaim_offset` drains the stale ring
-> entry (and, under `alloc-decommit`, can decommit+unmap a magazine-resident
-> segment). This is PRE-EXISTING (present since fastbin; Э6 neither opened nor
-> closed it — it closed only the word1-overwrite hole) and is UB-by-contract as
-> with any double-free (M2 promises an exact no-op only for the live/mapped,
-> single-legged case). Pinned by
-> `tests/regression_xthread_double_free_residual.rs` (RED, `#[ignore]`d) and
-> modelled by `tests/loom_magazine_ring_compose.rs`; the real fix is task #164.
+> **RESIDUAL M2 LIMIT (cross-thread double-free) — task #164 (NARROWED).**
+> The two oracles are exact ONLY for the two OWN-THREAD resting places (this
+> class's magazine + the BinTable free list). They are BLIND to a block whose
+> cross-thread free is still in-flight (undrained) in its segment's
+> `RemoteFreeRing`. Task #164 narrowed the window: the drain now consults
+> the magazine via `reclaim_offset_checked`'s `is_in_magazine` predicate,
+> so a block that is simultaneously magazine-resident AND in the ring is
+> detected and the ring entry is dropped (the magazine copy stays canonical).
+> ALL production drain paths are covered (refill, realloc, dbg).
+> Pinned GREEN by `drain_resident_xthread_double_free_no_corruption`
+> and `realloc_path_drain_respects_magazine`.
+>
+> **Remaining residual = re-issue-before-drain / delayed xfree** (one ABA
+> class): if the block was popped from the magazine (re-issued to the user)
+> before the drain runs, the drain sees `bitmap = allocated, not in magazine`
+> — state-identical to a genuine delayed cross-thread free. No distinguishing
+> signal exists without per-block generations. The re-issue case is pinned RED
+> by `residual_xthread_double_free_no_corruption` (still `#[ignore]`d).
+> Full fix: task X7 (hardened-only, generational ring entry — see
+> `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4).
 > The §6.1 text below is retained for historical context only.
 
 ### 6.1 M2 double-free of a magazine-resident block (historical — see banner)
