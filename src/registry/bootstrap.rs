@@ -493,8 +493,10 @@ fn ensure_slow() -> &'static Registry {
             //
             //  2. The only non-zero initial values are `HeapSlot::next_free =
             //     u32::MAX` (NEXT_FREE_TAIL) and `Registry::free_slots =
-            //     TaggedPtr::empty() = 0x0000_0000_FFFF_FFFF`. We write those
-            //     in-place using `addr_of_mut!` + `write`.
+            //     TaggedPtr::empty() = 0x0000_0000_0000_FFFF` (task W7a: the
+            //     index half is now 16 bits, so the empty sentinel is `0xFFFF`,
+            //     not the old 32-bit `0xFFFF_FFFF`). We write those in-place
+            //     using `addr_of_mut!` + `write`.
             //
             // `AtomicU32` and `AtomicU64` are `#[repr(transparent)]` over their
             // inner `UnsafeCell<u32/u64>`, which is `#[repr(transparent)]` over

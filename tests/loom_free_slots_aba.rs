@@ -10,14 +10,17 @@
 //! (NOT the real functions, which use `core::sync::atomic` and operate on a
 //! live `Registry`/`HeapSlot` array). It reproduces the EXACT protocol shape:
 //!
-//! - `free_slots: AtomicU64` head, packed `(index | tag << 32)` via
-//!   `TaggedPtr` (low 32 bits = slot index, high 32 bits = a monotonic tag
-//!   bumped on every successful PUSH — never on pop).
+//! - `free_slots: AtomicU64` head, packed `(index | tag << 16)` via
+//!   `TaggedPtr` (low 16 bits = slot index, high 48 bits = a monotonic tag
+//!   bumped on every successful PUSH — never on pop; task W7a).
 //! - Per-slot `next_free: AtomicU32` link (mirrors `HeapSlot::next_free`),
 //!   with `NEXT_FREE_TAIL` (`u32::MAX`) as the "no next" sentinel and
-//!   `TaggedPtr::empty()` (`value = INDEX_MASK = u32::MAX`, `tag = 0`) as the
-//!   "stack empty" sentinel — same numeric value as `NEXT_FREE_TAIL` but
-//!   spelled out separately, matching the real code's own comment on this.
+//!   `TaggedPtr::empty()` (`value = INDEX_MASK = 0xFFFF`, `tag = 0`) as the
+//!   "stack empty" sentinel. Post-W7a these are DISTINCT numeric values
+//!   (`INDEX_MASK = 0xFFFF` for empty vs `NEXT_FREE_TAIL = u32::MAX` for the
+//!   per-slot tail link) — the real code keeps the two mappings spelled out
+//!   separately, so the `TAIL → empty()` translation in `pop`/`push` is
+//!   exercised faithfully here regardless of the value coincidence.
 //! - `pop`: load tagged head, read the slot's `next_free` link, CAS head to
 //!   `(next, SAME tag)` — a losing CAS retries with the fresh head.
 //! - `push`: write the slot's `next_free` link to the current head's index
@@ -68,8 +71,9 @@ use loom::thread;
 /// slot's `next_free` link (`u32::MAX`).
 const NEXT_FREE_TAIL: u32 = u32::MAX;
 
-/// Number of bits carrying the index (mirrors `tagged_ptr::INDEX_BITS`).
-const INDEX_BITS: u32 = 32;
+/// Number of bits carrying the index (mirrors `tagged_ptr::INDEX_BITS` — 16
+/// since task W7a; the high 48 bits carry the ABA tag).
+const INDEX_BITS: u32 = 16;
 const INDEX_MASK: u64 = (1u64 << INDEX_BITS) - 1;
 
 /// Mirrors `TaggedPtr::pack`/`unpack`/`empty`/`is_empty` — pure bit

@@ -54,10 +54,6 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-#[cfg(any(
-    all(feature = "alloc-global", feature = "fastbin"),
-    feature = "alloc-decommit"
-))]
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
@@ -93,7 +89,17 @@ pub struct HeapSlot {
     /// but cross-thread reads still require atomic synchronisation to avoid a
     /// data race. `Release` on the bump (in `claim`) pairs with the reader's
     /// `Acquire` load after observing `state == LIVE`.
-    pub generation: AtomicU32,
+    ///
+    /// **Width — `AtomicU64` (task W7a):** a `u32` generation wraps at `2^32`
+    /// recycles (`FREE → LIVE → FREE` cycles = thread deaths). On a
+    /// thread-per-request server that is reachable over weeks/months, at which
+    /// point a wrapped generation could re-collide with a value a stale
+    /// `(index, generation)` owner key still holds — reintroducing the ABA on
+    /// slot RECYCLE→reCLAIM this field exists to defeat. `u64` wraps at `2^64`
+    /// (∼10^19 recycles) — unreachable in any process lifetime. The widening
+    /// is Ir-neutral (this field is off every hot alloc/dealloc path — it is
+    /// bumped once per claim on the cold registry-protocol path only).
+    pub generation: AtomicU64,
     /// The heap value, lazily materialised by `claim` on the slot's first
     /// `FREE → LIVE` transition and reused on later reclaims. Wrapped in
     /// `UnsafeCell` so `claim` can return `&mut HeapCore` through a shared
@@ -187,7 +193,7 @@ impl HeapSlot {
     pub(crate) const fn new_uninit() -> Self {
         Self {
             state: AtomicU8::new(STATE_FREE),
-            generation: AtomicU32::new(0),
+            generation: AtomicU64::new(0),
             heap: UnsafeCell::new(MaybeUninit::uninit()),
             next_free: AtomicU32::new(NEXT_FREE_TAIL),
             initialised: AtomicBool::new(false),

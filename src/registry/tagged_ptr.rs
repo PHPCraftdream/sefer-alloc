@@ -2,7 +2,7 @@
 //! `free_slots` Treiber stack to defeat the ABA problem.
 //!
 //! The `free_slots` stack head is a single `AtomicU64`. The low
-//! [`INDEX_BITS`] = 32 bits carry the slot index; the high 32 bits carry a
+//! [`INDEX_BITS`] = 16 bits carry the slot index; the high 48 bits carry a
 //! monotonic **tag** that is bumped on every successful push. The classic ABA
 //! scenario — thread A reads head=X, thread B pops X then re-pushes X — is
 //! defeated because the re-push bumps the tag, so A's CAS on `(X, old_tag)`
@@ -15,16 +15,23 @@
 //! with the ABA tag in the SEGMENT-alignment low bits. `TaggedPtr` is
 //! henceforth `free_slots`-only.)
 //!
-//! ## Why 32-bit tags are enough
+//! ## Why 48-bit tags (task W7a)
 //!
-//! The tag wraps at `u32::MAX + 1 = 2^32 ≈ 4.3 × 10^9`. A wrap-around ABA
-//! requires the SAME slot to be popped-and-repushed `2^32` times with the
-//! racing thread parked across every one of them — at, say, 10 ns per
-//! push/pop that is ~43 seconds of sustained churn on a single slot with the
-//! victim thread frozen. That is far beyond any realistic allocator churn
-//! (heaps are claimed/recycled on thread spawn/exit, not per-allocation).
-//! This matches the judgement recorded in §2.1 / risk-register of
-//! `ALLOC_PLAN_PHASE12-13.md`: "document the tag-width vs realistic churn".
+//! [`MAX_HEAPS`](super::bootstrap::MAX_HEAPS) = 4096 needs only 13 bits, so a
+//! 32-bit index half was 19 bits of pure waste. Repacking to
+//! [`INDEX_BITS`] = 16 (holds 65535 ≥ 4096, with the empty sentinel `0xFFFF`
+//! reserved above the cap) hands the freed 16 bits to the tag: **48 tag bits**,
+//! wrapping at `2^48 ≈ 2.8 × 10^14`. At a sustained (and already unrealistic)
+//! 100k pushes/sec on a SINGLE slot with the victim thread parked across every
+//! one, a wrap-around ABA would take ∼89 years — effectively unreachable in any
+//! process lifetime, upgrading the OLD 32-bit tag's "probabilistic, ∼43 s of
+//! frozen-victim churn" bound (§2.1 risk-register of
+//! `ALLOC_PLAN_PHASE12-13.md`) to a structural non-hazard. The repack is
+//! Ir-neutral (`pack`/`unpack` are the same two shifts/masks on different
+//! constants; this is a cold registry-protocol word, off every hot alloc path).
+//! A `const` assert below pins `MAX_HEAPS < 2^INDEX_BITS` so a future
+//! `MAX_HEAPS` bump that no longer fits 16 bits fails to compile rather than
+//! silently colliding the index with the tag.
 //!
 //! **0.3.0 (task #141) — resolved:** the push-pop-repush ABA loom model for
 //! THIS `TaggedPtr`/`free_slots` protocol is now `tests/loom_free_slots_aba.rs`
@@ -62,10 +69,29 @@
 
 /// Number of low bits reserved for the index/value. The high bits of the
 /// `u64` word carry the tag.
-pub(crate) const INDEX_BITS: u32 = 32;
+///
+/// **16 (task W7a):** [`MAX_HEAPS`](super::bootstrap::MAX_HEAPS) = 4096 fits in
+/// 13 bits, and the empty sentinel `INDEX_MASK = 0xFFFF` (65535) sits above the
+/// cap, so 16 bits hold every valid index plus the sentinel with room to spare
+/// — leaving 48 bits for the ABA tag (see the module doc's "Why 48-bit tags").
+pub(crate) const INDEX_BITS: u32 = 16;
 
-/// Bit-mask for the low [`INDEX_BITS`] (the value half).
+/// Bit-mask for the low [`INDEX_BITS`] (the value half). With
+/// [`INDEX_BITS`] = 16 this is `0xFFFF`.
 const INDEX_MASK: u64 = (1u64 << INDEX_BITS) - 1;
+
+/// Compile-time guard: every valid slot index (`0..MAX_HEAPS`) AND the empty
+/// sentinel (`INDEX_MASK`) must be representable in [`INDEX_BITS`], and the
+/// sentinel must NOT collide with any valid index. `MAX_HEAPS <= INDEX_MASK`
+/// guarantees both: the largest valid index is `MAX_HEAPS - 1 < INDEX_MASK`, so
+/// `INDEX_MASK` is a non-index, and all indices fit the low bits. A future
+/// `MAX_HEAPS` bump past `2^16 - 1` fails to compile here rather than silently
+/// truncating an index into the tag or colliding with the sentinel.
+const _: () = assert!(
+    (super::bootstrap::MAX_HEAPS as u64) <= INDEX_MASK,
+    "MAX_HEAPS must be < 2^INDEX_BITS so slot indices fit the value half and \
+     never collide with the empty sentinel (INDEX_MASK)"
+);
 
 /// A packed `(value | tag)` word. Construct via [`TaggedPtr::pack`];
 /// decompose via [`TaggedPtr::unpack`]. Stored inside an `AtomicU64` by the
@@ -105,9 +131,10 @@ impl TaggedPtr {
         (word & INDEX_MASK, word >> INDEX_BITS)
     }
 
-    /// The sentinel "empty stack" word: value = all-ones-index (no real slot
-    /// is `u32::MAX` — the registry caps at `MAX_HEAPS`), tag = 0. Both stacks
-    /// are initialised to this.
+    /// The sentinel "empty stack" word: value = all-ones-index
+    /// (`INDEX_MASK` = `0xFFFF` = 65535, which is above `MAX_HEAPS` = 4096, so
+    /// it is never a real slot index), tag = 0. The `free_slots` stack is
+    /// initialised to this.
     #[must_use]
     pub(crate) const fn empty() -> u64 {
         // value = INDEX_MASK (all-ones in the low bits) is an impossible slot
@@ -124,3 +151,52 @@ impl TaggedPtr {
         value == INDEX_MASK
     }
 }
+
+// ---------------------------------------------------------------------------
+// Test-only forwarders (task W7a wrap counterfactual).
+//
+// `TaggedPtr` and its constants are `pub(crate)`, so an integration test in
+// `tests/` cannot reach them directly. These `#[doc(hidden)]` `pub` forwarders
+// expose the pure pack/unpack arithmetic (and the width constants) to
+// `tests/regression_counter_wrap.rs`, which drives the 48-bit tag WRAP
+// boundary (pack the max tag `2^48 - 1`, bump it once to wrap → 0, assert the
+// index round-trips across the wrap and the empty sentinel is never mistaken
+// for a live index). They add NO code to any allocation path — they are thin
+// `const fn` shims over the same bit ops, compiled the same as a direct call,
+// and are not referenced by any production caller.
+#[doc(hidden)]
+#[must_use]
+pub const fn dbg_pack(value: u64, tag: u64) -> u64 {
+    TaggedPtr::pack(value, tag)
+}
+
+#[doc(hidden)]
+#[must_use]
+pub const fn dbg_unpack(word: u64) -> (u64, u64) {
+    TaggedPtr::unpack(word)
+}
+
+#[doc(hidden)]
+#[must_use]
+pub const fn dbg_empty() -> u64 {
+    TaggedPtr::empty()
+}
+
+#[doc(hidden)]
+#[must_use]
+pub const fn dbg_is_empty(word: u64) -> bool {
+    TaggedPtr::is_empty(word)
+}
+
+/// Number of index bits (16 since W7a). Exposed for the wrap counterfactual.
+#[doc(hidden)]
+pub const DBG_INDEX_BITS: u32 = INDEX_BITS;
+
+/// The tag half's width in bits (`64 - INDEX_BITS` = 48 since W7a). The tag
+/// wraps at `2^DBG_TAG_BITS`.
+#[doc(hidden)]
+pub const DBG_TAG_BITS: u32 = 64 - INDEX_BITS;
+
+/// The index mask (`0xFFFF` since W7a) — also the empty-sentinel index value.
+#[doc(hidden)]
+pub const DBG_INDEX_MASK: u64 = INDEX_MASK;

@@ -18,7 +18,9 @@
 //! ## ABA defence
 //!
 //! Both Treiber stacks ([`Registry::free_slots`], [`Registry::abandoned_segs`])
-//! carry a monotonic tag in the high 32 bits of their `AtomicU64` head,
+//! carry a monotonic tag in the high bits of their `AtomicU64` head (48 bits
+//! for `free_slots` — the low 16 hold the slot index, task W7a; the
+//! abandoned-segs tag lives in the segment-alignment low bits of the base),
 //! bumped on every push. This defeats the classic ABA (pop-X, re-push-X
 //! while a racer is parked with head=X): the re-push bumps the tag, so the
 //! racer's CAS on `(X, old_tag)` fails. See `super::tagged_ptr::TaggedPtr`
@@ -547,7 +549,7 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 ///
 /// This is the textbook Treiber pop: load the (tagged) head, read its
 /// `next_free` link, then CAS the head to that next link. The tag in the high
-/// 32 bits defeats the ABA problem: if between our load and our CAS another
+/// 48 bits defeats the ABA problem: if between our load and our CAS another
 /// thread pops the head and re-pushes the SAME slot index, the tag will have
 /// advanced, our CAS fails, and we retry — never observing a stale chain.
 ///

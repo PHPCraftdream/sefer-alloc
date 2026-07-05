@@ -87,8 +87,10 @@ fn slot_state(idx: usize) -> u8 {
     reg.slots[idx].state.load(Ordering::Acquire)
 }
 
-/// Read a slot's `generation` atomically (test helper).
-fn slot_generation(idx: usize) -> u32 {
+/// Read a slot's `generation` atomically (test helper). `generation` is
+/// `AtomicU64` since task W7a (widened from `AtomicU32` to move the recycle→
+/// reclaim ABA wrap from `2^32` to an unreachable `2^64`).
+fn slot_generation(idx: usize) -> u64 {
     let reg = bootstrap::ensure();
     reg.slots[idx].generation.load(Ordering::Acquire)
 }

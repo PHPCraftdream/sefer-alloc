@@ -66,3 +66,16 @@ UNREGRESSED (slightly below baseline). All correctness pins green; carve_batch
 is byte-identical to the per-block carve loop (M2 untouched — carve never writes
 the bitmap; D1 exact +n; page-dedication "first class wins"; SEGMENT boundary
 check; decommit recommit-on-reuse), verified by `tests/regression_carve_batch.rs`.
+
+## W7a note (generation→u64 + TaggedPtr repack)
+
+W7a widened `HeapSlot::generation` to `AtomicU64` (byte-identical Ir — the field
+is written only on cold claim/recycle and compared only `== 1`) and repacked
+`TaggedPtr` to `index:16 | tag:48` (all call sites are cold: bootstrap /
+claim / recycle — none on the alloc/free hot loop). The repack shifts EVERY
+bench by a uniform **−4 Ir** — a *decrease*, from the one-time bootstrap
+`free_slots = TaggedPtr::empty()` store whose constant shrank from
+`0x0000_0000_FFFF_FFFF` to `0x0000_0000_0000_FFFF` (a cheaper immediate that
+falls inside each bench's first-claim window). Not a hot-path touch; accepted.
+The current post-W7a table is the W4 table above minus 4 on every row
+(e.g. `cold_alloc_free_256x16b` = 123,512; `small_churn_16b` = 80,793).
