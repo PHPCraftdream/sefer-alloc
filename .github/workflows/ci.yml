@@ -610,15 +610,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # cargo-fuzz links the sanitizer runtime against the *prebuilt* std of
+          # the build target. Its default target on this runner resolves to
+          # `x86_64-unknown-linux-musl`, whose std is NOT installed (E0463:
+          # can't find crate for `std`). Force the gnu target below (its std
+          # ships with the toolchain); add rust-src as belt-and-suspenders in
+          # case a future cargo-fuzz build-std's the sanitizer runtime.
+          targets: x86_64-unknown-linux-gnu
+          components: rust-src
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
       # `cargo fuzz build` compiles every registered target under the fuzz
-      # crate (its own workspace root); no target is executed.
+      # crate (its own workspace root); no target is executed. Pin the gnu
+      # target so the sanitizer build links a std that actually exists on the
+      # runner (see the toolchain note above).
       - name: Build fuzz targets
         working-directory: fuzz
-        run: cargo +nightly fuzz build
+        run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
 
   docs:
     name: rustdoc
