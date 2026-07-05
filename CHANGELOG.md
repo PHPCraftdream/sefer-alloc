@@ -5,40 +5,6 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Fixed
-
-- **Stats hit counters: closed a Stacked-Borrows aliasing gap (task W3).** The
-  process-wide `stats().tcache_hits` / `.large_cache_hits` aggregators used to
-  read each heap's counter through `(*heap_ptr).…` — materialising a shared
-  `&HeapCore`/`&AllocCore` over a struct the OWNING thread concurrently holds a
-  protected `&mut` into (the `alloc(&mut self, …)` protector). That is a
-  foreign-read of a protected `Unique`: UB under Stacked Borrows (miri's default
-  model), even though it is fine under Tree Borrows. The two hit counters now
-  live in the shared, `Sync` `HeapSlot` (which the aggregator already reads via
-  `&HeapSlot` for the `initialised` flag); the owning thread increments them
-  through a stable `&'static AtomicU64` handed to its `HeapCore` at
-  `HeapRegistry::claim` time, and the aggregators read the slot's atomic
-  directly — no `&HeapCore` is ever formed. No behaviour change: the counters
-  increment exactly as before and `stats()` returns the same values.
-
-### Changed
-
-- **New `alloc-stats` feature (default OFF, not in `production`) — task W3.**
-  The per-hit increments for `tcache_hits` / `large_cache_hits` are now gated
-  behind `alloc-stats`. With it off (the default, and the `production` set), the
-  magazine (churn) and large-cache hit fast paths carry no counter bookkeeping,
-  and those two `stats()` fields read `0`; all other `stats()` fields are
-  unaffected. Measured (W1 Ir judge, `--features production`): gating the bump
-  out brings `production` *below* the pre-W3 baseline on the hit-heavy benches
-  (`small_churn_16b` −59 Ir, `churn_256b` −59 Ir, `recycle_alloc_free_256b`
-  −477 Ir, `cold_alloc_free_256b` −236 Ir) — so closing the aliasing gap is a
-  net hot-path *win* for `production`, not a regression. Enable
-  `--features "production alloc-stats"` when you poll the two hit counters. The
-  counter storage is always present (in the slot), so toggling the feature never
-  changes layout/ABI.
-
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
@@ -46,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 implemented with line-by-line zero-trust review, per-fix counterfactual
 verification, and a commit between phases: the **P0–P7 perf arc**
 (#144–#163, beat `mimalloc` on small/medium), a **reliability, stress &
-release-doc pass** (R1–R4 / S1–S3 / D1, #153–#168), the **post-review
-hardening pass** (#129–#143), and the **initial phase A–F pass**. Sections
-below are grouped per workstream.
+release-doc pass** (R1–R4 / S1–S3 / D1, #153–#168), **two post-tag review
+passes** (#164–#178 — a hardening/H1 pass then a perf/reliability/CI pass
+W1–W6, both driven by fresh `/fxx` audits with per-fix counterfactuals), the
+**post-review hardening pass** (#129–#143), and the **initial phase A–F pass**.
+Sections below are grouped per workstream.
 
 ### Performance — the P0–P7 "beat mimalloc on small/medium" arc (#144–#163)
 
@@ -342,6 +310,101 @@ verified by a personal counterfactual before commit.
   comment no longer rests on the false "reverse TLS declaration order"
   guarantee (rewritten to the three real reasons); the stale
   `install_thread_free` "Box-allocates" claim corrected.
+
+### Second review pass — perf, reliability & CI hardening (W1–W6)
+
+A second `/fxx` review of the fully-composed tree. A **deterministic
+instruction-count (`Ir`) judge was built first** (W1) so every perf change is
+proven on the noisy Windows dev host *before* push, not left to Linux CI. Each
+change was verified by a personal counterfactual and committed between phases.
+
+#### Performance
+
+- **W4 — `carve_batch` + batched `dec_live`: the cold 16–64 B path drops
+  ~6.3k `Ir`.** A cold refill carved blocks one at a time through `carve_block`,
+  paying a runtime `align_up` division on the loop-carried `bump` dependency
+  chain plus a per-block `SegmentMeta` view, `bump` load/store, `is_decommitted`
+  check, `inc_live`, and page-map probe — most of them tautological after the
+  first block of a run. `AllocCore::carve_batch` carves a whole run from the
+  bump cursor in one shot (one `align_up`, one `set_bump`, one `add_live(n)`,
+  one recommit check, page-map marking only on a page change), byte-identical to
+  the per-block loop (the alloc bitmap is never touched — a bump-carved block is
+  already `bit0 = allocated`, so M2 is untouched; D1 exact `+n`; same SEGMENT
+  boundary, page dedication, and decommit recommit-on-reuse). `refill_class_bump`
+  also drops a now-dead redundant freelist re-read after the `free_exhausted`
+  latch. `flush_run`'s per-block `dec_live_and_maybe_decommit` becomes one
+  `sub_live(k)` + a single decommit check (`live` reaches 0 only at the last
+  accepted block, so the decommit decision is identical). Measured (W1 Ir judge,
+  `production`): `cold_alloc_free_256x16b` 129,863 → 123,516 (−6,347),
+  `cold_alloc_free_256x64b` −6,350, `recycle_alloc_free_256x16b` −6,254; churn
+  is unregressed. Two candidates were **honest-rejected with numbers**: a
+  `REFILL_N` const LUT regressed cold +32 Ir vs the inlined `udiv`; a
+  `heap_core` branch-fold was not a self-contained `match`. Pinned by
+  `regression_carve_batch` (+ `alloc_core_differential` M1–M4 and
+  `regression_magazine_oracles` M2).
+- **W3 — `alloc-stats` gate: `production` lands *below* the pre-W3 baseline on
+  the hit-heavy benches.** The per-hit `tcache_hits` / `large_cache_hits`
+  increments are now gated behind a new `alloc-stats` feature (default OFF, NOT
+  in `production`). With it off, the magazine (churn) and large-cache hit fast
+  paths carry no counter bookkeeping and those two `stats()` fields read `0`
+  (all other `stats()` fields unaffected; the counter storage always exists in
+  the slot, so toggling never changes layout/ABI). Gating the bump out brings
+  `production` below baseline: `small_churn_16b` −59, `churn_256b` −59,
+  `recycle_256b` −477, `cold_256b` −236 Ir. Enable
+  `--features "production alloc-stats"` to poll the counters.
+
+#### Fixed
+
+- **W3 — closed a Stacked-Borrows aliasing gap in the stats aggregators.** The
+  process-wide `stats().tcache_hits` / `.large_cache_hits` aggregators read each
+  heap's counter through `(*heap_ptr).…`, materialising a shared
+  `&HeapCore`/`&AllocCore` over a struct the OWNING thread concurrently holds a
+  protected `&mut` into — a foreign read of a protected `Unique`: UB under
+  Stacked Borrows (miri's default model), fine under Tree Borrows. The two hit
+  counters now live in the shared, `Sync` `HeapSlot` (already read by the
+  aggregator via `&HeapSlot` for `initialised`); the owner increments them
+  through a stable `&'static AtomicU64` planted at `HeapRegistry::claim`, and the
+  aggregators read the slot's atomic directly — no `&HeapCore` is ever formed.
+  Personally verified under miri: the old shape is SB UB, the new shape is
+  SB-clean (`regression_w3_stats_aliasing_miri`).
+- **W2 — `SegmentTable` tombstone-rebuild: killed a long-horizon probe cliff.**
+  The open-addressing `contains_base` hash tombstoned deleted entries but never
+  converted them back to empty, so `#empty` was monotonically non-increasing:
+  every register/unregister cycle with a fresh base (large-cache eviction,
+  decommit-recycle, ASLR) consumed one empty slot forever. Once `#empty` hit 0,
+  a `contains_base` MISS — the hot case, since every cross-thread free begins
+  with one on the caller's own table — probed the ENTIRE table. A long-running
+  server (the DBMS/async profile the crate targets) degraded to ~`HASH_CAPACITY`
+  metadata loads per cross-thread free. Fixed with an exact tombstone counter
+  that rebuilds the hash from the live slot set once tombstones exceed
+  `HASH_CAPACITY/4` (O(1) amortised per delete; the read path stays branch-free).
+  Membership is transparent across rebuilds. Ir byte-identical on all hot benches
+  (zero instructions added to the measured paths). Pinned by
+  `regression_segment_table_tombstone_rebuild`.
+
+#### Internal — tooling, CI, docs
+
+- **W1 — a deterministic WSL `Ir` judge (`npm run iai`, `scripts/iai.mjs`).**
+  Drives the Linux-only `benches/perf_gate_iai.rs` through WSL under
+  `valgrind --tool=callgrind` and tables the per-bench instruction count.
+  Instruction counts are byte-deterministic run-to-run, which makes this a judge
+  on the noisy Windows host where wall-clock is not. `docs/perf/IAI_BASELINE.md`
+  records the reference table.
+- **W5 — MSRV / macOS / fuzzing.** Silenced a `cargo +1.88 check --all-features`
+  dead-code false-positive on `ABANDON_SEG_SIZE` (an MSRV-invisible `const _`
+  assert reference); added a `macos-latest` allocator job (real Darwin runs the
+  `madvise(MADV_DONTNEED)` decommit path) plus an honesty note that XNU
+  `MADV_DONTNEED` is lazy (RSS reclaim best-effort; correctness unaffected as
+  `alloc_zeroed` zeroes explicitly); widened the fuzz align corridor to
+  `2^0..2^21` (exercising #130's large-align math), added a third fuzz target
+  `heap_core_ops` (the fastbin magazine via the `SeferAlloc` `GlobalAlloc`
+  face), seed corpora, and a build-only `fuzz-build` CI job.
+- **W6 — sanitizer coverage gaps.** Added a plain-provenance `miri-plain` CI job
+  for the exposed-provenance intrusive stacks (A1 `deferred_large` /
+  `abandoned_segs`), which the strict-provenance miri jobs cannot validate by
+  design; and added the two Large cross-thread tests
+  (`regression_realloc_xthread_stamp`, `regression_heap_xthread_large_free_no_leak`)
+  to the ThreadSanitizer list.
 
 ### Post-review hardening pass (#129–#143)
 

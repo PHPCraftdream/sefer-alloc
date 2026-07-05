@@ -225,15 +225,17 @@ disclaimer):
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
   bump-direct carve roughly halved the gap (16 B now 1.60×, 64 B 1.15× slower)
-  and brought cold 256 B to parity — the residual is honest per-block
-  page-fault work, called out in
+  and brought cold 256 B to parity; a later `carve_batch` pass (W4) shaved a
+  further ~6.3k `Ir` off the cold 16–64 B refill (one hoisted `align_up`
+  division + bookkeeping per carve run instead of per block) — the residual is
+  honest per-block page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc-grow under neighbour pressure** it is ~1.1× faster than
   `mimalloc` and ~8.8× faster than `System`.
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
-The verification stack is also honest: 106 integration test files, 11 loom
+The verification stack is also honest: 109 integration test files, 11 loom
 models, proptest differential against a reference model, miri with
 strict-provenance, ThreadSanitizer (×3 clean runs), Valgrind memcheck (clean),
 aarch64 (qemu), libFuzzer, soak / RSS / tokio-burn-in harnesses. The
@@ -684,24 +686,24 @@ those guarantees.
 ## Verification evidence
 
 This is a verification-first build. Every claim above is backed by a tool,
-a test file, and a reproducible command. **106 integration test files** ship
-in `tests/` (95 conventional + 11 loom models — counted separately below);
+a test file, and a reproducible command. **109 integration test files** ship
+in `tests/` (98 conventional + 11 loom models — counted separately below);
 **5 example binaries** in `examples/`; **9 benches** in `benches/`
 (`global_alloc`, `heap_alloc`, `heap_async_pattern`, `heap_xthread`,
 `large_realloc`, `locality`, `perf_gate_iai`, `pinned_write`, `sharded_write`);
-**2 libFuzzer targets** in `fuzz/`
-(`region_ops`, `global_alloc_ops`).
+**3 libFuzzer targets** in `fuzz/`
+(`region_ops`, `global_alloc_ops`, `heap_core_ops`).
 
 | Tool | What it proves | Where in repo |
 |---|---|---|
-| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (106 files) |
+| Unit / integration tests | Construction, edge cases, end-to-end behaviour | `tests/*.rs` (109 files) |
 | `proptest` differential | Op-stream agreement with a reference model (M1–M4) | `tests/alloc_core_differential.rs`, `tests/differential.rs` |
 | `loom` | Cross-thread protocol agreement (Phase 12, Phase 10) — honest status per file (some model live paths, some are retained-with-honesty-notes on removed/dead paths) in each file's own doc comment | `tests/loom_bootstrap_cas.rs`, `loom_deferred_large.rs`, `loom_epoch.rs`, `loom_fallback_init.rs`, `loom_free_slots_aba.rs`, `loom_magazine_ring_compose.rs`, `loom_registry.rs`, `loom_remote_ring.rs`, `loom_sharded.rs`, `loom_thread_free.rs`, `loom_xthread_protocol.rs` (11 models) |
 | `miri` (strict-provenance) | UAF, races at byte level, double-free, exposed-provenance casts | CI gate: `region_invariants`, `decommit_miri_cycle`, `reclaim_offset_unit` |
 | ThreadSanitizer | Real cross-thread data races on a live binary | CI job + manual ×3 verified clean on `race_repro`, `race_norecycle`, `global_alloc_mt`, `heap_cross_thread`, `decommit_stale_ring`, `decommit_soak` |
 | Valgrind `memcheck` | UAF, leaks, invalid reads at the process level | Manual: clean on all three cross-thread test binaries. Note: `helgrind` / `DRD` are inapplicable to lock-free atomic code (Valgrind doesn't model Rust atomics) — TSan is the right concurrency detector here. |
 | aarch64 via `qemu-user` | Code-gen + relaxed-memory smoke on ARM | CI job + manual 13/13 tests pass. Honest caveat: TCG translation does not fully model ARM's weak-memory; real ARM hardware verification is a follow-up. |
-| libFuzzer | Op-stream invariants under random input | `fuzz/fuzz_targets/region_ops.rs`, `global_alloc_ops.rs` |
+| libFuzzer | Op-stream invariants under random input | `fuzz/fuzz_targets/region_ops.rs`, `global_alloc_ops.rs`, `heap_core_ops.rs` (fastbin magazine) |
 | Soak harness | N-thread × hours stability | `examples/soak_xthread.rs` (32 / 64 / 128 workers) |
 | tokio burn-in | Live `#[global_allocator]` under tokio multi-thread runtime | `examples/tokio_burn_in.rs` |
 | RSS probe | Memory recovery under asymmetric cross-thread pressure | `examples/rss_probe.rs` |
