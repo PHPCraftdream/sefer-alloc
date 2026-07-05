@@ -3,8 +3,11 @@
 // miri matrix in .github/workflows/ci.yml.
 //
 // Usage (from repo root):
-//   node scripts/miri.mjs           # the full CI miri matrix
+//   node scripts/miri.mjs           # the full CI miri matrix (strict provenance)
 //   node scripts/miri.mjs decommit_miri_cycle   # a subset (by test name)
+//   node scripts/miri.mjs --plain   # the PLAIN-provenance matrix (exposed-
+//                                    # provenance stacks; see PLAIN_MATRIX below)
+//   node scripts/miri.mjs --plain regression_heap_xthread_large_free_no_leak
 //   npm run miri
 //
 // Each entry is [features, testName]; miri is slow (segment tests run 1-8 min
@@ -52,14 +55,53 @@ const MATRIX = [
   // `decommit_miri_cycle`.
 ];
 
-const filter = process.argv.slice(2);
-const entries = filter.length
-  ? MATRIX.filter(([, t]) => filter.includes(t))
-  : MATRIX;
+// W6: the PLAIN-provenance matrix. `src/registry/bootstrap.rs` (~lines 126-136)
+// documents that the exposed-provenance intrusive stacks — the A1
+// `deferred_large` push/drain stack and the `abandoned_segs` stack — pack real
+// pointer addresses via `expose_provenance` and re-derive them via
+// `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is
+// rejected under `-Zmiri-strict-provenance` (correctly — it is the documented
+// structural limit, not a bug), so these tests get ZERO miri coverage in the
+// strict MATRIX above. Run them under PLAIN miri (Stacked Borrows, non-strict
+// provenance — miri's default) instead: the `push.rs` / `drain.rs` /
+// `heap_registry.rs` / `node.rs` pairs ARE validatable there. Small N per test
+// (Large allocs, <=100 iterations) keeps each run miri-affordable. Kept SEPARATE
+// from the strict MATRIX — a strict-clean test must NOT move here and vice-versa.
+// Under plain miri the `expose_provenance`/`with_exposed_provenance_mut` pairs
+// surface as integer-to-pointer cast WARNINGS (validated) — strict miri would
+// hard-ERROR on the same casts, which is the whole reason for a plain job.
+// Verified locally: `regression_xthread_large_free_no_leak` → 3 passed (~156s).
+//
+// NOT here: the explicit-`Heap`-face tests
+// (`regression_heap_xthread_large_free_no_leak`,
+// `regression_xthread_large_free_layout_mismatch`) call `Heap::new()` on a
+// SPAWNED thread; that thread's per-thread primordial 4 MiB segment goes
+// unreachable at thread exit, so miri's leak checker reports it — a per-thread-
+// `Heap` miri artifact, NOT the exposed-provenance path (its p2i re-derivations
+// warn cleanly there too). Suppressing it needs `-Zmiri-ignore-leaks`, which
+// would void the "no_leak" oracle. Their cross-thread reclaim is covered on
+// REAL threads under TSan (see scripts/tsan.mjs) instead.
+const PLAIN_MATRIX = [
+  // A1 deferred-large stack over the `SeferAlloc`/`HeapCore` (global) face.
+  ['alloc-global alloc-xthread', 'regression_xthread_large_free_no_leak'],
+];
 
+const args = process.argv.slice(2);
+const plain = args.includes('--plain');
+const filter = args.filter((a) => a !== '--plain');
+const matrix = plain ? PLAIN_MATRIX : MATRIX;
+const entries = filter.length
+  ? matrix.filter(([, t]) => filter.includes(t))
+  : matrix;
+
+// The strict job pins `-Zmiri-strict-provenance`; the plain job DROPS it (the
+// exposed-provenance re-derivations require the default, non-strict model). Both
+// keep `-Zmiri-disable-isolation`.
 const env = {
   ...process.env,
-  MIRIFLAGS: '-Zmiri-strict-provenance -Zmiri-disable-isolation',
+  MIRIFLAGS: plain
+    ? '-Zmiri-disable-isolation'
+    : '-Zmiri-strict-provenance -Zmiri-disable-isolation',
 };
 
 let allOk = true;

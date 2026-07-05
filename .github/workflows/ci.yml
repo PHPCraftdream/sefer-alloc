@@ -249,6 +249,58 @@ jobs:
           components: miri
       - run: cargo miri test ${{ matrix.test }}
 
+  miri-plain:
+    # W6: PLAIN-provenance miri for the exposed-provenance intrusive stacks.
+    # `src/registry/bootstrap.rs` (~lines 126-136) documents that the A1
+    # `deferred_large` push/drain stack and the `abandoned_segs` stack pack a
+    # real pointer's address via `expose_provenance` and re-derive it via
+    # `with_exposed_provenance_mut` BY DESIGN. That wildcard-provenance shape is
+    # rejected by `-Zmiri-strict-provenance` (correctly — the documented
+    # structural limit, not a bug), so the strict `miri` job above gives the
+    # `push.rs` / `drain.rs` / `heap_registry.rs` / `node.rs` pairs ZERO
+    # coverage. This job runs the tests that exercise those stacks under PLAIN
+    # miri (Stacked Borrows, miri's default non-strict provenance model) — the
+    # ONLY mode in which the re-derivations validate. It DROPS
+    # `-Zmiri-strict-provenance` and keeps only `-Zmiri-disable-isolation`.
+    # Kept SEPARATE from the strict `miri` job (whose tests stay strict-clean);
+    # no test is shared between the two jobs. Small N per test (Large allocs,
+    # <=100 iterations) keeps each run miri-affordable.
+    name: miri-plain (${{ matrix.test }})
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-disable-isolation"
+    strategy:
+      fail-fast: false
+      matrix:
+        # The A1 deferred-large / abandoned-seg exposed-provenance stacks over
+        # the GLOBAL-singleton `SeferAlloc`/`HeapCore` face. The three test fns
+        # (double-free-no-double-reclaim, counter-advances-again, reclaims-
+        # segments-no-leak) drive the `push.rs` / `drain.rs` / `heap_registry.rs`
+        # / `node.rs` re-derivations; under plain miri they show up as
+        # integer-to-pointer cast WARNINGS (validated, not errors — strict miri
+        # would hard-ERROR on exactly those casts, which is why this must run
+        # non-strict). Verified locally: 3 passed, 0 failed (~156s).
+        #
+        # NOT included — the two explicit-`Heap`-face tests
+        # (`regression_heap_xthread_large_free_no_leak`,
+        # `regression_xthread_large_free_layout_mismatch`): both call
+        # `Heap::new()` on a SPAWNED thread, whose per-thread primordial 4 MiB
+        # segment becomes unreachable when that thread exits, so miri's leak
+        # checker reports it (a genuine miri artifact of the per-thread `Heap`
+        # face, NOT the exposed-provenance path — the p2i re-derivations warn
+        # cleanly there too). Silencing it needs `-Zmiri-ignore-leaks`, which
+        # would defeat these "no_leak" oracles. Their cross-thread reclaim IS
+        # covered on REAL threads by the TSan `tsan` job instead.
+        test:
+          # A1 stack over the `SeferAlloc`/`HeapCore` (global-singleton) face.
+          - "--features \"alloc-global alloc-xthread\" --test regression_xthread_large_free_no_leak"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: cargo miri test ${{ matrix.test }}
+
   loom:
     # Loom model-checking of every concurrency protocol in the crate:
     # the bootstrap-CAS state-machine (Registry lazy init), the adopt
@@ -364,6 +416,15 @@ jobs:
       # caps the workers at 4 to bound TSan's shadow memory) so the run stays
       # ~sub-second. These env vars are read ONLY by that test and are UNSET in
       # the native suite, so native behavior is byte-identical to before.
+      #
+      # W6: the Large cross-thread FREE path (the A1 deferred-large /
+      # abandoned-seg exposed-provenance stacks) was UNINSTRUMENTED — every test
+      # above frees small blocks cross-thread. `regression_realloc_xthread_stamp`
+      # (the W4/MUST-1 realloc → cross-thread-free path) and
+      # `regression_heap_xthread_large_free_no_leak` (the A1 Large cross-thread
+      # reclaim over the `Heap` face) are both genuine MT tests (each spawns a
+      # non-owner thread that remotely frees a Large segment) and compile under
+      # `production`, so add both to this step.
       - name: Run production-config tests under ThreadSanitizer
         env:
           SEFER_STRESS_OPS: "600"
@@ -377,6 +438,8 @@ jobs:
           --test heap_cross_thread
           --test tls_heap_teardown_ordering_stress
           --test regression_percounter_perheap_aggregation
+          --test regression_realloc_xthread_stamp
+          --test regression_heap_xthread_large_free_no_leak
           --test stress_concurrent_boundaries
 
   multi-arch:

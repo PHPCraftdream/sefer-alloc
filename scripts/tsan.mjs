@@ -45,6 +45,17 @@ const PROD_TESTS = [
   'heap_cross_thread',
   'tls_heap_teardown_ordering_stress',
   'regression_percounter_perheap_aggregation',
+  // W6: the Large cross-thread FREE path (A1 deferred-large / abandoned-seg
+  // exposed-provenance stacks) had no TSan coverage — the two production steps
+  // above only exercise the small-block cross-thread races and the Э5 counter
+  // reads. Both of these are genuine MT tests (each spawns a non-owner thread
+  // that remotely frees a Large segment, then joins): `regression_realloc_
+  // xthread_stamp` drives the W4/MUST-1 realloc → cross-thread-free path, and
+  // `regression_heap_xthread_large_free_no_leak` drives the A1 Large
+  // cross-thread reclaim over the `Heap` public face. Both compile under the
+  // `production` set (production ⊇ alloc-global ⊇ alloc, + alloc-xthread).
+  'regression_realloc_xthread_stamp',
+  'regression_heap_xthread_large_free_no_leak',
   // S3 (#168): the concurrent boundary-stress hammer (S1) under TSan — the
   // highest-value race surface (magazine / RemoteFreeRing / Э5 counters under
   // boundary pressure). Its per-thread op budget and thread cap are slashed for
