@@ -155,6 +155,23 @@ pub const RING_SLOT_EMPTY: u32 = u32::MAX;
 #[doc(hidden)]
 pub const RING_CAP: usize = 256;
 
+// The ring's u32 `head`/`tail` cursors are monotonic WRAPPING counters:
+// occupancy is `tail.wrapping_sub(head)` and the slot index is `i % RING_CAP`.
+// For the slot sequence to stay CONTINUOUS across the `u32::MAX → 0` wrap, the
+// index must not jump at the boundary: `(2^32 - 1) % CAP` must be followed by
+// `0 % CAP`, i.e. `2^32 % CAP == 0`. That holds iff `CAP` is a power of two.
+// A non-power-of-two CAP would jump the slot index at the wrap (…, (2^32-1) mod
+// CAP, 0 mod CAP …) and corrupt the FIFO on the ONE genuinely reachable wrap
+// hazard (2^32 cross-thread frees on a single hot, long-lived segment). This is
+// an otherwise UNSTATED dependency; pin it at compile time.
+const _: () = assert!(
+    RING_CAP.is_power_of_two(),
+    "RING_CAP must be a power of two so 2^32 % RING_CAP == 0 — the ring's u32 \
+     head/tail cursors wrap continuously across u32::MAX only then; a \
+     non-power-of-two CAP would jump the slot index at the wrap and corrupt the \
+     FIFO"
+);
+
 /// The byte footprint of a `RemoteFreeRing` in segment metadata. Fixed so the
 /// bootstrap can carve it deterministically alongside the bin table.
 #[doc(hidden)]
@@ -273,6 +290,33 @@ impl RemoteFreeRing {
     #[doc(hidden)]
     pub fn overflow_count(&self) -> u32 {
         self.overflow().load(Ordering::Acquire)
+    }
+
+    /// **Test surface** (task: long-run u32 wrap): preset the `head` and `tail`
+    /// cursors directly so a test can drive the ring across the `u32::MAX → 0`
+    /// boundary without first pushing 2^32 entries. Writes the atomics with
+    /// `Release` (mirrors the production drain's `head` publish / push's `tail`
+    /// reservation visibility) so a subsequently spawned producer/consumer sees
+    /// the preset. MUST be called on a quiescent ring (no concurrent push/drain)
+    /// and MUST leave `tail.wrapping_sub(head) <= RING_CAP` (the ring's full
+    /// invariant) — the caller is responsible for a consistent preset.
+    #[cfg(feature = "alloc-xthread")]
+    #[doc(hidden)]
+    pub fn dbg_set_cursors(&self, head: u32, tail: u32) {
+        self.head().store(head, Ordering::Release);
+        self.tail().store(tail, Ordering::Release);
+    }
+
+    /// **Test surface** (task: long-run u32 wrap): read the current `(head,
+    /// tail)` cursor pair. Lets a test assert occupancy (`tail.wrapping_sub(
+    /// head)`) across the wrap. `Acquire` loads (uniform with the drain/push).
+    #[cfg(feature = "alloc-xthread")]
+    #[doc(hidden)]
+    pub fn dbg_cursors(&self) -> (u32, u32) {
+        (
+            self.head().load(Ordering::Acquire),
+            self.tail().load(Ordering::Acquire),
+        )
     }
 
     /// Initialise a fresh ring at `base + off`: zero the cursors and mark every
