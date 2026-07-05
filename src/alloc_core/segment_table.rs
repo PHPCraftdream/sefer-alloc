@@ -169,6 +169,31 @@ pub(crate) struct SegmentTable {
     /// right after `free_list`'s `FREE_LIST_CAPACITY` entries). The number of
     /// valid (push-order) entries currently on the free-list stack.
     free_top: *mut u32,
+    /// W2 (tombstone-rebuild) — number of TOMBSTONE entries currently present
+    /// in `hash_slots`. A PLAIN struct field (NOT primordial-resident memory):
+    /// the carved footprint (`slots`/`hash_slots`/`free_list`/`free_top`) is
+    /// unchanged; this counter is an inline field of the `SegmentTable` value
+    /// held by `AllocCore`, zero-initialised in `from_primordial`.
+    ///
+    /// ## Why it exists (the perf-metastability it kills)
+    ///
+    /// Tombstones are written by `hash_remove` and, pre-W2, NEVER converted
+    /// back to empty (no backward-shift deletion, no rebuild). Every
+    /// register/unregister cycle with a FRESH base (large-cache eviction,
+    /// decommit-recycle, ASLR) consumed one empty slot forever, so `#empty`
+    /// was monotonically non-increasing. Once `#empty` hit 0 (live ≤
+    /// `MAX_SEGMENTS`, tombstones ≥ `MAX_SEGMENTS`), a `hash_contains` of an
+    /// ABSENT base — the hot case, since every cross-thread free begins with a
+    /// `contains_base` MISS on the caller's own table — probed the ENTIRE
+    /// `HASH_CAPACITY` array before returning `false`. A long-running server
+    /// degraded to ~`HASH_CAPACITY` metadata loads per cross-thread free. Not
+    /// UB — a metastable perf collapse in exactly the DBMS/async profile the
+    /// crate targets.
+    ///
+    /// The counter is maintained EXACTLY (incremented by `hash_remove`,
+    /// decremented when `hash_insert` reuses a tombstone slot, reset to 0 by
+    /// `rebuild_hash`) so the rebuild trigger can fire deterministically.
+    tombstones: u32,
 }
 
 impl SegmentTable {
@@ -204,6 +229,9 @@ impl SegmentTable {
             hash_slots,
             free_list,
             free_top,
+            // W2: no tombstones exist in a freshly-carved hash table (the
+            // bootstrap zeroed every entry to `null_mut()` = empty).
+            tombstones: 0,
         }
     }
 
@@ -304,6 +332,12 @@ impl SegmentTable {
         super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
         // OPT-B: remove from hash table (tombstone the entry).
         self.hash_remove(base);
+        // W2: `hash_remove` just bumped `tombstones`. Amortise the rebuild onto
+        // this deletion if the table has crossed the threshold (see
+        // `maybe_rebuild_hash`). Rebuild lives on the DELETION path, not the
+        // read path, so `contains_base`/`hash_contains` stay branch-free of
+        // rebuild logic.
+        self.maybe_rebuild_hash();
         // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
         // cached. A stale cache slot surviving removal would let a future
         // `contains_base` HIT on an unregistered/recycled/unmapped base and
@@ -385,6 +419,13 @@ impl SegmentTable {
                 // future `register`). Guarded by `current == base` above, so
                 // this index is pushed at most once per logical recycle.
                 self.free_list_push(id);
+                // W2: amortise a rebuild onto this deletion if the tombstone
+                // count crossed the threshold. Done AFTER the slot is NULLed so
+                // `rebuild_hash`'s live-base scan (over `slots[0..count]`) does
+                // NOT re-insert the just-recycled `base` (its slot is now
+                // NULL and skipped) — the rebuild must observe the table in its
+                // post-removal state.
+                self.maybe_rebuild_hash();
                 return;
             }
         }
@@ -675,6 +716,14 @@ impl SegmentTable {
             let entry = self.hash_slot_read(i);
             if entry.is_null() || entry == TOMBSTONE {
                 // Empty or tombstone: this slot is available.
+                if entry == TOMBSTONE {
+                    // W2: reusing a tombstone converts it back to live — the
+                    // ONLY tombstone→live transition. Keep `tombstones` exact
+                    // (it is otherwise only grown by `hash_remove` and reset by
+                    // `rebuild_hash`); an off-by-one here would let the rebuild
+                    // trigger fire early or late.
+                    self.tombstones -= 1;
+                }
                 self.hash_slot_write(i, base);
                 return;
             }
@@ -710,12 +759,108 @@ impl SegmentTable {
                 // Found the live entry: replace with tombstone so probe chains
                 // for other keys that passed through this slot remain intact.
                 self.hash_slot_write(i, TOMBSTONE);
+                // W2: the ONLY live→tombstone transition — bump the exact
+                // tombstone count so `unregister`/`recycle` can decide whether
+                // the table has accumulated enough tombstones to warrant a
+                // rebuild.
+                self.tombstones += 1;
                 return;
             }
             // TOMBSTONE or different live entry: skip and continue probing.
             i = (i + 1) & (HASH_CAPACITY - 1);
             debug_assert!(i != start, "hash_remove looped without finding base");
         }
+    }
+
+    /// W2 — rebuild trigger. Called on the deletion paths (`unregister`,
+    /// `recycle`) right after a tombstone was created (and the vacated slot
+    /// NULLed). Rebuilds only when tombstones exceed `HASH_CAPACITY / 4`.
+    ///
+    /// ## Threshold justification (why a quarter)
+    ///
+    /// A rebuild is O(`HASH_CAPACITY`) (clear the array + re-insert every live
+    /// base). If we trigger every time `tombstones > HASH_CAPACITY / 4`, then
+    /// between two rebuilds at least `HASH_CAPACITY / 4` *fresh* deletions must
+    /// have occurred (each rebuild resets the count to 0, and only a
+    /// live→tombstone removal grows it). So the O(`HASH_CAPACITY`) rebuild cost
+    /// is amortised over ≥ `HASH_CAPACITY / 4` deletions → **O(1) amortised**
+    /// per delete. A quarter (rather than a half) also keeps the *steady-state*
+    /// tombstone population ≤ `HASH_CAPACITY / 4`, so `#empty` stays ≥
+    /// `HASH_CAPACITY - MAX_SEGMENTS - HASH_CAPACITY/4` = well above zero (with
+    /// `HASH_CAPACITY = 2·MAX_SEGMENTS`, that is ≥ `HASH_CAPACITY/4` empty
+    /// slots always), which bounds the worst-case `hash_contains` probe length
+    /// and kills the metastable collapse this counter exists to prevent. A
+    /// smaller fraction would rebuild too often (cost); a larger one lets the
+    /// probe chains grow longer before reclaiming — a quarter is the balance.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    #[inline]
+    fn maybe_rebuild_hash(&mut self) {
+        if self.tombstones > (HASH_CAPACITY / 4) as u32 {
+            self.rebuild_hash();
+        }
+    }
+
+    /// W2 — rebuild the open-addressing hash from the authoritative dense slot
+    /// registry, eliminating ALL tombstones. Clears `hash_slots` to empty,
+    /// re-inserts every LIVE base (`slots[0..count]`, skipping NULL/recycled
+    /// slots), resets `tombstones` to 0, and clears `own_cache`.
+    ///
+    /// This is TRANSPARENT: `contains_base`/`hash_contains` return the exact
+    /// same true/false for every base before and after (membership is defined
+    /// by the live slot set, which the rebuild reproduces exactly). The only
+    /// thing that changes is the probe *positions* — which is precisely why
+    /// `own_cache` MUST be reset: it caches `hash_contains`-proven bases, and a
+    /// rebuild moves entries, so a stale cache slot could point a probe at the
+    /// wrong position. Clearing it is the safe, correct move (it re-fills
+    /// lazily from won probes), and matches the eviction discipline of
+    /// `unregister`/`recycle`, which clear the cache in lockstep with hash
+    /// mutation.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    fn rebuild_hash(&mut self) {
+        // 1. Clear the whole hash table to empty (null).
+        for i in 0..HASH_CAPACITY {
+            self.hash_slot_write(i, core::ptr::null_mut());
+        }
+        // 2. Tombstones are gone — reset the exact count BEFORE re-inserting so
+        //    the tombstone→live decrement in `hash_insert` (which cannot fire
+        //    now, since every slot is empty) never sees a stale value.
+        self.tombstones = 0;
+        // 3. Re-insert every LIVE base from the authoritative dense registry.
+        //    NULL (recycled) slots are skipped — they are not members. The
+        //    just-vacated base (in `recycle`/`unregister`) is already NULL in
+        //    `slots`, so it is correctly NOT re-inserted.
+        let n = self.count as usize;
+        for i in 0..n {
+            let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
+            let base = super::node::Node::read_struct::<*mut u8>(slot);
+            if !base.is_null() {
+                self.hash_insert(base);
+            }
+        }
+        // 4. Reset the proven-present cache: a rebuild moved probe positions, so
+        //    every cached (proven) entry may now be stale. Clearing is the
+        //    safe, correct move — it re-fills lazily from future won probes.
+        self.own_cache = [core::ptr::null_mut(); OWN_CACHE_SIZE];
+    }
+
+    /// W2 — TEST-ONLY observability seam: the current exact TOMBSTONE count in
+    /// the hash table. Mirrors the `dbg_*` convention used elsewhere in the
+    /// substrate (e.g. `count()` exposure via `AllocCore::dbg_table_count`).
+    /// Lets the counterfactual regression test observe that the rebuild fires
+    /// and keeps tombstones bounded. Zero production impact.
+    #[doc(hidden)]
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    pub(crate) fn dbg_hash_tombstones(&self) -> u32 {
+        self.tombstones
     }
 
     /// Check whether `base` is present in the hash table (O(1) average).
