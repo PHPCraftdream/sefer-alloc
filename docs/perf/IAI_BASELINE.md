@@ -79,3 +79,38 @@ bench by a uniform **−4 Ir** — a *decrease*, from the one-time bootstrap
 falls inside each bench's first-claim window). Not a hot-path touch; accepted.
 The current post-W7a table is the W4 table above minus 4 on every row
 (e.g. `cold_alloc_free_256x16b` = 123,512; `small_churn_16b` = 80,793).
+
+## Pre-X-arc full baseline (2026-07-05)
+
+Fresh full-run snapshot taken before the perf/correctness X-arc (#182–187).
+Confirms **zero drift since W7a** — every `Ir` is byte-identical to the post-W7a
+values above (small_churn 80,793 · cold 123,512 · recycle 175,892 · realloc_grow
+1,520,714). This is the reference the X-arc diffs against; X1 (in-place Large
+realloc) targets `realloc_grow`.
+
+This run also records the FULL callgrind metrics — L1/L2/RAM hits and
+`Estimated Cycles` (`= L1 + 5·L2 + 35·RAM`, callgrind's default model). These
+are what X3's cache-aware judge upgrade will diff against, since `Ir` counts a
+`udiv` and a cache-missing load identically (both = 1 instruction) while cycles
+do not. Numbers are deterministic run-to-run (callgrind).
+
+| bench function              |        Ir |    L1 hits | L2 hits | RAM hits | Est. Cycles |
+| --------------------------- | --------: | ---------: | ------: | -------: | ----------: |
+| small_churn_16b             |    80,793 |    141,802 |      64 |    5,201 |     324,157 |
+| aligned_churn_640b_a128     |    80,677 |    141,690 |      64 |    5,201 |     324,045 |
+| large_alloc_free_cycle      |    72,341 |    131,665 |      62 |    5,206 |     314,185 |
+| realloc_grow                | 1,520,714 |  3,751,251 |  45,317 |   92,240 |   7,206,236 |
+| cold_alloc_free_256x16b     |   123,512 |    193,440 |     107 |    5,277 |     378,670 |
+| cold_alloc_free_256x64b     |   123,019 |    192,766 |     109 |    5,459 |     384,376 |
+| recycle_alloc_free_256x16b  |   175,892 |    255,667 |     109 |    5,281 |     441,047 |
+| recycle_alloc_free_256x64b  |   175,414 |    254,996 |     111 |    5,475 |     447,176 |
+| churn_256b                  |    80,668 |    141,676 |      64 |    5,202 |     324,066 |
+| churn_write_256b            |    80,796 |    141,929 |      64 |    5,205 |     324,424 |
+
+**`realloc_grow` is the outlier the X-arc exists for:** 92,240 RAM hits and
+45,317 L2 hits vs ~5.2k / ~100 for every other bench — memcpy floors made
+visible. Its Estimated Cycles (7,206,236) is ~22× any other bench, a WIDER gap
+than the 19× seen in `Ir` alone: the cache-miss cost of the copies is invisible
+to `Ir` but real in cycles. X1 (in-place growth within the already-mapped
+`span_usable`) removes the copy entirely on the fits-in-span path, so the cycle
+metric should collapse even harder than `Ir`.

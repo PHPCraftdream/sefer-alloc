@@ -1,5 +1,70 @@
 # `SeferAlloc` — benchmark & honest verdict
 
+> ## 0.3.0 pre-X-arc re-measurement (2026-07-05) — vs mimalloc & System
+>
+> Fresh full re-run on the clean post-W7 tree (`origin/main`), taken as the
+> reference before the perf/correctness X-arc (#182–187). Same host and quick
+> criterion profile (`sample_size(10)`, 150 ms warm-up / 600 ms measurement),
+> noisy Windows 10 dev machine (±15–20 %). All three allocators are driven
+> directly through their `GlobalAlloc` impl in ONE binary — a true
+> apples-to-apples comparison (`SeferAlloc` is NOT installed as the bench
+> binary's global allocator; it is called directly, exactly like `mimalloc 0.1`
+> and `System`). Medians shown; trust the ratio and order of magnitude, not the
+> exact µs. The deterministic per-op judge remains `perf_gate_iai` (`Ir`, Linux
+> CI / `npm run iai` — see [`perf/IAI_BASELINE.md`](perf/IAI_BASELINE.md), whose
+> "Pre-X-arc full baseline" section is byte-identical to post-W7a). Ratio =
+> Sefer/mimalloc; **< 1.0 = Sefer faster**.
+>
+> **Large alloc+free — flagship large-cache (`alloc-decommit`):**
+>
+> | size   | SeferAlloc |  mimalloc |  System | vs mimalloc | vs System |
+> | ------ | ---------: | --------: | ------: | ----------: | --------: |
+> | 4 MiB  | **59.0 ns** |   735 ns | 15.9 µs | **12.5× faster** | **269× faster** |
+> | 16 MiB | **75.5 ns** |  1.13 µs | 17.7 µs | **15.0× faster** | **234× faster** |
+> | 64 MiB | **73.8 ns** |  2.58 µs | 18.8 µs | **35.0× faster** | **255× faster** |
+>
+> **Steady-state churn** (256-block working set, non-writing):
+>
+> | size   | SeferAlloc | mimalloc |  System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | ------: | ----------: | --------: |
+> | 16 B   | **21.0 µs** |  39.8 µs | 141.9 µs | **1.90× faster** | 6.75× faster |
+> | 64 B   | **21.1 µs** |  39.4 µs | 157.9 µs | **1.87× faster** | 7.48× faster |
+> | 256 B  | **21.6 µs** |  22.9 µs | 130.5 µs | **1.06× faster** | 6.05× faster |
+> | 1024 B | **21.6 µs** | 165.4 µs | 118.9 µs | **7.66× faster** | 5.50× faster |
+>
+> **Writing churn** (each block written after alloc — the realistic pattern, headline):
+>
+> | size   | SeferAlloc | mimalloc |  System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | ------: | ----------: | --------: |
+> | 16 B   | **22.3 µs** |  39.6 µs | 129.4 µs | **1.77× faster** | 5.79× faster |
+> | 64 B   | **23.3 µs** | 52.7 µs¹ | 200.3 µs | **2.26× faster** | 8.61× faster |
+> | 256 B  | **29.2 µs** |  32.6 µs | 220.8 µs | **1.12× faster** | 7.56× faster |
+> | 1024 B | **33.2 µs** | 230.7 µs | 238.7 µs | **6.96× faster** | 7.19× faster |
+>
+> ¹ mimalloc's 64 B write row was noisy this run (samples 43–65 µs); the "Sefer
+> leads" signal is solid, the exact multiplier is inflated by the high tail.
+>
+> **Cold/bulk direct** (`alloc N → free N`, no reuse — the documented magazine worst-case):
+>
+> | size     | SeferAlloc | mimalloc |  System | vs mimalloc | vs System |
+> | -------- | ---------: | -------: | ------: | ----------: | --------: |
+> | 16 B     | 25.6 µs | **10.6 µs** | 105.5 µs | 2.41× slower | 4.12× faster |
+> | 64 B     | 27.6 µs | **17.9 µs** | 146.1 µs | 1.54× slower | 5.30× faster |
+> | 256 B    | 39.3 µs | **22.9 µs** | 143.7 µs | 1.71× slower | 3.66× faster |
+> | 1024 B   | **41.4 µs** | 48.1 µs | 193.9 µs | **1.16× faster** | 4.68× faster |
+> | Vec_push | **625 ns** | 631 ns | 570 ns | ≈parity (1.01× faster) | 1.10× slower |
+>
+> **Verdict (2026-07-05):** large-object work is a decisive win (12–35× vs
+> mimalloc, 234–269× vs System — the large-cache flagship). On the realistic
+> WRITING churn `SeferAlloc` leads mimalloc at **every** size (1.12–6.96×); on
+> non-writing churn it also leads everywhere (parity-plus at 256 B). The one
+> loss is **cold/bulk tiny (16–64 B)** where mimalloc's cheaper first-touch path
+> leads ~1.5–2.4× — the documented magazine trade-off, kept as a regression
+> guard, not a representative workload. `System` trails 3.7–269× throughout
+> (the sole exception: `Vec_push`, where all three are within noise). Consistent
+> with the P0–P7 history below; where absolute µs disagree, THIS section is
+> current.
+>
 > ## 0.3.x re-measurement (2026-07-03) — after the P0–P5 perf arc
 > (256 B churn caveat below is superseded by P6 — see the "P5 → P6" section)
 >
