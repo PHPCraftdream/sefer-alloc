@@ -177,3 +177,27 @@ knows the slot index; clearing exactly one bit is sound only with per-slot
 bits, not a shared bloom — i.e. a 16-bit occupancy mask keyed by slot, which
 is just the scan again). Recorded so the next reader does not re-run the same
 experiment blind.
+
+## X6 honest-reject (2026-07-05) — clz class_for vs the 16 KiB SIZE2CLASS LUT
+
+**REJECT.** A clz-based `class_for` (14-byte `CLZ_BASE` per-pow2-bucket table +
+≤6-step forward scan — the 49-class geometry has 1–5 irregular classes per
+log2 bucket, no closed form) was proven **bitwise-identical** to the LUT over
+8,280,074 (size, align) pairs, then measured against the 11-bench reference:
+
+- Churn Ir: 0 delta (the compiler const-evals `class_for` for the benches'
+  fixed sizes — both variants generate identical code there).
+- `realloc_grow` (the one dynamically-sized path): **+658 Ir** — clz+scan
+  costs more instructions than one indexed load.
+- **Estimated Cycles regressed on 10/11 benches** (churn +72…+208; recycle
+  +72/+140; multiseg +76; only cold_64b −64): RAM hits unchanged (±4), so the
+  LUT's 16 KiB footprint never surfaced as misses even in callgrind's
+  cold-start model, while the scan's extra loads did.
+
+Caveat recorded: the tiny benches under-represent the LUT's real cache
+pressure against an application working set — but this was not a near-tie
+(10/11 EC regressions), so the footprint tie-break did not apply. If a future
+arc revisits, the trigger should be a REAL-application cache profile (not
+microbenches) showing SIZE2CLASS lines contending; the clz implementation and
+the exhaustive differential test are recoverable from this ledger entry's
+description.
