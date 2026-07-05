@@ -150,3 +150,30 @@ untouched (churn per-op below the pre-X2 baseline once the one-time constant
 is excluded). `multiseg_cold_256k` (new, X3) is the designated judge for X5
 (per-class segment queues): 34 × 256 KiB allocations span 3 segments and the
 second round's refills walk all three via `find_segment_with_free`.
+
+## X4 honest-rejects (2026-07-05) — both recycle experiments measured and declined
+
+Recorded per the project's reject-with-numbers precedent (E2 REFILL_N LUT).
+Final tree after X4 = pristine `2a23878` (zero diff; nothing shipped).
+
+**A — `TCACHE_CAP` 16→32 (byte-budgeted both sides): REJECT.** Every bench
+regressed, including the explicit target (recycle **+32,305** Ir; churn
++22.3k; cold +25.3k; large +18.3k). The bench shapes don't refill-miss enough
+to amortize a doubled cap — each refill/flush just got twice as large (bigger
+carve/flush batches, larger `Tcache` zero-init, longer M2 scan). Confirms the
+FASTBIN P6 sweep's "CAP=32+ materially worse" even post-Э1 batched carve.
+
+**B — 64-bit bloom signature gating the M2 in-magazine scan: REJECT (the
+won-front rule).** Recycle won big (−19,147 / −14,235; cold −8,733 / −6,997)
+but ALL THREE churn benches regressed ~+980 Ir — far past the ±10 hot-path
+kill threshold. Mechanism: on churn the freed block was just popped from the
+magazine, so its signature bit is still set → the gate never skips the scan
+and is pure overhead (shift+and+test per free + push-side `|=` + a larger
+`Tcache`). The bloom only earns its skip on cold/recycle, where freed blocks
+came from the substrate (bit clear). Churn is the won front; the project does
+not trade it — declined despite the net-positive arithmetic. If a future arc
+revisits this, the shape to try is a signature that is CLEARED on pop (pop
+knows the slot index; clearing exactly one bit is sound only with per-slot
+bits, not a shared bloom — i.e. a 16-bit occupancy mask keyed by slot, which
+is just the scan again). Recorded so the next reader does not re-run the same
+experiment blind.
