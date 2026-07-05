@@ -540,3 +540,4 @@ context and caveats.
 | [RACE_DRAIN_RECLAIM.md](RACE_DRAIN_RECLAIM.md) | Full diagnostic trail of the drain-reclaim UAF (§1-§14); the true root cause (class derivation §13); the shipped fix |
 | [ALLOC_BENCH.md](ALLOC_BENCH.md) | Single-thread and MT benchmark results; OPT-E large cache; heap-core pinning honest verdict; all numbers in context |
 | [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md) | Flamegraph analysis across 4 workloads; 6 OPT candidates (A-H) with estimated impact |
+| [DURABILITY.md](DURABILITY.md) | Ultra-long-run counter inventory: every monotonic/wrapping/saturating cursor with its width, wrap arithmetic, verdict, and boundary test — and the rule for adding a new one |

@@ -265,8 +265,9 @@ pub struct Registry {
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
     pub count: core::sync::atomic::AtomicU32,
-    /// Tagged-Treiber head of the `free_slots` stack: low 32 = slot index,
-    /// high 32 = tag (bumped per push). Initialised empty.
+    /// Tagged-Treiber head of the `free_slots` stack: low 16 = slot index,
+    /// high 48 = ABA tag (bumped per push; see `TaggedPtr`, repacked in W7a).
+    /// Initialised empty.
     pub free_slots: core::sync::atomic::AtomicU64,
     /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
     /// the full 64-bit segment base (in the high bits, since bases are
