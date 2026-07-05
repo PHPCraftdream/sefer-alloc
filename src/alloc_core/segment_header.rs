@@ -877,6 +877,20 @@ impl SegmentMeta {
         self.set_live_count(v.saturating_add(1));
     }
 
+    /// Add `n` to `live_count` in ONE load+store (E1, task W4 — batched carve).
+    /// Equivalent to `n` sequential [`inc_live`](Self::inc_live) calls: the
+    /// counter is owner-only (single-writer), so the intermediate per-block
+    /// values are unobservable and collapsing them to one saturating add is
+    /// byte-identical in the final state — the same D1-equivalence argument
+    /// `drain_freelist_batch` uses for its batched `inc_live`. Saturating for
+    /// the same defence-in-depth reason as `inc_live`.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn add_live(&mut self, n: u32) {
+        let v = self.live_count_of();
+        self.set_live_count(v.saturating_add(n));
+    }
+
     /// Decrement `live_count` (a block was freed) and return the NEW value.
     /// Saturating at zero: a decrement below zero would indicate a double-free
     /// that slipped past the bitmap guard (it cannot, since the caller checks
@@ -887,6 +901,22 @@ impl SegmentMeta {
     pub(crate) fn dec_live(&mut self) -> u32 {
         let v = self.live_count_of();
         let new = v.saturating_sub(1);
+        self.set_live_count(new);
+        new
+    }
+
+    /// Subtract `n` from `live_count` in ONE load+store and return the NEW
+    /// value (E3, task W4 — batched flush). Equivalent to `n` sequential
+    /// [`dec_live`](Self::dec_live) calls: the counter is owner-only, so the
+    /// intermediate per-block values are unobservable and collapsing them to one
+    /// saturating sub is byte-identical in the final value. Saturating at zero
+    /// for the same defence-in-depth reason as `dec_live` (a real flush never
+    /// removes more live blocks than exist).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn sub_live(&mut self, n: u32) -> u32 {
+        let v = self.live_count_of();
+        let new = v.saturating_sub(n);
         self.set_live_count(new);
         new
     }

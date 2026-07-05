@@ -942,6 +942,46 @@ impl AllocCore {
         true
     }
 
+    /// E3 (task W4) — batched dec-then-maybe-decommit for a same-segment flush
+    /// run. Subtracts `k` (the number of accepted blocks in the run) from
+    /// `live_count` in ONE `sub_live` and makes the SAME decommit decision the
+    /// per-block loop would make.
+    ///
+    /// ## Byte-identical to `k` sequential `dec_live_and_maybe_decommit` calls
+    ///
+    /// `flush_run`'s doc already proves that within a same-segment run `live`
+    /// can only reach 0 at the LAST accepted block (every still-un-flushed
+    /// same-segment block counts as live, so the segment empties iff the run
+    /// flushes ALL its remaining live blocks — and then only at block `k`). So:
+    ///   - The final `live_count` is identical: `sub_live(k)` == `k` `dec_live`s.
+    ///   - Decommit fires at most once, on the SAME transition (the k-th block
+    ///     that brings `live` to 0), under the SAME proviso
+    ///     (`live == 0 && base != small_cur && !is_decommitted && kind == Small`)
+    ///     — the per-block loop's earlier iterations all had `live > 0` and so
+    ///     never entered the decommit branch. Checking the proviso ONCE on the
+    ///     post-`sub_live` value therefore reproduces the loop exactly.
+    ///
+    /// Returns `true` iff decommit fired (caller runs `table.recycle`).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    fn dec_live_batch_and_maybe_decommit(base: *mut u8, k: u32, small_cur: *mut u8) -> bool {
+        if k == 0 {
+            return false;
+        }
+        let mut meta = SegmentMeta::new(base);
+        let live = meta.sub_live(k);
+        if live != 0 || base == small_cur || meta.is_decommitted() {
+            return false;
+        }
+        // Same PRIMORDIAL exclusion as `dec_live_and_maybe_decommit`: only a
+        // `Small` segment's payload genuinely starts at `small_meta_end()`.
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+            return false;
+        }
+        Self::decommit_empty_segment(&mut meta, base);
+        true
+    }
+
     /// TEST-ONLY (Phase 35): the process-wide count of M6 decommit invocations
     /// (`decommit_empty_segment` calls). The soak test reads this to assert the
     /// decommit hook actually fires when segments empty (the counterfactual: with
@@ -1250,6 +1290,32 @@ impl AllocCore {
     )]
     pub fn dbg_unregister(&mut self, ptr: *mut u8) {
         self.table.unregister(os::segment_base_of_ptr(ptr));
+    }
+
+    /// TEST-ONLY (E2, task W4): the `block_size` of a small class, so the
+    /// `refill_n` LUT-vs-formula equivalence test can feed the same input to
+    /// both without needing `pub(crate)` access to `SIZE_CLASS_TABLE`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_block_size(class_idx: usize) -> usize {
+        SizeClasses::block_size(class_idx)
+    }
+
+    /// TEST-ONLY (E2, task W4): number of small size classes.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_small_class_count() -> usize {
+        super::size_classes::SMALL_CLASS_COUNT
+    }
+
+    /// TEST-ONLY (E1, task W4): drive [`carve_batch`](Self::carve_batch)
+    /// directly (it is a private internal), so the equivalence regression test
+    /// can carve a run and inspect the exact block set without going through the
+    /// magazine. Returns the number of blocks carved into `out`.
+    #[doc(hidden)]
+    pub fn dbg_carve_batch(&mut self, class_idx: usize, out: &mut [*mut u8]) -> usize {
+        let block_size = SizeClasses::block_size(class_idx);
+        self.carve_batch(class_idx, block_size, out)
     }
 
     #[doc(hidden)]
@@ -1580,12 +1646,23 @@ impl AllocCore {
             //    freelist head) is byte-identical to the per-block path. Source
             //    order is UNCHANGED: current segment's freelist, then the
             //    ring-draining whole-heap scan, then bump-carve.
-            let n = self.drain_freelist_batch(self.small_cur, class_idx, &mut out[filled..]);
-            if n != 0 {
-                filled += n;
-                continue;
-            }
+            //
+            //    E1 (task W4): once `free_exhausted` is latched there is nothing
+            //    left to reclaim for the rest of this refill (proof below), so we
+            //    SKIP the per-iteration `drain_freelist_batch` re-read + subslice
+            //    construction — a pure tautology after the latch — and go
+            //    straight to the batched bump-carve. The head cannot become
+            //    non-null mid-refill: no dealloc / reclaim / flush runs inside
+            //    `refill_class_bump` after the latch, and a remote free that
+            //    arrives now lands in the (already-scanned) ring, deferred to the
+            //    NEXT refill's drain. So re-draining the current segment's
+            //    freelist would only ever pop 0 — safe to skip.
             if !free_exhausted {
+                let n = self.drain_freelist_batch(self.small_cur, class_idx, &mut out[filled..]);
+                if n != 0 {
+                    filled += n;
+                    continue;
+                }
                 // `find_segment_with_free` runs the A1 ring-drain (reclaiming
                 // cross-thread frees into the per-segment BinTables) BEFORE it
                 // returns a base — that ordering is preserved: we call the batch
@@ -1598,24 +1675,27 @@ impl AllocCore {
                     }
                 }
                 // Scan found nothing (and drained all rings): stop re-scanning
-                // for the remainder of this refill; carve from here on.
+                // AND re-draining for the remainder of this refill; carve only.
                 free_exhausted = true;
             }
-            // 2. No free block anywhere: bump-carve DIRECTLY into `out`. No
-            //    BinTable round-trip — `carve_block` leaves the block live +
-            //    bitmap-allocated, exactly the handed-out state.
-            if let Some(ptr) = self.carve_block(class_idx, block_size) {
-                out[filled] = ptr;
-                filled += 1;
+            // 2. No free block anywhere: batched bump-carve DIRECTLY into `out`
+            //    (E1, task W4). One `carve_batch` fills the whole remaining run
+            //    from the current segment's bump in one shot — no BinTable
+            //    round-trip, block live + bitmap-allocated, exactly the
+            //    handed-out state (byte-identical to the per-block `carve_block`
+            //    loop it replaces; see `carve_batch`).
+            let n = self.carve_batch(class_idx, block_size, &mut out[filled..]);
+            if n != 0 {
+                filled += n;
                 continue;
             }
             // 3. Current segment is full: reserve a fresh one and retry the
             //    carve. If reserve fails, stop and return what we have.
             match self.reserve_small_segment() {
                 Some(_) => {
-                    if let Some(ptr) = self.carve_block(class_idx, block_size) {
-                        out[filled] = ptr;
-                        filled += 1;
+                    let n = self.carve_batch(class_idx, block_size, &mut out[filled..]);
+                    if n != 0 {
+                        filled += n;
                         continue;
                     }
                     // A fresh segment that cannot fit even one block indicates
@@ -1792,20 +1872,16 @@ impl AllocCore {
             bt.set_head(class_idx, off);
         }
 
-        // Per accepted block: `dec_live_and_maybe_decommit` (AFTER `set_head`,
-        // matching the sequential ordering). `live` can only reach 0 at the
-        // LAST accepted block, so at most one decommit fires — identical to the
-        // per-block path. Recycle the slot if it fired.
+        // E3 (task W4): batched `dec_live` (AFTER `set_head`, matching the
+        // sequential ordering). `live` can only reach 0 at the LAST accepted
+        // block (see `flush_run`'s doc), so one `sub_live(accepted_count)` + a
+        // single decommit check is byte-identical to the former per-accepted-block
+        // `dec_live_and_maybe_decommit` loop — at most one decommit fires, on the
+        // same transition, under the same proviso. Recycle the slot if it fired.
         #[cfg(feature = "alloc-decommit")]
         {
             let small_cur = self.small_cur;
-            let mut fired = false;
-            for _ in 0..accepted_count {
-                if Self::dec_live_and_maybe_decommit(base, small_cur) {
-                    fired = true;
-                }
-            }
-            if fired {
+            if Self::dec_live_batch_and_maybe_decommit(base, accepted_count as u32, small_cur) {
                 self.table.recycle(base);
             }
         }
@@ -2309,6 +2385,100 @@ impl AllocCore {
         }
         let ptr = Node::deref(segment, aligned_bump);
         Some(ptr)
+    }
+
+    /// E1 (task W4) — **batched bump-carve**. Carve a RUN of up to `out.len()`
+    /// `block_size`-strided blocks from the current small segment's bump cursor
+    /// in ONE shot, writing them into `out[..n]` and returning `n` (0 if the
+    /// segment cannot fit even one block — the caller reserves a fresh segment,
+    /// exactly as it does on `carve_block` → `None`).
+    ///
+    /// ## Byte-identical to `n` sequential `carve_block`s — what is HOISTED
+    ///
+    /// A run of `carve_block(class_idx, block_size)` calls, after the FIRST,
+    /// always finds `bump` already `block_size`-aligned (the previous carve left
+    /// `bump = aligned_prev + block_size`, and every class `block_size` is a
+    /// multiple of `MIN_BLOCK`), so `align_up(bump, block_size)` is a TAUTOLOGY
+    /// from the second block on. We therefore align ONCE (`aligned_start`), then
+    /// stride by `block_size`. The following are hoisted across the run because
+    /// none of them can change mid-run (a carve run touches only owner-only
+    /// bump/live/page-map state, and no free/decommit runs between carves):
+    ///   - `SegmentMeta::new` + `bump_of()` LOAD — once (bump only advances by
+    ///     our own writes; we track it locally).
+    ///   - `align_up` div — once (tautological after block 0).
+    ///   - `set_bump` STORE — once, to `aligned_start + n*block_size` (identical
+    ///     to the last sequential carve's final bump).
+    ///   - `live += n` — one batched saturating add (D1: exactly `n` handed out,
+    ///     byte-identical to `n` `inc_live`s; owner-only counter, intermediate
+    ///     states unobservable — same argument as `drain_freelist_batch`).
+    ///   - `is_decommitted()` check + recommit — once at run start (the flag is
+    ///     set only in the decommit path, which cannot run mid-carve).
+    ///
+    /// ## What STAYS per-block (NOT tautologies)
+    ///   - The page-map `class_of`/`set_class` "first class wins" marking is
+    ///     applied per DISTINCT payload page: we compute the page of each block
+    ///     and call `set_class` only when the page index CHANGES from the prior
+    ///     block (byte-identical to `carve_block`'s per-block "mark only if
+    ///     `class_of(page).is_none()`", since within a run the first block to
+    ///     enter a page is the one that dedicates it, and later same-page blocks
+    ///     find it already `Some` → no-op). For `block_size > PAGE` every block
+    ///     lands on a fresh page, so this degrades to per-block correctly.
+    ///
+    /// ## M2 / D1 / boundary — preserved EXACTLY
+    ///   - M2: carve NEVER touches the alloc bitmap (a bump-carved block is
+    ///     already bit0=allocated, the M2 convention) — identical to `carve_block`.
+    ///   - D1: `+n` for the `n` blocks handed out.
+    ///   - Boundary: `n = min(out.len(), room)` where
+    ///     `room = (SEGMENT - aligned_start) / block_size`, so
+    ///     `aligned_start + n*block_size <= SEGMENT` — the same
+    ///     `aligned + block_size > SEGMENT` per-block check, batched.
+    fn carve_batch(&mut self, class_idx: usize, block_size: usize, out: &mut [*mut u8]) -> usize {
+        if out.is_empty() {
+            return 0;
+        }
+        let segment = self.small_cur;
+        let mut meta = SegmentMeta::new(segment);
+        let bump = meta.bump_of();
+        let aligned_start = align_up(bump, block_size);
+        if aligned_start + block_size > SEGMENT {
+            return 0; // not room for even one block
+        }
+        // Recommit ONCE at run start if the segment's payload was decommitted
+        // (identical to `carve_block`'s per-block check — the flag cannot change
+        // mid-run, so one check covers the whole run).
+        #[cfg(feature = "alloc-decommit")]
+        if meta.is_decommitted() {
+            os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT);
+            meta.set_decommitted(false);
+        }
+        // How many blocks fit from `aligned_start` to the segment end, capped by
+        // the caller's slice.
+        let room = (SEGMENT - aligned_start) / block_size;
+        let n = out.len().min(room);
+        // Advance the bump cursor ONCE to just past the last carved block —
+        // byte-identical to the final `set_bump` of the n-th sequential carve.
+        meta.set_bump(aligned_start + n * block_size);
+        // Batched live increment (D1): exactly `n` blocks handed out.
+        #[cfg(feature = "alloc-decommit")]
+        meta.add_live(n as u32);
+        // Page-map "first class wins", applied once per DISTINCT page entered by
+        // this run. `carve_block` marks a page iff it was not already owned; the
+        // first block to land on a page is the one that dedicates it, so calling
+        // `set_class` on each page-index CHANGE reproduces that exactly.
+        let mut pm = meta.page_map();
+        let mut prev_page = usize::MAX;
+        for (i, slot) in out[..n].iter_mut().enumerate() {
+            let off = aligned_start + i * block_size;
+            let page = off / super::os::PAGE;
+            if page != prev_page {
+                if pm.class_of(page).is_none() {
+                    pm.set_class(page, class_idx);
+                }
+                prev_page = page;
+            }
+            *slot = Node::deref(segment, off);
+        }
+        n
     }
 
     /// Deallocate a small block: push it onto its owning segment's class free
