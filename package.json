@@ -8,6 +8,7 @@
     "loom": "node scripts/loom.mjs",
     "miri": "node scripts/miri.mjs",
     "tsan": "node scripts/tsan.mjs",
+    "iai": "node scripts/iai.mjs",
     "harden": "node scripts/loom.mjs && node scripts/miri.mjs && node scripts/tsan.mjs"
   }
 }
