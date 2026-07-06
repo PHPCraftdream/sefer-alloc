@@ -950,15 +950,28 @@ impl HeapCore {
                     // `drain_resident_xthread_double_free_no_corruption`,
                     // `realloc_path_drain_respects_magazine`.
                     //
+                    // Task R1 (retro C1, 2026-07-06) closed a SECOND leg the X2
+                    // campaign missed: the refill-window in-out-buffer leg.
+                    // `refill_class_bump_impl` pulls freelist blocks into the
+                    // caller-owned `out[0..filled]` buffer BEFORE draining rings;
+                    // the predicate's `if k == c { return false; }` shortcut
+                    // (justified only by count[c]==0 borrow-safety) is blind to
+                    // those magazine-destined blocks, so a stale ring note for a
+                    // block already in `out` was reclaimed → relinked → re-pulled
+                    // in the SAME refill call (P double-issued at consecutive
+                    // positions). Fix: wrap the predicate with an out-membership
+                    // guard (`is_in_magazine(ptr,k) || (k == c && out[..filled].contains(ptr))`).
+                    // GREEN test: `refill_window_does_not_double_issue_in_out_buffer_resident_block`.
+                    //
                     // REMAINING residual = re-issue-before-drain / delayed xfree
-                    // (one ABA class): if the block was popped (re-issued) before
-                    // the drain runs, the state is information-theoretically
-                    // identical to a genuine delayed cross-thread free (bitmap
-                    // allocated, not in magazine, (off,class)-only entry). Pinned
-                    // RED by `residual_xthread_double_free_no_corruption`
-                    // (#[ignore]d). Full fix: task X7 (hardened, generational
-                    // ring entry — see RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md
-                    // §8.4).
+                    // (the THIRD leg): if the block was popped (re-issued to the
+                    // user) before the drain runs, the state is information-
+                    // theoretically identical to a genuine delayed cross-thread
+                    // free (bitmap allocated, not in magazine, not in the refill
+                    // out-buffer, (off,class)-only entry). Pinned RED by
+                    // `residual_xthread_double_free_no_corruption` (#[ignore]d).
+                    // Full fix: task X7 (hardened, generational ring entry — see
+                    // RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md §8.4).
                     //
                     // (1) in-magazine DF oracle — ALWAYS. Э10 (P7.4): the
                     // sequential early-exit scan above (`for i in 0..cnt`) does

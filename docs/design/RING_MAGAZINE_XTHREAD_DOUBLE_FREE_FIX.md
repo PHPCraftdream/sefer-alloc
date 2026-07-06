@@ -362,6 +362,25 @@ No distinguishing state exists without per-block generations.
 by the zero-cost drain-side check (which covers the in-magazine leg for free and leaves
 the re-issue leg identically uncovered).
 
+> **Scope note (added 2026-07-06, task R1 / retro C1).** The impossibility above
+> covers ONLY the re-issue-before-drain leg — the block has already been popped
+> from the magazine into the user's hands when the drain runs. The X-arc
+> adversarial retrospective (§C1) found a SECOND, **decidable** leg that this
+> theorem does NOT cover and that the X2 fix as originally shipped left open:
+> the **refill-window in-out-buffer** leg. `refill_class_bump_impl` pulls
+> freelist blocks into the caller-owned `out[0..filled]` buffer BEFORE draining
+> rings; the predicate's `if k == c { return false; }` shortcut is blind to
+> those magazine-destined blocks (they are not yet in `tcache.slots`). A stale
+> ring note for such a block is information-theoretically DISTINGUISHABLE — the
+> block IS visible, just in `out` rather than in the magazine — so no
+> generations are needed. Task R1 closed this leg by wrapping the predicate
+> with an out-membership guard (`is_in_magazine(ptr,k) || (k == c &&
+> out[..filled].contains(ptr))`). The taxonomy is now THREE legs:
+> 1. in-magazine-at-drain — closed by X2 (task #164);
+> 2. **in-refill-out-buffer-at-drain — closed by R1 (task R1, this fix);**
+> 3. re-issue-before-drain (block in user's hands) — the impossibility above,
+>    territory of X7 (generational).
+
 ### 8.3 Implemented shape: section 5's fallback (a)-closure, narrowed
 
 The implemented fix uses the section 5 fallback (a) shape: a `&dyn Fn(*mut u8, usize) ->

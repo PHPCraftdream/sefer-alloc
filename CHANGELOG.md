@@ -53,6 +53,21 @@ tables so no experiment is re-run blind).
   per heap claim, ~+30 Ir per refill-miss; hot magazine push/pop untouched.
   Bonus: `realloc_grow` → **561,910 Ir** (the alloc-leg now hits the
   magazine). loom green model + two new counterfactual regression tests.
+  - **Correction (R1, 2026-07-06):** the X2 fix as originally shipped left a
+    SECOND, decidable leg open — the **refill-window in-out-buffer** leg.
+    `refill_class_bump_impl` pulls freelist blocks into `out[0..filled]`
+    BEFORE draining rings; the predicate's `if k == c { return false; }`
+    shortcut (justified only by count[c]==0 borrow-safety) was blind to those
+    magazine-destined blocks, so a stale ring note was reclaimed → relinked →
+    the SAME refill loop re-pulled the block → double-issue at consecutive
+    positions. Task R1 closed it by wrapping the predicate with an
+    out-membership guard (`is_in_magazine(ptr,k) || (k == c &&
+    out[..filled].contains(ptr))`) — zero cost when the ring is empty.
+    Counterfactual regression test:
+    `refill_window_does_not_double_issue_in_out_buffer_resident_block`
+    (reverting the guard → P double-issued at positions [14, 15]). The §8
+    impossibility theorem is now correctly scoped to leg 3 only (re-issue-
+    before-drain); the taxonomy is three legs, not two.
 - **X3 — judge upgrade (#184).** `scripts/iai.mjs` now surfaces the full
   callgrind metric set (Ir | L1 | L2 | RAM | Estimated Cycles) — Ir counts a
   `udiv` and a cache-missing load identically, cycles do not; the X-arc's own

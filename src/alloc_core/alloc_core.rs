@@ -1941,8 +1941,32 @@ impl AllocCore {
                 // cross-thread frees into the per-segment BinTables) BEFORE it
                 // returns a base — that ordering is preserved: we call the batch
                 // drain only on the base it hands back.
+                // Task R1 (retro C1): wrap the caller's magazine predicate
+                // with an out-membership guard. The predicate passed in from
+                // `refill_magazine_slow` opens with `if k == c { return false; }`
+                // (justified ONLY by the borrow-safety invariant count[c]==0),
+                // which means blocks already pulled into `out[0..filled]` during
+                // THIS refill call — magazine-destined but not yet stamped into
+                // the magazine — are INVISIBLE to it. A stale cross-thread
+                // double-free note for such a block still sitting in a ring
+                // would then be reclaimed (write_next + mark_free), relinking
+                // the block onto the freelist, and the SAME refill loop would
+                // pull it into `out` AGAIN → P issued twice out of one refill.
+                //
+                // The guard closes the window for free: when the ring is empty
+                // (the common case) `issued_so_far.contains` is never consulted,
+                // so the Ir cost on the hot refill path is exactly zero — the
+                // out-buffer is non-empty only when we have already drained at
+                // least one block from the freelist AND the ring has work, and
+                // even then the scan is over a CAP-bounded magazine refill batch.
                 #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-                let found_seg = self.find_segment_with_free_checked(class_idx, is_in_magazine);
+                let found_seg = {
+                    let issued_so_far: &[*mut u8] = &out[..filled];
+                    self.find_segment_with_free_checked(class_idx, &|ptr, k| {
+                        is_in_magazine(ptr, k)
+                            || (k == class_idx && issued_so_far.contains(&ptr))
+                    })
+                };
                 #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
                 let found_seg = self.find_segment_with_free(class_idx);
                 if let Some(seg) = found_seg {
