@@ -29,6 +29,7 @@
 // Usage (from repo root):
 //   node scripts/iai.mjs                          # all perf_gate benches
 //   node scripts/iai.mjs cold_alloc_free_256x16b  # filter to one/some benches
+//   node scripts/iai.mjs --features 'production hardened'  # override features
 //   npm run iai
 //
 // Requires: WSL with valgrind + a cargo toolchain. It installs
@@ -60,8 +61,17 @@ const RUNNER_VER_PREFIX = '0.14.';
 // (alloc-global + alloc-xthread + alloc-decommit + fastbin) — the real-world
 // default whose magazine/fastbin + large-cache fast paths are the whole point
 // of the gate. We match CI so the Ir baseline we record here is the SAME number
-// CI will produce. All ten bench functions compile under `production`.
-const FEATURES = 'production';
+// CI will produce. All eleven bench functions compile under `production`.
+//
+// X7-Ф5 (task #193): a `--features <set>` CLI override was added so the
+// hardened-tier cost table can be recorded WITHOUT forking the script. The
+// override is backward-compatible: with no `--features` arg, `production`
+// remains the default (CI / `npm run iai` behaviour is byte-identical). The
+// override ONLY changes which feature set cargo compiles + callgrind measures;
+// the bench binary, the runner, the parser, and the report format are all
+// feature-agnostic.
+const DEFAULT_FEATURES = 'production';
+const FEATURES_OVERRIDE_FLAG = '--features';
 
 const BENCH = 'perf_gate_iai';
 const LINUX_TARGET = '/tmp/sefer-iai';
@@ -71,10 +81,33 @@ const wslRoot = winToWsl(REPO_ROOT);
 // NOT support runtime bench-name filtering — passing a name after `--` is
 // silently swallowed and matches nothing (verified: `cargo bench --bench
 // perf_gate_iai -- cold_alloc_free_256x16b` produces zero output). So we ALWAYS
-// run the whole group (the full 10-bench run is only ~6s under callgrind) and
+// run the whole group (the full 11-bench run is only ~6s under callgrind) and
 // filter the REPORTED rows here instead. A row is kept if any CLI arg is a
 // substring of its name. No args → report all.
-const filters = process.argv.slice(2);
+//
+// X7-Ф5: the `--features <set>` flag is parsed out FIRST (it takes the next
+// argv token as its value) and is NOT treated as a bench-name filter.
+// Remaining args (after the flag + its value are removed) are the bench-name
+// substring filters, exactly as before.
+const rawArgs = process.argv.slice(2);
+let featuresOverride = null;
+const filterArgs = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === FEATURES_OVERRIDE_FLAG) {
+    if (i + 1 >= rawArgs.length) {
+      console.error(
+        `[iai] ${FEATURES_OVERRIDE_FLAG} requires a value (e.g. --features 'production hardened')`,
+      );
+      process.exit(2);
+    }
+    featuresOverride = rawArgs[i + 1];
+    i++; // consume the value
+  } else {
+    filterArgs.push(rawArgs[i]);
+  }
+}
+const FEATURES = featuresOverride ?? DEFAULT_FEATURES;
+const filters = filterArgs;
 const wanted = (name) =>
   filters.length === 0 || filters.some((f) => name.includes(f));
 

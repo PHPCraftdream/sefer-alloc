@@ -254,10 +254,28 @@ compare, key write, array store, count bump. No bitmap, no `contains_base`, no
 > class): if the block was popped from the magazine (re-issued to the user)
 > before the drain runs, the drain sees `bitmap = allocated, not in magazine`
 > — state-identical to a genuine delayed cross-thread free. No distinguishing
-> signal exists without per-block generations. The re-issue case is pinned RED
-> by `residual_xthread_double_free_no_corruption` (still `#[ignore]`d).
-> Full fix: task X7 (hardened-only, generational ring entry — see
-> `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4).
+> signal exists without per-block generations. The re-issue case was pinned RED
+> by `residual_xthread_double_free_no_corruption` (was `#[ignore]`d).
+>
+> **UPDATE (X7, 2026-07-06, Ф1–Ф5): this leg is now CLOSED under `--features
+> hardened`.** The X7 arc added a per-granule `u8` generation counter (in
+> segment metadata) + a hardened ring-entry repack `[gen:8|class:6|off16:18]`
+> + three touches: bump-at-issue, stamp-at-remote-free, compare-at-drain. Under
+> `hardened` the drain drops a stale note whose generation no longer matches the
+> block's current life; the `residual_xthread_double_free_no_corruption` test
+> (X7-Ф3) turns GREEN under `hardened` (the pinned bug becomes the feature
+> proof) and stays `#[ignore]`d under the other profiles (no behaviour change
+> outside hardened). The only remaining leak is the **1/256 wrap** (≥256
+> re-issues without an intervening drain → the stamped gen coincidentally
+> matches the current gen mod 256) — an accepted probabilistic residual by
+> design (plan §2.5), pinned to its exact 256-modulus by
+> `tests/regression_gen_wrap_boundary.rs`. Full account:
+> [`X7_GENERATIONAL_RING_PLAN.md`](design/X7_GENERATIONAL_RING_PLAN.md);
+> costed sketch and implementation status in
+> [`RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4](design/RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md).
+> Production hot path byte-for-byte untouched (all X7 code is behind the
+> `hardened` cfg); hardened-tier cost published in
+> [`docs/perf/IAI_BASELINE.md`](perf/IAI_BASELINE.md).
 > The §6.1 text below is retained for historical context only.
 
 ### 6.1 M2 double-free of a magazine-resident block (historical — see banner)

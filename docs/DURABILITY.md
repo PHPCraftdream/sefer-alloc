@@ -15,7 +15,10 @@ request, hot-segment) runs are:
 
 Honest framing: after **W7a** (widen `HeapSlot::generation` → `AtomicU64`;
 repack `TaggedPtr` to `index:16 | tag:48`) and **W7b** (ring cursor wrap made
-explicit + pinned), **none of these is a live bug today**. The purpose of this
+explicit + pinned), **none of these is a live bug today** — with ONE
+documented, accepted exception: the **X7 per-granule generation counter**
+(hardened-only, `u8`) wraps at 256 by design (plan §2.5), an accepted residual
+of the cross-thread double-free defence, NOT a bug to fix. The purpose of this
 doc is to make long-run robustness *auditable* and *future-proof* — and to
 enforce the rule in the last section.
 
@@ -32,6 +35,7 @@ enforce the rule in the last section.
 | `large_cache_seq` / `CachedLarge::seq` | `src/alloc_core/alloc_core.rs:292`,`185` | `u64` | monotonic wrapping (`wrapping_add`) | 2^64 large-cache deposits — unreachable | bounded-by-width (FIFO-oldest picked by `min_by_key(seq)`; a 2^64 wrap is not reachable in any process) | `tests/regression_large_cache_multi_size_cycle.rs` (FIFO order) |
 | `SegmentHeader::live_count` | `src/alloc_core/segment_header.rs:285` | `u32`, **saturating** (`add_live`/`sub_live` sat) | saturating | blocks-per-segment = `SEGMENT/MIN_BLOCK` = 4 MiB/16 = 262144 ≪ 2^32 — cannot overflow | bounded (saturating is pure defence-in-depth) | `tests/regression_carve_batch.rs`, `regression_batch_flush.rs` |
 | `SegmentHeader` `owner_gen` (packed in `owner_state`) | `src/alloc_core/segment_header.rs:86` (`OWNER_GEN_SHIFT=32`, mask `u32::MAX`) | 32-bit generation in bits [32..63] of the `owner_state` `u64` | monotonic wrapping | 2^32 abandon→adopt cycles on ONE segment — reachable only via the abandon/adopt path (dead since Phase 12.5, same as `abandoned_segs`) | dead-path (M9 adoption CAS is unreachable on production paths; `tests/loom_registry.rs` models it as an explicitly-unreachable protocol). Residual documented for any reactivation | `tests/loom_registry.rs` (models the CAS; honesty note in-file) |
+| X7 per-granule generation counter (`gen_at`/`bump_gen` cell) | `src/alloc_core/segment_header.rs:1200`,`1231` (table footprint at `:153`) | `AtomicU8` (8 bits — NOT widened) per `MIN_BLOCK` granule, `#[cfg(feature = "hardened")]` only | wrapping (correctness-relevant, **accepted residual by design**) | 256 re-issues of ONE block with no intervening drain of the stale note — reachable under adversarial/pathological cross-thread-free timing (a hot block re-issued 256× before a lazy drain catches the stale note); the stamp/compare narrows the re-issue-before-drain double-free window to exactly this modulus | **accepted residual (NOT widened)** — X7 plan §2.5 explicitly rejected widening the gen field (a `u64` note would double the ring footprint to two `u32`s for an already-UB program class). An 8-bit gen keeps the hardened ring entry in one `u32` (`[gen:8\|class:6\|off16:18]`); the 1/256 wrap is the documented probabilistic residual-of-the-residual, the cost of not doubling the ring. The stamp/compare guard (Ф3) closes the re-issue-before-drain leg for the 255/256 of cases that matter; the 1/256 wrap is the accepted leak | `tests/regression_gen_wrap_boundary.rs` (X7-Ф5: pins the EXACT 256-modulus — `stamped_gen == current_gen` is TRUE at k=256, FALSE at k=255/257; const-derived from `ENTRY_GEN_BITS == 8`) + `tests/regression_gen_table_layout.rs::gen_roundtrip_and_wrap` (Ф1: the wrap mechanic) |
 | `SegmentTable::count` | `src/alloc_core/segment_table.rs:154` | `u32` | monotonic (high-water) | capped at `MAX_SEGMENTS = 1024` — cannot wrap | bounded | `tests/segment_table_o1.rs` |
 | `SegmentTable::tombstones` | `src/alloc_core/segment_table.rs:196` | `u32` | bounded/reset | reset to 0 by the W2 rebuild when `> HASH_CAPACITY/4` (= 512); population never exceeds `HASH_CAPACITY` = 2048 | bounded | `tests/regression_segment_table_tombstone_rebuild.rs` |
 | `SegmentHeader::bump` | `src/alloc_core/segment_header.rs:197` | `usize` | monotonic | bounded by `SEGMENT` (4 MiB) — never wraps | bounded | carve/refill tests (`regression_bump_direct_refill.rs`) |
@@ -39,7 +43,7 @@ enforce the rule in the last section.
 | `os::SEGMENTS_RESERVED_TOTAL` / `RELEASED_TOTAL` | `src/alloc_core/os.rs:52`,`57` | `AtomicU64` | monotonic (`fetch_add`) | 2^64 — unreachable | bounded-by-width (diagnostic; net = reserved − released) | soak tests, `regression_*_no_leak.rs` |
 | `AllocStats` fields (`tcache_hits`, `ring_overflows`, `large_cache_hits`, `decommit_calls`, `large_xthread_reclaimed`, `segments_reserved/released_total`, `heaps_claimed_high_water`) | `src/global/alloc_stats.rs:50`–128 | `u64` | monotonic/saturating (diagnostic) | 2^64 — unreachable | not correctness-load-bearing | `tests/regression_percounter_perheap_aggregation.rs`, `regression_w3_stats_aliasing_miri.rs` |
 
-## Reachability arithmetic (the two genuinely-reachable ones)
+## Reachability arithmetic (the genuinely-reachable ones)
 
 - **Ring cursors (`head`/`tail`, `u32`, per segment).** Reachable = `2^32`
   cross-thread frees against a *single* hot, long-lived segment. At, say, 10M
@@ -56,6 +60,23 @@ enforce the rule in the last section.
   wrap boundary is *removed*, not merely tested: `regression_counter_wrap.rs`
   presets generation to `u32::MAX − 1`, forces two recycle→reclaims, and asserts
   the value crosses `> u32::MAX` as a `u64` with no truncation.
+- **X7 per-granule generation counter (`u8`, hardened-only).** Reachable =
+  **256** re-issues of ONE block with no intervening drain of the stale note.
+  Unlike the two above, this boundary is NOT removed — it is the **accepted
+  residual of the X7 arc** (plan §2.5). The stamp/compare guard (Ф3) closes the
+  re-issue-before-drain cross-thread double-free leg for the 255/256 of cases
+  that do not wrap; the 1/256 wrap is the documented probabilistic leak, the
+  price of keeping the hardened ring entry in one `u32` (`[gen:8|class:6|
+  off16:18]`) instead of doubling the ring footprint with a `u64` note. The
+  boundary is *tested and pinned to its exact modulus*, not widened:
+  `regression_gen_wrap_boundary.rs` (Ф5) asserts the drain's
+  `stamped_gen == current_gen` compare is TRUE at exactly k=256 bumps and FALSE
+  at k=255/257, and that the modulus is `1 << ENTRY_GEN_BITS == 256` (const-
+  derived from the gen field width). 256 re-issues-without-drain of a single
+  block is reachable only under adversarial cross-thread-free timing (a hot
+  block re-issued 256× before the owner's lazy drain catches the stale note) —
+  the residual is accepted because the program class that triggers it is already
+  UB (a cross-thread double-free of a re-issued block).
 
 ## THE RULE — adding a new monotonic/wrapping counter
 
@@ -74,6 +95,14 @@ BOTH:
      - `tests/regression_counter_wrap.rs` (W7a) — preset generation near `2^32`
        and the tag at `2^48 − 1`, cross the boundary, assert no truncation. Each
        assertion fails if the widening is reverted (non-vacuous).
+     - `tests/regression_gen_wrap_boundary.rs` (X7-Ф5) — pins the EXACT 256-
+       modulus of the hardened gen counter's wrap: the drain's
+       `stamped_gen == current_gen` compare is TRUE at k=256 bumps (the accepted
+       collision) and FALSE at k=255/257, with the modulus const-derived from
+       `ENTRY_GEN_BITS == 8`. This is the template for an **accepted residual**
+       (a wrap that is NOT widened, by explicit design decision — the boundary
+       test pins the residual's exact shape so a future widening surfaces as a
+       test delta, not a silent change).
    - *Compile-time bound assert* (for structurally-bounded counters): pin the
      bound so a future config bump fails to compile rather than silently wrapping.
      Templates: `const _: () = assert!(RING_CAP.is_power_of_two(), …)`

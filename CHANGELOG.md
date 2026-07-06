@@ -105,7 +105,77 @@ tables so no experiment is re-run blind).
   documented cold constants of their pre-arc values; every M2/D1 guarantee
   intact and one double-free leg newly closed. X7 (hardened generational ring
   entries — the only path to the remaining, proven-undetectable double-free
-  leg) is scoped in the design doc §8.4 as a future arc.
+  leg) landed as a follow-up arc; see the "X7" subsection below.
+
+### Hardening — the X7 generational-ring arc (#188–#193, 2026-07-06)
+
+The X-arc closed the *in-magazine* and *refill-window* legs of the cross-thread
+double-free residual (X2 #164, R1). The third and final leg — *re-issue-before-
+drain* (a block popped from the magazine and re-issued before the owner's lazy
+drain catches a stale cross-thread-free note) — is information-theoretically
+indistinguishable from a genuine delayed free on the bare `GlobalAlloc`
+interface. X7 closes it under `--features hardened` via a per-granule
+generation counter: the ring note now carries the block's generation at
+remote-free time, and the drain drops a note whose generation no longer matches
+the block's current life. Delivered in five phases (Ф1–Ф5), each committed
+between phases with a zero-trust review and a production-judge gate.
+
+- **Ф1 (`cdc3361`, #189) — gen table in segment metadata.** A 256 KiB table of
+  `AtomicU8` (one byte per `MIN_BLOCK = 16` granule, `#[cfg(feature =
+  "hardened")]`-gated) carved into the segment metadata region, below
+  `small_meta_end`. Not decommitted with the payload → numbering is continuous
+  across decommit-reset; dies only with full segment release. Byte-level
+  `gen_at`/`bump_gen` accessors (Relaxed load / `fetch_add(1, Relaxed)`). Miri-
+  clean (exposed-provenance standalone-buffer tests). Production-judge 11/11
+  byte-identical.
+- **Ф2 (`345a2ce`, #190) — hardened ring-entry repack.** The ring's `u32` slot
+  entry repacks under hardened to `[gen:8|class:6|off16:18]` (was
+  `[off:22|class:10]`). Const-asserts pin the bit layout (sum == 32, gen == 8);
+  the `RING_SLOT_EMPTY = u32::MAX` non-collision is structurally guaranteed
+  (`class=63` is unreachable: `SMALL_CLASS_COUNT = 49 < 64`). Round-trip +
+  field-independence + misalignment-guard regression tests. Non-hardened path
+  byte-identical.
+- **Ф3 (`d1e91ff`, #191) — the three touches.** (a) issue bumps the gen
+  (`bump_gen` at magazine pop + `pop_free`); (b) remote free stamps the current
+  gen into the note (`dealloc_routing` Variant-2); (c) drain compares, AFTER all
+  existing guards, BEFORE `write_next`: mismatch ⇒ drop. The pinned-red
+  `#[ignore]` test `residual_xthread_double_free_no_corruption` (scenario
+  A→B→I→D) turns GREEN under `hardened` — the pinned bug becomes the feature
+  proof. loom model + `should_panic` counterfactual; production-judge 11/11
+  byte-identical.
+- **Ф4 (`3b0ed2c`, #192) — lifecycle-seam tests.** Pins the three seams the gen
+  table touches: (1) decommit-reset continuity (the table is NOT re-zeroed —
+  numbering persists; fresh segments ARE zeroed by `init_gen_table_in_place`);
+  (2) recycle/release drops stale notes via the EXISTING `contains_base`/
+  `magic_at` guards (the gen table is unmapped before any post-recycle read);
+  (3) adopt/abandon — the table travels with the segment unchanged (`abandon`
+  touches only `owner_state`, never metadata bytes).
+- **Ф5 (#193) — honest costs, wrap boundary, docs sync, final runs.** This
+  phase. (a) Published the hardened-tier cost in
+  [`docs/perf/IAI_BASELINE.md`](docs/perf/IAI_BASELINE.md): marginal per-op
+  cost is **+0.2–0.8% Ir** on the magazine hot path (the per-issue `bump_gen`
+  RMW), **+2.6%** on refill-miss paths, plus a one-time **~262k Ir bootstrap**
+  per heap-claim (gen-table zeroing) — the published price of the defence-in-
+  depth feature (plan §5: "порога 'не хуже' нет — это осознанная плата за
+  защиту"). (b) Wrap-1/256 boundary test
+  (`tests/regression_gen_wrap_boundary.rs`): pins the EXACT 256-modulus of the
+  accepted residual — `stamped_gen == current_gen` is TRUE at k=256 bumps
+  (collision), FALSE at k=255/257, const-derived from `ENTRY_GEN_BITS == 8`.
+  (c) Docs sync: `DURABILITY.md` (+gen counter inventory row, accepted-residual
+  verdict category), `RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8.4 (→
+  IMPLEMENTED), `FASTBIN_DESIGN.md` residual banner (→ CLOSED under hardened).
+  (d) Final loom/miri runs green across both profiles; TSan deferred to CI on
+  push (Linux-only, not runnable on the Windows dev host).
+
+**Residual after X7:** leg 3 (re-issue-before-drain) is closed under
+`--features hardened`. The only remaining leak is the **1/256 wrap** (≥256
+re-issues of one block without an intervening drain → the stamped gen
+coincidentally matches the current gen mod 256) — an accepted probabilistic
+residual by design (plan §2.5 rejected doubling the ring footprint for a `u64`
+note), pinned to its exact modulus by the Ф5 boundary test. The production hot
+path is byte-for-byte untouched (every X7 code path is behind the hardened
+cfg). Full phased account:
+[`docs/design/X7_GENERATIONAL_RING_PLAN.md`](docs/design/X7_GENERATIONAL_RING_PLAN.md).
 
 ### Performance — the P0–P7 "beat mimalloc on small/medium" arc (#144–#163)
 

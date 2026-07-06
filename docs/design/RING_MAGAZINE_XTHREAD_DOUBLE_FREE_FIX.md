@@ -379,7 +379,7 @@ the re-issue leg identically uncovered).
 > 1. in-magazine-at-drain — closed by X2 (task #164);
 > 2. **in-refill-out-buffer-at-drain — closed by R1 (task R1, this fix);**
 > 3. re-issue-before-drain (block in user's hands) — the impossibility above,
->    territory of X7 (generational).
+>    **closed UNDER HARDENED by X7 (Ф1–Ф5, 2026-07-06); see §8.4 below.**
 
 ### 8.3 Implemented shape: section 5's fallback (a)-closure, narrowed
 
@@ -408,7 +408,39 @@ a documented UB residual.
 invoked only per ring entry during a drain (cold, refill-miss path), on the branch where
 bitmap reads "allocated". No per-push or per-pop write. iai Ir byte-identical.
 
-### 8.4 The costed full fix (task X7, hardened-only)
+### 8.4 The costed full fix (task X7, hardened-only) — IMPLEMENTED 2026-07-06 (Ф1–Ф5)
+
+> **Status: IMPLEMENTED.** The X7 arc (Ф1–Ф5, task #188 umbrella) landed this
+> fix under `--features hardened`. Commits: Ф1 `cdc3361` (gen table in segment
+> metadata), Ф2 `345a2ce` (hardened ring-entry repack `[gen:8|class:6|off16:18]`),
+> Ф3 `d1e91ff` (the three touches: bump-at-issue / stamp-at-remote-free /
+> compare-at-drain + the success-criterion test), Ф4 `3b0ed2c` (lifecycle-seam
+> tests: decommit-reset / recycle / adopt), Ф5 (this phase: hardened costs in
+> the ledger, wrap-1/256 boundary test, docs sync, TSan/miri/loom final runs).
+> The full phased account is in
+> [`X7_GENERATIONAL_RING_PLAN.md`](X7_GENERATIONAL_RING_PLAN.md); this section
+> is retained as the original costed sketch.
+>
+> **Residual taxonomy after X7:** leg 1 (in-magazine-at-drain) — closed by X2
+> (#164); leg 2 (refill-window in-out-buffer) — closed by R1; leg 3 (re-issue-
+> before-drain) — **closed UNDER HARDENED** by X7 (the stamp/compare guard drops
+> a stale note whose generation no longer matches the block's current life). The
+> only remaining leak is the **1/256 wrap**: a stale note whose stamped
+> generation coincidentally equals the current generation modulo 256 (≥256
+> re-issues without an intervening drain) is wrongly honoured — a probabilistic
+> residual-of-the-residual, accepted by design (plan §2.5 rejected doubling the
+> ring footprint for a `u64` note to close a leak that only fires under
+> adversarial cross-thread-free timing on an already-UB program class). Pinned to
+> its exact 256-modulus by `tests/regression_gen_wrap_boundary.rs` (Ф5). The
+> production hot path is byte-for-byte untouched (every X7 code path is behind
+> `#[cfg(feature = "hardened")]`; the Ф1–Ф4 production-judge gates confirmed
+> 11/11 byte-identical Ir at every phase, and Ф5 re-confirms it as the closure
+> gate). The hardened-tier cost is published in
+> [`docs/perf/IAI_BASELINE.md`](../perf/IAI_BASELINE.md) ("Hardened-tier costs
+> (X7)" section): +0.2–0.8% Ir marginal on the magazine hot path (the per-issue
+> `bump_gen` RMW), +2.6% on refill-miss paths, plus a one-time ~262k Ir
+> bootstrap per heap-claim (gen-table zeroing) — the published price of the
+> defence-in-depth feature.
 
 The ring `u32` entry currently packs `off:22 + class:10` (22 offset bits, 10 class bits).
 Only 6 class bits are needed (`SMALL_CLASS_COUNT = 49 < 64`). This frees 4 bits. Combined

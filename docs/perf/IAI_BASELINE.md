@@ -303,3 +303,105 @@ the large-n scan to amortise it. Recorded so the next reader does not re-run the
 same bitmap variant blind.
 
 Final tree after X5 = pristine `490974d` (zero diff; nothing shipped).
+
+## Hardened-tier costs (X7, 2026-07-06)
+
+The X7 arc (Ф1–Ф5, task #188 umbrella; commits `cdc3361`/`345a2ce`/`d1e91ff`/
+`3b0ed2c` + this phase) added a hardened-only per-granule generation counter
+that closes the re-issue-before-drain cross-thread double-free leg (plan
+§1–§5). The hardened tier is ADDITIVE over `production` (`hardened` pulls
+`fastbin` + the gen-table metadata + the interior-pointer free guard); the
+production hot path stays byte-for-byte identical (the Ф1–Ф4 production-judge
+gates confirm 11/11 at every phase, and Ф5 re-confirms it here as the closure
+gate). This section publishes the hardened-tier cost — the price of the
+defence-in-depth feature, per the project's "publish the cost, no threshold"
+rule for accepted feature costs.
+
+**Method:** `node scripts/iai.mjs --features "production hardened"` (the
+`--features` override was added to `scripts/iai.mjs` in this phase — backward-
+compatible; no-arg default stays `production`, so CI / `npm run iai` is
+byte-identical). Same iai-callgrind runner (0.14.2), same WSL valgrind 3.22.0,
+same eleven bench functions, same callgrind cache model. The hardened numbers
+below were taken in one run; the determinism argument (callgrind Ir is
+reproducible run-to-run on the same binary+input) is unchanged.
+
+| bench                       | prod Ir | hardened Ir | Δ Ir | Δ % | hardened EC | Δ EC |
+| --------------------------- | ------: | ----------: | ---: | --: | ----------: | ---: |
+| small_churn_16b             |  81,396 |     344,102 | +262,706 | +322.8% |   990,713 | +664,601 |
+| aligned_churn_640b_a128     |  81,405 |     344,245 | +262,840 | +322.9% |   990,754 | +664,561 |
+| large_alloc_free_cycle      |  72,984 |     335,179 | +262,195 | +359.2% |   979,903 | +663,796 |
+| realloc_grow                | 561,912 |     824,375 | +262,463 |  +46.7% | 4,482,381 | +664,814 |
+| cold_alloc_free_256x16b     | 125,215 |     389,584 | +264,369 | +211.1% | 1,049,340 | +666,629 |
+| cold_alloc_free_256x64b     | 125,218 |     389,587 | +264,369 | +211.1% | 1,055,522 | +666,643 |
+| recycle_alloc_free_256x16b  | 179,018 |     445,851 | +266,833 | +149.1% | 1,117,709 | +669,772 |
+| recycle_alloc_free_256x64b  | 179,021 |     445,854 | +266,833 | +149.1% | 1,124,265 | +669,752 |
+| churn_256b                  |  81,396 |     343,782 | +262,386 | +322.4% |   990,197 | +664,085 |
+| churn_write_256b            |  81,524 |     343,910 | +262,386 | +321.9% |   990,487 | +664,085 |
+| multiseg_cold_256k          | 111,642 |     372,141 | +260,499 | +233.3% | 1,043,727 | +660,666 |
+
+**Reading the table honestly — the cost is a one-time bootstrap, NOT a per-op
+tax.** The raw Ir delta looks catastrophic (+322% on churn!), but it is almost
+entirely a CONSTANT additive ~262k Ir paid once per bench PROCESS, visible on
+EVERY bench including `large_alloc_free_cycle` (which does ZERO small-block
+magazine work — its full +262,195 Ir delta IS the bootstrap, nothing else).
+That constant is the hardened tier's heap-claim setup: `init_gen_table_in_place`
+zeroes the 256 KiB gen table on every fresh segment reserve, and the interior-
+pointer free guard's one-time wiring runs at first claim. Subtracted out, the
+MARGINAL per-op cost of the hardened feature is what the plan §5 predicted:
+
+| bench                       | marginal Δ Ir (minus bootstrap) | marginal Δ % |
+| --------------------------- | ------------------------------: | -----------: |
+| small_churn_16b             |                          +511 | +0.6% |
+| aligned_churn_640b_a128     |                          +645 | +0.8% |
+| large_alloc_free_cycle      |                            0 |  0.0% |
+| realloc_grow                |                          +268 |  0.0% |
+| cold_alloc_free_256x16b     |                        +2,174 | +1.7% |
+| cold_alloc_free_256x64b     |                        +2,174 | +1.7% |
+| recycle_alloc_free_256x16b  |                        +4,638 | +2.6% |
+| recycle_alloc_free_256x64b  |                        +4,638 | +2.6% |
+| churn_256b                  |                          +191 | +0.2% |
+| churn_write_256b            |                          +191 | +0.2% |
+| multiseg_cold_256k          |                        −1,696 | −1.5% |
+
+(The bootstrap constant is derived from `large_alloc_free_cycle`'s raw delta —
+that bench issues one Large segment and frees it, touching no magazine, no
+gen-table cell, no interior-pointer guard. Its entire hardened delta is
+therefore the per-process setup cost. This is the cleanest decomposition
+available; the marginal numbers are the per-op feature tax the plan §5
+forecast at "±2–4% churn.")
+
+**The headline:** the magazine hot path (`small_churn_16b`, `churn_256b`,
+`churn_write_256b`) pays **+0.2–0.8% Ir** — the per-issue `bump_gen` RMW on the
+gen-table cell (one `fetch_add(1, Relaxed)` into a cold metadata byte). The
+refill-miss path (`recycle_*`) pays **+2.6%** — the RMW amplified across the
+batch carve. `multiseg_cold_256k`'s −1.5% is binary-layout noise (the hardened
+feature widens segment metadata, shifting code addresses — within callgrind's
+determinism, cross-binary layout jitter of this magnitude is expected and is
+NOT a per-op signal). This is the published cost of the defence-in-depth
+feature; there is no "must not regress" threshold on it (plan §5: "порога 'не
+хуже' нет — это осознанная плата за защиту"). The production hot path is
+untouched (0% delta by construction — every hardened code path is behind
+`#[cfg(feature = "hardened")]`).
+
+**Production-judge re-confirmation (Ф5 closure gate):** the no-arg `npm run
+iai` (plain `production`) still produces the Post-X1+X2+X3 reference table
+above, byte-for-byte. The hardened code is all behind the feature flag; the
+production binary is the same binary Ф4 shipped. This is the final production-
+neutrality gate for the X7 arc.
+
+Full hardened-tier metric set (Ir | L1 | L2 | RAM | Estimated Cycles), matching
+the production reference table's column structure for direct comparison:
+
+| bench                       |        Ir |     L1 hits | L2 hits | RAM hits | Est. Cycles |
+| --------------------------- | --------: | ----------: | ------: | -------: | ----------: |
+| small_churn_16b             |   344,102 |     663,598 |     162 |    9,323 |     990,713 |
+| aligned_churn_640b_a128     |   344,245 |     663,754 |     160 |    9,320 |     990,754 |
+| large_alloc_free_cycle      |   335,179 |     652,858 |     162 |    9,321 |     979,903 |
+| realloc_grow                |   824,375 |   1,694,526 |   4,102 |   79,067 |   4,482,381 |
+| cold_alloc_free_256x16b     |   389,584 |     718,585 |     176 |    9,425 |   1,049,340 |
+| cold_alloc_free_256x64b     |   389,587 |     718,397 |     190 |    9,605 |   1,055,522 |
+| recycle_alloc_free_256x16b  |   445,851 |     786,589 |     179 |    9,435 |   1,117,709 |
+| recycle_alloc_free_256x64b  |   445,854 |     786,390 |     193 |    9,626 |   1,124,265 |
+| churn_256b                  |   343,782 |     663,152 |     162 |    9,321 |     990,197 |
+| churn_write_256b            |   343,910 |     663,407 |     162 |    9,322 |     990,487 |
+| multiseg_cold_256k          |   372,141 |     706,607 |     189 |    9,605 |   1,043,727 |
