@@ -699,14 +699,28 @@ provide (double-free of LIVE/MAPPED memory = no-op, never UB, protected
 by the pre-reuse `off >= bump` stale-free guard (#138); foreign pointer =
 safe no-op; forbid(unsafe) by default at the top level with named
 audited seams under `production`). One documented residual: the
-**ring↔magazine cross-thread double-free residual limit of M2** (task
-R2 / #154; real fix #164) — a block whose cross-thread free is still
-in-flight in a segment's `RemoteFreeRing` (not yet drained) sets neither
-own-thread oracle (magazine `slots` scan nor BinTable `is_free` bitmap);
-pinned by `tests/regression_xthread_double_free_residual.rs`, modelled
-by `tests/loom_magazine_ring_compose.rs`; full note in
-`docs/FASTBIN_DESIGN.md`. On
-real workloads — churn, MT, large-alloc — we are net faster while keeping
+**ring↔magazine cross-thread double-free residual limit of M2** — a block whose
+cross-thread free is still in-flight in a segment's `RemoteFreeRing` (not yet
+drained) sets neither own-thread oracle (magazine `slots` scan nor BinTable
+`is_free` bitmap). Two of its three legs are closed on plain `production`: the
+in-magazine leg (X2 / #164) and the refill-window double-issue leg (R1, f23f7eb).
+The **third leg — *re-issue-before-drain*** — remains an accepted residual under
+plain `production`: pinned by the permanently-`#[ignore]`d
+`tests/regression_xthread_double_free_residual.rs` (honestly red without
+per-block generations — no distinguishing state exists), modelled by
+`tests/loom_magazine_ring_compose.rs`. Under **`--features hardened`** the X7
+per-granule generation guard (stamp the ring note with the block's generation at
+remote-free time; drop it on drain if the generation has advanced) closes this
+leg — pinned by the sibling `residual_xthread_double_free_no_corruption_hardened`
+test in the same file — **except for the 1/256 wrap**: ≥256 re-issues of one
+block without an intervening drain of the stale note collides with the current
+generation mod 256, the accepted probabilistic residual-of-the-residual (design
+plan §2.5 rejected doubling the ring footprint for a `u64` gen; pinned by
+`tests/regression_gen_wrap_boundary.rs`). Full account in
+[`docs/DURABILITY.md`](docs/DURABILITY.md) (ledger entry + §"X7 per-granule
+generation counter") and
+[`docs/design/X7_GENERATIONAL_RING_PLAN.md`](docs/design/X7_GENERATIONAL_RING_PLAN.md).
+On real workloads — churn, MT, large-alloc — we are net faster while keeping
 those guarantees.
 
 ---
@@ -764,7 +778,7 @@ The full safety stack and the relationship between layers is documented in
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
 | **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin` | **The recommended combo for long-running multi-thread workloads.** The fast default — no paid caller-misuse checks on the free hot path. | off | **DBMS, async runtimes, anything that allocates over hours.** |
 | `alloc-stats` | — | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
-| `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine (`HeapCore`) and the `AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) | off | untrusted / adversarial callers, forensic hardening |
+| `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine (`HeapCore`) and the `AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) **X7 closure:** under `hardened`, a per-granule generation counter also closes the *re-issue-before-drain* leg of the ring↔magazine cross-thread double-free residual (the third leg of M2, open under plain `production`) — the ring note is stamped with the block's generation and dropped on drain if it has advanced — **except the 1/256 wrap** (≥256 re-issues without an intervening drain collide mod 256), the accepted probabilistic residual-of-the-residual. See [`docs/DURABILITY.md`](docs/DURABILITY.md) (ledger entry + X7 §). | off | untrusted / adversarial callers, forensic hardening |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 
