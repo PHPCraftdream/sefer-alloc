@@ -1487,15 +1487,18 @@ impl AllocCore {
 
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
-    /// **OPT-F — in-place small→small realloc:** when both the old and new
-    /// sizes resolve to the same size class (or the new class is smaller —
-    /// i.e. `new_class_idx <= old_class_idx`), the block physically fits the
-    /// new size without any data movement. In that case we return the original
-    /// pointer unchanged: no alloc, no copy, no dealloc. The block's live-count
-    /// and alloc-bitmap stay intact (the block is still "live" under the same
-    /// segment, just now described by a smaller `Layout`).
+    /// Two in-place fast paths are attempted first (shared with
+    /// [`try_realloc_inplace`], which [`HeapCore::realloc`](crate::registry::HeapCore)
+    /// calls so its alloc leg can route through the magazine-aware
+    /// `HeapCore::alloc`):
     ///
-    /// The small short-circuit applies ONLY to small (non-large) segments.
+    /// **OPT-F — in-place small→small realloc:** when both the old and new
+    /// sizes resolve to the SAME size class (`new_class_idx == old_class_idx`),
+    /// the block physically fits the new size without any data movement, so we
+    /// return the original pointer unchanged: no alloc, no copy, no dealloc.
+    /// The block's live-count and alloc-bitmap stay intact. The `==` (not
+    /// `<=`) rule is load-bearing — see `realloc_inplace_fast_path`'s comment
+    /// and `tests/regression_realloc_cross_class_shrink.rs`.
     ///
     /// **OPT-G — in-place Large→Large realloc:** when the block lives in a
     /// Large segment and the grown size (clamped to `MIN_BLOCK`) still fits
@@ -1512,132 +1515,19 @@ impl AllocCore {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
-        // OPT-G: in-place short-circuit for Large→Large realloc when the
-        // grown size still fits the segment's already-committed physical span.
-        //
-        // Preconditions (all must hold to take the fast path):
-        //   1. The pointer lives in one of OUR segments (registered in the
-        //      table).
-        //   2. The segment kind is `Large` (dedicated single-allocation
-        //      segment). Huge is excluded conservatively — only Large segments
-        //      have a verified committed-span guarantee via `span_usable`.
-        //   3. GROW or SAME size only (clamped: `new_eff >= old_eff`). A
-        //      shrink falls through to the slow path, which reclaims RSS by
-        //      moving the payload to a smaller segment/class.
-        //   4. The grown payload fits the committed span:
-        //      `payload_offset + new_eff <= span_usable` (checked add to
-        //      guard against usize wrap on pathological sizes).
-        //
-        // MIN_BLOCK clamping: the alloc path clamps every request to
-        // `MIN_BLOCK` before storing `large_size` in the header. The #138
-        // cross-thread consistency check (`large_layout_consistent`) compares
-        // the header value against `layout_size.max(MIN_BLOCK)`. We must
-        // clamp identically here so a later cross-thread free does not see
-        // `raw != clamped` and silently drop the free — permanently leaking
-        // the segment + its SegmentTable slot (#114/#130 class).
-        //
-        // Soundness:
-        //   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
-        //       NOT by the passed layout. A grown-in-place block stays a Large
-        //       segment, so `dealloc(ptr, new_layout)` frees the whole segment
-        //       correctly regardless of `new_size`.
-        //   (b) `crates/vmem` reserves large segments with
-        //       `VirtualAlloc(MEM_RESERVE|MEM_COMMIT)` over the WHOLE span;
-        //       the large-cache keeps pages committed on deposit. The entire
-        //       `span_usable` region is committed and writable — growing into
-        //       it cannot fault.
-        //   (c) Large reservations round UP to whole SEGMENT (4 MiB) multiples,
-        //       so e.g. a 512 KiB large alloc owns a full 4 MiB committed span
-        //       and can grow to ~4 MiB in place.
-        //
-        // When all hold: update the header's `large_size` to the CLAMPED
-        // `new_eff` and return the SAME pointer. The grown tail is
-        // uninitialised (matching `GlobalAlloc`).
-        {
-            let base = os::segment_base_of_ptr(ptr);
-            if self.table.contains_base(base) && SegmentHeader::kind_at(base) == SegmentKind::Large
-            {
-                let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
-                let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
-                if new_eff >= old_eff {
-                    let payload_off = ptr as usize - base as usize;
-                    let span_usable = SegmentHeader::span_usable_at(base);
-                    if let Some(end) = payload_off.checked_add(new_eff) {
-                        if end <= span_usable {
-                            // Fits: update the logical size (clamped) and
-                            // return the same pointer.
-                            SegmentHeader::set_large_size_at(base, new_eff);
-                            return ptr;
-                        }
-                    }
-                }
-            }
+        // OPT-F / OPT-G: try the in-place fast paths first (Large grow-in-span
+        // and Small same-class). The detection logic lives in ONE place —
+        // `realloc_inplace_fast_path` — shared with `try_realloc_inplace`
+        // (which `HeapCore::realloc` calls so its alloc leg can route through
+        // the magazine-aware `HeapCore::alloc`). Keeping a single source of
+        // truth here closes the unmarked duplication/divergence hazard flagged
+        // in the X-arc retrospective (C2): a bugfix applied to one copy but
+        // not the other would silently disagree.
+        if let Some(p) = self.realloc_inplace_fast_path(ptr, old_layout, new_size) {
+            return p;
         }
-        // OPT-F: in-place short-circuit for small→small realloc within the
-        // SAME size class.
-        //
-        // Preconditions (all must hold to take the fast path):
-        //   1. The pointer lives in one of OUR segments (registered in the table).
-        //   2. The segment kind is Small or Primordial (has a BinTable / class).
-        //   3. Both the old layout and the new size classify as Small (not Large).
-        //   4. new_class_idx == old_class_idx → the block stays in EXACTLY the
-        //      same size class.
-        //
-        // Why `==` and NOT `<=` (the subtle correctness point): a caller that
-        // reallocs `ptr` then later frees it MUST, per the `GlobalAlloc`
-        // contract, pass the NEW layout (`new_size`, same align) to `dealloc`.
-        // Our `dealloc` (post-#114) derives the block's size class from that
-        // layout alone — NOT from where the block physically sits. A block is
-        // carved at an offset that is a multiple of ITS class's `block_size`;
-        // that offset is NOT necessarily a multiple of a *smaller* class's
-        // `block_size` (the class sizes are not divisors of one another —
-        // e.g. the 132464-byte class is not a multiple of the 4096-byte
-        // class). So if we returned `ptr` unchanged for a shrink that crosses
-        // into a smaller class (`new_class < old_class`), the eventual
-        // `dealloc` would push this block's offset onto the SMALLER class's
-        // free list, where the offset is misaligned — corrupting that free
-        // list so a later `alloc` from it returns a mis-placed pointer. This
-        // was latent until task B1 added page-aligned classes (512..16384):
-        // before B1 the shrink target for a page-aligned request classified
-        // to `None` (Large) and never hit this path, so the bug never
-        // manifested. `==` keeps the block in its own class, where the
-        // carved offset is valid for the free list `dealloc` will use.
-        //
-        // When the class matches we return `ptr` unchanged. No copy (the
-        // block has not moved), no dealloc (we reuse it); the alloc-bitmap
-        // and live-count are unaffected (the block stays live).
-        //
-        // A cross-class shrink (`new_class < old_class`) falls through to the
-        // slow path (alloc new block in the smaller class + copy + dealloc
-        // old block in its own class) — correct, just not zero-copy. Growth
-        // (`new_class > old_class`) and Large on either side also fall
-        // through.
-        {
-            let base = os::segment_base_of_ptr(ptr);
-            if self.table.contains_base(base)
-                && matches!(
-                    SegmentHeader::kind_at(base),
-                    SegmentKind::Small | SegmentKind::Primordial
-                )
-            {
-                let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
-                let align = old_layout.align();
-                let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
-                if let (Some(old_class), Some(new_class)) = (
-                    super::size_classes::SizeClasses::class_for(old_size, align),
-                    super::size_classes::SizeClasses::class_for(clamped_new, align),
-                ) {
-                    if new_class == old_class {
-                        // Same class: the block's offset is valid for the
-                        // free list a later `dealloc(new_layout)` will use.
-                        return ptr;
-                    }
-                }
-                // Falls through: new_class != old_class (grow, or cross-class
-                // shrink), OR one of them is Large (class_for returned None).
-                // Take the slow path.
-            }
-        }
+        // In-place fast paths did not apply: alloc a fresh block, copy the
+        // preserved prefix, and free the old block.
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
             Ok(l) => l,
             Err(_) => return core::ptr::null_mut(),
@@ -1652,22 +1542,105 @@ impl AllocCore {
         new_ptr
     }
 
-    /// Task #164: try the two in-place realloc fast paths (Large grow-in-span,
-    /// Small same-class) WITHOUT falling through to `self.alloc` on miss. Returns
-    /// `Some(ptr)` on in-place success, `None` on fallthrough. `HeapCore::realloc`
-    /// uses this so the alloc leg routes through the magazine-aware
-    /// `HeapCore::alloc` (which drains via the checked predicate), closing the
-    /// unchecked drain path through `AllocCore::alloc` → `alloc_small`.
-    #[cfg(feature = "alloc-global")]
-    pub(crate) fn try_realloc_inplace(
+    /// Single source of truth for the OPT-F / OPT-G in-place realloc fast
+    /// paths. Returns `Some(ptr)` (the SAME pointer, unchanged or with its
+    /// Large header's `large_size` updated in place) when an in-place resize
+    /// is possible, `None` otherwise. Does NOT fall through to `self.alloc` —
+    /// callers own that decision (the substrate-level [`realloc`](Self::realloc)
+    /// calls `self.alloc` + copy + `self.dealloc`; the registry-level
+    /// [`try_realloc_inplace`] is consumed by `HeapCore::realloc`, which routes
+    /// its alloc leg through the magazine-aware `HeapCore::alloc`).
+    ///
+    /// Both callers share these detection predicates so a bugfix applied to
+    /// one cannot silently fail to reach the other (the X-arc retrospective
+    /// C2 hazard).
+    ///
+    /// # OPT-G — Large→Large in-place grow
+    ///
+    /// Preconditions (all must hold to take the fast path):
+    ///   1. The pointer lives in one of OUR segments (registered in the
+    ///      table).
+    ///   2. The segment kind is `Large` (dedicated single-allocation
+    ///      segment). Huge is excluded conservatively — only Large segments
+    ///      have a verified committed-span guarantee via `span_usable`.
+    ///   3. GROW or SAME size only (clamped: `new_eff >= old_eff`). A
+    ///      shrink falls through to the slow path, which reclaims RSS by
+    ///      moving the payload to a smaller segment/class.
+    ///   4. The grown payload fits the committed span:
+    ///      `payload_offset + new_eff <= span_usable` (checked add to
+    ///      guard against usize wrap on pathological sizes).
+    ///
+    /// MIN_BLOCK clamping: the alloc path clamps every request to
+    /// `MIN_BLOCK` before storing `large_size` in the header. The #138
+    /// cross-thread consistency check (`large_layout_consistent`) compares
+    /// the header value against `layout_size.max(MIN_BLOCK)`. We must
+    /// clamp identically here so a later cross-thread free does not see
+    /// `raw != clamped` and silently drop the free — permanently leaking
+    /// the segment + its SegmentTable slot (#114/#130 class).
+    ///
+    /// Soundness:
+    ///   (a) `dealloc` routes Large frees by `SegmentHeader::kind_at(base)`,
+    ///       NOT by the passed layout. A grown-in-place block stays a Large
+    ///       segment, so `dealloc(ptr, new_layout)` frees the whole segment
+    ///       correctly regardless of `new_size`.
+    ///   (b) `crates/vmem` reserves large segments with
+    ///       `VirtualAlloc(MEM_RESERVE|MEM_COMMIT)` over the WHOLE span;
+    ///       the large-cache keeps pages committed on deposit. The entire
+    ///       `span_usable` region is committed and writable — growing into
+    ///       it cannot fault.
+    ///   (c) Large reservations round UP to whole SEGMENT (4 MiB) multiples,
+    ///       so e.g. a 512 KiB large alloc owns a full 4 MiB committed span
+    ///       and can grow to ~4 MiB in place.
+    ///
+    /// When all hold: update the header's `large_size` to the CLAMPED
+    /// `new_eff` and return the SAME pointer. The grown tail is
+    /// uninitialised (matching `GlobalAlloc`).
+    ///
+    /// # OPT-F — Small→Small same-class in-place
+    ///
+    /// Preconditions (all must hold to take the fast path):
+    ///   1. The pointer lives in one of OUR segments (registered in the table).
+    ///   2. The segment kind is Small or Primordial (has a BinTable / class).
+    ///   3. Both the old layout and the new size classify as Small (not Large).
+    ///   4. new_class_idx == old_class_idx → the block stays in EXACTLY the
+    ///      same size class.
+    ///
+    /// Why `==` and NOT `<=` (the subtle correctness point): a caller that
+    /// reallocs `ptr` then later frees it MUST, per the `GlobalAlloc`
+    /// contract, pass the NEW layout (`new_size`, same align) to `dealloc`.
+    /// Our `dealloc` (post-#114) derives the block's size class from that
+    /// layout alone — NOT from where the block physically sits. A block is
+    /// carved at an offset that is a multiple of ITS class's `block_size`;
+    /// that offset is NOT necessarily a multiple of a *smaller* class's
+    /// `block_size` (the class sizes are not divisors of one another —
+    /// e.g. the 132464-byte class is not a multiple of the 4096-byte
+    /// class). So if we returned `ptr` unchanged for a shrink that crosses
+    /// into a smaller class (`new_class < old_class`), the eventual
+    /// `dealloc` would push this block's offset onto the SMALLER class's
+    /// free list, where the offset is misaligned — corrupting that free
+    /// list so a later `alloc` from it returns a mis-placed pointer. This
+    /// was latent until task B1 added page-aligned classes (512..16384):
+    /// before B1 the shrink target for a page-aligned request classified
+    /// to `None` (Large) and never hit this path, so the bug never
+    /// manifested. `==` keeps the block in its own class, where the
+    /// carved offset is valid for the free list `dealloc` will use.
+    ///
+    /// When the class matches we return `ptr` unchanged. No copy (the
+    /// block has not moved), no dealloc (we reuse it); the alloc-bitmap
+    /// and live-count are unaffected (the block stays live).
+    ///
+    /// A cross-class shrink (`new_class < old_class`) falls through to the
+    /// slow path (alloc new block in the smaller class + copy + dealloc
+    /// old block in its own class) — correct, just not zero-copy. Growth
+    /// (`new_class > old_class`) and Large on either side also fall
+    /// through.
+    #[inline]
+    fn realloc_inplace_fast_path(
         &mut self,
         ptr: *mut u8,
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
-        if ptr.is_null() {
-            return None;
-        }
         // OPT-G: Large→Large in-place grow.
         {
             let base = os::segment_base_of_ptr(ptr);
@@ -1710,6 +1683,29 @@ impl AllocCore {
             }
         }
         None
+    }
+
+    /// Task #164: try the two in-place realloc fast paths (Large grow-in-span,
+    /// Small same-class) WITHOUT falling through to `self.alloc` on miss. Returns
+    /// `Some(ptr)` on in-place success, `None` on fallthrough. `HeapCore::realloc`
+    /// uses this so the alloc leg routes through the magazine-aware
+    /// `HeapCore::alloc` (which drains via the checked predicate), closing the
+    /// unchecked drain path through `AllocCore::alloc` → `alloc_small`.
+    ///
+    /// Thin wrapper over [`realloc_inplace_fast_path`] — the OPT-F/OPT-G
+    /// detection logic lives in exactly one place, shared with the
+    /// substrate-level [`realloc`](Self::realloc).
+    #[cfg(feature = "alloc-global")]
+    pub(crate) fn try_realloc_inplace(
+        &mut self,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        if ptr.is_null() {
+            return None;
+        }
+        self.realloc_inplace_fast_path(ptr, old_layout, new_size)
     }
 
     /// Iterate over all registered segment bases (read-only). Exposed for the

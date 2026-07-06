@@ -1082,36 +1082,50 @@ impl HeapCore {
     /// Shrink/grow an allocation. Returns null on OOM (leaving the old
     /// allocation intact). Null `ptr` returns null.
     ///
-    /// ## C2 (0.3.0) — delegate own-thread reallocs to `AllocCore::realloc`
+    /// ## Own-segment pointers (task C2 + #164)
     ///
-    /// This used to ALWAYS do alloc+copy+dealloc, even when `ptr` belongs to
-    /// one of our own segments — which meant the OPT-F in-place short-circuit
-    /// in [`AllocCore::realloc`] (same-class shrink/no-op — see its doc
-    /// comment, especially the `==` vs `<=` correctness note fixed alongside
-    /// #114) was dead code on the `HeapCore`/global-allocator face: nothing
-    /// ever called it. Every `realloc` through `SeferAlloc` paid a full
-    /// alloc+copy+dealloc even for a same-class resize that could have
-    /// returned the original pointer untouched.
+    /// If `ptr` lives in one of THIS heap's segments (`contains_base` — the
+    /// same O(1) ownership test `dbg_owner_id_for` uses), the resize takes the
+    /// magazine-aware fast path:
     ///
-    /// The fix: if `ptr` lives in one of OUR segments (`segment_bases()`
-    /// contains its base — the same ownership test `dbg_owner_id_for` already
-    /// uses), delegate to `self.core.realloc`, which performs the in-place
-    /// short-circuit for a same-class small→small resize and otherwise falls
-    /// back to alloc+copy+dealloc INTERNALLY (so behaviour for the
-    /// non-in-place cases is unchanged, just now funnelled through one
-    /// correct implementation instead of a second, redundant one here).
+    ///   1. **A1 deferred-large drain** (`alloc-xthread` only): BEFORE the
+    ///      in-place attempt, if the NEW size classifies as Large
+    ///      (`class_for(...).is_none()`), drain this heap's deferred-free
+    ///      stack (MUST-1/A1 — a realloc-growth-only thread still reclaims
+    ///      cross-thread-freed large segments; otherwise its stack
+    ///      accumulates unboundedly). This drain is load-bearing — it runs
+    ///      whether or not the in-place path succeeds.
+    ///   2. **In-place attempt**: call `AllocCore::try_realloc_inplace`, which
+    ///      applies the OPT-F (Small same-class) and OPT-G (Large grow-in-span)
+    ///      short-circuits. On success it returns the SAME `ptr` (mutating the
+    ///      block's header in place, never moving it) — we return immediately.
+    ///   3. **Move leg**: on in-place failure, build the new `Layout`, call
+    ///      `HeapCore::alloc` (magazine-aware — drains via the checked
+    ///      predicate and stamps per #169), copy `min(old, new)` bytes, then
+    ///      `HeapCore::dealloc` the old pointer.
     ///
-    /// We must NOT call `AllocCore::realloc` for a pointer we do not own
-    /// (e.g. under `alloc-xthread`, a block that lives in ANOTHER heap's
-    /// segment): `AllocCore::realloc`'s `self.table.contains_base` check
-    /// would correctly reject it and fall through to its own alloc+copy+
-    /// dealloc, but that alloc would happen on OUR heap while the dealloc of
-    /// the OLD block would go through OUR `core.dealloc` — which does not
-    /// know how to route a foreign pointer cross-thread (only `HeapCore`'s
-    /// `dealloc`/`dealloc_routing` does). So a foreign `ptr` takes the
-    /// original path here: alloc a new block on OUR heap, copy
-    /// `min(old, new)`, then free the OLD pointer via `self.dealloc` (which
-    /// DOES route cross-thread correctly under `alloc-xthread`).
+    /// The move leg routes through `HeapCore::alloc`/`HeapCore::dealloc`
+    /// (NOT `AllocCore::realloc`'s internal alloc+copy+dealloc) so that the
+    /// two ownership hooks `HeapCore::alloc` applies — segment-ownership
+    /// stamping (`stamp_segment_owner`, which under `alloc-xthread` also
+    /// writes `owner_thread_free`, the field that makes a remote free route
+    /// back here instead of leaking) and the checked drain — fire on the
+    /// freshly allocated block. Without them a Vec grown via realloc on
+    /// thread A would live in an UNSTAMPED Large segment; when A hands it
+    /// to thread B and B drops it, `dealloc_routing` sees not-ours +
+    /// magic OK + `owner_tf == null` → silent no-op → the whole segment
+    /// (4+ MiB) and its `SegmentTable` slot leak forever (the resurrected
+    /// A1/#114 leak-to-abort).
+    ///
+    /// ## Foreign pointers
+    ///
+    /// A `ptr` we do NOT own (e.g. under `alloc-xthread`, a block that lives
+    /// in ANOTHER heap's segment) takes the move leg directly: alloc a new
+    /// block on OUR heap (`HeapCore::alloc`), copy `min(old, new)`, then free
+    /// the OLD pointer via `self.dealloc` (which routes cross-thread correctly
+    /// under `alloc-xthread`; under plain own-thread builds this is
+    /// `core.dealloc`, a safe no-op for a truly foreign pointer per its own
+    /// contract).
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
@@ -1124,39 +1138,37 @@ impl HeapCore {
             // `segment_bases().any(|b| b == base)`. Same semantics: `true` iff
             // `base` is one of THIS heap's registered, live segments.
             if self.core.contains_base(base) {
-                // Own-segment pointer: delegate to the substrate, which
-                // performs the in-place short-circuit (OPT-F) when possible
-                // and alloc+copy+dealloc otherwise -- entirely within
-                // `self.core`, so no cross-thread routing concern here (we
-                // own this segment).
+                // Own-segment pointer. The resize proceeds in up to three
+                // phases (see the doc comment above): A1 Large drain, in-place
+                // attempt, then move leg — all funnelled through the
+                // magazine-aware `HeapCore::alloc`/`dealloc` (NOT
+                // `AllocCore::realloc`'s internal alloc, which bypasses the
+                // ownership hooks).
                 //
-                // MUST-1 (0.3.0, C2 regression fix): `AllocCore::realloc` may
-                // internally `alloc` a FRESH segment for the non-in-place
-                // cases (a large→large grow carves a new dedicated Large
-                // segment; a small→new resize carves a new small segment).
-                // That substrate alloc does NOT run the two ownership hooks
-                // `HeapCore::alloc` applies — segment-ownership stamping
-                // (`stamp_segment_owner`, which under `alloc-xthread` also
-                // writes `owner_thread_free`, the field that makes a remote
-                // free route back here instead of leaking) and the A1
-                // deferred-large drain (`drain_large_deferred_free`). Without
-                // them, a Vec grown via realloc on thread A lives in an
-                // UNSTAMPED (`owner_thread_free == null`) Large segment; when
-                // A hands it to thread B and B drops it, `dealloc_routing`
-                // sees not-ours + magic OK + `owner_tf == null` → silent
-                // no-op → the whole segment (4+ MiB) and its `SegmentTable`
-                // slot leak forever (the resurrected A1/#114 leak-to-abort).
+                // MUST-1 (0.3.0, C2 regression fix): the in-place attempt and
+                // any move-leg alloc may carve a FRESH segment. That substrate
+                // alloc does NOT run the two ownership hooks `HeapCore::alloc`
+                // applies — segment-ownership stamping (`stamp_segment_owner`,
+                // which under `alloc-xthread` also writes `owner_thread_free`,
+                // the field that makes a remote free route back here instead
+                // of leaking) and the A1 deferred-large drain
+                // (`drain_large_deferred_free`). Without them, a Vec grown via
+                // realloc on thread A lives in an UNSTAMPED
+                // (`owner_thread_free == null`) Large segment; when A hands it
+                // to thread B and B drops it, `dealloc_routing` sees not-ours
+                // + magic OK + `owner_tf == null` → silent no-op → the whole
+                // segment (4+ MiB) and its `SegmentTable` slot leak forever
+                // (the resurrected A1/#114 leak-to-abort).
                 //
-                // Fix: mirror `HeapCore::alloc`'s two hooks around the
-                // substrate realloc.
-                //
-                //   (1) A1 Large drain — BEFORE delegating, if the NEW request
-                //       classifies as Large (`class_for(...).is_none()`, the
-                //       exact predicate `alloc` uses), drain this heap's
-                //       deferred-free stack so a realloc-growth-only thread
-                //       still reclaims cross-thread-freed large segments
-                //       (otherwise its stack accumulates unboundedly — the
-                //       A1 drain-bypass leg of the bug).
+                //   (1) A1 Large drain — BEFORE the in-place attempt, if the
+                //       NEW request classifies as Large
+                //       (`class_for(...).is_none()`, the exact predicate
+                //       `alloc` uses), drain this heap's deferred-free stack
+                //       so a realloc-growth-only thread still reclaims
+                //       cross-thread-freed large segments (otherwise its stack
+                //       accumulates unboundedly — the A1 drain-bypass leg of
+                //       the bug). This drain is load-bearing and runs
+                //       regardless of whether the in-place path then succeeds.
                 #[cfg(feature = "alloc-xthread")]
                 {
                     let class = crate::alloc_core::size_classes::SizeClasses::class_for(
@@ -1167,31 +1179,29 @@ impl HeapCore {
                         self.drain_large_deferred_free();
                     }
                 }
-                //   (2) Ownership stamp — stamp the RESULT so any fresh
-                //       segment the substrate carved gets `owner_state` +
-                //       `owner_thread_free` written (the latter is what makes
-                //       a later cross-thread free route back here). An
-                //       in-place realloc returns the SAME `ptr`, whose segment
-                //       was already stamped when it was first allocated, so we
-                //       skip re-stamping then (`stamp_segment_owner` is
-                //       idempotent via the OPT-C cache, so this is only an
-                //       optimisation). A null result is an OOM — nothing to
-                //       stamp.
-                // Task #164: try the in-place fast paths first. If they
-                // succeed, return immediately (no drain needed — the block
-                // stays in place). If they fail, route the alloc leg through
-                // HeapCore::alloc (magazine-aware, checked drain), NOT through
-                // AllocCore::realloc's blind alloc→alloc_small path.
+                //   (2) In-place attempt — try OPT-F (Small same-class) and
+                //       OPT-G (Large grow-in-span) via the substrate. On
+                //       success the block's header is mutated IN PLACE and
+                //       the SAME `ptr` is returned (no alloc leg, hence no
+                //       alloc-leg drain — the A1 drain above already covered
+                //       the Large case). On failure fall through to the move
+                //       leg, which routes through `HeapCore::alloc`
+                //       (magazine-aware, checked drain) — NOT through
+                //       `AllocCore::realloc`'s blind alloc→alloc_small path.
                 if let Some(p) = self.core.try_realloc_inplace(ptr, old_layout, new_size) {
-                    #[cfg(feature = "alloc-global")]
-                    if p != ptr {
-                        self.stamp_segment_owner(p);
-                    }
+                    // `try_realloc_inplace` mutates the block's header in
+                    // place and always returns the SAME pointer on success
+                    // (it never moves the block). The segment was already
+                    // stamped when first allocated, so there is nothing to
+                    // re-stamp here.
+                    debug_assert_eq!(p, ptr, "try_realloc_inplace must return the same pointer");
                     return p;
                 }
-                // In-place failed: alloc+copy+dealloc through HeapCore (the
-                // same path the foreign-pointer branch below uses). This
-                // ensures the alloc leg drains via the checked predicate.
+                //   (3) Move leg — in-place did not apply: alloc a fresh block
+                //       through `HeapCore::alloc` (magazine-aware: drains via
+                //       the checked predicate + stamps per #169), copy the
+                //       preserved prefix, then `HeapCore::dealloc` the old
+                //       pointer (own-segment → routes through `core.dealloc`).
                 let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
                     Ok(l) => l,
                     Err(_) => return core::ptr::null_mut(),

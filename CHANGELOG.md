@@ -68,6 +68,23 @@ tables so no experiment is re-run blind).
     (reverting the guard → P double-issued at positions [14, 15]). The §8
     impossibility theorem is now correctly scoped to leg 3 only (re-issue-
     before-drain); the taxonomy is three legs, not two.
+  - **Cleanup (R2, 2026-07-06):** the X-arc retrospective (C2) flagged
+    `AllocCore::realloc` as production-dead yet carrying a full duplicate of
+    the OPT-F/OPT-G in-place logic also present in `try_realloc_inplace` —
+    an unmarked divergence hazard. Resolved by extracting the shared
+    detection into one private helper, `realloc_inplace_fast_path`, called
+    by both `AllocCore::realloc` (substrate-level fallback to its own
+    alloc+copy+dealloc) and `try_realloc_inplace` (the `alloc-global`-gated
+    thin wrapper `HeapCore::realloc` consumes). Single source of truth; no
+    behaviour change. The same pass rewrote `HeapCore::realloc`'s doc
+    comment, which still described the pre-#164 "delegate to
+    `self.core.realloc`" flow, to match the actual body (try_realloc_inplace
+    → `HeapCore::alloc` + copy + `HeapCore::dealloc`), and replaced a dead
+    `if p != ptr { stamp }` branch (unreachable: `try_realloc_inplace`
+    always returns the same pointer) with a `debug_assert_eq!`. MUST-1/A1
+    and #169 stamp semantics unchanged; both invariant-guarding suites
+    (`regression_realloc_xthread_stamp`, `regression_inplace_large_realloc`)
+    stayed green without assertion edits.
 - **X3 — judge upgrade (#184).** `scripts/iai.mjs` now surfaces the full
   callgrind metric set (Ir | L1 | L2 | RAM | Estimated Cycles) — Ir counts a
   `udiv` and a cache-missing load identically, cycles do not; the X-arc's own
