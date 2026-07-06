@@ -1,5 +1,15 @@
 # Phase 9 heap bench -- honest verdict
 
+> **Historical note (0.3.x):** the `Heap` type this document benchmarks was
+> **removed** from the crate. It was a thin wrapper around `AllocCore` with no
+> magazine cache (unlike the production `HeapCore`/`SeferAlloc` face, which has
+> the per-thread magazine fast path). This bench showed `Heap` running ~9–12x
+> slower than mimalloc on the steady-state alloc/dealloc hot path — the gap that
+> triggered the decision to remove `Heap` rather than invest in speeding it up,
+> since `SeferAlloc`'s magazine-backed path already closes that gap and does not
+> need `Heap` at all. See the BREAKING CHANGE entry in `CHANGELOG.md`. The
+> document is preserved as the honest historical record of that decision.
+
 Single-thread alloc/dealloc hot path: 1024 alloc+dealloc operations per
 iteration, `Layout::from_size_align(size, 8)`. Heap is pre-warmed (one
 alloc+dealloc batch before timing starts) so the measurement isolates the

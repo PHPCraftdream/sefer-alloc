@@ -190,7 +190,7 @@ pub(crate) const ENTRY_OFF_MASK: u32 = (1 << ENTRY_OFF_BITS) - 1;
 /// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 49)`,
 /// so the result is `< 2^32` and never collides with `RING_SLOT_EMPTY`
 /// (`u32::MAX`) for any real block.
-#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+#[cfg_attr(any(not(feature = "alloc-xthread"), feature = "hardened"), allow(dead_code))]
 #[inline(always)]
 pub(crate) fn pack_entry(off: u32, class_idx: u32) -> u32 {
     debug_assert!(off <= ENTRY_OFF_MASK, "offset overflows ring-entry field");

@@ -128,11 +128,10 @@ fn interior_ptr_free_is_noop() {
 }
 
 /// The SUBSTRATE leg of the same guard (`AllocCore::dealloc_small`) — the path
-/// the explicit `Heap` face (`with_heap`) and any direct `AllocCore` user reach,
-/// which does NOT go through the per-thread magazine. Without the substrate
-/// guard an interior-pointer free here slips past the 16 B-granular `is_free`
-/// bitmap oracle and is pushed onto the BinTable free list → the next same-class
-/// alloc re-issues the mid-block address.
+/// any direct `AllocCore` user reaches, which does NOT go through the per-thread
+/// magazine. Without the substrate guard an interior-pointer free here slips past
+/// the 16 B-granular `is_free` bitmap oracle and is pushed onto the BinTable free
+/// list → the next same-class alloc re-issues the mid-block address.
 ///
 /// ## Counterfactual (verified RED without the guard)
 ///

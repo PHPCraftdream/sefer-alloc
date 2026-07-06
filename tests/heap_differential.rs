@@ -1,15 +1,19 @@
-//! Differential property test for the Phase 9 per-thread heap (`alloc`
-//! feature). Models `Heap` against a reference (a `Vec` of live allocations).
-//! Encodes invariants M1--M4 through the heap layer.
+//! Differential property test for the Phase 8 segment substrate (`alloc-core`
+//! feature). Models `AllocCore` against a reference (a `Vec` of live
+//! allocations). Encodes invariants M1--M4 through the substrate layer.
 //!
 //! Per the short-scenario policy: ~64 cases, small sizes.
+//!
+//! (An earlier version drove this through the now-removed `Heap` wrapper;
+//! `Heap` was a pure pass-through to `AllocCore` on the single-thread `alloc`
+//! feature, so this is a faithful 1:1 substitution.)
 
-#![cfg(feature = "alloc")]
+#![cfg(feature = "alloc-core")]
 
 use std::alloc::Layout;
 
 use proptest::prelude::*;
-use sefer_alloc::Heap;
+use sefer_alloc::AllocCore;
 
 /// A live allocation in the model.
 #[derive(Clone)]
@@ -21,7 +25,7 @@ struct Live {
 
 unsafe impl Send for Live {}
 
-/// Operations applied to both the model and `Heap`.
+/// Operations applied to both the model and `AllocCore`.
 #[derive(Clone, Debug)]
 enum Op {
     Alloc { size: usize, align: usize },
@@ -74,7 +78,7 @@ proptest! {
             0..200,
         )
     ) {
-        let mut heap = Heap::new().expect("heap bootstrap");
+        let mut heap = AllocCore::new().expect("heap bootstrap");
         let mut live: Vec<Live> = Vec::new();
 
         for op in ops {

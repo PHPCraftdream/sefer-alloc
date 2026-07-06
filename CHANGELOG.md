@@ -5,6 +5,87 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### BREAKING CHANGE — removal of the `Heap` / `with_heap` public face and the `alloc` feature
+
+The explicit `Heap` type (`src/heap/heap.rs`), its TLS binding `with_heap` /
+`with_heap_try` (`src/heap/tls.rs`), and the `alloc` Cargo feature that gated
+them have been **removed entirely**. This is a semver-breaking API removal.
+
+**Why.** `Heap` was a thin wrapper around `AllocCore` with no per-thread
+magazine cache. The production `#[global_allocator]` face (`SeferAlloc`, backed
+by the registry-resident `HeapCore`) already has the magazine fast path and
+does not use `Heap` at all. A head-to-head benchmark
+(`docs/HEAP_BENCH.md`, preserved as a historical record) showed `Heap` running
+~9–12x slower than mimalloc on the steady-state alloc/dealloc hot path — the
+gap that triggered the decision to remove `Heap` rather than invest in speeding
+it up, since the magazine-backed `SeferAlloc` path supersedes it entirely.
+
+**What was removed:**
+- The `Heap` struct and its `impl` (`new`/`alloc`/`dealloc`/`realloc`/
+  `alloc_zeroed`/`dealloc_any_thread`/`Drop`).
+- The `with_heap` and `with_heap_try` TLS bindings and the
+  `RefCell<Option<Heap>>` thread-local.
+- The `alloc` Cargo feature (it gated only `Heap`/`with_heap`).
+- The `src/heap/` module entirely (`heap.rs`, `tls.rs`, `thread_free.rs`,
+  `mod.rs` — all existed solely for `Heap`).
+- The `benches/heap_alloc.rs` bench and its `[[bench]]` entry.
+- The `regression_with_heap_no_panic` test (tested the `with_heap` no-panic
+  contract — coverage of `with_heap` is removed by design).
+- The `regression_heap_xthread_large_free_no_leak` test (the `Heap`-face A1
+  regression; the parallel `HeapCore`-face regression
+  `regression_xthread_large_free_no_leak` remains and covers the same fix).
+- The `heap_cross_thread` and `heap_miri_xthread` tests (exercised
+  `Heap::dealloc_any_thread`; `HeapCore` does not expose a public cross-thread-
+  free entry point, so these cannot be faithfully rewritten without inventing
+  new public API. Cross-thread coverage lives on against `SeferAlloc`/
+  `HeapCore` via `global_alloc_mt.rs`, `concurrent_stress.rs`, etc.).
+
+**What was rewritten (coverage preserved):**
+- `heap_cross_segment`, `heap_diag`, `heap_differential`, `heap_invariants`,
+  `heap_soak`: rewrote from `Heap` to `AllocCore` directly (faithful 1:1
+  substitution — under the single-thread `alloc` feature `Heap` was a pure
+  pass-through to `AllocCore`). The two `with_heap` TLS tests in
+  `heap_invariants` were removed (they tested `with_heap` specifically).
+- `numa_alloc`: tests 1 and 3 already used `AllocCore` directly (unchanged);
+  test 2 (`cross_node_handoff_safe`, which used `Heap::dealloc_any_thread`)
+  was removed (cross-thread NUMA-handoff coverage lost — `HeapCore` does not
+  expose `dealloc_any_thread`; see "coverage lost" below).
+- `stamp_cache` test 3: rewrote from `Heap::dealloc_any_thread` end-to-end
+  cross-thread free to a direct `dbg_owner_id_for` stamp readback (preserves
+  the OPT-C stamp-cache coverage; loses the end-to-end cross-thread-free leg).
+- `regression_xthread_large_free_layout_mismatch`: deleted only the `heap_face`
+  submodule (the `HeapCore`-face tests remain).
+- `regression_hardened_interior_ptr`: both tests already used `HeapCore`/
+    `AllocCore` (not `Heap`); only a doc comment was updated.
+
+**Coverage lost (cannot be faithfully rewritten without new public API):**
+- `Heap::dealloc_any_thread` cross-thread free via the explicit-`Heap` face:
+  `HeapCore` does not expose a public `dealloc_any_thread` equivalent (cross-
+  thread routing lives inside the private `dealloc_routing`, reachable only
+  via `SeferAlloc::dealloc`). The miri-targeted `heap_miri_xthread` and the
+  `numa_alloc::cross_node_handoff_safe` tests exercised this path directly.
+  Miri coverage of the substrate continues via `decommit_miri_cycle.rs`; cross-
+  thread NUMA coverage is a decision point for a human (whether to expose a
+  `HeapCore::dealloc_any_thread`-shaped public API or accept the loss).
+- `with_heap` no-panic reentrancy contract: removed by design (the API is
+  gone). The production `SeferAlloc` face has its own reentrancy-safe TLS
+  binding (`global::tls_heap`) which is structurally reentrancy-free (raw
+  `Cell<*mut HeapCore>`, no `RefCell` borrow state).
+
+**Migration.** Users of `Heap`/`with_heap` should switch to `SeferAlloc`
+(`#[global_allocator] static A: SeferAlloc = SeferAlloc;`) or, for direct
+substrate access, `AllocCore` (`alloc-core` feature). There is no `Heap`-
+shaped replacement with `dealloc_any_thread`; cross-thread free is reached via
+the `SeferAlloc` global face.
+
+**Feature rewiring.** `alloc-xthread` and `alloc-global` previously depended
+on `alloc`; they now depend on `alloc-core` directly (the `alloc` feature's
+only content was `Heap`/`with_heap`, so depending on it would be a no-op).
+The `production` feature bundle (`alloc-global + alloc-xthread + alloc-decommit
++ fastbin`) is unchanged in effect.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is

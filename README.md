@@ -262,7 +262,6 @@ one actually proves.
                    │                              │
                    ▼                              ▼
          ┌─────────────────────────────────────────────────────┐
-         │  Heap (per-thread, opt-in alloc-xthread)            │
          │  HeapCore (registry + stamp + xthread routing)      │
          │  AllocCore (single-thread alloc/dealloc/realloc)    │
          │  SegmentTable + page_map + bin_table + alloc_bitmap │
@@ -347,7 +346,7 @@ these named files is a hard compile error in every configuration):
 | [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
-| [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap` | `alloc-global` |
+| [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
 | [`src/registry/bootstrap.rs`](src/registry/bootstrap.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol. | `alloc-global` |
@@ -390,8 +389,8 @@ on any alloc path — M5 reentrancy-freedom is upheld structurally.
 
 ### Per-thread heaps and the lock-free fast path
 
-A thread allocates from its own `Heap`'s per-class `BinTable` via a single
-pointer read; deallocates with a single pointer write through the `node`
+A thread allocates from its own `HeapCore`'s per-class magazine (tcache) via a
+single pointer read; deallocates with a single pointer write through the `node`
 seam. No lock, no atomic on the common case. Slow path: refill `REFILL_BATCH
 = 31` blocks from the current segment (the constant is **measured** — see
 commit `81fec54`, bigger refills hurt locality).
@@ -758,15 +757,14 @@ The full safety stack and the relationship between layers is documented in
 |---|---|---|---|---|
 | `std` | — | `SyncRegion`, all `std`-gated tiers | **on** | almost always |
 | `alloc-core` | `std` | The segment substrate (`AllocCore`) | off | building on `AllocCore` directly |
-| `alloc` | `alloc-core` | Per-thread `Heap` + intrusive free lists | off | single-thread allocator |
-| `alloc-xthread` | `alloc` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator |
-| `alloc-global` | `alloc` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
+| `alloc-xthread` | `alloc-core` | Lock-free cross-thread free via `RemoteFreeRing` | off | multi-thread allocator |
+| `alloc-global` | `alloc-core` | The `SeferAlloc` `#[global_allocator]` face | off | process-wide allocator |
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
 | **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin` | **The recommended combo for long-running multi-thread workloads.** The fast default — no paid caller-misuse checks on the free hot path. | off | **DBMS, async runtimes, anything that allocates over hours.** |
 | `alloc-stats` | — | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
-| `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine and the `Heap`/`AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) | off | untrusted / adversarial callers, forensic hardening |
+| `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine (`HeapCore`) and the `AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) | off | untrusted / adversarial callers, forensic hardening |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 

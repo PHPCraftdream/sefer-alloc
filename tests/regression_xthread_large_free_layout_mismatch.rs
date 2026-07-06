@@ -1,6 +1,6 @@
 //! Regression test for task #138 — A1 post-reuse defensive mitigation
 //! (layout-vs-header consistency check in the cross-thread Large-free
-//! routing paths, `HeapCore::dealloc_routing` and `Heap::dealloc_any_thread`).
+//! routing path, `HeapCore::dealloc_routing`).
 //!
 //! ## What this guards against
 //!
@@ -325,84 +325,4 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
         unsafe { (*heap).dealloc(p, layout) };
     }
     unsafe { HeapRegistry::recycle(heap) };
-}
-
-/// Sister coverage for the OTHER call site of the mitigation:
-/// `Heap::dealloc_any_thread` (the explicit `Heap`/`with_heap` public face,
-/// task #132's parity fix). Mirrors
-/// `xthread_large_free_mismatched_layout_is_dropped` but through the `Heap`
-/// API instead of `HeapRegistry`/`HeapCore`.
-#[cfg(feature = "alloc")]
-mod heap_face {
-    use std::alloc::Layout;
-    use std::thread;
-
-    use sefer_alloc::alloc_core::deferred_large::DBG_LARGE_XTHREAD_RECLAIMED;
-    use sefer_alloc::Heap;
-    use std::sync::atomic::Ordering;
-
-    #[test]
-    fn heap_face_xthread_large_free_mismatched_layout_is_dropped() {
-        let _g = super::SerialGuard::acquire();
-
-        const SIZE: usize = 512 * 1024;
-        const N_FILLER: usize = 20;
-        let real_layout = Layout::from_size_align(SIZE, 8).unwrap();
-        let wrong_layout = Layout::from_size_align(SIZE / 4, 8).unwrap();
-
-        let mut heap = Heap::new().expect("Heap::new bootstrap");
-        let baseline = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
-
-        let p = heap.alloc(real_layout);
-        assert!(!p.is_null(), "alloc returned null");
-        unsafe {
-            std::ptr::write_bytes(p, 0xDD, SIZE);
-        }
-        let addr = p as usize;
-
-        // Remote thread frees with the WRONG layout size via the public
-        // cross-thread-safe entry point — must be a no-op.
-        thread::spawn(move || {
-            Heap::dealloc_any_thread(addr as *mut u8, wrong_layout);
-        })
-        .join()
-        .unwrap();
-
-        unsafe {
-            assert_eq!(p.read(), 0xDD, "segment corrupted by the dropped free");
-        }
-
-        // Force the owner's large-alloc slow path (drain) repeatedly.
-        let mut filler: Vec<*mut u8> = Vec::with_capacity(N_FILLER);
-        for i in 0..N_FILLER {
-            let q = heap.alloc(real_layout);
-            assert!(!q.is_null(), "filler alloc[{i}] returned null");
-            filler.push(q);
-        }
-
-        let after_mismatch = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
-        assert_eq!(
-            after_mismatch,
-            baseline,
-            "Heap-face: a cross-thread free with a mismatched layout size \
-             was reclaimed (delta {} != 0)",
-            after_mismatch - baseline
-        );
-        unsafe {
-            assert_eq!(
-                p.read(),
-                0xDD,
-                "segment corrupted/reused after drain-forcing round"
-            );
-        }
-        assert!(
-            !filler.contains(&p),
-            "p's segment was reclaimed and reused by a filler allocation"
-        );
-
-        heap.dealloc(p, real_layout);
-        for &q in &filler {
-            heap.dealloc(q, real_layout);
-        }
-    }
 }

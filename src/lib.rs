@@ -210,9 +210,6 @@ mod concurrent;
 #[doc(hidden)]
 pub mod alloc_core;
 
-#[cfg(feature = "alloc")]
-mod heap;
-
 // `#[doc(hidden)] pub` (not private `mod`) so the task #129 teardown-ordering
 // tests (`tests/tls_heap_teardown_torn_sentinel.rs`,
 // `tests/tls_heap_teardown_ordering_stress.rs`) can reach `global::tls_heap`'s
@@ -248,9 +245,6 @@ pub use alloc_core::LargeCacheConfig;
 pub use alloc_core::LargeCacheMode;
 #[cfg(feature = "alloc-core")]
 pub use alloc_core::{AllocCore, SegmentLayout};
-
-#[cfg(feature = "alloc")]
-pub use heap::{with_heap, Heap};
 
 #[cfg(feature = "alloc-global")]
 pub use global::{AllocStats, SeferAlloc};

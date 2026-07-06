@@ -1,15 +1,21 @@
-//! Focused invariant tests for the Phase 9 per-thread heap (`alloc` feature).
+//! Focused invariant tests for the Phase 8 segment substrate (`alloc-core`
+//! feature).
 //!
 //! Targeted unit tests: alignment, reuse, refill, realloc, churn, own-thread
-//! dealloc on multiple threads each with its own heap. Kept FAST per the
-//! short-scenario policy: small sizes, small counts, miri-friendly.
+//! dealloc on multiple threads each with its own `AllocCore`. Kept FAST per
+//! the short-scenario policy: small sizes, small counts, miri-friendly.
+//!
+//! (An earlier version drove this through the now-removed `Heap` wrapper;
+//! `Heap` was a pure pass-through to `AllocCore` on the single-thread `alloc`
+//! feature, so this is a faithful 1:1 substitution. The two TLS `with_heap`
+//! binding tests were removed alongside the `Heap`/`with_heap` API.)
 
-#![cfg(feature = "alloc")]
+#![cfg(feature = "alloc-core")]
 
 use std::alloc::Layout;
 use std::ptr;
 
-use sefer_alloc::Heap;
+use sefer_alloc::AllocCore;
 
 // ---------------------------------------------------------------------------
 // M1 -- validity: non-null, sized, aligned.
@@ -17,7 +23,7 @@ use sefer_alloc::Heap;
 
 #[test]
 fn m1_small_allocations_are_aligned_and_writable() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     for align in [1usize, 2, 4, 8, 16] {
         for size in [1usize, 7, 16, 100, 1024, 4096] {
             let layout = Layout::from_size_align(size, align).unwrap();
@@ -37,7 +43,7 @@ fn m1_small_allocations_are_aligned_and_writable() {
 
 #[test]
 fn m1_large_allocations_are_aligned_and_writable() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let big = 1024 * 1024; // 1 MiB -- above SMALL_MAX
     let layout = Layout::from_size_align(big, 4096).unwrap();
     let p = h.alloc(layout);
@@ -52,7 +58,7 @@ fn m1_large_allocations_are_aligned_and_writable() {
 
 #[test]
 fn m1_alloc_zeroed_is_all_zero() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(999, 8).unwrap();
     let p = h.alloc_zeroed(layout);
     assert!(!p.is_null());
@@ -69,7 +75,7 @@ fn m1_alloc_zeroed_is_all_zero() {
 
 #[test]
 fn m2_double_free_does_not_crash() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(64, 8).unwrap();
     let p = h.alloc(layout);
     h.dealloc(p, layout);
@@ -86,7 +92,7 @@ fn m2_double_free_does_not_crash() {
 
 #[test]
 fn m3_simultaneous_allocations_do_not_overlap() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(256, 8).unwrap();
     let mut ptrs = Vec::new();
     for _ in 0..64 {
@@ -124,7 +130,7 @@ fn m3_simultaneous_allocations_do_not_overlap() {
 
 #[test]
 fn m4_various_sizes_and_aligns() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     for align in [1usize, 2, 4, 8, 16] {
         for size in [1usize, 15, 31, 63, 127, 255, 511, 1023, 2047] {
             let layout = Layout::from_size_align(size, align).unwrap();
@@ -141,7 +147,7 @@ fn m4_various_sizes_and_aligns() {
 
 #[test]
 fn free_list_reuses_freed_blocks() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(64, 8).unwrap();
     let mut ptrs = Vec::new();
     for _ in 0..256 {
@@ -163,7 +169,7 @@ fn free_list_reuses_freed_blocks() {
 
 #[test]
 fn refill_works_after_draining_free_list() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(128, 8).unwrap();
     // Allocate enough to trigger at least one refill (REFILL_BATCH = 31,
     // so 64 allocs should trigger 2 refills).
@@ -189,7 +195,7 @@ fn refill_works_after_draining_free_list() {
 
 #[test]
 fn realloc_preserves_prefix_bytes() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let initial = 128;
     let layout = Layout::from_size_align(initial, 8).unwrap();
     let p = h.alloc(layout);
@@ -231,7 +237,7 @@ fn realloc_preserves_prefix_bytes() {
 
 #[test]
 fn churn_keeps_heap_consistent() {
-    let mut h = Heap::new().unwrap();
+    let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(64, 8).unwrap();
     for _ in 0..10_000 {
         let p = h.alloc(layout);
@@ -249,7 +255,7 @@ fn multi_thread_own_heap_own_dealloc() {
     let threads: Vec<_> = (0..4)
         .map(|_| {
             std::thread::spawn(|| {
-                let mut h = Heap::new().unwrap();
+                let mut h = AllocCore::new().unwrap();
                 let layout = Layout::from_size_align(64, 8).unwrap();
                 let mut ptrs = Vec::new();
                 for _ in 0..256 {
@@ -271,57 +277,6 @@ fn multi_thread_own_heap_own_dealloc() {
                 for &p in &ptrs {
                     h.dealloc(p, layout);
                 }
-            })
-        })
-        .collect();
-    for t in threads {
-        t.join().unwrap();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// TLS binding: with_heap routes to the thread's own heap.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn tls_with_heap_works() {
-    let result = sefer_alloc::with_heap(|h| {
-        let layout = Layout::from_size_align(64, 8).unwrap();
-        let p = h.alloc(layout);
-        assert!(!p.is_null());
-        unsafe { ptr::write_bytes(p, 0xDD, 64) };
-        unsafe { assert_eq!(p.read(), 0xDD) };
-        h.dealloc(p, layout);
-    });
-    assert!(result.is_some());
-}
-
-#[test]
-fn tls_multi_thread_isolation() {
-    let threads: Vec<_> = (0..4)
-        .map(|tid| {
-            std::thread::spawn(move || {
-                sefer_alloc::with_heap(|h| {
-                    let layout = Layout::from_size_align(128, 8).unwrap();
-                    let mut ptrs = Vec::new();
-                    for _ in 0..64 {
-                        let p = h.alloc(layout);
-                        assert!(!p.is_null());
-                        unsafe { ptr::write_bytes(p, tid as u8, 128) };
-                        ptrs.push(p);
-                    }
-                    for &p in &ptrs {
-                        unsafe {
-                            for b in 0..128 {
-                                assert_eq!(p.add(b).read(), tid as u8);
-                            }
-                        }
-                    }
-                    for &p in &ptrs {
-                        h.dealloc(p, layout);
-                    }
-                })
-                .unwrap();
             })
         })
         .collect();

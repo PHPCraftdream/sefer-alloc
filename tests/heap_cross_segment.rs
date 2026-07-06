@@ -17,12 +17,17 @@
 //! (e.g. a cross-segment offset truncated into a `BinTable` slot) would hand out
 //! an out-of-bounds / aliased block and trip here (overlap → wrong byte, or a
 //! fault).
-#![cfg(feature = "alloc")]
+//!
+//! Exercises `AllocCore` directly (the segment substrate). (An earlier version
+//! drove this through the now-removed `Heap` wrapper; `Heap` was a pure pass-
+//! through to `AllocCore` on the single-thread `alloc` feature, so this is a
+//! faithful 1:1 substitution.)
+#![cfg(feature = "alloc-core")]
 
 use std::alloc::Layout;
 use std::collections::HashSet;
 
-use sefer_alloc::Heap;
+use sefer_alloc::AllocCore;
 
 /// Mirror of `alloc_core::os::SEGMENT` (4 MiB). Kept as a literal because the
 /// constant is crate-private; asserted indirectly by the span check below.
@@ -41,7 +46,7 @@ fn cross_segment_free_blocks_are_reused() {
     // Enough live blocks to span several segments at once.
     const COUNT: usize = 4000;
 
-    let mut heap = Heap::new().unwrap();
+    let mut heap = AllocCore::new().unwrap();
 
     // --- Round 1: allocate COUNT blocks, span multiple segments. ---
     let mut r1: Vec<*mut u8> = Vec::with_capacity(COUNT);

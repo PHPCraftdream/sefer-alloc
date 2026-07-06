@@ -33,18 +33,17 @@
 //! (outside the registry bootstrap). Until then `thread_free` is `None` and
 //! the heap serves only own-thread allocations (cross-thread frees to its
 //! segments are a safe no-op, matching the existing unstamped-segment
-//! behaviour in `Heap::dealloc_small`).
+//! behaviour in `dealloc_small`).
 //!
-//! ## `Heap` vs `HeapCore`
+//! ## `HeapCore` — the sole allocator face
 //!
-//! The existing [`Heap`](crate::heap::Heap) is the Phase 9/10/12.1
-//! thread-local heap (owns `AllocCore` + the cross-thread stack, served via
-//! `RefCell<Option<Heap>>` TLS, with the abandon-on-drop leak discipline).
-//! `HeapCore` is the *slot-resident* value the registry stores and the 12.3
-//! raw-pointer TLS caches. They coexist in 12.3: the explicit-`Heap`-API
-//! (`with_heap`) keeps serving the `alloc` feature and its tests; the malloc
-//! face (`SeferAlloc`) is rewired to route through `HeapCore` via the
-//! registry. The eventual collapse of `Heap` into `HeapCore` is later work.
+//! `HeapCore` is the slot-resident value the registry stores and the raw-
+//! pointer TLS caches. The malloc face (`SeferAlloc`) routes through `HeapCore`
+//! via the registry. (An earlier `Heap`/`with_heap` public face existed in
+//! 0.3.0–0.3.x as a thin `AllocCore` wrapper without the magazine; it was
+//! removed in 0.3.x — never used by the production fast path, ~9–12x slower
+//! than mimalloc per `docs/HEAP_BENCH.md`. `HeapCore` is the magazine-backed
+//! successor that supersedes it entirely.)
 
 use core::alloc::Layout;
 #[cfg(feature = "alloc-xthread")]

@@ -1,9 +1,8 @@
 //! Shared A1 primitives (0.3.x task #132): the cross-thread deferred-free
-//! Treiber stack for Large/huge segments, extracted so BOTH public allocator
-//! faces — [`crate::registry::heap_core::HeapCore`] (the `SeferAlloc`/
-//! `GlobalAlloc` face) and [`crate::heap::Heap`] (the explicit `Heap`/
-//! `with_heap` face) — reuse the identical push/drain logic (including the
-//! double-push guard hardening) instead of maintaining two copies that could
+//! Treiber stack for Large/huge segments, extracted so the
+//! [`crate::registry::heap_core::HeapCore`] allocator face (the `SeferAlloc`/
+//! `GlobalAlloc` path) reuses a single push/drain logic (including the
+//! double-push guard hardening) instead of maintaining copies that could
 //! drift apart.
 //!
 //! Both faces' `thread_free`/identity `AtomicPtr<u8>` field plays a dual

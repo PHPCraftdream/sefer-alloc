@@ -64,7 +64,6 @@ use std::sync::mpsc;
 use std::thread;
 
 use sefer_alloc::alloc_core::{numa, AllocCore};
-use sefer_alloc::Heap;
 
 // ---------------------------------------------------------------------------
 // Guard helper
@@ -145,119 +144,6 @@ fn same_thread_segments_same_node() {
 
     core.dealloc(ptr_a, layout);
     core.dealloc(ptr_b, layout);
-}
-
-// ---------------------------------------------------------------------------
-// Test 2: cross_node_handoff_safe
-// ---------------------------------------------------------------------------
-
-/// Allocate N blocks on **thread A** (main thread using `Heap`) then hand
-/// the raw addresses to **thread B** which frees them via
-/// `Heap::dealloc_any_thread`.
-///
-/// This is the smoke test for cross-thread free on segments that may (on a
-/// multi-NUMA machine) belong to different NUMA nodes than thread B's node.
-/// The allocator must not panic, corrupt memory, or leak segments regardless
-/// of the node mismatch.
-///
-/// ## Why we use `Heap` (not `AllocCore`) here
-///
-/// `Heap::dealloc_any_thread` works by pushing the block's
-/// (offset, class) pair into the segment's `RemoteFreeRing`.  The ring is
-/// only consulted when the segment's `owner_thread_free` field is non-null —
-/// that field is stamped by `Heap` on first dealloc of a segment's block.
-/// `AllocCore` alone does not stamp this field, so a cross-thread free via
-/// `dealloc_any_thread` would silently no-op without exercising the ring.
-/// Using `Heap` ensures the stamp is set and the cross-thread path fires.
-///
-/// ## Safety contract for the pointer handoff
-///
-/// - The `Heap` stays alive in the main thread until thread B finishes
-///   freeing, so the backing segments remain mapped.
-/// - Pointers are sent as `usize` (raw `*mut u8` is `!Send`).
-/// - Pattern is written before send and verified by the consumer before
-///   freeing — corruption would be caught by the assertion.
-#[test]
-fn cross_node_handoff_safe() {
-    if !numa_test_enabled() {
-        eprintln!(
-            "SEFER_NUMA_TEST != 1 — пропускаю \
-             (нужна multi-NUMA топология: QEMU -numa или numa=fake)"
-        );
-        return;
-    }
-
-    const N: usize = 64;
-    let layout = Layout::from_size_align(128, 8).unwrap();
-
-    // Thread A (main thread): allocate N blocks and write a unique pattern.
-    let mut heap = Heap::new().expect("Heap::new failed");
-    let mut ptrs: Vec<(usize, u8)> = Vec::with_capacity(N);
-
-    for i in 0..N {
-        let ptr = heap.alloc(layout);
-        assert!(!ptr.is_null(), "heap alloc #{i} returned null");
-
-        let pat = ((i * 7 + 0xA5) & 0xFF) as u8;
-        // SAFETY: ptr is valid for layout.size() bytes — just allocated.
-        unsafe {
-            std::ptr::write_bytes(ptr, pat, layout.size());
-            // Immediate readback — catches any immediately-visible corruption.
-            assert_eq!(
-                (ptr as *const u8).read(),
-                pat,
-                "main thread: pattern readback failed at block {i}"
-            );
-        }
-        ptrs.push((ptr as usize, pat));
-    }
-
-    // Send the list of (addr, pattern) to thread B via mpsc.
-    let (tx, rx) = mpsc::channel::<Vec<(usize, u8)>>();
-    tx.send(ptrs).expect("channel send failed");
-    drop(tx);
-
-    // Thread B: receive, verify pattern still intact, then free cross-thread.
-    let consumer = thread::spawn(move || {
-        let blocks = rx.recv().expect("channel recv failed");
-        for (addr, pat) in blocks {
-            let ptr = addr as *mut u8;
-            // Verify pattern before freeing — catches cross-node UAF.
-            // SAFETY: main thread wrote this pattern and keeps the Heap alive.
-            unsafe {
-                assert_eq!(
-                    (ptr as *const u8).read(),
-                    pat,
-                    "consumer: pattern corrupted before cross-thread free"
-                );
-            }
-            // Free via the cross-thread path — this exercises the
-            // RemoteFreeRing push path across potential NUMA boundaries.
-            Heap::dealloc_any_thread(ptr, layout);
-        }
-    });
-
-    // Keep the Heap alive until the consumer finishes so the segments remain mapped.
-    consumer.join().expect("consumer thread panicked");
-
-    // After the consumer frees all blocks into the ring, trigger a drain
-    // by allocating one more block on the main thread (slow-path drain).
-    let drain_ptr = heap.alloc(layout);
-    assert!(
-        !drain_ptr.is_null(),
-        "post-handoff alloc returned null (ring drain may have failed)"
-    );
-    unsafe {
-        std::ptr::write_bytes(drain_ptr, 0xCC, layout.size());
-        assert_eq!(
-            (drain_ptr as *const u8).read(),
-            0xCC,
-            "post-handoff alloc readback failed"
-        );
-    }
-    heap.dealloc(drain_ptr, layout);
-    // `heap` drops here — segments are abandoned cleanly (M10 no-leak contract
-    // is upheld by the shard model).
 }
 
 // ---------------------------------------------------------------------------

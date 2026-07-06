@@ -16,12 +16,13 @@
 //!    active segment changes the cache misses and the slow path re-stamps.
 //!    All allocations must be non-null and readable.
 //!
-//! 3. `cross_thread_dealloc_after_stamp_cache_works` (xthread-only) — allocs
-//!    on heap A via `HeapCore`, then another thread frees all blocks via
-//!    `Heap::dealloc_any_thread`. This confirms that `stamp_segment_owner`
-//!    actually wrote `owner_thread_free` into the segment header (if the fast
-//!    path had incorrectly skipped the TFS stamp the cross-thread free would
-//!    silently drop the block and a write-back assertion would catch it).
+//! 3. `stamp_cache_writes_owner_thread_free` (xthread-only) — allocs on a heap
+//!    via `HeapCore` (through the registry), then reads back the
+//!    `owner_thread_free` stamp via `dbg_owner_id_for` to confirm the OPT-C fast
+//!    path did not suppress the first slow-path stamp. (An earlier version
+//!    verified this end-to-end via the now-removed `Heap::dealloc_any_thread`
+//!    cross-thread free; that leg was rewritten because `HeapCore` does not
+//!    expose a public cross-thread-free entry point.)
 
 #![cfg(feature = "alloc-global")]
 
@@ -136,76 +137,65 @@ fn alloc_across_classes_works() {
 
 // ─── test 3 (xthread only) ─────────────────────────────────────────────────
 
-/// Cross-thread dealloc after stamp-cache: allocate on one heap's `HeapCore`
-/// (via the registry), then free via `Heap::dealloc_any_thread` on a
-/// different thread. This verifies that `stamp_segment_owner` (even via the
-/// OPT-C fast path on subsequent allocs) correctly writes `owner_thread_free`
-/// into the segment header at least once (on the very first slow-path call).
+/// Stamp-cache verification under `alloc-xthread`: allocate on one heap's
+/// `HeapCore` (via the registry), then confirm `stamp_segment_owner` (even via
+/// the OPT-C fast path on subsequent allocs) correctly writes
+/// `owner_thread_free` into the segment header at least once (on the very first
+/// slow-path call).
+///
+/// The original version of this test verified the stamp end-to-end by
+/// cross-thread freeing the blocks via the now-removed `Heap::dealloc_any_thread`
+/// API. `HeapCore` does not expose a public cross-thread-free entry point (the
+/// cross-thread routing lives inside `SeferAlloc::dealloc` / the private
+/// `dealloc_routing`), so the end-to-end cross-thread leg cannot be faithfully
+/// reproduced without inventing new public API. This rewrite preserves the
+/// stamp-cache coverage (the OPT-C fast path's correctness) by verifying the
+/// stamp directly via `dbg_owner_id_for`, which reads back the
+/// `owner_thread_free` field the stamp wrote.
 ///
 /// Gated on `alloc-global + alloc-xthread`.
 #[cfg(feature = "alloc-xthread")]
 #[test]
-fn cross_thread_dealloc_after_stamp_cache_works() {
-    use sefer_alloc::Heap;
-
+fn stamp_cache_writes_owner_thread_free() {
     let _serial = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    // Use the public Heap API which also goes through owner-stamping (Heap's
-    // stamp_owner covers alloc-xthread TFS stamping).
-    let mut heap = Heap::new().expect("Heap::new failed");
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
     let layout = Layout::from_size_align(64, 8).unwrap();
 
-    // Allocate a batch; write a tag into each block.
+    // Allocate a batch; the first alloc from a new segment takes the slow path
+    // and stamps `owner_thread_free`. Subsequent allocs from the SAME segment
+    // hit the OPT-C cache (fast path) and skip the re-stamp.
     const N: usize = 64;
-    let mut ptrs: Vec<(*mut u8, u64)> = Vec::new();
+    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
-        let p = heap.alloc(layout);
+        // SAFETY: heap is a live slot; single-writer (this thread owns it).
+        let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null(), "alloc returned null at i={i}");
-        let tag = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-        // SAFETY: p is valid, aligned, and owned by this thread.
-        unsafe { core::ptr::write(p as *mut u64, tag) };
-        ptrs.push((p, tag));
+        ptrs.push(p);
     }
 
-    // Verify tags before cross-thread free.
-    for &(p, tag) in &ptrs {
-        let read = unsafe { core::ptr::read(p as *const u64) };
-        assert_eq!(read, tag, "tag corrupt before cross-thread free");
+    // Every allocated block's segment must have a non-null `owner_thread_free`
+    // stamp — the OPT-C fast path must not have incorrectly suppressed the
+    // first slow-path stamp. `dbg_owner_id_for` returns the owner slot id by
+    // reading the stamped field; if the stamp were missing it would return
+    // `None` (or a mismatched id).
+    for &p in &ptrs {
+        let owner = unsafe { (*heap).dbg_owner_id_for(p) };
+        assert!(
+            owner.is_some(),
+            "stamp-cache regression: ptr {:p} has no owner_thread_free stamp \
+             (OPT-C fast path suppressed the first slow-path stamp)",
+            p
+        );
     }
 
-    // Send pointer addresses to another thread for cross-thread free.
-    let addrs: Vec<usize> = ptrs.iter().map(|&(p, _)| p as usize).collect();
-    std::thread::spawn(move || {
-        for addr in addrs {
-            Heap::dealloc_any_thread(addr as *mut u8, layout);
-        }
-    })
-    .join()
-    .expect("cross-thread free thread panicked");
-
-    // Re-allocate the same number of blocks. This triggers the lazy ring
-    // drain (RemoteFreeRing) on the first alloc-slow-path miss, recycling
-    // the cross-thread-freed blocks. If `owner_thread_free` had not been
-    // stamped (i.e., if the OPT-C fast path had incorrectly suppressed the
-    // TFS stamp), `dealloc_any_thread` would have silently no-opped, and the
-    // re-allocated blocks would all be fresh (no panic in that case, but the
-    // old blocks would be permanently leaked — this is the correctness
-    // concern, not a crash).
-    let mut new_ptrs = Vec::new();
-    for _ in 0..N {
-        let p = heap.alloc(layout);
-        assert!(!p.is_null(), "re-alloc returned null");
-        // Write + read-back: confirm the pointer is usable (catches UAF if
-        // the block was returned to the wrong heap or double-freed).
-        unsafe {
-            core::ptr::write_bytes(p, 0xBB, 64);
-            assert_eq!(p.read(), 0xBB, "re-alloc block not writable (UAF?)");
-        }
-        new_ptrs.push(p);
+    // Free all (own-thread).
+    for p in ptrs {
+        unsafe { (*heap).dealloc(p, layout) };
     }
 
-    for p in new_ptrs {
-        heap.dealloc(p, layout);
-    }
+    unsafe { HeapRegistry::recycle(heap) };
 }

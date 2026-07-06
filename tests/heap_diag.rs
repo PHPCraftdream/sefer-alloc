@@ -1,4 +1,4 @@
-//! Deterministic churn regression test for the Phase 9 per-thread heap.
+//! Deterministic churn regression test for the Phase 9 segment substrate.
 //!
 //! Complements the randomised `heap_differential.rs` proptest with a fast,
 //! fully deterministic (LCG-driven) alloc/dealloc/realloc churn that verifies
@@ -6,14 +6,18 @@
 //! carries a unique fill byte, so any overlap, free-list aliasing, or lost-data
 //! bug surfaces immediately as a mismatch — and reproducibly, run to run.
 //!
-//! This guards the free-list reuse path: blocks handed back from the per-heap
+//! This guards the free-list reuse path: blocks handed back from the per-segment
 //! free list hold stale bytes (unlike fresh OS-zeroed pages), so a realloc that
 //! mis-copies, or an alloc that returns an aliased/overlapping block, corrupts
 //! a tracked fill and trips the check. Kept fast per the short-scenario policy
 //! (modest sizes, bounded ops).
-#![cfg(feature = "alloc")]
+//!
+//! Exercises `AllocCore` directly. (An earlier version drove this through the
+//! now-removed `Heap` wrapper; `Heap` was a pure pass-through to `AllocCore` on
+//! the single-thread `alloc` feature, so this is a faithful 1:1 substitution.)
+#![cfg(feature = "alloc-core")]
 
-use sefer_alloc::Heap;
+use sefer_alloc::AllocCore;
 use std::alloc::Layout;
 
 struct Live {
@@ -50,7 +54,7 @@ const ALIGNS: [usize; 6] = [1, 2, 4, 8, 16, 4096];
 
 fn run(seed: u64, with_large: bool, ops_n: usize, label: &str) {
     let mut st = seed;
-    let mut heap = Heap::new().unwrap();
+    let mut heap = AllocCore::new().unwrap();
     let mut live: Vec<Live> = Vec::new();
     let mut next_fill: u8 = 1;
     let bump_fill = |f: &mut u8| {

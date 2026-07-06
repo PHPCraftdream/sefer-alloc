@@ -135,7 +135,7 @@ not pull it in.
 |---|---|---|
 | [`src/alloc_core/os.rs`](../src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit. | `alloc-core` |
 | [`src/alloc_core/node.rs`](../src/alloc_core/node.rs) | Intrusive free-list node read/write: the single place that reads/writes the `next` pointer inside a free block; also `release_segment` thin wrapper. | `alloc-core` |
-| [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `Heap`. | `alloc-global` |
+| [`src/global/sefer_alloc.rs`](../src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore`. | `alloc-global` |
 | [`src/global/tls_heap.rs`](../src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` / `abandon_segments` from the guard's drop. | `alloc-global` |
 | [`src/global/fallback.rs`](../src/global/fallback.rs) | Primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (survives reentrant / early-init / teardown access). | `alloc-global` |
 | [`src/registry/bootstrap.rs`](../src/registry/bootstrap.rs) | The primordial-segment carve / SegmentTable bootstrap seam — raw-pointer footprint carving of the metadata region under the atomic single-writer bootstrap protocol. | `alloc-global` |
@@ -203,11 +203,10 @@ path. This is M5 (reentrancy-freedom). See [ALLOC_PLAN.md](ALLOC_PLAN.md) §1.
 
 ### Structure
 
-Each thread owns a `Heap` (or uses `AllocCore` directly for single-thread
-mode). The `Heap` holds a `HeapCore` bound via raw-pointer TLS with a
-reentrancy fallback (introduced in Phase 11.5 hardening). On `SeferAlloc`,
-`current_for_alloc()` performs a registry hop to find or create the per-thread
-`HeapCore`.
+Each thread owns a `HeapCore` (or uses `AllocCore` directly for single-thread
+mode), bound via raw-pointer TLS with a reentrancy fallback (introduced in
+Phase 11.5 hardening). On `SeferAlloc`, `current_for_alloc()` performs a
+registry hop to find or create the per-thread `HeapCore`.
 
 ### Hot path
 

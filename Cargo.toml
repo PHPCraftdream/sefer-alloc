@@ -91,32 +91,28 @@ pinning = ["experimental", "dep:core_affinity"]
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
 alloc-core = ["std", "dep:aligned-vmem"]
-# Phase 9: per-thread heap + intrusive free lists -- the lock-free fast path.
-# A thread allocates from its own heap with no lock and no atomic on the common
-# case. Single-owner still (cross-thread free is Phase 10). Builds on the
-# Phase 8 segment substrate (`alloc-core`). Requires `std` (TLS).
-alloc = ["alloc-core"]
 # Phase 10: opt-in cross-thread free. Enables the lock-free Treiber stack
 # (`ThreadFreeStack`) for cross-thread `dealloc`, owner stamping on segment
 # headers, and the `dealloc_any_thread` entry point. Sound across thread death
-# via abandonment-leak (segments and the Treiber head are leaked on `Heap::drop`
+# via abandonment-leak (segments and the Treiber head are leaked on drop
 # so late cross-thread frees never touch unmapped memory). Full abandoned-heap
 # adoption (reclaiming leaked segments) is Phase 11. Without this feature, the
-# `alloc` feature provides the Phase 9 single-thread-only allocator (sound:
-# single owner, no cross-thread refs). Requires `alloc` (and thus `alloc-core`).
-alloc-xthread = ["alloc"]
+# `alloc-core` substrate provides single-thread-only allocation (sound:
+# single owner, no cross-thread refs). Requires `alloc-core`.
+alloc-xthread = ["alloc-core"]
 # Phase 11: the drop-in `GlobalAlloc` face -- `SeferAlloc`. Installs over the
-# per-thread `Heap` substrate via the TLS `with_heap` binding (allocation-free
-# lazy init). The `unsafe impl GlobalAlloc` is the single new `unsafe` surface
-# of this phase -- it is the documented malloc-face seam (the trait is `unsafe`;
-# the body delegates to the already-proven safe `Heap` entry points). Every
-# entry point is no-panic (a panic in a global allocator aborts the process):
-# checked branches return null on OOM, never panic/abort. Reentrancy-free (M5)
-# is upheld structurally: no `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the
-# path -- the TLS init is the Phase 9 lazy allocation-free discipline. Requires
-# `alloc` (and thus `alloc-core`). Add `alloc-xthread` alongside it for the
-# multi-thread face (cross-thread `dealloc` via the Phase 10 Treiber stack).
-alloc-global = ["alloc"]
+# per-thread `HeapCore` substrate via the registry-backed raw-pointer TLS
+# binding (allocation-free lazy init). The `unsafe impl GlobalAlloc` is the
+# single new `unsafe` surface of this phase -- it is the documented malloc-face
+# seam (the trait is `unsafe`; the body delegates to the already-proven safe
+# `HeapCore` entry points). Every entry point is no-panic (a panic in a global
+# allocator aborts the process): checked branches return null on OOM, never
+# panic/abort. Reentrancy-free (M5) is upheld structurally: no
+# `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path -- the TLS init is
+# the lazy allocation-free discipline. Requires `alloc-core`. Add `alloc-xthread`
+# alongside it for the multi-thread face (cross-thread `dealloc` via the Phase
+# 10 Treiber stack).
+alloc-global = ["alloc-core"]
 # Phase 35: M6 decommit — return the payload pages of an empty small segment to
 # the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its
 # live-block count drops to zero, recommitting on first reuse. Additive over
@@ -294,18 +290,10 @@ name = "pinned_write"
 harness = false
 required-features = ["pinning"]
 
-# Phase 9: per-thread heap alloc/dealloc hot path vs mimalloc and the system
-# allocator. Quick criterion profile (sample_size 10, short warm-up). Honest
-# verdict in docs/HEAP_BENCH.md.
-[[bench]]
-name = "heap_alloc"
-harness = false
-required-features = ["alloc"]
-
 # Phase 11: `SeferAlloc` installed as `#[global_allocator]` vs `mimalloc` and
 # the system allocator, exercising real Rust allocation patterns (Vec/Box churn).
 # Quick criterion profile (sample_size 10, short warm-up). Honest verdict in
-# docs/ALLOC_BENCH.md. Requires `alloc-global` (which brings `alloc`).
+# docs/ALLOC_BENCH.md. Requires `alloc-global`.
 [[bench]]
 name = "global_alloc"
 harness = false

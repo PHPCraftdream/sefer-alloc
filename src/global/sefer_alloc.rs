@@ -9,8 +9,8 @@
 //!
 //! ## Phase 12.3 rewiring
 //!
-//! Previously (Phase 11) this face routed through
-//! `RefCell<Option<Heap>>` via `with_heap_try`. That binding ABORTED under
+//! Previously (Phase 11) this face routed through a now-removed
+//! `RefCell<Option<Heap>>` TLS binding. That binding ABORTED under
 //! libtest's reentrant harness: `RefCell::try_borrow_mut` returns `Err` on
 //! a reentrant borrow → the alloc face returned null → std aborted.
 //!
