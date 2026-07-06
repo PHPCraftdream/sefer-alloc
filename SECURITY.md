@@ -4,11 +4,11 @@
 
 | Version | Supported |
 |---|---|
-| 0.1.x (current) | Yes |
-| Earlier versions | No |
+| Latest `0.x` release (see [crates.io](https://crates.io/crates/sefer-alloc)) | Yes |
+| Earlier releases | No |
 
-Only the latest published `0.1.x` release on [crates.io](https://crates.io)
-receives security patches. Users on older versions are encouraged to upgrade.
+Only the latest published `0.x` release on [crates.io](https://crates.io)
+receives security patches. Users on older releases are encouraged to upgrade.
 
 
 ## Reporting a vulnerability
