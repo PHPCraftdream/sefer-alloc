@@ -36,7 +36,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -50,7 +50,7 @@ jobs:
       matrix:
         features: ["", "--features experimental", "--all-features"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -94,7 +94,7 @@ jobs:
           # misuse-guard runs alongside the decommit (M6) recommit cycle.
           - "--features \"production hardened\"" # paranoid tier over the flagship bundle
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       # --no-fail-fast: run EVERY test binary even if an earlier one fails, so
       # a failure in one binary never masks failures in later ones (a lesson
@@ -112,7 +112,7 @@ jobs:
     name: test windows (production)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --features production --no-fail-fast
       # The magazine-in-isolation config (fastbin without decommit) exercises the
@@ -131,7 +131,7 @@ jobs:
     name: test macos (production)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --features production --no-fail-fast
       # The decommit path in isolation: MADV_DONTNEED on Darwin is advisory/lazy
@@ -149,7 +149,7 @@ jobs:
     name: test workspace members
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p aligned-vmem -p sefer-region -p malloc-bench-rs --no-fail-fast
 
@@ -162,7 +162,7 @@ jobs:
     name: MSRV 1.88 (cargo check)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
       - run: cargo check --all-features
 
@@ -174,7 +174,7 @@ jobs:
     name: no_std core build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: thumbv7em-none-eabi
@@ -243,7 +243,7 @@ jobs:
           # without voiding the test. Its decommit/recommit UB surface is already
           # covered by `decommit_miri_cycle`.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -295,7 +295,7 @@ jobs:
           # A1 stack over the `SeferAlloc`/`HeapCore` (global-singleton) face.
           - "--features \"alloc-global alloc-xthread\" --test regression_xthread_large_free_no_leak"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -359,7 +359,7 @@ jobs:
           - test: loom_epoch
             features: "experimental"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --release --features "${{ matrix.features }}" --test ${{ matrix.test }}
 
@@ -375,7 +375,7 @@ jobs:
     env:
       RUSTFLAGS: "-Zsanitizer=thread"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
@@ -457,7 +457,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             use_cross: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -505,7 +505,7 @@ jobs:
     name: numa-shim mock dispatch tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p numa-shim --features mock
       - run: cargo test -p numa-shim --features "mock vmem-integration"
@@ -522,7 +522,7 @@ jobs:
     name: numa-shim real Windows kernel (correctness, not perf)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
@@ -537,7 +537,7 @@ jobs:
     name: numa-shim real macOS kernel (no-op contract)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p numa-shim
       - run: cargo test -p numa-shim --features vmem-integration
@@ -567,7 +567,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install numactl
         run: |
@@ -608,7 +608,7 @@ jobs:
     name: fuzz targets build (nightly)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           # cargo-fuzz links the sanitizer runtime against the *prebuilt* std of
@@ -638,7 +638,7 @@ jobs:
     # `-D warnings` removal — many intra-doc links into `#[doc(hidden)]`
     # modules produce warnings that are not PR blockers.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       # All-features so every intra-doc link (including the gated tiers) resolves.
       - run: cargo doc --no-deps --all-features
