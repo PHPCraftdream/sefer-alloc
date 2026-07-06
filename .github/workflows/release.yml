@@ -92,8 +92,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      # SEC-6 (task #203): SHA-pinned to the commit `v5` points at
+      # (verified via `git ls-remote https://github.com/actions/checkout.git refs/tags/v5`).
+      # This is the only workflow carrying the crates.io publish token, so the
+      # tag-rewrite supply-chain vector is removed here specifically. Bump the
+      # SHA when intentionally moving to a new checkout major/minor.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
+      # SEC-6 (task #203): deliberately NOT SHA-pinned. `@stable` is a moving
+      # branch by design (the audit flagged this as "acceptable, but worth a
+      # conscious decision") — it exists precisely to resolve to the latest
+      # stable Rust toolchain at run time. Pinning a SHA would freeze it to
+      # whatever stable was current when this comment was written and silently
+      # stop tracking new stable releases. The supply-chain risk is also lower
+      # here: this action only installs a toolchain, it never touches the
+      # `CARGO_REGISTRY_TOKEN`. Left tag-pinned by conscious decision.
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Resolve target crate
