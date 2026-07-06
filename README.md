@@ -230,8 +230,12 @@ disclaimer):
   division + bookkeeping per carve run instead of per block) — the residual is
   honest per-block page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
-- On **realloc-grow under neighbour pressure** it is ~1.1× faster than
-  `mimalloc` and ~8.8× faster than `System`.
+- On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
+  into a rout: `realloc_grow_geometric` (64 B→4 MiB) is **~40× faster than
+  `mimalloc`** (9.7 µs vs 383 µs) and ~290× faster than `System`;
+  `realloc_in_place_unfavorable` went from 1.1× *slower* to **~1,500× faster**
+  (906 ns vs 1.36 ms) — every Large growth step that fits the committed 4 MiB
+  span is a header update returning the same pointer (re-measured 2026-07-06).
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
@@ -473,8 +477,13 @@ keeps this win without unbounded RSS amplification across cache reuse.
 
 | Bench | SeferAlloc | mimalloc | System | Notes |
 |---|---|---|---|---|
-| `realloc_grow_geometric` (64 B→4 MiB) | **~323 µs** | ~360 µs | ~2.85 ms | ~1.1× faster than mimalloc; **~8.8× faster than System** |
-| `realloc_in_place_unfavorable`        | ~1.68 ms   | ~1.55 ms | ~8.15 ms | ~1.1× slower than mimalloc; **~4.9× faster than System** |
+| `realloc_grow_geometric` (64 B→4 MiB) | **~9.7 µs** | ~383 µs | ~2.78 ms | **~40× faster than mimalloc; ~290× faster than System** |
+| `realloc_in_place_unfavorable`        | **~906 ns** | ~1.36 ms | ~7.26 ms | **~1,500× faster than mimalloc; ~8,000× faster than System** |
+
+(Re-measured 2026-07-06 after the X-arc: OPT-G grows a Large block in place
+whenever the new size fits the already-committed 4 MiB span — a header update
+returning the same pointer, zero copy. Deterministic proof: `realloc_grow`
+1,520,714 → 561,912 Ir / −47 % Estimated Cycles in the callgrind gate.)
 
 ### Small-class churn vs cold direct (`benches/global_alloc.rs`)
 
@@ -636,8 +645,9 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
   - **Cold first-touch after P3 (Э1 bump-direct carve):** cold 256 B reached
     parity; cold 1024 B 1.84× faster; cold 16/64 B halved their gap (now 1.60×
     / 1.15× slower, down from 2.6× / 2.0×).
-  - **Realloc** (`realloc_grow_geometric`): ~1.1× faster than `mimalloc`,
-    ~8.8× faster than `System`.
+  - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
+    ~290× faster than `System`; `realloc_in_place_unfavorable` **~1,500×
+    faster** (post-X-arc OPT-G in-place Large growth, 2026-07-06).
   - **MT macro at T ≥ 2:** larson 1.21–1.28×, mstress 1.19–1.31× faster.
 - **Where it ties:** cold 256 B (parity after Э1); non-writing 256 B churn
   (parity after Э6); bulk 1024 B; MT mstress T = 2 within noise.

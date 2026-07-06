@@ -1,5 +1,41 @@
 # `SeferAlloc` — benchmark & honest verdict
 
+> ## 0.3.0 post-X-arc re-measurement (2026-07-06) — the realloc breakthrough
+>
+> Full re-run after the X-arc (#182–188: X1 OPT-G in-place Large realloc, X2
+> #164 drain-side magazine check + magazine-routed realloc alloc-leg). Same
+> host/profile/caveats as the 2026-07-05 section below (noisy Windows dev box,
+> ±15–20 %, ratios are the signal). **The realloc rows are the news** — the
+> X-arc turned realloc from parity into a rout:
+>
+> | Bench | SeferAlloc | mimalloc | System | vs mimalloc | vs System | pre-X was |
+> |---|---|---|---|---|---|---|
+> | `realloc_grow_geometric` (64 B→4 MiB) | **9.67 µs** | 382.7 µs | 2.78 ms | **39.6× faster** | **288× faster** | ~323 µs (1.1× faster) |
+> | `realloc_in_place_unfavorable` | **906 ns** | 1.355 ms | 7.26 ms | **~1,500× faster** | **~8,000× faster** | ~1.68 ms (1.1× SLOWER) |
+>
+> SeferAlloc improved on ITSELF 33× / 1,850× on these two benches: every
+> Large→Large growth step that fits the already-committed 4 MiB span is now a
+> header update returning the same pointer (OPT-G), and the small-step alloc
+> leg rides the magazine (X2). The deterministic proof is the Ir judge:
+> `realloc_grow` 1,520,714 → 561,912 Ir (−63 %), Estimated Cycles −47 %.
+>
+> **Large alloc+free** (unchanged flagship): 4 MiB **58.6 ns** vs mi 716 ns
+> (12.2×) vs Sys 17.7 µs (302×); 16 MiB **61.9 ns** (13.5× / 237×); 64 MiB
+> **60.8 ns** (33× / 258×).
+>
+> **Churn** (writing, realistic): 16 B **22.3 µs** vs 38.8 (1.74×); 64 B
+> **22.3** vs 38.0 (1.71×); 256 B **22.9** vs 23.2 (≈parity-plus); 1024 B
+> **22.8** vs 165.1 (**7.2×**). Non-writing: 1.81× / 1.83× / 1.07× / 7.29×.
+> Sefer leads at every size on both patterns — X2's drain-side check did not
+> regress the won front (its refill cost is one-time-bootstrap + refill-miss
+> only, invisible at wall-clock).
+>
+> **Cold/bulk direct** (documented magazine worst-case, unchanged story):
+> 16 B 2.5× / 64 B 2.1× / 256 B 1.8× slower than mimalloc; 1024 B 1.12×
+> faster; `Vec_push` 557 ns ≈ mi 498 ns. vs System 3.9–4.1× faster.
+>
+> Where this section and the 2026-07-05 one disagree, THIS one is current.
+>
 > ## 0.3.0 pre-X-arc re-measurement (2026-07-05) — vs mimalloc & System
 >
 > Fresh full re-run on the clean post-W7 tree (`origin/main`), taken as the
