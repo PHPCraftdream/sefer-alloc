@@ -1,0 +1,80 @@
+# cargo-deny configuration.
+#
+# Closes the §1.3 / §1.6 #3 / §2.2 gap from
+# docs/security/SECURITY_COMPLIANCE_AUDIT_2026-07-06.md: RustSec advisories and
+# license compatibility are now machine-checked in CI (`.github/workflows/ci.yml`
+# `deny` job). This file is the config that job runs against.
+#
+# Verified to PASS against the current dependency tree (Cargo.lock as of task
+# #202) on cargo-deny 0.19.9.
+
+[graph]
+# Exercise the full feature matrix so every optional dependency
+# (arc-swap, crossbeam-epoch, core_affinity, aligned-vmem, numa-shim, fastbin
+# production tier, hardened tier) is pulled into the graph and checked. A
+# default-features-only graph would leave the optional-dep licenses un-audited.
+all-features = true
+
+[advisories]
+version = 2
+# The ignore list is intentionally narrow: each entry names a specific RustSec
+# advisory ID with a documented rationale. Do NOT add an ID here without a
+# comment explaining why suppressing it is correct and what would un-suppress
+# it. A blanket `unmaintained = "none"` would hide FUTURE unmaintained
+# advisories too; the per-ID ignore keeps new ones visible.
+ignore = [
+    # RUSTSEC-2025-0141 — `bincode` 1.3.3 is permanently unmaintained (the
+    # upstream team ceased development). Reaches this workspace ONLY through
+    # the `iai-callgrind` dev-dependency (the Linux-only CI perf-gate bench,
+    # `[[bench]] perf_gate_iai`), i.e. it is NOT in the published crate's
+    # runtime/optional dep tree — dev-dependencies do not ship to downstream
+    # consumers. `iai-callgrind 0.14.2` pins `bincode 1.x` with no safe
+    # upgrade path inside this workspace (a bump would be a separate
+    # dependency-version decision per project convention). Tracked for human
+    # decision: replace or drop `iai-callgrind`, or accept the dev-only
+    # unmaintained transitive chain. Suppressing here is NOT endorsing
+    # bincode for runtime use.
+    "RUSTSEC-2025-0141",
+
+    # RUSTSEC-2026-0173 — `proc-macro-error2` 2.0.1 is unmaintained (the fork
+    # author confirmed it and recommends migrating away). Same chain as
+    # above: reaches this workspace ONLY through
+    # `iai-callgrind-macs v0.5.1 -> iai-callgrind v0.14.2` (Linux-only
+    # dev-dependency), NOT in the published runtime tree. No safe upgrade
+    # exists inside `iai-callgrind 0.14.x`. Same human-decision deferral as
+    # RUSTSEC-2025-0141 above.
+    "RUSTSEC-2026-0173",
+]
+
+[licenses]
+version = 2
+# Allow-list built from the ACTUAL licenses cargo-deny reports against the
+# current full-feature dependency tree (not copied blindly from the audit's
+# §2.2 inventory — see the task #202 report for the reconciliation). The audit
+# listed BSD-2-Clause (zerocopy) and others as "in the dev tree", but the
+# current tree resolves to exactly these three SPDX identifiers.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Zlib",
+]
+# Per the task spec: do NOT ship a config that would immediately fail CI on
+# duplicate-version noise across dev-dependencies (criterion/tokio/etc. pull
+# several). `unlicensed` and `copyleft` stay at their deny defaults (a real
+# license problem must still fail the gate).
+
+[bans]
+# Permissive for now (task #202 scope is advisories + licenses, not a full
+# supply-chain lockdown). Duplicate transitive versions across dev-deps are
+# surfaced as warnings, not failures; tighten in a later pass if desired.
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+# Allow only crates.io as a registry source; deny any git-sourced or
+# unknown-registry dependency. Workspace-local path crates
+# (crates/vmem, crates/numa, crates/region, crates/malloc-bench, and the
+# root's path-dep on crates/region) are allowed implicitly by cargo-deny's
+# default `unknown-workspace` handling (workspace members are trusted).
+unknown-registry = "deny"
+unknown-git = "deny"
