@@ -88,6 +88,18 @@ pub(crate) fn primordial() -> Option<Primordial> {
         let ring_off = Layout::remote_ring_off();
         super::remote_free_ring::RemoteFreeRing::init_in_place(base, ring_off);
     }
+    // X7 Ф3 (task #191): zero the per-segment generation table under
+    // `hardened`. Compiled ONLY under `hardened`; under any other feature the
+    // table does not exist and this call is absent (byte-identical to the
+    // pre-X7 build). Without this zeroing, a `gen_at`/`bump_gen` Relaxed load
+    // on a never-written cell is UB (miri-confirmed during Ф1) — the carried-
+    // over Ф1 gap this call closes. The table is NOT re-zeroed on
+    // decommit-reset: the X7 plan §2.2 fixes generation numbering as
+    // CONTINUOUS across decommit-reset, so old generations persist intentionally.
+    #[cfg(feature = "hardened")]
+    {
+        super::segment_header::init_gen_table_in_place(base);
+    }
 
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.

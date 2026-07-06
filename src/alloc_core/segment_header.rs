@@ -822,12 +822,23 @@ impl Layout {
         }
     }
     /// Offset of the registry array in the primordial segment (page-aligned
-    /// past the remote ring — the registry is primordial-only).
+    /// past ALL small-segment metadata — header + page map + bin table + alloc
+    /// bitmap + remote ring + [gen table under `hardened`]). The registry is
+    /// primordial-only; it sits after `small_meta_end()` so it never overlaps
+    /// any small-segment metadata region.
+    ///
+    /// **X7 Ф3 (task #191) fix:** under `hardened`, `small_meta_end()` includes
+    /// the generation table (~256 KiB). The pre-Ф3 code computed this offset
+    /// from `remote_ring_off + FOOTPRINT` directly, which SKIPPED the gen table
+    /// — so under hardened the registry/hash/free-list were carved ON TOP OF the
+    /// gen table region, silently corrupting each other. Using `small_meta_end()`
+    /// (which already accounts for the gen table under hardened, and is identical
+    /// to the old computation under non-hardened) fixes the overlap. The
+    /// non-hardened value is byte-identical to the pre-Ф3 layout (both compute
+    /// `align_up(remote_ring_off + FOOTPRINT, PAGE)` — `small_meta_end` IS that
+    /// value when the gen table is absent).
     pub(crate) const fn primordial_registry_off() -> usize {
-        align_up_const(
-            Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT,
-            PAGE,
-        )
+        Self::small_meta_end()
     }
     /// Offset of the open-addressing hash table in the primordial segment
     /// (immediately after the registry array, 8-byte aligned).
@@ -1225,6 +1236,45 @@ pub fn bump_gen(base: *mut u8, off: usize) -> u8 {
     );
     let cell = Node::atomic_u8_at(base, Layout::gen_table_off() + idx);
     cell.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+}
+
+/// X7 Ф3 — initialise the per-segment generation table to ALL ZEROS at segment
+/// creation. Every byte writes `0` (the first life) via [`Node::write_u8`],
+/// mirroring [`AllocBitmap::init_in_place`](super::alloc_bitmap::AllocBitmap::init_in_place)'s
+/// byte-by-byte zeroing discipline. Compiled ONLY under `#[cfg(feature =
+/// "hardened")]`; under any other feature config the generation table does not
+/// exist and this function is absent (the non-hardened build is byte-identical).
+///
+/// # Why zero at init (and NOT re-zero on decommit-recycle)
+///
+/// The X7 plan §2.2 (decision 2) fixes the semantics: the generation table
+/// "lives in segment metadata, is NOT decommitted with the payload, and its
+/// numbering is CONTINUOUS across decommit-reset — old generations persist,
+/// new blocks continue numbering from wherever they were." So:
+///   - at FRESH segment creation (primordial bootstrap + every
+///     `reserve_small_segment`): zero the table — no block has ever lived
+///     here, so every cell starts at life 0. Without this, a `gen_at` /
+///     `bump_gen` Relaxed load on a never-written cell is UB (miri-confirmed
+///     during Ф1) — the carried-over Ф1 gap this call closes.
+///   - at decommit-reset (`decommit_empty_segment`): do NOT re-zero — the plan
+///     explicitly wants continuity. A stale ring note whose generation matches
+///     the CURRENT (recycled) life would have to survive an entire
+///     `alloc→free→drain→empty→decommit→re-carve→re-issue→drain` cycle AND
+///     coincide modulo 256, which is the accepted 1/256 wrap residual (§2.5),
+///     not a new hole.
+///
+/// `base` MUST be a live small/primordial segment base whose generation table
+/// (at [`Layout::gen_table_off`], [`GEN_TABLE_FOOTPRINT`] bytes) is carved and
+/// about to be consulted.
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+pub fn init_gen_table_in_place(base: *mut u8) {
+    let table_off = Layout::gen_table_off();
+    let mut i = 0;
+    while i < GEN_TABLE_FOOTPRINT {
+        Node::write_u8(Node::offset(base, table_off + i), 0);
+        i += 1;
+    }
 }
 
 const fn align_up_const(n: usize, a: usize) -> usize {

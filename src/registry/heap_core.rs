@@ -706,7 +706,20 @@ impl HeapCore {
                                 Ordering::Relaxed,
                             );
                         }
-                        return self.tcache.slots[c][new_cnt];
+                        let issued = self.tcache.slots[c][new_cnt];
+                        // X7 Ф3 (task #191) touch (a): bump the generation at
+                        // ISSUE. The block leaves the allocator's bookkeeping
+                        // (the magazine) and enters the caller's hands — this
+                        // is the life transition. Compiled ONLY under
+                        // `hardened`; non-hardened is byte-identical (the
+                        // `cfg(not)` branch is a bare passthrough).
+                        #[cfg(feature = "hardened")]
+                        {
+                            let base = os::segment_base_of_ptr(issued);
+                            let off = (issued as usize) - (base as usize);
+                            crate::alloc_core::segment_header::bump_gen(base, off);
+                        }
+                        return issued;
                     }
 
                     // Magazine miss: batch-refill + stamp hoist (P4).
@@ -1374,9 +1387,31 @@ impl HeapCore {
                 Some(c) => c as u32,
                 None => return, // Large layout on a small segment: contract violation; drop.
             };
-        let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
-        let ring = SegmentMeta::new(base).remote_ring();
-        let _ = ring.push(packed);
+        // X7 Ф3 (task #191) touch (b): under `hardened`, stamp the block's
+        // CURRENT generation (as observed by THIS freeing thread, Relaxed) into
+        // the ring note via `pack_entry_hardened`. The owner's drain (touch (c))
+        // compares this stamped gen against the block's gen-at-drain-time; a
+        // mismatch means the block was re-issued since this note was stamped,
+        // so honouring it would double-free/corrupt the CURRENT occupant — the
+        // note is dropped. Non-hardened builds keep the untouched `pack_entry`
+        // exactly as before (byte-identical, verified by construction — the
+        // `cfg(not)` branch IS the pre-existing code, not a re-implementation).
+        // Sibling-block discipline mirrors `Layout::small_meta_end()` (Ф1).
+        #[cfg(feature = "hardened")]
+        {
+            let gen = crate::alloc_core::segment_header::gen_at(base, off as usize);
+            let packed = crate::alloc_core::remote_free_ring::pack_entry_hardened(
+                gen, class_idx, off,
+            );
+            let ring = SegmentMeta::new(base).remote_ring();
+            let _ = ring.push(packed);
+        }
+        #[cfg(not(feature = "hardened"))]
+        {
+            let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
+            let ring = SegmentMeta::new(base).remote_ring();
+            let _ = ring.push(packed);
+        }
     }
 
     /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow
@@ -1439,7 +1474,21 @@ impl HeapCore {
         // Pop the top, leave n-1 in the magazine.
         let new_cnt = n - 1;
         self.tcache.count[c] = new_cnt as u16;
-        self.tcache.slots[c][new_cnt]
+        let issued = self.tcache.slots[c][new_cnt];
+        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
+        // leaves the allocator's bookkeeping (the magazine) and enters the
+        // caller's hands — this is the life transition. This is the refill
+        // path's issue point (the refill fills n slots, then pops ONE off the
+        // top for the caller; the remaining n-1 are still allocator-owned in
+        // the magazine and are bumped on THEIR respective pops). Compiled ONLY
+        // under `hardened`; non-hardened is byte-identical.
+        #[cfg(feature = "hardened")]
+        {
+            let base = os::segment_base_of_ptr(issued);
+            let off = (issued as usize) - (base as usize);
+            crate::alloc_core::segment_header::bump_gen(base, off);
+        }
+        issued
     }
 
     /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two

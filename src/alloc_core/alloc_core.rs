@@ -771,9 +771,25 @@ impl AllocCore {
         small_cur: *mut u8,
         is_in_magazine: &F,
     ) -> bool {
-        let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
-        let off = off as usize;
-        let class_idx = class_idx as usize;
+        // X7 Ф3 (task #191): under `hardened` the ring entry was packed with
+        // `pack_entry_hardened` (touch (b) in `dealloc_routing`), so it must be
+        // unpacked with the matching `unpack_entry_hardened` — which also
+        // recovers the stamped generation byte. Under non-hardened the entry
+        // was packed with the untouched `pack_entry`, so the unpack is the
+        // untouched `unpack_entry` (byte-identical to the pre-X7 code,
+        // verified by construction — the `cfg(not)` branch IS the pre-existing
+        // code). Sibling-block discipline mirrors `Layout::small_meta_end()`.
+        //
+        // `stamped_gen` is consulted AFTER all existing guards (the load-bearing
+        // ordering: magic/kind/align/bump/is_free/X2-magazine, THEN gen) and
+        // BEFORE `write_next` — see the comment below.
+        #[cfg(feature = "hardened")]
+        let (stamped_gen, class_idx_raw, off_raw) =
+            super::remote_free_ring::unpack_entry_hardened(packed);
+        #[cfg(not(feature = "hardened"))]
+        let (off_raw, class_idx_raw) = super::remote_free_ring::unpack_entry(packed);
+        let off = off_raw as usize;
+        let class_idx = class_idx_raw as usize;
         if class_idx >= super::size_classes::SMALL_CLASS_COUNT {
             return false;
         }
@@ -809,6 +825,33 @@ impl AllocCore {
         // link, no mark_free, no dec_live).
         if is_in_magazine(ptr, class_idx) {
             return false;
+        }
+        // X7 Ф3 (task #191) touch (c): the GENERATIONAL guard. Under
+        // `hardened`, AFTER all existing guards (magic/kind/align/bump/
+        // is_free/X2-magazine — that ordering is load-bearing, do NOT reorder)
+        // and BEFORE `write_next`/`mark_free`: compare the generation stamped
+        // in the ring note (touch (b)) against the block's CURRENT generation.
+        // A mismatch means the block has been RE-ISSUED since the note was
+        // stamped (its life counter advanced via `bump_gen` at the issue pop),
+        // so honouring this note would double-free / corrupt the CURRENT
+        // occupant — DROP it (return false: no link, no mark_free, no
+        // dec_live), exactly like the `is_in_magazine` drop above. This closes
+        // the re-issue-before-drain leg (residual leg 3): a note that
+        // "survived" a re-issue in the ring is identified by its stale
+        // generation and discarded. Compiled ONLY under `hardened`; under
+        // non-hardened this block is absent (byte-identical to pre-X7).
+        //
+        // Wrap 1/256 (X7 §2.5): after 256 re-issues-without-drain a stale note
+        // coincides with the current generation and is wrongly honoured — a
+        // probabilistic residual accepted by design, pinned by a Ф5 boundary
+        // test, not fixable without doubling the ring footprint.
+        #[cfg(feature = "hardened")]
+        {
+            let current_gen =
+                super::segment_header::gen_at(base, off);
+            if stamped_gen != current_gen {
+                return false;
+            }
         }
         let block_nn = match NonNull::new(ptr) {
             Some(nn) => nn,
@@ -1227,9 +1270,27 @@ impl AllocCore {
             return false;
         }
         let off = (ptr as usize - base as usize) as u32;
-        let packed = super::remote_free_ring::pack_entry(off, class_idx as u32);
-        let ring = SegmentMeta::new(base).remote_ring();
-        ring.push(packed).is_ok()
+        // X7 Ф3 (task #191): mirror `dealloc_routing`'s touch (b). Under
+        // `hardened` the drain unpacks with `unpack_entry_hardened`, so the
+        // push MUST pack with `pack_entry_hardened` and stamp the current
+        // generation — otherwise the gen-check at drain would compare against
+        // an unstamped (zero) gen and false-mismatch on every entry. Under
+        // non-hardened the untouched `pack_entry` is used (byte-identical).
+        // Sibling-block discipline mirrors `dealloc_routing`'s Variant-2 block.
+        #[cfg(feature = "hardened")]
+        {
+            let gen = super::segment_header::gen_at(base, off as usize);
+            let packed =
+                super::remote_free_ring::pack_entry_hardened(gen, class_idx as u32, off);
+            let ring = SegmentMeta::new(base).remote_ring();
+            ring.push(packed).is_ok()
+        }
+        #[cfg(not(feature = "hardened"))]
+        {
+            let packed = super::remote_free_ring::pack_entry(off, class_idx as u32);
+            let ring = SegmentMeta::new(base).remote_ring();
+            ring.push(packed).is_ok()
+        }
     }
 
     /// TEST-ONLY (task #37): drain every owned segment's ring into its
@@ -2559,6 +2620,20 @@ impl AllocCore {
         // payload and thus recommits.
         #[cfg(feature = "alloc-decommit")]
         meta.inc_live();
+        // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. `pop_free`
+        // hands a block directly to the caller (it is the non-magazine substrate
+        // pop, reachable from `alloc_small`). Under `hardened` (which implies
+        // `fastbin`), `HeapCore::alloc` routes small blocks through the magazine
+        // and never reaches here — but a direct `AllocCore` consumer (or a future
+        // config change) could, so the bump is placed at this issue point for
+        // correctness and defense-in-depth. The magazine refill path uses
+        // `drain_freelist_batch` (which fills `out`, NOT issuing to a caller), so
+        // blocks pulled into the magazine are NOT bumped here — they are bumped
+        // on their later magazine pop. Compiled ONLY under `hardened`.
+        #[cfg(feature = "hardened")]
+        {
+            super::segment_header::bump_gen(segment, head_off as usize);
+        }
         let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
     }
@@ -3568,6 +3643,17 @@ impl AllocCore {
                 base,
                 SegLayout::remote_ring_off(),
             );
+        }
+        // X7 Ф3 (task #191): zero the per-segment generation table under
+        // `hardened`. Compiled ONLY under `hardened`; under any other feature
+        // the table does not exist and this call is absent (byte-identical to
+        // the pre-X7 build). Closes the carried-over Ф1 gap: without this
+        // zeroing, a `gen_at`/`bump_gen` Relaxed load on a never-written cell
+        // is UB. NOT re-zeroed on decommit-reset (plan §2.2: generation
+        // numbering is continuous across decommit-reset by design).
+        #[cfg(feature = "hardened")]
+        {
+            super::segment_header::init_gen_table_in_place(base);
         }
         self.small_cur = base;
         Some(base)

@@ -50,8 +50,20 @@
 //! theoretically indistinguishable from a delayed remote free of the current
 //! lifetime without per-block generations — see
 //! `docs/design/RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md` §8. It remains
-//! RED + `#[ignore]`d. The full fix is task X7 (hardened-only, per-block
-//! generational guard).
+//! RED + `#[ignore]`d under non-hardened profiles (the theorem still holds
+//! without generations — no distinguishing state exists).
+//!
+//! **X7 Ф3 (task #191) — the hardened closure.** Under `--features
+//! "production hardened"` the per-block generation guard (X7 plan §3-Ф3)
+//! makes this interleaving DECIDABLE: the ring note stamped at remote-free
+//! time carries the block's THEN-current generation; the drain compares it
+//! against the block's NOW-current generation (advanced by `bump_gen` at the
+//! issue pop); a mismatch means the note refers to a PAST life and is
+//! dropped. The sibling test `residual_xthread_double_free_no_corruption_hardened`
+//! (below, `#[cfg(feature = "hardened")]`) runs the SAME A→B→I→D interleaving
+//! and asserts NO corruption — it is GREEN under hardened. The original test
+//! above stays `#[ignore]`d under ALL profiles (honestly red without
+//! generations, the theorem's permanent territory).
 //!
 //! (The sentinel-clobber assertion (a) trips first; if a fix only addressed
 //! the clobber but not the double-issue, assertion (b) would guard that leg.)
@@ -348,6 +360,124 @@ fn realloc_path_drain_respects_magazine() {
     }
     if !q2.is_null() {
         unsafe { (*heap).dealloc(q2, Layout::from_size_align(256, 8).unwrap()) };
+    }
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// **X7 Ф3 (task #191) — the hardened closure of the re-issue-before-drain
+/// residual (leg 3).** This is the SUCCESS CRITERION of the entire X7 arc:
+/// the SAME A→B→I→D interleaving that is permanently RED without generations
+/// (pinned by `residual_xthread_double_free_no_corruption` above) becomes
+/// GREEN under `--features "production hardened"` — the per-block generation
+/// guard makes the previously-undecidable state decidable.
+///
+/// # Why this is GREEN under hardened (and the sibling stays RED)
+///
+/// The three X7 Ф3 touches (see `docs/design/X7_GENERATIONAL_RING_PLAN.md`
+/// §3-Ф3) close the window:
+///
+/// 1. **Touch (a) — bump at ISSUE:** when step (4) pops P from the magazine
+///    and hands it to the caller, `bump_gen(P)` advances P's generation
+///    counter from N to N+1. P is now in its (N+1)-th life.
+/// 2. **Touch (b) — stamp at REMOTE FREE:** when step (2) pushed P's offset
+///    into the ring (simulating the remote free), `pack_entry_hardened`
+///    stamped P's THEN-current generation (N) into the ring note.
+/// 3. **Touch (c) — compare at DRAIN:** when step (5) drains the stale ring
+///    entry, `reclaim_offset_checked` reads P's CURRENT generation (N+1) and
+///    compares it against the stamped generation (N). They MISMATCH → the
+///    note refers to a PAST life → it is DROPPED (return false, no
+///    `write_next`, no `mark_free`, no `dec_live`). P's live word0 (the
+///    sentinel) survives, and P is never linked onto the BinTable → no
+///    double-issue.
+///
+/// # Counterfactual (non-vacuous)
+///
+/// Without touch (c) — if the gen-comparison were removed — the drain would
+/// `write_next(P, old_head)`, clobbering P's sentinel word0, and link P onto
+/// the BinTable → P double-issuable. Assertion (a) (sentinel survives) AND
+/// assertion (b) (P issued ≤ 1 time) would both fail. The counterfactual
+/// proof (break touch (c), confirm RED, restore, confirm GREEN) is in the
+/// Ф3 final report.
+///
+/// # cfg gate
+///
+/// `#[cfg(feature = "hardened")]`: compiled ONLY under hardened. Under
+/// non-hardened the generation table does not exist, the ring entry is not
+/// stamped, and the drain has no gen to compare — the test would fail
+/// (correctly: the theorem holds without generations). The sibling test above
+/// pins that permanent RED state.
+#[cfg(feature = "hardened")]
+#[test]
+fn residual_xthread_double_free_no_corruption_hardened() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null());
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let c = unsafe { (*heap).dbg_class_for(layout) }.expect("16/8 must be a small class");
+
+    // (1) alloc P. Under hardened, touch (a) bumps P's generation to 1
+    //     (0 → 1 at the issue pop).
+    let p = unsafe { (*heap).alloc(layout) };
+    assert!(!p.is_null());
+
+    // (2) simulate the REMOTE cross-thread free of P. Under hardened, touch
+    //     (b) stamps P's CURRENT generation (1) into the ring note.
+    let pushed = unsafe { (*heap).dbg_push_to_ring(p, c) };
+    assert!(pushed, "ring push failed (ring full or P not owned)");
+
+    // (3) own-thread free P → lands in the magazine (both oracles blind).
+    unsafe { (*heap).dealloc(p, layout) };
+
+    // (4) alloc once → pops P from the magazine (LIFO). Under hardened, touch
+    //     (a) bumps P's generation again (1 → 2). P is now in its 2nd life.
+    //     Write a sentinel into its word0.
+    let p2 = unsafe { (*heap).alloc(layout) };
+    assert!(!p2.is_null());
+    assert_eq!(
+        p2, p,
+        "expected the magazine to re-issue P (LIFO); the repro relies on it"
+    );
+    unsafe { (p2 as *mut usize).write(SENTINEL) };
+
+    // (5) drain all rings → the stale ring entry (stamped gen=1) is compared
+    //     against P's current gen (=2). MISMATCH → the note is DROPPED.
+    //     write_next NEVER runs. P's sentinel survives.
+    unsafe { (*heap).dbg_drain_all_rings() };
+
+    // ── Assert CORRECTNESS (GREEN under hardened) ────────────────────────
+    // (a) P's live user bytes must NOT have been clobbered by the drain.
+    let word0 = unsafe { (p2 as *mut usize).read() };
+    assert_eq!(
+        word0, SENTINEL,
+        "P's sentinel word0 was CLOBBERED by the ring drain's write_next \
+         (X7 hardened gen-guard failed to drop the stale note): expected \
+         {SENTINEL:#018x}, got {word0:#018x}"
+    );
+
+    // (b) a following alloc batch must never return P twice (no double-issue).
+    let mut issued: Vec<*mut u8> = Vec::with_capacity(64);
+    for _ in 0..64 {
+        let q = unsafe { (*heap).alloc(layout) };
+        if q.is_null() {
+            break;
+        }
+        issued.push(q);
+    }
+    let p_count = issued.iter().filter(|&&q| q == p).count();
+    assert!(
+        p_count <= 1,
+        "P was double-issued ({p_count} times) after the ring drain — the \
+         X7 hardened gen-guard failed to drop the stale note and linked a \
+         live block onto the BinTable"
+    );
+
+    // Cleanup.
+    for &q in &issued {
+        if q != p {
+            unsafe { (*heap).dealloc(q, layout) };
+        }
     }
     unsafe { HeapRegistry::recycle(heap) };
 }
