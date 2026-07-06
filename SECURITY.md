@@ -1,9 +1,5 @@
 # Security Policy
 
-<!-- PLACEHOLDER: Replace MAINTAINER_EMAIL with the real maintainer address
-     before publishing this repository. Search for REPLACE_WITH_REAL_EMAIL. -->
-
-
 ## Supported versions
 
 | Version | Supported |
@@ -22,21 +18,10 @@ receives security patches. Users on older versions are encouraged to upgrade.
 Public disclosure before a fix is available gives potential attackers advance
 notice and puts users at risk.
 
-### Preferred channel: GitHub Security Advisories
-
 Use the private
 [Security Advisory](../../security/advisories/new) form on this repository
 (GitHub → Security tab → "Report a vulnerability"). This channel is
 confidential; only the maintainers and invited collaborators can see the report.
-
-### Fallback: e-mail
-
-If the Security Advisory form is unavailable or you are unsure whether your
-finding qualifies, send an encrypted or plaintext e-mail to:
-
-```
-REPLACE_WITH_REAL_EMAIL
-```
 
 Include in the report:
 
