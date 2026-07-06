@@ -225,11 +225,9 @@ disclaimer):
   256 B churn loss was **eliminated in P6 (Э6)** — its cause was a stale
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
-  bump-direct carve roughly halved the gap (16 B now 1.60×, 64 B 1.15× slower)
-  and brought cold 256 B to parity; a later `carve_batch` pass (W4) shaved a
-  further ~6.3k `Ir` off the cold 16–64 B refill (one hoisted `align_up`
-  division + bookkeeping per carve run instead of per block) — the residual is
-  honest per-block page-fault work, called out in
+  bump-direct carve removed the tautological round-trip, but the post-X-arc
+  re-measurement still shows a 2.1–2.5× cold gap (16 B 2.5×, 64 B 2.1× slower);
+  the residual is honest per-block page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
   into a rout: `realloc_grow_geometric` (64 B→4 MiB) is **~40× faster than
@@ -502,10 +500,13 @@ mimalloc's cheaper first-touch path led at tiny sizes.
 The **P0–P6 perf arc** (below) attacked exactly these two fronts. On cold tiny
 blocks the P3 bump-direct batched carve (Э1) removed the tautological
 `carve → BinTable → pop` round-trip that made every virgin block pay ~40
-metadata-touch instructions: it roughly **halved the cold gap** (16 B from
-2.6× → 1.60× slower, 64 B from 2.0× → 1.15× slower) and brought **cold 256 B to
-parity**. On churn the one-branch resolver (Э2) + classify-once (Э4) +
-lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
+metadata-touch instructions: it roughly **halved the cold gap at P3 time**
+(16 B 2.6× → 1.60× slower, 64 B 2.0× → 1.15× slower) and brought **cold 256 B
+to parity at P3 time** — though the post-X-arc re-measurement puts the cold
+tiny gap back at 2.5× / 2.1× slower and cold 256 B at 1.8× slower on this
+noisy host (see the Cold direct column below and the iai gate for the
+deterministic signal). On churn the one-branch resolver (Э2) + classify-once
+(Э4) + lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
 1.63× faster, 64 B 1.23× → 1.69× faster); then **Э6 (P6) eliminated the 256 B
 churn loss entirely** by moving the M2 double-free oracle out of the block body
 and into hot metadata (see below). Ranges below span two runs on a noisy host;
@@ -553,11 +554,11 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16–64 B), 1.15–1.60× behind
-mimalloc.** This is the cold carve path (`global_alloc`, no reuse), unchanged
-by Э6 (which targets only the churn free path). The residual is honest
-per-block work — page-map writes and page faults on genuinely fresh pages, not
-ceremony — documented in
+**Where we still trail — cold tiny blocks (16–64 B), 2.1–2.5× behind
+mimalloc (post-X-arc re-measurement).** This is the cold carve path
+(`global_alloc`, no reuse), unchanged by Э6 (which targets only the churn
+free path). The residual is honest per-block work — page-map writes and page
+faults on genuinely fresh pages, not ceremony — documented in
 [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md).
 
 The DETERMINISTIC counterpart to these noisy single-host wall-clock ratios is
@@ -612,27 +613,37 @@ leads — see the verdict below.
 block is a fresh carve). Historically the documented worst case for a
 per-thread magazine; the **P3 bump-direct batched carve (Э1)** removed the
 tautological `carve → BinTable → pop` round-trip that made every virgin
-block pay ~40 metadata-touch instructions, so this is no longer a dramatic
-loss — it is the same cold-direct measurement as the "Cold direct" column of
-the Performance table above.
+block pay ~40 metadata-touch instructions. This is the same cold-direct
+measurement as the "Cold direct" column of the Performance table above
+(post-X-arc `vs mimalloc` ratios reproduced here for the dedicated section):
 
-| Size | SeferAlloc | mimalloc | System | vs mimalloc | (pre-P3 was) |
-|---|---|---|---|---|---|
-|   16 B | ~17 µs | ~11 µs | ~111 µs | 1.60× slower | 2.6× slower |
-|   64 B | ~22 µs | ~19 µs | ~160 µs | 1.15× slower | 2.0× slower |
-|  256 B | ~24 µs | ~23 µs | ~131 µs | ≈ parity (1.03×) | 1.5× slower |
-| 1024 B | ~24 µs | ~43 µs | ~138 µs | **1.84× faster** | 1.2× faster |
+| Size | vs mimalloc (post-X-arc) | (pre-P3 was) |
+|---|---|---|
+|   16 B | 2.5× slower | 2.6× slower |
+|   64 B | 2.1× slower | 2.0× slower |
+|  256 B | 1.8× slower | 1.5× slower |
+| 1024 B | **1.12× faster** | 1.2× faster |
 
-The residual gap on the tiniest cold sizes is honest per-block work
-(page-map writes, page faults on genuinely fresh pages), not a tautology —
-the round-trip is gone. Э6 (P6) does **not** touch this cold carve path (it
-targets only the churn free path), so cold tiny remains the one place
-`mimalloc` leads. The old P7 alloc-side bulk-bypass was retired in P3
-(bump-direct IS the ideal bulk path, so the streak-detection heuristic no
-longer buys anything). `fastbin` remains default-on in `production`; its M2
-double-free guard is now paid entirely in hot metadata (no block-body touch
-on free after Э6), so 256 B churn — previously a ~16 % loss — now **leads**
-mimalloc on the realistic writing pattern (see the verdict below).
+(Cold-direct `vs mimalloc` ratios measured 2026-07-06 post-X-arc, see
+[docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); absolute µs were not re-recorded
+in the post-X-arc section — only the ratios — and are omitted here rather
+than carried stale, matching the main Performance table's disclosure. The
+"pre-P3 was" column is the pre-X-arc historical run, kept for the
+before/after of the Э1 trajectory.)
+
+The P3 carve removed the tautological round-trip, but the post-X-arc
+re-measurement shows the cold tiny gap back at ~2.1–2.5× rather than the
+~1.15–1.60× the earlier P3-era run recorded — the residual is honest
+per-block work (page-map writes, page faults on genuinely fresh pages) on a
+noisy single host, not ceremony, and the deterministic signal is the iai gate
+below. Э6 (P6) does **not** touch this cold carve path (it targets only the
+churn free path), so cold tiny remains the one place `mimalloc` leads. The
+old P7 alloc-side bulk-bypass was retired in P3 (bump-direct IS the ideal
+bulk path, so the streak-detection heuristic no longer buys anything).
+`fastbin` remains default-on in `production`; its M2 double-free guard is now
+paid entirely in hot metadata (no block-body touch on free after Э6), so
+256 B churn — previously a ~16 % loss — now **leads** mimalloc on the
+realistic writing pattern (see the verdict below).
 
 Reproduce with:
 
@@ -656,9 +667,11 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
-  - **Cold first-touch after P3 (Э1 bump-direct carve):** cold 256 B reached
-    parity; cold 1024 B 1.84× faster; cold 16/64 B halved their gap (now 1.60×
-    / 1.15× slower, down from 2.6× / 2.0×).
+  - **Cold first-touch after P3 (Э1 bump-direct carve):** the tautological
+    round-trip is gone; the post-X-arc re-measurement still shows a 2.5× /
+    2.1× cold gap at 16/64 B (down from the 2.6× / 2.0× pre-P3 baseline on
+    this noisy host, but wider than the P3-era 1.60× / 1.15× record) and cold
+    1024 B **1.12× faster**.
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
     ~290× faster than `System`; `realloc_in_place_unfavorable` **~1,500×
     faster** (post-X-arc OPT-G in-place Large growth, 2026-07-06).
@@ -667,8 +680,8 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
     on mstress" was the 0.2.0 historical run — mstress is the noisier workload
     and the mimalloc column swung run-to-run this re-run).
-- **Where it ties:** cold 256 B (parity after Э1); non-writing 256 B churn
-  (parity after Э6); bulk 1024 B; MT mstress T = 2 within noise.
+- **Where it ties:** non-writing 256 B churn (parity after Э6); bulk 1024 B;
+  MT mstress T = 2 within noise.
 - **Where it now leads (was a loss through P5):**
   - **256 B churn: eliminated the loss in P6 (Э6).** Was ~1.16–1.25× behind
     mimalloc. The real cause was a stale per-heap key stamped in the block body
@@ -682,9 +695,11 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     write hole is closed; `tests/regression_magazine_oracles.rs` test (c) is
     RED pre-Э6, GREEN on Э6).
 - **Where it loses:**
-  - **Cold tiny blocks (16–64 B): 1.15–1.60× behind `mimalloc`.** Halved by the
-    P3 bump-direct carve but not fully closed — what remains is honest per-block
-    work (page-map writes, page faults on genuinely fresh pages), not ceremony.
+  - **Cold tiny blocks (16–64 B): 2.1–2.5× behind `mimalloc`** (post-X-arc
+    re-measurement). The P3 bump-direct carve removed the tautological
+    round-trip but did not fully close the gap — what remains is honest
+    per-block work (page-map writes, page faults on genuinely fresh pages),
+    not ceremony.
   - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`
     (historical 0.2.0 MT numbers, not re-run this pass). Structural cost of our
     safety machinery; the per-thread architecture means it does not compound —
