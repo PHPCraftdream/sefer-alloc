@@ -204,6 +204,190 @@ pub(crate) fn unpack_entry(packed: u32) -> (u32, u32) {
     (packed & ENTRY_OFF_MASK, packed >> ENTRY_OFF_BITS)
 }
 
+// ---------------------------------------------------------------------------
+// X7 Ф2 (task #190) — hardened ring-entry repack: `[gen:8|class:6|off16:18]`.
+//
+// The non-hardened `pack_entry`/`unpack_entry` ABOVE are byte-for-byte
+// untouched (the production entry format, compiled whenever `alloc-xthread`
+// is on — this is NOT a hardened-only surface). The block below adds a
+// SEPARATE packing scheme compiled ONLY under `#[cfg(feature = "hardened")]`,
+// threading the block's generation counter (X7 Ф1's gen-table byte) into the
+// ring note so a drain can drop a note whose generation no longer matches the
+// block's current life (X7 plan §2.4, §3-Ф2). Nothing here is wired into
+// `push`/`drain` or any other ring method yet — that is Ф3. This phase is
+// purely the pack/unpack pair + round-trip tests, mirroring Ф1's discipline.
+//
+// Bit layout (low bits → high bits), matching the plan's notation
+// `[gen:8|class:6|off16:18]` read high-to-low (the same convention the
+// non-hardened doc comment uses: `[class_idx: bits 22..32][off: bits 0..22]`
+// lists the HIGH field first):
+//
+//   bits [ 0..18) : off16 = off >> MIN_BLOCK_SHIFT   (off in MIN_BLOCK units)
+//   bits [18..24) : class_idx                         (size class, < 64)
+//   bits [24..32) : gen                               (generation byte, 0..=255)
+//
+// `off16` is 18 bits because `SEGMENT / MIN_BLOCK = 2^22 / 2^4 = 2^18` — every
+// `MIN_BLOCK`-aligned segment-relative offset divides to a value `< 2^18`.
+// `class` is 6 bits because `SMALL_CLASS_COUNT = 49 < 64 = 2^6`. `gen` is 8
+// bits — the `u8` generation counter established in Ф1 (wraps at 256, the
+// accepted 1/256 residual; X7 §2.5). The three fields sum to exactly 32 — no
+// wasted or overlapping bits. The external contract is symmetric with the
+// non-hardened pair: callers pass and receive the FULL segment-relative byte
+// offset (the `off16` internal representation never leaks — pack shifts down
+// by `MIN_BLOCK_SHIFT`, unpack shifts back up).
+//
+// `RING_SLOT_EMPTY` (`u32::MAX`) non-collision: the packed word equals
+// `u32::MAX` only when ALL three fields are simultaneously all-ones — i.e.
+// `gen=0xFF`, `class=0x3F` (=63), `off16=0x3_FFFF`. `off16=0x3_FFFF` IS
+// reachable (it is `SEGMENT - MIN_BLOCK` >> 4, a real last block start), and
+// `gen=0xFF` is reachable (the u8 wrap). BUT `class=63` is NOT: the maximum
+// real small class index is `SMALL_CLASS_COUNT - 1 = 48` (`0x30`), so the
+// class field never reaches `0x3F`. The maximum packed word over real ranges
+// is therefore `0xFFC3_FFFF < u32::MAX` (computed and pinned by the
+// `entry_never_collides_with_ring_slot_empty` regression test). This safety
+// HOLDS ONLY WHILE `SMALL_CLASS_COUNT <= 49` — the const-assert below pins
+// that the class field's all-ones value (`2^ENTRY_CLASS_BITS - 1 = 63`) stays
+// strictly above `SMALL_CLASS_COUNT - 1`, so a future bump of
+// `SMALL_CLASS_COUNT` past 63 cannot silently reintroduce a collision. Ф3's
+// ring `push`/`drain` reuse is sound under that invariant.
+// ---------------------------------------------------------------------------
+
+/// X7 Ф2: bits of a hardened ring entry reserved for `off16` (the offset in
+/// `MIN_BLOCK` units). `SEGMENT / MIN_BLOCK = 2^18`, so 18 bits suffice.
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+pub const ENTRY_OFF16_BITS: u32 = 18;
+/// X7 Ф2: bits reserved for the size class. `SMALL_CLASS_COUNT = 49 < 2^6`.
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+pub const ENTRY_CLASS_BITS: u32 = 6;
+/// X7 Ф2: bits reserved for the generation counter (the Ф1 `u8`, wraps at 256).
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+pub const ENTRY_GEN_BITS: u32 = 8;
+
+/// X7 Ф2: shift of the `class` field (starts where `off16` ends).
+#[cfg(feature = "hardened")]
+const ENTRY_CLASS_SHIFT: u32 = ENTRY_OFF16_BITS;
+/// X7 Ф2: shift of the `gen` field (starts where `class` ends).
+#[cfg(feature = "hardened")]
+const ENTRY_GEN_SHIFT: u32 = ENTRY_OFF16_BITS + ENTRY_CLASS_BITS;
+
+/// X7 Ф2: mask for the `off16` field of a hardened ring entry.
+#[cfg(feature = "hardened")]
+pub(crate) const ENTRY_OFF16_MASK: u32 = (1u32 << ENTRY_OFF16_BITS) - 1;
+/// X7 Ф2: mask for the `class` field of a hardened ring entry.
+#[cfg(feature = "hardened")]
+pub(crate) const ENTRY_CLASS_MASK: u32 = (1u32 << ENTRY_CLASS_BITS) - 1;
+/// X7 Ф2: mask for the `gen` field of a hardened ring entry.
+#[cfg(feature = "hardened")]
+pub(crate) const ENTRY_GEN_MASK: u32 = (1u32 << ENTRY_GEN_BITS) - 1;
+
+// X7 Ф2: compile-time pin of the bit layout (W7-style const-asserts, mirroring
+// the existing `RING_CAP.is_power_of_two()` assert above). Each field's value
+// range is provably covered, and the three fields sum to exactly 32 — the
+// plan's layout, not a looser one. `SEGMENT / MIN_BLOCK` and `SMALL_CLASS_COUNT`
+// are referenced via `super::` (this file otherwise imports only `Node`); the
+// hardened-only `use` is colocated with the asserts so it is invisible to a
+// non-hardened compile.
+#[cfg(feature = "hardened")]
+const _: () = {
+    use super::os::SEGMENT;
+    use super::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT, SMALL_CLASS_COUNT};
+    assert!(
+        ENTRY_GEN_BITS + ENTRY_CLASS_BITS + ENTRY_OFF16_BITS == 32,
+        "hardened ring entry fields must sum to exactly 32 bits (X7 §2.4 layout)"
+    );
+    assert!(
+        ENTRY_GEN_BITS == 8,
+        "gen field must be exactly 8 bits (the Ф1 u8 generation counter)"
+    );
+    assert!(
+        (SMALL_CLASS_COUNT as u64) <= (1u64 << ENTRY_CLASS_BITS),
+        "class field must cover SMALL_CLASS_COUNT"
+    );
+    assert!(
+        MIN_BLOCK.is_power_of_two() && SEGMENT.is_power_of_two(),
+        "MIN_BLOCK and SEGMENT must be powers of two for the exact off16 division"
+    );
+    assert!(
+        MIN_BLOCK_SHIFT == MIN_BLOCK.trailing_zeros(),
+        "MIN_BLOCK_SHIFT must equal log2(MIN_BLOCK) (kept in sync by size_classes)"
+    );
+    assert!(
+        (SEGMENT as u64) >> MIN_BLOCK_SHIFT <= (1u64 << ENTRY_OFF16_BITS),
+        "off16 field must cover SEGMENT/MIN_BLOCK (the largest MIN_BLOCK-aligned offset)"
+    );
+    // RING_SLOT_EMPTY non-collision pin (see the block doc above): the packed
+    // word is `u32::MAX` only when gen=0xFF AND class=0x3F AND off16=0x3_FFFF.
+    // gen and off16 maxima ARE reachable, so safety rests on class=0x3F being
+    // UNreachable — i.e. the max real class (`SMALL_CLASS_COUNT - 1`) staying
+    // strictly below the class field's all-ones value (`2^BITS - 1`). Pin it so
+    // a future bump of SMALL_CLASS_COUNT into the all-ones value fails to
+    // compile here instead of silently reintroducing a sentinel collision.
+    assert!(
+        (SMALL_CLASS_COUNT as u64) < (1u64 << ENTRY_CLASS_BITS) - 1,
+        "SMALL_CLASS_COUNT must stay strictly below the class field's all-ones value \
+         so a hardened ring entry can never equal RING_SLOT_EMPTY (u32::MAX)"
+    );
+};
+
+/// X7 Ф2: pack `(gen, class_idx, off)` into a single `u32` hardened ring entry
+/// with the layout `[gen:8|class:6|off16:18]` (gen in the HIGH bits, class in
+/// the middle, `off16 = off >> MIN_BLOCK_SHIFT` in the LOW bits — see the block
+/// doc above). `off` is the FULL segment-relative byte offset (same units as
+/// the non-hardened [`pack_entry`]); the `off16` internal representation never
+/// leaks to callers. Returns a value that never collides with
+/// [`RING_SLOT_EMPTY`] for any real `(gen, class, off)` triple (verified by the
+/// `entry_never_collides_with_ring_slot_empty` regression test).
+///
+/// Compiled ONLY under `#[cfg(feature = "hardened")]`; not wired into
+/// `push`/`drain` yet (that is Ф3).
+#[cfg(feature = "hardened")]
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+#[inline(always)]
+pub fn pack_entry_hardened(gen: u8, class_idx: u32, off: u32) -> u32 {
+    debug_assert!(
+        off >> super::size_classes::MIN_BLOCK_SHIFT <= ENTRY_OFF16_MASK,
+        "offset overflows hardened ring-entry off16 field"
+    );
+    debug_assert!(
+        off % super::size_classes::MIN_BLOCK as u32 == 0,
+        "hardened ring-entry offset must be MIN_BLOCK-aligned (off16 = off >> MIN_BLOCK_SHIFT)"
+    );
+    debug_assert!(
+        class_idx <= ENTRY_CLASS_MASK,
+        "class_idx overflows hardened ring-entry class field"
+    );
+    let off16 = off >> super::size_classes::MIN_BLOCK_SHIFT;
+    let packed = (off16 & ENTRY_OFF16_MASK)
+        | ((class_idx & ENTRY_CLASS_MASK) << ENTRY_CLASS_SHIFT)
+        | ((gen as u32 & ENTRY_GEN_MASK) << ENTRY_GEN_SHIFT);
+    debug_assert_ne!(
+        packed, RING_SLOT_EMPTY,
+        "hardened pack_entry must never produce the ring-slot sentinel"
+    );
+    packed
+}
+
+/// X7 Ф2: unpack a hardened ring entry into `(gen, class_idx, off)`, where
+/// `off` is the FULL segment-relative byte offset (the `off16` internal field
+/// is shifted back up by `MIN_BLOCK_SHIFT` so the external contract is symmetric
+/// with the non-hardened [`unpack_entry`]).
+///
+/// Compiled ONLY under `#[cfg(feature = "hardened")]`; not wired into
+/// `push`/`drain` yet (that is Ф3).
+#[cfg(feature = "hardened")]
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+#[inline(always)]
+pub fn unpack_entry_hardened(packed: u32) -> (u8, u32, u32) {
+    let off16 = packed & ENTRY_OFF16_MASK;
+    let class_idx = (packed >> ENTRY_CLASS_SHIFT) & ENTRY_CLASS_MASK;
+    let gen = ((packed >> ENTRY_GEN_SHIFT) & ENTRY_GEN_MASK) as u8;
+    let off = off16 << super::size_classes::MIN_BLOCK_SHIFT;
+    (gen, class_idx, off)
+}
+
 /// The cursor block: `head`, `tail`, `overflow`, and a 4-byte pad so the slot
 /// array starts 8-aligned (harmless on `AtomicU32` but tidy). 16 bytes total.
 const CURSOR_BLOCK: usize = 4 * core::mem::size_of::<u32>();
