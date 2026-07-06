@@ -21,6 +21,11 @@ the reference future perf work (e.g. W4 `carve_batch`) diffs against.
   BYTE-IDENTICAL `Ir` for all 10 benches. That determinism is what makes this a
   judge on this Windows dev host (wall-clock is noise; `Ir` is not).
 
+**Current reference for new work:** see the "Post-X1+X2+X3 reference
+(2026-07-05) — the CURRENT 11-bench table" section below — this file retains
+the historical post-W3 baseline above for provenance; do not diff new benches
+against the post-W3 numbers.
+
 ## Baseline (Ir per bench function)
 
 | bench function              |         Ir |

@@ -91,7 +91,7 @@ impl Drop for SerialGuard {
 const SENTINEL: usize = 0x5EFE_5EFE_5EFE_5EFE;
 
 #[test]
-#[ignore = "known residual M2 limit: cross-thread double-free ring-in-flight — real fix tracked as task #164"]
+#[ignore = "known residual: re-issue-before-drain (leg 3) — information-theoretically indistinguishable from a delayed genuine xfree without per-block generations; full fix tracked as X7 (see docs/design/X7_GENERATIONAL_RING_PLAN.md)"]
 fn residual_xthread_double_free_no_corruption() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();

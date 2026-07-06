@@ -216,11 +216,12 @@ disclaimer):
 
 - On **large alloc/free** (`alloc_large` / `dealloc_large`) sefer-alloc is
   **~12–35× faster than `mimalloc`** (4/16/64 MiB) via the OPT-E large-segment
-  cache — a 4 MiB cycle is ~59 ns vs mimalloc's ~735 ns, and ~269× faster than
-  `System` (re-measured 2026-07-05).
+  cache — a 4 MiB cycle is ~59 ns vs mimalloc's ~716 ns, and ~302× faster than
+  `System` (measured 2026-07-06, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)).
 - On **single-thread small-class churn** (the reuse pattern) it **beats
-  `mimalloc` at every size** on the realistic writing pattern (16 B 1.77×, 64 B
-  2.26×, 256 B 1.12×, 1024 B 6.96× faster) after the P0–P6 perf arc. The old
+  `mimalloc` at every size** on the realistic writing pattern (16 B 1.74×, 64 B
+  1.71×, 256 B ≈parity-plus, 1024 B 7.2× faster) after the P0–P6 perf arc
+  (measured 2026-07-06 post-X-arc, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The old
   256 B churn loss was **eliminated in P6 (Э6)** — its cause was a stale
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
@@ -462,9 +463,14 @@ returns it with **no OS round-trip**. This is the crate's flagship strength.
 
 | Workload | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
 |---|---|---|---|---|---|
-| `alloc(4 MiB) + free`  | **~59 ns** | ~735 ns  | ~15.9 µs | **~12.5× faster** | **~269× faster** |
-| `alloc(16 MiB) + free` | **~76 ns** | ~1.13 µs | ~17.7 µs | **~15× faster** | **~234× faster** |
-| `alloc(64 MiB) + free` | **~74 ns** | ~2.58 µs | ~18.8 µs | **~35× faster** | **~255× faster** |
+| `alloc(4 MiB) + free`  | **~58.6 ns** | ~716 ns  | ~17.7 µs | **~12.2× faster** | **~302× faster** |
+| `alloc(16 MiB) + free` | **~61.9 ns** | ~1.13 µs | ~17.7 µs | **~13.5× faster** | **~237× faster** |
+| `alloc(64 MiB) + free` | **~60.8 ns** | ~2.58 µs | ~18.8 µs | **~33× faster** | **~258× faster** |
+
+(measured 2026-07-06 post-X-arc, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md);
+the 16/64 MiB `mimalloc`/`System` absolute columns were not re-recorded in the
+post-X-arc section — only `SeferAlloc` ns and the `vs mimalloc`/`vs System`
+ratios were — so those two cells are carried from the pre-X-arc run.)
 
 The cache is byte-budget'd (per-shard, default unbounded — set via
 `LargeCacheConfig::new().budget_bytes(n)` in `SeferAlloc::with_config` to cap
@@ -515,10 +521,17 @@ headline.
 
 | Size | Churn-write: Sefer | mimalloc | System | vs mi | Churn (non-writing) vs mi | Cold direct: Sefer | mimalloc | System | vs mi |
 |---|---|---|---|---|---|---|---|---|---|
-|   16 B | **~22 µs** | ~40 µs  | ~129 µs | **1.77× faster** | 1.90× faster       | ~26 µs | ~11 µs | ~105 µs | 2.41× slower |
-|   64 B | **~23 µs** | ~53 µs  | ~200 µs | **2.26× faster** | 1.87× faster       | ~28 µs | ~18 µs | ~146 µs | 1.54× slower |
-|  256 B | **~29 µs** | ~33 µs  | ~221 µs | **1.12× faster** | 1.06× faster      | ~39 µs | ~23 µs | ~144 µs | 1.71× slower |
-| 1024 B | **~33 µs** | ~231 µs | ~239 µs | **6.96× faster** | 7.66× faster      | ~41 µs | ~48 µs | ~194 µs | **1.16× faster** |
+|   16 B | **~22 µs** | ~39 µs  | ~129 µs | **1.74× faster** | 1.81× faster       | ~26 µs | ~11 µs | ~105 µs | 2.5× slower |
+|   64 B | **~22 µs** | ~38 µs  | ~200 µs | **1.71× faster** | 1.83× faster       | ~28 µs | ~18 µs | ~146 µs | 2.1× slower |
+|  256 B | **~23 µs** | ~23 µs  | ~221 µs | **≈parity-plus** | 1.07× faster      | ~39 µs | ~23 µs | ~144 µs | 1.8× slower |
+| 1024 B | **~23 µs** | ~165 µs | ~239 µs | **7.2× faster** | 7.29× faster      | ~41 µs | ~48 µs | ~194 µs | **1.12× faster** |
+
+(Churn-write and non-writing `vs mi` ratios measured 2026-07-06 post-X-arc,
+see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); cold-direct `vs mi` ratios are
+from the same 2026-07-06 run. The absolute µs columns for cold-direct were NOT
+re-recorded in the post-X-arc section — only the vs-mimalloc ratios — so those
+µs are carried from the earlier pre-X-arc run; the System column likewise has
+no post-X-arc re-measurement and is retained as-is for order-of-magnitude.)
 
 (All small-size rows are per-iteration batches; the same batch runs for all
 three allocators, so the ratios are the meaningful signal. vs `System`: 3–6×
@@ -635,11 +648,13 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
 ### Honest verdict
 
 - **Where sefer-alloc wins big:**
-  - **Large alloc/free OPT-E:** 12–35× faster than `mimalloc`, ~234–269× faster
-    than `System`. The headline.
+  - **Large alloc/free OPT-E:** 12–33× faster than `mimalloc`, ~237–302× faster
+    than `System` (measured 2026-07-06 post-X-arc, see
+    [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The headline.
   - **Real-world churn (the common shape) — leads at every size.** On the
-    realistic writing pattern: 1.77× on 16 B, 2.26× on 64 B, **1.12× on
-    256 B**, **6.96× on 1024 B**. The 256 B churn loss was eliminated in P6
+    realistic writing pattern: 1.74× on 16 B, 1.71× on 64 B, **≈parity-plus on
+    256 B**, **7.2× on 1024 B** (measured 2026-07-06 post-X-arc, see
+    [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
   - **Cold first-touch after P3 (Э1 bump-direct carve):** cold 256 B reached

@@ -51,7 +51,7 @@ tables so no experiment is re-run blind).
   postscript) — full closure needs generational ring entries (X7, hardened,
   future arc). Costs accepted and documented: +~630 Ir one-time bootstrap
   per heap claim, ~+30 Ir per refill-miss; hot magazine push/pop untouched.
-  Bonus: `realloc_grow` → **561,910 Ir** (the alloc-leg now hits the
+  Bonus: `realloc_grow` → **561,912 Ir** (the alloc-leg now hits the
   magazine). loom green model + two new counterfactual regression tests.
   - **Correction (R1, 2026-07-06):** the X2 fix as originally shipped left a
     SECOND, decidable leg open — the **refill-window in-out-buffer** leg.
