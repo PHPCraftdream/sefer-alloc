@@ -16,6 +16,14 @@ on:
     - cron: '0 6 * * 1'   # NUMA real-kernel job (weekly Monday 06:00 UTC)
   workflow_dispatch:
 
+# SEC-4 (task #201): least-privilege token scope. No job in this workflow
+# performs any write to the repo contents (no `git push`, no release creation,
+# no PR/issue comment) — every job is a read-only check (checkout + cargo).
+# Pin the workflow-level GITHUB_TOKEN to read-only contents so the job default
+# cannot widen it even if the repo default token were read/write.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   # `-D warnings` is the strict-CI policy (Phase F3, task #124). Re-enabled

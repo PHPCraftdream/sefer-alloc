@@ -77,6 +77,15 @@ concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
+# SEC-4 (task #201): least-privilege token scope. The publish step uploads to
+# crates.io via the separate `CARGO_REGISTRY_TOKEN` secret, NOT via the
+# `GITHUB_TOKEN`; no step creates a GitHub Release, pushes a git ref, or
+# comments on a PR/issue. The `$GITHUB_STEP_SUMMARY` writes are to a file the
+# runner hands the step via env, not a contents API call. So the whole
+# workflow is read-only with respect to repo contents.
+permissions:
+  contents: read
+
 jobs:
   publish:
     name: Publish

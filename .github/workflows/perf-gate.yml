@@ -40,6 +40,14 @@ env:
   # Linux-only, so this cannot be validated on a dev machine).
   IAI_CALLGRIND_REGRESSION: 'Ir=10'
 
+# SEC-4 (task #201): least-privilege token scope. The job checks out the repo,
+# caches/uploads artifacts, and runs `cargo bench`; none of these require
+# contents-write on the repo (no `git push`, no release, no PR comment).
+# `actions/upload-artifact` and `actions/cache` use their own scoped backends,
+# not the contents API.
+permissions:
+  contents: read
+
 jobs:
   iai-callgrind:
     name: instruction-count regression gate
