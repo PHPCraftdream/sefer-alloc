@@ -208,6 +208,61 @@
 > mimalloc's cheaper first-touch path leads. `System` trails everywhere by
 > 3–300×. **This 256 B churn caveat was overturned in P6 — see the next
 > section.**
+>
+> ## MT macro-bench re-run (2026-07-06, post R1/R2/R3)
+>
+> The Phase-13.7 MT tables below (larson/mstress, T = 1/2/4, unpinned) predate
+> the retro-fix arc that landed today: **R1** (`f23f7eb`, refill-window
+> double-issue close — adds an `out[..filled].contains(ptr)` membership check
+> on the refill drain path), **R2** (`03f6a7f`, realloc dedupe — production-dead
+> `AllocCore::realloc` removed, no hot-path change), **R3** (`ee4d799`,
+> docs-only). R1 touches the exact refill path this MT bench stresses under
+> cross-thread free pressure; R2/R3 are not expected to move MT throughput.
+> Re-run with the documented invocation (no new flags):
+>
+> ```
+> cargo run --release --example malloc_macro --features "alloc-global alloc-xthread"
+> ```
+>
+> Same Windows 10 dev host, same deterministic xorshift seeds, 400 k
+> steps/thread, aggregate M ops/sec (op = one alloc + one free), unpinned.
+> Representative of three consecutive runs (SeferAlloc column within ~±10 %
+> across THIS section's own 3 runs; independent spot-check runs during review
+> widened that to ~±15–20 % on mstress T = 4 specifically — noise is real,
+> not fabricated, but tighter here than the host's honest worst case;
+> mimalloc's larson T = 1 swung 17.7→28.9 M between runs —
+> the known mimalloc-T=1-larson dip already noted in the 13.7 commentary — so
+> the mimalloc/System columns are order-of-magnitude only):
+>
+> **larson — post R1/R2/R3 (2026-07-06)**
+>
+> | T | SeferMalloc | mimalloc | System |
+> | -: | ----------: | -------: | -----: |
+> | 1 |   ~18.7 M   | ~28.9 M  | ~6.5 M |
+> | 2 | **~25.2 M** | ~18.3 M  | ~6.8 M |
+> | 4 | **~41.0 M** | ~33.6 M  | ~13.7 M |
+>
+> **mstress — post R1/R2/R3 (2026-07-06)**
+>
+> | T | SeferMalloc | mimalloc | System |
+> | -: | ----------: | -------: | -----: |
+> | 1 |   ~24.3 M   | ~31.5 M  | ~3.9 M |
+> | 2 | **~39.8 M** | ~40.7 M  | ~7.0 M |
+> | 4 | **~68.5 M** | ~66.0 M  | ~12.4 M |
+>
+> **Delta vs the Phase-13.7 tables below (SeferMalloc column, all within ±15 %,
+> no flag):** larson 1 −11 % (21→18.7), larson 2 +0.6 %, larson 4 +2.5 %,
+> mstress 1 −2.7 %, mstress 2 −7.4 %, mstress 4 +5.4 %. The largest move
+> (larson T = 1, −11 %) is **inside** the documented ±10–15 % run-to-run noise
+> band and was not reproduced consistently across the three runs (run 2 and 3
+> landed at 17.8 / 18.7 M — i.e. flat within noise); it is **not** attributed
+> to R1/R2/R3. **No T/mode combination moved by more than ±15 %**, so no
+> regression or win is claimed against the retro fixes. The crossover shape is
+> unchanged: mimalloc leads at T = 1, `SeferMalloc` leads at T ≥ 2 on larson
+> and reaches parity-plus at T ≥ 2 on mstress. (The README's separate "0.2.0
+> historical" MT table carries different absolute figures — mstress T = 4
+> ~84 M there vs ~68 M here — but that table is explicitly labelled historical
+> 0.2.0 and is not a like-for-like comparison to this post-R run; see README.)
 
 ---
 

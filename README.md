@@ -663,7 +663,11 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
     ~290× faster than `System`; `realloc_in_place_unfavorable` **~1,500×
     faster** (post-X-arc OPT-G in-place Large growth, 2026-07-06).
-  - **MT macro at T ≥ 2:** larson 1.21–1.28×, mstress 1.19–1.31× faster.
+  - **MT macro at T ≥ 2:** larson 1.22–1.38× faster, mstress ≈parity to 1.04×
+    faster (measured 2026-07-06 post-R1/R2/R3, see
+    [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
+    on mstress" was the 0.2.0 historical run — mstress is the noisier workload
+    and the mimalloc column swung run-to-run this re-run).
 - **Where it ties:** cold 256 B (parity after Э1); non-writing 256 B churn
   (parity after Э6); bulk 1024 B; MT mstress T = 2 within noise.
 - **Where it now leads (was a loss through P5):**
