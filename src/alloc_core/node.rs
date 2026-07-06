@@ -313,6 +313,31 @@ impl Node {
         unsafe { base.add(off) }
     }
 
+    /// Return a `&'static AtomicU8` view over the single byte at `base + off`.
+    /// X7 Ф1 (task #189): used by the per-segment generation table — one
+    /// `AtomicU8` per `MIN_BLOCK` granule, the hardened remote-free staleness
+    /// guard. The table lives in segment metadata under `#[cfg(feature =
+    /// "hardened")]`; the owner writes Relaxed (single-writer at issue time —
+    /// Ф3), remote reads Relaxed (also Ф3). Mirrors [`atomic_u32_at`]; the
+    /// segment-lifetime reasoning is identical, only the field width is 1 byte
+    /// (and `AtomicU8` has no alignment requirement beyond 1).
+    #[cfg_attr(not(feature = "hardened"), allow(dead_code))]
+    #[allow(dead_code)] // wired in X7 Ф1; consumed by Ф2/Ф3 + the gen-table layout test
+    #[inline(always)]
+    pub(crate) fn atomic_u8_at(
+        base: *mut u8,
+        off: usize,
+    ) -> &'static core::sync::atomic::AtomicU8 {
+        let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU8;
+        // SAFETY: caller guarantees `base` is a live segment base and `off` is
+        // the offset of a byte within a metadata region at `base`, with
+        // `off + 1` in-bounds. The segment remains mapped for the process
+        // lifetime (freed only at `AllocCore::drop`, after all cross-thread
+        // frees have quiesced), so the `'static` lifetime is sound. `AtomicU8`
+        // is `Sync`, so shared atomic access from any thread is race-free.
+        unsafe { &*ptr }
+    }
+
     /// Return a `&'static AtomicU32` view over the 4 aligned bytes at
     /// `base + off`. Used by the per-segment `RemoteFreeRing` (the
     /// non-intrusive cross-thread-free queue) to obtain atomic views over its

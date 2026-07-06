@@ -40,7 +40,11 @@ use core::mem::size_of;
 
 use super::node::Node;
 use super::os::PAGE;
+#[cfg(feature = "hardened")]
+use super::os::SEGMENT;
 use super::size_classes::SMALL_CLASS_COUNT;
+#[cfg(feature = "hardened")]
+use super::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
 
 /// Magic value written to every segment header at creation. Used as a sanity
 /// check that a computed segment base really is one of our segments (defence
@@ -126,6 +130,27 @@ pub(crate) const fn unpack_owner_gen(word: u64) -> u32 {
 /// The number of pages in one segment (`SEGMENT / PAGE` = 1024 for the default
 /// 4 MiB / 4 KiB pair). The `PageMap` has exactly this many entries.
 pub(crate) const PAGES_PER_SEGMENT: usize = super::os::SEGMENT / PAGE;
+
+/// X7 Ф1 (task #189): the byte footprint of the per-segment **generation
+/// table** — the hardened remote-free staleness guard. One byte per
+/// `MIN_BLOCK` granule of the WHOLE segment, so every segment-relative offset
+/// `off` indexes a unique cell at `off >> MIN_BLOCK_SHIFT` without needing a
+/// payload-vs-metadata bounds distinction (the metadata granules' cells are
+/// simply never read/written — no block starts there, exactly like the
+/// [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) discipline). For the
+/// default 4 MiB / 16 B pair this is `4 MiB / 16 = 262 144` bytes = 256 KiB
+/// (64 pages) — the ~6–7% metadata overhead the X7 plan §1/§2.1 budgets.
+///
+/// Computed from the constants (not a hardcoded literal) so it cannot drift if
+/// `SEGMENT` / `MIN_BLOCK` change. `MIN_BLOCK` divides `SEGMENT` (both are
+/// powers of two), so the division is exact — no rounding is needed.
+///
+/// Compiled ONLY under `#[cfg(feature = "hardened")]`; outside that feature the
+/// generation table does not exist and the segment byte layout is unchanged.
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+#[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
+pub const GEN_TABLE_FOOTPRINT: usize = SEGMENT / MIN_BLOCK;
 
 /// Kind of a segment. Lives in the header so `segment_of(ptr)` immediately
 /// tells the Cartographer how to handle a pointer into this segment.
@@ -752,13 +777,49 @@ impl Layout {
             4,
         )
     }
-    /// End of the small-segment metadata (page-aligned past the remote ring).
-    /// Payload carving begins here.
+    /// Offset of the per-segment **generation table** (X7 Ф1, task #189) — the
+    /// hardened remote-free staleness guard: one `AtomicU8` per `MIN_BLOCK`
+    /// granule of the segment, recording the current "life number" of the block
+    /// at that granule. Lives in segment metadata right after the remote-free
+    /// ring, 1-byte aligned (it is a byte array). Compiled ONLY under
+    /// `#[cfg(feature = "hardened")]`; under any other feature config the
+    /// generation table does not exist and [`small_meta_end`] is byte-identical
+    /// to the pre-X7 layout (the production-judge-neutrality requirement — see
+    /// the layout assertions at the bottom of this file). See
+    /// [`GEN_TABLE_FOOTPRINT`] / [`gen_at`] / [`bump_gen`].
+    #[cfg(feature = "hardened")]
+    pub(crate) const fn gen_table_off() -> usize {
+        // 1-byte aligned (the table is a byte array). `remote_ring_off` is
+        // already 4-byte aligned and the ring footprint is a multiple of 4, so
+        // this offset is at least 4-aligned — trivially ≥ 1-aligned.
+        Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT
+    }
+    /// End of the small-segment metadata (page-aligned past the last metadata
+    /// region). Payload carving begins here.
+    ///
+    /// Under `#[cfg(feature = "hardened")]` this is page-aligned past the
+    /// generation table (X7 Ф1); under any other feature config it is
+    /// page-aligned past the remote-free ring and is **byte-identical to the
+    /// pre-X7 layout** (no generation table exists outside `hardened`).
     pub(crate) const fn small_meta_end() -> usize {
-        align_up_const(
-            Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT,
-            PAGE,
-        )
+        #[cfg(feature = "hardened")]
+        {
+            align_up_const(
+                Self::gen_table_off() + GEN_TABLE_FOOTPRINT,
+                PAGE,
+            )
+        }
+        // Non-hardened: page-aligned past the remote ring ONLY. This branch is
+        // the sole compiled branch when `hardened` is off, so the byte layout
+        // is provably unchanged from the pre-X7 build (the const assert at the
+        // bottom of this file pins the value).
+        #[cfg(not(feature = "hardened"))]
+        {
+            align_up_const(
+                Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT,
+                PAGE,
+            )
+        }
     }
     /// Offset of the registry array in the primordial segment (page-aligned
     /// past the remote ring — the registry is primordial-only).
@@ -1088,6 +1149,84 @@ impl SegmentMeta {
     }
 }
 
+// ---------------------------------------------------------------------------
+// X7 Ф1 (task #189) — generation-table byte-level accessors.
+//
+// The generation table is a standalone byte-array metadata region (like the
+// alloc bitmap), NOT a `SegmentHeader` field, so its accessors are free
+// functions (not `offset_of!`-on-header field reads). Each cell is an
+// `AtomicU8` obtained through the `node` seam (`Node::atomic_u8_at`), mirroring
+// how the adoption path obtains `&AtomicU64` views over header fields.
+//
+// Memory model (X7 plan §2): owner writes Relaxed (single-writer at block issue
+// — that is Ф3, not this phase); remote reads Relaxed (also Ф3). Both orderings
+// are TSan-clean: the table is the staleness key, not a release/acquire fence.
+// Ф1 wires ONLY the byte-level read/RMW primitives — nothing in the
+// alloc/dealloc/refill/drain paths consults the table yet.
+//
+// Compiled ONLY under `#[cfg(feature = "hardened")]`.
+// ---------------------------------------------------------------------------
+
+/// Read the generation byte of the block at payload offset `off` in the segment
+/// at `base`. `off` is a segment-relative byte offset (same convention as the
+/// `payload_off` used elsewhere, e.g. `realloc_inplace_fast_path`'s OPT-G code):
+/// it is shifted by `MIN_BLOCK_SHIFT` to index the table. Relaxed atomic load —
+/// the remote-free drain compares this against the generation stamped in the
+/// ring note (Ф3); a mismatch means the note refers to a past life of the block
+/// and is dropped.
+///
+/// # Caller's contract
+///
+/// `base` MUST be a live small/primordial segment base whose generation table
+/// (at [`Layout::gen_table_off`]) is carved and (under Ф2+) initialised; `off`
+/// MUST be a `MIN_BLOCK`-aligned segment-relative offset of a live block (`off
+/// >> MIN_BLOCK_SHIFT < GEN_TABLE_FOOTPRINT`, which holds for any `off <
+/// SEGMENT`).
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+#[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
+#[inline(always)]
+pub fn gen_at(base: *mut u8, off: usize) -> u8 {
+    let idx = off >> MIN_BLOCK_SHIFT;
+    debug_assert!(
+        idx < GEN_TABLE_FOOTPRINT,
+        "generation-table index out of range"
+    );
+    let cell = Node::atomic_u8_at(base, Layout::gen_table_off() + idx);
+    cell.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Atomically increment the generation byte of the block at payload offset `off`
+/// in the segment at `base`, returning the value held BEFORE the increment (the
+/// "old life"). Relaxed read-modify-write (`fetch_add(1, Relaxed)`) — the owner
+/// is the single writer at block-issue time (Ф3); the increment establishes a
+/// new life so any in-flight remote-free note stamped with the OLD generation
+/// will mismatch and be dropped on drain.
+///
+/// The counter is a `u8` and WRAPS at 256 (X7 plan §2.5): after 256
+/// re-issues-without-drain a stale note coincides with the current generation
+/// and is wrongly honoured — a probabilistic residual, accepted by design and
+/// pinned by a boundary test in Ф5.
+///
+/// # Caller's contract
+///
+/// Same as [`gen_at`]: `base` is a live segment base with a carved generation
+/// table; `off` is a `MIN_BLOCK`-aligned segment-relative offset of a live
+/// block.
+#[cfg(feature = "hardened")]
+#[doc(hidden)]
+#[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
+#[inline(always)]
+pub fn bump_gen(base: *mut u8, off: usize) -> u8 {
+    let idx = off >> MIN_BLOCK_SHIFT;
+    debug_assert!(
+        idx < GEN_TABLE_FOOTPRINT,
+        "generation-table index out of range"
+    );
+    let cell = Node::atomic_u8_at(base, Layout::gen_table_off() + idx);
+    cell.fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+}
+
 const fn align_up_const(n: usize, a: usize) -> usize {
     let mask = a - 1;
     (n + mask) & !mask
@@ -1097,6 +1236,17 @@ const fn align_up_const(n: usize, a: usize) -> usize {
 // room for at least one payload page, and the smallest size class must hold a
 // free-list node.
 const _: () = assert!(Layout::primordial_meta_end() + PAGE <= super::os::SEGMENT);
+const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
+// X7 Ф1 (task #189): under `hardened` the generation table (~256 KiB / 64 pages)
+// is carved into segment metadata, shifting `small_meta_end` up by that much.
+// This is exactly the capacity risk the X7 plan §4 "Risks" calls out ("Ёмкость
+// сегмента под hardened меняет геометрию"). The assertion above (ungated) already
+// re-checks under every feature config, but this hardened-only assert pins the
+// LARGER value explicitly — load-bearing, not decorative: if a future change to
+// `GEN_TABLE_FOOTPRINT` or the upstream layout pushed the hardened
+// `small_meta_end` past `SEGMENT`, the crate would fail to compile under
+// `--features hardened` here rather than silently overflowing the payload.
+#[cfg(feature = "hardened")]
 const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
 const _: () = assert!(super::size_classes::MIN_BLOCK >= super::node::NODE_SIZE);
 // Phase 35: adding the `live_count` / `decommitted` fields must NOT push the

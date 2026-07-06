@@ -46,7 +46,14 @@ pub(crate) mod os;
 /// isolated ring unit test. Nothing here is stable public API.
 #[doc(hidden)]
 pub mod remote_free_ring;
-pub(crate) mod segment_header;
+/// The per-segment metadata layout + field-specific header accessors + (X7 Ф1)
+/// the generation-table byte-level accessors. `pub` (not `pub(crate)`) only
+/// because `alloc_core` itself is `#[doc(hidden)]` (see `lib.rs`): the public
+/// surface is test-only (the `#[doc(hidden)] pub` gen-table accessors
+/// `gen_at`/`bump_gen`/`GEN_TABLE_FOOTPRINT`/`Layout::gen_table_off`), reachable
+/// by the isolated gen-table layout test. Nothing here is stable public API.
+#[doc(hidden)]
+pub mod segment_header;
 mod segment_layout;
 pub(crate) mod segment_table;
 pub(crate) mod size_classes;
