@@ -360,8 +360,13 @@ jobs:
           # composition, forcing the model to be updated alongside #164.
           - test: loom_magazine_ring_compose
             features: "alloc-global alloc-xthread"
+          # task #204: the `alloc` Cargo feature (and the `Heap` type it
+          # gated) was removed; this file's synthetic `Node` model never
+          # actually depended on it (verified: compiles and passes with an
+          # empty feature set) — the CI matrix simply hadn't been updated
+          # when the feature was deleted.
           - test: loom_thread_free
-            features: "alloc"
+            features: ""
           - test: loom_sharded
             features: "experimental"
           - test: loom_epoch
@@ -388,10 +393,13 @@ jobs:
         with:
           components: rust-src
       # The race-prone cross-thread tests: the reproduction harnesses
-      # (race_repro / race_norecycle), the multi-threaded global-alloc churn
-      # (global_alloc_mt), and the cross-thread heap dealloc routing
-      # (heap_cross_thread). `-Zbuild-std` rebuilds std with TSan
+      # (race_repro / race_norecycle) and the multi-threaded global-alloc
+      # churn (global_alloc_mt). `-Zbuild-std` rebuilds std with TSan
       # instrumentation so the detector sees inside the standard library too.
+      # (task #204: `heap_cross_thread` was removed along with the `Heap`
+      # type it exercised — its cross-thread coverage lives on via
+      # `HeapCore`'s own MT tests below, e.g.
+      # `regression_realloc_xthread_stamp`.)
       - name: Run race-prone tests under ThreadSanitizer
         run: >-
           cargo +nightly test
@@ -401,7 +409,6 @@ jobs:
           --test race_repro
           --test race_norecycle
           --test global_alloc_mt
-          --test heap_cross_thread
       # R3 (#155): the `alloc-global alloc-xthread` step above leaves the whole
       # magazine / fastbin production layer UNINSTRUMENTED by TSan. Add a second
       # step over the flagship `production` feature set (fastbin + decommit) on
@@ -428,11 +435,14 @@ jobs:
       # W6: the Large cross-thread FREE path (the A1 deferred-large /
       # abandoned-seg exposed-provenance stacks) was UNINSTRUMENTED — every test
       # above frees small blocks cross-thread. `regression_realloc_xthread_stamp`
-      # (the W4/MUST-1 realloc → cross-thread-free path) and
-      # `regression_heap_xthread_large_free_no_leak` (the A1 Large cross-thread
-      # reclaim over the `Heap` face) are both genuine MT tests (each spawns a
-      # non-owner thread that remotely frees a Large segment) and compile under
-      # `production`, so add both to this step.
+      # (the W4/MUST-1 realloc → cross-thread-free path) is a genuine MT test
+      # (spawns a non-owner thread that remotely frees a Large segment) and
+      # compiles under `production`, so it's added to this step. (task #204:
+      # `regression_heap_xthread_large_free_no_leak`, which covered the same
+      # A1 Large cross-thread reclaim over the removed `Heap` face, was
+      # deleted along with `Heap` — `HeapCore` has no public
+      # `dealloc_any_thread` to give it a faithful substitute; the
+      # `regression_realloc_xthread_stamp` coverage above remains.)
       - name: Run production-config tests under ThreadSanitizer
         env:
           SEFER_STRESS_OPS: "600"
@@ -443,11 +453,9 @@ jobs:
           --target x86_64-unknown-linux-gnu
           --features "production"
           --test global_alloc_mt
-          --test heap_cross_thread
           --test tls_heap_teardown_ordering_stress
           --test regression_percounter_perheap_aggregation
           --test regression_realloc_xthread_stamp
-          --test regression_heap_xthread_large_free_no_leak
           --test stress_concurrent_boundaries
 
   multi-arch:
