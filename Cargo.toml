@@ -182,6 +182,24 @@ alloc-stats = []
 # has the magazine free path this guards); enabling it without the magazine is a
 # no-op. See README "Hardened vs production".
 hardened = ["fastbin"]
+# PERF-3 Ф1 (task #208): opt-in **experimental** performance feature — the per-
+# segment run-encoded freelist storage (`RunStack`), the storage/layout phase of
+# the run-encoded freelist arc (docs/design/RUN_ENCODED_FREELIST_PLAN.md). Adds
+# a new per-segment metadata region (~3 KiB for the default 49 classes × 8
+# descriptors × 8 B) that will (in later phases Ф2/Ф3) let the recycle path
+# (flush → freelist → drain) encode contiguous freed-block runs as compact
+# `(start_off, count)` descriptors instead of per-block intrusive `next`-pointer
+# writes/loads. THIS FEATURE IS OFF BY DEFAULT and intentionally NOT part of
+# `production`: it is a production-path performance change whose win/no-go
+# verdict is deferred to Ф5 (the honest cost/benefit ledger + go/no-go gate).
+# Until Ф5 reaches GO, enabling it shifts `small_meta_end()` up by the RunStack
+# footprint (reducing per-segment payload capacity); with it OFF the byte layout
+# is identical to the pre-PERF-3 build (the production-judge-neutrality gate).
+# Additive over `alloc-core`; no new dependency, no new `unsafe` site — the
+# RunStack is plain safe arithmetic through the `node` seam. See
+# docs/design/RUN_ENCODED_FREELIST_PLAN.md §2.1/§2.2/§2.8/§3-Ф1 for the fixed
+# design decisions this feature gates.
+alloc-runfreelist = ["alloc-core"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).

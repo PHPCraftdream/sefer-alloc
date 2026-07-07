@@ -100,6 +100,19 @@ pub(crate) fn primordial() -> Option<Primordial> {
     {
         super::segment_header::init_gen_table_in_place(base);
     }
+    // PERF-3 Ф1 (task #208): zero the per-segment run-encoded freelist stack
+    // under `alloc-runfreelist`. Compiled ONLY under `alloc-runfreelist`; under
+    // any other feature the RunStack does not exist and this call is absent
+    // (byte-identical to the pre-PERF-3 build). Every descriptor starts at
+    // `count == 0` (the empty/sentinel state — plan §2.1); Ф2's flush path will
+    // push the first descriptors, Ф3's drain will pop them, Ф4's decommit-reset
+    // will `clear_all`. Mirrors the `BinTable::init_in_place` /
+    // `AllocBitmap::init_in_place` row in plan §4.1's table — the SAME call
+    // shape X7-Ф3 used for `init_gen_table_in_place` (the block above).
+    #[cfg(feature = "alloc-runfreelist")]
+    {
+        super::run_stack::RunStack::init_in_place(base);
+    }
 
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
     //    segment's own base (self-reference). The write goes through `Node`.

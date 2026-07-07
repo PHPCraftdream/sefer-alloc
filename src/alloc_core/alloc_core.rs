@@ -3655,6 +3655,17 @@ impl AllocCore {
         {
             super::segment_header::init_gen_table_in_place(base);
         }
+        // PERF-3 Ф1 (task #208): zero the per-segment run-encoded freelist
+        // stack under `alloc-runfreelist`. Compiled ONLY under
+        // `alloc-runfreelist`; under any other feature the RunStack does not
+        // exist and this call is absent (byte-identical to the pre-PERF-3
+        // build). Every descriptor starts at `count == 0` (empty/sentinel —
+        // plan §2.1). Mirrors the bootstrap's identical call site (plan §4.1
+        // — the SAME two sites X7-Ф3 wired `init_gen_table_in_place` into).
+        #[cfg(feature = "alloc-runfreelist")]
+        {
+            super::run_stack::RunStack::init_in_place(base);
+        }
         self.small_cur = base;
         Some(base)
     }
