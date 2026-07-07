@@ -50,6 +50,28 @@ Core instructions, mandatory for all code in this repository. They
 - **Heavy/exhaustive runs (large N, many cases, CPU-hours of fuzz,
   multi-arch) — that is Phase 5 hardening**, not the everyday cycle.
 
+## Before every push: `npm run check`
+
+- **Run `npm run check` before pushing, every time.** It runs the fast subset
+  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all three
+  CI feature-matrix entries (`""`, `--features experimental`, `--all-features`),
+  `cargo test` under `production` and `production alloc-runfreelist`, then
+  `npm run iai` (the deterministic judge) — and fails fast at the first red
+  step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
+  miri, loom, TSan, multi-arch, no_std, MSRV) but it catches the most common
+  drift class before a push, not after.
+- **Why this rule exists:** a push in this session shipped 17 commits with a
+  red CI (rustfmt drift accumulated across several phases, plus two CI
+  workflow jobs still pointing at test files/features deleted by an earlier
+  task) — discovered only by watching the Actions run *after* pushing.
+  `npm run check` is the command that would have caught all of it first.
+- **`npm run bench:table`** — the companion canonical wall-clock comparison
+  table (SeferAlloc vs mimalloc vs System, fixed ns/op units, fixed bench
+  set) for whenever comparative numbers are asked for. Exists because ad-hoc
+  benchmark tables varied in units/subset/format run to run, once causing a
+  spurious "20ns → 40ns regression" that was actually just µs-per-batch vs
+  ns-per-op confusion.
+
 ## Active rules (from the plan/methodology)
 
 - `#![forbid(unsafe_code)]` for the upper world; `unsafe` is allowed only in
