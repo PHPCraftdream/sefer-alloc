@@ -1399,9 +1399,8 @@ impl HeapCore {
         #[cfg(feature = "hardened")]
         {
             let gen = crate::alloc_core::segment_header::gen_at(base, off as usize);
-            let packed = crate::alloc_core::remote_free_ring::pack_entry_hardened(
-                gen, class_idx, off,
-            );
+            let packed =
+                crate::alloc_core::remote_free_ring::pack_entry_hardened(gen, class_idx, off);
             let ring = SegmentMeta::new(base).remote_ring();
             let _ = ring.push(packed);
         }

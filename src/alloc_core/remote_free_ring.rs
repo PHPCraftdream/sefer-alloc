@@ -190,7 +190,10 @@ pub(crate) const ENTRY_OFF_MASK: u32 = (1 << ENTRY_OFF_BITS) - 1;
 /// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 49)`,
 /// so the result is `< 2^32` and never collides with `RING_SLOT_EMPTY`
 /// (`u32::MAX`) for any real block.
-#[cfg_attr(any(not(feature = "alloc-xthread"), feature = "hardened"), allow(dead_code))]
+#[cfg_attr(
+    any(not(feature = "alloc-xthread"), feature = "hardened"),
+    allow(dead_code)
+)]
 #[inline(always)]
 pub(crate) fn pack_entry(off: u32, class_idx: u32) -> u32 {
     debug_assert!(off <= ENTRY_OFF_MASK, "offset overflows ring-entry field");
@@ -352,7 +355,7 @@ pub fn pack_entry_hardened(gen: u8, class_idx: u32, off: u32) -> u32 {
         "offset overflows hardened ring-entry off16 field"
     );
     debug_assert!(
-        off % super::size_classes::MIN_BLOCK as u32 == 0,
+        off.is_multiple_of(super::size_classes::MIN_BLOCK as u32),
         "hardened ring-entry offset must be MIN_BLOCK-aligned (off16 = off >> MIN_BLOCK_SHIFT)"
     );
     debug_assert!(

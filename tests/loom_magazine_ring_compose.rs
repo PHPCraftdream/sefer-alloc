@@ -49,7 +49,7 @@
 
 #![cfg(loom)]
 
-use loom::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use loom::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use loom::sync::Arc;
 use loom::thread;
 
@@ -310,8 +310,7 @@ impl ComposeGen {
     /// stamped gen against the current gen. A mismatch → DROP the note
     /// (do NOT set bitmap_free). Only a match → link (set bitmap_free).
     fn drain_gen_checked(&self) {
-        if self.ring.load(Ordering::Acquire) == P_TOKEN
-            && !self.bitmap_free.load(Ordering::Acquire)
+        if self.ring.load(Ordering::Acquire) == P_TOKEN && !self.bitmap_free.load(Ordering::Acquire)
         {
             // X2 check first (magazine-resident drop).
             if self.in_magazine.load(Ordering::Acquire) {
@@ -336,8 +335,7 @@ impl ComposeGen {
     /// `drain_gen_checked` MINUS the gen comparison. Used by the
     /// `#[should_panic]` test to prove the gen-check is load-bearing.
     fn drain_gen_no_guard(&self) {
-        if self.ring.load(Ordering::Acquire) == P_TOKEN
-            && !self.bitmap_free.load(Ordering::Acquire)
+        if self.ring.load(Ordering::Acquire) == P_TOKEN && !self.bitmap_free.load(Ordering::Acquire)
         {
             // X2 check (magazine-resident drop) — kept.
             if self.in_magazine.load(Ordering::Acquire) {

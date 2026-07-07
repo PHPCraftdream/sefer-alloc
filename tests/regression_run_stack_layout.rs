@@ -104,7 +104,10 @@ impl SegmentBuffer {
         // either a valid, `layout`-aligned, zeroed-by-us pointer or null (we
         // abort on null). The bytes are initialised to 0 by `write_bytes`.
         let ptr = unsafe { std::alloc::alloc(layout) };
-        assert!(!ptr.is_null(), "raw alloc of a SEGMENT-byte buffer must succeed");
+        assert!(
+            !ptr.is_null(),
+            "raw alloc of a SEGMENT-byte buffer must succeed"
+        );
         unsafe { core::ptr::write_bytes(ptr, 0, SL::SEGMENT) };
         Self { ptr, layout }
     }
@@ -145,14 +148,25 @@ fn run_stack_off_is_aligned_and_stacks_correctly() {
     );
     // `small_meta_end` is page-aligned, so the RunStack plus its page-padding
     // is what shifts `small_meta_end` up under `alloc-runfreelist`.
-    assert_eq!(end % SegmentLayout::PAGE, 0, "small_meta_end must be page-aligned");
+    assert_eq!(
+        end % SegmentLayout::PAGE,
+        0,
+        "small_meta_end must be page-aligned"
+    );
     // Sanity bound: the RunStack is < 1 page for the default geometry (49 × 8 × 8
     // = 3136 B < 4096 B), so its footprint alone never pushes a SECOND page.
-    assert!(
-        FOOTPRINT < SegmentLayout::PAGE,
-        "RunStack FOOTPRINT ({FOOTPRINT}) should be < PAGE ({}) for the default geometry",
-        SegmentLayout::PAGE
-    );
+    // Both operands are consts under the default geometry, so clippy can
+    // constant-fold the whole condition; the assertion is intentional
+    // documentation-as-a-test, not dead code — it still fires if the default
+    // geometry ever changes.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(
+            FOOTPRINT < SegmentLayout::PAGE,
+            "RunStack FOOTPRINT ({FOOTPRINT}) should be < PAGE ({}) for the default geometry",
+            SegmentLayout::PAGE
+        );
+    }
 }
 
 /// **Test 2 — footprint is the exact constant-derived value.**
@@ -171,10 +185,23 @@ fn footprint_matches_constant_derivation() {
         "FOOTPRINT must be SMALL_CLASS_COUNT * RUNSTACK_CAPACITY * size_of::<RunDesc>()"
     );
     // Sanity bounds for the default geometry.
-    assert_eq!(small_class_count, 49, "SMALL_CLASS_COUNT is 49 in this build");
-    assert_eq!(RUNSTACK_CAPACITY, 8, "RUNSTACK_CAPACITY is 8 (plan §2.2 fixed decision)");
-    assert_eq!(core::mem::size_of::<RunDesc>(), 8, "RunDesc is 8 bytes (plan §2.1)");
-    assert_eq!(FOOTPRINT, 3136, "49 * 8 * 8 = 3136 bytes for the default geometry");
+    assert_eq!(
+        small_class_count, 49,
+        "SMALL_CLASS_COUNT is 49 in this build"
+    );
+    assert_eq!(
+        RUNSTACK_CAPACITY, 8,
+        "RUNSTACK_CAPACITY is 8 (plan §2.2 fixed decision)"
+    );
+    assert_eq!(
+        core::mem::size_of::<RunDesc>(),
+        8,
+        "RunDesc is 8 bytes (plan §2.1)"
+    );
+    assert_eq!(
+        FOOTPRINT, 3136,
+        "49 * 8 * 8 = 3136 bytes for the default geometry"
+    );
 }
 
 /// **Test 3 — push/peek/pop/is_empty round-trip.** A fresh segment's RunStack
@@ -189,16 +216,28 @@ fn push_peek_pop_round_trip() {
     let class = 3; // arbitrary in-range class
 
     // Fresh buffer is all-zero → every class empty.
-    assert!(RunStack::is_empty(base, class), "freshly-init class should be empty");
-    assert!(RunStack::pop(base, class).is_none(), "pop on empty class returns None");
-    assert!(RunStack::peek(base, class).is_none(), "peek on empty class returns None");
+    assert!(
+        RunStack::is_empty(base, class),
+        "freshly-init class should be empty"
+    );
+    assert!(
+        RunStack::pop(base, class).is_none(),
+        "pop on empty class returns None"
+    );
+    assert!(
+        RunStack::peek(base, class).is_none(),
+        "peek on empty class returns None"
+    );
 
     // Push one descriptor.
     assert!(
         RunStack::push(base, class, 0x1000, 4),
         "push into an empty class must succeed"
     );
-    assert!(!RunStack::is_empty(base, class), "class with one descriptor is not empty");
+    assert!(
+        !RunStack::is_empty(base, class),
+        "class with one descriptor is not empty"
+    );
 
     // Peek sees it (non-destructive).
     let peeked = RunStack::peek(base, class).expect("peek after push must see the descriptor");
@@ -218,9 +257,18 @@ fn push_peek_pop_round_trip() {
     assert_eq!(popped._spare, 0);
 
     // After pop the class is empty again.
-    assert!(RunStack::is_empty(base, class), "class is empty after the only descriptor is popped");
-    assert!(RunStack::pop(base, class).is_none(), "second pop returns None");
-    assert!(RunStack::peek(base, class).is_none(), "peek after final pop returns None");
+    assert!(
+        RunStack::is_empty(base, class),
+        "class is empty after the only descriptor is popped"
+    );
+    assert!(
+        RunStack::pop(base, class).is_none(),
+        "second pop returns None"
+    );
+    assert!(
+        RunStack::peek(base, class).is_none(),
+        "peek after final pop returns None"
+    );
 }
 
 /// **Test 4 — lowest-occupied-slot-first multi-descriptor push/pop.** Push two
@@ -239,8 +287,14 @@ fn lowest_slot_first_multi_descriptor_push_pop() {
 
     // Push two descriptors. `push` scans from slot 0 and claims the first
     // empty slot, so the FIRST push lands in slot 0 and the SECOND in slot 1.
-    assert!(RunStack::push(base, class, 0x100, 1), "first push succeeds (slot 0)");
-    assert!(RunStack::push(base, class, 0x200, 2), "second push succeeds (slot 1)");
+    assert!(
+        RunStack::push(base, class, 0x100, 1),
+        "first push succeeds (slot 0)"
+    );
+    assert!(
+        RunStack::push(base, class, 0x200, 2),
+        "second push succeeds (slot 1)"
+    );
 
     // `pop` scans from slot 0 and returns the FIRST non-empty slot, so for
     // this sequence it returns the SLOT-0 descriptor first (which was the
@@ -248,14 +302,23 @@ fn lowest_slot_first_multi_descriptor_push_pop() {
     // comment: ordering is "lowest occupied slot", not a specified
     // LIFO/FIFO discipline; Ф2/Ф3 never depend on drain order.
     let p1 = RunStack::pop(base, class).expect("first pop returns a descriptor");
-    assert_eq!(p1.start_off, 0x100, "slot-0 (first-pushed) descriptor is returned first");
+    assert_eq!(
+        p1.start_off, 0x100,
+        "slot-0 (first-pushed) descriptor is returned first"
+    );
     assert_eq!(p1.count, 1);
 
     let p2 = RunStack::pop(base, class).expect("second pop returns a descriptor");
-    assert_eq!(p2.start_off, 0x200, "slot-1 (second-pushed) descriptor is returned second");
+    assert_eq!(
+        p2.start_off, 0x200,
+        "slot-1 (second-pushed) descriptor is returned second"
+    );
     assert_eq!(p2.count, 2);
 
-    assert!(RunStack::pop(base, class).is_none(), "third pop returns None");
+    assert!(
+        RunStack::pop(base, class).is_none(),
+        "third pop returns None"
+    );
     assert!(RunStack::is_empty(base, class));
 }
 
@@ -277,8 +340,14 @@ fn distinct_classes_are_independent() {
 
     // Push into class A; class B stays empty.
     assert!(RunStack::push(base, class_a, 0x1000, 3));
-    assert!(!RunStack::is_empty(base, class_a), "class A has a descriptor");
-    assert!(RunStack::is_empty(base, class_b), "class B must be unaffected by A's push");
+    assert!(
+        !RunStack::is_empty(base, class_a),
+        "class A has a descriptor"
+    );
+    assert!(
+        RunStack::is_empty(base, class_b),
+        "class B must be unaffected by A's push"
+    );
 
     // Push into class B; class A's descriptor is unchanged.
     assert!(RunStack::push(base, class_b, 0x2000, 7));
@@ -297,7 +366,10 @@ fn distinct_classes_are_independent() {
     assert_eq!(popped_a.start_off, 0x1000);
     assert_eq!(popped_a.count, 3);
     assert!(RunStack::is_empty(base, class_a), "class A is now empty");
-    assert!(!RunStack::is_empty(base, class_b), "class B still has its descriptor after A's pop");
+    assert!(
+        !RunStack::is_empty(base, class_b),
+        "class B still has its descriptor after A's pop"
+    );
 
     // Pop class B.
     let popped_b = RunStack::pop(base, class_b).expect("pop class B");
@@ -336,15 +408,16 @@ fn capacity_boundary_and_overflow_returns_false() {
         overflow_result.is_ok(),
         "push on a full RunStack must NOT panic — it returns false (plan §2.6)"
     );
-    assert_eq!(
-        overflow_result.unwrap(),
-        false,
+    assert!(
+        !overflow_result.unwrap(),
         "push on a full RunStack returns false (the overflow signal)"
     );
 
     // The overflow push did NOT corrupt any existing descriptor.
     assert_eq!(
-        RunStack::peek(base, class).expect("the CAPACITY existing descriptors are intact").count,
+        RunStack::peek(base, class)
+            .expect("the CAPACITY existing descriptors are intact")
+            .count,
         1,
         "the first-pushed descriptor (slot 0) is unchanged by the failed push"
     );
@@ -363,8 +436,7 @@ fn capacity_boundary_and_overflow_returns_false() {
         drained += 1;
     }
     assert_eq!(
-        drained,
-        RUNSTACK_CAPACITY,
+        drained, RUNSTACK_CAPACITY,
         "after re-push, exactly RUNSTACK_CAPACITY descriptors are drainable"
     );
     assert!(RunStack::is_empty(base, class));
@@ -452,6 +524,14 @@ fn non_runfreelist_build_compiles_and_layout_is_unchanged() {
     // would fail to compile (verified by the absence of any
     // `#[cfg(feature = "alloc-runfreelist")]` reference here). The layout
     // constants that DO exist are unchanged:
-    assert_eq!(SegmentLayout::SEGMENT, 1 << 22, "SEGMENT is the 4 MiB default");
-    assert_eq!(SegmentLayout::MIN_BLOCK, 16, "MIN_BLOCK is the 16 B default");
+    assert_eq!(
+        SegmentLayout::SEGMENT,
+        1 << 22,
+        "SEGMENT is the 4 MiB default"
+    );
+    assert_eq!(
+        SegmentLayout::MIN_BLOCK,
+        16,
+        "MIN_BLOCK is the 16 B default"
+    );
 }

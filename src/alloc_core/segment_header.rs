@@ -828,10 +828,7 @@ impl Layout {
         // hardened), NOT by replacing the hardened logic.
         #[cfg(feature = "alloc-runfreelist")]
         {
-            align_up_const(
-                Self::run_stack_off() + super::run_stack::FOOTPRINT,
-                PAGE,
-            )
+            align_up_const(Self::run_stack_off() + super::run_stack::FOOTPRINT, PAGE)
         }
         // Non-runfreelist: page-aligned past the pre-runstack end ONLY. This
         // branch is the sole compiled branch when `alloc-runfreelist` is off,

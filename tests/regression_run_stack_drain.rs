@@ -55,9 +55,9 @@
 use std::alloc::Layout;
 use std::collections::HashSet;
 
-use sefer_alloc::AllocCore;
 #[cfg(feature = "alloc-runfreelist")]
 use sefer_alloc::alloc_core::run_stack::RunStack;
+use sefer_alloc::AllocCore;
 use sefer_alloc::SegmentLayout;
 
 fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
@@ -145,7 +145,7 @@ fn drain_equivalence_feature_on_matches_classic() {
     // [5] (singleton, → linked list) + [6,7] (run, → RunStack) +
     // [9] (singleton, → linked list). Blocks [4], [8], [10], [11] stay LIVE.
     let buf = carve_contiguous(&mut core, c, 12);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
 
     let run_a: Vec<*mut u8> = sorted[0..4].to_vec();
@@ -154,9 +154,13 @@ fn drain_equivalence_feature_on_matches_classic() {
     let singleton_b = sorted[9];
 
     let batch: Vec<*mut u8> = vec![
-        run_a[0], run_a[1], run_a[2], run_a[3],
+        run_a[0],
+        run_a[1],
+        run_a[2],
+        run_a[3],
         singleton_a,
-        run_b[0], run_b[1],
+        run_b[0],
+        run_b[1],
         singleton_b,
     ];
     assert_eq!(batch.len(), 8);
@@ -167,8 +171,7 @@ fn drain_equivalence_feature_on_matches_classic() {
     let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
     assert_eq!(drained, 8, "drain must return all 8 flushed blocks");
 
-    let drained_set: HashSet<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     let batch_set: HashSet<usize> = batch.iter().map(|p| *p as usize).collect();
     assert_eq!(
         drained_set, batch_set,
@@ -187,7 +190,11 @@ fn drain_equivalence_feature_on_matches_classic() {
     for &p in &out[..drained] {
         core.dealloc(p, layout);
     }
-    for &p in sorted[4..5].iter().chain(&sorted[8..9]).chain(&sorted[10..12]) {
+    for &p in sorted[4..5]
+        .iter()
+        .chain(&sorted[8..9])
+        .chain(&sorted[10..12])
+    {
         core.dealloc(p, layout);
     }
 }
@@ -211,7 +218,7 @@ fn mixed_drain_all_blocks_exactly_once() {
     // Layout: [0,1,2]=run(3), [3]=gap(live), [4]=singleton, [5]=gap(live),
     // [6,7,8]=run(3), [9]=gap(live), [10]=singleton, [11]=gap(live).
     let buf = carve_contiguous(&mut core, c, 12);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
 
     let run_a: Vec<*mut u8> = sorted[0..3].to_vec();
@@ -220,9 +227,13 @@ fn mixed_drain_all_blocks_exactly_once() {
     let singleton_b = sorted[10];
 
     let batch: Vec<*mut u8> = vec![
-        run_a[0], run_a[1], run_a[2],
+        run_a[0],
+        run_a[1],
+        run_a[2],
         singleton_a,
-        run_b[0], run_b[1], run_b[2],
+        run_b[0],
+        run_b[1],
+        run_b[2],
         singleton_b,
     ];
     assert_eq!(batch.len(), 8);
@@ -233,12 +244,14 @@ fn mixed_drain_all_blocks_exactly_once() {
     assert_eq!(drained, 8, "all 8 flushed blocks must drain");
 
     // Multiset check: every block exactly once.
-    let mut drained_vec: Vec<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let mut drained_vec: Vec<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     drained_vec.sort_unstable();
     let mut batch_vec: Vec<usize> = batch.iter().map(|p| *p as usize).collect();
     batch_vec.sort_unstable();
-    assert_eq!(drained_vec, batch_vec, "drained multiset == flushed multiset");
+    assert_eq!(
+        drained_vec, batch_vec,
+        "drained multiset == flushed multiset"
+    );
 
     // After drain, every drained block must be bitmap-ALLOCATED (handed out).
     for &p in &out[..drained] {
@@ -251,7 +264,12 @@ fn mixed_drain_all_blocks_exactly_once() {
     for &p in &out[..drained] {
         core.dealloc(p, layout);
     }
-    for &p in sorted[3..4].iter().chain(&sorted[5..6]).chain(&sorted[9..10]).chain(&sorted[11..12]) {
+    for &p in sorted[3..4]
+        .iter()
+        .chain(&sorted[5..6])
+        .chain(&sorted[9..10])
+        .chain(&sorted[11..12])
+    {
         core.dealloc(p, layout);
     }
 }
@@ -286,7 +304,7 @@ fn m2_double_free_through_run_refused() {
     // Carve 4 contiguous, flush as ONE run (→ RunStack). All 4 are FREE in
     // the bitmap and encoded in one descriptor.
     let buf = carve_contiguous(&mut core, c, 4);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
     core.flush_class(c, &sorted);
 
@@ -325,7 +343,8 @@ fn m2_double_free_through_run_refused() {
     // the run).
     let head = core.dbg_freelist_head_for(buf[0], c);
     assert_eq!(
-        head, u32::MAX,
+        head,
+        u32::MAX,
         "linked-list head must be NULL (run-only flush; reclaim refused the double-free)"
     );
 
@@ -342,17 +361,25 @@ fn m2_double_free_through_run_refused() {
     // drain finds nothing because reclaim refused to link it).
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
     let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
-    assert_eq!(drained, 4, "all 4 run-member blocks drain, exactly once each");
+    assert_eq!(
+        drained, 4,
+        "all 4 run-member blocks drain, exactly once each"
+    );
 
-    let mut drained_vec: Vec<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let mut drained_vec: Vec<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     drained_vec.sort_unstable();
     let mut batch_vec: Vec<usize> = sorted.iter().map(|p| *p as usize).collect();
     batch_vec.sort_unstable();
     assert_eq!(drained_vec, batch_vec, "drained multiset == run members");
     // The victim appears exactly once.
-    let victim_count = drained_vec.iter().filter(|&&p| p == victim as usize).count();
-    assert_eq!(victim_count, 1, "victim handed out EXACTLY once (no double-issue)");
+    let victim_count = drained_vec
+        .iter()
+        .filter(|&&p| p == victim as usize)
+        .count();
+    assert_eq!(
+        victim_count, 1,
+        "victim handed out EXACTLY once (no double-issue)"
+    );
 
     for &p in &out[..drained] {
         core.dealloc(p, layout);
@@ -396,7 +423,7 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     // Carve 4 contiguous blocks. Flush [0,1,2] as a run (→ RunStack, one
     // descriptor count 3). [3] stays live.
     let buf = carve_contiguous(&mut core, c, 4);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
     core.flush_class(c, &sorted[0..3]);
 
@@ -426,8 +453,7 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     );
 
     // No duplicates: s1 and s2 each appear exactly once.
-    let drained_set: HashSet<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     assert_eq!(drained_set.len(), drained, "no duplicate blocks in drain");
     let expected: HashSet<usize> = sorted[0..3].iter().map(|p| *p as usize).collect();
     assert_eq!(drained_set, expected, "drained set == the 3 run-members");
@@ -460,7 +486,7 @@ fn drain_capacity_boundary() {
     // Capacity 4: drains run_a fully (4 blocks), then stops (out full) before
     // touching run_b. run_b's descriptor survives for the next drain.
     let buf = carve_contiguous(&mut core, c, 10);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
 
     let run_a: Vec<*mut u8> = sorted[0..4].to_vec();
@@ -468,8 +494,7 @@ fn drain_capacity_boundary() {
     let run_b: Vec<*mut u8> = sorted[5..8].to_vec();
 
     let batch: Vec<*mut u8> = vec![
-        run_a[0], run_a[1], run_a[2], run_a[3],
-        run_b[0], run_b[1], run_b[2],
+        run_a[0], run_a[1], run_a[2], run_a[3], run_b[0], run_b[1], run_b[2],
     ];
     core.flush_class(c, &batch);
 
@@ -480,8 +505,7 @@ fn drain_capacity_boundary() {
     let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
     assert_eq!(drained, cap, "drain bounded by out.len()");
 
-    let drained_set: HashSet<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     let run_a_set: HashSet<usize> = run_a.iter().map(|p| *p as usize).collect();
     assert_eq!(
         drained_set, run_a_set,
@@ -532,7 +556,7 @@ fn empty_runstack_falls_back_to_linked_list() {
     // and [3] stay LIVE (allocated, NOT freed, NOT in batch) so they do not
     // pollute the freelist.
     let buf = carve_contiguous(&mut core, c, 5);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
 
     let batch: Vec<*mut u8> = vec![sorted[0], sorted[2], sorted[4]];
@@ -551,8 +575,7 @@ fn empty_runstack_falls_back_to_linked_list() {
     let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
     assert_eq!(drained, 3, "all 3 singletons drain via linked-list path");
 
-    let drained_set: HashSet<usize> =
-        out[..drained].iter().map(|p| *p as usize).collect();
+    let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     let batch_set: HashSet<usize> = batch.iter().map(|p| *p as usize).collect();
     assert_eq!(drained_set, batch_set);
 
@@ -587,7 +610,7 @@ fn drain_order_runstack_first_then_linked_list() {
     // [8,9] (run_b, 2). [4],[5],[7] stay live as gaps so the singleton [6] is
     // NOT offset-adjacent to either run (else Ф2 would merge them).
     let buf = carve_contiguous(&mut core, c, 10);
-    let mut sorted: Vec<*mut u8> = buf.iter().copied().collect();
+    let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
 
     let run_a: Vec<*mut u8> = sorted[0..4].to_vec();
@@ -595,9 +618,7 @@ fn drain_order_runstack_first_then_linked_list() {
     let run_b: Vec<*mut u8> = sorted[8..10].to_vec();
 
     let batch: Vec<*mut u8> = vec![
-        run_a[0], run_a[1], run_a[2], run_a[3],
-        singleton,
-        run_b[0], run_b[1],
+        run_a[0], run_a[1], run_a[2], run_a[3], singleton, run_b[0], run_b[1],
     ];
     core.flush_class(c, &batch);
 
@@ -612,8 +633,7 @@ fn drain_order_runstack_first_then_linked_list() {
         .chain(run_b.iter())
         .map(|p| *p as usize)
         .collect();
-    let first_n: HashSet<usize> =
-        out[..6].iter().map(|p| *p as usize).collect();
+    let first_n: HashSet<usize> = out[..6].iter().map(|p| *p as usize).collect();
     assert_eq!(
         first_n, run_set,
         "first 6 drained blocks are exactly the run-members (RunStack drained first)"
@@ -660,13 +680,18 @@ fn drain_classic_when_feature_off() {
     core.flush_class(c, &buf);
 
     for &p in &buf {
-        assert!(core.dbg_is_free_for(p), "every block must be FREE (classic)");
+        assert!(
+            core.dbg_is_free_for(p),
+            "every block must be FREE (classic)"
+        );
     }
 
     let head = core.dbg_freelist_head_for(buf[0], c);
-    let batch_offs: HashSet<u32> =
-        buf.iter().map(|p| (*p as usize - base0) as u32).collect();
-    assert!(batch_offs.contains(&head), "head must reference a batch block");
+    let batch_offs: HashSet<u32> = buf.iter().map(|p| (*p as usize - base0) as u32).collect();
+    assert!(
+        batch_offs.contains(&head),
+        "head must reference a batch block"
+    );
 
     let mut out = vec![core::ptr::null_mut::<u8>(); N + 4];
     let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);

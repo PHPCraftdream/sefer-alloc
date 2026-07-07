@@ -324,10 +324,7 @@ impl Node {
     #[cfg_attr(not(feature = "hardened"), allow(dead_code))]
     #[allow(dead_code)] // wired in X7 Ф1; consumed by Ф2/Ф3 + the gen-table layout test
     #[inline(always)]
-    pub(crate) fn atomic_u8_at(
-        base: *mut u8,
-        off: usize,
-    ) -> &'static core::sync::atomic::AtomicU8 {
+    pub(crate) fn atomic_u8_at(base: *mut u8, off: usize) -> &'static core::sync::atomic::AtomicU8 {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU8;
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
         // the offset of a byte within a metadata region at `base`, with

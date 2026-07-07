@@ -29,6 +29,7 @@
 //!   comparison `stamped_gen == gen_at(...)` is
 //!   - `true`  (WRONG — collision) at exactly `k = 256`,
 //!   - `false` (correct drop)      at `k = 255` and `k = 257`,
+//!
 //!   for `N` swept across the u8 range (0, 1, 127, 128, 200, 255) so the
 //!   boundary is pinned at every starting generation, including the wrap-edge
 //!   `N = 255` (where +1 ⇒ 0, the u8 overflow point itself).
@@ -96,16 +97,17 @@ struct SegmentBuffer {
 }
 impl SegmentBuffer {
     fn new() -> Self {
-        let layout = std::alloc::Layout::from_size_align(
-            SegmentLayout::SEGMENT,
-            SegmentLayout::MIN_BLOCK,
-        )
-        .expect("SEGMENT/MIN_BLOCK layout is valid");
+        let layout =
+            std::alloc::Layout::from_size_align(SegmentLayout::SEGMENT, SegmentLayout::MIN_BLOCK)
+                .expect("SEGMENT/MIN_BLOCK layout is valid");
         // SAFETY: `layout` has non-zero size (SEGMENT = 4 MiB); `alloc` returns
         // either a valid, `layout`-aligned, zeroed-by-us pointer or null (we
         // abort on null). The bytes are initialised to 0 by `write_bytes`.
         let ptr = unsafe { std::alloc::alloc(layout) };
-        assert!(!ptr.is_null(), "raw alloc of a SEGMENT-byte buffer must succeed");
+        assert!(
+            !ptr.is_null(),
+            "raw alloc of a SEGMENT-byte buffer must succeed"
+        );
         unsafe { core::ptr::write_bytes(ptr, 0, SegmentLayout::SEGMENT) };
         Self { ptr, layout }
     }
@@ -220,8 +222,8 @@ fn drain_compare_at_exact_wrap_collides() {
             "k=255: stamped gen {n} must NOT equal current gen {current_255} — \
              only an exact 256-multiple collides"
         );
-        assert_eq!(
-            n == current_255, false,
+        assert!(
+            n != current_255,
             "k=255 drain compare: must be FALSE (drop the stale note)"
         );
 
@@ -236,8 +238,8 @@ fn drain_compare_at_exact_wrap_collides() {
              this is the accepted 1/256 wrap residual (X7 §2.5), the exact \
              modulus at which a stale note is wrongly honoured"
         );
-        assert_eq!(
-            n == current_256, true,
+        assert!(
+            n == current_256,
             "k=256 drain compare: must be TRUE (collision — the accepted residual)"
         );
 
@@ -249,8 +251,8 @@ fn drain_compare_at_exact_wrap_collides() {
             "k=257: stamped gen {n} must NOT equal current gen {current_257} — \
              the collision is ONLY at exact 256-multiples, not ±1"
         );
-        assert_eq!(
-            n == current_257, false,
+        assert!(
+            n != current_257,
             "k=257 drain compare: must be FALSE (drop the stale note)"
         );
 

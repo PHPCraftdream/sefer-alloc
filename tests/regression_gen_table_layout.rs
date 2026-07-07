@@ -92,7 +92,10 @@ impl SegmentBuffer {
         // either a valid, `layout`-aligned, zeroed-by-us pointer or null (we
         // abort on null). The bytes are initialised to 0 by `write_bytes`.
         let ptr = unsafe { std::alloc::alloc(layout) };
-        assert!(!ptr.is_null(), "raw alloc of a SEGMENT-byte buffer must succeed");
+        assert!(
+            !ptr.is_null(),
+            "raw alloc of a SEGMENT-byte buffer must succeed"
+        );
         unsafe { core::ptr::write_bytes(ptr, 0, SegmentLayout::SEGMENT) };
         Self { ptr, layout }
     }
@@ -135,7 +138,11 @@ fn gen_roundtrip_and_wrap() {
     let off = SegmentLayout::MIN_BLOCK; // first payload granule (offset 16)
 
     // Freshly zeroed buffer: generation 0.
-    assert_eq!(gen_at(base, off), 0, "fresh granule should have generation 0");
+    assert_eq!(
+        gen_at(base, off),
+        0,
+        "fresh granule should have generation 0"
+    );
 
     // 300 bumps → final readable generation = 300 mod 256 = 44.
     let n = 300u32;
@@ -145,7 +152,11 @@ fn gen_roundtrip_and_wrap() {
         (n % 256) as u8,
         "after {n} bumps the generation should be n mod 256"
     );
-    assert_eq!(gen_at(base, off), (n % 256) as u8, "gen_at should read the post-bump value");
+    assert_eq!(
+        gen_at(base, off),
+        (n % 256) as u8,
+        "gen_at should read the post-bump value"
+    );
 
     // Boundary: exactly 256 bumps from any point returns to the same value.
     let before = gen_at(base, off);
@@ -178,13 +189,29 @@ fn distinct_granules_are_independent() {
 
     // Bump A five times; B must stay at 0.
     let _ = bump_n(base, off_a, 5);
-    assert_eq!(gen_at(base, off_a), 5, "granule A should reflect its 5 bumps");
-    assert_eq!(gen_at(base, off_b), 0, "granule B must be unaffected by A's bumps");
+    assert_eq!(
+        gen_at(base, off_a),
+        5,
+        "granule A should reflect its 5 bumps"
+    );
+    assert_eq!(
+        gen_at(base, off_b),
+        0,
+        "granule B must be unaffected by A's bumps"
+    );
 
     // Bump B three times; A must stay at 5.
     let _ = bump_n(base, off_b, 3);
-    assert_eq!(gen_at(base, off_a), 5, "granule A must be unaffected by B's bumps");
-    assert_eq!(gen_at(base, off_b), 3, "granule B should reflect its 3 bumps");
+    assert_eq!(
+        gen_at(base, off_a),
+        5,
+        "granule A must be unaffected by B's bumps"
+    );
+    assert_eq!(
+        gen_at(base, off_b),
+        3,
+        "granule B should reflect its 3 bumps"
+    );
 }
 
 /// **Test 3 — footprint is the exact constant-derived value.** `GEN_TABLE_FOOTPRINT`
@@ -202,11 +229,17 @@ fn footprint_matches_constant_derivation() {
     );
     // Sanity bounds for the default 4 MiB / 16 B geometry — document the order
     // of magnitude so a gross regression (e.g. bits-vs-bytes confusion) is
-    // caught even by a reader who skips the exact assert.
-    assert!(
-        GEN_TABLE_FOOTPRINT >= 256 * 1024 && GEN_TABLE_FOOTPRINT <= 300 * 1024,
-        "GEN_TABLE_FOOTPRINT ({GEN_TABLE_FOOTPRINT}) should be ~256 KiB for a 4 MiB segment"
-    );
+    // caught even by a reader who skips the exact assert. Both operands are
+    // consts under the default geometry, so clippy can constant-fold the
+    // whole condition; the assertion is intentional documentation-as-a-test,
+    // not dead code — it still fires if the default geometry ever changes.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(
+            GEN_TABLE_FOOTPRINT >= 256 * 1024 && GEN_TABLE_FOOTPRINT <= 300 * 1024,
+            "GEN_TABLE_FOOTPRINT ({GEN_TABLE_FOOTPRINT}) should be ~256 KiB for a 4 MiB segment"
+        );
+    }
     // MIN_BLOCK divides SEGMENT (both powers of two), so the division is exact —
     // no rounding. Confirm both are powers of two so this invariant holds.
     assert!(
@@ -244,7 +277,11 @@ fn relaxed_rmw_is_coherent() {
         seen.iter().all(|&v| v),
         "all 256 values must be visited exactly once in a full cycle"
     );
-    assert_eq!(gen_at(base, off), 0, "after exactly 256 bumps the counter wraps to 0");
+    assert_eq!(
+        gen_at(base, off),
+        0,
+        "after exactly 256 bumps the counter wraps to 0"
+    );
 }
 
 /// **Test 5 — non-hardened layout neutrality.** Compiles ONLY when `hardened`
@@ -264,6 +301,14 @@ fn non_hardened_build_compiles_and_layout_is_unchanged() {
     // non-hardened — if any leaked out of the cfg gate this file would fail to
     // compile (verified by the absence of any `#[cfg(feature = "hardened")]`
     // reference here). The layout constants that DO exist are unchanged:
-    assert_eq!(SegmentLayout::SEGMENT, 1 << 22, "SEGMENT is the 4 MiB default");
-    assert_eq!(SegmentLayout::MIN_BLOCK, 16, "MIN_BLOCK is the 16 B default");
+    assert_eq!(
+        SegmentLayout::SEGMENT,
+        1 << 22,
+        "SEGMENT is the 4 MiB default"
+    );
+    assert_eq!(
+        SegmentLayout::MIN_BLOCK,
+        16,
+        "MIN_BLOCK is the 16 B default"
+    );
 }

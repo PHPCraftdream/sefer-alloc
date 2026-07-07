@@ -847,8 +847,7 @@ impl AllocCore {
         // test, not fixable without doubling the ring footprint.
         #[cfg(feature = "hardened")]
         {
-            let current_gen =
-                super::segment_header::gen_at(base, off);
+            let current_gen = super::segment_header::gen_at(base, off);
             if stamped_gen != current_gen {
                 return false;
             }
@@ -1305,8 +1304,7 @@ impl AllocCore {
         #[cfg(feature = "hardened")]
         {
             let gen = super::segment_header::gen_at(base, off as usize);
-            let packed =
-                super::remote_free_ring::pack_entry_hardened(gen, class_idx as u32, off);
+            let packed = super::remote_free_ring::pack_entry_hardened(gen, class_idx as u32, off);
             let ring = SegmentMeta::new(base).remote_ring();
             ring.push(packed).is_ok()
         }
@@ -2045,8 +2043,7 @@ impl AllocCore {
                 let found_seg = {
                     let issued_so_far: &[*mut u8] = &out[..filled];
                     self.find_segment_with_free_checked(class_idx, &|ptr, k| {
-                        is_in_magazine(ptr, k)
-                            || (k == class_idx && issued_so_far.contains(&ptr))
+                        is_in_magazine(ptr, k) || (k == class_idx && issued_so_far.contains(&ptr))
                     })
                 };
                 #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
@@ -2319,8 +2316,7 @@ impl AllocCore {
                 // the array itself) so `run_member` lines up with the original
                 // source-order slots (which is what the rebuild walk scans).
                 // Insertion sort: n ≤ 16, branch-friendly, allocation-free.
-                let mut idx: [usize; FLUSH_RUN_DETECT_CAP] =
-                    [0; FLUSH_RUN_DETECT_CAP];
+                let mut idx: [usize; FLUSH_RUN_DETECT_CAP] = [0; FLUSH_RUN_DETECT_CAP];
                 let mut k = 0;
                 while k < accepted_n {
                     idx[k] = k;
@@ -2355,7 +2351,12 @@ impl AllocCore {
                     let run_len = j - i;
                     if run_len >= 2 {
                         let start_off = accepted_offs[idx[i]];
-                        if super::run_stack::RunStack::push(base, class_idx, start_off, run_len as u16) {
+                        if super::run_stack::RunStack::push(
+                            base,
+                            class_idx,
+                            start_off,
+                            run_len as u16,
+                        ) {
                             let mut m = i;
                             while m < j {
                                 run_member[idx[m]] = true;
@@ -2994,12 +2995,8 @@ impl AllocCore {
                 if i < desc.count as usize {
                     let rem_start = (start + i * block_size) as u32;
                     let rem_count = desc.count - i as u16;
-                    let pushed = super::run_stack::RunStack::push(
-                        segment,
-                        class_idx,
-                        rem_start,
-                        rem_count,
-                    );
+                    let pushed =
+                        super::run_stack::RunStack::push(segment, class_idx, rem_start, rem_count);
                     // The pushback MUST succeed (we just freed one slot; single-
                     // writer). A `false` here would indicate a capacity
                     // invariant violation (more than `RUNSTACK_CAPACITY`
@@ -3050,7 +3047,7 @@ impl AllocCore {
             for _ in 0..k {
                 meta.inc_live();
             }
-            return k;
+            k
         }
 
         // --- `#[cfg(not(feature = "alloc-runfreelist"))]`: byte-identical to

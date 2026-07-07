@@ -139,7 +139,10 @@ fn fresh_segment_gen_table_is_zeroed() {
     // reads gen 0 (carve does NOT bump — plan §2.3 decision 3).
     let mut by_seg: BTreeMap<usize, Vec<*mut u8>> = BTreeMap::new();
     for &p in &ptrs {
-        by_seg.entry(segment_base_of(p) as usize).or_default().push(p);
+        by_seg
+            .entry(segment_base_of(p) as usize)
+            .or_default()
+            .push(p);
     }
     assert!(
         by_seg.len() >= 2,
@@ -274,7 +277,11 @@ fn recycled_segment_ring_drain_is_safe() {
         assert!(!p.is_null(), "alloc failed after post-recycle drain");
         unsafe {
             core::ptr::write_bytes(p, 0x7E, 256);
-            assert_eq!(p.read(), 0x7E, "write/readback failed after post-recycle drain");
+            assert_eq!(
+                p.read(),
+                0x7E,
+                "write/readback failed after post-recycle drain"
+            );
         }
         ac.dealloc(p, layout);
         ok += 1;
@@ -330,7 +337,11 @@ fn abandon_segments_preserves_generation() {
 
     let base = segment_base_of(p);
     let off = (p as usize) - (base as usize);
-    assert_eq!(off % SegmentLayout::MIN_BLOCK, 0, "offset is granule-aligned");
+    assert_eq!(
+        off % SegmentLayout::MIN_BLOCK,
+        0,
+        "offset is granule-aligned"
+    );
 
     // (2) Read P's generation BEFORE abandon. It is 1 (one issue pop).
     let gen_before = gen_at(base, off);

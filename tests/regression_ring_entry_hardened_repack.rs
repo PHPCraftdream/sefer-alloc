@@ -82,8 +82,8 @@
 #![cfg(feature = "hardened")]
 
 use sefer_alloc::alloc_core::remote_free_ring::{
-    pack_entry_hardened, unpack_entry_hardened, RING_SLOT_EMPTY, ENTRY_CLASS_BITS, ENTRY_GEN_BITS,
-    ENTRY_OFF16_BITS,
+    pack_entry_hardened, unpack_entry_hardened, ENTRY_CLASS_BITS, ENTRY_GEN_BITS, ENTRY_OFF16_BITS,
+    RING_SLOT_EMPTY,
 };
 use sefer_alloc::SegmentLayout;
 
@@ -120,7 +120,10 @@ fn roundtrip_boundary_spread() {
     // 64 this test would still compile but the const-assert in the source would
     // have already failed the build).
     let max_class = small_class_count() - 1;
-    assert!(max_class < 64, "SMALL_CLASS_COUNT must stay < 64 (const-asserted in source)");
+    assert!(
+        max_class < 64,
+        "SMALL_CLASS_COUNT must stay < 64 (const-asserted in source)"
+    );
     let classes: [u32; 3] = [0, max_class as u32 / 2, max_class as u32];
     let offs: [u32; 3] = [0, mb, max_off];
 
@@ -184,8 +187,14 @@ fn roundtrip_dense_grid() {
 #[test]
 fn bit_widths_sum_to_exactly_32() {
     assert_eq!(ENTRY_GEN_BITS, 8, "gen field must be 8 bits (the Ф1 u8)");
-    assert_eq!(ENTRY_CLASS_BITS, 6, "class field must be 6 bits (SMALL_CLASS_COUNT=49 < 64)");
-    assert_eq!(ENTRY_OFF16_BITS, 18, "off16 field must be 18 bits (SEGMENT/MIN_BLOCK = 2^18)");
+    assert_eq!(
+        ENTRY_CLASS_BITS, 6,
+        "class field must be 6 bits (SMALL_CLASS_COUNT=49 < 64)"
+    );
+    assert_eq!(
+        ENTRY_OFF16_BITS, 18,
+        "off16 field must be 18 bits (SEGMENT/MIN_BLOCK = 2^18)"
+    );
     assert_eq!(
         ENTRY_GEN_BITS + ENTRY_CLASS_BITS + ENTRY_OFF16_BITS,
         32,
@@ -249,7 +258,8 @@ fn entry_never_collides_with_ring_slot_empty() {
     let off16_max = max_off >> SegmentLayout::MIN_BLOCK_SHIFT;
     let theoretical = (off16_max) | (63u32 << 18) | (255u32 << 24);
     assert_eq!(
-        theoretical, u32::MAX,
+        theoretical,
+        u32::MAX,
         "the all-ones triple (gen=255, class=63, off16=max) is the unique u32::MAX packing"
     );
     assert!(

@@ -34,6 +34,7 @@
 //!     class c) reports false → the reclaim path relinks P onto the freelist
 //!     a SECOND time → a later iteration of the SAME refill loop pulls P into
 //!     `out` AGAIN.
+//!
 //!   Net effect: P is issued twice out of ONE refill call — the positions are
 //!   CONSECUTIVE in the issued batch (e.g. [14, 15]), proving the duplicate
 //!   arises within a single refill, not across two refills.

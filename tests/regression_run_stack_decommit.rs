@@ -70,9 +70,9 @@
 use std::alloc::Layout;
 use std::collections::HashSet;
 
-use sefer_alloc::AllocCore;
 #[cfg(feature = "alloc-runfreelist")]
 use sefer_alloc::alloc_core::run_stack::RunStack;
+use sefer_alloc::AllocCore;
 use sefer_alloc::SegmentLayout;
 
 /// All tests in this file drive the process-global `AllocCore` primordial
@@ -202,10 +202,7 @@ fn runstack_count(ptr: *mut u8, class: usize) -> usize {
 ///
 /// Requires `alloc-decommit` (the only build under which `decommit_empty_segment`
 /// fires) and `alloc-runfreelist` (the RunStack exists).
-#[cfg(all(
-    feature = "alloc-runfreelist",
-    feature = "alloc-decommit"
-))]
+#[cfg(all(feature = "alloc-runfreelist", feature = "alloc-decommit"))]
 #[cfg_attr(miri, ignore)]
 #[test]
 fn decommit_clears_runstack_no_stale_descriptor() {
@@ -256,8 +253,7 @@ fn decommit_clears_runstack_no_stale_descriptor() {
     let run_batch: Vec<*mut u8> = middle_sorted[0..8].to_vec();
     core.flush_class(c, &run_batch);
     let base_ptr = middle_base as *mut u8;
-    let desc = RunStack::peek(base_ptr, c)
-        .expect("middle-segment flush must push a descriptor");
+    let desc = RunStack::peek(base_ptr, c).expect("middle-segment flush must push a descriptor");
     assert_eq!(
         desc.count, 8,
         "8 offset-adjacent blocks must encode as one count-8 descriptor"
@@ -333,7 +329,10 @@ fn decommit_clears_runstack_no_stale_descriptor() {
     assert!(!p.is_null(), "alloc must succeed after the decommit wave");
     unsafe {
         core::ptr::write_bytes(p, 0xA5, 16);
-        assert_eq!(*p, 0xA5, "write/readback must succeed after the decommit wave");
+        assert_eq!(
+            *p, 0xA5,
+            "write/readback must succeed after the decommit wave"
+        );
     }
     core.dealloc(p, layout);
 }
@@ -483,7 +482,10 @@ fn drain_overflow_no_leak_for_large_block_class() {
 
     // (6) Total drained = 8 (all members, NO LEAK). RunStack empty.
     let total = drained1 + drained2;
-    assert_eq!(total, 8, "all 8 flushed blocks must drain across the two calls");
+    assert_eq!(
+        total, 8,
+        "all 8 flushed blocks must drain across the two calls"
+    );
 
     assert_eq!(
         runstack_count(buf[0], c),
@@ -513,7 +515,11 @@ fn drain_overflow_no_leak_for_large_block_class() {
         );
     }
     let drained_set: HashSet<usize> = drained_vec.iter().copied().collect();
-    assert_eq!(drained_set.len(), 8, "no duplicate blocks across the two drains");
+    assert_eq!(
+        drained_set.len(),
+        8,
+        "no duplicate blocks across the two drains"
+    );
 
     // Cleanup.
     for &addr in &drained_vec {
