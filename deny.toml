@@ -44,6 +44,27 @@ ignore = [
     # exists inside `iai-callgrind 0.14.x`. Same human-decision deferral as
     # RUSTSEC-2025-0141 above.
     "RUSTSEC-2026-0173",
+
+    # RUSTSEC-2026-0204 — `crossbeam-epoch` 0.9.18's `fmt::Display` impl
+    # dereferences a raw pointer that can be a `Shared::null()`/`Atomic::null()`
+    # sentinel (fixed upstream in >=0.9.20). UNLIKE the two entries above, this
+    # is NOT purely a dev-only chain: `cargo tree -i crossbeam-epoch` shows
+    # TWO paths — (1) `criterion (dev-dep) -> rayon -> rayon-core ->
+    # crossbeam-deque -> crossbeam-epoch` (bench-only) AND (2) a DIRECT
+    # optional dependency (`Cargo.toml`'s `experimental` feature ->
+    # `dep:crossbeam-epoch`, backing `src/concurrent/hand.rs`'s
+    # `Atomic<T>`/`Shared`/`Guard`-based epoch-reclaimed slot). Verified this
+    # workspace's own code does NOT trigger the vulnerable path: grepped
+    # `src/` for any `fmt::Display`/`format!`/`{}`-style formatting of a
+    # `crossbeam_epoch::Shared`/`Atomic` value — none exists; `hand.rs` only
+    # dereferences these via `.as_ref()`/pointer-load APIs Debug-derives touch,
+    # not the affected Display path. Suppressing is therefore sound for THIS
+    # crate's actual usage today, but a future addition of Display/format
+    # logging on an epoch pointer would silently reintroduce the bug under
+    # this ignore — re-grep before trusting this note stays valid. A
+    # `cargo update -p crossbeam-epoch` bump (>=0.9.20) is a dependency-version
+    # decision per project convention, deferred to an explicit request.
+    "RUSTSEC-2026-0204",
 ]
 
 [licenses]
