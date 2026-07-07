@@ -86,6 +86,335 @@ only content was `Heap`/`with_heap`, so depending on it would be a no-op).
 The `production` feature bundle (`alloc-global + alloc-xthread + alloc-decommit
 + fastbin`) is unchanged in effect.
 
+### Security & compliance remediation (SEC-1 through SEC-6)
+
+A `/fxx` security/compliance audit
+([`docs/security/SECURITY_COMPLIANCE_AUDIT_2026-07-06.md`](docs/security/SECURITY_COMPLIANCE_AUDIT_2026-07-06.md),
+research-only — no source touched) found the unsafe-confinement, dependency,
+secrets, and MSRV claims all VERIFIED as advertised, and ten lower-severity
+process/documentation gaps. SEC-1 through SEC-6 close six of them (three
+MEDIUM, three LOW). No code defect was found or fixed — the pass hardens
+disclosure, CI supply-chain posture, and the user-facing hardened-tier docs.
+
+- **SEC-1 (`c3389de`, #198) — `SECURITY.md` shipped with a non-functional
+  e-mail fallback.** The fallback section carried the literal placeholder
+  `REPLACE_WITH_REAL_EMAIL` plus a `<!-- PLACEHOLDER: ... -->` banner, and no
+  real maintainer address exists anywhere in the repo to source a genuine one
+  from (`Cargo.toml` has no `authors`/email field). Rather than invent a
+  plausible-looking placeholder, the e-mail fallback channel is **removed
+  entirely** (−15 lines); private disclosure now relies solely on **GitHub
+  Security Advisories**, which was already the preferred channel and remains
+  fully functional.
+- **SEC-2 (`94fc4f4`, #199) — `SECURITY.md` supported-versions table was
+  stale.** It declared "`0.1.x` (current) — Yes" while the published crate is
+  `0.3.0` — literally promising patches only for the `0.1.x` line. Reworded to
+  "**Latest `0.x` release (see crates.io)**" so the table does not go stale
+  again on the next patch/minor bump.
+- **SEC-3 (`c81246f`, #200) — README's X7 residual disclosure was stale.**
+  The README "documented residual" paragraph (≈line 701) still cited #164 as
+  the pending fix and the `hardened` feature-matrix row (≈line 778) described
+  only the H1 interior-pointer guard, with no mention of the X7 generational-
+  ring arc that closed the re-issue-before-drain leg under `--features
+  hardened`. (The X7 closure and its 1/256 wrap were fully documented
+  internally — `DURABILITY.md`, this CHANGELOG, the X7 plan — but absent from
+  the surface a security-conscious consumer evaluating `hardened` would
+  actually read; audit finding §1.5.) Both passages now state the residual
+  taxonomy correctly: two of three legs closed on plain `production` (X2/#164,
+  R1), the third closed under `hardened` **except the 1/256 wrap**, which is
+  named explicitly as the accepted probabilistic residual-of-the-residual.
+  The plain-production residual disclosure is not weakened.
+- **SEC-4 (`fd05274`, #201) — `permissions: contents: read` added to all
+  three workflows.** `.github/workflows/{ci,release,perf-gate}.yml` previously
+  ran with the repository-default `GITHUB_TOKEN` scope (legacy read/write on
+  older repos). Traced every job/step in all three files: no job needs
+  contents-write — `ci.yml` is checkout+cargo; `release.yml` publishes via the
+  separate `CARGO_REGISTRY_TOKEN` secret, not `GITHUB_TOKEN`; `perf-gate.yml`
+  caches/uploads via its own scoped backends. Workflow-level `contents: read`
+  applied to all three; no job needed a broader override.
+- **SEC-5 (`d70cd19`, #202) — new `deny.toml` + CI `deny` job
+  (cargo-deny).** Closes audit gaps §1.3 (cargo-audit never run, tool absent
+  locally) and §1.6#3/§2.2 (license compatibility manually assessed, not
+  machine-checked). `cargo-deny` was chosen over `cargo-audit`-alone because
+  it covers both RustSec advisories **and** license compatibility in one
+  tool/one job. New `deny.toml` at the repo root: `[advisories]` with a
+  narrow per-ID-documented ignore list; `[licenses]` allow-list built from
+  cargo-deny's actual report against the current full-feature tree (MIT /
+  Apache-2.0 / Zlib — narrower than the audit's manual §2.2 inventory,
+  reconciled in the task report; no copyleft found either way); `[bans]`
+  permissive (duplicate-version = warn); `[sources]` crates.io-only. At the
+  time, two narrowly-scoped dev-only ignore entries: **RUSTSEC-2025-0141**
+  (`bincode` 1.3.3 unmaintained; reaches this workspace ONLY through
+  `iai-callgrind`, the Linux-only CI perf-gate bench — NOT in the published
+  runtime tree) and **RUSTSEC-2026-0173** (`proc-macro-error2` 2.0.1
+  unmaintained; same `iai-callgrind` dev-only chain). A third was added later
+  this session — see the "CI fixes" subsection below.
+- **SEC-6 (`91a6dac`, #203) — SHA-pinned `actions/checkout@v5` in
+  `release.yml`.** Scoped to the token-bearing workflow per audit finding
+  §1.6#2 (this is the only workflow carrying `CARGO_REGISTRY_TOKEN`, so
+  tag-rewrite supply-chain risk matters most here). `actions/checkout@v5` →
+  pinned to the exact commit SHA `v5` currently resolves to (verified via
+  `git ls-remote`), with a trailing `# v5` comment for readability.
+  `dtolnay/rust-toolchain@stable` was **deliberately left tag-pinned** — it is
+  a moving branch by design (tracks the latest stable toolchain), and pinning
+  it to a SHA would defeat its purpose; the conscious decision is recorded in
+  the commit message.
+
+### PERF-1 — README bench-doc sync (`650a3ed`, #205)
+
+The README carried two disagreeing cold-direct tables: the dedicated "Cold
+first-touch" section still showed P3-era numbers (16 B 1.60× slower, 64 B
+1.15× slower, 256 B parity, 1024 B 1.84× faster), while the main dated
+"Performance" table already had the correct post-X-arc re-measurement. A
+full-file grep found **five** total occurrences of the stale ratios (the intro
+bullet, the P0–P6 narrative, the "where we still trail" callout, the dedicated
+Cold first-touch table + prose, and the Honest verdict bullets). All five were
+synced to the post-X-arc measured ratios — **2.5× / 2.1× / 1.8× slower on
+16 B / 64 B / 256 B cold-direct, 1.12× faster on 1024 B** (measured
+2026-07-06 post-X-arc) — each explicitly labeled as post-X-arc vs preserved
+P3-era history (the P3-era history is not erased; it carries a provenance
+note). Docs-only; no source change.
+
+### PERF-2 — TCACHE_CAP / FLUSH_N sweep: honest-reject (`e6f5112`, #206)
+
+**REJECT (all three candidates).** A `/fxx` research hypothesis (#206 / PERF-2)
+proposed that a larger per-class magazine (`TCACHE_CAP`, default 16) would
+amortize refill/flush orchestration cost on storm-shaped alloc/free patterns
+(the cold first-touch gap vs mimalloc). Tested `TCACHE_CAP = 32 / 64 / 128`
+against the default `16` on **both** judges: the 11-bench iai
+instruction-count gate and the wall-clock `global_alloc` criterion bench (the
+exact 1024-op cold-storm shape the hypothesis targeted). Every candidate
+**regressed every bench, including the explicit targets** (cold / recycle /
+the `global_alloc` storm), and the regressions grew **monotonically and
+super-linearly** with CAP. Pure experiment — **zero source changes survived**
+(`git diff` to `src/` empty at the end; this doc is the only new file).
+Recorded per the project's reject-with-numbers precedent so the next reader
+does not re-run the same sweep blind. Full tables and mechanism in
+[`docs/perf/PERF2_TCACHE_CAP_SWEEP_EXPERIMENT.md`](docs/perf/PERF2_TCACHE_CAP_SWEEP_EXPERIMENT.md).
+
+- **CAP=32 reproduces X4-A** (the 2026-07-05 reject) within binary-layout
+  noise: recycle +32,779 Ir (+18%), churn +22,863 (+28%), cold +25,763 (+21%),
+  every other bench regressed too. Mechanism (X4-A's, re-confirmed): each
+  refill/flush doubled in size (bigger carve/flush batches, larger `Tcache`
+  zero-init at heap claim, longer M2 in-magazine scan); the benches don't
+  refill-miss enough to amortize the larger batches.
+- **CAP=64** is strictly worse on every bench (monotonic): recycle +88,949 Ir
+  (+50%), churn +56,033 (+69%), cold +66,881 (+53%).
+- **CAP=128 — super-linear regression; the decisive signal.** The `Tcache`
+  struct footprint grows from **6.4 KiB → 50.2 KiB/thread** for `slots` alone
+  (`49 × 128 × 8 B`) and **spills L1** — visible in the L2-hit column jumping
+  ~160 → ~1000 on `small_churn_16b`: the magazine metadata itself stopped
+  being L1-resident. Wall-clock confirmed on the exact storm shape: the sefer-
+  vs-mimalloc gap on `global_alloc/16B` **WIDENED from 2.5× to 4.9×** at
+  CAP=128 instead of narrowing (64B 2.3×→5.1×, 256B 1.46×→3.9×, 1024B
+  0.90×→2.0×). The storm hypothesis's own arithmetic ("1024/16 = 64 refills →
+  1024/128 = 8 refills, an 8× amortization win") is overwhelmed by the
+  per-refill cost growth (8× larger carve batch + L1-spill). The companion
+  predictions also failed against measurement: `churn_256b`/`small_churn_16b`
+  were predicted CAP-insensitive but regressed monotonically (the first alloc
+  of each iteration triggers a full refill — larger CAP = larger refill batch
+  + larger `Tcache` zero-init); `large_alloc_free_cycle` regressed too
+  despite doing NO small-block magazine work (pure `Tcache` zero-init at heap
+  claim).
+
+**Verdict.** mimalloc's advantage is **NOT a deeper magazine — it is a
+structurally cheaper refill** (a `mmap`/page free list with no per-refill
+orchestration equivalent), which a larger CAP cannot replicate and in fact
+punishes. The CAP parameter is already at its optimum (16); CAP=64 and CAP=128
+are the two never-before-measured values and are strictly worse. The shape that
+could win is a **cheaper refill, not a rarer refill** — exactly the family
+PERF-3 (below) then attempted on the recycle flush→drain path.
+
+### PERF-3 — run-encoded freelist arc (Ф0–Ф5): IMPLEMENTED then honest-rejected
+
+PERF-2 named "cheaper per-block work on the hot recycle path" as the winning
+family of attack. PERF-3 was the concrete realization of that family for the
+recycle flush→drain path: encode contiguous same-class runs as compact
+`(start_off, count)` descriptors so the drain side reconstructs member
+addresses by stride arithmetic (`start_off + i*block_size`) instead of pointer-
+chasing `Node::read_next` per block. Design:
+[`docs/design/RUN_ENCODED_FREELIST_PLAN.md`](docs/design/RUN_ENCODED_FREELIST_PLAN.md).
+Verdict (Ф5):
+[`docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md`](docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md).
+Five phases, each committed between phases with a zero-trust review by @o46m
+(GO each on Ф1–Ф4); the Ф5 measurement is the honest-reject.
+
+- **Ф0 (`2732dfc`, #207) — design doc.** No src/ code; mirrors the X7 plan's
+  structure (key insight → fixed decisions → phases Ф0–Ф6 → risks →
+  readiness). Targets the "cheaper refill, not rarer refill" family PERF-2
+  identified.
+- **Ф1 (`5c5b6af`, #208) — `RunStack` storage + Layout.** New module
+  `src/alloc_core/run_stack.rs` (`RunStack`, `RunDesc { start_off, count }`
+  compact descriptors for contiguous-offset same-class runs,
+  `RUNSTACK_CAPACITY = 8` per class, `Layout::run_stack_off` /
+  `small_meta_end` shift to carve the RunStack region into segment metadata).
+  New **`alloc-runfreelist`** Cargo feature (`= ["alloc-core"]`, **opt-in,
+  NOT in `production`**). Storage only — no allocator behavior wired up yet.
+  Production-judge 11/11 byte-identical (neutrality gate).
+- **Ф2 (`7d5bada`, #209) — flush-side contiguous-run detection in `flush_run`.**
+  Under the feature, `flush_run` collects accepted (guard-passing) freed
+  offsets and detects contiguous sub-runs to divert into RunStack descriptors.
+  **Empirical finding:** the magazine's LIFO refill returns blocks in
+  **descending** address order, so a flush batch built from magazine order is
+  descending, not ascending, and **in-place adjacency detection found ~0%
+  contiguity** on the target `bench_direct_alloc` pattern. **Sorting
+  (ascending) recovered 100% adjacency** on the target pattern — so the
+  landed detector is sort-then-detect, not in-place. (This finding is load-
+  bearing for the Ф5 mechanism analysis below.)
+- **Ф3 (`f13ec4b`, #210) — drain-side stride reconstruction in
+  `drain_freelist_batch` — "the heart."** Full `#[cfg(feature =
+  "alloc-runfreelist")]` / `#[cfg(not(...))]` body split. Feature-on: drain
+  RunStack for the class FIRST (pop descriptors, reconstruct member offsets by
+  `start_off + i*block_size` instead of pointer-chasing `read_next`, guard
+  `bm.is_free(off)` before `mark_alloc` + hand-out — fail-safe skip, never
+  panics), THEN drain the classic linked list for remaining `out` capacity.
+  The `is_free` guard is **mandatory defense-in-depth** (plan §2.3): the M2
+  bitmap stays the ground truth, not the descriptor — a reconstructed offset
+  that is somehow not free is skipped, never mis-linked.
+- **Ф4 (`3e097be`, #211) — `decommit_empty_segment` clears RunStack +
+  drain-overflow fix.** (a) On decommit, `RunStack::clear_all(base)` runs
+  before `set_decommitted` — stale descriptors would otherwise reconstruct
+  addresses into unmapped payload memory on a later drain (opposite policy
+  from X7's gen table, which is deliberately NOT re-zeroed: RunStack
+  descriptors are address hints into payload, so stale hints are unsafe, not
+  merely stale). (b) Also fixed a narrow **descriptor-overflow-on-drain leak**
+  found during Ф3's review: classes with `block_size > 8192 B` could have a
+  descriptor larger than a single drain call's `out` capacity — fixed via a
+  truncated-remainder pushback (`RunStack::push` of the un-drained tail when
+  `out` fills mid-descriptor).
+- **Ф5 (`154d1fa`, #212) — THE VERDICT: NO-GO / honest-reject.** Measurement-
+  only phase (no source changes). Applied the pre-declared GO/NO-GO gate
+  (design doc §3-Ф5) mechanically. The feature **REGRESSED every one of the 11
+  iai benches**: the 4 cold/recycle targets (the feature's whole design goal)
+  regressed **+23% to +31% Ir** (needed ≥5% **improvement** — `cold_16b`
+  +23.04%, `cold_64b` +23.89%, `recycle_16b` +31.03%, `recycle_64b` +31.03%);
+  the other 7 regressed **+0.75% to +4.33%** (6 of 7 breach the ≤+1% ceiling;
+  only `realloc_grow` +0.75% sits inside it, because its hot path is the
+  large-block realloc copy, not the small-block recycle path). Wall-clock
+  confirmed on the exact storm shape: **+40.5%** on `global_alloc/16B`,
+  **+42.5%** on `64B`, +43.2% on `256B`, +68.9% on `1024B` (criterion's own
+  paired `change:` field p = 0.00 < 0.05 on every row). All three NO-GO
+  triggers fire simultaneously — not a close call.
+
+  **Root cause (confirmed by @o46m's independent code review):** the landed Ф2
+  implementation **AUGMENTS** the classic per-block `write_next` chain-build
+  rather than **diverting** from it — every accepted block still pays the full
+  classic linked-list cost, and the sort/detect/push/rebuild machinery runs as
+  an **ADDITIONAL** pass on top, not instead of it. The single `read_next`
+  load the drain side saves per run-member block is dwarfed by this added
+  flush-side cost. The **L1-hits column is the smoking gun**: for
+  `recycle_alloc_free_256x16b`, ON L1 hits = 336,531 vs OFF 260,773 — a rise
+  of **+75,758 L1 hits**, almost exactly matching the +55,593 rise in Ir (the
+  new instructions are predominantly L1-resident memory ops: the offset
+  array, the sort permutation, the RunStack slots). There is no level of the
+  cache hierarchy where the feature wins (L2 flat ~174→~176, RAM flat-to-
+  slightly-up 5,335→5,419). The "eliminate the dependent-load pointer chase"
+  hypothesis is **refuted**: the pointer chase was already prefetcher-covered
+  and cheap (the design doc's own §5 readiness note had flagged this as the
+  failure mode). The design doc §1's honesty caveat — "this plan introduces a
+  different representation, where hoist is *possible*" — was correct that the
+  hoist is possible; the measurement shows it is not *profitable*.
+
+  **Disposition: feature stays OFF / opt-in-only** (`alloc-runfreelist`, NOT
+  in `production`; Ф6 is not triggered). Source is **KEPT, not reverted** —
+  (1) **zero production cost**: the feature-off build is byte-identical to the
+  pre-PERF-3 build (the neutrality gate, verified again by Ф5's baseline
+  reproducing the 11-bench reference digit-for-digit); (2) the code is
+  **correct, reviewed, and tested** — Ф1–Ф4 each passed @o46m zero-trust
+  review, each has dedicated regression tests (`tests/regression_run_stack_*`),
+  and the M2-double-free-through-run and decommit-clears-runstack safety cases
+  are explicitly covered; (3) the loss is an **algorithmic-cost loss, not a
+  correctness loss**, and the algorithm can be revisited — a future "PERF-3.5"
+  reworking `flush_run` to genuinely **DIVERT** (skip `write_next` for detected
+  run-members — write the descriptor instead of the chain link) rather than
+  augment could in principle tip the trade; the storage (Ф1), drain-side
+  reconstruction (Ф3), and lifecycle seams (Ф4) are reusable as-is, only Ф2's
+  flush-side algorithm would need rework. (Precedent: PERF-2 left no source
+  because it temp-edited a constant — nothing reusable to keep; PERF-3 landed
+  four phases of real reviewed implementation, and the honest-reject is of the
+  *measured outcome*, not the *code quality*.)
+
+**Combined with PERF-2, this establishes:** sefer's remaining small-size gap
+vs mimalloc is **not closeable by either a deeper magazine OR a cheaper-per-
+block recycle representation of this shape** — the gap is structural in the
+refill/flush orchestration itself (`find_segment_with_free` / latch /
+carve-batch machinery), which is where a future PERF-4 should look.
+
+### New dev scripts
+
+- **`scripts/bench-table.mjs` — `npm run bench:table` (`73a6b2b`).** Runs the
+  comparative wall-clock bench and **always prints the SAME canonical tables**
+  (ns/op units, fixed bench set, vs-mimalloc ratio column). Written because
+  ad-hoc benchmark tables varied in units/subset/format run to run — once
+  causing a spurious apparent "20 ns → 40 ns regression" that was actually a
+  µs-per-1024-op-batch vs ns-per-op unit mixup. The canonical table is now the
+  single source of truth whenever comparative numbers are asked for.
+- **`scripts/check-all.mjs` — `npm run check` (`29087c5`).** Single pre-push
+  gate: `cargo fmt --check`, `clippy -D warnings` across all three CI feature-
+  matrix entries (`""`, `--features experimental`, `--all-features`), `cargo
+  test` under `production` and `production alloc-runfreelist`, then `npm run
+  iai` (the deterministic judge). Fails fast at the first red step. Written
+  after a push this session shipped 17 commits with a red CI (rustfmt drift
+  accumulated across the PERF-3 phases, plus two ci.yml jobs pointing at a
+  Cargo feature and test files deleted by task #204 — see the next section)
+  that this command would have caught locally in under 5 minutes. It does NOT
+  replace CI (CI additionally runs miri, loom, TSan, multi-arch, no_std, MSRV)
+  but catches the most common drift class before a push, not after.
+
+### CI fixes — found and fixed via a red CI run this session
+
+A push mid-session went red on CI (Actions run 28846975468); the fixes below
+landed in the same session. All are style/lint/drift — zero behavior change
+(verified via judge byte-identical + full test suite green on each).
+
+- **`d9767fe` — `cargo fmt --all` + clippy fixes across the CI feature
+  matrix.** The PERF-3 arc (Ф1–Ф5) landed real code without a final
+  `cargo fmt --all` + full clippy-matrix pass, so CI's fmt and clippy gates
+  were red on push. `cargo fmt --all`: mechanical reformat (line-wrapping) in
+  `alloc_core.rs`'s Ф2–Ф4 additions and the new `regression_run_stack_*.rs`
+  test files. `clippy -D warnings` across all three CI matrix entries:
+  `needless_return` (`return k;` → `k` in the `alloc-runfreelist` branch of
+  `drain_freelist_batch`, tail position under `--all-features`),
+  `manual_is_multiple_of` (`off % MIN_BLOCK as u32 == 0` → `.is_multiple_of(…)`
+  in `remote_free_ring.rs`), `bool_assert_comparison` +
+  `nonminimal_bool` (`assert_eq!(expr, true)` → `assert!(expr)` in
+  `regression_gen_wrap_boundary.rs` / `regression_run_stack_layout.rs` — same
+  assertions, same failure messages), `doc_lazy_continuation` (a blank `//!`
+  line to split a markdown-list lazy continuation in
+  `regression_gen_wrap_boundary.rs` /
+  `regression_refill_window_double_issue.rs`), `assertions_on_constants`, and
+  `iter_cloned_collect`. Purely style/lint; zero semantic change.
+- **`ad1d533` — two CI workflow jobs referenced code deleted by task #204
+  (Heap removal).** The `loom (loom_thread_free)` matrix entry passed
+  `--features "alloc"` (a Cargo feature that no longer exists — it only ever
+  gated the removed `Heap` type; the test's synthetic `Node` model never
+  actually depended on it — feature set changed to `""`). The `thread-
+  sanitizer` job ran `--test heap_cross_thread` and
+  `--test regression_heap_xthread_large_free_no_leak` — **both test files were
+  deleted in task #204** (no faithful `HeapCore` substitute existed; see the
+  Heap-removal section above). A drift the removal task's own CI runs hadn't
+  caught until this session's push.
+- **`e1ff1e9` — added RUSTSEC-2026-0204 (crossbeam-epoch) to `deny.toml`'s
+  ignore list.** A **new** advisory, unrelated to any change in this session —
+  discovered via the `cargo-deny` CI job (SEC-5) failing on push (Actions run
+  28848487484). `crossbeam-epoch` 0.9.18's `fmt::Display` impl dereferences a
+  raw pointer that can be a null `Shared`/`Atomic` sentinel (fixed upstream in
+  ≥0.9.20). Unlike the two existing dev-only ignore entries (bincode,
+  proc-macro-error2, both via `iai-callgrind`), this one is **NOT** purely a
+  dev-dependency chain: `cargo tree -i crossbeam-epoch` shows both the
+  dev-only `criterion → rayon → crossbeam-deque → crossbeam-epoch` path AND a
+  direct optional dependency via `Cargo.toml`'s `experimental` feature
+  (`dep:crossbeam-epoch`, backing `src/concurrent/hand.rs`'s epoch-reclaimed
+  slot). Verified this crate's own code does **not** trigger the vulnerable
+  path: grepped `src/` for any `fmt::Display`/`format!`/`{}`-style formatting
+  of a `crossbeam_epoch::Shared`/`Atomic` value — none exists; `hand.rs` only
+  dereferences these via `.as_ref()`/pointer-load APIs, not the affected
+  Display path. The ignore is therefore **sound for current usage**, but
+  flagged in the `deny.toml` comment that a future addition of Display/format
+  logging on an epoch pointer would silently reintroduce the bug under this
+  ignore — re-grep before trusting the note stays valid. A
+  `cargo update -p crossbeam-epoch` bump (≥0.9.20) is the proper fix,
+  deferred as a dependency-version decision per project convention.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is

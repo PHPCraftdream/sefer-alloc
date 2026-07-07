@@ -219,15 +219,16 @@ disclaimer):
   cache — a 4 MiB cycle is ~59 ns vs mimalloc's ~716 ns, and ~302× faster than
   `System` (measured 2026-07-06, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)).
 - On **single-thread small-class churn** (the reuse pattern) it **beats
-  `mimalloc` at every size** on the realistic writing pattern (16 B 1.74×, 64 B
-  1.71×, 256 B ≈parity-plus, 1024 B 7.2× faster) after the P0–P6 perf arc
-  (measured 2026-07-06 post-X-arc, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The old
+  `mimalloc` at every size** on the realistic writing pattern (16 B 1.66×, 64 B
+  1.90×, 256 B 1.07×, 1024 B 6.43× faster) after the P0–P6 perf arc
+  (measured 2026-07-07 via `npm run bench:table`, see
+  [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The old
   256 B churn loss was **eliminated in P6 (Э6)** — its cause was a stale
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
-  bump-direct carve removed the tautological round-trip, but the post-X-arc
-  re-measurement still shows a 2.1–2.5× cold gap (16 B 2.5×, 64 B 2.1× slower);
-  the residual is honest per-block page-fault work, called out in
+  bump-direct carve removed the tautological round-trip, but the 2026-07-07
+  re-measurement still shows a 2.1–2.8× cold gap (16 B 2.75×, 64 B 2.08×
+  slower); the residual is honest per-block page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
   into a rout: `realloc_grow_geometric` (64 B→4 MiB) is **~40× faster than
@@ -502,8 +503,8 @@ blocks the P3 bump-direct batched carve (Э1) removed the tautological
 `carve → BinTable → pop` round-trip that made every virgin block pay ~40
 metadata-touch instructions: it roughly **halved the cold gap at P3 time**
 (16 B 2.6× → 1.60× slower, 64 B 2.0× → 1.15× slower) and brought **cold 256 B
-to parity at P3 time** — though the post-X-arc re-measurement puts the cold
-tiny gap back at 2.5× / 2.1× slower and cold 256 B at 1.8× slower on this
+to parity at P3 time** — though the 2026-07-07 re-measurement puts the cold
+tiny gap back at 2.75× / 2.08× slower and cold 256 B at 1.91× slower on this
 noisy host (see the Cold direct column below and the iai gate for the
 deterministic signal). On churn the one-branch resolver (Э2) + classify-once
 (Э4) + lock-free hit counter (Э5) **widened the tiny-block lead** (16 B 1.26× →
@@ -519,23 +520,53 @@ new in P6.0 — each block is written after alloc; **the realistic pattern**,
 because real code writes to the memory it allocates). The writing row is the
 headline.
 
-| Size | Churn-write: Sefer | mimalloc | System | vs mi | Churn (non-writing) vs mi | Cold direct: Sefer | mimalloc | System | vs mi |
-|---|---|---|---|---|---|---|---|---|---|
-|   16 B | **~22 µs** | ~39 µs  | ~129 µs | **1.74× faster** | 1.81× faster       | ~26 µs | ~11 µs | ~105 µs | 2.5× slower |
-|   64 B | **~22 µs** | ~38 µs  | ~200 µs | **1.71× faster** | 1.83× faster       | ~28 µs | ~18 µs | ~146 µs | 2.1× slower |
-|  256 B | **~23 µs** | ~23 µs  | ~221 µs | **≈parity-plus** | 1.07× faster      | ~39 µs | ~23 µs | ~144 µs | 1.8× slower |
-| 1024 B | **~23 µs** | ~165 µs | ~239 µs | **7.2× faster** | 7.29× faster      | ~41 µs | ~48 µs | ~194 µs | **1.12× faster** |
+All three patterns below now have fully re-measured absolute ns/op (every
+allocator column, every size) — no stale carried figures. Reproduce with
+`npm run bench:table` ([`scripts/bench-table.mjs`](scripts/bench-table.mjs)),
+the canonical wall-clock comparison script that always prints this exact shape
+(ns/op, fixed bench set, vs-mimalloc ratio). It exists precisely so this table
+is regenerated the same way each time instead of hand-assembled in different
+units — an earlier ad-hoc table once read as a 20 ns → 40 ns "regression" that
+was actually a µs-per-batch vs ns-per-op unit mixup.
 
-(Churn-write and non-writing `vs mi` ratios measured 2026-07-06 post-X-arc,
-see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); cold-direct `vs mi` ratios are
-from the same 2026-07-06 run. The absolute µs columns for cold-direct were NOT
-re-recorded in the post-X-arc section — only the vs-mimalloc ratios — so those
-µs are carried from the earlier pre-X-arc run; the System column likewise has
-no post-X-arc re-measurement and is retained as-is for order-of-magnitude.)
+**Churn + write** (`bench_churn_alloc_write` — same as churn but writes 16 B
+after each alloc; **the realistic pattern**, real code writes to what it
+allocates) — the headline:
 
-(All small-size rows are per-iteration batches; the same batch runs for all
-three allocators, so the ratios are the meaningful signal. vs `System`: 3–6×
-faster across the board.)
+| Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+|   16 B | **36.2 ns** |  60.0 ns | 221.7 ns | **1.66× faster** |
+|   64 B | **31.5 ns** |  59.8 ns | 176.0 ns | **1.90× faster** |
+|  256 B | **33.2 ns** |  35.5 ns | 163.3 ns | **1.07× faster** |
+| 1024 B | **29.2 ns** | 187.8 ns | 172.1 ns | **6.43× faster** |
+
+**Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
+alloc per op; the artificial pattern where the old stale-key slow path bit
+hardest, before Э6 removed it):
+
+| Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+|   16 B | **34.9 ns** |  62.7 ns | 183.1 ns | **1.80× faster** |
+|   64 B | **31.9 ns** |  58.3 ns | 172.2 ns | **1.83× faster** |
+|  256 B | **30.2 ns** |  34.3 ns | 184.6 ns | **1.14× faster** |
+| 1024 B | **31.5 ns** | 222.0 ns | 259.8 ns | **7.05× faster** |
+
+**Cold direct** (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op; the
+"first touch" path, historically the worst case where mimalloc's cheaper
+carve led at tiny sizes):
+
+| Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+|   16 B |  32.4 ns |  11.8 ns | 105.8 ns | 2.75× slower |
+|   64 B |  32.1 ns |  15.4 ns | 122.4 ns | 2.08× slower |
+|  256 B |  43.5 ns |  22.8 ns | 116.0 ns | 1.91× slower |
+| 1024 B | **41.6 ns** |  47.2 ns | 178.2 ns | **1.13× faster** |
+
+(Measured 2026-07-07 via `npm run bench:table`, Windows dev host, criterion
+`sample_size(10)` — the same noisy-host caveat as every prior wall-clock row in
+this README. All absolute columns were re-recorded in this run; no figure is
+carried from an earlier measurement. vs `System`: ~3–9× faster across the
+board.)
 
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and
@@ -554,12 +585,22 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16–64 B), 2.1–2.5× behind
-mimalloc (post-X-arc re-measurement).** This is the cold carve path
-(`global_alloc`, no reuse), unchanged by Э6 (which targets only the churn
-free path). The residual is honest per-block work — page-map writes and page
-faults on genuinely fresh pages, not ceremony — documented in
+**Where we still trail — cold tiny blocks (16–64 B), 2.1–2.8× behind
+mimalloc (2026-07-07 re-measurement: 16 B 2.75×, 64 B 2.08×, 256 B 1.91×
+slower; 1024 B 1.13× faster — see the Cold direct table above).** This is the
+cold carve path (`global_alloc`, no reuse), unchanged by Э6 (which targets
+only the churn free path). The residual is honest per-block work — page-map
+writes and page faults on genuinely fresh pages, not ceremony — documented in
 [`docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md`](docs/perf/PERF_PLAN_beat_mimalloc_small_medium.md).
+The `alloc-runfreelist` experimental feature (PERF-3) attempted to close
+exactly this cold/recycle gap via a run-encoded freelist representation and
+was **honest-rejected** — it regressed every one of the 11 iai benches
+*including the four cold/recycle targets*, and the wall-clock judge confirmed
+the regression direction and magnitude (+40 %/+43 % on the 16 B/64 B cold
+storm); see
+[`docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md`](docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md).
+The feature stays off / opt-in-only (not in `production`), so a reader does
+not need to wonder whether work on this gap is silently ongoing.
 
 The DETERMINISTIC counterpart to these noisy single-host wall-clock ratios is
 the instruction-count `perf_gate_iai` gate (Valgrind, Linux-only CI): the P0
@@ -615,24 +656,25 @@ per-thread magazine; the **P3 bump-direct batched carve (Э1)** removed the
 tautological `carve → BinTable → pop` round-trip that made every virgin
 block pay ~40 metadata-touch instructions. This is the same cold-direct
 measurement as the "Cold direct" column of the Performance table above
-(post-X-arc `vs mimalloc` ratios reproduced here for the dedicated section):
+(post-X-arc `vs mimalloc` ratios reproduced here for the dedicated section;
+absolute ns/op for every allocator are now in the main Cold direct table
+above, re-measured 2026-07-07 via `npm run bench:table`):
 
-| Size | vs mimalloc (post-X-arc) | (pre-P3 was) |
+| Size | vs mimalloc (2026-07-07) | (pre-P3 was) |
 |---|---|---|
-|   16 B | 2.5× slower | 2.6× slower |
-|   64 B | 2.1× slower | 2.0× slower |
-|  256 B | 1.8× slower | 1.5× slower |
-| 1024 B | **1.12× faster** | 1.2× faster |
+|   16 B | 2.75× slower | 2.6× slower |
+|   64 B | 2.08× slower | 2.0× slower |
+|  256 B | 1.91× slower | 1.5× slower |
+| 1024 B | **1.13× faster** | 1.2× faster |
 
-(Cold-direct `vs mimalloc` ratios measured 2026-07-06 post-X-arc, see
-[docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); absolute µs were not re-recorded
-in the post-X-arc section — only the ratios — and are omitted here rather
-than carried stale, matching the main Performance table's disclosure. The
-"pre-P3 was" column is the pre-X-arc historical run, kept for the
-before/after of the Э1 trajectory.)
+(Cold-direct `vs mimalloc` ratios measured 2026-07-07, see
+[docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md) and the main Performance table
+above — all absolute ns/op columns were re-recorded in this run. The "pre-P3
+was" column is the pre-X-arc historical run, kept for the before/after of the
+Э1 trajectory.)
 
-The P3 carve removed the tautological round-trip, but the post-X-arc
-re-measurement shows the cold tiny gap back at ~2.1–2.5× rather than the
+The P3 carve removed the tautological round-trip, but the 2026-07-07
+re-measurement shows the cold tiny gap at ~2.1–2.8× rather than the
 ~1.15–1.60× the earlier P3-era run recorded — the residual is honest
 per-block work (page-map writes, page faults on genuinely fresh pages) on a
 noisy single host, not ceremony, and the deterministic signal is the iai gate
@@ -662,16 +704,16 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     than `System` (measured 2026-07-06 post-X-arc, see
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The headline.
   - **Real-world churn (the common shape) — leads at every size.** On the
-    realistic writing pattern: 1.74× on 16 B, 1.71× on 64 B, **≈parity-plus on
-    256 B**, **7.2× on 1024 B** (measured 2026-07-06 post-X-arc, see
-    [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The 256 B churn loss was eliminated in P6
+    realistic writing pattern: 1.66× on 16 B, 1.90× on 64 B, **1.07× on
+    256 B**, **6.43× on 1024 B** (measured 2026-07-07 via `npm run bench:table`,
+    see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
   - **Cold first-touch after P3 (Э1 bump-direct carve):** the tautological
-    round-trip is gone; the post-X-arc re-measurement still shows a 2.5× /
-    2.1× cold gap at 16/64 B (down from the 2.6× / 2.0× pre-P3 baseline on
+    round-trip is gone; the 2026-07-07 re-measurement shows a 2.75× /
+    2.08× cold gap at 16/64 B (down from the 2.6× / 2.0× pre-P3 baseline on
     this noisy host, but wider than the P3-era 1.60× / 1.15× record) and cold
-    1024 B **1.12× faster**.
+    1024 B **1.13× faster**.
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
     ~290× faster than `System`; `realloc_in_place_unfavorable` **~1,500×
     faster** (post-X-arc OPT-G in-place Large growth, 2026-07-06).
@@ -695,11 +737,11 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     write hole is closed; `tests/regression_magazine_oracles.rs` test (c) is
     RED pre-Э6, GREEN on Э6).
 - **Where it loses:**
-  - **Cold tiny blocks (16–64 B): 2.1–2.5× behind `mimalloc`** (post-X-arc
-    re-measurement). The P3 bump-direct carve removed the tautological
-    round-trip but did not fully close the gap — what remains is honest
-    per-block work (page-map writes, page faults on genuinely fresh pages),
-    not ceremony.
+  - **Cold tiny blocks (16–64 B): 2.1–2.8× behind `mimalloc`** (2026-07-07
+    re-measurement: 16 B 2.75×, 64 B 2.08×, 256 B 1.91× slower). The P3
+    bump-direct carve removed the tautological round-trip but did not fully
+    close the gap — what remains is honest per-block work (page-map writes,
+    page faults on genuinely fresh pages), not ceremony.
   - **Single-thread larson/mstress T = 1:** 1.28–1.36× behind `mimalloc`
     (historical 0.2.0 MT numbers, not re-run this pass). Structural cost of our
     safety machinery; the per-thread architecture means it does not compound —
