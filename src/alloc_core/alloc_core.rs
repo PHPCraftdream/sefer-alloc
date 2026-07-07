@@ -1233,6 +1233,31 @@ impl AllocCore {
             base,
             SegLayout::alloc_bitmap_off(),
         ));
+        // 2e. PERF-3 Ф4 (task #211, plan §2.5): clear the per-segment `RunStack`
+        //     for EVERY class. After the payload pages are returned to the OS
+        //     (step 1) and `bump` is reset to the payload start (step 2a), any
+        //     stale run descriptor would point into the decommitted/unmapped
+        //     payload region; a later `drain_freelist_batch` on this segment
+        //     (before it is slot-recycled) would reconstruct `start_off +
+        //     i*block_size` into that dead region. Clearing the `RunStack` here
+        //     makes the post-decommit drain see an empty stack and return 0,
+        //     exactly as the head-zeroing in step 2b makes the linked-list drain
+        //     see `FREE_LIST_NULL` and return 0 — end-state byte-identical to
+        //     the pre-PERF-3 decommit for the drain path (both representations
+        //     empty). This mirrors the structural role of the `bt.set_head(c,
+        //     FREE_LIST_NULL)` loop above (NULL the per-class fast-path state)
+        //     and is the direct analogue of X7's decommit-lifecycle seam — with
+        //     the OPPOSITE policy: X7's gen table is deliberately NOT re-zeroed
+        //     (numbering is continuous across decommit, plan X7 §2.2), whereas
+        //     the `RunStack` MUST be re-zeroed (its descriptors are address
+        //     hints into the payload, which is now unmapped; stale hints are
+        //     unsafe, not merely stale). Compiled ONLY under
+        //     `alloc-runfreelist`; the non-feature decommit path is byte-
+        //     identical to pre-Ф4 (the production-judge neutrality gate).
+        #[cfg(feature = "alloc-runfreelist")]
+        {
+            super::run_stack::RunStack::clear_all(base);
+        }
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);
     }
@@ -2933,19 +2958,63 @@ impl AllocCore {
                     // member. Do NOT add it to `out`.
                     i += 1;
                 }
-                // If `out` filled mid-descriptor, the remaining members of THIS
-                // descriptor are already FREE in the bitmap and would be drained
-                // on the next `drain_freelist_batch` call — but the descriptor
-                // was just popped and cleared, so those members would be LOST
-                // (a leak, not a double-issue — the block stays FREE-in-bitmap
-                // but unreachable until segment decommit/recommit resets it).
-                // KNOWN NARROW GAP (found by @o46m's Ф3 review, tracked for
-                // Ф4/Ф5, not fixed here): for classes with block_size > 8192B,
-                // a refill's `out` capacity can be < `FLUSH_N` (8), so a
-                // full-batch contiguous run's descriptor count CAN exceed the
-                // capacity of the call that pops it. The fix (peek-before-pop,
-                // or push back a truncated remainder descriptor) is deferred —
-                // see task #211/#212.
+                // PERF-3 Ф4 (task #211): if `out` filled MID-descriptor (`i <
+                // desc.count` when the inner loop exited because `k ==
+                // out.len()`), the remaining `desc.count - i` members are still
+                // FREE in the bitmap but the descriptor was just popped+cleared
+                // — without this pushback those members would be LOST (a leak:
+                // FREE-in-bitmap, on no linked list, referenced by no
+                // descriptor, until a decommit/recommit resets the segment).
+                //
+                // This gap (found by @o46m's Ф3 review) is REAL and reachable
+                // for small classes with `block_size > 8192 B`: there
+                // `refill_n_for_class(block_size) = clamp(64 KiB / block_size,
+                // 1, 16) < FLUSH_N (= 8)`, so a refill's `out` capacity is
+                // SMALLER than a full-batch contiguous run's descriptor count
+                // (up to `FLUSH_N = 8`). The inner loop then fills `out`
+                // partway through the descriptor and the tail leaks.
+                //
+                // Fix: push a TRUNCATED REMAINDER descriptor covering exactly
+                // the un-drained members `[start + i*block_size, count - i)`
+                // back onto the `RunStack`. It is safe because (a) those
+                // members are still FREE (the inner loop only `mark_alloc`'d
+                // members `[0, i)`), and (b) the push ALWAYS succeeds: the slot
+                // we just popped is now empty, so among the `RUNSTACK_CAPACITY`
+                // (= 8) slots at most 7 are occupied → `push` finds the empty
+                // popped slot. (If a concurrent push had raced it could in
+                // principle fill the slot, but the `RunStack` is single-writer
+                // — plan §"No atomics" — owned by this thread's drain, so no
+                // race exists.) The next `drain_freelist_batch` call pops the
+                // remainder and continues draining from `i`.
+                //
+                // This is the same phase's algorithm (Ф3's drain), not scope
+                // creep: Ф3's pop-then-iterate design assumed `count <=
+                // out.len()` (true only for `block_size <= 8192`), and this
+                // closes the assumption for the large-small-class tail.
+                if i < desc.count as usize {
+                    let rem_start = (start + i * block_size) as u32;
+                    let rem_count = desc.count - i as u16;
+                    let pushed = super::run_stack::RunStack::push(
+                        segment,
+                        class_idx,
+                        rem_start,
+                        rem_count,
+                    );
+                    // The pushback MUST succeed (we just freed one slot; single-
+                    // writer). A `false` here would indicate a capacity
+                    // invariant violation (more than `RUNSTACK_CAPACITY`
+                    // simultaneous live descriptors for one class from a single
+                    // drain) — unreachable, but assert in debug builds to catch
+                    // a future regression in the push/pop slot discipline.
+                    debug_assert!(
+                        pushed,
+                        "RunStack pushback of a drained-descriptor remainder \
+                         failed: capacity invariant violated (class {class_idx}, \
+                         rem_count {rem_count})"
+                    );
+                    // `out` is full → the outer `while k < out.len()` exits
+                    // next iteration. The remainder is safely on the stack.
+                }
             }
 
             // THEN drain the classic linked list for any remaining capacity.
