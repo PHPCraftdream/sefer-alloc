@@ -1572,7 +1572,7 @@ impl AllocCore {
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// Two in-place fast paths are attempted first (shared with
-    /// [`try_realloc_inplace`], which [`HeapCore::realloc`](crate::registry::HeapCore)
+    /// [`try_realloc_inplace_known_base`](Self::try_realloc_inplace_known_base), which [`HeapCore::realloc`](crate::registry::HeapCore)
     /// calls so its alloc leg can route through the magazine-aware
     /// `HeapCore::alloc`):
     ///
@@ -1607,8 +1607,13 @@ impl AllocCore {
         // truth here closes the unmarked duplication/divergence hazard flagged
         // in the X-arc retrospective (C2): a bugfix applied to one copy but
         // not the other would silently disagree.
-        if let Some(p) = self.realloc_inplace_fast_path(ptr, old_layout, new_size) {
-            return p;
+        let base = os::segment_base_of_ptr(ptr);
+        if self.table.contains_base(base) {
+            if let Some(p) =
+                self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
+            {
+                return p;
+            }
         }
         // In-place fast paths did not apply: alloc a fresh block, copy the
         // preserved prefix, and free the old block.
@@ -1632,7 +1637,7 @@ impl AllocCore {
     /// is possible, `None` otherwise. Does NOT fall through to `self.alloc` —
     /// callers own that decision (the substrate-level [`realloc`](Self::realloc)
     /// calls `self.alloc` + copy + `self.dealloc`; the registry-level
-    /// [`try_realloc_inplace`] is consumed by `HeapCore::realloc`, which routes
+    /// [`try_realloc_inplace_known_base`](Self::try_realloc_inplace_known_base) is consumed by `HeapCore::realloc`, which routes
     /// its alloc leg through the magazine-aware `HeapCore::alloc`).
     ///
     /// Both callers share these detection predicates so a bugfix applied to
@@ -1718,70 +1723,65 @@ impl AllocCore {
     /// old block in its own class) — correct, just not zero-copy. Growth
     /// (`new_class > old_class`) and Large on either side also fall
     /// through.
+    /// In-place realloc fast paths for a pointer whose segment base has already
+    /// been proven live in this `AllocCore`'s table. This is the same logic as
+    /// [`realloc_inplace_fast_path`](Self::realloc_inplace_fast_path), split so
+    /// `HeapCore::realloc` can reuse its own `contains_base(base)` proof instead
+    /// of probing the segment table again.
     #[inline]
-    fn realloc_inplace_fast_path(
+    fn realloc_inplace_fast_path_known_base(
         &mut self,
+        base: *mut u8,
         ptr: *mut u8,
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "known-base realloc called for a segment not owned by this core"
+        );
+        let kind = SegmentHeader::kind_at(base);
         // OPT-G: Large→Large in-place grow.
-        {
-            let base = os::segment_base_of_ptr(ptr);
-            if self.table.contains_base(base) && SegmentHeader::kind_at(base) == SegmentKind::Large
-            {
-                let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
-                let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
-                if new_eff >= old_eff {
-                    let payload_off = ptr as usize - base as usize;
-                    let span_usable = SegmentHeader::span_usable_at(base);
-                    if let Some(end) = payload_off.checked_add(new_eff) {
-                        if end <= span_usable {
-                            SegmentHeader::set_large_size_at(base, new_eff);
-                            return Some(ptr);
-                        }
+        if kind == SegmentKind::Large {
+            let old_eff = old_layout.size().max(super::size_classes::MIN_BLOCK);
+            let new_eff = new_size.max(super::size_classes::MIN_BLOCK);
+            if new_eff >= old_eff {
+                let payload_off = ptr as usize - base as usize;
+                let span_usable = SegmentHeader::span_usable_at(base);
+                if let Some(end) = payload_off.checked_add(new_eff) {
+                    if end <= span_usable {
+                        SegmentHeader::set_large_size_at(base, new_eff);
+                        return Some(ptr);
                     }
                 }
             }
+            return None;
         }
         // OPT-F: Small→Small same-class in-place.
-        {
-            let base = os::segment_base_of_ptr(ptr);
-            if self.table.contains_base(base)
-                && matches!(
-                    SegmentHeader::kind_at(base),
-                    SegmentKind::Small | SegmentKind::Primordial
-                )
-            {
-                let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
-                let align = old_layout.align();
-                let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
-                if let (Some(old_class), Some(new_class)) = (
-                    super::size_classes::SizeClasses::class_for(old_size, align),
-                    super::size_classes::SizeClasses::class_for(clamped_new, align),
-                ) {
-                    if new_class == old_class {
-                        return Some(ptr);
-                    }
+        if matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
+            let old_size = old_layout.size().max(super::size_classes::MIN_BLOCK);
+            let align = old_layout.align();
+            let clamped_new = new_size.max(super::size_classes::MIN_BLOCK);
+            if let (Some(old_class), Some(new_class)) = (
+                super::size_classes::SizeClasses::class_for(old_size, align),
+                super::size_classes::SizeClasses::class_for(clamped_new, align),
+            ) {
+                if new_class == old_class {
+                    return Some(ptr);
                 }
             }
         }
         None
     }
 
-    /// Task #164: try the two in-place realloc fast paths (Large grow-in-span,
-    /// Small same-class) WITHOUT falling through to `self.alloc` on miss. Returns
-    /// `Some(ptr)` on in-place success, `None` on fallthrough. `HeapCore::realloc`
-    /// uses this so the alloc leg routes through the magazine-aware
-    /// `HeapCore::alloc` (which drains via the checked predicate), closing the
-    /// unchecked drain path through `AllocCore::alloc` → `alloc_small`.
-    ///
-    /// Thin wrapper over [`realloc_inplace_fast_path`] — the OPT-F/OPT-G
-    /// detection logic lives in exactly one place, shared with the
-    /// substrate-level [`realloc`](Self::realloc).
+    /// Try the two in-place realloc fast paths (Large grow-in-span, Small same-class), but the
+    /// caller has already proven `base` is live in this core's segment table.
+    /// Used by `HeapCore::realloc` to avoid a duplicate `contains_base` probe
+    /// after its own ownership check.
     #[cfg(feature = "alloc-global")]
-    pub(crate) fn try_realloc_inplace(
+    pub(crate) fn try_realloc_inplace_known_base(
         &mut self,
+        base: *mut u8,
         ptr: *mut u8,
         old_layout: Layout,
         new_size: usize,
@@ -1789,7 +1789,7 @@ impl AllocCore {
         if ptr.is_null() {
             return None;
         }
-        self.realloc_inplace_fast_path(ptr, old_layout, new_size)
+        self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
     }
 
     /// Iterate over all registered segment bases (read-only). Exposed for the

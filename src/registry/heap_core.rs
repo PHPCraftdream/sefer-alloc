@@ -1107,7 +1107,7 @@ impl HeapCore {
     ///      cross-thread-freed large segments; otherwise its stack
     ///      accumulates unboundedly). This drain is load-bearing — it runs
     ///      whether or not the in-place path succeeds.
-    ///   2. **In-place attempt**: call `AllocCore::try_realloc_inplace`, which
+    ///   2. **In-place attempt**: call `AllocCore::try_realloc_inplace_known_base`, which
     ///      applies the OPT-F (Small same-class) and OPT-G (Large grow-in-span)
     ///      short-circuits. On success it returns the SAME `ptr` (mutating the
     ///      block's header in place, never moving it) — we return immediately.
@@ -1200,13 +1200,16 @@ impl HeapCore {
                 //       leg, which routes through `HeapCore::alloc`
                 //       (magazine-aware, checked drain) — NOT through
                 //       `AllocCore::realloc`'s blind alloc→alloc_small path.
-                if let Some(p) = self.core.try_realloc_inplace(ptr, old_layout, new_size) {
-                    // `try_realloc_inplace` mutates the block's header in
+                if let Some(p) = self
+                    .core
+                    .try_realloc_inplace_known_base(base, ptr, old_layout, new_size)
+                {
+                    // `try_realloc_inplace_known_base` mutates the block's header in
                     // place and always returns the SAME pointer on success
                     // (it never moves the block). The segment was already
                     // stamped when first allocated, so there is nothing to
                     // re-stamp here.
-                    debug_assert_eq!(p, ptr, "try_realloc_inplace must return the same pointer");
+                    debug_assert_eq!(p, ptr, "known-base realloc must return the same pointer");
                     return p;
                 }
                 //   (3) Move leg — in-place did not apply: alloc a fresh block
