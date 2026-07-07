@@ -2867,50 +2867,172 @@ impl AllocCore {
         #[cfg(not(feature = "alloc-decommit"))]
         let meta = SegmentMeta::new(segment);
         let mut bt = meta.bin_table();
-        // Read the head ONCE.
-        let mut head_off = bt.head(class_idx);
-        if head_off == FREE_LIST_NULL {
-            return 0;
+
+        // PERF-3 Ф3 (task #210): under `alloc-runfreelist`, FIRST drain the
+        // per-segment `RunStack` for this class — reconstructing each
+        // descriptor's member blocks by stride arithmetic
+        // (`start_off + i * block_size`) instead of the dependent-load pointer
+        // chase the classic linked-list walk pays (plan §1 — the attacked
+        // mechanism). The `RunStack` holds compact `(start_off, count)`
+        // descriptors that Ф2's `flush_run` pushed for contiguous-accepted
+        // sub-runs; singletons and overflow stayed on the linked list and are
+        // drained second by the unchanged loop below.
+        //
+        // The two bodies below (`cfg(feature)` and `cfg(not)`) are a SPLIT, not
+        // an additive `#[cfg]` block, because the feature-on path must NOT take
+        // the classic early-return on `head == NULL` (the RunStack may hold
+        // blocks for a class whose linked-list head is NULL — that is the
+        // all-run-no-singleton case Ф2 produces) and must gate `set_head` on
+        // whether the linked-list walk actually ran (only-touch-changed-state).
+        // The `cfg(not)` body is byte-identical to the pre-Ф3 body: the classic
+        // early-return, unconditional `set_head`, and `inc_live(k)` stand
+        // unchanged (the production-judge neutrality gate).
+        #[cfg(feature = "alloc-runfreelist")]
+        {
+            let mut bm = meta.alloc_bitmap();
+            let mut k = 0usize;
+            let block_size = SizeClasses::block_size(class_idx);
+            // Pop descriptors one at a time; for each, reconstruct every member
+            // offset, guard it, and hand it out. Stop as soon as `out` is full.
+            while k < out.len() {
+                let desc = match super::run_stack::RunStack::pop(segment, class_idx) {
+                    Some(d) => d,
+                    None => break, // RunStack exhausted for this class → fall through.
+                };
+                let start = desc.start_off as usize;
+                let mut i = 0usize;
+                while i < desc.count as usize && k < out.len() {
+                    let off = (start + i * block_size) as u32;
+                    // **Defense-in-depth M2 guard (plan §2.3 decision 1,
+                    // load-bearing).** The `AllocBitmap` is the SOLE ground
+                    // truth; a `RunDesc` is only a reconstruction HINT. Every
+                    // reconstructed offset is re-checked against the bitmap
+                    // BEFORE being handed out, exactly as the linked-list drain
+                    // does. The fallthrough (a reconstructed offset that is NOT
+                    // free) is UNREACHABLE in correct operation: per plan §2.4's
+                    // structural proof, a run-member block is FREE in the bitmap
+                    // by construction (Ф2's flush guard accepted it then
+                    // `mark_free`'d it), and no path transitions it to ALLOCATED
+                    // except this very drain. BUT the guard must still exist and
+                    // FAIL SAFE (skip that one slot, no panic, no batch abort):
+                    // it is what prevents a double-issue if a future bug ever
+                    // lets a non-free block appear in a descriptor, and it is
+                    // what makes the M2-double-free-through-run counterfactual
+                    // test (`regression_run_stack_drain.rs`) have teeth.
+                    if bm.is_free(off) {
+                        // FREE → ALLOC: hand the block out. This RMW is identical
+                        // to the linked-list drain's `mark_alloc` (same
+                        // invariant, same per-block cost — plan §2.3); the run
+                        // descriptor only changes HOW the address is obtained.
+                        bm.mark_alloc(off);
+                        out[k] = Node::deref(segment, off as usize);
+                        k += 1;
+                    }
+                    // else: UNREACHABLE in correct operation. Fail safe: skip
+                    // this one reconstructed slot and continue to the next
+                    // member. Do NOT add it to `out`.
+                    i += 1;
+                }
+                // If `out` filled mid-descriptor, the remaining members of THIS
+                // descriptor are already FREE in the bitmap and would be drained
+                // on the next `drain_freelist_batch` call — but the descriptor
+                // was just popped and cleared, so those members would be LOST
+                // (a leak, not a double-issue — the block stays FREE-in-bitmap
+                // but unreachable until segment decommit/recommit resets it).
+                // KNOWN NARROW GAP (found by @o46m's Ф3 review, tracked for
+                // Ф4/Ф5, not fixed here): for classes with block_size > 8192B,
+                // a refill's `out` capacity can be < `FLUSH_N` (8), so a
+                // full-batch contiguous run's descriptor count CAN exceed the
+                // capacity of the call that pops it. The fix (peek-before-pop,
+                // or push back a truncated remainder descriptor) is deferred —
+                // see task #211/#212.
+            }
+
+            // THEN drain the classic linked list for any remaining capacity.
+            // Read the head ONCE.
+            let mut head_off = bt.head(class_idx);
+            // `linked_walked` gates `set_head`: only state that actually changed
+            // is touched. If the RunStack alone filled `out` and the linked list
+            // was never walked, `set_head` is skipped (mirrors Ф2's rebuild-step
+            // discipline for the mixed-representation case).
+            let mut linked_walked = false;
+            while k < out.len() && head_off != FREE_LIST_NULL {
+                let block_ptr = Node::deref(segment, head_off as usize);
+                let block_nn = match NonNull::new(block_ptr) {
+                    Some(nn) => nn,
+                    None => break,
+                };
+                let next = Node::read_next(block_nn);
+                bm.mark_alloc(head_off);
+                out[k] = block_ptr;
+                k += 1;
+                linked_walked = true;
+                head_off = if next.is_null() {
+                    FREE_LIST_NULL
+                } else {
+                    (next as usize - segment as usize) as u32
+                };
+            }
+            if linked_walked {
+                bt.set_head(class_idx, head_off);
+            }
+            // `inc_live` ONCE by the TOTAL `k` across both representations (D1).
+            #[cfg(feature = "alloc-decommit")]
+            for _ in 0..k {
+                meta.inc_live();
+            }
+            return k;
         }
-        let mut bm = meta.alloc_bitmap();
-        let mut k = 0usize;
-        while k < out.len() && head_off != FREE_LIST_NULL {
-            let block_ptr = Node::deref(segment, head_off as usize);
-            let block_nn = match NonNull::new(block_ptr) {
-                Some(nn) => nn,
-                // A null-deref would only arise from a corrupt offset; stop the
-                // walk here and commit what we have (defence-in-depth). `head`
-                // is left pointing at this node so nothing is lost.
-                None => break,
-            };
-            // Dependent load: read this block's `next` BEFORE recording it. The
-            // block body is never written on the pop path, so this is race-free
-            // against ourselves.
-            let next = Node::read_next(block_nn);
-            // Clear this block's bitmap bit — it leaves the free list and is
-            // handed out (per-block, byte-identical to `pop_free`).
-            bm.mark_alloc(head_off);
-            out[k] = block_ptr;
-            k += 1;
-            head_off = if next.is_null() {
-                FREE_LIST_NULL
-            } else {
-                // `next` is an absolute pointer into the SAME segment (free
-                // lists are per-segment), so offset = next - segment.
-                (next as usize - segment as usize) as u32
-            };
+
+        // --- `#[cfg(not(feature = "alloc-runfreelist"))]`: byte-identical to
+        //     the pre-Ф3 body (the production path — judge neutrality gate).
+        #[cfg(not(feature = "alloc-runfreelist"))]
+        {
+            // Read the head ONCE.
+            let mut head_off = bt.head(class_idx);
+            if head_off == FREE_LIST_NULL {
+                return 0;
+            }
+            let mut bm = meta.alloc_bitmap();
+            let mut k = 0usize;
+            while k < out.len() && head_off != FREE_LIST_NULL {
+                let block_ptr = Node::deref(segment, head_off as usize);
+                let block_nn = match NonNull::new(block_ptr) {
+                    Some(nn) => nn,
+                    // A null-deref would only arise from a corrupt offset; stop the
+                    // walk here and commit what we have (defence-in-depth). `head`
+                    // is left pointing at this node so nothing is lost.
+                    None => break,
+                };
+                // Dependent load: read this block's `next` BEFORE recording it. The
+                // block body is never written on the pop path, so this is race-free
+                // against ourselves.
+                let next = Node::read_next(block_nn);
+                // Clear this block's bitmap bit — it leaves the free list and is
+                // handed out (per-block, byte-identical to `pop_free`).
+                bm.mark_alloc(head_off);
+                out[k] = block_ptr;
+                k += 1;
+                head_off = if next.is_null() {
+                    FREE_LIST_NULL
+                } else {
+                    // `next` is an absolute pointer into the SAME segment (free
+                    // lists are per-segment), so offset = next - segment.
+                    (next as usize - segment as usize) as u32
+                };
+            }
+            // Write the new head ONCE: the first un-popped node, or NULL.
+            bt.set_head(class_idx, head_off);
+            // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
+            // popped block always comes from a COMMITTED payload (a decommitted
+            // segment was reset to an empty free list, so the drain finds nothing
+            // there), so no recommit is needed on this path.
+            #[cfg(feature = "alloc-decommit")]
+            for _ in 0..k {
+                meta.inc_live();
+            }
+            k
         }
-        // Write the new head ONCE: the first un-popped node, or NULL.
-        bt.set_head(class_idx, head_off);
-        // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
-        // popped block always comes from a COMMITTED payload (a decommitted
-        // segment was reset to an empty free list, so the drain finds nothing
-        // there), so no recommit is needed on this path.
-        #[cfg(feature = "alloc-decommit")]
-        for _ in 0..k {
-            meta.inc_live();
-        }
-        k
     }
 
     /// Carve a fresh `block_size`-aligned block from the current small

@@ -423,13 +423,22 @@ fn flush_run_classic_when_feature_off() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 7 — Run-member blocks NOT on linked-list drain (Ф2 intermediate state).
+// Test 7 — Run-member blocks ARE drained (Ф3 reality; was a Ф2 intermediate
+// assertion).
 //
 // Carve 6 contiguous blocks. Flush [0,1,2] (run, → RunStack) + [4] (singleton,
 // → linked list). Blocks [3] and [5] are NOT freed and NOT in the batch — they
-// stay LIVE, so they don't pollute the freelist. The classic drain should
-// return ONLY the singleton (1 block); the run blocks are in the RunStack,
-// undrainable until Ф3.
+// stay LIVE, so they don't pollute the freelist.
+//
+// Ф2's version of this test asserted the drain returned ONLY the singleton (1
+// block) because run blocks were "undrainable until Ф3" — the documented Ф2
+// intermediate state. Ф3 closes that gap: the drain now reconstructs run-member
+// blocks by stride arithmetic FIRST, then drains the linked list for any
+// remaining capacity. So the drain returns ALL 4 flushed blocks (3 run + 1
+// singleton), exactly once each — the full behavioral equivalence that is Ф3's
+// gate. The full mixed-drain coverage (set-equality, no-dup, no-missing) lives
+// in `tests/regression_run_stack_drain.rs`; this test is kept as a minimal
+// smoke that the Ф2 intermediate state no longer holds.
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "alloc-runfreelist")]
@@ -454,20 +463,24 @@ fn run_member_blocks_not_on_linked_list_drain() {
     assert!(peeked.is_some(), "one run → one descriptor");
     assert_eq!(peeked.unwrap().count, 3);
 
-    // Classic drain returns ONLY the singleton (no pre-existing freelist
-    // entries; the run blocks are in RunStack, not linked-list, until Ф3).
+    // Ф3: drain now reconstructs the run-member blocks FIRST (stride
+    // arithmetic), then drains the linked list. Returns ALL 4 flushed blocks.
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
     let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
     assert_eq!(
-        drained, 1,
-        "classic drain returns only the singleton (run blocks undrainable until Ф3)"
+        drained, 4,
+        "Ф3 drain returns all flushed blocks (3 run + 1 singleton)"
     );
-    assert_eq!(out[0] as usize, singleton as usize);
+    let drained_set: HashSet<usize> =
+        out[..drained].iter().map(|p| *p as usize).collect();
+    let batch_set: HashSet<usize> = batch.iter().map(|p| *p as usize).collect();
+    assert_eq!(drained_set, batch_set, "drained set == flushed set (Ф3 equivalence)");
+    // No duplicates.
+    assert_eq!(drained_set.len(), drained, "no duplicate blocks in drain");
 
-    // Cleanup: drain gave us the singleton back (now allocated); re-free all
-    // batch blocks + the leftover live blocks.
-    core.dealloc(out[0], layout);
-    for &p in &run_blocks {
+    // Cleanup: drain gave us all flushed blocks back (now allocated); re-free
+    // them + the leftover live blocks.
+    for &p in &out[..drained] {
         core.dealloc(p, layout);
     }
     core.dealloc(sorted[3], layout);
