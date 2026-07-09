@@ -79,8 +79,14 @@ impl Node {
         // exclusively owned (free, not user-visible). Casting to `*mut *mut u8`
         // and writing one word is in-bounds: the block is `>= NODE_SIZE` bytes,
         // and we write exactly `size_of::<*mut u8>()` bytes at offset 0. The
-        // write is not visible to any other reference (Phase 8 is
-        // single-threaded; `block` is exclusive).
+        // write does not alias any other live reference under the SINGLE-WRITER
+        // invariant: a free-list node is touched only by the segment's OWNER
+        // thread (owner-only free-list discipline), and a cross-thread ("remote")
+        // free NEVER writes the body of a block — it enqueues `(offset, class)`
+        // into the per-segment ring, leaving the block bytes untouched (see
+        // `registry::heap_core::dealloc_routing`, "block bytes untouched" /
+        // Variant-2 ring). So while `block` is in this thread's free list, no
+        // remote path writes these bytes and `block` is exclusively the owner's.
         unsafe { ptr.write_unaligned(next) };
     }
 
@@ -129,8 +135,11 @@ impl Node {
     pub(crate) fn zero(ptr: *mut u8, len: usize) {
         // SAFETY: caller guarantees `[ptr, ptr+len)` is a valid writable range
         // (a freshly-reserved or free block). `write_bytes(0)` fills it with
-        // zeroes; the range does not overlap any other live reference (Phase 8
-        // is single-threaded and the block is exclusively owned at this point).
+        // zeroes; the range does not overlap any other live reference under the
+        // single-writer invariant — the block is owned by this (owner) thread at
+        // this point and a remote free never writes a block's body (it enqueues
+        // `(offset, class)` into the per-segment ring; see
+        // `registry::heap_core::dealloc_routing`, "block bytes untouched").
         unsafe { core::ptr::write_bytes(ptr, 0, len) };
     }
 
@@ -162,8 +171,13 @@ impl Node {
         // SAFETY: caller guarantees `dst` is valid for `size_of::<T>()` bytes,
         // properly aligned, and exclusively owned. `T: Copy` means the write
         // is a plain bit copy (no destructor surprise). The write does not
-        // alias any other live reference (Phase 8 is single-threaded and the
-        // caller owns the target exclusively).
+        // alias any other live reference under the single-writer invariant: a
+        // metadata field is written only by its owning thread, and a remote free
+        // never writes segment/block bodies (it enqueues `(offset, class)` into
+        // the per-segment ring; see `registry::heap_core::dealloc_routing`,
+        // "block bytes untouched"). Fields read cross-thread are either
+        // owner-only (written once, then read-only) or atomic — see the
+        // field-specific accessors below.
         unsafe { dst.write(value) };
     }
 
@@ -328,10 +342,19 @@ impl Node {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU8;
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
         // the offset of a byte within a metadata region at `base`, with
-        // `off + 1` in-bounds. The segment remains mapped for the process
-        // lifetime (freed only at `AllocCore::drop`, after all cross-thread
-        // frees have quiesced), so the `'static` lifetime is sound. `AtomicU8`
-        // is `Sync`, so shared atomic access from any thread is race-free.
+        // `off + 1` in-bounds. LIFETIME (see the `'static` note on
+        // [`atomic_u64_at`] for the full argument): the `'static` here is NOT
+        // "the segment is mapped for the whole process" — Large segments are
+        // released mid-process (`AllocCore::reclaim_large_segment` /
+        // large-cache eviction → `os::release_segment`), and no `HeapCore` is
+        // ever dropped. The reference is valid only WHILE `base`'s segment is
+        // registered in its owning heap's table; the CALLER must supply the
+        // per-path liveness argument that the segment cannot be released under
+        // this access (for the remote-free paths: the double-push guard in
+        // `alloc_core::deferred_large::push` and the "(a)/(b) indistinguishable,
+        // dangling free → fault" reasoning in
+        // `registry::heap_core::dealloc_routing`). `AtomicU8` is `Sync`, so
+        // shared atomic access from any thread is race-free.
         unsafe { &*ptr }
     }
 
@@ -352,10 +375,18 @@ impl Node {
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
         // the offset of a properly 4-byte-aligned `AtomicU32` field within a
         // `#[repr(C)]` (or hand-laid-out) metadata region at `base`, with
-        // `off + 4` in-bounds. The segment remains mapped for the process
-        // lifetime (freed only at `AllocCore::drop`, after all cross-thread
-        // frees have quiesced), so the `'static` lifetime is sound. `AtomicU32`
-        // is `Sync`, so shared atomic access from any thread is race-free.
+        // `off + 4` in-bounds. LIFETIME (see the `'static` note on
+        // [`atomic_u64_at`] for the full argument): the `'static` is NOT "mapped
+        // for the whole process" — Large segments are released mid-process
+        // (`AllocCore::reclaim_large_segment` / large-cache eviction →
+        // `os::release_segment`). The reference is valid only WHILE `base`'s
+        // segment is registered in its owning heap's table; the CALLER must
+        // supply the per-path liveness argument that the segment cannot be
+        // released under this access (for the remote-free ring paths: the
+        // double-push guard in `alloc_core::deferred_large::push` and the
+        // "(a)/(b) indistinguishable, dangling free → fault" reasoning in
+        // `registry::heap_core::dealloc_routing`). `AtomicU32` is `Sync`, so
+        // shared atomic access from any thread is race-free.
         unsafe { &*ptr }
     }
 
@@ -376,10 +407,10 @@ impl Node {
     ///
     /// # Caller's contract
     ///
-    /// - `base` MUST be a live segment base owned by this allocator (it will
-    ///   remain mapped and the header byte range valid for the process
-    ///   lifetime — segments are only freed at `AllocCore::drop`, which runs
-    ///   after all adoption has quiesced).
+    /// - `base` MUST be a live segment base owned by this allocator, and the
+    ///   caller MUST hold a liveness argument that it STAYS live (registered in
+    ///   its owning heap's segment table) for the duration of the access — see
+    ///   the LIFETIME note below.
     /// - `off` MUST be the offset of an 8-byte-aligned `u64`/`AtomicU64`
     ///   field within a `#[repr(C)]` header at `base`, and `off + 8` MUST be
     ///   within the segment. The caller (the segment-header module) derives
@@ -387,9 +418,36 @@ impl Node {
     ///   yields a properly-aligned in-layout offset — so alignment and bounds
     ///   hold by construction.
     ///
-    /// The returned reference carries `'static` because the segment is never
-    /// freed while adoption may be in flight (the abandon/adopt protocol
-    /// completes before `AllocCore::drop`).
+    /// ## LIFETIME — why `'static`, and what actually backs it
+    ///
+    /// The `'static` here is a SEAM convenience (it lets `registry::heap_core`,
+    /// which is `#![deny(unsafe_code)]`, hold an `&AtomicU64` into segment
+    /// metadata without its own pointer seam), NOT a claim that the segment
+    /// lives for the whole process. The old "segments are only freed at
+    /// `AllocCore::drop`, after all cross-thread frees/adoption have quiesced"
+    /// wording was FALSE on both halves and is removed:
+    ///
+    /// - Large segments are released MID-process —
+    ///   `AllocCore::reclaim_large_segment` → `os::release_segment`, plus the
+    ///   several `alloc-decommit`/large-cache eviction release sites in
+    ///   `alloc_core.rs`. So a segment header CAN become unmapped while the
+    ///   process runs.
+    /// - "after cross-thread frees have quiesced" was an argument for the
+    ///   long-removed public alloc façade (task #17); today nothing enforces it
+    ///   and — because registry `HeapCore`s are never dropped — nothing needs it.
+    ///
+    /// The real safety of remote accesses rests on THIN per-path liveness
+    /// arguments living in OTHER files, which the caller is obliged to carry:
+    /// the double-push guard in `alloc_core::deferred_large::push`
+    /// (`push_large_deferred_free`, "claim once") and the honest
+    /// "(a) live-foreign / (b) already-released are O(1)-indistinguishable;
+    /// a dangling free into a released segment is fundamentally UB" reasoning in
+    /// `registry::heap_core::dealloc_routing`. This same class of "dormant"
+    /// substrate hazard is what the REACTIVATION HAZARD note in
+    /// `registry::heap_registry` warns about: a future decommit-when-empty
+    /// policy that releases segments mid-process would invalidate any naive
+    /// blanket-`'static` read here. Treat the returned reference as valid ONLY
+    /// while `base`'s segment is registered in its owning heap's table.
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn atomic_u64_at(
@@ -399,11 +457,12 @@ impl Node {
         let ptr = Self::offset(base, off) as *mut core::sync::atomic::AtomicU64;
         // SAFETY: caller guarantees `base` is a live segment base and `off` is
         // the offset of a properly-aligned `AtomicU64` field within a
-        // `#[repr(C)]` header at `base`, with `off + 8` in-bounds. The
-        // segment remains mapped for the process lifetime (freed only at
-        // `AllocCore::drop`, after adoption quiesces), so the `'static`
-        // lifetime is sound. `AtomicU64` is `Sync`, so shared atomic access
-        // from any thread is race-free.
+        // `#[repr(C)]` header at `base`, with `off + 8` in-bounds. The `'static`
+        // is sound only WHILE `base`'s segment is registered in its owning
+        // heap's table; the caller carries the per-path liveness argument (see
+        // the LIFETIME note in this fn's doc — segments ARE released mid-process,
+        // so this is not a whole-process mapping guarantee). `AtomicU64` is
+        // `Sync`, so shared atomic access from any thread is race-free.
         unsafe { &*ptr }
     }
 
@@ -447,8 +506,16 @@ impl Node {
     /// addresses (the stamp site writes the slot-field / fallback-static
     /// address). In both cases the pointee is a `'static` never dropped for the
     /// process lifetime, so the returned `'static` reference's lifetime is
-    /// sound. `AtomicPtr` is `Sync`, so shared atomic access from any thread is
-    /// race-free. Because the pointee is outside every `&mut HeapCore` retag
+    /// sound. NOTE — unlike the segment-metadata accessors above
+    /// ([`atomic_u64_at`] et al., whose `'static` is only valid WHILE the
+    /// segment stays registered because segments ARE released mid-process), the
+    /// two pointees here are GENUINELY process-`'static`: a registry slot's
+    /// `thread_free` (the slot array never shrinks) and `FALLBACK_TFS` (a
+    /// program-lifetime static). So this accessor's `'static` needs no per-path
+    /// liveness argument — the exhaustive (a)/(b) enumeration above IS the
+    /// liveness proof, and keeping it exhaustive is load-bearing. `AtomicPtr` is
+    /// `Sync`, so shared atomic access from any thread is race-free. Because the
+    /// pointee is outside every `&mut HeapCore` retag
     /// range, a remote write here also does not conflict with the owner's
     /// `alloc(&mut self)` protector (the H1 fix — see `HeapCore::thread_free`).
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
