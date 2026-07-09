@@ -3131,7 +3131,16 @@ impl AllocCore {
         // a recommit only happens on the first reuse after an empty→decommit).
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
-            os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT);
+            if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                // Honest OOM: the OS refused to re-commit the payload
+                // (commit-charge exhaustion). Do NOT clear `decommitted` and do
+                // NOT advance the bump — writing into the still-reserved page
+                // would fault, and clearing the flag would poison the segment
+                // (future carves would skip recommit and hit the same
+                // uncommitted page). Report "segment full" so the caller falls
+                // back (fresh segment / null), matching the reserve path.
+                return None;
+            }
             meta.set_decommitted(false);
         }
         // Update ONLY the bump cursor.
@@ -3214,7 +3223,13 @@ impl AllocCore {
         // mid-run, so one check covers the whole run).
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
-            os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT);
+            if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                // Honest OOM (see `carve_block`): leave the segment marked
+                // decommitted, do not advance the bump, and carve nothing so the
+                // caller falls back (fresh segment / null) instead of writing
+                // into a still-reserved page.
+                return 0;
+            }
             meta.set_decommitted(false);
         }
         // How many blocks fit from `aligned_start` to the segment end, capped by

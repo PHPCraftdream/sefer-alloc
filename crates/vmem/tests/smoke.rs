@@ -56,15 +56,46 @@ fn decommit_recommit_roundtrip() {
     // SAFETY: base is a live reservation; [span/2, span) is page-aligned and
     // contains nothing we still need.
     unsafe {
-        recommit(base, 0, 0); // empty range no-op
+        assert!(recommit(base, 0, 0), "empty range no-op reports success");
         aligned_vmem::decommit(base, span / 2, span);
-        recommit(base, span / 2, span);
+        assert!(
+            recommit(base, span / 2, span),
+            "recommit of a live reservation's decommitted range must succeed"
+        );
         // After recommit the page reads as zero (fresh OS page).
         assert_eq!(
             base.add(span / 2).read(),
             0,
             "recommitted page must be zeroed"
         );
+    }
+}
+
+#[test]
+fn recommit_is_fallible_and_reports_success_on_the_happy_path() {
+    // Non-regression for the fallible `recommit` API (bug-hunt 2026-07-09):
+    // `recommit` now returns `bool` (`true` = committed / no-op, `false` = OS
+    // refused). We cannot portably force a commit-charge failure without an FFI
+    // test seam, so this locks the SUCCESS contract: a well-formed recommit of a
+    // decommitted range on a live reservation returns `true`, and misformed /
+    // empty ranges return `true` as a no-op. A `false` from a genuine OOM is the
+    // path `carve_block`/`carve_batch` translate into a null carve.
+    let span = 2 * MIB;
+    let r = reserve_aligned(span, span).expect("reserve");
+    let base = r.as_ptr();
+    // SAFETY: base is a live reservation for `span` bytes.
+    unsafe {
+        assert!(recommit(base, 0, 0), "empty range is a success no-op");
+        assert!(recommit(base, span, span + PAGE), "start>=end no-op");
+        assert!(recommit(base, 1, PAGE), "misaligned start no-op");
+        aligned_vmem::decommit(base, span / 2, span);
+        assert!(
+            recommit(base, span / 2, span),
+            "recommit of decommitted range on a live reservation succeeds"
+        );
+        // Writing into the now-committed range must not fault.
+        base.add(span / 2).write(0x5C);
+        assert_eq!(base.add(span / 2).read(), 0x5C);
     }
 }
 

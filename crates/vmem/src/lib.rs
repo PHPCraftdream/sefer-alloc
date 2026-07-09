@@ -308,16 +308,28 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 ///
 /// `start` and `end` must be multiples of [`PAGE`] and within the span.
 ///
+/// Returns `true` if the range is now committed (or the call was a well-formed
+/// no-op — empty range), and `false` if the OS refused to commit the pages
+/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT write
+/// into `[base+start, base+end)`: the pages are still merely reserved, and a
+/// write would fault (`STATUS_ACCESS_VIOLATION` on Windows). Never panics, so
+/// it is safe to call from inside a `GlobalAlloc` implementation.
+///
+/// A contract violation on the offsets (misaligned, or `start >= end`) returns
+/// `true` as a no-op — no pages are touched, matching the pre-fallible
+/// behaviour. Only a genuine OS commit failure yields `false`.
+///
 /// # Safety
 ///
 /// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation
 /// whose `[base+start, base+end)` range was previously decommitted.
-pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) {
+#[must_use]
+pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
     if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
-        return;
+        return true;
     }
     // SAFETY: forwarded from the caller's contract.
-    unsafe { recommit_pages_impl(base, start, end) };
+    unsafe { recommit_pages_impl(base, start, end) }
 }
 
 // ---------------------------------------------------------------------------
@@ -383,19 +395,26 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize) {
 }
 
 #[cfg(all(windows, not(miri)))]
-unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) {
+unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> bool {
     let len = end - start;
     // SAFETY: caller guarantees `[base+start, +len)` is within an address-space
     // reservation owned by them; `MEM_COMMIT` re-commits the physical pages.
+    // `VirtualAlloc(MEM_COMMIT)` returns the base address on success or NULL when
+    // the system cannot back the commit (commit-charge exhaustion). We MUST
+    // surface that NULL — writing into a reserved-but-uncommitted page faults
+    // (`STATUS_ACCESS_VIOLATION`). Unlike the reserve path we do not need the
+    // returned pointer's value (the range is already at a fixed address); only
+    // its non-NULL-ness matters.
     let addr = unsafe { base.add(start) };
-    unsafe {
+    let committed = unsafe {
         VirtualAlloc(
             addr as *mut core::ffi::c_void,
             len,
             MEM_COMMIT,
             PAGE_READWRITE,
-        );
-    }
+        )
+    };
+    !committed.is_null()
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -515,9 +534,11 @@ unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize) {
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) {
+unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
     // On unix, re-access after MADV_DONTNEED is implicit — the kernel provides
-    // fresh zeroed pages on demand. No syscall needed.
+    // fresh zeroed pages on demand. No syscall needed, and this path physically
+    // cannot fail (no eager commit to refuse), so always report success.
+    true
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -635,8 +656,9 @@ unsafe fn decommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) {
 }
 
 #[cfg(miri)]
-unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) {
-    // Miri: decommit was a no-op, so recommit is too.
+unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
+    // Miri: decommit was a no-op, so recommit is too — always succeeds.
+    true
 }
 
 /// Round `addr` up to the next multiple of `align` (a power of two).

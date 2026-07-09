@@ -218,21 +218,29 @@ pub(crate) fn segments_released_total() -> u64 {
 /// `base` is the SEGMENT-aligned base. We decommit `[base + start_offset,
 /// base + end_offset)` — typically the payload region past the metadata. The
 /// offsets MUST be page-aligned and within the segment.
-#[allow(dead_code)] // M6 infrastructure; exercised by the soak test.
 pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees no live blocks exist in the range, and offsets are
-    // page-aligned. `aligned_vmem::decommit` validates the range and is a
-    // no-op under miri.
+    // page-aligned. `aligned_vmem::decommit` validates only the offset
+    // alignment and `start < end` (NOT that the range lies within the segment —
+    // that is this caller's invariant), and is a no-op under miri.
     unsafe { vmem::decommit(base, start_offset, end_offset) };
 }
 
 /// Recommit previously-decommitted pages within a segment. Thin wrapper over
 /// [`aligned_vmem::recommit`].
-#[allow(dead_code)] // M6 infrastructure; future heap integration.
-pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
+///
+/// Returns `true` if the range is now committed (writes into it are safe), and
+/// `false` if the OS refused the commit (commit-charge exhaustion / true OOM).
+/// On `false` the caller MUST NOT write into the range and MUST leave the
+/// segment marked decommitted — this is an honest OOM, propagated as a null
+/// carve, never a fault or panic (`sefer_alloc` OOM contract).
+#[must_use]
+pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator,
     // and `[base + start_offset, base + end_offset)` was previously decommitted.
-    // `aligned_vmem::recommit` validates the range and is a no-op under miri.
-    unsafe { vmem::recommit(base, start_offset, end_offset) };
+    // `aligned_vmem::recommit` validates only the offset alignment and
+    // `start < end` (NOT range containment — that is this caller's invariant),
+    // and is a no-op that reports success under miri.
+    unsafe { vmem::recommit(base, start_offset, end_offset) }
 }
