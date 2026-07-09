@@ -32,7 +32,7 @@
 #![cfg(feature = "alloc-core")]
 
 use core::alloc::Layout;
-use sefer_alloc::AllocCore;
+use sefer_alloc::{AllocCore, SegmentLayout};
 
 /// (a) Grow a Large alloc that FITS span_usable: returns the SAME pointer,
 /// the original prefix bytes are preserved, the grown tail is writable.
@@ -260,9 +260,11 @@ fn shrink_large_does_not_pin() {
         }
     }
 
-    // Shrink to 128 KiB — still Large, but smaller. The slow path should
-    // relocate (alloc a new, smaller segment + copy + dealloc old).
-    let new_size = 128 * 1024;
+    // Shrink to just above SMALL_MAX — still Large, but smaller. (The old value
+    // 128 KiB was a SMALL class, so this test did NOT exercise Large-shrink at
+    // all.) Derived from the constant so a size-class rebuild cannot demote it.
+    let new_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
+    assert!(new_size > SegmentLayout::SMALL_MAX && new_size < old_size);
     let new_ptr = ac.realloc(ptr, old_layout, new_size);
     assert!(!new_ptr.is_null());
 
@@ -275,6 +277,61 @@ fn shrink_large_does_not_pin() {
                 "prefix byte {i} lost during Large shrink"
             );
         }
+    }
+
+    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+}
+
+/// (e2) Large → strictly-smaller-Large SHRINK across segment spans (multi-
+/// segment source → single-segment target). The source (8 MiB) spans TWO
+/// SEGMENTs (4 MiB each); shrinking to 5 MiB is still genuinely Large but
+/// needs a different segment span, so the realloc slow leg must relocate
+/// (alloc a fresh smaller large segment + copy + dealloc old). This closes the
+/// coverage hole: `grow_beyond_span_relocates_and_preserves` only covers the
+/// GROW direction of the relocating slow leg; nothing covered the SHRINK
+/// direction of a genuine Large→Large move until now.
+#[test]
+fn shrink_large_to_smaller_large_relocates_and_preserves() {
+    let mut ac = AllocCore::new().expect("primordial");
+
+    // 8 MiB — spans two 4 MiB SEGMENTs; unambiguously Large.
+    let old_size = 8 * 1024 * 1024;
+    assert!(old_size > SegmentLayout::SMALL_MAX);
+    let old_layout = Layout::from_size_align(old_size, 16).unwrap();
+    let ptr = ac.alloc(old_layout);
+    assert!(!ptr.is_null());
+
+    // Write a marker across a prefix wider than one page so a relocating copy
+    // is verifiable.
+    unsafe {
+        for i in 0..4096usize {
+            ptr.add(i).write((i as u8).wrapping_add(0x77));
+        }
+    }
+
+    // 5 MiB — still Large, still multi-segment, but strictly smaller than the
+    // source. Shrink never takes the in-place fast path, so this drives the
+    // relocating slow leg (alloc+copy+dealloc).
+    let new_size = 5 * 1024 * 1024;
+    assert!(new_size > SegmentLayout::SMALL_MAX && new_size < old_size);
+    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    assert!(!new_ptr.is_null());
+
+    // The min(old,new) prefix must survive the move.
+    unsafe {
+        for i in 0..4096usize {
+            assert_eq!(
+                new_ptr.add(i).read(),
+                (i as u8).wrapping_add(0x77),
+                "prefix byte {i} lost during Large→smaller-Large shrink relocation"
+            );
+        }
+    }
+
+    // The whole shrunk block must be writable (committed) end-to-end.
+    unsafe {
+        new_ptr.add(new_size - 1).write(0x99);
+        assert_eq!(new_ptr.add(new_size - 1).read(), 0x99);
     }
 
     ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());

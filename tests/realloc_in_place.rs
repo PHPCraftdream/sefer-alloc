@@ -28,7 +28,7 @@
 #![cfg(feature = "alloc-core")]
 
 use core::alloc::Layout;
-use sefer_alloc::AllocCore;
+use sefer_alloc::{AllocCore, SegmentLayout};
 
 /// Realloc to the exact same size in the same class (no-op case).
 #[test]
@@ -176,8 +176,12 @@ fn realloc_cross_class_up_moves_and_preserves_data() {
 #[test]
 fn realloc_large_to_large_preserves_data() {
     let mut ac = AllocCore::new().expect("primordial");
-    // Use a size larger than SMALL_MAX so both paths go through the large path.
-    let old_size = 128 * 1024; // 128 KiB — definitely large.
+    // Both sizes must exceed SMALL_MAX (~253 KiB) so both the source and the
+    // target go through the large (dedicated-segment) path — 128 KiB, the old
+    // value, was actually a SMALL class and never exercised the large path.
+    // Derive from the constant so a size-class rebuild cannot silently demote.
+    let old_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE; // just above SMALL_MAX
+    assert!(old_size > SegmentLayout::SMALL_MAX);
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
@@ -188,7 +192,8 @@ fn realloc_large_to_large_preserves_data() {
         }
     }
 
-    let new_size = 256 * 1024;
+    let new_size = old_size + 512 * 1024; // grow, still Large
+    assert!(new_size > SegmentLayout::SMALL_MAX);
     let new_ptr = ac.realloc(ptr, old_layout, new_size);
     assert!(!new_ptr.is_null());
 

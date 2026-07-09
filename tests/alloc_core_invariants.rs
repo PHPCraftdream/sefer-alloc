@@ -82,14 +82,23 @@ fn m2_double_free_is_noop() {
     let layout = Layout::from_size_align(64, 8).unwrap();
     let ptr = a.alloc(layout);
     a.dealloc(ptr, layout);
-    // Second dealloc of the same pointer must be a no-op (not crash, not
-    // corrupt). The defensive foreign/double-free check zeroes the header
-    // magic on the first dealloc for large, and small free-lists simply
-    // re-push (which is benign — the block just returns to the free list).
+    // Second dealloc of the same pointer must be a no-op (Phase 13.4a: the
+    // per-segment bitmap guard rejects the double-free — the block is NOT
+    // pushed onto the free list a second time). If the guard were absent, the
+    // second dealloc would corrupt the free list (a self-loop at the head), so
+    // a subsequent alloc would re-issue the SAME looped block.
     a.dealloc(ptr, layout);
-    // Allocator still works afterwards.
+    // Two consecutive allocs must yield DISTINCT blocks. Under a broken M2
+    // (self-loop from the double-add) the head would keep returning the same
+    // node, so ptr1 == ptr2 — this assert is the load-bearing detector.
+    let ptr1 = a.alloc(layout);
+    assert!(!ptr1.is_null());
     let ptr2 = a.alloc(layout);
     assert!(!ptr2.is_null());
+    assert_ne!(
+        ptr1, ptr2,
+        "double-free corrupted the free list — same block issued twice (M2 guard failed)"
+    );
 }
 
 #[test]
@@ -201,6 +210,15 @@ fn segment_of_finds_our_segment_base() {
         (ptr as usize) >= base && (ptr as usize) < base + SegmentLayout::SEGMENT,
         "ptr not within its computed segment"
     );
+    // Load-bearing detector: the derived base must be a base this allocator
+    // actually OWNS (registered in its segment table). The two asserts above
+    // are tautologies of the SEGMENT mask (true for any pointer); this one
+    // exercises the real membership routing (`contains_base`) and fails if the
+    // segment is not registered — i.e. if routing is broken.
+    assert!(
+        a.dbg_contains_base(ptr),
+        "segment base of a live pointer is not owned by the allocator (M7 routing failed)"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -303,8 +321,14 @@ fn free_list_reuses_freed_blocks() {
 fn many_large_allocs_then_free() {
     let mut a = AllocCore::new().unwrap();
     let mut ptrs = Vec::new();
+    // Every size must be strictly ABOVE SMALL_MAX so these are genuinely Large
+    // allocations (the dedicated-segment path), not small classes. Derived from
+    // the constant, not a literal, so a size-class table rebuild cannot silently
+    // demote these back into the small range.
+    let base = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
     for i in 0..20usize {
-        let size = 50_000 * (i + 1);
+        let size = base + 50_000 * i;
+        assert!(size > SegmentLayout::SMALL_MAX, "size {size} not Large");
         let layout = Layout::from_size_align(size, 4096).unwrap();
         let p = a.alloc(layout);
         assert!(!p.is_null(), "large alloc {i} failed");

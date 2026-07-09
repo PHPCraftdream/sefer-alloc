@@ -79,11 +79,22 @@ fn m2_double_free_does_not_crash() {
     let layout = Layout::from_size_align(64, 8).unwrap();
     let p = h.alloc(layout);
     h.dealloc(p, layout);
-    // Second dealloc: pushes again onto the free list. Not ideal but not UB.
-    // The allocator must continue to function.
+    // Second dealloc: the Phase 13.4a per-segment bitmap guard rejects this
+    // double-free — the block is NOT pushed again (an earlier, pre-13.4a
+    // version re-pushed, which was benign but not detectable). If the guard
+    // were absent, the double-add would self-loop the free-list head, causing
+    // the same block to be re-issued on consecutive allocs.
     h.dealloc(p, layout);
+    // Two consecutive allocs must yield DISTINCT blocks: under a broken M2 the
+    // looped head returns the same node twice. This assert is the detector.
+    let p1 = h.alloc(layout);
+    assert!(!p1.is_null());
     let p2 = h.alloc(layout);
     assert!(!p2.is_null());
+    assert_ne!(
+        p1, p2,
+        "double-free corrupted the free list — same block issued twice (M2 guard failed)"
+    );
 }
 
 // ---------------------------------------------------------------------------
