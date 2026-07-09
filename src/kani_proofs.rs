@@ -128,6 +128,14 @@ mod node_proofs {
     }
 }
 
+// Kani does NOT support concurrency: `crossbeam_epoch::pin()` uses TLS +
+// epoch machinery that CBMC models as sequential with fictitious addresses,
+// causing `dereference failure: invalid integer address` on every harness that
+// calls `pin()`. The concurrent invariants of `AtomicSlot` (CAS uniqueness,
+// no torn reads) are already verified by loom (11 harnesses in CI); Kani would
+// only prove the sequential projection — strictly weaker. We therefore keep
+// only the two harnesses that exercise pure-sequential branches (no `pin()`):
+// the saturation guard and the vacant-drop no-op.
 #[cfg(all(kani, feature = "experimental"))]
 mod hand_proofs {
     use crate::concurrent::hand::{AtomicSlot, EvictOutcome};
@@ -140,61 +148,7 @@ mod hand_proofs {
         assert_eq!(slot.generation(), 0);
     }
 
-    // ── 2. install → read_with round-trip returns the installed value ────
-
-    #[kani::proof]
-    fn install_read_roundtrip() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let val: u32 = kani::any();
-        let gen = slot.install(val, &guard);
-        let got = slot.read_with(gen, &guard, |v| *v);
-        assert_eq!(got, Some(val));
-    }
-
-    // ── 3. read_with a stale (gen+1) generation returns None ─────────────
-
-    #[kani::proof]
-    fn read_stale_generation_returns_none() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let val: u32 = kani::any();
-        let gen = slot.install(val, &guard);
-        kani::assume(gen < u32::MAX);
-        let stale_gen = gen + 1;
-        let got = slot.read_with(stale_gen, &guard, |v| *v);
-        assert_eq!(got, None);
-    }
-
-    // ── 4. try_evict_at at the current generation wins exactly once ──────
-
-    #[kani::proof]
-    fn evict_wins_once() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let val: u32 = kani::any();
-        let gen = slot.install(val, &guard);
-        let outcome = slot.try_evict_at(gen, &guard);
-        assert_eq!(outcome, EvictOutcome::Evicted { reusable: true });
-    }
-
-    // ── 5. a second try_evict_at at the same (now stale) gen returns Stale
-
-    #[kani::proof]
-    fn evict_stale_returns_stale() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let val: u32 = kani::any();
-        let gen = slot.install(val, &guard);
-        // First eviction succeeds.
-        let first = slot.try_evict_at(gen, &guard);
-        assert_eq!(first, EvictOutcome::Evicted { reusable: true });
-        // Second eviction at the same gen is stale (generation already bumped).
-        let second = slot.try_evict_at(gen, &guard);
-        assert_eq!(second, EvictOutcome::Stale);
-    }
-
-    // ── 6. try_evict_at(u32::MAX, _) is Stale (saturation guard) ─────────
+    // ── 2. try_evict_at(u32::MAX, _) is Stale (saturation guard) ─────────
 
     #[kani::proof]
     fn evict_max_generation_returns_stale() {
@@ -204,20 +158,7 @@ mod hand_proofs {
         assert_eq!(outcome, EvictOutcome::Stale);
     }
 
-    // ── 7. read_with after eviction returns None ─────────────────────────
-
-    #[kani::proof]
-    fn read_after_evict_returns_none() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let val: u32 = kani::any();
-        let gen = slot.install(val, &guard);
-        let _ = slot.try_evict_at(gen, &guard);
-        let got = slot.read_with(gen, &guard, |v| *v);
-        assert_eq!(got, None);
-    }
-
-    // ── 8. drop_value on a vacant slot is a no-op (does not panic) ───────
+    // ── 3. drop_value on a vacant slot is a no-op (does not panic) ───────
 
     #[kani::proof]
     fn drop_value_vacant_is_noop() {
