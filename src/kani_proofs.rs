@@ -128,37 +128,21 @@ mod node_proofs {
     }
 }
 
-// Kani does NOT support concurrency: `crossbeam_epoch::pin()` uses TLS +
-// epoch machinery that CBMC models as sequential with fictitious addresses,
-// causing `dereference failure: invalid integer address` on every harness that
-// calls `pin()`. The concurrent invariants of `AtomicSlot` (CAS uniqueness,
-// no torn reads) are already verified by loom (11 harnesses in CI); Kani would
-// only prove the sequential projection — strictly weaker. We therefore keep
-// only the two harnesses that exercise pure-sequential branches (no `pin()`):
-// the saturation guard and the vacant-drop no-op.
+// Kani does NOT support concurrency: `crossbeam_epoch::pin()` uses TLS
+// (`pthread_key_create`) which CBMC cannot model, so every harness that calls
+// `pin()` fails with "call to foreign C function pthread_key_create is not
+// currently supported". The concurrent invariants of `AtomicSlot` (CAS
+// uniqueness, no torn reads) are already verified by loom (11 harnesses in
+// CI). We keep only harnesses that never touch the epoch runtime.
 #[cfg(all(kani, feature = "experimental"))]
 mod hand_proofs {
-    use crate::concurrent::hand::{AtomicSlot, EvictOutcome};
-
-    // ── 1. vacant() starts at INITIAL_GENERATION (0) ─────────────────────
+    use crate::concurrent::hand::AtomicSlot;
 
     #[kani::proof]
-    fn vacant_is_null() {
+    fn vacant_starts_at_generation_zero() {
         let slot = AtomicSlot::<u32>::vacant();
         assert_eq!(slot.generation(), 0);
     }
-
-    // ── 2. try_evict_at(u32::MAX, _) is Stale (saturation guard) ─────────
-
-    #[kani::proof]
-    fn evict_max_generation_returns_stale() {
-        let slot = AtomicSlot::<u32>::vacant();
-        let guard = crossbeam_epoch::pin();
-        let outcome = slot.try_evict_at(u32::MAX, &guard);
-        assert_eq!(outcome, EvictOutcome::Stale);
-    }
-
-    // ── 3. drop_value on a vacant slot is a no-op (does not panic) ───────
 
     #[kani::proof]
     fn drop_value_vacant_is_noop() {
