@@ -13,7 +13,10 @@ does). The only C dependency in the repository is the optional `mimalloc`
 dev-dependency used as a baseline in benchmarks — never on a consumer's
 runtime path.
 
-**Date:** 2026-06-28. Current mainline: commit 4e034e5.
+**Date:** 2026-07-10 (as of commit 4a4ff5e). Numbers and inventories below are
+snapshots as of this commit; they may drift with later commits — treat the
+date/commit stamp as the freshness marker and re-verify against the source files
+cited in each section if in doubt.
 
 ---
 
@@ -67,11 +70,32 @@ API surface:
 - `SeferAlloc` -- `unsafe impl GlobalAlloc` over the per-thread segment heap.
   Enabled by feature `alloc-global`; cross-thread `dealloc` requires
   `alloc-xthread`. The `production` alias bundles
-  `alloc-global + alloc-xthread + alloc-decommit` as the recommended
+  `alloc-global + alloc-xthread + alloc-decommit + fastbin` as the recommended
   long-running deployment set.
 
 Full safety invariants for both faces: [INVARIANTS.md](INVARIANTS.md)
 (I1-I6 for the Handle face, M1-M8 for the alloc face).
+
+**Additional opt-in features** (default OFF, NOT part of `production` — see the
+feature table in [README.md](../README.md#feature-flags)):
+
+- `hardened` (additive over `fastbin`) — paranoid deploy hardening: an
+  interior-pointer free guard (`off % block_size != 0` rejected as a no-op) on
+  both own-thread free faces, plus the **X7 per-granule generational ring**: a
+  per-granule generation counter stamped on each `RemoteFreeRing` note and
+  dropped on drain if it has advanced, closing the *re-issue-before-drain* leg
+  of the ring↔magazine cross-thread double-free residual of M2 (except the
+  1/256 wrap — the accepted probabilistic residual). Costs a modulo-per-free, so
+  it is off the production fast path.
+- `alloc-stats` — per-hit diagnostic counters: bumps `stats().tcache_hits`
+  (magazine) and `stats().large_cache_hits` (large cache) on each hit. The
+  per-hit increment is compiled out when off (those two fields then read 0); the
+  counter storage is always present so toggling never changes layout/ABI.
+- `alloc-runfreelist` — **experimental** run-encoded freelist storage
+  (`RunStack`): a per-segment metadata region that (in later phases) will encode
+  contiguous freed-block runs as compact `(start_off, count)` descriptors
+  instead of per-block intrusive `next` writes. Its go/no-go verdict is deferred;
+  with it off the byte layout is identical to the pre-feature build.
 
 ---
 
@@ -357,11 +381,13 @@ Full argument: [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md) §1.
 cache, every large alloc+free round-trips through the OS. OPT-E adds a
 per-`AllocCore` free-cache (`LARGE_CACHE_SLOTS = 8`): a freed large
 segment is held committed rather than munmapped. On a cache hit, the next
-large alloc reuses it with no OS call. Current-tree measurement on 4 MiB
-alloc+free: **~58 ns vs ~779 ns for mimalloc (~13× faster)**; 16 MiB
-~63 ns vs ~890 ns (~14× faster); 64 MiB ~62 ns vs ~2.14 µs (~34× faster)
-— see the current-tree numbers in the README Performance table. See
-[ALLOC_BENCH.md](ALLOC_BENCH.md) OPT-E section.
+large alloc reuses it with no OS call. Flagship measurement on 4 MiB
+alloc+free: **~58.6 ns vs ~716 ns for mimalloc (~12.2× faster)** (source:
+[ALLOC_BENCH.md](ALLOC_BENCH.md) large alloc+free table, as of commit 4a4ff5e);
+64 MiB **~60.8 ns (~33× faster than mimalloc)** — same source/run, absolute
+mimalloc figure omitted here to avoid pairing it with a different bench
+run's number; see the full table for the paired values. See the
+[ALLOC_BENCH.md](ALLOC_BENCH.md) OPT-E section for the full table.
 
 **Adaptive policy** (tasks #90-#92, the "client controls / we ship sane
 defaults" model):
@@ -448,7 +474,7 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (103 files) |
+| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (119 files, as of commit 4a4ff5e) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs` |
 | loom | Cross-thread protocol correctness under bounded interleavings (11 models) | `tests/loom_bootstrap_cas.rs`, `tests/loom_deferred_large.rs`, `tests/loom_epoch.rs`, `tests/loom_fallback_init.rs`, `tests/loom_free_slots_aba.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_registry.rs`, `tests/loom_remote_ring.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
@@ -505,7 +531,9 @@ this host that `SeferAlloc` does not exhibit.
 
 ### Large alloc / free (after OPT-E large-segment cache)
 
-`SeferAlloc` 4 MiB alloc+free: **42 ns** vs mimalloc 788 ns -- **18x faster**.
+`SeferAlloc` 4 MiB alloc+free: **~58.6 ns** vs mimalloc ~716 ns -- **~12.2×
+faster** (source: [ALLOC_BENCH.md](ALLOC_BENCH.md) large alloc+free table, as of
+commit 4a4ff5e; the same number is cited in §6 above).
 The cache eliminates the OS round-trip on repeated large alloc+free cycles.
 Without the cache (before #65) every large `dealloc` called `munmap`/
 `VirtualFree`, making large allocs significantly slower than mimalloc.

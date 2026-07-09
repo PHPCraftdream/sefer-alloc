@@ -1,5 +1,12 @@
 # Design
 
+> ⚠️ **Historical design document** — see
+> [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) for the current unsafe-seam inventory
+> and architecture. Sections below describe the early plan (e.g. a "byte tier
+> (Phase 4)" that was superseded, and a "one screenful of `unsafe`" promise that
+> predates the current inventory of 10 confined-unsafe `src` modules plus 3
+> unsafe companion crates). Kept for provenance, not as the current spec.
+
 ## Three organs
 
 | Organ | Responsibility | Safety |

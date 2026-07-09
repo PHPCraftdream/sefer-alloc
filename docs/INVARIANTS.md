@@ -1,8 +1,9 @@
 # Safety invariants
 
 These are the properties `sefer-alloc` upholds. They are encoded as tests
-(unit tests in `src/lib.rs` plus the proptest harness in `tests/differential.rs`)
-and form the spec that every future change must keep green.
+(`tests/region_invariants.rs`, `tests/compaction.rs`, and the proptest harness
+in `tests/differential.rs`) and form the spec that every future change must keep
+green.
 
 - **I1 — resolution.** A handle returned by `insert` resolves via `get` to the
   inserted value until it is `remove`d.
@@ -16,9 +17,10 @@ and form the spec that every future change must keep green.
 - **I5 — drop-once.** Every live value is dropped exactly once: on `remove`
   (returned to the caller) or on `Region` drop. None is dropped twice; none is
   leaked.
-- **I6 — compaction (Phase 2, not yet implemented).** After compaction, every
+- **I6 — compaction (Phase 2, implemented).** After compaction, every
   live handle still resolves to the same logical value, and reclaimed slots are
-  reused. See `docs/PLAN.md`.
+  reused. Compaction-by-construction is provided by the slotmap backing and is
+  verified in `tests/compaction.rs`. See `docs/PLAN.md`.
 
 ## Allocator invariants (Phase 8+, `alloc-core`)
 
@@ -46,8 +48,9 @@ source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
   `docs/FASTBIN_DESIGN.md`.
 - **M3 — no overlap.** Two simultaneously-live allocations never share a byte.
 - **M4 — alignment & size fidelity.** The class chosen always satisfies size and
-  alignment; large/huge allocations honour arbitrary alignment via a dedicated
-  segment.
+  alignment; large/huge allocations honour alignment up to `SEGMENT` (4 MiB) via
+  a dedicated segment. Requests with `align >= SEGMENT` are rejected with `null`
+  by design (task #130) — the dedicated-segment path cannot satisfy them.
 - **M5 — reentrancy-freedom (load-bearing).** No entry point on the
   alloc/dealloc path allocates through the global allocator, takes a global lock
   that could deadlock against itself, or recurses. Proven structurally (no
@@ -59,8 +62,10 @@ source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
   WITHOUT miri so the production path's freedom from `std::alloc` is still shown.
 - **M6 — OS return (Phase 10).** Memory freed back to empty segments is
   eventually returned to the OS (decommit); steady-state RSS does not grow
-  unboundedly under churn. (Phase 8 frees all segments at `AllocCore` drop;
-  eager decommit lands in Phase 10.)
+  unboundedly under churn. Eager decommit was implemented in Phase 35 (feature
+  `alloc-decommit`, part of the `production` bundle): an empty small segment's
+  payload pages are decommitted when its live-block count drops to zero and
+  recommitted on first reuse.
 - **M7 — owner routing.** A pointer's owning segment is found in O(1) via
   `segment_of(ptr) = ptr & ~(SEGMENT-1)`; cross-thread free (Phase 10) reaches
   exactly the owning heap and reclaims exactly once.

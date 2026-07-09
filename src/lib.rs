@@ -65,7 +65,7 @@
 //! (this crate's other face) are `no_std` + `alloc`-only and unaffected.
 //!
 //! See `docs/INVARIANTS.md` for the safety invariants this crate upholds and
-//! `docs/DESIGN.md` for the architecture.
+//! `docs/ARCHITECTURE.md` for the architecture.
 //!
 //! ## Example
 //!

@@ -613,8 +613,14 @@ pub(crate) fn align_up(n: usize, a: usize) -> usize {
 /// byte each, carved from the segment right after the header.
 ///
 /// Each entry is a [`PageClass`] discriminant byte telling which size class
-/// owns the page (or `Free` / `Meta`). The Cartographer consults this on
-/// `dealloc` to route a freed block to its page's class free list.
+/// owns the page (or `Free` / `Meta`).
+///
+/// NOTE (post-Phase 13.3): this table is **NOT load-bearing for class routing**;
+/// do NOT derive block classes from it. No production `dealloc` path derives a
+/// freed block's class from `PageMap` — the class is carried authoritatively by
+/// the caller's `Layout` (own-thread) or stamped into the `RemoteFreeRing` entry
+/// (cross-thread). Deriving a class here would reintroduce the mixed-class /
+/// stale-cursor drain-reclaim bug fixed in §13 of `RACE_DRAIN_RECLAIM.md`.
 pub(crate) struct PageMap {
     /// Absolute address of the first entry (we store the absolute `*mut u8`
     /// so reads need no segment-base arithmetic).

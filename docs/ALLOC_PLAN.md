@@ -284,6 +284,12 @@ hardening gate.
 
 ## 6. Where `unsafe` lives (the structural promise, extended)
 
+> ⚠️ **Historical (this section only)** — the "two thin seams / two screenfuls"
+> framing below predates the current inventory. See
+> [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) "Confined unsafe seams" for the
+> authoritative current inventory (10 confined-unsafe `src` modules plus 3
+> unsafe companion crates). Kept for provenance.
+
 Two thin seams, compiler-enforced (`deny(unsafe_code)` crate-wide; `allow` only
 in these), plus the existing Phase-3b/4 organs during the transition:
 
