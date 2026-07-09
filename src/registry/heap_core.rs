@@ -123,94 +123,69 @@ pub struct HeapCore {
     /// state lives in each segment's `BinTable`, so this is the heap's entire
     /// small-allocation engine.
     pub(crate) core: AllocCore,
-    /// The cross-thread free-stack head. Phase 12.5: this is an INLINE
-    /// `AtomicPtr<u8>` (not a `Box<AtomicPtr<u8>>`) so that
-    /// [`install_thread_free`](Self::install_thread_free) performs NO
-    /// `std::alloc` — it is a no-op (the field is initialised to null in
-    /// [`new`](Self::new), which is M5-clean). This is load-bearing for the
-    /// `alloc-global + alloc-xthread` combo: under `#[global_allocator]`, a
-    /// `Box::new` on the TLS bind path would recurse into `SeferAlloc::alloc`
-    /// → `current_for_alloc` → `bind_slow` → `install_thread_free` → `Box::new`
-    /// → infinite recursion → stack overflow. The inline field breaks that
-    /// cycle: the head's address is `&self.thread_free`, stable for the
-    /// slot's lifetime (the `HeapCore` lives in the `'static` registry slot
-    /// array), so segment headers can store a raw `*const AtomicPtr<u8>` to
-    /// it.
+    /// Stable `&'static` handle to the cross-thread free-stack head / identity
+    /// stamp — which, task H1, now lives in the OWNING
+    /// [`HeapSlot::thread_free`](super::heap_slot::HeapSlot::thread_free)
+    /// (a `Sync`, process-`'static` slot field) rather than INLINE in this
+    /// `HeapCore`.
+    ///
+    /// **Why it moved out of `HeapCore` (task H1 — the W3 hoist, repeated).**
+    /// The head is CASed by REMOTE threads (a cross-thread free of a Large
+    /// segment → [`push_large_deferred_free`](Self::push_large_deferred_free) →
+    /// a `compare_exchange` reconstructed through EXPOSED provenance). When the
+    /// `AtomicPtr<u8>` lived INSIDE `HeapCore`, that foreign write landed inside
+    /// the byte range of the owner's protected `&mut HeapCore` (materialised on
+    /// EVERY `alloc`/`dealloc`) — a protector / data-race violation under
+    /// Stacked/Tree Borrows, empirically confirmed by miri (a retag-write vs.
+    /// atomic-load data race between the owner's
+    /// `stamp_segment_owner(&mut self)` fn-entry retag and the remote's
+    /// `head.load()`). This is EXACTLY the conflict class W3 already paid to fix
+    /// for the diagnostic counters (there a foreign READ; here a foreign WRITE,
+    /// strictly stronger). See
+    /// `tests/regression_xthread_thread_free_alias_miri.rs` for the reproducer.
+    ///
+    /// Storing the head in the `HeapSlot` (shared by design, `Sync`) removes it
+    /// from every `&mut HeapCore` retag range: the owner reaches it through this
+    /// `&'static` handle (planted at
+    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim) time,
+    /// exactly like [`tcache_hits`](Self::tcache_hits)), and remote freers reach
+    /// the SAME slot word through the `owner_thread_free_at(base)` segment-header
+    /// stamp — which now stores the slot field's stable `'static` address.
+    ///
+    /// **M5-clean, no recursion.** Like the old inline field, resolving this
+    /// handle allocates NOTHING (the slot's `thread_free` is null-initialised in
+    /// the registry bootstrap's zeroed pages), so
+    /// [`install_thread_free`](Self::install_thread_free) is still a no-op and
+    /// the `#[global_allocator]` bind-path recursion the inline field was
+    /// introduced to avoid (`Box::new` → `SeferAlloc::alloc` → …) remains
+    /// impossible.
+    ///
+    /// **Dual role, unchanged.** The head's ADDRESS is this heap's identity
+    /// token, compared by `dealloc_routing` (`owner_thread_free_at(base) == our
+    /// head` — an address compare that never dereferences the value); its VALUE
+    /// (`AtomicPtr<u8>`) is the head of this heap's deferred-free Treiber stack
+    /// over Large segment BASES (0.3.0 task A1 — reclaims cross-thread-freed
+    /// Large segments, drained on the owner's `alloc_large` slow path via
+    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free)). The two
+    /// uses touch disjoint parts of the same word. Single-consumer (only the
+    /// owner pops), multi-producer (any remote may push) — a plain CAS-loop
+    /// push needs no ABA tag. `null` VALUE = empty stack.
+    ///
+    /// ⚠️ The `abandon_segments` reactivation hazard on the intrusive
+    /// `next_abandoned` link is unchanged — see
+    /// `HeapRegistry::abandon_segments`.
+    ///
+    /// Stored as a SAFE `Option<&'static _>` (not a raw pointer): this module is
+    /// `#![deny(unsafe_code)]`, so a raw-pointer deref would be a hard error.
+    /// The `&'static` is minted by `HeapRegistry::claim` / `fallback::heap_ptr`
+    /// (both in unsafe-permitted seams) from the owning slot's / the
+    /// `FALLBACK_TFS` static's `AtomicPtr`. `None` only in the transient
+    /// pre-bind window (never observed on any alloc/free path — every stamp /
+    /// drain / push runs only after the handle was planted).
     ///
     /// Only present under `alloc-xthread` (the cross-thread feature).
-    /// 0.3.0 (task A1): ALSO doubles as the head of this heap's per-heap
-    /// deferred-free Treiber stack for Large/huge segments freed by a
-    /// REMOTE thread.
-    ///
-    /// **Background:** under the Phase 12.5 shard model the intrusive TFS
-    /// this field was originally built for is gone — cross-thread frees of
-    /// SMALL blocks route through each segment's `RemoteFreeRing`, not
-    /// through this head. `thread_free` therefore serves ONLY as an identity
-    /// stamp (`owner_thread_free_at(base) == &heap.thread_free` is how a
-    /// remote freer recognises "this segment belongs to that heap" — see
-    /// `dealloc_routing`); its `AtomicPtr<u8>` VALUE was otherwise always
-    /// null and unused.
-    ///
-    /// **The A1 leak this reuse fixes:** `dealloc_routing`'s Large branch
-    /// used to be a bare `return` (a permanent no-op) whenever a Large
-    /// segment was freed by a thread other than its owner — the segment
-    /// (whole 4+ MiB, or more for an oversized allocation) was never
-    /// released and its `SegmentTable` slot was never recycled: a silent,
-    /// permanent leak under any workload that allocates-here/frees-there for
-    /// large blocks (e.g. async runtimes migrating tasks across worker
-    /// threads).
-    ///
-    /// **The fix:** since `thread_free` is idle, we press it into service as
-    /// a SECOND role — a Treiber-stack head over segment BASES (not small
-    /// blocks). A remote free of a Large segment now pushes the segment's
-    /// `base` onto this stack (via
-    /// [`push_large_deferred_free`](Self::push_large_deferred_free)) instead
-    /// of no-op'ing. The OWNER thread drains the stack lazily, on its own
-    /// `alloc_large` slow path (via
-    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free)),
-    /// before reserving a fresh segment — so a cross-thread-freed large
-    /// segment is recycled (via `AllocCore::reclaim_large_segment`, which
-    /// either deposits it in the `alloc-decommit` large-cache or releases it
-    /// to the OS) the next time this heap does a large allocation.
-    ///
-    /// **No conflation with the identity-stamp role:** the identity check
-    /// (`owner_tf == our_head`, comparing the `*const AtomicPtr<u8>`
-    /// ADDRESS) never dereferences the pointed-to `AtomicPtr<u8>` VALUE, so
-    /// stuffing a segment base into that value cell does not corrupt the
-    /// stamp comparison — the two roles use disjoint parts of the same word
-    /// (the address is the identity; the pointee is the stack head).
-    ///
-    /// **Structurally identical to** the Phase 12.4
-    /// `Registry::abandoned_segs` intrusive Treiber stack
-    /// (`push_abandoned_segment_into`/`pop_abandoned_segment` in
-    /// `heap_registry.rs`) — same push/CAS/pop shape — but PER-HEAP (this
-    /// field, not the global registry head) and reusing each segment's
-    /// `next_abandoned` header field as the intrusive link.
-    ///
-    /// ⚠️ **This field-sharing is safe ONLY while `abandon_segments` stays
-    /// unreachable from production** (Phase 12.5's "release the slot only"
-    /// discipline — see its doc comment in `heap_registry.rs`). It is NOT a
-    /// structural guarantee: both this local stack and the global
-    /// abandoned-segs stack write the SAME `next_abandoned` field, and if the
-    /// global walk is ever reactivated (e.g. a future decommit-when-empty
-    /// policy — see the `⚠️ REACTIVATION HAZARD` note on
-    /// `HeapRegistry::abandon_segments`) without excluding Large segments, a
-    /// segment mid-flight on THIS stack can have its link silently
-    /// overwritten by that walk — corrupting this stack's chain (leak of
-    /// everything behind it, and a possible wild-pointer read on a later
-    /// local pop). Read that note in full before wiring `abandon_segments`
-    /// back onto any hot path.
-    ///
-    /// No ABA tag is needed here (unlike the global stack): only the OWNER
-    /// thread ever pops from this stack (single consumer), so the classic
-    /// multi-popper ABA race does not apply; multiple REMOTE threads may push
-    /// concurrently (multi-producer), which a plain CAS-loop push handles
-    /// without a tag.
-    ///
-    /// `null` = empty stack (steady state — most workloads never hit this
-    /// path).
     #[cfg(feature = "alloc-xthread")]
-    pub(crate) thread_free: AtomicPtr<u8>,
+    pub(crate) thread_free: Option<&'static AtomicPtr<u8>>,
 
     /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
     /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
@@ -320,8 +295,14 @@ impl HeapCore {
         Some(Self {
             id,
             core,
+            // task H1: the head now lives in the owning slot; this handle is
+            // planted by `HeapRegistry::claim` (via `bind_thread_free`) —
+            // or by `fallback::heap_ptr` for the fallback heap — right after
+            // the slot binds. `None` until then (never observed on any
+            // alloc/free path — stamping/draining/pushing all run only after
+            // the handle was planted).
             #[cfg(feature = "alloc-xthread")]
-            thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            thread_free: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
@@ -351,8 +332,14 @@ impl HeapCore {
         Some(Self {
             id,
             core,
+            // task H1: the head now lives in the owning slot; this handle is
+            // planted by `HeapRegistry::claim` (via `bind_thread_free`) —
+            // or by `fallback::heap_ptr` for the fallback heap — right after
+            // the slot binds. `None` until then (never observed on any
+            // alloc/free path — stamping/draining/pushing all run only after
+            // the handle was planted).
             #[cfg(feature = "alloc-xthread")]
-            thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            thread_free: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
@@ -474,21 +461,44 @@ impl HeapCore {
     /// Only compiled under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn install_thread_free(&mut self) -> *const AtomicPtr<u8> {
-        // The field is already initialised (null) in `new`; we only hand out
-        // its address. The address is stable for the slot's lifetime (the
-        // `HeapCore` lives in the `'static` registry slot array).
-        &self.thread_free as *const AtomicPtr<u8>
+        // task H1: the head lives in the owning slot (planted via
+        // `bind_thread_free` at claim time); we only hand out its stable
+        // `'static` address. Address stability is unchanged (the slot lives in
+        // the `'static` registry array). `None` only in the pre-bind window;
+        // callers of `install_thread_free` (the TLS bind path) run after the
+        // claim that planted the handle, so it is always `Some` here in
+        // practice — a null return in the pre-bind window is a safe no-op
+        // (no cross-thread stamping has happened yet).
+        self.thread_free
+            .map_or(core::ptr::null(), |h| h as *const AtomicPtr<u8>)
+    }
+
+    /// task H1: plant the stable `&'static` handle to THIS heap's slot-resident
+    /// (or fallback-static) cross-thread free-stack head. Called once, right
+    /// after the slot / fallback heap is materialised and before any allocation
+    /// on this heap runs, by
+    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// (via `bind_slot_counters`) / `fallback::heap_ptr`. Idempotent — on a
+    /// slot re-claim the handle already references the same `'static` word, so
+    /// re-planting is a harmless no-op store. Same discipline as
+    /// [`bind_tcache_hits`](Self::bind_tcache_hits).
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn bind_thread_free(&mut self, head: &'static AtomicPtr<u8>) {
+        self.thread_free = Some(head);
     }
 
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
-    /// null if [`install_thread_free`](Self::install_thread_free) was never
-    /// called (no cross-thread stamping has happened → cross-thread frees to
-    /// this heap's segments are a safe no-op). Used by the drain / routing
-    /// paths on the owning thread.
+    /// null in the transient pre-bind window (no cross-thread stamping has
+    /// happened yet → cross-thread frees to this heap's segments are a safe
+    /// no-op). Used by the drain / routing paths on the owning thread. task H1:
+    /// resolves to the OWNING slot's `thread_free` word (via the `&'static`
+    /// handle), NOT an inline `HeapCore` field — so the returned address is
+    /// outside every `&mut HeapCore` retag range.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
     pub(crate) fn thread_free_head(&self) -> *const AtomicPtr<u8> {
-        &self.thread_free as *const AtomicPtr<u8>
+        self.thread_free
+            .map_or(core::ptr::null(), |h| h as *const AtomicPtr<u8>)
     }
 
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
@@ -534,10 +544,16 @@ impl HeapCore {
     /// inline).
     #[cfg(feature = "alloc-xthread")]
     pub(crate) fn drain_large_deferred_free(&mut self) {
-        crate::alloc_core::deferred_large::drain_large_deferred_free(
-            &self.thread_free,
-            &mut self.core,
-        );
+        // task H1: drain through the `&'static` slot handle, NOT an inline
+        // field. `None` only in the pre-bind window — nothing could have been
+        // pushed yet then (a remote push needs the stamp, which needs the
+        // handle), so an empty-stack no-op is correct. Resolving the handle
+        // BEFORE forming the `&mut self.core` split-borrow keeps the head
+        // reference (a `&'static` into the slot, outside this `&mut HeapCore`)
+        // disjoint from the core borrow.
+        if let Some(head) = self.thread_free {
+            crate::alloc_core::deferred_large::drain_large_deferred_free(head, &mut self.core);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1598,15 +1614,26 @@ impl HeapCore {
                 // Task #142: expose this atomic's provenance so a REMOTE
                 // freer can reconstruct a wildcard pointer to it (via
                 // `Node::atomic_ptr_ref` → `with_exposed_provenance_mut`)
-                // rather than inheriting this owner's `&mut self`-rooted
-                // reference provenance — which a concurrent remote write
-                // would disable, corrupting other remotes' access (see
-                // `Node::atomic_ptr_ref`). `addr_of!` takes the field address
-                // WITHOUT an intermediate `&` retag; `expose_provenance`
-                // registers it for the paired `with_exposed_provenance_mut`.
-                let tf_ptr = core::ptr::addr_of!(self.thread_free);
-                let _ = tf_ptr.expose_provenance();
-                meta.stamp_owner_thread_free(tf_ptr as *const _);
+                // rather than inheriting a reference provenance a concurrent
+                // remote write would disable, corrupting other remotes' access
+                // (see `Node::atomic_ptr_ref`).
+                //
+                // task H1: the head is the OWNING SLOT's `thread_free` word,
+                // reached through the `&'static` handle planted at claim time
+                // — NOT an inline `HeapCore` field. This is the whole point of
+                // the H1 hoist: the exposed address is outside every `&mut
+                // HeapCore` retag range, so a remote CAS onto it no longer
+                // races the owner's `alloc(&mut self)` protector. `handle as
+                // *const _` takes the slot field's stable address without any
+                // `&mut self`-rooted retag; `expose_provenance` registers it
+                // for the paired `with_exposed_provenance_mut`. `None` cannot
+                // occur here — stamping runs only after the claim that planted
+                // the handle (defensive: skip the stamp if somehow unbound).
+                if let Some(handle) = self.thread_free {
+                    let tf_ptr = handle as *const AtomicPtr<u8>;
+                    let _ = tf_ptr.expose_provenance();
+                    meta.stamp_owner_thread_free(tf_ptr as *const _);
+                }
             }
         }
 

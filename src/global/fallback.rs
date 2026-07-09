@@ -68,9 +68,33 @@
 
 use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
+#[cfg(feature = "alloc-xthread")]
+use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
+
+/// task H1: the fallback heap's cross-thread free-stack head / identity stamp,
+/// hoisted OUT of the fallback `HeapCore` into this process-`'static` atomic —
+/// the fallback's analogue of a registry slot's
+/// [`HeapSlot::thread_free`](crate::registry::HeapSlot::thread_free).
+///
+/// The fallback `HeapCore` lives in a `static mut` handed out as `&mut` under
+/// the [`LOCK`] spinlock; a REMOTE thread cross-thread-freeing a Large segment
+/// owned by the fallback CASes its free-stack head through EXPOSED provenance.
+/// Were that head an inline `HeapCore` field, the remote write would land
+/// inside the range of the owner's `&mut *FALLBACK` — the same H1 aliasing
+/// conflict fixed for registry heaps by moving the head into the `Sync` slot.
+/// This standalone `'static` atomic (never inside any `&mut HeapCore`) is the
+/// fallback's equivalent slot word: its stable address is planted into the
+/// fallback `HeapCore` (via `HeapCore::bind_thread_free`) at init, and stamped
+/// into the fallback's segment headers, so remote freers CAS THIS word, never
+/// a byte inside `FALLBACK`.
+///
+/// `AtomicPtr` is `Sync`, so shared cross-thread atomic access is race-free;
+/// null-initialised (empty stack). Only present under `alloc-xthread`.
+#[cfg(feature = "alloc-xthread")]
+static FALLBACK_TFS: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
 /// Bootstrap-state values (mirrors `registry::bootstrap`).
 const STATE_UNINIT: u8 = 0;
@@ -147,6 +171,29 @@ pub fn heap_ptr() -> *mut HeapCore {
                     // `static_mut_refs`); we cast to `*mut HeapCore` for the
                     // `write`.
                     unsafe { (addr_of_mut!(FALLBACK) as *mut HeapCore).write(hc) };
+                    // task H1: plant the fallback heap's stable handle to its
+                    // out-of-struct free-stack head (`FALLBACK_TFS`), the
+                    // fallback analogue of `bind_slot_counters` binding a
+                    // registry heap to its slot's `thread_free`. Done here,
+                    // under the init race (we are the sole initialiser; no
+                    // other thread can read `FALLBACK` until we publish READY),
+                    // BEFORE the Release store — so the first `with_heap`
+                    // alloc/free already sees a bound handle. Skipped when
+                    // `alloc-xthread` is off (the fallback is single-threaded
+                    // in that config and has no cross-thread head).
+                    #[cfg(feature = "alloc-xthread")]
+                    {
+                        // SAFETY: we won the init race (STATE_INITIALIZING) and
+                        // just `write`(hc) into `FALLBACK`; we are its sole
+                        // writer and no other thread can reference it until we
+                        // publish READY. This exclusive `&mut` lives only for
+                        // the `bind_thread_free` call. `FALLBACK_TFS` is a
+                        // process-`'static` atomic, so `&FALLBACK_TFS` is a
+                        // sound `&'static`.
+                        let heap_ref: &mut HeapCore =
+                            unsafe { &mut *(addr_of_mut!(FALLBACK) as *mut HeapCore) };
+                        heap_ref.bind_thread_free(&FALLBACK_TFS);
+                    }
                     INIT_STATE.store(STATE_READY, Ordering::Release);
                     // SAFETY: READY just published by us.
                     return addr_of_mut!(FALLBACK) as *mut HeapCore;

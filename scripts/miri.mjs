@@ -84,6 +84,19 @@ const MATRIX = [
 const PLAIN_MATRIX = [
   // A1 deferred-large stack over the `SeferAlloc`/`HeapCore` (global) face.
   ['alloc-global alloc-xthread', 'regression_xthread_large_free_no_leak'],
+  // task H1: the `thread_free` aliasing guard. Runs an owner `&mut HeapCore`
+  // alloc loop CONCURRENTLY (real overlap, not the phase-serialised shape of
+  // the test above) with a remote thread CASing the owner's cross-thread
+  // free-stack head. BEFORE the H1 fix (head inline in `HeapCore`) this
+  // reported a retag-write-vs-atomic-load data race under plain miri; AFTER
+  // the fix (head hoisted into the `Sync` `HeapSlot` / `FALLBACK_TFS`, outside
+  // every `&mut HeapCore` retag range) it is clean. Needs the elevated
+  // preemption rate (see PLAIN_MIRIFLAGS) so the scheduler lands a remote CAS
+  // inside a live owner alloc frame.
+  [
+    'alloc-global alloc-xthread',
+    'regression_xthread_thread_free_alias_miri',
+  ],
 ];
 
 const args = process.argv.slice(2);
@@ -97,10 +110,16 @@ const entries = filter.length
 // The strict job pins `-Zmiri-strict-provenance`; the plain job DROPS it (the
 // exposed-provenance re-derivations require the default, non-strict model). Both
 // keep `-Zmiri-disable-isolation`.
+// The plain job adds an elevated `-Zmiri-preemption-rate` so the scheduler
+// interleaves a remote cross-thread-free CAS INSIDE a live owner `alloc(&mut
+// self)` frame — the schedule the task H1 aliasing guard
+// (`regression_xthread_thread_free_alias_miri`) needs to exercise. The other
+// plain test (`regression_xthread_large_free_no_leak`) is phase-serialised and
+// indifferent to the rate.
 const env = {
   ...process.env,
   MIRIFLAGS: plain
-    ? '-Zmiri-disable-isolation'
+    ? '-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5'
     : '-Zmiri-strict-provenance -Zmiri-disable-isolation',
 };
 

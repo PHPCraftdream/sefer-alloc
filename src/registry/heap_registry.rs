@@ -525,7 +525,8 @@ impl HeapRegistry {
 #[cfg_attr(
     not(any(
         all(feature = "alloc-global", feature = "fastbin"),
-        feature = "alloc-decommit"
+        feature = "alloc-decommit",
+        feature = "alloc-xthread"
     )),
     allow(unused_variables)
 )]
@@ -538,6 +539,13 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     heap_ref.bind_tcache_hits(&slot.tcache_hits);
     #[cfg(feature = "alloc-decommit")]
     heap_ref.bind_large_cache_hits(&slot.large_cache_hits);
+    // task H1: plant the stable `&'static` handle to this slot's cross-thread
+    // free-stack head (moved out of `HeapCore` into the `Sync` slot — see
+    // `HeapSlot::thread_free` / `HeapCore::thread_free`). This is what makes the
+    // remote CAS target the slot word (outside every `&mut HeapCore` retag
+    // range) instead of an inline `HeapCore` field.
+    #[cfg(feature = "alloc-xthread")]
+    heap_ref.bind_thread_free(&slot.thread_free);
 }
 
 // ---------------------------------------------------------------------------

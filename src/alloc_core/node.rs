@@ -429,45 +429,61 @@ impl Node {
     ///
     /// # Caller's contract
     ///
-    /// `ptr` MUST be the address of a live `AtomicPtr<u8>` field inside EITHER
-    /// (a) a `HeapCore` that lives in the registry's `'static` slot array, or
-    /// (b) a `Heap`'s leaked (on `Drop`, under `alloc-xthread`)
-    /// `Box<AtomicPtr<u8>>` identity token — both callers derive `ptr`
-    /// exclusively from `thread_free_head()`/`owner_thread_free_at`, which
-    /// only ever produce such addresses. In both cases the pointee outlives
-    /// every reachable reference to it (the registry slot array is
-    /// `'static`; a `Heap`'s identity `Box` is intentionally leaked rather
-    /// than dropped, precisely so a late cross-thread reader never
-    /// dereferences freed memory — see `Heap::drop`'s doc comment), so the
-    /// returned `'static` reference's lifetime is sound. `AtomicPtr` is
-    /// `Sync`, so shared atomic access from any thread is race-free.
+    /// `ptr` MUST be the address of a live, process-`'static` `AtomicPtr<u8>`
+    /// that is NOT an inline field of any `HeapCore`. task H1 moved the
+    /// cross-thread free-stack head OUT of `HeapCore` for exactly this reason
+    /// (the head is CASed by remotes while the owner holds a protected `&mut
+    /// HeapCore`, so it must not lie inside that struct's byte range). Today
+    /// the two live pointees are:
+    ///
+    /// - (a) a registry slot's
+    ///   [`HeapSlot::thread_free`](crate::registry::HeapSlot) field — the slot
+    ///   array is `'static`; or
+    /// - (b) the fallback heap's `FALLBACK_TFS` `static AtomicPtr<u8>`
+    ///   (`global::fallback`) — a process-`'static` standalone atomic.
+    ///
+    /// Both callers derive `ptr` exclusively from
+    /// `thread_free_head()`/`owner_thread_free_at`, which only ever produce such
+    /// addresses (the stamp site writes the slot-field / fallback-static
+    /// address). In both cases the pointee is a `'static` never dropped for the
+    /// process lifetime, so the returned `'static` reference's lifetime is
+    /// sound. `AtomicPtr` is `Sync`, so shared atomic access from any thread is
+    /// race-free. Because the pointee is outside every `&mut HeapCore` retag
+    /// range, a remote write here also does not conflict with the owner's
+    /// `alloc(&mut self)` protector (the H1 fix — see `HeapCore::thread_free`).
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn atomic_ptr_ref(
         ptr: *const core::sync::atomic::AtomicPtr<u8>,
     ) -> &'static core::sync::atomic::AtomicPtr<u8> {
         // Task #142 (cross-thread aliasing soundness): materialize the shared
-        // atomic through EXPOSED provenance (a "wildcard" pointer), NOT the
-        // reference-derived provenance `ptr` inherited from the owner's stamp.
-        // `ptr` originates as `&owner.thread_free` on the OWNING thread — a
-        // provenance rooted in that thread's `&mut HeapCore`/`Box`. If a
-        // REMOTE thread reconstructs `&*ptr` and writes (the deferred-free
-        // Treiber `compare_exchange`), that write is "foreign" to the stamp's
-        // reference tag and DISABLES it, so a SECOND remote thread reading
-        // through a sibling `&*ptr` hits UB (Stacked/Tree Borrows). The stamp
-        // sites (`stamp_owner_thread_free` callers) now `expose_provenance()`
-        // the atomic; reconstructing here via `with_exposed_provenance_mut`
-        // yields a pointer that is NOT a child of the owner's borrow tree, so
-        // concurrent cross-thread interior-mutable access by multiple remotes
-        // no longer disables a shared parent tag. `AtomicPtr` is `Sync` +
-        // interior-mutable, so shared atomic writes through the resulting
-        // `&AtomicPtr` are sound.
+        // atomic through EXPOSED provenance (a "wildcard" pointer), NOT a
+        // reference-derived provenance the stamp inherited from the owner. The
+        // stamp site (`stamp_owner_thread_free` callers) took `ptr` from the
+        // owning thread; if a REMOTE thread reconstructed `&*ptr` under a
+        // reference tag and wrote (the deferred-free Treiber
+        // `compare_exchange`), that write would be "foreign" to the stamp's tag
+        // and DISABLE it, so a SECOND remote reading through a sibling `&*ptr`
+        // would hit UB (Stacked/Tree Borrows). The stamp sites therefore
+        // `expose_provenance()` the atomic; reconstructing here via
+        // `with_exposed_provenance_mut` yields a pointer that is NOT a child of
+        // any owner-rooted borrow tree, so concurrent cross-thread
+        // interior-mutable access by multiple remotes no longer disables a
+        // shared parent tag. `AtomicPtr` is `Sync` + interior-mutable, so
+        // shared atomic writes through the resulting `&AtomicPtr` are sound.
+        //
+        // task H1: the pointee is now a slot-resident / fallback-`static`
+        // `AtomicPtr` OUTSIDE any `HeapCore` (see the caller's-contract note
+        // above), so the remote write also cannot conflict with the owner's
+        // `alloc(&mut self)` protector — the remote-vs-remote AND the
+        // remote-vs-owner conflict classes are both closed.
         let exposed =
             core::ptr::with_exposed_provenance_mut::<core::sync::atomic::AtomicPtr<u8>>(ptr.addr());
         // SAFETY: caller's contract above — `ptr`'s address is the stable
-        // address of a live `AtomicPtr<u8>` (a `'static` registry-slot field,
-        // or a leaked-on-drop `Box<AtomicPtr>`) whose provenance the stamp
-        // site exposed, so the wildcard pointer validly covers it.
+        // address of a live, process-`'static` `AtomicPtr<u8>` (a registry
+        // slot's `thread_free` field, or the fallback's `FALLBACK_TFS` static)
+        // whose provenance the stamp site exposed, so the wildcard pointer
+        // validly covers it.
         unsafe { &*exposed }
     }
 }

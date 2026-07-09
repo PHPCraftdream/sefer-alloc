@@ -276,7 +276,12 @@ jobs:
     name: miri-plain (${{ matrix.test }})
     runs-on: ubuntu-latest
     env:
-      MIRIFLAGS: "-Zmiri-disable-isolation"
+      # Elevated preemption rate: the task H1 aliasing guard
+      # (`regression_xthread_thread_free_alias_miri`) needs the scheduler to
+      # interleave a remote cross-thread-free CAS INSIDE a live owner
+      # `alloc(&mut self)` frame. The other plain test is phase-serialised and
+      # indifferent to the rate.
+      MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
     strategy:
       fail-fast: false
       matrix:
@@ -302,6 +307,14 @@ jobs:
         test:
           # A1 stack over the `SeferAlloc`/`HeapCore` (global-singleton) face.
           - "--features \"alloc-global alloc-xthread\" --test regression_xthread_large_free_no_leak"
+          # task H1: the `thread_free` aliasing guard. Owner `&mut HeapCore`
+          # alloc loop CONCURRENTLY (real overlap) with a remote thread CASing
+          # the owner's cross-thread free-stack head. Pre-H1-fix this reported a
+          # retag-write-vs-atomic-load data race under plain miri; post-fix
+          # (head hoisted out of `HeapCore` into the `Sync` `HeapSlot` /
+          # `FALLBACK_TFS`) it is clean. Needs the elevated preemption rate set
+          # in this job's `env` above.
+          - "--features \"alloc-global alloc-xthread\" --test regression_xthread_thread_free_alias_miri"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly

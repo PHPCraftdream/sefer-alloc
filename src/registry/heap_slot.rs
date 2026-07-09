@@ -55,6 +55,8 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::sync::atomic::AtomicU64;
+#[cfg(feature = "alloc-xthread")]
+use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use super::heap_core::HeapCore;
@@ -176,6 +178,45 @@ pub struct HeapSlot {
     /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
     #[cfg(feature = "alloc-decommit")]
     pub large_cache_hits: AtomicU64,
+
+    /// Cross-thread free-stack head / identity stamp (task H1 — the W3 hoist
+    /// applied to the TFS head).
+    ///
+    /// This is the storage that used to be the INLINE `HeapCore::thread_free`
+    /// `AtomicPtr<u8>` field. It was moved OUT of `HeapCore` and into this
+    /// `Sync`, process-`'static` slot for exactly the reason W3 moved the
+    /// diagnostic counters: a REMOTE thread cross-thread-freeing a Large
+    /// segment owned by this heap CASes this word (through EXPOSED provenance —
+    /// `Node::atomic_ptr_ref` → `with_exposed_provenance_mut` →
+    /// `compare_exchange`, see `alloc_core::deferred_large::push`), while the
+    /// OWNING thread concurrently holds a protected `&mut HeapCore` spanning
+    /// the whole struct. When this word lived INSIDE `HeapCore`, that foreign
+    /// write landed inside the range of the owner's protected `&mut` — a
+    /// protector/data-race violation under Stacked/Tree Borrows (empirically
+    /// confirmed by miri: a retag-write vs. atomic-load data race between the
+    /// owner's `stamp_segment_owner(&mut self)` fn-entry retag and the remote's
+    /// `head.load()` in `push_large_deferred_free`). See
+    /// `tests/regression_xthread_thread_free_alias_miri.rs`.
+    ///
+    /// Moving the word into the slot removes it from every `&mut HeapCore`
+    /// retag range: the owner reaches it through a stable `&'static AtomicPtr`
+    /// handle (planted at [`super::heap_registry::HeapRegistry::claim`] time,
+    /// like `tcache_hits`), and remote freers reach the SAME word through the
+    /// `owner_thread_free_at(base)` segment-header stamp — which now stores
+    /// this slot field's address. The slot lives in the `'static` registry
+    /// array, so the address is stable for the slot's (process) lifetime and
+    /// never re-pointed across `recycle`→`claim`.
+    ///
+    /// Dual role, unchanged from the old inline field: the ADDRESS is the
+    /// per-heap identity token compared by `dealloc_routing`
+    /// (`owner_thread_free_at(base) == our head`); the VALUE (`AtomicPtr<u8>`)
+    /// is the head of this heap's deferred-free Treiber stack over Large
+    /// segment bases (`null` = empty). The two uses touch disjoint parts of the
+    /// same word, so there is no conflation.
+    ///
+    /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
+    #[cfg(feature = "alloc-xthread")]
+    pub thread_free: AtomicPtr<u8>,
 }
 
 impl HeapSlot {
@@ -201,6 +242,8 @@ impl HeapSlot {
             tcache_hits: AtomicU64::new(0),
             #[cfg(feature = "alloc-decommit")]
             large_cache_hits: AtomicU64::new(0),
+            #[cfg(feature = "alloc-xthread")]
+            thread_free: AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 
