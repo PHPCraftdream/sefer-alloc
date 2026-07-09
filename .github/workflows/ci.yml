@@ -101,6 +101,30 @@ jobs:
           # fastbin-without-decommit). Add the flagship+paranoid combo so the
           # misuse-guard runs alongside the decommit (M6) recommit cycle.
           - "--features \"production hardened\"" # paranoid tier over the flagship bundle
+          # C2 (bug-hunt review 2026-07-09): these three feature tiers ship
+          # tests whose BODIES are gated behind `#[cfg(feature = "...")]`, so
+          # NO existing `cargo test` row above actually RAN their behavior —
+          # the preprocessor stripped the test bodies out of every plain run.
+          # They were only ever exercised locally via `npm run check`
+          # (scripts/check-all.mjs), a pre-push gate, not per-PR CI. A real
+          # leak bug (Ф4 remainder-pushback) had already been found in the
+          # `alloc-runfreelist` recycle path — guarded only by that pre-push
+          # gate. Add per-PR CI rows so the gated test bodies run:
+          #   - alloc-runfreelist: regression_run_stack_{flush,drain,decommit}
+          #   - alloc-stats: the per-hit counter asserts (stats_reflects_activity)
+          #   - pinning: the routing-binding tests in tests/pinning.rs
+          # The feature-strings mirror scripts/check-all.mjs verbatim.
+          - "--features \"production alloc-runfreelist\"" # C2: run-encoded freelist test bodies
+          - "--features \"production alloc-stats\"" # C2: per-hit diagnostic counter asserts
+          - "--features pinning" # C2: thread-per-core routing-binding tests
+          # `--all-features` as the closing row: exercises every gated tier
+          # together (adds experimental + hardened + numa-aware on top). The
+          # numa_alloc real-mbind assertions are env-guarded (SEFER_NUMA_TEST=1,
+          # set ONLY by the scheduled `numa-real-kernel` job) and skip trivially
+          # on this single-NUMA runner, so `--all-features` here is a
+          # compile+link+run check of the full feature union, not a NUMA
+          # correctness gate. Verified green locally under the same conditions.
+          - "--all-features" # C2: full feature union (numa tests env-guarded → skip)
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

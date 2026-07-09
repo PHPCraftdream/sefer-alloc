@@ -64,6 +64,25 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--features', 'production alloc-runfreelist'],
   },
+  // C2 (bug-hunt review 2026-07-09): kept in lockstep with the CI `test`
+  // job's feature matrix (.github/workflows/ci.yml). These tiers carry
+  // tests whose bodies are `#[cfg(feature = "...")]`-gated, so only a run
+  // WITH the feature actually exercises them.
+  {
+    name: 'test (--features "production alloc-stats")',
+    cmd: 'cargo',
+    args: ['test', '--features', 'production alloc-stats'],
+  },
+  {
+    name: 'test (--features pinning)',
+    cmd: 'cargo',
+    args: ['test', '--features', 'pinning'],
+  },
+  {
+    name: 'test (--all-features)',
+    cmd: 'cargo',
+    args: ['test', '--all-features'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
