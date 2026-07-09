@@ -52,7 +52,7 @@ resolver = "2"
 [lints.rust]
 # `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that gates the
 # loom model-check harness. Declare it so `unexpected cfg` warnings are silent.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)'] }
 
 [features]
 # The single-threaded core (`Region<T>` / `Handle<T>`) needs only `alloc` and

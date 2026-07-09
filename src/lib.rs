@@ -248,3 +248,6 @@ pub use alloc_core::{AllocCore, SegmentLayout};
 
 #[cfg(feature = "alloc-global")]
 pub use global::{AllocStats, SeferAlloc};
+
+#[cfg(kani)]
+mod kani_proofs;

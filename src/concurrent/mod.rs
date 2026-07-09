@@ -16,7 +16,7 @@
 
 mod epoch_handle;
 mod epoch_region;
-mod hand;
+pub(crate) mod hand;
 mod lock_free_handle;
 mod lock_free_region;
 mod sharded_handle;

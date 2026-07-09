@@ -1,0 +1,40 @@
+name: Kani verification
+
+# Ф4: separate Kani proof-harness workflow. Kept APART from ci.yml so the
+# (CPU-hour-heavy) CBMC model-checking runs never gate the main CI gate.
+# Linux-only: Kani has no Windows build. Triggered on push/PR/dispatch only —
+# deliberately NOT scheduled (cost).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# SEC-4 (task #201): least-privilege token scope, mirroring ci.yml. No job
+# here writes repo contents; pin the token read-only regardless of repo default.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  kani:
+    name: Kani proof harnesses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # Kani ships its own toolchain (a pinned nightly + CBMC); `cargo kani
+      # setup` downloads it on first run. The stable toolchain above is only
+      # needed for `cargo install kani-verifier`.
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier
+          cargo kani setup
+      - name: Run node proofs (alloc-core)
+        run: cargo kani --features alloc-core
+      - name: Run hand proofs (experimental)
+        run: cargo kani --features experimental
