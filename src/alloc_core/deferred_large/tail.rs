@@ -1,7 +1,7 @@
 //! 0.3.0 hardening (post-A1), extracted for #132: the **on-this-stack** tail
-//! sentinel for the deferred-free Treiber stack that both public allocator
-//! faces (`HeapCore` and `Heap`) reuse their `thread_free`/identity
-//! `AtomicPtr<u8>` field for (see the `push`/`drain` doc comments in this
+//! sentinel for the deferred-free Treiber stack that the `HeapCore` face
+//! reuses its `thread_free`/identity
+//! `AtomicPtr<u8>` head for (see the `push`/`drain` doc comments in this
 //! module for the full mechanism).
 //!
 //! This MUST be distinct from

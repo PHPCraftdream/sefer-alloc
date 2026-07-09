@@ -264,7 +264,10 @@ pub(crate) struct SegmentHeader {
     /// segment header after `segment_base_of(ptr)` and CAS-pushes the freed
     /// block onto the Treiber stack. `null` for segments not yet bound to a
     /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
-    /// it is `Box`-allocated inside the owning `Heap`.
+    /// it addresses a process-`'static` head: a registry-slot-resident
+    /// `HeapSlot::thread_free` field (the slot array is `'static`) or the
+    /// fallback `FALLBACK_TFS` static atomic (post-W3, task #13 — no longer a
+    /// `Box`).
     pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
     /// Phase 12.4: the segment's ownership state — packed
     /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /

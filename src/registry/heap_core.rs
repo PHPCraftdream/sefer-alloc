@@ -516,9 +516,7 @@ impl HeapCore {
     /// primitive takes `&AtomicPtr<u8>` directly, so the pointer-to-reference
     /// deref of `head` stays HERE (via the `alloc_core::node` seam, same
     /// discipline as `next_abandoned_atomic`/`owner_state_atomic`) rather
-    /// than inside the shared (seam-free) module — `Heap`'s call site
-    /// derives its own `&AtomicPtr<u8>` without any seam at all (it owns the
-    /// field directly).
+    /// than inside the shared (seam-free) module.
     #[cfg(feature = "alloc-xthread")]
     fn push_large_deferred_free(head: *const AtomicPtr<u8>, base: *mut u8) {
         // `heap_core.rs` is NOT an allowed `unsafe` seam (see `src/lib.rs`'s

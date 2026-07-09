@@ -115,8 +115,8 @@ These conventions are enforced at review time and by CI.
 ### Safety boundaries
 
 - The crate top-level carries `#![forbid(unsafe_code)]` in the default
-  configuration and `#![deny(unsafe_code)]` with `experimental` or `byte`
-  features enabled.
+  configuration and `#![deny(unsafe_code)]` with the `experimental` or
+  `alloc-core` features enabled (see `src/lib.rs`'s top-level attributes).
 - `unsafe` is permitted **only** inside these two modules:
   - `src/concurrent/hand.rs` (gated on `experimental`)
   - `src/byte/byte_region.rs` and `src/byte/byte_allocator.rs` (gated on

@@ -417,13 +417,13 @@ impl Node {
     /// NOT one of the whitelisted seam modules in `src/lib.rs`), so the
     /// pointer-to-reference conversion is centralised here instead.
     ///
-    /// 0.3.x task #132: [`Heap::dealloc_any_thread`](crate::heap::Heap::dealloc_any_thread)
-    /// uses this SAME accessor for the identical purpose, deref'ing a REMOTE
-    /// `owner_thread_free_at(base)` stamp that points at another `Heap`'s
-    /// [`ThreadFreeStack`](crate::heap::thread_free::ThreadFreeStack) identity
-    /// atomic (a leaked `Box<AtomicPtr<u8>>`, per-heap-lifetime-static — see
-    /// its module doc) — `heap::heap` is likewise not a whitelisted `unsafe`
-    /// seam.
+    /// 0.3.x task #132: the cross-thread Large-segment reclaim path uses this
+    /// SAME accessor for the identical purpose, deref'ing a REMOTE
+    /// `owner_thread_free_at(base)` stamp that points at another owner's
+    /// thread-free-stack head atomic. Post-W3 (task #13) that head is a
+    /// slot-resident `'static` field (`HeapSlot::thread_free`) or the fallback
+    /// process-`'static` `FALLBACK_TFS` — NOT a leaked `Box` — so its address
+    /// is stable for the process lifetime (see the caller's contract below).
     ///
     /// [`HeapCore::push_large_deferred_free`]: crate::registry::heap_core::HeapCore
     ///

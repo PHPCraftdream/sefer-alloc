@@ -1,5 +1,5 @@
 //! [`push_large_deferred_free`] — extracted for #132 (unify the A1 guarantee
-//! across both public allocator faces, `HeapCore` and `Heap`, without
+//! across the `HeapCore` face and any direct `AllocCore` user, without
 //! duplicating the double-push-guarded Treiber push).
 
 use core::sync::atomic::{AtomicPtr, Ordering};

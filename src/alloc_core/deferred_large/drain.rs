@@ -1,5 +1,5 @@
 //! [`drain_large_deferred_free`] — extracted for #132 (unify the A1
-//! guarantee across both public allocator faces, `HeapCore` and `Heap`,
+//! guarantee across the `HeapCore` face and any direct `AllocCore` user,
 //! without duplicating the drain/reclaim pop loop).
 
 use core::sync::atomic::{AtomicPtr, Ordering};
@@ -13,13 +13,12 @@ use crate::alloc_core::AllocCore;
 /// ([`drain_large_deferred_free`]). Bumped once per segment successfully
 /// drained and handed to
 /// [`AllocCore::reclaim_large_segment`](crate::alloc_core::AllocCore::reclaim_large_segment),
-/// from EITHER public face (`HeapCore` or `Heap`) that calls this shared
+/// from any caller (the `HeapCore` face) that invokes this shared
 /// primitive.
 ///
 /// Diagnostic only (relaxed, like `DECOMMIT_CALLS` in `alloc_core.rs`),
 /// `pub` so `tests/regression_xthread_large_free_no_leak.rs` (HeapCore face)
-/// and the new `Heap`-face regression test can assert reclaim actually
-/// happened.
+/// can assert reclaim actually happened.
 #[doc(hidden)]
 pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
@@ -43,8 +42,8 @@ pub static DBG_LARGE_XTHREAD_RECLAIMED: core::sync::atomic::AtomicU64 =
 ///
 /// `head` and `core` MUST belong to the SAME heap (the stack `head` guards
 /// and the substrate that owns the segments linked on it) — this function
-/// does not and cannot verify that; callers pass `&self.thread_free`/
-/// `&mut self.core` (or the `Heap`-face equivalents) from the same `self`.
+/// does not and cannot verify that; callers pass the owner's `thread_free`
+/// head and `&mut core` (the substrate) belonging to the same owner.
 pub(crate) fn drain_large_deferred_free(head: &AtomicPtr<u8>, core: &mut AllocCore) {
     loop {
         let cur = head.load(Ordering::Acquire);

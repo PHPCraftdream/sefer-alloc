@@ -13,9 +13,9 @@ pub(crate) mod alloc_bitmap;
 mod alloc_core;
 mod bootstrap;
 /// The cross-thread deferred-free Treiber stack for Large/huge segments
-/// (task A1, extracted for #132). Shared by both public allocator faces
-/// (`registry::heap_core::HeapCore` and `heap::Heap`) so the double-push-
-/// guarded push/drain logic is not duplicated.
+/// (task A1, extracted for #132). Used by the allocator face
+/// (`registry::heap_core::HeapCore`) and any direct `AllocCore` user so the
+/// double-push-guarded push/drain logic is not duplicated.
 ///
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is
 /// `#[doc(hidden)]` (see `lib.rs`): `DBG_LARGE_XTHREAD_RECLAIMED` is

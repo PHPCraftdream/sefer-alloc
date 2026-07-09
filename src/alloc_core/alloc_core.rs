@@ -3346,8 +3346,8 @@ impl AllocCore {
         // ── H1 (task #167): interior-pointer guard (HARDENED) ───────────────
         // The SAME guard as `HeapCore::dealloc_own_thread_with_base`'s magazine
         // free path, here on the SUBSTRATE own-thread free — the path the
-        // explicit `Heap` face (`with_heap` → `Heap::dealloc_small` →
-        // `self.core.dealloc`) and any direct `AllocCore` user reach (the
+        // direct `AllocCore` free face (`AllocCore::dealloc_small`) any
+        // non-magazine substrate user reaches (the
         // magazine guard only covers the `SeferAlloc` face). A real block start
         // of class `class_idx` sits at an `off` that is a whole multiple of
         // `block_size(class_idx)` (carve aligns the bump to `block_size`); an
