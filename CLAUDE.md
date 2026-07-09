@@ -6,7 +6,32 @@ Core instructions, mandatory for all code in this repository. They
 ## File and module structure
 
 - **One file — one export.** Each source file defines exactly one public item
-  (type, trait, function). The file name matches the export.
+  (type, trait, function). The file name matches the export. This rule is about
+  *one responsibility per file*, not a literal count of `pub` tokens; the
+  following categories are sanctioned exceptions (they keep a single focused
+  responsibility even though the file exposes more than one public item):
+  1. **doc-hidden test-only forwarders** — items that are `pub` solely because
+     their enclosing module is `#[doc(hidden)]`, exposing a test hook so an
+     integration test in `tests/` can reach an otherwise-internal surface (the
+     established "test-only export pattern"; see the `#[doc(hidden)]` notes in
+     `src/lib.rs`, `src/alloc_core/mod.rs`, `src/registry/mod.rs`,
+     `src/registry/tagged_ptr.rs`). These are not stable public API.
+  2. **protocol-constant clusters attached to their one primary type** — a set
+     of `pub` protocol constants that belong to a single owning type and live
+     with it (e.g. `RemoteFreeRing` with its `RING_CAP` / `DBG_RING_OVERFLOW`
+     constants). The constants are that type's protocol, not independent
+     exports in the sense of the rule.
+  3. **single-file seam crates in `crates/`** — for a crate that is one file
+     (e.g. `crates/vmem/src/lib.rs`, `crates/numa/src/lib.rs`,
+     `crates/malloc-bench/src/lib.rs`), "the whole crate is one module"; it
+     publishing several public items is normal, because the crate as a whole is
+     the single focused library — that is its one responsibility.
+  4. **`#[cfg(kani)]` proof harnesses in `src/`** (e.g. `src/kani_proofs.rs`) —
+     Kani proof harnesses need `pub(crate)` internals (e.g.
+     `crate::alloc_core::node::Node`, `crate::concurrent::hand::AtomicSlot`)
+     that are invisible from `tests/` (integration tests see only `pub`), so
+     they legitimately live in `src/` behind `#[cfg(kani)]` rather than in the
+     `tests/` tree.
 - **`mod.rs` — reexports only, no code.** The `mod.rs` file contains
   exclusively `mod`/`pub mod`/`pub use` declarations. No logic, types,
   functions, or tests belong in `mod.rs` — it only wires modules together.
@@ -75,7 +100,14 @@ Core instructions, mandatory for all code in this repository. They
 ## Active rules (from the plan/methodology)
 
 - `#![forbid(unsafe_code)]` for the upper world; `unsafe` is allowed only in
-  one documented module `hand` (phases 3b/4) behind a feature flag.
+  named seam modules that lift it with `#![allow(unsafe_code)]`, each with a
+  single documented reason to hold `unsafe`. The seams are inventoried in
+  README §"Where unsafe lives — the complete list" and mirrored in the
+  `src/lib.rs` header. Source of truth (self-verifying, never a hardcoded
+  count): `grep -rln 'allow(unsafe_code)' src/ crates/` — this command, not a
+  number written into prose, is the authoritative list; any formal audit
+  compares against its output, and a stray `unsafe` outside a named seam is a
+  hard compile error in every feature configuration.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
