@@ -343,23 +343,31 @@ fn churn_write_256b() {
 // round's allocs (`find_segment_with_free` walks every registered segment of
 // the class when the magazine + primordial freelist are drained). Geometry:
 // the largest small size class is 258,752 B (≈253 KiB), and one 4 MiB segment
-// holds 16 such blocks; so `MULTISEG_BATCH` (34) allocations span 3 segments
-// (16 + 16 + 2). Round 1 allocates 34 distinct blocks — draining the magazine,
+// holds 15 usable such blocks (16 fit in 4 MiB but the primordial reserves one
+// block's worth for its registry and each fresh segment loses one to per-segment
+// metadata); so `MULTISEG_BATCH` (34) allocations span 3 segments (15 + 15 + 4).
+// Round 1 allocates 34 distinct blocks — draining the magazine,
 // carving segment 1, then registering + carving segments 2 and 3 — and frees
 // them all. Round 2 allocates 34 again: with the magazine drained and every
 // block back on the segment freelists, each alloc's magazine-refill calls
 // `find_segment_with_free`, which must walk the 3 registered segments. This is
 // the exact path X5's segment-queue reordering will speed up; the cold
 // first-segment carve (round 1) is the floor X5 cannot beat. The block size
-// (256 KiB requests, served by the largest small class — NOT literal 16 B
+// (258,752 B ≈ 253 KiB requests, served by the largest small class — NOT literal 16 B
 // blocks) is chosen so a handful of allocations span multiple segments; 16 B
 // blocks would need ~260k allocations to fill one segment, far too many for
 // callgrind's <1M-Ir budget. Kept FAST: 2 × 34 = 68 allocs + 68 frees of a
 // cache-cold large-small class — total work comparable to the existing cold
 // benches (well under 1M Ir; the per-alloc cost is dominated by the segment
 // scan, not a 253 KiB memcpy, since these are fresh freelist pops).
+// SMALL_MAX (258,752 B ≈ 253 KiB) EXACTLY — the largest small size class, so
+// this request routes to the Small (per-segment freelist) path, NOT the Large
+// dedicated-segment path. A literal 256 KiB (262,144 B) exceeds SMALL_MAX and
+// would give ONE Large segment per block (1 block/segment), breaking the
+// "16 blocks per 4 MiB segment, 34 blocks span 3 segments" geometry this bench
+// relies on to exercise `find_segment_with_free`'s multi-segment scan.
 #[cfg(target_os = "linux")]
-const MULTISEG_BLOCK: usize = 256 * 1024;
+const MULTISEG_BLOCK: usize = 258_752;
 #[cfg(target_os = "linux")]
 const MULTISEG_BATCH: usize = 34;
 #[cfg(target_os = "linux")]
@@ -385,6 +393,73 @@ fn multiseg_cold_256k() {
     }
 }
 
+// PERF-4 (task #14) — decommit→recycle segment-churn regression guard.
+//
+// The `cold_*` / `recycle_*` / `churn_*` benches above all live inside the
+// PRIMORDIAL segment (small op-counts never span past it), and the primordial
+// segment is explicitly EXCLUDED from decommit (`dec_live_and_maybe_decommit`
+// bails on `kind != Small`) — so NONE of them ever exercise
+// `decommit_empty_segment` → `table.recycle`. `multiseg_cold_256k` touches it
+// only twice (2 rounds). This bench is the dedicated regression target for the
+// decommit-churn path the shamir-db sweep flagged (0.3.0 vs 0.2.1): it drives a
+// NON-primordial small segment through empty→decommit→recycle→re-reserve on
+// EVERY round, which is precisely where PERF-4's "dead metadata reset before
+// release" tax was paid, and where the fix (release-follows fast path in
+// `decommit_empty_segment_for_release`) removes it.
+//
+// Geometry: the largest small size class is SMALL_MAX = 258,752 B (≈253 KiB);
+// one 4 MiB segment holds 15 usable such blocks (16 fit in 4 MiB, but the
+// primordial reserves one block's worth for its self-hosted registry and every
+// fresh small segment loses a block to per-segment metadata → 15 usable).
+// `SEGCYCLE_BATCH` (34) fills the primordial (15) + a SECOND small segment (15)
+// + opens a THIRD (4) each round, so the SECOND segment is NON-current when the
+// batch is freed → it empties while not the carve target → `decommit_empty_segment`
+// fires and `recycle` returns it to the OS. The next round re-reserves it.
+// CRITICAL: a batch that only just spills into the second segment (e.g. 18) does
+// NOT decommit — that second segment is still the CURRENT carve target, which is
+// excluded from decommit; the batch MUST reach a THIRD segment (≥ 31 blocks) to
+// leave the second one non-current. `SEGCYCLE_ROUNDS` (6) repeats the full
+// reserve→fill→empty→decommit→recycle cycle so the per-round decommit/recycle
+// cost dominates the signal (measured: 6 decommits per run, 1 per round). Kept
+// within callgrind's <1M-Ir budget: 6 × 34 = 204 allocs + 204 frees of a
+// large-small class (freelist pops, not 253 KiB memcpys).
+//
+// The block size MUST be `<= SMALL_MAX` (258,752 B), NOT a literal 256 KiB
+// (262,144 B): 262,144 > 258,752 routes to the dedicated-segment Large path,
+// where `dec_live_and_maybe_decommit` bails on `kind != Small` and
+// `decommit_empty_segment_for_release` (the very path this bench guards) is
+// NEVER reached — the pre-fix bench silently measured the Large path and its
+// decommit counter never moved.
+#[cfg(target_os = "linux")]
+const SEGCYCLE_BLOCK: usize = 258_752;
+#[cfg(target_os = "linux")]
+const SEGCYCLE_BATCH: usize = 34;
+#[cfg(target_os = "linux")]
+const SEGCYCLE_ROUNDS: usize = 6;
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn seg_cycle_decommit_256k() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(SEGCYCLE_BLOCK, 8).unwrap();
+    let mut ptrs: [*mut u8; SEGCYCLE_BATCH] = [core::ptr::null_mut(); SEGCYCLE_BATCH];
+    for _round in 0..SEGCYCLE_ROUNDS {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { sefer.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the same
+                // layout, and is freed exactly once per round. Freeing the whole
+                // batch empties the non-primordial second segment → decommit →
+                // recycle.
+                unsafe { sefer.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -400,6 +475,7 @@ library_benchmark_group!(
         churn_256b,
         churn_write_256b,
         multiseg_cold_256k,
+        seg_cycle_decommit_256k,
 );
 
 #[cfg(target_os = "linux")]

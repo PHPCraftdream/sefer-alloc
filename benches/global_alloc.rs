@@ -389,10 +389,85 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
     group.finish();
 }
 
+/// PERF-4 (task #14) — the decommit→recycle segment-churn shape. This is the
+/// wall-clock companion to the `seg_cycle_decommit_256k` iai bench (the
+/// deterministic judge). It drives a NON-primordial small segment through
+/// empty→decommit→recycle→re-reserve on every round — the exact path the
+/// shamir-db sweep flagged (0.3.0 vs 0.2.1, "many short-lived small segments
+/// cycling quickly") and which PERF-4's release-follows fast path optimizes.
+///
+/// Geometry (see the iai bench for the full rationale): the largest small size
+/// class is SMALL_MAX = 258,752 B (≈253 KiB) and one 4 MiB segment holds 15
+/// such blocks (16 fit in 4 MiB, but the primordial reserves one block's worth
+/// for its self-hosted registry and every fresh small segment loses a block to
+/// per-segment metadata → 15 usable). `SEG_BATCH` (34) fills the primordial (15),
+/// then a SECOND small segment (15), then opens a THIRD (4), so the SECOND
+/// segment is NON-current when the whole batch is freed → it goes empty while not
+/// the carve target → `decommit_empty_segment` + `recycle`. Note: a batch that
+/// only just spills into the second segment (say 18) does NOT decommit — that
+/// segment is still the current carve target, which is excluded from decommit;
+/// the batch MUST reach a THIRD segment (≥ 31 blocks) to leave the second one
+/// non-current. Under `alloc-decommit` this is the decommit path; without it,
+/// the same shape still measures the reserve/carve/release churn. Compared
+/// head-to-head vs mimalloc and System.
+fn bench_segment_decommit_cycle<A: GlobalAlloc>(alloc: &A, layout: Layout) {
+    const SEG_BATCH: usize = 34;
+    let mut ptrs: [*mut u8; SEG_BATCH] = [core::ptr::null_mut(); SEG_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid alignment.
+        *slot = unsafe { alloc.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was allocated by `alloc` with the same layout and is
+            // freed exactly once; freeing the whole batch empties the
+            // non-primordial second segment → decommit → recycle.
+            unsafe { alloc.dealloc(ptr, layout) };
+        }
+    }
+}
+
+fn bench_global_segment_decommit_cycle(c: &mut Criterion) {
+    let mut group = c.benchmark_group("segment_decommit_cycle");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferAlloc::new();
+    let mi = mimalloc::MiMalloc;
+    let sys = System;
+
+    // The largest small size class EXACTLY (SMALL_MAX = 258,752 B ≈ 253 KiB) @
+    // align 8: this MUST route to the Small path for the decommit trigger to
+    // fire. A literal 256 KiB (262,144 B) exceeds SMALL_MAX (258,752 B) and
+    // silently falls through to the dedicated-segment Large path, where
+    // `dec_live_and_maybe_decommit` bails on `kind != Small` and
+    // `decommit_empty_segment_for_release` is NEVER reached — the whole point
+    // of the bench. One 4 MiB segment holds 15 usable such blocks (see
+    // `bench_segment_decommit_cycle`'s doc comment for the full 15/15/4 batch
+    // breakdown); `SEG_BATCH` (34) must reach a THIRD segment to leave the
+    // second one non-current, which is what actually triggers decommit.
+    let layout = Layout::from_size_align(258_752, 8).unwrap();
+
+    group.bench_function("SeferAlloc/253KiB", |b| {
+        b.iter(|| bench_segment_decommit_cycle(&sefer, layout))
+    });
+    group.bench_function("mimalloc/253KiB", |b| {
+        b.iter(|| bench_segment_decommit_cycle(&mi, layout))
+    });
+    group.bench_function("System/253KiB", |b| {
+        b.iter(|| bench_segment_decommit_cycle(&sys, layout))
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_global_alloc,
     bench_global_alloc_churn,
-    bench_global_alloc_churn_write
+    bench_global_alloc_churn_write,
+    bench_global_segment_decommit_cycle
 );
 criterion_main!(benches);
