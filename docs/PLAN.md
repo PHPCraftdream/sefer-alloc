@@ -106,10 +106,14 @@ to each tier:
 | **ThreadSanitizer** | data races at runtime | Phase 3b |
 | **cargo-fuzz** | corruption on adversarial op streams | Phase 5 |
 | **multi-arch CI** (x86_64 + aarch64) | weak-memory bugs x86 hides | Phase 5 |
-| `#![forbid(unsafe_code)]` except one module | confinement of `unsafe` | structural, compiler-checked |
+| `#![forbid(unsafe_code)]` except named seam modules | confinement of `unsafe` | structural, compiler-checked |
 
-The structural promise — "the `unsafe` is one screenful" — is checked by the
-compiler (forbid everywhere but one documented module), not asserted in prose.
+The structural promise — `unsafe` is confined to named seam modules, each
+lifting the ban with `#![allow(unsafe_code)]` for a single documented reason —
+is checked by the compiler, not asserted in prose. The seams are inventoried in
+README §"Where unsafe lives — the complete list"; the current, authoritative
+list (no hardcoded count) is whatever `grep -rln 'allow(unsafe_code)' src/
+crates/` prints, and a stray `unsafe` outside a named seam is a compile error.
 
 ## 4. Invariants
 
