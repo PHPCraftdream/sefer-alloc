@@ -29,7 +29,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use sefer_alloc::SeferAlloc;
 
 /// Representative small-to-medium sizes for the churn bench.
@@ -80,21 +80,64 @@ fn bench_direct_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout) {
     }
 }
 
-/// Churn bench: maintain a working set of `working_set` live blocks; each of
-/// `ops` iterations frees a pseudo-random block and allocates a replacement.
-/// This is the steady-state pattern a per-thread magazine (tcache) wins on:
-/// freed blocks re-enter the cache and are re-allocated without round-tripping
-/// the BinTable. Fixed PRNG seed = 0xCAFE for reproducibility.
-fn bench_churn_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usize, ops: usize) {
-    let mut rng = XorShift64::new(0xCAFE);
-
-    // Pre-fill the working set.
+/// Pre-fill a working set of `working_set` live blocks for the churn benches.
+/// This is the COLD phase (first-touch page faults, BinTable carve) that F7
+/// pulled OUT of the timed region: the churn benches time only the
+/// steady-state `churn_step` loop via `iter_batched`, so the cold prefill and
+/// the teardown no longer contaminate the reported ns/op.
+fn churn_prefill<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usize) -> Vec<*mut u8> {
     let mut live: Vec<*mut u8> = Vec::with_capacity(working_set);
     for _ in 0..working_set {
         // SAFETY: layout has non-zero size and valid alignment.
         let p = unsafe { alloc.alloc(layout) };
         live.push(p);
     }
+    live
+}
+
+/// Teardown: free every block in the working set.
+///
+/// NOTE (correction, found by adversarial re-review of the F7 fix): this is
+/// called from INSIDE the `iter_batched` routine closure at each call site
+/// below (`churn_step(...); churn_teardown(...)`), not from the closure's
+/// return-value drop — `iter_batched` only excludes `setup`'s time, not
+/// arbitrary code the routine closure itself runs. So teardown's
+/// `CHURN_WORKING_SET` (256) frees ARE included in the timed region, on top
+/// of the `ops` (1024) churn pairs — roughly a 20% addition to the timed
+/// operation count that `OPS` alone does not capture. A prior version of this
+/// comment (and `churn_step`'s) claimed teardown was untimed and that `ops`
+/// was the exact divisor with "no prefill/teardown skew"; that was false.
+/// Making teardown genuinely untimed would require `routine` to return a
+/// drop-guard value (whose `Drop` frees the blocks) instead of calling
+/// `churn_teardown` inline — left as a follow-up, not implemented here to
+/// avoid restructuring the six `iter_batched` call sites below under time
+/// pressure. The residual ~20% overshoot is a smaller, known-shape error than
+/// the ~25% F7 originally reported (mixed cold prefill AND uncounted teardown
+/// with a *different* divisor); reported ns/op should be read as "per churn
+/// op, plus a small constant teardown tax," not as exact.
+fn churn_teardown<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &[*mut u8]) {
+    for &p in live {
+        if !p.is_null() {
+            // SAFETY: `p` was allocated by `alloc` with the same layout.
+            unsafe { alloc.dealloc(p, layout) };
+        }
+    }
+}
+
+/// Churn bench: maintain a working set of `working_set` live blocks; each of
+/// `ops` iterations frees a pseudo-random block and allocates a replacement.
+/// This is the steady-state pattern a per-thread magazine (tcache) wins on:
+/// freed blocks re-enter the cache and are re-allocated without round-tripping
+/// the BinTable. Fixed PRNG seed = 0xCAFE for reproducibility. This loop's
+/// prefill is untimed (F7 fix), but `churn_teardown` runs inside the SAME
+/// timed `iter_batched` routine right after this call at every call site
+/// below — see the correction note on [`churn_teardown`]'s doc comment.
+/// `ops` (1024) is the count `bench-table.mjs` divides by; the timed region
+/// actually does `ops` churn pairs plus `CHURN_WORKING_SET` (256) teardown
+/// frees, so the reported ns/op understates the true per-op cost slightly.
+fn churn_step<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &mut [*mut u8], ops: usize) {
+    let working_set = live.len();
+    let mut rng = XorShift64::new(0xCAFE);
 
     // Churn: free a random slot, alloc a replacement.
     for _ in 0..ops {
@@ -109,33 +152,16 @@ fn bench_churn_alloc<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usi
     }
 
     black_box(&live);
-
-    // Teardown: free everything.
-    for &p in &live {
-        if !p.is_null() {
-            // SAFETY: `p` was allocated by `alloc` with the same layout.
-            unsafe { alloc.dealloc(p, layout) };
-        }
-    }
 }
 
-/// Writing-churn bench: an EXACT clone of `bench_churn_alloc` except that
-/// immediately after every non-null `alloc` (both the pre-fill loop and the
-/// churn loop) it writes the first 16 bytes (two u64 words at offset 0 and 8)
-/// of the freshly allocated block. This dirties word1 (bytes 8..16 — the
-/// magazine M2 double-free-guard key location) so the realistic
-/// write-to-what-you-allocate pattern is measured, instead of leaving a stale
-/// key that forces a slow-path scan on every free. Fixed PRNG seed = 0xCAFE
-/// (identical to the non-writing bench) for reproducibility.
-fn bench_churn_alloc_write<A: GlobalAlloc>(
+/// Write-prefill: like `churn_prefill` but writes the first 16 bytes of each
+/// freshly allocated block (see `churn_step_write` for the rationale). Cold
+/// phase, pulled OUT of the timed region (F7).
+fn churn_prefill_write<A: GlobalAlloc>(
     alloc: &A,
     layout: Layout,
     working_set: usize,
-    ops: usize,
-) {
-    let mut rng = XorShift64::new(0xCAFE);
-
-    // Pre-fill the working set.
+) -> Vec<*mut u8> {
     let mut live: Vec<*mut u8> = Vec::with_capacity(working_set);
     for _ in 0..working_set {
         // SAFETY: layout has non-zero size and valid alignment.
@@ -149,6 +175,20 @@ fn bench_churn_alloc_write<A: GlobalAlloc>(
         }
         live.push(p);
     }
+    live
+}
+
+/// Writing-churn bench: an EXACT clone of `churn_step` except that immediately
+/// after every non-null `alloc` it writes the first 16 bytes (two u64 words at
+/// offset 0 and 8) of the freshly allocated block. This dirties word1 (bytes
+/// 8..16 — the magazine M2 double-free-guard key location) so the realistic
+/// write-to-what-you-allocate pattern is measured, instead of leaving a stale
+/// key that forces a slow-path scan on every free. Fixed PRNG seed = 0xCAFE
+/// (identical to the non-writing bench) for reproducibility. Only this loop is
+/// timed (F7).
+fn churn_step_write<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &mut [*mut u8], ops: usize) {
+    let working_set = live.len();
+    let mut rng = XorShift64::new(0xCAFE);
 
     // Churn: free a random slot, alloc a replacement, write into it.
     for _ in 0..ops {
@@ -171,14 +211,6 @@ fn bench_churn_alloc_write<A: GlobalAlloc>(
     }
 
     black_box(&live);
-
-    // Teardown: free everything.
-    for &p in &live {
-        if !p.is_null() {
-            // SAFETY: `p` was allocated by `alloc` with the same layout.
-            unsafe { alloc.dealloc(p, layout) };
-        }
-    }
 }
 
 fn bench_global_alloc(c: &mut Criterion) {
@@ -214,7 +246,14 @@ fn bench_global_alloc(c: &mut Criterion) {
     }
 
     // --- Real-world pattern: Vec<i64> push/grow churn ---
-    // This exercises realloc + many small allocs as the Vec grows.
+    // Honest geometric growth: capacity doubles (4, 8, 16, … 512) exactly as
+    // `Vec` does, so this exercises realloc + many small allocs as the Vec
+    // grows — capacity sequence 4, 8, 16, 32, 64, 128, 256, 512 per closure
+    // call: 8 allocs total (the initial 4-element alloc, plus 7 growth
+    // reallocs — each an alloc-new + copy-old + dealloc-old), NOT a single
+    // jump straight to the final 4 KiB. `old_layout` is
+    // tracked honestly across steps (mirroring the System arm) so every
+    // dealloc matches the layout its block was allocated with.
     const VEC_PUSHES: usize = 512;
     group.bench_function("Vec_push/SeferAlloc", |b| {
         b.iter(|| {
@@ -224,21 +263,21 @@ fn bench_global_alloc(c: &mut Criterion) {
             let mut ptr: *mut i64 = core::ptr::null_mut();
             let mut cap: usize = 0;
             let mut len: usize = 0;
-            let layout = Layout::array::<i64>(VEC_PUSHES.max(1)).unwrap();
             for i in 0..VEC_PUSHES {
                 if len == cap {
                     let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap.max(VEC_PUSHES)).unwrap();
+                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
                     // SAFETY: realloc-like growth through SeferAlloc.
                     let new_ptr = unsafe { sefer.alloc(new_layout) };
                     if !new_ptr.is_null() && !ptr.is_null() {
+                        let old_layout = Layout::array::<i64>(cap).unwrap();
                         unsafe {
                             core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
-                            sefer.dealloc(ptr as *mut u8, layout);
+                            sefer.dealloc(ptr as *mut u8, old_layout);
                         }
                     }
                     ptr = new_ptr as *mut i64;
-                    cap = new_cap.max(VEC_PUSHES);
+                    cap = new_cap;
                 }
                 // SAFETY: ptr is valid for `cap` elements if non-null.
                 if !ptr.is_null() {
@@ -262,21 +301,21 @@ fn bench_global_alloc(c: &mut Criterion) {
             let mut ptr: *mut i64 = core::ptr::null_mut();
             let mut cap: usize = 0;
             let mut len: usize = 0;
-            let layout = Layout::array::<i64>(VEC_PUSHES.max(1)).unwrap();
             for i in 0..VEC_PUSHES {
                 if len == cap {
                     let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap.max(VEC_PUSHES)).unwrap();
+                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
                     // SAFETY: realloc-like growth through mimalloc.
                     let new_ptr = unsafe { mi.alloc(new_layout) };
                     if !new_ptr.is_null() && !ptr.is_null() {
+                        let old_layout = Layout::array::<i64>(cap).unwrap();
                         unsafe {
                             core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
-                            mi.dealloc(ptr as *mut u8, layout);
+                            mi.dealloc(ptr as *mut u8, old_layout);
                         }
                     }
                     ptr = new_ptr as *mut i64;
-                    cap = new_cap.max(VEC_PUSHES);
+                    cap = new_cap;
                 }
                 // SAFETY: ptr is valid for `cap` elements if non-null.
                 if !ptr.is_null() {
@@ -301,7 +340,7 @@ fn bench_global_alloc(c: &mut Criterion) {
             for i in 0..VEC_PUSHES {
                 if len == cap {
                     let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap.max(VEC_PUSHES)).unwrap();
+                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
                     // SAFETY: realloc-like growth through System.
                     let new_ptr = unsafe { sys.alloc(new_layout) };
                     if !new_ptr.is_null() && !ptr.is_null() {
@@ -312,7 +351,7 @@ fn bench_global_alloc(c: &mut Criterion) {
                         }
                     }
                     ptr = new_ptr as *mut i64;
-                    cap = new_cap.max(VEC_PUSHES);
+                    cap = new_cap;
                 }
                 if !ptr.is_null() {
                     unsafe { ptr.add(len).write(i as i64) };
@@ -344,16 +383,41 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
+        // F7: `iter_batched` times ONLY the steady-state churn loop (`OPS`
+        // op-pairs). Prefill (cold, first-touch) is the untimed setup and
+        // teardown is the untimed drop — so the reported ns/op divides by
+        // exactly `OPS`, with no ~25% cold-phase skew.
         group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc(&sefer, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill(&sefer, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&sefer, layout, &mut live, OPS);
+                    churn_teardown(&sefer, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
 
         group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc(&mi, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill(&mi, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&mi, layout, &mut live, OPS);
+                    churn_teardown(&mi, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
 
         group.bench_function(format!("System/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc(&sys, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill(&sys, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&sys, layout, &mut live, OPS);
+                    churn_teardown(&sys, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
     }
 
@@ -373,16 +437,38 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
+        // F7: time ONLY the churn loop (see the non-writing group above).
         group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc_write(&sefer, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill_write(&sefer, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step_write(&sefer, layout, &mut live, OPS);
+                    churn_teardown(&sefer, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
 
         group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc_write(&mi, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill_write(&mi, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step_write(&mi, layout, &mut live, OPS);
+                    churn_teardown(&mi, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
 
         group.bench_function(format!("System/{size}B"), |b| {
-            b.iter(|| bench_churn_alloc_write(&sys, layout, CHURN_WORKING_SET, OPS))
+            b.iter_batched(
+                || churn_prefill_write(&sys, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step_write(&sys, layout, &mut live, OPS);
+                    churn_teardown(&sys, layout, &live);
+                },
+                BatchSize::SmallInput,
+            )
         });
     }
 

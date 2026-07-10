@@ -218,6 +218,10 @@ disclaimer):
   **~12–35× faster than `mimalloc`** (4/16/64 MiB) via the OPT-E large-segment
   cache — a 4 MiB cycle is ~59 ns vs mimalloc's ~716 ns, and ~302× faster than
   `System` (measured 2026-07-06, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)).
+  Preconditions for these headline ratios: same-size reuse inside the decay
+  window with a size factor ≤ 2× (the OPT-E cache holds 8 committed slots) —
+  do not extrapolate them to mixed-size or cold-first-touch workloads, where
+  the cache misses and the numbers regress to OS-round-trip cost.
 - On **single-thread small-class churn** (the reuse pattern) it **beats
   `mimalloc` at every size** on the realistic writing pattern (16 B 1.66×, 64 B
   1.90×, 256 B 1.07×, 1024 B 6.43× faster) after the P0–P6 perf arc
@@ -233,9 +237,11 @@ disclaimer):
 - On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
   into a rout: `realloc_grow_geometric` (64 B→4 MiB) is **~40× faster than
   `mimalloc`** (9.7 µs vs 383 µs) and ~290× faster than `System`;
-  `realloc_in_place_unfavorable` went from 1.1× *slower* to **~1,500× faster**
-  (906 ns vs 1.36 ms) — every Large growth step that fits the committed 4 MiB
-  span is a header update returning the same pointer (re-measured 2026-07-06).
+  `realloc_grow_neighbour_pressure` (formerly `realloc_in_place_unfavorable`;
+  renamed for honesty — after OPT-G the neighbours no longer block sefer's
+  in-place growth) went from 1.1× *slower* to **~1,500× faster** (906 ns vs
+  1.36 ms) — every Large growth step that fits the committed 4 MiB span is a
+  header update returning the same pointer (re-measured 2026-07-06).
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
@@ -477,12 +483,19 @@ decay back to `live + headroom`. There is no per-span size cap — a 30 GB
 segment on a 64 GB box is cacheable now. The 0.3.0 `span_usable` fix (#134)
 keeps this win without unbounded RSS amplification across cache reuse.
 
-### Realloc grow under adversarial neighbour pressure
+### Realloc grow under neighbour pressure
 
 | Bench | SeferAlloc | mimalloc | System | Notes |
 |---|---|---|---|---|
 | `realloc_grow_geometric` (64 B→4 MiB) | **~9.7 µs** | ~383 µs | ~2.78 ms | **~40× faster than mimalloc; ~290× faster than System** |
-| `realloc_in_place_unfavorable`        | **~906 ns** | ~1.36 ms | ~7.26 ms | **~1,500× faster than mimalloc; ~8,000× faster than System** |
+| `realloc_grow_neighbour_pressure`     | **~906 ns** | ~1.36 ms | ~7.26 ms | **~1,500× faster than mimalloc; ~8,000× faster than System** |
+
+(`realloc_grow_neighbour_pressure` was renamed from `realloc_in_place_unfavorable`
+in the 2026-07-09 review: after OPT-G the live neighbours no longer prevent
+sefer's in-place Large growth, so the bench measures sefer's header-update path
+against the copy-and-free path mimalloc/System still take — not an adversarial
+in-place case for sefer. Numbers unchanged; identical geometry, re-measured
+2026-07-06.)
 
 (Re-measured 2026-07-06 after the X-arc: OPT-G grows a Large block in place
 whenever the new size fits the already-committed 4 MiB span — a header update
@@ -715,8 +728,9 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     this noisy host, but wider than the P3-era 1.60× / 1.15× record) and cold
     1024 B **1.13× faster**.
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
-    ~290× faster than `System`; `realloc_in_place_unfavorable` **~1,500×
-    faster** (post-X-arc OPT-G in-place Large growth, 2026-07-06).
+    ~290× faster than `System`; `realloc_grow_neighbour_pressure` (formerly
+    `realloc_in_place_unfavorable`) **~1,500× faster** (post-X-arc OPT-G
+    in-place Large growth, 2026-07-06).
   - **MT macro at T ≥ 2:** larson 1.22–1.38× faster, mstress ≈parity to 1.04×
     faster (measured 2026-07-06 post-R1/R2/R3, see
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster

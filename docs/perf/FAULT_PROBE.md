@@ -70,13 +70,20 @@ this Windows dev host** the way `Ir` is.
 
 ## Recommendation
 
-1. **Primary (adopt):** run fault-sensitive judging on **real Linux CI only**.
-   The `.github/workflows/perf-gate.yml` job already runs on Linux runners
-   where `perf stat -e page-faults,minor-faults` works and `getrusage` is
-   tighter. A fault column can be added there as a coarse (±20%) regression
-   signal alongside `Ir` (which stays the tight gate). On the dev host, `Ir`
-   + `Estimated Cycles` (the X3 upgrade) already cover the deterministic axis;
-   faults are the one axis left to CI.
+1. **Primary — DECLINED as of 2026-07-09 (review F10).** The original
+   recommendation was to add a coarse (±20 %) fault column to the Linux
+   `.github/workflows/perf-gate.yml` job (where `perf stat
+   -e page-faults,minor-faults` works and `getrusage` is tighter), alongside
+   `Ir` as the tight gate. **Not implemented, and deliberately not scheduled:**
+   the workflow has no `fault` step (verified by `grep -n fault
+   .github/workflows/perf-gate.yml` → no match) and this is now a documented
+   non-goal, not a silent gap. Rationale for declining: the fault axis is
+   redundant with the deterministic signal we already gate on — `Ir` +
+   `Estimated Cycles` (the X3 upgrade) rise with distinct pages touched (see
+   §3 below: `cold_*` / `multiseg_cold_256k` `Ir` is already a fault proxy),
+   so a ±20 % fault column would add CI surface and a second noisy threshold
+   for a signal `Ir` already tracks tightly. Low priority vs effort; revisit
+   only if a fault-specific regression ever slips past the `Ir` gate.
 2. **Secondary (optional, dev host):** if a *local* coarse fault signal is
    wanted, wrap `getrusage(RUSAGE_SELF).ru_minflt` around each bench fn in a
    tiny native (non-callgrind) harness — take the **median of N≥5 runs** and

@@ -1,5 +1,24 @@
 # `SeferAlloc` — benchmark & honest verdict
 
+> **⚠ Methodology change (2026-07-09, review F3/F7) — two bench families below
+> are superseded pending a fresh `npm run bench:table`:**
+> - **`Vec_push`** now does honest geometric `Vec<i64>` growth (capacity
+>   doubles 4→8→…→512, i.e. 8 real grow steps with copy-old + dealloc-old),
+>   not the previous single jump straight to 4 KiB. Its cost therefore rose
+>   from a single 4 KiB alloc to a full grow cycle; a short local run
+>   (2026-07-09, noisy host) read SeferAlloc ~1.32 µs / mimalloc ~1.15 µs /
+>   System ~2.17 µs per closure call. The old sub-microsecond `Vec_push` rows
+>   below measured the collapsed single-alloc shape — do not compare them to
+>   post-fix numbers.
+> - **`global_alloc_churn` / `_churn_write`** now time ONLY the steady-state
+>   churn loop (`iter_batched`, prefill + teardown moved out of the measured
+>   region), so the reported ns/op divides by exactly `OPS = 1024` with no
+>   ~25 % cold-phase skew. The churn rows below still include the cold prefill
+>   and teardown and read ~25 % high per op.
+>
+> Everything else in this file (large alloc/free, realloc, cold-direct) is
+> unaffected. Rerun `npm run bench:table` to refresh the two families above.
+
 > ## 0.3.0 post-X-arc re-measurement (2026-07-06) — the realloc breakthrough
 >
 > Full re-run after the X-arc (#182–188: X1 OPT-G in-place Large realloc, X2
@@ -11,7 +30,13 @@
 > | Bench | SeferAlloc | mimalloc | System | vs mimalloc | vs System | pre-X was |
 > |---|---|---|---|---|---|---|
 > | `realloc_grow_geometric` (64 B→4 MiB) | **9.67 µs** | 382.7 µs | 2.78 ms | **39.6× faster** | **288× faster** | ~323 µs (1.1× faster) |
-> | `realloc_in_place_unfavorable` | **906 ns** | 1.355 ms | 7.26 ms | **~1,500× faster** | **~8,000× faster** | ~1.68 ms (1.1× SLOWER) |
+> | `realloc_grow_neighbour_pressure` [^rgnp] | **906 ns** | 1.355 ms | 7.26 ms | **~1,500× faster** | **~8,000× faster** | ~1.68 ms (1.1× SLOWER) |
+>
+> [^rgnp]: Renamed from `realloc_in_place_unfavorable` in the 2026-07-09 review:
+>     after OPT-G the live neighbours no longer block sefer's in-place Large
+>     growth, so the bench is no longer adversarial for sefer (it measures
+>     sefer's header-update path vs the copy-and-free path mimalloc/System
+>     take). Geometry and numbers unchanged.
 >
 > SeferAlloc improved on ITSELF 33× / 1,850× on these two benches: every
 > Large→Large growth step that fits the already-committed 4 MiB span is now a

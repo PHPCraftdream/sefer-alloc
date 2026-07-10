@@ -33,10 +33,10 @@ const FEATURES = 'production';
 // closure performs per measured iteration; dividing the per-iteration time
 // by OPS gives a stable "ns per allocator operation" figure that is
 // comparable across runs regardless of how many ops happen to be batched
-// into one closure call. Vec_push's closure does a SINGLE alloc+dealloc
-// pair (the growth loop's capacity jumps straight to its final size on the
-// first growth — see the bench source) plus VEC_PUSHES stores, so it is
-// reported as-is (one "op" = one whole closure call), not scaled by OPS.
+// into one closure call. Vec_push's closure does honest geometric Vec growth
+// (capacity doubles 4→8→…→512, i.e. 8 grow steps of alloc-new + copy-old +
+// dealloc-old) plus VEC_PUSHES stores per closure call; it is reported as-is
+// (one "op" = one whole closure call), not scaled by OPS.
 const OPS = 1024;
 const SIZES = ['16B', '64B', '256B', '1024B'];
 const ARMS = ['SeferAlloc', 'mimalloc', 'System'];
@@ -131,7 +131,7 @@ function printSizedTable(title, id, scale, byId) {
 }
 
 function printVecPushTable(byId) {
-  console.log('\n### Vec_push (amortized `Vec<i64>` growth — one alloc+dealloc pair + stores per op, NOT scaled)\n');
+  console.log('\n### Vec_push (honest geometric `Vec<i64>` growth — 8 grow steps + stores per op, NOT scaled)\n');
   console.log('| SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |');
   console.log('|---:|---:|---:|---:|');
   const vals = {};

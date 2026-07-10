@@ -11,10 +11,16 @@
 //!    (16 doublings). Uses `GlobalAlloc::realloc` directly (no `Vec` amortization
 //!    hiding the cost) so the full grow cycle is captured honestly.
 //!
-//! 3. **`realloc_in_place_unfavorable`** — repeated `realloc` of a single block
-//!    while competing allocations live between the old and next candidate
-//!    addresses, preventing in-place growth. Quantifies the copy-and-free cost
-//!    under adversarial neighbour pressure.
+//! 3. **`realloc_grow_neighbour_pressure`** — repeated `realloc` of a single
+//!    block while competing small allocations live around it. Historically
+//!    "unfavorable": the neighbours were meant to block in-place growth and
+//!    force copy-and-free. After OPT-G, SeferAlloc's Large blocks live in a
+//!    dedicated segment and grow into their own `span_usable`, so neighbour
+//!    pressure no longer blocks in-place growth for sefer — this bench now
+//!    measures sefer's header-update in-place path against the copy-and-free
+//!    path the other allocators still take. Renamed from
+//!    `realloc_in_place_unfavorable` for honesty (see review F9/F10,
+//!    2026-07-09).
 //!
 //! All three groups compare three allocators through their `GlobalAlloc` trait
 //! implementations called directly (no process-level `#[global_allocator]`
@@ -237,16 +243,21 @@ fn bench_realloc_grow_geometric(c: &mut Criterion) {
     group.finish();
 }
 
-/// Group 3: realloc under adversarial neighbour pressure (unfavorable in-place
-/// condition).
+/// Group 3: realloc under neighbour pressure.
 ///
 /// A subject block is grown in 256 KiB steps (8 steps: 512 KiB → 2.5 MiB)
-/// while 32 neighbour allocations occupy adjacent address space. Because the
-/// neighbours are held alive the entire time, the allocator cannot extend the
-/// subject in-place — it must alloc-new + copy + dealloc-old on every step.
-/// This measures the copy-and-free degradation path.
-fn bench_realloc_in_place_unfavorable(c: &mut Criterion) {
-    let mut group = c.benchmark_group("realloc_in_place_unfavorable");
+/// while 32 neighbour allocations occupy adjacent address space. Originally
+/// designed as an adversarial "unfavorable in-place" case: the live neighbours
+/// were meant to force alloc-new + copy + dealloc-old on every step. After
+/// OPT-G this no longer holds for SeferAlloc — a Large block lives in its own
+/// dedicated segment and grows into `span_usable`, so neighbour pressure does
+/// NOT block in-place growth for sefer. The bench therefore measures sefer's
+/// header-update in-place path vs the copy-and-free path mimalloc/System still
+/// take; renamed from `realloc_in_place_unfavorable` for honesty (review
+/// F9/F10). The copy-and-free path itself stays under observation via the
+/// mimalloc/System arms here and via `realloc_grow_geometric`.
+fn bench_realloc_grow_neighbour_pressure(c: &mut Criterion) {
+    let mut group = c.benchmark_group("realloc_grow_neighbour_pressure");
     group.sample_size(10);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(3));
@@ -277,6 +288,6 @@ criterion_group!(
     benches,
     bench_large_alloc_free,
     bench_realloc_grow_geometric,
-    bench_realloc_in_place_unfavorable,
+    bench_realloc_grow_neighbour_pressure,
 );
 criterion_main!(benches);

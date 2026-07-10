@@ -3,11 +3,12 @@
 Deterministic instruction-count (`Ir`) baseline for `benches/perf_gate_iai.rs`,
 the reference future perf work (e.g. W4 `carve_batch`) diffs against.
 
-- **Commit:** post-W3 (`alloc-stats` gating; the W2 tombstone-rebuild is
-  Ir-neutral). Original baseline was `4e139b0`; W3 gated the per-hit stats bump
-  out of `production`, moving every hit-heavy bench BELOW the original baseline
-  (small_churn −59, cold_16b −236, recycle_16b −477). W4 (`carve_batch`) diffs
-  against THIS table.
+- **Commit (this section, historical provenance):** post-W3 (`alloc-stats`
+  gating; the W2 tombstone-rebuild is Ir-neutral). Original baseline was
+  `4e139b0`; W3 gated the per-hit stats bump out of `production`, moving every
+  hit-heavy bench BELOW the original baseline (small_churn −59, cold_16b −236,
+  recycle_16b −477). This 10-bench table is retained ONLY for provenance — new
+  work does NOT diff against it (see "Current reference for new work" below).
 - **Features:** `production` (`alloc-global` + `alloc-xthread` + `alloc-decommit`
   + `fastbin`) — the same set the CI perf-gate benches with, so these numbers
   match `.github/workflows/perf-gate.yml`. (`stats` counters are OFF in
@@ -18,13 +19,19 @@ the reference future perf work (e.g. W4 `carve_batch`) diffs against.
   `iai-callgrind = "0.14"` in `Cargo.toml`); valgrind 3.22.0.
 - **Determinism:** `Ir` is callgrind instructions-retired — deterministic
   run-to-run on the same binary+input. Two back-to-back full runs produced
-  BYTE-IDENTICAL `Ir` for all 10 benches. That determinism is what makes this a
-  judge on this Windows dev host (wall-clock is noise; `Ir` is not).
+  BYTE-IDENTICAL `Ir` for all benches (10 at the time of this section). That
+  determinism is what makes this a judge on this Windows dev host (wall-clock
+  is noise; `Ir` is not).
 
-**Current reference for new work:** see the "Post-X1+X2+X3 reference
-(2026-07-05) — the CURRENT 11-bench table" section below — this file retains
-the historical post-W3 baseline above for provenance; do not diff new benches
-against the post-W3 numbers.
+**Current reference for new work:** the "Post-X1+X2+X3 reference (2026-07-05)"
+section below captures 11 bench fns and is the last fully-tabulated reference
+in this file. Since then a 12th bench fn — `seg_cycle_decommit_256k` (task #14,
+the PERF-4 decommit→recycle segment-churn probe) — was added to
+`benches/perf_gate_iai.rs`; adding a bench fn shifts every other bench's Ir via
+pure binary layout, so once its numbers are captured the 11-bench table is
+superseded as a diff target. Regenerate the full table with `npm run iai`
+before diffing new work; this file retains the historical post-W3 (10-bench)
+baseline above for provenance only — do not diff against it.
 
 ## Baseline (Ir per bench function)
 
