@@ -23,17 +23,28 @@
 //! ## M5-clean bootstrap invariant
 //!
 //! `HeapCore::new` bootstraps via [`AllocCore::new`] (OS aperture only —
-//! `mmap`/`VirtualAlloc`, **never** `std::alloc`). The cross-thread
-//! `ThreadFreeStack` is `Box`-allocated (goes through `std::alloc`), so it
-//! is **NOT** constructed in `HeapCore::new` — that would violate the
-//! M5-clean bootstrap of `HeapRegistry::claim` (which lazily materialises
-//! a `HeapCore` inside the slot and runs inside the registry's
-//! `ensure`/bootstrap path). Instead the TFS handle is installed lazily by
-//! `HeapCore::install_thread_free`, called from the TLS bind-slow path
-//! (outside the registry bootstrap). Until then `thread_free` is `None` and
-//! the heap serves only own-thread allocations (cross-thread frees to its
-//! segments are a safe no-op, matching the existing unstamped-segment
-//! behaviour in `dealloc_small`).
+//! `mmap`/`VirtualAlloc`, **never** `std::alloc`) and allocates NOTHING
+//! else. In particular the cross-thread free-stack head is **not** an inline
+//! `HeapCore` field and is **not** `Box`-allocated: task H1 hoisted it OUT of
+//! `HeapCore` into the OWNING [`HeapSlot::thread_free`] (a `Sync`,
+//! process-`'static` slot field, null-initialised in the registry bootstrap's
+//! zeroed pages) — see the [`thread_free`](HeapCore::thread_free) field doc for
+//! the full aliasing-gap rationale (a remote CAS onto an inline head would land
+//! inside the owner's protected `&mut HeapCore` retag range). `HeapCore::new`
+//! therefore leaves its [`thread_free`](HeapCore::thread_free) handle `None`;
+//! the stable `&'static` handle to that slot word is planted right after the
+//! slot binds by [`bind_thread_free`](HeapCore::bind_thread_free) — called from
+//! `HeapRegistry::claim`, or from `fallback::heap_ptr` with `&FALLBACK_TFS` for
+//! the standalone fallback heap. Because resolving that handle allocates
+//! nothing, the bootstrap stays M5-clean (no `std::alloc` reach) and the
+//! `#[global_allocator]` bind-path recursion an eager `Box::new` would have
+//! caused remains impossible. In the transient pre-bind window
+//! (`thread_free == None`, never observed on any alloc/free path) the heap
+//! serves only own-thread allocations — cross-thread frees to its segments are
+//! a safe no-op, matching the existing unstamped-segment behaviour in
+//! `dealloc_small`.
+//!
+//! [`HeapSlot::thread_free`]: super::heap_slot::HeapSlot::thread_free
 //!
 //! ## `HeapCore` — the sole allocator face
 //!
@@ -281,10 +292,14 @@ impl HeapCore {
     /// reservation).
     ///
     /// **M5-clean:** this performs NO `std::alloc`. The cross-thread TFS
-    /// handle is `None` here; it is installed separately by
-    /// [`install_thread_free`](Self::install_thread_free) on the TLS bind
-    /// path (which is allowed to touch `std::alloc` — it is NOT inside the
-    /// registry bootstrap).
+    /// handle ([`thread_free`](Self::thread_free)) is `None` here; the stable
+    /// `&'static` handle to the OWNING slot's `thread_free` word (or
+    /// `FALLBACK_TFS` for the fallback heap) is planted separately by
+    /// [`bind_thread_free`](Self::bind_thread_free), called from
+    /// `HeapRegistry::claim` / `fallback::heap_ptr` right after the slot binds
+    /// and before any allocation on this heap runs. That binding also allocates
+    /// nothing (task H1 hoisted the head out of `HeapCore`; there is no `Box`),
+    /// so the whole path stays M5-clean.
     ///
     /// Called lazily by [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
     /// when it transitions a slot `FREE → LIVE` and needs to materialise the
@@ -441,22 +456,27 @@ impl HeapCore {
     /// Lazily "install" the cross-thread free-stack handle on the TLS
     /// bind-slow path.
     ///
-    /// Phase 12.5 redesign: this performs **NO allocation** — it is a no-op
-    /// that simply hands out the address of the INLINE
-    /// [`thread_free`](Self::thread_free) field (an `AtomicPtr<u8>` already
-    /// initialised to null in [`new`](Self::new)). It does NOT allocate a
-    /// `Box<AtomicPtr<u8>>` — an earlier design did, but that was removed
-    /// because a `Box::new` here would recurse through `SeferAlloc::alloc` →
-    /// `bind_slow` → `install_thread_free` → `Box::new` under a
-    /// `#[global_allocator]` build and self-deadlock/overflow (see the field
-    /// doc on `thread_free`). Because it allocates nothing, it is trivially
-    /// M5-clean and idempotent (every call returns the same address; there is
-    /// no per-call state to guard).
+    /// This performs **NO allocation** — it is a no-op that simply hands out
+    /// the address of THIS heap's already-bound free-stack head. Since task H1
+    /// that head is NOT an inline `HeapCore` field and NOT a `Box<AtomicPtr>`:
+    /// it lives in the OWNING [`HeapSlot::thread_free`](super::heap_slot::HeapSlot::thread_free)
+    /// word (or `FALLBACK_TFS` for the fallback heap), null-initialised in the
+    /// registry bootstrap and reached here through the `&'static` handle
+    /// [`bind_thread_free`](Self::bind_thread_free) planted at claim time. An
+    /// earlier design `Box`-allocated the head lazily here, but that was removed
+    /// because a `Box::new` on this path would recurse through
+    /// `SeferAlloc::alloc` → `bind_slow` → `install_thread_free` → `Box::new`
+    /// under a `#[global_allocator]` build and self-deadlock/overflow (see the
+    /// field doc on [`thread_free`](Self::thread_free)). Because it allocates
+    /// nothing, it is trivially M5-clean and idempotent (every call returns the
+    /// same address; there is no per-call state to guard).
     ///
-    /// Returns the stable `*const AtomicPtr<u8>` head pointer (the inline
-    /// field's address, stable for the slot's lifetime) that segment headers
+    /// Returns the stable `*const AtomicPtr<u8>` head pointer (the slot word's
+    /// `'static` address, stable for the slot's lifetime) that segment headers
     /// store in `owner_thread_free` so cross-thread freers can route to this
-    /// heap.
+    /// heap — or null in the transient pre-bind window (`thread_free == None`),
+    /// which callers on the TLS bind path never observe (they run after the
+    /// claim that planted the handle).
     ///
     /// Only compiled under `alloc-xthread` (the cross-thread feature).
     #[cfg(feature = "alloc-xthread")]

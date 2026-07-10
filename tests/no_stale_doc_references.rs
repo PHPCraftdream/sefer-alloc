@@ -99,6 +99,67 @@ fn no_removed_heap_type_doc_mentions() {
     );
 }
 
+/// Regression-guard against the SPECIFIC pre-task-H1 `thread_free` prose in
+/// `registry/heap_core.rs` and `global/fallback.rs`.
+///
+/// Task #13 (the W3/H1 hoist) moved the cross-thread free-stack head OUT of an
+/// inline `HeapCore` field into the owning `HeapSlot::thread_free` slot word
+/// (and `FALLBACK_TFS` for the fallback heap). Task #31 rewrote the module-doc
+/// and method-doc blocks in those two files that still described the OLD
+/// mechanism (a `Box`-allocated stack, "install" as the binding step, an inline
+/// head field). This test fails if any of those exact stale phrases reappear.
+///
+/// The needles are narrow, load-bearing PHRASES — not bare identifiers. In
+/// particular it does NOT ban the token `install_thread_free`: that method
+/// still exists (a no-op accessor) and is legitimately referenced. It bans only
+/// the description of the head as `Box`-allocated or as an inline field, which
+/// is now false after H1. Doc-only guard: reads source text, never links the
+/// crate, so it runs in every feature configuration.
+#[test]
+fn no_stale_pre_h1_thread_free_prose() {
+    // (file, list-of-forbidden-substrings). Each substring is an exact phrase
+    // removed by task #31 that would only reappear via a genuine regression.
+    let cases: &[(&str, &[&str])] = &[
+        (
+            "registry/heap_core.rs",
+            &[
+                "ThreadFreeStack is Box-allocated",
+                "`ThreadFreeStack` is `Box`-allocated",
+                "hands out the address of the INLINE",
+                "installed separately by\n    /// [`install_thread_free`]",
+            ],
+        ),
+        (
+            "global/fallback.rs",
+            &[
+                "already-initialised (in `new`) inline `thread_free` field",
+                "wired purely from the stable inline field",
+            ],
+        ),
+    ];
+
+    let mut offenders = Vec::new();
+    for (rel, needles) in cases {
+        let path = src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for needle in *needles {
+            if text.contains(needle) {
+                offenders.push(format!("{}: stale phrase reintroduced: {needle:?}", rel));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "task #13 (H1) hoisted the cross-thread free-stack head out of an \
+         inline `HeapCore` field into the owning slot's `thread_free` word \
+         (and `FALLBACK_TFS`); task #31 rewrote the docs. These pre-H1 stale \
+         phrases (Box-allocated stack / inline head field) were reintroduced:\n{}",
+        offenders.join("\n"),
+    );
+}
+
 /// Regression-guard for a checkable NUMERIC claim in the overview docs.
 ///
 /// `docs/ARCHITECTURE.md` states the count of integration-test files as

@@ -42,15 +42,19 @@
 //!
 //! The fallback's [`HeapCore::new`] goes through the OS aperture
 //! (`mmap`/`VirtualAlloc`) and never `std::alloc` — same M5-clean property
-//! as the registry bootstrap. Under `alloc-xthread`,
-//! [`HeapCore::install_thread_free`] does NOT allocate: since the 12.5
-//! redesign its body is a no-op that merely hands out the address of the
-//! heap's already-initialised (in `new`) inline `thread_free` field. (A real
-//! `Box`-via-`std::alloc` here would self-deadlock — the first fallback alloc
-//! runs under the fallback spinlock, and re-entering the global allocator to
-//! grow a `Box` would recurse back into it.) There is thus no first-alloc
-//! `Box` and no OOM-on-install case to handle: cross-thread-free routing is
-//! wired purely from the stable inline field, M5-clean and M10-preserving.
+//! as the registry bootstrap. Under `alloc-xthread`, the cross-thread
+//! free-stack head is NOT an inline `HeapCore` field and is NOT `Box`-allocated:
+//! task H1 hoisted it into the standalone process-`'static` [`FALLBACK_TFS`]
+//! atomic (the fallback's analogue of a registry slot's `thread_free` word),
+//! whose stable address is bound into the fallback `HeapCore` via
+//! [`HeapCore::bind_thread_free`] once, at init under the bootstrap race,
+//! BEFORE the `READY` publish. So cross-thread-free routing is wired purely
+//! from that already-bound `'static` word — no allocation on any fallback
+//! path, M5-clean and M10-preserving. (A `Box`-via-`std::alloc` here would
+//! self-deadlock — the first fallback alloc runs under the fallback spinlock,
+//! and re-entering the global allocator to grow a `Box` would recurse back
+//! into it; hoisting the head to a `'static` avoids that entirely, with no
+//! first-alloc `Box` and no OOM-on-install case to handle.)
 //!
 //! [`tls_heap::current`]: super::tls_heap::current
 
