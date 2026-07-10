@@ -1,23 +1,90 @@
 # `SeferAlloc` — benchmark & honest verdict
 
-> **⚠ Methodology change (2026-07-09, review F3/F7) — two bench families below
-> are superseded pending a fresh `npm run bench:table`:**
+> **⚠ Methodology change (2026-07-09, review F3/F7) — resolved by the
+> 2026-07-10 section below, which is the first full run on the new
+> methodology:**
 > - **`Vec_push`** now does honest geometric `Vec<i64>` growth (capacity
 >   doubles 4→8→…→512, i.e. 8 real grow steps with copy-old + dealloc-old),
->   not the previous single jump straight to 4 KiB. Its cost therefore rose
->   from a single 4 KiB alloc to a full grow cycle; a short local run
->   (2026-07-09, noisy host) read SeferAlloc ~1.32 µs / mimalloc ~1.15 µs /
->   System ~2.17 µs per closure call. The old sub-microsecond `Vec_push` rows
->   below measured the collapsed single-alloc shape — do not compare them to
->   post-fix numbers.
+>   not the previous single jump straight to 4 KiB. The old sub-microsecond
+>   `Vec_push` rows in older sections measured the collapsed single-alloc
+>   shape — do not compare them to post-fix numbers.
 > - **`global_alloc_churn` / `_churn_write`** now time ONLY the steady-state
 >   churn loop (`iter_batched`, prefill + teardown moved out of the measured
 >   region), so the reported ns/op divides by exactly `OPS = 1024` with no
->   ~25 % cold-phase skew. The churn rows below still include the cold prefill
->   and teardown and read ~25 % high per op.
+>   ~25 % cold-phase skew. Churn rows in sections OLDER than 2026-07-10 still
+>   include the cold prefill/teardown and read ~25 % high per op — do not
+>   read the 2026-07-10 churn improvement as pure allocator speedup; roughly
+>   a quarter of it is the removed measurement skew.
 >
-> Everything else in this file (large alloc/free, realloc, cold-direct) is
-> unaffected. Rerun `npm run bench:table` to refresh the two families above.
+> Everything else (large alloc/free, realloc, cold-direct) is
+> methodology-unchanged across sections.
+
+> ## 0.3.x post-PERF-PASS re-measurement (2026-07-10) — after the five-pass perf arc
+>
+> Full `npm run bench:table` re-run at `e6b9b3a` after the PERF-PASS-1..5 arc
+> (`50c07b0`…`e6b9b3a`: thin-LTO + `codegen-units = 1` profile, virgin-bitmap
+> init skip, Mechanism-2 small-segment hysteresis pool, ring-drain empty-guard
+> + false-sharing partitions, `SegmentHeader`/`Tcache` cache-line reorders).
+> Same host/profile/caveats as every section below (noisy Windows dev box,
+> criterion `sample_size(10)`, ±15–20 % — ratios are the signal, exact ns are
+> not). **First run on the honest 2026-07-09 methodology** (see the note
+> above): churn rows are NOT directly comparable to pre-2026-07-10 sections.
+> All values are **ns per op** as printed by `scripts/bench-table.mjs`.
+>
+> **Churn + write** (each block written after alloc — the realistic pattern,
+> headline):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | **21.0 ns** |  23.7 ns | 144.1 ns | **1.12× faster** | 6.9× faster |
+> | 64 B   | **21.1 ns** |  29.2 ns | 154.8 ns | **1.38× faster** | 7.3× faster |
+> | 256 B  | **24.0 ns** |  39.4 ns | 151.9 ns | **1.64× faster** | 6.3× faster |
+> | 1024 B | **22.4 ns** | 227.7 ns | 171.8 ns | **10.19× faster** | 7.7× faster |
+>
+> **Churn, non-writing** (the artificial no-write pattern):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | **19.4 ns** |  21.3 ns | 136.7 ns | **1.10× faster** | 7.0× faster |
+> | 64 B   | **20.5 ns** |  28.8 ns | 162.3 ns | **1.40× faster** | 7.9× faster |
+> | 256 B  | **19.3 ns** |  41.1 ns | 162.6 ns | **2.12× faster** | 8.4× faster |
+> | 1024 B | **21.4 ns** | 251.0 ns | 180.6 ns | **11.70× faster** | 8.4× faster |
+>
+> **Cold/bulk direct** (`alloc N → free N`, no reuse — the documented magazine
+> worst-case):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 35.3 ns | **15.0 ns** | 155.2 ns | 2.35× slower | 4.4× faster |
+> | 64 B   | 39.2 ns | **20.4 ns** | 177.0 ns | 1.92× slower | 4.5× faster |
+> | 256 B  | 51.1 ns | **29.7 ns** | 168.6 ns | 1.72× slower | 3.3× faster |
+> | 1024 B | **41.7 ns** |  56.7 ns | 306.2 ns | **1.36× faster** | 7.3× faster |
+>
+> **`Vec_push`** (honest geometric `Vec<i64>` growth, 8 grow steps per op —
+> first table on the new shape): SeferAlloc 1237.6 ns ≈ mimalloc 1149.5 ns
+> (1.08× slower, within the host's noise band) vs System 2120.8 ns (1.7×
+> faster). Consistent with the short 2026-07-09 spot-run.
+>
+> **`segment_decommit_cycle`** (253 KiB Large alloc+free through the
+> decommit/cache path): SeferAlloc **1.95 µs** vs mimalloc 8.14 µs (**4.2×
+> faster**) vs System 57.7 µs (**29.6× faster**).
+>
+> (`working_set_cycle` — the Mechanism-2 wall-clock judge, SeferAlloc-only,
+> no comparison columns — reported decommit_calls deltas of 1/1/129/193 at
+> 16/64/256/1024 B this run: the pool fully absorbs decommit churn at
+> 16–64 B; the 256/1024 B residual is the known `POOL_MAX_SLOTS = 4` cap,
+> tracked as RAD-3 in
+> [`perf/PERF_PLAN_2026-07-10-radical-audit-implementation-plan.md`](perf/PERF_PLAN_2026-07-10-radical-audit-implementation-plan.md).)
+>
+> **Verdict (2026-07-10):** on steady-state churn SeferAlloc now leads
+> mimalloc at **every** size on **both** patterns — 1.1–1.4× at 16–64 B,
+> 1.6–2.1× at 256 B, and **10–12× at 1024 B** (mimalloc falls off a cliff at
+> 1 KiB churn; System is 7–8× behind throughout). Cold/bulk tiny remains
+> mimalloc's front (1.7–2.4× at 16–256 B, narrowed from 1.9–2.8× on
+> 2026-07-07), and 1024 B cold now leads. Large alloc/free and realloc were
+> not re-run today — the 2026-07-06 post-X-arc rows stand. Where this section
+> and any older one disagree on churn/`Vec_push`, THIS one is current (and
+> methodology-corrected).
 
 > ## 0.3.0 post-X-arc re-measurement (2026-07-06) — the realloc breakthrough
 >
