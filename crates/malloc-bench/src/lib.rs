@@ -31,6 +31,19 @@
 //! A dependency-free xorshift64 PRNG with a fixed per-thread seed, so runs
 //! are reproducible. No external `rand` crate is required.
 //!
+//! # Relationship to `examples/malloc_macro.rs` (deliberate duplication)
+//!
+//! The root crate's `examples/malloc_macro.rs` contains an INDEPENDENT SECOND
+//! COPY of this same larson/mstress workload. That copy predates this crate's
+//! extraction and is kept separate on purpose: it also carries the
+//! `pinning`/`PinnedRunner` core-affinity integration (a two-mode pinned-vs-
+//! unpinned sweep), which the current [`run`] API — a plain `fn() -> A`
+//! constructor with no per-thread pin hook — cannot express, and it produces
+//! the README MT-table numbers that were not re-plumbed onto this crate under
+//! time pressure. The two copies WILL drift; if you change the workload
+//! semantics in one, mirror it in the other. See task #28 (the 1.2
+//! maintainability finding).
+//!
 //! # No `#[global_allocator]`
 //!
 //! The harness calls `GlobalAlloc::alloc`/`dealloc` trait methods directly —

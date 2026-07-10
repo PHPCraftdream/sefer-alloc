@@ -75,6 +75,16 @@ experimental = ["std", "dep:arc-swap", "dep:crossbeam-epoch"]
 # of our own) and exposes an explicit shard-binding API plus a thread-per-core
 # runner on `ShardedRegion`. The default and `experimental` builds do NOT pull
 # `core_affinity`: this feature is purely opt-in. See docs/PLAN.md §7c.
+#
+# NOTE (review 2.5): `pinning` inherits ALL of `experimental`'s deps — including
+# `arc-swap` + `crossbeam-epoch` (the legacy research concurrent tier) — even
+# though `PinnedRunner` itself uses ONLY `core_affinity` + `ShardedRegion`
+# (`src/concurrent/pinning.rs`; `sharded_region.rs` references neither arc-swap
+# nor crossbeam-epoch). It depends on `experimental` because `ShardedRegion` is
+# gated there, not because it needs the epoch/RCU types. Narrowing this (moving
+# `ShardedRegion` behind a leaner sub-feature so `pinning` need not drag in the
+# whole legacy tier) is a real feature-graph refactor and is intentionally NOT
+# attempted here; documented as a known, accepted over-inclusion.
 pinning = ["experimental", "dep:core_affinity"]
 # Phase 8: the segment substrate + self-hosted metadata — the foundation of a
 # real allocator (the Membrane Inversion). OS-backed SEGMENT-aligned spans via a

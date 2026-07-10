@@ -463,10 +463,16 @@ QEMU / `numa=fake` verify correctness (correct `mbind` call, correct
 socket all fake nodes have identical access latency. Real measurement requires
 2-socket hardware. This is documented in [PHASE_NUMA_DESIGN.md](PHASE_NUMA_DESIGN.md) §5.
 
-Best-effort NUMA benefit pairs naturally with the `pinning` feature
-(`core_affinity`): when threads are pinned, NUMA node membership is stable.
-Without pinning the OS may migrate threads; new segments go to the new node
-but existing segments remain on the old one (MVP strategy: ignore migration).
+Best-effort NUMA benefit depends on threads staying on their node: when a
+thread is pinned to a core, its NUMA node membership is stable, so new segments
+consistently land on that node. Without pinning the OS may migrate threads; new
+segments go to the new node but existing segments remain on the old one (MVP
+strategy: ignore migration). Note that the `pinning` feature's `PinnedRunner`
+only pins the *`ShardedRegion` worker threads* of the legacy concurrent tier —
+it does NOT pin `SeferAlloc`'s own allocating threads. To get stable NUMA
+membership for allocator threads you pin them yourself (e.g. via
+`core_affinity` directly, or your runtime's affinity API); `numa-aware` then
+steers each pinned thread's fresh segments to its node.
 
 ---
 
@@ -568,3 +574,4 @@ context and caveats.
 | [ALLOC_BENCH.md](ALLOC_BENCH.md) | Single-thread and MT benchmark results; OPT-E large cache; heap-core pinning honest verdict; all numbers in context |
 | [PROFILE_FLAMEGRAPHS.md](PROFILE_FLAMEGRAPHS.md) | Flamegraph analysis across 4 workloads; 6 OPT candidates (A-H) with estimated impact |
 | [DURABILITY.md](DURABILITY.md) | Ultra-long-run counter inventory: every monotonic/wrapping/saturating cursor with its width, wrap arithmetic, verdict, and boundary test — and the rule for adding a new one |
+| [GLOSSARY.md](GLOSSARY.md) | Identifier glossary: decodes the ID families in source comments (I1-I6, M1-M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |

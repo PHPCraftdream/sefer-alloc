@@ -1,5 +1,29 @@
 //! Multi-threaded macro-benchmark for `SeferAlloc` vs `mimalloc` vs `System`.
 //!
+//! # Relationship to `malloc-bench-rs` (deliberate duplication)
+//!
+//! The larson/mstress workload primitives here (`Block`, `XorShift64`,
+//! `pick_size`, `alloc_block`/`free_block`/`drain_mailbox`, the two worker
+//! loops) are an INDEPENDENT SECOND COPY of the same workload that also lives in
+//! the publishable `malloc-bench-rs` crate (`crates/malloc-bench/src/lib.rs`,
+//! `Workload::{Larson, Mstress}` + `run`/`sweep`). This example was written
+//! BEFORE that crate was extracted, and it is kept separate ON PURPOSE:
+//!   - the README MT-table numbers ("MT cross-thread", ~611 M ops/s) are
+//!     produced by THIS file, and re-plumbing them onto `malloc-bench-rs`'s
+//!     `run` API under time pressure risked silently shifting the published
+//!     numbers;
+//!   - more substantively, this file carries the `pinning`/`PinnedRunner`
+//!     core-affinity integration and the two-mode (unpinned vs pinned) sweep
+//!     (see `run_config`'s `pinned` arg and `main`'s `#[cfg(feature =
+//!     "pinning")]` block). `malloc-bench-rs::run` takes a plain `fn() -> A`
+//!     allocator constructor with NO per-thread pin hook, so that integration
+//!     cannot be expressed through the crate's current public API without
+//!     extending it.
+//!
+//! The two copies WILL drift; if you change the workload semantics here, mirror
+//! it in `crates/malloc-bench/src/lib.rs` (and vice-versa). See task #28 (the
+//! 1.2 maintainability finding).
+//!
 //! Run with:
 //!   `cargo run --release --example malloc_macro --features "alloc-global alloc-xthread"`
 //!
