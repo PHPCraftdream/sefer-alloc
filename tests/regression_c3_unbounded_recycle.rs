@@ -60,6 +60,31 @@
 //! slot-recycled, even though `dbg_decommit_count()` still advances for
 //! (nearly) all 150 (payload decommit fires unconditionally; only the slot
 //! recycle was capped). Removing the cap restores a clean pass.
+//!
+//! ## Mechanism 2 (task #51) — the bounded hysteresis pool
+//!
+//! The empty-small-segment pool (`SmallSegmentPoolConfig`, ON by default in
+//! `production`) deliberately RETAINS up to `pool_cap` (default 4) emptied
+//! small segments — kept registered + committed, free-lists intact — instead of
+//! releasing them, so the next `reserve_small_segment` reuses one without an OS
+//! round-trip. That means up to `pool_cap` of the 150 survivor segments stay
+//! registered after the single drain (`dbg_live_count_for` returns `Some(0)`,
+//! not `None`), lowering the recycled floor to `TARGET_SEGMENTS - 2 - pool_cap`.
+//!
+//! This does NOT weaken the test's guarantee — it strengthens it. The rejected
+//! Phase C design pinned an UNBOUNDED, ever-growing set of slots PERMANENTLY
+//! (no drain path). This test now proves the pool's retention is instead:
+//!   - BOUNDED: `dbg_pooled_count() <= pool_cap` (the synchronous budget cap in
+//!     `release_or_pool_empty_segment` never lets the pool overfill, even
+//!     mid-scan); and
+//!   - TEMPORARY / drainable: after `dbg_drain_small_pool()` force-drains the
+//!     pool, recycling CONVERGES to the full pool-less floor `TARGET_SEGMENTS -
+//!     2` (only `small_cur` + the primordial remain registered).
+//!
+//! Together those two facts are exactly the "no unbounded / no permanent
+//! pinning" property the original test existed to prove — now demonstrated
+//! against a bounded, drainable retention window rather than against
+//! zero-retention.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -194,8 +219,8 @@ fn unbounded_recycle_within_single_scan() {
         .filter(|&&p| ac.dbg_live_count_for(p).is_none())
         .count();
 
-    // Up to TWO of the TARGET_SEGMENTS survivor segments may legitimately be
-    // excluded from recycling even at live_count == 0:
+    // Three exclusion classes account for the survivor segments that are
+    // legitimately NOT slot-recycled at live_count == 0:
     //   1. `small_cur` — the currently active carve target: decommit/recycle
     //      never fires for it even when empty (§M6: a segment still being
     //      carved from stays committed).
@@ -204,32 +229,82 @@ fn unbounded_recycle_within_single_scan() {
     //      the primordial hosts the self-hosted registry between
     //      `small_meta_end()` and `primordial_meta_end()`, so returning its
     //      pages to the OS would corrupt the substrate).
+    //   3. Mechanism 2 (task #51) — the empty-small-segment HYSTERESIS POOL.
+    //      Up to `pool_cap` (default 4) emptied segments are deliberately
+    //      RETAINED (kept registered + committed, free-lists intact) instead of
+    //      released, so the next `reserve_small_segment` reuses one without an
+    //      OS round-trip. A retained segment stays registered, so
+    //      `dbg_live_count_for` returns `Some(0)` for its survivor pointer —
+    //      counting AGAINST `recycled_count` here.
     //
     // Task #145 (P1) added the exact 256 B size class, repacking these 256 B
     // blocks (~16 384/segment now, was ~13 791 at the old 304 B class). The
     // repacking shifted survivor discovery so ONE survivor now lands in the
-    // primordial segment while `small_cur` is a DIFFERENT segment — so both
-    // exclusions above apply as two DISTINCT segments (before, they coincided
-    // and only one slot was excluded). Both excluded segments verifiably have
-    // live_count == 0, `is_decommitted == false`, and stay registered — i.e.
-    // committed-but-idle exactly like `small_cur`, NOT a pinned/leaked slot
-    // (the second-round reallocation below still succeeds without table
-    // exhaustion, proving no leak). So the floor is TARGET_SEGMENTS - 2. This
-    // still proves the load-bearing property: recycling is UNBOUNDED (148 ≫
-    // the rejected CAP=32), not capped at any fixed buffer size.
-    let min_expected = TARGET_SEGMENTS - 2;
+    // primordial segment while `small_cur` is a DIFFERENT segment — so classes
+    // (1)+(2) apply as two DISTINCT segments. Class (3) adds at most `pool_cap`
+    // more. So the floor is TARGET_SEGMENTS - 2 - pool_cap.
+    //
+    // This STILL proves the load-bearing property — recycling is UNBOUNDED
+    // (≫ the rejected CAP=32), not capped at any fixed buffer — because the
+    // retained set is BOUNDED by `pool_cap` (asserted directly below) and
+    // TEMPORARY (drained to full recycling further below). The rejected Phase C
+    // CAP=32 bug pinned segments PERMANENTLY with no drain path; the pool's
+    // retention is a documented, bounded, drainable window, not a leak.
+    let pool_cap = ac.dbg_pool_cap();
+
+    // (3a) Retention is BOUNDED: at most `pool_cap` segments are pooled at any
+    // instant, even mid-scan (the synchronous budget cap in
+    // `release_or_pool_empty_segment` — the pool never overfills). This is the
+    // direct analogue of the rejected design's fatal property: THAT design let
+    // an unbounded number of slots stay pinned; THIS one caps it hard.
+    assert!(
+        ac.dbg_pooled_count() <= pool_cap,
+        "pool over-filled: pooled_count={} exceeds pool_cap={pool_cap} — the \
+         synchronous budget cap in release_or_pool_empty_segment failed",
+        ac.dbg_pooled_count()
+    );
+
+    let min_expected = TARGET_SEGMENTS - 2 - pool_cap;
     assert!(
         recycled_count >= min_expected,
         "only {recycled_count} of {TARGET_SEGMENTS} survivor segments were actually \
          SLOT-RECYCLED (unregistered from the table) after the single drain call \
-         (expected >= {min_expected}, allowing the current carve segment and the \
-         never-recyclable primordial segment to be excluded). `dbg_decommit_count` \
-         advanced by {decommits_this_scan}, \
-         so payload decommit fired for (nearly) every segment — but the table SLOT \
-         recycle (`table.recycle(base)`) did not happen for all of them. This is \
-         exactly the rejected Phase C CAP=32 bug: a bounded deferred-recycle buffer \
-         decommits every emptied segment's payload but only recycles the first CAP \
-         table slots, permanently pinning the rest."
+         (expected >= {min_expected}, allowing the current carve segment, the \
+         never-recyclable primordial segment, and up to pool_cap={pool_cap} \
+         hysteresis-pooled segments to be excluded). `dbg_decommit_count` \
+         advanced by {decommits_this_scan}. If this floor is UNDERSHOT it means \
+         the recycle became bounded by a fixed buffer BEYOND the documented pool \
+         (the rejected Phase C CAP=32 class of bug), because the pool retention \
+         is separately proven bounded (<= pool_cap) and drainable (below)."
+    );
+
+    // (3b) Retention is TEMPORARY — NOT a permanent pin. Force-drain the pool:
+    // every pooled segment is released (reset + table.recycle). After this,
+    // recycling CONVERGES to the full (pool-less) floor of TARGET_SEGMENTS - 2:
+    // the ONLY survivor segments still registered are the two never-recyclable
+    // ones (small_cur + primordial). This is the load-bearing "no permanent
+    // leak" proof — the pool held slots only within a bounded, drainable
+    // window, exactly compatible with the test's original guarantee.
+    let pooled_before_drain = ac.dbg_pooled_count();
+    let drained = ac.dbg_drain_small_pool();
+    assert_eq!(
+        drained, pooled_before_drain,
+        "dbg_drain_small_pool drained {drained} but pooled_count was \
+         {pooled_before_drain} — the pool did not fully drain"
+    );
+    assert_eq!(ac.dbg_pooled_count(), 0, "pool not empty after force-drain");
+    let recycled_after_drain = survivors
+        .values()
+        .filter(|&&p| ac.dbg_live_count_for(p).is_none())
+        .count();
+    assert!(
+        recycled_after_drain >= TARGET_SEGMENTS - 2,
+        "after draining the hysteresis pool only {recycled_after_drain} of \
+         {TARGET_SEGMENTS} survivor segments are recycled (expected >= \
+         {}) — a pooled segment was PERMANENTLY pinned rather than merely \
+         retained in the bounded, drainable pool window. That would be the \
+         rejected Phase C permanent-pin class of bug.",
+        TARGET_SEGMENTS - 2
     );
 
     // Slots must be genuinely reusable: verify a second large round of
