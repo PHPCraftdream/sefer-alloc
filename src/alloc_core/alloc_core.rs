@@ -3160,11 +3160,11 @@ impl AllocCore {
             if linked_walked {
                 bt.set_head(class_idx, head_off);
             }
-            // `inc_live` ONCE by the TOTAL `k` across both representations (D1).
+            // `inc_live` ONCE by the TOTAL `k` across both representations (D1),
+            // via the batch `add_live(k)` primitive (byte-identical to `k`
+            // per-block `inc_live`s — see `add_live`'s D1-equivalence note).
             #[cfg(feature = "alloc-decommit")]
-            for _ in 0..k {
-                meta.inc_live();
-            }
+            meta.add_live(k as u32);
             k
         }
 
@@ -3210,11 +3210,11 @@ impl AllocCore {
             // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
             // popped block always comes from a COMMITTED payload (a decommitted
             // segment was reset to an empty free list, so the drain finds nothing
-            // there), so no recommit is needed on this path.
+            // there), so no recommit is needed on this path. Applied via the
+            // batch `add_live(k)` primitive (byte-identical to `k` per-block
+            // `inc_live`s — see `add_live`'s D1-equivalence note).
             #[cfg(feature = "alloc-decommit")]
-            for _ in 0..k {
-                meta.inc_live();
-            }
+            meta.add_live(k as u32);
             k
         }
     }
@@ -3500,7 +3500,15 @@ impl AllocCore {
             core::mem::size_of::<SegmentHeader>(),
             align.max(super::os::PAGE),
         );
-        let needed = hdr_aligned + align_up(size, align);
+        // task #25 (security): `checked_add` for local overflow safety — a
+        // wrap here is unreachable under the `Layout` size/align invariant
+        // today, but this no longer RELIES on the caller's `Layout` being
+        // well-formed (parity with the realloc path, which already uses
+        // `checked_add`). A wrap → null (a legal alloc-failure signal).
+        let needed = match hdr_aligned.checked_add(align_up(size, align)) {
+            Some(n) => n,
+            None => return core::ptr::null_mut(),
+        };
         // Round up to a whole number of SEGMENT-sized spans — the same rounding
         // `Segment::reserve` does internally.  `reserve_aligned_on_node` (like
         // the OS `mmap`/`VirtualAlloc` path) requires the usable size to be an

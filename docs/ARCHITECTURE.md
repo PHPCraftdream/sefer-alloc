@@ -474,7 +474,7 @@ but existing segments remain on the old one (MVP strategy: ignore migration).
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (120 files, as of commit c7971a4) |
+| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (122 files, as of commit c7971a4) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs` |
 | loom | Cross-thread protocol correctness under bounded interleavings (11 models) | `tests/loom_bootstrap_cas.rs`, `tests/loom_deferred_large.rs`, `tests/loom_epoch.rs`, `tests/loom_fallback_init.rs`, `tests/loom_free_slots_aba.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_registry.rs`, `tests/loom_remote_ring.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |

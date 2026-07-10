@@ -880,6 +880,31 @@ impl HeapCore {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.count[c] as usize;
 
+                    // ── F7 (task #25): Large-segment kind guard (HARDENED) ──
+                    // `class_for` returning `Some(c)` above keys the free on
+                    // the *layout*, not on where `ptr` actually lives. If the
+                    // caller frees a pointer that sits in a LARGE segment with
+                    // a small layout (a GlobalAlloc-contract violation — the
+                    // real UB is on the caller side), the M2 oracles below
+                    // would read the "bitmap"/magazine state out of the bytes
+                    // of the Large allocation's PAYLOAD — potentially routing
+                    // that block into the magazine and later re-issuing it as a
+                    // small block, aliasing the still-live Large block.
+                    //
+                    // The substrate path (`AllocCore::dealloc`) routes by
+                    // segment `kind` FIRST and so degrades to a no-op on the
+                    // same violation. This restores that symmetry: reject the
+                    // Large-in-small-layout free as a no-op BEFORE the oracles.
+                    // A single `kind_at(base)` header read (a table-free field
+                    // load), gated behind `hardened` (default OFF) like the
+                    // interior-pointer guard just below it.
+                    #[cfg(feature = "hardened")]
+                    {
+                        if SegmentHeader::kind_at(base) == SegmentKind::Large {
+                            return; // Large-segment free via small layout — no-op
+                        }
+                    }
+
                     // ── H1 (task #167): interior-pointer guard (HARDENED) ──
                     // A block start of class `c` always sits at a segment
                     // offset that is a whole multiple of `block_size(c)`

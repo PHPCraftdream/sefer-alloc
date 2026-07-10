@@ -239,30 +239,83 @@ where
     if heap.is_null() {
         return None; // True OOM (the OS refused the primordial reservation).
     }
-    acquire_lock();
+    // task L4: acquire the spinlock through a RAII guard so a panic inside `f`
+    // still releases `LOCK` (its `Drop` runs while unwinding). Without the
+    // guard, a panic in `f` would leave `LOCK == true` forever, wedging every
+    // subsequent pre-TLS / teardown allocation in `acquire_lock`'s spin
+    // (deadlock instead of a clean abort). No-panic is a project invariant
+    // (HeapCore never panics), but the guard makes `with_heap` panic-safe at
+    // zero cost — it also removes the explicit `release_lock()` call.
+    let _guard = LockGuard::acquire();
     // SAFETY: `heap` is non-null and points to the initialised `FALLBACK`
-    // `HeapCore`. `LOCK` is held (we just acquired it), giving us exclusive
-    // `&mut` access — no other thread can be inside `with_heap`. The
+    // `HeapCore`. `LOCK` is held (the guard just acquired it), giving us
+    // exclusive `&mut` access — no other thread can be inside `with_heap`. The
     // `HeapCore` is valid for the process lifetime (never dropped).
-    let result = f(unsafe { &mut *heap });
-    release_lock();
-    Some(result)
+    Some(f(unsafe { &mut *heap }))
 }
 
-/// Acquire the fallback spinlock. Spins until `LOCK` flips false → true.
-fn acquire_lock() {
-    while LOCK
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        // Spin with a PAUSE/YIELD hint. Contention on the fallback is
-        // essentially impossible (the windows that route here are rare and
-        // typically single-threaded), so the spin is academic.
-        core::hint::spin_loop();
+/// RAII guard over the fallback [`LOCK`] spinlock (task L4). Acquiring it spins
+/// `false → true`; dropping it stores `false`. The `Drop` guarantees the lock
+/// is released even if the closure passed to [`with_heap`] panics — turning a
+/// would-be permanent deadlock into a clean unwind (or process abort under
+/// `panic = "abort"`), without which a single panic in the fallback would wedge
+/// all later pre-TLS / teardown allocations forever.
+struct LockGuard;
+
+impl LockGuard {
+    /// Acquire the fallback spinlock, returning the guard that will release it.
+    fn acquire() -> Self {
+        while LOCK
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            // Spin with a PAUSE/YIELD hint. Contention on the fallback is
+            // essentially impossible (the windows that route here are rare and
+            // typically single-threaded), so the spin is academic.
+            core::hint::spin_loop();
+        }
+        LockGuard
     }
 }
 
-/// Release the fallback spinlock.
-fn release_lock() {
-    LOCK.store(false, Ordering::Release);
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        LOCK.store(false, Ordering::Release);
+    }
+}
+
+/// `#[doc(hidden)]` test hook (task L4) — not part of the public API. Exercises
+/// the panic-safety of the fallback spinlock: it invokes [`with_heap`] with a
+/// closure that PANICS (caught here via `catch_unwind`), then reports whether a
+/// SUBSEQUENT [`with_heap`] can still acquire the lock. Before the RAII
+/// `LockGuard`, the panicking closure left `LOCK == true` forever, so the second
+/// `with_heap` would spin in `acquire_lock` indefinitely (deadlock); the test
+/// verifies that instead it returns promptly (guard released the lock while
+/// unwinding). Returns `true` iff the second `with_heap` completed — i.e. the
+/// lock was NOT wedged.
+///
+/// The whole call runs on the current thread with no `sleep`/polling: if the
+/// lock were wedged the second `with_heap` would hang here (the test wraps this
+/// in its own bounded watchdog thread, so a regression surfaces as a timeout
+/// rather than a literal forever-hang).
+#[cfg(feature = "std")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
+    // First: a panicking closure. `catch_unwind` swallows the unwind so the
+    // test process survives; the `LockGuard` inside `with_heap` must release
+    // `LOCK` on the way out.
+    let panicked = std::panic::catch_unwind(|| {
+        let _ = with_heap(|_heap| {
+            panic!("deliberate panic inside with_heap (task L4 test hook)");
+        });
+    })
+    .is_err();
+    if !panicked {
+        // The closure was expected to panic; if it did not, the hook is broken.
+        return false;
+    }
+    // Second: a NON-panicking closure. If the lock is still held (regression),
+    // this spins forever; if the guard released it, this returns immediately.
+    with_heap(|_heap| ()).is_some()
 }

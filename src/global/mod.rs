@@ -30,3 +30,11 @@ pub mod tls_heap;
 
 pub use alloc_stats::AllocStats;
 pub use sefer_alloc::SeferAlloc;
+
+// `#[doc(hidden)]` test-only hook (task L4): lets the fallback panic-safety
+// regression test (`tests/regression_fallback_panic_lock.rs`) reach the
+// otherwise-private `fallback` spinlock behaviour. Same established pattern as
+// `tls_heap::dbg_teardown_then_resolve_is_fallback` above; not stable API.
+#[cfg(feature = "std")]
+#[doc(hidden)]
+pub use fallback::dbg_panic_in_with_heap_releases_lock;
