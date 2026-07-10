@@ -75,6 +75,73 @@ const FEATURES_OVERRIDE_FLAG = '--features';
 
 const BENCH = 'perf_gate_iai';
 const LINUX_TARGET = '/tmp/sefer-iai';
+
+// --- Marginal Ir/op decomposition (review finding F2, 2026-07-09) ---------
+//
+// WHY THIS COLUMN EXISTS. Every iai bench function builds a fresh `SeferAlloc`
+// in its OWN process (`SeferAlloc::new()` at the top of each bench in
+// benches/perf_gate_iai.rs), so EVERY raw Ir number includes the FULL one-time
+// heap bootstrap (registry + primordial reserve + 32 KiB bitmap-init +
+// Tcache-zero). That constant DOMINATES the small-op-count benches: the
+// performance review (docs/reviews/2026-07-09-performance-review.md §F2)
+// measured `small_churn_16b` = 81,423 Ir of which ~90 % is bootstrap, vs
+// `cold_alloc_free_256x16b` = 125,354 Ir of which only ~58 % is. Consequence:
+// a nominal "≤ +1 % Ir" threshold is 2–10× SOFTER or HARDER per-op depending
+// purely on how much of a given bench's sum is the shared constant — the same
+// headline percent measures wildly different per-operation strictness.
+//
+// The fix the review recommends (F2 rec. 1): subtract the bootstrap constant
+// and divide by the bench's real operation count, giving a "marginal Ir/op"
+// that is directly comparable ACROSS benches and is the honest unit to phrase
+// future GO/NO-GO thresholds in.
+//
+// BOOTSTRAP PROXY. `large_alloc_free_cycle` issues exactly ONE Large segment
+// and frees it — it touches NO magazine, NO small-class carve, NO freelist.
+// Its entire Ir is therefore (bootstrap + the cost of one Large alloc+free),
+// which is the cleanest bootstrap proxy the existing bench set offers (the
+// same decomposition the X7 hardened-tier table in docs/perf/IAI_BASELINE.md
+// already uses). We do NOT add a new "bootstrap-only" bench: that would add
+// CPU time to the callgrind judge for no signal the proxy does not already
+// give. We treat `large_alloc_free_cycle`'s raw Ir as the constant `B`; the
+// proxy is a slight OVER-estimate of pure bootstrap (it includes one Large
+// op-pair, a few hundred Ir), which makes the marginal column a mild
+// LOWER-bound on per-op cost — the conservative direction for a regression
+// guard. `large_alloc_free_cycle` itself has no meaningful "marginal per-op"
+// (it IS the constant) and is reported as "-".
+//
+// OP COUNTS. The divisor is the number of alloc+free op-PAIRS each bench
+// performs, derived DIRECTLY from the constants in benches/perf_gate_iai.rs
+// (CHURN_OPS=64, COLD_BATCH=256, the 2-round recycle/multiseg loops,
+// SEGCYCLE_ROUNDS×SEGCYCLE_BATCH). These mirror the bench source; if a bench's
+// loop bounds change there, update the matching entry here. A bench absent from
+// this map (or mapped to null) prints "-" in the marginal column — it is a
+// best-effort SIGNAL column and MUST NOT affect pass/fail (Ir stays the judge).
+const BOOTSTRAP_BENCH = 'large_alloc_free_cycle';
+const BENCH_OPS = {
+  // churn family: CHURN_OPS (64) alloc→dealloc pairs.
+  small_churn_16b: 64,
+  aligned_churn_640b_a128: 64,
+  churn_256b: 64,
+  churn_write_256b: 64,
+  // the bootstrap proxy itself — 1 pair, but it DEFINES the constant, so its
+  // marginal figure is meaningless; reported as "-" (mapped null explicitly).
+  large_alloc_free_cycle: null,
+  // realloc_grow: 1 initial alloc + 16 reallocs + 1 dealloc. The 16 growth
+  // reallocs are the measured work (the C2 realloc-grow path); we use 16 as
+  // the op count so the marginal figure is "Ir per realloc-grow step".
+  realloc_grow: 16,
+  // cold first-touch: COLD_BATCH (256) distinct blocks, one alloc + one free
+  // each = 256 pairs.
+  cold_alloc_free_256x16b: 256,
+  cold_alloc_free_256x64b: 256,
+  // recycle: 2 rounds × COLD_BATCH (256) = 512 pairs.
+  recycle_alloc_free_256x16b: 512,
+  recycle_alloc_free_256x64b: 512,
+  // multiseg: 2 rounds × MULTISEG_BATCH (34) = 68 pairs.
+  multiseg_cold_256k: 68,
+  // seg-cycle decommit: SEGCYCLE_ROUNDS (6) × SEGCYCLE_BATCH (34) = 204 pairs.
+  seg_cycle_decommit_256k: 204,
+};
 const wslRoot = winToWsl(REPO_ROOT);
 
 // Optional CLI filter: bench-function name substrings. iai-callgrind 0.14 does
@@ -271,7 +338,31 @@ function fmt(n) {
   return n == null || !Number.isFinite(n) ? '-' : n.toLocaleString('en-US');
 }
 
-function printTable(rows) {
+/**
+ * Marginal Ir per operation for one bench, given the bootstrap constant `B`
+ * (the `large_alloc_free_cycle` raw Ir). Returns `(ir - B) / ops`, rounded to
+ * one decimal, or `null` when the bench has no op-count entry, when it IS the
+ * bootstrap proxy, or when `B` is unknown (bootstrap bench absent/filtered).
+ * See the F2 block near the top of this file for the full rationale.
+ */
+function marginalIrPerOp(row, bootstrap) {
+  if (bootstrap == null || !Number.isFinite(bootstrap)) return null;
+  const ops = BENCH_OPS[row.name];
+  if (ops == null || ops <= 0) return null;
+  return Math.round(((row.ir - bootstrap) / ops) * 10) / 10;
+}
+
+/** Format a marginal Ir/op value (one decimal), or "-" for null. */
+function fmtMarginal(n) {
+  return n == null || !Number.isFinite(n)
+    ? '-'
+    : n.toLocaleString('en-US', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      });
+}
+
+function printTable(rows, bootstrap) {
   if (!rows.length) {
     console.log('[iai] (no Ir parsed)');
     return;
@@ -282,14 +373,31 @@ function printTable(rows) {
   const cw = 12;
   const head = (s) => s.padStart(cw);
   console.log(
-    `\n  ${'bench'.padEnd(w)}  ${head('Ir')}  ${head('L1')}  ${head('L2')}  ${head('RAM')}  ${head('EstCycles')}`,
+    `\n  ${'bench'.padEnd(w)}  ${head('Ir')}  ${head('L1')}  ${head('L2')}  ${head('RAM')}  ${head('EstCycles')}  ${head('Ir/op*')}`,
   );
   console.log(
-    `  ${'-'.repeat(w)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}`,
+    `  ${'-'.repeat(w)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}`,
   );
   for (const r of rows) {
+    const marg = marginalIrPerOp(r, bootstrap);
     console.log(
-      `  ${r.name.padEnd(w)}  ${fmt(r.ir).padStart(cw)}  ${fmt(r.l1).padStart(cw)}  ${fmt(r.l2).padStart(cw)}  ${fmt(r.ram).padStart(cw)}  ${fmt(r.cycles).padStart(cw)}`,
+      `  ${r.name.padEnd(w)}  ${fmt(r.ir).padStart(cw)}  ${fmt(r.l1).padStart(cw)}  ${fmt(r.l2).padStart(cw)}  ${fmt(r.ram).padStart(cw)}  ${fmt(r.cycles).padStart(cw)}  ${fmtMarginal(marg).padStart(cw)}`,
+    );
+  }
+  // Footnote: make the column's meaning + the constant used unmissable in the
+  // raw report (a reader diffing two runs must know this is bootstrap-adjusted,
+  // not a raw metric). See finding F2.
+  if (bootstrap != null && Number.isFinite(bootstrap)) {
+    console.log(
+      `\n  * Ir/op = (Ir − ${fmt(bootstrap)}) / ops — marginal instruction count per\n` +
+        `    operation, with the one-time process bootstrap subtracted (constant taken\n` +
+        `    from ${BOOTSTRAP_BENCH}). Comparable across benches; the honest unit for\n` +
+        `    per-op thresholds (review finding F2). "-" = bootstrap proxy / no op-count.`,
+    );
+  } else {
+    console.log(
+      `\n  * Ir/op omitted: ${BOOTSTRAP_BENCH} (the bootstrap constant) was not in this\n` +
+        `    run (filtered out?). Run without a filter, or include ${BOOTSTRAP_BENCH}.`,
     );
   }
 }
@@ -306,7 +414,13 @@ try {
   const compileErr = /^error(\[|:)/m.test(out);
   const allRows = parseMetrics(out);
   const rows = allRows.filter((r) => wanted(r.name));
-  printTable(rows);
+  // Bootstrap constant for the marginal Ir/op column is taken from the FULL
+  // (unfiltered) run, so the column still works when the user filters the
+  // report down to benches that exclude `large_alloc_free_cycle`. Null if the
+  // proxy bench was not produced at all (e.g. a filter passed to cargo).
+  const bootstrapRow = allRows.find((r) => r.name === BOOTSTRAP_BENCH);
+  const bootstrap = bootstrapRow ? bootstrapRow.ir : null;
+  printTable(rows, bootstrap);
 
   // For a MEASUREMENT tool, "pass" = it ran and produced an Ir for every
   // requested bench. A compile error, a missing runner, or a requested bench

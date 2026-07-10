@@ -48,6 +48,47 @@ baseline above for provenance only — do not diff against it.
 | churn_256b                  |     81,045 |
 | churn_write_256b            |     81,173 |
 
+## Marginal Ir/op column (review finding F2, 2026-07-09)
+
+`scripts/iai.mjs` prints a seventh column, **`Ir/op*`**, alongside
+Ir/L1/L2/RAM/EstCycles. It exists because every bench function builds a FRESH
+`SeferAlloc` in its own process (`SeferAlloc::new()` at the top of each bench in
+`benches/perf_gate_iai.rs`), so EVERY raw Ir includes the full one-time heap
+bootstrap (registry + primordial reserve + 32 KiB bitmap-init + Tcache-zero).
+That constant dominates the small-op-count benches unevenly:
+`small_churn_16b` (81,423 Ir) is ~90 % bootstrap, `cold_alloc_free_256x16b`
+(125,354 Ir) only ~58 %. A nominal "≤ +1 % Ir" threshold is therefore 2–10×
+softer or harder *per operation* depending purely on the bench's bootstrap
+share — the same headline percent measures different per-op strictness. The
+performance review flagged this as finding **F2** and recommended surfacing a
+bootstrap-adjusted per-op figure (see
+`docs/reviews/2026-07-09-performance-review.md` §F2).
+
+**Definition:** `Ir/op = (Ir − B) / ops`, where `B` is the raw Ir of
+`large_alloc_free_cycle` (the bootstrap proxy — one Large alloc+free, touching
+no magazine / no small-class carve / no freelist, so its Ir is essentially the
+per-process constant; this is the same decomposition the X7 hardened-tier
+table below already uses), and `ops` is the bench's alloc+free op-**pair** count
+(`CHURN_OPS=64`; `COLD_BATCH=256`; recycle/multiseg 2-round loops = 512/68;
+`SEGCYCLE_ROUNDS×SEGCYCLE_BATCH=204`; `realloc_grow` = 16 growth steps). The
+op-counts are encoded in `BENCH_OPS` in `scripts/iai.mjs`, mirrored from the
+bench constants. `large_alloc_free_cycle` itself IS the constant, so its
+marginal figure prints `-`.
+
+The proxy slightly OVER-estimates pure bootstrap (it includes one Large
+op-pair), so the marginal column is a mild LOWER-bound on true per-op cost —
+the conservative direction for a regression guard. It is a best-effort SIGNAL
+column: **Ir stays the pass/fail judge**; a missing bootstrap row (e.g. the
+proxy filtered out of a run) prints `-` and never affects the verdict.
+
+Sanity-check against the CAP=16 baseline in
+`PERF2_TCACHE_CAP_SWEEP_EXPERIMENT.md` (B = 73,011):
+`small_churn_16b` → (81,423 − 73,011)/64 = **131.4 Ir/op**;
+`cold_alloc_free_256x16b` → (125,354 − 73,011)/256 = **204.5 Ir/op**;
+`recycle_alloc_free_256x16b` → (179,180 − 73,011)/512 = **207.4 Ir/op** —
+matching the review's ≈131 / ≈204 hand-figures. Future GO/NO-GO thresholds
+should be phrased in this marginal unit, not raw sums (F2 rec. 2).
+
 ## W4 result (E1 `carve_batch` + E3 batched `dec_live`; E2/E4 rejected)
 
 E1 (`AllocCore::carve_batch` — one hoisted `align_up` div / bump load-store /
