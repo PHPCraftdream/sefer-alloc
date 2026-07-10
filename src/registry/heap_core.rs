@@ -648,7 +648,7 @@ impl HeapCore {
             // ownership BEFORE reaching `dealloc_own_thread`/the magazine).
             {
                 if let Some(c) = class {
-                    let cnt = self.tcache.count[c] as usize;
+                    let cnt = self.tcache.classes[c].count as usize;
                     if cnt > 0 {
                         // Magazine hit: pop from the top of the stack.
                         // P4: NO stamp here — the block's source segment was
@@ -656,7 +656,7 @@ impl HeapCore {
                         // pulled it. The OPT-C cache guarantees the segment
                         // header still carries our ownership.
                         let new_cnt = cnt - 1;
-                        self.tcache.count[c] = new_cnt as u16;
+                        self.tcache.classes[c].count = new_cnt as u8;
                         // Э5 (task #145): load+store instead of `fetch_add` — no
                         // `lock xadd` on the churn hot path. SOUND because this
                         // thread is the SOLE WRITER of ITS OWN counter: it is a
@@ -697,7 +697,7 @@ impl HeapCore {
                                 Ordering::Relaxed,
                             );
                         }
-                        let issued = self.tcache.slots[c][new_cnt];
+                        let issued = self.tcache.classes[c].slots[new_cnt];
                         // X7 Ф3 (task #191) touch (a): bump the generation at
                         // ISSUE. The block leaves the allocator's bookkeeping
                         // (the magazine) and enters the caller's hands — this
@@ -716,7 +716,7 @@ impl HeapCore {
                     // Magazine miss: batch-refill + stamp hoist (P4).
                     // We inline the refill+stamp here instead of calling
                     // `refill_class_stamped` because borrowing `self.core`
-                    // and `self.tcache.slots[c]` separately avoids a
+                    // and `self.tcache.classes[c].slots` separately avoids a
                     // double-mutable-borrow conflict on `self`.
                     //
                     // P3 (Э1, task #147): the miss refills via
@@ -856,7 +856,7 @@ impl HeapCore {
             // sound for any align it accepted, not just align<=16).
             {
                 if let Some(c) = SizeClasses::class_for(size, align) {
-                    let cnt = self.tcache.count[c] as usize;
+                    let cnt = self.tcache.classes[c].count as usize;
 
                     // ── F7 (task #25): Large-segment kind guard (HARDENED) ──
                     // `class_for` returning `Some(c)` above keys the free on
@@ -1023,7 +1023,7 @@ impl HeapCore {
                     // `{slots[c][i] : i < cnt}` is unchanged; only the
                     // evaluation order (chunked OR vs. sequential early-exit)
                     // differs.
-                    let slots = &self.tcache.slots[c];
+                    let slots = &self.tcache.classes[c].slots;
                     let chunks = cnt & !3; // (cnt / 4) * 4
                     let mut i = 0;
                     while i < chunks {
@@ -1072,8 +1072,8 @@ impl HeapCore {
 
                     if cnt < TCACHE_CAP {
                         // Legit free → push. NO key stamp, NO block-body write.
-                        self.tcache.slots[c][cnt] = ptr;
-                        self.tcache.count[c] = (cnt + 1) as u16;
+                        self.tcache.classes[c].slots[cnt] = ptr;
+                        self.tcache.classes[c].count = (cnt + 1) as u8;
                         return;
                     }
                     // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
@@ -1089,17 +1089,18 @@ impl HeapCore {
                     // (mark_free + dec_live) exactly as before.
                     //
                     // Normal overflow: half-flush, then push.
-                    self.core.flush_class(c, &self.tcache.slots[c][0..FLUSH_N]);
+                    self.core
+                        .flush_class(c, &self.tcache.classes[c].slots[0..FLUSH_N]);
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
                     let remaining = TCACHE_CAP - FLUSH_N;
                     for i in 0..remaining {
-                        self.tcache.slots[c][i] = self.tcache.slots[c][i + FLUSH_N];
+                        self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
                     }
                     // Push (Э6: NO key stamp, NO block-body write). The oracles
                     // above already ran before this overflow branch, so a
                     // double-free is caught even when the magazine is full.
-                    self.tcache.slots[c][remaining] = ptr;
-                    self.tcache.count[c] = (remaining + 1) as u16;
+                    self.tcache.classes[c].slots[remaining] = ptr;
+                    self.tcache.classes[c].count = (remaining + 1) as u8;
                     return;
                 }
             }
@@ -1470,32 +1471,32 @@ impl HeapCore {
         use crate::alloc_core::size_classes::SizeClasses;
 
         let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
-        // Task #164: zero-copy split borrow. The refill writes DIRECTLY into
-        // `tcache.slots[c]` (no buffer, no copy). The magazine predicate
-        // closure reads OTHER classes' slots via `split_at_mut` halves and
-        // `tcache.count` (a disjoint field from `tcache.slots`).
+        // Task #164 / PERF-PASS-5 (G7): zero-copy split borrow. The refill
+        // writes DIRECTLY into `tcache.classes[c].slots` (no buffer, no
+        // copy). The magazine predicate closure reads OTHER classes' `count`
+        // + `slots` (now bundled in one `PerClass` per the task #53
+        // restructure) via `split_at_mut` halves over `tcache.classes`.
         //
         // KEY INVARIANT (load-bearing): at refill time, `count[c] == 0` —
         // the refill runs ONLY on a magazine miss (the pop in `alloc` failed
         // because `cnt == 0`). So the predicate for class `c` itself is
         // trivially false (0 slots to scan), and the mutable borrow of
-        // `slots[c]` (for the refill output) is never read by the closure.
-        let (before, rest) = self.tcache.slots.split_at_mut(c);
+        // `classes[c].slots` (for the refill output) is never read by the
+        // closure.
+        let (before, rest) = self.tcache.classes.split_at_mut(c);
         let (cur, after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
-        let counts = &self.tcache.count;
         let n = self
             .core
-            .refill_class_bump_checked(c, &mut cur[0..want], &|ptr, k| {
+            .refill_class_bump_checked(c, &mut cur.slots[0..want], &|ptr, k| {
                 // count[c] == 0 during its own refill (invariant above) —
                 // the predicate is trivially false and we never touch the
-                // mutably-borrowed `cur` slice.
+                // mutably-borrowed `cur.slots` slice.
                 if k == c {
                     return false;
                 }
-                let cnt = counts[k] as usize;
-                let arr: &[*mut u8; super::tcache::TCACHE_CAP] =
-                    if k < c { &before[k] } else { &after[k - c - 1] };
-                (0..cnt).any(|j| arr[j] == ptr)
+                let entry = if k < c { &before[k] } else { &after[k - c - 1] };
+                let cnt = entry.count as usize;
+                (0..cnt).any(|j| entry.slots[j] == ptr)
             });
         if n == 0 {
             return core::ptr::null_mut(); // true OOM
@@ -1506,7 +1507,7 @@ impl HeapCore {
         // block's. Idempotent per segment; one stamp per distinct source.
         let mut prev_base = usize::MAX;
         for i in 0..n {
-            let p = self.tcache.slots[c][i];
+            let p = self.tcache.classes[c].slots[i];
             if !p.is_null() {
                 let base = os::segment_base_of_ptr(p) as usize;
                 if base != prev_base {
@@ -1517,8 +1518,8 @@ impl HeapCore {
         }
         // Pop the top, leave n-1 in the magazine.
         let new_cnt = n - 1;
-        self.tcache.count[c] = new_cnt as u16;
-        let issued = self.tcache.slots[c][new_cnt];
+        self.tcache.classes[c].count = new_cnt as u8;
+        let issued = self.tcache.classes[c].slots[new_cnt];
         // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
         // leaves the allocator's bookkeeping (the magazine) and enters the
         // caller's hands — this is the life transition. This is the refill
@@ -1721,15 +1722,19 @@ impl HeapCore {
         self.last_stamped_segment
     }
 
-    /// TEST-ONLY (P7): read the magazine count for class `c`.
+    /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
+    /// `u16` at this test-only boundary (task #53 shrank the internal
+    /// storage to `u8` — see `PerClass::count` — but keeps this accessor's
+    /// return type stable for existing callers).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     pub fn dbg_tcache_count(&self, c: usize) -> u16 {
-        self.tcache.count[c]
+        self.tcache.classes[c].count as u16
     }
 
     /// TEST-ONLY (task D3): resolve the size class index for `layout`, the
-    /// same classification `alloc` uses to index `tcache.slots`/`count`.
+    /// same classification `alloc` uses to index `tcache.classes[c].slots`/
+    /// `.count`.
     /// Delegates to [`AllocCore::dbg_layout_class_for`]; exposed at the
     /// `HeapCore` level because `core` is `pub(crate)` and external
     /// integration tests only see `HeapCore`/`HeapRegistry`.
@@ -1783,8 +1788,9 @@ impl HeapCore {
         {
             let tc = &self.tcache;
             self.core.dbg_drain_all_rings_checked(&|ptr, class_idx| {
-                let cnt = tc.count[class_idx] as usize;
-                (0..cnt).any(|j| tc.slots[class_idx][j] == ptr)
+                let entry = &tc.classes[class_idx];
+                let cnt = entry.count as usize;
+                (0..cnt).any(|j| entry.slots[j] == ptr)
             });
         }
         #[cfg(not(feature = "fastbin"))]
@@ -1818,12 +1824,13 @@ impl HeapCore {
     pub fn dbg_flush_all(&mut self) {
         use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
         for c in 0..SMALL_CLASS_COUNT {
-            let n = self.tcache.count[c] as usize;
+            let n = self.tcache.classes[c].count as usize;
             if n == 0 {
                 continue;
             }
-            self.core.flush_class(c, &self.tcache.slots[c][0..n]);
-            self.tcache.count[c] = 0;
+            self.core
+                .flush_class(c, &self.tcache.classes[c].slots[0..n]);
+            self.tcache.classes[c].count = 0;
         }
     }
 }

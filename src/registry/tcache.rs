@@ -97,18 +97,59 @@ pub(crate) const fn refill_n_for_class(block_size: usize) -> usize {
 /// flush/refill thrash when the working set hovers near CAP.
 pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
 
+/// PERF-PASS-5 (G7/FP2, task #53): one size class's magazine — `count` and
+/// `slots` bundled together so a magazine push/pop touches ONE cache line
+/// instead of two.
+///
+/// Before this change, `Tcache` stored `slots: [[*mut u8; CAP]; N]` and
+/// `count: [u16; N]` as two SEPARATE top-level arrays (`count` ~6 KiB away
+/// from `slots` in the enclosing `HeapCore`/`HeapSlot`), so every magazine
+/// hit/push/pop touched `count[c]` (one line) AND `slots[c]` (a different,
+/// far-away line) — two dependent cache lines for what is architecturally a
+/// single "check depth, touch top-of-stack" operation. Grouping `count` and
+/// `slots` into one `PerClass` struct and using `[PerClass; N]` puts a
+/// class's depth counter directly adjacent to (in front of) its own pointer
+/// stack, so both live in the same 8-byte-aligned region and — for the
+/// common case where a hit/push touches only the top few slots — the SAME
+/// 64-byte cache line.
+///
+/// `count` is `u8`, not `u16`: `TCACHE_CAP` (16) fits comfortably in a `u8`
+/// (max 255), and every accumulation of `count` is compared against
+/// `TCACHE_CAP` (16) or `FLUSH_N` (8) before use — see the call sites in
+/// `heap_core.rs` (`cnt + 1`, `remaining + 1` after a half-flush) — so no
+/// arithmetic on this path ever approaches the `u8` range limit. Shrinking
+/// `count` from `u16` to `u8` also shrinks `PerClass` by 1 byte per class
+/// (49 classes × 1 byte saved), a minor bonus on top of the locality win.
+#[derive(Clone, Copy)]
+pub(crate) struct PerClass {
+    /// Current magazine depth for this class (0..=`TCACHE_CAP`). `u8`: see
+    /// the [`PerClass`] doc for why `TCACHE_CAP` (16) safely fits.
+    pub(crate) count: u8,
+    /// This class's pointer stack. `slots[0..count as usize]` are valid.
+    pub(crate) slots: [*mut u8; TCACHE_CAP],
+}
+
+impl PerClass {
+    /// Construct an empty per-class magazine (count zero, all slots null).
+    const fn new() -> Self {
+        Self {
+            count: 0,
+            slots: [core::ptr::null_mut(); TCACHE_CAP],
+        }
+    }
+}
+
 /// Per-thread, per-class magazine cache.
 ///
-/// `slots[c][0..count[c]]` are valid free-block pointers of class `c`.
-/// The magazine is owner-private (single thread reads/writes it). No
-/// atomics, no locks.
+/// `classes[c].slots[0..classes[c].count as usize]` are valid free-block
+/// pointers of class `c`. The magazine is owner-private (single thread
+/// reads/writes it). No atomics, no locks.
 pub(crate) struct Tcache {
-    /// Per-class pointer stacks. `slots[c][0..count[c]]` are valid.
-    pub(crate) slots: [[*mut u8; TCACHE_CAP]; SMALL_CLASS_COUNT],
-    /// Per-class magazine depth. **count:** current depth per class
-    /// (0..=TCACHE_CAP). (P3: the former `alloc_streak` companion array was
+    /// Per-class magazines: each entry bundles that class's depth counter
+    /// with its pointer stack (see [`PerClass`] for the cache-locality
+    /// rationale). (P3: the former `alloc_streak` companion array was
     /// removed with the P7 bulk-mode bypass — see the module-level note.)
-    pub(crate) count: [u16; SMALL_CLASS_COUNT],
+    pub(crate) classes: [PerClass; SMALL_CLASS_COUNT],
 }
 
 impl Tcache {
@@ -117,8 +158,7 @@ impl Tcache {
     /// at construction (M5-clean).
     pub(crate) const fn new() -> Self {
         Self {
-            slots: [[core::ptr::null_mut(); TCACHE_CAP]; SMALL_CLASS_COUNT],
-            count: [0u16; SMALL_CLASS_COUNT],
+            classes: [PerClass::new(); SMALL_CLASS_COUNT],
         }
     }
 }
