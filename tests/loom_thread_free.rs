@@ -56,7 +56,7 @@
 //! # How to run
 //!
 //! ```sh
-//! RUSTFLAGS="--cfg loom" cargo test --features alloc --test loom_thread_free
+//! RUSTFLAGS="--cfg loom" cargo test --test loom_thread_free
 //! ```
 
 #![cfg(loom)]

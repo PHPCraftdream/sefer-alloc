@@ -29,7 +29,14 @@ const FEATURES = {
   // `compose_finds_double_issue_hole_pre164` (#[should_panic] counterfactual)
   // + `compose_drain_sees_magazine_invariant_holds` (GREEN invariant, #164).
   loom_magazine_ring_compose: 'alloc-global,alloc-xthread',
-  loom_thread_free: 'alloc',
+  // task #204: the `alloc` Cargo feature (and the `Heap` type it gated) was
+  // REMOVED and renamed to alloc-core/alloc-xthread/alloc-global. This mapping
+  // still pointed at the deleted `alloc` feature, so cargo silently ignored the
+  // unknown feature — but this file's synthetic `Node` model never depended on
+  // it (only `#![cfg(loom)]`, no crate symbols): it compiles + passes with an
+  // EMPTY feature set, which is exactly what the ci.yml `loom` matrix runs
+  // (`- test: loom_thread_free / features: ""`). Mirror CI: empty feature set.
+  loom_thread_free: '',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };
@@ -42,24 +49,48 @@ const tests = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 // rebuilds), preserving each test's correct gate.
 const byFeature = new Map();
 for (const t of tests) {
-  const f = FEATURES[t];
-  if (!f) {
+  // NB: use `in`/hasOwnProperty, NOT `if (!f)` — a valid feature value can be
+  // the EMPTY string (`loom_thread_free: ''`, mirroring the ci.yml matrix). A
+  // falsy `!f` check would mis-classify that legitimate entry as "unknown test"
+  // and abort — the very stale-name → 0-runs class of bug this script guards.
+  if (!Object.prototype.hasOwnProperty.call(FEATURES, t)) {
     console.error(`[loom] unknown test "${t}" — not in the feature map`);
     process.exit(2);
   }
+  const f = FEATURES[t];
   if (!byFeature.has(f)) byFeature.set(f, []);
   byFeature.get(f).push(t);
 }
 
 console.log(`[loom] tests: ${tests.join(', ')}\n`);
 
+// Regression-guard against the stale-feature-name → silent-0-runs class of bug
+// (task #29: `loom_thread_free` was mapped to the DELETED `alloc` feature and
+// never actually selected). Log the resolved test count per entry up front, and
+// hard-fail if any entry selected ZERO tests — a mapping should never resolve to
+// an empty group.
+for (const [features, group] of byFeature) {
+  const label = features === '' ? '(no features)' : `--features ${features}`;
+  console.log(`[loom] ${label}: ${group.length} test(s) selected — ${group.join(', ')}`);
+  if (group.length === 0) {
+    console.error(`[loom] FAIL: 0 tests selected for ${label} — stale/empty feature mapping`);
+    process.exit(2);
+  }
+}
+console.log('');
+
 let allOk = true;
 for (const [features, group] of byFeature) {
-  console.log(`\n[loom] --features ${features}: ${group.join(', ')}`);
+  const label = features === '' ? '(no features)' : `--features ${features}`;
+  console.log(`\n[loom] ${label}: ${group.join(', ')}`);
   const testArgs = group.flatMap((t) => ['--test', t]);
+  // An empty feature set must OMIT `--features` entirely — cargo rejects an
+  // empty `--features ''` argument. This mirrors the ci.yml matrix entry for
+  // `loom_thread_free` (features: "").
+  const featureArgs = features === '' ? [] : ['--features', features];
   const { code, out } = await run(
     'cargo',
-    ['test', '--release', '--features', features, ...testArgs],
+    ['test', '--release', ...featureArgs, ...testArgs],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ''} --cfg loom`.trim() },
@@ -70,9 +101,9 @@ for (const [features, group] of byFeature) {
   // "running 0 tests" and exit 0. If NO test binary actually ran a test, treat
   // the group as a failure so a mis-mapped feature set can never look green.
   const ranSomething = /running [1-9]\d* test/.test(out) || /test result: ok\. [1-9]/.test(out);
-  const ok = verdict(`loom ${features}`, code, out) && ranSomething;
+  const ok = verdict(`loom ${label}`, code, out) && ranSomething;
   if (!ranSomething) {
-    console.log(`[loom ${features}] FAIL (0 tests ran — feature gate excluded the model)`);
+    console.log(`[loom ${label}] FAIL (0 tests ran — feature gate excluded the model)`);
   }
   allOk = allOk && ok;
 }
