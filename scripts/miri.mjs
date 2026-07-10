@@ -101,11 +101,49 @@ const PLAIN_MATRIX = [
 
 const args = process.argv.slice(2);
 const plain = args.includes('--plain');
+// The positional args are TEST NAMES (each MATRIX entry is `[features, test]`).
+// They are NOT feature names: an entry with several features
+// (`'alloc-global alloc-xthread alloc-decommit fastbin'`) must be selected as a
+// whole by its test name — never token-matched against the space-joined feature
+// string. Filter strictly on the test name (column 1) to keep that distinction.
 const filter = args.filter((a) => a !== '--plain');
 const matrix = plain ? PLAIN_MATRIX : MATRIX;
+const knownTests = new Set(matrix.map(([, t]) => t));
+
+// Regression-guard against the silent-0-runs class of bug (task #29 in loom.mjs;
+// task #18 here): a filter token that matches NO test name — a stale/typo test
+// name, or a bare feature token mistaken for a test name (e.g. `alloc-decommit`,
+// one of the feature words of a multi-feature entry) — must hard-fail loudly, not
+// silently drop to an empty run. Validate every requested name up front.
+const unknown = filter.filter((t) => !knownTests.has(t));
+if (unknown.length) {
+  console.error(
+    `[miri] unknown test name(s): ${unknown.join(', ')} — not a test in the ${
+      plain ? 'PLAIN_MATRIX' : 'MATRIX'
+    }. Pass test names (column 1 of the matrix), not feature names.`,
+  );
+  console.error(`[miri] known tests: ${[...knownTests].join(', ')}`);
+  process.exit(2);
+}
+
 const entries = filter.length
   ? matrix.filter(([, t]) => filter.includes(t))
   : matrix;
+
+// Smoke-guard (mirrors loom.mjs): report the resolved entry count and hard-fail
+// if it is ZERO — a matrix/filter combination should never resolve to an empty
+// run, which would look green while validating nothing.
+console.log(
+  `[miri] ${plain ? 'PLAIN' : 'strict'} matrix: ${entries.length} entr${
+    entries.length === 1 ? 'y' : 'ies'
+  } selected — ${entries.map(([, t]) => t).join(', ') || '(none)'}`,
+);
+if (entries.length === 0) {
+  console.error(
+    `[miri] FAIL: 0 entries selected — stale/empty matrix or filter matched nothing`,
+  );
+  process.exit(2);
+}
 
 // The strict job pins `-Zmiri-strict-provenance`; the plain job DROPS it (the
 // exposed-provenance re-derivations require the default, non-strict model). Both
