@@ -107,8 +107,10 @@
 //     No libnuma dep. Small, single-responsibility. Audit in isolation.
 //
 //   malloc-bench-rs (crates/malloc-bench/src/lib.rs) — #![allow(unsafe_code)]
-//     Confined to alloc_block / free_block / drain_mailbox helpers only;
+//     Confined to alloc_block / free_block / drain_mailbox helpers plus one
+//     `unsafe impl Send for Block` (the cross-thread ownership-transfer token);
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
+//     Callers must supply a stateless-facade `A` (see `run`'s contract doc).
 //
 //   sefer-region  (crates/region/src/lib.rs)       — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's

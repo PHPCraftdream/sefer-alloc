@@ -368,11 +368,20 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // is leaked, never corrupted.
                 let _ = fallback::with_heap(|h| h.dealloc(ptr, layout));
             }
-            // SAFETY: as above; `dealloc` is a safe no-op on a
-            // foreign/dangling pointer (M2 defence-in-depth), so even if
-            // `ptr` was allocated on a different thread's heap, this routes
-            // correctly (own-thread → BinTable; cross-thread → TFS under
-            // `alloc-xthread`).
+            // SAFETY: as above. For a LIVE/MAPPED pointer this routes
+            // correctly regardless of which thread allocated it (own-thread →
+            // BinTable; cross-thread → TFS under `alloc-xthread`), and the M2
+            // double-free guard makes a repeated free of a still-mapped block
+            // a no-op. This is NOT a blanket "safe on any foreign/dangling
+            // pointer" claim: a dangling pointer into an already-RELEASED,
+            // unmapped segment is fundamentally UB — `dealloc_routing`
+            // (`registry/heap_core.rs`) cannot O(1)-distinguish it from a live
+            // foreign segment, and reading `magic_at(base)` on the released
+            // segment would fault. Not calling `dealloc` on an already-freed
+            // pointer is the caller's baseline `GlobalAlloc` obligation (a
+            // basic trait contract, not something M2 relaxes); M2 hardens the
+            // live-block case, it does not extend the contract to released
+            // memory.
             CurrentHeap::Own(heap) => unsafe { (*heap).dealloc(ptr, layout) },
         }
     }

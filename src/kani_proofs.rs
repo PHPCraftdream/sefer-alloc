@@ -1,9 +1,23 @@
-//! Kani proof harnesses for `alloc_core::node::Node` and
-//! `concurrent::hand::AtomicSlot`.
+//! Kani proof harnesses — bounded, symbolic-input round-trip / invariant
+//! proofs, compiled only under `cfg(kani)`.
 //!
-//! These harnesses are compiled only under `cfg(kani)` and verify the
-//! round-trip correctness of the unsafe pointer primitives in `Node` and the
-//! publication/eviction protocol of `AtomicSlot`.
+//! What these prove, and what they DO NOT:
+//!
+//! - `node_proofs` — smoke round-trip proofs on LOCALLY-VALID buffers for the
+//!   `alloc_core::node::Node` pointer primitives (write→read round-trips,
+//!   in-bounds `deref`/`offset`). They exercise the arithmetic; they do NOT
+//!   model the caller contracts those primitives require (bounds, exclusivity,
+//!   `'static` lifetime) — those are the caller's obligation, unmodelled here.
+//! - `hand_proofs` — two no-concurrency invariants of `AtomicSlot`
+//!   (`vacant().generation() == 0` and `drop_value()` on a vacant slot is a
+//!   no-op). These do NOT model the publication/eviction protocol: Kani cannot
+//!   model concurrency (see the `hand_proofs` module comment on `pin()`), so
+//!   the CAS-uniqueness / no-torn-read properties are covered by loom, not here.
+//! - `pack_proofs` — bounded round-trip / no-panic proofs over symbolic input
+//!   for the registry's pure bit-packing arithmetic (`TaggedPtr::pack/unpack`
+//!   and `bootstrap::pack_abandoned_head/unpack_abandoned_head`). This is where
+//!   Kani is genuinely strong: exhaustive-over-all-inputs bounded proofs with
+//!   no concurrency and no caller contract to assume.
 
 #[cfg(all(kani, feature = "alloc-core"))]
 mod node_proofs {
@@ -148,5 +162,83 @@ mod hand_proofs {
     fn drop_value_vacant_is_noop() {
         let mut slot = AtomicSlot::<u32>::vacant();
         slot.drop_value();
+    }
+}
+
+// Bounded proofs of the registry's pure bit-packing arithmetic. No pointers
+// are dereferenced, no concurrency, no caller contract — Kani explores EVERY
+// input in the modelled range and proves the round-trip / no-overflow
+// invariants hold. These harnesses ARE the regression tests for the packing
+// (a future INDEX_BITS / SEGMENT-alignment change that broke round-trip or
+// let a tag bleed into the value half would fail here).
+#[cfg(all(kani, feature = "alloc-global"))]
+mod pack_proofs {
+    use crate::registry::bootstrap::{
+        abandoned_head_is_empty, pack_abandoned_head, unpack_abandoned_head, ABANDON_TAG_MASK,
+        ABANDONED_HEAD_EMPTY,
+    };
+    use crate::registry::tagged_ptr::{dbg_pack, dbg_unpack, INDEX_BITS};
+
+    // ── 1. TaggedPtr pack→unpack round-trip ──────────────────────────────
+    //
+    // For any value that fits the low INDEX_BITS and any tag that fits the
+    // high (64 - INDEX_BITS), pack then unpack recovers BOTH halves exactly.
+    #[kani::proof]
+    fn tagged_pack_unpack_roundtrip() {
+        let index_mask: u64 = (1u64 << INDEX_BITS) - 1;
+        let value: u64 = kani::any();
+        let tag: u64 = kani::any();
+        // The caller's documented invariant: value fits the index half, tag
+        // fits the remaining high bits.
+        kani::assume(value <= index_mask);
+        kani::assume(tag < (1u64 << (64 - INDEX_BITS)));
+
+        let word = dbg_pack(value, tag);
+        let (got_value, got_tag) = dbg_unpack(word);
+        assert_eq!(got_value, value);
+        assert_eq!(got_tag, tag);
+    }
+
+    // ── 2. TaggedPtr unpack never loses / mixes bits on ANY word ─────────
+    //
+    // For a fully arbitrary 64-bit word (no assumptions), unpack splits it at
+    // the INDEX_BITS boundary with no overlap: value is exactly the low bits,
+    // tag is exactly the high bits, and re-packing them is the identity.
+    #[kani::proof]
+    fn tagged_unpack_is_clean_split() {
+        let index_mask: u64 = (1u64 << INDEX_BITS) - 1;
+        let word: u64 = kani::any();
+        let (value, tag) = dbg_unpack(word);
+        // Halves never overlap: value occupies only the low bits.
+        assert!(value <= index_mask);
+        // The split is lossless: recombining reproduces the original word.
+        assert_eq!(dbg_pack(value, tag), word);
+    }
+
+    // ── 3. abandoned-head pack→unpack recovers the tag; base low bits zero ─
+    //
+    // Kani cannot expose/reconstruct pointer provenance, so we drive the
+    // arithmetic through the empty sentinel (base = null): packing any tag
+    // onto the null base must round-trip the (masked) tag, keep the base null,
+    // and the word must still read as "empty" (base distinguishes empty, the
+    // tag is irrelevant to emptiness).
+    #[kani::proof]
+    fn abandoned_head_tag_roundtrips_on_null_base() {
+        let tag: u64 = kani::any();
+        let word = pack_abandoned_head(core::ptr::null_mut(), tag);
+        let (base, got_tag) = unpack_abandoned_head(word);
+        assert!(base.is_null());
+        // Only the low ABANDON_TAG_MASK bits of the tag survive the packing.
+        assert_eq!(got_tag, tag & ABANDON_TAG_MASK);
+        // A null base always denotes the empty stack, regardless of tag.
+        assert!(abandoned_head_is_empty(word));
+    }
+
+    // ── 4. the empty sentinel is recognised and carries a null base ──────
+    #[kani::proof]
+    fn abandoned_empty_sentinel_is_empty() {
+        assert!(abandoned_head_is_empty(ABANDONED_HEAD_EMPTY));
+        let (base, _tag) = unpack_abandoned_head(ABANDONED_HEAD_EMPTY);
+        assert!(base.is_null());
     }
 }

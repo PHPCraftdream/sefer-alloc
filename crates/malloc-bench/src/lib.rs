@@ -376,7 +376,21 @@ impl Default for Config {
 /// Run one workload × allocator × thread-count and return aggregate ops/sec.
 ///
 /// `A` is your allocator — typically a ZST (`System`, `mimalloc::MiMalloc`,
-/// etc.). A fresh instance is constructed per thread via `make_alloc`.
+/// etc.). A fresh instance is constructed **per thread** via `make_alloc`.
+///
+/// # Contract on `A`: stateless facade over shared global state
+///
+/// Because a block allocated on one thread may be handed off (via mpsc) and
+/// freed on ANOTHER thread — and each thread holds its OWN `A` instance —
+/// `A` MUST be a stateless facade over shared/global allocator state (e.g.
+/// [`std::alloc::System`], or `SeferAlloc`'s `#[global_allocator]` instance,
+/// which routes all instances to the same process-global heap registry).
+/// Allocating via one `A` instance and freeing via a DIFFERENT `A` instance is
+/// sound only when both instances route to the SAME underlying allocator; a
+/// genuinely per-instance-stateful `A` (each instance owning a private arena)
+/// would see a cross-thread free reach the wrong arena and is NOT supported by
+/// this harness. This is the same constraint the `GlobalAlloc` trait already
+/// implies for any allocator installed as `#[global_allocator]`.
 ///
 /// The harness:
 /// 1. Spawns `config.threads` workers, each with its own mailbox channel for

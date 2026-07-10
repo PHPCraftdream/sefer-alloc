@@ -247,6 +247,21 @@ impl Drop for AbandonGuard {
 /// [`current_for_alloc`] instead). Kept `pub` as the canonical accessor for
 /// future direct-API consumers and tests.
 ///
+/// # Locking obligation on the fallback pointer
+///
+/// By discarding the tag this accessor erases a synchronisation obligation
+/// that [`current_for_alloc`] surfaces via [`CurrentHeap::Fallback`]: on the
+/// TORN and `Err` (TLS-teardown) branches the returned pointer is the
+/// process-**global fallback heap**, shared by every thread whose TLS is
+/// unavailable. Mutable (`&mut HeapCore`) access to the OWN-thread pointer is
+/// sound lock-free (single-writer registry-slot invariant), but the fallback
+/// pointer has NO such owner — mutating it is sound ONLY under the
+/// `fallback::with_heap` spinlock. A caller cannot tell from the bare pointer
+/// which case it got, so a direct-API consumer of `current()` must either treat
+/// the result as read-only or route every mutation through `fallback::with_heap`
+/// (the tagged [`current_for_alloc`] is the safe default — prefer it). This
+/// obligation is why the accessor is currently unused by the alloc face.
+///
 /// Inlined so the fast path collapses to a TLS-get + branch in the callers.
 #[must_use]
 #[inline]
