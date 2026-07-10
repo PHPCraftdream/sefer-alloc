@@ -147,7 +147,7 @@ fn unbounded_recycle_within_single_scan() {
     // `dbg_drain_all_rings`), exactly like `find_segment_with_free`'s
     // production code path.
     let mut pushed = 0usize;
-    for (_, &p) in survivors.iter() {
+    for &p in survivors.values() {
         if ac.dbg_push_to_ring(p, class_idx) {
             pushed += 1;
         }
