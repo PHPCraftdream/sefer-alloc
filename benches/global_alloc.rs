@@ -97,30 +97,47 @@ fn churn_prefill<A: GlobalAlloc>(alloc: &A, layout: Layout, working_set: usize) 
 
 /// Teardown: free every block in the working set.
 ///
-/// NOTE (correction, found by adversarial re-review of the F7 fix): this is
-/// called from INSIDE the `iter_batched` routine closure at each call site
-/// below (`churn_step(...); churn_teardown(...)`), not from the closure's
-/// return-value drop — `iter_batched` only excludes `setup`'s time, not
-/// arbitrary code the routine closure itself runs. So teardown's
-/// `CHURN_WORKING_SET` (256) frees ARE included in the timed region, on top
-/// of the `ops` (1024) churn pairs — roughly a 20% addition to the timed
-/// operation count that `OPS` alone does not capture. A prior version of this
-/// comment (and `churn_step`'s) claimed teardown was untimed and that `ops`
-/// was the exact divisor with "no prefill/teardown skew"; that was false.
-/// Making teardown genuinely untimed would require `routine` to return a
-/// drop-guard value (whose `Drop` frees the blocks) instead of calling
-/// `churn_teardown` inline — left as a follow-up, not implemented here to
-/// avoid restructuring the six `iter_batched` call sites below under time
-/// pressure. The residual ~20% overshoot is a smaller, known-shape error than
-/// the ~25% F7 originally reported (mixed cold prefill AND uncounted teardown
-/// with a *different* divisor); reported ns/op should be read as "per churn
-/// op, plus a small constant teardown tax," not as exact.
+/// PERF-PASS-1 (task #49, G3/A2a): historically this was called from INSIDE
+/// the `iter_batched` routine closure at each call site below
+/// (`churn_step(...); churn_teardown(...)`), which `iter_batched` DOES time —
+/// it only excludes `setup`'s time, not arbitrary code the routine closure
+/// itself runs. At 1024B under `alloc-decommit` this made teardown ~85% of
+/// the reported "churn" ns/op (~183us of ~208us total, per the churn-reuse
+/// review's phase-split measurement), because freeing the last live block in
+/// a non-current small segment triggers the decommit->release->re-reserve
+/// cycle. `bench_global_alloc_churn`/`_write` below now use
+/// [`ChurnTeardownGuard`] instead: the routine closure returns a guard
+/// wrapping `live`, and `iter_batched` times only the guard's construction
+/// (trivial move) — the guard's `Drop` impl runs `churn_teardown` OUTSIDE the
+/// timed region, exactly matching how `churn_prefill` (setup) is already
+/// excluded. One variant, [`bench_global_alloc_churn_with_teardown`], is kept
+/// DELIBERATELY unconverted (still times teardown inline) as a diagnostic
+/// signal for later Mechanism-2 (task #51) work — not a bug, see its own doc
+/// comment.
 fn churn_teardown<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &[*mut u8]) {
     for &p in live {
         if !p.is_null() {
             // SAFETY: `p` was allocated by `alloc` with the same layout.
             unsafe { alloc.dealloc(p, layout) };
         }
+    }
+}
+
+/// PERF-PASS-1 (task #49, G3/A2a): drop-guard that frees a churn working set
+/// OUTSIDE criterion's timed region. `iter_batched`'s routine closure returns
+/// this guard; criterion times only the closure's execution (including the
+/// guard's cheap construction/move), then drops the returned value AFTER
+/// stopping the clock for that iteration. See `churn_teardown`'s doc comment
+/// for why this matters at 1024B under `alloc-decommit`.
+struct ChurnTeardownGuard<'a, A: GlobalAlloc> {
+    alloc: &'a A,
+    layout: Layout,
+    live: Vec<*mut u8>,
+}
+
+impl<'a, A: GlobalAlloc> Drop for ChurnTeardownGuard<'a, A> {
+    fn drop(&mut self) {
+        churn_teardown(self.alloc, self.layout, &self.live);
     }
 }
 
@@ -383,10 +400,86 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        // F7: `iter_batched` times ONLY the steady-state churn loop (`OPS`
-        // op-pairs). Prefill (cold, first-touch) is the untimed setup and
-        // teardown is the untimed drop — so the reported ns/op divides by
-        // exactly `OPS`, with no ~25% cold-phase skew.
+        // F7 + PERF-PASS-1 (task #49, G3/A2a): `iter_batched` times ONLY the
+        // steady-state churn loop (`OPS` op-pairs) plus the trivial guard
+        // construction. Prefill (cold, first-touch) is the untimed setup and
+        // teardown now runs in `ChurnTeardownGuard::drop`, which `iter_batched`
+        // does NOT time (only the routine closure's own execution is timed) —
+        // so the reported ns/op divides by exactly `OPS`, with neither the
+        // ~25% cold-phase skew F7 fixed nor the ~85%-at-1024B teardown skew
+        // this pass fixes.
+        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
+            b.iter_batched(
+                || churn_prefill(&sefer, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&sefer, layout, &mut live, OPS);
+                    ChurnTeardownGuard {
+                        alloc: &sefer,
+                        layout,
+                        live,
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+
+        group.bench_function(format!("mimalloc/{size}B"), |b| {
+            b.iter_batched(
+                || churn_prefill(&mi, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&mi, layout, &mut live, OPS);
+                    ChurnTeardownGuard {
+                        alloc: &mi,
+                        layout,
+                        live,
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+
+        group.bench_function(format!("System/{size}B"), |b| {
+            b.iter_batched(
+                || churn_prefill(&sys, layout, CHURN_WORKING_SET),
+                |mut live| {
+                    churn_step(&sys, layout, &mut live, OPS);
+                    ChurnTeardownGuard {
+                        alloc: &sys,
+                        layout,
+                        live,
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    group.finish();
+}
+
+/// PERF-PASS-1 (task #49, G3/A2a): DELIBERATE diagnostic variant of
+/// `bench_global_alloc_churn` that keeps teardown INSIDE the timed
+/// `iter_batched` routine (the pre-fix behavior). This is not a leftover bug —
+/// it is kept on purpose as the Mechanism-2 (task #51) signal: the gap
+/// between this bench's ns/op and `global_alloc_churn`'s ns/op at the same
+/// size IS the segment decommit/release/re-reserve lifecycle cost the
+/// churn-reuse review measured (~183us of ~208us at 1024B under
+/// `alloc-decommit`). Do not "fix" this bench to exclude teardown — that
+/// would remove the only local signal for that cost class until task #51
+/// lands Mechanism-2.
+fn bench_global_alloc_churn_with_teardown(c: &mut Criterion) {
+    let mut group = c.benchmark_group("global_alloc_churn_with_teardown");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferAlloc::new();
+    let mi = mimalloc::MiMalloc;
+    let sys = System;
+
+    for &size in SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+
         group.bench_function(format!("SeferAlloc/{size}B"), |b| {
             b.iter_batched(
                 || churn_prefill(&sefer, layout, CHURN_WORKING_SET),
@@ -437,13 +530,19 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        // F7: time ONLY the churn loop (see the non-writing group above).
+        // F7 + PERF-PASS-1 (task #49, G3/A2a): time ONLY the churn loop (see
+        // the non-writing group above) — teardown moved to the untimed
+        // `ChurnTeardownGuard::drop`.
         group.bench_function(format!("SeferAlloc/{size}B"), |b| {
             b.iter_batched(
                 || churn_prefill_write(&sefer, layout, CHURN_WORKING_SET),
                 |mut live| {
                     churn_step_write(&sefer, layout, &mut live, OPS);
-                    churn_teardown(&sefer, layout, &live);
+                    ChurnTeardownGuard {
+                        alloc: &sefer,
+                        layout,
+                        live,
+                    }
                 },
                 BatchSize::SmallInput,
             )
@@ -454,7 +553,11 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
                 || churn_prefill_write(&mi, layout, CHURN_WORKING_SET),
                 |mut live| {
                     churn_step_write(&mi, layout, &mut live, OPS);
-                    churn_teardown(&mi, layout, &live);
+                    ChurnTeardownGuard {
+                        alloc: &mi,
+                        layout,
+                        live,
+                    }
                 },
                 BatchSize::SmallInput,
             )
@@ -465,7 +568,11 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
                 || churn_prefill_write(&sys, layout, CHURN_WORKING_SET),
                 |mut live| {
                     churn_step_write(&sys, layout, &mut live, OPS);
-                    churn_teardown(&sys, layout, &live);
+                    ChurnTeardownGuard {
+                        alloc: &sys,
+                        layout,
+                        live,
+                    }
                 },
                 BatchSize::SmallInput,
             )
@@ -549,11 +656,137 @@ fn bench_global_segment_decommit_cycle(c: &mut Criterion) {
     group.finish();
 }
 
+/// PERF-PASS-1 (task #49, G3/A2b) — the canonical Mechanism-2 (task #51)
+/// judge. Reproduces the churn-reuse review's "criterion-shape probe" that
+/// isolated the 1024B churn blow-up to the empty-small-segment
+/// decommit->release->re-reserve lifecycle (not the reuse path itself, which
+/// measures 29-30ns/op flat): `N_WORKING_SETS` (64) independent working sets,
+/// each `WORKING_SET_LEN` live pointers, are pre-built in `iter_batched`'s
+/// untimed setup; the timed routine frees and reallocates EVERY block of
+/// EVERY working set once (one full free+realloc oscillation per block, in
+/// working-set order), simulating a working set that repeatedly crosses a
+/// segment boundary and empties/re-fills non-current segments. Teardown of
+/// all `N_WORKING_SETS` sets happens in the untimed `Drop` portion via
+/// [`WorkingSetCycleGuard`] (same pattern as `ChurnTeardownGuard` above), so
+/// the reported ns/op is the oscillation cost alone, not lifecycle teardown.
+///
+/// Only `SeferAlloc` is measured here (unlike the other groups in this file):
+/// the point of this bench is `SeferAlloc`'s specific decommit/reuse
+/// lifecycle, which mimalloc/System don't share the shape of, and the
+/// `AllocStats` delta reporting below (`stats()`) is SeferAlloc-specific.
+const N_WORKING_SETS: usize = 64;
+
+/// PERF-PASS-1 (task #49, G3/A2b): drop-guard analogous to
+/// `ChurnTeardownGuard`, but owning `N_WORKING_SETS` independent working
+/// sets. `Drop` frees every live pointer across every set, outside the timed
+/// `iter_batched` region.
+struct WorkingSetCycleGuard<'a> {
+    alloc: &'a SeferAlloc,
+    layout: Layout,
+    sets: Vec<Vec<*mut u8>>,
+}
+
+impl<'a> Drop for WorkingSetCycleGuard<'a> {
+    fn drop(&mut self) {
+        for set in &self.sets {
+            churn_teardown(self.alloc, self.layout, set);
+        }
+    }
+}
+
+/// Pre-build `N_WORKING_SETS` working sets of `working_set_len` live blocks
+/// each. Untimed `iter_batched` setup — mirrors `churn_prefill` but produces
+/// many independent sets instead of one, so the timed routine can cycle each
+/// set through a free+realloc oscillation without the sets sharing state.
+fn working_set_cycle_prefill(
+    alloc: &SeferAlloc,
+    layout: Layout,
+    working_set_len: usize,
+) -> Vec<Vec<*mut u8>> {
+    (0..N_WORKING_SETS)
+        .map(|_| churn_prefill(alloc, layout, working_set_len))
+        .collect()
+}
+
+/// Timed routine: for every working set, free-then-reallocate every block
+/// once (in place, same index) — one full oscillation across a potential
+/// segment boundary per block, across all `N_WORKING_SETS` sets. This is the
+/// shape that, per the churn-reuse review's probe, reproduces 20
+/// decommit+release+re-reserve cycles at 1024B with 0 such cycles at
+/// 16/64/256B (whose footprint stays inside the primordial segment).
+fn working_set_cycle_step(alloc: &SeferAlloc, layout: Layout, sets: &mut [Vec<*mut u8>]) {
+    for set in sets.iter_mut() {
+        for slot in set.iter_mut() {
+            if !slot.is_null() {
+                // SAFETY: `*slot` was allocated by `alloc` with `layout`.
+                unsafe { alloc.dealloc(*slot, layout) };
+            }
+            // SAFETY: layout has non-zero size and valid alignment.
+            *slot = unsafe { alloc.alloc(layout) };
+        }
+    }
+    black_box(&sets);
+}
+
+fn bench_working_set_cycle(c: &mut Criterion) {
+    let mut group = c.benchmark_group("working_set_cycle");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferAlloc::new();
+
+    for &size in SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+
+        // dbg_segments_released_total / dbg_decommit_count (via `stats()`)
+        // are process-wide monotonic counters (see
+        // `src/alloc_core/alloc_core.rs` `dbg_decommit_count`,
+        // `dbg_segments_released_total`) — not resettable, so we snapshot
+        // before/after the whole `bench_function` call (all `sample_size`
+        // iterations) and report the delta as a diagnostic, not a strict
+        // per-iteration measurement. `decommit_calls` reads 0 unless
+        // `alloc-decommit` is compiled in; `segments_released_total` is
+        // always compiled. If `alloc-decommit` is off, only the segment
+        // release counter (still meaningful: recycle/release without decommit
+        // also fires it) is expected to move.
+        let before = sefer.stats();
+        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
+            b.iter_batched(
+                || working_set_cycle_prefill(&sefer, layout, CHURN_WORKING_SET),
+                |mut sets| {
+                    working_set_cycle_step(&sefer, layout, &mut sets);
+                    WorkingSetCycleGuard {
+                        alloc: &sefer,
+                        layout,
+                        sets,
+                    }
+                },
+                BatchSize::SmallInput,
+            )
+        });
+        let after = sefer.stats();
+
+        eprintln!(
+            "working_set_cycle/SeferAlloc/{size}B: decommit_calls delta = {}, \
+             segments_released_total delta = {}",
+            after.decommit_calls.saturating_sub(before.decommit_calls),
+            after
+                .segments_released_total
+                .saturating_sub(before.segments_released_total),
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_global_alloc,
     bench_global_alloc_churn,
+    bench_global_alloc_churn_with_teardown,
     bench_global_alloc_churn_write,
-    bench_global_segment_decommit_cycle
+    bench_global_segment_decommit_cycle,
+    bench_working_set_cycle
 );
 criterion_main!(benches);
