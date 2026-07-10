@@ -262,6 +262,40 @@ type LargeCacheHitCounter = core::sync::atomic::AtomicU64;
 /// primordial segment's payload (self-hosted) — there is NO `Vec<Segment>`:
 /// `AllocCore::drop` walks the registry and frees every reservation through
 /// the `os` seam.
+///
+/// ## PERF-PASS-5 (G7/ML6, task #53) — field DECLARATION order is a no-op here
+///
+/// `AllocCore` is `repr(Rust)` (no explicit `#[repr(..)]`): field
+/// declaration order is a HINT to the compiler, not a layout guarantee. The
+/// 2026-07-10 memory-layout review (finding 6) measured rustc placing the
+/// cold 384-byte `large_cache` array ahead of the dealloc-hot `table` field
+/// under the OLD source order (`large_cache` declared before `table`). This
+/// task moved `table` and `small_cur` to be the FIRST two fields declared
+/// below — and then re-measured with `-Zprint-type-sizes` on this project's
+/// CURRENT profile (task #49 already added `lto = "thin"` /
+/// `codegen-units = 1`): the compiled layout is BYTE-IDENTICAL to before —
+/// rustc still places `large_cache` first, `table`/`small_cur` in the
+/// middle. A minimal reproduction (two structs with `table`/`small_cur`
+/// declared first vs. `large_cache` declared first, otherwise identical
+/// fields) confirmed this is not an artifact of this struct's specific
+/// `#[cfg(feature = "alloc-decommit")]` gating: rustc's `repr(Rust)`
+/// layout algorithm reorders fields by its own heuristic (chiefly
+/// size/alignment) REGARDLESS of declaration order for this field set (all
+/// fields here are `align <= 8`, so there is no alignment-driven reason to
+/// prefer one order over the other, and the compiler's choice is not
+/// influenced by which one happens to appear first in the source).
+///
+/// **Verdict: NO-OP, reported honestly per the task spec rather than forcing
+/// a cosmetic reorder that measurement shows does nothing.** The
+/// declaration order below (`table`/`small_cur` first) is KEPT anyway
+/// because it is the more readable grouping (hot fields first in the
+/// source, matching the doc narrative) and costs nothing — but it has no
+/// effect on the compiled cache-line layout `AllocCore::dealloc`'s
+/// `table.own_cache` touch actually observes. If a future toolchain/profile
+/// change makes `repr(Rust)` field order load-bearing again, an explicit
+/// `#[repr(C)]` (with the accompanying hand-packing discipline
+/// `SegmentHeader` uses) would be the correct fix, not a bare declaration
+/// reorder.
 pub struct AllocCore {
     /// The primordial segment registry (self-hosted in segment 0's payload).
     table: SegmentTable,
