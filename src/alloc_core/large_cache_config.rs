@@ -30,9 +30,9 @@
 //! build time, so no `Result` is needed and there is nothing to panic on in a
 //! `const` context. Per-setter contracts are documented on each method.
 
-// `LargeCacheMode` is defined in `alloc_core.rs` (the sibling sub-module
-// `alloc_core::alloc_core`) and re-exported by `alloc_core::mod.rs`.
-use super::alloc_core::LargeCacheMode;
+// `LargeCacheMode` lives in the sibling sub-module `alloc_core::large_cache_mode`
+// and is re-exported by `alloc_core::mod.rs`.
+use super::large_cache_mode::LargeCacheMode;
 
 // ── Default constants (kept in sync with the old env-parser defaults) ─────────
 

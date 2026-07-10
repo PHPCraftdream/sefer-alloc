@@ -24,6 +24,8 @@ mod bootstrap;
 pub mod deferred_large;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
+#[cfg(feature = "alloc-decommit")]
+pub mod large_cache_mode;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is
@@ -77,7 +79,7 @@ pub(crate) mod size_classes;
 
 pub use alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
-pub use alloc_core::LargeCacheMode;
-#[cfg(feature = "alloc-decommit")]
 pub use large_cache_config::LargeCacheConfig;
+#[cfg(feature = "alloc-decommit")]
+pub use large_cache_mode::LargeCacheMode;
 pub use segment_layout::SegmentLayout;

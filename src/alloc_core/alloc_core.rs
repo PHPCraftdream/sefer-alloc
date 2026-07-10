@@ -81,28 +81,12 @@ const LARGE_CACHE_SLOTS: usize = 8;
 #[cfg(feature = "alloc-decommit")]
 const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 
-/// The three large-cache operating modes.
-///
-/// `Lazy` is the default; the others are reserved for a future background
-/// scavenger thread (not yet implemented — they currently behave identically
-/// to `Lazy`). Set via [`LargeCacheConfig::mode`].
-///
-/// [`LargeCacheConfig::mode`]: super::large_cache_config::LargeCacheConfig::mode
+// `LargeCacheMode` now lives in its own file (`large_cache_mode.rs`) per the
+// one-export-per-file rule (task #27); it is re-exported unchanged by
+// `alloc_core::mod.rs`. Imported here so the shard field, the config type, and
+// the `dbg_large_cache_mode` test seam keep referring to it by bare name.
 #[cfg(feature = "alloc-decommit")]
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[non_exhaustive]
-pub enum LargeCacheMode {
-    /// Default: Phase 2 lazy decay only. No background thread. Identical to
-    /// pre-Phase-3 behaviour; all existing tests continue to pass unchanged.
-    Lazy,
-    /// Reserved for a future background scavenger thread that visits idle
-    /// shards and calls `run_decay_step()` on their large-caches. Currently
-    /// behaves identically to `Lazy`.
-    Background,
-    /// Alias for `Background`. Reserved for the future distinction "lazy hooks
-    /// AND background thread active" vs "background thread only".
-    Both,
-}
+use super::large_cache_mode::LargeCacheMode;
 
 // ---------------------------------------------------------------------------
 // Phase 2 — lazy exponential decay of the large-cache excess

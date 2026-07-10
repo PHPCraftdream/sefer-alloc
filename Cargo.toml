@@ -201,23 +201,37 @@ alloc-stats = ["alloc-core"]
 # has the magazine free path this guards); enabling it without the magazine is a
 # no-op. See README "Hardened vs production".
 hardened = ["fastbin"]
-# PERF-3 Ф1 (task #208): opt-in **experimental** performance feature — the per-
-# segment run-encoded freelist storage (`RunStack`), the storage/layout phase of
-# the run-encoded freelist arc (docs/design/RUN_ENCODED_FREELIST_PLAN.md). Adds
-# a new per-segment metadata region (~3 KiB for the default 49 classes × 8
-# descriptors × 8 B) that will (in later phases Ф2/Ф3) let the recycle path
-# (flush → freelist → drain) encode contiguous freed-block runs as compact
-# `(start_off, count)` descriptors instead of per-block intrusive `next`-pointer
-# writes/loads. THIS FEATURE IS OFF BY DEFAULT and intentionally NOT part of
-# `production`: it is a production-path performance change whose win/no-go
-# verdict is deferred to Ф5 (the honest cost/benefit ledger + go/no-go gate).
-# Until Ф5 reaches GO, enabling it shifts `small_meta_end()` up by the RunStack
-# footprint (reducing per-segment payload capacity); with it OFF the byte layout
-# is identical to the pre-PERF-3 build (the production-judge-neutrality gate).
-# Additive over `alloc-core`; no new dependency, no new `unsafe` site — the
-# RunStack is plain safe arithmetic through the `node` seam. See
-# docs/design/RUN_ENCODED_FREELIST_PLAN.md §2.1/§2.2/§2.8/§3-Ф1 for the fixed
-# design decisions this feature gates.
+# PERF-3 (tasks #208–#212): opt-in **experimental** performance feature — the
+# per-segment run-encoded freelist (`RunStack`): compact `(start_off, count)`
+# descriptors for contiguous freed-block runs on the recycle path
+# (flush → freelist → drain), the full Ф1–Ф4 implementation (storage, flush,
+# drain, lifecycle). Adds a per-segment metadata region (~3 KiB for the default
+# 49 classes × 8 descriptors × 8 B).
+#
+# VERDICT: Ф5 REACHED — **NO-GO (honest-reject)**, see
+# docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md §Verdict. The measured cold/recycle
+# targets *regressed* +23 %–+31 % (Ir) instead of the predicted ≥5 % improvement
+# (the saved dependent-load pointer-chase was largely prefetcher-covered, while
+# the sort+scan+descriptor-push representation costs more L1 traffic and
+# instructions than it saves). This feature will therefore NOT be added to
+# `production` in its current representation; it is not under active
+# development. The Ф1–Ф4 source
+# (`run_stack.rs` + the `#[cfg(feature = "alloc-runfreelist")]` sites in
+# `alloc_core.rs`) is **deliberately retained**, not dead-on-arrival: it is
+# correct, reviewed and regression-tested, compiles to nothing under the default
+# feature set, and is kept as a ready starting point for a possible future
+# re-run (e.g. a "PERF-3.5" that reworks the flush side to *divert* away from the
+# intrusive chain rather than *augment* it — see the disposition recommendation
+# in the experiment doc §"Source disposition"). Removing the code is a separate,
+# more invasive decision that has intentionally NOT been taken.
+#
+# Until/unless such a re-run reaches GO, enabling this feature shifts
+# `small_meta_end()` up by the RunStack footprint (reducing per-segment payload
+# capacity); with it OFF the byte layout is identical to the pre-PERF-3 build
+# (the production-judge-neutrality gate). Additive over `alloc-core`; no new
+# dependency, no new `unsafe` site — the RunStack is plain safe arithmetic
+# through the `node` seam. See docs/design/RUN_ENCODED_FREELIST_PLAN.md and
+# docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md.
 alloc-runfreelist = ["alloc-core"]
 # NUMA-aware segment reservation: when a new segment is reserved, pages are
 # steered to the NUMA node of the calling thread
