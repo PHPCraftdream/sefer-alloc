@@ -41,19 +41,29 @@
 //!   ... bin_table_off + BinTable::FOOTPRINT (4-byte aligned)
 //!   ┌──────────────────────────────────────────────────────────┐
 //!   │ RemoteFreeRing                                           │
+//!   │  offset 0..64  (own cache line — consumer-only writes):  │
 //!   │  • head: AtomicU32  (4 B) — drain cursor (consumer)      │
+//!   │  • [60 B reserved padding]                                │
+//!   │  offset 64..128 (own cache line — producer-touched):     │
 //!   │  • tail: AtomicU32  (4 B) — push reserve cursor (producers)
 //!   │  • overflow: AtomicU32 (4 B) — count of discarded pushes  │
 //!   │    (ring-full → bounded leak; sound, never corrupts)      │
-//!   │  • pad: 4 B (align slots to 8)                           │
+//!   │  • [56 B reserved padding]                                │
+//!   │  offset 128.. (data, starts on its own cache line):       │
 //!   │  • slots: [AtomicU32; RING_CAP]  (RING_CAP × 4 B)         │
 //!   │    each slot holds a block offset or RING_SLOT_EMPTY      │
 //!   └──────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! `FOOTPRINT = 16 (cursor block) + RING_CAP * 4`. With `RING_CAP = 256` that
-//! is 1040 bytes per segment — under one page, negligible vs. the 4 MiB
-//! segment, and amortised across all blocks the segment serves.
+//! **PERF-PASS-4 (G8/ML4, task #52):** the cursor block widened from 16 to
+//! 128 bytes so `head` (consumer-only), `tail`/`overflow` (producer-touched),
+//! and the data slots each start on their OWN 64-byte cache line — the
+//! pre-task packing put all three on one line (the ring's in-segment base is
+//! 64-byte aligned), guaranteeing maximal ping-pong: a consumer's `head`
+//! publish invalidated the producers' `tail` CAS line AND the first 12 data
+//! slots. `FOOTPRINT = CURSOR_BLOCK (128) + RING_CAP * 4`. With `RING_CAP =
+//! 256` that is 1152 bytes per segment (was 1040) — still under one page,
+//! negligible vs. the 4 MiB segment.
 //!
 //! ## MPSC protocol (Vyukov-style bounded, CAS-reserved)
 //!
@@ -391,23 +401,52 @@ pub fn unpack_entry_hardened(packed: u32) -> (u8, u32, u32) {
     (gen, class_idx, off)
 }
 
-/// The cursor block: `head`, `tail`, `overflow`, and a 4-byte pad so the slot
-/// array starts 8-aligned (harmless on `AtomicU32` but tidy). 16 bytes total.
-const CURSOR_BLOCK: usize = 4 * core::mem::size_of::<u32>();
+/// The cursor block: `head`, `tail`, `overflow`, padded up to 128 bytes — two
+/// full cache lines, so `head` (consumer-only) and `tail`/`overflow`
+/// (producer-touched) each start their OWN 64-byte-aligned line.
+///
+/// **PERF-PASS-4 (G8/ML4, task #52) — was 16 bytes.** At `CURSOR_BLOCK = 16`,
+/// `head`@0 + `tail`@4 + `overflow`@8 + a 4-byte pad + `slots[0..12]` all
+/// shared ONE 64-byte cache line (the ring's in-segment base is 64-byte
+/// aligned, so this was exact, not approximate). Producers CAS `tail` and
+/// Acquire-load `head` on every push; the consumer Release-stores `head`,
+/// Acquire-loads `tail`, and reads/clears slots — all landing on that SAME
+/// line. Widening to 128 bytes puts `head` (offset 0, consumer-only writes)
+/// on its own line and `tail`/`overflow` (offset 64, producer-touched) on a
+/// SECOND line, disjoint from both `head` and the first data slots
+/// (`SLOTS_OFF` moves from 16 to 128). Costs 112 extra bytes per segment's
+/// ring metadata (4 MiB segment; negligible). `FOOTPRINT` and every
+/// downstream segment-metadata offset (`Layout::small_meta_end`, etc.)
+/// derive FROM this constant, so the layout re-composes automatically — see
+/// the compile-time layout asserts at the bottom of `segment_header.rs`,
+/// which re-verify unchanged.
+const CURSOR_BLOCK: usize = 128;
 
-/// Offset of the `head` cursor within the ring metadata.
+/// Offset of the `head` cursor within the ring metadata. Own cache line
+/// (bytes 0..64) — consumer-only writes (`drain`'s `head.store`), producer
+/// reads (`push`'s full-check `head.load(Acquire)`).
 ///
 /// Only read by the ring's push/drain methods, which are only reachable on
 /// builds that exercise cross-thread free (`alloc-xthread`); unused under
 /// `--features alloc-core` alone.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const HEAD_OFF: usize = 0;
-/// Offset of the `tail` cursor within the ring metadata.
+/// Offset of the `tail` cursor within the ring metadata. PERF-PASS-4: moved
+/// from 4 to 64 — its own cache line, separate from `head`'s line and from
+/// the first data slots. Producer-CASed on every push; consumer
+/// Acquire-loads it once per drain.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-const TAIL_OFF: usize = 4;
-/// Offset of the `overflow` counter within the ring metadata.
-const OVERFLOW_OFF: usize = 8;
-/// Offset of the first slot within the ring metadata.
+const TAIL_OFF: usize = 64;
+/// Offset of the `overflow` counter within the ring metadata. PERF-PASS-4:
+/// moved from 8 to 68 — shares `tail`'s line (both are producer-touched;
+/// `overflow` is only written on the rare full-ring path, so co-locating it
+/// with `tail` costs nothing on the common push path and avoids spending a
+/// THIRD cache line on one counter).
+const OVERFLOW_OFF: usize = 68;
+/// Offset of the first slot within the ring metadata. PERF-PASS-4: moved
+/// from 16 to 128 (`CURSOR_BLOCK`) — the data slots now start on a line past
+/// BOTH cursor lines, so neither producer's `tail` CAS nor the consumer's
+/// `head` store dirties a line the other side is scanning for data.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const SLOTS_OFF: usize = CURSOR_BLOCK;
 
@@ -602,8 +641,15 @@ impl RemoteFreeRing {
     /// Stops at the first not-yet-published reserved slot (a producer won the
     /// reservation CAS but hasn't stored the offset yet) — order is preserved by
     /// the cursors, so a later drain picks it up.
+    ///
+    /// Returns the final `head` value written (i.e. the drain cursor after
+    /// this call). PERF-PASS-4 (G9/C2, task #52): callers that maintain an
+    /// owner-private cached copy of `head` (to skip future empty drains — see
+    /// [`RemoteFreeRing::is_likely_empty`]) use this to refresh their cache
+    /// without a second atomic load; callers that don't care simply ignore it
+    /// (existing call sites are source- and behaviour-compatible).
     #[cfg(feature = "alloc-xthread")]
-    pub fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+    pub fn drain<F: FnMut(u32)>(&self, mut reclaim: F) -> u32 {
         // Acquire: see every producer's Release reservation (tail CAS) and
         // their Release publish (slot store).
         let t = self.tail().load(Ordering::Acquire);
@@ -653,6 +699,7 @@ impl RemoteFreeRing {
         // Publish the new head so producers' full-check sees the freed space.
         // Release: pairs with their Acquire head load in `push`.
         self.head().store(h, Ordering::Release);
+        h
     }
 
     /// Whether the ring is likely empty (momentary observation). Heuristic —
@@ -664,5 +711,55 @@ impl RemoteFreeRing {
         let t = self.tail().load(Ordering::Acquire);
         let h = self.head().load(Ordering::Acquire);
         t == h
+    }
+
+    /// PERF-PASS-4 (G9/C2, task #52) — pre-drain empty-guard primitive: a
+    /// cheap Relaxed load of `tail` ONLY (no `head` load at all — the caller
+    /// already holds its own owner-private cached copy of `head`, refreshed
+    /// from [`drain`](Self::drain)'s return value).
+    ///
+    /// **Why `Relaxed` is sound here (extends the existing single-consumer
+    /// argument at [`drain`](Self::drain)'s doc comment):** the sole purpose
+    /// of this load is to decide "has ANY producer reserved a slot since we
+    /// last drained". A push's `tail` CAS is `AcqRel`; a Relaxed load here may
+    /// observe an OLDER value of `tail` than the most recent CAS (no
+    /// synchronizes-with edge), but it can NEVER observe a value that skips a
+    /// real advance: `tail` is monotonic (only ever `wrapping_add(1)`-ed by a
+    /// winning CAS), so ANY Relaxed load of it returns either the cached
+    /// value or a LATER one — never a value that hides a genuine push. Three
+    /// outcomes:
+    ///   - `tail_relaxed() == cached_head` → the ring is PROVABLY unchanged
+    ///     since the cache was taken (no push can have landed without moving
+    ///     `tail` off `cached_head`, and `cached_head` was itself set FROM a
+    ///     real `head` value that only advances up to a real `tail`) — safe
+    ///     to skip the drain entirely.
+    ///   - `tail_relaxed() != cached_head` but a push landed AFTER this load
+    ///     returns → exactly the same as today's drain missing a push that
+    ///     lands after `drain`'s own `tail.load(Acquire)` returns: the
+    ///     "later drain picks it up" contract (module docs) already covers
+    ///     this window, unconditionally, regardless of whether THIS call
+    ///     skipped or ran a real drain.
+    ///   - A push landed and is visible: `tail_relaxed() != cached_head`, the
+    ///     caller falls through to a real `drain()`, which re-establishes
+    ///     ordering via its own `Acquire` tail load — this Relaxed load is
+    ///     ONLY a pre-filter, never the operation that reads the pushed data.
+    ///
+    /// The slot re-claim boundary (a segment's ring surviving a `HeapSlot`
+    /// recycle→claim, per the shard-reuse discipline — see
+    /// `HeapRegistry::abandon_segments`'s module doc) needs NO extra fence
+    /// here: the cache lives in the segment's OWN header
+    /// (`SegmentHeader::ring_drain_head`), which is reset to `0` only when a
+    /// segment is freshly reserved (`SegmentHeader::small`), exactly mirroring
+    /// the ring's own `head`/`tail` reset in `RemoteFreeRing::init_in_place`
+    /// at the SAME call site (`reserve_small_segment`). A recycled `HeapSlot`
+    /// re-claimed by a new owner thread reuses the SAME `HeapCore` (and hence
+    /// the SAME live segments/rings) whole — there is no "new owner, old
+    /// ring" combination in this codebase's shard-reuse model, so there is no
+    /// window where a stale cached head from a different logical owner could
+    /// leak across a re-claim.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn tail_relaxed(&self) -> u32 {
+        self.tail().load(Ordering::Relaxed)
     }
 }

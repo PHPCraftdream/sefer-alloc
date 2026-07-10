@@ -20,6 +20,11 @@ const MATRIX = [
   ['experimental', 'region_invariants'],
   ['alloc-core alloc-decommit', 'decommit_miri_cycle'],
   ['alloc-global alloc-xthread', 'reclaim_offset_unit'],
+  // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard's
+  // `SegmentHeader::ring_drain_head` field, exercised via a REAL
+  // `find_segment_with_free` scan (not the unconditional `dbg_drain_all_rings`
+  // force-drain `reclaim_offset_unit` uses).
+  ['alloc-global alloc-xthread', 'regression_ring_drain_guard_miri'],
   ['alloc-core', 'regression_large_align_no_segment_exhaustion'],
   ['alloc-core', 'regression_page_aligned_no_segment_exhaustion'],
   ['alloc-core', 'regression_realloc_cross_class_shrink'],

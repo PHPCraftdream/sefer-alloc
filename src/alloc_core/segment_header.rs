@@ -342,6 +342,44 @@ pub(crate) struct SegmentHeader {
     /// `live_count`).
     #[cfg_attr(not(feature = "numa-aware"), allow(dead_code))]
     pub node_id: u32,
+    /// PERF-PASS-4 (G9/C2, task #52): the owner's cached copy of the
+    /// `RemoteFreeRing`'s `head` cursor, as last observed by THIS segment's
+    /// `find_segment_with_free_impl` drain guard. Lets the guard skip a
+    /// `RemoteFreeRing::drain` call (and its unconditional `head.store(_,
+    /// Release)`) when the ring's `tail` has not advanced past this cached
+    /// value since the last drain — i.e. the ring is provably empty of
+    /// anything new, without touching the ring's `head` atomic at all.
+    ///
+    /// **Not atomic — owner-only**, identical discipline to `bump` /
+    /// `live_count`: the segment's owning thread is the ONLY reader/writer
+    /// (the drain guard runs exclusively on the owner, exactly like the
+    /// `RemoteFreeRing::drain` call it gates). A plain `u32` field, accessed
+    /// through its `offset_of!` offset, is race-free under the same
+    /// single-writer argument `bump_of`/`set_bump` document.
+    ///
+    /// **Why this lives in the segment header, not `SegmentTable`:** the
+    /// cache must travel with SEGMENT identity, not with a `SegmentTable`
+    /// slot INDEX. A `SegmentTable` slot index is reused across
+    /// register/recycle for a completely different segment (task #60 slot
+    /// recycle), so an index-keyed cache would need explicit invalidation at
+    /// reuse — exactly the "stale cache surviving a re-claim" hazard this
+    /// task's spec calls out. The header field instead lives inside the very
+    /// segment memory it describes: a fresh segment always gets a fresh
+    /// header via `SegmentHeader::small(..)` (see [`small`](Self::small),
+    /// which zero-inits this field), so there is no way to observe a stale
+    /// value from a PRIOR segment's ring occupying the same virtual address
+    /// or the same table slot — the field's lifetime is the segment's
+    /// lifetime, exactly like `bump`/`live_count`/the ring itself.
+    ///
+    /// **Present in EVERY build's layout** (same discipline as
+    /// `live_count`/`node_id`): read/written only under
+    /// `#[cfg(feature = "alloc-xthread")]`, but the byte layout of
+    /// `SegmentHeader` does not otherwise shift across feature configs.
+    /// Starts at 0 (matching a freshly-initialised ring's `head == 0`), so
+    /// the FIRST scan of a brand-new segment correctly treats "cached head ==
+    /// real head == 0" as "nothing to drain" until a real push moves `tail`.
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub ring_drain_head: u32,
 }
 
 /// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
@@ -393,6 +431,11 @@ impl SegmentHeader {
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
             node_id: NO_NODE_RAW,
+            // PERF-PASS-4 (G9/C2): a fresh segment's ring starts at head == 0
+            // (RemoteFreeRing::init_in_place zeroes the cursors); the cache
+            // starts at the same value so the first drain guard check
+            // correctly observes "nothing to drain yet".
+            ring_drain_head: 0,
         }
     }
 
@@ -437,6 +480,9 @@ impl SegmentHeader {
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,
+            // Large segments have no RemoteFreeRing (no BinTable either) —
+            // inert, like live_count/decommitted above.
+            ring_drain_head: 0,
         }
     }
 
@@ -1139,6 +1185,35 @@ impl SegmentMeta {
     pub(crate) fn set_node_id(&mut self, node: u32) {
         let off = core::mem::offset_of!(SegmentHeader, node_id);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, node);
+    }
+
+    // -------------------------------------------------------------------
+    // PERF-PASS-4 (G9/C2, task #52) — field-specific owner-only accessor for
+    // the `ring_drain_head` drain-guard cache. Identical discipline to
+    // `live_count`/`decommitted`/`node_id`: a single-word load/store at the
+    // field's `offset_of!` offset through the `node` seam. Owner-only: only
+    // `find_segment_with_free_impl`'s drain guard (running exclusively on the
+    // segment's owning thread, the same thread that calls
+    // `RemoteFreeRing::drain`) reads or writes this field.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-cached `RemoteFreeRing` head, as of the last drain (or
+    /// segment init, if never drained).
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn ring_drain_head_of(&self) -> u32 {
+        let off = core::mem::offset_of!(SegmentHeader, ring_drain_head);
+        Node::read_u32(Node::offset(self.base, off) as *const u32)
+    }
+
+    /// Write the owner-cached `RemoteFreeRing` head. Called after a drain (real
+    /// or skipped) to record the ring's current `head` for the next guard
+    /// check.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn set_ring_drain_head(&mut self, value: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, ring_drain_head);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
     }
 
     /// Stamp the `owner_thread_free` field ONLY (not a full-struct

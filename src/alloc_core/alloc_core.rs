@@ -2807,37 +2807,65 @@ impl AllocCore {
             // metadata via `magic_at`/`kind_at`/`bump_of`.
             #[cfg(feature = "alloc-xthread")]
             {
-                let ring = SegmentMeta::new(base).remote_ring();
-                let small_cur = self.small_cur;
-                #[cfg(feature = "alloc-decommit")]
-                let mut decommit_happened = false;
-                ring.drain(|off| {
-                    // Task #164: when a magazine exists (fastbin), use the
-                    // checked variant that consults the magazine predicate
-                    // before `write_next`, closing the in-magazine leg of the
-                    // ring↔magazine cross-thread double-free residual.
-                    #[cfg(feature = "fastbin")]
-                    let reclaimed =
-                        Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
-                    #[cfg(not(feature = "fastbin"))]
-                    let reclaimed = Self::reclaim_offset(base, off, small_cur);
+                let mut meta_for_ring = SegmentMeta::new(base);
+                // PERF-PASS-4 (G9/C2, task #52): pre-drain empty-guard. Compare
+                // a cheap Relaxed `tail` load against this segment's
+                // owner-cached `head` (persisted across calls in the segment's
+                // OWN header — see `SegmentHeader::ring_drain_head`'s doc
+                // comment for why the cache lives there and not in
+                // `SegmentTable`, and `RemoteFreeRing::tail_relaxed`'s doc
+                // comment for the full soundness argument). If they match, no
+                // producer has reserved a slot since the last drain (real or
+                // guarded) — skip `drain()` entirely, INCLUDING the
+                // unconditional `head.store(_, Release)` it would otherwise
+                // perform, for a ring that has nothing new to report. A push
+                // landing after this check is exactly as deferred as one
+                // landing after today's unconditional drain finishes — the
+                // "later drain picks it up" contract (remote_free_ring.rs
+                // module docs) is unchanged.
+                let ring = meta_for_ring.remote_ring();
+                let cached_head = meta_for_ring.ring_drain_head_of();
+                if ring.tail_relaxed() != cached_head {
+                    let small_cur = self.small_cur;
                     #[cfg(feature = "alloc-decommit")]
-                    if reclaimed {
-                        decommit_happened = true;
+                    let mut decommit_happened = false;
+                    let new_head = ring.drain(|off| {
+                        // Task #164: when a magazine exists (fastbin), use the
+                        // checked variant that consults the magazine predicate
+                        // before `write_next`, closing the in-magazine leg of the
+                        // ring↔magazine cross-thread double-free residual.
+                        #[cfg(feature = "fastbin")]
+                        let reclaimed =
+                            Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
+                        #[cfg(not(feature = "fastbin"))]
+                        let reclaimed = Self::reclaim_offset(base, off, small_cur);
+                        #[cfg(feature = "alloc-decommit")]
+                        if reclaimed {
+                            decommit_happened = true;
+                        }
+                        #[cfg(not(feature = "alloc-decommit"))]
+                        {
+                            let _ = reclaimed;
+                        }
+                    });
+                    // Slot recycle: now that the drain is complete, it is safe to
+                    // release the OS reservation and NULL the slot. Any stale ring
+                    // entries have already been processed (and guarded by `off >= bump`).
+                    #[cfg(feature = "alloc-decommit")]
+                    if decommit_happened {
+                        self.table.recycle(base);
+                        // This base is now recycled; skip the BinTable check.
+                        continue;
                     }
-                    #[cfg(not(feature = "alloc-decommit"))]
-                    {
-                        let _ = reclaimed;
-                    }
-                });
-                // Slot recycle: now that the drain is complete, it is safe to
-                // release the OS reservation and NULL the slot. Any stale ring
-                // entries have already been processed (and guarded by `off >= bump`).
-                #[cfg(feature = "alloc-decommit")]
-                if decommit_happened {
-                    self.table.recycle(base);
-                    // This base is now recycled; skip the BinTable check.
-                    continue;
+                    // Refresh the cache with the drain's actual final head —
+                    // NOT `ring.tail_relaxed()`'s pre-drain snapshot, so a
+                    // producer that reserved (but had not yet published) a
+                    // slot at drain time is correctly NOT counted as "seen"
+                    // (the drain stopped at the unpublished slot; the next
+                    // guard check must still observe `tail != new_head` and
+                    // drain again to pick it up — see the module doc's
+                    // "later drain picks it up" contract).
+                    meta_for_ring.set_ring_drain_head(new_head);
                 }
             }
             let meta = SegmentMeta::new(base);

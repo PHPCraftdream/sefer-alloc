@@ -23,6 +23,8 @@ const FEATURES = {
   loom_free_slots_aba: 'alloc-global',
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
   loom_remote_ring: 'alloc-core,alloc-xthread',
+  // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard model.
+  loom_remote_ring_drain_guard: 'alloc-core,alloc-xthread',
   // #141: the A1 deferred-large push/drain model (found the #143 push leak).
   loom_deferred_large: 'alloc-core,alloc-xthread',
   // R2 (#154) + #164: magazine↔RemoteFreeRing composition shadow model.
