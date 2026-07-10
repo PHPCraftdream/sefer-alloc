@@ -23,17 +23,19 @@ the reference future perf work (e.g. W4 `carve_batch`) diffs against.
   determinism is what makes this a judge on this Windows dev host (wall-clock
   is noise; `Ir` is not).
 
-**Current reference for new work:** the "Post-PERF-PASS-1 reference
+**Current reference for new work:** the "Post-PERF-PASS-2 reference
 (2026-07-10)" section near the end of this file is the last fully-tabulated
 reference and captures all 12 current bench fns (including
-`seg_cycle_decommit_256k`). The "Post-X1+X2+X3 reference (2026-07-05)"
-section below is retained for provenance only — task #49 (PERF-PASS-1)
-added `[profile.release]`/`[profile.bench]` LTO tuning (`lto = "thin"`,
-`codegen-units = 1`), which shifted every bench's Ir via pure codegen
-change (no allocator-behavior change), so the 11-bench table below is
-superseded as a diff target. Regenerate the full table with `npm run iai`
-before diffing new work; older baselines in this file (post-W3, post-X1+X2+X3)
-are historical provenance only — do not diff against them.
+`seg_cycle_decommit_256k`). The "Post-PERF-PASS-1 reference (2026-07-10)"
+and "Post-X1+X2+X3 reference (2026-07-05)" sections below are retained for
+provenance only — task #50 (PERF-PASS-2) elided the fresh-segment
+`AllocBitmap` virgin-init (a real, large allocator-behavior change: every
+bench's bootstrap constant drops from 72,325 to 39,532 Ir, since
+`SeferAlloc::new()`'s primordial-segment reserve no longer pays the 32 KiB
+bitmap zero-loop), so both older tables are superseded as diff targets.
+Regenerate the full table with `npm run iai` before diffing new work; older
+baselines in this file (post-W3, post-X1+X2+X3, post-PERF-PASS-1) are
+historical provenance only — do not diff against them.
 
 ## Baseline (Ir per bench function)
 
@@ -516,3 +518,129 @@ table: its `Ir` is dominated by the large-block memcpy floor per the X-arc
 section above, and LTO's win there is proportionally tiny — 561,912-class
 baseline vs 559,882 — well within the same pattern.) No regressions: `npm
 run iai` reports **12 without regressions; 0 regressed** on this table.
+
+## G1 honest-reject (2026-07-10) — magazine double-free oracle fold into AllocBitmap
+
+Recorded per the project's reject-with-numbers precedent (E2 REFILL_N LUT,
+X4, X5, X6). Task #50 (PERF-PASS-2) investigated folding the in-magazine
+double-free scan (`dealloc_own_thread_with_base`'s O(count) pointer scan,
+`src/registry/heap_core.rs`) into `AllocBitmap` — the source review's
+top-ranked finding, estimated at ~25-35% of the small-alloc gap vs
+mimalloc. **REJECT — not implemented, no code changed for this part.**
+
+**Why:** tracing every real call site (not just the review's sketch) shows
+the redefinition ("bit 1 = not owned by user, set on magazine push, clear
+on pop") requires *inverting* an existing, documented, load-bearing
+optimization at multiple sites, not a free relabeling:
+
+- `refill_class_bump_impl`'s freelist-drain leg (`drain_freelist_batch`/
+  `pop_free`) already calls `mark_alloc` on the premise "the block leaves
+  the free list and is handed to the caller" — false once the destination
+  can be the magazine instead of the user, at every one of these call
+  sites (`alloc_core.rs` ~2933-2936, ~3083, ~3162, ~3209).
+- `refill_class_bump`'s bump-carve leg (`carve_batch`) deliberately leaves
+  the bit unset as a documented prior optimization — also inverted by the
+  proposed redefinition.
+- `reclaim_offset_checked` (the cross-thread ring-drain path, `#[cfg(feature
+  = "fastbin")]`) already runs `is_free(off)` PLUS a separate `is_in_magazine`
+  O(count) scan specifically *because* today's bitmap is blind to magazine
+  residency. Folding residency into the bit would make `is_in_magazine`
+  redundant — a real behavior change to the H1-adjacent cross-thread reclaim
+  protocol that both the task and the source review explicitly wanted to
+  leave untouched.
+
+A single alloc call can legitimately set up to 32 consecutive bits in one
+shot (1 requested + `REFILL_BATCH = 31` refilled blocks,
+`carve_block_with_refill`), which the review's simple "set on push, clear on
+pop" framing did not account for.
+
+**Verification the reject is sound (not a shortcut):** the M2 double-free
+counterfactual tests (`t2_double_free_magazine_block_is_noop`,
+`t2_triple_free_still_noop`, `t2_double_free_64b_class`) were temporarily
+broken (in-magazine scan disabled) to confirm they are non-vacuous — all
+three went RED as expected, `T3` (which relies on the separate bitmap
+oracle, untouched by this reject) correctly stayed green. Reverted; full M2
+suite green again.
+
+**Measured (honest, not just reasoned):** the magazine-hit benches this
+finding specifically targeted show **exactly 0.0 Ir/op delta** (marginal,
+bootstrap-subtracted) vs the Post-PERF-PASS-1 reference — `small_churn_16b`
+124.3→124.3, `aligned_churn_640b_a128` 124.5→124.5, `churn_256b`
+124.3→124.3, `churn_write_256b` 128.3→128.3. No regression, no improvement —
+consistent with "no code changed" rather than a silent behavior shift.
+
+**If a future arc revisits this:** the shape to try is NOT a simple bit
+redefinition but a design that (a) audits and updates every `mark_alloc`/
+`mark_free` call site's semantics consistently (the four sites named above,
+at minimum), and (b) resolves whether `is_in_magazine`'s separate scan in
+`reclaim_offset_checked` becomes provably redundant or must be kept for the
+cross-thread case specifically — that analysis was not completed here (out
+of scope once the sub-part was correctly identified as non-trivial) and is
+the actual blocker, not a fundamental soundness objection to the idea.
+
+Final tree change for this rejected sub-part: none (zero diff for G1
+specifically; task #50's other sub-parts — G5/C1 virgin-init elision, G10/D2
+code-motion — landed independently, see the reference table below).
+
+## Post-PERF-PASS-2 reference (2026-07-10) — the CURRENT 12-bench table
+
+Task #50 (PERF-PASS-2, group G5/C1, source:
+`docs/reviews/2026-07-10-perf-large-segment-review.md` finding 3) elided the
+fresh-segment `AllocBitmap` virgin-init: `AllocCore::reserve_small_segment`
+and `bootstrap::primordial` now skip the explicit 32 KiB zero-write under
+`cfg(not(miri))`, relying on the OS's demand-zero guarantee for freshly
+reserved pages (verified empirically on this platform by
+`tests/regression_virgin_bitmap_skip.rs`'s poison-then-assert counterfactual
+tests). This is a real allocator-behavior change — every bench pays the
+primordial-segment bootstrap once via `SeferAlloc::new()`/`AllocCore::new()`,
+so the bootstrap constant itself drops (`large_alloc_free_cycle`:
+72,325 → 39,532 Ir). **Future diffs are taken against THIS table.**
+
+G1 (folding the magazine double-free oracle into the same bitmap) was
+investigated and REJECTED — see the section above — so this table reflects
+ONLY the virgin-init elision (G5/C1) and the code-motion cleanup (G10/D2,
+`dealloc_foreign_slow` outlining, Ir-neutral by construction).
+
+Regenerated via `npm run iai`, same runner (iai-callgrind 0.14.2 in WSL,
+valgrind 3.22.0, same 12 bench functions). Verified independently twice —
+once by the implementing agent, once by the orchestrator re-running `npm
+run iai` from a clean shell after personally reviewing and lightly cleaning
+up the diff (removing two lines of dead code the agent left behind) — both
+runs produced byte-identical numbers.
+
+| bench                       |        Ir |     L1 hits | L2 hits | RAM hits | Est. Cycles | Ir/op* |
+| --------------------------- | --------: | ----------: | ------: | -------: | ----------: | -----: |
+| small_churn_16b             |    47,489 |      75,851 |      50 |    4,690 |     240,251 |  124.3 |
+| aligned_churn_640b_a128     |    47,498 |      75,868 |      48 |    4,689 |     240,223 |  124.5 |
+| large_alloc_free_cycle      |    39,532 |      66,561 |      51 |    4,698 |     231,246 |      — |
+| realloc_grow                |   527,064 |   1,106,071 |   3,859 |   74,440 |   3,730,766 | 30,470.8 |
+| cold_alloc_free_256x16b     |    88,818 |     124,750 |      94 |    4,766 |     292,030 |  192.5 |
+| cold_alloc_free_256x64b     |    88,821 |     124,604 |      94 |    4,948 |     298,254 |  192.5 |
+| recycle_alloc_free_256x16b  |   139,376 |     184,631 |      97 |    4,773 |     352,171 |  195.0 |
+| recycle_alloc_free_256x64b  |   139,379 |     184,444 |      97 |    4,966 |     358,739 |  195.0 |
+| churn_256b                  |    47,489 |      75,852 |      50 |    4,689 |     240,217 |  124.3 |
+| churn_write_256b            |    47,745 |      76,236 |      50 |    4,689 |     240,601 |  128.3 |
+| multiseg_cold_256k          |    70,525 |     102,884 |      69 |    4,875 |     273,854 |  455.8 |
+| seg_cycle_decommit_256k     |   104,335 |     145,546 |      69 |    4,875 |     316,516 |  317.7 |
+
+**The headline: virgin-init elision is a large, real win on every fresh-
+segment-heavy bench, and Ir-neutral (as expected) on pure magazine-hit
+churn:**
+
+| bench                        | Post-PERF-PASS-1 Ir/op* | Post-PERF-PASS-2 Ir/op* |     Δ |
+| ----------------------------- | -----------------------: | ------------------------: | ----: |
+| small_churn_16b               |                    124.3 |                     124.3 |   0.0 |
+| aligned_churn_640b_a128       |                    124.5 |                     124.5 |   0.0 |
+| churn_256b                    |                    124.3 |                     124.3 |   0.0 |
+| churn_write_256b              |                    128.3 |                     128.3 |   0.0 |
+| cold_alloc_free_256x16b       |                    192.6 |                     192.5 |  −0.1 |
+| cold_alloc_free_256x64b       |                    192.7 |                     192.5 |  −0.2 |
+| multiseg_cold_256k            |                  1,420.3 |                     455.8 | −964.5 |
+| seg_cycle_decommit_256k       |                    639.1 |                     317.7 | −321.4 |
+
+`multiseg_cold_256k` and `seg_cycle_decommit_256k` (the fresh-segment-heavy
+benches) show the real win — each fresh segment carved during the bench no
+longer pays the 32 KiB bitmap zero-loop. Churn benches (pure magazine-hit,
+no fresh segments after the first) are exactly flat, honestly reflecting
+that this pass changed cold-path behavior only. No regressions: `npm run
+iai` reports **12 without regressions; 0 regressed** on this table.
