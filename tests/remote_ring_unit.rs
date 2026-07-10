@@ -267,7 +267,7 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
     // 1. Every reclaimed offset reclaimed EXACTLY once.
     let mut doubles = 0u64;
     let mut distinct = 0u64;
-    for (_off, &cnt) in map.iter() {
+    for &cnt in map.values() {
         if cnt > 1 {
             doubles += 1;
         }
