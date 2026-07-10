@@ -1315,9 +1315,35 @@ impl HeapCore {
             self.dealloc_own_thread(ptr, layout);
             return;
         }
+        // `contains_base` is FALSE: not one of our segments. The entire cold
+        // cross-thread tail (magic/kind checks, Large deferred-push, ring
+        // push) is outlined below — see `dealloc_foreign_slow`'s doc comment
+        // (PERF-PASS-2, G10/D2, task #50).
+        self.dealloc_foreign_slow(ptr, base, layout);
+    }
 
-        // `contains_base` is FALSE: `base` is not one of OUR segments. Two
-        // possibilities:
+    /// PERF-PASS-2 (G10/D2, task #50): outlined cold cross-thread dealloc
+    /// tail, split out of `dealloc_routing` (which is `#[inline(always)]` and
+    /// sits directly behind the hot own-thread `contains_base` hit-check on
+    /// EVERY free). Before this split, the entire body below — magic/kind
+    /// header reads, the Large-segment deferred-free push, and the small-
+    /// block ring push, each with hardened/non-hardened variants — was
+    /// inlined into `dealloc_routing` itself, bloating the I-cache footprint
+    /// of the hot own-thread free path with code that only ever executes on
+    /// a genuine cross-thread free (`contains_base(base) == false`). Mirrors
+    /// the existing `refill_magazine_slow` outlining pattern (`#[cold]
+    /// #[inline(never)]`, called once behind a single cold branch).
+    ///
+    /// Pure code motion: the body is byte-identical to the pre-split
+    /// `dealloc_routing` tail (same statements, same order, same `return`
+    /// points — only now behind a call boundary instead of inlined). `base`
+    /// is passed in (already computed by the caller's `contains_base` check)
+    /// so it is not recomputed.
+    #[cfg(feature = "alloc-xthread")]
+    #[cold]
+    #[inline(never)]
+    fn dealloc_foreign_slow(&mut self, ptr: *mut u8, base: *mut u8, layout: Layout) {
+        // `base` is not one of OUR segments. Two possibilities:
         //   (a) a LIVE segment owned by ANOTHER heap — mapped, its owner's
         //       table contains it (just not ours) — reading its header is
         //       safe, and this cross-thread free must be routed to its owner.
