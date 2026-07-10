@@ -4649,12 +4649,34 @@ impl AllocCore {
         // reservation_len) with the same semantics as Segment::reserve.
         #[cfg(feature = "numa-aware")]
         let (base, reservation, reservation_len) = {
-            let (b, r, rl) = numa::reserve_aligned_on_node(SEGMENT, my_node)?;
+            let reserved = numa::reserve_aligned_on_node(SEGMENT, my_node);
+            // Mechanism 2 (task #51 / follow-up): pool-drain-and-retry on OS
+            // reservation failure, mirroring `alloc_large`'s identical guard
+            // — the pool is a reclaimable soft reserve, never a hard pin
+            // under memory pressure, even for a plain small-segment reserve.
+            #[cfg(feature = "alloc-decommit")]
+            let reserved = match reserved {
+                Some(t) => Some(t),
+                None if self.pooled_count > 0 => {
+                    self.drain_small_pool();
+                    numa::reserve_aligned_on_node(SEGMENT, my_node)
+                }
+                None => None,
+            };
+            let (b, r, rl) = reserved?;
             (b.as_ptr(), r, rl)
         };
         #[cfg(not(feature = "numa-aware"))]
         let (base, reservation, reservation_len) = {
-            let segment = Segment::reserve(SEGMENT)?;
+            let mut seg = Segment::reserve(SEGMENT);
+            // Mechanism 2 (task #51 / follow-up): same pool-drain-and-retry
+            // guard as the numa-aware arm above.
+            #[cfg(feature = "alloc-decommit")]
+            if seg.is_none() && self.pooled_count > 0 {
+                self.drain_small_pool();
+                seg = Segment::reserve(SEGMENT);
+            }
+            let segment = seg?;
             let b = segment.as_ptr();
             let r = segment.reservation();
             let rl = segment.reservation_len();

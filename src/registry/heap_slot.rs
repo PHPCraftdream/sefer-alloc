@@ -319,11 +319,14 @@ pub struct HeapSlot {
     /// own 64-byte-aligned sub-struct — see [`HeapSlotRemote`]'s doc comment
     /// for the false-sharing residue this fixes. Always present in the
     /// layout (mirroring the fields' own prior discipline of being "present
-    /// but inert" under a non-matching feature set — `HeapSlotRemote` itself
+    /// but inert" under a non-matching feature set) — `HeapSlotRemote` itself
     /// degrades to a smaller/empty `#[repr(align(64))]` struct when every
-    /// gated field is compiled out, which is still sound: an empty
-    /// `align(64)` struct is 0 bytes rounded up to 64 by the alignment, so
-    /// the false-sharing partition is preserved even with zero live fields).
+    /// gated field is compiled out. A zero-sized type stays 0 bytes even
+    /// under `align(64)` (Rust does not pad a ZST up to its alignment), so
+    /// in that degenerate config `remote` contributes no bytes at all — which
+    /// is still sound, because with zero live fields there is nothing left
+    /// for a remote thread to touch, so the false-sharing question this
+    /// grouping exists to answer does not arise in the first place.
     pub(crate) remote: HeapSlotRemote,
 }
 

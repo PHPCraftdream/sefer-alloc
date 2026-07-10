@@ -249,9 +249,14 @@ impl PageClass {
 /// a pure layout edit: no offset is hardcoded anywhere, and
 /// `Layout::page_map_off()` (`align_up(size_of::<SegmentHeader>(), PAGE)`)
 /// and every downstream metadata offset are byte-identical to before the
-/// reorder (see the `size_of::<SegmentHeader>() <= PAGE` /
-/// `Layout::page_map_off() == PAGE` const-asserts at the bottom of this
-/// file, which re-verify this at compile time regardless of field order).
+/// reorder. The exact 104-byte figure is confirmed by the field-by-field
+/// accounting above (3×8 + 4×4 + 1 + 7 pad + 6×8 + 2×4 = 104), verified via
+/// `-Zprint-type-sizes` while designing this reorder — the
+/// `size_of::<SegmentHeader>() <= PAGE` / `Layout::page_map_off() == PAGE`
+/// const-asserts at the bottom of this file are a coarser compile-time
+/// sanity bound (they would also pass at, say, 112 bytes), not a
+/// byte-exact pin; they still catch any REGRESSION that pushes the header
+/// past a full page, which is the invariant they exist to guard.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct SegmentHeader {
