@@ -135,7 +135,7 @@ pub fn current_node() -> Option<u32> {
     {
         let n = mock::current_node_slot();
         mock::record(mock::MockCall::CurrentNode(n));
-        return Some(n);
+        Some(n)
     }
     #[cfg(not(feature = "mock"))]
     {
@@ -182,7 +182,6 @@ pub unsafe fn bind_range(base: *mut u8, len: usize, node: u32) {
             len,
             node,
         });
-        return;
     }
     #[cfg(not(feature = "mock"))]
     {
@@ -226,7 +225,7 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
                 node,
             });
         }
-        return Some(r);
+        Some(r)
     }
     #[cfg(not(feature = "mock"))]
     {
@@ -240,6 +239,11 @@ pub fn reserve_on_node(size: usize, align: usize, node: u32) -> Option<aligned_v
 
 // ---- Linux (real hardware, not miri) --------------------------------------
 #[cfg(all(target_os = "linux", not(miri)))]
+// Under `mock`, the public API dispatches to the recording mock instead of
+// these platform impls, so every symbol here is (expectedly) unused. `mock`
+// exists precisely to bypass the real syscalls; the platform code still must
+// compile. Suppress dead-code only in that combination.
+#[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::{bind_range_impl_linux, NO_NODE};
 
@@ -494,6 +498,8 @@ mod platform {
     not(miri),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
+// Reached only from the platform module, which is itself unused under `mock`.
+#[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || node >= 64 {
         return;
@@ -520,20 +526,24 @@ unsafe fn bind_range_impl_linux(base: *mut u8, len: usize, node: u32) {
     not(miri),
     not(any(target_arch = "x86_64", target_arch = "aarch64"))
 ))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn bind_range_impl_linux(_base: *mut u8, _len: usize, _node: u32) {
     // mbind syscall number unknown for this arch; binding is skipped silently.
 }
 
 /// `MPOL_PREFERRED`: soft preferred-node policy; kernel falls back on pressure.
 #[cfg(all(target_os = "linux", not(miri)))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 const MPOL_PREFERRED: i32 = 1;
 
 /// Syscall number for `mbind(2)` on x86_64.
 #[cfg(all(target_os = "linux", not(miri), target_arch = "x86_64"))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 const SYS_MBIND: i64 = 237;
 
 /// Syscall number for `mbind(2)` on aarch64.
 #[cfg(all(target_os = "linux", not(miri), target_arch = "aarch64"))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 const SYS_MBIND: i64 = 235;
 
 // `syscall(2)` from glibc/musl — always present, does not require libnuma.
@@ -551,6 +561,7 @@ extern "C" {
     not(miri),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 unsafe fn libc_mbind(
     addr: *mut core::ffi::c_void,
     len: u64,
@@ -577,6 +588,11 @@ unsafe fn libc_mbind(
 // Windows platform module
 // ---------------------------------------------------------------------------
 #[cfg(all(windows, not(miri)))]
+// Under `mock`, the public API dispatches to the recording mock instead of
+// these platform impls, so every symbol here is (expectedly) unused. `mock`
+// exists precisely to bypass the real syscalls; the platform code still must
+// compile. Suppress dead-code only in that combination.
+#[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::NO_NODE;
 
@@ -727,6 +743,7 @@ mod platform {
 
 // ---- macOS stub -----------------------------------------------------------
 #[cfg(target_os = "macos")]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::NO_NODE;
 
@@ -751,6 +768,7 @@ mod platform {
 
 // ---- miri stub (any OS under miri) ----------------------------------------
 #[cfg(miri)]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::NO_NODE;
 
@@ -774,6 +792,7 @@ mod platform {
 
 // ---- Fallback: unsupported platform (e.g. FreeBSD, other Unix) ------------
 #[cfg(not(any(target_os = "linux", windows, target_os = "macos", miri,)))]
+#[cfg_attr(feature = "mock", allow(dead_code))]
 mod platform {
     use super::NO_NODE;
 

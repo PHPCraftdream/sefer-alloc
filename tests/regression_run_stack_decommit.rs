@@ -67,12 +67,16 @@
 
 #![cfg(feature = "alloc-core")]
 
+#[cfg(feature = "alloc-runfreelist")]
 use std::alloc::Layout;
+#[cfg(feature = "alloc-runfreelist")]
 use std::collections::HashSet;
 
 #[cfg(feature = "alloc-runfreelist")]
 use sefer_alloc::alloc_core::run_stack::RunStack;
+#[cfg(feature = "alloc-runfreelist")]
 use sefer_alloc::AllocCore;
+#[cfg(feature = "alloc-runfreelist")]
 use sefer_alloc::SegmentLayout;
 
 /// All tests in this file drive the process-global `AllocCore` primordial
@@ -83,10 +87,12 @@ use sefer_alloc::SegmentLayout;
 /// the same discipline the existing decommit/soak tests implicitly rely on by
 /// living in their own test-binary process. Tests in this file are the only
 /// concurrent residents of THIS process's allocator, so one lock suffices.
+#[cfg(feature = "alloc-runfreelist")]
 static ALLOC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Derive the small-class index for `(size, align)`, panicking if it is not a
 /// small class.
+#[cfg(feature = "alloc-runfreelist")]
 fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
     let layout = Layout::from_size_align(size, align).unwrap();
     core.dbg_layout_class_for(layout)
@@ -96,10 +102,12 @@ fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
 /// The `block_size` for a small-class index, read from the public
 /// `SIZE_CLASS_TABLE` re-export (the `SizeClasses` struct is `pub(crate)`, so
 /// tests cannot call `SizeClasses::block_size` directly).
+#[cfg(feature = "alloc-runfreelist")]
 fn block_size_for_class(c: usize) -> usize {
     SegmentLayout::SIZE_CLASS_TABLE[c]
 }
 
+#[cfg(feature = "alloc-runfreelist")]
 fn seg_base(ptr: *mut u8) -> usize {
     SegmentLayout::segment_base_of(ptr as usize)
 }
