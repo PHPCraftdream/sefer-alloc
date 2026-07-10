@@ -205,21 +205,162 @@ impl PageClass {
 ///
 /// `#[repr(C)]` so the layout is deterministic and the bootstrap can compute
 /// the page-map / bin-table offsets after it.
+///
+/// ## PERF-PASS-5 (G7, task #53) — field order is cache-line-aware
+///
+/// Field DECLARATION order here is the PHYSICAL byte order (guaranteed by
+/// `#[repr(C)]`, unlike `AllocCore`'s `repr(Rust)`) — and `#[repr(C)]` does
+/// NOT reorder for padding the way `repr(Rust)` does, so the declaration
+/// order must ALREADY be alignment-descending within each hot/cold group to
+/// avoid re-introducing padding gaps (a naive "hot fields first, in prose
+/// order" declaration measurably grew this struct to 112 bytes — verified
+/// with `-Zprint-type-sizes` while designing this reorder — because e.g.
+/// `magic: u32` immediately followed by `bump: usize` forces a 4-byte gap to
+/// re-align `bump` to 8). The layout actually used below is
+/// alignment-descending within each group (8-byte fields, then 4-byte
+/// fields, then the 1-byte `kind`), which packs with ZERO internal padding.
+///
+/// The small-segment per-operation hot set — `bump` (refill/carve cursor,
+/// rewritten on every `carve_block`), `owner_thread_free` (cross-thread free
+/// routing), `owner_state` (adoption CAS + owner-id compare), `magic`
+/// (dealloc-routing base validation), `live_count` / `decommitted` (M6
+/// decommit bookkeeping, touched on every own-thread free/carve under
+/// `alloc-decommit`), `ring_drain_head` (task #52's drain-guard cache,
+/// read/written on every refill-miss free-list scan), and `kind`
+/// (dealloc-routing dispatch) — is declared FIRST: 8+8+8 (three 8-byte
+/// fields, offsets 0/8/16) + 4+4+4+4 (four 4-byte fields, offsets
+/// 24/28/32/36) + 1 (`kind`, offset 40) = 41 bytes, all naturally aligned
+/// with no INTERNAL gaps, so the whole hot set occupies bytes 0..41 —
+/// comfortably inside the first 64-byte cache line. The Large-only /
+/// teardown-only / unregister-only cold fields (`large_size`, `large_align`,
+/// `span_usable`, `reservation`, `reservation_len`, `next_abandoned`,
+/// `segment_id`, `node_id`) are declared AFTER, likewise
+/// alignment-descending; a 7-byte tail-alignment gap after `kind` (offset
+/// 41..48, needed to re-align the first cold 8-byte field, `large_size`, to
+/// its natural 8-byte boundary) pushes the cold set to bytes 48..104 —
+/// measured via `-Zprint-type-sizes` (see the task's verification notes).
+/// That single unavoidable gap is the ONLY padding in the whole struct; the
+/// hot set itself (bytes 0..41) has zero internal padding.
+///
+/// `size_of::<SegmentHeader>()` stays 104 bytes — the field set and every
+/// field's own size/alignment are unchanged, only the DECLARATION order
+/// moved. Every access already goes through `core::mem::offset_of!`-based
+/// accessors (`bump_of`, `magic_at`, `owner_thread_free_at`, …), so this is
+/// a pure layout edit: no offset is hardcoded anywhere, and
+/// `Layout::page_map_off()` (`align_up(size_of::<SegmentHeader>(), PAGE)`)
+/// and every downstream metadata offset are byte-identical to before the
+/// reorder (see the `size_of::<SegmentHeader>() <= PAGE` /
+/// `Layout::page_map_off() == PAGE` const-asserts at the bottom of this
+/// file, which re-verify this at compile time regardless of field order).
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct SegmentHeader {
-    /// Sanity magic — every segment starts with this. A computed segment base
-    /// that does not have this magic is not one of our segments (foreign ptr).
-    pub magic: u32,
-    /// The segment kind (primordial / small / large). Decides dealloc routing.
-    pub kind: SegmentKind,
-    /// The segment's index in the global registry. `u32::MAX` until registered
-    /// (the primordial segment is index 0).
-    pub segment_id: u32,
+    // ── Hot set: bytes 0..41 (one cache line, alignment-descending: the
+    // three 8-byte fields first, then the four 4-byte fields, then the
+    // 1-byte `kind` — zero internal padding under `#[repr(C)]`) ────────────
     /// For small/primordial segments: the bump cursor, in BYTES from the
     /// segment base, of the next uncarved payload byte. The bootstrap sets it
     /// to the end of the metadata region (header + page map + bin table).
+    /// Rewritten on every `carve_block` — the single hottest owner-write in
+    /// the refill path.
     pub bump: usize,
+    /// Phase 10: a stable pointer to the owning heap's thread-free stack head
+    /// (`*const AtomicPtr<u8>`). A cross-thread freer reads this from the
+    /// segment header after `segment_base_of(ptr)` and CAS-pushes the freed
+    /// block onto the Treiber stack. `null` for segments not yet bound to a
+    /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
+    /// it addresses a process-`'static` head: a registry-slot-resident
+    /// `HeapSlot::thread_free` field (the slot array is `'static`) or the
+    /// fallback `FALLBACK_TFS` static atomic (post-W3, task #13 — no longer a
+    /// `Box`).
+    pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
+    /// Phase 12.4: the segment's ownership state — packed
+    /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
+    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The
+    /// Abandoned→Live CAS on this word is the SINGLE linearization point of
+    /// adoption (M9). Stored as a plain `u64` so the `#[repr(C)] Copy`
+    /// `SegmentHeader` remains a plain bit-pattern (the bootstrap lays it down
+    /// via `Node::write_struct`, and `SegmentMeta::header` reads it back as a
+    /// unit). The adoption path accesses it through the dedicated
+    /// [`owner_state_atomic`](SegmentMeta::owner_state_atomic) view (`&AtomicU64`
+    /// at the same fixed offset), because a plain struct-field read would be a
+    /// non-atomic data race under the concurrent adoption CAS.
+    pub owner_state: u64,
+    /// Sanity magic — every segment starts with this. A computed segment base
+    /// that does not have this magic is not one of our segments (foreign ptr).
+    /// Read on every cross-thread dealloc-routing base validation.
+    pub magic: u32,
+    /// Phase 35 (M6 decommit): the **owner-only** count of live (carved-and-not-
+    /// free) blocks in this small/primordial segment. Incremented when a block
+    /// is handed to the caller (`pop_free` / `carve_block`), decremented when a
+    /// block is freed (`dealloc_small` / `reclaim_offset`). When it reaches zero
+    /// the segment is empty and (under `alloc-decommit`) its payload pages are
+    /// returned to the OS.
+    ///
+    /// **Not atomic — owner-only.** Every mutation runs on the segment's owner:
+    /// own-thread alloc/free AND the owner-side ring drain (`reclaim_offset`).
+    /// The cross-thread freer NEVER touches this field (it pushes an offset into
+    /// the `RemoteFreeRing`; the owner decrements when it drains). So a plain
+    /// `u32` field, accessed through its `offset_of!` offset like `bump`, is
+    /// race-free under the single-writer discipline (see §2 of the Phase 35
+    /// design and the `bump_of`/`set_bump` precedent).
+    ///
+    /// The field is present in EVERY build's layout (so the header byte layout
+    /// is stable regardless of feature config — like `owner_state`/
+    /// `next_abandoned`); it is read/mutated ONLY under `alloc-decommit`. Without
+    /// that feature it is dead data (silenced below).
+    pub live_count: u32,
+    /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
+    /// segment's payload pages are currently DECOMMITTED (returned to the OS).
+    /// Set when `live_count` hits zero and the payload is decommitted+reset;
+    /// cleared when the segment is reselected for carving and the payload is
+    /// recommitted. Present in every layout, used only under `alloc-decommit`.
+    pub decommitted: u32,
+    /// PERF-PASS-4 (G9/C2, task #52): the owner's cached copy of the
+    /// `RemoteFreeRing`'s `head` cursor, as last observed by THIS segment's
+    /// `find_segment_with_free_impl` drain guard. Lets the guard skip a
+    /// `RemoteFreeRing::drain` call (and its unconditional `head.store(_,
+    /// Release)`) when the ring's `tail` has not advanced past this cached
+    /// value since the last drain — i.e. the ring is provably empty of
+    /// anything new, without touching the ring's `head` atomic at all.
+    ///
+    /// **Not atomic — owner-only**, identical discipline to `bump` /
+    /// `live_count`: the segment's owning thread is the ONLY reader/writer
+    /// (the drain guard runs exclusively on the owner, exactly like the
+    /// `RemoteFreeRing::drain` call it gates). A plain `u32` field, accessed
+    /// through its `offset_of!` offset, is race-free under the same
+    /// single-writer argument `bump_of`/`set_bump` document.
+    ///
+    /// **Why this lives in the segment header, not `SegmentTable`:** the
+    /// cache must travel with SEGMENT identity, not with a `SegmentTable`
+    /// slot INDEX. A `SegmentTable` slot index is reused across
+    /// register/recycle for a completely different segment (task #60 slot
+    /// recycle), so an index-keyed cache would need explicit invalidation at
+    /// reuse — exactly the "stale cache surviving a re-claim" hazard this
+    /// task's spec calls out. The header field instead lives inside the very
+    /// segment memory it describes: a fresh segment always gets a fresh
+    /// header via `SegmentHeader::small(..)` (see [`small`](Self::small),
+    /// which zero-inits this field), so there is no way to observe a stale
+    /// value from a PRIOR segment's ring occupying the same virtual address
+    /// or the same table slot — the field's lifetime is the segment's
+    /// lifetime, exactly like `bump`/`live_count`/the ring itself.
+    ///
+    /// **Present in EVERY build's layout** (same discipline as
+    /// `live_count`/`node_id`): read/written only under
+    /// `#[cfg(feature = "alloc-xthread")]`, but the byte layout of
+    /// `SegmentHeader` does not otherwise shift across feature configs.
+    /// Starts at 0 (matching a freshly-initialised ring's `head == 0`), so
+    /// the FIRST scan of a brand-new segment correctly treats "cached head ==
+    /// real head == 0" as "nothing to drain" until a real push moves `tail`.
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+    pub ring_drain_head: u32,
+    /// The segment kind (primordial / small / large). Decides dealloc routing.
+    /// Read on every cross-thread dealloc-routing dispatch.
+    pub kind: SegmentKind,
+
+    // ── Cold set: bytes 41.. (Large-only / teardown-only / unregister-only,
+    // alignment-descending: 8-byte fields, then the 4-byte `segment_id` /
+    // `node_id`) ─────────────────────────────────────────────────────────
     /// For large/huge segments: the size (bytes) of the single allocation.
     /// Unused for small/primordial (zero).
     pub large_size: usize,
@@ -259,28 +400,6 @@ pub(crate) struct SegmentHeader {
     /// The full size of the OS reservation (head + usable + tail). Paired with
     /// `reservation` for the OS free call.
     pub reservation_len: usize,
-    /// Phase 10: a stable pointer to the owning heap's thread-free stack head
-    /// (`*const AtomicPtr<u8>`). A cross-thread freer reads this from the
-    /// segment header after `segment_base_of(ptr)` and CAS-pushes the freed
-    /// block onto the Treiber stack. `null` for segments not yet bound to a
-    /// heap (Phase 8 `AllocCore`-only segments). The pointer is stable because
-    /// it addresses a process-`'static` head: a registry-slot-resident
-    /// `HeapSlot::thread_free` field (the slot array is `'static`) or the
-    /// fallback `FALLBACK_TFS` static atomic (post-W3, task #13 — no longer a
-    /// `Box`).
-    pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
-    /// Phase 12.4: the segment's ownership state — packed
-    /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
-    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The
-    /// Abandoned→Live CAS on this word is the SINGLE linearization point of
-    /// adoption (M9). Stored as a plain `u64` so the `#[repr(C)] Copy`
-    /// `SegmentHeader` remains a plain bit-pattern (the bootstrap lays it down
-    /// via `Node::write_struct`, and `SegmentMeta::header` reads it back as a
-    /// unit). The adoption path accesses it through the dedicated
-    /// [`owner_state_atomic`](SegmentMeta::owner_state_atomic) view (`&AtomicU64`
-    /// at the same fixed offset), because a plain struct-field read would be a
-    /// non-atomic data race under the concurrent adoption CAS.
-    pub owner_state: u64,
     /// Phase 12.4: the intrusive link for the global abandoned-segments
     /// Treiber stack. While a segment is ABANDONED and on the stack, this
     /// holds the segment-relative OFFSET of the NEXT abandoned segment's base
@@ -291,33 +410,9 @@ pub(crate) struct SegmentHeader {
     /// [`next_abandoned_atomic`](SegmentMeta::next_abandoned_atomic) on the
     /// abandon/adopt path.
     pub next_abandoned: u64,
-    /// Phase 35 (M6 decommit): the **owner-only** count of live (carved-and-not-
-    /// free) blocks in this small/primordial segment. Incremented when a block
-    /// is handed to the caller (`pop_free` / `carve_block`), decremented when a
-    /// block is freed (`dealloc_small` / `reclaim_offset`). When it reaches zero
-    /// the segment is empty and (under `alloc-decommit`) its payload pages are
-    /// returned to the OS.
-    ///
-    /// **Not atomic — owner-only.** Every mutation runs on the segment's owner:
-    /// own-thread alloc/free AND the owner-side ring drain (`reclaim_offset`).
-    /// The cross-thread freer NEVER touches this field (it pushes an offset into
-    /// the `RemoteFreeRing`; the owner decrements when it drains). So a plain
-    /// `u32` field, accessed through its `offset_of!` offset like `bump`, is
-    /// race-free under the single-writer discipline (see §2 of the Phase 35
-    /// design and the `bump_of`/`set_bump` precedent).
-    ///
-    /// The field is present in EVERY build's layout (so the header byte layout
-    /// is stable regardless of feature config — like `owner_state`/
-    /// `next_abandoned`); it is read/mutated ONLY under `alloc-decommit`. Without
-    /// that feature it is dead data (silenced below).
-    pub live_count: u32,
-    /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
-    /// segment's payload pages are currently DECOMMITTED (returned to the OS).
-    /// Set when `live_count` hits zero and the payload is decommitted+reset;
-    /// cleared when the segment is reselected for carving and the payload is
-    /// recommitted. Like `live_count`, present in every layout, used only under
-    /// `alloc-decommit`.
-    pub decommitted: u32,
+    /// The segment's index in the global registry. `u32::MAX` until registered
+    /// (the primordial segment is index 0). Unregister/recycle-only read.
+    pub segment_id: u32,
     /// Phase B (numa-aware): the NUMA node on which this segment's physical
     /// pages were allocated. `NO_NODE_RAW` (`u32::MAX`) means "unknown / not
     /// bound to any NUMA node" (the sentinel used on all platforms and when
@@ -342,44 +437,6 @@ pub(crate) struct SegmentHeader {
     /// `live_count`).
     #[cfg_attr(not(feature = "numa-aware"), allow(dead_code))]
     pub node_id: u32,
-    /// PERF-PASS-4 (G9/C2, task #52): the owner's cached copy of the
-    /// `RemoteFreeRing`'s `head` cursor, as last observed by THIS segment's
-    /// `find_segment_with_free_impl` drain guard. Lets the guard skip a
-    /// `RemoteFreeRing::drain` call (and its unconditional `head.store(_,
-    /// Release)`) when the ring's `tail` has not advanced past this cached
-    /// value since the last drain — i.e. the ring is provably empty of
-    /// anything new, without touching the ring's `head` atomic at all.
-    ///
-    /// **Not atomic — owner-only**, identical discipline to `bump` /
-    /// `live_count`: the segment's owning thread is the ONLY reader/writer
-    /// (the drain guard runs exclusively on the owner, exactly like the
-    /// `RemoteFreeRing::drain` call it gates). A plain `u32` field, accessed
-    /// through its `offset_of!` offset, is race-free under the same
-    /// single-writer argument `bump_of`/`set_bump` document.
-    ///
-    /// **Why this lives in the segment header, not `SegmentTable`:** the
-    /// cache must travel with SEGMENT identity, not with a `SegmentTable`
-    /// slot INDEX. A `SegmentTable` slot index is reused across
-    /// register/recycle for a completely different segment (task #60 slot
-    /// recycle), so an index-keyed cache would need explicit invalidation at
-    /// reuse — exactly the "stale cache surviving a re-claim" hazard this
-    /// task's spec calls out. The header field instead lives inside the very
-    /// segment memory it describes: a fresh segment always gets a fresh
-    /// header via `SegmentHeader::small(..)` (see [`small`](Self::small),
-    /// which zero-inits this field), so there is no way to observe a stale
-    /// value from a PRIOR segment's ring occupying the same virtual address
-    /// or the same table slot — the field's lifetime is the segment's
-    /// lifetime, exactly like `bump`/`live_count`/the ring itself.
-    ///
-    /// **Present in EVERY build's layout** (same discipline as
-    /// `live_count`/`node_id`): read/written only under
-    /// `#[cfg(feature = "alloc-xthread")]`, but the byte layout of
-    /// `SegmentHeader` does not otherwise shift across feature configs.
-    /// Starts at 0 (matching a freshly-initialised ring's `head == 0`), so
-    /// the FIRST scan of a brand-new segment correctly treats "cached head ==
-    /// real head == 0" as "nothing to drain" until a real push moves `tail`.
-    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
-    pub ring_drain_head: u32,
 }
 
 /// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
