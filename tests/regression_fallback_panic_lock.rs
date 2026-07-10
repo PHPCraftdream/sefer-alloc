@@ -15,6 +15,7 @@
 //! The `#[doc(hidden)]` hook `dbg_panic_in_with_heap_releases_lock`:
 //!   1. calls `with_heap` with a closure that PANICS (caught via `catch_unwind`),
 //!   2. then calls `with_heap` again with a normal closure,
+//!
 //! returning `true` iff step 2 COMPLETED (lock not wedged). We run the hook on a
 //! watchdog thread with a bounded join timeout: before the guard, step 2 would
 //! hang forever, so a regression surfaces as a TIMEOUT here rather than a literal

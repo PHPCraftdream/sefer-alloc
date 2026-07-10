@@ -226,6 +226,7 @@ pub(crate) fn segments_released_total() -> u64 {
 /// `base` is the SEGMENT-aligned base. We decommit `[base + start_offset,
 /// base + end_offset)` — typically the payload region past the metadata. The
 /// offsets MUST be page-aligned and within the segment.
+#[cfg(feature = "alloc-decommit")]
 pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees no live blocks exist in the range, and offsets are
@@ -244,6 +245,7 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// segment marked decommitted — this is an honest OOM, propagated as a null
 /// carve, never a fault or panic (`sefer_alloc` OOM contract).
 #[must_use]
+#[cfg(feature = "alloc-decommit")]
 pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator,
     // and `[base + start_offset, base + end_offset)` was previously decommitted.
