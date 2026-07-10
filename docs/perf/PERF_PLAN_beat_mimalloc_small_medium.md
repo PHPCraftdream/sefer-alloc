@@ -169,8 +169,22 @@ cold-storm → free-storm → churn correctness. Expect: cold 16–64 B ~28 →
 
 ### P4 — polish (#148, optional, one commit per item)
 (a) flush word-merge + chain-splice (free-storm 2–5%); (b) S3 `alloc_zeroed`
-virgin-skip — ONLY with an iron virgin flag + mandatory poison counterfactual,
-else reject honestly; (c) TCACHE_CAP/FLUSH_N sweep — by measurement only.
+virgin-skip — **NO-GO (honest-reject, 2026-07-10)**, see
+`docs/checkpoints/2026-07-10-alloc-zeroed-virgin-skip-reject.md`. Short reason:
+the plan's own precondition ("iron virgin flag") does not exist and cannot be
+had cheaply — there is no per-block virgin state, only a segment-level
+decommit flag, and virgin-ness of a *specific block inside an already-committed
+segment* is a finer question the plan underestimated. The extractable win is
+narrow (only the first `alloc_zeroed` touch of a genuinely fresh, never-reused
+bump slice), and the recycled/decommit→recommit path *legitimately* carries
+non-zero garbage on macOS/XNU/*BSD (`MADV_DONTNEED` is advisory+lazy, no
+zero-fill guarantee — vmem `lib.rs` §decommit note, lines ~522–526), so an
+unconditional skip would be a correctness bug, not an optimization. Cost of the
+required per-block virgin metadata + invariant is not justified without real
+profiling (itself a separate task). Reconsider only if P0/P5 Ir data proves the
+memset is a measurable bootstrap cost AND a segment-level virgin signal can
+gate it without new per-block state. (c) TCACHE_CAP/FLUSH_N sweep — by
+measurement only.
 
 ### P5 — final measurement + honest verdict (#149)
 Re-run criterion tables; dispatch perf-gate → Ir vs P0 baseline (deterministic
