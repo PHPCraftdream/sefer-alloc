@@ -33,6 +33,13 @@
 // `LargeCacheMode` lives in the sibling sub-module `alloc_core::large_cache_mode`
 // and is re-exported by `alloc_core::mod.rs`.
 use super::large_cache_mode::LargeCacheMode;
+// `SmallSegmentPoolConfig` (Mechanism 2, task #51) lives in the sibling
+// sub-module `alloc_core::small_segment_pool_config`. It is carried as a field
+// here — both are `alloc-decommit`-gated construction-time knobs threaded
+// through the SAME single-config plumbing, so embedding it avoids adding a
+// second config parameter through four API layers (see that type's module
+// docs for the wiring rationale).
+use super::small_segment_pool_config::SmallSegmentPoolConfig;
 
 // ── Default constants (kept in sync with the old env-parser defaults) ─────────
 
@@ -102,6 +109,15 @@ pub struct LargeCacheConfig {
 
     /// Cache operating mode. `None` uses the default (`Lazy`).
     pub(crate) mode: Option<LargeCacheMode>,
+
+    /// Empty-small-segment hysteresis pool config (Mechanism 2, task #51).
+    /// Carried here because it is threaded through the SAME construction-time
+    /// plumbing as the large-cache knobs; see
+    /// [`SmallSegmentPoolConfig`](super::small_segment_pool_config::SmallSegmentPoolConfig)
+    /// for the full rationale. Defaults to `SmallSegmentPoolConfig::DEFAULT`
+    /// (pool ENABLED, 4 segments / 16 MiB) — so `production` gets pooling on by
+    /// default with no explicit opt-in.
+    pub(crate) pool: SmallSegmentPoolConfig,
 }
 
 #[cfg(feature = "alloc-decommit")]
@@ -144,6 +160,7 @@ impl LargeCacheConfig {
             decay_interval_ms: None,
             decay_rate_percent: None,
             mode: None,
+            pool: SmallSegmentPoolConfig::DEFAULT,
         }
     }
 
@@ -234,6 +251,20 @@ impl LargeCacheConfig {
         self
     }
 
+    /// Set the empty-small-segment hysteresis pool config (Mechanism 2, task
+    /// #51).
+    ///
+    /// Default: [`SmallSegmentPoolConfig::DEFAULT`](super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT)
+    /// (pool enabled, 4 segments / 16 MiB). Pass
+    /// `SmallSegmentPoolConfig::new().pool_segments(0)` to disable pooling
+    /// (immediate release of every empty small segment — the pre-Mechanism-2
+    /// behaviour).
+    #[must_use]
+    pub const fn pool(mut self, pool: SmallSegmentPoolConfig) -> Self {
+        self.pool = pool;
+        self
+    }
+
     // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
 
     /// Resolve the byte budget. `None` = unbounded (no admission limit).
@@ -290,5 +321,11 @@ impl LargeCacheConfig {
             Some(m) => m,
             None => LargeCacheMode::Lazy,
         }
+    }
+
+    /// Resolve the empty-small-segment pool config (Mechanism 2, task #51).
+    #[must_use]
+    pub(crate) const fn resolved_pool(&self) -> SmallSegmentPoolConfig {
+        self.pool
     }
 }

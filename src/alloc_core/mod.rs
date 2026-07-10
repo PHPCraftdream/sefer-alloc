@@ -76,6 +76,8 @@ pub mod segment_header;
 mod segment_layout;
 pub(crate) mod segment_table;
 pub(crate) mod size_classes;
+#[cfg(feature = "alloc-decommit")]
+pub mod small_segment_pool_config;
 
 pub use alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
@@ -83,3 +85,5 @@ pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
 pub use segment_layout::SegmentLayout;
+#[cfg(feature = "alloc-decommit")]
+pub use small_segment_pool_config::SmallSegmentPoolConfig;

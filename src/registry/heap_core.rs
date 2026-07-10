@@ -1791,6 +1791,19 @@ impl HeapCore {
         self.core.dbg_drain_all_rings();
     }
 
+    /// TEST-ONLY (Mechanism 2, task #51): force-drain this heap's
+    /// empty-small-segment hysteresis pool (release + recycle every pooled
+    /// segment). Forwards to `AllocCore::dbg_drain_small_pool`. Used by
+    /// decommit tests that run through the `SeferAlloc`/`HeapRegistry` face
+    /// (where `claim_with_config` cannot reliably disable the pool on a reused
+    /// slot) to deterministically observe the decommit that a pooled segment
+    /// would otherwise absorb. Returns the number of segments drained.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_drain_small_pool(&mut self) -> usize {
+        self.core.dbg_drain_small_pool()
+    }
+
     /// TEST-ONLY (P5): force-flush every class's magazine back to the
     /// substrate. Used by decommit-soak tests to drain magazine-buffered
     /// blocks before asserting decommit invariants.

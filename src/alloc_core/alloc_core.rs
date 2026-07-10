@@ -81,6 +81,18 @@ const LARGE_CACHE_SLOTS: usize = 8;
 #[cfg(feature = "alloc-decommit")]
 const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 
+/// Mechanism 2 (task #51) — compile-time hard cap on the empty-small-segment
+/// hysteresis pool's fixed storage array. The runtime cap
+/// (`SmallSegmentPoolConfig::pool_segments`, default 4) is clamped to this at
+/// construction. Chosen to match the default and keep the array tiny (a plain
+/// `[*mut u8; 4]` in `AllocCore`, structurally identical to `large_cache`); a
+/// user who configures a larger `pool_segments` is clamped to 4, which the
+/// config's doc states. Raising this is a one-line change here plus re-checking
+/// the array literals — deliberately kept small since the whole point of the
+/// pool is a BOUNDED hysteresis buffer, not an unbounded segment cache.
+#[cfg(feature = "alloc-decommit")]
+const POOL_MAX_SLOTS: usize = 4;
+
 // `LargeCacheMode` now lives in its own file (`large_cache_mode.rs`) per the
 // one-export-per-file rule (task #27); it is re-exported unchanged by
 // `alloc_core::mod.rs`. Imported here so the shard field, the config type, and
@@ -362,6 +374,76 @@ pub struct AllocCore {
     /// `#![forbid(unsafe_code)]` — a raw pointer would be unusable).
     #[cfg(feature = "alloc-decommit")]
     large_cache_hits_sink: Option<&'static LargeCacheHitCounter>,
+
+    // ── Mechanism 2 (task #51) — empty-small-segment hysteresis pool ─────────
+    /// The pool: bases of empty small segments retained committed + registered
+    /// instead of released, so a later `find_segment_with_free` re-serves their
+    /// free-listed blocks without an OS syscall (see [`SmallSegmentPoolConfig`]
+    /// for the design).
+    ///
+    /// **Array, not an intrusive header field — why.** The cap is tiny
+    /// (`POOL_MAX_SLOTS` = 4), so a plain fixed array — structurally identical
+    /// to [`large_cache`](Self::large_cache) — is simpler and just as correct as
+    /// threading an intrusive "next pooled" link through `SegmentHeader`:
+    ///   - Zero new `SegmentHeader` bytes and zero new `unsafe` surface (the
+    ///     array lives in `AllocCore`, reached by safe indexing).
+    ///   - The `regression_c3_unbounded_recycle` interaction is far easier to
+    ///     reason about with an explicit `pooled_count`-bounded array (the
+    ///     "at most 4 retained" bound is a direct array-length fact) than with
+    ///     an intrusive chain whose length is implicit.
+    ///   - No per-segment "is this pooled?" state is needed at all: a pooled
+    ///     segment is NOT a distinct table/scan state — it stays a normal
+    ///     registered, committed, `live_count == 0` small segment. "Pooled"
+    ///     means only "its base is in this array, so it is retained rather than
+    ///     released; when `find_segment_with_free` reuses its free blocks it is
+    ///     removed from the array (`unpool_if_present`)." (See
+    ///     `release_or_pool_empty_segment` for the stale-ring-while-pooled
+    ///     soundness argument.)
+    ///
+    /// Occupancy is `[0, pooled_count)`; slots `[pooled_count, POOL_MAX_SLOTS)`
+    /// hold `null_mut()`. LIFO (push at `pooled_count`, pop from
+    /// `pooled_count - 1`) for cache warmth — the most-recently-emptied segment
+    /// is the warmest to re-carve from.
+    ///
+    /// [`SmallSegmentPoolConfig`]: super::small_segment_pool_config::SmallSegmentPoolConfig
+    #[cfg(feature = "alloc-decommit")]
+    pooled_segments: [*mut u8; POOL_MAX_SLOTS],
+
+    /// Number of occupied entries in [`pooled_segments`](Self::pooled_segments)
+    /// (`[0, pooled_count)` are valid bases).
+    #[cfg(feature = "alloc-decommit")]
+    pooled_count: usize,
+
+    /// Resolved runtime cap on pooled segments: `min(config.pool_segments,
+    /// config.pool_byte_cap / SEGMENT, POOL_MAX_SLOTS)`. `0` = pool disabled
+    /// (every empty small segment released immediately — the pre-Mechanism-2
+    /// behaviour). Set once at [`AllocCore::new_with_config`].
+    #[cfg(feature = "alloc-decommit")]
+    pool_cap: usize,
+
+    /// Per-slot insertion sequence for [`pooled_segments`](Self::pooled_segments),
+    /// mirroring [`CachedLarge::seq`]: the FIFO-oldest pooled segment is the one
+    /// with the smallest `seq`. Used by the decay tick (`maybe_decay_small_pool`)
+    /// to evict the COLDEST (oldest-pooled) segment, distinct from the LIFO
+    /// (warmest) order `pop_pooled_segment` uses when draining. Only entries in
+    /// `[0, pooled_count)` are meaningful.
+    #[cfg(feature = "alloc-decommit")]
+    pooled_seq: [u64; POOL_MAX_SLOTS],
+
+    /// Monotonic insertion counter for the pool (stamped into `pooled_seq` on
+    /// each admit). Mirrors [`large_cache_seq`](Self::large_cache_seq).
+    #[cfg(feature = "alloc-decommit")]
+    pool_seq_ctr: u64,
+
+    /// Wall-clock time of the last small-pool decay tick. `None` = never ticked.
+    /// Mirrors [`last_decay_tick`](Self::last_decay_tick) for the large cache.
+    /// The decay evicts the FIFO-oldest pooled segment once the configured
+    /// interval elapses, so a burst-then-quiet small workload does not pin the
+    /// pooled segments indefinitely (the hard bound is still the `pool_cap` /
+    /// byte-cap; the decay is the "eventual drain to zero when truly idle" that
+    /// makes retention TEMPORARY, not merely bounded).
+    #[cfg(feature = "alloc-decommit")]
+    last_pool_decay_tick: Option<std::time::Instant>,
 }
 
 impl AllocCore {
@@ -412,6 +494,17 @@ impl AllocCore {
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
         core.large_cache_mode = config.resolved_mode();
+        // Mechanism 2 (task #51): resolve the empty-small-segment pool cap.
+        // The effective cap is the tightest of the three bounds:
+        //   - the configured segment count,
+        //   - the byte ceiling expressed in whole segments (each is `SEGMENT`),
+        //   - the compile-time array size `POOL_MAX_SLOTS`.
+        // A `0` in EITHER config knob disables the pool (min → 0), matching the
+        // `SmallSegmentPoolConfig` contract.
+        let pool_cfg = config.resolved_pool();
+        let by_segments = pool_cfg.resolved_pool_segments();
+        let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
+        core.pool_cap = by_segments.min(by_bytes).min(POOL_MAX_SLOTS);
         Some(core)
     }
 
@@ -473,6 +566,29 @@ impl AllocCore {
             // above.
             #[cfg(feature = "alloc-decommit")]
             large_cache_hits_sink: None,
+            // Mechanism 2 (task #51): empty pool. `pool_cap` defaults to the
+            // production default here (as if `SmallSegmentPoolConfig::DEFAULT`);
+            // `new_with_config` overwrites it from the resolved config. The
+            // `new_inner`-only path (a `not(alloc-decommit)`-style direct
+            // bootstrap) never reaches this arm — every `alloc-decommit` build
+            // funnels construction through `new_with_config`.
+            #[cfg(feature = "alloc-decommit")]
+            pooled_segments: [core::ptr::null_mut(); POOL_MAX_SLOTS],
+            #[cfg(feature = "alloc-decommit")]
+            pooled_count: 0,
+            #[cfg(feature = "alloc-decommit")]
+            pool_cap: super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS
+                .min(
+                    super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_BYTE_CAP
+                        / SEGMENT,
+                )
+                .min(POOL_MAX_SLOTS),
+            #[cfg(feature = "alloc-decommit")]
+            pooled_seq: [0u64; POOL_MAX_SLOTS],
+            #[cfg(feature = "alloc-decommit")]
+            pool_seq_ctr: 0,
+            #[cfg(feature = "alloc-decommit")]
+            last_pool_decay_tick: None,
         })
     }
 
@@ -1070,13 +1186,10 @@ impl AllocCore {
     fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
         let mut meta = SegmentMeta::new(base);
         let live = meta.dec_live();
-        // PERF-4 (task #14): every caller of this fn recycles `base` the instant
-        // `true` is returned (see the three call sites), so the payload is about
-        // to go back to the OS — use the release-follows fast path that resets
-        // only the bump cursor and skips the (dead) full metadata reset.
         // Only an empty, non-current, not-already-decommitted segment is
-        // returned to the OS. The current carve target stays committed (we are
-        // about to bump-allocate into it); already-decommitted is idempotent.
+        // eligible for release/pool. The current carve target stays committed
+        // (we are about to bump-allocate into it); already-decommitted is
+        // idempotent.
         if live != 0 || base == small_cur || meta.is_decommitted() {
             return false;
         }
@@ -1092,7 +1205,18 @@ impl AllocCore {
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
             return false;
         }
-        Self::decommit_empty_segment_for_release(&mut meta, base);
+        // Mechanism 2 (task #51): the reset (`decommit_empty_segment_for_release`)
+        // is NO LONGER performed here. This fn is self-less (called from the
+        // self-less `reclaim_offset`), so it cannot consult the per-`AllocCore`
+        // pool. It now reports ONLY "this segment just emptied and is eligible
+        // for release-or-pool"; the `&mut self` caller then routes to
+        // [`release_or_pool_empty_segment`](Self::release_or_pool_empty_segment),
+        // which either pools it (leaving `bump`/free-lists intact so the blocks
+        // stay reusable) or does the release-follows reset + `table.recycle`.
+        // Moving the reset to the caller is what makes pooling correct: the
+        // former in-place `set_bump(payload_start)` would push every freed
+        // block's offset `>= bump`, making a pooled segment's free-list blocks
+        // unreachable.
         true
     }
 
@@ -1132,10 +1256,226 @@ impl AllocCore {
         if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
             return false;
         }
-        // PERF-4 (task #14): `flush_run`'s only caller recycles `base` on `true`,
-        // so use the release-follows fast path (see `dec_live_and_maybe_decommit`).
-        Self::decommit_empty_segment_for_release(&mut meta, base);
+        // Mechanism 2 (task #51): as in `dec_live_and_maybe_decommit`, the reset
+        // is NO LONGER done here — the caller (`flush_run`) routes the `true`
+        // return through `release_or_pool_empty_segment`.
         true
+    }
+
+    /// Mechanism 2 (task #51) — decide the fate of a small segment that just
+    /// emptied (`dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`
+    /// returned `true` for it): either RETAIN it in the empty-small-segment
+    /// hysteresis pool (kept registered + committed, free-lists intact), or
+    /// RELEASE it (the pre-Mechanism-2 behaviour: release-follows reset +
+    /// `table.recycle`).
+    ///
+    /// Called from every site that observes a small segment reach
+    /// `live_count == 0` — `dealloc_small`, the ring-drain in
+    /// `find_segment_with_free_impl`, `flush_run`, and the test-only
+    /// `dbg_drain_all_rings_impl` — in place of the former unconditional
+    /// `self.table.recycle(base)`.
+    ///
+    /// ## Admission rule (bounded, synchronous — no reliance on a later tick)
+    ///
+    /// If the pool is enabled (`pool_cap > 0`) and NOT already full
+    /// (`pooled_count < pool_cap`), the segment is admitted: pushed onto the
+    /// pool array and left EXACTLY as it was the instant it emptied — still
+    /// registered in the `SegmentTable`, pages still committed, `bump` wherever
+    /// it was (near segment end, fully carved), `decommitted == false`, every
+    /// class free list still populated with the blocks that were just freed.
+    /// NOTHING is reset. A later `find_segment_with_free` finds those free
+    /// blocks and reuses them in place (removing the segment from the pool via
+    /// `unpool_if_present`) — the reuse costs NO OS reserve/release round-trip,
+    /// which is the hysteresis win. (A pooled segment is never re-inserted as a
+    /// fresh CARVE target: it is fully-carved, so `reserve_small_segment` always
+    /// takes a genuinely fresh OS segment — the pool is a free-list reserve, not
+    /// a carve reserve.)
+    ///
+    /// If the pool is disabled OR already full, the segment is released
+    /// immediately here — the pool never holds MORE than `pool_cap` at any
+    /// instant, mid-scan or otherwise (this is the synchronous budget cap that
+    /// keeps `regression_c3_unbounded_recycle`'s bound tight and predictable:
+    /// at most `pool_cap` retained, ever).
+    ///
+    /// ## Stale-ring-while-pooled soundness (no special-casing needed)
+    ///
+    /// A pooled segment stays a NORMAL registered small segment — it is scanned
+    /// by `find_segment_with_free_impl`'s ring drain exactly like any other, and
+    /// receives NO "skip while pooled" treatment. This is sound because at
+    /// `live_count == 0` EVERY block in the segment is already free, so any
+    /// cross-thread free arriving for one of its offsets is necessarily a
+    /// DOUBLE-FREE of an already-free block. `reclaim_offset` handles that with
+    /// its existing bitmap `is_free` guard (a no-op that returns `false` BEFORE
+    /// any `write_next`) — the SAME guard that already protected an
+    /// about-to-be-decommitted empty segment (design §1.2). Crucially, because
+    /// pooling does NOT reset `bump` (unlike the release path), the `off >= bump`
+    /// guard does NOT fire for the segment's real block offsets; the `is_free`
+    /// guard is what catches the double-free. Both are no-ops, both touch only
+    /// never-decommitted metadata, and the payload stays committed the whole
+    /// time — so there is no UAF and no write to unmapped memory (the M6 §1
+    /// safety argument holds verbatim, and is in fact STRICTLY weaker to satisfy
+    /// here since the payload is never even decommitted while pooled). Once the
+    /// segment is un-pooled (reused via `find_segment_with_free`) and allocation
+    /// resumes, its `live_count` rises and it behaves as an ordinary registered
+    /// segment. Every empty-observing site `continue`s / returns after this
+    /// call, so it yields `()`: the caller does not need to distinguish pooled
+    /// from released.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn release_or_pool_empty_segment(&mut self, base: *mut u8) {
+        // Defence-in-depth against a double-entry: a segment that is already
+        // pooled must never be pushed again (a duplicate base → later
+        // double-recycle). By construction this cannot happen — a pooled segment
+        // is `unpool_if_present`-removed the instant it is reused, so it carries
+        // no live block until re-emptied, and re-emptying requires reuse first —
+        // but the guard is O(4) and makes the invariant local and robust.
+        debug_assert!(
+            !self.pooled_segments[..self.pooled_count].contains(&base),
+            "double-pool of an already-pooled segment"
+        );
+        // Admit to the pool if enabled and there is room, stamping the insertion
+        // sequence so the decay tick can evict the FIFO-oldest.
+        if self.pooled_count < self.pool_cap {
+            self.pooled_segments[self.pooled_count] = base;
+            self.pooled_seq[self.pooled_count] = self.pool_seq_ctr;
+            self.pool_seq_ctr = self.pool_seq_ctr.wrapping_add(1);
+            self.pooled_count += 1;
+            return; // pooled — base still valid/registered
+        }
+        // Pool disabled or full: release immediately (pre-Mechanism-2 path).
+        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        self.table.recycle(base);
+    }
+
+    /// Mechanism 2 (task #51) — the release-follows reset + the caller's
+    /// `table.recycle` were previously inlined at each empty-observing site (as
+    /// `decommit_empty_segment_for_release` + `self.table.recycle(base)`). This
+    /// helper is the reset half, kept self-less so the release branch of
+    /// `release_or_pool_empty_segment` and the pool-eviction path can share it.
+    /// It is byte-identical to the pre-Mechanism-2 release path: it performs the
+    /// release-follows fast reset (`set_bump(payload_start)` +
+    /// `set_decommitted(true)`) so the intra-drain `off >= bump` stale-ring
+    /// guard still fires before the whole reservation goes back to the OS.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn release_empty_segment_now(meta: &mut SegmentMeta, base: *mut u8) {
+        Self::decommit_empty_segment_for_release(meta, base);
+    }
+
+    /// Mechanism 2 (task #51) — pop the most-recently-pooled (LIFO, warmest)
+    /// empty small segment, or `None` if the pool is empty. Used by
+    /// `drain_small_pool` to walk the whole pool when releasing it (the eviction
+    /// order does not matter there). Pooled segments are NOT re-inserted as carve
+    /// targets: they are reused in place via `find_segment_with_free`'s free-list
+    /// path (which calls `unpool_if_present`), so this pop is a pure removal
+    /// primitive, not a "hand back a fresh segment" one.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn pop_pooled_segment(&mut self) -> Option<*mut u8> {
+        if self.pooled_count == 0 {
+            return None;
+        }
+        // Pop the WARMEST (largest-seq) pooled segment for cache warmth (its
+        // pages/metadata are the most recently touched). Scan the ≤4 live
+        // entries for the max seq, then swap-remove it to keep the array
+        // compact in `[0, pooled_count)`.
+        let mut best = 0usize;
+        for i in 1..self.pooled_count {
+            if self.pooled_seq[i] > self.pooled_seq[best] {
+                best = i;
+            }
+        }
+        let base = self.pooled_segments[best];
+        self.remove_pool_slot(best);
+        Some(base)
+    }
+
+    /// Mechanism 2 (task #51): if `base` is currently retained in the hysteresis
+    /// pool, remove it (it is being reused via `find_segment_with_free`'s
+    /// free-list path, so it is no longer an empty-and-idle pooled segment).
+    /// Linear scan + swap-remove over the ≤ `POOL_MAX_SLOTS` (4) live entries —
+    /// trivial, and only consulted off the cold free-list-miss path. Removing on
+    /// reuse is what prevents a re-populated-then-re-emptied segment from being
+    /// pushed into the pool a SECOND time (a double-entry → later
+    /// double-recycle).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn unpool_if_present(&mut self, base: *mut u8) {
+        if let Some(idx) = self.pooled_segments[..self.pooled_count]
+            .iter()
+            .position(|&b| b == base)
+        {
+            self.remove_pool_slot(idx);
+        }
+    }
+
+    /// Swap-remove pool slot `idx` (compacting `[0, pooled_count)`). The
+    /// segment's fate (reuse vs release) is the caller's business — this only
+    /// updates the pool bookkeeping.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn remove_pool_slot(&mut self, idx: usize) {
+        let last = self.pooled_count - 1;
+        self.pooled_segments[idx] = self.pooled_segments[last];
+        self.pooled_seq[idx] = self.pooled_seq[last];
+        self.pooled_segments[last] = core::ptr::null_mut();
+        self.pooled_seq[last] = 0;
+        self.pooled_count = last;
+    }
+
+    /// Mechanism 2 (task #51) — the small-pool decay tick. Mirrors the SHAPE of
+    /// [`maybe_decay_large_cache`](Self::maybe_decay_large_cache): a fast
+    /// early-exit when there is nothing to reclaim (pool empty) avoids the
+    /// `Instant::now()` syscall on the overwhelmingly common path, so idle and
+    /// small-only workloads that never fill the pool pay near-zero. When the
+    /// pool is non-empty AND the configured interval has elapsed since the last
+    /// tick, it evicts the single FIFO-OLDEST (smallest-seq, coldest) pooled
+    /// segment — release-follows reset + `table.recycle`. Repeated ticks drain
+    /// the pool to zero when the workload goes quiet, so pooled retention is
+    /// TEMPORARY, not merely bounded.
+    ///
+    /// Called from [`reserve_small_segment`]'s cold path AFTER a pool miss — the
+    /// natural "small churn is happening but the pool did not help this time"
+    /// clock edge — and NOT on any hot alloc/free path. The trigger is chosen
+    /// there rather than at the large-cache sites because a SMALL-segment
+    /// workload may never call `alloc_large`, so hooking the large-path decay
+    /// tick would never fire for it; `reserve_small_segment` is the cheapest
+    /// small-path edge that is already cold (only reached on segment
+    /// exhaustion) and is the exact place a stale pool should be trimmed.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn maybe_decay_small_pool(&mut self) {
+        // Fast early-exit: nothing pooled → nothing to reclaim, skip the clock.
+        if self.pooled_count == 0 {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let elapsed = match self.last_pool_decay_tick {
+            Some(t) => now.duration_since(t),
+            None => {
+                // First call: prime the timer without evicting (same anti-thrash
+                // guard as the large-cache decay's first-call priming).
+                self.last_pool_decay_tick = Some(now);
+                return;
+            }
+        };
+        // Reuse the large-cache decay interval as the process-wide "decay tick"
+        // period — one knob governs both hysteresis buffers' idle-drain cadence.
+        if elapsed < self.decay_config.decay_interval {
+            return;
+        }
+        self.last_pool_decay_tick = Some(now);
+        // Evict the FIFO-oldest (coldest) pooled segment.
+        let mut oldest = 0usize;
+        for i in 1..self.pooled_count {
+            if self.pooled_seq[i] < self.pooled_seq[oldest] {
+                oldest = i;
+            }
+        }
+        let base = self.pooled_segments[oldest];
+        self.remove_pool_slot(oldest);
+        Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+        self.table.recycle(base);
     }
 
     /// TEST-ONLY (Phase 35): the process-wide count of M6 decommit invocations
@@ -1201,6 +1541,60 @@ impl AllocCore {
             return None;
         }
         Some(SegmentMeta::new(base).live_count_of())
+    }
+
+    /// TEST-ONLY (Mechanism 2, task #51): the number of empty small segments
+    /// currently retained in the hysteresis pool. Lets the
+    /// `regression_c3_unbounded_recycle` test prove the retention is BOUNDED
+    /// (`<= pool_cap`), and the `small_segment_pool` tests assert pool
+    /// occupancy across admit/pop/evict transitions.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_pooled_count(&self) -> usize {
+        self.pooled_count
+    }
+
+    /// TEST-ONLY (Mechanism 2, task #51): the resolved runtime pool cap
+    /// (`min(pool_segments, pool_byte_cap / SEGMENT, POOL_MAX_SLOTS)`; `0` =
+    /// pool disabled). Lets tests assert the config resolution.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_pool_cap(&self) -> usize {
+        self.pool_cap
+    }
+
+    /// TEST-ONLY (Mechanism 2, task #51): forcibly DRAIN the hysteresis pool —
+    /// release every pooled segment to the OS (reset + `table.recycle`) exactly
+    /// as the pool-full eviction path does. Returns the number of segments
+    /// drained. This is the "eventual drain" primitive the
+    /// `regression_c3_unbounded_recycle` test uses to prove that a pooled
+    /// segment is NOT permanently pinned: after draining the pool, every
+    /// previously-pooled slot is genuinely recycled (unregistered), converging
+    /// to full recycling. A production analogue (decay-tick draining) is wired
+    /// into `maybe_decay_small_pool`; this seam gives tests a deterministic,
+    /// sleep-free trigger.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_drain_small_pool(&mut self) -> usize {
+        self.drain_small_pool()
+    }
+
+    /// Mechanism 2 (task #51): release every pooled small segment (reset +
+    /// `table.recycle`), returning the count drained. Used both by the
+    /// large-alloc OS-reservation-failure fallback (the pool is a reclaimable
+    /// soft reserve — see `alloc_large_slow`) and by the `dbg_drain_small_pool`
+    /// test seam.
+    #[cfg(feature = "alloc-decommit")]
+    fn drain_small_pool(&mut self) -> usize {
+        let mut drained = 0usize;
+        while let Some(base) = self.pop_pooled_segment() {
+            Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
+            self.table.recycle(base);
+            drained += 1;
+        }
+        drained
     }
 
     /// TEST-ONLY (Phase 35): whether `ptr`'s segment is currently decommitted, or
@@ -1477,7 +1871,10 @@ impl AllocCore {
             });
             #[cfg(feature = "alloc-decommit")]
             if decommit_happened {
-                self.table.recycle(base);
+                // Mechanism 2 (task #51): same pool-or-release routing as the
+                // production `find_segment_with_free_impl` drain site, so this
+                // test seam exercises the identical decision path.
+                self.release_or_pool_empty_segment(base);
             }
         }
     }
@@ -2564,7 +2961,9 @@ impl AllocCore {
         {
             let small_cur = self.small_cur;
             if Self::dec_live_batch_and_maybe_decommit(base, accepted_count as u32, small_cur) {
-                self.table.recycle(base);
+                // Mechanism 2 (task #51): pool-or-release instead of the former
+                // unconditional recycle.
+                self.release_or_pool_empty_segment(base);
             }
         }
     }
@@ -2877,13 +3276,31 @@ impl AllocCore {
                             let _ = reclaimed;
                         }
                     });
-                    // Slot recycle: now that the drain is complete, it is safe to
-                    // release the OS reservation and NULL the slot. Any stale ring
-                    // entries have already been processed (and guarded by `off >= bump`).
+                    // Mechanism 2 (task #51): now that the drain is complete, the
+                    // emptied segment is routed through the pool/release
+                    // decision — either RETAINED in the pool (kept registered +
+                    // committed, free-lists intact) or RELEASED (OS reservation
+                    // freed, slot NULLed). EITHER way we `continue` past the
+                    // BinTable check for this base in THIS scan:
+                    //   - released → base is unmapped, MUST be skipped;
+                    //   - pooled   → the segment JUST emptied on the LAST ring
+                    //     entry of this drain; skipping it here (rather than
+                    //     immediately handing it back) simply defers its reuse to
+                    //     a LATER `find_segment_with_free`, which will find its
+                    //     free blocks and `unpool_if_present` it — that later
+                    //     free-list reuse (no OS reserve/release) is the
+                    //     hysteresis win. Handing it back in the SAME scan is
+                    //     unnecessary and keeps the drain loop simple.
+                    // Any stale ring entries were already processed (guarded by
+                    // the bitmap `is_free` check; and on the release branch the
+                    // release-follows reset's `off >= bump` guard covers
+                    // subsequent same-drain entries). The decision is deferred to
+                    // here — NOT taken mid-drain inside `reclaim_offset` — so the
+                    // whole ring is fully drained against still-committed
+                    // metadata first.
                     #[cfg(feature = "alloc-decommit")]
                     if decommit_happened {
-                        self.table.recycle(base);
-                        // This base is now recycled; skip the BinTable check.
+                        self.release_or_pool_empty_segment(base);
                         continue;
                     }
                     // Refresh the cache with the drain's actual final head —
@@ -2917,18 +3334,39 @@ impl AllocCore {
                         continue;
                     }
                     // Local or unknown node — use it immediately.
+                    // Mechanism 2 (task #51): if this segment was RETAINED in the
+                    // pool (empty, committed), it is now being reused — remove it
+                    // from the pool so it is not later re-pooled a second time (a
+                    // double-entry that would double-recycle its base). This is
+                    // the hysteresis WIN: the emptied segment's free blocks are
+                    // re-served here with no OS reserve/release round-trip.
+                    #[cfg(feature = "alloc-decommit")]
+                    self.unpool_if_present(base);
                     return Some(base);
                 }
                 // Without numa-aware: same as before — return the first match.
                 #[cfg(not(feature = "numa-aware"))]
-                return Some(base);
+                {
+                    // Mechanism 2 (task #51): un-pool on reuse (see the
+                    // numa-aware arm above for the double-pool rationale).
+                    #[cfg(feature = "alloc-decommit")]
+                    self.unpool_if_present(base);
+                    return Some(base);
+                }
             }
         }
         // First pass found no local segment with a free block; fall back to
         // the first foreign-node segment we recorded (or None if everything is
         // empty / all recycled).
         #[cfg(feature = "numa-aware")]
-        return fallback;
+        {
+            // Mechanism 2 (task #51): un-pool the fallback on reuse too.
+            #[cfg(feature = "alloc-decommit")]
+            if let Some(fb) = fallback {
+                self.unpool_if_present(fb);
+            }
+            fallback
+        }
         #[cfg(not(feature = "numa-aware"))]
         None
     }
@@ -3492,17 +3930,20 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
-        // Phase 35 (M6): one fewer live block in this segment; decommit if it
-        // just emptied and is not the current carve target. Own-thread free runs
-        // on the owner, so the counter stays single-writer.
-        // Task #60 (slot recycle): if decommit fired, recycle the table slot
-        // immediately — `dealloc_small` is NOT inside a ring drain (no stale
-        // ring entries arrive here for `base` on the own-thread path), so the
-        // metadata is readable, the slot can be NULLed, and the OS reservation
-        // can be released right away.
+        // Phase 35 (M6): one fewer live block in this segment; if it just
+        // emptied and is not the current carve target, route it through the
+        // Mechanism-2 (task #51) pool/release decision. Own-thread free runs on
+        // the owner, so the counter stays single-writer.
+        // Task #60 (slot recycle) / Mechanism 2: if the segment emptied,
+        // `release_or_pool_empty_segment` either retains it in the pool (kept
+        // committed + registered) or releases it (reset + `table.recycle`) —
+        // `dealloc_small` is NOT inside a ring drain (no stale ring entries
+        // arrive here for `base` on the own-thread path), so on the release
+        // branch the metadata is readable, the slot can be NULLed, and the OS
+        // reservation can be released right away.
         #[cfg(feature = "alloc-decommit")]
         if Self::dec_live_and_maybe_decommit(base, self.small_cur) {
-            self.table.recycle(base);
+            self.release_or_pool_empty_segment(base);
         }
     }
 
@@ -3568,14 +4009,25 @@ impl AllocCore {
         // every 4 MiB request.
         #[cfg(feature = "alloc-decommit")]
         {
+            // G11 (task #51) — BEST-FIT: scan ALL slots and pick the compatible
+            // entry with the SMALLEST `usable_size`, instead of taking the first
+            // fit. A cached entry is compatible when it is big enough
+            // (`usable_size >= usable`) yet not wastefully large
+            // (`usable_size <= usable * LARGE_CACHE_SIZE_FACTOR`). Best-fit keeps
+            // the tightest span for this request and leaves the larger cached
+            // spans available for larger future requests — reducing internal
+            // fragmentation / RSS waste versus first-fit, at O(LARGE_CACHE_SLOTS)
+            // (8) cost on the cold large-alloc path (negligible).
             let mut hit_idx: Option<usize> = None;
+            let mut best_usable: usize = usize::MAX;
             for i in 0..LARGE_CACHE_SLOTS {
                 if let Some(ref slot) = self.large_cache[i] {
                     if slot.usable_size >= usable
                         && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
+                        && slot.usable_size < best_usable
                     {
+                        best_usable = slot.usable_size;
                         hit_idx = Some(i);
-                        break;
                     }
                 }
             }
@@ -3681,14 +4133,39 @@ impl AllocCore {
 
         #[cfg(feature = "numa-aware")]
         let (base, reservation, reservation_len) = {
-            match numa::reserve_aligned_on_node(usable, my_node) {
+            let reserved = numa::reserve_aligned_on_node(usable, my_node);
+            // Mechanism 2 (task #51): if the OS refused the reservation, the
+            // small-segment hysteresis pool may be holding committed memory the
+            // OS could hand back — drain it and retry ONCE before conceding OOM.
+            // This makes the pool a reclaimable SOFT reserve, not a hard pin: a
+            // large allocation that would otherwise succeed is never starved by
+            // committed-but-idle pooled small segments.
+            #[cfg(feature = "alloc-decommit")]
+            let reserved = match reserved {
+                Some(t) => Some(t),
+                None if self.pooled_count > 0 => {
+                    self.drain_small_pool();
+                    numa::reserve_aligned_on_node(usable, my_node)
+                }
+                None => None,
+            };
+            match reserved {
                 Some((b, r, rl)) => (b.as_ptr(), r, rl),
                 None => return core::ptr::null_mut(),
             }
         };
         #[cfg(not(feature = "numa-aware"))]
         let (base, reservation, reservation_len) = {
-            let segment = match Segment::reserve(usable) {
+            let mut seg = Segment::reserve(usable);
+            // Mechanism 2 (task #51): pool-drain-and-retry on OS-reservation
+            // failure — see the numa-aware arm above for the rationale (the pool
+            // is a reclaimable soft reserve, not a hard pin).
+            #[cfg(feature = "alloc-decommit")]
+            if seg.is_none() && self.pooled_count > 0 {
+                self.drain_small_pool();
+                seg = Segment::reserve(usable);
+            }
+            let segment = match seg {
                 Some(s) => s,
                 None => return core::ptr::null_mut(),
             };
@@ -4108,6 +4585,23 @@ impl AllocCore {
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
     fn reserve_small_segment(&mut self) -> Option<*mut u8> {
+        // Mechanism 2 (task #51): this path is reached only when NO registered
+        // segment — including any POOLED empty segment — has a free block of the
+        // requested class (`find_segment_with_free` already scanned them all,
+        // pooled included, and REMOVED any it reused from the pool). A pooled
+        // segment is fully-carved (bump near `SEGMENT` end), so it cannot serve
+        // as a FRESH carve target for a class its free list lacks — that is why
+        // the pool is drawn from via `find_segment_with_free`'s free-list reuse
+        // (the hysteresis win: the emptied segment's blocks are re-served with
+        // no OS work), NOT as `small_cur` here. So this function always reserves
+        // a genuinely fresh, carve-capable OS segment.
+        //
+        // This is the cold small-path clock edge, so trim any stale pooled
+        // segment here (cheap: fast early-exit when the pool is empty; one
+        // `Instant::now()` at most, only when something is pooled).
+        #[cfg(feature = "alloc-decommit")]
+        self.maybe_decay_small_pool();
+
         // Phase C (numa-aware): determine the calling thread's NUMA node
         // BEFORE the reservation so we can pass it to `reserve_aligned_on_node`
         // (Windows requires the node at reserve-time via VirtualAllocExNuma;
