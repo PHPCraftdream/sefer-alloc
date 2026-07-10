@@ -443,7 +443,9 @@ required-features = ["alloc-global", "alloc-xthread"]
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
 # and inflates `.rlib` / rmeta sizes noticeably for every `cargo build --release`
-# (even non-profiling runs). We therefore do NOT add a [profile.*] section.
+# (even non-profiling runs). We therefore do NOT set `debug` in [profile.*]
+# below — codegen tuning (lto/codegen-units) is a separate axis from
+# debug-info and does not carry that cost.
 #
 # Instead: pass the env var once, at profiling time:
 #
@@ -460,3 +462,27 @@ required-features = ["alloc-global", "alloc-xthread"]
 # `line-tables-only` gives adequate function names + file/line for flamegraphs
 # without the full DWARF variable info that `true`/`full` would add.
 # Documented in docs/PROFILE_FLAMEGRAPHS.md §0.
+
+# ── §0b — Release/bench codegen tuning (PERF-PASS-1 / task #49, G6/A1) ──────
+#
+# No [profile.*] section existed before this. mimalloc's C core is compiled
+# by its build script at full optimization; the Rust side was running at the
+# Cargo default of 16 codegen units with no LTO and unwind landing pads on
+# every call. `codegen-units = 1` + `lto = "thin"` reliably improves register
+# allocation/code layout on the branchy ~30-instruction alloc/free fast path.
+# Known consequence: this shifts `npm run iai` instruction-count baselines —
+# re-pin docs/perf/IAI_BASELINE.md after landing this (see that file's own
+# regeneration rule). See docs/reviews/2026-07-10-perf-memory-layout-review.md
+# finding 3 for the full rationale.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+# NOTE: `panic = "abort"` was tried here per the review's "optionally" clause
+# but Cargo unconditionally ignores `panic` for the `bench`/`test` profiles
+# (warns "`panic` setting is ignored for `bench` profile") because the
+# libtest/criterion harness requires unwinding to catch a failing
+# iteration/assertion. Left out; `lto`/`codegen-units` still apply.
