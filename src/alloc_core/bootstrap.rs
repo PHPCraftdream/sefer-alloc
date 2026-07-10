@@ -77,6 +77,17 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // guard) to all-zeros ("everything allocated / not-a-block"). Carved at the
     // fixed `alloc_bitmap_off`; the bits are flipped to FREE as blocks are
     // pushed onto free lists.
+    //
+    // PERF-PASS-2 (G5/C1, task #50): under `cfg(not(miri))` this explicit
+    // zero-init is SKIPPED — `base` is the PRIMORDIAL segment, reserved a few
+    // lines above via `Segment::reserve` (the ONLY OS allocation primitive on
+    // this bootstrap path — see the module doc), never carved or decommitted
+    // before this point. The OS guarantees fresh pages are zero (see the
+    // matching comment at `AllocCore::reserve_small_segment`'s identical skip,
+    // `alloc_core.rs`), so re-zeroing here is a tautology. Under `miri` the
+    // fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed, so
+    // miri keeps the explicit init unconditionally.
+    #[cfg(miri)]
     super::alloc_bitmap::AllocBitmap::init_in_place(base_plus(base, Layout::alloc_bitmap_off()));
     // Initialise the per-segment non-intrusive cross-thread-free ring (the
     // Variant-2 fix: queues carry offsets, never poison the block). Only under

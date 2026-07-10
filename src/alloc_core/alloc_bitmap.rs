@@ -77,6 +77,16 @@ impl AllocBitmap {
     /// [`Node::write_u8`]. `bits` MUST point to [`FOOTPRINT`](Self::FOOTPRINT)
     /// writable bytes inside the segment being initialised (caller's contract —
     /// the bootstrap).
+    ///
+    /// PERF-PASS-2 (G5/C1, task #50): the two virgin-reserve call sites
+    /// (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) now skip
+    /// calling this under `cfg(not(miri))` — see their doc comments — so under
+    /// a non-miri build WITHOUT `alloc-decommit` (whose
+    /// `decommit_empty_segment_impl` full-reset is the only remaining
+    /// unconditional caller) this function is legitimately unreachable. The
+    /// `cfg_attr` below silences that specific, expected case; under `miri` or
+    /// `alloc-decommit` it IS called and the lint stays live.
+    #[cfg_attr(all(not(miri), not(feature = "alloc-decommit")), allow(dead_code))]
     pub(crate) fn init_in_place(bits: *mut u8) {
         let mut i = 0;
         while i < Self::FOOTPRINT {

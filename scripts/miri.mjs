@@ -46,6 +46,18 @@ const MATRIX = [
   // test (a representative size/align subset, 4 realloc pairs, windowed canary)
   // so it finishes in ~40s; the native (non-miri) grid is exhaustive & unchanged.
   ['alloc-core', 'stress_boundary_sweep'],
+  // PERF-PASS-2 (G5/C1, task #50): the virgin-segment `AllocBitmap` init-
+  // elision poison-then-assert counterfactual. Under `cfg(miri)` the skip
+  // does NOT fire (miri's `std::alloc` fallback is not guaranteed zeroed, so
+  // the explicit zero-init stays unconditional there — see the matching
+  // comments at both call sites) — so T1/T2's "reads back zero" assertions
+  // hold trivially under miri regardless of the skip. What miri DOES usefully
+  // scrutinise here is the new `dbg_alloc_bitmap_bytes_for` test-only
+  // accessor's raw pointer-offset read loop (new code, `Node::offset`/
+  // `Node::read_u8` in a loop over a caller-provided `out` slice) and T3's
+  // M2 double-free-guard exercise on a freshly-reserved segment, for
+  // strict-provenance UB.
+  ['alloc-core', 'regression_virgin_bitmap_skip'],
   // W3: the stats-aggregator Stacked-Borrows counterfactual. The default
   // (non-ignored) test asserts the W3 shape — counter read off a shared
   // `&Slot`, never forming `&HeapCore` over the owner's protected `&mut` — is

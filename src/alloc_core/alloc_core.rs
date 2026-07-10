@@ -1671,6 +1671,35 @@ impl AllocCore {
         self.drain_freelist_batch(base, class_idx, out)
     }
 
+    /// TEST-ONLY (PERF-PASS-2, task #50): read `out.len()` raw bytes starting
+    /// at `ptr`'s segment's `AllocBitmap` base, byte-for-byte, with NO
+    /// interpretation (unlike `dbg_is_free_for`, which decodes a single bit
+    /// for a specific block offset). Exists for the sub-part 2 (G5/C1)
+    /// virgin-init-elision poison-then-assert counterfactual
+    /// (`tests/regression_virgin_bitmap_skip.rs`): the test needs to inspect
+    /// the WHOLE bitmap footprint of a freshly-reserved segment (including
+    /// byte ranges no `alloc`/`dealloc` call has touched) to prove the OS
+    /// handed back genuinely zeroed pages, not just that one class's bit
+    /// happens to read as allocated (which `dbg_is_free_for` alone cannot
+    /// distinguish from "never written" vs "explicitly zeroed").
+    ///
+    /// `out.len()` MUST be `<= AllocBitmap::FOOTPRINT` (debug-asserted); the
+    /// caller is responsible for not reading past the bitmap's own footprint
+    /// (reading further would spill into the next metadata region, which this
+    /// accessor does not guard against — test-only, not a production API).
+    #[doc(hidden)]
+    pub fn dbg_alloc_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
+        debug_assert!(
+            out.len() <= super::alloc_bitmap::AllocBitmap::FOOTPRINT,
+            "dbg_alloc_bitmap_bytes_for: out.len() exceeds AllocBitmap::FOOTPRINT"
+        );
+        let base = os::segment_base_of_ptr(ptr);
+        let bitmap_base = Node::offset(base, SegLayout::alloc_bitmap_off());
+        for (i, byte) in out.iter_mut().enumerate() {
+            *byte = Node::read_u8(Node::offset(bitmap_base, i));
+        }
+    }
+
     /// Shrink/grow an allocation in place or by alloc + copy + dealloc.
     ///
     /// Two in-place fast paths are attempted first (shared with
@@ -4138,6 +4167,35 @@ impl AllocCore {
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
         // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
         // guard) to all-zeros; bits flip to FREE as blocks are pushed.
+        //
+        // PERF-PASS-2 (G5/C1, task #50): under `cfg(not(miri))` this init is
+        // SKIPPED — `base` is a segment JUST reserved fresh from the OS via
+        // `Segment::reserve`/`numa::reserve_aligned_on_node` a few lines above
+        // (never carved, never decommit-reset), and the OS guarantees fresh
+        // pages read as zero (Windows `MEM_COMMIT` demand-zero; POSIX
+        // anonymous `mmap` zero-fill — see `crates/vmem/src/lib.rs`'s reserve
+        // paths). `AllocBitmap::init_in_place`'s target state is ALL ZEROS
+        // (see its doc comment), so writing zero over memory the OS already
+        // handed back as zero is a tautology. Skipping it avoids dirtying
+        // `AllocBitmap::FOOTPRINT` (32 KiB / 8 pages for the default
+        // SEGMENT/MIN_BLOCK pair) of metadata pages that would otherwise fault
+        // in eagerly instead of lazily.
+        //
+        // Under `miri` this is NOT skipped: `crates/vmem/src/lib.rs`'s miri
+        // fallback aperture is `std::alloc::alloc`, which is NOT guaranteed
+        // zeroed — so miri keeps the explicit zero-init, exactly as before.
+        //
+        // This is NOT the rejected P4(b) `alloc_zeroed` virgin-skip (that NO-GO
+        // was about *user-visible payload* virginity, where macOS
+        // `MADV_DONTNEED` laziness on a RECYCLED (not freshly-reserved) mapping
+        // makes "recycled == zero" an unsound assumption). Here the virgin
+        // signal is exact — this function only ever runs immediately after a
+        // fresh OS reservation, never on a decommit-reused segment (that path
+        // is `decommit_empty_segment_impl`'s `release_follows=false` full
+        // reset, which keeps its own explicit `AllocBitmap::init_in_place`
+        // call unconditionally — see PERF-PASS-2 report / task #50) — and it
+        // is metadata, not payload the user could have observed/mutated.
+        #[cfg(miri)]
         super::alloc_bitmap::AllocBitmap::init_in_place(base_add(
             base,
             SegLayout::alloc_bitmap_off(),
