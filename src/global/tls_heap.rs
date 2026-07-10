@@ -415,10 +415,23 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
     finish_bind(heap)
 }
 
-/// Shared post-claim logic: install the cross-thread TFS (under
-/// `alloc-xthread`), publish the pointer into `LOCAL`, arm the
+/// Shared post-claim logic: publish the pointer into `LOCAL`, arm the
 /// `AbandonGuard`, and return the tagged result. Called from both
 /// [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
+///
+/// task #38: this used to also call `HeapCore::install_thread_free` here
+/// ("install the cross-thread TFS handle on the bind-slow path"). That call
+/// was dead by construction and has been removed: since task H1 (#13), the
+/// cross-thread free-stack head is planted by
+/// [`HeapCore::bind_thread_free`](crate::registry::heap_core::HeapCore::bind_thread_free),
+/// called from `HeapRegistry::claim`/`claim_with_config` (via
+/// `bind_slot_counters`) BEFORE either function returns `heap` to this
+/// caller — so `thread_free` is always `Some` by the time `finish_bind` runs,
+/// and `install_thread_free` (a pure accessor, `self.thread_free.map_or(null,
+/// |h| h as *const _)`) had no side effect to perform and its return value
+/// was discarded. Verified by tracing every `heap`-producing path
+/// (`claim`/`claim_with_config`'s first-claim AND re-claim legs) to the
+/// planting call before any return.
 #[cold]
 fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     let heap = if heap.is_null() {
@@ -427,23 +440,6 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     } else {
         heap
     };
-
-    // Under `alloc-xthread`: install the cross-thread TFS handle. Since Phase
-    // 12.5 this performs NO `std::alloc`: the TFS is an INLINE `AtomicPtr<u8>`
-    // field on `HeapCore` and `install_thread_free` is a no-op returning that
-    // field's stable address (a `Box::new` here would recurse into
-    // `SeferAlloc::alloc` → `bind_slow` → `install_thread_free` forever — see
-    // `registry::heap_core`). It cannot fail, so the TLS bind path stays
-    // M5-clean and M10 (never null) is preserved.
-    #[cfg(feature = "alloc-xthread")]
-    {
-        // SAFETY: `heap` was returned by `claim`/`claim_with_config` and is
-        // the slot's sole writer (the CAS won). We have exclusive `&mut`
-        // access by the single-writer invariant. `install_thread_free` is
-        // idempotent.
-        let heap_ref: &mut HeapCore = unsafe { &mut *heap };
-        heap_ref.install_thread_free();
-    }
 
     // Publish into LOCAL (so subsequent `current()` calls hit the fast path)
     // and arm the guard with a COPY (so its Drop does not read LOCAL).

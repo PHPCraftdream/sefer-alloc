@@ -30,12 +30,13 @@
 //! alloc path would recurse infinitely. This module contains NONE of those.
 //! `current()` is a plain thread-local load + null check. `bind_slow` claims
 //! a registry slot (which bootstraps via the OS aperture, never `std::alloc`);
-//! since Phase 12.5 the bind path performs NO `std::alloc` at all: the
-//! cross-thread free head (TFS) is an INLINE `AtomicPtr<u8>` field on
-//! `HeapCore`, and `install_thread_free` is a no-op returning that field's
-//! address (a `Box` there would recurse into `SeferAlloc::alloc` →
-//! `bind_slow` → `install_thread_free` forever — see `registry::heap_core`).
-//! The `HeapCore` alloc/dealloc paths are pure safe integer
+//! the bind path performs NO `std::alloc` at all: since task H1 (#13), the
+//! cross-thread free head (TFS) is a slot-resident `'static AtomicPtr<u8>`
+//! (or `FALLBACK_TFS` for the fallback heap), planted by
+//! `HeapCore::bind_thread_free` at claim time — before `bind_slow` ever sees
+//! the heap pointer, so no per-bind allocation is needed at all (a `Box`
+//! there would have recursed into `SeferAlloc::alloc` → `bind_slow` → …; see
+//! `registry::heap_core`). The `HeapCore` alloc/dealloc paths are pure safe integer
 //! arithmetic + the `node` seam (intrusive pointer r/w). No `std` collection
 //! is reachable from here.
 //!

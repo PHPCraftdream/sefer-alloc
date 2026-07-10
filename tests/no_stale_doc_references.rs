@@ -100,7 +100,7 @@ fn no_removed_heap_type_doc_mentions() {
 }
 
 /// Regression-guard against the SPECIFIC pre-task-H1 `thread_free` prose in
-/// `registry/heap_core.rs` and `global/fallback.rs`.
+/// `registry/heap_core.rs`, `global/fallback.rs`, and `global/sefer_alloc.rs`.
 ///
 /// Task #13 (the W3/H1 hoist) moved the cross-thread free-stack head OUT of an
 /// inline `HeapCore` field into the owning `HeapSlot::thread_free` slot word
@@ -109,12 +109,17 @@ fn no_removed_heap_type_doc_mentions() {
 /// mechanism (a `Box`-allocated stack, "install" as the binding step, an inline
 /// head field). This test fails if any of those exact stale phrases reappear.
 ///
-/// The needles are narrow, load-bearing PHRASES — not bare identifiers. In
-/// particular it does NOT ban the token `install_thread_free`: that method
-/// still exists (a no-op accessor) and is legitimately referenced. It bans only
-/// the description of the head as `Box`-allocated or as an inline field, which
-/// is now false after H1. Doc-only guard: reads source text, never links the
-/// crate, so it runs in every feature configuration.
+/// Task #38 additionally REMOVED the `install_thread_free` method itself (it
+/// was a dead call on the TLS bind-slow path — `bind_thread_free` at claim
+/// time, which runs strictly before `finish_bind`, already guarantees
+/// `thread_free` is bound). So the bare token `install_thread_free` is now
+/// ALSO banned outside the one file allowed to mention it historically
+/// (`global/tls_heap.rs`'s `finish_bind` doc, which explains the removal in
+/// the past tense — "this used to also call ..."). A reintroduced call site
+/// or doc claiming the method still exists would be a genuine regression.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
 #[test]
 fn no_stale_pre_h1_thread_free_prose() {
     // (file, list-of-forbidden-substrings). Each substring is an exact phrase
@@ -127,6 +132,7 @@ fn no_stale_pre_h1_thread_free_prose() {
                 "`ThreadFreeStack` is `Box`-allocated",
                 "hands out the address of the INLINE",
                 "installed separately by\n    /// [`install_thread_free`]",
+                "install_thread_free",
             ],
         ),
         (
@@ -134,8 +140,10 @@ fn no_stale_pre_h1_thread_free_prose() {
             &[
                 "already-initialised (in `new`) inline `thread_free` field",
                 "wired purely from the stable inline field",
+                "install_thread_free",
             ],
         ),
+        ("global/sefer_alloc.rs", &["install_thread_free"]),
     ];
 
     let mut offenders = Vec::new();

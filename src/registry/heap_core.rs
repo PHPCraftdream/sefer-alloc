@@ -165,11 +165,9 @@ pub struct HeapCore {
     ///
     /// **M5-clean, no recursion.** Like the old inline field, resolving this
     /// handle allocates NOTHING (the slot's `thread_free` is null-initialised in
-    /// the registry bootstrap's zeroed pages), so
-    /// [`install_thread_free`](Self::install_thread_free) is still a no-op and
-    /// the `#[global_allocator]` bind-path recursion the inline field was
-    /// introduced to avoid (`Box::new` → `SeferAlloc::alloc` → …) remains
-    /// impossible.
+    /// the registry bootstrap's zeroed pages), so the `#[global_allocator]`
+    /// bind-path recursion the inline field was introduced to avoid
+    /// (`Box::new` → `SeferAlloc::alloc` → …) remains impossible.
     ///
     /// **Dual role, unchanged.** The head's ADDRESS is this heap's identity
     /// token, compared by `dealloc_routing` (`owner_thread_free_at(base) == our
@@ -451,46 +449,6 @@ impl HeapCore {
     #[allow(dead_code)]
     pub(crate) fn set_small_current_internal(&mut self, base: *mut u8) {
         self.core.set_small_current(base);
-    }
-
-    /// Lazily "install" the cross-thread free-stack handle on the TLS
-    /// bind-slow path.
-    ///
-    /// This performs **NO allocation** — it is a no-op that simply hands out
-    /// the address of THIS heap's already-bound free-stack head. Since task H1
-    /// that head is NOT an inline `HeapCore` field and NOT a `Box<AtomicPtr>`:
-    /// it lives in the OWNING [`HeapSlot::thread_free`](super::heap_slot::HeapSlot::thread_free)
-    /// word (or `FALLBACK_TFS` for the fallback heap), null-initialised in the
-    /// registry bootstrap and reached here through the `&'static` handle
-    /// [`bind_thread_free`](Self::bind_thread_free) planted at claim time. An
-    /// earlier design `Box`-allocated the head lazily here, but that was removed
-    /// because a `Box::new` on this path would recurse through
-    /// `SeferAlloc::alloc` → `bind_slow` → `install_thread_free` → `Box::new`
-    /// under a `#[global_allocator]` build and self-deadlock/overflow (see the
-    /// field doc on [`thread_free`](Self::thread_free)). Because it allocates
-    /// nothing, it is trivially M5-clean and idempotent (every call returns the
-    /// same address; there is no per-call state to guard).
-    ///
-    /// Returns the stable `*const AtomicPtr<u8>` head pointer (the slot word's
-    /// `'static` address, stable for the slot's lifetime) that segment headers
-    /// store in `owner_thread_free` so cross-thread freers can route to this
-    /// heap — or null in the transient pre-bind window (`thread_free == None`),
-    /// which callers on the TLS bind path never observe (they run after the
-    /// claim that planted the handle).
-    ///
-    /// Only compiled under `alloc-xthread` (the cross-thread feature).
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) fn install_thread_free(&mut self) -> *const AtomicPtr<u8> {
-        // task H1: the head lives in the owning slot (planted via
-        // `bind_thread_free` at claim time); we only hand out its stable
-        // `'static` address. Address stability is unchanged (the slot lives in
-        // the `'static` registry array). `None` only in the pre-bind window;
-        // callers of `install_thread_free` (the TLS bind path) run after the
-        // claim that planted the handle, so it is always `Some` here in
-        // practice — a null return in the pre-bind window is a safe no-op
-        // (no cross-thread stamping has happened yet).
-        self.thread_free
-            .map_or(core::ptr::null(), |h| h as *const AtomicPtr<u8>)
     }
 
     /// task H1: plant the stable `&'static` handle to THIS heap's slot-resident
