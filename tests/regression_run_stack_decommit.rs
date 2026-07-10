@@ -215,7 +215,17 @@ fn runstack_count(ptr: *mut u8, class: usize) -> usize {
 #[test]
 fn decommit_clears_runstack_no_stale_descriptor() {
     let _guard = ALLOC_LOCK.lock().unwrap();
-    let mut core = AllocCore::new().unwrap();
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool — this test
+    // asserts decommit FIRES on an emptied non-current segment (and clears its
+    // RunStack). With the pool ON (production default) the ~3-4 emptied segments
+    // are absorbed by the 4-slot pool (no decommit). Disabling it exercises the
+    // decommit→RunStack-clear path this test covers. Pool behaviour is covered
+    // by `tests/small_segment_pool.rs`.
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
     let c = class_for(&core, 16, 8);
     let layout = Layout::from_size_align(16, 8).unwrap();
     let block_size = block_size_for_class(c);

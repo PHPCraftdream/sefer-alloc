@@ -133,7 +133,17 @@ fn cold_storm_free_storm_churn_inner(size: usize, align: usize) {
 #[cfg(all(feature = "alloc-decommit", not(miri)))]
 #[test]
 fn d1_cold_storm_then_free_decommits() {
-    let mut core = AllocCore::new().unwrap();
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool — this test
+    // asserts the decommit hook FIRES when non-current segments empty. With the
+    // pool ON (production default) that churn is absorbed by the pool (retained
+    // committed, no decommit). Disabling it exercises the flush→decommit path
+    // this test covers (still live under `production` on pool-full/disabled).
+    // Pool behaviour is covered by `tests/small_segment_pool.rs`.
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
     // Larger blocks so a moderate N spans multiple segments (a non-current
     // segment is what can decommit; the primordial and small_cur do not).
     let size = 1024usize;

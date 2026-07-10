@@ -32,6 +32,7 @@
 use core::alloc::Layout;
 
 use sefer_alloc::alloc_core::AllocCore;
+use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
 /// Sustained churn that empties whole segments: allocate enough blocks to spill
 /// past the primordial segment into fresh `Small` segments, then free them all.
@@ -46,7 +47,16 @@ use sefer_alloc::alloc_core::AllocCore;
 #[test]
 fn decommit_fires_and_recommit_roundtrips() {
     let before = AllocCore::dbg_decommit_count();
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool so the
+    // decommit-hook counterfactual stays deterministic. With the pool ON (the
+    // production default) this workload's ~4-segments-per-round churn is
+    // absorbed by the pool (retained committed, no decommit / no recommit) — the
+    // hook would never fire. Disabling the pool exercises exactly the
+    // decommit→recommit-on-reuse path this soak was written for (still fully
+    // live under `production`, whenever the pool is full or disabled). The
+    // pool's OWN reuse path is covered by `tests/small_segment_pool.rs`.
+    let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
     // 256 B blocks: 16 per 4 KiB page; a 4 MiB segment holds thousands. To force
     // several fresh segments we allocate well past one segment's payload.
     let layout = Layout::from_size_align(256, 8).unwrap();

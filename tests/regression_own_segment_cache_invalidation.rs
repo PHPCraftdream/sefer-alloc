@@ -54,7 +54,17 @@ const SEGMENT: usize = 4 * 1024 * 1024;
 /// recycled base is treated as FOREIGN (M2 no-op), never a stale cache hit.
 #[test]
 fn recycle_evicts_own_segment_cache_no_stale_hit() {
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool. This test
+    // verifies that RECYCLING a segment evicts it from the own-segment cache;
+    // with the pool ON (production default) the emptied segments are RETAINED
+    // (not recycled) up to the cap, so the recycle-eviction path this test
+    // targets would not fire. Disabling the pool restores deterministic
+    // recycling. Pool behaviour is covered by `tests/small_segment_pool.rs`.
+    let mut ac = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
 
     // Spread across several fresh Small segments. Keep every block alive during

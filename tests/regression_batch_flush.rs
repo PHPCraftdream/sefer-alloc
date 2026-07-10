@@ -341,7 +341,16 @@ fn c_partial_flush_live_count_exact() {
 #[cfg(feature = "alloc-decommit")]
 #[test]
 fn c_decommit_fires_once_per_emptied_segment() {
-    let mut core = AllocCore::new().unwrap();
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool — this test
+    // asserts decommit fires once per emptied segment. With the pool ON
+    // (production default) the emptied segments are absorbed by the pool (no
+    // decommit). Disabling it exercises the batch-flush→decommit path this test
+    // covers. Pool behaviour is covered by `tests/small_segment_pool.rs`.
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
     let size = 1024usize;
     let align = 8usize;
     let c = class_for(&core, size, align);

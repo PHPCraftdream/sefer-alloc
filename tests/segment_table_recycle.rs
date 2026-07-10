@@ -53,8 +53,17 @@
 fn slot_recycle_lifts_cap() {
     use core::alloc::Layout;
     use sefer_alloc::alloc_core::AllocCore;
+    use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool. This is a
+    // task-#60 SLOT-RECYCLE test — it must exercise the decommit→release→recycle
+    // path on every emptied segment. With the pool ON (production default) this
+    // ~3-live-segment workload is fully absorbed by the 4-slot pool, so decommit
+    // never fires and the recycle path is never reached. Disabling the pool
+    // restores the deterministic recycle behaviour this test was written for;
+    // the pool interaction is covered separately by `tests/small_segment_pool.rs`.
+    let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
 
     // 256 B blocks: fits many per segment. We need enough per round to spill
     // past the primordial AND past one fresh segment, so that the SECOND fresh
@@ -193,8 +202,15 @@ fn recycled_slot_is_reused() {
     use std::collections::HashSet;
 
     use sefer_alloc::alloc_core::AllocCore;
+    use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the pool so this task-#60 slot-recycle unit
+    // test deterministically exercises decommit → slot recycle → reuse (with the
+    // pool ON, the ~3 emptied segments would be retained committed and reused via
+    // the pool, so decommit/recycle would not fire). Pool reuse is covered by
+    // `tests/small_segment_pool.rs`.
+    let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
 
     // 2 KiB blocks: small enough for miri, large enough to overflow the
     // primordial's payload in a few hundred allocs.

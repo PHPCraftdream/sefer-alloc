@@ -19,11 +19,23 @@
 use core::alloc::Layout;
 
 use sefer_alloc::alloc_core::AllocCore;
+use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 
 #[test]
 fn decommit_recommit_cycle_bookkeeping() {
     let before = AllocCore::dbg_decommit_count();
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool for this
+    // test. With the pool ON (the production default), the handful of segments
+    // this small miri-sized workload empties are ABSORBED by the pool (retained
+    // committed, no decommit) instead of decommitted+recommitted — so the
+    // decommit hook would never fire and the reuse would go through the pool,
+    // not the recommit path. Disabling the pool restores the deterministic
+    // decommit→recommit cycle this test was written to cover (that path is still
+    // fully live under `production`: it fires whenever the pool is full or
+    // disabled). The pool's OWN reuse path is covered by
+    // `tests/small_segment_pool.rs`.
+    let cfg = LargeCacheConfig::new().pool(SmallSegmentPoolConfig::new().pool_segments(0));
+    let mut ac = AllocCore::new_with_config(cfg).expect("primordial");
     // 2 KiB blocks: ~2K per 4 MiB payload, so a few thousand spills one fresh
     // segment. Small enough for miri to finish quickly.
     let layout = Layout::from_size_align(2048, 8).unwrap();

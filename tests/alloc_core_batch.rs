@@ -285,7 +285,18 @@ fn t_refill_spans_segments() {
 #[cfg(feature = "alloc-decommit")]
 #[test]
 fn t_flush_decommit() {
-    let mut core = AllocCore::new().unwrap();
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool so this
+    // decommit-hook test stays deterministic. With the pool ON (production
+    // default) the ≥3 emptied segments here are ABSORBED by the 4-slot pool
+    // (retained committed, no decommit) — the hook would never fire. Disabling
+    // the pool exercises exactly the flush→decommit path this test covers (still
+    // fully live under `production`, whenever the pool is full or disabled). Pool
+    // behaviour is covered by `tests/small_segment_pool.rs`.
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
     let size = 1024usize;
     let align = 8usize;
     let c = class_for(&core, size, align);

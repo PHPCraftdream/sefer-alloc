@@ -271,7 +271,17 @@ fn partial_and_bounded_drain_set_head_correct() {
 #[cfg(all(feature = "alloc-decommit", not(miri)))]
 #[test]
 fn d1_batch_drain_exact_cold_free_recycle() {
-    let mut core = AllocCore::new().unwrap();
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool — this test
+    // asserts the cold-free batch drain empties + RECYCLES segments (decommit
+    // fires). With the pool ON (production default) the emptied segments are
+    // retained (no decommit/recycle). Disabling it exercises the drain→recycle
+    // path this test covers. Pool behaviour is covered by
+    // `tests/small_segment_pool.rs`.
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
     let size = 1024usize;
     let align = 8usize;
     let c = class_for(&core, size, align);

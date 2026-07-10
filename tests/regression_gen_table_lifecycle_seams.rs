@@ -216,7 +216,18 @@ fn fresh_segment_gen_table_is_zeroed() {
 #[cfg(feature = "alloc-decommit")]
 #[test]
 fn recycled_segment_ring_drain_is_safe() {
-    let mut ac = AllocCore::new().expect("primordial");
+    // Mechanism 2 (task #51): DISABLE the empty-small-segment pool so the
+    // decommit+recycle this test asserts fires DETERMINISTICALLY. With the pool
+    // ON (production default) up to `pool_cap` emptied segments are retained
+    // (no decommit); this test's payload is the drain-after-RECYCLE health
+    // check, so it needs at least one segment to actually recycle. Disabling the
+    // pool guarantees that. Pool behaviour is covered by
+    // `tests/small_segment_pool.rs`.
+    let mut ac = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .expect("primordial");
     let layout = Layout::from_size_align(256, 8).unwrap();
     let class_idx = ac
         .dbg_layout_class_for(layout)

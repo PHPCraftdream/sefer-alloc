@@ -144,15 +144,29 @@ fn t4_decommit_fires_after_flush_not_before() {
     // in the magazine, keeping live_count=8.
 
     // Force flush: the remaining 8 magazine blocks go to the substrate,
-    // live_count hits 0, decommit fires for the target.
+    // live_count hits 0, and the target segment is either decommitted+recycled
+    // OR (Mechanism 2, task #51) retained in the empty-small-segment pool. To
+    // observe the decommit deterministically regardless of pool state, drain the
+    // pool after the flush: a pooled target is then released (decommit fires).
+    // (This heap runs with the production default pool ON; `claim_with_config`
+    // cannot reliably disable it on a reused registry slot, so we drain instead
+    // — the invariant under test is "flushing the magazine empties the segment
+    // and makes its payload decommittable", which the drain makes observable.)
     unsafe { (*heap).dbg_flush_all() };
+    #[cfg(feature = "alloc-decommit")]
+    unsafe {
+        (*heap).dbg_drain_small_pool()
+    };
 
     let decommit_after_flush = AllocCore::dbg_decommit_count();
 
-    // The KEY assertion: decommit count must INCREASE after the flush.
+    // The KEY assertion: decommit count must INCREASE after the flush (+ pool
+    // drain). Before the flush the 8 magazine-resident blocks kept the target's
+    // live_count > 0, so NO decommit could fire; only after the flush empties it
+    // does the segment become decommittable.
     assert!(
         decommit_after_flush > decommit_after_free,
-        "decommit count did not increase after dbg_flush_all \
+        "decommit count did not increase after dbg_flush_all + pool drain \
          (after_free={decommit_after_free}, after_flush={decommit_after_flush}). \
          Magazine-resident blocks should have kept the target segment's \
          live_count > 0 until flush.",
