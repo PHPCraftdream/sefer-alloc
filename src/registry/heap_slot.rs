@@ -45,11 +45,27 @@
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); the registry is a documented atomic seam (the slot table's
-// `Sync`/`Send` impls are the new `unsafe` surface of Phase 12.2). `allow`
-// lifts the crate-level `deny` for this file only — `unsafe` anywhere else
-// in the crate is a hard error. The ONLY `unsafe` here is the `unsafe impl
-// Sync` / `unsafe impl Send` on `HeapSlot`, each carrying a `// SAFETY:`
-// proof (the registry's atomic single-writer protocol).
+// `Sync` impl is the `unsafe` surface of Phase 12.2). `allow` lifts the
+// crate-level `deny` for this file only — `unsafe` anywhere else in the crate
+// is a hard error. The ONLY `unsafe` here is the `unsafe impl Sync` on
+// `HeapSlot`, carrying a `// SAFETY:` proof (the registry's atomic
+// single-writer protocol). There is deliberately NO `unsafe impl Send` — see
+// the M6 note above that impl at the bottom of the file (a by-value
+// cross-thread move is neither needed nor proven; `Sync` alone carries the
+// process-global sharing).
+//
+// ## M7 note — field visibility and the soundness boundary
+//
+// The slot's `Sync` proof (and every neighbouring registry SAFETY proof)
+// relies on the CAS-gated single-writer protocol on `state`/`heap`. Safe code
+// that could flip `state` LIVE→FREE or write `heap`/`next_free` directly would
+// break that invariant with NO `unsafe` keyword at the violation site — this
+// is the general "safe membrane over a seam" limit spelled out in
+// `src/lib.rs`. To shrink that membrane, every slot field a test does not need
+// is `pub(crate)` (reachable only inside the crate's confined registry code).
+// Only `state` and `generation` remain `pub` — the `#[doc(hidden)] pub`
+// registry surface exposes them to integration tests that read/write them
+// directly; both carry a field-level note that they are NOT stable public API.
 #![allow(unsafe_code)]
 
 use core::cell::UnsafeCell;
@@ -78,6 +94,13 @@ pub const NEXT_FREE_TAIL: u32 = u32::MAX;
 #[repr(C)]
 pub struct HeapSlot {
     /// `FREE` or `LIVE`. The claim/recycle CAS target.
+    ///
+    /// Kept `pub` (not `pub(crate)`) ONLY because integration tests in
+    /// `tests/` read it directly through the `#[doc(hidden)] pub` registry
+    /// surface (`reg.slots[idx].state.load(..)` — `tests/registry_basic.rs`,
+    /// `tests/regression_counter_wrap.rs`). It is NOT stable public API. See
+    /// the module-level M7 note below on why the remaining slot fields were
+    /// narrowed to `pub(crate)` while this and `generation` stayed `pub`.
     pub state: AtomicU8,
     /// Bumped on every successful (re)claim — the M8/M9 generation. Combined
     /// with the slot index it forms the unique `(index, generation)` owner
@@ -101,18 +124,23 @@ pub struct HeapSlot {
     /// (∼10^19 recycles) — unreachable in any process lifetime. The widening
     /// is Ir-neutral (this field is off every hot alloc/dealloc path — it is
     /// bumped once per claim on the cold registry-protocol path only).
+    ///
+    /// Kept `pub` for the same reason as [`state`](Self::state): integration
+    /// tests read AND write it directly (`slot.generation.store(preset, ..)`
+    /// in `tests/regression_counter_wrap.rs`'s u64-wrap counterfactual). Not
+    /// stable public API.
     pub generation: AtomicU64,
     /// The heap value, lazily materialised by `claim` on the slot's first
     /// `FREE → LIVE` transition and reused on later reclaims. Wrapped in
     /// `UnsafeCell` so `claim` can return `&mut HeapCore` through a shared
     /// `&HeapSlot`, and `MaybeUninit` so a `FREE` slot carries no live
     /// (expensive-to-construct) `HeapCore`.
-    pub heap: UnsafeCell<MaybeUninit<HeapCore>>,
+    pub(crate) heap: UnsafeCell<MaybeUninit<HeapCore>>,
     /// Intrusive link for the `free_slots` Treiber stack. Holds the NEXT free
     /// slot's index (or [`NEXT_FREE_TAIL`] for the stack tail) while the slot
     /// is FREE. Read/written by the registry only while the slot is FREE (no
     /// concurrent LIVE access).
-    pub next_free: AtomicU32,
+    pub(crate) next_free: AtomicU32,
     /// Release-published "heap is materialised" flag (task #133 hardening).
     ///
     /// Starts `false` and becomes `true` EXACTLY ONCE, at the end of the
@@ -148,7 +176,7 @@ pub struct HeapSlot {
     /// "not yet materialised, contributes nothing to the aggregate" — sound
     /// because a slot that has never been claimed has never incremented any
     /// per-heap counter either).
-    pub initialised: AtomicBool,
+    pub(crate) initialised: AtomicBool,
 
     /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
     /// HIT counter. Lives in the SLOT — which is `Sync` and designed to be
@@ -169,7 +197,7 @@ pub struct HeapSlot {
     /// by the slot's current owner (single writer); read Relaxed by that
     /// owner and by the cross-thread aggregator.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub tcache_hits: AtomicU64,
+    pub(crate) tcache_hits: AtomicU64,
 
     /// DIAGNOSTIC (task W3): this slot's process-lifetime large-segment cache
     /// HIT counter. Same design and rationale as [`tcache_hits`](Self::tcache_hits)
@@ -177,7 +205,7 @@ pub struct HeapSlot {
     /// read by [`super::heap_registry::large_cache_hits_total`] from the
     /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
     #[cfg(feature = "alloc-decommit")]
-    pub large_cache_hits: AtomicU64,
+    pub(crate) large_cache_hits: AtomicU64,
 
     /// Cross-thread free-stack head / identity stamp (task H1 — the W3 hoist
     /// applied to the TFS head).
@@ -216,7 +244,7 @@ pub struct HeapSlot {
     ///
     /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
     #[cfg(feature = "alloc-xthread")]
-    pub thread_free: AtomicPtr<u8>,
+    pub(crate) thread_free: AtomicPtr<u8>,
 }
 
 impl HeapSlot {
@@ -276,9 +304,23 @@ impl HeapSlot {
 // init'd it).
 unsafe impl Sync for HeapSlot {}
 
-// SAFETY (Send): a `&HeapSlot` can be sent to another thread — the slot's
-// atomic fields are `Send` (atomics are `Send + Sync`), and `heap` is only
-// mutated through the CAS-gated single-writer protocol, so sending a shared
-// reference cannot create a data race. (We never move a `HeapSlot` itself —
-// the array is static; `Send` is for the shared-reference send.)
-unsafe impl Send for HeapSlot {}
+// NOTE (no `unsafe impl Send`): `HeapSlot` is deliberately NOT `Send` (task
+// #21 / review M6). The previous `unsafe impl Send for HeapSlot` proved the
+// wrong statement — its SAFETY text argued about sending a *`&HeapSlot`* to
+// another thread, which is what `Send + Sync` on the atomic fields plus the
+// `Sync` impl above already provide (a `&T` is `Send` iff `T: Sync`). What
+// `Send` on `HeapSlot` itself actually authorises is moving a `HeapSlot`
+// *by value* to another thread — carrying a possibly-LIVE `HeapCore`
+// (`AllocCore`'s raw segment pointers, `last_stamped_segment: *mut u8`) with
+// it. Nobody wrote (or needs) a proof for that: a by-value move bypasses the
+// entire `claim` CAS single-writer discipline every neighbouring SAFETY proof
+// depends on, and no code path in the crate ever moves a `HeapSlot` by value
+// across threads — the registry array is `'static` and immovable, reached
+// only through `&`/`&mut`. The process-global sharing the registry needs is
+// carried by `Sync` alone (`Registry`'s `Sync` requires only
+// `[HeapSlot; N]: Sync`, i.e. `HeapSlot: Sync`, NOT `Send`). Removing the
+// impl lets the `HeapCore` raw pointers make `HeapSlot` auto-`!Send`, so a
+// future by-value cross-thread send (e.g. a shadow `Vec<HeapSlot>` shipped to
+// a worker) becomes a compile error rather than a silent auto-blessed hazard.
+// This does not regress any real caller (full `cargo build`/`cargo test`
+// green with the impl removed).

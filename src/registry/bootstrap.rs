@@ -279,11 +279,22 @@ pub struct Registry {
     pub abandoned_segs: core::sync::atomic::AtomicU64,
 }
 
-// SAFETY (Sync): `Registry` is shared across threads via the `AtomicPtr`. All
-// mutable access to its fields goes through atomics (`count`, `free_slots`,
-// `abandoned_segs`) or the slot-level single-writer protocol (`slots`). The
-// same argument that made the old `static REGISTRY` sound applies here.
-unsafe impl Sync for Registry {}
+// `Registry` is shared across threads via the `AtomicPtr`. All mutable access
+// to its fields goes through atomics (`count`, `free_slots`, `abandoned_segs`)
+// or the slot-level single-writer protocol (`slots`). Every field is ALREADY
+// `Sync`: the three `Atomic*` fields, and `[HeapSlot; MAX_HEAPS]` (which is
+// `Sync` because `HeapSlot` carries its own `unsafe impl Sync` — see
+// `heap_slot.rs`). So `Registry` AUTO-derives `Sync`; no `unsafe impl` is
+// needed (task #21 / review L1). The former `unsafe impl Sync for Registry`
+// only restated the auto-impl but FROZE it: a future `!Sync` field (e.g. a
+// `Cell<..>` diagnostic) would silently keep `Registry: Sync` — unsound —
+// where the auto-impl would honestly drop it. This compile-time assert
+// documents the intent AND enforces it: adding a `!Sync` field makes THIS line
+// fail to compile with a clear "`Registry: Sync` is not satisfied" error.
+const _: () = {
+    fn assert_sync<T: Sync>() {}
+    let _ = assert_sync::<Registry>;
+};
 
 // -------------------------------------------------------------------------
 // Lazy pointer: replaces the 22 MB `static REGISTRY: Registry`.

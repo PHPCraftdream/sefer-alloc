@@ -160,6 +160,32 @@
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
 //  EVERY configuration. Verifiable: `grep -rln 'allow(unsafe_code)' src/ crates/`
+//
+// ── The soundness boundary is WIDER than the unsafe-syntax boundary ────────────
+//
+//  The confinement above is real, but it enforces the localization of unsafe
+//  *syntax* only — it is NOT a claim that a bug outside these modules cannot
+//  cause UB. The soundness boundary is the seams PLUS every safe membrane
+//  function that calls into them with a documented PROSE contract: violating
+//  that contract from safe code is UB even though no `unsafe` keyword appears
+//  at the violation site. Concrete membranes to audit as part of the trusted
+//  computing base:
+//    * `alloc_core::node::{write_usize, write_struct, offset, zero, ...}` — safe
+//      `pub(crate)` fns whose whole body is a raw r/w; soundness rests on the
+//      caller's bounds/exclusivity/`'static` invariants stated in prose.
+//    * `os::release_segment` — a safe fn; a double call (double-release) from
+//      safe code is UB (the OS reservation is freed twice).
+//    * `os::{decommit_pages, recommit_pages}` — safe fns; the range-containment
+//      invariant is the caller's, unchecked.
+//    * `registry::heap_slot::HeapSlot` — its `state`/`heap` single-writer
+//      invariant (which the slot's `Sync` proof and the `claim`/`recycle`
+//      protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
+//      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
+//      this membrane inside the crate — see that module's M7 note.)
+//  In short: the membrane pattern concentrates the *unsafe blocks* into 14
+//  files for audit, but the *soundness argument* spans those safe callers too.
+//  This is a deliberate, worthwhile trade — named here so a future editor does
+//  not misread "no stray unsafe" as "no UB reachable from safe code".
 #![cfg_attr(
     not(any(feature = "experimental", feature = "alloc-core")),
     forbid(unsafe_code)

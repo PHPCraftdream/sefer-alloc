@@ -167,13 +167,21 @@ impl Segment {
     }
 }
 
-// `Send` is already implemented on `aligned_vmem::Reservation`; we simply
-// forward it. `Segment` wraps one `Reservation`, which is `Send`, so `Segment`
-// is `Send`.
-// SAFETY: `Segment` owns its OS reservation exclusively. Same reasoning as
-// for the old `Segment`: moving it to another thread transfers exclusive
-// ownership of every byte with no aliasing on the origin thread.
-unsafe impl Send for Segment {}
+// `Send` is already implemented on `aligned_vmem::Reservation`; `Segment` is a
+// newtype over one `Reservation`, so it AUTO-derives `Send` — no `unsafe impl`
+// needed (task #21 / review L1). The former `unsafe impl Send for Segment`
+// only restated the auto-impl, but froze it: had a future edit added a
+// `!Send` field (e.g. a `Cell<..>` diagnostic), the manual impl would have
+// silently kept `Segment: Send` — a lie — where the auto-impl would honestly
+// drop it. This compile-time assert documents the intent (Segment must stay
+// `Send`, its sole use is exclusive-ownership transfer to another thread) AND
+// enforces it: adding a `!Send` field makes THIS line fail to compile with a
+// clear "`Segment: Send` is not satisfied" error, instead of a silent unsound
+// bless.
+const _: () = {
+    fn assert_send<T: Send>() {}
+    let _ = assert_send::<Segment>;
+};
 
 // NOTE: `Segment` is intentionally NOT `Sync` (same as before). Writes into
 // the span happen via raw pointers in the `node` seam under the single-threaded
