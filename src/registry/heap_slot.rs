@@ -336,9 +336,15 @@ impl HeapSlot {
     ///
     /// Previously used by `Registry::new_zeroed()` to populate a `static`
     /// initialiser. Now retained as a self-documenting spec of the slot's
-    /// initial state; the actual in-place initialisation of the heap-allocated
-    /// registry (see [`super::bootstrap::ensure`]) writes the same values
-    /// directly via `addr_of_mut!` field writes.
+    /// initial state. NOTE (RAD-1): the actual heap-allocated registry
+    /// (see [`super::bootstrap::ensure`]) NO LONGER pre-populates `next_free`
+    /// per slot — it relies on the OS-zeroed reservation and lets
+    /// `push_free_slot` write `next_free` lazily before any pop reads it (this
+    /// killed a ~16 MiB first-touch under `production`). So this const spec's
+    /// `next_free = NEXT_FREE_TAIL` differs from the live bootstrap's
+    /// `next_free = 0` — an intentional, observationally-equivalent divergence
+    /// (the sentinel is dead until the first push overwrites it), not a bug.
+    /// Every OTHER field here matches the bootstrap's OS-zeroed initial state.
     ///
     /// This does NOT allocate a `HeapCore` — that is deferred to `claim`.
     #[allow(dead_code)]

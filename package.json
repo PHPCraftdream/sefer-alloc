@@ -9,6 +9,7 @@
     "miri": "node scripts/miri.mjs",
     "tsan": "node scripts/tsan.mjs",
     "iai": "node scripts/iai.mjs",
+    "first-alloc": "node scripts/first-alloc-bench.mjs",
     "bench:table": "node scripts/bench-table.mjs",
     "check": "node scripts/check-all.mjs",
     "harden": "node scripts/loom.mjs && node scripts/miri.mjs && node scripts/tsan.mjs"

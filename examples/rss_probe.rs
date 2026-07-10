@@ -15,12 +15,15 @@
 //!
 //! - **Measured directly:** RSS (platform-specific, see `mod rss` below),
 //!   cumulative allocs/frees, in-flight estimate (`allocs - frees`).
-//! - **NOT measured directly:** `RemoteFreeRing` overflow.  The ring's `overflow`
-//!   field is `pub(crate)` internal state; breaking encapsulation to expose it
-//!   would require a source change.  The in-flight estimate (`allocs - frees`)
-//!   is the best indirect proxy available without invasive instrumentation.
-//!   If a direct overflow counter is needed, add a `pub fn overflow_count()` to
-//!   `RemoteFreeRing` and re-export it — **left for user approval**.
+//! - **Overflow (now measurable directly):** the process-wide ring-overflow
+//!   counter EXISTS — `RemoteFreeRing::overflow_count()` (per-ring) and the
+//!   process-wide `DBG_RING_OVERFLOW` static (task D2), surfaced on the public
+//!   face as `SeferAlloc::stats().ring_overflows`. The earlier note here ("the
+//!   `overflow` field is `pub(crate)`; a `pub fn overflow_count()` would need
+//!   adding — left for user approval") is STALE: that counter and accessor
+//!   already landed. This harness still also reports the in-flight estimate
+//!   (`allocs - frees`) as an independent cross-check, but the direct overflow
+//!   count is available via `stats().ring_overflows` for callers that want it.
 //!
 //! ## Run
 //!
@@ -535,10 +538,10 @@ fn main() {
     }
 
     println!();
-    println!("NOTE: RemoteFreeRing overflow counter is internal (pub(crate)).");
-    println!("  Overflow can only be measured INDIRECTLY via in_flight_estimate");
-    println!("  (allocs - frees).  For a direct counter, add pub fn overflow_count()");
-    println!("  to src/alloc_core/remote_free_ring.rs — left for user approval.");
+    println!("NOTE: a DIRECT process-wide ring-overflow counter now exists");
+    println!("  (SeferAlloc::stats().ring_overflows, backed by DBG_RING_OVERFLOW —");
+    println!("  task D2). The in-flight estimate (allocs - frees) above is retained");
+    println!("  as an independent cross-check, not the only signal available.");
     println!();
     println!("NOTE: Run with --features alloc-decommit to compare recovery ratio.");
 }

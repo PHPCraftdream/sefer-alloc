@@ -15,11 +15,14 @@
 //! ## Why lazy heap-allocation instead of a `static`?
 //!
 //! The original design used `static REGISTRY: Registry = Registry::new_zeroed()`.
-//! `HeapSlot::new_uninit()` initialises `next_free` to `u32::MAX` (NEXT_FREE_TAIL),
-//! a non-zero value, which forces the ENTIRE 22 MB slot array into `.data`
-//! instead of `.bss`. With `MAX_HEAPS = 4096` and ~5 KiB per `HeapCore` slot,
-//! this added ~22 MB to every binary that linked sefer-alloc with the
-//! `production` feature.
+//! `HeapSlot::new_uninit()` initialised `next_free` to `u32::MAX`
+//! (`NEXT_FREE_TAIL`), a non-zero value, which forced the ENTIRE slot array
+//! into `.data` instead of `.bss` — a large per-binary `.data` cost for every
+//! binary that linked sefer-alloc with the `production` feature (the inline
+//! `HeapCore` in each slot carries the `fastbin` magazine + `alloc-decommit`
+//! large-cache state, so under `production` a `HeapSlot` is ~7.5 KiB and the
+//! whole array is ~29 MiB; without those features a slot is ~192 B and the
+//! array ~768 KiB — the `.data` cost tracked the feature-dependent slot size).
 //!
 //! The fix: replace the `static` with an `AtomicPtr<Registry>` (8 bytes of
 //! `.data`). On first call to [`ensure`], the winner of a CAS race allocates
@@ -30,6 +33,20 @@
 //! registry is process-global, never torn down). After that, every call is a
 //! single Acquire load + non-null, non-sentinel check — branch-light and
 //! allocation-free.
+//!
+//! ## RAD-1: lazy `next_free` (no eager per-slot first-touch)
+//!
+//! The in-place init writes ONLY the single non-zero `Registry` field
+//! (`free_slots = TaggedPtr::empty()`); it does NOT pre-populate each slot's
+//! `next_free`. `next_free` is written lazily by `push_free_slot` (which runs
+//! before any `pop_free_slot` can read it), so the OS-zeroed initial value is
+//! never observed. This removed a ~16 MiB demand-zero first-touch (4096 slots ×
+//! ~7.5 KiB stride under `production` = 4096 distinct pages) and several ms of
+//! first-allocation latency, paid once per process and invisible to every
+//! warm-process wall-clock/iai bench. The judge is
+//! `examples/first_alloc_process.rs` (driven by `scripts/first-alloc-bench.mjs`)
+//! — a process-per-sample RSS/latency probe. See the SAFETY comment at the
+//! init site in `ensure_slow` for the full read-audit.
 //!
 //! ## The pointer state-machine
 //!
@@ -148,7 +165,11 @@
 use core::hint::spin_loop;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
-use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL};
+// NOTE (RAD-1): `NEXT_FREE_TAIL` is no longer imported here — the eager
+// per-slot `next_free = NEXT_FREE_TAIL` pre-population was removed (lazy init;
+// `push_free_slot` writes `next_free` before any read — see the SAFETY comment
+// at the removed loop's former site in `ensure_slow`).
+use super::heap_slot::HeapSlot;
 use super::tagged_ptr::TaggedPtr;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
@@ -297,7 +318,9 @@ const _: () = {
 };
 
 // -------------------------------------------------------------------------
-// Lazy pointer: replaces the 22 MB `static REGISTRY: Registry`.
+// Lazy pointer: replaces the large `.data` `static REGISTRY: Registry` (the
+// slot array's size is feature-dependent — ~29 MiB under `production`, ~768 KiB
+// without the inline-`HeapCore` magazine/large-cache state).
 // -------------------------------------------------------------------------
 
 /// Sentinel: a non-null, non-real address that means "one thread is currently
@@ -312,9 +335,10 @@ const SENTINEL_INITIALIZING: usize = 1;
 /// valid, fully-constructed `Registry`.
 ///
 /// BINARY SIZE: this is 8 bytes of `.data` (one pointer). The old
-/// `static REGISTRY: Registry = Registry::new_zeroed()` was ~22 MB of `.data`
-/// because `HeapSlot::new_uninit()` sets `next_free = u32::MAX` (NEXT_FREE_TAIL),
-/// a non-zero value that forced the full slot array into `.data` instead of `.bss`.
+/// `static REGISTRY: Registry = Registry::new_zeroed()` put the WHOLE slot array
+/// into `.data` (up to ~29 MiB under `production`) because
+/// `HeapSlot::new_uninit()` sets `next_free = u32::MAX` (`NEXT_FREE_TAIL`), a
+/// non-zero value that forced the full slot array into `.data` instead of `.bss`.
 static REGISTRY_PTR: AtomicPtr<Registry> = AtomicPtr::new(core::ptr::null_mut());
 
 /// Size of `Registry` rounded up to a multiple of `aligned_vmem::PAGE` (4 KiB).
@@ -490,25 +514,30 @@ fn ensure_slow() -> &'static Registry {
             // In-place initialisation of the Registry — field by field.
             //
             // We do NOT use `ptr::write(base, Registry::new_zeroed())` because
-            // `Registry` is ~22 MB (4096 × HeapSlot each ~5 KiB). Creating that
-            // value as a `const fn` result and passing it to `ptr::write` would
-            // either: (a) put 22 MB in `.rodata` (defeating the binary-size goal)
-            // or (b) create a 22 MB stack temporary in debug builds (stack
-            // overflow). Instead we initialise each field in-place through raw
-            // pointer arithmetic, exploiting two facts:
+            // `Registry` is large (up to ~29 MiB under `production` — 4096 ×
+            // HeapSlot each ~7.5 KiB). Creating that value as a `const fn` result
+            // and passing it to `ptr::write` would either: (a) put ~29 MiB in
+            // `.rodata` (defeating the binary-size goal) or (b) create a ~29 MiB
+            // stack temporary in debug builds (stack overflow). Instead we
+            // initialise in-place through raw pointer arithmetic, exploiting two
+            // facts:
             //
             //  1. OS-allocated pages are zero-initialised (both `VirtualAlloc`
-            //     on Windows and anonymous `mmap` on Linux guarantee this). Most
-            //     fields start at zero: `state = 0 = STATE_FREE`, `generation =
-            //     0`, `heap = MaybeUninit::uninit()` (unspecified bits, zeroes
-            //     are fine), `count = 0`, `abandoned_segs = 0`.
+            //     on Windows and anonymous `mmap` on Linux guarantee this). ALL
+            //     slot fields start at their correct zero value — including, per
+            //     RAD-1, `next_free = 0` (lazy init: `push_free_slot` writes the
+            //     real link before any pop reads it, so the zero is never
+            //     observed): `state = 0 = STATE_FREE`, `generation = 0`,
+            //     `heap = MaybeUninit::uninit()` (unspecified bits, zeroes are
+            //     fine), `initialised = 0`, `count = 0`, `abandoned_segs = 0`.
             //
-            //  2. The only non-zero initial values are `HeapSlot::next_free =
-            //     u32::MAX` (NEXT_FREE_TAIL) and `Registry::free_slots =
+            //  2. The ONLY non-zero initial value is `Registry::free_slots =
             //     TaggedPtr::empty() = 0x0000_0000_0000_FFFF` (task W7a: the
             //     index half is now 16 bits, so the empty sentinel is `0xFFFF`,
-            //     not the old 32-bit `0xFFFF_FFFF`). We write those in-place
-            //     using `addr_of_mut!` + `write`.
+            //     not the old 32-bit `0xFFFF_FFFF`). We write it in-place using
+            //     `addr_of_mut!` + `write`. (RAD-1: the per-slot `next_free`
+            //     pre-population is gone — see the SAFETY comment at the write
+            //     site below.)
             //
             // `AtomicU32` and `AtomicU64` are `#[repr(transparent)]` over their
             // inner `UnsafeCell<u32/u64>`, which is `#[repr(transparent)]` over
@@ -524,37 +553,48 @@ fn ensure_slow() -> &'static Registry {
             // non-zero fields below. After all writes the `Registry` at `base`
             // is fully initialised and valid.
             unsafe {
-                // Write each slot's `next_free` to NEXT_FREE_TAIL (u32::MAX).
-                // Everything else in each slot starts at zero, which is correct:
+                // RAD-1 (Phase 1, E1): the eager per-slot `next_free =
+                // NEXT_FREE_TAIL` write loop (over all `MAX_HEAPS = 4096` slots)
+                // was REMOVED here. It was the dominant startup RSS/latency cost:
+                // under `production`, `HeapSlot` is ~7488 B (the inline
+                // `HeapCore` carries the `fastbin` magazine + `alloc-decommit`
+                // large-cache state), so the 4096 writes landed on 4096 DISTINCT
+                // pages (stride > 4 KiB) — ~16 MiB of demand-zero first-touch RSS
+                // and several ms of latency, paid once on the first allocation of
+                // every process, invisible to every wall-clock/iai bench (they
+                // measure a warm long-lived process). Measured RED baseline:
+                // `examples/first_alloc_process.rs` → RSS Δ 1 heap ≈ 16.1 MiB,
+                // first-alloc latency ≈ 8.6 ms.
+                //
+                // Why removing it is SOUND (the `next_free` read-audit, RAD-1
+                // Step 1): a slot's `next_free` field is READ in exactly ONE
+                // place — `pop_free_slot` (`heap_registry.rs`), and only for a
+                // slot the pop just observed as the `free_slots` stack head. A
+                // slot only becomes a stack head via `push_free_slot`, which
+                // WRITES `next_free` (under `Release`) BEFORE the CAS that
+                // publishes the slot as the head. So every `next_free` read is
+                // preceded (happens-after) by a `push_free_slot` write of that
+                // same slot's `next_free`. A freshly-MINTED slot (via
+                // `bump_count`) goes straight to `claim` and is NEVER read
+                // through `next_free` before it is first pushed — the bootstrap
+                // sentinel value was dead on arrival for every mint. Lazy init
+                // (the push writes it) is therefore observationally identical to
+                // eager init, at zero first-touch cost. (`NEXT_FREE_TAIL` is
+                // still the tail sentinel `push_free_slot` writes for the
+                // empty-stack case — the constant is unchanged; only the eager
+                // pre-population is gone.)
+                //
+                // Everything else in each slot correctly starts at OS-zeroed:
+                //   next_free   = 0 (NOT NEXT_FREE_TAIL anymore — lazy, see
+                //     above; 0 is never read before a push overwrites it)
                 //   state       = 0 = STATE_FREE
                 //   generation  = 0
                 //   heap        = MaybeUninit::uninit() (unspecified, zero is fine)
-                //   initialised = 0 = false (AtomicBool::new(false) is a
-                //     zero byte -- correct starting value, see its doc
-                //     comment on HeapSlot for why a reader must never
-                //     dereference `heap` before observing this as `true`)
-                //   tcache_hits / large_cache_hits = 0 (task W3: the slot's
-                //     own hit counters, AtomicU64::new(0) is 8 zero bytes --
-                //     an un-bound slot reads 0 and contributes nothing to the
-                //     aggregate; no explicit write needed)
-                let slots_base: *mut HeapSlot = core::ptr::addr_of_mut!((*base).slots).cast();
-                for i in 0..MAX_HEAPS {
-                    // SAFETY: `i < MAX_HEAPS`, so `slots_base.add(i)` is within
-                    // the allocation. `next_free` is addressed by name via
-                    // `addr_of_mut!` (not a hard-coded offset), so its byte
-                    // offset is resolved by the compiler and stays correct even
-                    // as other `#[repr(C)]` fields are added around it. `AtomicU32` is
-                    // repr(transparent) over `UnsafeCell<u32>` which is
-                    // repr(transparent) over `u32`, so writing a `u32` at the
-                    // address of the `AtomicU32` is sound.
-                    let slot_ptr = slots_base.add(i);
-                    // Use addr_of_mut! to address the `next_free` field directly.
-                    core::ptr::addr_of_mut!((*slot_ptr).next_free)
-                        .cast::<u32>()
-                        .write(NEXT_FREE_TAIL);
-                }
-
-                // Write `free_slots = TaggedPtr::empty()`.
+                //   initialised = 0 = false
+                //   tcache_hits / large_cache_hits = 0
+                //
+                // Write `free_slots = TaggedPtr::empty()` (the ONE non-zero
+                // Registry field — a single 8-byte store, not 4096).
                 // `count` and `abandoned_segs` start at zero (already correct).
                 core::ptr::addr_of_mut!((*base).free_slots)
                     .cast::<u64>()
@@ -585,9 +625,11 @@ fn ensure_slow() -> &'static Registry {
         Err(_) => {
             // ── Loser branch ─────────────────────────────────────────────
             // Another thread is (or was) initialising. Spin until we observe
-            // a real (non-null, non-sentinel) pointer. This window is tiny:
-            // the winner does one OS page reservation + 4096 field writes for
-            // `next_free` (~16 KiB) + one store. On the first call this may
+            // a real (non-null, non-sentinel) pointer. This window is now tiny:
+            // the winner does one OS reservation + ONE `free_slots` store + one
+            // publish store (RAD-1 removed the eager 4096-slot `next_free` write
+            // loop — that loop, not the reservation, was the multi-millisecond
+            // part of this window under `production`). On the first call this may
             // take a few microseconds; on any subsequent call to `ensure`, the
             // fast path in `ensure()` returns before reaching here.
             loop {

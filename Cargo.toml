@@ -365,6 +365,20 @@ required-features = ["alloc-global"]
 name = "global_allocator"
 required-features = ["alloc-global"]
 
+# RAD-1 / Phase 0(a): process-per-sample first-alloc RSS + latency probe — the
+# E1 registry-bootstrap judge. Measures the ~16 MiB first-touch cost of the
+# registry `next_free` materialisation, which is invisible to Criterion/iai (they
+# run many iterations in one long-lived process where the pages are already
+# resident). Driven by `scripts/first-alloc-bench.mjs`, which runs this binary
+# N times as SEPARATE processes and aggregates. Requires the full `production`
+# feature set: the inline `HeapCore` (and thus the registry footprint that
+# exhibits the ~16 MiB first-touch) only reaches ~7.5 KiB/slot under
+# `alloc-decommit` + `fastbin`; with just alloc-global+alloc-xthread each slot is
+# ~192 B and the defect does not manifest. See the example's module docs.
+[[example]]
+name = "first_alloc_process"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
