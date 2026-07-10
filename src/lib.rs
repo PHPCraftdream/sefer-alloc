@@ -33,7 +33,10 @@
 //! `SeferAlloc::stats` → `AllocStats`: cache
 //! hit rates, cross-thread reclaim/overflow counts, and cumulative
 //! segment/heap totals (`segments_reserved_total - segments_released_total`
-//! is the live segment count — the field to alert on for a segment leak).
+//! is the live segment count — the field to alert on for a segment leak;
+//! `foreign_or_unroutable_frees` is the field to alert on for a cross-thread-
+//! free leak under an `alloc-global`-without-`alloc-xthread` misconfiguration,
+//! and requires the `alloc-stats` feature to be populated).
 //! `stats()` is a handful of relaxed atomic loads (no locks, no allocation),
 //! safe to poll on a metrics-scrape timer:
 //!

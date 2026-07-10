@@ -163,7 +163,16 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 # counter STORAGE (the slot fields + the aggregators) is always present — only
 # the per-hit WRITE is gated — so turning the feature on/off never changes the
 # ABI/layout, and a build with it off still safely reads 0 from every slot.
-alloc-stats = []
+#
+# Depends on `alloc-core`: on its own `alloc-stats` has nothing to count (the
+# per-event increments it gates live in the `alloc-core`/`alloc-global`
+# allocator stack), so `--features alloc-stats` alone used to compile a silent
+# no-op — a footgun with no guard (review finding 2.4). Pulling in `alloc-core`
+# makes the compiler refuse the useless-in-isolation combination: turning the
+# stats counters on now transitively enables the allocator whose events they
+# count. Safe (every real caller already builds it `alongside production`,
+# which pulls `alloc-core`) and a strictly stronger guard than a doc note.
+alloc-stats = ["alloc-core"]
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
 # NOT free enough to enable unconditionally. Default OFF; NOT part of

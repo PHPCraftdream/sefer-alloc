@@ -126,4 +126,43 @@ pub struct AllocStats {
     /// underlying registry counter is a `u32`; widened here via `as u64` —
     /// see `SeferAlloc::stats()`).
     pub heaps_claimed_high_water: u64,
+
+    /// Number of `dealloc` calls that resolved to a segment base **not owned by
+    /// the freeing thread's heap** and were therefore silently dropped
+    /// (foreign or unroutable pointer). Cumulative since process start,
+    /// process-wide.
+    ///
+    /// **This is the field to alert on for a cross-thread-free leak under a
+    /// misconfigured build.** In a build WITHOUT `alloc-xthread` there is no
+    /// cross-thread routing: a block allocated on thread A and freed on thread
+    /// B has nowhere sound to go, so `dealloc` drops it and the block is
+    /// **leaked permanently** (see the "Multi-thread safety" section of
+    /// [`SeferAlloc`](super::SeferAlloc)). `alloc-global` without `alloc-xthread`
+    /// is a legitimate single-threaded trade-off — so the crate does not
+    /// `compile_error!` on it — but a multi-threaded program built that way by
+    /// mistake would leak with no other observable signal. A non-zero and
+    /// growing value here is the signature of that misconfiguration (or of a
+    /// genuine foreign-pointer free). Under `production` (which includes
+    /// `alloc-xthread`) legitimate cross-thread frees are routed, not dropped,
+    /// so this should stay at (or near) `0`.
+    ///
+    /// **Scope: this counter is `!alloc-xthread`-specific, not a general
+    /// "any foreign free" signal.** Under `alloc-xthread`, a foreign/unroutable
+    /// pointer never reaches [`AllocCore::dealloc`](crate::AllocCore::dealloc)
+    /// (where this counter increments) — `HeapCore::dealloc_routing` branches
+    /// earlier and has its own silent no-op drops (a `magic` mismatch, a
+    /// defensive not-ours return, an inconsistent Large layout), none of which
+    /// bump this field. A `0` reading under `alloc-xthread` therefore does
+    /// **not** mean no drops occurred — only that the specific
+    /// `!alloc-xthread` leak signature this field targets did not fire.
+    ///
+    /// **Requires the `alloc-stats` feature (default OFF, not in
+    /// `production`).** The per-event increment is gated behind `alloc-stats`
+    /// so the free hot path carries no bookkeeping by default — identical
+    /// discipline to [`tcache_hits`](Self::tcache_hits) /
+    /// [`large_cache_hits`](Self::large_cache_hits). Without `alloc-stats` this
+    /// field reads `0` even when drops are occurring; build with
+    /// `--features "…​ alloc-stats"` to get the real count. Also `0` in a build
+    /// without `alloc-global` (no `dealloc` face at all).
+    pub foreign_or_unroutable_frees: u64,
 }

@@ -191,6 +191,38 @@ struct CachedLarge {
 #[cfg(feature = "alloc-decommit")]
 static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
+/// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
+/// NOT one of this heap's registered segments, so `dealloc` silently drops it
+/// (see [`AllocCore::dealloc`]).
+///
+/// **Why this counter exists — the `alloc-global`-without-`alloc-xthread`
+/// footgun.** In a build WITHOUT `alloc-xthread` there is no cross-thread
+/// routing path: a block allocated on thread A and freed on thread B resolves
+/// to a base that is not in B's heap's segment table, falls into this no-op,
+/// and is **leaked permanently** (see `SeferAlloc`'s "Multi-thread safety"
+/// docs). That configuration is a legitimate single-threaded trade-off — so
+/// there is no `compile_error!` — but a multi-threaded program built that way
+/// by mistake would leak monotonically with NO observable metric. This counter
+/// is that metric: a non-zero, growing value under `alloc-global` alone is the
+/// signature of a misconfiguration (or a genuine foreign-pointer free).
+///
+/// Surfaced as [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees)
+/// via [`AllocCore::dbg_foreign_or_unroutable_frees`]. Diagnostic only
+/// (Relaxed, like `DECOMMIT_CALLS` / `DBG_RING_OVERFLOW`).
+///
+/// The per-event increment is gated behind `alloc-stats` (default OFF, not in
+/// `production`), matching the other per-event stat counters (`tcache_hits`,
+/// `large_cache_hits`): the free hot path carries no bookkeeping unless
+/// `alloc-stats` is compiled in. The static itself is always present (gated on
+/// `alloc-core` — the feature that first defines `AllocCore::dealloc` and its
+/// foreign-pointer no-op) so the accessor has a stable definition regardless of
+/// the rest of the feature set. `alloc-stats` depends on `alloc-core`, so
+/// whenever the increment is compiled in the static is guaranteed to exist.
+#[cfg(feature = "alloc-core")]
+pub(crate) static FOREIGN_OR_UNROUTABLE_FREES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 // TEST/DIAGNOSTIC-ONLY (task D1 → 0.4.x task #133): large-cache HIT
 // counter. Originally a single process-wide `static AtomicU64`, bumped by
 // EVERY heap's `alloc_large` cache-hit path — a contended `lock xadd` on a
@@ -538,6 +570,15 @@ impl AllocCore {
         // registered segments, this pointer is not one of ours — no-op (do not
         // touch foreign memory, do not even read a header that may be unmapped).
         if !self.table.contains_base(base) {
+            // Review finding 2.3: make the drop OBSERVABLE. Without
+            // `alloc-xthread` this branch is the sole guard, and a cross-thread
+            // free lands here as a PERMANENT leak — the misconfiguration
+            // signature this counter exists to expose (see
+            // `FOREIGN_OR_UNROUTABLE_FREES`). Gated behind `alloc-stats` so the
+            // free hot path pays nothing by default, matching the crate's other
+            // per-event stat counters. Relaxed: diagnostic only.
+            #[cfg(feature = "alloc-stats")]
+            FOREIGN_OR_UNROUTABLE_FREES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return;
         }
         // Field-specific `kind` read (Phase 13.3): a single byte at its
@@ -1122,6 +1163,20 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_decommit_count() -> u64 {
         DECOMMIT_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls
+    /// that hit the foreign-or-unroutable no-op branch (a `ptr` not in any of
+    /// this heap's registered segments — silently dropped). Backs
+    /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees).
+    /// See [`FOREIGN_OR_UNROUTABLE_FREES`] for the full rationale (the
+    /// `alloc-global`-without-`alloc-xthread` cross-thread-free leak footgun).
+    /// A plain relaxed atomic load — diagnostic only, no ordering obligation.
+    /// Reads `0` unless the per-event increment was compiled in (`alloc-stats`).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-core")]
+    pub fn dbg_foreign_or_unroutable_frees() -> u64 {
+        FOREIGN_OR_UNROUTABLE_FREES.load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// DIAGNOSTIC (task E1): process-wide count of successful OS segment

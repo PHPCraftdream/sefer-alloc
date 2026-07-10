@@ -320,6 +320,15 @@ impl SeferAlloc {
             segments_released_total: crate::alloc_core::AllocCore::dbg_segments_released_total(),
 
             heaps_claimed_high_water: crate::registry::heaps_claimed_high_water() as u64,
+
+            // Review finding 2.3: the foreign-or-unroutable-free drop counter.
+            // Always-present static (backs the `alloc-global`-without-
+            // `alloc-xthread` cross-thread-free leak footgun observability);
+            // reads 0 unless the per-event increment was compiled in
+            // (`alloc-stats`). `stats()` is `alloc-global`-only, so the static
+            // is always defined here.
+            foreign_or_unroutable_frees:
+                crate::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees(),
         }
     }
 }
