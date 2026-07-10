@@ -70,9 +70,9 @@
 
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use core::sync::atomic::AtomicU64;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
+use core::sync::atomic::AtomicU64;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use super::heap_core::HeapCore;

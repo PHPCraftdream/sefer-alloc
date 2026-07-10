@@ -141,8 +141,8 @@ fn no_stale_pre_h1_thread_free_prose() {
     let mut offenders = Vec::new();
     for (rel, needles) in cases {
         let path = src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let text = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let text =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         for needle in *needles {
             if text.contains(needle) {
                 offenders.push(format!("{}: stale phrase reintroduced: {needle:?}", rel));

@@ -79,7 +79,10 @@ fn foreign_pointer_free_is_a_safe_no_op_and_is_counted() {
     unsafe { a.dealloc(foreign_ptr, live_layout) };
 
     // Prove we did not corrupt the foreign buffer (the no-op really is a no-op).
-    assert_eq!(foreign_buf, [0u8; 64], "foreign free must not write the block");
+    assert_eq!(
+        foreign_buf, [0u8; 64],
+        "foreign free must not write the block"
+    );
 
     let after = a.stats().foreign_or_unroutable_frees;
 

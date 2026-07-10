@@ -138,7 +138,11 @@ fn large_ptr_small_layout_free_is_noop() {
 
     // The Large block is still ours to free legitimately — heap stays sound.
     unsafe {
-        assert_eq!(large.read(), 0xCC, "Large payload corrupted by the cold-storm");
+        assert_eq!(
+            large.read(),
+            0xCC,
+            "Large payload corrupted by the cold-storm"
+        );
         (*heap).dealloc(large, large_layout);
     }
     for &p in &issued {

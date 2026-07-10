@@ -174,8 +174,8 @@ mod hand_proofs {
 #[cfg(all(kani, feature = "alloc-global"))]
 mod pack_proofs {
     use crate::registry::bootstrap::{
-        abandoned_head_is_empty, pack_abandoned_head, unpack_abandoned_head, ABANDON_TAG_MASK,
-        ABANDONED_HEAD_EMPTY,
+        abandoned_head_is_empty, pack_abandoned_head, unpack_abandoned_head, ABANDONED_HEAD_EMPTY,
+        ABANDON_TAG_MASK,
     };
     use crate::registry::tagged_ptr::{dbg_pack, dbg_unpack, INDEX_BITS};
 
