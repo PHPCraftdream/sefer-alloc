@@ -340,11 +340,25 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 #[cfg(all(windows, not(miri)))]
 fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     let over = size.checked_add(align)?;
+    // PERF-PASS-1 (task #49, G4/A3): two-step reserve-then-commit instead of
+    // reserve+commit-the-whole-over-allocation-then-trim. The old path
+    // committed `over` (up to 2x `size`) bytes via
+    // `MEM_RESERVE | MEM_COMMIT`, then `MEM_DECOMMIT`-trimmed the head/tail —
+    // a transient 2x commit-charge spike and page-table population for pages
+    // discarded microseconds later, plus 3 syscalls total. `MEM_RESERVE`
+    // alone (no commit) reserves address space without touching the commit
+    // charge or the page tables; only the exact `size`-byte aligned span is
+    // then committed — 2 syscalls, zero over-commit. The release path is
+    // unchanged: `VirtualFree(region, 0, MEM_RELEASE)` releases the WHOLE
+    // reservation regardless of which sub-range was committed, so trimming is
+    // no longer needed at all (not even a decommit-trim — the head/tail bytes
+    // are simply never committed in the first place).
     let region = unsafe {
-        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE | MEM_COMMIT,
-        // PAGE_READWRITE)` reserves+commits `over` bytes, returning the base
-        // (granularity-aligned) or NULL on OOM. We check for NULL immediately.
-        let p = winapi_virtual_alloc(over);
+        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
+        // reserves (but does not commit) `over` bytes of address space,
+        // returning the base (granularity-aligned) or NULL on OOM/refusal. We
+        // check for NULL immediately.
+        let p = winapi_virtual_reserve(over);
         NonNull::new(p as *mut u8)?
     };
     let region_ptr = region.as_ptr();
@@ -353,35 +367,44 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
     debug_assert!(base_addr + size <= region_addr + over);
     let base = unsafe {
         // SAFETY: `base_addr` is non-null (>= region_addr) and within the
-        // committed `over`-byte region; aligned to `align`.
+        // reserved `over`-byte region; aligned to `align`.
         NonNull::new_unchecked(base_addr as *mut u8)
     };
-    let head = base_addr - region_addr;
-    let tail_start = base_addr + size;
-    let tail_len = (region_addr + over) - tail_start;
-    if head > 0 {
+    // SAFETY: `[base_addr, base_addr+size)` is within the just-reserved
+    // `over`-byte region (asserted above); `MEM_COMMIT` commits exactly this
+    // aligned sub-range, matching the fallible-recommit convention this crate
+    // already uses (`recommit_pages_impl`, task-referenced commit 617518f):
+    // check `VirtualAlloc`'s return for NULL rather than assuming success.
+    let committed = unsafe { winapi_virtual_commit(base_addr as *mut u8, size) };
+    if committed.is_null() {
+        // Commit failed (commit-charge exhaustion): mirror the reserve path's
+        // existing "never panic, return None on OOM" contract. The
+        // reservation itself succeeded, so it must still be released before
+        // reporting failure — otherwise this leaks the address-space
+        // reservation (not physical memory, since nothing was committed, but
+        // a leaked VA range nonetheless).
         unsafe {
-            // SAFETY: `[region_addr, region_addr + head)` is within the committed
-            // region; `MEM_DECOMMIT` returns its physical pages while keeping the
-            // address space reserved until `MEM_RELEASE` on drop.
-            winapi_virtual_decommit(region_ptr, head);
+            // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
+            // call immediately above and has not been released yet; releasing
+            // it here (before ever handing it to a caller) cannot double-free.
+            winapi_virtual_release(region_ptr);
         }
-    }
-    if tail_len > 0 {
-        unsafe {
-            // SAFETY: `[tail_start, tail_start + tail_len)` is within the committed
-            // region; same `MEM_DECOMMIT` contract as the head.
-            winapi_virtual_decommit(tail_start as *mut u8, tail_len);
-        }
+        return None;
     }
     Some((base, region, over))
 }
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize, _align: usize) {
-    // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE
-    // | MEM_COMMIT, ..)`. `VirtualFree(.., 0, MEM_RELEASE)` releases the ENTIRE
-    // region reserved in that one call — `dwSize` MUST be 0 in this mode.
+    // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE,
+    // ..)` (PERF-PASS-1, task #49: reserve-only, no longer MEM_COMMIT — see
+    // `reserve_aligned_raw` above) with an inner aligned sub-range separately
+    // committed via `MEM_COMMIT`. `VirtualFree(.., 0, MEM_RELEASE)` releases
+    // the ENTIRE region reserved in that one `VirtualAlloc` call regardless of
+    // which (if any) sub-range was subsequently committed — `dwSize` MUST be 0
+    // in this mode. This path is intentionally UNCHANGED by the reserve/commit
+    // split: it always released the whole reservation, independent of commit
+    // state, so it stays correct without modification.
     winapi_virtual_release(reservation.as_ptr());
 }
 
@@ -440,12 +463,23 @@ const MEM_RELEASE: u32 = 0x0000_8000;
 const PAGE_READWRITE: u32 = 0x04;
 
 #[cfg(all(windows, not(miri)))]
-unsafe fn winapi_virtual_alloc(over: usize) -> *mut core::ffi::c_void {
-    // SAFETY: non-zero `over` + documented reserve+commit + RW protection flags.
+unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
+    // PERF-PASS-1 (task #49, G4/A3): `MEM_RESERVE` only — no `MEM_COMMIT`.
+    // SAFETY: non-zero `over` + documented reserve-only + RW protection flags
+    // (the protection flags apply once the sub-range is later committed).
+    VirtualAlloc(core::ptr::null_mut(), over, MEM_RESERVE, PAGE_READWRITE)
+}
+
+#[cfg(all(windows, not(miri)))]
+unsafe fn winapi_virtual_commit(addr: *mut u8, len: usize) -> *mut core::ffi::c_void {
+    // PERF-PASS-1 (task #49, G4/A3): commit exactly the aligned `[addr,
+    // addr+len)` sub-range within an already-reserved region.
+    // SAFETY: caller (`reserve_aligned_raw`) guarantees `[addr, addr+len)` is
+    // within a region just reserved via `winapi_virtual_reserve`.
     VirtualAlloc(
-        core::ptr::null_mut(),
-        over,
-        MEM_RESERVE | MEM_COMMIT,
+        addr as *mut core::ffi::c_void,
+        len,
+        MEM_COMMIT,
         PAGE_READWRITE,
     )
 }
@@ -459,8 +493,10 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_release(addr: *mut u8) {
     // SAFETY: caller guarantees `addr` is the base of a region reserved via
-    // `VirtualAlloc(.., MEM_RESERVE|MEM_COMMIT, ..)`; `MEM_RELEASE` + size 0
-    // releases the entire reservation.
+    // `VirtualAlloc(.., MEM_RESERVE, ..)` (PERF-PASS-1: reserve-only, with an
+    // inner sub-range separately `MEM_COMMIT`ted — see `reserve_aligned_raw`);
+    // `MEM_RELEASE` + size 0 releases the entire reservation regardless of
+    // commit state.
     VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE);
 }
 
@@ -471,6 +507,26 @@ unsafe fn winapi_virtual_release(addr: *mut u8) {
 
 #[cfg(all(unix, not(miri)))]
 fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    // PERF-PASS-1 (task #49, G4/A3): try an EXACT-size `mmap(size)` first (1
+    // syscall). Linux's top-down mmap placement heuristic (and, in the
+    // decommit->recycle->re-reserve cycle, the kernel handing back the same
+    // hole just `munmap`ped) often returns an address that already satisfies
+    // `align` for a whole-segment-sized request, especially once the process
+    // has done a few of these reservations. If the returned address happens
+    // to already be `align`-aligned, use it directly. This mirrors mimalloc's
+    // own opportunistic-alignment trick.
+    if let Some(exact) = try_reserve_aligned_exact(size, align) {
+        return Some(exact);
+    }
+    // Fallback: NOT aligned (or the exact-size mmap failed for a reason
+    // unrelated to alignment, e.g. transient OOM at this exact size — retried
+    // below with the larger allocation is a legitimate reattempt, not
+    // incorrect). Over-reserve `size + align` and trim head/tail exactly as
+    // before this pass — functionally identical to the pre-existing
+    // behavior, so this path is a strict fallback: never worse than today,
+    // worst case `1 (failed exact attempt, if it returned an unaligned
+    // mapping) + 1 (munmap of that mapping) + 1 (over-reserve mmap) + up to 2
+    // (trim munmaps)` = up to 5 syscalls, same ceiling the review names.
     let over = size.checked_add(align)?;
     let region_ptr = unsafe {
         // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` requests an
@@ -505,6 +561,56 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
             libc_munmap(tail_start as *mut u8, tail_len);
         }
     }
+    Some((base, base, size))
+}
+
+/// PERF-PASS-1 (task #49, G4/A3): attempt the 1-syscall exact-size mmap fast
+/// path. Returns `Some((base, base, size))` (matching the over-reserve path's
+/// return shape, where `reservation == base` because there is no head/tail to
+/// keep track of) if the kernel happened to hand back an already-aligned
+/// address; returns `None` (after `munmap`-ing the unaligned mapping, if one
+/// was obtained) so the caller can fall back to the over-reserve path. A
+/// `None` here is NOT necessarily an OOM signal — it may just mean "not
+/// aligned" — so the caller must retry via the fallback, not propagate `None`
+/// as final failure.
+#[cfg(all(unix, not(miri)))]
+fn try_reserve_aligned_exact(
+    size: usize,
+    align: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    let region_ptr = unsafe {
+        // SAFETY: `mmap(NULL, size, RW, PRIVATE|ANON, -1, 0)` requests an
+        // anonymous private mapping of exactly `size` bytes; the kernel
+        // chooses the (page-aligned) address or returns MAP_FAILED (mapped to
+        // null by `libc_mmap`).
+        let p = libc_mmap(size);
+        if p.is_null() {
+            return None;
+        }
+        p
+    };
+    let region_addr = region_ptr as usize;
+    if !region_addr.is_multiple_of(align) {
+        // Not aligned — this exact-size mapping is useless for the caller's
+        // alignment contract. Give it back to the kernel immediately so the
+        // fallback's over-reserve attempt doesn't compete with it for address
+        // space, then signal "try the fallback" via `None`.
+        unsafe {
+            // SAFETY: `region_ptr` was just returned by `mmap` above with
+            // length `size`, and is unmapped here exactly once (this whole
+            // mapping is being discarded, not partially trimmed).
+            libc_munmap(region_ptr as *mut u8, size);
+        }
+        return None;
+    }
+    let base = unsafe {
+        // SAFETY: `region_ptr` is non-null (checked above) and now proven
+        // `align`-aligned.
+        NonNull::new_unchecked(region_ptr as *mut u8)
+    };
+    // `reservation == base` and `reservation_len == size`: there is no
+    // head/tail trim in this path, so the entire mapping IS the usable span,
+    // identical in shape to the over-reserve path's post-trim invariant.
     Some((base, base, size))
 }
 
