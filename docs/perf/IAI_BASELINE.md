@@ -23,15 +23,17 @@ the reference future perf work (e.g. W4 `carve_batch`) diffs against.
   determinism is what makes this a judge on this Windows dev host (wall-clock
   is noise; `Ir` is not).
 
-**Current reference for new work:** the "Post-X1+X2+X3 reference (2026-07-05)"
-section below captures 11 bench fns and is the last fully-tabulated reference
-in this file. Since then a 12th bench fn — `seg_cycle_decommit_256k` (task #14,
-the PERF-4 decommit→recycle segment-churn probe) — was added to
-`benches/perf_gate_iai.rs`; adding a bench fn shifts every other bench's Ir via
-pure binary layout, so once its numbers are captured the 11-bench table is
+**Current reference for new work:** the "Post-PERF-PASS-1 reference
+(2026-07-10)" section near the end of this file is the last fully-tabulated
+reference and captures all 12 current bench fns (including
+`seg_cycle_decommit_256k`). The "Post-X1+X2+X3 reference (2026-07-05)"
+section below is retained for provenance only — task #49 (PERF-PASS-1)
+added `[profile.release]`/`[profile.bench]` LTO tuning (`lto = "thin"`,
+`codegen-units = 1`), which shifted every bench's Ir via pure codegen
+change (no allocator-behavior change), so the 11-bench table below is
 superseded as a diff target. Regenerate the full table with `npm run iai`
-before diffing new work; this file retains the historical post-W3 (10-bench)
-baseline above for provenance only — do not diff against it.
+before diffing new work; older baselines in this file (post-W3, post-X1+X2+X3)
+are historical provenance only — do not diff against them.
 
 ## Baseline (Ir per bench function)
 
@@ -453,3 +455,64 @@ the production reference table's column structure for direct comparison:
 | churn_256b                  |   343,782 |     663,152 |     162 |    9,321 |     990,197 |
 | churn_write_256b            |   343,910 |     663,407 |     162 |    9,322 |     990,487 |
 | multiseg_cold_256k          |   372,141 |     706,607 |     189 |    9,605 |   1,043,727 |
+
+## Post-PERF-PASS-1 reference (2026-07-10) — the CURRENT 12-bench table
+
+Task #49 (PERF-PASS-1, group G6/A1, source:
+`docs/reviews/2026-07-10-perf-memory-layout-review.md` finding 3) added
+`[profile.release]`/`[profile.bench]` codegen tuning (`lto = "thin"`,
+`codegen-units = 1`) — no `[profile.*]` section existed before. This is a
+pure codegen change (register allocation / code layout on the branchy
+alloc/free fast path), not an allocator-behavior change, but it shifts
+every bench's `Ir` and is therefore a re-pin point like every prior
+binary-layout-affecting change in this file (W7a, the 11th/12th bench
+additions). **Future diffs are taken against THIS table.**
+
+Regenerated via `npm run iai` (same runner: iai-callgrind 0.14.2 in WSL,
+valgrind 3.22.0, same 12 bench functions as the production-judge table
+above — this section is the `production` feature set, not `hardened`).
+Verified independently twice — once by the implementing agent, once by
+the orchestrator re-running `npm run iai` from a clean shell — both runs
+produced byte-identical numbers, confirming determinism holds across the
+LTO-tuned binary too.
+
+| bench                       |        Ir |     L1 hits | L2 hits | RAM hits | Est. Cycles | Ir/op* |
+| --------------------------- | --------: | ----------: | ------: | -------: | ----------: | -----: |
+| small_churn_16b             |    80,282 |     140,901 |      57 |    5,200 |     323,186 |  124.3 |
+| aligned_churn_640b_a128     |    80,290 |     140,913 |      56 |    5,202 |     323,263 |  124.5 |
+| large_alloc_free_cycle      |    72,325 |     131,611 |      55 |    5,211 |     314,271 |      — |
+| realloc_grow                |   559,882 |   1,171,145 |   3,866 |   74,945 |   3,813,550 | 30,472.3 |
+| cold_alloc_free_256x16b     |   121,641 |     189,824 |     103 |    5,280 |     375,139 |  192.6 |
+| cold_alloc_free_256x64b     |   121,644 |     189,650 |     105 |    5,458 |     381,205 |  192.7 |
+| recycle_alloc_free_256x16b  |   172,049 |     249,677 |     104 |    5,285 |     435,172 |  194.8 |
+| recycle_alloc_free_256x64b  |   172,052 |     249,490 |     107 |    5,475 |     441,650 |  194.8 |
+| churn_256b                  |    80,282 |     140,900 |      57 |    5,201 |     323,220 |  124.3 |
+| churn_write_256b            |    80,538 |     141,283 |      57 |    5,202 |     323,638 |  128.3 |
+| multiseg_cold_256k          |   168,902 |     297,953 |     212 |    6,380 |     522,313 | 1,420.3 |
+| seg_cycle_decommit_256k     |   202,692 |     340,616 |     212 |    6,379 |     564,941 |  639.1 |
+
+**The headline: LTO/codegen-units=1 is a real, if modest, win across the
+board**, consistent with a branchy ~30-instruction fast path benefiting
+from single-CGU register allocation:
+
+| bench                        | pre-tuning Ir | post-tuning Ir |    Δ Ir |    Δ % |
+| ----------------------------- | ------------: | --------------: | ------: | -----: |
+| small_churn_16b               |        81,408 |          80,282 |  −1,126 | −1.4%  |
+| aligned_churn_640b_a128       |        81,417 |          80,290 |  −1,127 | −1.4%  |
+| large_alloc_free_cycle        |        72,982 |          72,325 |    −657 | −0.9%  |
+| cold_alloc_free_256x16b       |       125,332 |         121,641 |  −3,691 | −2.9%  |
+| cold_alloc_free_256x64b       |       125,335 |         121,644 |  −3,691 | −2.9%  |
+| recycle_alloc_free_256x16b    |       178,070 |         172,049 |  −6,021 | −3.4%  |
+| recycle_alloc_free_256x64b    |       178,073 |         172,052 |  −6,021 | −3.4%  |
+| churn_256b                    |        81,408 |          80,282 |  −1,126 | −1.4%  |
+| churn_write_256b              |        81,536 |          80,538 |    −998 | −1.2%  |
+| multiseg_cold_256k            |       172,239 |         168,902 |  −3,337 | −1.9%  |
+| seg_cycle_decommit_256k       |       210,043 |         202,692 |  −7,351 | −3.5%  |
+
+(`pre-tuning Ir` is this session's last recorded pre-PERF-PASS-1 `npm run
+check` run, itself post-#38's fmt-drift commit — the immediate prior state
+before task #49 touched `Cargo.toml`. `realloc_grow` omitted from the delta
+table: its `Ir` is dominated by the large-block memcpy floor per the X-arc
+section above, and LTO's win there is proportionally tiny — 561,912-class
+baseline vs 559,882 — well within the same pattern.) No regressions: `npm
+run iai` reports **12 without regressions; 0 regressed** on this table.
