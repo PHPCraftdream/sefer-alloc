@@ -88,10 +88,146 @@ pub const STATE_LIVE: u8 = 1;
 /// caps at `MAX_HEAPS`, far below).
 pub const NEXT_FREE_TAIL: u32 = u32::MAX;
 
-/// One registry slot. `#[repr(C)]` so the bootstrap can compute the slot
-/// array's footprint deterministically and lay it down at a fixed offset in
-/// the primordial segment.
-#[repr(C)]
+/// PERF-PASS-4 (G8/ML2, task #52) — the remote/foreign-access fields of a
+/// [`HeapSlot`], grouped into their own 64-byte-aligned sub-struct.
+///
+/// **The false-sharing residue this fixes:** measured via nightly
+/// `-Zprint-type-sizes` (`--features production`) before this change, the
+/// single cache line at `HeapSlot` byte offset 6976..7040 simultaneously
+/// held FOUR unrelated access patterns:
+///   1. `last_stamped_segment`/`id` (inside `heap: HeapCore`) — owner-hot,
+///      read on every stamp fast-path check (`heap_core.rs` OPT-C).
+///   2. `thread_free`@7016 — remote-CASed by a cross-thread Large free on
+///      EVERY such free (`push_large_deferred_free`), Acquire-loaded on the
+///      drain check. This is the H1 word: the earlier UB fix this session
+///      hoisted it OUT of `HeapCore` (to escape the owner's `&mut HeapCore`
+///      Stacked-Borrows retag range) but physically re-created the adjacency
+///      — a remote CAS on `thread_free` invalidates the very line holding
+///      the owner's stamp cache.
+///   3. `tcache_hits`/`large_cache_hits`@7000/7008 — read CROSS-THREAD by the
+///      `stats()` aggregator (`tcache_hits_total`/`large_cache_hits_total`).
+///   4. The START of the NEXT slot's `state`/`generation` (the un-padded
+///      7024-byte stride is not a multiple of 64, so slot boundaries drift
+///      through cache-line phase across the 4096-slot array).
+///
+/// **The fix:** every field a REMOTE thread ever touches — the CASed
+/// `thread_free` word and the cross-thread-read diagnostic counters — moves
+/// into this sub-struct, `#[repr(C, align(64))]` so it starts its own cache
+/// line, disjoint from `HeapSlot`'s owner-hot fields (`heap`'s
+/// `last_stamped_segment`/`id`) and from the next array element (paired with
+/// `#[repr(align(64))]` on `HeapSlot` itself, below, which rounds the
+/// per-slot stride up to a 64-multiple).
+///
+/// Field ORDER inside is unchanged from the flat layout (still `#[repr(C)]`,
+/// still initialised the same way in [`HeapSlot::new_uninit`] and the
+/// bootstrap's `addr_of_mut!` writes) — only the GROUPING and alignment
+/// changed. Every external reference (`&'static AtomicU64`/`&'static
+/// AtomicPtr<u8>` handles bound at `claim` time — see
+/// `heap_registry::bind_slot_counters`) is unaffected: a Rust field
+/// reference's address is stable regardless of struct nesting.
+#[repr(C, align(64))]
+pub(crate) struct HeapSlotRemote {
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
+    /// HIT counter. Lives in the SLOT — which is `Sync` and designed to be
+    /// shared — rather than inside the owner's `HeapCore`, closing a formal
+    /// aliasing gap: the process-wide aggregator
+    /// ([`super::heap_registry::tcache_hits_total`]) reads this via the
+    /// `&HeapSlot` it already holds, WITHOUT ever materialising a shared
+    /// `&HeapCore` over a struct the owning thread concurrently holds a
+    /// protected `&mut` into (a foreign-read of a protected `Unique` — UB
+    /// under Stacked Borrows). The owning thread increments this through a
+    /// stable `&'static AtomicU64` handed to its `HeapCore` at
+    /// [`super::heap_registry::HeapRegistry::claim`] time (the slot lives in
+    /// the `'static` registry array, so the reference is sound for the
+    /// process lifetime).
+    ///
+    /// Zero-initialised: an un-bound slot reads 0, so it contributes nothing
+    /// to the aggregate even before `initialised` is published. Written only
+    /// by the slot's current owner (single writer); read Relaxed by that
+    /// owner and by the cross-thread aggregator.
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub(crate) tcache_hits: AtomicU64,
+
+    /// DIAGNOSTIC (task W3): this slot's process-lifetime large-segment cache
+    /// HIT counter. Same design and rationale as [`tcache_hits`](Self::tcache_hits)
+    /// (moved into the shared slot to close the Stacked-Borrows aliasing gap);
+    /// read by [`super::heap_registry::large_cache_hits_total`] from the
+    /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) large_cache_hits: AtomicU64,
+
+    /// Cross-thread free-stack head / identity stamp (task H1 — the W3 hoist
+    /// applied to the TFS head).
+    ///
+    /// This is the storage that used to be the INLINE `HeapCore::thread_free`
+    /// `AtomicPtr<u8>` field. It was moved OUT of `HeapCore` and into this
+    /// `Sync`, process-`'static` slot for exactly the reason W3 moved the
+    /// diagnostic counters: a REMOTE thread cross-thread-freeing a Large
+    /// segment owned by this heap CASes this word (through EXPOSED provenance —
+    /// `Node::atomic_ptr_ref` → `with_exposed_provenance_mut` →
+    /// `compare_exchange`, see `alloc_core::deferred_large::push`), while the
+    /// OWNING thread concurrently holds a protected `&mut HeapCore` spanning
+    /// the whole struct. When this word lived INSIDE `HeapCore`, that foreign
+    /// write landed inside the range of the owner's protected `&mut` — a
+    /// protector/data-race violation under Stacked/Tree Borrows (empirically
+    /// confirmed by miri: a retag-write vs. atomic-load data race between the
+    /// owner's `stamp_segment_owner(&mut self)` fn-entry retag and the remote's
+    /// `head.load()` in `push_large_deferred_free`). See
+    /// `tests/regression_xthread_thread_free_alias_miri.rs`.
+    ///
+    /// Moving the word into the slot removes it from every `&mut HeapCore`
+    /// retag range: the owner reaches it through a stable `&'static AtomicPtr`
+    /// handle (planted at [`super::heap_registry::HeapRegistry::claim`] time,
+    /// like `tcache_hits`), and remote freers reach the SAME word through the
+    /// `owner_thread_free_at(base)` segment-header stamp — which now stores
+    /// this slot field's address. The slot lives in the `'static` registry
+    /// array, so the address is stable for the slot's (process) lifetime and
+    /// never re-pointed across `recycle`→`claim`.
+    ///
+    /// Dual role, unchanged from the old inline field: the ADDRESS is the
+    /// per-heap identity token compared by `dealloc_routing`
+    /// (`owner_thread_free_at(base) == our head`); the VALUE (`AtomicPtr<u8>`)
+    /// is the head of this heap's deferred-free Treiber stack over Large
+    /// segment bases (`null` = empty). The two uses touch disjoint parts of the
+    /// same word, so there is no conflation.
+    ///
+    /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) thread_free: AtomicPtr<u8>,
+}
+
+impl HeapSlotRemote {
+    /// Construct in the bootstrap's initial state: every counter zero, the
+    /// TFS head null. Mirrors [`HeapSlot::new_uninit`].
+    #[allow(dead_code)]
+    pub(crate) const fn new_uninit() -> Self {
+        Self {
+            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+            tcache_hits: AtomicU64::new(0),
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_hits: AtomicU64::new(0),
+            #[cfg(feature = "alloc-xthread")]
+            thread_free: AtomicPtr::new(core::ptr::null_mut()),
+        }
+    }
+}
+
+/// One registry slot. `#[repr(C, align(64))]`: `repr(C)` so the bootstrap can
+/// compute the slot array's footprint deterministically and lay it down at a
+/// fixed offset in the primordial segment (unchanged from before this task);
+/// `align(64)` (PERF-PASS-4, G8/ML2, task #52) so the per-slot stride is a
+/// multiple of the cache-line size — the un-padded pre-task stride (7024
+/// bytes) was NOT a multiple of 64, so consecutive slots' cache-line
+/// boundaries drifted out of phase across the 4096-slot array, meaning a
+/// remote CAS near one slot's tail could ALSO dirty the next slot's `state`/
+/// `generation` header fields. Rounding the stride to a 64-multiple costs at
+/// most 63 bytes of padding per slot (+64 KiB across the whole registry —
+/// negligible; the registry's pages are lazily committed by the OS, so an
+/// idle process never touches the extra padding bytes at all). See
+/// [`HeapSlotRemote`]'s doc comment for the paired fix (grouping the
+/// remote-access fields onto their OWN 64-byte-aligned line, disjoint from
+/// this slot's owner-hot fields).
+#[repr(C, align(64))]
 pub struct HeapSlot {
     /// `FREE` or `LIVE`. The claim/recycle CAS target.
     ///
@@ -178,73 +314,17 @@ pub struct HeapSlot {
     /// per-heap counter either).
     pub(crate) initialised: AtomicBool,
 
-    /// DIAGNOSTIC (task W3): this slot's process-lifetime magazine (tcache)
-    /// HIT counter. Lives in the SLOT — which is `Sync` and designed to be
-    /// shared — rather than inside the owner's `HeapCore`, closing a formal
-    /// aliasing gap: the process-wide aggregator
-    /// ([`super::heap_registry::tcache_hits_total`]) reads this via the
-    /// `&HeapSlot` it already holds, WITHOUT ever materialising a shared
-    /// `&HeapCore` over a struct the owning thread concurrently holds a
-    /// protected `&mut` into (a foreign-read of a protected `Unique` — UB
-    /// under Stacked Borrows). The owning thread increments this through a
-    /// stable `&'static AtomicU64` handed to its `HeapCore` at
-    /// [`super::heap_registry::HeapRegistry::claim`] time (the slot lives in
-    /// the `'static` registry array, so the reference is sound for the
-    /// process lifetime).
-    ///
-    /// Zero-initialised: an un-bound slot reads 0, so it contributes nothing
-    /// to the aggregate even before `initialised` is published. Written only
-    /// by the slot's current owner (single writer); read Relaxed by that
-    /// owner and by the cross-thread aggregator.
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub(crate) tcache_hits: AtomicU64,
-
-    /// DIAGNOSTIC (task W3): this slot's process-lifetime large-segment cache
-    /// HIT counter. Same design and rationale as [`tcache_hits`](Self::tcache_hits)
-    /// (moved into the shared slot to close the Stacked-Borrows aliasing gap);
-    /// read by [`super::heap_registry::large_cache_hits_total`] from the
-    /// `&HeapSlot`, written by the owner through a stable `&'static AtomicU64`.
-    #[cfg(feature = "alloc-decommit")]
-    pub(crate) large_cache_hits: AtomicU64,
-
-    /// Cross-thread free-stack head / identity stamp (task H1 — the W3 hoist
-    /// applied to the TFS head).
-    ///
-    /// This is the storage that used to be the INLINE `HeapCore::thread_free`
-    /// `AtomicPtr<u8>` field. It was moved OUT of `HeapCore` and into this
-    /// `Sync`, process-`'static` slot for exactly the reason W3 moved the
-    /// diagnostic counters: a REMOTE thread cross-thread-freeing a Large
-    /// segment owned by this heap CASes this word (through EXPOSED provenance —
-    /// `Node::atomic_ptr_ref` → `with_exposed_provenance_mut` →
-    /// `compare_exchange`, see `alloc_core::deferred_large::push`), while the
-    /// OWNING thread concurrently holds a protected `&mut HeapCore` spanning
-    /// the whole struct. When this word lived INSIDE `HeapCore`, that foreign
-    /// write landed inside the range of the owner's protected `&mut` — a
-    /// protector/data-race violation under Stacked/Tree Borrows (empirically
-    /// confirmed by miri: a retag-write vs. atomic-load data race between the
-    /// owner's `stamp_segment_owner(&mut self)` fn-entry retag and the remote's
-    /// `head.load()` in `push_large_deferred_free`). See
-    /// `tests/regression_xthread_thread_free_alias_miri.rs`.
-    ///
-    /// Moving the word into the slot removes it from every `&mut HeapCore`
-    /// retag range: the owner reaches it through a stable `&'static AtomicPtr`
-    /// handle (planted at [`super::heap_registry::HeapRegistry::claim`] time,
-    /// like `tcache_hits`), and remote freers reach the SAME word through the
-    /// `owner_thread_free_at(base)` segment-header stamp — which now stores
-    /// this slot field's address. The slot lives in the `'static` registry
-    /// array, so the address is stable for the slot's (process) lifetime and
-    /// never re-pointed across `recycle`→`claim`.
-    ///
-    /// Dual role, unchanged from the old inline field: the ADDRESS is the
-    /// per-heap identity token compared by `dealloc_routing`
-    /// (`owner_thread_free_at(base) == our head`); the VALUE (`AtomicPtr<u8>`)
-    /// is the head of this heap's deferred-free Treiber stack over Large
-    /// segment bases (`null` = empty). The two uses touch disjoint parts of the
-    /// same word, so there is no conflation.
-    ///
-    /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
-    #[cfg(feature = "alloc-xthread")]
-    pub(crate) thread_free: AtomicPtr<u8>,
+    /// PERF-PASS-4 (G8/ML2, task #52): the remote/foreign-access fields
+    /// (`tcache_hits`, `large_cache_hits`, `thread_free`), grouped into their
+    /// own 64-byte-aligned sub-struct — see [`HeapSlotRemote`]'s doc comment
+    /// for the false-sharing residue this fixes. Always present in the
+    /// layout (mirroring the fields' own prior discipline of being "present
+    /// but inert" under a non-matching feature set — `HeapSlotRemote` itself
+    /// degrades to a smaller/empty `#[repr(align(64))]` struct when every
+    /// gated field is compiled out, which is still sound: an empty
+    /// `align(64)` struct is 0 bytes rounded up to 64 by the alignment, so
+    /// the false-sharing partition is preserved even with zero live fields).
+    pub(crate) remote: HeapSlotRemote,
 }
 
 impl HeapSlot {
@@ -266,12 +346,7 @@ impl HeapSlot {
             heap: UnsafeCell::new(MaybeUninit::uninit()),
             next_free: AtomicU32::new(NEXT_FREE_TAIL),
             initialised: AtomicBool::new(false),
-            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache_hits: AtomicU64::new(0),
-            #[cfg(feature = "alloc-decommit")]
-            large_cache_hits: AtomicU64::new(0),
-            #[cfg(feature = "alloc-xthread")]
-            thread_free: AtomicPtr::new(core::ptr::null_mut()),
+            remote: HeapSlotRemote::new_uninit(),
         }
     }
 

@@ -536,16 +536,21 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // live reference to it.
     let heap_ref: &mut HeapCore = unsafe { &mut *heap };
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    heap_ref.bind_tcache_hits(&slot.tcache_hits);
+    heap_ref.bind_tcache_hits(&slot.remote.tcache_hits);
     #[cfg(feature = "alloc-decommit")]
-    heap_ref.bind_large_cache_hits(&slot.large_cache_hits);
+    heap_ref.bind_large_cache_hits(&slot.remote.large_cache_hits);
     // task H1: plant the stable `&'static` handle to this slot's cross-thread
     // free-stack head (moved out of `HeapCore` into the `Sync` slot — see
-    // `HeapSlot::thread_free` / `HeapCore::thread_free`). This is what makes the
-    // remote CAS target the slot word (outside every `&mut HeapCore` retag
-    // range) instead of an inline `HeapCore` field.
+    // `HeapSlotRemote::thread_free` / `HeapCore::thread_free`). This is what
+    // makes the remote CAS target the slot word (outside every `&mut
+    // HeapCore` retag range) instead of an inline `HeapCore` field.
+    // PERF-PASS-4 (G8/ML2, task #52): the field moved into the
+    // `remote: HeapSlotRemote` sub-struct; the address handed out here is
+    // unaffected (a field reference's address is stable regardless of
+    // nesting) — same stable `'static` address, just now on its own
+    // 64-byte-aligned cache line.
     #[cfg(feature = "alloc-xthread")]
-    heap_ref.bind_thread_free(&slot.thread_free);
+    heap_ref.bind_thread_free(&slot.remote.thread_free);
 }
 
 // ---------------------------------------------------------------------------
@@ -890,7 +895,7 @@ pub fn tcache_hits_total() -> u64 {
         // `(*heap_ptr).tcache_hits()` read had. Relaxed load of a shared
         // `Sync` atomic — sound from any thread; observes the owner's
         // monotonic single-writer increments.
-        total = total.saturating_add(slot.tcache_hits.load(Ordering::Relaxed));
+        total = total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
     }
     total
 }
@@ -941,7 +946,7 @@ pub fn large_cache_hits_total() -> u64 {
         // a protected `&mut` into. This closes the Stacked-Borrows aliasing gap
         // the old `(*heap_ptr).core.dbg_large_cache_hits()` read had. Relaxed
         // load of a shared `Sync` atomic — sound from any thread.
-        total = total.saturating_add(slot.large_cache_hits.load(Ordering::Relaxed));
+        total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
     }
     total
 }
