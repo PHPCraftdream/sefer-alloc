@@ -234,29 +234,39 @@ impl PageClass {
 /// comfortably inside the first 64-byte cache line. The Large-only /
 /// teardown-only / unregister-only cold fields (`large_size`, `large_align`,
 /// `span_usable`, `reservation`, `reservation_len`, `next_abandoned`,
-/// `segment_id`, `node_id`) are declared AFTER, likewise
-/// alignment-descending; a 7-byte tail-alignment gap after `kind` (offset
-/// 41..48, needed to re-align the first cold 8-byte field, `large_size`, to
-/// its natural 8-byte boundary) pushes the cold set to bytes 48..104 —
-/// measured via `-Zprint-type-sizes` (see the task's verification notes).
-/// That single unavoidable gap is the ONLY padding in the whole struct; the
-/// hot set itself (bytes 0..41) has zero internal padding.
+/// `pool_next`, `pool_prev`, `segment_id`, `node_id`) are declared AFTER,
+/// likewise alignment-descending; a 7-byte tail-alignment gap after `kind`
+/// (offset 41..48, needed to re-align the first cold 8-byte field,
+/// `large_size`, to its natural 8-byte boundary) pushes the cold set to bytes
+/// 48..120 — measured via `-Zprint-type-sizes` (see the task's verification
+/// notes). That single unavoidable gap is the ONLY padding in the whole
+/// struct; the hot set itself (bytes 0..41) has zero internal padding.
 ///
-/// `size_of::<SegmentHeader>()` stays 104 bytes — the field set and every
-/// field's own size/alignment are unchanged, only the DECLARATION order
-/// moved. Every access already goes through `core::mem::offset_of!`-based
-/// accessors (`bump_of`, `magic_at`, `owner_thread_free_at`, …), so this is
-/// a pure layout edit: no offset is hardcoded anywhere, and
-/// `Layout::page_map_off()` (`align_up(size_of::<SegmentHeader>(), PAGE)`)
-/// and every downstream metadata offset are byte-identical to before the
-/// reorder. The exact 104-byte figure is confirmed by the field-by-field
-/// accounting above (3×8 + 4×4 + 1 + 7 pad + 6×8 + 2×4 = 104), verified via
-/// `-Zprint-type-sizes` while designing this reorder — the
-/// `size_of::<SegmentHeader>() <= PAGE` / `Layout::page_map_off() == PAGE`
-/// const-asserts at the bottom of this file are a coarser compile-time
-/// sanity bound (they would also pass at, say, 112 bytes), not a
-/// byte-exact pin; they still catch any REGRESSION that pushes the header
-/// past a full page, which is the invariant they exist to guard.
+/// ## RAD-3 (E2, task #56) — `size_of::<SegmentHeader>()` grew 104 → 120 bytes
+///
+/// Two new 8-byte pointer fields (`pool_next`, `pool_prev` — the intrusive
+/// doubly-linked list for the empty-small-segment hysteresis pool, replacing
+/// the old fixed `[*mut u8; POOL_MAX_SLOTS]` array that lived in `AllocCore`
+/// and scaled with `MAX_HEAPS`) were appended to the cold set. The 7-byte
+/// tail-alignment gap after `kind` (bytes 41..48) is UNCHANGED — it exists to
+/// re-align the cold set's first 8-byte field, independent of how many 8-byte
+/// fields follow. `size_of::<SegmentHeader>()` is confirmed by the
+/// field-by-field accounting: 3×8 + 4×4 + 1 + 7 pad (hot set, bytes 0..48) +
+/// 8×8 + 2×4 (cold set: `large_size`, `large_align`, `span_usable`,
+/// `reservation`, `reservation_len`, `next_abandoned`, `pool_next`,
+/// `pool_prev`, then `segment_id`, `node_id`) = 48 + 72 = 120, verified via
+/// `-Zprint-type-sizes` while adding these fields. `Layout::page_map_off()`
+/// (`align_up(size_of::<SegmentHeader>(), PAGE)`) is `align_up(120, 4096) ==
+/// 4096` — byte-identical to the pre-RAD-3 value (both 104 and 120 round up
+/// to one page), so every downstream metadata offset
+/// (`bin_table_off`/`alloc_bitmap_off`/`remote_ring_off`/`small_meta_end`/…)
+/// is UNCHANGED — this growth is fully absorbed by the header's own
+/// sub-page padding and does not ripple into the rest of the segment layout.
+/// The `size_of::<SegmentHeader>() <= PAGE` / `Layout::page_map_off() ==
+/// PAGE` const-asserts at the bottom of this file are a coarser compile-time
+/// sanity bound (they would also pass at, say, 128 bytes), not a byte-exact
+/// pin; they still catch any REGRESSION that pushes the header past a full
+/// page, which is the invariant they exist to guard.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct SegmentHeader {
@@ -415,6 +425,44 @@ pub(crate) struct SegmentHeader {
     /// [`next_abandoned_atomic`](SegmentMeta::next_abandoned_atomic) on the
     /// abandon/adopt path.
     pub next_abandoned: u64,
+    /// RAD-3 (E2, task #56) — the intrusive DOUBLY-linked list link to the
+    /// NEXT more-recently-pooled segment in the empty-small-segment
+    /// hysteresis pool (Mechanism 2), or `null` if this is the pool's HEAD
+    /// (the warmest / most-recently-emptied entry) or the segment is not
+    /// currently pooled. `AllocCore` keeps only `pool_head`/`pool_tail`/
+    /// `pooled_count`/`pool_cap` — the list itself lives entirely in these two
+    /// header fields, so the pool's storage cost does NOT scale with
+    /// `POOL_MAX_SLOTS` (removed) x `MAX_HEAPS` the way the old fixed
+    /// `[*mut u8; POOL_MAX_SLOTS]` array did (see the removed field's history
+    /// in git blame / `docs/perf/PERF_PLAN_2026-07-10-radical-audit-
+    /// implementation-plan.md` §E2 for the RSS-per-registry-slot rationale).
+    ///
+    /// **Owner-only, plain pointer (not atomic).** The pool is exclusively
+    /// single-threaded bookkeeping — every push/pop/remove happens on the
+    /// segment's owning thread inside `AllocCore`'s pool methods (mirroring
+    /// `bump`/`live_count`'s owner-only discipline); no cross-thread reader
+    /// ever touches these fields (unlike `next_abandoned`, which the
+    /// CROSS-THREAD abandon/adopt protocol accesses via a `&AtomicU64` view —
+    /// hence THAT field stays a `u64` offset/pointer hybrid with exposed
+    /// provenance, while these can be plain `*mut u8` pointers accessed
+    /// through ordinary field-specific reads/writes, see
+    /// [`SegmentMeta::pool_next_of`]/[`SegmentMeta::set_pool_next`]).
+    ///
+    /// List order: HEAD = most-recently-pooled (`pop_pooled_segment` pops the
+    /// head in O(1) — the "warmest" reuse the old max-seq scan achieved by
+    /// comparison, now achieved for free by insertion order). TAIL =
+    /// least-recently-pooled (the decay tick evicts the tail in O(1) — the
+    /// "coldest" segment, mirroring the old min-seq scan).
+    pub pool_next: *mut u8,
+    /// RAD-3 (E2, task #56) — the intrusive link to the PREVIOUS
+    /// (more-recently-pooled, i.e. closer to the list head) segment. Needed
+    /// for O(1) removal from the MIDDLE of the list — `unpool_if_present`
+    /// removes an arbitrary segment (the one just reused via
+    /// `find_segment_with_free`, which is essentially never the coldest tail
+    /// entry), which a singly-linked list could only do in O(n). `null` for
+    /// the pool's TAIL entry or a non-pooled segment. Same owner-only, plain
+    /// pointer discipline as [`pool_next`](Self::pool_next).
+    pub pool_prev: *mut u8,
     /// The segment's index in the global registry. `u32::MAX` until registered
     /// (the primordial segment is index 0). Unregister/recycle-only read.
     pub segment_id: u32,
@@ -486,6 +534,10 @@ impl SegmentHeader {
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
             next_abandoned: ABANDONED_TAIL,
+            // RAD-3 (E2): a fresh segment is not on the empty-segment pool's
+            // list yet — both links start null (the "not pooled" sentinel).
+            pool_next: core::ptr::null_mut(),
+            pool_prev: core::ptr::null_mut(),
             // A fresh small segment has no live blocks and a committed payload.
             live_count: 0,
             decommitted: 0,
@@ -534,6 +586,10 @@ impl SegmentHeader {
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
             next_abandoned: ABANDONED_TAIL,
+            // RAD-3 (E2): Large segments never join the small-segment pool —
+            // inert, like live_count/decommitted below.
+            pool_next: core::ptr::null_mut(),
+            pool_prev: core::ptr::null_mut(),
             // Large segments do not use the small-segment decommit bookkeeping
             // (they hold one allocation and are freed wholesale at Drop); these
             // are inert for a Large header.
@@ -1216,6 +1272,52 @@ impl SegmentMeta {
     pub(crate) fn set_decommitted(&mut self, value: bool) {
         let off = core::mem::offset_of!(SegmentHeader, decommitted);
         Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
+    }
+
+    // -------------------------------------------------------------------
+    // RAD-3 (E2, task #56) — field-specific owner-only accessors for the
+    // empty-small-segment hysteresis pool's intrusive doubly-linked list
+    // (`pool_next`/`pool_prev`). Identical discipline to `live_count`/
+    // `decommitted`: a single-word load/store at the field's `offset_of!`
+    // offset through the `node` seam. Owner-only: only `AllocCore`'s pool
+    // methods (`alloc_core_small_pool.rs`), running exclusively on the
+    // segment's owning thread, ever read or write these fields.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-only `pool_next` link (the next more-recently-pooled
+    /// segment towards the pool's HEAD, or `null` if this is the head / the
+    /// segment is not pooled).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn pool_next_of(&self) -> *mut u8 {
+        let off = core::mem::offset_of!(SegmentHeader, pool_next);
+        Node::read_ptr_mut(Node::offset(self.base, off) as *const *mut u8)
+    }
+
+    /// Write the owner-only `pool_next` link.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn set_pool_next(&mut self, value: *mut u8) {
+        let off = core::mem::offset_of!(SegmentHeader, pool_next);
+        Node::write_ptr_mut(Node::offset(self.base, off) as *mut *mut u8, value);
+    }
+
+    /// Read the owner-only `pool_prev` link (the previous — closer to the
+    /// pool's TAIL — pooled segment, or `null` if this is the tail / the
+    /// segment is not pooled).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn pool_prev_of(&self) -> *mut u8 {
+        let off = core::mem::offset_of!(SegmentHeader, pool_prev);
+        Node::read_ptr_mut(Node::offset(self.base, off) as *const *mut u8)
+    }
+
+    /// Write the owner-only `pool_prev` link.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline(always)]
+    pub(crate) fn set_pool_prev(&mut self, value: *mut u8) {
+        let off = core::mem::offset_of!(SegmentHeader, pool_prev);
+        Node::write_ptr_mut(Node::offset(self.base, off) as *mut *mut u8, value);
     }
 
     // -------------------------------------------------------------------

@@ -77,17 +77,18 @@ pub(super) const LARGE_CACHE_SLOTS: usize = 8;
 #[cfg(feature = "alloc-decommit")]
 pub(super) const LARGE_CACHE_SIZE_FACTOR: usize = 2;
 
-/// Mechanism 2 (task #51) — compile-time hard cap on the empty-small-segment
-/// hysteresis pool's fixed storage array. The runtime cap
-/// (`SmallSegmentPoolConfig::pool_segments`, default 4) is clamped to this at
-/// construction. Chosen to match the default and keep the array tiny (a plain
-/// `[*mut u8; 4]` in `AllocCore`, structurally identical to `large_cache`); a
-/// user who configures a larger `pool_segments` is clamped to 4, which the
-/// config's doc states. Raising this is a one-line change here plus re-checking
-/// the array literals — deliberately kept small since the whole point of the
-/// pool is a BOUNDED hysteresis buffer, not an unbounded segment cache.
-#[cfg(feature = "alloc-decommit")]
-pub(super) const POOL_MAX_SLOTS: usize = 4;
+// RAD-3 (E2, task #56): the old `POOL_MAX_SLOTS = 4` compile-time hard cap —
+// a fixed `[*mut u8; POOL_MAX_SLOTS]` storage array that silently clamped any
+// `SmallSegmentPoolConfig::pool_segments` request above 4 — is REMOVED. The
+// pool's storage is now an intrusive doubly-linked list threaded through
+// `SegmentHeader::pool_next`/`pool_prev` (see `alloc_core_small_pool.rs`),
+// so `AllocCore` holds only a head/tail pointer pair + `pooled_count` +
+// `pool_cap`, independent of how large a cap the user configures — no
+// compile-time array bound, and no per-registry-slot storage cost that scales
+// with `MAX_HEAPS` regardless of whether a given heap ever pools a segment
+// (the same class of structural cost RAD-1 removed from the registry's
+// `next_free` bootstrap). `pool_cap` is now HONESTLY the resolved
+// `min(pool_segments, pool_byte_cap / SEGMENT)` — no third `.min(_)` term.
 
 // `LargeCacheMode` now lives in its own file (`large_cache_mode.rs`) per the
 // one-export-per-file rule (task #27); it is re-exported unchanged by
@@ -406,65 +407,76 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub(super) large_cache_hits_sink: Option<&'static LargeCacheHitCounter>,
 
-    // ── Mechanism 2 (task #51) — empty-small-segment hysteresis pool ─────────
-    /// The pool: bases of empty small segments retained committed + registered
-    /// instead of released, so a later `find_segment_with_free` re-serves their
-    /// free-listed blocks without an OS syscall (see [`SmallSegmentPoolConfig`]
-    /// for the design).
+    // ── Mechanism 2 (task #51; RAD-3/E2 task #56 restructure) — empty-small-
+    // segment hysteresis pool ─────────────────────────────────────────────────
+    /// The pool's HEAD: the base of the most-recently-pooled ("warmest")
+    /// empty small segment, or `null` if the pool is empty. The pool's
+    /// storage is an intrusive DOUBLY-linked list threaded through each
+    /// pooled segment's own [`SegmentHeader::pool_next`]/`pool_prev` fields
+    /// (see [`SmallSegmentPoolConfig`] for the pool's design) — `AllocCore`
+    /// itself holds only this head pointer, [`pool_tail`](Self::pool_tail),
+    /// [`pooled_count`](Self::pooled_count), and
+    /// [`pool_cap`](Self::pool_cap).
     ///
-    /// **Array, not an intrusive header field — why.** The cap is tiny
-    /// (`POOL_MAX_SLOTS` = 4), so a plain fixed array — structurally identical
-    /// to [`large_cache`](Self::large_cache) — is simpler and just as correct as
-    /// threading an intrusive "next pooled" link through `SegmentHeader`:
-    ///   - Zero new `SegmentHeader` bytes and zero new `unsafe` surface (the
-    ///     array lives in `AllocCore`, reached by safe indexing).
-    ///   - The `regression_c3_unbounded_recycle` interaction is far easier to
-    ///     reason about with an explicit `pooled_count`-bounded array (the
-    ///     "at most 4 retained" bound is a direct array-length fact) than with
-    ///     an intrusive chain whose length is implicit.
-    ///   - No per-segment "is this pooled?" state is needed at all: a pooled
-    ///     segment is NOT a distinct table/scan state — it stays a normal
-    ///     registered, committed, `live_count == 0` small segment. "Pooled"
-    ///     means only "its base is in this array, so it is retained rather than
-    ///     released; when `find_segment_with_free` reuses its free blocks it is
-    ///     removed from the array (`unpool_if_present`)." (See
-    ///     `release_or_pool_empty_segment` for the stale-ring-while-pooled
-    ///     soundness argument.)
+    /// **Intrusive list, not a fixed array — why (RAD-3/E2).** The prior
+    /// design used a fixed `[*mut u8; POOL_MAX_SLOTS]` array (`POOL_MAX_SLOTS
+    /// = 4`), which silently clamped any `pool_segments` request above 4 and,
+    /// more importantly, is a compile-time-sized field INSIDE `AllocCore` —
+    /// which lives inline in every registry `HeapSlot` (`MAX_HEAPS = 4096`
+    /// slots). Raising the cap by widening the array multiplies that fixed
+    /// cost by 4096 regardless of whether a given heap ever pools a segment —
+    /// exactly the structural RSS/binary-size cost class RAD-1 eliminated
+    /// from the registry's `next_free` bootstrap. An intrusive list instead
+    /// stores its "next"/"prev" links INSIDE the segments themselves (which
+    /// already exist, already have header bytes to spare — see
+    /// `SegmentHeader`'s RAD-3 doc note) — `AllocCore`'s own per-heap cost
+    /// stays two pointers + two `usize`s, INDEPENDENT of how large a cap the
+    /// user configures.
     ///
-    /// Occupancy is `[0, pooled_count)`; slots `[pooled_count, POOL_MAX_SLOTS)`
-    /// hold `null_mut()`. LIFO (push at `pooled_count`, pop from
-    /// `pooled_count - 1`) for cache warmth — the most-recently-emptied segment
-    /// is the warmest to re-carve from.
+    /// List order: HEAD = warmest (most recently emptied) — the analogue of
+    /// the old array's "push at `pooled_count`, pop from `pooled_count - 1`"
+    /// LIFO order, now realised as O(1) push-front / pop-front. TAIL =
+    /// coldest (least recently emptied) — evicted by the decay tick, the
+    /// analogue of the old min-seq scan, now O(1) pop-back.
+    ///
+    /// No per-segment "is this pooled?" flag is needed (same invariant as
+    /// before): a pooled segment stays a normal registered, committed,
+    /// `live_count == 0` small segment; "pooled" means only "this segment is
+    /// currently linked into the pool list" — `pool_next`/`pool_prev` are
+    /// both `null` for the pool's sole entry (head==tail) or for a
+    /// not-currently-pooled segment (see `release_or_pool_empty_segment` for
+    /// the stale-ring-while-pooled soundness argument, unchanged by this
+    /// restructure).
     ///
     /// [`SmallSegmentPoolConfig`]: super::small_segment_pool_config::SmallSegmentPoolConfig
     #[cfg(feature = "alloc-decommit")]
-    pub(super) pooled_segments: [*mut u8; POOL_MAX_SLOTS],
+    pub(super) pool_head: *mut u8,
 
-    /// Number of occupied entries in [`pooled_segments`](Self::pooled_segments)
-    /// (`[0, pooled_count)` are valid bases).
+    /// The pool's TAIL: the base of the least-recently-pooled ("coldest")
+    /// empty small segment, or `null` if the pool is empty. See
+    /// [`pool_head`](Self::pool_head) for the full design note.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) pool_tail: *mut u8,
+
+    /// Number of segments currently linked into the pool list
+    /// (`pool_head`/`pool_tail` + each entry's `pool_next`/`pool_prev`).
     #[cfg(feature = "alloc-decommit")]
     pub(super) pooled_count: usize,
 
     /// Resolved runtime cap on pooled segments: `min(config.pool_segments,
-    /// config.pool_byte_cap / SEGMENT, POOL_MAX_SLOTS)`. `0` = pool disabled
-    /// (every empty small segment released immediately — the pre-Mechanism-2
-    /// behaviour). Set once at [`AllocCore::new_with_config`].
+    /// config.pool_byte_cap / SEGMENT)`. `0` = pool disabled (every empty
+    /// small segment released immediately — the pre-Mechanism-2 behaviour).
+    /// Set once at [`AllocCore::new_with_config`].
+    ///
+    /// **RAD-3 (E2, task #56): no third `.min(POOL_MAX_SLOTS)` term.** The
+    /// prior compile-time array cap silently clamped any request above 4;
+    /// the intrusive-list storage has no such compile-time bound, so this
+    /// cap now HONESTLY reflects exactly what the caller configured (bounded
+    /// only by the byte budget) — the value returned by
+    /// [`dbg_pool_cap`](Self::dbg_pool_cap) is always the true operative cap,
+    /// observable and un-clamped.
     #[cfg(feature = "alloc-decommit")]
     pub(super) pool_cap: usize,
-
-    /// Per-slot insertion sequence for [`pooled_segments`](Self::pooled_segments),
-    /// mirroring [`CachedLarge::seq`]: the FIFO-oldest pooled segment is the one
-    /// with the smallest `seq`. Used by the decay tick (`maybe_decay_small_pool`)
-    /// to evict the COLDEST (oldest-pooled) segment, distinct from the LIFO
-    /// (warmest) order `pop_pooled_segment` uses when draining. Only entries in
-    /// `[0, pooled_count)` are meaningful.
-    #[cfg(feature = "alloc-decommit")]
-    pub(super) pooled_seq: [u64; POOL_MAX_SLOTS],
-
-    /// Monotonic insertion counter for the pool (stamped into `pooled_seq` on
-    /// each admit). Mirrors [`large_cache_seq`](Self::large_cache_seq).
-    #[cfg(feature = "alloc-decommit")]
-    pub(super) pool_seq_ctr: u64,
 
     /// Wall-clock time of the last small-pool decay tick. `None` = never ticked.
     /// Mirrors [`last_decay_tick`](Self::last_decay_tick) for the large cache.
@@ -525,17 +537,22 @@ impl AllocCore {
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
         core.large_cache_mode = config.resolved_mode();
-        // Mechanism 2 (task #51): resolve the empty-small-segment pool cap.
-        // The effective cap is the tightest of the three bounds:
+        // Mechanism 2 (task #51); RAD-3 (E2, task #56): resolve the
+        // empty-small-segment pool cap. The effective cap is the tighter of
+        // the two bounds the user actually controls:
         //   - the configured segment count,
-        //   - the byte ceiling expressed in whole segments (each is `SEGMENT`),
-        //   - the compile-time array size `POOL_MAX_SLOTS`.
+        //   - the byte ceiling expressed in whole segments (each is `SEGMENT`).
         // A `0` in EITHER config knob disables the pool (min → 0), matching the
-        // `SmallSegmentPoolConfig` contract.
+        // `SmallSegmentPoolConfig` contract. NO third `.min(POOL_MAX_SLOTS)`
+        // term — the old compile-time array bound is gone (the pool's storage
+        // is now the intrusive `SegmentHeader::pool_next`/`pool_prev` list,
+        // which has no fixed capacity), so a caller who asks for
+        // `.pool_segments(64)` genuinely GETS a cap of 64 (subject only to the
+        // byte budget), not a silent clamp to 4.
         let pool_cfg = config.resolved_pool();
         let by_segments = pool_cfg.resolved_pool_segments();
         let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
-        core.pool_cap = by_segments.min(by_bytes).min(POOL_MAX_SLOTS);
+        core.pool_cap = by_segments.min(by_bytes);
         Some(core)
     }
 
@@ -597,27 +614,26 @@ impl AllocCore {
             // above.
             #[cfg(feature = "alloc-decommit")]
             large_cache_hits_sink: None,
-            // Mechanism 2 (task #51): empty pool. `pool_cap` defaults to the
-            // production default here (as if `SmallSegmentPoolConfig::DEFAULT`);
-            // `new_with_config` overwrites it from the resolved config. The
-            // `new_inner`-only path (a `not(alloc-decommit)`-style direct
-            // bootstrap) never reaches this arm — every `alloc-decommit` build
-            // funnels construction through `new_with_config`.
+            // Mechanism 2 (task #51); RAD-3 (E2, task #56): empty pool.
+            // `pool_cap` defaults to the production default here (as if
+            // `SmallSegmentPoolConfig::DEFAULT`); `new_with_config` overwrites
+            // it from the resolved config. The `new_inner`-only path (a
+            // `not(alloc-decommit)`-style direct bootstrap) never reaches
+            // this arm — every `alloc-decommit` build funnels construction
+            // through `new_with_config`. `pool_head`/`pool_tail` start
+            // `null` (empty list) — no fixed-size array to zero-init.
             #[cfg(feature = "alloc-decommit")]
-            pooled_segments: [core::ptr::null_mut(); POOL_MAX_SLOTS],
+            pool_head: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-decommit")]
+            pool_tail: core::ptr::null_mut(),
             #[cfg(feature = "alloc-decommit")]
             pooled_count: 0,
             #[cfg(feature = "alloc-decommit")]
-            pool_cap: super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS
-                .min(
+            pool_cap:
+                super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS.min(
                     super::small_segment_pool_config::SmallSegmentPoolConfig::DEFAULT_POOL_BYTE_CAP
                         / SEGMENT,
-                )
-                .min(POOL_MAX_SLOTS),
-            #[cfg(feature = "alloc-decommit")]
-            pooled_seq: [0u64; POOL_MAX_SLOTS],
-            #[cfg(feature = "alloc-decommit")]
-            pool_seq_ctr: 0,
+                ),
             #[cfg(feature = "alloc-decommit")]
             last_pool_decay_tick: None,
         })

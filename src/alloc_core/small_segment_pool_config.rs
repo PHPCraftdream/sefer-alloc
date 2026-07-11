@@ -139,9 +139,14 @@ impl SmallSegmentPoolConfig {
     /// Set the maximum number of empty small segments retained in the pool.
     ///
     /// `0` disables the pool (every empty small segment is released
-    /// immediately — the pre-Mechanism-2 behaviour). Values above the
-    /// compile-time hard cap (`POOL_MAX_SLOTS` = 4 in `alloc_core`) are clamped
-    /// to it at resolution time (the pool storage is a fixed array).
+    /// immediately — the pre-Mechanism-2 behaviour). Any `n > 0` is honoured
+    /// exactly (RAD-3/E2, task #56: the pool's storage is an intrusive list
+    /// threaded through the pooled segments' own headers, not a fixed-size
+    /// array, so there is no compile-time upper bound to silently clamp
+    /// against) — subject only to [`pool_byte_cap`](Self::pool_byte_cap): the
+    /// resolved cap is `min(pool_segments, pool_byte_cap / SEGMENT)`. A very
+    /// large `pool_segments` with the default (or a small) byte cap is
+    /// therefore still bounded by the byte budget, not by this knob alone.
     ///
     /// Default: 4.
     #[must_use]

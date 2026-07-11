@@ -306,6 +306,39 @@ impl Node {
         unsafe { dst.write(value) };
     }
 
+    /// Read a `*mut T` pointer from `src` (aligned, word-sized). RAD-3 (E2,
+    /// task #56): the mutable-pointer counterpart of [`read_ptr`] — used by
+    /// the field-specific segment-header accessors for the empty-small-segment
+    /// pool's intrusive `pool_next`/`pool_prev` links, which are OWNER-ONLY
+    /// (mutated on every pool admit/remove, unlike `owner_thread_free`'s
+    /// write-once discipline) `*mut u8` fields, not `*const u8`.
+    ///
+    /// `src` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
+    /// for a pointer, in a live segment.
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn read_ptr_mut<T>(src: *const *mut T) -> *mut T {
+        // SAFETY: caller guarantees `src` is valid, pointer-aligned, in a live
+        // segment. One word load.
+        unsafe { src.read() }
+    }
+
+    /// Write a `*mut T` pointer `value` at `dst` (aligned, word-sized). RAD-3
+    /// (E2, task #56): the mutable-pointer counterpart of [`write_ptr`]; see
+    /// [`read_ptr_mut`] for why the pool's link fields need this variant
+    /// rather than the `*const T` one.
+    ///
+    /// `dst` MUST be valid for `size_of::<*mut T>()` bytes, properly aligned
+    /// for a pointer, and exclusively owned (owner-only: only the segment's
+    /// owning thread's pool bookkeeping ever writes `pool_next`/`pool_prev`).
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn write_ptr_mut<T>(dst: *mut *mut T, value: *mut T) {
+        // SAFETY: caller guarantees `dst` is valid, pointer-aligned, and
+        // exclusively owned by the calling (owner) thread.
+        unsafe { dst.write(value) };
+    }
+
     /// Compute `base + off` as a `*mut u8` — the address-arithmetic primitive
     /// the safe Cartographer needs to address in-segment metadata. Wrapping
     /// `*mut u8::add` (an `unsafe fn` because a bad offset could wrap or

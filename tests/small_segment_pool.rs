@@ -115,9 +115,19 @@ fn byte_cap_clamps_segment_count() {
     );
 }
 
-/// `pool_segments` above the compile-time `POOL_MAX_SLOTS` (4) is clamped to 4.
+/// RAD-3 (E2, task #56): `pool_segments` is HONOURED exactly, with no silent
+/// compile-time clamp — the old `POOL_MAX_SLOTS = 4` fixed-array cap is gone
+/// (the pool's storage is now an intrusive list threaded through the pooled
+/// segments' own headers, which has no fixed capacity). A request well above
+/// the old hard cap, with a byte budget generous enough not to bind, resolves
+/// to EXACTLY the requested value — this is the load-bearing counterfactual
+/// for the plan's "the public API advertises `.pool_segments(8)` but the
+/// runtime silently reduces it to 4" defect (see
+/// `docs/perf/PERF_PLAN_2026-07-10-radical-audit-implementation-plan.md` §E2):
+/// before this task `pool_segments(99)` resolved to 4; after it, it resolves
+/// to 99.
 #[test]
-fn pool_segments_clamped_to_max_slots() {
+fn pool_segments_above_old_hard_cap_is_honoured() {
     let cfg = LargeCacheConfig::new().pool(
         SmallSegmentPoolConfig::new()
             .pool_segments(99)
@@ -126,8 +136,9 @@ fn pool_segments_clamped_to_max_slots() {
     let ac = AllocCore::new_with_config(cfg).expect("primordial");
     assert_eq!(
         ac.dbg_pool_cap(),
-        4,
-        "pool_segments must clamp to POOL_MAX_SLOTS=4"
+        99,
+        "pool_segments must be honoured exactly — no silent clamp to the old \
+         POOL_MAX_SLOTS=4 hard cap"
     );
 }
 

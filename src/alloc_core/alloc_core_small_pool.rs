@@ -6,6 +6,8 @@
 //! is a pure code-movement sibling of `alloc_core.rs`; no behavior changed. The
 //! whole module is `alloc-decommit`-gated because every method here is.
 
+use core::ptr;
+
 use super::node::Node;
 use super::os::{self, SEGMENT};
 use super::segment_header::{
@@ -219,26 +221,96 @@ impl AllocCore {
     pub(super) fn release_or_pool_empty_segment(&mut self, base: *mut u8) {
         // Defence-in-depth against a double-entry: a segment that is already
         // pooled must never be pushed again (a duplicate base → later
-        // double-recycle). By construction this cannot happen — a pooled segment
-        // is `unpool_if_present`-removed the instant it is reused, so it carries
-        // no live block until re-emptied, and re-emptying requires reuse first —
-        // but the guard is O(4) and makes the invariant local and robust.
+        // double-recycle / a corrupt list). By construction this cannot
+        // happen — a pooled segment is `unpool_if_present`-removed the
+        // instant it is reused, so it carries no live block until
+        // re-emptied, and re-emptying requires reuse first — but the guard
+        // is O(1) and makes the invariant local and robust. Full membership
+        // test, same disjunction `unpool_if_present` uses below: `base` is
+        // pooled iff it IS the head, OR its `pool_prev` is non-null (a
+        // not-pooled segment always has `pool_prev == null` — see
+        // `SegmentHeader::small`/`large`'s initial state and
+        // `pool_unlink`'s removal-time reset — and can never equal
+        // `pool_head`, since the head is by definition pooled).
         debug_assert!(
-            !self.pooled_segments[..self.pooled_count].contains(&base),
+            self.pool_head != base && SegmentMeta::new(base).pool_prev_of().is_null(),
             "double-pool of an already-pooled segment"
         );
-        // Admit to the pool if enabled and there is room, stamping the insertion
-        // sequence so the decay tick can evict the FIFO-oldest.
+        // Admit to the pool if enabled and there is room: push-front (this
+        // segment becomes the new HEAD — the warmest entry, mirroring the old
+        // array's "push at pooled_count" LIFO insertion).
         if self.pooled_count < self.pool_cap {
-            self.pooled_segments[self.pooled_count] = base;
-            self.pooled_seq[self.pooled_count] = self.pool_seq_ctr;
-            self.pool_seq_ctr = self.pool_seq_ctr.wrapping_add(1);
-            self.pooled_count += 1;
+            Self::pool_push_front(
+                &mut self.pool_head,
+                &mut self.pool_tail,
+                &mut self.pooled_count,
+                base,
+            );
             return; // pooled — base still valid/registered
         }
         // Pool disabled or full: release immediately (pre-Mechanism-2 path).
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
         self.table.recycle(base);
+    }
+
+    /// RAD-3 (E2, task #56) — push `base` onto the FRONT (head) of the
+    /// intrusive pool list: `base` becomes the new warmest entry.
+    /// Self-less (`&mut *mut u8` / `&mut usize` params rather than `&mut
+    /// self`) so [`release_or_pool_empty_segment`](Self::release_or_pool_empty_segment)
+    /// can call it while other `self` fields are still in scope, mirroring
+    /// the existing self-less helper pattern this file already uses
+    /// (`dec_live_and_maybe_decommit`, `release_empty_segment_now`).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn pool_push_front(head: &mut *mut u8, tail: &mut *mut u8, count: &mut usize, base: *mut u8) {
+        let mut meta = SegmentMeta::new(base);
+        meta.set_pool_prev(ptr::null_mut());
+        meta.set_pool_next(*head);
+        if (*head).is_null() {
+            // Pool was empty: `base` is both head and tail.
+            *tail = base;
+        } else {
+            // Link the OLD head's `pool_prev` back to `base`.
+            SegmentMeta::new(*head).set_pool_prev(base);
+        }
+        *head = base;
+        *count += 1;
+    }
+
+    /// RAD-3 (E2, task #56) — unlink `base` from the intrusive pool list,
+    /// given it is CURRENTLY a member (caller's contract — callers first
+    /// establish membership via a head/tail/count check, exactly like the old
+    /// `remove_pool_slot`'s callers located a known array index first).
+    /// Patches the neighbours' links and, if `base` was the head or tail,
+    /// updates `head`/`tail` accordingly. Self-less for the same reason as
+    /// [`pool_push_front`](Self::pool_push_front).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    fn pool_unlink(head: &mut *mut u8, tail: &mut *mut u8, count: &mut usize, base: *mut u8) {
+        let meta = SegmentMeta::new(base);
+        let prev = meta.pool_prev_of();
+        let next = meta.pool_next_of();
+        if prev.is_null() {
+            *head = next;
+        } else {
+            SegmentMeta::new(prev).set_pool_next(next);
+        }
+        if next.is_null() {
+            *tail = prev;
+        } else {
+            SegmentMeta::new(next).set_pool_prev(prev);
+        }
+        // Clear the removed segment's own links (defence-in-depth: a stale
+        // link left dangling here would corrupt a LATER re-admission if this
+        // segment is pooled again — `release_or_pool_empty_segment`'s
+        // `pool_push_front` always sets `pool_prev`/`pool_next` fresh on
+        // (re-)admission, so this reset is not load-bearing today, but it
+        // keeps a not-currently-pooled segment's links at the same `null`
+        // sentinel a freshly-constructed header carries, matching
+        // `SegmentHeader::small`/`large`'s initial state).
+        SegmentMeta::new(base).set_pool_next(ptr::null_mut());
+        SegmentMeta::new(base).set_pool_prev(ptr::null_mut());
+        *count -= 1;
     }
 
     /// Mechanism 2 (task #51) — the release-follows reset + the caller's
@@ -256,65 +328,66 @@ impl AllocCore {
         Self::decommit_empty_segment_for_release(meta, base);
     }
 
-    /// Mechanism 2 (task #51) — pop the most-recently-pooled (LIFO, warmest)
-    /// empty small segment, or `None` if the pool is empty. Used by
-    /// `drain_small_pool` to walk the whole pool when releasing it (the eviction
-    /// order does not matter there). Pooled segments are NOT re-inserted as carve
-    /// targets: they are reused in place via `find_segment_with_free`'s free-list
-    /// path (which calls `unpool_if_present`), so this pop is a pure removal
-    /// primitive, not a "hand back a fresh segment" one.
+    /// RAD-3 (E2, task #56; formerly Mechanism 2 task #51) — pop the
+    /// most-recently-pooled (HEAD, warmest) empty small segment, or `None` if
+    /// the pool is empty. Used by `drain_small_pool` to walk the whole pool
+    /// when releasing it (the eviction order does not matter there). Pooled
+    /// segments are NOT re-inserted as carve targets: they are reused in
+    /// place via `find_segment_with_free`'s free-list path (which calls
+    /// `unpool_if_present`), so this pop is a pure removal primitive, not a
+    /// "hand back a fresh segment" one.
+    ///
+    /// O(1): the head IS the warmest entry by construction (every admission
+    /// pushes to the front — see [`pool_push_front`](Self::pool_push_front)),
+    /// so no scan is needed (the old array version scanned ≤4 entries for the
+    /// max insertion-sequence; the intrusive list makes that comparison free
+    /// by maintaining the order structurally).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     fn pop_pooled_segment(&mut self) -> Option<*mut u8> {
-        if self.pooled_count == 0 {
+        if self.pool_head.is_null() {
+            debug_assert_eq!(self.pooled_count, 0, "head null but pooled_count != 0");
             return None;
         }
-        // Pop the WARMEST (largest-seq) pooled segment for cache warmth (its
-        // pages/metadata are the most recently touched). Scan the ≤4 live
-        // entries for the max seq, then swap-remove it to keep the array
-        // compact in `[0, pooled_count)`.
-        let mut best = 0usize;
-        for i in 1..self.pooled_count {
-            if self.pooled_seq[i] > self.pooled_seq[best] {
-                best = i;
-            }
-        }
-        let base = self.pooled_segments[best];
-        self.remove_pool_slot(best);
+        let base = self.pool_head;
+        Self::pool_unlink(
+            &mut self.pool_head,
+            &mut self.pool_tail,
+            &mut self.pooled_count,
+            base,
+        );
         Some(base)
     }
 
-    /// Mechanism 2 (task #51): if `base` is currently retained in the hysteresis
-    /// pool, remove it (it is being reused via `find_segment_with_free`'s
-    /// free-list path, so it is no longer an empty-and-idle pooled segment).
-    /// Linear scan + swap-remove over the ≤ `POOL_MAX_SLOTS` (4) live entries —
-    /// trivial, and only consulted off the cold free-list-miss path. Removing on
-    /// reuse is what prevents a re-populated-then-re-emptied segment from being
-    /// pushed into the pool a SECOND time (a double-entry → later
-    /// double-recycle).
+    /// RAD-3 (E2, task #56; formerly Mechanism 2 task #51): if `base` is
+    /// currently retained in the hysteresis pool, remove it (it is being
+    /// reused via `find_segment_with_free`'s free-list path, so it is no
+    /// longer an empty-and-idle pooled segment). Removing on reuse is what
+    /// prevents a re-populated-then-re-emptied segment from being pushed into
+    /// the pool a SECOND time (a double-entry → later double-recycle / a
+    /// corrupt list).
+    ///
+    /// **O(1) membership test, no list walk.** A pooled segment always has
+    /// EITHER `pool_prev_of() != null` (it is not the head) OR
+    /// `pool_head == base` (it IS the head — the only pooled entry whose
+    /// `pool_prev` is null). This is exhaustive: a NOT-pooled segment's
+    /// `pool_prev` is always null (see `SegmentHeader::small`/`large`'s
+    /// initial state and `pool_unlink`'s removal-time reset) AND it can never
+    /// equal `pool_head` (the head is by definition pooled), so the
+    /// disjunction is both necessary and sufficient for "is `base` pooled"
+    /// without walking the list.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     pub(super) fn unpool_if_present(&mut self, base: *mut u8) {
-        if let Some(idx) = self.pooled_segments[..self.pooled_count]
-            .iter()
-            .position(|&b| b == base)
-        {
-            self.remove_pool_slot(idx);
+        let is_pooled = self.pool_head == base || !SegmentMeta::new(base).pool_prev_of().is_null();
+        if is_pooled {
+            Self::pool_unlink(
+                &mut self.pool_head,
+                &mut self.pool_tail,
+                &mut self.pooled_count,
+                base,
+            );
         }
-    }
-
-    /// Swap-remove pool slot `idx` (compacting `[0, pooled_count)`). The
-    /// segment's fate (reuse vs release) is the caller's business — this only
-    /// updates the pool bookkeeping.
-    #[cfg(feature = "alloc-decommit")]
-    #[inline]
-    fn remove_pool_slot(&mut self, idx: usize) {
-        let last = self.pooled_count - 1;
-        self.pooled_segments[idx] = self.pooled_segments[last];
-        self.pooled_seq[idx] = self.pooled_seq[last];
-        self.pooled_segments[last] = core::ptr::null_mut();
-        self.pooled_seq[last] = 0;
-        self.pooled_count = last;
     }
 
     /// Mechanism 2 (task #51) — the small-pool decay tick. Mirrors the SHAPE of
@@ -359,15 +432,18 @@ impl AllocCore {
             return;
         }
         self.last_pool_decay_tick = Some(now);
-        // Evict the FIFO-oldest (coldest) pooled segment.
-        let mut oldest = 0usize;
-        for i in 1..self.pooled_count {
-            if self.pooled_seq[i] < self.pooled_seq[oldest] {
-                oldest = i;
-            }
-        }
-        let base = self.pooled_segments[oldest];
-        self.remove_pool_slot(oldest);
+        // Evict the FIFO-oldest (coldest) pooled segment — the list TAIL by
+        // construction (every admission pushes to the HEAD, so the tail is
+        // always the least-recently-pooled entry; O(1), no scan needed,
+        // unlike the old array's min-seq scan).
+        let base = self.pool_tail;
+        debug_assert!(!base.is_null(), "pooled_count > 0 but pool_tail is null");
+        Self::pool_unlink(
+            &mut self.pool_head,
+            &mut self.pool_tail,
+            &mut self.pooled_count,
+            base,
+        );
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
         self.table.recycle(base);
     }
@@ -414,9 +490,11 @@ impl AllocCore {
         self.pooled_count
     }
 
-    /// TEST-ONLY (Mechanism 2, task #51): the resolved runtime pool cap
-    /// (`min(pool_segments, pool_byte_cap / SEGMENT, POOL_MAX_SLOTS)`; `0` =
-    /// pool disabled). Lets tests assert the config resolution.
+    /// TEST-ONLY (Mechanism 2, task #51; RAD-3/E2 task #56): the resolved
+    /// runtime pool cap (`min(pool_segments, pool_byte_cap / SEGMENT)`; `0` =
+    /// pool disabled). NO compile-time upper bound since RAD-3 — the value
+    /// returned here is always the HONEST cap the caller configured, never
+    /// silently clamped. Lets tests assert the config resolution.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     #[must_use]

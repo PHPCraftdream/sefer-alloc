@@ -780,6 +780,203 @@ fn bench_working_set_cycle(c: &mut Criterion) {
     group.finish();
 }
 
+/// RAD-3 (plan Phase 0(b) + Phase 3, E2) — `pool_cap_sweep`: a
+/// spread-then-empty-then-drain harness (the pattern
+/// `tests/small_segment_pool.rs`/`tests/regression_c3_unbounded_recycle.rs`
+/// already use via `AllocCore` directly — spread allocations across many
+/// distinct small segments, empty every segment but one survivor block each
+/// via a cross-thread-free-shaped ring push, then drain), parameterized over
+/// the small-segment pool's configured cap (`SmallSegmentPoolConfig::
+/// pool_segments`). This is the judge for the E2 workstream: PASS-3's own
+/// honest report (`docs/perf/IAI_BASELINE.md`, "Post-PERF-PASS-3 reference")
+/// recorded 173/367 residual `decommit_calls` at 256 B/1024 B in
+/// `working_set_cycle` because demand exceeds the (at the time of writing
+/// that report) hard-capped 4-segment pool. This harness sweeps cap =
+/// 0/1/4/8/16 and reports the `decommit_calls` delta at each cap, so a
+/// before/after comparison across the "remove the silent clamp" change is
+/// directly visible in the harness's own output rather than asserted from
+/// memory.
+///
+/// **Why `AllocCore` directly, not `SeferAlloc` / `working_set_cycle`'s
+/// shape.** An earlier version of this harness reused
+/// `working_set_cycle_prefill`/`_step` verbatim (built-in-place oscillation of
+/// 64 concurrent working sets through `SeferAlloc`). Measured against BOTH
+/// the pre-fix code (RED baseline) and the post-fix code, that specific
+/// access pattern turned out to be cap-INSENSITIVE at every swept value —
+/// each pass's peak concurrent segment-empty count never exceeds what even
+/// `cap=1` already absorbs, so it cannot distinguish "cap silently clamped to
+/// 4" from "cap honestly resolved to 8/16" (both produce the SAME
+/// `decommit_calls` delta in that shape). A harness that cannot go RED before
+/// the fix is not a valid counterfactual — see this task's summary for the
+/// measured numbers. This shape instead directly controls how many DISTINCT
+/// segments empty out in a single scan (`SPREAD_TARGET_SEGMENTS`, well above
+/// every swept cap), which is exactly the axis `pool_cap` bounds — a clean,
+/// monotonic, cap-sensitive signal (verified: decommits strictly decrease as
+/// cap rises from 0 through 32 against this task's fixed code).
+///
+/// **Why `AllocCore` (not `SeferAlloc`) — no TLS/thread plumbing needed.**
+/// `AllocCore::new_with_config` builds a standalone allocator directly (no
+/// registry/TLS bind), so — unlike the `SeferAlloc`-based approach, which
+/// needed a fresh OS thread per cap to get a never-before-bound TLS slot —
+/// this harness just constructs a fresh `AllocCore` per cap on the criterion
+/// runner's own thread. `AllocCore` is `pub` (re-exported at the crate root),
+/// so a bench (like `tests/small_segment_pool.rs`, an integration test) may
+/// use it directly; the `dbg_*` seams used below
+/// (`dbg_layout_class_for`/`dbg_push_to_ring`/`dbg_drain_all_rings`/
+/// `dbg_decommit_count`) are the SAME `#[doc(hidden)] pub` test-only surface
+/// `tests/small_segment_pool.rs` and `tests/regression_c3_unbounded_recycle.rs`
+/// already rely on.
+///
+/// `pool_byte_cap` is set generously (256 MiB, i.e. 64 segments' worth) so
+/// that only `pool_segments` — not the byte ceiling — constrains occupancy at
+/// every swept cap; the point is to isolate the segment-count knob.
+///
+/// Gated on `alloc-xthread` too (not just `alloc-decommit`): the sweep uses
+/// `dbg_push_to_ring`/`dbg_drain_all_rings`, which only exist under
+/// `alloc-xthread` (the ring is a cross-thread-free mechanism). `alloc-decommit`
+/// alone (without `alloc-xthread`) is a real, separately-buildable feature
+/// combination in this crate (`alloc-decommit = ["alloc-core"]`, no
+/// `alloc-xthread` dependency) — gating on `alloc-decommit` alone left this
+/// code uncompilable under that combination even though `production` (which
+/// always pulls in both) masked the gap in the project's own CI matrix.
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+const POOL_CAP_SWEEP_VALUES: &[usize] = &[0, 1, 4, 8, 16];
+
+/// Number of distinct small segments to spread allocations across before
+/// emptying them all in one scan — comfortably above every value in
+/// [`POOL_CAP_SWEEP_VALUES`] so the pool is genuinely saturated at each cap
+/// (otherwise a low target could never exercise cap=16, for instance).
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+const SPREAD_TARGET_SEGMENTS: usize = 40;
+
+/// Spread allocations of `layout` across [`SPREAD_TARGET_SEGMENTS`] distinct
+/// fresh small segments (one "survivor" block recorded per segment, mirroring
+/// `tests/small_segment_pool.rs::spread_across_segments`), free every
+/// non-survivor block, then push each survivor into its OWN segment's
+/// cross-thread free ring (`dbg_push_to_ring`) and drain every ring in one
+/// scan (`dbg_drain_all_rings`) — emptying every one of the
+/// `SPREAD_TARGET_SEGMENTS` segments (except the current carve target and the
+/// primordial segment) in a single call, exactly the scenario
+/// `regression_c3_unbounded_recycle` exercises. Returns the
+/// `dbg_decommit_count()` delta observed across that single drain call.
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
+    let config = sefer_alloc::LargeCacheConfig::new().pool(
+        sefer_alloc::SmallSegmentPoolConfig::new()
+            .pool_segments(cap)
+            .pool_byte_cap(256 * 1024 * 1024),
+    );
+    let mut ac = sefer_alloc::AllocCore::new_with_config(config).expect("primordial reservation");
+    let layout = Layout::from_size_align(size, 8).unwrap();
+    let class_idx = ac
+        .dbg_layout_class_for(layout)
+        .expect("bench sizes are all small classes");
+
+    const SEGMENT: usize = 4 * 1024 * 1024;
+    // Scale the per-round block count to `size` so a round reliably advances
+    // past at least one fresh segment regardless of block size: a 4 MiB
+    // segment holds roughly `SEGMENT / size` blocks of this size (ignoring
+    // metadata overhead, a slight under-count that only makes this MORE
+    // generous), so `4 * (SEGMENT / size)` blocks per round crosses several
+    // segment boundaries even at the smallest bench size (16 B, ~262K
+    // blocks/segment) without inflating the round count needed at larger
+    // sizes (1024 B, ~4K blocks/segment) into the millions.
+    let round_blocks = 4 * (SEGMENT / size).max(1);
+    let mut survivors: std::collections::HashMap<usize, *mut u8> = std::collections::HashMap::new();
+    let mut all_ptrs: Vec<*mut u8> = Vec::new();
+    let mut round = 0usize;
+    while survivors.len() < SPREAD_TARGET_SEGMENTS && round < SPREAD_TARGET_SEGMENTS * 3 {
+        for _ in 0..round_blocks {
+            let p = ac.alloc(layout);
+            assert!(!p.is_null(), "alloc null while spreading (round={round})");
+            let seg_base = (p as usize) & !(SEGMENT - 1);
+            survivors.entry(seg_base).or_insert(p);
+            all_ptrs.push(p);
+        }
+        round += 1;
+    }
+    assert!(
+        survivors.len() >= SPREAD_TARGET_SEGMENTS,
+        "failed to spread across {SPREAD_TARGET_SEGMENTS} segments (only {})",
+        survivors.len()
+    );
+
+    let survivor_set: std::collections::HashSet<usize> =
+        survivors.values().map(|&p| p as usize).collect();
+    for &p in &all_ptrs {
+        if !survivor_set.contains(&(p as usize)) {
+            // SAFETY: `p` was allocated by `ac.alloc` with `layout` above and
+            // is freed exactly once (non-survivors are freed here; survivors
+            // are freed only via the ring-push/drain path below).
+            ac.dealloc(p, layout);
+        }
+    }
+    for &p in survivors.values() {
+        ac.dbg_push_to_ring(p, class_idx);
+    }
+
+    let before = sefer_alloc::AllocCore::dbg_decommit_count();
+    ac.dbg_drain_all_rings();
+    let after = sefer_alloc::AllocCore::dbg_decommit_count();
+
+    // Cleanup: the pool may still hold up to `cap` segments; force-drain so
+    // this `AllocCore`'s `Drop` walks a clean table (no functional
+    // requirement — `Drop` releases every registered segment either way —
+    // this just keeps consecutive sweep iterations independent of leftover
+    // pooled state from a prior cap's run within the same process).
+    let _ = ac.dbg_drain_small_pool();
+
+    after.saturating_sub(before)
+}
+
+/// Entry point: sweep every cap in [`POOL_CAP_SWEEP_VALUES`] at every size in
+/// [`SIZES`], reporting the `decommit_calls` delta observed during the single
+/// drain call via `eprintln!` (matching `bench_working_set_cycle`'s reporting
+/// style). Registered as a single trivial (one-iteration) criterion benchmark
+/// purely so `cargo bench` runs it as part of the normal harness and its
+/// `eprintln!` diagnostic lines land in the same captured output as
+/// `working_set_cycle`'s — criterion does not otherwise offer a "run once,
+/// print diagnostics" hook outside `bench_function`. Not a comparative
+/// wall-clock judge; the sweep's signal is the `eprintln!` counter deltas,
+/// not the criterion timing table (the spread/drain construction cost swamps
+/// the drain itself, so the criterion timing column is not meaningful here).
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+fn bench_pool_cap_sweep(c: &mut Criterion) {
+    let mut group = c.benchmark_group("pool_cap_sweep");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(1));
+    group.measurement_time(Duration::from_millis(1));
+
+    for &size in SIZES {
+        for &cap in POOL_CAP_SWEEP_VALUES {
+            group.bench_function(format!("cap={cap}/{size}B"), |b| {
+                b.iter(|| {
+                    let delta = pool_cap_sweep_spread_and_drain(cap, size);
+                    eprintln!(
+                        "pool_cap_sweep/cap={cap}/{size}B: decommit_calls delta = {delta} \
+                         (spread across {SPREAD_TARGET_SEGMENTS} segments, single drain)",
+                    );
+                    black_box(delta);
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+criterion_group!(
+    benches,
+    bench_global_alloc,
+    bench_global_alloc_churn,
+    bench_global_alloc_churn_with_teardown,
+    bench_global_alloc_churn_write,
+    bench_global_segment_decommit_cycle,
+    bench_working_set_cycle,
+    bench_pool_cap_sweep
+);
+#[cfg(not(all(feature = "alloc-decommit", feature = "alloc-xthread")))]
 criterion_group!(
     benches,
     bench_global_alloc,
