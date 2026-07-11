@@ -60,6 +60,48 @@
 //! ```sh
 //! RUSTFLAGS="--cfg loom" cargo test --release --features alloc-global --test loom_free_slots_aba
 //! ```
+//!
+//! # H-2 addendum (UBFIX-4): the empty-transition tag-reset ABA
+//!
+//! The two tests above model the classic "pop X, repush X" ABA and prove the
+//! TAG mechanism in general defeats it. They do NOT, on their own, exercise
+//! the specific defect fixed by UBFIX-4/H-2: the ORIGINAL `pop`'s
+//! empty-transition branch (the pop that drains the stack to zero elements)
+//! collapsed the head to `TaggedPtr::empty()`, which hardcodes **tag = 0**,
+//! discarding whatever running tag was live at the moment of the drain. A
+//! parked popper holding a stale `(idx, tag)` snapshot from BEFORE the drain
+//! can then have its stale tag spuriously RECUR after the stack drains and
+//! is immediately refilled by a repush of the SAME index — because the
+//! repush computes `new_tag = drained_tag(0) + 1 = 1`, and if the popper's
+//! stale snapshot also happened to be `tag = 1` (e.g. this was the second
+//! push ever performed on this slot), the numeric head word recurs EXACTLY,
+//! and the stale popper's CAS spuriously succeeds — a genuine ABA collision,
+//! not merely a "same index, different tag" near-miss the outer tests above
+//! already rule out.
+//!
+//! `pop_empty_transition_preserves_tag` below models BOTH the buggy drain
+//! branch (`pack(MASK, 0)`) and the fixed drain branch (`pack(MASK, tag)`,
+//! reusing the tag the draining pop just read) via a `preserve_tag_on_drain`
+//! flag, replays the IDENTICAL 2-thread interleaving against both (using a
+//! two-flag rendezvous so thread B's full pop+push cycle is GUARANTEED to
+//! be sandwiched between thread A's head load and A's CAS — not merely
+//! possible under some schedule, which a naive free race left ambiguous
+//! with an "innocent" ordering; see `run_h2_interleaving`'s doc comment for
+//! why), and asserts:
+//! - **buggy branch:** loom finds the schedule where the stalled popper's
+//!   (A's) CAS — fired against a snapshot from BEFORE B's cycle — spuriously
+//!   succeeds even though B's cycle fully completed in the interim (a stale
+//!   CAS succeeding is, by definition, an ABA collision) — `#[should_panic]`
+//!   counterfactual `counterfactual_empty_transition_tag_reset_lets_aba_recur`.
+//! - **fixed branch:** the SAME interleaving forces the stalled popper's CAS
+//!   to fail (it observes a tag that has moved on), so it retries and the
+//!   free-list stays loss/duplication-free (`pop_empty_transition_preserves_tag`).
+//!
+//! This directly transcribes the fix landed in `pop_free_slot`
+//! (`src/registry/heap_registry.rs`) and `TaggedPtr::empty_index`
+//! (`src/registry/tagged_ptr.rs`): the fixed `pop` packs the empty
+//! sentinel's index half with the RUNNING tag it just observed, instead of
+//! resetting to a hardcoded 0.
 
 #![cfg(loom)]
 
@@ -382,4 +424,257 @@ fn counterfactual_untagged_head_lets_aba_corrupt_free_list() {
             "free-list corrupted (loss or duplication): got {popped:?}"
         );
     });
+}
+
+// ============================================================================
+// H-2 (UBFIX-4): the empty-transition tag-reset ABA.
+//
+// A single-slot registry, seeded so the head already carries a NON-ZERO
+// running tag (`tag = 1`, as if one prior push-then-pop-then-push cycle
+// already happened during bootstrap/warm-up — a completely ordinary state,
+// not a contrived edge case). Two threads race:
+//
+// - Thread A performs a MANUAL split pop (mirrors `pop_free_slot`): loads
+//   the head, reads the slot's `next_free` link, computes its OWN candidate
+//   `new_head` for the "drain to empty" branch, then STALLS before firing
+//   its CAS (letting B's full pop+push interleave in the gap — same
+//   technique as `aba_repush_forces_stale_cas_retry_and_stays_consistent`
+//   above).
+// - Thread B performs a full `pop()` (draining the stack to empty — the
+//   SAME index A is targeting) followed immediately by a full `push()` of
+//   that SAME index (refilling the stack). This is the exact "drain, then
+//   immediately refill the same slot" cycle H-2 is about.
+//
+// `preserve_tag_on_drain` selects between the BUGGY drain branch
+// (`pack(MASK, 0)`, mirrors `TaggedPtr::empty()`) and the FIXED drain
+// branch (`pack(MASK, tag)`, mirrors `TaggedPtr::pack(TaggedPtr::empty_index(),
+// _tag)` landed in `pop_free_slot`). Both A and B use the SAME branch
+// selection (they model the SAME build of the allocator).
+// ============================================================================
+
+/// Registry variant with a single live slot, seeded at a caller-chosen
+/// starting tag (models "this is not the first push/pop cycle ever" — the
+/// realistic steady-state case, not a bootstrap artifact).
+struct SingleSlotRegistry {
+    free_slots: AtomicU64,
+    next_free: AtomicU32,
+}
+
+impl SingleSlotRegistry {
+    /// Slot 0 is on the stack, head = `(idx=0, tag=start_tag)`,
+    /// `next_free[0] = TAIL` (it is the only element).
+    fn seeded(start_tag: u64) -> Arc<Self> {
+        Arc::new(SingleSlotRegistry {
+            free_slots: AtomicU64::new(tagged_ptr::pack(0, start_tag)),
+            next_free: AtomicU32::new(NEXT_FREE_TAIL),
+        })
+    }
+
+    /// Mirrors `pop_free_slot`, parameterised on the drain-branch tag
+    /// behaviour so the SAME function models both the buggy and fixed
+    /// builds (`preserve_tag_on_drain = false` reproduces the H-2 bug;
+    /// `true` is the landed fix).
+    fn pop(&self, preserve_tag_on_drain: bool) -> Option<u32> {
+        let mut head = self.free_slots.load(Ordering::Acquire);
+        loop {
+            if tagged_ptr::is_empty(head) {
+                return None;
+            }
+            let (idx_v, tag) = tagged_ptr::unpack(head);
+            let idx = idx_v as u32;
+            let next = self.next_free.load(Ordering::Acquire);
+            let new_head = if next == NEXT_FREE_TAIL {
+                if preserve_tag_on_drain {
+                    // FIX: reuse the tag just read instead of resetting to 0.
+                    tagged_ptr::pack(INDEX_MASK, tag)
+                } else {
+                    // BUG: `TaggedPtr::empty()` — hardcoded tag 0.
+                    tagged_ptr::empty()
+                }
+            } else {
+                tagged_ptr::pack(next as u64, tag)
+            };
+            match self.free_slots.compare_exchange(
+                head,
+                new_head,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(idx),
+                Err(actual) => head = actual,
+            }
+        }
+    }
+
+    /// Mirrors `push_free_slot`: reads the tag out of the CURRENT head
+    /// unconditionally (empty or not) and bumps it. Identical in both the
+    /// buggy and fixed builds — H-2's fix lives entirely in `pop`'s drain
+    /// branch; `push` already composes correctly with either.
+    fn push(&self, idx: u32) {
+        let mut head = self.free_slots.load(Ordering::Acquire);
+        loop {
+            let next_link = if tagged_ptr::is_empty(head) {
+                NEXT_FREE_TAIL
+            } else {
+                let (cur_idx, _tag) = tagged_ptr::unpack(head);
+                cur_idx as u32
+            };
+            self.next_free.store(next_link, Ordering::Release);
+            let (_cur_idx, tag) = tagged_ptr::unpack(head);
+            let new_tag = tag.wrapping_add(1);
+            let new_head = tagged_ptr::pack(idx as u64, new_tag);
+            match self.free_slots.compare_exchange(
+                head,
+                new_head,
+                Ordering::Release,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(actual) => head = actual,
+            }
+        }
+    }
+}
+
+/// Runs the H-2 interleaving against whichever drain-branch behaviour
+/// `preserve_tag_on_drain` selects, and PANICS (`"stale CAS succeeded"`) if
+/// loom finds a schedule where thread A's CAS — fired against a snapshot
+/// captured BEFORE thread B's full pop+push cycle — spuriously succeeds
+/// AFTER that cycle has fully completed. `builder.check` requires an `Fn`
+/// closure (it may replay the body across many schedules), so the assertion
+/// lives INSIDE the closure — same idiom as
+/// `aba_repush_forces_stale_cas_retry_and_stays_consistent` above.
+///
+/// **Why a rendezvous, not a free race:** a naive free race between A's
+/// split pop and B's full pop+push lets loom explore DEGENERATE schedules
+/// where B's whole cycle runs entirely BEFORE A's initial load (so A's
+/// "stale" snapshot is actually fresh — A legitimately re-pops the
+/// just-repushed index, which is correct behaviour, not a bug) or entirely
+/// AFTER A's CAS (no interaction at all). Both degenerate schedules produce
+/// "A and B both got index 0" without any ABA, which would make a naive
+/// "same index" assertion false-positive on the FIXED build (confirmed: an
+/// earlier version of this harness asserted exactly that and failed on
+/// `preserve_tag_on_drain = true`, a spurious failure — not a real bug —
+/// caused by exactly this degenerate ordering).
+///
+/// Two `AtomicU32` flags force STRICT sandwiching instead: A signals
+/// `a_loaded` immediately after its step-1 load (so B cannot start before
+/// A's snapshot exists), then spin-waits on `b_done` before firing its CAS
+/// (so B's ENTIRE pop+push cycle is guaranteed complete before A's CAS —
+/// this is the genuine "B fully mutated state in the gap between A's read
+/// and A's CAS" scenario H-2 is about). Spin-waiting on a `loom::sync`
+/// atomic via `thread::yield_now()` is loom's standard idiom for a one-shot
+/// rendezvous (loom explores every point the spinner could observe the
+/// flag; the state space stays bounded because both threads run a fixed,
+/// small number of steps).
+fn run_h2_interleaving(preserve_tag_on_drain: bool) {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(move || {
+        // Seed at tag = 1 (an ordinary post-warm-up state: one push already
+        // happened before this run started), so B's drain-then-refill cycle
+        // recomputes exactly tag = 1 again in the BUGGY branch (0 -> +1 -> 1),
+        // colliding with A's captured `tag = 1` snapshot.
+        let reg = SingleSlotRegistry::seeded(1);
+        // Rendezvous flags: 0 = not yet signalled, 1 = signalled.
+        let a_loaded = Arc::new(AtomicU32::new(0));
+        let b_done = Arc::new(AtomicU32::new(0));
+
+        // Thread B: waits for A's snapshot, then runs a FULL pop (drains
+        // the stack — the same index A is targeting) immediately followed
+        // by a full push of that SAME index (refills the stack) — the
+        // exact "drain, then immediately repush" cycle the fix targets.
+        // Signals `b_done` only after BOTH complete.
+        let reg_b = Arc::clone(&reg);
+        let a_loaded_b = Arc::clone(&a_loaded);
+        let b_done_b = Arc::clone(&b_done);
+        let tb = thread::spawn(move || {
+            while a_loaded_b.load(Ordering::Acquire) == 0 {
+                thread::yield_now();
+            }
+            let popped = reg_b.pop(preserve_tag_on_drain);
+            if let Some(idx) = popped {
+                reg_b.push(idx);
+            }
+            b_done_b.store(1, Ordering::Release);
+            popped
+        });
+
+        // Thread A: manual split pop (load, read next_free, compute
+        // candidate) — mirrors `pop_free_slot`'s body with the CAS pulled
+        // out. Signals `a_loaded` right after the load, then BLOCKS on
+        // `b_done` before firing its CAS — forcing B's entire cycle to be
+        // sandwiched in the gap by construction (not merely "possible under
+        // some loom schedule").
+        let head = reg.free_slots.load(Ordering::Acquire);
+        let (idx_v, tag) = tagged_ptr::unpack(head);
+        let idx = idx_v as u32;
+        let next = reg.next_free.load(Ordering::Acquire);
+        let new_head = if next == NEXT_FREE_TAIL {
+            if preserve_tag_on_drain {
+                tagged_ptr::pack(INDEX_MASK, tag)
+            } else {
+                tagged_ptr::empty()
+            }
+        } else {
+            tagged_ptr::pack(next as u64, tag)
+        };
+        a_loaded.store(1, Ordering::Release);
+        while b_done.load(Ordering::Acquire) == 0 {
+            thread::yield_now();
+        }
+        // A's CAS against the STALE captured `head` — B's full pop+push is
+        // GUARANTEED to have completed in the gap between A's load (above)
+        // and this CAS.
+        let a_result = reg
+            .free_slots
+            .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Relaxed)
+            .map(|_| idx);
+
+        tb.join().unwrap();
+
+        // THE INVARIANT: once B has fully completed a pop+push cycle on
+        // this slot (guaranteed true here by the rendezvous), A's CAS
+        // against its PRE-B snapshot must NEVER succeed — the tag half of
+        // the live head must have moved on from what A captured, because a
+        // push (B's repush) always bumps the tag by construction. If A's
+        // CAS succeeds anyway, the tag sequence must have looped back to
+        // A's stale value — exactly the H-2 empty-transition tag-reset bug
+        // (the drain branch discarding the running tag lets the very next
+        // push recompute a numerically colliding word).
+        assert!(
+            a_result.is_err(),
+            "stale CAS succeeded: thread A's compare_exchange used a head \
+             snapshot captured BEFORE thread B's full pop+push cycle, yet \
+             succeeded AFTER that cycle completed — an empty-transition \
+             tag-reset ABA collision (H-2)"
+        );
+    });
+}
+
+/// **The fix (`preserve_tag_on_drain = true`):** replaying the H-2
+/// interleaving against the FIXED drain branch, loom finds NO schedule
+/// where A's stale CAS spuriously succeeds — the running tag keeps
+/// climbing across the empty transition (B's drain preserves tag=1, B's
+/// refill bumps it to 2), so A's captured `tag=1` snapshot can never recur
+/// numerically. A's CAS is always forced to fail and retry.
+#[test]
+fn pop_empty_transition_preserves_tag() {
+    run_h2_interleaving(true);
+}
+
+/// **The counterfactual (non-vacuousness proof):** replaying the IDENTICAL
+/// interleaving against the BUGGY drain branch (`preserve_tag_on_drain =
+/// false`, i.e. `TaggedPtr::empty()`'s hardcoded tag=0 — the pre-fix
+/// behaviour), loom finds the schedule where A's stale CAS spuriously
+/// succeeds: B's drain resets the tag to 0, B's refill computes `0+1=1`,
+/// recreating A's captured `tag=1` head word exactly, so A's CAS succeeds
+/// against a head that is numerically identical but structurally stale —
+/// classic ABA. This proves the H-2 harness is non-vacuous: it is the
+/// PRESENCE of the fix (not an artifact of the test's construction) that
+/// makes `pop_empty_transition_preserves_tag` above pass.
+#[test]
+#[should_panic(expected = "stale CAS succeeded")]
+fn counterfactual_empty_transition_tag_reset_lets_aba_recur() {
+    run_h2_interleaving(false);
 }

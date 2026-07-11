@@ -38,7 +38,7 @@ use core::sync::atomic::Ordering;
 
 use super::bootstrap::{
     abandoned_head_is_empty, ensure, pack_abandoned_head, unpack_abandoned_head, Registry,
-    ABANDONED_HEAD_EMPTY, MAX_HEAPS,
+    MAX_HEAPS,
 };
 use super::heap_core::HeapCore;
 use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL, STATE_FREE, STATE_LIVE};
@@ -371,9 +371,20 @@ impl HeapRegistry {
             let next_link = meta.next_abandoned_atomic().load(Ordering::Acquire);
             // Compute the new head: the next base (full pointer) with the
             // SAME tag (a pop preserves the tag — only pushes bump it), or
-            // empty if `next == ABANDONED_TAIL`.
+            // the empty sentinel if `next == ABANDONED_TAIL`.
+            //
+            // M-6 FIX (identical shape to H-2 in `pop_free_slot` above): do
+            // NOT collapse straight to the constant `ABANDONED_HEAD_EMPTY`
+            // (base=null, tag=0) — that resets the running ABA tag to 0 on
+            // every empty transition, reopening the classic Treiber ABA
+            // window across an empty→non-empty churn cycle. Instead pack a
+            // null base (still unambiguously "empty" — `abandoned_head_is_empty`
+            // only inspects the base half) together with the tag we just
+            // observed on the head being popped off. `push_abandoned_segment_into`
+            // already reads the tag out of the current head unconditionally
+            // and bumps it, so this composes correctly with no other change.
             let new_head = if next_link == ABANDONED_TAIL {
-                ABANDONED_HEAD_EMPTY
+                pack_abandoned_head(core::ptr::null_mut(), tag)
             } else {
                 // EXPOSED-PROVENANCE LOAD SITE: `next_link` is the FULL 64-bit base of
                 // the next abandoned segment, stored as plain `u64` data by
@@ -587,12 +598,27 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
         // Read the next link BEFORE the CAS (the push stored it under
         // Release; our Acquire load of `head` + this Acquire read see it).
         let next = slot.next_free.load(Ordering::Acquire);
-        // The new head is `next` (or empty if `next == NEXT_FREE_TAIL`) with
-        // the SAME tag we observed — the tag is bumped only on PUSH, so a pop
-        // preserves it. A concurrent re-push of `idx` will bump the tag and
-        // fail our CAS (the ABA fix).
+        // The new head is `next` (or the empty sentinel if
+        // `next == NEXT_FREE_TAIL`) with the SAME tag we observed — the tag
+        // is bumped only on PUSH, so a pop preserves it. A concurrent
+        // re-push of `idx` will bump the tag and fail our CAS (the ABA fix).
+        //
+        // H-2 FIX: on the empty transition we must NOT reset the tag to 0
+        // (`TaggedPtr::empty()` hardcodes tag=0). If we did, a parked racer
+        // holding a stale `(idx, tag)` snapshot from BEFORE the stack emptied
+        // could see the tag sequence restart from 0 on the next push and
+        // spuriously match its stale tag, letting a stale CAS succeed onto a
+        // freshly-repushed-but-different chain — the exact ABA corruption the
+        // tag exists to prevent. Instead we pack the empty sentinel's index
+        // half (`INDEX_MASK`) with the RUNNING tag we just read (`_tag`, the
+        // tag observed on the head we are popping off) — `TaggedPtr::is_empty`
+        // only inspects the index half, so this is still unambiguously empty,
+        // but the tag keeps counting forward across the empty transition
+        // exactly as it would across any other pop. `push_free_slot` already
+        // reads the tag out of the current head (empty or not) and bumps it,
+        // so this composes correctly with no other change needed.
         let new_head = if next == NEXT_FREE_TAIL {
-            TaggedPtr::empty()
+            TaggedPtr::pack(TaggedPtr::empty_index(), _tag)
         } else {
             TaggedPtr::pack(next as u64, _tag)
         };

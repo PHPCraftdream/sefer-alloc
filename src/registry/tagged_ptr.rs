@@ -135,11 +135,33 @@ impl TaggedPtr {
     /// (`INDEX_MASK` = `0xFFFF` = 65535, which is above `MAX_HEAPS` = 4096, so
     /// it is never a real slot index), tag = 0. The `free_slots` stack is
     /// initialised to this.
+    ///
+    /// Only the BOOTSTRAP-time empty state uses tag 0 unconditionally; a
+    /// RUNTIME empty transition (a pop that drains the last slot) must
+    /// instead preserve the running tag — see [`empty_index`](Self::empty_index)
+    /// and the H-2 fix note on `pop_free_slot` in `heap_registry.rs`.
     #[must_use]
     pub(crate) const fn empty() -> u64 {
         // value = INDEX_MASK (all-ones in the low bits) is an impossible slot
         // index / segment base, so it unambiguously denotes "empty".
         Self::pack(INDEX_MASK, 0)
+    }
+
+    /// The "empty stack" sentinel's index half (`INDEX_MASK`), for callers
+    /// that need to pack it together with a NON-zero, caller-supplied tag
+    /// (`pack(TaggedPtr::empty_index(), running_tag)`) rather than the
+    /// bootstrap `empty()` word, which always zeroes the tag.
+    ///
+    /// **H-2 fix:** `pop_free_slot`'s empty transition (the pop that drains
+    /// the last live slot) uses this — packing the tag it just observed on
+    /// the popped head — instead of `empty()`, which would reset the running
+    /// ABA tag to 0 and reopen the classic Treiber ABA window across an
+    /// empty→non-empty→... churn cycle. [`is_empty`](Self::is_empty) only
+    /// inspects the index half, so a non-zero tag here is still
+    /// unambiguously "empty".
+    #[must_use]
+    pub(crate) const fn empty_index() -> u64 {
+        INDEX_MASK
     }
 
     /// Whether a packed word denotes the empty stack (the [`empty`] sentinel).
