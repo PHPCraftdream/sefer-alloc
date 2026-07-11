@@ -672,11 +672,21 @@ impl AllocCore {
     /// `alloc_zeroed`/`realloc`).
     ///
     /// This entry point is **safe**: a foreign pointer (not one of ours) or a
-    /// double-free is a **no-op** (M2 — never UB, never corrupts the
-    /// allocator), matching the defensive contract the Phase 11 `GlobalAlloc`
-    /// face will require. A well-behaved caller passes a valid prior
-    /// allocation of `layout`; the safety here is defence-in-depth, not a
-    /// licence to free garbage.
+    /// double-free **before the address is reused** is a **no-op** (M2 —
+    /// never UB, never corrupts the allocator), matching the defensive
+    /// contract the Phase 11 `GlobalAlloc` face will require. A well-behaved
+    /// caller passes a valid prior allocation of `layout`; the safety here is
+    /// defence-in-depth, not a licence to free garbage.
+    ///
+    /// This guarantee has the same information-theoretic limit as every
+    /// `free(ptr)`-shaped interface (mimalloc, glibc, ...): once an address
+    /// has been reused by a subsequent allocation, a second `dealloc` of the
+    /// stale pointer is byte-for-byte indistinguishable from a legitimate
+    /// free of the CURRENT owner's block — there is no metadata left to
+    /// detect it. `contains_base` protects against pointers that are foreign
+    /// or whose segment is unmapped/never allocated; it cannot and does not
+    /// promise anything about a stale pointer that aliases a live
+    /// reallocation.
     ///
     /// **Phase 13.3 — arithmetic own-thread free.** The hot path is now pure
     /// arithmetic + (at most) one field-specific header byte read, NOT a
@@ -1124,6 +1134,19 @@ impl AllocCore {
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
     /// Returns null on failure, leaving the old allocation intact. Safe: a
     /// null `ptr` returns null without touching state.
+    ///
+    /// A **foreign pointer** (its computed segment base is not one of ours)
+    /// also returns null without touching state, symmetric with
+    /// [`dealloc`](Self::dealloc)'s foreign-pointer no-op. This is a
+    /// substrate-level (`AllocCore`) safe entry point with no cross-heap
+    /// concept: unlike `HeapCore::realloc` (which has a design-load-bearing
+    /// foreign-leg for `alloc-xthread` — a pointer from another live heap in
+    /// the SAME process is legitimate there and `dealloc` routes it
+    /// cross-thread), a pointer this `AllocCore` does not recognise is never
+    /// legitimate. Falling through to the move-leg for such a pointer would
+    /// `ptr::copy_nonoverlapping` out of an arbitrary caller-supplied address
+    /// under a `pub fn` with no `unsafe` marker — an unsound safe API. See
+    /// the F1 finding in the UB/memory-safety audit.
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
@@ -1137,12 +1160,19 @@ impl AllocCore {
         // in the X-arc retrospective (C2): a bugfix applied to one copy but
         // not the other would silently disagree.
         let base = os::segment_base_of_ptr(ptr);
-        if self.table.contains_base(base) {
-            if let Some(p) =
-                self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
-            {
-                return p;
-            }
+        if !self.table.contains_base(base) {
+            // Foreign/unregistered pointer: NOT a legitimate move-leg
+            // candidate at the substrate level (see doc comment above and F1
+            // in the UB/memory-safety audit). Symmetric with `dealloc`'s
+            // foreign-pointer no-op — return null instead of falling through
+            // to `self.alloc` + `Node::copy_nonoverlapping(ptr, ..)`, which
+            // would read `old_layout.size()` bytes from an address we never
+            // registered.
+            return core::ptr::null_mut();
+        }
+        if let Some(p) = self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
+        {
+            return p;
         }
         // In-place fast paths did not apply: alloc a fresh block, copy the
         // preserved prefix, and free the old block.
