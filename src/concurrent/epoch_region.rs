@@ -202,12 +202,18 @@ impl<T> EpochRegion<T> {
 
     /// Drains the per-shard remote-free queue into the owner's free list
     /// (single-consumer). Called by the owner at the start of its next op.
-    /// Honors reusable-vs-retired: the queue holds only successfully-evicted
-    /// indices, and `try_evict_at` already encoded saturation by reporting
-    /// `reusable: false` to the REMOTE remover — but the remote remover pushes
-    /// the index REGARDLESS, and the owner must re-check the slot's generation
-    /// is not saturated before re-adding. (In practice the index is pushed only
-    /// when `reusable`; this re-check is a defensive belt.)
+    ///
+    /// Honors reusable-vs-retired: both push sites
+    /// ([`remove`](Self::remove) and [`remote_evict`](Self::remote_evict))
+    /// already gate on `EvictOutcome::Evicted { reusable: true }` before
+    /// enqueuing an index here, so in practice every index in the queue is
+    /// reusable. This drain additionally RE-CHECKS each index's current
+    /// generation and skips (drops, does not re-add) any index that reads
+    /// `u32::MAX` — a defensive belt, not the primary gate: it protects
+    /// against ever handing a retired (saturated) slot back into circulation
+    /// even if a future push site stops gating on `reusable`. A skipped index
+    /// is simply not pushed to `state.free`; the slot stays vacant at gen
+    /// `u32::MAX` forever (intentionally abandoned — see `try_evict_at`).
     fn drain_remote_free(&self, state: &mut FreeState) {
         // Fast path: no remote frees → no lock acquisition.
         // We peek-lock: take the queue, and if non-empty, drain it into the
@@ -227,6 +233,16 @@ impl<T> EpochRegion<T> {
             core::mem::take(&mut *q)
         };
         for index in drained {
+            // Defensive re-check: a retired (gen == u32::MAX) slot must never
+            // re-enter the free list (see doc above). `AtomicSlot::generation`
+            // is an Acquire load — cheap, and this loop is already off the hot
+            // path (mutex held, remote-free queue drain).
+            let Some(slot) = self.slots.get(index as usize) else {
+                continue;
+            };
+            if slot.generation() == u32::MAX {
+                continue;
+            }
             state.free.push(index);
         }
     }
@@ -358,12 +374,13 @@ impl<T> EpochRegion<T> {
         // We won the CAS uniquely. Decrement len (races the owner's fetch_add
         // and other removers' fetch_sub correctly — both are atomic).
         self.len.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-        // Enqueue the freed index for the owner to drain. Push even if the slot
-        // saturated — `try_evict_at` reports reusable:false for saturation,
-        // and the owner re-checks on drain (a saturated slot is dropped from
-        // the drain loop, never re-added to the free list). This keeps the
-        // remote remover's path uniform (one lock acquisition) and pushes the
-        // retire decision to the single-consumer owner.
+        // Enqueue the freed index for the owner to drain — ONLY if reusable.
+        // `try_evict_at` reports `reusable: false` when the eviction landed the
+        // slot's generation on `u32::MAX` (saturated/retired): such a slot must
+        // never be pushed, since `install` never mints a handle on a retired
+        // slot and no future `try_evict_at` on it can do real work (it hits the
+        // upfront `Stale` guard). `drain_remote_free` also re-checks
+        // defensively, but the primary gate is here.
         let reusable = matches!(outcome, EvictOutcome::Evicted { reusable: true });
         if reusable {
             // Only reusable slots are worth re-adding; a retired slot is
@@ -376,6 +393,33 @@ impl<T> EpochRegion<T> {
             }
         }
         true
+    }
+
+    /// **Diagnostics/testing only.** Force-sets the generation of the slot at
+    /// `index` to `generation`, bypassing the normal install/evict protocol.
+    ///
+    /// This exists SOLELY so an integration test (`tests/`) can reach the
+    /// generation-saturation edge of [`AtomicSlot::try_evict_at`] (a slot
+    /// whose eviction lands its generation on `u32::MAX`, which must be
+    /// retired rather than reused — UBFIX-9 / M-8) without driving ~4 billion
+    /// real insert/remove cycles, which the project's short-scenario test
+    /// policy forbids. Same established `#[doc(hidden)]` test-only-export
+    /// pattern as [`ShardedRegion`](crate::concurrent::ShardedRegion)'s
+    /// `_reset_my_shard_binding_for_tests`.
+    ///
+    /// Production code MUST NEVER call this. The caller MUST only target a
+    /// slot it knows is currently vacant (e.g. index `0` on a freshly
+    /// `with_capacity`-created region, before any insert) — forcing the
+    /// generation of an OCCUPIED slot desyncs it from the installed value's
+    /// true generation, a self-inflicted ABA hazard this method does nothing
+    /// to prevent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of range for this region's capacity.
+    #[doc(hidden)]
+    pub fn _set_slot_generation_for_tests(&self, index: u32, generation: u32) {
+        self.slots[index as usize].set_generation_for_tests(generation);
     }
 }
 

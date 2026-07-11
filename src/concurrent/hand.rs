@@ -66,11 +66,16 @@ pub(crate) enum EvictOutcome {
     /// transition out of `expected_gen`: it has swapped the value to null and
     /// scheduled `defer_destroy` of the old pointer.
     ///
-    /// `reusable` is always `true` for a CAS win: saturation (`expected_gen ==
-    /// u32::MAX`) is handled upfront by returning [`EvictOutcome::Stale`], so a
-    /// win implies a non-saturated generation that the caller may re-add to a
-    /// free list. (A slot reaches `u32::MAX` only via retirement, and no live
-    /// handle ever carries MAX — see `try_evict_at`.)
+    /// `reusable` is `true` iff the POST-eviction generation (`expected_gen +
+    /// 1`) is itself not saturated, i.e. `expected_gen != u32::MAX - 1`. The
+    /// upfront `expected_gen == u32::MAX` check in `try_evict_at` only rejects
+    /// a CAS attempted AT the sentinel (returning [`EvictOutcome::Stale`]); it
+    /// does NOT cover the CAS that WINS and LANDS the slot on the sentinel
+    /// (`expected_gen == u32::MAX - 1` → `next == u32::MAX`). That slot is
+    /// retired: `reusable` is `false`, and the caller must NOT re-add it to a
+    /// free list — no live handle will ever carry `u32::MAX`, so `install`
+    /// will never run on it again, and a subsequent `try_evict_at` against it
+    /// would immediately hit the upfront `Stale` guard rather than a real CAS.
     Evicted { reusable: bool },
     /// The slot was NO LONGER at `expected_gen` when the CAS ran: another
     /// remover already transitioned it (or the owner reinstalled at a later
@@ -127,13 +132,29 @@ impl<T> AtomicSlot<T> {
     ///
     /// Pairing: an evicting thread stores the generation with `Release` in
     /// [`try_evict_at`](Self::try_evict_at); this `Acquire` load therefore sees
-    /// the bump (and any value publication ordered before it). Retained as a
-    /// diagnostic accessor; the eviction path uses the CAS directly rather than
-    /// a load-then-check (which would be the unsound off-mutex hazard).
+    /// the bump (and any value publication ordered before it). Used as a
+    /// diagnostic accessor and by [`EpochRegion`](crate::concurrent::EpochRegion)'s
+    /// `drain_remote_free` defensive re-check; the eviction path itself uses
+    /// the CAS directly rather than a load-then-check (which would be the
+    /// unsound off-mutex hazard).
     #[must_use]
-    #[allow(dead_code)]
     pub(crate) fn generation(&self) -> u32 {
         self.generation.load(Ordering::Acquire)
+    }
+
+    /// **Diagnostics/testing only.** Force-sets the slot's generation with
+    /// `Release` ordering, bypassing the normal install/evict protocol.
+    ///
+    /// This exists SOLELY so a test can reach the `expected_gen == u32::MAX -
+    /// 1` saturation-retirement edge of [`try_evict_at`](Self::try_evict_at)
+    /// without driving ~4 billion real insert/remove cycles (which the
+    /// project's short-scenario test policy forbids). Production code MUST
+    /// NEVER call this: it does not touch `value`, so calling it on an
+    /// occupied slot desyncs the generation from the installed value's true
+    /// generation (a self-inflicted ABA hazard) — the test call sites gate
+    /// this to freshly-`with_capacity`-created, still-vacant slots only.
+    pub(crate) fn set_generation_for_tests(&self, generation: u32) {
+        self.generation.store(generation, Ordering::Release);
     }
 
     /// Lock-free read under a pinned epoch [`Guard`].
@@ -262,14 +283,16 @@ impl<T> AtomicSlot<T> {
     /// removal (Phase 7b).
     ///
     /// Atomically transitions the slot's generation from `expected_gen` to
-    /// `expected_gen + 1` via `compare_exchange` (saturation at `u32::MAX`:
-    /// the CAS still wins but the generation stays at MAX, and the slot is
-    /// reported non-reusable — retired). On a SUCCESSFUL CAS the caller
-    /// UNIQUELY owns the reclamation: this method then swaps the value
-    /// pointer to null and schedules `guard.defer_destroy(old)`. On a FAILED
-    /// CAS the slot was no longer at `expected_gen` (another remover won, or
-    /// the owner reinstalled) — nothing is touched and [`EvictOutcome::Stale`]
-    /// is returned.
+    /// `expected_gen + 1` via `compare_exchange` (saturation: if `expected_gen
+    /// == u32::MAX` the attempt is rejected upfront as [`EvictOutcome::Stale`]
+    /// — see below; if `expected_gen == u32::MAX - 1` the CAS wins and the
+    /// generation LANDS on `u32::MAX`, and the slot is reported non-reusable —
+    /// retired). On a SUCCESSFUL CAS the caller UNIQUELY owns the
+    /// reclamation: this method then swaps the value pointer to null and
+    /// schedules `guard.defer_destroy(old)`. On a FAILED CAS the slot was no
+    /// longer at `expected_gen` (another remover won, or the owner
+    /// reinstalled) — nothing is touched and [`EvictOutcome::Stale`] is
+    /// returned.
     ///
     /// # Why this is the sound way to evict from a NON-OWNER thread
     ///
@@ -368,10 +391,19 @@ impl<T> AtomicSlot<T> {
         unsafe {
             guard.defer_destroy(old);
         }
-        // We won the CAS at a non-saturated generation (saturated returns early
-        // as Stale above), so the slot is reusable: the caller may re-add it to
-        // a free list once the freed index reaches the owner.
-        EvictOutcome::Evicted { reusable: true }
+        // Reusable iff the POST-eviction generation (`next`) is itself not
+        // saturated. The upfront `expected_gen == u32::MAX` guard above only
+        // rejects a CAS attempted AT the sentinel; it does NOT cover the CAS
+        // that WINS and lands the slot ON the sentinel (`expected_gen ==
+        // u32::MAX - 1` → `next == u32::MAX`). That slot must be retired here,
+        // not handed back reusable: nothing can ever evict it again (the next
+        // `try_evict_at` on it would see `expected_gen == u32::MAX` and hit the
+        // upfront `Stale` guard, so a `reusable: true` here would mint a live
+        // handle at gen `u32::MAX` that can never be removed — a permanent slot
+        // leak and a `len` that never comes back down).
+        EvictOutcome::Evicted {
+            reusable: next != u32::MAX,
+        }
     }
 
     /// Drops the value this slot holds (if any), given EXCLUSIVE access.

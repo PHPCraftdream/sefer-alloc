@@ -187,6 +187,94 @@ fn region_drop_runs_live_value_destructors_once() {
     );
 }
 
+/// UBFIX-9 / M-8 counterfactual: a slot whose eviction lands its generation
+/// on `u32::MAX` (the saturation sentinel) must be RETIRED — never handed
+/// back to the free list.
+///
+/// Before the fix, `AtomicSlot::try_evict_at` unconditionally returned
+/// `Evicted { reusable: true }` on every CAS win, EXCEPT the upfront
+/// `expected_gen == u32::MAX` guard (which only rejects an attempt already
+/// AT the sentinel). It never checked whether the CAS *landed* the
+/// generation ON the sentinel (`expected_gen == u32::MAX - 1` → `next ==
+/// u32::MAX`). So the slot freed by that eviction went back into the free
+/// list, a following `insert` reused it and minted a LIVE handle carrying
+/// generation `u32::MAX`, and that handle could never be removed again (its
+/// own `try_evict_at(u32::MAX, ..)` hits the upfront `Stale` guard
+/// unconditionally) — a permanent slot leak: `len` never returns to 0 and
+/// the region's usable capacity silently shrinks by one forever.
+///
+/// This test drives a single-slot region directly to that boundary via the
+/// `#[doc(hidden)]` test-only `_set_slot_generation_for_tests` hook (driving
+/// it there through ~4 billion real insert/remove cycles is exactly what the
+/// project's short-scenario test policy forbids) and asserts the POST-fix
+/// contract: the retiring eviction's slot is NOT reusable, so it does not
+/// return to the free list, and a subsequent insert into the (now
+/// zero-capacity-in-practice) region fails with `Err` rather than silently
+/// resurrecting a slot at the sentinel generation.
+///
+/// RED (pre-fix)/GREEN (post-fix): with the old unconditional `reusable:
+/// true`, `second.is_ok()` below was `true` (the slot was wrongly recycled)
+/// and `region.len()` returned to `0` after both removes — this test would
+/// have failed both assertions. No prior test in this suite exercised the
+/// saturation boundary at all.
+#[test]
+fn eviction_landing_on_max_generation_retires_the_slot_instead_of_reusing_it() {
+    // Single-slot region: index 0 is the only slot, so whether it goes back
+    // to the free list is directly observable via a following insert.
+    let region = EpochRegion::<u32>::with_capacity(1);
+
+    // Force the (still-vacant) slot 0 to one generation below the sentinel.
+    // `install` (inside `insert`) does not bump the generation, so the handle
+    // minted below carries exactly `u32::MAX - 1`.
+    region._set_slot_generation_for_tests(0, u32::MAX - 1);
+
+    let first_handle = region
+        .insert(1_u32)
+        .unwrap_or_else(|_| panic!("insert into the freshly-forced vacant slot must succeed"));
+    assert_eq!(region.len(), 1);
+
+    // Evicting this handle CASes the generation `u32::MAX - 1 -> u32::MAX`:
+    // the CAS wins (this is a real, successful eviction of a live handle),
+    // but the slot lands ON the sentinel and must be retired.
+    assert!(
+        region.remove(first_handle),
+        "a live handle at the pre-sentinel generation must remove successfully"
+    );
+    assert_eq!(
+        region.get_cloned(first_handle),
+        None,
+        "removed handle must be None (I2) regardless of saturation"
+    );
+    assert_eq!(
+        region.len(),
+        0,
+        "len must drop back to 0 — the eviction itself is accounted for correctly"
+    );
+
+    // The counterfactual: because the slot retired (generation now u32::MAX),
+    // it must NOT have returned to the free list. A region of capacity 1 with
+    // its only slot retired has ZERO effective capacity: the next insert must
+    // fail with Err, handing the value back — never silently minting a new
+    // live handle at generation u32::MAX (which could never be removed
+    // again).
+    let second = region.insert(2_u32);
+    assert!(
+        second.is_err(),
+        "a slot that saturated its generation must be retired, not recycled — \
+         insert into a capacity-1 region with its only slot retired must fail"
+    );
+    assert_eq!(
+        second.unwrap_err(),
+        2_u32,
+        "a failed insert hands the value back unchanged"
+    );
+    assert_eq!(
+        region.len(),
+        0,
+        "len stays 0 — the failed insert must not have touched accounting"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Concurrency test.
 // ---------------------------------------------------------------------------
