@@ -99,18 +99,38 @@ impl AllocCore {
         if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
             return false;
         }
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
+        let kind = SegmentHeader::kind_at(base);
+        if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
             return false;
         }
         let bs = SizeClasses::block_size(class_idx) as u32;
         if !(off as u32).is_multiple_of(bs) {
             return false;
         }
+        // H-1 (UBFIX-3): reject an offset that lands in the segment's OWN
+        // metadata region (header / page map / bin table / …) instead of the
+        // payload. Without this guard a garbled/attacker-controlled ring
+        // entry with a small, `block_size`-aligned `off` (e.g. `0`) sails
+        // past every other guard and `write_next` below clobbers live
+        // segment metadata — corrupting the header, bitmap, or bin table
+        // in place. `payload_start` is the compile-time metadata footprint,
+        // primordial segments carry the extra registry/hash/free-list
+        // regions on top of the small footprint, so they use the larger
+        // `primordial_meta_end()`.
+        let payload_start = if kind == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
+        };
+        if off < payload_start {
+            return false;
+        }
         let meta = SegmentMeta::new(base);
-        #[cfg(feature = "alloc-decommit")]
+        // M-1 (UBFIX-3): this guard was previously `#[cfg(feature =
+        // "alloc-decommit")]`-only, so builds without that feature had NO
+        // upper bound at all — a stale/garbled offset `>= bump` (uncarved
+        // payload) would sail through. Corruption containment must not
+        // depend on the decommit feature, so the compare is unconditional.
         if off >= meta.bump_of() {
             return false;
         }
@@ -208,10 +228,8 @@ impl AllocCore {
         if SegmentHeader::magic_at(base) != super::segment_header::SEGMENT_MAGIC {
             return false;
         }
-        if !matches!(
-            SegmentHeader::kind_at(base),
-            SegmentKind::Small | SegmentKind::Primordial
-        ) {
+        let kind = SegmentHeader::kind_at(base);
+        if !matches!(kind, SegmentKind::Small | SegmentKind::Primordial) {
             return false;
         }
         // Sanity: the offset must be a whole number of `block_size` units. carve
@@ -223,6 +241,20 @@ impl AllocCore {
         // defensive `dealloc` contract).
         let bs = SizeClasses::block_size(class_idx) as u32;
         if !(off as u32).is_multiple_of(bs) {
+            return false;
+        }
+        // H-1 (UBFIX-3): reject an offset in the segment's OWN metadata
+        // region (header / page map / bin table / …) rather than payload —
+        // see `reclaim_offset_checked`'s identical guard for the full
+        // rationale. Primordial segments have the larger footprint (extra
+        // registry/hash/free-list regions), so they use
+        // `primordial_meta_end()`.
+        let payload_start = if kind == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
+        };
+        if off < payload_start {
             return false;
         }
         let meta = SegmentMeta::new(base);
@@ -238,9 +270,12 @@ impl AllocCore {
         // This is the concrete realization of design §1.3 ("reclaim does a no-op
         // BEFORE touching the block on a stale entry") for the reset bitmap. The
         // owner is the sole `bump` writer, and reclaim runs owner-side, so this
-        // field read is consistent (no concurrent bump write). Owner-only, so
-        // gated to the feature that resets the bump.
-        #[cfg(feature = "alloc-decommit")]
+        // field read is consistent (no concurrent bump write).
+        //
+        // M-1 (UBFIX-3): previously `#[cfg(feature = "alloc-decommit")]`-only,
+        // so non-decommit builds had NO upper bound — a stale/garbled
+        // `off >= bump` value sailed straight through. Corruption containment
+        // must not depend on the decommit feature; unconditional now.
         if off >= meta.bump_of() {
             return false;
         }
@@ -467,6 +502,26 @@ impl AllocCore {
         let bitmap_base = Node::offset(base, SegLayout::alloc_bitmap_off());
         for (i, byte) in out.iter_mut().enumerate() {
             *byte = Node::read_u8(Node::offset(bitmap_base, i));
+        }
+    }
+
+    /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
+    /// payload lower bound for `ptr`'s segment — the same `payload_start`
+    /// (`Layout::primordial_meta_end()` for a primordial segment, else
+    /// `Layout::small_meta_end()`) the H-1 guard in `dealloc_small`/
+    /// `reclaim_offset`/`reclaim_offset_checked`/`flush_run` rejects offsets
+    /// below. Exposed so a regression test can construct a metadata-region
+    /// address (`base + k` for `k < payload_start`) without hardcoding the
+    /// crate's private layout constants (`segment_header::Layout` is
+    /// `pub(crate)`, unreachable from `tests/`).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_payload_start_for(&self, ptr: *mut u8) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
         }
     }
 
@@ -832,8 +887,19 @@ impl AllocCore {
         let mut bm = meta.alloc_bitmap();
         // Hoist the `bump` LOAD once (the COMPARE stays per-block). A flush
         // never carves, so `bump` cannot advance during this run.
-        #[cfg(feature = "alloc-decommit")]
         let bump = meta.bump_of();
+        // H-1 (UBFIX-3): hoist the payload lower bound once — every block in
+        // `run` shares this `base` (see this fn's doc), so `kind`/
+        // `payload_start` are run-invariant. Reject any block whose `off`
+        // lands in the segment's OWN metadata region (header / page map /
+        // bin table / …) instead of the payload; see `dealloc_small`'s
+        // identical guard for the full rationale.
+        let kind = SegmentHeader::kind_at(base);
+        let payload_start = if kind == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
+        };
 
         // PERF-3 Ф2: collect the offsets of ACCEPTED blocks for the run-
         // detection pass below (under `alloc-runfreelist` only). The bound is
@@ -868,8 +934,18 @@ impl AllocCore {
 
         for &ptr in run {
             let off = (ptr as usize - base as usize) as u32;
-            // Guard 1 (per-block): decommit stale-free `off >= bump`.
-            #[cfg(feature = "alloc-decommit")]
+            // Guard 0 (per-block): H-1 payload lower bound (`payload_start`
+            // hoisted above — run-invariant). A `write_next` on an
+            // in-metadata offset would clobber this segment's own header/
+            // page-map/bin-table in place.
+            if (off as usize) < payload_start {
+                continue;
+            }
+            // Guard 1 (per-block): decommit stale-free `off >= bump`. M-1
+            // (UBFIX-3): previously `#[cfg(feature = "alloc-decommit")]`-only
+            // — non-decommit builds had no upper bound at all. Corruption
+            // containment must not depend on the decommit feature;
+            // unconditional now (`bump` is hoisted unconditionally above).
             if (off as usize) >= bump {
                 continue;
             }
@@ -1962,6 +2038,25 @@ impl AllocCore {
         if !(off as usize).is_multiple_of(SizeClasses::block_size(class_idx)) {
             return;
         }
+        // H-1 (UBFIX-3): reject an offset that lands in the segment's OWN
+        // metadata region (header / page map / bin table / …) instead of the
+        // payload. A caller passing a foreign/corrupt `ptr` whose computed
+        // `off` happens to be small and `block_size`-aligned (e.g. `0`) would
+        // otherwise sail past every guard below and `write_next` clobbers
+        // live segment metadata in place — corrupting the header, bitmap, or
+        // bin table. `payload_start` is the compile-time metadata footprint;
+        // primordial segments carry the extra registry/hash/free-list
+        // regions on top of the small footprint, so they use the larger
+        // `primordial_meta_end()`.
+        let kind = SegmentHeader::kind_at(base);
+        let payload_start = if kind == SegmentKind::Primordial {
+            SegLayout::primordial_meta_end()
+        } else {
+            SegLayout::small_meta_end()
+        };
+        if (off as usize) < payload_start {
+            return;
+        }
         // Phase 35 (M6 decommit) — the post-decommit stale-free guard. When a
         // segment empties it is decommitted AND reset: `bump` returns to
         // `small_meta_end()` and the alloc bitmap is zeroed. A late free / a
@@ -1971,9 +2066,12 @@ impl AllocCore {
         // that was ever carved has `off >= bump` ONLY after such a reset (a live
         // block in a committed segment always has `off < bump`); so rejecting
         // `off >= bump` closes the window with no false positive on a real free.
-        // Owner-only `bump` read (single-writer), gated to the feature that
-        // resets the bump.
-        #[cfg(feature = "alloc-decommit")]
+        // Owner-only `bump` read (single-writer).
+        //
+        // M-1 (UBFIX-3): previously `#[cfg(feature = "alloc-decommit")]`-only,
+        // so non-decommit builds had NO upper bound — a stale/garbled/foreign
+        // `off >= bump` value sailed straight through. Corruption containment
+        // must not depend on the decommit feature; unconditional now.
         if (off as usize) >= meta.bump_of() {
             return;
         }
