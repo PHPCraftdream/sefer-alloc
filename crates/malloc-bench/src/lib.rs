@@ -22,9 +22,15 @@
 //! block is freed **exactly once, by exactly one thread**. A handed-off block
 //! is moved out of the producer's bookkeeping (its slot is set empty) before
 //! being sent; the consumer drains its mailbox and frees each received block
-//! once. At the end every thread frees its own remaining live blocks, then
-//! drains any final mailbox contents — so nothing is dropped on the floor and
-//! nothing is freed twice.
+//! once. If the send itself fails (the target thread already dropped its
+//! receiver on thread-finish skew), the block was never observed by another
+//! thread, so the sender frees it locally instead of dropping the
+//! `SendError`. At the end every thread frees its own remaining live blocks
+//! and drains its mailbox one last time; after ALL threads have joined,
+//! [`run`] does one more sweep over every leftover receiver (now that no
+//! sender can still be racing a send) to catch any block that arrived in the
+//! final window between a worker's own last drain and its `rx` being handed
+//! back — so nothing is dropped on the floor and nothing is freed twice.
 //!
 //! # Determinism
 //!
@@ -242,10 +248,16 @@ unsafe fn larson_worker<A: GlobalAlloc>(
                 }
                 // The producer no longer owns `block` after send; the slot is
                 // now empty and will be refilled below.
-                if senders[target].send(block).is_err() {
-                    // Receiver gone (shouldn't happen during the run) — we
-                    // can't send, so the block would be leaked. Free locally
-                    // to stay UAF/leak-free. (Unreachable in practice.)
+                if let Err(e) = senders[target].send(block) {
+                    // Receiver gone (shouldn't happen during the run, but is
+                    // reachable on thread-finish skew: the target thread can
+                    // exit its worker loop and drop `rx` while this thread is
+                    // still sending). `send` returns the block back to us on
+                    // failure — free it locally so it is not leaked.
+                    // SAFETY: `e.0` is the same `Block` we just tried to send;
+                    // it was never observed by another thread (the channel
+                    // send failed), so we are still its unique owner.
+                    unsafe { free_block(a, e.0) };
                 }
             }
         } else if let Some(block) = slots[idx].take() {
@@ -308,7 +320,15 @@ unsafe fn mstress_worker<A: GlobalAlloc>(
                     if target == self_idx {
                         target = (target + 1) % n_threads;
                     }
-                    let _ = senders[target].send(block);
+                    if let Err(e) = senders[target].send(block) {
+                        // Same reasoning as the larson handoff site: `send`
+                        // failed (receiver's thread already dropped its
+                        // `rx`), so `e.0` was never observed by another
+                        // thread. Free it locally to stay leak-free.
+                        // SAFETY: `e.0` is the same `Block` we just tried to
+                        // send; we are still its unique owner.
+                        unsafe { free_block(a, e.0) };
+                    }
                 } else {
                     // SAFETY: owned here, freed once.
                     unsafe { free_block(a, block) };
@@ -494,7 +514,14 @@ where
             let mut extra = 0u64;
             // SAFETY: uniquely owned inbound blocks.
             unsafe { drain_mailbox(&alloc, &rx, &mut extra) };
-            ops + extra
+            // Hand `rx` back to the caller instead of dropping it here: a
+            // peer thread can still be mid-`send` to us after this drain
+            // (thread-finish skew), and a block that lands in the channel
+            // between this drain and `rx` being dropped would otherwise be
+            // leaked. `run` does one more drain per receiver after ALL
+            // workers have joined (so no sender can still be sending), which
+            // closes that window.
+            (ops + extra, rx)
         });
         handles.push(handle);
     }
@@ -504,14 +531,32 @@ where
     let start = Instant::now();
 
     let mut total_ops: u64 = 0;
+    let mut leftover_receivers = Vec::with_capacity(threads);
     for h in handles {
-        total_ops += h.join().expect("worker panicked");
+        let (ops, rx) = h.join().expect("worker panicked");
+        total_ops += ops;
+        leftover_receivers.push(rx);
     }
     let elapsed = start.elapsed();
 
-    // After all workers joined, every sender is dropped and every receiver was
-    // drained in the worker's final step: no block is leaked or double-freed.
+    // Every worker has joined, so every `send` call that will ever happen has
+    // already happened — no sender can race this final sweep. Drop the
+    // `Sender`s first so each `Receiver` is exhausted after this drain
+    // (`try_recv` won't spuriously report the channel as open), then do one
+    // last drain per receiver to free any block that arrived after that
+    // worker's own final drain but before it returned `rx`. This closes the
+    // last leak window described above.
     drop(senders);
+    let final_alloc = make_alloc();
+    let mut final_freed = 0u64;
+    for rx in &leftover_receivers {
+        // SAFETY: all workers have joined and every sender is dropped, so
+        // these are the last blocks left in the channels; each is uniquely
+        // owned here. `final_alloc` is sound to free them with per the
+        // stateless-facade contract documented above (all `A` instances
+        // route to the same underlying allocator).
+        unsafe { drain_mailbox(&final_alloc, rx, &mut final_freed) };
+    }
 
     total_ops as f64 / elapsed.as_secs_f64()
 }
