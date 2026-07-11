@@ -11,6 +11,12 @@
 pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
+mod alloc_core_large;
+#[cfg(feature = "alloc-decommit")]
+mod alloc_core_large_cache;
+mod alloc_core_small;
+#[cfg(feature = "alloc-decommit")]
+mod alloc_core_small_pool;
 mod bootstrap;
 /// The cross-thread deferred-free Treiber stack for Large/huge segments
 /// (task A1, extracted for #132). Used by the allocator face
