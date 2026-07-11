@@ -61,113 +61,144 @@ impl HeapRegistry {
     /// Tries the `free_slots` stack first (a recycled slot); on empty, mints
     /// a fresh slot by bumping `count`. Then CASes the slot `FREE → LIVE`,
     /// bumps its `generation`, and (lazily) materialises the `HeapCore` in
-    /// the slot's `UnsafeCell` if this is the slot's first claim. Returns
-    /// `null` only if `count` has reached `MAX_HEAPS` AND the free stack is
-    /// empty (registry exhaustion — the caller, 12.3, falls back to the
-    /// primordial heap).
+    /// the slot's `UnsafeCell` if this slot has never been materialised
+    /// before. Returns `null` if `count` has reached `MAX_HEAPS` AND the free
+    /// stack is empty (registry exhaustion — the caller, 12.3, falls back to
+    /// the primordial heap), OR if materialisation itself fails (OOM on the
+    /// slot's first claim — see the M-5 note below).
+    ///
+    /// **M-5 (UBFIX-5):** the materialisation gate is
+    /// `!slot.initialised.load(Acquire)`, NOT `new_gen == 1`. `generation` is
+    /// bumped unconditionally by every successful `FREE → LIVE` CAS,
+    /// including a claim that hits this exact slot again after a PRIOR claim
+    /// materialised-then-OOM'd on it (see below) — in that scenario `new_gen`
+    /// would already be `> 1` on the retry even though the slot's `HeapCore`
+    /// was never actually written, and the old `new_gen == 1` gate would skip
+    /// materialisation entirely and hand out a pointer to
+    /// `MaybeUninit::uninit()` bytes. `initialised` is the correct gate
+    /// because it is FALSE for exactly "this slot's `HeapCore` has never been
+    /// written", independent of how many times `generation` has been bumped
+    /// (see `HeapSlot::initialised`'s doc comment for the full publish
+    /// argument).
+    ///
+    /// **OOM-on-materialisation push-back:** if `HeapCore::new` returns
+    /// `None` (the OS refused the segment reservation), the slot has already
+    /// been popped off `free_slots` (or freshly minted by `bump_count`) and
+    /// CASed to `LIVE` — without pushing it back onto `free_slots`, it would
+    /// be LIVE forever, never materialised and never claimable again (a
+    /// leaked slot; `MAX_HEAPS` reachable prematurely). The OOM branch CASes
+    /// the slot back `LIVE → FREE` and pushes it onto `free_slots` (the exact
+    /// shape of a normal [`recycle`](Self::recycle)) before returning `null`,
+    /// so a later claim can retry the same slot index once memory pressure
+    /// eases.
     #[must_use]
     pub fn claim() -> *mut HeapCore {
-        let idx = match Self::pick_slot() {
-            Some(i) => i,
-            None => return core::ptr::null_mut(),
-        };
-        let reg = ensure();
-        // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
-        let slot = unsafe { reg.slots.get_unchecked(idx) };
+        loop {
+            let idx = match Self::pick_slot() {
+                Some(i) => i,
+                None => return core::ptr::null_mut(),
+            };
+            let reg = ensure();
+            // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
+            let slot = unsafe { reg.slots.get_unchecked(idx) };
 
-        if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
-            == Err(STATE_LIVE)
-        {
-            return Self::claim(); // lost the slot race — retry
-        }
-        let new_gen = slot.generation.fetch_add(1, Ordering::Release) + 1;
-        if new_gen == 1 {
-            let heap_ptr = slot.heap.get();
-            match HeapCore::new(idx as u32) {
-                // SAFETY: sole writer, uninitialised slot, first claim.
-                Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
-                None => {
-                    let _ = slot.cas_state(
-                        STATE_LIVE,
-                        STATE_FREE,
-                        Ordering::Release,
-                        Ordering::Relaxed,
-                    );
-                    return core::ptr::null_mut();
-                }
+            if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+                == Err(STATE_LIVE)
+            {
+                continue; // lost the slot race — retry
             }
-            // W3: plant this heap's stable handles to its slot-resident
-            // diagnostic hit counters, now that the `HeapCore` is materialised
-            // in the slot. See `bind_slot_counters`.
-            // SAFETY: we just `write`(hc) into this slot's `UnsafeCell` and are
-            // its sole writer (the FREE→LIVE CAS winner); no other thread holds
-            // a reference to it yet (`initialised` not yet published).
-            unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
-            // Publish readiness: Release-store `initialised = true` ONLY
-            // now that `heap_ptr.write(hc)` has fully completed (task #133
-            // hardening — see `HeapSlot::initialised`'s doc comment for the
-            // UB window this closes: `count`/`generation` alone are bumped
-            // BEFORE `HeapCore::new()` runs and are NOT safe gates for a
-            // cross-thread reader to dereference `heap`). This Release
-            // store is the publish half of the HB pair; diagnostic
-            // aggregation readers (`tcache_hits_total`,
-            // `large_cache_hits_total`) pair it with an Acquire load.
-            slot.initialised.store(true, Ordering::Release);
+            slot.generation.fetch_add(1, Ordering::Release);
+            if !slot.initialised.load(Ordering::Acquire) {
+                let heap_ptr = slot.heap.get();
+                match HeapCore::new(idx as u32) {
+                    // SAFETY: sole writer, uninitialised slot, first claim.
+                    Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
+                    None => {
+                        // OOM on materialisation: push the slot back to FREE
+                        // so it is not leaked (M-5) — same shape as `recycle`.
+                        push_back_after_oom(reg, slot, idx as u32);
+                        return core::ptr::null_mut();
+                    }
+                }
+                // W3: plant this heap's stable handles to its slot-resident
+                // diagnostic hit counters, now that the `HeapCore` is materialised
+                // in the slot. See `bind_slot_counters`.
+                // SAFETY: we just `write`(hc) into this slot's `UnsafeCell` and are
+                // its sole writer (the FREE→LIVE CAS winner); no other thread holds
+                // a reference to it yet (`initialised` not yet published).
+                unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
+                // Publish readiness: Release-store `initialised = true` ONLY
+                // now that `heap_ptr.write(hc)` has fully completed (task #133
+                // hardening — see `HeapSlot::initialised`'s doc comment for the
+                // UB window this closes: `count`/`generation` alone are bumped
+                // BEFORE `HeapCore::new()` runs and are NOT safe gates for a
+                // cross-thread reader to dereference `heap`). This Release
+                // store is the publish half of the HB pair; diagnostic
+                // aggregation readers (`tcache_hits_total`,
+                // `large_cache_hits_total`) pair it with an Acquire load.
+                slot.initialised.store(true, Ordering::Release);
+            }
+            // SAFETY: slot is LIVE and initialised; we are sole writer.
+            return slot.heap.get().cast::<HeapCore>();
         }
-        // SAFETY: slot is LIVE and initialised; we are sole writer.
-        slot.heap.get().cast::<HeapCore>()
     }
 
     /// Like [`claim`](Self::claim) but plumbs `config` into the newly
-    /// materialised `HeapCore` (first claim only — generation == 1). On
-    /// re-claim the existing `HeapCore` is reused as-is; its large-cache
-    /// config was set at first claim and persists.
+    /// materialised `HeapCore` (first materialisation only — gated on
+    /// [`HeapSlot::initialised`], see the M-5 note on `claim` for why NOT
+    /// `generation == 1`). On re-claim the existing `HeapCore` is reused
+    /// as-is; its large-cache config was set at first materialisation and
+    /// persists.
+    ///
+    /// **OOM-on-materialisation push-back:** identical to `claim`'s — see
+    /// that method's doc comment for the full rationale. On `HeapCore::new_with_config`
+    /// returning `None`, the slot is CASed back to `FREE` and pushed onto
+    /// `free_slots` before returning `null`, so it is not leaked.
     ///
     /// Only present under `alloc-decommit`.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub fn claim_with_config(config: crate::alloc_core::LargeCacheConfig) -> *mut HeapCore {
-        let idx = match Self::pick_slot() {
-            Some(i) => i,
-            None => return core::ptr::null_mut(),
-        };
-        let reg = ensure();
-        // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
-        let slot = unsafe { reg.slots.get_unchecked(idx) };
+        loop {
+            let idx = match Self::pick_slot() {
+                Some(i) => i,
+                None => return core::ptr::null_mut(),
+            };
+            let reg = ensure();
+            // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
+            let slot = unsafe { reg.slots.get_unchecked(idx) };
 
-        if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
-            == Err(STATE_LIVE)
-        {
-            return Self::claim_with_config(config); // lost the slot race — retry
-        }
-        let new_gen = slot.generation.fetch_add(1, Ordering::Release) + 1;
-        if new_gen == 1 {
-            let heap_ptr = slot.heap.get();
-            // First claim: materialise using the caller's config.
-            match HeapCore::new_with_config(idx as u32, config) {
-                // SAFETY: sole writer, uninitialised slot, first claim.
-                Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
-                None => {
-                    let _ = slot.cas_state(
-                        STATE_LIVE,
-                        STATE_FREE,
-                        Ordering::Release,
-                        Ordering::Relaxed,
-                    );
-                    return core::ptr::null_mut();
-                }
+            if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+                == Err(STATE_LIVE)
+            {
+                continue; // lost the slot race — retry
             }
-            // W3: plant slot-counter handles — see `claim` above and
-            // `bind_slot_counters`.
-            // SAFETY: identical to `claim` — sole writer, just materialised,
-            // not yet published.
-            unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
-            // Publish readiness — see the identical store in `claim` above
-            // for the full rationale (task #133 hardening).
-            slot.initialised.store(true, Ordering::Release);
+            slot.generation.fetch_add(1, Ordering::Release);
+            if !slot.initialised.load(Ordering::Acquire) {
+                let heap_ptr = slot.heap.get();
+                // First materialisation: use the caller's config.
+                match HeapCore::new_with_config(idx as u32, config) {
+                    // SAFETY: sole writer, uninitialised slot, first claim.
+                    Some(hc) => unsafe { heap_ptr.cast::<HeapCore>().write(hc) },
+                    None => {
+                        // OOM on materialisation: push the slot back to FREE
+                        // so it is not leaked (M-5) — same shape as `recycle`.
+                        push_back_after_oom(reg, slot, idx as u32);
+                        return core::ptr::null_mut();
+                    }
+                }
+                // W3: plant slot-counter handles — see `claim` above and
+                // `bind_slot_counters`.
+                // SAFETY: identical to `claim` — sole writer, just materialised,
+                // not yet published.
+                unsafe { bind_slot_counters(slot, heap_ptr.cast::<HeapCore>()) };
+                // Publish readiness — see the identical store in `claim` above
+                // for the full rationale (task #133 hardening).
+                slot.initialised.store(true, Ordering::Release);
+            }
+            // SAFETY: slot is LIVE and initialised; we are sole writer.
+            return slot.heap.get().cast::<HeapCore>();
         }
-        // SAFETY: slot is LIVE and initialised; we are sole writer.
-        slot.heap.get().cast::<HeapCore>()
     }
 
     /// Pick a candidate slot index: pop from `free_slots` (recycled slot)
@@ -562,6 +593,40 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // 64-byte-aligned cache line.
     #[cfg(feature = "alloc-xthread")]
     heap_ref.bind_thread_free(&slot.remote.thread_free);
+}
+
+/// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`
+/// materialisation failed (OOM). Called from `claim`/`claim_with_config`
+/// ONLY on the `HeapCore::new`/`new_with_config` `None` branch — at that
+/// point the slot is `LIVE` (the caller already won the `FREE → LIVE` CAS)
+/// but `heap` was never written and `initialised` was never published, so
+/// this is NOT the general [`HeapRegistry::recycle`](HeapRegistry::recycle)
+/// path (which requires a valid `*mut HeapCore` derived from a completed
+/// claim) — it is the OOM-specific mirror of it, working directly off the
+/// slot reference and index the caller already has in hand.
+///
+/// CASes the slot `LIVE → FREE` (mirrors `recycle`'s CAS — Release on
+/// success so a later claim's Acquire load of `state` sees the slot's freed
+/// state and the `next_free` link this function pushes) then pushes it onto
+/// `free_slots`, exactly as `recycle` does. Without this push-back the slot
+/// would stay `LIVE` forever: never materialised (so every future `claim`
+/// hitting the initialisation branch on the SAME index would see
+/// `initialised == false` and retry `HeapCore::new`, which is a correctness
+/// non-issue) but also never reachable via `pick_slot` again (`free_slots`
+/// never gets it back and `count` already counted it) — a genuine slot leak
+/// under sustained memory pressure, tightening the effective `MAX_HEAPS`
+/// cap with every transient OOM.
+///
+/// The CAS is expected to always succeed: the caller is the slot's sole
+/// writer since winning the `FREE → LIVE` CAS in `claim`/`claim_with_config`,
+/// and no other path can observe this slot as `LIVE` and race a state
+/// transition on it before the caller itself either finishes materialising
+/// or calls this function. We still use a CAS (not a plain store) to mirror
+/// `recycle`'s defensive shape and keep `state`'s only mutator discipline
+/// uniform across the module.
+fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
+    let _ = slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed);
+    push_free_slot(reg, idx);
 }
 
 // ---------------------------------------------------------------------------
@@ -975,4 +1040,83 @@ pub fn large_cache_hits_total() -> u64 {
         total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
     }
     total
+}
+
+// ---------------------------------------------------------------------------
+// UBFIX-5 test-only hooks (M-5 / L-9a regression coverage).
+//
+// There is no test-only way to force `HeapCore::new`/`new_with_config` to
+// return `None` (a real OS reservation refusal) without touching
+// `alloc_core.rs` (out of this task's scope — see the task's isolation
+// note). These hooks instead reproduce the EXACT slot-level state the OOM
+// branch leaves behind, by driving the identical `FREE → LIVE` CAS +
+// `generation` bump + push-back-to-FREE sequence `claim` performs, WITHOUT
+// running `HeapCore::new` — i.e. "claim a slot, then simulate materialisation
+// failing" — so a caller-side test can verify the state `push_back_after_oom`
+// produces (LIVE→FREE, back on `free_slots`, `generation` bumped but
+// `initialised` still false) and that a SUBSEQUENT real `claim()` recovers it
+// correctly (the M-5 fix under test: the gate is `initialised`, not
+// `generation == 1`).
+// ---------------------------------------------------------------------------
+
+/// Test-only hook (UBFIX-5 / M-5): claim a slot via the exact `pick_slot` +
+/// `FREE → LIVE` CAS + `generation` bump prelude `claim` uses, then — instead
+/// of materialising a `HeapCore` — immediately push it back to `FREE` via
+/// [`push_back_after_oom`], exactly as `claim`'s OOM branch does. Returns the
+/// slot index touched, or `None` on registry exhaustion (mirrors `claim`'s
+/// own `None` case, vanishingly unlikely in a test).
+///
+/// This reproduces, deterministically and without touching `alloc_core.rs`,
+/// the exact post-OOM slot state `claim`'s `HeapCore::new() == None` branch
+/// leaves behind: `state == FREE`, the slot back on `free_slots`,
+/// `generation` bumped by exactly one, and `initialised` still `false` (the
+/// slot's `HeapCore` was never written). A caller can use the returned index
+/// with [`dbg_slot_generation`] / a subsequent `claim()` to verify (a) the
+/// slot is not leaked (a following `claim()` can reach it again) and (b) a
+/// following `claim()` on this exact slot — which will observe
+/// `generation >= 2` (already bumped once here) — still correctly
+/// materialises the `HeapCore` rather than skipping materialisation (the
+/// defect the old `new_gen == 1` gate had: it would treat any
+/// `generation > 1` slot as "already materialised" regardless of
+/// `initialised`, handing out a pointer to `MaybeUninit::uninit()` bytes).
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
+    let idx = HeapRegistry::pick_slot()?;
+    let reg = ensure();
+    // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
+    let slot = unsafe { reg.slots.get_unchecked(idx) };
+    if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
+        == Err(STATE_LIVE)
+    {
+        // Lost the slot race to a concurrent real claim (should not happen
+        // under the crate's `tests/` serial-guard discipline, but stay
+        // total rather than panic): report exhaustion-shaped `None` rather
+        // than corrupting a slot we do not own.
+        return None;
+    }
+    slot.generation.fetch_add(1, Ordering::Release);
+    // Do NOT call `HeapCore::new` / write `heap` / publish `initialised` —
+    // this is the simulated OOM: materialisation never happened.
+    push_back_after_oom(reg, slot, idx as u32);
+    Some(idx as u32)
+}
+
+/// Test-only introspection (UBFIX-5): read a slot's `initialised` flag
+/// directly. `HeapSlot::initialised` is `pub(crate)` (not reachable from
+/// `tests/` through the normal `#[doc(hidden)] pub` surface, unlike `state`/
+/// `generation`), so this hook exists purely to let integration tests assert
+/// the M-5 postcondition: a slot returned by [`dbg_claim_then_simulate_oom`]
+/// must read `initialised == false` (materialisation never ran), and after a
+/// following successful `claim()` on the same index it must read `true`.
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_slot_initialised(idx: u32) -> bool {
+    let reg = ensure();
+    if idx as usize >= MAX_HEAPS {
+        return false;
+    }
+    // SAFETY: range-checked above.
+    let slot = unsafe { reg.slots.get_unchecked(idx as usize) };
+    slot.initialised.load(Ordering::Acquire)
 }
