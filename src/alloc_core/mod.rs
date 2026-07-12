@@ -32,8 +32,10 @@ pub mod deferred_large;
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_mode;
-/// RAD-5 (E4) GO/NO-GO EXPERIMENT — see the module doc for the design and
-/// `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured verdict.
+/// RAD-5 (plan Phase 5-E4), verdict GO — the second orthogonal per-segment
+/// bitmap (magazine residency), wired into the production hot path. See the
+/// module doc for the design and `docs/perf/IAI_BASELINE.md` §RAD-5 for the
+/// measurement.
 pub(crate) mod magazine_bitmap;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.

@@ -23,7 +23,7 @@ use crate::{Handle, Region};
 ///
 /// A panic while a guard is held poisons the `RwLock`. A poisoned `Region` is
 /// still structurally valid — no broken memory invariants: `slotmap` keeps the
-/// dense store generational and consistent regardless of a panicked op, so we
+/// slot store generational and consistent regardless of a panicked op, so we
 /// **recover from poison** rather than propagate it. Every accessor uses
 /// `RwLockReadGuard`/`RwLockWriteGuard` recovery (`PoisonError::into_inner`),
 /// handing back the intact inner `Region` and letting callers continue. This

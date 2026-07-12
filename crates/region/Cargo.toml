@@ -10,7 +10,7 @@ repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/region"
 documentation = "https://docs.rs/sefer-region"
 keywords = ["slotmap", "arena", "handle", "generational", "no-std"]
-categories = ["data-structures", "memory-management", "no-std::no-alloc"]
+categories = ["data-structures", "memory-management", "no-std"]
 
 [features]
 default = ["std"]

@@ -1,9 +1,12 @@
 //! # sefer-region — typed handle-addressed store
 //!
 //! A thin typed membrane over [`slotmap`](https://docs.rs/slotmap): values live
-//! in slotmap's dense, cache-friendly, always-compact backing store, and every
-//! operation exposes only typed [`Handle<T>`] values — raw `DefaultKey`s never
-//! escape the crate boundary.
+//! in `slotmap::SlotMap` — a contiguous slot array resolved by a single
+//! indirection (the lookup/churn axis it was benchmarked to win; see
+//! `docs/BENCHMARKS.md`). `SlotMap` keeps tombstone holes after removals, so it
+//! is NOT always-compact; `DenseSlotMap` is the dense-iteration alternative.
+//! Every operation exposes only typed [`Handle<T>`] values — raw `DefaultKey`s
+//! never escape the crate boundary.
 //!
 //! ## What makes this different from using slotmap directly?
 //!

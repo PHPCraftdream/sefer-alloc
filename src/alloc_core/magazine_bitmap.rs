@@ -1,7 +1,9 @@
-//! [`MagazineBitmap`] — RAD-5 (E4) GO/NO-GO EXPERIMENT. **Not wired into the
-//! production hot path if this ledger entry records a NO-GO** — see
-//! `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured verdict before
-//! reusing anything in this file.
+//! [`MagazineBitmap`] — RAD-5 (plan Phase 5-E4), **verdict: GO** (see
+//! `docs/perf/IAI_BASELINE.md` §RAD-5 for the measurement). This bitmap IS
+//! wired into the production hot path — it is compiled unconditionally (no
+//! feature flag) and probed in O(1) on the own-thread free double-free oracle
+//! and the cross-class magazine predicate, replacing the O(count) slot scans
+//! those paths used before RAD-5.
 //!
 //! A second, orthogonal per-segment bitmap: one bit per `MIN_BLOCK`-slot,
 //! recording whether the block starting at that slot is currently RESIDENT IN

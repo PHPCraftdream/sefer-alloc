@@ -1,24 +1,30 @@
-//! [`RunStack`] — the per-segment **run-encoded freelist** storage (PERF-3 Ф1,
-//! task #208), carved from segment metadata under
+//! [`RunStack`] — the per-segment **run-encoded freelist** (PERF-3, full
+//! Ф1–Ф4 implementation), carved from segment metadata under
 //! `#[cfg(feature = "alloc-runfreelist")]`.
 //!
-//! This is the STORAGE/LAYOUT phase of the run-encoded freelist arc
-//! (docs/design/RUN_ENCODED_FREELIST_PLAN.md). It introduces a new per-segment
-//! metadata region that will (in later phases Ф2/Ф3) hold compact
-//! `(start_off, count)` descriptors for contiguous freed-block runs, so the
-//! recycle path (magazine flush → segment freelist → later refill drain) can
-//! reconstruct block addresses by **stride arithmetic** instead of the
-//! dependent-load pointer chase through per-block intrusive `next` words that
-//! the classic linked freelist pays today (plan §1 — the attacked mechanism).
+//! **VERDICT: Ф5 reached NO-GO (honest-reject)** — see
+//! `docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md` §Verdict (and the
+//! `alloc-runfreelist` feature block in the root `Cargo.toml` for the full
+//! disposition). The measured cold/recycle targets regressed +23 %–+31 % (Ir)
+//! instead of the predicted ≥5 % improvement, so this feature is NOT part of
+//! `production`, is off by default, and is not under active development. The
+//! Ф1–Ф4 source is deliberately retained: correct, reviewed and
+//! regression-tested, compiles to nothing under the default feature set, kept
+//! as a ready starting point for a possible future re-run.
 //!
-//! THIS FILE IS PURE STORAGE + LAYOUT + ACCESSORS. Nothing in
-//! alloc/dealloc/flush/drain/reclaim consults or mutates a `RunStack` yet —
-//! Ф2 wires the flush (detect-contiguous-run + push) side, Ф3 wires the drain
-//! (reconstruct-from-descriptor) side, Ф4 wires the decommit lifecycle. This
-//! mirrors the discipline X7-Ф1 applied to the generation table
-//! (cdc3361 — storage + byte accessors landed first, behaviour touched only in
-//! Ф2/Ф3). The phase boundary here is exactly the same: existence + layout +
-//! accessors + init, no behavioural wiring.
+//! The run-encoded freelist (docs/design/RUN_ENCODED_FREELIST_PLAN.md) stores
+//! compact `(start_off, count)` descriptors for contiguous freed-block runs,
+//! so the recycle path (magazine flush → segment freelist → later refill
+//! drain) can reconstruct block addresses by **stride arithmetic** instead of
+//! the dependent-load pointer chase through per-block intrusive `next` words
+//! that the classic linked freelist pays (plan §1 — the attacked mechanism).
+//!
+//! The behavioural wiring (the Ф2–Ф4 call sites that consult/mutate a
+//! `RunStack`) lives in `alloc_core_small.rs` and `alloc_core_small_pool.rs`
+//! under the same `alloc-runfreelist` feature: Ф2 flush (detect-contiguous-run
+//! + `push`), Ф3 drain (reconstruct-from-descriptor + `pop`), Ф4 decommit
+//! lifecycle (`clear_all`). This file itself holds only the storage layout,
+//! init, and accessors.
 //!
 //! ## What this module IS and is NOT
 //!

@@ -4,9 +4,13 @@ use crate::Handle;
 
 /// A handle-addressed store of `T`.
 ///
-/// A thin typed membrane over `slotmap::SlotMap<slotmap::DefaultKey, T>`:
-/// values live in `slotmap`'s dense, cache-friendly, always-compact backing
-/// store, and every operation delegates to `slotmap` while exposing only typed
+/// A thin typed membrane over `slotmap::SlotMap<slotmap::DefaultKey, T>`.
+/// `SlotMap` keeps values in a contiguous slot array resolved by a single
+/// indirection (the lookup/churn axis it was benchmarked to win; see
+/// `docs/BENCHMARKS.md`), but it leaves tombstone holes after removals — it is
+/// NOT always-compact, and iteration walks the slot array skipping holes
+/// (~30 % slower than a `DenseSlotMap`, which packs live values for dense
+/// iteration). Every operation delegates to `slotmap` while exposing only typed
 /// [`Handle<T>`] values (raw `DefaultKey`s never escape). All operations are
 /// `O(1)`.
 ///
@@ -115,13 +119,16 @@ impl<T> Region<T> {
         self.inner.remove(handle.key)
     }
 
-    /// Iterates the live values in dense (cache-friendly) order. The order is
-    /// unspecified and changes as elements are removed.
+    /// Iterates the live values. The order is unspecified and changes as
+    /// elements are removed. Walks the underlying `SlotMap`'s slot array,
+    /// skipping tombstone holes — so this is NOT cache-dense over live values
+    /// (a `DenseSlotMap`-backed store would be); see `docs/BENCHMARKS.md`.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.inner.values()
     }
 
-    /// Mutably iterates the live values in dense order.
+    /// Mutably iterates the live values (same non-dense order caveat as
+    /// [`iter`](Self::iter)).
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.inner.values_mut()
     }

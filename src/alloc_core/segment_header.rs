@@ -185,12 +185,21 @@ pub(crate) enum SegmentKind {
     Unknown = 0xFF,
 }
 
-/// Per-page descriptor: which size class owns this page, or `Free` if the page
-/// is uncarved. Encoded as a `u8` (we have ~49 small classes + sentinel
-/// values). Pages are dedicated to a single class once carved (simplifies
-/// free-list routing — a freed block returns to its page's class free list).
-/// This is mimalloc's "page is owned by one size class" rule, which keeps the
-/// free path O(1).
+/// Per-page descriptor: the FIRST size class carved into a page, or `Free` if
+/// the page is still uncarved. Encoded as a `u8` (~49 small classes + the
+/// `Free`/`Meta` sentinels below).
+///
+/// NOTE: under this substrate's shared-bump-cursor model a page is
+/// **mixed-class** — one segment-wide bump cursor interleaves blocks of
+/// different classes, so consecutive carves of different classes are adjacent
+/// and share pages. `set_class` records only the FIRST class to touch a page
+/// (the "first class wins" rule, applied in `carve_block`/`carve_batch`); later
+/// blocks of other classes landing on the same page are NOT re-recorded.
+/// `PageMap` is therefore NOT a reliable class oracle — no production `dealloc`
+/// path derives a block's class from it (see the [`PageMap`] struct doc and §13
+/// of `RACE_DRAIN_RECLAIM.md`). This deliberately differs from mimalloc's "page
+/// is owned by one size class" model, which would require a per-class bump
+/// cursor.
 pub(crate) enum PageClass {
     /// The page is uncarved (still part of the bump region).
     Free = 0xFF,
