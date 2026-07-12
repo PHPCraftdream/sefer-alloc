@@ -381,7 +381,10 @@ fn abandon_segments_preserves_generation() {
 
     // Drain the abandoned stack (cleanup — the segments stay mapped, but we
     // pop them so they don't accumulate across serialized registry tests).
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: the abandoned bases are segments pushed by `abandon_segments`
+    // above; they stay mapped (heap is recycled only after this drain), so each
+    // popped base is safe to dereference.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 
     // SAFETY: `heap` was returned by `claim` and not yet recycled.
     unsafe { HeapRegistry::recycle(heap) };

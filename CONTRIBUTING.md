@@ -111,6 +111,14 @@ These conventions are enforced at review time and by CI.
 - **Tests go in `tests/`.** Do not add `#[cfg(test)] mod tests { ... }` inside
   `src/*.rs`. Integration tests live under `tests/` mirroring the source
   structure; unit invariant tests live in `tests/` as well.
+- **No doctests.** Do not add runnable rustdoc code examples (` ```rust `,
+  ` ```compile_fail `, ` ```no_run `, bare ` ``` `, etc.) in `src/**/*.rs` doc
+  comments — each one is compiled and run as its own separate test binary by
+  `cargo test --doc`, and that per-example compile cost adds up fast across the
+  crate. Illustrative code in a doc comment must use a non-executed fence
+  (` ```text ` or plain prose) instead. Put the runnable version of the example
+  as a real test in `tests/`. Existing doctests are pre-existing debt tracked
+  for migration, not a precedent to extend.
 
 ### Safety boundaries
 

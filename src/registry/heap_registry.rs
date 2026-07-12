@@ -369,7 +369,31 @@ impl HeapRegistry {
     /// caller — `abandon_segments` — derives it from a registered segment
     /// table). The segment's `owner_state` SHOULD already be ABANDONED (the
     /// caller sets it before pushing); this push does not touch `owner_state`.
-    pub fn push_abandoned_segment(base: *mut u8) {
+    ///
+    /// # Safety
+    ///
+    /// `base` must be a SEGMENT-aligned base of a segment that is currently
+    /// MAPPED and carries a valid `SegmentMeta` header, and the caller must
+    /// guarantee the segment's memory stays mapped (not released/unmapped, e.g.
+    /// by `AllocCore::drop` / `os::release_segment`) for as long as `base`
+    /// remains reachable on the global abandoned-segments stack — i.e. until a
+    /// [`pop_abandoned_segment`](Self::pop_abandoned_segment) removes it. A later
+    /// `pop` DEREFERENCES this base to read its `next_abandoned` link
+    /// (`SegmentMeta::new(base).next_abandoned_atomic().load(...)`), so
+    /// publishing a base whose memory is later freed is a use-after-free
+    /// (round2 R2-2). This is exactly the discipline the internal
+    /// [`abandon_segments`](Self::abandon_segments) path upholds (registry heaps
+    /// are recycled, not dropped, so their abandoned segments stay mapped until
+    /// adopted); the previous SAFE signature let a downstream caller bypass that
+    /// discipline — reachable via the `#[doc(hidden)] pub mod registry` — without
+    /// writing a single `unsafe`. The signature is now `unsafe` to match
+    /// `abandon_segments` / `try_adopt` and force every pusher to acknowledge the
+    /// precondition. Regression guard: `HeapRegistry::push_abandoned_segment(p)`
+    /// from safe code is now a compile error (E0133, call to unsafe function) —
+    /// no runnable doc example needed, the type system rejects it permanently
+    /// and every real call site is exercised by
+    /// `tests/regression_abandoned_stack_safe_api_uaf.rs`.
+    pub unsafe fn push_abandoned_segment(base: *mut u8) {
         let reg = ensure();
         push_abandoned_segment_into(reg, base);
     }
@@ -385,8 +409,27 @@ impl HeapRegistry {
     /// `next_abandoned` link, CAS the head to that next link. The ABA tag in
     /// the head defeats the pop-repush race (if another abandon pushed a new
     /// base between our load and CAS, the tag differs and we retry).
+    ///
+    /// # Safety
+    ///
+    /// Every base on the abandoned-segments stack must have been published by a
+    /// caller of [`push_abandoned_segment`](Self::push_abandoned_segment) that
+    /// upholds ITS safety contract (segment mapped with a valid header until
+    /// popped). Under that discipline this pop dereferences only valid, mapped
+    /// memory and is sound. The signature is `unsafe` because the pop
+    /// DEREFERENCES the popped base to read its `next_abandoned` link — a stale
+    /// base published by a contract-violating pusher (e.g. a segment whose
+    /// memory was since freed by `AllocCore::drop`) would make this a
+    /// use-after-free (round2 R2-2). The sole legitimate production caller is
+    /// the internal adopter [`try_adopt`](Self::try_adopt) (already `unsafe`),
+    /// which relies on the internal `abandon_segments` push path that keeps
+    /// abandoned segments mapped until adoption. Regression guard:
+    /// `HeapRegistry::pop_abandoned_segment()` from safe code is now a compile
+    /// error (E0133) — no runnable doc example needed, see
+    /// `tests/regression_abandoned_stack_safe_api_uaf.rs` for the exercised
+    /// round-trip.
     #[must_use]
-    pub fn pop_abandoned_segment() -> Option<*mut u8> {
+    pub unsafe fn pop_abandoned_segment() -> Option<*mut u8> {
         let reg = ensure();
         let mut head = reg.abandoned_segs.load(Ordering::Acquire);
         loop {

@@ -125,7 +125,8 @@ fn remote_free_large(layout: Layout, ptr: *mut u8) {
 fn abandon_segments_is_unreachable_from_any_recycle_path() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: drain-only; bases left by prior tests are still-mapped segments.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 
     let layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
     let heap = HeapRegistry::claim();
@@ -152,7 +153,10 @@ fn abandon_segments_is_unreachable_from_any_recycle_path() {
     // would now be sitting on `abandoned_segs` — a pop would return
     // Some(_). It must NOT: the abandoned-segs stack stays empty, because
     // `recycle` alone never reaches `abandon_segments`.
-    let popped = HeapRegistry::pop_abandoned_segment();
+    // SAFETY: at this point `recycle` is the only teardown that ran; per the
+    // test's invariant, nothing pushed onto `abandoned_segs`, so the stack is
+    // empty and the pop returns None without dereferencing any base.
+    let popped = unsafe { HeapRegistry::pop_abandoned_segment() };
     assert!(
         popped.is_none(),
         "recycle must not reach abandon_segments: the abandoned-segs stack \
@@ -190,7 +194,8 @@ fn abandon_segments_is_unreachable_from_any_recycle_path() {
 fn reactivating_abandon_segments_while_a1_inflight_corrupts_the_link() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: drain-only; bases left by prior tests are still-mapped segments.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 
     let layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
     let heap = HeapRegistry::claim();
@@ -227,7 +232,10 @@ fn reactivating_abandon_segments_while_a1_inflight_corrupts_the_link() {
     // This alone proves the field-sharing collision: `abandon_segments`
     // silently relinked a base that A1 still believes is its own chain node.
     let expected_base = segment_base_of(p);
-    let popped = HeapRegistry::pop_abandoned_segment();
+    // SAFETY: `abandon_segments(heap)` (called above) pushed `heap`'s segments,
+    // which stay mapped (heap not dropped), so the popped base is safe to
+    // dereference.
+    let popped = unsafe { HeapRegistry::pop_abandoned_segment() };
     assert_eq!(
         popped,
         Some(expected_base),
@@ -262,5 +270,6 @@ fn reactivating_abandon_segments_while_a1_inflight_corrupts_the_link() {
     // `heap` or touch it further — its A1 link is now in an undefined state
     // (by design, that is the point of this test), so no further operation
     // on it is safe to perform here.
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: drain-only; the abandoned bases are still-mapped segments.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 }

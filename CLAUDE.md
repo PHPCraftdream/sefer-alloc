@@ -42,6 +42,15 @@ Core instructions, mandatory for all code in this repository. They
   in the module file (`#[cfg(test)] mod tests` inside `src/*.rs`). Tests live in
   `tests/` (integration) with a mirrored structure; new code is written with
   tests in separate files from the very beginning, not extracted later.
+- **No doctests.** Never add a runnable rustdoc code example (` ```rust `,
+  ` ```compile_fail `, ` ```no_run `, or a bare ` ``` ` fence) to a doc comment
+  in `src/**/*.rs` — `cargo test --doc` compiles and runs every one of them as
+  its own separate test binary, and that per-example compile overhead is too
+  slow across a crate this size. Illustrative snippets in doc comments must use
+  a non-executed fence (` ```text `) or plain prose; the runnable version of the
+  example belongs in `tests/` as a real test. Pre-existing doctests are tracked
+  debt for migration (see `docs/reviews/2026-07-12-round2-remediation-plan.md`),
+  not a precedent for adding more.
 
 ## Phased delivery
 

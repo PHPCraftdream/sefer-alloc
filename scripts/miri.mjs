@@ -114,6 +114,15 @@ const PLAIN_MATRIX = [
     'alloc-global alloc-xthread',
     'regression_xthread_thread_free_alias_miri',
   ],
+  // R2-2 (T1): the abandoned-segs push/pop API is now `unsafe`. This exercises
+  // the legitimate round-trip (a still-mapped segment) through the pop's
+  // `next_abandoned` dereference — the exact read that is a UAF when the push
+  // contract is violated — validating it is UB-free on the valid path. Tiny
+  // (one claim + one round-trip); runs in ~6s under plain miri. PLAIN (not
+  // strict) because the abandoned-segs intrusive stack packs real pointer
+  // addresses via `expose_provenance` BY DESIGN (same reason as the A1 entries
+  // above).
+  ['alloc-global', 'regression_abandoned_stack_safe_api_uaf'],
 ];
 
 const args = process.argv.slice(2);

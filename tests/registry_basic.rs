@@ -77,7 +77,10 @@ fn count_at_entry() -> u32 {
 /// Drain any leftover abandoned-segment entries so a test starts from a
 /// known-empty stack.
 fn drain_abandoned() {
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: drain-only cleanup; every base on the global abandoned stack was
+    // pushed by the internal `abandon_segments` path, which keeps the segment
+    // mapped until adoption, so each popped base is safe to dereference here.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 }
 
 /// Read a slot's `state` atomically (test helper — the field is `pub` under
@@ -225,7 +228,8 @@ fn abandon_pop_round_trip() {
     drain_abandoned();
     // Empty pop returns None.
     assert!(
-        HeapRegistry::pop_abandoned_segment().is_none(),
+        // SAFETY: empty stack — no base to dereference; the pop returns None.
+        unsafe { HeapRegistry::pop_abandoned_segment() }.is_none(),
         "pop on an empty abandoned stack must return None"
     );
 
@@ -242,8 +246,14 @@ fn abandon_pop_round_trip() {
         .expect("a fresh heap owns at least its primordial segment");
     assert!(!base.is_null(), "segment base must be non-null");
 
-    HeapRegistry::push_abandoned_segment(base);
-    let popped = HeapRegistry::pop_abandoned_segment().expect("pop must return the pushed base");
+    // SAFETY: `base` is a real, SEGMENT-aligned base of a segment that stays
+    // mapped for the whole test — `heap` is neither dropped nor recycled until
+    // after the pop below, so the abandoned stack never holds a stale pointer
+    // (the R2-2 UAF precondition).
+    unsafe { HeapRegistry::push_abandoned_segment(base) };
+    // SAFETY: the only base on the stack is the one pushed above (still mapped).
+    let popped =
+        unsafe { HeapRegistry::pop_abandoned_segment() }.expect("pop must return the pushed base");
     assert_eq!(
         popped, base,
         "pop must return the exact base that was pushed (no address truncation)"
@@ -251,7 +261,8 @@ fn abandon_pop_round_trip() {
 
     // After a pop the stack is empty again.
     assert!(
-        HeapRegistry::pop_abandoned_segment().is_none(),
+        // SAFETY: empty stack after the single pop above.
+        unsafe { HeapRegistry::pop_abandoned_segment() }.is_none(),
         "after popping the only entry, the stack must be empty"
     );
 }
@@ -327,14 +338,18 @@ fn abandon_segments_walks_owned_segments() {
     // SAFETY: `a` was returned by `claim` and not yet recycled.
     unsafe { HeapRegistry::abandon_segments(a) };
     // The heap owned ≥1 segment (the primordial); abandoning pushed it.
-    let popped = HeapRegistry::pop_abandoned_segment();
+    // SAFETY: `abandon_segments` pushed only segments still owned by `heap`'s
+    // table — they stay mapped until adoption (`heap` is not dropped here), so
+    // the popped base is safe to dereference (the R2-2 contract).
+    let popped = unsafe { HeapRegistry::pop_abandoned_segment() };
     assert!(
         popped.is_some(),
         "abandon_segments must push owned segments onto the abandoned stack \
          (Phase 12.4: it is a real walk, not a no-op)"
     );
     // Drain any remaining (a heap may own several segments).
-    while HeapRegistry::pop_abandoned_segment().is_some() {}
+    // SAFETY: every remaining base is a still-mapped segment of `heap`.
+    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 }
 
 /// Bootstrap idempotency: every call to `ensure` returns the SAME pointer and
