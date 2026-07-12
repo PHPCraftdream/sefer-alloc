@@ -1454,12 +1454,19 @@ impl HeapCore {
     /// ## Foreign pointers
     ///
     /// A `ptr` we do NOT own (e.g. under `alloc-xthread`, a block that lives
-    /// in ANOTHER heap's segment) takes the move leg directly: alloc a new
-    /// block on OUR heap (`HeapCore::alloc`), copy `min(old, new)`, then free
-    /// the OLD pointer via `self.dealloc` (which routes cross-thread correctly
-    /// under `alloc-xthread`; under plain own-thread builds this is
-    /// `core.dealloc`, a safe no-op for a truly foreign pointer per its own
-    /// contract).
+    /// in ANOTHER heap's segment) takes the foreign leg. R2-1: before copying,
+    /// the leg now validates that `ptr` resolves to a LIVE sefer segment
+    /// (segment-header magic check, mirroring `dealloc_foreign_slow`'s first
+    /// guard) AND that `old_layout.size()` does not exceed that segment's
+    /// committed span. A bogus/foreign pointer (stack, foreign allocator,
+    /// dangling) or an oversized claim is rejected (null) BEFORE any copy —
+    /// never read out of bounds. A legitimate cross-heap sefer pointer passes
+    /// both checks, copies `min(old, new)`, then frees the OLD pointer via
+    /// `self.dealloc` (which routes cross-thread correctly under
+    /// `alloc-xthread`). Without `alloc-xthread` there is no legitimate
+    /// cross-heap owner, so the foreign leg returns null outright (symmetric
+    /// with `AllocCore::realloc`'s foreign-pointer null and `dealloc`'s
+    /// foreign no-op).
     pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
@@ -1539,6 +1546,17 @@ impl HeapCore {
                 //       the checked predicate + stamps per #169), copy the
                 //       preserved prefix, then `HeapCore::dealloc` the old
                 //       pointer (own-segment → routes through `core.dealloc`).
+                //
+                //       R2-1 (soundness): bound the move leg's read by the
+                //       block's actual committed span, not the caller-supplied
+                //       `old_layout.size()`. This is a SAFE `pub fn`; a bogus
+                //       layout (e.g. 8 MiB for a 16-byte block) must not drive
+                //       an OOB read. `base` was proven live above by
+                //       `contains_base`. The write side is always safe (`copy
+                //       <= new_size`); the read is bounded here.
+                if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+                    return core::ptr::null_mut();
+                }
                 let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
                     Ok(l) => l,
                     Err(_) => return core::ptr::null_mut(),
@@ -1553,23 +1571,54 @@ impl HeapCore {
                 return new_ptr;
             }
         }
-        // Foreign pointer (not one of our segments) or `alloc-global` absent:
-        // alloc a fresh block on OUR heap, copy, then free the OLD pointer
-        // through `self.dealloc` (which routes cross-thread correctly under
-        // `alloc-xthread`; under plain own-thread builds this is `core.dealloc`,
-        // a safe no-op for a truly foreign pointer per its own contract).
-        let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
-            Ok(l) => l,
-            Err(_) => return core::ptr::null_mut(),
-        };
-        let new_ptr = self.alloc(new_layout);
-        if new_ptr.is_null() {
-            return core::ptr::null_mut();
+        // Foreign pointer (not one of our segments). Before copying from it,
+        // the pointer MUST resolve to a live sefer segment of sufficient
+        // committed span; otherwise a safe caller passing a bogus/foreign
+        // pointer triggers an out-of-bounds read (R2-1, gap 1).
+        //
+        // Under `alloc-xthread` this leg is the deliberately-designed
+        // cross-heap path (a pointer from ANOTHER live heap is legitimate,
+        // and `self.dealloc` routes its free cross-thread). The membership
+        // barrier is the segment-header magic check (mirrors
+        // `dealloc_foreign_slow`'s first guard): a pointer whose computed
+        // base is not a live sefer segment — stack, foreign allocator,
+        // dangling — is rejected (null) before any copy. A REAL cross-heap
+        // sefer segment passes magic, then the same R2-1 span bound as the
+        // own-seg leg applies.
+        //
+        // Without `alloc-xthread` there is no cross-thread routing and thus
+        // no legitimate owner for a pointer this heap does not recognise:
+        // copying from it would read arbitrary caller-supplied memory under
+        // a safe fn. Return null, `ptr` untouched — symmetric with
+        // `AllocCore::realloc`'s foreign-pointer null and `dealloc`'s foreign
+        // no-op.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            let base = os::segment_base_of_ptr(ptr);
+            if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
+                return core::ptr::null_mut();
+            }
+            if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+                return core::ptr::null_mut();
+            }
+            let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
+                Ok(l) => l,
+                Err(_) => return core::ptr::null_mut(),
+            };
+            let new_ptr = self.alloc(new_layout);
+            if new_ptr.is_null() {
+                return core::ptr::null_mut();
+            }
+            let copy = old_layout.size().min(new_size);
+            Node::copy_nonoverlapping(ptr, new_ptr, copy);
+            self.dealloc(ptr, old_layout);
+            new_ptr
         }
-        let copy = old_layout.size().min(new_size);
-        Node::copy_nonoverlapping(ptr, new_ptr, copy);
-        self.dealloc(ptr, old_layout);
-        new_ptr
+        #[cfg(not(feature = "alloc-xthread"))]
+        {
+            let _ = new_size;
+            core::ptr::null_mut()
+        }
     }
 
     // -----------------------------------------------------------------------

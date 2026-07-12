@@ -1310,6 +1310,21 @@ impl AllocCore {
         }
         // In-place fast paths did not apply: alloc a fresh block, copy the
         // preserved prefix, and free the old block.
+        //
+        // R2-1 (soundness): the move leg copies `old_layout.size().min(
+        // new_size)` bytes OUT of `ptr`. `contains_base(base)` proved the
+        // segment is ours & mapped, but NOT that the block is as large as
+        // `old_layout` claims — and this is a SAFE `pub fn` (no `unsafe`
+        // marker), so unlike `GlobalAlloc::realloc` (whose `unsafe` signature
+        // makes the caller's `old_layout` a trusted precondition) a bogus
+        // `old_layout` (e.g. 8 MiB claimed for a 16-byte block) must not drive
+        // an out-of-bounds read. The write side is always safe (`copy <=
+        // new_size <= the fresh allocation`); the unsound half is the READ.
+        // Reject (return null, `ptr` untouched) when the claimed old size
+        // exceeds the segment's actual committed span.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+            return core::ptr::null_mut();
+        }
         let new_layout = match Layout::from_size_align(new_size, old_layout.align()) {
             Ok(l) => l,
             Err(_) => return core::ptr::null_mut(),
@@ -1322,6 +1337,49 @@ impl AllocCore {
         Node::copy_nonoverlapping(ptr, new_ptr, copy);
         self.dealloc(ptr, old_layout);
         new_ptr
+    }
+
+    /// R2-1 (soundness): the maximum number of bytes starting at `payload`
+    /// that lie within the COMMITTED span of the segment at `base`, computed
+    /// purely from segment-header metadata — WITHOUT trusting any
+    /// caller-supplied `Layout`.
+    ///
+    /// [`realloc`](Self::realloc) and `HeapCore::realloc` are SAFE `pub fn`s
+    /// (no `unsafe` marker), so they must not let a bogus `old_layout.size()`
+    /// drive an out-of-bounds read in the move leg's
+    /// [`Node::copy_nonoverlapping`]. `contains_base(base)` proves the segment
+    /// is OURS and MAPPED, but says nothing about how large the block at
+    /// `payload` actually is; this method supplies that missing upper bound.
+    ///
+    /// For a Large segment the committed span is the header's `span_usable`
+    /// (the physical OS reservation, `>=` the logical `large_size`, so all real
+    /// data is preserved). For a Small/Primordial segment `span_usable` is
+    /// unused (0) — the segment is exactly one `SEGMENT` (4 MiB), fully
+    /// committed on reserve — so `SEGMENT` is the bound. In both cases the
+    /// result is an upper bound on the bytes that can be read from `payload`
+    /// without faulting or escaping the segment's OS allocation; the move legs
+    /// reject (`old_layout.size() >` this value) before any copy rather than
+    /// reading past the segment.
+    ///
+    /// # Preconditions
+    ///
+    /// `base` MUST already be proven to be a live, mapped segment — via
+    /// `contains_base(base)` (own-segment legs) or `magic_at(base) ==
+    /// SEGMENT_MAGIC` (the cross-heap foreign leg under `alloc-xthread`).
+    /// This method reads `kind`/`span_usable` header fields at `base`, which
+    /// is only sound for a mapped segment.
+    #[inline]
+    pub(crate) fn safe_payload_read_span(base: *mut u8, payload: *mut u8) -> usize {
+        let seg_span = if SegmentHeader::kind_at(base) == SegmentKind::Large {
+            SegmentHeader::span_usable_at(base)
+        } else {
+            // Small/Primordial: `span_usable` is 0 (inert — see
+            // `SegmentHeader::small`); the segment is exactly one SEGMENT,
+            // fully committed on reserve.
+            os::SEGMENT
+        };
+        let off = (payload as usize).wrapping_sub(base as usize);
+        seg_span.saturating_sub(off)
     }
 
     /// Single source of truth for the OPT-F / OPT-G in-place realloc fast

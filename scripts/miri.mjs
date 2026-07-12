@@ -28,6 +28,15 @@ const MATRIX = [
   ['alloc-core', 'regression_large_align_no_segment_exhaustion'],
   ['alloc-core', 'regression_page_aligned_no_segment_exhaustion'],
   ['alloc-core', 'regression_realloc_cross_class_shrink'],
+  // R2-1 (T2): the move-leg OOB-read guard. The bogus `realloc(16b, 8 MiB,
+  // 8 MiB)` scenario would `copy_nonoverlapping` 8 MiB out of a 4 MiB
+  // segment — a read that escapes the segment's OS allocation. Under the fix
+  // the span-consistency check returns null before any allocation/copy, so
+  // this run validates the GREEN path is UB-free (the RED path's 8 MiB alloc
+  // + OOB read is too slow for the miri matrix; verified RED under native
+  // `cargo test` instead). Strict-provenance-clean (own-thread substrate
+  // path, real sefer pointer, `contains_base`-proven base).
+  ['alloc-core', 'regression_realloc_oob_old_layout'],
   // R3 (#155): fastbin / production-path miri coverage. The Э6 M2 oracle
   // strict-provenance claim (free path never touches the block body), the Э1
   // bump-direct carve pointer math (storm capped under cfg(miri)), and the Э3
