@@ -236,8 +236,12 @@ impl LargeCacheConfig {
     ///   inline on the next large alloc/free after the interval has elapsed.
     ///   No background thread; idle processes pay nothing.
     /// - `LargeCacheMode::Background` / `LargeCacheMode::Both`: reserved for
-    ///   a future background scavenger thread. Currently behaves identically
-    ///   to `Lazy` (the scavenger is not yet implemented).
+    ///   a future background scavenger thread that is **not yet implemented**.
+    ///   They are accepted by this setter (so the builder stays `const` and
+    ///   infallible — validation happens at resolution time per the builder
+    ///   contract), but materialising a heap whose config resolves to either
+    ///   panics inside [`AllocCore::new_with_config`](super::AllocCore::new_with_config)
+    ///   with a "not yet implemented" message. Use `LargeCacheMode::Lazy`.
     ///
     /// Default: `LargeCacheMode::Lazy`.
     #[must_use]

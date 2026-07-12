@@ -208,11 +208,40 @@ impl SeferAlloc {
     /// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
     /// ```
     ///
-    /// The config is stored in the `SeferAlloc` struct and plumbed into
-    /// each per-thread `AllocCore` when its TLS slot is first claimed.
-    /// Threads created before the static is initialised will receive the
-    /// default config — in practice this cannot happen because the `static`
-    /// initialiser runs before any thread is started.
+    /// The config is stored in the `SeferAlloc` struct and plumbed into a
+    /// per-thread heap when that heap's registry slot is **first
+    /// materialised** — which happens on the thread's first allocation (the
+    /// cold TLS `bind_slow` path; subsequent allocations hit the cached TLS
+    /// pointer and never re-read the config).
+    ///
+    /// # Binding semantics — single instance vs. multiple instances
+    ///
+    /// The binding has two layers, and both are "first to bind wins":
+    ///
+    /// - **Per slot (registry):** a registry slot is configured exactly once,
+    ///   at its first materialisation. Slots are never de-initialised — when a
+    ///   thread exits, its slot is recycled *whole* (same `HeapCore`, same
+    ///   config) and reused as-is by whichever thread claims it next. So the
+    ///   config of a slot is fixed by the first `SeferAlloc` instance to
+    ///   materialise it, for the slot's entire process lifetime.
+    /// - **Per thread (TLS):** the first allocation on a thread caches the
+    ///   heap pointer in TLS; every later allocation reuses that cached
+    ///   pointer. The config is consulted only on the cold first-bind branch.
+    ///
+    /// For the normal, supported usage — **one** `#[global_allocator]` `static`
+    /// `SeferAlloc` per process — this is consistent and correct: every thread
+    /// materialises its slot through that single instance, so every thread's
+    /// heap carries that one config. (The `static` initialiser also runs
+    /// before `main`, before any thread is started, so there is no
+    /// "pre-init thread" window.)
+    ///
+    /// Installing **multiple** `SeferAlloc` instances with *different* configs
+    /// in one process is unusual and effectively unsupported: whichever
+    /// instance first materialises a given slot / first binds a given thread
+    /// wins, and the other instances' configs are silently ignored for that
+    /// slot/thread. There is no cross-instance config independence. If you
+    /// need distinct large-cache configs, run separate processes — do not
+    /// rely on per-instance config under a single global registry.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {

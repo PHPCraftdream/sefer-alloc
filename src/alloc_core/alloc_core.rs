@@ -533,7 +533,31 @@ impl AllocCore {
         let mut core = Self::new_inner()?;
         core.large_cache_budget_bytes = config.resolved_budget_bytes();
         core.decay_config = LargeCacheDecayConfig::from_config(&config);
-        core.large_cache_mode = config.resolved_mode();
+        // T5 (cleanup#6): reject the unimplemented `Background`/`Both` modes
+        // loudly here — at resolution time — instead of letting them silently
+        // degrade to `Lazy` (their old behaviour, since no production code ever
+        // branches on `large_cache_mode`). This is the validation site the
+        // `LargeCacheConfig` builder contract names ("validation and clamping
+        // happen at resolution time inside `new_with_config`, not at build
+        // time — there is nothing to panic on in a const context"), so the
+        // setter stays infallible/`const` and the gap closes at the one place
+        // every heap materialisation goes through, covering both the direct
+        // `AllocCore::new_with_config` path and the `SeferAlloc` → registry →
+        // `HeapCore::new_with_config` path. A panic (not `None`): `None` means
+        // OOM here, and reusing it would conflate a misconfiguration with a
+        // primordial allocation failure.
+        let mode = config.resolved_mode();
+        match mode {
+            LargeCacheMode::Lazy => {}
+            LargeCacheMode::Background | LargeCacheMode::Both => {
+                panic!(
+                    "LargeCacheMode::{mode:?} is reserved for a future background scavenger \
+                     thread that is not yet implemented; build the config with \
+                     LargeCacheMode::Lazy instead"
+                );
+            }
+        }
+        core.large_cache_mode = mode;
         // Mechanism 2 (task #51); RAD-3 (E2, task #56): resolve the
         // empty-small-segment pool cap. The effective cap is the tighter of
         // the two bounds the user actually controls:
