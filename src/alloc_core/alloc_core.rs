@@ -1080,7 +1080,12 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_segment_id_of(&self, ptr: *mut u8) -> u32 {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        // R2-3: release-surviving membership guard (replaces a debug-only
+        // debug_assert! that compiled out in release, leaving the raw header
+        // read unguarded). This module is #![forbid(unsafe_code)], so the
+        // heap_registry-style `unsafe fn` discipline does not apply — a real
+        // runtime guard is the soundness fix here.
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_segment_id_of: ptr's segment is not owned by this AllocCore"
         );
@@ -1094,7 +1099,7 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_stamp_segment_id: ptr's segment is not owned by this AllocCore"
         );
@@ -1110,7 +1115,7 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_kind_byte_of: ptr's segment is not owned by this AllocCore"
         );
@@ -1134,7 +1139,7 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_stamp_kind_byte: ptr's segment is not owned by this AllocCore"
         );
@@ -1155,7 +1160,7 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_kind_at_tag: ptr's segment is not owned by this AllocCore"
         );
@@ -1174,7 +1179,7 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_large_size_of(&self, ptr: *mut u8) -> usize {
         let base = os::segment_base_of_ptr(ptr);
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "dbg_large_size_of: ptr's segment is not owned by this AllocCore"
         );
@@ -1487,7 +1492,7 @@ impl AllocCore {
         old_layout: Layout,
         new_size: usize,
     ) -> Option<*mut u8> {
-        debug_assert!(
+        assert!(
             self.table.contains_base_ro(base),
             "known-base realloc called for a segment not owned by this core"
         );

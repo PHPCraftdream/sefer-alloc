@@ -495,18 +495,40 @@ impl RemoteFreeRing {
     ///
     /// Production code MUST use [`at`](Self::at) with a segment-relative offset
     /// from [`Layout::remote_ring_off`](super::segment_header::Layout::remote_ring_off).
+    ///
+    /// R2-3: the null + 4-byte-alignment preconditions are checked by a
+    /// RELEASE-surviving `assert!` (not `debug_assert!`), so a null/misaligned
+    /// base panics in every build. The `FOOTPRINT`-writability / liveness half
+    /// of the contract cannot be checked at runtime (this module is
+    /// `#![forbid(unsafe_code)]`, so the `unsafe fn` discipline used by the
+    /// `heap_registry` seam does not apply here) and remains the caller's
+    /// responsibility — passing a `FOOTPRINT`-valid, aligned live buffer is the
+    /// only documented use.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
     pub fn over_test_buffer(base: *mut u8) -> Self {
+        assert!(
+            !base.is_null() && (base as usize).is_multiple_of(4),
+            "over_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"
+        );
         Self::at(base, 0)
     }
 
     /// **Test surface**: initialise a fresh ring at `base` (offset 0). Same as
     /// [`init_in_place`](Self::init_in_place) but for a standalone buffer (no
     /// segment-relative offset). See [`over_test_buffer`](Self::over_test_buffer).
+    ///
+    /// R2-3: carries the same release-surviving null + 4-byte-alignment `assert!`
+    /// as [`over_test_buffer`](Self::over_test_buffer); the `FOOTPRINT`-writability
+    /// half of the contract stays the caller's responsibility (this module is
+    /// `#![forbid(unsafe_code)]`).
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
     pub fn init_test_buffer(base: *mut u8) {
+        assert!(
+            !base.is_null() && (base as usize).is_multiple_of(4),
+            "init_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"
+        );
         Self::init_in_place(base, 0)
     }
 

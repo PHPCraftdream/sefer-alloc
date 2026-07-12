@@ -1565,7 +1565,12 @@ impl SegmentMeta {
 #[inline(always)]
 pub fn gen_at(base: *mut u8, off: usize) -> u8 {
     let idx = off >> MIN_BLOCK_SHIFT;
-    debug_assert!(
+    // R2-3: release-surviving index bound (replaces a debug-only debug_assert!
+    // that compiled out in release, leaving the atomic load unguarded). The
+    // base-validity half of the contract stays the caller's responsibility —
+    // this module is #![forbid(unsafe_code)], so the heap_registry-style
+    // `unsafe fn` discipline cannot apply here.
+    assert!(
         idx < GEN_TABLE_FOOTPRINT,
         "generation-table index out of range"
     );
@@ -1596,7 +1601,12 @@ pub fn gen_at(base: *mut u8, off: usize) -> u8 {
 #[inline(always)]
 pub fn bump_gen(base: *mut u8, off: usize) -> u8 {
     let idx = off >> MIN_BLOCK_SHIFT;
-    debug_assert!(
+    // R2-3: release-surviving index bound (replaces a debug-only debug_assert!
+    // that compiled out in release, leaving the atomic load unguarded). The
+    // base-validity half of the contract stays the caller's responsibility —
+    // this module is #![forbid(unsafe_code)], so the heap_registry-style
+    // `unsafe fn` discipline cannot apply here.
+    assert!(
         idx < GEN_TABLE_FOOTPRINT,
         "generation-table index out of range"
     );

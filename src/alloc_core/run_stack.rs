@@ -224,7 +224,8 @@ impl RunStack {
     /// index would index out of the `RunStack` region).
     #[doc(hidden)]
     pub fn push(base: *mut u8, class: usize, start_off: u32, count: u16) -> bool {
-        debug_assert!(class < SMALL_CLASS_COUNT, "class index out of range");
+        // R2-3: release-surviving class bound (replaces debug_assert!).
+        assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
         let mut slot = 0usize;
         while slot < RUNSTACK_CAPACITY {
@@ -270,7 +271,8 @@ impl RunStack {
     /// [`push`]: Self::push
     #[doc(hidden)]
     pub fn pop(base: *mut u8, class: usize) -> Option<RunDesc> {
-        debug_assert!(class < SMALL_CLASS_COUNT, "class index out of range");
+        // R2-3: release-surviving class bound (replaces debug_assert!).
+        assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
         let mut slot = 0usize;
         while slot < RUNSTACK_CAPACITY {
@@ -294,7 +296,8 @@ impl RunStack {
     /// [`pop`]: Self::pop
     #[doc(hidden)]
     pub fn peek(base: *mut u8, class: usize) -> Option<RunDesc> {
-        debug_assert!(class < SMALL_CLASS_COUNT, "class index out of range");
+        // R2-3: release-surviving class bound (replaces debug_assert!).
+        assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
         let mut slot = 0usize;
         while slot < RUNSTACK_CAPACITY {
@@ -312,7 +315,8 @@ impl RunStack {
     /// Whether `class` has zero non-empty descriptors.
     #[doc(hidden)]
     pub fn is_empty(base: *mut u8, class: usize) -> bool {
-        debug_assert!(class < SMALL_CLASS_COUNT, "class index out of range");
+        // R2-3: release-surviving class bound (replaces debug_assert!).
+        assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
         let mut slot = 0usize;
         while slot < RUNSTACK_CAPACITY {
