@@ -1799,11 +1799,33 @@ impl HeapCore {
         if ring.push(packed).is_ok() {
             return; // Fast path: the common case never retries.
         }
-        for _ in 0..RING_PUSH_RETRY_SPINS {
-            core::hint::spin_loop();
-            if ring.push(packed).is_ok() {
-                DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
-                return;
+        // RAD-4 aggregate-cost fix (task #72 follow-up): the spin window below
+        // exists to buy time for the OWNER to drain the ring — it is pure
+        // waste when no owner CAN drain. Under the Phase 12.5 shard model a
+        // segment's rings are drained only by its slot's CURRENT claimant
+        // (lazily, on that thread's alloc path); when the owning slot is FREE
+        // (its thread exited, nobody has re-claimed it), no drain can happen
+        // until a future claim, so spinning cannot succeed. Without this gate,
+        // EVERY free into a full ring of an owner-less segment paid the whole
+        // `RING_PUSH_RETRY_SPINS` budget (262,144 spin+CAS attempts ≈
+        // milliseconds each in a debug build) — a send-then-exit producer
+        // pattern (`tests/race_norecycle.rs`: producers exit while ~10⁵ of
+        // their blocks are still in flight to a long-lived freeing consumer)
+        // multiplied that into MINUTES of aggregate dealloc() stall, tripping
+        // the test's 30 s watchdog (`process::abort` → 0xC0000409). The gate
+        // skips straight to the second-chance `HeapOverflow` push (whose
+        // entries a future claimant of the slot drains, exactly like the ring
+        // entries themselves) and then to the original documented-sound
+        // bounded leak. A LIVE owner keeps RAD-4's designed behaviour
+        // unchanged (`tests/remote_fanin.rs` remains the judge for that
+        // shape).
+        if Self::owner_slot_is_live(base) {
+            for _ in 0..RING_PUSH_RETRY_SPINS {
+                core::hint::spin_loop();
+                if ring.push(packed).is_ok() {
+                    DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
             }
         }
         // Retry budget exhausted: the segment's own ring has stayed
@@ -1861,6 +1883,48 @@ impl HeapCore {
         // `'static` array — ordinary bounds-checked indexing, no `unsafe`.
         let slot = &reg.slots[idx];
         slot.overflow.push(base, packed)
+    }
+
+    /// Advisory owner-liveness probe gating
+    /// [`push_with_overflow_retry`](Self::push_with_overflow_retry)'s spin
+    /// window: `true` iff `base`'s owning registry slot is currently
+    /// `STATE_LIVE` — i.e. some thread exists that will (lazily, on its alloc
+    /// path) drain this segment's ring, so waiting for that drain is
+    /// meaningful. Resolution is the same `owner_state` → `unpack_owner_id` →
+    /// `slots[idx]` walk [`push_to_heap_overflow`](Self::push_to_heap_overflow)
+    /// performs (see its doc comment for why the Relaxed `owner_state` read is
+    /// sound cross-thread).
+    ///
+    /// **Advisory, not authoritative — both stale outcomes are benign.** The
+    /// slot's `state` is read Relaxed with no generation check, so this can
+    /// race claim/recycle in either direction:
+    /// - stale `LIVE` (owner exited just after the load): ONE free wastes one
+    ///   spin budget; the NEXT free re-probes and sees `FREE`. Bounded,
+    ///   one-off — not the per-free multiplication this gate exists to stop.
+    /// - stale `FREE` (slot re-claimed just after the load): the push skips
+    ///   ahead to the `HeapOverflow` ring, whose entries the new claimant
+    ///   drains on its own schedule — the same destination those entries had
+    ///   anyway. No block is lost that the spin would have saved.
+    ///
+    /// An out-of-range id (`OWNER_ID_NONE` — an unstamped early segment, or
+    /// the process-global fallback heap, whose `id = u32::MAX` masks to
+    /// `OWNER_ID_NONE` under `pack_owner`'s 31-bit id field) has no slot to
+    /// consult; report "live" to preserve RAD-4's original unconditional spin
+    /// there (the fallback heap is process-lived and drains on its own
+    /// allocs, so waiting for it is meaningful).
+    #[cfg(feature = "alloc-xthread")]
+    #[inline]
+    fn owner_slot_is_live(base: *mut u8) -> bool {
+        use crate::alloc_core::segment_header::unpack_owner_id;
+        let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+        let idx = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
+        if idx >= super::bootstrap::MAX_HEAPS {
+            return true;
+        }
+        super::bootstrap::ensure().slots[idx]
+            .state
+            .load(Ordering::Relaxed)
+            == super::heap_slot::STATE_LIVE
     }
 
     /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow
