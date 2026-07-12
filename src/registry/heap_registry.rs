@@ -1008,37 +1008,59 @@ pub fn heaps_claimed_high_water() -> u32 {
 /// already uses (`heap.get().cast::<HeapCore>()`).
 ///
 /// Only present under `alloc-global + fastbin` (mirrors
-/// `HeapCore::tcache_hits`'s cfg-gate).
+/// `HeapCore::tcache_hits`'s cfg-gate). The per-slot WALK it performs is
+/// additionally gated on `alloc-stats` (R3-A, round3 finding N1): the
+/// counter it sums is only ever incremented under `alloc-stats`, which is
+/// NOT part of `production`, so without `alloc-stats` the walk would sum
+/// compile-time zeros — it is compiled out (returns 0 with no loop) to keep
+/// `stats()` O(1) on a metrics-scrape hot path as its doc promises.
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 #[doc(hidden)]
 #[must_use]
 pub fn tcache_hits_total() -> u64 {
-    let reg = ensure();
-    let count = reg.count.load(Ordering::Acquire) as usize;
-    let mut total: u64 = 0;
-    for idx in 0..count.min(MAX_HEAPS) {
-        // SAFETY: `idx < count <= MAX_HEAPS`, so this is in range of the
-        // `'static` slot array.
-        let slot = unsafe { reg.slots.get_unchecked(idx) };
-        // The `initialised` gate (task #133): keep it for the documented
-        // ordering. With the W3 move it is no longer load-bearing for SAFETY
-        // (the counter lives in the slot itself — an un-bound slot's
-        // `tcache_hits` is a zero `AtomicU64`, sound to read and contributing
-        // 0), but a mid-mint slot must still not be summed, and the Acquire
-        // here pairs with `claim`'s Release publish for that ordering.
-        if !slot.initialised.load(Ordering::Acquire) {
-            continue;
+    // R3-A (round3 N1): the per-slot counter this aggregates is only ever
+    // incremented under `alloc-stats` (`heap_core.rs`'s W3 bump), which is NOT
+    // part of `production`. Without it every slot's counter is compile-time 0,
+    // so the walk below would sum zeros — yet it still read up to `count` slots
+    // on every `stats()` call, contradicting `stats()`'s "no heap walk" doc.
+    // Gate the WALK on `alloc-stats` to match the gate on the increment: with
+    // it off, return 0 at compile time with NO loop; with it on, the existing
+    // per-slot walk is UNCHANGED (W3's per-slot-counter design is deliberate —
+    // it avoids a hot-path-contended global counter; see the W3 comment in
+    // `heap_core.rs`).
+    #[cfg(feature = "alloc-stats")]
+    {
+        let reg = ensure();
+        let count = reg.count.load(Ordering::Acquire) as usize;
+        let mut total: u64 = 0;
+        for idx in 0..count.min(MAX_HEAPS) {
+            // SAFETY: `idx < count <= MAX_HEAPS`, so this is in range of the
+            // `'static` slot array.
+            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // The `initialised` gate (task #133): keep it for the documented
+            // ordering. With the W3 move it is no longer load-bearing for SAFETY
+            // (the counter lives in the slot itself — an un-bound slot's
+            // `tcache_hits` is a zero `AtomicU64`, sound to read and contributing
+            // 0), but a mid-mint slot must still not be summed, and the Acquire
+            // here pairs with `claim`'s Release publish for that ordering.
+            if !slot.initialised.load(Ordering::Acquire) {
+                continue;
+            }
+            // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
+            // `(*heap_ptr).…` deref, so NO shared `&HeapCore` is ever materialised
+            // over a struct the owning thread concurrently holds a protected `&mut`
+            // into. This closes the Stacked-Borrows aliasing gap the old
+            // `(*heap_ptr).tcache_hits()` read had. Relaxed load of a shared
+            // `Sync` atomic — sound from any thread; observes the owner's
+            // monotonic single-writer increments.
+            total = total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
         }
-        // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
-        // `(*heap_ptr).…` deref, so NO shared `&HeapCore` is ever materialised
-        // over a struct the owning thread concurrently holds a protected `&mut`
-        // into. This closes the Stacked-Borrows aliasing gap the old
-        // `(*heap_ptr).tcache_hits()` read had. Relaxed load of a shared
-        // `Sync` atomic — sound from any thread; observes the owner's
-        // monotonic single-writer increments.
-        total = total.saturating_add(slot.remote.tcache_hits.load(Ordering::Relaxed));
+        total
     }
-    total
+    #[cfg(not(feature = "alloc-stats"))]
+    {
+        0
+    }
 }
 
 /// DIAGNOSTIC (task #133): process-wide large-cache hit total — aggregated
@@ -1063,33 +1085,49 @@ pub fn tcache_hits_total() -> u64 {
 /// `large_cache_hits`, so contributing 0 is correct).
 ///
 /// Only present under `alloc-decommit` (mirrors
-/// `AllocCore::dbg_large_cache_hits`'s cfg-gate).
+/// `AllocCore::dbg_large_cache_hits`'s cfg-gate). Like
+/// [`tcache_hits_total`], the per-slot WALK is additionally gated on
+/// `alloc-stats` (R3-A, round3 finding N1): the counter it sums is only ever
+/// incremented under `alloc-stats`, which is NOT part of `production`, so
+/// without `alloc-stats` the walk is compiled out (returns 0 with no loop).
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]
 #[must_use]
 pub fn large_cache_hits_total() -> u64 {
-    let reg = ensure();
-    let count = reg.count.load(Ordering::Acquire) as usize;
-    let mut total: u64 = 0;
-    for idx in 0..count.min(MAX_HEAPS) {
-        // SAFETY: `idx < count <= MAX_HEAPS` is in range of the `'static`
-        // slot array.
-        let slot = unsafe { reg.slots.get_unchecked(idx) };
-        // The `initialised` gate — see `tcache_hits_total`'s (identical
-        // rationale): kept for the documented ordering, no longer load-bearing
-        // for safety after the W3 move (the counter is in the slot itself).
-        if !slot.initialised.load(Ordering::Acquire) {
-            continue;
+    // R3-A (round3 N1): see `tcache_hits_total` for the full rationale — the
+    // same increment/walk gate mismatch applies here. Without `alloc-stats` the
+    // per-slot counter is compile-time 0, so the walk is compiled out to keep
+    // `stats()` O(1). With `alloc-stats` the existing per-slot walk runs
+    // UNCHANGED.
+    #[cfg(feature = "alloc-stats")]
+    {
+        let reg = ensure();
+        let count = reg.count.load(Ordering::Acquire) as usize;
+        let mut total: u64 = 0;
+        for idx in 0..count.min(MAX_HEAPS) {
+            // SAFETY: `idx < count <= MAX_HEAPS` is in range of the `'static`
+            // slot array.
+            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // The `initialised` gate — see `tcache_hits_total`'s (identical
+            // rationale): kept for the documented ordering, no longer load-bearing
+            // for safety after the W3 move (the counter is in the slot itself).
+            if !slot.initialised.load(Ordering::Acquire) {
+                continue;
+            }
+            // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
+            // `(*heap_ptr).core.…` deref, so NO shared `&HeapCore`/`&AllocCore` is
+            // ever materialised over a struct the owning thread concurrently holds
+            // a protected `&mut` into. This closes the Stacked-Borrows aliasing gap
+            // the old `(*heap_ptr).core.dbg_large_cache_hits()` read had. Relaxed
+            // load of a shared `Sync` atomic — sound from any thread.
+            total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
         }
-        // W3: read the counter DIRECTLY off the `&HeapSlot` — NO
-        // `(*heap_ptr).core.…` deref, so NO shared `&HeapCore`/`&AllocCore` is
-        // ever materialised over a struct the owning thread concurrently holds
-        // a protected `&mut` into. This closes the Stacked-Borrows aliasing gap
-        // the old `(*heap_ptr).core.dbg_large_cache_hits()` read had. Relaxed
-        // load of a shared `Sync` atomic — sound from any thread.
-        total = total.saturating_add(slot.remote.large_cache_hits.load(Ordering::Relaxed));
+        total
     }
-    total
+    #[cfg(not(feature = "alloc-stats"))]
+    {
+        0
+    }
 }
 
 // ---------------------------------------------------------------------------

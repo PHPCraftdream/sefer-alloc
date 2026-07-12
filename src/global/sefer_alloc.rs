@@ -282,9 +282,21 @@ impl SeferAlloc {
     /// segment/heap totals. See [`AllocStats`] for what each field means and
     /// which feature flags it depends on.
     ///
-    /// `stats()` is a handful of relaxed atomic loads: no locks, no
-    /// allocation, no segment or heap walk. Safe to call on a metrics-scrape
-    /// hot path.
+    /// **Cost.** Without `alloc-stats` (the default — it is not part of
+    /// `production`), `stats()` is O(1): a fixed handful of relaxed atomic
+    /// loads, no locks, no allocation, and no segment or heap walk. The two
+    /// hit counters (`tcache_hits` / `large_cache_hits`) are compile-time zero
+    /// here — their aggregating slot walks are compiled out entirely under
+    /// `not(alloc-stats)`, since the per-hit increments they would sum are
+    /// themselves absent. Safe to call on a metrics-scrape hot path.
+    ///
+    /// WITH `alloc-stats`, the two hit counters are aggregated by a walk over
+    /// the initialized registry slots (each a Relaxed atomic load of that
+    /// slot's counter — still no locks and no segment walk; only registry slot
+    /// metadata is touched, never segment payloads). `stats()` is then
+    /// O(initialized-slot-count) for those two fields; every other field
+    /// remains a single relaxed load. Still safe to poll periodically — just
+    /// no longer O(1) with `alloc-stats` on.
     ///
     /// The counters are **process-wide**, not per-`SeferAlloc`-instance: if a
     /// process installs more than one `SeferAlloc` (unusual, but not

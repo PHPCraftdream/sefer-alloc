@@ -16,9 +16,15 @@
 //!
 //! ## Cost
 //!
-//! `stats()` is a fixed handful of relaxed atomic loads — no locks, no
-//! segment/heap walk, no allocation. Safe to call from a metrics-scrape hot
-//! path.
+//! Without `alloc-stats` (the default — not part of `production`), `stats()`
+//! is a fixed handful of relaxed atomic loads: no locks, no segment/heap
+//! walk, no allocation. Safe to call from a metrics-scrape hot path. WITH
+//! `alloc-stats`, the two hit-rate counters (`tcache_hits`/`large_cache_hits`)
+//! are aggregated by a walk over the initialized registry slots (still no
+//! locks, no segment payload touched — only per-slot counter metadata); every
+//! other field remains a single relaxed load either way. See
+//! [`SeferAlloc::stats`](super::SeferAlloc::stats)'s doc for the full
+//! per-mode cost breakdown (R3-A, round3 finding N1).
 //!
 //! ## Stability across feature combinations
 //!
