@@ -623,7 +623,6 @@ impl HeapCore {
     /// substrate (a future decommit-when-empty policy); NOT on the hot path
     /// of the shard model.
     #[cfg(feature = "alloc-global")]
-    #[allow(dead_code)]
     pub(crate) fn register_segment_internal(&mut self, base: *mut u8) -> Option<u32> {
         self.core.register_segment(base)
     }
@@ -633,7 +632,6 @@ impl HeapCore {
     /// [`AllocCore::set_small_current`]. Retained for the substrate; NOT on
     /// the shard-model hot path.
     #[cfg(feature = "alloc-global")]
-    #[allow(dead_code)]
     pub(crate) fn set_small_current_internal(&mut self, base: *mut u8) {
         self.core.set_small_current(base);
     }

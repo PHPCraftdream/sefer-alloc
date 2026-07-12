@@ -1630,7 +1630,6 @@ impl AllocCore {
     /// the hot path of the shard model (a heap owns its segments exclusively
     /// and never transfers them).
     #[cfg(feature = "alloc-global")]
-    #[allow(dead_code)]
     pub(crate) fn set_small_current(&mut self, base: *mut u8) {
         self.small_cur = base;
     }
