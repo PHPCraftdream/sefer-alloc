@@ -363,8 +363,29 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
     };
     let region_ptr = region.as_ptr();
     let region_addr = region_ptr as usize;
-    let base_addr = align_up_addr(region_addr, align);
-    debug_assert!(base_addr + size <= region_addr + over);
+    // `align_up_addr`/the fit check below are release-mode (not
+    // `debug_assert!`-only, L-9d): `region_addr` comes straight from the OS
+    // and is not attacker-controlled in practice, but treating a would-be
+    // overflow/out-of-range result as an ordinary OOM costs nothing and
+    // removes the UB-shaped landmine of trusting unchecked arithmetic on an
+    // address.
+    let fits = align_up_addr(region_addr, align).and_then(|a| {
+        let end = a.checked_add(size)?;
+        let region_end = region_addr.checked_add(over)?;
+        (end <= region_end).then_some(a)
+    });
+    let base_addr = match fits {
+        Some(a) => a,
+        None => {
+            unsafe {
+                // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
+                // call immediately above and has not been released yet; releasing
+                // it here (before ever handing it to a caller) cannot double-free.
+                winapi_virtual_release(region_ptr);
+            }
+            return None;
+        }
+    };
     let base = unsafe {
         // SAFETY: `base_addr` is non-null (>= region_addr) and within the
         // reserved `over`-byte region; aligned to `align`.
@@ -539,14 +560,36 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
         p
     };
     let region_addr = region_ptr as usize;
-    let base_addr = align_up_addr(region_addr, align);
+    // `align_up_addr`/the fit check below are release-mode (not
+    // `debug_assert!`-only, L-9d): `region_addr` comes straight from the OS
+    // and is not attacker-controlled in practice, but treating a would-be
+    // overflow/out-of-range result as an ordinary OOM costs nothing and
+    // removes the UB-shaped landmine of trusting unchecked arithmetic on an
+    // address.
+    let fits = align_up_addr(region_addr, align).and_then(|a| {
+        let tail_start = a.checked_add(size)?;
+        let region_end = region_addr.checked_add(over)?;
+        (tail_start <= region_end).then_some((a, tail_start, region_end))
+    });
+    let (base_addr, tail_start, region_end) = match fits {
+        Some(t) => t,
+        None => {
+            unsafe {
+                // SAFETY: `region_ptr` was returned by the `mmap` call
+                // immediately above and has not been trimmed/released yet;
+                // releasing the whole `over`-byte mapping here (before ever
+                // handing it to a caller) cannot double-free.
+                libc_munmap(region_ptr as *mut u8, over);
+            }
+            return None;
+        }
+    };
     let base = unsafe {
         // SAFETY: `base_addr` is non-null (>= region_addr) and `align`-aligned.
         NonNull::new_unchecked(base_addr as *mut u8)
     };
     let head = base_addr - region_addr;
-    let tail_start = base_addr + size;
-    let tail_len = (region_addr + over) - tail_start;
+    let tail_len = region_end - tail_start;
     if head > 0 {
         unsafe {
             // SAFETY: `[region_addr, region_addr + head)` is within the freshly
@@ -768,9 +811,12 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> boo
 }
 
 /// Round `addr` up to the next multiple of `align` (a power of two).
+/// Returns `None` on overflow (the rounded-up value would not fit in
+/// `usize`) instead of wrapping — the caller treats this exactly like any
+/// other OS-level reservation failure (OOM), never a panic or silent wrap.
 #[cfg(not(miri))]
-fn align_up_addr(addr: usize, align: usize) -> usize {
+fn align_up_addr(addr: usize, align: usize) -> Option<usize> {
     debug_assert!(align.is_power_of_two());
     let mask = align - 1;
-    (addr + mask) & !mask
+    addr.checked_add(mask).map(|sum| sum & !mask)
 }

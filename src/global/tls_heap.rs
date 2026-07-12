@@ -282,8 +282,7 @@ impl Drop for AbandonGuard {
 ///
 /// This is the un-tagged variant, for callers that do not need to
 /// distinguish own-thread vs fallback (the alloc face uses
-/// [`current_for_alloc`] instead). Kept `pub` as the canonical accessor for
-/// future direct-API consumers and tests.
+/// [`current_for_alloc`] instead).
 ///
 /// # Locking obligation on the fallback pointer
 ///
@@ -300,11 +299,18 @@ impl Drop for AbandonGuard {
 /// (the tagged [`current_for_alloc`] is the safe default — prefer it). This
 /// obligation is why the accessor is currently unused by the alloc face.
 ///
+/// L-9g: kept `pub(crate)` (not `pub`) precisely because of the hazard above —
+/// the untagged pointer is easy to misuse across a crate boundary where the
+/// caller cannot see this doc comment's obligation at the call site. Crate-
+/// internal callers already have the full context; an external consumer that
+/// needs this distinction should use the tagged [`current_for_alloc`] /
+/// [`CurrentHeap`] instead.
+///
 /// Inlined so the fast path collapses to a TLS-get + branch in the callers.
 #[must_use]
 #[inline]
 #[allow(dead_code)] // The alloc face uses `current_for_alloc` (tagged). Kept for direct API.
-pub fn current() -> *mut HeapCore {
+pub(crate) fn current() -> *mut HeapCore {
     match LOCAL.try_with(|c| c.get()) {
         // Э2 (task #145) — TWO SENTINELS, ONE BRANCH. `null = 0` and
         // `TORN = usize::MAX` are the two ends of the address range; every

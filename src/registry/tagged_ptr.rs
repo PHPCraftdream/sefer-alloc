@@ -95,22 +95,12 @@ const _: () = assert!(
 
 /// A packed `(value | tag)` word. Construct via [`TaggedPtr::pack`];
 /// decompose via [`TaggedPtr::unpack`]. Stored inside an `AtomicU64` by the
-/// registry stacks.
+/// registry's `free_slots` stack — the only stack that uses `TaggedPtr` (see
+/// the module doc's "Provenance model" section).
 ///
-/// `value` is interpreted by the caller:
-/// - for `free_slots` it is a slot index (`u32`);
-/// - for `abandoned_segs` it is a segment base address (a `*mut u8` cast to
-///   `u64`).
-///
-/// For `abandoned_segs` this restricts segment bases to the low 32 bits of
-/// the address space. That holds for the miri aperture (host `std::alloc`
-/// returns low addresses on the supported miri hosts) and is the realistic
-/// case on x86-64 Windows/Linux/macOS user space where the registry carves
-/// segments via `mmap`/`VirtualAlloc` (which the kernel places well below
-/// 4 GiB for anonymous mappings in practice on the default ASLR layout). The
-/// bootstrap `debug_assert`s the base fits; if a future target violates this,
-/// switch `abandoned_segs` to an intrusive head+next layout (as
-/// `ThreadFreeStack` already does for its `AtomicPtr`).
+/// `value` is a slot index (`u32`, `< 2^INDEX_BITS`); the caller guarantees
+/// this by construction. `TaggedPtr` never packs a pointer/address, so there
+/// is no provenance concern and no address-width restriction here.
 pub(crate) struct TaggedPtr;
 
 impl TaggedPtr {

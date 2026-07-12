@@ -89,14 +89,21 @@ pub fn reserve_aligned_on_node(
     let reservation_ptr = r.reservation_ptr();
     let reservation_len = r.reservation_len();
 
-    // Suppress the Drop so `aligned_vmem` does NOT call munmap/VirtualFree;
-    // sefer-alloc takes ownership and releases via `os::release_segment` later.
-    let _ = r.into_parts();
-
-    // Both pointers are guaranteed non-null by the `reserve_on_node` contract
-    // (it returns None on OOM; a successful Some(r) is always non-null).
+    // L-9e: validate BEFORE calling `into_parts()`. `r` still owns its RAII
+    // Drop at this point, so if either pointer were somehow null, the `?`
+    // below drops `r` normally (releasing the OS reservation) instead of
+    // leaking it. Both pointers are guaranteed non-null by the
+    // `reserve_on_node` contract in practice (it returns `None` on OOM; a
+    // successful `Some(r)` is always non-null) — this ordering just makes
+    // that guarantee load-bearing-free: a future contract violation fails
+    // safe (release, then `None`) rather than leaking.
     let base = NonNull::new(base_ptr)?;
     let reservation = NonNull::new(reservation_ptr)?;
+
+    // Suppress the Drop so `aligned_vmem` does NOT call munmap/VirtualFree;
+    // sefer-alloc takes ownership and releases via `os::release_segment`
+    // later. Only reached now that both pointers are proven non-null.
+    let _ = r.into_parts();
 
     // This path bypasses `os::Segment::reserve` (it goes through
     // `numa_shim::reserve_on_node` instead), so it must bump the same

@@ -445,6 +445,9 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_freelist_head_for(&self, ptr: *mut u8, class_idx: usize) -> u32 {
         let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return FREE_LIST_NULL;
+        }
         SegmentMeta::new(base).bin_table().head(class_idx)
     }
 
@@ -457,6 +460,9 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
         let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return false;
+        }
         let off = (ptr as usize - base as usize) as u32;
         SegmentMeta::new(base).alloc_bitmap().is_free(off)
     }
