@@ -1,7 +1,12 @@
 #![allow(deprecated)]
 //! [`LockFreeRegion`] — lock-free reads via RCU with page-granularity copy-on-write.
 //!
-//! The crate's differentiated value (Phase 3b-I): concurrent handle-addressed
+//! **Status — legacy/research-tier:** superseded by the production `alloc-xthread`
+//! cross-thread free path; kept under the `experimental` feature for backward
+//! compatibility and as a research baseline, and `#[deprecated]` on the struct
+//! below. No new development is planned (see the `concurrent` module docs).
+//!
+//! Historical research value (Phase 3b-I): concurrent handle-addressed
 //! storage that is safe *and* fast for read-mostly workloads. Readers load an
 //! immutable snapshot of the page table through [`arc_swap`] and look up
 //! lock-free; rare writers serialise among themselves, copy only the touched

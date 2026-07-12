@@ -3,6 +3,11 @@
 //! with **lock-free cross-thread removal** and a **shard lifecycle** (Phase 7b,
 //! `experimental`; supersedes 7a's claim-and-never-release model).
 //!
+//! **Status — legacy/research-tier:** superseded by the production `alloc-xthread`
+//! cross-thread free path; kept under the `experimental` feature for backward
+//! compatibility and as a research baseline, and `#[deprecated]` on the struct
+//! below. No new development is planned (see the `concurrent` module docs).
+//!
 //! This is pure **safe composition** on top of [`EpochRegion<T>`]: the
 //! single-writer-per-shard principle gives each writer *thread* its own
 //! [`EpochRegion`], so two writers in different shards never meet on a lock.

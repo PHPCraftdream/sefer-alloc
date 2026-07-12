@@ -3,6 +3,11 @@
 //! writes, with `crossbeam-epoch` reclamation (Phase 3b-II), extended in
 //! Phase 7b with a **lock-free cross-thread removal** path.
 //!
+//! **Status — legacy/research-tier:** superseded by the production `alloc-xthread`
+//! cross-thread free path; kept under the `experimental` feature for backward
+//! compatibility and as a research baseline, and `#[deprecated]` on the struct
+//! below. No new development is planned (see the `concurrent` module docs).
+//!
 //! This tier trades the zero-`unsafe` RCU of [`LockFreeRegion`](super::LockFreeRegion)
 //! (3b-I) for **O(1) per-slot writes** (no snapshot clone) at the cost of the
 //! crate's single confined `unsafe` organ, [`AtomicSlot<T>`] (see
