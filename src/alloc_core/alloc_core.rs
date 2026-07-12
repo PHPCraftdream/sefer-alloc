@@ -1082,7 +1082,12 @@ impl AllocCore {
     /// slot lookup).
     #[doc(hidden)]
     pub fn dbg_segment_id_of(&self, ptr: *mut u8) -> u32 {
-        SegmentHeader::segment_id_at(os::segment_base_of_ptr(ptr))
+        let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_segment_id_of: ptr's segment is not owned by this AllocCore"
+        );
+        SegmentHeader::segment_id_at(base)
     }
 
     /// TEST-ONLY (task #135): overwrite the stamped `segment_id` field of
@@ -1091,7 +1096,12 @@ impl AllocCore {
     /// `unregister_defends_against_mismatched_segment_id`.
     #[doc(hidden)]
     pub fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
-        SegmentHeader::set_segment_id_at(os::segment_base_of_ptr(ptr), id);
+        let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_stamp_segment_id: ptr's segment is not owned by this AllocCore"
+        );
+        SegmentHeader::set_segment_id_at(base, id);
     }
 
     /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
@@ -1103,6 +1113,10 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
         let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_kind_byte_of: ptr's segment is not owned by this AllocCore"
+        );
         let off = core::mem::offset_of!(SegmentHeader, kind);
         Node::read_u8(Node::offset(base, off) as *const u8)
     }
@@ -1123,6 +1137,10 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
         let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_stamp_kind_byte: ptr's segment is not owned by this AllocCore"
+        );
         let off = core::mem::offset_of!(SegmentHeader, kind);
         Node::write_u8(Node::offset(base, off), raw);
     }
@@ -1140,6 +1158,10 @@ impl AllocCore {
     #[must_use]
     pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
         let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_kind_at_tag: ptr's segment is not owned by this AllocCore"
+        );
         match SegmentHeader::kind_at(base) {
             SegmentKind::Primordial => 0,
             SegmentKind::Small => 1,
@@ -1155,6 +1177,10 @@ impl AllocCore {
     #[doc(hidden)]
     pub fn dbg_large_size_of(&self, ptr: *mut u8) -> usize {
         let base = os::segment_base_of_ptr(ptr);
+        debug_assert!(
+            self.table.contains_base_ro(base),
+            "dbg_large_size_of: ptr's segment is not owned by this AllocCore"
+        );
         let off = core::mem::offset_of!(SegmentHeader, large_size);
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
