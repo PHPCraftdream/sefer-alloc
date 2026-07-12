@@ -77,71 +77,131 @@ jobs:
       - name: clippy (--all-features)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  test:
-    name: test (${{ matrix.features }})
+  # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
+  # feature-set matrix jobs into 4 jobs, grouped by theme (the same
+  # grouping the original per-entry comments already used). Unlike
+  # `loom`/`miri` above, these 13 entries have 13 DIFFERENT feature
+  # strings (no pair shares one, so there is no "share one cargo
+  # invocation" trick available) — each step below is its own `cargo
+  # test <features> --no-fail-fast` invocation, same as before.
+  #
+  # Every step carries `if: ${{ !cancelled() }}` so a failure in one
+  # feature-set's step does NOT skip the remaining steps in the same job
+  # (GitHub Actions' default is to skip subsequent steps after a
+  # failure) — this preserves, at the feature-set granularity, the exact
+  # property `--no-fail-fast` already guarantees at the test-binary
+  # granularity within one step: "a failure in one row never masks
+  # failures in later rows" (the explicit 0.3.0-hardening-pass lesson
+  # this repo learned the hard way once already). The job's own overall
+  # conclusion still correctly reports failure if any step failed.
+  test-core:
+    name: test (core tiers)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-          - "" # default: the safe core + SyncRegion
-          - "--features experimental" # adds LockFreeRegion + EpochRegion (deprecated, legacy)
-          # Phases 8–13 allocator descent. Without these, CI never exercised
-          # alloc-core/alloc/alloc-global/alloc-xthread/alloc-decommit.
-          - "--features alloc-core" # Phase 8 segment substrate (AllocCore)
-          - "--features \"alloc-global alloc-xthread\"" # Phases 9–11: per-thread Heap + SeferAlloc + cross-thread free
-          - "--features \"alloc-global alloc-xthread alloc-decommit\"" # + Phase 35 M6 decommit
-          # #137: the fastbin (magazine/tcache) path and the flagship
-          # `production` bundle were NOT exercised in CI — the entire magazine
-          # code path (the churn hot path) ran untested. Add both: `fastbin`
-          # in isolation (magazine without decommit) and the full `production`
-          # bundle (fastbin + decommit + everything).
-          - "--features \"alloc-global alloc-xthread fastbin\"" # #137: magazine/tcache path
-          - "--features production" # #137: the recommended flagship config (fastbin + decommit)
-          # H1 (#167): the opt-in `hardened` misuse-guard tier. Without this
-          # row the interior-pointer guard and its counterfactual regression
-          # test (`regression_hardened_interior_ptr`, gated on the feature)
-          # would never RUN in CI — clippy's --all-features only compiles it.
-          # Also covers the fastbin-without-decommit config with the guard on.
-          - "--features hardened" # #167: paranoid tier (guard + its regression test)
-          # H1 follow-up: README calls `hardened` "additive over production", but
-          # no CI row built the two together — the paranoid guard tier was only
-          # ever exercised WITHOUT decommit (the `hardened` row above is
-          # fastbin-without-decommit). Add the flagship+paranoid combo so the
-          # misuse-guard runs alongside the decommit (M6) recommit cycle.
-          - "--features \"production hardened\"" # paranoid tier over the flagship bundle
-          # C2 (bug-hunt review 2026-07-09): these three feature tiers ship
-          # tests whose BODIES are gated behind `#[cfg(feature = "...")]`, so
-          # NO existing `cargo test` row above actually RAN their behavior —
-          # the preprocessor stripped the test bodies out of every plain run.
-          # They were only ever exercised locally via `npm run check`
-          # (scripts/check-all.mjs), a pre-push gate, not per-PR CI. A real
-          # leak bug (Ф4 remainder-pushback) had already been found in the
-          # `alloc-runfreelist` recycle path — guarded only by that pre-push
-          # gate. Add per-PR CI rows so the gated test bodies run:
-          #   - alloc-runfreelist: regression_run_stack_{flush,drain,decommit}
-          #   - alloc-stats: the per-hit counter asserts (stats_reflects_activity)
-          #   - pinning: the routing-binding tests in tests/pinning.rs
-          # The feature-strings mirror scripts/check-all.mjs verbatim.
-          - "--features \"production alloc-runfreelist\"" # C2: run-encoded freelist test bodies
-          - "--features \"production alloc-stats\"" # C2: per-hit diagnostic counter asserts
-          - "--features pinning" # C2: thread-per-core routing-binding tests
-          # `--all-features` as the closing row: exercises every gated tier
-          # together (adds experimental + hardened + numa-aware on top). The
-          # numa_alloc real-mbind assertions are env-guarded (SEFER_NUMA_TEST=1,
-          # set ONLY by the scheduled `numa-real-kernel` job) and skip trivially
-          # on this single-NUMA runner, so `--all-features` here is a
-          # compile+link+run check of the full feature union, not a NUMA
-          # correctness gate. Verified green locally under the same conditions.
-          - "--all-features" # C2: full feature union (numa tests env-guarded → skip)
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # --no-fail-fast: run EVERY test binary even if an earlier one fails, so
-      # a failure in one binary never masks failures in later ones (a lesson
-      # from the 0.3.0 hardening pass — cargo's default fail-fast hid two red
-      # tests behind an earlier failure).
-      - run: cargo test ${{ matrix.features }} --no-fail-fast
+      - name: test ()
+        if: ${{ !cancelled() }}
+        run: cargo test --no-fail-fast # default: the safe core + SyncRegion
+      - name: test (--features experimental)
+        if: ${{ !cancelled() }}
+        run: cargo test --features experimental --no-fail-fast # adds LockFreeRegion + EpochRegion (deprecated, legacy)
+      # Phases 8–13 allocator descent. Without this, CI never exercised
+      # alloc-core (the segment substrate, AllocCore).
+      - name: test (--features alloc-core)
+        if: ${{ !cancelled() }}
+        run: cargo test --features alloc-core --no-fail-fast
+
+  test-xthread:
+    name: test (xthread progression)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # Phases 9–11: per-thread Heap + SeferAlloc + cross-thread free.
+      - name: test (--features "alloc-global alloc-xthread")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread" --no-fail-fast
+      # + Phase 35 M6 decommit.
+      - name: test (--features "alloc-global alloc-xthread alloc-decommit")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit" --no-fail-fast
+      # #137: the fastbin (magazine/tcache) path and the flagship
+      # `production` bundle were NOT exercised in CI — the entire
+      # magazine code path (the churn hot path) ran untested. Cover both:
+      # `fastbin` in isolation (magazine without decommit) and the full
+      # `production` bundle (fastbin + decommit + everything).
+      - name: test (--features "alloc-global alloc-xthread fastbin")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
+      - name: test (--features production)
+        if: ${{ !cancelled() }}
+        run: cargo test --features production --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+
+  test-hardened:
+    name: test (hardened tier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # H1 (#167): the opt-in `hardened` misuse-guard tier. Without this
+      # step the interior-pointer guard and its counterfactual regression
+      # test (`regression_hardened_interior_ptr`, gated on the feature)
+      # would never RUN in CI — clippy's --all-features only compiles
+      # it. Also covers the fastbin-without-decommit config with the
+      # guard on.
+      - name: test (--features hardened)
+        if: ${{ !cancelled() }}
+        run: cargo test --features hardened --no-fail-fast
+      # H1 follow-up: README calls `hardened` "additive over
+      # production", but no CI row built the two together — the
+      # paranoid guard tier was only ever exercised WITHOUT decommit
+      # (the step above is fastbin-without-decommit). This step is the
+      # flagship+paranoid combo so the misuse-guard runs alongside the
+      # decommit (M6) recommit cycle.
+      - name: test (--features "production hardened")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production hardened" --no-fail-fast
+
+  test-gated-bodies:
+    # C2 (bug-hunt review 2026-07-09): the first three steps below ship
+    # tests whose BODIES are gated behind `#[cfg(feature = "...")]`, so
+    # NO plain `cargo test` run exercises their behavior — the
+    # preprocessor strips the test bodies out entirely otherwise. They
+    # were only ever exercised locally via `npm run check`
+    # (scripts/check-all.mjs), a pre-push gate, not per-PR CI. A real
+    # leak bug (Ф4 remainder-pushback) had already been found in the
+    # `alloc-runfreelist` recycle path — guarded only by that pre-push
+    # gate. These steps run the gated test bodies per-PR:
+    #   - alloc-runfreelist: regression_run_stack_{flush,drain,decommit}
+    #   - alloc-stats: the per-hit counter asserts (stats_reflects_activity)
+    #   - pinning: the routing-binding tests in tests/pinning.rs
+    # The feature-strings mirror scripts/check-all.mjs verbatim.
+    name: test (gated bodies + all-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: test (--features "production alloc-runfreelist")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production alloc-runfreelist" --no-fail-fast
+      - name: test (--features "production alloc-stats")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production alloc-stats" --no-fail-fast
+      - name: test (--features pinning)
+        if: ${{ !cancelled() }}
+        run: cargo test --features pinning --no-fail-fast
+      # `--all-features` as the closing step: exercises every gated tier
+      # together (adds experimental + hardened + numa-aware on top). The
+      # numa_alloc real-mbind assertions are env-guarded
+      # (SEFER_NUMA_TEST=1, set ONLY by the scheduled `numa-real-kernel`
+      # job) and skip trivially on this single-NUMA runner, so
+      # `--all-features` here is a compile+link+run check of the full
+      # feature union, not a NUMA correctness gate. Verified green
+      # locally under the same conditions.
+      - name: test (--all-features)
+        if: ${{ !cancelled() }}
+        run: cargo test --all-features --no-fail-fast
 
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
