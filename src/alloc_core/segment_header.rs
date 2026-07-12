@@ -971,15 +971,28 @@ impl Layout {
     pub(crate) const fn alloc_bitmap_off() -> usize {
         align_up_const(Self::bin_table_off() + BinTable::FOOTPRINT * 2, 8)
     }
+    /// RAD-5 (E4) GO/NO-GO EXPERIMENT — offset of the per-segment
+    /// [`MagazineBitmap`](super::magazine_bitmap::MagazineBitmap), an
+    /// orthogonal second bitmap recording magazine residency (see its module
+    /// doc). Placed immediately after `AllocBitmap`, 8-byte aligned, same
+    /// `FOOTPRINT` geometry (one bit per `MIN_BLOCK` slot). See
+    /// `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured verdict
+    /// before assuming this offset is load-bearing for any shipped feature.
+    pub(crate) const fn magazine_bitmap_off() -> usize {
+        align_up_const(
+            Self::alloc_bitmap_off() + super::alloc_bitmap::AllocBitmap::FOOTPRINT,
+            8,
+        )
+    }
     /// Offset of the per-segment `RemoteFreeRing` (the non-intrusive
     /// cross-thread-free MPSC queue of `u32` block-offsets). Lives in segment
-    /// metadata right after the alloc bitmap, 4-byte aligned (each ring slot is a
-    /// `u32`). Carved alongside the bin table at bootstrap. See
+    /// metadata right after the magazine bitmap (RAD-5), 4-byte aligned (each
+    /// ring slot is a `u32`). Carved alongside the bin table at bootstrap. See
     /// [`crate::alloc_core::remote_free_ring::RemoteFreeRing`] for the protocol.
     #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     pub(crate) const fn remote_ring_off() -> usize {
         align_up_const(
-            Self::alloc_bitmap_off() + super::alloc_bitmap::AllocBitmap::FOOTPRINT,
+            Self::magazine_bitmap_off() + super::magazine_bitmap::MagazineBitmap::FOOTPRINT,
             4,
         )
     }
@@ -1450,6 +1463,19 @@ impl SegmentMeta {
     #[inline(always)]
     pub(crate) fn alloc_bitmap(&self) -> super::alloc_bitmap::AllocBitmap {
         super::alloc_bitmap::AllocBitmap::new(Node::offset(self.base, Layout::alloc_bitmap_off()))
+    }
+
+    /// RAD-5 (E4) GO/NO-GO EXPERIMENT — the magazine-residency bitmap view.
+    /// The bitmap bytes are carved at [`Layout::magazine_bitmap_off`] and
+    /// zeroed at bootstrap (mirroring `alloc_bitmap`); this returns the typed
+    /// view over them. See `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
+    /// measured verdict.
+    #[inline(always)]
+    pub(crate) fn magazine_bitmap(&self) -> super::magazine_bitmap::MagazineBitmap {
+        super::magazine_bitmap::MagazineBitmap::new(Node::offset(
+            self.base,
+            Layout::magazine_bitmap_off(),
+        ))
     }
 
     /// The per-segment `RemoteFreeRing` view (the non-intrusive cross-thread

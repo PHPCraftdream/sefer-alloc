@@ -32,6 +32,9 @@ pub mod deferred_large;
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_mode;
+/// RAD-5 (E4) GO/NO-GO EXPERIMENT — see the module doc for the design and
+/// `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured verdict.
+pub(crate) mod magazine_bitmap;
 pub(crate) mod node;
 /// NUMA OS-seam: NUMA-node detection and segment binding.
 /// `pub` (not `pub(crate)`) only because `alloc_core` itself is

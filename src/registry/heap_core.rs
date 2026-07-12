@@ -827,6 +827,21 @@ impl HeapCore {
                             );
                         }
                         let issued = self.tcache.classes[c].slots[new_cnt];
+                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
+                        // magazine-residency bit — this block leaves the
+                        // magazine for the caller. THE HOT PATH: unlike the
+                        // `hardened`-only gen-table bump below, this runs on
+                        // EVERY magazine hit under `production`, so it forces
+                        // a `segment_base_of_ptr` + bitmap read-modify-write
+                        // that this path previously did not pay AT ALL. See
+                        // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
+                        // measured cost of this specific store on
+                        // `small_churn_16b` et al.
+                        {
+                            let base = os::segment_base_of_ptr(issued);
+                            let off = (issued as usize - base as usize) as u32;
+                            SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+                        }
                         // X7 Ф3 (task #191) touch (a): bump the generation at
                         // ISSUE. The block leaves the allocator's bookkeeping
                         // (the magazine) and enters the caller's hands — this
@@ -1131,45 +1146,25 @@ impl HeapCore {
                     // Full fix: task X7 (hardened, generational ring entry — see
                     // RING_MAGAZINE_XTHREAD_DOUBLE_FREE_FIX.md §8.4).
                     //
-                    // (1) in-magazine DF oracle — ALWAYS. Э10 (P7.4): the
-                    // sequential early-exit scan above (`for i in 0..cnt`) does
-                    // not vectorize; in a free-storm `cnt` sits at TCACHE_CAP=16
-                    // right before every overflow, so this runs hot. Rewritten
-                    // branchless: process `floor(cnt/4)*4` entries in chunks of
-                    // 4 with an OR-combined equality (one branch per chunk),
-                    // then a scalar tail of the remaining `cnt%4` (0..3).
-                    //
-                    // CRITICAL — never compare an index >= cnt. `slots[c]` is a
-                    // fixed `[*mut u8; TCACHE_CAP]`; entries at `i >= cnt` are
-                    // STALE (the magazine is a stack — slots above `cnt` hold
-                    // old pointers of blocks since re-issued). A stale MATCH
-                    // would turn a legitimate free into a false double-free
-                    // no-op → a LEAK. So we scan EXACTLY `cnt` entries: the
-                    // chunk loop covers `0..(cnt/4)*4` and the tail covers
-                    // `(cnt/4)*4..cnt`. We do NOT round `cnt` up to a multiple
-                    // of 4 (that would read stale slots). Semantics are
-                    // byte-identical to the old loop: the tested set
-                    // `{slots[c][i] : i < cnt}` is unchanged; only the
-                    // evaluation order (chunked OR vs. sequential early-exit)
-                    // differs.
-                    let slots = &self.tcache.classes[c].slots;
-                    let chunks = cnt & !3; // (cnt / 4) * 4
-                    let mut i = 0;
-                    while i < chunks {
-                        let hit = (slots[i] == ptr)
-                            | (slots[i + 1] == ptr)
-                            | (slots[i + 2] == ptr)
-                            | (slots[i + 3] == ptr);
-                        if hit {
-                            return; // in-magazine double-free — no-op
-                        }
-                        i += 4;
-                    }
-                    while i < cnt {
-                        if slots[i] == ptr {
-                            return; // in-magazine double-free — no-op
-                        }
-                        i += 1;
+                    // (1) in-magazine DF oracle — ALWAYS. RAD-5 (E4) GO/NO-GO
+                    // EXPERIMENT: replaced the Э10 branchless chunked scan
+                    // (which walked up to `cnt` <= TCACHE_CAP=16 magazine
+                    // slots) with an O(1) probe of the second
+                    // (magazine-residency) bitmap. `off`/`meta` are hoisted
+                    // here (previously computed AFTER this oracle, for the
+                    // flushed-DF oracle below) so both oracles share them.
+                    // Semantics: exact replacement — a block is
+                    // magazine-resident in the bitmap's view iff it is one of
+                    // `{slots[c][i] : i < cnt}` in the old scan's view, by
+                    // construction (mark on push, clear on pop/flush — see
+                    // `magazine_bitmap.rs`'s module doc). See
+                    // `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the
+                    // measured verdict on whether this probe is actually
+                    // cheaper than the scan it replaces.
+                    let off = (ptr as usize - base as usize) as u32;
+                    let meta = SegmentMeta::new(base);
+                    if meta.magazine_bitmap().is_in_magazine(off) {
+                        return; // in-magazine double-free — no-op
                     }
                     // (2) flushed DF oracle — ALWAYS. `base`/`off`/bitmap are
                     // read on a segment already PROVEN ours and mapped by
@@ -1179,8 +1174,6 @@ impl HeapCore {
                     // (same value `segment_base_of_ptr` would return — pure),
                     // threaded in from `dealloc_routing` so it is computed
                     // once on the own-thread free path.
-                    let off = (ptr as usize - base as usize) as u32;
-                    let meta = SegmentMeta::new(base);
                     // Stale-free guard, parity with `dealloc_small`
                     // (alloc_core.rs). A block that was carved into a segment
                     // later decommitted+reset has `off >= bump` (bump was reset
@@ -1201,6 +1194,15 @@ impl HeapCore {
 
                     if cnt < TCACHE_CAP {
                         // Legit free → push. NO key stamp, NO block-body write.
+                        //
+                        // RAD-5 (E4) GO/NO-GO EXPERIMENT: mark this block
+                        // magazine-resident in the second bitmap. `meta`/`off`
+                        // are already computed above for the M2 bitmap read —
+                        // this reuses them, paying only the new bitmap's own
+                        // read-modify-write. See `magazine_bitmap.rs`'s module
+                        // doc; `docs/perf/IAI_BASELINE.md`'s RAD-5 entry has
+                        // the measured verdict on whether this is worth it.
+                        meta.magazine_bitmap().mark_magazine(off);
                         self.tcache.classes[c].slots[cnt] = ptr;
                         self.tcache.classes[c].count = (cnt + 1) as u8;
                         return;
@@ -1217,6 +1219,19 @@ impl HeapCore {
                     // returns blocks to the substrate via `dealloc_small`
                     // (mark_free + dec_live) exactly as before.
                     //
+                    // RAD-5: the FLUSH_N blocks about to be flushed leave the
+                    // magazine — clear their bit BEFORE calling `flush_class`
+                    // (mirrors "flush = clear_magazine + mark_free": the
+                    // AllocBitmap side of `mark_free` happens inside
+                    // `flush_class`/`flush_run`; this bitmap's clear happens
+                    // here since `AllocCore` has no magazine concept).
+                    for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N] {
+                        let fbase = os::segment_base_of_ptr(flushed);
+                        let foff = (flushed as usize - fbase as usize) as u32;
+                        SegmentMeta::new(fbase)
+                            .magazine_bitmap()
+                            .clear_magazine(foff);
+                    }
                     // Normal overflow: half-flush, then push.
                     self.core
                         .flush_class(c, &self.tcache.classes[c].slots[0..FLUSH_N]);
@@ -1228,6 +1243,8 @@ impl HeapCore {
                     // Push (Э6: NO key stamp, NO block-body write). The oracles
                     // above already ran before this overflow branch, so a
                     // double-free is caught even when the magazine is full.
+                    // RAD-5: mark the newly-pushed block magazine-resident.
+                    meta.magazine_bitmap().mark_magazine(off);
                     self.tcache.classes[c].slots[remaining] = ptr;
                     self.tcache.classes[c].count = (remaining + 1) as u8;
                     return;
@@ -1668,9 +1685,17 @@ impl HeapCore {
         let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
         // Task #164 / PERF-PASS-5 (G7): zero-copy split borrow. The refill
         // writes DIRECTLY into `tcache.classes[c].slots` (no buffer, no
-        // copy). The magazine predicate closure reads OTHER classes' `count`
-        // + `slots` (now bundled in one `PerClass` per the task #53
-        // restructure) via `split_at_mut` halves over `tcache.classes`.
+        // copy). `split_at_mut`/`split_first_mut` is still needed to obtain
+        // `cur: &mut PerClass` (the refill's write target) while the rest of
+        // `self` stays usable inside the closure below.
+        //
+        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the magazine predicate closure used
+        // to scan OTHER classes' magazine slots (`entry.slots[0..cnt]`,
+        // O(cnt) per candidate offset drained from a remote ring, via the
+        // `before`/`after` split halves). Replaced with an O(1) probe of the
+        // second (magazine-residency) bitmap — the probe is keyed by segment
+        // offset, not by class, so `before`/`after` are no longer read (only
+        // `cur.slots` as the write target survives from the original split).
         //
         // KEY INVARIANT (load-bearing): at refill time, `count[c] == 0` —
         // the refill runs ONLY on a magazine miss (the pop in `alloc` failed
@@ -1678,20 +1703,19 @@ impl HeapCore {
         // trivially false (0 slots to scan), and the mutable borrow of
         // `classes[c].slots` (for the refill output) is never read by the
         // closure.
-        let (before, rest) = self.tcache.classes.split_at_mut(c);
-        let (cur, after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
+        let (_before, rest) = self.tcache.classes.split_at_mut(c);
+        let (cur, _after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
         let n = self
             .core
             .refill_class_bump_checked(c, &mut cur.slots[0..want], &|ptr, k| {
-                // count[c] == 0 during its own refill (invariant above) —
-                // the predicate is trivially false and we never touch the
-                // mutably-borrowed `cur.slots` slice.
                 if k == c {
                     return false;
                 }
-                let entry = if k < c { &before[k] } else { &after[k - c - 1] };
-                let cnt = entry.count as usize;
-                (0..cnt).any(|j| entry.slots[j] == ptr)
+                let pbase = os::segment_base_of_ptr(ptr);
+                let poff = (ptr as usize - pbase as usize) as u32;
+                SegmentMeta::new(pbase)
+                    .magazine_bitmap()
+                    .is_in_magazine(poff)
             });
         if n == 0 {
             return core::ptr::null_mut(); // true OOM
@@ -1714,6 +1738,19 @@ impl HeapCore {
         // Pop the top, leave n-1 in the magazine.
         let new_cnt = n - 1;
         self.tcache.classes[c].count = new_cnt as u8;
+        // RAD-5: mark the n-1 blocks REMAINING in the magazine as
+        // magazine-resident (refill = existing `mark_alloc`/leave-unset on
+        // `AllocBitmap` inside `refill_class_bump_checked`, unchanged, PLUS
+        // this `mark_magazine` for every block landing in the magazine). The
+        // block at `new_cnt` is popped to the caller below and must NOT be
+        // marked (it is being issued, not retained).
+        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
+            let pbase = os::segment_base_of_ptr(p);
+            let poff = (p as usize - pbase as usize) as u32;
+            SegmentMeta::new(pbase)
+                .magazine_bitmap()
+                .mark_magazine(poff);
+        }
         let issued = self.tcache.classes[c].slots[new_cnt];
         // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE. The block
         // leaves the allocator's bookkeeping (the magazine) and enters the
@@ -1979,13 +2016,22 @@ impl HeapCore {
     pub fn dbg_drain_all_rings(&mut self) {
         // Task #164: split borrow — `&self.tcache` (read) + `&mut self.core`
         // (write) are disjoint fields of HeapCore.
+        //
+        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the magazine predicate is now the
+        // O(1) bitmap probe, matching the production `refill_magazine_slow`
+        // predicate — see that function's identical replacement for the
+        // rationale. `class_idx` is unused by the probe (residency is keyed
+        // by offset, not class) but kept in the closure signature to match
+        // the `dbg_drain_all_rings_checked`/`reclaim_offset_checked` `F: Fn(*mut
+        // u8, usize) -> bool` contract.
         #[cfg(feature = "fastbin")]
         {
-            let tc = &self.tcache;
-            self.core.dbg_drain_all_rings_checked(&|ptr, class_idx| {
-                let entry = &tc.classes[class_idx];
-                let cnt = entry.count as usize;
-                (0..cnt).any(|j| entry.slots[j] == ptr)
+            self.core.dbg_drain_all_rings_checked(&|ptr, _class_idx| {
+                let pbase = os::segment_base_of_ptr(ptr);
+                let poff = (ptr as usize - pbase as usize) as u32;
+                SegmentMeta::new(pbase)
+                    .magazine_bitmap()
+                    .is_in_magazine(poff)
             });
         }
         #[cfg(not(feature = "fastbin"))]
@@ -2022,6 +2068,16 @@ impl HeapCore {
             let n = self.tcache.classes[c].count as usize;
             if n == 0 {
                 continue;
+            }
+            // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear every flushed block's
+            // magazine-residency bit BEFORE the flush, mirroring the
+            // production overflow-flush site in `dealloc_own_thread_with_base`.
+            for &flushed in &self.tcache.classes[c].slots[0..n] {
+                let fbase = os::segment_base_of_ptr(flushed);
+                let foff = (flushed as usize - fbase as usize) as u32;
+                SegmentMeta::new(fbase)
+                    .magazine_bitmap()
+                    .clear_magazine(foff);
             }
             self.core
                 .flush_class(c, &self.tcache.classes[c].slots[0..n]);

@@ -80,6 +80,19 @@
 //! about to be released to the OS, so a future re-reserve of that address
 //! range goes through one of the two (now-skipped) virgin-reserve sites again,
 //! not through a stale, still-dirty bitmap.
+//!
+//! ## RAD-5 (E4) GO/NO-GO EXPERIMENT extension
+//!
+//! T1/T2 below were extended with an identical unconditional whole-footprint
+//! check for the second (magazine-residency) `MagazineBitmap`, which mirrors
+//! `AllocBitmap`'s exact virgin-skip discipline at the same two call sites
+//! (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) plus an
+//! unconditional re-init on the decommit-reset full-reset path
+//! (`alloc_core_small_pool.rs`'s `decommit_empty_segment_impl`,
+//! `release_follows = false` branch) — the same "skip on virgin, always
+//! re-init on reuse" shape as `AllocBitmap`. See
+//! `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured GO/NO-GO
+//! verdict on the bitmap this extension protects.
 
 #![cfg(feature = "alloc-core")]
 
@@ -116,6 +129,29 @@ fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
     const FOOTPRINT: usize = 32 * 1024; // AllocBitmap::FOOTPRINT for the default SEGMENT/MIN_BLOCK pair
     let mut buf = vec![0u8; FOOTPRINT];
     ac.dbg_alloc_bitmap_bytes_for(p, &mut buf);
+
+    // RAD-5 (E4) GO/NO-GO EXPERIMENT: the second (magazine-residency)
+    // bitmap's virgin-init is skipped by the SAME `cfg(not(miri))` discipline
+    // (see `bootstrap.rs`/`alloc_core_small.rs`'s matching skip comments for
+    // `MagazineBitmap::init_in_place`). `AllocCore` alone (no `HeapCore`
+    // magazine layer above it) never marks this bitmap, so EVERY byte of its
+    // footprint must read zero on a freshly-reserved primordial segment — a
+    // stronger, unconditional check than T1's `AllocBitmap` assertion (which
+    // has to exclude the legitimately-refilled span). If the virgin-init
+    // skip were unsound for this bitmap's freshly-carved pages, this would
+    // observe non-zero garbage.
+    const MAG_FOOTPRINT: usize = 32 * 1024; // MagazineBitmap::FOOTPRINT, same geometry as AllocBitmap
+    let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
+    ac.dbg_magazine_bitmap_bytes_for(p, &mut mag_buf);
+    assert!(
+        mag_buf.iter().all(|&b| b == 0),
+        "freshly-reserved primordial segment's MagazineBitmap (RAD-5) did \
+         not read back all-zero before any magazine traffic — the OS-zero \
+         assumption the virgin-init skip depends on does not hold on this \
+         platform (or the skip fired on a non-virgin path). First non-zero \
+         byte at index {:?}.",
+        mag_buf.iter().position(|&b| b != 0)
+    );
 
     // The requested block sits at `primordial_meta_end()` (the payload
     // start); its bit index is `off >> MIN_BLOCK_SHIFT`. The refill batch
@@ -206,6 +242,21 @@ fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
     const FOOTPRINT: usize = 32 * 1024;
     let mut buf = vec![0u8; FOOTPRINT];
     ac.dbg_alloc_bitmap_bytes_for(fresh_ptr, &mut buf);
+
+    // RAD-5 (E4) GO/NO-GO EXPERIMENT: same unconditional whole-footprint
+    // check as T1, for the second (non-primordial) virgin-reserve call site
+    // (`AllocCore::reserve_small_segment`'s `MagazineBitmap` skip).
+    const MAG_FOOTPRINT: usize = 32 * 1024;
+    let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
+    ac.dbg_magazine_bitmap_bytes_for(fresh_ptr, &mut mag_buf);
+    assert!(
+        mag_buf.iter().all(|&b| b == 0),
+        "freshly-reserved (non-primordial) small segment's MagazineBitmap \
+         (RAD-5) did not read back all-zero — the OS-zero assumption \
+         failed, or the skip fired on a segment that was not actually \
+         virgin. First non-zero byte at index {:?}.",
+        mag_buf.iter().position(|&b| b != 0)
+    );
 
     // `fresh_ptr` is the FIRST block carved from the fresh segment; the same
     // `carve_block_with_refill` batch behaviour as T1 applies: 1 requested +

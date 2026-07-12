@@ -89,6 +89,17 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // miri keeps the explicit init unconditionally.
     #[cfg(miri)]
     super::alloc_bitmap::AllocBitmap::init_in_place(base_plus(base, Layout::alloc_bitmap_off()));
+    // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended to
+    // the second (magazine-residency) bitmap — see
+    // `magazine_bitmap.rs`'s module doc and `MagazineBitmap::init_in_place`'s
+    // doc comment. Skipped under `cfg(not(miri))` for the identical reason as
+    // the line above (fresh OS pages read zero; the target init state is
+    // all-zeros).
+    #[cfg(miri)]
+    super::magazine_bitmap::MagazineBitmap::init_in_place(base_plus(
+        base,
+        Layout::magazine_bitmap_off(),
+    ));
     // Initialise the per-segment non-intrusive cross-thread-free ring (the
     // Variant-2 fix: queues carry offsets, never poison the block). Only under
     // `alloc-xthread`; without it the ring metadata is reserved (the Layout

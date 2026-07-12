@@ -541,6 +541,24 @@ impl AllocCore {
         }
     }
 
+    /// RAD-5 (E4) GO/NO-GO EXPERIMENT, TEST-ONLY: same byte-for-byte raw read
+    /// as `dbg_alloc_bitmap_bytes_for`, over the second (magazine-residency)
+    /// bitmap instead. Exists for the poison-then-assert counterfactual
+    /// extension (`tests/regression_virgin_bitmap_skip.rs`) that proves the
+    /// virgin-init skip is sound for this bitmap too, not just `AllocBitmap`.
+    #[doc(hidden)]
+    pub fn dbg_magazine_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
+        debug_assert!(
+            out.len() <= super::magazine_bitmap::MagazineBitmap::FOOTPRINT,
+            "dbg_magazine_bitmap_bytes_for: out.len() exceeds MagazineBitmap::FOOTPRINT"
+        );
+        let base = os::segment_base_of_ptr(ptr);
+        let bitmap_base = Node::offset(base, SegLayout::magazine_bitmap_off());
+        for (i, byte) in out.iter_mut().enumerate() {
+            *byte = Node::read_u8(Node::offset(bitmap_base, i));
+        }
+    }
+
     /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
     /// payload lower bound for `ptr`'s segment — the same `payload_start`
     /// (`Layout::primordial_meta_end()` for a primordial segment, else
@@ -2403,6 +2421,15 @@ impl AllocCore {
         super::alloc_bitmap::AllocBitmap::init_in_place(base_add(
             base,
             SegLayout::alloc_bitmap_off(),
+        ));
+        // RAD-5 (E4) GO/NO-GO EXPERIMENT: same virgin-skip discipline extended
+        // to the second (magazine-residency) bitmap — see
+        // `magazine_bitmap.rs`'s module doc. Skipped under `cfg(not(miri))`
+        // for the identical reason as the line above.
+        #[cfg(miri)]
+        super::magazine_bitmap::MagazineBitmap::init_in_place(base_add(
+            base,
+            SegLayout::magazine_bitmap_off(),
         ));
         // Initialise the per-segment remote-free ring (Variant-2 fix). Only
         // under `alloc-xthread`; the Layout always reserves the bytes.

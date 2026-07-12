@@ -780,3 +780,103 @@ Every task followed this repo's zero-trust methodology: `sx`-agent
 implementation, personal diff review, personal re-run of the full test
 suite / clippy / `npm run check` / `npm run iai` by the orchestrator (not
 just trusting the implementing agent's own report), before each commit.
+
+## RAD-5 GO (2026-07-11/12) — `MagazineBitmap`, a second orthogonal per-segment bitmap
+
+Task #58 (RAD-5, plan Phase 5/E4, `docs/perf/PERF_PLAN_2026-07-10-radical-
+audit-implementation-plan.md`) revisited the G1 honest-reject above with a
+different shape: instead of *redefining* `AllocBitmap`'s semantics (the
+shape G1 rejected — see that section), add a second, orthogonal bitmap
+(`src/alloc_core/magazine_bitmap.rs`, `MagazineBitmap`) recording ONLY
+magazine residency, leaving every `AllocBitmap` call site byte-identical.
+This closes G1's stated blocker cleanly: no `mark_alloc`/`mark_free`
+call-site semantics change, so `carve_batch`'s leave-unset optimization and
+the freelist-drain legs are untouched.
+
+Replaces two O(count) scans with an O(1) bitmap probe: the own-thread free
+path's in-magazine double-free oracle (`heap_core.rs`'s
+`dealloc_own_thread_with_base`, previously the Э10 branchless chunked scan
+over `tcache.classes[c].slots[0..cnt]`) and the cross-class magazine
+predicate inside `refill_magazine_slow` / `dbg_drain_all_rings`
+(previously an O(cnt) scan of every OTHER class's slots via
+`before`/`after` split halves). Mark on magazine push (own-thread free,
+both the in-place push and the overflow-push leg) and on refill for every
+block landing in the magazine; clear on magazine pop (alloc hit, refill
+issue) and magazine flush (both production half-flush and the test-only
+full flush). 32 KiB / segment (0.78% of 4 MiB), carved into segment
+metadata right after `AllocBitmap`, with the same virgin-init-skip
+discipline (`cfg(not(miri))` elision at the two fresh-reserve call sites,
+unconditional re-init on decommit-reset) extended and counterfactual-tested
+in `tests/regression_virgin_bitmap_skip.rs`.
+
+**Verdict: GO.** Measured independently by the orchestrator (not just
+trusting the implementing agent's own numbers) — clean stash/pop
+apples-to-apples on this exact tree, `npm run iai` (iai-callgrind
+0.14.2 / WSL / valgrind), 12 without regressions, 0 regressed both with
+and without the diff:
+
+| bench                       | baseline Ir | RAD-5 Ir | Δ raw Ir | baseline Ir/op* | RAD-5 Ir/op* | Δ Ir/op* |
+| ---------------------------- | ----------: | -------: | -------: | --------------: | -----------: | -------: |
+| small_churn_16b              |      37,265 |   33,938 |   −3,327 |            125.0 |          73.0 |    −52.0 |
+| aligned_churn_640b_a128       |      37,274 |   33,948 |   −3,326 |            125.2 |          73.2 |    −52.0 |
+| churn_256b                   |      37,265 |   33,938 |   −3,327 |            125.0 |          73.0 |    −52.0 |
+| churn_write_256b             |      37,392 |   34,130 |   −3,262 |            127.0 |          76.0 |    −51.0 |
+| cold_alloc_free_256x16b      |      81,130 |   75,987 |   −5,143 |            202.6 |         182.5 |    −20.1 |
+| recycle_alloc_free_256x16b   |     133,803 |  123,712 |  −10,091 |            204.2 |         184.5 |    −19.7 |
+
+- **Churn kill gate (±10 raw Ir threshold, X4-B precedent):** all four
+  churn benches IMPROVED by ~3,260–3,330 raw Ir — roughly 300× past the
+  kill threshold in the favorable direction, not a marginal pass.
+- **Cold/recycle honest-budget gate (task spec: 15–25 Ir/op improvement
+  against a 68 Ir/op budget):** landed at 19.7–20.1 Ir/op improvement,
+  inside the expected window.
+- The implementing agent's own independently-run numbers (same method,
+  separate WSL invocation) were 51.0/49.0 Ir/op churn improvement and
+  16.7/16.9 Ir/op cold/recycle improvement — small run-to-run variance
+  (~1-3 Ir/op) from the orchestrator's rerun, same direction and order of
+  magnitude, both readings comfortably clear both gates.
+
+**Why the a-priori cost-model prediction (regression expected) was wrong:**
+the replaced scan sat inside a runtime-variable-trip-count loop
+(`while i < chunks` / `while i < cnt`) on the free hot path even though it
+executes 0-1 times in practice for these benches (`cnt` small); replacing
+it with the bitmap's unconditional straight-line probe let the compiler
+generate a tighter fast path overall, outweighing the new store's own
+cost. Not measurement noise — reproduced 3× byte-identical by the
+implementing agent, and independently reproduced by the orchestrator via a
+full stash/pop clean-baseline rerun (numbers above).
+
+**Verification (personally re-run by the orchestrator, not trusted from
+the agent's report):** every one of the 8 changed/new files read line by
+line; the layout-offset chain (`magazine_bitmap_off` → `remote_ring_off` →
+`gen_table_off` → `run_stack_off` → `primordial_*_off`) traced and
+confirmed self-consistent via the existing `small_meta_end() + PAGE <=
+SEGMENT` const-asserts (all 3 CI feature matrices compile clean); `cargo
+clippy --all-targets -D warnings` clean on all 3 matrices; `cargo fmt
+--check` clean; `cargo test --release --features production` — 48/49 test
+binaries green, the one failure being the pre-existing, unrelated
+`docs/ARCHITECTURE.md` test-file-count drift (134 files, fixed separately);
+the M2 counterfactual personally broken (`if false &&
+meta.magazine_bitmap().is_in_magazine(off)`) and confirmed RED
+(`in_magazine_double_free_is_noop` failed with the exact "same pointer
+issued twice" signature) then restored and confirmed GREEN;
+`drain_resident_xthread_double_free_no_corruption`,
+`refill_window_does_not_double_issue_in_out_buffer_resident_block`,
+`realloc_path_drain_respects_magazine` all green; `miri` run directly on
+`regression_virgin_bitmap_skip` (the load-bearing virgin-init-skip
+extension) — all 3 tests (T1/T2/T3) pass, confirming the skip is sound for
+the new bitmap too, not just `AllocBitmap`.
+
+Files: `src/alloc_core/magazine_bitmap.rs` (new), `src/alloc_core/mod.rs`,
+`src/alloc_core/segment_header.rs`, `src/alloc_core/bootstrap.rs`,
+`src/alloc_core/alloc_core_small.rs`, `src/alloc_core/alloc_core_small_pool.rs`,
+`src/registry/heap_core.rs`, `tests/regression_virgin_bitmap_skip.rs`.
+
+**Note on baseline staleness:** the Post-PERF-PASS-5 reference table above
+predates RAD-1 through RAD-4 and UBFIX-1 through UBFIX-12 (all landed
+between that table and this entry) and is no longer the live baseline for
+future comparisons — this entry's "baseline" column is a fresh clean-HEAD
+measurement taken immediately before this diff, not a read from that
+table. A general re-pin of the reference table is left as a follow-up (not
+blocking this GO decision, which only needed the relative before/after
+delta on this exact tree).

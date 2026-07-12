@@ -665,6 +665,17 @@ impl AllocCore {
             base,
             SegLayout::alloc_bitmap_off(),
         ));
+        // RAD-5 (E4) GO/NO-GO EXPERIMENT: the second (magazine-residency)
+        // bitmap must also be reset on a full decommit — a stale "resident"
+        // bit surviving decommit would misreport magazine membership for a
+        // future carve at the same offset. This full-reset path is NOT the
+        // virgin-skip elision (the segment is being reused, not freshly
+        // reserved), so this call stays UNCONDITIONAL, mirroring the
+        // `AllocBitmap` re-init immediately above.
+        super::magazine_bitmap::MagazineBitmap::init_in_place(Node::offset(
+            base,
+            SegLayout::magazine_bitmap_off(),
+        ));
         // 2e. PERF-3 Ф4 (task #211, plan §2.5): clear the per-segment `RunStack`
         //     for EVERY class. After the payload pages are returned to the OS
         //     (step 1) and `bump` is reset to the payload start (step 2a), any
