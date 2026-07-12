@@ -103,7 +103,20 @@ fn flushed_double_free_is_noop() {
     assert!(!heap.is_null());
     let layout = Layout::from_size_align(16, 8).unwrap();
 
+    // N only needs to comfortably exceed TCACHE_CAP (16) to force at least one
+    // magazine overflow flush to the BinTable free list — 200 was far more
+    // than that margin needs. Under miri (each alloc/dealloc call re-
+    // interprets the whole magazine+bitmap+BinTable machinery) shrink to 40:
+    // still 2.5x TCACHE_CAP, so the flush this test targets still fires: the
+    // 200x N / 400 native retry-loop bound below shrinks proportionally.
+    #[cfg(not(miri))]
     const N: usize = 200;
+    #[cfg(miri)]
+    const N: usize = 40;
+    #[cfg(not(miri))]
+    const REISSUE_PROBE_ATTEMPTS: usize = 400;
+    #[cfg(miri)]
+    const REISSUE_PROBE_ATTEMPTS: usize = 2 * N;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
         let p = unsafe { (*heap).alloc(layout) };
@@ -117,8 +130,8 @@ fn flushed_double_free_is_noop() {
     let target = ptrs[0]; // flushed early to a BinTable free list
     unsafe { (*heap).dealloc(target, layout) }; // flushed double-free
 
-    let mut issued: Vec<*mut u8> = Vec::with_capacity(400);
-    for _ in 0..400 {
+    let mut issued: Vec<*mut u8> = Vec::with_capacity(REISSUE_PROBE_ATTEMPTS);
+    for _ in 0..REISSUE_PROBE_ATTEMPTS {
         let p = unsafe { (*heap).alloc(layout) };
         if p.is_null() {
             break;
@@ -162,7 +175,17 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
     assert!(!heap.is_null());
     let layout = Layout::from_size_align(16, 8).unwrap();
 
+    // See `flushed_double_free_is_noop`'s identical constants for the
+    // miri-shrink rationale (N only needs to comfortably exceed TCACHE_CAP=16
+    // to force a flush).
+    #[cfg(not(miri))]
     const N: usize = 200;
+    #[cfg(miri)]
+    const N: usize = 40;
+    #[cfg(not(miri))]
+    const REISSUE_PROBE_ATTEMPTS: usize = 400;
+    #[cfg(miri)]
+    const REISSUE_PROBE_ATTEMPTS: usize = 2 * N;
     let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
     for i in 0..N {
         let p = unsafe { (*heap).alloc(layout) };
@@ -185,8 +208,8 @@ fn flushed_double_free_with_garbage_word1_is_noop() {
     // The hazardous double-free.
     unsafe { (*heap).dealloc(target, layout) };
 
-    let mut issued: Vec<*mut u8> = Vec::with_capacity(400);
-    for _ in 0..400 {
+    let mut issued: Vec<*mut u8> = Vec::with_capacity(REISSUE_PROBE_ATTEMPTS);
+    for _ in 0..REISSUE_PROBE_ATTEMPTS {
         let p = unsafe { (*heap).alloc(layout) };
         if p.is_null() {
             break;

@@ -139,7 +139,40 @@ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 /// the RSS cost regardless of `MAX_HEAPS` (4096) claimed slots. Only a slot
 /// that is BOTH claimed AND genuinely hits the exhausted-retry path commits
 /// the specific 4 KiB pages its entries land on.
+///
+/// **Miri-shrunk (2026-07-12 follow-up):** the `96 MiB` figure above is
+/// "virtual, never resident" on NATIVE only — miri's interpreter has no
+/// concept of lazy OS paging; when the `Registry` (which embeds
+/// `[HeapSlot; MAX_HEAPS]`, and therefore `MAX_HEAPS` copies of this array)
+/// is allocated, miri's Stacked/Tree-Borrows tracking materialises real
+/// interpreter-process metadata proportional to the FULL allocation size,
+/// not the touched subset. Measured: this alone drove miri's own process to
+/// ~11-12 GiB RSS on every test that calls `bootstrap::ensure()` under
+/// `alloc-xthread` (i.e. every pre-existing xthread/fastbin miri test, NOT
+/// just the ones RAD-4b added) — comfortably exceeding a standard CI
+/// runner's memory and triggering an OOM-driven runner kill partway through
+/// whichever test happened to still be running (`tests/
+/// regression_xthread_large_free_no_leak.rs`, `tests/
+/// regression_xthread_thread_free_alias_miri.rs`,
+/// `tests/regression_magazine_oracles.rs` under the `production` bundle —
+/// none of these are new to RAD-4b; they only became unaffordable once this
+/// field's registry-wide footprint grew). `tests/miri_heap_overflow_unit.rs`
+/// already worked around this for the ONE test RAD-4b added (by testing a
+/// standalone `Box`-allocated `HeapOverflow`, bypassing the registry
+/// entirely) but the fix belongs here, at the source, so every OTHER miri
+/// test that goes through `bootstrap::ensure()` benefits too. `64` keeps
+/// comfortable headroom over `miri_heap_overflow_unit.rs`'s own requirement
+/// (32 total pushes across its two producer threads, asserted to never
+/// overflow) while cutting the per-slot footprint from 24 KiB to 768 B —
+/// `768 B * MAX_HEAPS(4096) = 3 MiB`, small enough that miri's eager
+/// tracking of the whole (still fully virtual on native) registry no longer
+/// dominates. Native keeps the full `2048` — this bound's native honesty
+/// argument (the paragraph above) is unaffected, since real OS lazy paging
+/// means the larger array costs nothing until actually touched.
+#[cfg(not(miri))]
 pub(crate) const HEAP_OVERFLOW_CAP: usize = 2048;
+#[cfg(miri)]
+pub(crate) const HEAP_OVERFLOW_CAP: usize = 64;
 
 /// Sentinel `base` value meaning "this slot carries no entry" (matches the
 /// OS-zeroed initial state — see [`HEAP_OVERFLOW_CAP`]'s doc comment). `0` is

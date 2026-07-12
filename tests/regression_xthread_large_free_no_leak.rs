@@ -67,6 +67,25 @@ use std::thread;
 
 use sefer_alloc::registry::{bootstrap, HeapRegistry, DBG_LARGE_XTHREAD_RECLAIMED};
 
+/// Miri-shrink for the whole-block `write_bytes`/read-back canary every test
+/// in this file does per Large block. Native fills the entire block (a real
+/// use-after-unmap would corrupt anywhere in it); under miri (which tracks
+/// every byte of every `write_bytes`/read individually — the dominant cost of
+/// this file's Large-allocation-heavy tests, see each test's own miri-N
+/// comment) a small window at the front is exactly as sensitive to the
+/// reclaim-then-reuse corruption these tests guard against (a reused segment
+/// still gets reset/re-carved from its start), so it is Miri-gated only;
+/// native coverage is unchanged. Mirrors `tests/stress_boundary_sweep.rs`'s
+/// established `LARGE_WINDOW` pattern.
+#[cfg(not(miri))]
+fn canary_write_len(size: usize) -> usize {
+    size
+}
+#[cfg(miri)]
+fn canary_write_len(_size: usize) -> usize {
+    4096
+}
+
 // Serialise all tests in this file: the registry and the reclaim counter are
 // process-global statics; concurrent test-fn execution would make the
 // `DBG_LARGE_XTHREAD_RECLAIMED` delta assertion flaky (another test in the
@@ -97,7 +116,14 @@ fn xthread_large_free_reclaims_segments_no_leak() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
+    // Only needs enough blocks to prove reclaim actually happens (`> 0`), not
+    // a statistically large sample. Under miri (each 512 KiB `write_bytes` +
+    // each alloc/dealloc call is individually byte-tracked — the dominant
+    // cost here) shrink to 10; native keeps the original 100.
+    #[cfg(not(miri))]
     const N: usize = 100;
+    #[cfg(miri)]
+    const N: usize = 10;
     // 512 KiB — comfortably above `SMALL_MAX` (a few KiB), so every
     // allocation is unambiguously routed to `AllocCore::alloc_large`.
     const SIZE: usize = 512 * 1024;
@@ -121,7 +147,7 @@ fn xthread_large_free_reclaims_segments_no_leak() {
             "round 1 alloc[{i}] segment not stamped with owner id"
         );
         unsafe {
-            std::ptr::write_bytes(p, (i & 0xFF) as u8, SIZE);
+            std::ptr::write_bytes(p, (i & 0xFF) as u8, canary_write_len(SIZE));
         }
         ptrs.push(p);
     }
@@ -158,7 +184,7 @@ fn xthread_large_free_reclaims_segments_no_leak() {
         let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null(), "round 2 alloc[{i}] returned null");
         unsafe {
-            std::ptr::write_bytes(p, 0xEE, SIZE);
+            std::ptr::write_bytes(p, 0xEE, canary_write_len(SIZE));
             assert_eq!(p.read(), 0xEE, "round 2 alloc[{i}] read-back mismatch");
         }
         ptrs2.push(p);
@@ -237,7 +263,12 @@ fn xthread_large_double_free_no_double_reclaim() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
+    // See `xthread_large_free_reclaims_segments_no_leak`'s identical
+    // miri-shrink rationale.
+    #[cfg(not(miri))]
     const N: usize = 50;
+    #[cfg(miri)]
+    const N: usize = 10;
     const SIZE: usize = 512 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
@@ -282,7 +313,7 @@ fn xthread_large_double_free_no_double_reclaim() {
         let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null(), "post-double-free alloc[{i}] returned null");
         unsafe {
-            std::ptr::write_bytes(p, 0xAB, SIZE);
+            std::ptr::write_bytes(p, 0xAB, canary_write_len(SIZE));
             assert_eq!(
                 p.read(),
                 0xAB,
@@ -328,7 +359,12 @@ fn xthread_large_free_reclaim_counter_advances_again() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
+    // See `xthread_large_free_reclaims_segments_no_leak`'s identical
+    // miri-shrink rationale.
+    #[cfg(not(miri))]
     const N: usize = 20;
+    #[cfg(miri)]
+    const N: usize = 6;
     const SIZE: usize = 512 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
