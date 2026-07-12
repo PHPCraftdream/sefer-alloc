@@ -431,8 +431,40 @@ impl SegmentTable {
         }
         // Defensive: `base` was not found at its stamped `segment_id` slot
         // (corrupt header / double-recycle / never-registered). This
-        // indicates a bug in the caller. Release the OS reservation anyway to
-        // avoid a leak, but don't corrupt the table.
+        // indicates a bug in the caller — or a corrupted `segment_id` (the
+        // same threat model `unregister`'s sibling guard defends against).
+        //
+        // L-3 (UBFIX-11): the ORIGINAL defensive tail released the OS
+        // reservation here WITHOUT first evicting `base` from the hash table
+        // / own-cache, unlike the main (non-defensive) path just above. If
+        // `base` happens to still be a genuinely LIVE entry in the hash table
+        // (reachable via `hash_index(base)`, which is keyed by the pointer
+        // VALUE, not by the corrupt `segment_id`) or the direct-mapped
+        // own-cache, that stale entry would survive this release: a later
+        // `contains_base(base)` on the now-UNMAPPED address would return
+        // `true` (cache hit or hash hit), routing a subsequent free as
+        // own-thread and reading/writing unmapped memory.
+        //
+        // `hash_remove`/`own_cache_clear` key on `base`'s VALUE (via
+        // `hash_index`/`cache_index`), never on `id` — so calling them here
+        // is safe and correct regardless of what is wrong with the stamped
+        // `segment_id`: if `base` is genuinely present in the hash/cache
+        // (under its natural probe position, independent of any slot index),
+        // it is evicted; if it is not present (e.g. truly never registered),
+        // both are already documented no-ops (`hash_remove`'s empty-slot
+        // return; `own_cache_clear`'s slot-mismatch skip). This mirrors the
+        // main path's exact call order (hash/cache eviction BEFORE the OS
+        // release), just without the (untrustworthy, in this branch) slot
+        // NULL + free-list push — the `slots[]` array itself is intentionally
+        // left untouched here, since we do not know which (if any) index
+        // legitimately maps to `base` under the corruption.
+        self.hash_remove(base);
+        self.own_cache_clear(base);
+        // Release the OS reservation anyway to avoid a leak, but don't
+        // corrupt the `slots[]` array — we do not know which slot (if any)
+        // legitimately corresponds to `base` under this corruption, so
+        // NULLing an unrelated slot / pushing a bogus free-list index would
+        // be worse than a defensive no-op there.
         super::os::release_segment(reservation, reservation_len);
     }
 

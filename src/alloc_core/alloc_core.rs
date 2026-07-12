@@ -849,9 +849,33 @@ impl AllocCore {
                         // Zero the magic so that if something reads the header
                         // while it's in the cache, it won't be confused as a
                         // live registered segment.
-                        let mut hdr_zero = stale;
-                        hdr_zero.magic = 0;
-                        Node::write_struct(base as *mut SegmentHeader, hdr_zero);
+                        //
+                        // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-
+                        // synthesis.md): this used to be `hdr_zero = stale;
+                        // hdr_zero.magic = 0; Node::write_struct(base, hdr_zero)`
+                        // — a non-atomic FULL-STRUCT write that races with
+                        // `SegmentHeader::magic_at`/`kind_at`/`large_size_at`/
+                        // `span_usable_at` (remote defensive field reads that can
+                        // observe a live header concurrently with this owner
+                        // write under a stale/duplicate remote free — misuse of
+                        // the `GlobalAlloc` contract the defensive reads exist to
+                        // survive without UB). `stale` is a fresh `read_at(base)`
+                        // taken just above, so every OTHER field of `hdr_zero`
+                        // is byte-identical to what is already in memory — the
+                        // full-struct write's only REAL effect was zeroing
+                        // `magic`. Restoring this file's own §11 discipline
+                        // ("remote-readable field ⇒ atomic single-word access",
+                        // the same pattern `SegmentMeta::owner_state_atomic`
+                        // already uses for the adoption CAS): write only the
+                        // `magic` field, through an `&AtomicU32` view at its
+                        // `offset_of!` offset, so a concurrent remote
+                        // `magic_at`/`kind_at`/`large_size_at`/`span_usable_at`
+                        // read never races a torn/non-atomic store — those other
+                        // three fields are untouched here, so no write to them is
+                        // needed at all.
+                        let magic_off = core::mem::offset_of!(SegmentHeader, magic);
+                        Node::atomic_u32_at(base, magic_off)
+                            .store(0, core::sync::atomic::Ordering::Release);
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
                         self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
@@ -914,6 +938,19 @@ impl AllocCore {
                 };
                 self.dealloc_small(base, ptr, class_idx);
             }
+            // L-5 (UBFIX-11): `contains_base` already proved `base` is one of
+            // OUR registered segments, but the `kind` BYTE at that base has
+            // been corrupted to something other than the three legitimate
+            // discriminants (0/1/2) — `kind_at`'s strict decode maps that to
+            // `Unknown` rather than guessing. Neither the Large branch (which
+            // would release/cache the OS reservation) nor the Small/
+            // Primordial branch (which would write a BinTable/free-list
+            // header into the payload) is safe to run against a segment
+            // whose real kind we cannot trust — no-op is the only sound
+            // choice: do not touch this segment's payload or reservation at
+            // all. Same reject-not-guess posture as the H-1 payload
+            // lower-bound guard (UBFIX-3).
+            SegmentKind::Unknown => {}
         }
     }
 
@@ -1057,6 +1094,60 @@ impl AllocCore {
         SegmentHeader::set_segment_id_at(os::segment_base_of_ptr(ptr), id);
     }
 
+    /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
+    /// `ptr`'s segment header (not decoded through `SegmentHeader::kind_at` —
+    /// the exact byte at the `kind` field's offset). Lets a test capture the
+    /// legitimate byte before corrupting it, and confirm the corruption
+    /// actually landed.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
+        let base = os::segment_base_of_ptr(ptr);
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        Node::read_u8(Node::offset(base, off) as *const u8)
+    }
+
+    /// TEST-ONLY (L-5, UBFIX-11): overwrite the RAW `kind` discriminant byte
+    /// of `ptr`'s segment header with an arbitrary value — including bytes
+    /// that are NOT one of the three legitimate `SegmentKind` discriminants
+    /// (0/1/2), simulating a corrupted/garbled header byte (a wild write from
+    /// an unrelated bug, or the aftermath of an H-1-class defect before its
+    /// fix). Used to construct the corrupted-kind scenario exercised by
+    /// `kind_at_rejects_corrupt_discriminant` — proves `SegmentHeader::
+    /// kind_at`'s strict decode maps any byte outside {0,1,2} to
+    /// `SegmentKind::Unknown` rather than silently defaulting to `Small`.
+    ///
+    /// Mirrors `dbg_stamp_segment_id`'s established test-only field-corruption
+    /// pattern (`offset_of!` + `Node::write_*`), applied to the `kind` byte
+    /// instead of `segment_id`.
+    #[doc(hidden)]
+    pub fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
+        let base = os::segment_base_of_ptr(ptr);
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        Node::write_u8(Node::offset(base, off), raw);
+    }
+
+    /// TEST-ONLY (L-5, UBFIX-11): the DECODED `SegmentKind` of `ptr`'s
+    /// segment, as `SegmentHeader::kind_at` (the strict decode this task
+    /// hardened) resolves it — returned as a small tag so `tests/` (which
+    /// cannot see the `pub(crate)` `SegmentKind` enum) can assert on it:
+    /// `0` = `Primordial`, `1` = `Small`, `2` = `Large`, `3` = `Unknown` (the
+    /// L-5 reject sentinel for any byte outside {0,1,2}). Distinct from
+    /// [`dbg_kind_byte_of`](Self::dbg_kind_byte_of), which reads the RAW byte
+    /// without going through `kind_at`'s decode at all — this accessor is
+    /// what actually proves the decode's behaviour.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
+        let base = os::segment_base_of_ptr(ptr);
+        match SegmentHeader::kind_at(base) {
+            SegmentKind::Primordial => 0,
+            SegmentKind::Small => 1,
+            SegmentKind::Large => 2,
+            SegmentKind::Unknown => 3,
+        }
+    }
+
     /// TEST-ONLY (OPT-G regression): read the `large_size` field from the
     /// header of `ptr`'s segment. Uses a direct field read (same pattern as
     /// `large_size_at` but without the `alloc-xthread` feature gate) so
@@ -1081,6 +1172,26 @@ impl AllocCore {
     )]
     pub fn dbg_unregister(&mut self, ptr: *mut u8) {
         self.table.unregister(os::segment_base_of_ptr(ptr));
+    }
+
+    /// TEST-ONLY (L-3, UBFIX-11): directly invoke `SegmentTable::recycle` for
+    /// `ptr`'s segment, for a public integration test (which cannot call the
+    /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed slot
+    /// lookup AND its defensive mismatch tail (`slots[id] != base` /
+    /// `id >= count`) in isolation — mirrors `dbg_unregister`'s role for
+    /// `SegmentTable::unregister`. The caller is responsible for constructing
+    /// whatever corrupted-`segment_id` scenario the test needs beforehand
+    /// (e.g. via `dbg_stamp_segment_id`) and for any cleanup afterwards.
+    ///
+    /// # Safety contract mirrors `SegmentTable::recycle`'s caller contract
+    ///
+    /// After this call returns, `ptr`'s segment's OS reservation has been
+    /// released (defensive tail) or released-and-slot-NULLed (main path) —
+    /// either way the caller MUST NOT dereference `ptr`/`base` afterwards.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_recycle(&mut self, ptr: *mut u8) {
+        self.table.recycle(os::segment_base_of_ptr(ptr));
     }
 
     /// TEST-ONLY (E2, task W4): the `block_size` of a small class, so the

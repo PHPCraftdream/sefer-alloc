@@ -167,6 +167,22 @@ pub(crate) enum SegmentKind {
     /// A large/huge segment: holds ONE allocation of arbitrary size/align. No
     /// page map; the header records the allocation's layout.
     Large = 2,
+    /// L-5 (UBFIX-11): NOT a real segment kind ever written by
+    /// `SegmentHeader::small`/`large` — a REJECT sentinel returned by
+    /// [`SegmentHeader::kind_at`] when the raw `kind` byte is anything other
+    /// than the three legitimate discriminants (0/1/2). Exists so a
+    /// corrupted/garbled `kind` byte (e.g. a wild write from an unrelated
+    /// heap-overflow, or the aftermath of an H-1-class defect before its fix)
+    /// is CONTAINED rather than silently amplified into a specific wrong
+    /// kind. See `kind_at`'s doc for the full rationale: every caller of
+    /// `kind_at` uses `==`/`matches!` against a SPECIFIC expected kind (never
+    /// an exhaustive match with a catch-all), so `Unknown` naturally fails
+    /// every such check and each call site's existing "not this kind" branch
+    /// becomes the safe no-op/reject path for free — no caller needed to
+    /// change to benefit from this guard, except the one exhaustive `match`
+    /// in `AllocCore::dealloc`, which gained an explicit `Unknown => no-op`
+    /// arm.
+    Unknown = 0xFF,
 }
 
 /// Per-page descriptor: which size class owns this page, or `Free` if the page
@@ -627,17 +643,34 @@ impl SegmentHeader {
         // The `SegmentKind` discriminant is one byte at `base + off`; read it
         // via the node seam and transcribe the raw byte back to the enum.
         let b = Node::read_u8(Node::offset(base, off) as *const u8);
-        // SAFETY (of the transcribe): the byte was laid down by `SegmentHeader::
-        // small`/`large` as a valid `SegmentKind` discriminant (`#[repr(u8)]`),
-        // and the header is otherwise immutable in this field, so the byte is
-        // always one of {0,1,2}. A corrupt byte would still produce a defined
-        // value here (the match is exhaustive on u8's three tag values; we map
-        // anything unexpected to `Small` defensively — the `magic_at` check the
-        // caller performs first rejects non-sefer bases).
+        // L-5 (UBFIX-11): STRICT decode — the byte was laid down by
+        // `SegmentHeader::small`/`large` as a valid `SegmentKind` discriminant
+        // (`#[repr(u8)]`) and the header is otherwise immutable in this
+        // field, so in the well-formed case the byte is always one of
+        // {0,1,2}. Previously any OTHER byte (a corrupted/garbled kind — a
+        // wild write from an unrelated bug, or the aftermath of an
+        // H-1-class defect before its fix) fell through to a `_ => Small`
+        // default: a corrupt/unexpected byte was silently treated as a
+        // VALID, specific segment kind — amplifying the corruption instead
+        // of containing it (e.g. a Large segment with a corrupted kind byte
+        // would be misrouted onto the Small free path, and a
+        // Small-specific free would write a BinTable/free-list header into
+        // a live Large payload). `magic_at` (checked by the caller first on
+        // the cross-thread path) rejects a non-sefer BASE, but does nothing
+        // to validate the `kind` BYTE of a base that IS ours but has been
+        // corrupted in place — so this decode must reject on its own.
+        // Every unexpected byte now maps to `SegmentKind::Unknown`, a
+        // sentinel no constructor ever writes; every caller of `kind_at`
+        // tests for a SPECIFIC expected kind via `==`/`matches!` (never an
+        // exhaustive match with an implicit catch-all — see the callers
+        // inventory in this task's audit), so `Unknown` naturally fails
+        // every such check and is routed to that call site's existing
+        // "not this kind" no-op/reject branch.
         match b {
             0 => SegmentKind::Primordial,
+            1 => SegmentKind::Small,
             2 => SegmentKind::Large,
-            _ => SegmentKind::Small,
+            _ => SegmentKind::Unknown,
         }
     }
 

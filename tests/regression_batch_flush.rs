@@ -31,8 +31,40 @@
 
 use std::alloc::Layout;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::{AllocCore, SegmentLayout};
+
+/// L-4 (UBFIX-11): `AllocCore::dbg_decommit_count()` backs a process-WIDE
+/// relaxed atomic (`DECOMMIT_CALLS`), shared across every test in this
+/// binary. `cargo test`'s default parallel test-thread execution can
+/// interleave two tests that both read a before/after delta around it,
+/// making either delta observe the OTHER test's decommit events too —
+/// exactly the interference observed between
+/// `c_decommit_fires_once_per_emptied_segment` and the L-4 counterfactual
+/// added below during this task's development. Serialize the (small) subset
+/// of tests in this file that consult that counter, mirroring the
+/// `SerialGuard` pattern already established elsewhere in the test suite
+/// (see `tests/regression_hardened_large_kind_own_free.rs`).
+static DECOMMIT_COUNTER_SERIAL: AtomicBool = AtomicBool::new(false);
+
+struct SerialGuard;
+impl SerialGuard {
+    fn acquire() -> Self {
+        while DECOMMIT_COUNTER_SERIAL
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            std::hint::spin_loop();
+        }
+        SerialGuard
+    }
+}
+impl Drop for SerialGuard {
+    fn drop(&mut self) {
+        DECOMMIT_COUNTER_SERIAL.store(false, Ordering::Release);
+    }
+}
 
 fn class_for(core: &AllocCore, size: usize, align: usize) -> usize {
     let layout = Layout::from_size_align(size, align).unwrap();
@@ -341,6 +373,10 @@ fn c_partial_flush_live_count_exact() {
 #[cfg(feature = "alloc-decommit")]
 #[test]
 fn c_decommit_fires_once_per_emptied_segment() {
+    // L-4 (UBFIX-11): serialize against the other test in this file that
+    // reads `AllocCore::dbg_decommit_count()`'s process-wide counter — see
+    // `SerialGuard`'s doc comment above.
+    let _guard = SerialGuard::acquire();
     // Mechanism 2 (task #51): DISABLE the empty-small-segment pool — this test
     // asserts decommit fires once per emptied segment. With the pool ON
     // (production default) the emptied segments are absorbed by the pool (no
@@ -451,4 +487,206 @@ fn c_decommit_fires_once_per_emptied_segment() {
 
     // buf is fully flushed now; nothing more to free.
     let _ = layout;
+}
+
+// ---------------------------------------------------------------------------
+// (d) L-4 (UBFIX-11) — a SECOND same-base run after a mid-batch
+// decommit-recycle must NOT re-touch the (now-unmapped) segment's metadata.
+//
+// `flush_class` groups a magazine batch into same-segment RUNS (Э8). The
+// grouping assumes each segment appears in at most one run — true for a
+// legitimate batch, but an upstream double-free reaching the magazine can
+// hand `flush_class` the SAME segment's blocks in two separate runs
+// (separated by a block from a different segment, breaking contiguous-base
+// detection). If the FIRST run empties its segment, `flush_run` decommits +
+// recycles it (releases the OS reservation, NULLs the table slot — pool
+// disabled here to force the REAL release leg, not the pool leg). Without
+// the L-4 fix, the SECOND run for that same base would still call
+// `flush_run`, which unconditionally reads/writes the segment's metadata
+// (`bump_of`, `bin_table()`, `alloc_bitmap()`, `kind_at`) — a metadata-level
+// use-after-free on unmapped memory.
+//
+// COUNTERFACTUAL: skip the `already_recycled` guard in `flush_class` (revert
+// to the pre-fix unconditional `self.flush_run(...)` call) → the second run
+// dereferences the unmapped segment → the process crashes with an access
+// violation (proven manually during this task's implementation; see the
+// task summary). With the fix, the second run is silently skipped — no
+// crash, and the surviving (non-recycled) segment's blocks flush normally.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "alloc-decommit")]
+#[test]
+fn d_second_run_after_mid_batch_recycle_is_skipped_not_uaf() {
+    // L-4 (UBFIX-11): this test triggers real decommit events (it does not
+    // itself read `dbg_decommit_count()`, but its `flush_class` call bumps
+    // that process-wide counter) — serialize against
+    // `c_decommit_fires_once_per_emptied_segment`, which DOES read a
+    // before/after delta of that counter and would otherwise observe THIS
+    // test's decommit events if the two interleave. See `SerialGuard`'s doc
+    // comment above.
+    let _guard = SerialGuard::acquire();
+    // Pool disabled: force the REAL release leg (OS unmap + slot NULL) on
+    // the first run's decommit, not the pool leg (which would leave the
+    // segment mapped and make the hazard this test targets unreachable).
+    let mut core = AllocCore::new_with_config(
+        sefer_alloc::LargeCacheConfig::new()
+            .pool(sefer_alloc::SmallSegmentPoolConfig::new().pool_segments(0)),
+    )
+    .unwrap();
+    let size = 1024usize;
+    let align = 8usize;
+    let c = class_for(&core, size, align);
+    let layout = Layout::from_size_align(size, align).unwrap();
+
+    // Span >= 2 Small segments (plus the primordial, which never decommits).
+    let n = 12_000usize;
+    let mut buf = vec![core::ptr::null_mut::<u8>(); n];
+    let got = core.refill_class(c, n, &mut buf);
+    assert_eq!(got, n);
+
+    let mut by_base: std::collections::HashMap<usize, Vec<*mut u8>> =
+        std::collections::HashMap::new();
+    for &p in &buf {
+        by_base.entry(seg_base(p)).or_default().push(p);
+    }
+    assert!(
+        by_base.len() >= 2,
+        "need >= 2 segments, got {}",
+        by_base.len()
+    );
+
+    // Identify `small_cur`'s base indirectly: one more alloc always lands on
+    // the CURRENT carve target, which `dec_live_and_maybe_decommit` excludes
+    // from decommit (`base == small_cur` guard) — so A must NOT be this
+    // segment, or the first run would never empty+recycle it (test would be
+    // vacuous, as observed before this fix). Free this probe block right
+    // back so it does not perturb the block sets collected above.
+    let probe = core.alloc(layout);
+    assert!(!probe.is_null());
+    let current_base = seg_base(probe);
+    core.dealloc(probe, layout);
+
+    // Pick segment A: a NON-primordial, NON-current segment with >= 2 blocks
+    // (the primordial NEVER decommits — `dec_live_and_maybe_decommit`'s
+    // `matches!(kind_at(base), SegmentKind::Small)` guard explicitly excludes
+    // it — and neither does the current carve target — `base == small_cur`
+    // guard — so neither is eligible to be A, or the first run would never
+    // empty+recycle it, making the test vacuous). B is any OTHER segment with
+    // >= 2 blocks (current or primordial is fine for B — it is never asked
+    // to decommit).
+    let mut bases: Vec<usize> = by_base.keys().copied().collect();
+    bases.sort();
+    let candidates: Vec<usize> = bases
+        .iter()
+        .copied()
+        .filter(|&b| {
+            by_base[&b].len() >= 2 && b != current_base && core.dbg_kind_at_tag(by_base[&b][0]) == 1
+            // 1 == SegmentKind::Small
+        })
+        .collect();
+    assert!(
+        !candidates.is_empty(),
+        "need >= 1 non-current segment with >= 2 blocks for A, got {} \
+         (current_base={current_base:#x})",
+        candidates.len()
+    );
+    let base_a = candidates[0];
+    let base_b = bases
+        .iter()
+        .copied()
+        .find(|&b| b != base_a && by_base[&b].len() >= 2)
+        .expect("need a second segment with >= 2 blocks for B");
+    let a_blocks = by_base[&base_a].clone();
+    let b_blocks = by_base[&base_b].clone();
+
+    // Free every OTHER segment's blocks up front, so A and B are the only
+    // live non-primordial segments left (isolates the decommit accounting).
+    let ab: HashSet<usize> = a_blocks
+        .iter()
+        .chain(b_blocks.iter())
+        .map(|&p| p as usize)
+        .collect();
+    for &p in &buf {
+        if !ab.contains(&(p as usize)) {
+            core.dealloc(p, layout);
+        }
+    }
+
+    let live_a = core.dbg_live_count_for(a_blocks[0]);
+    let live_b = core.dbg_live_count_for(b_blocks[0]);
+    assert_eq!(live_a, Some(a_blocks.len() as u32), "A precondition");
+    assert_eq!(live_b, Some(b_blocks.len() as u32), "B precondition");
+
+    // Build the batch: ALL of A's blocks (run 1, will empty + recycle A),
+    // then ONE block of B (breaks run contiguity — forces a NEW run to
+    // start), then ALL of A's blocks AGAIN (run 2 — the "double-free
+    // reaching the magazine" scenario: the same pointers appear a second
+    // time, simulating a stale/duplicate free that slipped past the
+    // magazine's own bookkeeping). Run 2 targets `base_a`, which by then has
+    // been decommitted-and-released by run 1.
+    let mut mag: Vec<*mut u8> = Vec::with_capacity(a_blocks.len() * 2 + 1);
+    mag.extend_from_slice(&a_blocks);
+    mag.push(b_blocks[0]);
+    mag.extend_from_slice(&a_blocks); // duplicate run for the SAME base
+
+    // Must not crash (access violation / segfault). If L-4 regresses, this
+    // process aborts here instead of returning — the strongest possible
+    // counterfactual signal (proven during this task's implementation: the
+    // unguarded second run reliably crashes with STATUS_ACCESS_VIOLATION /
+    // SIGSEGV on the unmapped segment's metadata read).
+    //
+    // NOTE: deliberately NOT using `AllocCore::dbg_decommit_count()` here —
+    // it is a process-WIDE relaxed atomic (`DECOMMIT_CALLS`), shared across
+    // every test in this binary; reading a before/after delta around this
+    // call would race against sibling tests' own decommit activity under
+    // `cargo test`'s default parallel test-thread execution (observed: this
+    // exact interference against `c_decommit_fires_once_per_emptied_segment`
+    // during this test's development). `dbg_live_count_for`/
+    // `dbg_is_decommitted_for` below are PER-SEGMENT state, not shared
+    // globals, so they give the same non-vacuousness proof without the race.
+    core.flush_class(c, &mag);
+
+    // A must be gone (slot recycled) — the dbg getters return None. This is
+    // simultaneously the non-vacuousness proof (A really did decommit+recycle
+    // from run 1) and the "no crash occurred" proof (we reached this line at
+    // all, having survived whatever run 2 did or didn't do to A's now-unmapped
+    // metadata).
+    assert_eq!(
+        core.dbg_live_count_for(a_blocks[0]),
+        None,
+        "segment A must be fully recycled (unmapped) after the first run — \
+         if this reads Some(_) instead, A never actually decommitted and \
+         this test is vacuous (did not exercise the L-4 hazard at all)"
+    );
+    assert_eq!(
+        core.dbg_is_decommitted_for(a_blocks[0]),
+        None,
+        "segment A's slot must be fully recycled (None), not merely \
+         decommitted-but-still-registered"
+    );
+
+    // B must be UNAFFECTED by A's recycle and by the (skipped) second run:
+    // exactly one block (b_blocks[0]) was flushed, so live_count drops by
+    // exactly 1 — not corrupted by a stray write from a mis-routed second
+    // run for A's base.
+    let expected_b_live = b_blocks.len() as u32 - 1;
+    assert_eq!(
+        core.dbg_live_count_for(b_blocks[0]),
+        Some(expected_b_live),
+        "segment B's live_count corrupted — the second (should-be-skipped) \
+         run for A may have bled into B's accounting"
+    );
+
+    // B's remaining blocks must still be valid and usable — the strongest
+    // proof that no stray metadata write escaped into B's segment.
+    for &p in &b_blocks[1..] {
+        unsafe {
+            core::ptr::write_bytes(p, 0x5A, size);
+            assert_eq!(
+                *p, 0x5A,
+                "B block became unwritable/corrupted after A's mid-batch recycle"
+            );
+        }
+        core.dealloc(p, layout);
+    }
 }

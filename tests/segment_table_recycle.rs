@@ -274,3 +274,123 @@ fn recycled_slot_is_reused() {
         ac.dealloc(p, layout);
     }
 }
+
+// ============================================================
+// Test 4 (L-3, UBFIX-11) — recycle's defensive-mismatch tail must evict the
+// hash table / own-cache entry before releasing the OS reservation.
+// ============================================================
+
+/// `SegmentTable::recycle`'s O(1) path trusts the segment's own stamped
+/// `segment_id` field to locate its slot (mirroring `unregister`'s O(1)
+/// path). If that field is corrupted (a caller bug, or genuine memory
+/// corruption — exactly the threat model the defensive branch exists for),
+/// the fallback tail releases the OS reservation anyway (to avoid a leak)
+/// but must NOT leave `base` reachable via `contains_base` afterwards: a
+/// later `contains_base(base)` hit on that now-UNMAPPED address would route
+/// a subsequent free as own-thread and read/write unmapped memory.
+///
+/// This is the counterfactual for L-3: before the fix, the defensive tail
+/// released the OS reservation WITHOUT first calling `hash_remove`/
+/// `own_cache_clear`, so a genuinely-still-present hash/cache entry for
+/// `base` survived the release. This test proves the fix by driving `base`
+/// through the OWN-CACHE fast path first (a won `contains_base` probe fills
+/// it — PERF-P2/Э3), THEN corrupting its `segment_id` and recycling via the
+/// defensive tail, THEN asserting `contains_base` is `false` afterwards.
+/// Without the fix this assertion goes RED (the stale cache entry still HITS).
+///
+/// ## Why this test does not exercise `AllocCore::drop`
+///
+/// The defensive tail intentionally does NOT NULL `slots[]` (see this task's
+/// summary: we do not know which slot, if any, legitimately corresponds to
+/// `base` under a corrupted `segment_id`, so touching an unrelated slot would
+/// be worse than leaving it alone). This means `a`'s original slot still
+/// holds the (now-dangling) pointer value after this test's defensive
+/// recycle — an ORTHOGONAL, pre-existing property of the defensive branch's
+/// contract (not something this task's fix changes or could safely change
+/// without risking a wrong-slot NULL). If `AllocCore::drop` ran normally at
+/// the end of this test, it would walk that still-non-NULL slot and attempt
+/// to release `a`'s (already-released) OS reservation a second time — a real
+/// double-free of an OS resource, not a controlled counterfactual. This test
+/// therefore `mem::forget`s `ac` after making its assertion, deliberately
+/// leaking the `AllocCore` (and, transitively, `b`'s still-live OS
+/// reservation) for the lifetime of the test process — the standard,
+/// well-understood way to sidestep an orthogonal Drop hazard while still
+/// proving the specific hash/cache-eviction fix this test targets.
+#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+#[test]
+fn recycle_defensive_tail_evicts_hash_and_cache() {
+    use core::alloc::Layout;
+    use sefer_alloc::{alloc_core::AllocCore, SegmentLayout};
+
+    let mut ac = AllocCore::new().expect("primordial");
+    let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
+    let layout = Layout::from_size_align(large_size, SegmentLayout::PAGE).unwrap();
+
+    let a = ac.alloc(layout);
+    assert!(!a.is_null(), "a: large alloc failed");
+    let b = ac.alloc(layout);
+    assert!(!b.is_null(), "b: large alloc failed");
+
+    // Drive `a` through the own-cache fast path (PERF-P2/Э3): a won
+    // `contains_base` probe fills `own_cache[cache_index(a)] = a`. Without
+    // this, the bug would still be provable via the hash table alone, but
+    // exercising BOTH the cache and the hash is a stronger counterfactual —
+    // the pre-fix code evicted NEITHER.
+    assert!(
+        ac.dbg_contains_base(a),
+        "a must be registered before the test"
+    );
+    assert!(
+        ac.dbg_contains_base(b),
+        "b must be registered before the test"
+    );
+
+    let a_id = ac.dbg_segment_id_of(a);
+    let b_id = ac.dbg_segment_id_of(b);
+    assert_ne!(a_id, b_id, "precondition: distinct segment ids");
+
+    // Corrupt `a`'s stamped segment_id to `b`'s id, exactly as
+    // `unregister_defends_against_mismatched_segment_id` does for
+    // `unregister`. `recycle`'s O(1) lookup will read `slots[b_id]`, find
+    // `b` there (not `a`), and fall into the defensive tail.
+    ac.dbg_stamp_segment_id(a, b_id);
+
+    // Drive `a` through `recycle`'s defensive-mismatch tail. This releases
+    // `a`'s OS reservation (to avoid a leak) but — under the fix — must ALSO
+    // evict `a` from the hash table and the own-cache before doing so.
+    ac.dbg_recycle(a);
+
+    // The counterfactual assertion: `a` must no longer be considered a live,
+    // routable segment. Pre-fix, the own-cache slot for `a` (filled above)
+    // and/or the hash entry would still report a HIT here — on an address
+    // whose OS reservation was JUST released (unmapped/reusable by the OS).
+    assert!(
+        !ac.dbg_contains_base(a),
+        "L-3 REGRESSION: `a` is still `contains_base`-reachable after \
+         `recycle`'s defensive tail released its OS reservation — a stale \
+         hash/own-cache entry survived the release, so a later free routed \
+         through `a`'s (unmapped) base would read/write freed memory"
+    );
+
+    // `b` must be completely unaffected by `a`'s defensive recycle: still
+    // registered, still writable.
+    assert!(
+        ac.dbg_contains_base(b),
+        "b's registration was corrupted by a's defensive recycle"
+    );
+    unsafe {
+        b.write(0xAB);
+        assert_eq!(
+            b.read(),
+            0xAB,
+            "b became unwritable after a's defensive recycle"
+        );
+    }
+
+    // See the doc comment above: `a`'s slot in `slots[]` was deliberately
+    // left untouched by the defensive tail (orthogonal to this fix), so a
+    // normal `Drop` would attempt to release `a`'s reservation a second
+    // time. Leak `ac` instead of dropping it — this test's assertions are
+    // already complete at this point.
+    core::mem::forget(ac);
+}

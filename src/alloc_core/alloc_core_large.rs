@@ -137,33 +137,57 @@ impl AllocCore {
                 // Update the byte-budget counter: this slot is leaving the cache.
                 self.large_cache_used_bytes =
                     self.large_cache_used_bytes.saturating_sub(slot.usable_size);
-                // Re-register the base in the segment table. Under
-                // alloc-decommit, recycle() left a NULL slot that register()
-                // will reuse — so this should not fail. If it does (table is
-                // genuinely full) we cannot reuse this slot; release it and
-                // fall through to the slow OS path.
-                let id = match self.table.register(slot.base) {
-                    Some(id) => id,
-                    None => {
-                        // Table still full: release the cached reservation and
-                        // fall through to the slow path.
-                        os::release_segment(slot.reservation, slot.reservation_len);
-                        // Fall through to OS path below.
-                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
-                    }
-                };
                 // Pages are kept committed in the cache (no decommit on deposit,
                 // no recommit needed on hit — they are already mapped and
-                // accessible). Just write a fresh header and return.
-                // Write a fresh header over the old one. The allocation lives
-                // at hdr_aligned (same computation as the slow path).
+                // accessible). Write a fresh header over the old one. The
+                // allocation lives at `hdr_aligned` (same computation as the
+                // slow path).
+                //
+                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
+                // this used to call `self.table.register(slot.base)` FIRST (to
+                // obtain `id` for the header) and only THEN
+                // `Node::write_struct(slot.base, hdr)` — but `register` already
+                // makes `slot.base` visible to `contains_base`/remote routing
+                // lookups, so the plain full-struct write that followed could
+                // race a concurrent remote defensive read
+                // (`SegmentHeader::magic_at`/`kind_at`/`large_size_at`/
+                // `span_usable_at`) on a stale/duplicate remote free — the same
+                // data-race class as the two `dealloc`/`reclaim_large_segment`
+                // "zero magic" sites, just in the opposite (publish) direction.
+                //
+                // Fix: reorder so the FULL header write happens while `slot.base`
+                // is still UNREGISTERED (not yet in `contains_base`'s table, so
+                // no remote reader can address it at all — the race is closed
+                // by construction, not by per-field atomics). `segment_id` is
+                // the only field that genuinely needs the registry-assigned
+                // `id`, which is only available AFTER `register()` runs; it is
+                // NOT one of the four remote-readable fields this finding
+                // targets (`magic`/`kind`/`large_size`/`span_usable` — see
+                // `SegmentHeader::segment_id_at`'s own doc: written once at
+                // registration and otherwise only read by same-thread-ish
+                // unregister/recycle bookkeeping), so it is written with a
+                // placeholder here and patched with a single-word
+                // `Node::write_u32` at its `offset_of!` offset, immediately
+                // after `register()` returns the real slot index — no OTHER
+                // code path can reach this not-yet-returned-to-its-caller
+                // segment's `segment_id` between `register()` and the patch (it
+                // is not yet handed to the allocation caller, so `unregister`/
+                // `recycle` cannot race it here). This mirrors
+                // `SegmentMeta::owner_state_atomic`'s general shape (write the
+                // register-derived field last, as its own single-word store)
+                // while requiring no changes to `segment_header.rs`/`node.rs`;
+                // `SegmentHeader::set_segment_id_at` is intentionally NOT reused
+                // here — it is documented TEST-ONLY (`dbg_stamp_segment_id`,
+                // "never called on any production path"), so this production
+                // patch performs the identical single `Node::write_u32` inline
+                // instead of repurposing that test seam.
                 let bump = hdr_aligned + align_up(size, align);
                 // `span_usable` is carried forward from the CACHED slot's own
                 // `usable_size` — the true physical span of the segment being
                 // reused — NOT recomputed from the new (possibly smaller)
                 // `size`/`align`. Bug #134.
                 let hdr = SegmentHeader::large(
-                    id,
+                    u32::MAX, // placeholder; patched below once `register()` assigns the real id
                     size,
                     align,
                     slot.usable_size,
@@ -172,6 +196,26 @@ impl AllocCore {
                     slot.reservation_len,
                 );
                 Node::write_struct(slot.base as *mut SegmentHeader, hdr);
+                // NOW publish `slot.base` to `contains_base`/remote routing.
+                // Under alloc-decommit, `recycle()` left a NULL slot that
+                // `register()` will reuse — so this should not fail. If it does
+                // (table is genuinely full) we cannot reuse this slot; release
+                // it and fall through to the slow OS path. `hdr` is already
+                // written above, but the slot never becomes visible in that
+                // failure branch, so there is nothing to unwind.
+                let id = match self.table.register(slot.base) {
+                    Some(id) => id,
+                    None => {
+                        os::release_segment(slot.reservation, slot.reservation_len);
+                        return self.alloc_large_slow(size, align, usable, hdr_aligned);
+                    }
+                };
+                // Patch the real registry slot index in now that the segment is
+                // visible — a single-word field write (disjoint from
+                // `bump`/`owner_state`, same discipline as `large_size_at`'s
+                // sibling setter `set_large_size_at`).
+                let segment_id_off = core::mem::offset_of!(SegmentHeader, segment_id);
+                Node::write_u32(Node::offset(slot.base, segment_id_off) as *mut u32, id);
                 // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
                 // node. The thread may have migrated since the segment was cached;
                 // updating the tag reflects the current physical binding.
@@ -343,9 +387,23 @@ impl AllocCore {
             }
 
             if let Some(slot_idx) = admitted {
-                let mut hdr_zero = hdr;
-                hdr_zero.magic = 0;
-                Node::write_struct(base as *mut SegmentHeader, hdr_zero);
+                // UBFIX-6 (M-2, docs/reviews/2026-07-10-ub-audit-final-synthesis.md):
+                // was `hdr_zero = hdr; hdr_zero.magic = 0; Node::write_struct(base,
+                // hdr_zero)` — a non-atomic FULL-STRUCT write racing the remote
+                // defensive field reads (`SegmentHeader::magic_at`/`kind_at`/
+                // `large_size_at`/`span_usable_at`) that can observe a live header
+                // concurrently with this owner write under a stale/duplicate
+                // remote free. `hdr` is a fresh `read_at(base)` taken at the top
+                // of this fn, so every OTHER field is already byte-identical to
+                // what's in memory — the only real effect is zeroing `magic`.
+                // Same fix as the mirror site in `AllocCore::dealloc`'s Large
+                // branch: a single atomic `&AtomicU32` store at `magic`'s
+                // `offset_of!` offset (the same field-wise-atomic-write pattern
+                // `SegmentMeta::owner_state_atomic` already uses for the
+                // adoption CAS — this crate's §11 discipline).
+                let magic_off = core::mem::offset_of!(SegmentHeader, magic);
+                Node::atomic_u32_at(base, magic_off)
+                    .store(0, core::sync::atomic::Ordering::Release);
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
                 self.large_cache[slot_idx] = Some(CachedLarge {

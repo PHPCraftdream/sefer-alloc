@@ -834,6 +834,46 @@ impl AllocCore {
     #[doc(hidden)]
     #[inline]
     pub fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        // L-4 (UBFIX-11): a per-CALL record of segment bases already recycled
+        // (decommitted-and-released OR pooled) by an EARLIER run within this
+        // same `flush_class` invocation. `flush_class` groups `blocks` into
+        // same-segment runs (Э8); the grouping assumes each segment appears
+        // in AT MOST ONE run, which holds for a legitimate magazine batch
+        // (the magazine never holds two live copies of the same block, and
+        // distinct blocks of one segment naturally form one contiguous
+        // same-base run once produced by the allocator). But an UPSTREAM
+        // double-free that reaches the magazine can hand `flush_class` a
+        // batch containing the SAME pointer (or two different pointers whose
+        // segment base coincides) in two SEPARATE positions, separated by a
+        // pointer from a different segment — producing two runs for one
+        // `base`. If the FIRST run empties the segment, `flush_run` calls
+        // `release_or_pool_empty_segment(base)`, which — on the release leg —
+        // decommits the payload, releases the OS reservation, and NULLs the
+        // table slot; `base` is then an UNMAPPED address. The SECOND run for
+        // the same `base` would still call `flush_run`, which unconditionally
+        // reads/writes that segment's metadata (`SegmentMeta::new(base)`,
+        // `bin_table()`, `alloc_bitmap()`, `bump_of()`, `kind_at(base)`) —
+        // metadata-level use-after-free.
+        //
+        // Even on the POOL leg (no OS release), the segment's `bump`/
+        // free-list state after the first run's `set_head` no longer matches
+        // what a naively-repeated second run would assume, and per the M2
+        // (double-free) discipline the safe move is uniformly "do not
+        // re-touch a base this call already recycled" rather than trying to
+        // distinguish pooled-safe from released-unsafe.
+        //
+        // Fixed-capacity array (M5: `AllocCore` allocates no `Vec`/`Box`),
+        // bounded like the sibling `FLUSH_RUN_DETECT_CAP` in `flush_run`: the
+        // production magazine batch is `TCACHE_CAP` (16) at most, so at most
+        // 16 DISTINCT bases can appear in one legitimate call; a `flush_class`
+        // slice larger than that (tests only) simply stops recording new
+        // bases once the array is full (`recycled_n == CAP`) — the excess
+        // just loses the double-free containment for anything beyond the
+        // 16th distinct recycled base, it does not corrupt anything.
+        const RECYCLED_CAP: usize = 16;
+        let mut recycled_bases: [*mut u8; RECYCLED_CAP] = [core::ptr::null_mut(); RECYCLED_CAP];
+        let mut recycled_n: usize = 0;
+
         let mut i = 0;
         while i < blocks.len() {
             let ptr = blocks[i];
@@ -853,7 +893,23 @@ impl AllocCore {
                 }
                 run_end += 1;
             }
-            self.flush_run(class_idx, base, &blocks[i..run_end]);
+            // L-4: if an EARLIER run in this call already recycled `base`,
+            // skip this run entirely — `base`'s metadata may be unmapped
+            // (released leg) or in a state a blind re-run must not assume
+            // (pooled leg). This is the exact defensive-skip the per-block
+            // `dealloc_small` path gets "for free" one block at a time (each
+            // call independently re-checks `contains_base`/`magic`/bitmap
+            // state); the batched run path must do it explicitly because it
+            // hoists metadata reads ONCE per run, before any per-block guard
+            // could observe the segment having vanished mid-batch.
+            let already_recycled = recycled_bases[..recycled_n].contains(&base);
+            if !already_recycled {
+                let recycled_now = self.flush_run(class_idx, base, &blocks[i..run_end]);
+                if recycled_now && recycled_n < RECYCLED_CAP {
+                    recycled_bases[recycled_n] = base;
+                    recycled_n += 1;
+                }
+            }
             i = run_end;
         }
     }
@@ -861,8 +917,18 @@ impl AllocCore {
     /// Flush ONE run of blocks that all share segment `base` (Э8). See
     /// `flush_class` for the byte-identical / decommit-equivalence proofs. Every
     /// block in `run` is non-null and has `segment_base_of_ptr(block) == base`.
+    ///
+    /// L-4 (UBFIX-11): returns `true` iff this run's flush triggered
+    /// `release_or_pool_empty_segment(base)` (i.e. the segment reached
+    /// `live_count == 0` and was recycled — pooled or released). `flush_class`
+    /// uses this to record `base` and skip any LATER same-`base` run within
+    /// the same call, instead of re-touching a segment whose metadata may now
+    /// be unmapped (released leg) or whose state a blind re-run must not
+    /// assume (pooled leg). Always `false` when `alloc-decommit` is off (no
+    /// recycle path exists in that config).
     #[inline]
-    fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) {
+    #[must_use]
+    fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
         // PERF-3 Ф2: under `alloc-runfreelist`, detect contiguous-accepted
         // sub-runs (offset-adjacent blocks) and encode them as compact
         // `(start_off, count)` descriptors on the per-segment `RunStack` instead
@@ -1127,8 +1193,12 @@ impl AllocCore {
                 // Mechanism 2 (task #51): pool-or-release instead of the former
                 // unconditional recycle.
                 self.release_or_pool_empty_segment(base);
+                // L-4 (UBFIX-11): report the recycle to `flush_class` so it can
+                // skip any later same-`base` run within this call.
+                return true;
             }
         }
+        false
     }
 
     /// Allocate a small block of the given class. Routes through the current
