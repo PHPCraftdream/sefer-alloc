@@ -79,8 +79,7 @@ use crate::concurrent::ShardedRegion;
 ///
 /// ## Example
 ///
-/// ```no_run
-/// # #[cfg(feature = "pinning")] {
+/// ```text
 /// use sefer_alloc::{PinnedRunner, ShardedRegion};
 /// use std::sync::Arc;
 ///
@@ -90,8 +89,9 @@ use crate::concurrent::ShardedRegion;
 ///     let h = region.insert(u64::from(shard_id)).unwrap();
 ///     assert_eq!(h.shard(), shard_id); // deterministic: shard == worker == core
 /// });
-/// # }
 /// ```
+///
+/// Runnable form (best-effort, gated on core enumeration): `tests/pinning.rs`.
 ///
 /// ## Pinning is best-effort
 ///

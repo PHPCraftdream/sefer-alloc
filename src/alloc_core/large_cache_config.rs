@@ -59,11 +59,10 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 /// free-cache.
 ///
 /// Construct with the [`new`](Self::new) associated function (or the
-/// [`DEFAULT`](Self::DEFAULT) constant) and chain the setter methods:
+/// [`DEFAULT`](Self::DEFAULT) constant) and chain the setter methods
+/// (runnable end-to-end form in `tests/sefer_alloc_with_config.rs`):
 ///
-/// ```rust
-/// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit", feature = "alloc-global"))]
-/// # {
+/// ```text
 /// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 ///
 /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
@@ -75,7 +74,6 @@ pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 ///
 /// #[global_allocator]
 /// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
-/// # }
 /// ```
 ///
 /// Passing `LargeCacheConfig::DEFAULT` (= `LargeCacheConfig::new()`) to
@@ -140,17 +138,14 @@ impl LargeCacheConfig {
 
     /// Construct a config with all knobs at their defaults.
     ///
-    /// Chain setter calls to override individual knobs:
+    /// Chain setter calls to override individual knobs (runnable form in
+    /// `tests/large_cache_config_knobs.rs`):
     ///
-    /// ```rust
-    /// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
-    /// # {
+    /// ```text
     /// use sefer_alloc::{LargeCacheConfig, LargeCacheMode};
     /// let cfg = LargeCacheConfig::new()
     ///     .budget_bytes(512 * 1024 * 1024)
     ///     .mode(LargeCacheMode::Lazy);
-    /// # let _ = cfg;
-    /// # }
     /// ```
     #[must_use]
     pub const fn new() -> Self {

@@ -38,11 +38,10 @@
 //! free leak under an `alloc-global`-without-`alloc-xthread` misconfiguration,
 //! and requires the `alloc-stats` feature to be populated).
 //! `stats()` is a handful of relaxed atomic loads (no locks, no allocation),
-//! safe to poll on a metrics-scrape timer:
+//! safe to poll on a metrics-scrape timer (requires the `alloc-global` feature;
+//! runnable form in `tests/sefer_alloc_examples.rs`):
 //!
-//! ```no_run
-//! # #[cfg(feature = "alloc-global")]
-//! # {
+//! ```text
 //! use sefer_alloc::SeferAlloc;
 //!
 //! #[global_allocator]
@@ -53,7 +52,6 @@
 //!     .segments_reserved_total
 //!     .saturating_sub(stats.segments_released_total);
 //! println!("segments_live={segments_live} tcache_hits={}", stats.tcache_hits);
-//! # }
 //! ```
 //!
 //! **Multi-thread footgun:** `alloc-global` without `alloc-xthread` has no
@@ -72,7 +70,7 @@
 //!
 //! ## Example
 //!
-//! ```
+//! ```text
 //! use sefer_alloc::Region;
 //!
 //! let mut region = Region::new();
@@ -85,6 +83,8 @@
 //! assert_eq!(region.get(a), None); // stale handle → None, never UB
 //! assert_eq!(region.get(b), Some(&"beta")); // others stay valid
 //! ```
+//!
+//! Runnable form: `tests/region_invariants.rs`.
 
 // ── Workspace: four independently-publishable companion crates ────────────────
 //

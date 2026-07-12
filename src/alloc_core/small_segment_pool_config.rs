@@ -72,11 +72,10 @@
 /// pool (Mechanism 2).
 ///
 /// Construct with [`new`](Self::new) (or the [`DEFAULT`](Self::DEFAULT)
-/// constant) and chain the setter methods:
+/// constant) and chain the setter methods (runnable form in
+/// `tests/small_segment_pool.rs`):
 ///
-/// ```rust
-/// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
-/// # {
+/// ```text
 /// use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
 ///
 /// const POOL: SmallSegmentPoolConfig = SmallSegmentPoolConfig::new()
@@ -84,8 +83,6 @@
 ///     .pool_byte_cap(32 * 1024 * 1024);
 ///
 /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new().pool(POOL);
-/// # let _ = CONFIG;
-/// # }
 /// ```
 #[cfg(feature = "alloc-decommit")]
 #[derive(Copy, Clone, Debug)]

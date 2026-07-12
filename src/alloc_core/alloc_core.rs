@@ -511,11 +511,9 @@ impl AllocCore {
     /// startup).
     ///
     /// Use this when you want to set the cache knobs at compile time without
-    /// environment variables:
+    /// environment variables (runnable form in `tests/large_cache_config_knobs.rs`):
     ///
-    /// ```rust
-    /// # #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
-    /// # {
+    /// ```text
     /// use sefer_alloc::{AllocCore, LargeCacheConfig, LargeCacheMode};
     ///
     /// let cfg = LargeCacheConfig::new()
@@ -527,7 +525,6 @@ impl AllocCore {
     ///
     /// let ac = AllocCore::new_with_config(cfg).expect("primordial");
     /// drop(ac);
-    /// # }
     /// ```
     #[cfg(feature = "alloc-decommit")]
     #[must_use]

@@ -81,24 +81,21 @@ use super::AllocStats;
 /// (Phase 12.3).
 ///
 /// Install it as your process's global allocator (simple form — uses all
-/// large-cache defaults):
+/// large-cache defaults; requires the `alloc-global` feature; runnable form
+/// in `tests/sefer_alloc_examples.rs`):
 ///
-/// ```no_run
-/// # #[cfg(feature = "alloc-global")]
-/// # {
+/// ```text
 /// use sefer_alloc::SeferAlloc;
 ///
 /// #[global_allocator]
 /// static A: SeferAlloc = SeferAlloc::new();
-/// # }
 /// ```
 ///
 /// Or configure the large-cache knobs at compile time (requires the
-/// `alloc-decommit` feature):
+/// `alloc-decommit` feature; runnable end-to-end form in
+/// `tests/sefer_alloc_with_config.rs`):
 ///
-/// ```no_run
-/// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
-/// # {
+/// ```text
 /// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
 ///
 /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
@@ -110,7 +107,6 @@ use super::AllocStats;
 ///
 /// #[global_allocator]
 /// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
-/// # }
 /// ```
 ///
 /// Each thread gets its own heap slot in the global registry (lazily claimed
@@ -195,11 +191,10 @@ impl SeferAlloc {
 
     /// Construct the allocator with a user-supplied large-cache configuration.
     ///
-    /// This is a `const fn` so it can be used in a `static` initialiser:
+    /// This is a `const fn` so it can be used in a `static` initialiser
+    /// (runnable end-to-end form in `tests/sefer_alloc_with_config.rs`):
     ///
-    /// ```no_run
-    /// # #[cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]
-    /// # {
+    /// ```text
     /// use sefer_alloc::{SeferAlloc, LargeCacheConfig, LargeCacheMode};
     ///
     /// const CONFIG: LargeCacheConfig = LargeCacheConfig::new()
@@ -211,7 +206,6 @@ impl SeferAlloc {
     ///
     /// #[global_allocator]
     /// static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
-    /// # }
     /// ```
     ///
     /// The config is stored in the `SeferAlloc` struct and plumbed into
@@ -268,9 +262,7 @@ impl SeferAlloc {
     /// forbidden), every instance's `stats()` reads the same process-global
     /// totals.
     ///
-    /// ```no_run
-    /// # #[cfg(feature = "alloc-global")]
-    /// # {
+    /// ```text
     /// use sefer_alloc::SeferAlloc;
     ///
     /// #[global_allocator]
@@ -285,8 +277,9 @@ impl SeferAlloc {
     ///         stats.ring_overflows,
     ///     );
     /// }
-    /// # }
     /// ```
+    ///
+    /// Runnable form: `tests/sefer_alloc_examples.rs`.
     #[must_use]
     pub fn stats(&self) -> AllocStats {
         AllocStats {

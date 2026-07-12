@@ -58,7 +58,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```text
 //! use malloc_bench_rs::{run, Config, Workload};
 //! use std::alloc::System;
 //!
@@ -71,6 +71,8 @@
 //! let ops = run(Workload::Larson, &cfg, || System);
 //! assert!(ops > 0.0, "expected non-zero ops/sec");
 //! ```
+//!
+//! Runnable form: `tests/smoke.rs`.
 
 #![allow(unsafe_code)]
 // Confined to alloc_block / free_block / drain_mailbox helpers.
@@ -444,7 +446,7 @@ impl Default for Config {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```text
 /// use malloc_bench_rs::{run, Config, Workload};
 /// use std::alloc::System;
 ///
@@ -571,7 +573,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
+/// ```text
 /// use malloc_bench_rs::{sweep, Config, Workload};
 /// use std::alloc::System;
 ///

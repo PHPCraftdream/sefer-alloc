@@ -25,7 +25,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```text
 //! use aligned_vmem::{reserve_aligned, release};
 //!
 //! // Reserve 4 MiB aligned to 4 MiB.
@@ -42,6 +42,8 @@
 //! // SAFETY: the triple came from `into_parts` and is released exactly once.
 //! unsafe { release(raw, raw_len, raw_align) };
 //! ```
+//!
+//! Runnable form: `tests/smoke.rs`.
 //!
 //! # Alignment contract
 //!

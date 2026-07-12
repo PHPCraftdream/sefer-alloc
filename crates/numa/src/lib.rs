@@ -14,7 +14,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```text
 //! use numa_shim::{current_node, NO_NODE};
 //!
 //! match current_node() {
@@ -22,6 +22,8 @@
 //!     None       => println!("NUMA unavailable or single-node host"),
 //! }
 //! ```
+//!
+//! Runnable form: `tests/smoke.rs`.
 //!
 //! ## Feature flags
 //!
