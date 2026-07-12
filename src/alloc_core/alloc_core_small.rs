@@ -461,6 +461,42 @@ impl AllocCore {
         SegmentMeta::new(base).alloc_bitmap().is_free(off)
     }
 
+    /// TEST-ONLY (UBFIX-7, M-3 counterfactual): overwrite the CURRENT freelist
+    /// head block's intrusive `next` word for `class_idx` in `ptr`'s segment
+    /// with an arbitrary raw pointer, simulating a UAF write into an
+    /// already-freed block that corrupts the chain pointer the allocator will
+    /// next trust. `next_raw` is written completely unvalidated (unlike the
+    /// production `Node::write_next` call sites, which only ever write a
+    /// pointer the allocator itself derived) — the caller is responsible for
+    /// choosing an out-of-segment value to exercise the hardened guard in
+    /// `pop_free`/`drain_freelist_batch`.
+    ///
+    /// Mirrors the established `dbg_stamp_*`-style field-corruption pattern
+    /// (see `AllocCore::dbg_stamp_segment_id`/`dbg_stamp_kind_byte` in
+    /// `alloc_core.rs`), applied to a freelist node's `next` word instead of a
+    /// header field. Returns `false` (no-op) if the class's free list is
+    /// currently empty (nothing to corrupt).
+    #[doc(hidden)]
+    #[cfg(feature = "hardened")]
+    pub fn dbg_corrupt_freelist_head_next(
+        &self,
+        ptr: *mut u8,
+        class_idx: usize,
+        next_raw: *mut u8,
+    ) -> bool {
+        let base = os::segment_base_of_ptr(ptr);
+        let head_off = SegmentMeta::new(base).bin_table().head(class_idx);
+        if head_off == FREE_LIST_NULL {
+            return false;
+        }
+        let block_ptr = Node::deref(base, head_off as usize);
+        let Some(block_nn) = NonNull::new(block_ptr) else {
+            return false;
+        };
+        Node::write_next(block_nn, next_raw);
+        true
+    }
+
     /// TEST-ONLY (Э7, task #161): drive `drain_freelist_batch` directly on
     /// `ptr`'s segment so a regression test can observe partial/full-drain
     /// behaviour (return count, resulting `set_head`, per-block bitmap state) in
@@ -1599,6 +1635,33 @@ impl AllocCore {
         let block_ptr = Node::deref(segment, head_off as usize);
         let block_nn = NonNull::new(block_ptr)?;
         let next = Node::read_next(block_nn);
+        // UBFIX-7 (M-3, `docs/reviews/2026-07-10-ub-audit-final-synthesis.md`):
+        // the intrusive freelist `next` word lives INSIDE the block itself, so
+        // it is writable by the user for as long as the block is (legitimately
+        // or via a use-after-free) in their hands. Before this guard, a
+        // corrupted `next` — e.g. left over from a UAF write into an
+        // already-freed block — was trusted unconditionally: the very next
+        // line turned it into a segment-relative offset via raw pointer
+        // subtraction, which is only sound if `next` actually lies inside
+        // `segment`. A `next` pointing outside the segment produces a garbage
+        // `u32` offset (wrapping/overflowing arithmetic), and the NEXT
+        // `pop_free`/`drain_freelist_batch` call derefs THAT offset via
+        // `Node::deref` (`segment.add(off)`), an out-of-bounds `add` — UB per
+        // `node.rs`'s SAFETY contract — and hands the caller a wild pointer
+        // dressed up as a legitimate block.
+        //
+        // `hardened`-gated (mimalloc `MI_SECURE`-style): validate `next` is
+        // either null or resolves to THIS segment's base before trusting it as
+        // a chain continuation; a mismatch TRUNCATES the chain here (treated
+        // as `FREE_LIST_NULL`) rather than being dereferenced. This never runs
+        // on the production (non-hardened) hot path — zero added instructions
+        // there, byte-identical to the pre-fix code under `cfg(not(hardened))`.
+        #[cfg(feature = "hardened")]
+        let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+            next
+        } else {
+            core::ptr::null_mut()
+        };
         let new_head = if next.is_null() {
             FREE_LIST_NULL
         } else {
@@ -1837,6 +1900,20 @@ impl AllocCore {
                     None => break,
                 };
                 let next = Node::read_next(block_nn);
+                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
+                // continuation — see `pop_free`'s identical guard for the full
+                // rationale (a UAF-corrupted `next` outside this segment would
+                // otherwise become a garbage offset, OOB-dereferenced by the
+                // NEXT drain/pop call). `hardened`-gated; a mismatch truncates
+                // the chain (this iteration's `head_off` becomes NULL below,
+                // which the loop condition then exits on) instead of being
+                // dereferenced.
+                #[cfg(feature = "hardened")]
+                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+                    next
+                } else {
+                    core::ptr::null_mut()
+                };
                 bm.mark_alloc(head_off);
                 out[k] = block_ptr;
                 k += 1;
@@ -1882,6 +1959,17 @@ impl AllocCore {
                 // block body is never written on the pop path, so this is race-free
                 // against ourselves.
                 let next = Node::read_next(block_nn);
+                // UBFIX-7 (M-3): validate `next` before trusting it as a chain
+                // continuation — see `pop_free`'s identical guard for the full
+                // rationale. `hardened`-gated; a mismatch truncates the chain
+                // (this iteration's `head_off` becomes NULL below, which the
+                // loop condition then exits on) instead of being dereferenced.
+                #[cfg(feature = "hardened")]
+                let next = if next.is_null() || os::segment_base_of_ptr(next) == segment {
+                    next
+                } else {
+                    core::ptr::null_mut()
+                };
                 // Clear this block's bitmap bit — it leaves the free list and is
                 // handed out (per-block, byte-identical to `pop_free`).
                 bm.mark_alloc(head_off);
