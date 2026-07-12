@@ -130,7 +130,7 @@ Each is a real crates.io crate (`cargo add aligned-vmem`, etc.). The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
 
-### Confined unsafe seams (current inventory — verifiable with `grep -rln 'allow(unsafe_code)' src/ crates/`)
+### Confined unsafe seams (current inventory — verifiable with `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`)
 
 **External publishable crates** (independently auditable):
 
@@ -139,7 +139,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture; sole responsibility = SEGMENT-aligned mmap/VirtualAlloc + decommit. Small, audit in isolation. |
 | `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim; sole responsibility = mbind(2)/VirtualAllocExNuma. Small, audit in isolation. |
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe; slotmap's audited core owns the generational layout. |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's audited core owns the generational layout. |
 
 **Internal sefer-alloc seams** (10 src modules total; compiler-enforced):
 

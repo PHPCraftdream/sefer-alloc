@@ -97,7 +97,9 @@
 //
 // ── Unsafe inventory — the complete, verifiable picture ───────────────────────
 //
-// Source of truth: `grep -rln 'allow(unsafe_code)' src/ crates/`
+// Source of truth: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
+// (line-anchored — the unanchored form also matches `//` comments that merely
+// mention the attribute, e.g. in this file and `src/registry/heap_overflow.rs`).
 //
 // EXTERNAL publishable crates (each independently auditable):
 //
@@ -164,7 +166,7 @@
 //      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
-//  EVERY configuration. Verifiable: `grep -rln 'allow(unsafe_code)' src/ crates/`
+//  EVERY configuration. Verifiable: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
 //
 // ── The soundness boundary is WIDER than the unsafe-syntax boundary ────────────
 //
@@ -187,8 +189,9 @@
 //      protocol depend on) is a prose contract; a safe CAS of `state` LIVE→FREE
 //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
 //      this membrane inside the crate — see that module's M7 note.)
-//  In short: the membrane pattern concentrates the *unsafe blocks* into 14
-//  files for audit, but the *soundness argument* spans those safe callers too.
+//  In short: the membrane pattern concentrates the *unsafe blocks* into a
+//  small named set of `#![allow(unsafe_code)]` files for audit (the ones
+//  inventoried above), but the *soundness argument* spans those safe callers too.
 //  This is a deliberate, worthwhile trade — named here so a future editor does
 //  not misread "no stray unsafe" as "no UB reachable from safe code".
 #![cfg_attr(

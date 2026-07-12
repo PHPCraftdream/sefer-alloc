@@ -113,10 +113,14 @@ Core instructions, mandatory for all code in this repository. They
   single documented reason to hold `unsafe`. The seams are inventoried in
   README §"Where unsafe lives — the complete list" and mirrored in the
   `src/lib.rs` header. Source of truth (self-verifying, never a hardcoded
-  count): `grep -rln 'allow(unsafe_code)' src/ crates/` — this command, not a
-  number written into prose, is the authoritative list; any formal audit
-  compares against its output, and a stray `unsafe` outside a named seam is a
-  hard compile error in every feature configuration.
+  count): `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/` — this
+  command, not a number written into prose, is the authoritative list; any
+  formal audit compares against its output, and a stray `unsafe` outside a
+  named seam is a hard compile error in every feature configuration. The
+  pattern is line-anchored (`^#![...]`) so it matches only the actual
+  crate/module attribute, not `//` comments that merely mention it (the
+  unanchored `grep -rln 'allow(unsafe_code)' ...` form has false positives,
+  e.g. in `src/lib.rs` and `src/registry/heap_overflow.rs`).
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.

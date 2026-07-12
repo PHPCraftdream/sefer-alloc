@@ -332,7 +332,10 @@ through a large general-purpose allocator crate — they can audit `aligned-vmem
 purpose: NUMA syscalls) in complete isolation. Each has one responsibility,
 one reason to have `unsafe`, and its own `cargo test`.
 
-Source of truth: `grep -rln 'allow(unsafe_code)' src/ crates/`
+Source of truth: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
+(line-anchored so it matches the actual crate/module attribute, not `//`
+comments that merely mention it — the unanchored form has false positives in
+`src/lib.rs` and `src/registry/heap_overflow.rs`).
 
 **External publishable crates (each independently auditable):**
 
@@ -341,7 +344,7 @@ Source of truth: `grep -rln 'allow(unsafe_code)' src/ crates/`
 | `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
 | `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s audited core owns the generational layout |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe` (shown for contrast; does **not** match the grep above); `slotmap`'s audited core owns the generational layout |
 
 **Internal sefer-alloc seams** (compiler-enforced — a stray `unsafe` outside
 these named files is a hard compile error in every configuration):
