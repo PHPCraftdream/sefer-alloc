@@ -379,8 +379,12 @@ pub struct AllocCore {
     /// from a `LargeCacheConfig`. Stored for diagnostic/test access and as the
     /// anchor for future scavenger-thread wiring.
     ///
-    /// `Lazy` (default): Phase 2 lazy decay, no background thread.
-    /// `Background` / `Both`: reserved for the future background scavenger.
+    /// `Lazy` — the only variant, currently — is Phase 2 lazy decay, no
+    /// background thread. `LargeCacheMode` is `#[non_exhaustive]`: a future
+    /// background-scavenger mode can be added as a non-breaking addition
+    /// (R3-B removed the earlier unimplemented `Background`/`Both`
+    /// placeholders — see `docs/reviews/2026-07-12-round3-remediation-plan.md`,
+    /// решение №2).
     #[cfg(feature = "alloc-decommit")]
     pub(super) large_cache_mode: LargeCacheMode,
 
