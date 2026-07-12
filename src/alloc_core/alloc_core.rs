@@ -1569,6 +1569,55 @@ impl Default for AllocCore {
     }
 }
 
+/// # ⚠️ Quiescence pin (UBFIX-12 / L-8, 0.3.0) — read before adding any
+/// `Sync`/cross-thread capability to `AllocCore`, or before making registry
+/// heaps droppable
+///
+/// This `drop` walks every segment in `self.table` and releases its OS
+/// reservation (`os::release_segment`) unconditionally — it does NOT perform
+/// any handshake to prove no OTHER thread is concurrently pushing onto one of
+/// these segments' cross-thread remote-free rings
+/// ([`RemoteFreeRing`](super::remote_free_ring::RemoteFreeRing), the
+/// `alloc-xthread` per-segment MPSC the segment header's `owner_thread_free`
+/// stamp routes into) before unmapping. If such a push raced this `drop`, it
+/// would write into memory that is either about to be, or has already been,
+/// unmapped — a use-after-free / wild write on the remote thread's side.
+///
+/// **Today this is reachable-but-moot, not a live bug**, for two independent
+/// reasons, EITHER of which is already sufficient on its own:
+///
+/// 1. **Registry heaps never reach this `drop`.** The `HeapRegistry`/
+///    `HeapCore` substrate that `SeferAlloc`/TLS actually use lives for the
+///    entire process (`HeapCore::new`'s `AllocCore` is never dropped by
+///    `recycle` — `recycle` only flips the slot's state and pushes it onto
+///    `free_slots` for reuse; see `HeapRegistry::recycle`). So the ONLY way
+///    to reach `AllocCore::drop` today is constructing a STANDALONE
+///    `AllocCore` directly (`AllocCore::new`/`::default`, bypassing the
+///    registry entirely) and letting it go out of scope.
+/// 2. **A standalone `AllocCore` cannot be shared across threads in the
+///    first place.** `AllocCore` carries raw pointers (`table`, `small_cur`,
+///    `large_cache` entries) and has no `unsafe impl Sync for AllocCore`
+///    anywhere in this crate (verified by grep at the time of writing) — so
+///    it is `!Sync` by the ordinary auto-trait rules, and a `&AllocCore`
+///    cannot be handed to another thread to begin with. Without a live
+///    `&AllocCore` on some OTHER thread, nothing can call the remote-free
+///    routing that would push onto a segment's `RemoteFreeRing` while this
+///    thread's `drop` is unmapping it — the race this note warns about has
+///    no way to be constructed against a standalone `AllocCore` today.
+///
+/// Both conditions must be independently defeated before this becomes live:
+/// (a) some future change makes registry heaps droppable (e.g. a
+/// decommit-when-empty or heap-teardown policy that actually frees a
+/// `HeapCore`'s `AllocCore`, not just recycles the slot), OR (b) some future
+/// change adds `unsafe impl Sync for AllocCore` (or otherwise exposes a
+/// standalone `AllocCore` for cross-thread sharing outside the registry).
+/// If EITHER lands, this `drop` needs a quiescence handshake — e.g. draining
+/// every segment's `RemoteFreeRing` under a happens-before edge that rules
+/// out a concurrent remote push, or otherwise proving no other thread holds
+/// a reference capable of routing a free into a segment this `drop` is about
+/// to unmap — before it is safe to release segments unconditionally as it
+/// does now. This note is the load-bearing reminder to add that handshake at
+/// that time; do not remove or weaken it while working on (a) or (b) above.
 impl Drop for AllocCore {
     fn drop(&mut self) {
         // OPT-E (alloc-decommit): release any large segments held in the
