@@ -198,6 +198,44 @@ impl Drop for AbandonGuard {
         // platform), no post-teardown reader of `LOCAL` can run either — those
         // resolvers get `Err` too and route to Fallback — so the no-op is safe.
         mark_local_torn();
+        // UBFIX-10 (M-9): opportunistic Large-deferred-free drain on thread
+        // exit. Before this task, `HeapCore::drain_large_deferred_free` ran
+        // ONLY from the two Large-classified call sites inside `alloc`/
+        // `realloc` — so a heap whose owning thread stopped issuing Large
+        // requests before it exited (e.g. it only ever allocated Small
+        // blocks, or its last Large request happened long before any
+        // cross-thread free of one of its Large segments arrived) could carry
+        // a non-empty deferred-free stack all the way to thread exit. Under
+        // the Phase 12.5 shard model the slot's `HeapCore` (including this
+        // stack's head) survives recycle intact and is reused whole by
+        // whichever thread next claims this slot — so the entries are not
+        // permanently unreachable, but if no future claimant ever allocates a
+        // Large block on this slot either, they stay queued (mapped, unused
+        // segments) indefinitely. Draining here, once, right before the slot
+        // goes back to the free pool, reclaims them opportunistically instead
+        // of leaving that outcome to chance.
+        //
+        // Placement: BEFORE the `recycle` CAS below, i.e. while this thread is
+        // still the slot's sole owner/writer (`STATE_LIVE`) — exactly the
+        // single-writer window every other mutation of this heap already
+        // relies on. Draining after `recycle` would race a new claimant.
+        //
+        // Cost: thread exit is definitionally cold (runs once per thread,
+        // never on the alloc/dealloc hot path), and
+        // `drain_large_deferred_free`'s pop loop starts with a single Acquire
+        // load of the stack head, returning immediately when empty — so the
+        // common case (nothing queued) costs one atomic load on a path that
+        // is already off every benched hot path.
+        //
+        // SAFETY: `heap` was returned by `HeapRegistry::claim` and is still
+        // LIVE (same justification as the `recycle` call below); `HeapCore`
+        // is `#![deny(unsafe_code)]`, so the dereference happens through the
+        // crate's own safe `&mut *heap` — sound because this thread is the
+        // heap's sole owner until the CAS below flips it to FREE.
+        #[cfg(feature = "alloc-xthread")]
+        unsafe {
+            (*heap).drain_large_deferred_free();
+        }
         // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
         // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL
         // its segments + the inline TFS head) STAYS WHOLE in the slot — it is
@@ -415,8 +453,8 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
     finish_bind(heap)
 }
 
-/// Shared post-claim logic: publish the pointer into `LOCAL`, arm the
-/// `AbandonGuard`, and return the tagged result. Called from both
+/// Shared post-claim logic: arm the `AbandonGuard`, publish the pointer into
+/// `LOCAL`, and return the tagged result. Called from both
 /// [`bind_slow_tagged`] and [`bind_slow_tagged_with_config`].
 ///
 /// task #38: this used to also call `HeapCore::install_thread_free` here
@@ -432,6 +470,43 @@ fn bind_slow_tagged_with_config(config: crate::alloc_core::LargeCacheConfig) -> 
 /// was discarded. Verified by tracing every `heap`-producing path
 /// (`claim`/`claim_with_config`'s first-claim AND re-claim legs) to the
 /// planting call before any return.
+///
+/// ## UBFIX-10 (L-6): guard-arm-before-claim-is-observable, with rollback
+///
+/// Before this fix, both `LOCAL.try_with` and `GUARD.try_with` below silently
+/// discarded their `Err`. The dangerous case is `GUARD.try_with` failing (TLS
+/// initialisation of the `AbandonGuard` slot can fail if this thread is
+/// already tearing down — e.g. `finish_bind` is reached from a resolver
+/// called out of some OTHER thread-local's `Drop`, after `std` has started
+/// rejecting new TLS-slot initialisation on this thread): the slot returned
+/// by `HeapRegistry::claim`/`claim_with_config` above is ALREADY `STATE_LIVE`
+/// (the CAS that claims it already ran, inside `claim`, before `finish_bind`
+/// was ever called) — but with no armed guard, NOTHING will ever call
+/// `HeapRegistry::recycle` on it. The slot is claimed but unguarded: LIVE
+/// forever, unreachable by any future `claim` (the free-pool never sees it
+/// again) — a permanent availability/resource leak (never UB — this thread
+/// never actually gets a usable heap in this branch), one slot per occurrence
+/// (out of `MAX_HEAPS`), silent (no error surfaces to the allocation caller,
+/// which routes to Fallback exactly as if this were a normal registry
+/// exhaustion).
+///
+/// The fix: arm `GUARD` FIRST (before publishing into `LOCAL`, before
+/// returning `Own` to the caller). If arming fails, this claimed slot has no
+/// living owner and must not be handed out — recycle it immediately (the
+/// exact same `HeapRegistry::recycle` the guard itself would otherwise have
+/// called on thread exit) and return `Fallback`, exactly as the
+/// registry-exhaustion / primordial-OOM branch above does. `LOCAL` is
+/// published only AFTER the guard is confirmed armed, so a partially-bound
+/// state (guard armed, `LOCAL` not yet set) can only ever be the LESS severe
+/// case: `current()`/`current_for_alloc()` would just re-enter `bind_slow`
+/// next call (a re-claim, cheap — `claim` reuses the same slot when
+/// `new_gen != 1`) rather than reading a claimed-but-unguarded slot.
+///
+/// SAFETY: `heap` was just returned by `claim`/`claim_with_config` and has
+/// not been recycled yet (this is the only code path that could recycle it
+/// between claim and here) — the single-caller contract `HeapRegistry::recycle`
+/// documents ("pointer previously returned by `claim`, not yet recycled") is
+/// satisfied.
 #[cold]
 fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
     let heap = if heap.is_null() {
@@ -441,10 +516,23 @@ fn finish_bind(heap: *mut HeapCore) -> CurrentHeap {
         heap
     };
 
-    // Publish into LOCAL (so subsequent `current()` calls hit the fast path)
-    // and arm the guard with a COPY (so its Drop does not read LOCAL).
+    // UBFIX-10 (L-6): arm the guard FIRST. If this fails, the claimed slot
+    // has no living owner to ever recycle it — roll back by recycling it
+    // here instead of handing out a claimed-but-unguarded slot.
+    if GUARD.try_with(|g| g.heap.set(heap)).is_err() {
+        // SAFETY: `heap` was returned by `claim`/`claim_with_config` above
+        // and has not yet been recycled (this is the first and only chance —
+        // no guard was armed to do it later).
+        unsafe { HeapRegistry::recycle(heap) };
+        return CurrentHeap::Fallback;
+    }
+
+    // Guard is armed. Publish into LOCAL (so subsequent `current()` calls hit
+    // the fast path). If THIS fails (rarer still, and less severe — the
+    // guard is already armed and will recycle correctly on thread exit),
+    // every call on this thread simply re-enters `bind_slow` and re-claims
+    // (cheap re-claim of the same slot), never reading a stale/unset LOCAL.
     let _ = LOCAL.try_with(|c| c.set(heap));
-    let _ = GUARD.try_with(|g| g.heap.set(heap));
     CurrentHeap::Own(heap)
 }
 

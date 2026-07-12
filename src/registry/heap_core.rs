@@ -1628,11 +1628,42 @@ impl HeapCore {
     /// call boundary, so `alloc`'s own frame is not bloated by register spills
     /// from the closure / `split_at_mut` machinery. Returns the popped pointer
     /// (the block to hand out), or null on true OOM.
+    ///
+    /// UBFIX-10 (M-9): opportunistic Large-deferred-free drain. Before this
+    /// task, `drain_large_deferred_free` was called ONLY from the two
+    /// Large-classified sites in [`alloc`](Self::alloc)/[`realloc`](Self::realloc)
+    /// — a heap that stopped allocating Large blocks entirely (e.g. a workload
+    /// that starts Large-heavy and settles into Small-only churn) never drained
+    /// again, so any cross-thread-freed Large segments queued on its deferred
+    /// stack stayed mapped-but-dead for the rest of the process's life
+    /// (unbounded resource retention, not UB — see
+    /// `docs/reviews/2026-07-10-ub-audit-final-synthesis.md` M-9). This is the
+    /// SMALL-path drain site: every magazine MISS (never a hit — this function
+    /// runs only when the fast-path pop in `alloc` found `count[c] == 0`)
+    /// opportunistically reclaims any queued Large segments too, so a
+    /// Small-only workload still recovers them. Placement here (rather than
+    /// unconditionally in `alloc`) keeps the check off the actual hot path —
+    /// `refill_magazine_slow` is `#[cold] #[inline(never)]`, reached only on a
+    /// miss, so the extra call costs nothing on the magazine-hit fast path
+    /// this file's own churn benchmarks measure.
+    ///
+    /// The call is the SAME cheap-precheck shape draining always has:
+    /// `drain_large_deferred_free`'s pop loop starts with a single Acquire
+    /// load of the stack head and returns immediately if it is null (see
+    /// `alloc_core::deferred_large::drain_large_deferred_free`) — an empty
+    /// stack costs exactly one atomic load here, no CAS, no further work.
+    /// `fastbin` requires `alloc-xthread` (`Cargo.toml`: `fastbin =
+    /// ["alloc-global", "alloc-xthread"]`), so the call is unconditional
+    /// inside this `fastbin`-gated function — no extra `cfg` needed.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
     #[cold]
     #[inline(never)]
     fn refill_magazine_slow(&mut self, c: usize) -> *mut u8 {
         use crate::alloc_core::size_classes::SizeClasses;
+
+        // UBFIX-10 (M-9): opportunistic drain on every magazine miss — see
+        // the doc comment above. Cheap when empty (one Acquire load).
+        self.drain_large_deferred_free();
 
         let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
         // Task #164 / PERF-PASS-5 (G7): zero-copy split borrow. The refill
