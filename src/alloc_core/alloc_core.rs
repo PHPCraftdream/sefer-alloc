@@ -16,9 +16,18 @@
 //!   that hand-carves self-hosted metadata; see [`bootstrap`]).
 //! - [`alloc`](AllocCore::alloc) / [`dealloc`](AllocCore::dealloc) /
 //!   [`realloc`](AllocCore::realloc) / [`alloc_zeroed`](AllocCore::alloc_zeroed)
-//!   — the single-threaded allocator entry points. `dealloc`/`realloc` are
-//!   `unsafe` per the `GlobalAlloc` contract (the caller must pass a valid
-//!   prior pointer/layout); they never panic and never recurse.
+//!   — the single-threaded allocator entry points. All four are **safe** `pub fn`s:
+//!   there is no `unsafe` in any signature (this is not a typo — verify with
+//!   `grep -n "pub fn dealloc\|pub fn realloc" src/alloc_core/alloc_core.rs`).
+//!   The *semantic* precondition of `dealloc`/`realloc` mirrors `GlobalAlloc`'s
+//!   — a well-behaved caller passes a valid prior pointer/layout — but unlike an
+//!   `unsafe fn` (which would "trust the caller or else invoke UB"), this crate
+//!   additionally enforces a defensive **M2 contract at runtime**: a foreign or
+//!   already-freed pointer (before its address is reused) degrades to a no-op
+//!   rather than corrupting allocator state. The full M2 rationale and the
+//!   affirmed design decision live in **one** place — [`dealloc`](AllocCore::dealloc)'s
+//!   own doc comment — to avoid scattered restatements; read that, not this bullet.
+//!   None of the entry points panic or recurse.
 //!
 //! ## Single-threaded
 //!
@@ -691,6 +700,21 @@ impl AllocCore {
 
     /// Deallocate memory previously returned by [`alloc`](Self::alloc) (or
     /// `alloc_zeroed`/`realloc`).
+    ///
+    /// **Design decision — affirmed safe `pub fn`, NOT `unsafe fn` (do not
+    /// re-litigate without a new exploit).** This is the single authoritative
+    /// record of the decision; the module-level "## API" bullet and
+    /// `HeapCore::dealloc` both defer here. Round2 (T2/T3, commits `02a2625`
+    /// and `79ef418`) adopted the M2 "defensive-free" contract — matching
+    /// `free()` in mimalloc/glibc — and round3 re-affirmed it after independent
+    /// audits (R3-MS-1/2/3, cq#1/#2) proposed marking it `unsafe fn`. The
+    /// rationale, in one line: an `unsafe` marker does NOT remove the
+    /// information-theoretic limit on detecting a stale-pointer double-free
+    /// *after the address is reused* (no metadata survives to distinguish it
+    /// from a legitimate free of the current owner), while the signature change
+    /// would be a breaking cascade across every call-site — a change of
+    /// posture, not of safety. No new exploit survived verification in three
+    /// independent audit rounds.
     ///
     /// This entry point is **safe**: a foreign pointer (not one of ours) or a
     /// double-free **before the address is reused** is a **no-op** (M2 —
