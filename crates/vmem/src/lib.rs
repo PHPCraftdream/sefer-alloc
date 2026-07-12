@@ -114,8 +114,14 @@ impl Reservation {
         self.len
     }
 
-    /// Whether the usable span is empty (always `false` — [`reserve_aligned`]
-    /// rejects zero sizes; provided for lint-friendliness).
+    /// Whether the usable span is empty ([`len()`](Self::len) == `0`).
+    ///
+    /// Every reservation reachable through the safe API is non-empty:
+    /// [`reserve_aligned`] rejects a zero `size`, and the unsafe
+    /// [`from_raw_parts`](Self::from_raw_parts) contract likewise requires a
+    /// non-zero `len`. Rather than hard-code `false`, this method reports the
+    /// actual length, so it stays correct should a future revision admit
+    /// zero-length spans — and so the type's state space is described honestly.
     #[must_use]
     #[inline]
     pub const fn is_empty(&self) -> bool {
