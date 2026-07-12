@@ -1292,8 +1292,53 @@ impl AllocCore {
         //    segment queues are a Phase 13 speed optimisation, not a 12.1
         //    deliverable). M5-safe: pure arithmetic + head reads via `Node`,
         //    no allocation.
+        // UBFIX-8 (M-4 audit finding, docs/reviews/2026-07-10-ub-audit-final-
+        // synthesis.md): this scan uses the UNCHECKED `find_segment_with_free`
+        // (no magazine-membership predicate), unlike the production fastbin
+        // refill path (`refill_class_bump_impl`), which passes
+        // `find_segment_with_free_checked` guarded by an `is_in_magazine`
+        // closure so a magazine-resident block is never handed out a second
+        // time via the free-list drain.
+        //
+        // Reachability analysis (traced, not assumed): `alloc_small` has
+        // exactly two callers in this crate — `AllocCore::alloc` (the plain
+        // substrate entry point) and the legacy `refill_class` (test-only;
+        // grep confirms its only non-doc callers are `tests/alloc_core_batch.rs`
+        // / `tests/regression_batch_flush.rs`, never `HeapCore`). The ONLY
+        // production entry point is `SeferAlloc::alloc` → `HeapCore::alloc`.
+        // `HeapCore::alloc` gates its magazine block on
+        // `#[cfg(all(feature = "alloc-global", feature = "fastbin"))]`; inside
+        // that block, EVERY small class (`class_for` returns `Some`) is routed
+        // through the magazine (hit → return, miss → `refill_magazine_slow` →
+        // `refill_class_bump_checked`, the CHECKED variant) and returns before
+        // reaching `self.core.alloc(layout)`. `self.core.alloc` — the only path
+        // that reaches `AllocCore::alloc_small` — is taken ONLY when `class` is
+        // `None` (a Large request) whenever fastbin is compiled in, i.e. this
+        // step-2 scan never runs for a small class in a fastbin build. And
+        // `fastbin = ["alloc-global", "alloc-xthread"]` in Cargo.toml — feature
+        // unification means fastbin is NEVER active without a magazine also
+        // being wired in. In builds WITHOUT fastbin there is no magazine at all
+        // (the `mark_magazine`/`clear_magazine` call sites all live inside the
+        // fastbin-gated code in `heap_core.rs`), so no block can be
+        // magazine-resident there either. Net: whenever this scan can reach a
+        // magazine-tagged block, it cannot run; whenever it runs, no block is
+        // magazine-tagged. Pinned below so a future refactor that opens a path
+        // from `HeapCore`'s fastbin magazine block into `AllocCore::alloc_small`
+        // fails loudly under any debug-assertions build instead of silently
+        // double-issuing a block.
         if let Some(seg) = self.find_segment_with_free(class_idx) {
             if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                debug_assert!(
+                    {
+                        let base = os::segment_base_of_ptr(ptr);
+                        let off = (ptr as usize - base as usize) as u32;
+                        !SegmentMeta::new(base).magazine_bitmap().is_in_magazine(off)
+                    },
+                    "alloc_small: find_segment_with_free (unchecked) returned a \
+                     magazine-resident block — this path was believed unreachable \
+                     under fastbin (see the doc comment above); a refactor has \
+                     opened a double-issue hazard",
+                );
                 return ptr;
             }
         }
