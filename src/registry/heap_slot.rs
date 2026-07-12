@@ -76,6 +76,8 @@ use core::sync::atomic::AtomicU64;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 
 use super::heap_core::HeapCore;
+#[cfg(feature = "alloc-xthread")]
+use super::heap_overflow::HeapOverflow;
 
 /// Slot state: `FREE` (available for claim) or `LIVE` (owned by a thread).
 /// Stored as a `u8` so the `FREE → LIVE` / `LIVE → FREE` transitions are
@@ -328,6 +330,24 @@ pub struct HeapSlot {
     /// for a remote thread to touch, so the false-sharing question this
     /// grouping exists to answer does not arise in the first place.
     pub(crate) remote: HeapSlotRemote,
+
+    /// RAD-4b (task #72): the slot-resident second-chance MPSC overflow ring
+    /// — see [`HeapOverflow`]'s module doc for the full design rationale.
+    /// Materialised unconditionally (like `remote`, above) so both the
+    /// owner's drain and a remote producer's push reach it through the SAME
+    /// `&'static HeapSlot` the registry already hands out, with no separate
+    /// claim-time wiring step (unlike `HeapCore::thread_free`'s `&'static`
+    /// handle, this ring needs no handle at all — a remote producer resolves
+    /// it directly from `bootstrap::ensure().slots[owner_id]`, see
+    /// `HeapCore::push_with_overflow_retry`).
+    ///
+    /// Only present under `alloc-xthread` (the cross-thread feature this
+    /// mechanism exists to serve) — mirrors `HeapSlotRemote::thread_free`'s
+    /// own gate. All-zero initial state, so an unclaimed or never-overflowing
+    /// slot never first-touches its 96 KiB array (see
+    /// `HeapOverflow::HEAP_OVERFLOW_CAP`'s RSS-discipline doc comment).
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) overflow: HeapOverflow,
 }
 
 impl HeapSlot {
@@ -356,6 +376,8 @@ impl HeapSlot {
             next_free: AtomicU32::new(NEXT_FREE_TAIL),
             initialised: AtomicBool::new(false),
             remote: HeapSlotRemote::new_uninit(),
+            #[cfg(feature = "alloc-xthread")]
+            overflow: HeapOverflow::new_uninit(),
         }
     }
 

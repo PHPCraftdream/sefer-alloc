@@ -593,6 +593,13 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // 64-byte-aligned cache line.
     #[cfg(feature = "alloc-xthread")]
     heap_ref.bind_thread_free(&slot.remote.thread_free);
+    // RAD-4b (task #72): plant the stable `&'static` handle to this slot's
+    // second-chance overflow ring. `overflow` (unlike `remote`'s grouped
+    // fields) lives directly on `HeapSlot`, not inside `HeapSlotRemote` — see
+    // that field's doc comment in `heap_slot.rs`. Same claim-time-binding
+    // discipline as `bind_thread_free`/`bind_tcache_hits` above.
+    #[cfg(feature = "alloc-xthread")]
+    heap_ref.bind_overflow(&slot.overflow);
 }
 
 /// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`

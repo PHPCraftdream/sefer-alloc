@@ -1,53 +1,69 @@
 //! `remote_fanin` — the RAD-4 (Phase 4, E3a) red→green counterfactual harness
-//! (implementation plan's Phase 0(c) / §7 "overflow-safe cross-thread free").
+//! (implementation plan's Phase 0(c) / §7 "overflow-safe cross-thread free"),
+//! extended by RAD-4b (task #72) to close the residual RAD-4 left open.
 //!
 //! ## What this proves
 //!
 //! `RemoteFreeRing` is a bounded (`RING_CAP = 256`) per-segment MPSC queue.
-//! Before this task, BOTH producer push sites in
-//! `HeapCore::dealloc_foreign_slow` discarded a failed push
-//! (`let _ = ring.push(packed);`) — a single overflow is a documented,
-//! sound, BOUNDED leak (the ring's own module docs), but a SUSTAINED
-//! producer→consumer fan-in (many remote threads freeing into one owner
-//! faster than the owner drains) turns that into an UNBOUNDED cumulative
-//! logical leak: every subsequent overflow permanently drops another block.
+//! Before RAD-4, BOTH producer push sites in `HeapCore::dealloc_foreign_slow`
+//! discarded a failed push (`let _ = ring.push(packed);`) — a single overflow
+//! is a documented, sound, BOUNDED leak (the ring's own module docs), but a
+//! SUSTAINED producer→consumer fan-in (many remote threads freeing into one
+//! owner faster than the owner drains) turns that into an UNBOUNDED
+//! cumulative logical leak: every subsequent overflow permanently drops
+//! another block.
 //!
-//! The fix (`HeapCore::push_with_overflow_retry`) retries a failed push for
-//! up to `RING_PUSH_RETRY_SPINS` spin-paced attempts before conceding to the
-//! original bounded-leak behaviour. This is a REALISTIC fix, not an
-//! absolute one: it depends on the owner eventually draining (which it does
-//! on every `alloc()` call), the SAME liveness assumption every lazy-drain
-//! path in this allocator already relies on. It cannot — by construction —
-//! recover a block if the owner NEVER runs again for the whole retry
-//! window (no bounded producer-side mechanism can, without either writing
-//! into the block's own bytes — reopening the H1-class UAF this ring exists
-//! to close — or unbounded heap-allocated node storage, which needs
-//! `Box::new` and reopens the `#[global_allocator]` reentrancy hazard
-//! `HeapCore`'s own module doc warns against; see `heap_core.rs`'s
-//! `RING_PUSH_RETRY_SPINS` doc comment for the full design-space
-//! discussion).
+//! RAD-4's fix (`HeapCore::push_with_overflow_retry`) retries a failed push
+//! for up to `RING_PUSH_RETRY_SPINS` spin-paced attempts before conceding.
+//! That fix was REALISTIC, not absolute: it depended on the owner eventually
+//! draining (which it does on every `alloc()` call), the SAME liveness
+//! assumption every lazy-drain path in this allocator already relies on. It
+//! could not — by construction — recover a block if the owner NEVER ran
+//! again for the whole retry window, and harness 2 below honestly measured
+//! that residual (up to 744/1000 blocks lost in its pathological shape).
 //!
-//! This file has three harnesses reflecting that honestly:
+//! **RAD-4b (task #72) closes that residual.** `HeapCore::
+//! push_to_heap_overflow` / `HeapOverflow` (`src/registry/heap_overflow.rs`)
+//! add a slot-resident, bounded (`HEAP_OVERFLOW_CAP = 2048`) second-chance
+//! MPSC ring, tried BEFORE `push_with_overflow_retry` concedes to the
+//! original bounded leak. It needs neither writing into the block's own
+//! bytes (reopening the H1-class UAF the ring exists to close) nor `Box`
+//! node storage (reopening the `#[global_allocator]` reentrancy hazard) —
+//! see that module's doc comment for the full design comparison
+//! (real-backpressure/blocking `dealloc`, a provenance-exposed
+//! `SegmentHeader` field, and properly tagging `next_abandoned` were all
+//! considered and are documented there, alongside the one HONEST caveat this
+//! fix still carries: `HEAP_OVERFLOW_CAP` is a fixed bound, not an infinite
+//! one — no bounded, non-blocking, `Box`-free mechanism can give a
+//! mathematically absolute guarantee against a producer population with
+//! unbounded throughput and an owner that never drains again for the rest of
+//! the process's life. What it DOES give: zero loss for any burst that fits
+//! the configured capacity — which is exactly what harness 2 below now
+//! proves for its own (deliberately pathological) burst size).
+//!
+//! This file has three harnesses:
 //!
 //! 1. [`remote_fanin_concurrent_overflow_is_recovered`] — the REALISTIC
 //!    fan-in shape: producers free concurrently WHILE the owner keeps
 //!    allocating/draining (interleaved, not silent) — sustained pressure,
 //!    producer rate > consumer rate, but the owner is alive and cycling
 //!    the whole time, exactly as the allocator's own lazy-drain design
-//!    assumes. This is the primary red→green counterfactual: pre-fix
+//!    assumes. This is the primary RAD-4 red→green counterfactual: pre-fix
 //!    (bare discard, no retry), any ring saturation under this shape
 //!    permanently drops blocks; post-fix, the bounded retry recovers them
 //!    because the owner's OWN concurrent alloc calls keep draining the
 //!    ring within the retry window. Native-only (see its doc comment).
 //! 2. [`remote_fanin_owner_starved_residual_is_bounded`] — the
 //!    PATHOLOGICAL shape: the owner does ZERO work for the entire producer
-//!    burst (joined on producer threads, not allocating). No bounded
-//!    producer-side retry can fully recover this (there is nothing for it
-//!    to wait on — the ring never drains during the whole retry window).
-//!    This test does NOT assert zero loss; it documents and bounds the
-//!    residual honestly (asserts the loss is a small, explainable fraction
-//!    of the burst, not unboundedly-growing with N — see its doc comment).
-//!    Native-only (see its doc comment).
+//!    burst (joined on producer threads, not allocating). This is the
+//!    RAD-4b red→green counterfactual: pre-RAD-4b, no bounded
+//!    producer-side retry could recover this (nothing for it to wait on —
+//!    the per-segment ring never drains during the whole burst), and this
+//!    harness measured a non-zero, merely-bounded residual. Post-RAD-4b,
+//!    the slot-resident `HeapOverflow` second-chance ring absorbs the
+//!    overflow the per-segment retry could not, and this harness now
+//!    asserts **`exhausted_delta == 0`** — the absolute-guarantee judge
+//!    this task's mandate specifies. Native-only (see its doc comment).
 //! 3. [`remote_fanin_miri_minimal_retry_ub_check`] — a minimal, deliberately
 //!    small two-phase harness that runs under BOTH native and miri, built
 //!    specifically because harnesses 1 and 2 (thousands of ops, many
@@ -57,11 +73,12 @@
 //!    statistical properties harnesses 1/2 and `tests/loom_remote_ring.rs`
 //!    already cover.
 //!
-//! ## The RED counterfactual (pre-fix behaviour, verified by hand)
+//! ## The RED counterfactuals (pre-fix behaviour, verified by hand)
 //!
-//! Before RAD-4's fix, `dealloc_foreign_slow`'s two push call sites were
+//! **RAD-4's original RED** (pre-`push_with_overflow_retry`):
+//! `dealloc_foreign_slow`'s two push call sites were
 //! `let _ = ring.push(packed);` — a bare discard, no retry, no counter.
-//! Verified during development by temporarily setting
+//! Verified during RAD-4's development by temporarily setting
 //! `RING_PUSH_RETRY_SPINS` to `0` (degenerating the retry loop to exactly
 //! that pre-fix single-attempt-then-drop shape) and re-running both
 //! harnesses below:
@@ -72,8 +89,18 @@
 //!     exhausted delta drops to **zero** on the same workload — GREEN.
 //!   - harness 2 (owner-starved): with zero retry budget the loss fraction
 //!     equals the raw overflow fraction (worse than the bounded residual
-//!     the real retry budget achieves) — see that test's doc comment for
-//!     the exact numbers observed.
+//!     the real retry budget achieves).
+//!
+//! **RAD-4b's RED** (pre-`HeapOverflow`, i.e. RAD-4's tree as it stood before
+//! this task): harness 2 (`remote_fanin_owner_starved_residual_is_bounded`)
+//! with its CURRENT (post-RAD-4b) `exhausted_delta == 0` / `reclaimed == N`
+//! assertions, run against the pre-RAD-4b `push_with_overflow_retry` (i.e.
+//! with `push_to_heap_overflow`'s call temporarily removed / made an
+//! always-`false` no-op) fails with a non-zero `exhausted_delta` (hundreds of
+//! blocks, matching the historically-measured 744/1000 order of magnitude)
+//! and `reclaimed < N` — confirmed by hand during this task's development
+//! (see the task's final report for the exact numbers observed) before
+//! restoring the real mechanism and re-confirming GREEN.
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 
@@ -270,31 +297,34 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
     unsafe { HeapRegistry::recycle(heap) };
 }
 
-/// ── Harness 2: pathological owner-starved fan-in (honest residual) ─────
+/// ── Harness 2: pathological owner-starved fan-in — RAD-4b absolute-guarantee
+/// judge ───────────────────────────────────────────────────────────────────
 ///
 /// The owner allocates `N` blocks, then `PRODUCERS` remote threads free ALL
 /// of them concurrently while the owner does ABSOLUTELY NOTHING (joined on
 /// the producer threads — no interleaved alloc, no interleaved drain) for
-/// the ENTIRE burst. This is the shape NO bounded producer-side retry can
-/// fully solve: the ring only drains when the owner calls `alloc()`, and
-/// the owner calls `alloc()` zero times during this window — there is
-/// nothing for a spin-retry to wait on.
+/// the ENTIRE burst. This is the shape NO bounded producer-side RETRY (RAD-4's
+/// `RING_PUSH_RETRY_SPINS`) can fully solve on its own: the per-segment ring
+/// only drains when the owner calls `alloc()`, and the owner calls `alloc()`
+/// zero times during this window — there is nothing for a spin-retry to wait
+/// on.
 ///
-/// **This test does NOT assert zero loss.** It documents the honest
-/// residual: `DBG_RING_PUSH_RETRY_EXHAUSTED` will be non-zero here (this is
-/// EXPECTED and is not a regression — see the module doc's design-space
-/// discussion for why closing this specific shape needs either block-byte
-/// writes, reopening the H1-class UAF class this ring exists to prevent, or
-/// unbounded `Box`-allocated node storage, reopening the
-/// `#[global_allocator]` reentrancy hazard — both explicitly rejected as
-/// out of scope for E3a's "smallest protocol delta" mandate). The assertion
-/// here is instead that the residual is BOUNDED and small relative to the
-/// burst — not unboundedly growing — and that the retry mechanism still
-/// recovers a meaningful majority of the overflow (the mechanism has real
-/// value even here: it absorbs the transient overflow that happens to land
-/// while OTHER producer threads' pushes are still in flight and about to
-/// free up ring slots via `RemoteFreeRing`'s own bounded capacity, even
-/// with the owner absent).
+/// **RAD-4b (task #72) — this test now asserts ZERO loss.** Before RAD-4b,
+/// this harness (then named `remote_fanin_owner_starved_residual_is_bounded`)
+/// documented a non-zero, merely-bounded residual here (up to 744/1000 blocks
+/// measured lost in this exact pathological shape) and explained why: RAD-4's
+/// retry has nothing to wait on once BOTH the per-segment `RemoteFreeRing`
+/// AND the retry budget are exhausted with the owner doing zero work. RAD-4b
+/// closes that residual with `HeapCore::push_to_heap_overflow` /
+/// `HeapOverflow` (`src/registry/heap_overflow.rs`): once a push exhausts its
+/// per-segment retry budget, it now falls back to the owning heap's
+/// SLOT-RESIDENT second-chance overflow ring (sized `HEAP_OVERFLOW_CAP =
+/// 2048`, 2× this harness's own N=1000 burst) BEFORE conceding to the
+/// original bounded leak — see that module's doc comment for the full design
+/// (including the honest "no FIXED bound is a mathematically absolute
+/// guarantee against infinite producers" caveat: this closes the gap for
+/// every workload whose burst fits the configured capacity, which is the
+/// literal judge this test IS).
 ///
 /// **Native-only** (`#[cfg(not(miri))]`) — see the identical rationale on
 /// [`remote_fanin_concurrent_overflow_is_recovered`] above.
@@ -342,10 +372,27 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
     }
 
     let overflow_delta = DBG_RING_OVERFLOW.load(Ordering::Relaxed) - overflow_before;
-    let exhausted_delta = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed) - exhausted_before;
 
-    // Owner reclaims whatever DID land, for cleanliness (not part of the
-    // oracle).
+    // This harness is only a valid counterfactual if it actually forced an
+    // overflow of the per-segment ring (otherwise RAD-4b's second-chance
+    // mechanism is never even exercised and a passing `exhausted_delta == 0`
+    // would be vacuous — the SAME non-vacuousness discipline harness 1 uses).
+    assert!(
+        overflow_delta > 0,
+        "remote_fanin_owner_starved harness did not force any per-segment ring \
+         overflow (DBG_RING_OVERFLOW delta == 0) — this run is a VACUOUS \
+         counterfactual for the RAD-4b absolute-guarantee judge, not a valid \
+         proof. Increase N / PRODUCERS."
+    );
+
+    // Owner wakes up AFTER the whole starved burst and resumes normal
+    // `alloc()` calls — the SAME opportunistic drain schedule
+    // `HeapCore::drain_heap_overflow` documents (every alloc under
+    // non-fastbin, every magazine-miss under fastbin). This reclaims
+    // whatever landed in either the per-segment rings or the heap-level
+    // overflow ring; the point of RAD-4b is that EVERY one of the N
+    // originally-allocated blocks is recoverable here, not merely "whatever
+    // survived".
     let mut reclaimed = 0usize;
     for _ in 0..N {
         let p = unsafe { (*heap).alloc(layout) };
@@ -356,21 +403,37 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
         unsafe { (*heap).dealloc(p, layout) };
     }
 
+    let exhausted_delta = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed) - exhausted_before;
+
     eprintln!(
         "remote_fanin_owner_starved: overflow_attempts_delta={overflow_delta} \
          exhausted_delta={exhausted_delta} reclaimed_after={reclaimed} (N={N}, \
-         PRODUCERS={PRODUCERS}) — owner did ZERO work during the burst; a nonzero \
-         exhausted_delta here is an ACCEPTED, DOCUMENTED residual, not a test \
-         failure by itself (see this test's doc comment)."
+         PRODUCERS={PRODUCERS}) — owner did ZERO work during the burst; RAD-4b's \
+         absolute-guarantee judge requires exhausted_delta == 0."
     );
 
-    // The residual must be BOUNDED (not "everything overflowed was lost" —
-    // the retry still recovers whatever transient ring headroom producers'
-    // OWN interleaved pushes/drains-of-nothing create) and must not exceed
-    // the number of blocks that could possibly have overflowed at all.
-    assert!(
-        exhausted_delta <= N as u64,
-        "exhausted count ({exhausted_delta}) exceeds N ({N}) — counter bookkeeping bug"
+    // RAD-4b (task #72): the ABSOLUTE-GUARANTEE assertion. Before this task,
+    // this exact pathological shape (owner fully starved for the whole
+    // burst) measured a non-zero, merely-bounded `exhausted_delta` (up to
+    // 744/1000). The slot-resident `HeapOverflow` second-chance ring closes
+    // this to EXACTLY ZERO for any burst that fits `HEAP_OVERFLOW_CAP`
+    // (2048 — 2x this harness's N=1000) — see this test's doc comment and
+    // `src/registry/heap_overflow.rs`'s module doc for the full design and
+    // its honest scope (a fixed-capacity, not infinite-capacity, guarantee).
+    assert_eq!(
+        exhausted_delta, 0,
+        "DBG_RING_PUSH_RETRY_EXHAUSTED advanced by {exhausted_delta} under the \
+         pathological FULLY-owner-starved fan-in — RAD-4b's HeapOverflow \
+         second-chance ring should have absorbed every block that overflowed \
+         the per-segment RemoteFreeRing's retry budget. A non-zero delta here \
+         means either the overflow ring's own capacity was exceeded (raise \
+         HEAP_OVERFLOW_CAP) or the RAD-4b mechanism is not wired correctly."
+    );
+    assert_eq!(
+        reclaimed, N,
+        "owner reclaimed {reclaimed} of {N} blocks after the starved burst — \
+         RAD-4b promises every block is recoverable once the owner resumes \
+         alloc() calls, not merely 'exhausted_delta == 0' bookkeeping."
     );
 
     unsafe { HeapRegistry::recycle(heap) };

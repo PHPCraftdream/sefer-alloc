@@ -25,11 +25,15 @@
 //! - `tagged_ptr` — the packed `(value | tag)` ABA-defence word.
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
+//! - [`heap_overflow`] — RAD-4b: the slot-resident second-chance MPSC
+//!   overflow ring that absorbs a cross-thread free once a segment's
+//!   `RemoteFreeRing` AND its bounded retry are both exhausted.
 //! - [`bootstrap`] — the process-global `Registry` + atomic state-machine.
 //! - [`heap_registry`] — the claim/recycle/abandon API.
 //!
 //! [`heap_core`]: self::heap_core
 //! [`heap_slot`]: self::heap_slot
+//! [`heap_overflow`]: self::heap_overflow
 //! [`bootstrap`]: self::bootstrap
 //! [`heap_registry`]: self::heap_registry
 
@@ -37,6 +41,16 @@
 pub mod bootstrap;
 #[doc(hidden)]
 pub mod heap_core;
+// `pub` (doc-hidden) only so a standalone miri UB-detection test
+// (`tests/miri_heap_overflow_unit.rs`) can reach `HeapOverflow`'s
+// `new_boxed_for_test`/`push`/`drain` test surface directly, without paying
+// the full `bootstrap::ensure()` + `MAX_HEAPS`-slot registry cost that made
+// exercising this protocol through the normal `remote_fanin` harnesses
+// impractically slow under miri's interpreter — mirrors the existing
+// `heap_core`/`heap_slot` doc-hidden test-only export pattern.
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub mod heap_overflow;
 #[doc(hidden)]
 pub mod heap_registry;
 #[doc(hidden)]

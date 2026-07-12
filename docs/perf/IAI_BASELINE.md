@@ -880,3 +880,207 @@ measurement taken immediately before this diff, not a read from that
 table. A general re-pin of the reference table is left as a follow-up (not
 blocking this GO decision, which only needed the relative before/after
 delta on this exact tree).
+
+## RAD-4b GO (2026-07-12) — `HeapOverflow`, a slot-resident second-chance
+## overflow ring closing RAD-4's owner-starved residual
+
+Task #72 (RAD-4b) revisited RAD-4's (`8b91b85`) explicitly-accepted residual:
+under FULL owner starvation (the owning thread performs zero `alloc()` calls
+for a producer burst's entire duration), `push_with_overflow_retry`'s bounded
+retry has nothing to wait on, and the design conceded to the original
+documented-sound bounded leak — measured at 744/1000 blocks lost in
+`tests/remote_fanin.rs::remote_fanin_owner_starved_residual_is_bounded`'s
+pathological shape. The task brief posed three candidate designs and invited a
+4th if none held up.
+
+### Design comparison (the honest call)
+
+1. **Real backpressure (`dealloc()` blocks until drained).** REJECTED. The
+   crate has zero blocking primitives anywhere (`grep -rn "spin_loop\|park\|
+   Condvar" src/` — only spin-hints exist), is `no_std`-capable (a `Condvar`/
+   futex needs OS-specific gating that would either break `no_std` or add a
+   large new conditional surface), and — the decisive argument — blocking
+   does not actually strengthen the guarantee: if the owner thread is
+   genuinely dead (not merely busy), a blocked producer waits FOREVER, an
+   unrecoverable deadlock strictly worse than the bounded leak it replaces.
+   Converts a resource-cost failure mode into an availability failure mode
+   for every thread in the process that frees memory. New synchronisation
+   primitive = new H1-class risk surface for a net-negative reliability
+   trade.
+2. **Slot-resident buffer + provenance-exposed `SegmentHeader` field.**
+   PARTIALLY adopted, redesigned. The task brief's sketch (a new
+   `owner_overflow: *const _` header field, provenance-exposed like
+   `owner_thread_free`) was replaced with something cheaper and lower-risk:
+   every segment ALREADY carries its owner's heap-slot id in `owner_state`
+   (`unpack_owner_id`, stamped by `stamp_segment_owner` on every alloc — the
+   same field `dbg_owner_id_for` already reads cross-thread). A remote
+   producer resolves the owning `&'static HeapSlot` via a single
+   bounds-checked `bootstrap::ensure().slots[owner_id]` array index — plain
+   safe Rust, no new `SegmentHeader` field, no provenance-exposure machinery,
+   zero layout risk to that already-heavily-audited 120-byte struct.
+3. **Properly fix M-7 (tag `next_abandoned`).** REJECTED for this task, as
+   the brief itself anticipated: `next_abandoned` is a SEGMENT-identity
+   queue (one link per segment); the lost item here is a BLOCK inside a
+   still-live segment — reusing that link only helps if the whole segment
+   is requeued, a coarser and semantically different operation. Also touches
+   `SegmentHeader` layout a second time in the same session (RAD-3/RAD-5
+   already shifted it) and would need a full re-derivation of M-7's
+   documented-dormant-hazard safety argument under a third concurrent
+   consumer — the audit's own "riskiest of the three" verdict, confirmed.
+4. **The shape actually shipped: `HeapOverflow`.** A bounded (`HEAP_OVERFLOW_CAP
+   = 2048`, 8× `RemoteFreeRing::RING_CAP`), slot-resident, per-HEAP MPSC ring
+   (`src/registry/heap_overflow.rs`), reusing `RemoteFreeRing`'s
+   already-proven Vyukov push/drain CAS-reserve protocol byte-for-byte in
+   shape, built from plain safe-Rust atomics (no `unsafe`, no seam) since a
+   `HeapSlot` is an ordinary `'static` Rust struct rather than raw `mmap`'d
+   segment bytes. `push_with_overflow_retry` tries this ring AFTER its
+   existing per-segment retry budget is exhausted, BEFORE conceding to the
+   bounded leak. Each entry is `(segment_base, packed_offset_class)` — one
+   heap owns many segments, so the base must travel with the entry (a
+   per-segment ring does not need this).
+
+**Honest scope of the guarantee.** No FIXED-capacity, non-blocking, `Box`-free
+structure can give a mathematically absolute guarantee against a producer
+population with unbounded throughput and a consumer that never runs again for
+the rest of the process's life — this is true of `HeapOverflow` exactly as it
+was already true of `RemoteFreeRing` (a bigger cap is a bigger bound, not
+"unbounded"). What RAD-4b delivers is the strongest guarantee a bounded,
+non-blocking, reentrancy-safe mechanism can: **zero loss for any burst that
+fits the configured capacity** — which is the literal, honestly-measured
+judge this task's mandate specifies. `HEAP_OVERFLOW_CAP = 2048` is 2× the
+mandated pathological-starvation judge's own burst (N=1000, 8 producers).
+
+### Verification
+
+**RED→GREEN (personally re-verified, non-vacuous, exact historical
+signature):** `push_to_heap_overflow`'s call site in `push_with_overflow_retry`
+temporarily short-circuited to `if false && Self::push_to_heap_overflow(...)`,
+re-ran `remote_fanin_owner_starved_residual_is_bounded` — **RED**, panicked
+with `exhausted_delta == 744` (matching the task's own pre-existing 744/1000
+historical measurement exactly, proving the counterfactual is not vacuous),
+`reclaimed_after=1000` (the segment itself was still recovered — this is the
+distinction between "block accounting lost" and "segment leaked", the same
+distinction RAD-4's own module doc draws). Restored the real call — **GREEN**,
+`exhausted_delta=0`, `reclaimed_after=1000`. Repeated after the final
+optimisation pass (handle-hoist, below) — same RED (744) / GREEN (0) result,
+confirming the optimisation did not change behaviour.
+
+**loom:** `tests/loom_heap_overflow.rs` (new) isolates the ONE genuinely new
+protocol detail beyond what `loom_remote_ring.rs` already proves for
+`RemoteFreeRing`'s shared push/drain shape: `HeapOverflow`'s entry is a PAIR
+of atomics (`base`, `packed`), publish-ordered `packed` (Relaxed) then `base`
+(Release) so `base` is the "is this slot published" gate. A `#[should_panic]`
+counterfactual (`counterfactual_wrong_publish_order_tears_entry`) inverts
+that order and loom FINDS the interleaving producing a torn read (a correct
+`base` paired with a stale/zero `packed`) — non-vacuous. 3/3 tests green.
+
+**miri:** the existing full-integration harness
+(`remote_fanin_miri_minimal_retry_ub_check`) did not complete in a reasonable
+time on the development host even before this task (its own doc already
+warned "impractically slow… even after aggressive scale-down"); `HeapOverflow`
+growing the registry by ~24 KiB/slot × `MAX_HEAPS` made it measurably worse
+(observed non-terminating after 5+ minutes / 18+ GB RSS under miri's
+interpreter, vs. the pre-existing harness's own already-marginal runtime).
+Added `tests/miri_heap_overflow_unit.rs` — a standalone, `Box`-allocated
+`HeapOverflow` (via a new `#[doc(hidden)] pub` test constructor,
+`HeapOverflow::new_boxed_for_test`, mirroring `RemoteFreeRing::
+over_test_buffer`'s established isolated-ring-test pattern) with NO registry,
+NO `bootstrap::ensure()` — just the ring's own push/drain, driven by two
+concurrent producer threads plus a sequential wrap-adjacent test. Completes in
+under 1 second under miri; both tests pass, no UB (the one informational
+"integer-to-pointer cast" note is expected — `base` is intentionally stored as
+`usize`, the same exposed-address discipline the crate's existing
+`Node::atomic_ptr_ref` machinery already uses elsewhere, not a soundness
+finding).
+
+**Full xthread regression suite:** `regression_realloc_xthread_stamp`,
+`regression_xthread_double_free_residual` (2 pass, 1 correctly still
+`#[ignore]`d — the unrelated X7-pinned residual), `regression_xthread_large_
+free_layout_mismatch`, `regression_xthread_large_free_no_leak`,
+`fastbin_requires_xthread` — all green, unchanged. `heap_core_bulk_bypass`,
+`heap_core_tcache*`, `registry_basic`, `regression_registry_initialised_gate`
+— all green, unchanged.
+
+**clippy** (all 3 CI feature-matrix entries: `""`, `--features experimental`,
+`--all-features`) — clean, zero warnings. **`cargo fmt --check`** — clean.
+
+**RSS judge** (`examples/first_alloc_process.rs`, the RAD-1 first-touch
+regression guard): `rss_after_1_heap_kib − rss_before_kib` stayed at ~116–120
+KiB (RAD-1's own ~0.1 MiB baseline), confirming `HeapOverflow`'s all-zero
+initial state (`ENTRY_EMPTY_BASE = 0`, matching OS-zeroed pages exactly — the
+same "never write it, so it's never first-touched" discipline RAD-1
+established) means claiming a heap does NOT first-touch its ~24 KiB overflow
+array. Growing `Registry`'s total VIRTUAL footprint by ~96 MiB (`24 KiB ×
+MAX_HEAPS = 4096`) costs nothing in RSS for a slot that never overflows —
+cheap on 64-bit address space.
+
+### iai — measured, iterated three times, final numbers pass the churn gate
+
+Isolated via a read-only `git worktree add --detach <tmp> HEAD` (HEAD =
+`06c04ba`, the sibling UBFIX-13 task's landed commit, tree clean of this diff)
+so the delta below is EXCLUSIVELY this task's contribution, not conflated with
+concurrent sibling-task changes in the same session.
+
+**Iteration 1 (initial `drain_heap_overflow` call in `alloc()`'s
+non-fastbin branch + `refill_magazine_slow`'s fastbin branch, unconditional
+2-atomic-load `HeapOverflow::drain` on every call):**
+
+| bench | baseline (HEAD) | iter 1 | Δ |
+|---|---:|---:|---:|
+| small_churn_16b | 34,015 | 34,029 | +14 |
+| churn_256b | 34,015 | 34,029 | +14 |
+| cold_alloc_free_256x16b | 76,828 | 77,052 | +224 |
+| recycle_alloc_free_256x16b | 125,260 | 125,634 | +374 |
+
+`+14` on the churn benches exceeds the `±10` churn kill-gate (X4-B
+precedent). Root cause: `refill_magazine_slow` already carries `drain_large_
+deferred_free`'s "cheap when empty (one Acquire load)" cost (M-9, accepted);
+`drain_heap_overflow` added a SECOND, structurally more expensive check
+(a Vyukov ring needs BOTH cursors — `head`/`tail` — to prove empty, unlike a
+Treiber stack's single `head.is_null()`), on the same magazine-miss refill
+path the churn benches' first iteration hits exactly once.
+
+**Iteration 2 (added `HeapOverflow::is_likely_empty`, a single-load
+Relaxed-tail-vs-cached-`Relaxed`-head pre-check before the full Acquire-pair
+drain):** `+12` — marginal improvement (2 Ir), confirmed the atomics
+themselves were not the dominant cost.
+
+**Iteration 3 (shipped): hoisted the `&'static HeapOverflow` handle to
+`HeapCore` at claim time** (`HeapCore::bind_overflow`, mirroring
+`bind_thread_free`/`bind_tcache_hits`'s existing claim-time-binding
+discipline exactly), replacing `drain_heap_overflow`'s per-call
+`bootstrap::ensure()` + `MAX_HEAPS`-bounds-checked array index with a
+pre-resolved reference, and cached the ring's own `tail` progress in
+`HeapCore::overflow_tail_cache` (an owner-private `usize`, refreshed from
+`HeapOverflow::drain`'s return value) so the common "never overflowed" case
+costs one `Relaxed` load against a plain cached integer, mirroring the
+existing `last_stamped_segment` OPT-C cache immediately adjacent in the same
+struct:
+
+| bench | baseline (HEAD) | shipped | Δ | Ir/op* Δ |
+|---|---:|---:|---:|---:|
+| small_churn_16b | 34,015 | 34,024 | **+9** | +0.14 |
+| aligned_churn_640b_a128 | 34,025 | 34,034 | +9 | +0.14 |
+| churn_256b | 34,015 | 34,024 | +9 | +0.14 |
+| churn_write_256b | 34,271 | 34,280 | +9 | +0.14 |
+| cold_alloc_free_256x16b | 76,828 | 76,927 | +99 | +0.38 |
+| recycle_alloc_free_256x16b | 125,260 | 125,389 | +129 | +0.50 |
+
+**Churn kill gate: `+9` raw Ir — inside the `±10` threshold.** Reproduced
+byte-identically across two independent re-runs (callgrind's Ir count is
+deterministic, not statistically noisy). Cold/recycle carry a larger absolute
+delta (many refills per bench run, each paying the one-time hoisted-handle
+check) but the SAME relative order of magnitude as the already-accepted M-9
+`drain_large_deferred_free` addition to this exact function.
+
+**Verdict: GO**, with the residual `+9`/`+99`/`+129` Ir cost disclosed
+plainly rather than chased to zero — the floor cost of a second opportunistic
+empty-check on the SAME magazine-miss refill path M-9 already instrumented,
+now genuinely as cheap as that mechanism's own single-cached-value check.
+
+Files: `src/registry/heap_overflow.rs` (new), `src/registry/heap_core.rs`,
+`src/registry/heap_registry.rs`, `src/registry/heap_slot.rs`,
+`src/registry/mod.rs`, `src/alloc_core/alloc_core.rs` (one `small_cur()`
+accessor), `tests/remote_fanin.rs` (harness 2 rewritten to assert
+`exhausted_delta == 0`), `tests/loom_heap_overflow.rs` (new),
+`tests/miri_heap_overflow_unit.rs` (new).

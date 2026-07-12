@@ -1551,6 +1551,24 @@ impl AllocCore {
         self.small_cur = base;
     }
 
+    /// RAD-4b (task #72): the current small segment's base, for callers
+    /// outside this module that need to pass it into
+    /// [`reclaim_offset`](Self::reclaim_offset) /
+    /// [`reclaim_offset_checked`](Self::reclaim_offset_checked) (both of
+    /// which take `small_cur` as a plain argument rather than reading `self`,
+    /// since they are associate functions, not methods — see their doc
+    /// comments). `small_cur` itself is `pub(super)` (module-private); this
+    /// thin `pub(crate)` accessor is the sole reason `HeapCore::
+    /// drain_heap_overflow` (`src/registry/heap_core.rs`, `registry` module,
+    /// outside `alloc_core`) needs to exist, mirroring the existing
+    /// `register_segment_internal`/`set_small_current_internal` style of
+    /// thin cross-module forwarders in `heap_core.rs`.
+    #[cfg(feature = "alloc-xthread")]
+    #[must_use]
+    pub(crate) fn small_cur(&self) -> *mut u8 {
+        self.small_cur
+    }
+
     // Э4 (task #145) "classify once" wrappers `alloc_small_class` /
     // `dealloc_small_class` were RETIRED in P3 (task #147): their only callers
     // were the P7 alloc-side and dealloc-side bulk bypasses, both removed here.

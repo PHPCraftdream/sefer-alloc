@@ -325,6 +325,33 @@ pub struct HeapCore {
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: Option<&'static AtomicPtr<u8>>,
 
+    /// RAD-4b (task #72): stable `&'static` handle to THIS heap's
+    /// slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// second-chance ring. Planted by
+    /// [`HeapRegistry::claim`](super::heap_registry::HeapRegistry::claim)
+    /// (via `bind_slot_counters` → [`bind_overflow`](Self::bind_overflow)),
+    /// mirroring [`thread_free`](Self::thread_free) /
+    /// [`tcache_hits`](Self::tcache_hits) exactly — same rationale: resolving
+    /// `&reg.slots[idx].overflow` fresh on every
+    /// [`drain_heap_overflow`](Self::drain_heap_overflow) call (a
+    /// `bootstrap::ensure()` + array index) is strictly more work than a
+    /// pre-resolved `'static` reference, and this field is on the
+    /// magazine-MISS refill path — see `IAI_BASELINE.md`'s RAD-4b entry for
+    /// the measured churn-gate cost this hoist recovers. `None` only in the
+    /// transient pre-bind window (never observed on any alloc/free path —
+    /// `drain_heap_overflow`/`push_to_heap_overflow` are the only readers,
+    /// and both run only on/after a claimed heap).
+    ///
+    /// `push_to_heap_overflow` is a free function called from a REMOTE
+    /// thread targeting `base`'s OWNER — a different heap than `self` — so it
+    /// cannot use this field (which is `self`'s OWN handle); it still
+    /// resolves the owner's slot via `bootstrap::ensure().slots[owner_id]`
+    /// (unavoidable — the whole point is finding a heap this thread does not
+    /// own). This hoist applies ONLY to the OWNER's own opportunistic drain,
+    /// the hot(ter) path the churn benches actually measure.
+    #[cfg(feature = "alloc-xthread")]
+    overflow: Option<&'static super::heap_overflow::HeapOverflow>,
+
     /// Per-thread, per-class magazine cache (Phase P2 — fastbin).
     /// Gated on `alloc-global + fastbin`. Owner-private (single-writer):
     /// only the owning thread touches it. See `registry::tcache`.
@@ -409,6 +436,23 @@ pub struct HeapCore {
     /// `stamp_segment_owner`).
     #[cfg(feature = "alloc-global")]
     last_stamped_segment: *mut u8,
+
+    /// RAD-4b (task #72): owner-private cache of the last `tail` value
+    /// observed on this heap's slot-resident `HeapOverflow` ring, refreshed
+    /// from [`HeapOverflow::drain`]'s return value. Lets
+    /// [`drain_heap_overflow`](Self::drain_heap_overflow) skip the full
+    /// Acquire-pair drain protocol (and its unconditional `head.store`) with
+    /// a single `Relaxed` load via
+    /// [`HeapOverflow::is_likely_empty`](super::heap_overflow::HeapOverflow::is_likely_empty)
+    /// on the overwhelmingly common "nothing ever overflowed into this ring"
+    /// case — mirrors the OPT-C `last_stamped_segment` cache immediately
+    /// above and `RemoteFreeRing`'s own documented `is_likely_empty`
+    /// caller-cached-`head` idiom (PERF-PASS-4 G9/C2), adapted to cache
+    /// `tail` here (the field a REMOTE push moves) since the OWNER is the
+    /// sole writer of `head`/reader of `tail`'s progress via this cache.
+    /// Starts at `0` (matches `HeapOverflow`'s all-zero initial `tail`).
+    #[cfg(feature = "alloc-xthread")]
+    overflow_tail_cache: usize,
 }
 
 impl HeapCore {
@@ -445,6 +489,10 @@ impl HeapCore {
             // the handle was planted).
             #[cfg(feature = "alloc-xthread")]
             thread_free: None,
+            // RAD-4b: planted by `bind_slot_counters` → `bind_overflow`
+            // right after the slot binds — see the field's doc comment.
+            #[cfg(feature = "alloc-xthread")]
+            overflow: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
@@ -455,6 +503,9 @@ impl HeapCore {
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
+            // RAD-4b: matches `HeapOverflow`'s all-zero initial `tail`.
+            #[cfg(feature = "alloc-xthread")]
+            overflow_tail_cache: 0,
         })
     }
 
@@ -482,6 +533,10 @@ impl HeapCore {
             // the handle was planted).
             #[cfg(feature = "alloc-xthread")]
             thread_free: None,
+            // RAD-4b: planted by `bind_slot_counters` → `bind_overflow`
+            // right after the slot binds — see the field's doc comment.
+            #[cfg(feature = "alloc-xthread")]
+            overflow: None,
             #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
             tcache: super::tcache::Tcache::new(),
             // W3: the counter now lives in the owning HeapSlot; this handle
@@ -492,6 +547,9 @@ impl HeapCore {
             tcache_hits: None,
             #[cfg(feature = "alloc-global")]
             last_stamped_segment: core::ptr::null_mut(),
+            // RAD-4b: matches `HeapOverflow`'s all-zero initial `tail`.
+            #[cfg(feature = "alloc-xthread")]
+            overflow_tail_cache: 0,
         })
     }
 
@@ -594,6 +652,16 @@ impl HeapCore {
         self.thread_free = Some(head);
     }
 
+    /// RAD-4b (task #72): plant the stable `&'static` handle to THIS heap's
+    /// slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// ring. Same discipline as [`bind_thread_free`](Self::bind_thread_free) /
+    /// [`bind_tcache_hits`](Self::bind_tcache_hits) — called once, right
+    /// after the slot binds, from `bind_slot_counters`.
+    #[cfg(feature = "alloc-xthread")]
+    pub(crate) fn bind_overflow(&mut self, overflow: &'static super::heap_overflow::HeapOverflow) {
+        self.overflow = Some(overflow);
+    }
+
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
     /// null in the transient pre-bind window (no cross-thread stamping has
     /// happened yet → cross-thread frees to this heap's segments are a safe
@@ -658,6 +726,77 @@ impl HeapCore {
         // disjoint from the core borrow.
         if let Some(head) = self.thread_free {
             crate::alloc_core::deferred_large::drain_large_deferred_free(head, &mut self.core);
+        }
+    }
+
+    /// RAD-4b (task #72): drain THIS heap's slot-resident
+    /// [`HeapOverflow`](super::heap_overflow::HeapOverflow) ring — the
+    /// second-chance queue [`push_to_heap_overflow`](Self::push_to_heap_overflow)
+    /// falls back to once a segment's own `RemoteFreeRing` AND its bounded
+    /// retry are both exhausted (see that method's doc comment for the full
+    /// design). Called by the OWNER on the SAME opportunistic schedule the
+    /// per-segment rings are already drained (every magazine-miss slow path
+    /// — see [`refill_magazine_slow`](Self::refill_magazine_slow) — and every
+    /// `find_segment_with_free` scan), so overflow entries are reclaimed with
+    /// the same liveness assumption every lazy-drain path in this allocator
+    /// already relies on ("the owner drains on its own next `alloc()`").
+    ///
+    /// Each entry's `(base, packed)` pair is reclaimed via
+    /// `AllocCore::reclaim_offset` (or, under `fastbin`, the
+    /// magazine-checked `reclaim_offset_checked` — mirrors
+    /// `dbg_drain_all_rings_impl`'s identical dual-path split) — the SAME
+    /// defensively-guarded reclaim primitive the per-segment ring drain
+    /// already uses, so a stale/garbled `base` (e.g. a segment recycled
+    /// between push and drain) is rejected by its own magic/kind/bounds
+    /// checks exactly as it would be for a per-segment ring entry, not
+    /// specially trusted here.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn drain_heap_overflow(&mut self) {
+        // RAD-4b: resolve through the pre-planted `&'static` handle (planted
+        // by `bind_overflow` at claim time), NOT a fresh `bootstrap::ensure()`
+        // + array index on every call — see the `overflow` field's doc
+        // comment for the churn-gate cost this hoist recovers. `None` only in
+        // the transient pre-bind window (never observed on any alloc/free
+        // path — this drain runs only after a claimed heap's `alloc()`).
+        let Some(overflow) = self.overflow else {
+            return;
+        };
+        // RAD-4b iai churn-gate discipline: skip the full drain protocol
+        // entirely on the overwhelmingly common "nothing has ever overflowed
+        // into this ring" case — a single `Relaxed` load compared against our
+        // own cached `tail`, mirroring the `last_stamped_segment` OPT-C cache
+        // and `RemoteFreeRing`'s own documented `is_likely_empty` idiom. See
+        // `HeapOverflow::is_likely_empty`'s doc comment for the full
+        // soundness argument.
+        if overflow.is_likely_empty(self.overflow_tail_cache) {
+            return;
+        }
+        let small_cur = self.core.small_cur();
+        #[cfg(feature = "fastbin")]
+        {
+            // No "class `c` currently being refilled" context exists at this
+            // call site (unlike `refill_class_bump_checked`'s closure in
+            // `refill_magazine_slow`, which special-cases `k == c` because
+            // `count[c] == 0` is a load-bearing invariant for THAT specific
+            // refill) — this drain reclaims entries of ANY class, so the
+            // predicate unconditionally checks the magazine-residency bitmap,
+            // mirroring `dbg_drain_all_rings_impl`'s general-purpose pattern.
+            self.overflow_tail_cache = overflow.drain(|base, packed| {
+                let _ = AllocCore::reclaim_offset_checked(base, packed, small_cur, &|ptr, _k| {
+                    let pbase = os::segment_base_of_ptr(ptr);
+                    let poff = (ptr as usize - pbase as usize) as u32;
+                    SegmentMeta::new(pbase)
+                        .magazine_bitmap()
+                        .is_in_magazine(poff)
+                });
+            });
+        }
+        #[cfg(not(feature = "fastbin"))]
+        {
+            self.overflow_tail_cache = overflow.drain(|base, packed| {
+                let _ = AllocCore::reclaim_offset(base, packed, small_cur);
+            });
         }
     }
 
@@ -729,6 +868,25 @@ impl HeapCore {
             if class.is_none() {
                 self.drain_large_deferred_free();
             }
+        }
+
+        // RAD-4b (task #72): opportunistically drain this heap's
+        // slot-resident `HeapOverflow` second-chance ring — see
+        // `push_to_heap_overflow`'s doc comment for the full design. Under
+        // `fastbin`, the drain is placed INSIDE `refill_magazine_slow`
+        // instead (a `#[cold] #[inline(never)]` magazine-MISS-only path —
+        // see that function), so the magazine-HIT fast path this file's own
+        // churn benchmarks measure pays NOTHING extra: adding an unconditional
+        // two-atomic-load check here, ahead of the magazine fast path below,
+        // would tax every alloc including hits, which is exactly the
+        // hot-path leak the task's iai gate exists to catch. Builds WITHOUT
+        // `fastbin` have no magazine and hence no `refill_magazine_slow`
+        // cold-path hook, so for them this call is the only opportunistic
+        // site — unconditional here, but that configuration has no magazine
+        // fast path to protect in the first place.
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        {
+            self.drain_heap_overflow();
         }
 
         // Cross-thread-freed blocks are reclaimed LAZILY, inside
@@ -1595,22 +1753,38 @@ impl HeapCore {
             let packed =
                 crate::alloc_core::remote_free_ring::pack_entry_hardened(gen, class_idx, off);
             let ring = SegmentMeta::new(base).remote_ring();
-            Self::push_with_overflow_retry(&ring, packed);
+            Self::push_with_overflow_retry(&ring, base, packed);
         }
         #[cfg(not(feature = "hardened"))]
         {
             let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
             let ring = SegmentMeta::new(base).remote_ring();
-            Self::push_with_overflow_retry(&ring, packed);
+            Self::push_with_overflow_retry(&ring, base, packed);
         }
     }
 
-    /// RAD-4 (Phase 4, E3a): push `packed` onto `ring`, retrying on
-    /// `Err(PushOverflow)` for up to [`RING_PUSH_RETRY_SPINS`] spin-paced
-    /// attempts before conceding to the original documented-sound bounded
-    /// leak. See the module-level comment above [`RING_PUSH_RETRY_SPINS`]
-    /// for the full rationale (why retry, not a new queue; why bounded, not
-    /// infinite).
+    /// RAD-4 (Phase 4, E3a); extended by RAD-4b (task #72): push `packed`
+    /// (the block's segment-relative `(offset, class)` word, already packed
+    /// by the caller) onto `ring`, retrying on `Err(PushOverflow)` for up to
+    /// [`RING_PUSH_RETRY_SPINS`] spin-paced attempts. See the module-level
+    /// comment above [`RING_PUSH_RETRY_SPINS`] for the full rationale (why
+    /// retry, not a new queue; why bounded, not infinite).
+    ///
+    /// **RAD-4b addition:** RAD-4 conceded to the documented-sound bounded
+    /// leak the moment the retry budget was exhausted — the honestly-measured
+    /// residual under full owner starvation
+    /// (`tests/remote_fanin.rs::remote_fanin_owner_starved_residual_is_bounded`).
+    /// Before conceding, this now tries ONE more thing: push `(base, packed)`
+    /// onto `base`'s OWNING heap's slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// ring (see that module's doc for the full design). The owning slot is
+    /// resolved from `base`'s `owner_state` header field (`unpack_owner_id` —
+    /// the SAME 12.3 ownership stamp `stamp_segment_owner` writes on every
+    /// alloc and `dbg_owner_id_for` already reads cross-thread), indexed
+    /// directly into the process-`'static` registry slot array — an ordinary
+    /// safe, bounds-checked array access, no new `unsafe` surface. Only if
+    /// THAT also fails (the second-chance ring is itself saturated) does this
+    /// fall back to the original bounded leak and bump
+    /// [`DBG_RING_PUSH_RETRY_EXHAUSTED`].
     ///
     /// Does NOT touch `RemoteFreeRing`'s own push/drain/cursor protocol —
     /// this is a caller-side wrapper that calls the SAME `RemoteFreeRing::push`
@@ -1619,6 +1793,7 @@ impl HeapCore {
     #[inline]
     fn push_with_overflow_retry(
         ring: &crate::alloc_core::remote_free_ring::RemoteFreeRing,
+        base: *mut u8,
         packed: u32,
     ) {
         if ring.push(packed).is_ok() {
@@ -1631,13 +1806,61 @@ impl HeapCore {
                 return;
             }
         }
-        // Retry budget exhausted: the ring has stayed saturated across the
-        // whole spin window (the owner is not draining fast enough, or not
-        // draining at all). Fall back to the original, documented-sound
-        // bounded leak — `RemoteFreeRing::push`'s own `DBG_RING_OVERFLOW` /
-        // per-segment `overflow_count` already ticked on every attempt
-        // above; this counter marks ONLY the genuinely-unrecovered case.
+        // Retry budget exhausted: the segment's own ring has stayed
+        // saturated across the whole spin window (the owner is not draining
+        // fast enough, or not draining at all). RAD-4b: before conceding to
+        // the bounded leak, try the owning heap's second-chance overflow
+        // ring — this is the mechanism that closes RAD-4's honestly-measured
+        // owner-starved residual.
+        if Self::push_to_heap_overflow(base, packed) {
+            return;
+        }
+        // Both the segment ring's retry budget AND the heap-level overflow
+        // ring are exhausted: the genuinely-unrecovered case. `RemoteFreeRing::
+        // push`'s own `DBG_RING_OVERFLOW` / per-segment `overflow_count`
+        // already ticked on every attempt above; this counter marks ONLY
+        // this fully-unrecovered case.
         DBG_RING_PUSH_RETRY_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// RAD-4b (task #72): resolve `base`'s owning [`HeapSlot`](super::heap_slot::HeapSlot)
+    /// from its `owner_state` header stamp and push `(base, packed)` onto
+    /// that slot's [`HeapOverflow`](super::heap_overflow::HeapOverflow) ring.
+    /// Returns `false` if the owner id is out of range (defensive — should
+    /// be unreachable for a live, correctly-stamped segment) or the
+    /// second-chance ring is itself saturated.
+    ///
+    /// `owner_state` is read Relaxed: this is the SAME diagnostic-strength
+    /// read `dbg_owner_id_for` already performs cross-thread (the id is
+    /// written once per segment-lifetime by the owner's `stamp_segment_owner`
+    /// and never concurrently mutated by a second writer — the single-writer
+    /// invariant on `owner_state` that every other cross-thread reader of
+    /// this field already relies on, e.g. `dealloc_foreign_slow`'s own
+    /// `owner_thread_free_at` read a few lines above this call site's
+    /// caller). A transient stale read (segment recycled and re-stamped
+    /// between this load and the array index below) resolves to either the
+    /// SAME heap (harmless) or a DIFFERENT live heap's slot (the pushed
+    /// entry sits in the wrong heap's overflow ring, drained on ITS next
+    /// opportunistic pass — not a correctness hazard: `HeapOverflow::drain`'s
+    /// `reclaim_offset(_checked)` call independently re-validates `base`'s
+    /// `magic`/`kind`/bounds before touching anything, exactly as the
+    /// existing per-segment ring drain already does for the identical class
+    /// of stale-entry hazard).
+    #[cfg(feature = "alloc-xthread")]
+    #[inline]
+    fn push_to_heap_overflow(base: *mut u8, packed: u32) -> bool {
+        use crate::alloc_core::segment_header::unpack_owner_id;
+        let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+        let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed));
+        let reg = super::bootstrap::ensure();
+        let idx = owner_id as usize;
+        if idx >= super::bootstrap::MAX_HEAPS {
+            return false; // Defensive: unstamped/garbled owner id.
+        }
+        // SAFETY-FREE: `idx < MAX_HEAPS` just checked; `reg.slots` is a plain
+        // `'static` array — ordinary bounds-checked indexing, no `unsafe`.
+        let slot = &reg.slots[idx];
+        slot.overflow.push(base, packed)
     }
 
     /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow
@@ -1681,6 +1904,14 @@ impl HeapCore {
         // UBFIX-10 (M-9): opportunistic drain on every magazine miss — see
         // the doc comment above. Cheap when empty (one Acquire load).
         self.drain_large_deferred_free();
+
+        // RAD-4b (task #72): opportunistic drain of this heap's
+        // `HeapOverflow` second-chance ring — same placement rationale as
+        // the M-9 drain immediately above (magazine-MISS-only, so the
+        // magazine-HIT fast path in `alloc` pays nothing extra). See
+        // `push_to_heap_overflow`'s doc comment for the full design and
+        // `alloc`'s matching non-fastbin call site.
+        self.drain_heap_overflow();
 
         let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
         // Task #164 / PERF-PASS-5 (G7): zero-copy split borrow. The refill
