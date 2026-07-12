@@ -145,12 +145,13 @@ impl SizeClasses {
     /// untouched.
     ///
     /// **Slow path (`align > SMALL_ALIGN_MAX`):** we still seed at the
-    /// `SIZE2CLASS` entry that covers `max(size, align)`, then walk forward at
-    /// most a handful of classes to find one whose `block_size` is divisible
-    /// by `align`. This is bounded by `SMALL_CLASS_COUNT` (currently 49), and in
-    /// practice settles in 0–3 steps for the typical async-runtime alignments
-    /// (32, 64, 128, 256 — `Cell<T,S>` etc.). Without this path EVERY alloc
-    /// with `align > 16` would go to the dedicated-segment Large path,
+    /// `SIZE2CLASS` entry that covers `max(size, align)`, then jump forward
+    /// over non-divisible classes (via `SIZE2CLASS` lookups on successive
+    /// multiples of `align`) to find one whose `block_size` is divisible by
+    /// `align`. This is provably equivalent to a step-by-1 walk but skips the
+    /// non-divisible geometric classes between multiples — e.g. for
+    /// `align = 128` from the ~144 B seed class it jumps straight to the
+    /// 256 B class. Without this path EVERY alloc with `align > 16` would go
     /// burning a full ~4 MiB segment + a SegmentTable slot per request — an
     /// architectural OOM source under concurrent task-spawning workloads
     /// (see task #114).
@@ -168,15 +169,35 @@ impl SizeClasses {
         if align <= SMALL_ALIGN_MAX {
             return Some(seed);
         }
-        // Slow path: walk forward to find a class whose block_size is a
-        // multiple of `align`. Bounded by SMALL_CLASS_COUNT; typically 0–3
-        // iterations for power-of-two `align` ≤ 256.
+        // Slow path: `align > SMALL_ALIGN_MAX` is a power of two (the `Layout`
+        // contract). Walk forward, but JUMP over non-divisible classes via the
+        // existing [`SIZE2CLASS`] table rather than stepping one class at a time.
+        // From a non-divisible class `i` (block size `b`), the next class that
+        // COULD be a multiple of `align` is the one covering the smallest
+        // multiple of `align` strictly greater than `b` — a bitmask round-up
+        // (align is a power of two) plus one O(1) `SIZE2CLASS` lookup. This is
+        // provably equivalent to the step-by-1 walk (it finds the same first
+        // divisible class — see `class_for_slow_path_matches_walk` in
+        // `tests/size_classes_slow_path_equivalence.rs`) but is never more
+        // iterations and is fewer whenever `seed` lands in a run of non-
+        // divisible geometric classes — e.g. `align=128` from the ~144 B class
+        // jumps directly to the 256 B class, skipping ~8 intervening classes.
+        // Termination: `next_mult > block` ⟹ the looked-up class index is
+        // strictly greater than `i` (the table is strictly increasing), so `i`
+        // advances every iteration.
         let mut i = seed;
         while i < SMALL_CLASS_COUNT {
-            if SIZE_CLASS_TABLE[i].is_multiple_of(align) {
+            let block = SIZE_CLASS_TABLE[i];
+            if block.is_multiple_of(align) {
                 return Some(i);
             }
-            i += 1;
+            // Smallest multiple of `align` strictly greater than `block` (align
+            // is a power of two, so `(block | (align - 1)) + 1` rounds up).
+            let next_mult = (block | (align - 1)) + 1;
+            if next_mult > SMALL_MAX {
+                return None;
+            }
+            i = SIZE2CLASS[(next_mult - 1) >> MIN_BLOCK_SHIFT] as usize;
         }
         None
     }

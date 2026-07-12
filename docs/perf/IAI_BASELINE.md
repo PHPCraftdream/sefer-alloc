@@ -1084,3 +1084,122 @@ Files: `src/registry/heap_overflow.rs` (new), `src/registry/heap_core.rs`,
 accessor), `tests/remote_fanin.rs` (harness 2 rewritten to assert
 `exhausted_delta == 0`), `tests/loom_heap_overflow.rs` (new),
 `tests/miri_heap_overflow_unit.rs` (new).
+
+## T10 honest-reject (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free`
+
+Task T10 (round2 remediation `performance#1`, `docs/reviews/2026-07-12-round2-
+synthesis.md` finding 1) targeted the O(S) segment scan in
+`AllocCore::find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`,
+the `for i in 0..n` loop over every owned segment on a free-list miss). The
+synthesis flagged this as the round2 sweep's biggest asymptotic perf
+opportunity but explicitly warned it "requires careful membership-tracking to
+fix correctly — a real correctness risk, not a trivial win". This entry
+records the experiment's measured outcome. **Verdict: NO-GO. Reverted.**
+
+### What was tried (recoverable from this description)
+
+A **per-class "last found segment" hint** — an
+`AllocCore.find_hint: [u16; SMALL_CLASS_COUNT]` field, initialised to
+`u16::MAX` at `AllocCore::new`. Entry `c` records the slot index of the most
+recent segment a full scan RETURNED for class `c`. Consulted as a **verified
+pre-check** at the top of the scan: if the hinted slot's `base_at` is non-null,
+`kind_at` is small/primordial, AND its `BinTable` head for `c` is non-null, the
+full O(n) scan is skipped and the hinted segment is returned directly. The hint
+is written ONLY inside `find_segment_with_free_impl` itself (on a successful
+full scan), **never on the alloc/free hot path** — zero hot-path maintenance,
+the deliberate design property that distinguished this from X5's per-segment
+`free_classes` bitmap (which maintained a bit at every empty↔nonempty transition
+on the dealloc slow path and lost there).
+
+The verification re-checks (`base_at` null for recycled slots, `kind_at`,
+`BinTable` head re-load) make the hint **sound by construction**: a stale hint
+(recycled slot, or segment that lost its last free block of class `c`) misses
+cleanly and falls through to the full scan, so it can never cause a missed
+segment, a false OOM, or an unnecessary carve. Correctness was proven by two
+regression tests (`tests/regression_t10_find_segment_multiseg_recovery.rs`):
+`find_segment_recovers_frees_across_segments_without_missed_segment` and
+`find_segment_recovers_frees_through_segment_drain_transitions`. Both
+counterfactual-verified (disabling the `BinTable` head re-check so a drained
+hinted segment is returned unconditionally makes BOTH fail with a freshly-carved
+segment's base appearing in the re-alloc set — the exact missed-segment
+signature). The tests remain in the tree as guards on the EXISTING scan: any
+future optimisation to this path must not violate them.
+
+### Why it was NO-GO (the measured mechanism — same shape as X5's honest-reject)
+
+**Churn kill gate (`±10` raw Ir, X4-B precedent):** FAILED. The hint's
+`find_hint: [u16; 49]` array initialisation at `AllocCore::new` costs a
+**constant +44 Ir on every heap construction** — proven by `large_alloc_free_
+cycle`'s raw delta (that bench issues one Large alloc+free, touching no small
+class, no `find_segment_with_free`, so its ENTIRE +44 Ir delta IS the array init
+at construction). Every bench pays this once per process, and the four churn
+benches landed at **+46 raw Ir** (`small_churn_16b` 34,320 → 34,366), ~5× past
+the `±10` kill threshold. The marginal per-op cost is honestly 0.0 Ir/op
+(bootstrap-subtracted), but the gate is in raw Ir per the established
+discipline, and X5 was rejected at +9.
+
+**Cold/recycle honest-budget gate (15–25 Ir/op improvement target):** did not
+meet the bar. Cold landed at +0.1 Ir/op, recycle at +0.1 Ir/op — flat, not the
+targeted double-digit improvement. The O(n) scan at n=3 (what these benches
+model) is 3 iterations with cache-hot segment headers; the hint cannot save
+work there because there is no extra cache line to avoid and the scan was never
+the bottleneck.
+
+**The structural argument** matches X5's recorded mechanism exactly: the
+payoff only materialises at n_segments ≫ 3, where (a) the scan cost grows
+linearly and (b) distant segments' headers stop being in cache. No current bench
+models that shape (`multiseg_cold_256k` spans only 3 segments). The hint DID
+show a small marginal win on the designated judge (`multiseg_cold_256k` −4.2
+Ir/op, `seg_cycle_decommit_256k` −6.6 Ir/op) but that is far below the budget
+AND comes attached to the +44 bootstrap that fails the churn gate — net
+negative for the measured regime.
+
+### Measurement (vs a fresh clean-HEAD baseline on this exact tree)
+
+| bench | baseline Ir | hint Ir | Δ raw Ir | baseline Ir/op* | hint Ir/op* | Δ Ir/op* |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| small_churn_16b | 34,320 | 34,366 | **+46** | 74.1 | 74.1 | 0.0 |
+| aligned_churn_640b_a128 | 34,330 | 34,376 | +46 | 74.3 | 74.3 | 0.0 |
+| large_alloc_free_cycle (bootstrap proxy) | 29,577 | 29,621 | **+44** | — | — | — |
+| realloc_grow | 518,865 | 518,882 | +17 | 30,580.5 | 30,578.8 | −1.7 |
+| cold_alloc_free_256x16b | 77,223 | 77,299 | +76 | 186.1 | 186.2 | +0.1 |
+| cold_alloc_free_256x64b | 77,226 | 77,302 | +76 | 186.1 | 186.3 | +0.2 |
+| recycle_alloc_free_256x16b | 125,856 | 125,917 | +61 | 188.0 | 188.1 | +0.1 |
+| recycle_alloc_free_256x64b | 125,859 | 125,920 | +61 | 188.1 | 188.1 | 0.0 |
+| churn_256b | 34,320 | 34,366 | +46 | 74.1 | 74.1 | 0.0 |
+| churn_write_256b | 34,576 | 34,622 | +46 | 78.1 | 78.1 | 0.0 |
+| multiseg_cold_256k | 60,397 | 60,153 | −244 | 453.2 | 449.0 | −4.2 |
+| seg_cycle_decommit_256k | 93,547 | 92,247 | −1,300 | 313.6 | 307.0 | −6.6 |
+
+(`baseline` and `hint` were both run via `npm run iai`, iai-callgrind 0.14.2 /
+WSL / valgrind, byte-identical determinism. The +44 Ir on `large_alloc_free_
+cycle` isolates the bootstrap cost cleanly — see above.)
+
+### Note on T10's other sub-finding (perf#9, `class_for` align>16)
+
+T10 also contained an independent, lower-risk sub-finding: `class_for`'s
+align>16 slow path was a step-by-1 divisibility walk (`size_classes.rs`).
+That was replaced with a jump-ahead walk over `SIZE2CLASS` (jump from a
+non-divisible class to the class covering the next multiple of `align`), proven
+bit-identical to the old walk for every valid `(size, align)` pair by
+`tests/size_classes_slow_path_equivalence.rs` (counterfactual-verified: a
+deliberately wrong round-up produces drift at size=65 align=64). That sub-fix
+is **orthogonal to this NO-GO** and **KEPT** (it is pure integer arithmetic,
+touches no segment machinery, and is correctness-pinned). The iai delta it
+introduces is unmeasurable: per the X6 honest-reject precedent, the compiler
+const-evals `class_for` for the benches' fixed sizes, so both variants generate
+identical bench code; the win is real-world-dynamic-align only, invisible to
+the iai judge.
+
+Final tree after T10 finding #1's revert: only `src/alloc_core/size_classes.rs`
+(the perf#9 jump) + the two test files changed; `src/alloc_core/alloc_core.rs`
+and `src/alloc_core/alloc_core_small.rs` are byte-identical to pre-T10 (the
+hint field and pre-check were added then fully reverted). A future arc that
+adds a ≥64-segment bench (or profiles a real application with 100+ long-lived
+small segments) may flip this verdict; the correctness-proven hint shape is
+recoverable from this entry's description. The shape to revisit is the FULL
+per-class queue (skip non-matching segments entirely), since a per-class hint
+alone already loses to the bootstrap cost at n=3 — but even the queue's extra
+link maintenance would need the large-n scan to amortise it (the same barrier
+X5 recorded).
+
