@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — removal of `LargeCacheMode::{Background, Both}`
+
+The `LargeCacheMode` enum (feature = `alloc-decommit`) has been reduced to
+its single implemented variant, `Lazy`. The `Background` and `Both`
+variants — placeholders for a background scavenger thread that was never
+implemented — have been **removed entirely**. This is a semver-breaking
+API removal.
+
+**Why.** `Background` and `Both` had no implemented behaviour: they were
+stored by the builder and silently degraded to `Lazy` at runtime. An
+earlier fix (T5) made materialising a heap with either variant `panic!`
+at resolution time, but that panic was reachable lazily through the
+`GlobalAlloc::alloc` entry point (first-bind materialises the per-thread
+heap), which conflicted with the crate's "never panics" guarantee on its
+allocation entry points. Removing the variants outright ("make invalid
+states unrepresentable") is safer than either the silent no-op or the
+panic: there is no longer an unrepresentable promise to reject. See
+`docs/reviews/2026-07-12-round3-remediation-plan.md` (решение №2).
+
+**What was removed:**
+- The `Background` and `Both` variants of `LargeCacheMode`.
+- The resolution-time `panic!` match in `AllocCore::new_with_config`
+  (T5's eager rejection) — nothing left to reject.
+- The two `should_panic` regression tests
+  (`background_mode_panics_at_materialisation`,
+  `both_mode_panics_at_materialisation`) in `tests/large_cache_mode.rs`.
+
+**Forward compatibility.** `LargeCacheMode` is now marked
+`#[non_exhaustive]`. Reintroducing a variant alongside a real future
+background-scavenger implementation will be a *non-breaking* addition,
+not another breaking change. Code that constructs `LargeCacheMode::Lazy`
+is unaffected; any code that referenced `Background`/`Both` will fail to
+compile (E0599 — no such variant) and should drop the reference.
+
+**Migration.** Remove any `.mode(LargeCacheMode::Background)` or
+`.mode(LargeCacheMode::Both)` call — `Lazy` (the default, and the only
+mode that ever had implemented behaviour) is what both were already
+doing.
+
 ### BREAKING CHANGE — removal of the `Heap` / `with_heap` public face and the `alloc` feature
 
 The explicit `Heap` type (`src/heap/heap.rs`), its TLS binding `with_heap` /

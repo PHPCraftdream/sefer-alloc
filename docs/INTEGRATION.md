@@ -115,19 +115,17 @@ trigger below).
   common path, no allocation. Idle process → no work. This is the
   mobile/embedded/serverless-friendly mode.
 
-- **`LargeCacheMode::Background` (reserved).** Intended to spawn a
-  dedicated thread that visits every shard's large-cache on a timer, so
-  a quiescent shard (no alloc/free activity) still gets decay. **In the
-  current release this behaves identically to `Lazy`.** The mode-selector
-  plumbing is in place; the thread itself is intentionally deferred.
+  `LargeCacheMode` is `#[non_exhaustive]`; `Lazy` is currently the only
+  variant. A future background-scavenger mode (e.g. a dedicated thread
+  visiting idle shards on a timer so a quiescent shard still gets decay)
+  may be added as a non-breaking change, but it does not exist today —
+  earlier `Background`/`Both` placeholders were never implemented and have
+  been removed from the enum.
 
-- **`LargeCacheMode::Both`.** Alias for `Background` today. Reserved for
-  the future distinction "lazy hooks AND background thread".
-
-**Practical recommendation:** keep the default `Lazy` unless your workload
-has long quiescent periods where you actively want background trimming.
-`Lazy` already covers DBMS / tokio servers / async runtimes where
-allocation pressure is continuous.
+**Practical recommendation:** keep the default `Lazy`. It already covers
+DBMS / tokio servers / async runtimes where allocation pressure is
+continuous, as well as idle workloads (a tick is gated by the next large
+op, but `headroom` bounds how much can accumulate before that op fires).
 
 ---
 
@@ -266,12 +264,6 @@ work unchanged.
   compiled when the `alloc-decommit` feature is on (included in
   `production`). Without it, use `SeferAlloc::new()` (the only
   constructor).
-
-- **Expecting `LargeCacheMode::Background` to spawn a thread.** Today
-  it behaves identically to `Lazy`. Use `LargeCacheMode::Lazy` (the
-  default) — it covers virtually all real workloads, including idle ones
-  (a tick is gated by the next large op, but `headroom` already bounds
-  how much can accumulate before that op fires).
 
 - **Setting `budget_bytes` smaller than `headroom_bytes`.** Legal but
   pointless — the cache will be forced into FIFO eviction at the budget

@@ -415,13 +415,15 @@ defaults" model):
   0.2.0).
 
 - *Phase 3 — mode selector (background-thread stub).* `LargeCacheMode
-  { Lazy, Background, Both }` enum is wired through the
+  { Lazy }` (`#[non_exhaustive]`) is wired through the
   `LargeCacheConfig::mode(m)` builder method. Default `Lazy` preserves
-  Phase 2 behaviour bit-for-bit; `Background` / `Both` currently fall
-  back to lazy while the full background scavenger thread (Mutex
-  refactor + registry iteration + safe spawn timing + TSan validation)
-  is deferred to a follow-up. The mode-selector plumbing means flipping
-  the switch later is a non-breaking change.
+  Phase 2 behaviour bit-for-bit. Earlier revisions carried unimplemented
+  `Background`/`Both` variants that silently fell back to `Lazy`, then
+  briefly panicked at heap-materialisation time — both removed in round3
+  (`docs/reviews/2026-07-12-round3-remediation-plan.md`, решение №2) in
+  favour of leaving the enum `#[non_exhaustive]`: adding a real mode later
+  (Mutex refactor + registry iteration + safe spawn timing + TSan
+  validation) is a non-breaking addition, not a re-add of a removed variant.
 
 Full configuration table is in the README "Tuning the large-segment cache"
 section.

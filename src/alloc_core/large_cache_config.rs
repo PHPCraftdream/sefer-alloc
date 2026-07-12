@@ -232,16 +232,14 @@ impl LargeCacheConfig {
 
     /// Set the cache operating mode.
     ///
-    /// - `LargeCacheMode::Lazy` (default): event-driven — a decay tick fires
-    ///   inline on the next large alloc/free after the interval has elapsed.
-    ///   No background thread; idle processes pay nothing.
-    /// - `LargeCacheMode::Background` / `LargeCacheMode::Both`: reserved for
-    ///   a future background scavenger thread that is **not yet implemented**.
-    ///   They are accepted by this setter (so the builder stays `const` and
-    ///   infallible — validation happens at resolution time per the builder
-    ///   contract), but materialising a heap whose config resolves to either
-    ///   panics inside [`AllocCore::new_with_config`](super::AllocCore::new_with_config)
-    ///   with a "not yet implemented" message. Use `LargeCacheMode::Lazy`.
+    /// - `LargeCacheMode::Lazy` (default and currently the only variant):
+    ///   event-driven — a decay tick fires inline on the next large alloc/free
+    ///   after the interval has elapsed. No background thread; idle processes
+    ///   pay nothing.
+    ///
+    /// `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future
+    /// background-scavenger mode to be added as a non-breaking change; today
+    /// only `Lazy` exists and is constructible.
     ///
     /// Default: `LargeCacheMode::Lazy`.
     #[must_use]

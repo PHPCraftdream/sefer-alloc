@@ -107,7 +107,7 @@ static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
 | `.headroom_bytes(N)` | `256 MiB` | Anti-thrash floor — the decay step does NOT release bytes below this level. Higher headroom = more memory retained between ticks (less aggressive trimming). |
 | `.decay_interval_ms(N)` | `1000` ms | Minimum wall-clock interval between consecutive decay ticks. A tick computes `excess = cached − headroom` and releases `excess × rate` back to the OS. |
 | `.decay_rate_percent(N)` | `10` % | Fraction of the excess released per tick, integer percent in `[1, 100]` (clamped). `10` ⇒ release 10 % per tick (self-damping exponential decay); `100` ⇒ flush all excess in one tick. |
-| `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — event-driven: each large alloc/free checks if the interval has elapsed; if so, one decay step runs inline. No background thread, idle process pays nothing. **`Background` / `Both`** — reserved for a future background scavenger; in 0.1 they fall back to `Lazy`. |
+| `.mode(M)` | `Lazy` | Decay trigger. **`Lazy`** — the only mode — event-driven: each large alloc/free checks if the interval has elapsed; if so, one decay step runs inline. No background thread, idle process pays nothing. `LargeCacheMode` is `#[non_exhaustive]`, leaving room for a future background-scavenger mode as a non-breaking addition. |
 
 The model is **"allocate fast, release slowly"**: each tick removes a
 constant fraction of the current excess, so the cache approaches the
@@ -881,7 +881,7 @@ runtime parse errors.
 | `decay_rate_percent(n)` | `10` (10 %/tick) | Integer percent of `excess = cached − headroom` to release back to the OS per tick. Range `[1, 100]`, clamped. |
 | `decay_interval_ms(n)` | `1000` (1 s) | Minimum wall-clock ms between two consecutive decay ticks. A tick fires inline on the next large alloc/free after the interval elapsed. Idle processes pay nothing. |
 | `headroom_bytes(n)` | `256 MiB` | Floor below which the decay is a no-op (anti-thrashing pad). |
-| `mode(m)` | `LargeCacheMode::Lazy` | `Lazy` (default) / `Background` / `Both`. `Background` and `Both` are reserved for a future background scavenger thread; currently behave identically to `Lazy`. |
+| `mode(m)` | `LargeCacheMode::Lazy` | `LargeCacheMode::Lazy` is the default and only variant. The enum is `#[non_exhaustive]`, reserved for a future background-scavenger mode as a non-breaking addition. |
 
 The model is "**allocate fast, release slowly**": on a large `free`, the
 span is admitted to the cache (subject to budget); on each subsequent large
