@@ -21,13 +21,13 @@
 //!
 //! ## What this file proves
 //!
-//! This is a COMPILE-TIME soundness fix, so the RED→GREEN regression guard is a
-//! pair of `compile_fail` doctests on the two functions in
-//! `src/registry/heap_registry.rs`: they prove safe code can no longer reach the
-//! API. (Before the fix the safe call compiled, so each `compile_fail` doctest
-//! was RED — `compile_fail` is violated by a successful compile; after the fix
-//! the call is rejected with E0133 "call to unsafe function", so the doctests
-//! are GREEN. The RED→GREEN was verified by reverting the `unsafe` markers.)
+//! This is a COMPILE-TIME soundness fix: the crate bans doctests (see
+//! CLAUDE.md's "No doctests" rule), so the RED→GREEN regression guard is NOT a
+//! `compile_fail` doctest — it is the plain fact that `push_abandoned_segment`/
+//! `pop_abandoned_segment` are now `unsafe fn`. A safe call to either is
+//! rejected with E0133 "call to unsafe function" at every call site, verified
+//! by temporarily reverting the `unsafe` markers and confirming `cargo build`
+//! fails, then restoring and confirming it succeeds.
 //!
 //! This file pins the BEHAVIOURAL contract: a caller that UPHOLDS the `# Safety`
 //! contract (a real, still-mapped segment) round-trips the exact base through

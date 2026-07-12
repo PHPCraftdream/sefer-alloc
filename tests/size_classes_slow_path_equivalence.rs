@@ -19,7 +19,7 @@
 //! `next_mult` wrong, or an off-by-one in the `SIZE2CLASS` index) makes at
 //! least one assertion below fail — confirmed during T10 by deliberately
 //! perturbing the round-up (`(block | align) + 1`, missing the `- 1`) which
-//! produced drift at `align=128, size=128`.
+//! produced drift at `size=65 align=64` (`jump=Some(9)` vs `walk=Some(7)`).
 
 #![cfg(feature = "alloc-core")]
 
