@@ -504,6 +504,20 @@ impl AllocCore {
     /// Equivalent to `AllocCore::new_with_config(LargeCacheConfig::DEFAULT)`.
     /// Returns `None` only if the OS refuses the primordial reservation (OOM at
     /// startup).
+    ///
+    /// `AllocCore` intentionally does **not** implement `Default` (R3-C). Both
+    /// `new()` and `new_with_config()` return `Option<Self>` because the very
+    /// first thing construction does is a real multi-MiB OS memory reservation
+    /// for the primordial segment, which can fail under memory pressure /
+    /// OOM / `rlimit`. A `Default` impl would have to hide that fallibility
+    /// behind an `.expect(...)` panic, but generic code across the ecosystem
+    /// treats `T::default()` / `T: Default` as a conventionally-cheap,
+    /// infallible operation (e.g. `Option::<T>::unwrap_or_default()`,
+    /// `#[derive(Default)]`, `mem::take`, `resize_with(Default::default)`) —
+    /// none of those call sites expect a multi-MiB syscall plus a latent
+    /// panic. Keeping the construction fallibility explicit (callers write
+    /// `AllocCore::new().expect("...")` themselves) is the deliberate design,
+    /// not an oversight; do not re-add a `Default` impl.
     #[must_use]
     #[inline]
     pub fn new() -> Option<Self> {
@@ -1682,27 +1696,6 @@ impl AllocCore {
             Some(class_idx) => AllocKind::Small { class_idx },
             None => AllocKind::Large,
         }
-    }
-}
-
-/// `Default` is a construction-time convenience only — it is NOT on the
-/// alloc/dealloc/realloc hot path and no code in this crate currently calls
-/// it (verified: no `AllocCore::default()` / `Default::default()` callers
-/// under `src/` or `tests/` at the time of writing). It exists for callers
-/// who want the ergonomics of `AllocCore::default()` / a `Default` trait
-/// bound at construction time and are prepared to accept that construction
-/// can fail.
-///
-/// This panics ONLY on true primordial OOM (the OS refuses the very first
-/// segment reservation) — the same failure `AllocCore::new` already surfaces
-/// as `None`. It never panics after construction: `alloc`/`dealloc`/
-/// `realloc` are infallible with respect to panicking (OOM there returns a
-/// null pointer / `None`, per the crate's no-panic-on-the-alloc-path
-/// discipline). Callers who cannot tolerate a panic at construction should
-/// call `AllocCore::new()` directly and handle `None`.
-impl Default for AllocCore {
-    fn default() -> Self {
-        Self::new().expect("AllocCore::new: primordial segment reservation failed (OOM)")
     }
 }
 

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — removal of `Default for AllocCore`
+
+The `Default` impl on `AllocCore` (feature = `alloc-core`) has been **removed
+entirely**. This is a semver-breaking API removal.
+
+**Why.** `AllocCore::new()` / `AllocCore::new_with_config()` return
+`Option<Self>` because the very first thing construction does is a real
+multi-MiB OS memory reservation for the primordial segment, which can fail
+under memory pressure / OOM / `rlimit`. The `Default` impl hid that
+fallibility behind `.expect(...)`, i.e. a panic. Generic code across the
+ecosystem treats `T::default()` / `T: Default` as a conventionally-cheap,
+infallible operation (`Option::<T>::unwrap_or_default()`, `#[derive(Default)]`
+on a containing struct, `mem::take`, collection `resize_with(Default::default)`,
+etc.) — none of those call sites expect a multi-MiB syscall plus a latent
+panic. The implementation had no internal callers (verified by grepping the
+whole tree), so the impl was a footgun for hypothetical generic-bound users
+rather than a load-bearing convenience. See
+`docs/reviews/2026-07-12-round3-remediation-plan.md` (R3-C / N3).
+
+**What was removed:**
+- The `impl Default for AllocCore` block in `src/alloc_core/alloc_core.rs`
+  (and its doc comment).
+
+**Migration.** Replace any `AllocCore::default()` (or `T: Default`-driven
+construction) with an explicit `AllocCore::new().expect("...")` or
+`AllocCore::new_with_config(cfg).expect("...")` — making both the fallibility
+and the panic visible *at the call site*, where they belong, rather than
+hidden inside a trait impl elsewhere. If you want to preserve the exact old
+message, use `AllocCore::new().expect("AllocCore::new: primordial segment
+reservation failed (OOM)")`.
+
 ### BREAKING CHANGE — removal of `LargeCacheMode::{Background, Both}`
 
 The `LargeCacheMode` enum (feature = `alloc-decommit`) has been reduced to
