@@ -51,12 +51,16 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy (${{ matrix.features }})
+    # Consolidated (2026-07-12, CI job-count reduction) from 3 matrix jobs
+    # into 3 sequential steps in one job. Each matrix entry paid its own
+    # checkout + toolchain install for a lint pass that runs in well under a
+    # minute — fixed per-job overhead was tripled for no parallelism benefit
+    # clippy needs. This does not reduce total CI work, only how many
+    # CONCURRENT jobs it costs against the account's job-concurrency ceiling
+    # (see the `loom`/`miri`/`miri-plain` jobs below, consolidated the same
+    # way, for the jobs that actually moved the needle).
+    name: clippy
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features: ["", "--features experimental", "--all-features"]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -66,7 +70,12 @@ jobs:
       # policy that produces noise out of proportion to value as a blocking
       # CI gate; keep it as an opt-in `cargo clippy -- -W clippy::pedantic`
       # for periodic cleanup, not as a per-PR blocker.
-      - run: cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
+      - name: clippy ()
+        run: cargo clippy --all-targets -- -D warnings
+      - name: clippy (--features experimental)
+        run: cargo clippy --all-targets --features experimental -- -D warnings
+      - name: clippy (--all-features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
     name: test (${{ matrix.features }})
@@ -214,72 +223,107 @@ jobs:
       # truly is no_std + alloc (not just "host build without the std feature").
       - run: cargo build --no-default-features --target thumbv7em-none-eabi
 
-  miri:
-    name: miri (${{ matrix.test }})
+  # Consolidated (2026-07-12, CI job-count reduction) from 9 single-test
+  # matrix jobs into 3 jobs, grouped by feature string (tests sharing a
+  # feature string share ONE `cargo miri test` invocation with multiple
+  # `--test` flags — one compile instead of N — rather than merely sharing a
+  # job with N separate invocations). Each job below still pays only one
+  # checkout + nightly+miri toolchain install. Per-test rationale comments
+  # from the original single-job-per-test layout are preserved next to each
+  # `--test` entry.
+  #
+  # BUG FIX folded in here: the `region_invariants` entry below used to run
+  # as the bare positional filter `cargo miri test region_invariants` — a
+  # SUBSTRING filter over TEST FUNCTION NAMES, not a target selector. None of
+  # `region_invariants.rs`'s actual test functions
+  # (`insert_get_remove_keeps_others_valid`, `stale_handle_after_reuse_is_none`,
+  # `get_mut_mutates_in_place`, `drops_each_value_exactly_once`,
+  # `clear_invalidates_all_handles`) contain the substring "region_invariants",
+  # so that invocation silently matched and ran ZERO tests (verified: `cargo
+  # test region_invariants` reports "0 passed" across every one of the
+  # workspace's ~137 test binaries) while still reporting a green `pass` —
+  # this CI job has been checking nothing since it was added. Fixed by using
+  # `--test region_invariants` (selects the BINARY; all 5 tests inside it run)
+  # like every other entry in this matrix already did correctly.
+  miri-core:
+    name: miri (core)
     runs-on: ubuntu-latest
     env:
-      # Miri needs the nightly toolchain and its Miri component. Per the
-      # short-scenario policy, run miri on the focused invariant/byte tests,
-      # NOT the full suite.
       MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
-    strategy:
-      fail-fast: false
-      matrix:
-        # The miri-relevant targets: the core invariants (UB-free slotmap
-        # membrane), the alloc-core invariants (M6 decommit/recommit cycle),
-        # and the reclaim-offset arithmetic.
-        test:
-          - "region_invariants"
-          # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
-          # (zero-crossing of payload pages) over the segment substrate.
-          - "--features \"alloc-core alloc-decommit\" --test decommit_miri_cycle"
-          # Phase 9–11 reclaim-offset arithmetic (cross-thread free placement)
-          # under miri's strict provenance — UB-free pointer math in the
-          # ring/reclaim path.
-          - "--features \"alloc-global alloc-xthread\" --test reclaim_offset_unit"
-          # Phase F5 (task #124): the task #114 align-regression tests.
-          # Single-threaded, `alloc-core`-only, no unsafe in the test bodies
-          # themselves — verified locally under
-          # `MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-disable-isolation"`
-          # before adding here (all three pass; ~99s/267s/3s respectively).
-          - "--features alloc-core --test regression_large_align_no_segment_exhaustion"
-          - "--features alloc-core --test regression_page_aligned_no_segment_exhaustion"
-          - "--features alloc-core --test regression_realloc_cross_class_shrink"
-          # R3 (#155): the fastbin M2 oracle path had ZERO miri coverage — the
-          # Э6 "free path never touches the block body" strict-provenance claim
-          # was never checked under miri. Single-threaded; the production
-          # feature set (fastbin + decommit).
-          - "--features \"alloc-global alloc-xthread alloc-decommit fastbin\" --test regression_magazine_oracles"
-          # The bump-direct carve path's pointer math under strict provenance
-          # (Э1). The cold-storm size is capped under `cfg(miri)` (256, from
-          # 4096) inside the test so the run fits miri's runtime; the pointer
-          # arithmetic / provenance coverage is identical at the smaller N. The
-          # decommit-heavy `d1_cold_storm_then_free_decommits` case is
-          # `cfg(not(miri))` (its N is size-load-bearing and cannot be capped).
-          - "--features \"alloc-global alloc-xthread alloc-decommit fastbin\" --test regression_bump_direct_refill"
-          # S3 (#168): the deterministic single-thread boundary sweep (S2) under
-          # miri — UB-free pointer math / provenance across the size×align seam
-          # grid + the realloc matrix. The grid is drastically shrunk under
-          # `cfg(miri)` INSIDE the test (a representative size/align subset, 4
-          # realloc pairs, a windowed canary instead of the full multi-hundred-KiB
-          # fill), so it finishes in ~40s here; the native (non-miri) grid is
-          # exhaustive and byte-identical to before. `alloc-core` is the gate.
-          - "--features alloc-core --test stress_boundary_sweep"
-          # NOTE: `regression_own_segment_cache_invalidation` (the Э3 own-segment
-          # cache invalidation) was evaluated for miri and DEFERRED (R3, #155):
-          # its correctness assertion needs ROUND_BLOCKS=18_000 across
-          # TARGET_SEGMENTS=6 (~100k interpreted 256 B allocations), which did
-          # not even finish compiling+running under miri in ~9 min locally — it
-          # would time out CI. The block-count is invariant-load-bearing (it must
-          # span >= 6 real 4 MiB segments), so it cannot be `cfg(miri)`-capped
-          # without voiding the test. Its decommit/recommit UB surface is already
-          # covered by `decommit_miri_cycle`.
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo miri test ${{ matrix.test }}
+      # The core invariants (UB-free slotmap membrane), default features.
+      - name: region_invariants
+        run: cargo miri test --test region_invariants
+      # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
+      # (zero-crossing of payload pages) over the segment substrate.
+      - name: decommit_miri_cycle
+        run: cargo miri test --features "alloc-core alloc-decommit" --test decommit_miri_cycle
+      # Phase 9–11 reclaim-offset arithmetic (cross-thread free placement)
+      # under miri's strict provenance — UB-free pointer math in the
+      # ring/reclaim path.
+      - name: reclaim_offset_unit
+        run: cargo miri test --features "alloc-global alloc-xthread" --test reclaim_offset_unit
+
+  miri-alloc-core:
+    # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
+    # all `alloc-core`-only (no unsafe in the test bodies themselves —
+    # verified locally under this exact MIRIFLAGS before originally adding
+    # each: ~99s/267s/3s for the three align tests, ~40s for the sweep under
+    # its `cfg(miri)`-shrunk grid). Same feature string across all four, so
+    # one `cargo miri test` invocation with four `--test` flags shares a
+    # single compile.
+    name: miri (alloc-core)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      # NOTE: `regression_own_segment_cache_invalidation` (the Э3 own-segment
+      # cache invalidation) was evaluated for miri and DEFERRED (R3, #155):
+      # its correctness assertion needs ROUND_BLOCKS=18_000 across
+      # TARGET_SEGMENTS=6 (~100k interpreted 256 B allocations), which did
+      # not even finish compiling+running under miri in ~9 min locally — it
+      # would time out CI. The block-count is invariant-load-bearing (it
+      # must span >= 6 real 4 MiB segments), so it cannot be
+      # `cfg(miri)`-capped without voiding the test. Its decommit/recommit
+      # UB surface is already covered by `decommit_miri_cycle` above.
+      - run: >-
+          cargo miri test --features alloc-core
+          --test regression_large_align_no_segment_exhaustion
+          --test regression_page_aligned_no_segment_exhaustion
+          --test regression_realloc_cross_class_shrink
+          --test stress_boundary_sweep
+
+  miri-fastbin:
+    # R3 (#155): the fastbin M2 oracle path had ZERO miri coverage — the Э6
+    # "free path never touches the block body" strict-provenance claim was
+    # never checked under miri. Plus the bump-direct carve path's pointer
+    # math under strict provenance (Э1; the cold-storm size is capped under
+    # `cfg(miri)` inside the test so the run fits miri's runtime — the
+    # decommit-heavy `d1_cold_storm_then_free_decommits` case stays
+    # `cfg(not(miri))`, its N is size-load-bearing and cannot be capped).
+    # Both single-threaded, both the production feature set (fastbin +
+    # decommit) — one invocation, two `--test` flags.
+    name: miri (fastbin)
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - run: >-
+          cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin"
+          --test regression_magazine_oracles
+          --test regression_bump_direct_refill
 
   miri-plain:
     # W6: PLAIN-provenance miri for the exposed-provenance intrusive stacks.
@@ -297,7 +341,11 @@ jobs:
     # Kept SEPARATE from the strict `miri` job (whose tests stay strict-clean);
     # no test is shared between the two jobs. Small N per test (Large allocs,
     # <=100 iterations) keeps each run miri-affordable.
-    name: miri-plain (${{ matrix.test }})
+    # Consolidated (2026-07-12, CI job-count reduction) from 2 matrix jobs
+    # into 1 job. Both entries share the SAME features AND the SAME
+    # MIRIFLAGS (below), so they run as one `cargo miri test` invocation with
+    # two `--test` flags — one compile, one job, instead of two of each.
+    name: miri-plain
     runs-on: ubuntu-latest
     env:
       # Elevated preemption rate: the task H1 aliasing guard
@@ -306,112 +354,134 @@ jobs:
       # `alloc(&mut self)` frame. The other plain test is phase-serialised and
       # indifferent to the rate.
       MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-preemption-rate=0.5"
-    strategy:
-      fail-fast: false
-      matrix:
-        # The A1 deferred-large / abandoned-seg exposed-provenance stacks over
-        # the GLOBAL-singleton `SeferAlloc`/`HeapCore` face. The three test fns
-        # (double-free-no-double-reclaim, counter-advances-again, reclaims-
-        # segments-no-leak) drive the `push.rs` / `drain.rs` / `heap_registry.rs`
-        # / `node.rs` re-derivations; under plain miri they show up as
-        # integer-to-pointer cast WARNINGS (validated, not errors — strict miri
-        # would hard-ERROR on exactly those casts, which is why this must run
-        # non-strict). Verified locally: 3 passed, 0 failed (~156s).
-        #
-        # NOT included — the two explicit-`Heap`-face tests
-        # (`regression_heap_xthread_large_free_no_leak`,
-        # `regression_xthread_large_free_layout_mismatch`): both call
-        # `Heap::new()` on a SPAWNED thread, whose per-thread primordial 4 MiB
-        # segment becomes unreachable when that thread exits, so miri's leak
-        # checker reports it (a genuine miri artifact of the per-thread `Heap`
-        # face, NOT the exposed-provenance path — the p2i re-derivations warn
-        # cleanly there too). Silencing it needs `-Zmiri-ignore-leaks`, which
-        # would defeat these "no_leak" oracles. Their cross-thread reclaim IS
-        # covered on REAL threads by the TSan `tsan` job instead.
-        test:
-          # A1 stack over the `SeferAlloc`/`HeapCore` (global-singleton) face.
-          - "--features \"alloc-global alloc-xthread\" --test regression_xthread_large_free_no_leak"
-          # task H1: the `thread_free` aliasing guard. Owner `&mut HeapCore`
-          # alloc loop CONCURRENTLY (real overlap) with a remote thread CASing
-          # the owner's cross-thread free-stack head. Pre-H1-fix this reported a
-          # retag-write-vs-atomic-load data race under plain miri; post-fix
-          # (head hoisted out of `HeapCore` into the `Sync` `HeapSlot` /
-          # `FALLBACK_TFS`) it is clean. Needs the elevated preemption rate set
-          # in this job's `env` above.
-          - "--features \"alloc-global alloc-xthread\" --test regression_xthread_thread_free_alias_miri"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo miri test ${{ matrix.test }}
+      # The A1 deferred-large / abandoned-seg exposed-provenance stacks over
+      # the GLOBAL-singleton `SeferAlloc`/`HeapCore` face. The three test fns
+      # (double-free-no-double-reclaim, counter-advances-again, reclaims-
+      # segments-no-leak) drive the `push.rs` / `drain.rs` / `heap_registry.rs`
+      # / `node.rs` re-derivations; under plain miri they show up as
+      # integer-to-pointer cast WARNINGS (validated, not errors — strict miri
+      # would hard-ERROR on exactly those casts, which is why this must run
+      # non-strict). Verified locally: 3 passed, 0 failed (~156s).
+      #
+      # NOT included — the two explicit-`Heap`-face tests
+      # (`regression_heap_xthread_large_free_no_leak`,
+      # `regression_xthread_large_free_layout_mismatch`): both call
+      # `Heap::new()` on a SPAWNED thread, whose per-thread primordial 4 MiB
+      # segment becomes unreachable when that thread exits, so miri's leak
+      # checker reports it (a genuine miri artifact of the per-thread `Heap`
+      # face, NOT the exposed-provenance path — the p2i re-derivations warn
+      # cleanly there too). Silencing it needs `-Zmiri-ignore-leaks`, which
+      # would defeat these "no_leak" oracles. Their cross-thread reclaim IS
+      # covered on REAL threads by the TSan `tsan` job instead.
+      #
+      # The second test (H1 aliasing guard) needs the elevated preemption
+      # rate set in this job's `env` above; both share it (harmless for the
+      # first test, which is phase-serialised and indifferent to the rate).
+      - run: >-
+          cargo miri test --features "alloc-global alloc-xthread"
+          --test regression_xthread_large_free_no_leak
+          --test regression_xthread_thread_free_alias_miri
 
-  loom:
-    # Loom model-checking of every concurrency protocol in the crate:
-    # the bootstrap-CAS state-machine (Registry lazy init), the adopt
-    # protocol (HeapRegistry.owner_state), cross-thread protocol
-    # (xthread / remote_ring / thread_free), and the deprecated
-    # experimental tier (sharded / epoch). Every protocol's loom file
-    # ships with a `should_panic` counterfactual that proves the harness
-    # is non-vacuous.
-    #
-    # Loom does NOT compose with the real allocator (it replaces atomics
-    # + threads + the global allocator), so these tests model each
-    # protocol's atomics in isolation against loom's harness — they are
-    # NOT integration tests that run the production code paths.
-    name: loom (${{ matrix.test }})
+  # Loom model-checking of every concurrency protocol in the crate: the
+  # bootstrap-CAS state-machine (Registry lazy init), the adopt protocol
+  # (HeapRegistry.owner_state), cross-thread protocol (xthread / remote_ring
+  # / thread_free), and the deprecated experimental tier (sharded / epoch).
+  # Every protocol's loom file ships with a `should_panic` counterfactual
+  # that proves the harness is non-vacuous.
+  #
+  # Loom does NOT compose with the real allocator (it replaces atomics +
+  # threads + the global allocator), so these tests model each protocol's
+  # atomics in isolation against loom's harness — they are NOT integration
+  # tests that run the production code paths.
+  #
+  # Consolidated (2026-07-12, CI job-count reduction) from 11 single-test
+  # matrix jobs into 4 jobs, grouped by feature string exactly like the
+  # `miri`/`miri-plain` jobs above: same-feature tests share one `cargo
+  # test --test A --test B ...` invocation (one compile); the one job below
+  # with two genuinely different feature strings runs them as two
+  # sequential steps instead.
+  loom-alloc-global:
+    name: loom (alloc-global)
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "--cfg loom"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - test: loom_bootstrap_cas
-            features: "alloc-global"
-          # #137: loom_fallback_init (the fallback-heap lazy-init state
-          # machine) existed but was never wired into the loom matrix — its
-          # model was checked locally but not gated in CI.
-          - test: loom_fallback_init
-            features: "alloc-global"
-          - test: loom_registry
-            features: "alloc-global"
-          - test: loom_xthread_protocol
-            features: "alloc-core alloc-xthread"
-          - test: loom_remote_ring
-            features: "alloc-core alloc-xthread"
-          # #141: A1 deferred_large push/drain Treiber-stack model (the
-          # double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL sentinel
-          # split from `src/alloc_core/deferred_large/push.rs`/`drain.rs`).
-          - test: loom_deferred_large
-            features: "alloc-core alloc-xthread"
-          # #141: Registry `free_slots` Treiber stack + `TaggedPtr` ABA-tag
-          # model (`src/registry/heap_registry.rs` pop_free_slot/push_free_slot
-          # + `src/registry/tagged_ptr.rs`).
-          - test: loom_free_slots_aba
-            features: "alloc-global"
-          # R2 (#154): magazine↔RemoteFreeRing composition shadow model. The
-          # primary test is a `#[should_panic]` counterfactual PINNING the
-          # #164 residual hole — it stays green exactly while the hole exists,
-          # and goes red the moment a fix (or a regression) changes the
-          # composition, forcing the model to be updated alongside #164.
-          - test: loom_magazine_ring_compose
-            features: "alloc-global alloc-xthread"
-          # task #204: the `alloc` Cargo feature (and the `Heap` type it
-          # gated) was removed; this file's synthetic `Node` model never
-          # actually depended on it (verified: compiles and passes with an
-          # empty feature set) — the CI matrix simply hadn't been updated
-          # when the feature was deleted.
-          - test: loom_thread_free
-            features: ""
-          - test: loom_sharded
-            features: "experimental"
-          - test: loom_epoch
-            features: "experimental"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --release --features "${{ matrix.features }}" --test ${{ matrix.test }}
+      # #137: loom_fallback_init (the fallback-heap lazy-init state machine)
+      # existed but was never wired into the loom matrix — its model was
+      # checked locally but not gated in CI.
+      # #141: loom_free_slots_aba — Registry `free_slots` Treiber stack +
+      # `TaggedPtr` ABA-tag model (`src/registry/heap_registry.rs`
+      # pop_free_slot/push_free_slot + `src/registry/tagged_ptr.rs`).
+      - run: >-
+          cargo test --release --features "alloc-global"
+          --test loom_bootstrap_cas
+          --test loom_fallback_init
+          --test loom_registry
+          --test loom_free_slots_aba
+
+  loom-xthread:
+    name: loom (alloc-core alloc-xthread)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg loom"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # #141: loom_deferred_large — A1 deferred_large push/drain Treiber-stack
+      # model (the double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL
+      # sentinel split from `src/alloc_core/deferred_large/push.rs`/`drain.rs`).
+      - run: >-
+          cargo test --release --features "alloc-core alloc-xthread"
+          --test loom_xthread_protocol
+          --test loom_remote_ring
+          --test loom_deferred_large
+
+  loom-experimental:
+    name: loom (experimental)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg loom"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: >-
+          cargo test --release --features "experimental"
+          --test loom_sharded
+          --test loom_epoch
+
+  loom-misc:
+    # The two remaining models don't share a feature string with each other
+    # or with any of the three groups above, so they run as two sequential
+    # steps (still one job, one checkout/toolchain) rather than each
+    # justifying its own job.
+    name: loom (misc)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--cfg loom"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # task #204: the `alloc` Cargo feature (and the `Heap` type it gated)
+      # was removed; this file's synthetic `Node` model never actually
+      # depended on it (verified: compiles and passes with an empty feature
+      # set) — the CI matrix simply hadn't been updated when the feature was
+      # deleted.
+      - name: loom_thread_free
+        run: cargo test --release --test loom_thread_free
+      # R2 (#154): magazine↔RemoteFreeRing composition shadow model. The
+      # primary test is a `#[should_panic]` counterfactual PINNING the #164
+      # residual hole — it stays green exactly while the hole exists, and
+      # goes red the moment a fix (or a regression) changes the composition,
+      # forcing the model to be updated alongside #164.
+      - name: loom_magazine_ring_compose
+        run: cargo test --release --features "alloc-global alloc-xthread" --test loom_magazine_ring_compose
 
   tsan:
     # ThreadSanitizer (weak-memory / data-race detector) gate for the
