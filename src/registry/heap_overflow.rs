@@ -344,10 +344,21 @@ impl HeapOverflow {
     /// reserved-but-not-yet-published slot (a producer won the tail CAS but
     /// has not stored `base` yet) — order is preserved by the cursors, a
     /// later drain picks it up, mirroring `RemoteFreeRing::drain` exactly.
-    /// Returns the final `tail` value observed (Acquire) so the caller can
-    /// refresh its [`is_likely_empty`](Self::is_likely_empty) cache without a
-    /// second atomic load — mirrors `RemoteFreeRing::drain`'s own return-value
-    /// contract (PERF-PASS-4 G9/C2).
+    ///
+    /// Returns the ACTUAL drain stop position — the final `head` value written
+    /// by this call (the cursor the next drain resumes from), NOT the entry
+    /// `tail` snapshot. This is load-bearing when the drain stopped early at a
+    /// reserved-but-not-yet-published slot (`h < t` at the break): returning
+    /// the entry-time `tail` there (the R2-4 bug) would make the caller's
+    /// [`is_likely_empty`](Self::is_likely_empty) cache equal the
+    /// still-current `tail`, so every subsequent guard check would WRONGLY
+    /// skip the re-drain that must observe the slot once its producer finishes
+    /// publishing — a pending cross-heap free gets stuck until an unrelated
+    /// later push incidentally moves `tail`. Returning `h` keeps the cache
+    /// strictly below `tail` while any reservation remains unpublished, so the
+    /// guard keeps re-draining until the publish lands — mirroring
+    /// `RemoteFreeRing::drain`'s own return-the-final-`head` contract
+    /// (PERF-PASS-4 G9/C2).
     ///
     /// `pub` (doc-hidden, not stable API) — see [`push`](Self::push)'s doc
     /// comment for why.
@@ -377,6 +388,37 @@ impl HeapOverflow {
             h = h.wrapping_add(1);
         }
         self.head.store(h, Ordering::Release);
-        t
+        // R2-4: return the ACTUAL stop position `h` (the value just published
+        // to `self.head`), NOT the entry-time `tail` snapshot `t`. Returning
+        // `t` here — as the pre-fix code did — caches a value equal to the
+        // still-current `tail` when the drain stopped at an unpublished slot,
+        // and `is_likely_empty` then skips every subsequent re-drain, sticking
+        // the pending free. See the method doc above for the full argument.
+        h
+    }
+
+    /// **Test surface** (`#[doc(hidden)] pub`): advance `tail` by exactly one
+    /// reservation WITHOUT publishing the slot's `(base, packed)` pair —
+    /// faithfully reproducing the window between a winning producer's tail CAS
+    /// and its subsequent `base` publish store, during which a concurrent
+    /// `drain` observes the slot as reserved-but-not-yet-published and must
+    /// stop. Lets `tests/heap_overflow_drain_return.rs` exercise the R2-4
+    /// interleaving (a `drain` that stops at this gap) DETERMINISTICALLY on a
+    /// single thread, without relying on thread scheduling — the real `push`
+    /// completes both halves before returning, so the half-published state is
+    /// otherwise unreachable from the public API.
+    ///
+    /// MUST be called on a quiescent ring (no concurrent `push`/`drain`) —
+    /// there is no CAS (a plain store suffices under the single-writer test
+    /// discipline), and no full-check (the test controls occupancy). Leaves
+    /// the reserved slot's `base` at [`ENTRY_EMPTY_BASE`], so a subsequent
+    /// `drain` stops there exactly as it would against a real racing producer.
+    #[doc(hidden)]
+    pub fn dbg_reserve_unpublished_for_test(&self) {
+        let t = self.tail.load(Ordering::Relaxed);
+        self.tail.store(t.wrapping_add(1), Ordering::Relaxed);
+        // Intentionally do NOT write `bases[idx]`/`packed[idx]`: the slot stays
+        // at its initial `ENTRY_EMPTY_BASE`, which is exactly `drain`'s
+        // publish-gate sentinel.
     }
 }
