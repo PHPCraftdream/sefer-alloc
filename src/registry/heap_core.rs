@@ -115,6 +115,135 @@ use crate::alloc_core::{node::Node, AllocCore};
 #[doc(hidden)]
 pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 
+// RAD-4 (Phase 4, E3a) — overflow-safe cross-thread small-block free.
+//
+// `RemoteFreeRing::push` (a per-segment, bounded MPSC queue — see that
+// module's docs) returns `Err(PushOverflow)` when its `RING_CAP = 256` slots
+// are all reserved-but-undrained. Before this task, BOTH push call sites in
+// `dealloc_foreign_slow` below discarded that error (`let _ = ring.push(..)`)
+// — a single overflow is a documented, sound, BOUNDED leak (the block stays
+// mapped but unused), but a SUSTAINED producer→consumer fan-in (many remote
+// threads freeing into one owner faster than the owner drains) turns that
+// into an UNBOUNDED cumulative logical leak: every subsequent overflow drops
+// another block, permanently, and `live_count` never returns to zero, which
+// blocks `alloc-decommit` from ever releasing the segment.
+//
+// The ring's own push/drain/cursor protocol is NOT touched by this fix (out
+// of scope per the RAD-4 task boundary, and the ring itself is fully sound —
+// see `docs/RACE_DRAIN_RECLAIM.md`). Closing the leak at the SMALLEST
+// protocol delta instead means changing what the CALLER does with
+// `Err(PushOverflow)`: retry, rather than drop.
+//
+// ## Why retry (not a new Treiber stack of block-payload nodes)
+//
+// The plan's own precedent for a heap-level MPSC fallback is `abandoned_segs`
+// / the A1 deferred-large-free stack (`HeapCore::thread_free`, reused as a
+// Treiber-stack head over segment BASES, chained through each segment's own
+// `next_abandoned` header field — see that field's doc comment). That idiom
+// works because A1's payload IS a segment identity (the whole segment is the
+// thing being queued) — no separate node storage is needed beyond the
+// segment's own pre-reserved header bytes.
+//
+// This case is different: the lost item is one FREED BLOCK's `(offset,
+// class)` pair, not a segment. Durably queuing that payload elsewhere would
+// need one of:
+//   - writing into the block's own bytes — reopens EXACTLY the H1-class UAF
+//     this ring was built to close (see the module doc on
+//     `RemoteFreeRing`: "a cross-thread freer never touches the block's
+//     bytes" is the ring's core soundness argument);
+//   - a new slot-resident (`HeapSlot`) head field, wired through
+//     `HeapRegistry::claim`'s `bind_slot_counters` — out of this task's file
+//     scope (`heap_registry.rs` is owned by a parallel task in this
+//     session), and, independently, still needs per-BLOCK node storage
+//     behind that head, which in turn needs either `Box::new` (the exact
+//     `#[global_allocator]` reentrancy hazard `HeapCore`'s own module doc
+//     warns against — "M5-clean bootstrap invariant") or a second in-segment
+//     array (a `RemoteFreeRing`-shaped structure in a NEW location — a
+//     segment-metadata layout change, explicitly out of scope for E3a: see
+//     the implementation plan's Phase 4 vs. the gated, higher-risk Phase 7
+//     dirty-segment queue);
+//   - reusing `next_abandoned` for LIVE Small segments too (it is unused
+//     while a Small segment is live) — rejected: the UB audit already flags
+//     `next_abandoned` sharing between `abandoned_segs` and A1 as a latent,
+//     documented reactivation hazard (Finding 5 / M-7 in
+//     `docs/reviews/2026-07-10-ub-audit-registry.md`); adding a THIRD
+//     consumer of the same link field on LIVE segments widens that hazard's
+//     blast radius instead of leaving it exactly as dormant as it is today.
+//
+// Retrying the push needs none of that: it adds no new struct, no new
+// header field, no new slot wiring, and never touches block bytes or the
+// ring's own cursor arithmetic. It is sound-by-construction (the ring stays
+// exactly as correct as it already is) and closes the leak as long as the
+// owner keeps draining — which it does on every `alloc()` call via
+// `find_segment_with_free`'s lazy per-segment ring drain, the SAME liveness
+// assumption every lazy-drain path in this allocator already relies on.
+//
+// ## Bound, not infinite spin
+//
+// An unconditionally infinite retry would make `dealloc()` able to block
+// forever if the owner thread stops allocating entirely while producers are
+// still freeing into it — a much bigger behavioural change for a
+// `GlobalAlloc` face than this task's "smallest protocol delta" mandate
+// accepts. `RING_PUSH_RETRY_SPINS` bounds the retry to a generous but finite
+// number of `core::hint::spin_loop()`-paced attempts (the same spin-hint
+// idiom already used by `global::fallback::LockGuard`/`bootstrap`'s
+// init-state spin). Within that bound, ANY owner drain (which empties up to
+// the full `RING_CAP = 256` slots in one pass) reopens enough room for the
+// retry to succeed — so the bound only matters for a truly pathological,
+// sustained-overflow workload; the `remote_fanin` harness
+// (`tests/remote_fanin.rs`) is the empirical judge of whether this bound is
+// generous enough in practice. If the bound is exhausted, the push still
+// falls back to the original, documented-sound bounded leak (dropped, both
+// `RemoteFreeRing`'s own `DBG_RING_OVERFLOW`/per-segment `overflow_count`
+// tick as before) — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY
+// this genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which
+// ticks on every individual full-ring push ATTEMPT, including ones a retry
+// goes on to recover).
+// Under miri (interpreted execution, orders of magnitude slower than
+// native), the full retry budget makes an overflow-heavy test impractically
+// slow — a single genuinely-exhausted retry loop at the native bound was
+// measured to make `cargo +nightly miri test` on `tests/remote_fanin.rs`
+// not finish in a reasonable time. `#[cfg(miri)]` narrows the bound to a
+// small but still-meaningful value (large enough to exercise the loop body,
+// the atomic CAS retry, and both counter-increment branches; small enough
+// for miri's interpreter to reach retry exhaustion in a bounded test)
+// WITHOUT changing the retry protocol/logic itself — the exact same idiom
+// `alloc_core_small.rs`/`bootstrap.rs` already use elsewhere in this crate
+// for miri-only initialisation gates (`grep -rn 'cfg(miri)' src/`), applied
+// here to a workload-size constant instead. Real (non-miri) builds are
+// completely unaffected.
+#[cfg(all(feature = "alloc-xthread", not(miri)))]
+const RING_PUSH_RETRY_SPINS: u32 = 262_144;
+#[cfg(all(feature = "alloc-xthread", miri))]
+const RING_PUSH_RETRY_SPINS: u32 = 64;
+
+/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a): process-wide count of small-block
+/// ring pushes that retried at least once (i.e. hit `Err(PushOverflow)` on
+/// their first attempt) and EVENTUALLY succeeded within
+/// [`RING_PUSH_RETRY_SPINS`]. A non-zero value means the fan-in pressure was
+/// high enough to transiently fill a ring, but the retry recovered every one
+/// of those blocks — the leak this task closes. Relaxed: diagnostic only,
+/// like `DBG_LARGE_XTHREAD_RECLAIMED` / `DBG_RING_OVERFLOW`.
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a): process-wide count of small-block
+/// ring pushes that exhausted [`RING_PUSH_RETRY_SPINS`] retries WITHOUT the
+/// ring ever draining enough to accept the push — the genuinely-unrecovered
+/// residual of the original bounded-leak behaviour. Distinct from
+/// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which counts
+/// every individual full-ring push attempt (including ones a retry later
+/// recovers). A `remote_fanin`-style harness asserts this stays at (or very
+/// near) zero to demonstrate the fix; a non-zero value here — not just a
+/// non-zero `DBG_RING_OVERFLOW` — is the honest signal of an actual lost
+/// block under this fix.
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub static DBG_RING_PUSH_RETRY_EXHAUSTED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// The thin, slot-resident heap value.
 ///
 /// Lives inside a [`HeapSlot`](super::heap_slot::HeapSlot)'s `UnsafeCell` and
@@ -1449,14 +1578,49 @@ impl HeapCore {
             let packed =
                 crate::alloc_core::remote_free_ring::pack_entry_hardened(gen, class_idx, off);
             let ring = SegmentMeta::new(base).remote_ring();
-            let _ = ring.push(packed);
+            Self::push_with_overflow_retry(&ring, packed);
         }
         #[cfg(not(feature = "hardened"))]
         {
             let packed = crate::alloc_core::remote_free_ring::pack_entry(off, class_idx);
             let ring = SegmentMeta::new(base).remote_ring();
-            let _ = ring.push(packed);
+            Self::push_with_overflow_retry(&ring, packed);
         }
+    }
+
+    /// RAD-4 (Phase 4, E3a): push `packed` onto `ring`, retrying on
+    /// `Err(PushOverflow)` for up to [`RING_PUSH_RETRY_SPINS`] spin-paced
+    /// attempts before conceding to the original documented-sound bounded
+    /// leak. See the module-level comment above [`RING_PUSH_RETRY_SPINS`]
+    /// for the full rationale (why retry, not a new queue; why bounded, not
+    /// infinite).
+    ///
+    /// Does NOT touch `RemoteFreeRing`'s own push/drain/cursor protocol —
+    /// this is a caller-side wrapper that calls the SAME `RemoteFreeRing::push`
+    /// every non-retrying call site already used, in a loop.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline]
+    fn push_with_overflow_retry(
+        ring: &crate::alloc_core::remote_free_ring::RemoteFreeRing,
+        packed: u32,
+    ) {
+        if ring.push(packed).is_ok() {
+            return; // Fast path: the common case never retries.
+        }
+        for _ in 0..RING_PUSH_RETRY_SPINS {
+            core::hint::spin_loop();
+            if ring.push(packed).is_ok() {
+                DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+        }
+        // Retry budget exhausted: the ring has stayed saturated across the
+        // whole spin window (the owner is not draining fast enough, or not
+        // draining at all). Fall back to the original, documented-sound
+        // bounded leak — `RemoteFreeRing::push`'s own `DBG_RING_OVERFLOW` /
+        // per-segment `overflow_count` already ticked on every attempt
+        // above; this counter marks ONLY the genuinely-unrecovered case.
+        DBG_RING_PUSH_RETRY_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Task #164 (Ir shaping): outlined refill-miss path. All split-borrow

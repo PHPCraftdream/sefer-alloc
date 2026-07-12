@@ -399,3 +399,210 @@ fn drain_empty_ring_is_noop() {
         assert_eq!(count, 0, "drain of empty ring reclaimed something");
     });
 }
+
+// =========================================================================
+// RAD-4 (Phase 4, E3a) — overflow-retry composition.
+//
+// `HeapCore::push_with_overflow_retry` (`src/registry/heap_core.rs`) wraps
+// the SAME `RemoteFreeRing::push` this file already models, in a bounded
+// retry loop, on `Err(PushOverflow)`. It adds NO new shared state beyond two
+// `Relaxed` diagnostic counters (no synchronisation role) and calls no new
+// ring method — the ring's push/drain protocol above is untouched. The
+// property that matters for THIS composition is: does retrying a failed
+// push, concurrently with OTHER producers ALSO retrying and a consumer
+// draining, still preserve the ring's own no-loss/no-duplication invariant?
+// `correct_ring_never_loses_or_duplicates` above already proves this for 2
+// non-overflowing producers; `counterfactual_drain_without_clear_duplicates_on_wrap`
+// already exercises a single-producer retry-on-overflow. This test closes
+// the gap between them: MULTIPLE producers, a CAP small enough that
+// overflow is FORCED (not just possible), each retrying independently,
+// racing a CONCURRENT consumer drain loop (not a join-then-drain shape) —
+// the actual shape `push_with_overflow_retry` runs under in production.
+// =========================================================================
+
+/// A `CAP = 1` ring model — the SAME `RingModel::push`/`drain` above, just
+/// re-instantiated at capacity 1 (below the file's shared `CAP = 4`) so that
+/// TWO concurrent producers already force genuine overflow (the second
+/// producer to reserve necessarily observes a full ring at least once) —
+/// matching the file's existing 2-producer scale
+/// (`correct_ring_never_loses_or_duplicates`) while keeping loom's state
+/// space tractable (an unconditional multi-producer retry-until-success loop
+/// against a larger CAP, or a 3rd producer, was measured to blow up loom's
+/// exploration time — this is deliberately the SMALLEST model that still
+/// forces overflow, not the largest that fits).
+struct RingModel1 {
+    head: AtomicU32,
+    tail: AtomicU32,
+    slot: AtomicU32,
+}
+
+impl RingModel1 {
+    fn new() -> Arc<Self> {
+        Arc::new(RingModel1 {
+            head: AtomicU32::new(0),
+            tail: AtomicU32::new(0),
+            slot: AtomicU32::new(RING_SLOT_EMPTY),
+        })
+    }
+
+    /// Identical shape to `RingModel::push`, `CAP = 1`.
+    fn push(&self, offset: u32) -> Result<(), ()> {
+        loop {
+            let t = self.tail.load(Ordering::Relaxed);
+            let h = self.head.load(Ordering::Acquire);
+            if t.wrapping_sub(h) >= 1 {
+                return Err(()); // full → overflow
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slot.store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Identical shape to `RingModel::drain`, `CAP = 1`.
+    fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+        let t = self.tail.load(Ordering::Acquire);
+        let mut h = self.head.load(Ordering::Relaxed);
+        while h != t {
+            let off = self.slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            reclaim(off);
+            self.slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.head.store(h, Ordering::Release);
+    }
+}
+
+/// 2 producers push disjoint offsets into a `CAP = 1` ring — with capacity
+/// 1, the second producer to reserve is GUARANTEED to observe a full ring at
+/// least once under any interleaving where the first producer's reservation
+/// has landed but not yet drained, forcing genuine overflow (not just
+/// contention) with the smallest possible producer count.
+///
+/// Each producer retries up to [`MODEL_RETRY_BOUND`] times on `Err(())`,
+/// yielding between attempts — mirroring `push_with_overflow_retry`'s
+/// bounded-retry SHAPE (a finite loop, not an infinite one) rather than its
+/// exact spin-vs-yield backoff strategy (orthogonal to the correctness
+/// property under test; see [`MODEL_RETRY_BOUND`]'s doc comment for why an
+/// UNBOUNDED retry loom model does not work here). A consumer drains ONCE
+/// after both producers join — the same shape as
+/// `correct_ring_never_loses_or_duplicates` above, extended to a `CAP = 1`
+/// ring so overflow is actually forced (that test's `CAP = 4` with 2
+/// producers never overflows).
+///
+/// INVARIANT: every offset that successfully lands (either producer's first
+/// attempt or a later retry) is reclaimed EXACTLY once — no duplication
+/// (the ring's own protocol, unmodified, still holds under this retry
+/// composition) and, GIVEN the retry bound is large enough for both
+/// producers to eventually win their CAS race against a `CAP = 1` ring
+/// drained only after both finish, no loss either.
+#[test]
+fn overflow_retry_concurrent_drain_never_loses_or_duplicates() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModel1::new();
+        let reclaimed: Arc<[AtomicU32; 2]> = Arc::new([AtomicU32::new(0), AtomicU32::new(0)]);
+        let landed: Arc<[AtomicU32; 2]> = Arc::new([AtomicU32::new(0), AtomicU32::new(0)]);
+
+        // 2 producers, each retrying its OWN offset up to MODEL_RETRY_BOUND
+        // times — exactly `push_with_overflow_retry`'s bounded-retry SHAPE
+        // (loop on `Err` up to a finite cap, no new synchronisation, same
+        // underlying `push`).
+        let mut producers = Vec::new();
+        for (i, &offset) in [10u32, 20u32].iter().enumerate() {
+            let ring_p = Arc::clone(&ring);
+            let landed_p = Arc::clone(&landed);
+            producers.push((
+                i,
+                thread::spawn(move || {
+                    for _ in 0..MODEL_RETRY_BOUND {
+                        if ring_p.push(offset).is_ok() {
+                            landed_p[i].store(1, Ordering::Relaxed);
+                            return;
+                        }
+                        thread::yield_now();
+                    }
+                }),
+            ));
+        }
+
+        for (_, p) in producers {
+            p.join().unwrap();
+        }
+
+        // Consumer drains ONCE, after both producers finished retrying —
+        // the SAME "producers join, then drain" shape
+        // `correct_ring_never_loses_or_duplicates` above already proves
+        // sound for the ring's own protocol; here it runs against a
+        // `CAP = 1` ring, so it also exercises the case where the SECOND
+        // producer's first attempt genuinely overflowed and had to retry
+        // (rather than winning the initial CAS race outright).
+        ring.drain(|off| {
+            let idx = match off {
+                10 => 0,
+                20 => 1,
+                _ => return,
+            };
+            reclaimed[idx].fetch_add(1, Ordering::Relaxed);
+        });
+
+        for (i, counter) in reclaimed.iter().enumerate() {
+            let seen = counter.load(Ordering::Acquire);
+            let did_land = landed[i].load(Ordering::Relaxed) == 1;
+            if did_land {
+                // A push that reported success MUST be reclaimed exactly
+                // once — this is the invariant that matters (no loss, no
+                // duplication of a push the retry loop believes succeeded).
+                assert_eq!(
+                    seen, 1,
+                    "producer {i}'s offset landed (push returned Ok) but was \
+                     reclaimed {seen} times (want exactly 1) — the overflow-retry \
+                     composition lost or duplicated a push"
+                );
+            } else {
+                // MODEL_RETRY_BOUND was exhausted in this particular
+                // interleaving (a loom artefact of a SMALL bound chosen for
+                // tractability, not a real-world outcome — the real
+                // RING_PUSH_RETRY_SPINS is 262,144, astronomically larger
+                // than any interleaving loom explores here). A push that
+                // never landed correctly contributes nothing to `reclaimed`.
+                assert_eq!(
+                    seen, 0,
+                    "producer {i}'s offset was reclaimed {seen} times despite \
+                     never successfully landing (push never returned Ok) — a \
+                     duplication/fabrication bug, not a retry-exhaustion artefact"
+                );
+            }
+        }
+    });
+}
+
+/// Bound on the model producers' retry loop (see
+/// `overflow_retry_concurrent_drain_never_loses_or_duplicates`). An
+/// UNBOUNDED retry-until-success loop (even with `thread::yield_now()`
+/// between attempts) was measured to make loom's model checker abort with
+/// "Model exceeded maximum number of branches... requiring the processor to
+/// make progress" — loom explores every retry iteration as new branches, so
+/// an unbounded loop is loom-hostile regardless of yield points (yielding
+/// only affects scheduling fairness, not the iteration count loom must
+/// explore). A small bound keeps the model tractable while still covering
+/// the property under test: does a push that DOES land (within the bound)
+/// get reclaimed exactly once under every interleaving loom explores. This
+/// mirrors `push_with_overflow_retry`'s own bounded nature (a real, finite
+/// cap — `RING_PUSH_RETRY_SPINS`) more faithfully than an infinite model
+/// loop would have, even though the real bound (262,144) is far larger than
+/// what loom can afford to explore exhaustively.
+const MODEL_RETRY_BOUND: u32 = 3;

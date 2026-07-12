@@ -52,6 +52,13 @@ pub(crate) mod tcache;
 
 #[doc(hidden)]
 pub use heap_core::HeapCore;
+// RAD-4 (Phase 4, E3a): the overflow-retry diagnostic counters — see their
+// doc comments in `heap_core.rs` for the full rationale. `#[doc(hidden)]
+// pub` (not stable API) so `tests/remote_fanin.rs` can read them, mirroring
+// the existing `DBG_LARGE_XTHREAD_RECLAIMED` test-only export pattern.
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+pub use heap_core::{DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED};
 // 0.3.x task #132: the reclaim counter moved to the shared
 // `alloc_core::deferred_large` module (both public faces bump the SAME
 // counter now); re-exported here for backward compatibility with existing
