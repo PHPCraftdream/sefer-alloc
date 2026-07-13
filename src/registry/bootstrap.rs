@@ -281,15 +281,24 @@ pub fn abandoned_head_is_empty(word: u64) -> bool {
 pub struct Registry {
     /// The fixed slot array. Indexed by slot id; `MAX_HEAPS` entries. Lives
     /// for the process lifetime (the reservation is never dropped).
-    pub slots: [HeapSlot; MAX_HEAPS],
+    //
+    // `pub(crate)` (task #93 / R4-MS-4): a `pub` slot array let safe
+    // downstream code reach `slots[idx].state.store(..)` and re-claim a LIVE
+    // `HeapCore`. Tests read slot state/generation through `dbg_slot_state`/
+    // `dbg_slot_generation` below.
+    pub(crate) slots: [HeapSlot; MAX_HEAPS],
     /// High-water mark of allocated slots (the next unused slot index). A
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
-    pub count: core::sync::atomic::AtomicU32,
+    pub(crate) count: core::sync::atomic::AtomicU32,
     /// Tagged-Treiber head of the `free_slots` stack: low 16 = slot index,
     /// high 48 = ABA tag (bumped per push; see `TaggedPtr`, repacked in W7a).
     /// Initialised empty.
-    pub free_slots: core::sync::atomic::AtomicU64,
+    //
+    // `pub(crate)` (task #93 / R4-MS-4): a `pub` free-list head let safe
+    // downstream code complete the re-claim attack by pushing a slot back onto
+    // the stack (`free_slots.store(dbg_pack(idx, ..))`).
+    pub(crate) free_slots: core::sync::atomic::AtomicU64,
     /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
     /// the full 64-bit segment base (in the high bits, since bases are
     /// `SEGMENT`-aligned → low `ABANDON_SEG_SHIFT` bits are zero) with an
@@ -297,7 +306,7 @@ pub struct Registry {
     /// `next_abandoned` header field chains to the next base. This fixes
     /// FINDINGS №1 (the old `AtomicU64` packing truncated bases >4 GiB);
     /// the full base is now preserved.
-    pub abandoned_segs: core::sync::atomic::AtomicU64,
+    pub(crate) abandoned_segs: core::sync::atomic::AtomicU64,
 }
 
 // `Registry` is shared across threads via the `AtomicPtr`. All mutable access
@@ -316,6 +325,57 @@ const _: () = {
     fn assert_sync<T: Sync>() {}
     let _ = assert_sync::<Registry>;
 };
+
+// -------------------------------------------------------------------------
+// Test-only `#[doc(hidden)]` accessors (task #93 / R4-MS-4).
+//
+// `Registry`'s fields are `pub(crate)`: safe code OUTSIDE the crate must not be
+// able to mutate the slot state machine or push onto `free_slots` (R4-MS-4 — a
+// `pub` field let safe downstream code re-claim a LIVE `HeapCore` and break
+// the `HeapSlot` single-writer invariant). The integration tests in `tests/`
+// that legitimately need to OBSERVE slot state/generation (and, in one
+// counterfactual, preset a generation near the u32 boundary) go through these
+// narrow accessors instead. The reads are plain atomic loads — always sound —
+// so they stay safe `fn`. The single write (`dbg_slot_preset_generation`) is
+// `unsafe fn` because its soundness needs the slot to not be racing a
+// concurrent `claim()`; the only caller
+// (`tests/regression_counter_wrap.rs`) wraps it in `unsafe { .. }` under a
+// documented precondition. (`count` reads already have the standalone
+// `count_for_test` accessor below.) These are NOT stable public API.
+impl Registry {
+    /// Read a slot's `state` atomically (test helper).
+    #[doc(hidden)]
+    #[inline]
+    pub fn dbg_slot_state(&self, idx: usize) -> u8 {
+        self.slots[idx].state.load(Ordering::Acquire)
+    }
+
+    /// Read a slot's `generation` atomically (test helper).
+    #[doc(hidden)]
+    #[inline]
+    pub fn dbg_slot_generation(&self, idx: usize) -> u64 {
+        self.slots[idx].generation.load(Ordering::Acquire)
+    }
+
+    /// Preset a slot's `generation` to `val` (test helper).
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure no other thread is concurrently `claim`ing or
+    /// `recycle`ing this slot. The only legitimate use is the
+    /// `tests/regression_counter_wrap.rs` u64-width counterfactual, which holds
+    /// the sole live handle to the slot under a single-threaded test and only
+    /// presets the generation of the slot it itself owns. `generation` is
+    /// written by the slot's owner on (re)claim; presetting it out from under a
+    /// live owner would corrupt the M8/M9 owner key stamped into segment
+    /// headers. The body is a plain atomic store (sound by itself); the
+    /// `unsafe fn` boundary carries the protocol precondition above.
+    #[doc(hidden)]
+    #[inline]
+    pub unsafe fn dbg_slot_preset_generation(&self, idx: usize, val: u64) {
+        self.slots[idx].generation.store(val, Ordering::Release)
+    }
+}
 
 // -------------------------------------------------------------------------
 // Lazy pointer: replaces the large `.data` `static REGISTRY: Registry` (the

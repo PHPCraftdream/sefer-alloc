@@ -119,7 +119,7 @@ fn oom_bailout_rollback_clears_sentinel_not_stuck() {
     // Whichever branch above ran, `ensure()` must still work normally
     // afterward -- the hook is documented to always restore `REGISTRY_PTR`
     // to what it observed on entry, and must never leave a live registry (or
-    // an UNINIT one) unable to bootstrap.
-    let reg = bootstrap::ensure();
-    let _ = reg.count.load(Ordering::Acquire);
+    // an UNINIT one) unable to bootstrap. `count_for_test()` exercises
+    // `ensure()` internally and reads `count`.
+    let _ = bootstrap::count_for_test();
 }

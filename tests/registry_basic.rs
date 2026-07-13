@@ -83,19 +83,20 @@ fn drain_abandoned() {
     while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
 }
 
-/// Read a slot's `state` atomically (test helper — the field is `pub` under
-/// `#[doc(hidden)]`).
+/// Read a slot's `state` atomically (test helper — the field is `pub(crate)`;
+/// reached via the narrow `Registry::dbg_slot_state` accessor).
 fn slot_state(idx: usize) -> u8 {
     let reg = bootstrap::ensure();
-    reg.slots[idx].state.load(Ordering::Acquire)
+    reg.dbg_slot_state(idx)
 }
 
 /// Read a slot's `generation` atomically (test helper). `generation` is
 /// `AtomicU64` since task W7a (widened from `AtomicU32` to move the recycle→
-/// reclaim ABA wrap from `2^32` to an unreachable `2^64`).
+/// reclaim ABA wrap from `2^32` to an unreachable `2^64`); reached via
+/// `Registry::dbg_slot_generation`.
 fn slot_generation(idx: usize) -> u64 {
     let reg = bootstrap::ensure();
-    reg.slots[idx].generation.load(Ordering::Acquire)
+    reg.dbg_slot_generation(idx)
 }
 
 /// `claim` returns non-null distinct slots, and each claimed slot is `LIVE`.
@@ -367,7 +368,7 @@ fn bootstrap_is_idempotent() {
     let count_before_claim = count_at_entry();
     let _ = HeapRegistry::claim(); // advances count by 1
     let reg_before = bootstrap::ensure();
-    let count_before = reg_before.count.load(Ordering::Acquire);
+    let count_before = bootstrap::count_for_test();
     assert_eq!(
         count_before,
         count_before_claim + 1,
@@ -378,7 +379,7 @@ fn bootstrap_is_idempotent() {
     // the SAME pointer (the fast path: Acquire load of REGISTRY_PTR, non-null
     // non-sentinel → return immediately). The registry is NOT reconstructed.
     let reg_after = bootstrap::ensure();
-    let count_after = reg_after.count.load(Ordering::Acquire);
+    let count_after = bootstrap::count_for_test();
     assert_eq!(
         count_before, count_after,
         "a second ensure must not re-initialise the registry (count preserved)"

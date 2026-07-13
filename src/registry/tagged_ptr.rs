@@ -176,6 +176,18 @@ impl TaggedPtr {
 // for a live index). They add NO code to any allocation path — they are thin
 // `const fn` shims over the same bit ops, compiled the same as a direct call,
 // and are not referenced by any production caller.
+//
+// Task #93 / R4-MS-4 audit: these forwarders (and `TaggedPtr` itself) are pure
+// bit-packing arithmetic — they hold no state and touch no memory. The R4-MS-4
+// attack needed BOTH `dbg_pack` AND a `pub` `free_slots` head to complete the
+// LIVE→FREE→re-claim takeover; after `Registry::free_slots` was narrowed to
+// `pub(crate)` (see `bootstrap.rs`), `dbg_pack` alone can no longer complete
+// the attack from outside the crate — the packed word it returns has nowhere
+// public to be stored. Leaving these `pub` is therefore sound; narrowing them
+// would gain nothing (the index/tag layout is not a secret) and would break
+// the W7a wrap counterfactual that pins the 16/48 split. The only outside-the-
+// crate caller is `tests/regression_counter_wrap.rs`'s pure-arithmetic tests;
+// `tests/loom_free_slots_aba.rs` uses its OWN local `mod tagged_ptr` model.
 #[doc(hidden)]
 #[must_use]
 pub const fn dbg_pack(value: u64, tag: u64) -> u64 {

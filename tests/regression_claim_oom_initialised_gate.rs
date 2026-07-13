@@ -105,13 +105,13 @@ impl Drop for SerialGuard {
 /// Read a slot's `state` atomically (test helper, mirrors `registry_basic.rs`).
 fn slot_state(idx: usize) -> u8 {
     let reg = bootstrap::ensure();
-    reg.slots[idx].state.load(Ordering::Acquire)
+    reg.dbg_slot_state(idx)
 }
 
 /// Read a slot's `generation` atomically (test helper, mirrors `registry_basic.rs`).
 fn slot_generation(idx: usize) -> u64 {
     let reg = bootstrap::ensure();
-    reg.slots[idx].generation.load(Ordering::Acquire)
+    reg.dbg_slot_generation(idx)
 }
 
 /// Drain `free_slots` by claiming (and deliberately NOT recycling) every

@@ -61,11 +61,16 @@
 // that could flip `state` LIVE→FREE or write `heap`/`next_free` directly would
 // break that invariant with NO `unsafe` keyword at the violation site — this
 // is the general "safe membrane over a seam" limit spelled out in
-// `src/lib.rs`. To shrink that membrane, every slot field a test does not need
-// is `pub(crate)` (reachable only inside the crate's confined registry code).
-// Only `state` and `generation` remain `pub` — the `#[doc(hidden)] pub`
-// registry surface exposes them to integration tests that read/write them
-// directly; both carry a field-level note that they are NOT stable public API.
+// `src/lib.rs`. EVERY slot field is therefore `pub(crate)` (reachable only
+// inside the crate's confined registry code). Task #93 / R4-MS-4 narrowed the
+// last two holdouts — `state` and `generation` — down from `pub` to
+// `pub(crate)`: while they were `pub`, safe downstream code could execute the
+// `LIVE → FREE` transition and re-push the slot onto `free_slots` itself,
+// handing a LIVE `HeapCore` to a second thread and breaking the very
+// single-writer invariant below. Integration tests that still need to
+// read/preset these fields go through the narrow `#[doc(hidden)]` accessors on
+// `Registry` (`dbg_slot_state`/`dbg_slot_generation`/`dbg_slot_preset_generation`,
+// in `bootstrap.rs`) — read accessors are safe, the ONE writer is `unsafe fn`.
 #![allow(unsafe_code)]
 
 use core::cell::UnsafeCell;
@@ -233,13 +238,12 @@ impl HeapSlotRemote {
 pub struct HeapSlot {
     /// `FREE` or `LIVE`. The claim/recycle CAS target.
     ///
-    /// Kept `pub` (not `pub(crate)`) ONLY because integration tests in
-    /// `tests/` read it directly through the `#[doc(hidden)] pub` registry
-    /// surface (`reg.slots[idx].state.load(..)` — `tests/registry_basic.rs`,
-    /// `tests/regression_counter_wrap.rs`). It is NOT stable public API. See
-    /// the module-level M7 note below on why the remaining slot fields were
-    /// narrowed to `pub(crate)` while this and `generation` stayed `pub`.
-    pub state: AtomicU8,
+    /// `pub(crate)` (task #93 / R4-MS-4): while this was `pub`, safe downstream
+    /// code could `state.store(STATE_FREE, ..)` on a LIVE slot and re-push it
+    /// onto `free_slots`, breaking the single-writer invariant the
+    /// `unsafe impl Sync` below depends on (R4-MS-4). Integration tests read it
+    /// through the narrow `Registry::dbg_slot_state` accessor (`bootstrap.rs`).
+    pub(crate) state: AtomicU8,
     /// Bumped on every successful (re)claim — the M8/M9 generation. Combined
     /// with the slot index it forms the unique `(index, generation)` owner
     /// key stamped into segment headers (12.3). Starts at 0; the first claim
@@ -263,11 +267,14 @@ pub struct HeapSlot {
     /// is Ir-neutral (this field is off every hot alloc/dealloc path — it is
     /// bumped once per claim on the cold registry-protocol path only).
     ///
-    /// Kept `pub` for the same reason as [`state`](Self::state): integration
-    /// tests read AND write it directly (`slot.generation.store(preset, ..)`
-    /// in `tests/regression_counter_wrap.rs`'s u64-wrap counterfactual). Not
-    /// stable public API.
-    pub generation: AtomicU64,
+    /// `pub(crate)` (task #93 / R4-MS-4): a `pub` field let safe downstream
+    /// code forge owner epochs or preset a LIVE slot's generation directly.
+    /// Integration tests read it via `Registry::dbg_slot_generation`, and the
+    /// ONE write site (`tests/regression_counter_wrap.rs`'s u64-wrap
+    /// counterfactual) goes through the `unsafe fn
+    /// Registry::dbg_slot_preset_generation` accessor, whose `# Safety` carries
+    /// the no-concurrent-claim precondition that makes the direct write sound.
+    pub(crate) generation: AtomicU64,
     /// The heap value, lazily materialised by `claim` on the slot's first
     /// `FREE → LIVE` transition and reused on later reclaims. Wrapped in
     /// `UnsafeCell` so `claim` can return `&mut HeapCore` through a shared
@@ -408,6 +415,15 @@ impl HeapSlot {
 // the single writer. `MaybeUninit` adds no new hazard: the registry's contract
 // is that `heap` is read only while `state == LIVE` (which means `claim` has
 // init'd it).
+//
+// This single-writer invariant ADDITIONALLY rests on `state`, `generation`,
+// `next_free` and every `Registry` control atomic being `pub(crate)`
+// (task #93 / R4-MS-4): safe code OUTSIDE the crate cannot execute the
+// `LIVE → FREE` transition or push onto `free_slots`, so it cannot smuggle a
+// second owner past the CAS gate. While those fields were `pub`, a safe
+// downstream crate could re-claim a LIVE slot under a thread that still held
+// a cached TLS `*mut HeapCore`, materialising two `&mut HeapCore` over one
+// `UnsafeCell` — exactly the aliasing this proof rules out.
 unsafe impl Sync for HeapSlot {}
 
 // NOTE (no `unsafe impl Send`): `HeapSlot` is deliberately NOT `Send` (task

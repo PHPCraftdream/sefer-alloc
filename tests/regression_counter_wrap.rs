@@ -30,8 +30,6 @@
 
 #![cfg(feature = "alloc-global")]
 
-use core::sync::atomic::Ordering;
-
 use sefer_alloc::registry::tagged_ptr::{
     dbg_empty, dbg_is_empty, dbg_pack, dbg_unpack, DBG_INDEX_BITS, DBG_INDEX_MASK, DBG_TAG_BITS,
 };
@@ -185,22 +183,25 @@ fn generation_crosses_u32_boundary_as_u64() {
     let id = unsafe { (*a).id() } as usize;
 
     let reg = bootstrap::ensure();
-    let slot = &reg.slots[id];
     assert_eq!(
-        slot.state.load(Ordering::Acquire),
+        reg.dbg_slot_state(id),
         STATE_LIVE,
         "claimed slot must be LIVE"
     );
 
     // Preset the generation to just below the old u32 wrap boundary. This slot
     // is ours (we hold the only live handle to it), and generation is written
-    // only by its owner on (re)claim — safe to store here directly (the field
-    // is `pub` under `#[doc(hidden)]`). We pick `u32::MAX - 1` so the next
+    // only by its owner on (re)claim. We pick `u32::MAX - 1` so the next
     // reclaim's `fetch_add(1)` lands EXACTLY on `u32::MAX`, and the one after
     // crosses to `u32::MAX + 1` (> 2^32 - 1), which a u32 cannot represent.
-    let preset: u64 = u32::MAX as u64 - 1; // 2^32 - 2
-    slot.generation.store(preset, Ordering::Release);
-    assert_eq!(slot.generation.load(Ordering::Acquire), preset);
+    // `generation` is `pub(crate)` (task #93 / R4-MS-4); the preset goes through
+    // the `unsafe fn Registry::dbg_slot_preset_generation` accessor.
+    let preset: u64 = u32::MAX as u64 - 1;
+    // SAFETY: this is the sole live handle to the slot (single-threaded test,
+    // no concurrent claim/recycle), and we preset only our own slot's
+    // generation — satisfying `dbg_slot_preset_generation`'s precondition.
+    unsafe { reg.dbg_slot_preset_generation(id, preset) };
+    assert_eq!(reg.dbg_slot_generation(id), preset);
 
     // Recycle → reclaim: each claim bumps generation by exactly 1.
     // SAFETY: `a` was returned by `claim` and not yet recycled.
@@ -209,7 +210,7 @@ fn generation_crosses_u32_boundary_as_u64() {
     assert!(!b.is_null());
     let id_b = unsafe { (*b).id() } as usize;
     assert_eq!(id_b, id, "LIFO reclaim must reuse the same slot");
-    let gen1 = reg.slots[id].generation.load(Ordering::Acquire);
+    let gen1 = reg.dbg_slot_generation(id);
     assert_eq!(
         gen1,
         u32::MAX as u64,
@@ -223,7 +224,7 @@ fn generation_crosses_u32_boundary_as_u64() {
     let c = HeapRegistry::claim();
     assert!(!c.is_null());
     assert_eq!(unsafe { (*c).id() } as usize, id, "still the same slot");
-    let gen2 = reg.slots[id].generation.load(Ordering::Acquire);
+    let gen2 = reg.dbg_slot_generation(id);
     assert_eq!(
         gen2,
         u32::MAX as u64 + 1,
