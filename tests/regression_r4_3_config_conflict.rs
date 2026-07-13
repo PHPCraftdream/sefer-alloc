@@ -23,8 +23,37 @@
 
 #![cfg(feature = "alloc-decommit")]
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use sefer_alloc::registry::HeapRegistry;
 use sefer_alloc::{LargeCacheConfig, SeferAlloc};
+
+// The registry is a process-global static and CONFIG_CONFLICTS is a
+// process-wide counter; both tests below rely on LIFO free_slots reuse
+// landing them on the SAME slot they just recycled. Running them
+// concurrently (cargo test's default) lets one test's claim/recycle
+// interleave with the other's, so a slot reused by test A's differently-
+// configured claim can spuriously trip test B's "no conflict" assertion.
+// Serialize (same established pattern as tests/registry_basic.rs).
+static SERIAL: AtomicBool = AtomicBool::new(false);
+
+struct SerialGuard;
+impl SerialGuard {
+    fn acquire() -> Self {
+        while SERIAL
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            std::hint::spin_loop();
+        }
+        SerialGuard
+    }
+}
+impl Drop for SerialGuard {
+    fn drop(&mut self) {
+        SERIAL.store(false, Ordering::Release);
+    }
+}
 
 /// Two configs that differ in a resolved field (budget_bytes: 64 MiB vs
 /// 128 MiB). `live_config_matches` compares resolved values, so these are a
@@ -37,6 +66,7 @@ const CONFIG_B: LargeCacheConfig = LargeCacheConfig::new().budget_bytes(128 * 10
 /// initialised, and detects the mismatch.
 #[test]
 fn config_conflict_detected_on_recycled_slot() {
+    let _serial = SerialGuard::acquire();
     // 1. Claim + materialise a slot with CONFIG_A.
     let heap1 = HeapRegistry::claim_with_config(CONFIG_A);
     assert!(!heap1.is_null());
@@ -75,6 +105,7 @@ fn config_conflict_detected_on_recycled_slot() {
 /// usage pattern must not trip the signal.
 #[test]
 fn matching_config_does_not_trigger_conflict_signal() {
+    let _serial = SerialGuard::acquire();
     let heap1 = HeapRegistry::claim_with_config(CONFIG_A);
     assert!(!heap1.is_null());
     // SAFETY: heap1 was returned by claim_with_config.

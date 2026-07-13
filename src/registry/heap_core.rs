@@ -184,21 +184,49 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 // forever if the owner thread stops allocating entirely while producers are
 // still freeing into it — a much bigger behavioural change for a
 // `GlobalAlloc` face than this task's "smallest protocol delta" mandate
-// accepts. `RING_PUSH_RETRY_SPINS` bounds the retry to a generous but finite
-// number of `core::hint::spin_loop()`-paced attempts (the same spin-hint
-// idiom already used by `global::fallback::LockGuard`/`bootstrap`'s
-// init-state spin). Within that bound, ANY owner drain (which empties up to
-// the full `RING_CAP = 256` slots in one pass) reopens enough room for the
-// retry to succeed — so the bound only matters for a truly pathological,
-// sustained-overflow workload; the `remote_fanin` harness
-// (`tests/remote_fanin.rs`) is the empirical judge of whether this bound is
-// generous enough in practice. If the bound is exhausted, the push still
-// falls back to the original, documented-sound bounded leak (dropped, both
-// `RemoteFreeRing`'s own `DBG_RING_OVERFLOW`/per-segment `overflow_count`
-// tick as before) — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY
-// this genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which
-// ticks on every individual full-ring push ATTEMPT, including ones a retry
-// goes on to recover).
+// accepts. `RING_PUSH_RETRY_SPINS` bounds the retry to a finite number of
+// `core::hint::spin_loop()`-paced attempts (the same spin-hint idiom already
+// used by `global::fallback::LockGuard`/`bootstrap`'s init-state spin). Within
+// that bound, ANY owner drain (which empties up to the full `RING_CAP = 256`
+// slots in one pass) reopens enough room for the retry to succeed — so the
+// bound only matters for a truly pathological, sustained-overflow workload;
+// the `remote_fanin` harness (`tests/remote_fanin.rs`) is the empirical judge
+// of whether this bound is generous enough in practice. If the bound is
+// exhausted, the push falls through to RAD-4b's `HeapOverflow` second-chance
+// ring (and only if THAT is also saturated, the original documented-sound
+// bounded leak) — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY this
+// genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which ticks
+// on every individual full-ring push ATTEMPT, including ones a retry goes on
+// to recover).
+//
+// ## Calibrated budget (task #99 / round4 finding R2)
+//
+// RAD-4's original value was 262,144 (2^18). The round4 review (finding R2)
+// flagged this: under sustained fan-in, one logical free could burn up to
+// ~524,288 atomic RMWs (each failed push attempt ticks both
+// `DBG_RING_OVERFLOW` and the per-segment `overflow_count`) before conceding.
+// Task #99 calibrated the actual need empirically via a live-owner fan-in
+// sweep {1,2,8,32 producers} against `tests/remote_fanin.rs` as the judge:
+//
+// - A two-phase backoff shape (tight spin + exponential `spin_loop()` padding
+//   between push attempts) was tried first — the idea being that the
+//   atomic-storm cost scales with push-ATTEMPT count, not spin-HINT count.
+//   REJECTED: the backoff gaps caused producers to MISS drain windows the
+//   flat spin catches (a drain empties the full ring in one pass; if no push
+//   attempt polls during that brief window, the capacity goes unused). Under
+//   release-mode contention this lost blocks at just 2 producers
+//   (`DBG_RING_PUSH_RETRY_EXHAUSTED` > 0). The flat spin IS the polling
+//   mechanism — backoff breaks it.
+// - A flat budget of 8,192 (= 32 × `RING_CAP = 256`, giving the owner ~32
+//   drain opportunities) was measured sufficient: `DBG_RING_PUSH_RETRY_
+//   EXHAUSTED` stays at 0 across the full sweep (verified in BOTH debug and
+//   release, 3 consecutive runs each, plus an isolated 32-producer release
+//   check). The review's suggested "8-32 attempts" was measured far too
+//   small for this codebase's ring/drain geometry.
+// - The 32× budget cut (262,144 → 8,192) reduces the worst-case per-overflow
+//   atomic-storm cost proportionally, and makes `remote_fanin`'s debug test
+//   ~27× faster (37.8s → 1.4s) — the retry path is exercised identically,
+//   just with a shorter spin.
 // Under miri (interpreted execution, orders of magnitude slower than
 // native), the full retry budget makes an overflow-heavy test impractically
 // slow — a single genuinely-exhausted retry loop at the native bound was
@@ -213,7 +241,7 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 // here to a workload-size constant instead. Real (non-miri) builds are
 // completely unaffected.
 #[cfg(all(feature = "alloc-xthread", not(miri)))]
-const RING_PUSH_RETRY_SPINS: u32 = 262_144;
+const RING_PUSH_RETRY_SPINS: u32 = 8_192;
 #[cfg(all(feature = "alloc-xthread", miri))]
 const RING_PUSH_RETRY_SPINS: u32 = 64;
 
@@ -1869,8 +1897,8 @@ impl HeapCore {
         // (its thread exited, nobody has re-claimed it), no drain can happen
         // until a future claim, so spinning cannot succeed. Without this gate,
         // EVERY free into a full ring of an owner-less segment paid the whole
-        // `RING_PUSH_RETRY_SPINS` budget (262,144 spin+CAS attempts ≈
-        // milliseconds each in a debug build) — a send-then-exit producer
+        // `RING_PUSH_RETRY_SPINS` budget (8,192 spin+CAS attempts under the
+        // task #99 retune; was 262,144 pre-calibration) — a send-then-exit producer
         // pattern (`tests/race_norecycle.rs`: producers exit while ~10⁵ of
         // their blocks are still in flight to a long-lived freeing consumer)
         // multiplied that into MINUTES of aggregate dealloc() stall, tripping

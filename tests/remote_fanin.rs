@@ -439,7 +439,123 @@ fn remote_fanin_owner_starved_residual_is_bounded() {
     unsafe { HeapRegistry::recycle(heap) };
 }
 
-/// ── Harness 3: minimal miri UB-detection target ─────────────────────────
+/// ── Harness 2.5: high-contention live-owner fan-in — task #99 (R2)
+/// calibrated-budget judge ──────────────────────────────────────────────────
+///
+/// Same realistic-concurrent shape as harness 1, but with 32 producers (the
+/// upper end of the round4 review's suggested sweep) instead of 8. This test
+/// was added by task #99 (finding R2) to lock in the calibrated
+/// `RING_PUSH_RETRY_SPINS` budget: the value was reduced 32× (262,144 → 8,192
+/// = 32 × `RING_CAP`), and this test proves that reduction does NOT cause
+/// `DBG_RING_PUSH_RETRY_EXHAUSTED` to advance under high-but-normal fan-in.
+/// A future change that reduces the budget further (or switches to a backoff
+/// shape that misses drain windows) would make this test fail — it is the
+/// counterfactual guard on the calibration.
+///
+/// **Native-only** (`#[cfg(not(miri))]`) — see harness 1's identical rationale.
+#[cfg(not(miri))]
+#[test]
+fn remote_fanin_high_contention_budget_is_sufficient() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    const N: usize = 4_000;
+    const PRODUCERS: usize = 32;
+    let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let heap_addr = heap as usize;
+
+    let overflow_before = DBG_RING_OVERFLOW.load(Ordering::Relaxed);
+    let exhausted_before = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed);
+
+    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "round 1 alloc[{i}] returned null");
+        ptrs.push(p);
+    }
+
+    let addrs: Vec<usize> = ptrs.iter().map(|&p| p as usize).collect();
+    let chunk = N.div_ceil(PRODUCERS);
+    let mut handles = Vec::with_capacity(PRODUCERS);
+    for slice in addrs.chunks(chunk) {
+        let slice = slice.to_vec();
+        handles.push(thread::spawn(move || {
+            let _ = bootstrap::ensure();
+            let remote_heap = HeapRegistry::claim();
+            assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+            for addr in slice {
+                unsafe { (*remote_heap).dealloc(addr as *mut u8, layout) };
+            }
+            unsafe { HeapRegistry::recycle(remote_heap) };
+        }));
+    }
+
+    // The OWNER concurrently allocates WITHOUT self-freeing, forcing every
+    // alloc() to fall through to find_segment_with_free → ring drain — the
+    // same live-owner drain pattern harness 1 uses.
+    let owner_rounds: thread::JoinHandle<()> = thread::spawn(move || {
+        let heap = heap_addr as *mut sefer_alloc::registry::HeapCore;
+        let mut batch: Vec<*mut u8> = Vec::with_capacity(N * 2);
+        for i in 0..(N * 2) {
+            let p = unsafe { (*heap).alloc(layout) };
+            if p.is_null() {
+                continue;
+            }
+            unsafe {
+                std::ptr::write_bytes(p, (i & 0xFF) as u8, BLOCK_SIZE);
+            }
+            batch.push(p);
+        }
+        for p in batch {
+            unsafe { (*heap).dealloc(p, layout) };
+        }
+    });
+
+    for h in handles {
+        h.join().expect("producer thread must not panic");
+    }
+    owner_rounds.join().expect("owner thread must not panic");
+
+    let overflow_delta = DBG_RING_OVERFLOW.load(Ordering::Relaxed) - overflow_before;
+    assert!(
+        overflow_delta > 0,
+        "remote_fanin_high_contention harness did not force any ring overflow \
+         (DBG_RING_OVERFLOW delta == 0) — this run is a VACUOUS counterfactual. \
+         Increase N / PRODUCERS."
+    );
+
+    // Final reclaim pass.
+    let heap = heap_addr as *mut sefer_alloc::registry::HeapCore;
+    let mut ptrs2: Vec<*mut u8> = Vec::with_capacity(N);
+    for i in 0..N {
+        let p = unsafe { (*heap).alloc(layout) };
+        assert!(!p.is_null(), "final alloc[{i}] returned null");
+        ptrs2.push(p);
+    }
+
+    let exhausted_delta = DBG_RING_PUSH_RETRY_EXHAUSTED.load(Ordering::Relaxed) - exhausted_before;
+    eprintln!(
+        "remote_fanin_high_contention: overflow_attempts_delta={overflow_delta} \
+         exhausted_delta={exhausted_delta} (N={N}, PRODUCERS={PRODUCERS})"
+    );
+    assert_eq!(
+        exhausted_delta, 0,
+        "DBG_RING_PUSH_RETRY_EXHAUSTED advanced by {exhausted_delta} under a 32-producer \
+         live-owner fan-in — the calibrated RING_PUSH_RETRY_SPINS budget (8,192 = 32 × RING_CAP) \
+         is no longer sufficient at this contention level. Either the budget was reduced too \
+         aggressively or the retry shape changed in a way that misses drain windows."
+    );
+
+    for &p in &ptrs2 {
+        unsafe { (*heap).dealloc(p, layout) };
+    }
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// ── Harness 3: minimal miri UB-detection target ─────────────────────────────────
 ///
 /// The two harnesses above are deliberately heavy stress tests (thousands
 /// of ops across many threads) — appropriate for NATIVE execution, where
