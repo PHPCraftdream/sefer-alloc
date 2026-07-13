@@ -657,14 +657,24 @@ impl AllocCore {
             out.len(),
             want,
         );
-        for (i, slot) in out.iter_mut().take(want).enumerate() {
+        // R4-2 (code_quality_review #2): the `debug_assert!` above vanishes in
+        // a release build, so a release caller passing `out.len() < want`
+        // would have `.take(want)` silently iterate only `out.len()` slots
+        // (slice iteration is bounds-safe) yet return `want` — a lying return
+        // (caller believes more slots are initialised than were written). Clamp
+        // `take` to the actual writable slot count and return THAT, so the
+        // return value is truthful in every build profile. The `debug_assert!`
+        // stays as a contract signal for debug callers who violate the intended
+        // `out.len() >= want` precondition.
+        let take = want.min(out.len());
+        for (i, slot) in out.iter_mut().take(take).enumerate() {
             let ptr = self.alloc_small(class_idx);
             if ptr.is_null() {
                 return i; // OOM or no more capacity
             }
             *slot = ptr;
         }
-        want
+        take
     }
 
     /// Э1 (task #147) — **bump-direct batched carve**. Fill `out` with up to

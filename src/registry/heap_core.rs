@@ -1598,6 +1598,20 @@ impl HeapCore {
         #[cfg(feature = "alloc-xthread")]
         {
             let base = os::segment_base_of_ptr(ptr);
+            // R4-2 (memory_safety_review, R4-MS-1/MS-2): guard the degenerate
+            // base BEFORE the raw `magic_at` read. `segment_base_of_ptr` masks
+            // the address down to the SEGMENT boundary; a garbage pointer like
+            // `1 as *mut u8` masks to `base == 0` (null), and `magic_at(0)`
+            // would then dereference address `offset_of!(SegmentHeader, magic)`
+            // with no guard — an immediate read of a structurally-impossible
+            // "segment". Reject null (and anything that masks to null) as a
+            // foreign pointer. This does NOT attempt cross-heap staleness
+            // detection (case (a) vs (b) in `dealloc_foreign_slow`); it closes
+            // only the narrower class where `base` cannot be a real segment by
+            // construction.
+            if base.is_null() {
+                return core::ptr::null_mut();
+            }
             if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
                 return core::ptr::null_mut();
             }
@@ -1729,6 +1743,19 @@ impl HeapCore {
         // `write_header` on `carve_block` (the §11 data race); reading each
         // field individually via its `offset_of!` offset touches bytes
         // disjoint from the owner-mutated `bump`, so there is no race.
+        //
+        // R4-2 (memory_safety_review, R4-MS-1/MS-2): the first field read is
+        // `magic_at(base)`. For a garbage pointer like `1 as *mut u8`,
+        // `segment_base_of_ptr` masks to `base == 0`, so `magic_at(0)` would
+        // dereference address `offset_of!(SegmentHeader, magic)` with no guard
+        // — an immediate read of a structurally-impossible "segment". Reject a
+        // null base here as a safe no-op (the same outcome the magic mismatch
+        // below produces for a non-segment base). This narrows, but does not
+        // close, the cross-heap staleness window noted above (case (a) vs (b)):
+        // a base that masks to null cannot be a real segment by construction.
+        if base.is_null() {
+            return;
+        }
         if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
             return;
         }
