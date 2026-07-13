@@ -81,6 +81,8 @@ pub use heap_core::{DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED};
 #[doc(hidden)]
 pub use crate::alloc_core::deferred_large::DBG_LARGE_XTHREAD_RECLAIMED;
 #[doc(hidden)]
+pub use heap_registry::config_conflicts_total;
+#[doc(hidden)]
 pub use heap_registry::heaps_claimed_high_water;
 #[cfg(feature = "alloc-decommit")]
 #[doc(hidden)]

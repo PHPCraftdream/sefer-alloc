@@ -242,6 +242,16 @@ impl SeferAlloc {
     /// slot/thread. There is no cross-instance config independence. If you
     /// need distinct large-cache configs, run separate processes — do not
     /// rely on per-instance config under a single global registry.
+    ///
+    /// **Detecting the conflict (task #95 / N2):** when a later `claim_with_config`
+    /// hits a slot that was already materialised with a *different* config, the
+    /// mismatch is no longer fully silent: it is counted in
+    /// [`config_conflicts`](AllocStats::config_conflicts) (visible via
+    /// [`stats()`](Self::stats)), and a `debug_assert!` fires in debug builds.
+    /// The slot's existing config still wins (this is a detect-and-signal
+    /// fix, not a reconfigure), but a non-zero `config_conflicts` is the
+    /// signature that multiple incompatible instances are competing for the
+    /// same registry slots.
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {
@@ -364,6 +374,11 @@ impl SeferAlloc {
             // is always defined here.
             foreign_or_unroutable_frees:
                 crate::alloc_core::AllocCore::dbg_foreign_or_unroutable_frees(),
+
+            #[cfg(feature = "alloc-decommit")]
+            config_conflicts: crate::registry::config_conflicts_total(),
+            #[cfg(not(feature = "alloc-decommit"))]
+            config_conflicts: 0,
         }
     }
 }

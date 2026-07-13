@@ -127,6 +127,7 @@ use super::large_cache_mode::LargeCacheMode;
 /// Kept in its own struct to make the intent clear and to allow
 /// `dbg_set_decay_config` to swap it in tests.
 #[cfg(feature = "alloc-decommit")]
+#[derive(PartialEq)]
 pub(super) struct LargeCacheDecayConfig {
     /// Fraction of the excess to release per tick, in basis points.
     /// 1000 = 10%, 5000 = 50%, 10000 = 100%.
@@ -588,6 +589,44 @@ impl AllocCore {
         let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
         core.pool_cap = by_segments.min(by_bytes);
         Some(core)
+    }
+
+    /// Compare this heap's live (resolved) cache/pool policy against a
+    /// requested [`LargeCacheConfig`]. Returns `true` when the resolved
+    /// values match what [`new_with_config`](Self::new_with_config) would
+    /// apply from `requested`.
+    ///
+    /// Used by `HeapRegistry::claim_with_config` (task #95 / N2) to detect
+    /// that a recycled slot's pre-existing policy silently overrides a
+    /// different config passed by a later claimant. Comparing **resolved**
+    /// values (not the raw `Option` fields of `LargeCacheConfig`) means two
+    /// configs that resolve identically — e.g. `budget_bytes(None)` vs
+    /// `LargeCacheConfig::DEFAULT` — are correctly treated as a match, so
+    /// this only flags genuine policy differences, not stylistic builder
+    /// variation.
+    ///
+    /// **Drift hazard:** the comparisons here MUST stay in sync with the
+    /// fields [`new_with_config`](Self::new_with_config) sets. If a future
+    /// change adds a new config-derived field to `AllocCore`, add the
+    /// matching comparison here.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn live_config_matches(
+        &self,
+        requested: &super::large_cache_config::LargeCacheConfig,
+    ) -> bool {
+        if self.large_cache_budget_bytes != requested.resolved_budget_bytes() {
+            return false;
+        }
+        if self.decay_config != LargeCacheDecayConfig::from_config(requested) {
+            return false;
+        }
+        if self.large_cache_mode != requested.resolved_mode() {
+            return false;
+        }
+        let pool_cfg = requested.resolved_pool();
+        let by_segments = pool_cfg.resolved_pool_segments();
+        let by_bytes = pool_cfg.resolved_pool_byte_cap() / SEGMENT;
+        self.pool_cap == by_segments.min(by_bytes)
     }
 
     /// Inner bootstrap: reserve the primordial segment and hand-carve its

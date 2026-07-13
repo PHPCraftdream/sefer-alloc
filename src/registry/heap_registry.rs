@@ -34,7 +34,7 @@
 // is a hard error. Every `unsafe` block carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::bootstrap::{
     abandoned_head_is_empty, ensure, pack_abandoned_head, unpack_abandoned_head, Registry,
@@ -47,6 +47,22 @@ use crate::alloc_core::segment_header::{
     pack_owner, unpack_owner_gen, unpack_owner_id, unpack_owner_state, SegmentMeta, ABANDONED_TAIL,
     OWNER_ID_NONE, OWNER_STATE_ABANDONED,
 };
+
+/// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
+/// — times `claim_with_config` found an already-materialised slot whose live
+/// (resolved) cache/pool policy differs from the requested config. Each such
+/// event means the slot's pre-existing config silently overrides the caller's
+/// request (first-materialisation-wins semantics; see
+/// `SeferAlloc::with_config`'s doc).
+///
+/// This is a **cold-path counter** (incremented at most once per thread bind,
+/// never on the alloc/dealloc hot path), so — unlike the `alloc-stats`-gated
+/// hot-path counters — the increment is ALWAYS compiled in (not gated behind
+/// `alloc-stats`). Reads `0` in a build without `alloc-decommit` (where
+/// `claim_with_config` does not exist).
+///
+/// Relaxed ordering — diagnostic only, no synchronization obligation.
+static CONFIG_CONFLICTS: AtomicU64 = AtomicU64::new(0);
 
 /// The global heap slot table. All methods operate on the process-global
 /// [`Registry`] returned by [`ensure`]; the type itself carries no state (it
@@ -150,6 +166,17 @@ impl HeapRegistry {
     /// as-is; its large-cache config was set at first materialisation and
     /// persists.
     ///
+    /// **Config-conflict detection (task #95 / N2):** when a re-claim hits
+    /// an already-initialised slot whose live (resolved) policy differs from
+    /// `config`, the mismatch is counted in [`CONFIG_CONFLICTS`] (visible via
+    /// [`SeferAlloc::stats`](crate::SeferAlloc::stats)'s `config_conflicts`
+    /// field) and surfaced with a `debug_assert!` in debug builds. The slot's
+    /// existing config silently wins — this is a detect-and-signal fix, not a
+    /// reconfigure (reconfigure-with-trim needs old-owner quiescence that
+    /// does not cleanly exist for the general case). The counter is the
+    /// release-safe signal; the `debug_assert!` is the development-time loud
+    /// signal.
+    ///
     /// **OOM-on-materialisation push-back:** identical to `claim`'s — see
     /// that method's doc comment for the full rationale. On `HeapCore::new_with_config`
     /// returning `None`, the slot is CASed back to `FREE` and pushed onto
@@ -195,6 +222,35 @@ impl HeapRegistry {
                 // Publish readiness — see the identical store in `claim` above
                 // for the full rationale (task #133 hardening).
                 slot.initialised.store(true, Ordering::Release);
+            } else {
+                // N2 (task #95): re-claim of an already-materialised slot.
+                // The slot's existing config (set at first materialisation)
+                // silently wins. Compare the requested config against the
+                // slot's live policy; on mismatch, count + signal.
+                //
+                // SAFETY: slot is LIVE and initialised; we are the sole
+                // writer (just won the FREE→LIVE CAS). The comparison is a
+                // read-only `&self` method on `HeapCore` — no mutation, no
+                // hazard.
+                let heap_ptr = slot.heap.get().cast::<HeapCore>();
+                let matches = unsafe { (*heap_ptr).live_config_matches(&config) };
+                if !matches {
+                    // Count FIRST (always compiled in — this is a cold path,
+                    // one increment per mismatched bind, not a hot-path RMW
+                    // worth gating behind `alloc-stats`).
+                    CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
+                    // Development-time loud signal. In release this is
+                    // compiled out, leaving the counter as the silent signal.
+                    // The counter was already incremented above, so even if
+                    // this fires the diagnostic is observable via `stats()`.
+                    debug_assert!(
+                        matches,
+                        "sefer-alloc: config conflict on recycled heap slot {} — \
+                         the slot's existing config silently overrides the \
+                         requested one (check SeferAlloc::stats().config_conflicts)",
+                        idx
+                    );
+                }
             }
             // SAFETY: slot is LIVE and initialised; we are sole writer.
             return slot.heap.get().cast::<HeapCore>();
@@ -943,6 +999,19 @@ fn abandon_one_segment(reg: &Registry, base: *mut u8, owner_id: u32) {
 #[must_use]
 pub fn heaps_claimed_high_water() -> u32 {
     ensure().count.load(Ordering::Relaxed)
+}
+
+/// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
+/// — times `claim_with_config` found an already-materialised slot whose live
+/// (resolved) cache/pool policy differs from the requested config. Backs
+/// [`AllocStats::config_conflicts`](crate::AllocStats::config_conflicts).
+/// See [`CONFIG_CONFLICTS`] for the full rationale. A plain relaxed atomic
+/// load — diagnostic only, no ordering obligation. Reads `0` in a build
+/// without `alloc-decommit` (where `claim_with_config` does not exist).
+#[doc(hidden)]
+#[must_use]
+pub fn config_conflicts_total() -> u64 {
+    CONFIG_CONFLICTS.load(Ordering::Relaxed)
 }
 
 /// DIAGNOSTIC (task #133 → W3): process-wide magazine (tcache) hit total —

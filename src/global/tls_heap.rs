@@ -236,6 +236,30 @@ impl Drop for AbandonGuard {
         unsafe {
             (*heap).drain_large_deferred_free();
         }
+        // task #95 / N1 — teardown trim. Flush every tcache class, drain the
+        // small-segment pool, and evict the entire large cache, returning
+        // retained memory to the OS. Same placement window as the
+        // `drain_large_deferred_free` call above: BEFORE the `recycle` CAS,
+        // while this thread is still the slot's sole owner/writer
+        // (`STATE_LIVE`). Without this trim, a wave of short-lived threads
+        // leaves tcache-buffered blocks, pooled small segments (up to 16 MiB
+        // each), and cached large spans pinned on each recycled slot —
+        // RSS/commit stays proportional to peak thread count, not current
+        // load (performance_review.md finding N1).
+        //
+        // Cost: thread exit is definitionally cold (runs once per thread,
+        // never on the alloc/dealloc hot path). Each sub-step starts with a
+        // cheap check (tcache class count == 0 → skip; pool empty → skip;
+        // large cache empty → skip) so a heap that already has nothing
+        // retained costs only a handful of loads on a path that is already
+        // off every benched hot path.
+        //
+        // SAFETY: same as `drain_large_deferred_free` above — `heap` was
+        // returned by `HeapRegistry::claim` and is still LIVE; this thread
+        // is the heap's sole owner until the CAS below flips it to FREE.
+        unsafe {
+            (*heap).trim_for_recycle();
+        }
         // Phase 12.5 (architectural turn): thread death = RELEASE THE SLOT
         // ONLY. We do NOT abandon/walk/clear the heap. The HeapCore (with ALL
         // its segments + the inline TFS head) STAYS WHOLE in the slot — it is

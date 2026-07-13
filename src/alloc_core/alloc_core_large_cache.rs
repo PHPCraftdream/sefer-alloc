@@ -112,6 +112,19 @@ impl AllocCore {
         }
     }
 
+    /// Evict the **entire** large cache — release every cached span's OS
+    /// reservation until the cache is empty. Called from the teardown-trim
+    /// path (`HeapCore::trim_for_recycle`, task #95/N1) to return retained
+    /// large segments to the OS on thread exit rather than leaving them
+    /// mapped on a recycled slot. Each eviction releases the FIFO-oldest
+    /// entry via [`evict_one_oldest`](Self::evict_one_oldest); the loop
+    /// terminates when the cache is empty (`evict_one_oldest` returns
+    /// `false`). Cost: O(LARGE_CACHE_SLOTS) — thread exit is cold.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn evict_all(&mut self) {
+        while self.evict_one_oldest() {}
+    }
+
     // ── Phase 2 test seams ────────────────────────────────────────────────────
 
     /// TEST-ONLY (Phase 2): force a decay tick by rewinding `last_decay_tick`

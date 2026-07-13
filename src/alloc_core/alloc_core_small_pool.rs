@@ -521,10 +521,11 @@ impl AllocCore {
     /// Mechanism 2 (task #51): release every pooled small segment (reset +
     /// `table.recycle`), returning the count drained. Used both by the
     /// large-alloc OS-reservation-failure fallback (the pool is a reclaimable
-    /// soft reserve — see `alloc_large_slow`) and by the `dbg_drain_small_pool`
-    /// test seam.
+    /// soft reserve — see `alloc_large_slow`), by the `dbg_drain_small_pool`
+    /// test seam, and by the production teardown-trim path
+    /// (`HeapCore::trim_for_recycle`, task #95 / N1).
     #[cfg(feature = "alloc-decommit")]
-    pub(super) fn drain_small_pool(&mut self) -> usize {
+    pub(crate) fn drain_small_pool(&mut self) -> usize {
         let mut drained = 0usize;
         while let Some(base) = self.pop_pooled_segment() {
             Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);

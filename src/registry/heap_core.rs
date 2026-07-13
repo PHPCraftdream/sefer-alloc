@@ -2422,29 +2422,33 @@ impl HeapCore {
 
     /// TEST-ONLY (Mechanism 2, task #51): force-drain this heap's
     /// empty-small-segment hysteresis pool (release + recycle every pooled
-    /// segment). Forwards to `AllocCore::dbg_drain_small_pool`. Used by
-    /// decommit tests that run through the `SeferAlloc`/`HeapRegistry` face
+    /// segment). Forwards to `AllocCore::drain_small_pool` — the production
+    /// teardown-trim primitive (see [`trim_for_recycle`](Self::trim_for_recycle)).
+    /// Used by decommit tests that run through the `SeferAlloc`/`HeapRegistry` face
     /// (where `claim_with_config` cannot reliably disable the pool on a reused
     /// slot) to deterministically observe the decommit that a pooled segment
     /// would otherwise absorb. Returns the number of segments drained.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_drain_small_pool(&mut self) -> usize {
-        self.core.dbg_drain_small_pool()
+        self.core.drain_small_pool()
     }
 
-    /// TEST-ONLY (P5): force-flush every class's magazine back to the
-    /// substrate. Used by decommit-soak tests to drain magazine-buffered
-    /// blocks before asserting decommit invariants.
+    /// Flush every tcache class's magazine back to the substrate via
+    /// `flush_class` → `dealloc_small` → `dec_live` → `maybe_decommit`.
     ///
     /// After this call, every magazine slot is empty (`count[c] == 0` for
     /// all classes) and the blocks have been returned to their owning
-    /// segments via `flush_class` → `dealloc_small` → `dec_live` →
-    /// `maybe_decommit`. If any segment reaches `live_count == 0` during
-    /// the flush, decommit fires.
-    #[doc(hidden)]
+    /// segments. If any segment reaches `live_count == 0` during the flush,
+    /// decommit/release fires (or the segment is pooled, subject to the
+    /// pool's cap).
+    ///
+    /// This is the production teardown-trim primitive (task #95 / N1),
+    /// called from [`trim_for_recycle`](Self::trim_for_recycle). The
+    /// `#[doc(hidden)] pub dbg_flush_all` test hook delegates here so test
+    /// coverage is preserved.
     #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-    pub fn dbg_flush_all(&mut self) {
+    pub(crate) fn flush_all_tcache(&mut self) {
         use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
         for c in 0..SMALL_CLASS_COUNT {
             let n = self.tcache.classes[c].count as usize;
@@ -2465,5 +2469,60 @@ impl HeapCore {
                 .flush_class(c, &self.tcache.classes[c].slots[0..n]);
             self.tcache.classes[c].count = 0;
         }
+    }
+
+    /// TEST-ONLY (P5): force-flush every class's magazine back to the
+    /// substrate. Delegates to the production [`flush_all_tcache`](Self::flush_all_tcache)
+    /// teardown-trim primitive. Used by decommit-soak tests to drain
+    /// magazine-buffered blocks before asserting decommit invariants.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    pub fn dbg_flush_all(&mut self) {
+        self.flush_all_tcache();
+    }
+
+    /// Production teardown trim (task #95 / N1): flush every tcache class,
+    /// drain the small-segment pool, and evict the entire large cache.
+    ///
+    /// Called by the TLS `AbandonGuard::drop` on thread exit, BEFORE the
+    /// `HeapRegistry::recycle` CAS flips the slot `LIVE → FREE`. At that
+    /// point this thread is still the slot's sole owner/writer (same
+    /// single-writer window every other mutation relies on), so no
+    /// cross-thread quiescence is needed.
+    ///
+    /// **Why:** without this trim, a wave of short-lived threads leaves
+    /// tcache-buffered blocks, pooled small segments (up to 16 MiB each),
+    /// and cached large spans pinned on each recycled slot — RSS/commit
+    /// stays proportional to the peak thread count, not the current load.
+    /// Draining here returns retained memory to the OS on the cold thread-
+    /// exit path (never on the alloc/dealloc hot path).
+    ///
+    /// Each sub-operation carries its own feature gate; in a build without
+    /// the relevant feature the corresponding step compiles to nothing.
+    pub(crate) fn trim_for_recycle(&mut self) {
+        // Flush every tcache class → blocks return to segments → segments
+        // may empty → decommit/release or pool.
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        self.flush_all_tcache();
+        // Drain the small-segment hysteresis pool → release every pooled
+        // segment to the OS. Evict the entire large cache → release every
+        // cached span.
+        #[cfg(feature = "alloc-decommit")]
+        {
+            self.core.drain_small_pool();
+            self.core.evict_all();
+        }
+    }
+
+    /// Compare this heap's live (resolved) cache/pool policy against a
+    /// requested config. Forwards to `AllocCore::live_config_matches`.
+    /// Used by `HeapRegistry::claim_with_config` (N2) to detect a config
+    /// mismatch on a recycled, already-materialised slot.
+    #[cfg(feature = "alloc-decommit")]
+    pub(crate) fn live_config_matches(
+        &self,
+        requested: &crate::alloc_core::LargeCacheConfig,
+    ) -> bool {
+        self.core.live_config_matches(requested)
     }
 }

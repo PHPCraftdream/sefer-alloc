@@ -171,4 +171,26 @@ pub struct AllocStats {
     /// `--features "…​ alloc-stats"` to get the real count. Also `0` in a build
     /// without `alloc-global` (no `dealloc` face at all).
     pub foreign_or_unroutable_frees: u64,
+
+    /// Number of times `claim_with_config` found an already-materialised
+    /// registry slot whose live (resolved) large-cache/pool policy differs
+    /// from the requested config. Each such event means the slot's
+    /// pre-existing config silently overrides the caller's request
+    /// (first-materialisation-wins semantics — see
+    /// [`SeferAlloc::with_config`](super::SeferAlloc::with_config)'s doc for
+    /// the full binding-semantics explanation).
+    ///
+    /// **This is the field to monitor when running multiple `SeferAlloc`
+    /// instances with different configs in one process** (unusual and
+    /// effectively unsupported — see `with_config`'s doc). In the normal
+    /// single-global-allocator case this stays at `0`.
+    ///
+    /// Unlike the hot-path counters (`tcache_hits`, `large_cache_hits`,
+    /// `foreign_or_unroutable_frees`), this counter's increment is NOT gated
+    /// behind `alloc-stats`: it lives on the cold claim/bind path (at most
+    /// one increment per thread bind, never on the alloc/dealloc fast path),
+    /// so there is no perf cost to always compiling it in. Requires the
+    /// `alloc-decommit` feature (where `claim_with_config` exists); `0`
+    /// otherwise.
+    pub config_conflicts: u64,
 }
