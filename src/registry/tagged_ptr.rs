@@ -8,12 +8,11 @@
 //! defeated because the re-push bumps the tag, so A's CAS on `(X, old_tag)`
 //! fails.
 //!
-//! (Phase 12.4: the `abandoned_segs` stack previously also used `TaggedPtr`,
-//! which stored the segment base in the low 32 bits and truncated addresses
-//! above 4 GiB — FINDINGS №1. It now uses a dedicated intrusive
-//! head+next layout in [`super::bootstrap`] that packs the full 64-bit base
-//! with the ABA tag in the SEGMENT-alignment low bits. `TaggedPtr` is
-//! henceforth `free_slots`-only.)
+//! (Historical note: an abandoned-segments stack previously also used
+//! `TaggedPtr`, storing the segment base in the low 32 bits and truncating
+//! addresses above 4 GiB — FINDINGS №1. Phase 12.4 moved it to a dedicated
+//! intrusive head+next layout, and task #97 / R4-5 removed that stack
+//! entirely. `TaggedPtr` is `free_slots`-only.)
 //!
 //! ## Why 48-bit tags (task W7a)
 //!
@@ -58,14 +57,11 @@
 //! `TaggedPtr` itself never casts a `*mut T` to/from its packed `u64` word —
 //! `free_slots` packs a plain `u32` SLOT INDEX (not a pointer), so there is
 //! no provenance to reason about here at all. It is strict-provenance-clean
-//! by construction, trivially. This is a DELIBERATE structural difference
-//! from `abandoned_segs` (see `super::bootstrap`'s "Provenance model"
-//! section): the doc comment above (§"For `abandoned_segs`...") describing
-//! bases packed via `TaggedPtr` is HISTORICAL — Phase 12.4 moved
-//! `abandoned_segs` off `TaggedPtr` onto the dedicated intrusive head+next
-//! layout in `bootstrap.rs` specifically because a raw pointer address does
-//! not fit this module's "pure integer, no provenance" contract cleanly.
-//! `TaggedPtr` remains `free_slots`-only, as the note above already states.
+//! by construction, trivially. (A removed abandoned-segments stack was the
+//! one former consumer of `TaggedPtr` that packed a raw pointer address;
+//! task #97 / R4-5 deleted it — see `super::bootstrap`'s "Provenance model"
+//! section for the exposed-provenance class that remains, on the
+//! `deferred_large` stack.)
 
 /// Number of low bits reserved for the index/value. The high bits of the
 /// `u64` word carry the tag.

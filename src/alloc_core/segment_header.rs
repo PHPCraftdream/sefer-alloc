@@ -52,48 +52,50 @@ use super::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
 pub(crate) const SEGMENT_MAGIC: u32 = 0x5E_F5_E0_01;
 
 // ---------------------------------------------------------------------------
-// Phase 12.4 — segment ownership state (the M9 adoption linearization point).
+// Segment ownership state (the `owner_state: u64` field).
 //
 // Each small/primordial segment carries an `owner_state: u64` field packing:
 //
-//   bits [0]      : state    — 0 = LIVE (owned by a heap), 1 = ABANDONED
+//   bits [0]      : state    — 0 = LIVE (owned by a heap). Always LIVE today:
+//                              the abandoned-segments / adoption substrate that
+//                              wrote the `1 = ABANDONED` value was removed
+//                              (task #97 / R4-5); the bit is retained in the
+//                              packing for layout stability but is structurally
+//                              always 0 now.
 //   bits [1..32]  : owner_id — the owning heap's registry slot index
 //                              (MAX_HEAPS = 4096 ≪ 2^31, so 31 bits is ample)
-//   bits [32..63] : generation — bumped on each adopt; the M9 coherence key
-//                                (a stale pointer reading an old generation
-//                                refuses — see §2.4 / §2.6 M9)
+//   bits [32..63] : generation — the coherence key read by cross-thread free
+//                                routing (a stale pointer reading an old
+//                                generation is routed to the slow path).
 //
-// The Abandoned→Live CAS on `owner_state` is the SINGLE linearization point
-// of adoption (M9): exactly one adopter wins per generation. The packing is
-// plain data (laid down / read through the `node` seam, like the rest of the
-// header) so this file stays `unsafe`-free.
+// The packing is plain data (laid down / read through the `node` seam, like
+// the rest of the header) so this file stays `unsafe`-free.
 //
 // `cfg_attr(not(alloc-global), allow(dead_code))`: the helpers below are used
-// by the registry's abandon/adopt path, which is `alloc-global`-gated. Without
-// `alloc-global` the registry does not compile, so the helpers appear unused —
-// but they are part of the segment header's documented contract (the fields
-// exist in every build's layout), so we silence the dead-code lint rather than
-// gate the fields themselves.
+// by the registry's owner-resolution path, which is `alloc-global`-gated.
+// Without `alloc-global` the registry does not compile, so the helpers appear
+// unused — but they are part of the segment header's documented contract (the
+// fields exist in every build's layout), so we silence the dead-code lint
+// rather than gate the fields themselves.
 // ---------------------------------------------------------------------------
 
 /// Owner-state bit layout.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 pub(crate) const OWNER_STATE_LIVE: u64 = 0;
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-pub(crate) const OWNER_STATE_ABANDONED: u64 = 1;
 /// Mask for the state bit (bit 0).
 const OWNER_STATE_MASK: u64 = 0x1;
 /// Bit-shift for the owner heap id field (starts at bit 1).
 const OWNER_ID_SHIFT: u32 = 1;
 const OWNER_ID_MASK: u64 = ((1u64 << 31) - 1) << OWNER_ID_SHIFT;
-/// Bit-shift for the generation field (starts at bit 32).
+/// Bit-shift for the generation field (starts at bit 32). Retained because
+/// [`pack_owner`] packs a generation (always 0 now that the adoption substrate
+/// that bumped it is gone — task #97 / R4-5; the field is kept for layout
+/// stability).
 const OWNER_GEN_SHIFT: u32 = 32;
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-const OWNER_GEN_MASK: u64 = (u32::MAX as u64) << OWNER_GEN_SHIFT;
 
 /// Sentinel owner id meaning "not bound to any heap yet" (a freshly-reserved
 /// segment before its first stamp). Distinct from a real slot index (which is
-/// `< MAX_HEAPS`); adoption skips such segments.
+/// `< MAX_HEAPS`).
 pub(crate) const OWNER_ID_NONE: u32 = 0x7FFF_FFFF;
 
 /// Pack `(state, owner_id, generation)` into one `u64` word (the layout
@@ -107,24 +109,11 @@ pub(crate) const fn pack_owner(state: u64, owner_id: u32, generation: u32) -> u6
         | ((generation as u64) << OWNER_GEN_SHIFT)
 }
 
-/// Unpack the state bit (0 = LIVE, 1 = ABANDONED) from an owner-state word.
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-#[inline(always)]
-pub(crate) const fn unpack_owner_state(word: u64) -> u64 {
-    word & OWNER_STATE_MASK
-}
-
 /// Unpack the owner heap id from an owner-state word.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 #[inline(always)]
 pub(crate) const fn unpack_owner_id(word: u64) -> u32 {
     ((word & OWNER_ID_MASK) >> OWNER_ID_SHIFT) as u32
-}
-
-/// Unpack the generation from an owner-state word.
-#[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-pub(crate) const fn unpack_owner_gen(word: u64) -> u32 {
-    ((word & OWNER_GEN_MASK) >> OWNER_GEN_SHIFT) as u32
 }
 
 /// The number of pages in one segment (`SEGMENT / PAGE` = 1024 for the default

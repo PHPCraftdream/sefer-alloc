@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — removal of the abandon/adopt substrate
+
+The abandoned-segments / adoption substrate (the unreachable segment-transfer
+protocol that predated Phase 12.5's whole-slot reuse) has been **removed
+entirely**. This is a semver-breaking API removal. It mirrors the
+`LargeCacheMode::{Background, Both}` removal precedent ("make invalid states
+unrepresentable"); git history preserves the code if a future
+decommit-when-empty policy ever needs to reintroduce segment transfer.
+
+**Why.** The substrate was unreachable on every production path: whole-slot
+reuse (Phase 12.5) recycles a slot's `HeapCore` whole on thread exit, so
+`abandon_segments` / `try_adopt` were never called. It was also internally
+inconsistent even on its own terms — `try_adopt` ignored the result of
+`register_segment_internal` (silently proceeding even if registration failed),
+`reset_stamp_cache` (documented as required on cross-heap segment transfer)
+was never called, and its intrusive linked-list field (`SegmentHeader::next_abandoned`)
+was shared with the LIVE `deferred_large` cross-thread-free stack (a separate,
+production feature). Retaining it as a "loom-proven basis for a future policy"
+was therefore an illusion: the documented future scenario already diverged
+from the code's live invariants, and a naive reactivation would clobber the
+`deferred_large` stack. See `docs/agent_reviews_round4/code_quality_review.md`
+(finding #4) and `docs/reviews/2026-07-13-round4-remediation-plan.md` (#97 /
+R4-5).
+
+**What was removed:**
+- `HeapRegistry::{abandon_segments, push_abandoned_segment,
+  pop_abandoned_segment, try_adopt}` and the private helpers
+  `push_abandoned_segment_into` / `abandon_one_segment`
+  (`src/registry/heap_registry.rs`).
+- `Registry::abandoned_segs` field and the abandoned-head packing helpers
+  `pack_abandoned_head` / `unpack_abandoned_head` / `abandoned_head_is_empty` /
+  `ABANDONED_HEAD_EMPTY` / `ABANDON_TAG_MASK` / `ABANDON_TAG_BITS` /
+  `ABANDON_SEG_SHIFT` / `ABANDON_SEG_SIZE` (`src/registry/bootstrap.rs`).
+- `OWNER_STATE_ABANDONED`, `unpack_owner_state`, `unpack_owner_gen`, and
+  `OWNER_GEN_MASK` (`src/alloc_core/segment_header.rs`) — used only by the
+  abandon/adopt CAS. (`owner_state`, `OWNER_STATE_LIVE`, `pack_owner`,
+  `unpack_owner_id`, `OWNER_ID_NONE` are RETAINED: the LIVE owner-id
+  resolution path for cross-thread free routing still uses them.)
+- The dead adoption forwarders `register_segment_internal` /
+  `set_small_current_internal` (`src/registry/heap_core.rs`) and
+  `register_segment` / `set_small_current` (`src/alloc_core/alloc_core.rs`)
+  — their sole caller was `try_adopt`.
+- The tests `loom_abandoned_segs_aba.rs`,
+  `regression_abandoned_stack_safe_api_uaf.rs`,
+  `regression_abandon_a1_next_abandoned_field_sharing.rs`, and
+  `loom_registry.rs` (entirely); the abandon-specific tests in
+  `registry_basic.rs` and `regression_gen_table_lifecycle_seams.rs` (Seam 3);
+  and the abandoned-head packing Kani proofs in `src/kani_proofs.rs`.
+
+**What was kept (NOT removed):** `SegmentHeader::next_abandoned` (the field)
+and `next_abandoned_atomic()` (the accessor), the `ABANDONED_TAIL` sentinel,
+and the entire `src/alloc_core/deferred_large/` module — these are the LIVE
+`deferred_large` cross-thread-free stack, a separate production feature that
+reuses the same header field. Its tests (`loom_deferred_large`,
+`regression_xthread_large_free_no_leak`) pass unchanged.
+
+**Migration.** No production code referenced the removed items. Downstream
+code that reached the `#[doc(hidden)] pub mod registry` surface and called
+`HeapRegistry::abandon_segments` / `push_abandoned_segment` /
+`pop_abandoned_segment` / `try_adopt` will fail to compile (E0425/E0061) and
+should drop the call — whole-slot reuse (the only production teardown path)
+makes segment abandonment unnecessary.
+
 ### BREAKING CHANGE — removal of `Default for AllocCore`
 
 The `Default` impl on `AllocCore` (feature = `alloc-core`) has been **removed

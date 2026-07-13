@@ -1653,9 +1653,9 @@ impl AllocCore {
         self.realloc_inplace_fast_path_known_base(base, ptr, old_layout, new_size)
     }
 
-    /// Iterate over all registered segment bases (read-only). Exposed for the
-    /// Phase 12.4 abandonment walk (`HeapCore::segment_bases` →
-    /// `abandon_segments`).
+    /// Iterate over all registered segment bases (read-only). A registry-walk
+    /// primitive used by cross-thread-free routing and (historically) the
+    /// Phase 12.4 abandonment walk (now removed — task #97 / R4-5).
     ///
     /// `#[doc(hidden)]` (task #136): `AllocCore` itself is re-exported as
     /// stable public API (unlike most of `alloc_core`), but this iterator is
@@ -1693,28 +1693,6 @@ impl AllocCore {
         self.table.contains_base(base)
     }
 
-    /// Register an already-reserved segment base into this substrate's table
-    /// (Phase 12.4 adoption). Returns the assigned `segment_id`, or `None` if
-    /// the table is full. Used by `HeapRegistry::try_adopt` to register an
-    /// adopted segment into the adopter's `AllocCore` so subsequent
-    /// `alloc`/`dealloc` routing finds it. The caller MUST have laid down a
-    /// valid header at `base` (the abandon path left it intact).
-    #[cfg(feature = "alloc-global")]
-    pub(crate) fn register_segment(&mut self, base: *mut u8) -> Option<u32> {
-        self.table.register(base)
-    }
-
-    /// Mark `base` as the current small segment (Phase 12.4 adoption primitive).
-    /// An adopted segment with free space becomes the bump target so the
-    /// adopter carves new allocations from it. Retained for the loom-proven
-    /// abandon/adopt substrate (a future decommit-when-empty policy); NOT on
-    /// the hot path of the shard model (a heap owns its segments exclusively
-    /// and never transfers them).
-    #[cfg(feature = "alloc-global")]
-    pub(crate) fn set_small_current(&mut self, base: *mut u8) {
-        self.small_cur = base;
-    }
-
     /// RAD-4b (task #72): the current small segment's base, for callers
     /// outside this module that need to pass it into
     /// [`reclaim_offset`](Self::reclaim_offset) /
@@ -1724,9 +1702,7 @@ impl AllocCore {
     /// comments). `small_cur` itself is `pub(super)` (module-private); this
     /// thin `pub(crate)` accessor is the sole reason `HeapCore::
     /// drain_heap_overflow` (`src/registry/heap_core.rs`, `registry` module,
-    /// outside `alloc_core`) needs to exist, mirroring the existing
-    /// `register_segment_internal`/`set_small_current_internal` style of
-    /// thin cross-module forwarders in `heap_core.rs`.
+    /// outside `alloc_core`) needs to exist.
     #[cfg(feature = "alloc-xthread")]
     #[must_use]
     pub(crate) fn small_cur(&self) -> *mut u8 {

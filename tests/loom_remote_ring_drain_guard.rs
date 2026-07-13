@@ -35,13 +35,13 @@
 //!
 //! Models the segment-header-resident cache surviving (or, in the buggy
 //! counterfactual, wrongly surviving) a "new owner" taking over the same ring
-//! memory. In THIS codebase's shard-reuse discipline (see
-//! `HeapRegistry::claim`'s module doc / `abandon_segments`'s "whole-heap
-//! reuse" note), a slot recycle→claim reuses the SAME `HeapCore` — and hence
-//! the SAME live segments/rings — whole; there is no "new owner, old ring"
-//! combination. This test proves the model is safe under the ONLY reset that
-//! can legitimately occur: a fresh segment (fresh ring memory, cache reset to
-//! 0 to match `RemoteFreeRing::init_in_place`'s zeroed cursors — see
+//! memory. In THIS codebase's shard-reuse discipline (whole-slot reuse,
+//! Phase 12.5 — see `HeapRegistry::claim`'s module doc), a slot recycle→claim
+//! reuses the SAME `HeapCore` — and hence the SAME live segments/rings —
+//! whole; there is no "new owner, old ring" combination. This test proves the
+//! model is safe under the ONLY reset that can legitimately occur: a fresh
+//! segment (fresh ring memory, cache reset to 0 to match
+//! `RemoteFreeRing::init_in_place`'s zeroed cursors — see
 //! `SegmentHeader::small`). It drains a ring, resets BOTH the ring cursors
 //! AND the cache to 0 (the fresh-segment invariant), then has a "new" producer
 //! push again and confirms a fresh `guarded_drain` still finds it — i.e. no

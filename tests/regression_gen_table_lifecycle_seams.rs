@@ -24,11 +24,9 @@
 //!      `decommit_stale_ring.rs` Scenario B; the focused pin here is
 //!      `recycled_segment_ring_drain_is_safe`.
 //!
-//!   3. **Adopt/abandon — the table travels with the segment** —
-//!      `abandon_one_segment` CASes only `owner_state` and pushes the base onto
-//!      the abandoned stack; it touches NO metadata bytes (the gen table lives
-//!      in segment metadata, which abandon/adopt never writes). Pinned here by
-//!      `abandon_segments_preserves_generation`.
+//! (A former Seam 3 — "adopt/abandon preserves the gen table" — was removed
+//! with the abandon/adopt substrate in task #97 / R4-5; nothing abandons a
+//! segment today, so the invariant it pinned is structurally guaranteed.)
 //!
 //! All gen-table-state tests are `#[cfg(feature = "hardened")]`-gated (matching
 //! Ф1/Ф2/Ф3's discipline): only under `hardened` does the generation table
@@ -44,9 +42,6 @@
 //!   trips miri). The decommit-reset half (NOT re-zeroed) is structurally pinned
 //!   (source re-read confirms `decommit_empty_segment` contains no
 //!   `init_gen_table_in_place`).
-//! - Seam 3: if a future change re-zeroed metadata on abandon (e.g. a
-//!   "clean slate on adopt" policy), the post-abandon `gen_at` would differ
-//!   from the pre-abandon value → assertion fails.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -298,94 +293,4 @@ fn recycled_segment_ring_drain_is_safe() {
         ok += 1;
     }
     assert_eq!(ok, 100, "all post-recycle-drain allocs must succeed");
-}
-
-// ===========================================================================
-// Seam 3 — adopt/abandon: the gen table travels with the segment (plan §3-Ф4)
-// ===========================================================================
-
-/// **`abandon_segments` does NOT touch the generation table.**
-///
-/// `abandon_one_segment` CASes only the segment's `owner_state` (LIVE→ABANDONED)
-/// and pushes its base onto the abandoned-segments stack. It writes NO metadata
-/// bytes — the gen table (which lives in segment metadata, below
-/// `small_meta_end`) is physically unchanged by the abandon/adopt cycle. The
-/// new owner (the adopter) therefore sees the EXACT generation state the old
-/// owner left: no reset, no corruption.
-///
-/// This is true by construction (abandon touches only header fields), but the
-/// X7 plan §3-Ф4 calls it out as a risk to VERIFY, not assume — a future
-/// "clean slate on adopt" policy that re-zeroed metadata would silently break
-/// the generational guard (a stale note from before the adopt would match a
-/// post-adopt gen of 0). This test pins the invariant: `gen_at(base, off)` is
-/// IDENTICAL before and after `abandon_segments`.
-///
-/// ## Protocol
-///
-/// 1. Alloc a block P (its gen is bumped to 1 at the issue pop).
-/// 2. Read `gen_at(base(P), off(P))` → 1.
-/// 3. Call `HeapRegistry::abandon_segments(heap)` (abandons every segment the
-///    heap owns, including P's).
-/// 4. Read `gen_at(base(P), off(P))` AGAIN → must STILL be 1.
-///
-/// `abandon_segments` is a retained loom-proven substrate primitive (Phase
-/// 12.5: it is NOT on the production hot path — the shard model reuses whole
-/// heaps). It remains compiled and reachable, so this test exercises it
-/// directly to pin the gen-table invariant for any future wiring.
-#[test]
-fn abandon_segments_preserves_generation() {
-    use sefer_alloc::registry::{bootstrap, HeapRegistry};
-
-    let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null());
-
-    let layout = Layout::from_size_align(16, 8).unwrap();
-
-    // (1) Alloc P. Under hardened, the issue pop bumps P's generation 0 → 1.
-    let p = unsafe { (*heap).alloc(layout) };
-    assert!(!p.is_null());
-
-    let base = segment_base_of(p);
-    let off = (p as usize) - (base as usize);
-    assert_eq!(
-        off % SegmentLayout::MIN_BLOCK,
-        0,
-        "offset is granule-aligned"
-    );
-
-    // (2) Read P's generation BEFORE abandon. It is 1 (one issue pop).
-    let gen_before = unsafe { gen_at(base, off) };
-    assert_eq!(
-        gen_before, 1,
-        "a freshly issued block should be at generation 1 under hardened"
-    );
-
-    // (3) Abandon every segment this heap owns. This CASes each segment's
-    // owner_state LIVE→ABANDONED and pushes its base onto the abandoned stack.
-    // It must NOT touch the gen table.
-    // SAFETY: `heap` was returned by `claim` and is the slot's sole writer.
-    unsafe { HeapRegistry::abandon_segments(heap) };
-
-    // (4) Read P's generation AFTER abandon. It MUST be unchanged — abandon
-    // touched only `owner_state`, not metadata bytes. If a future change
-    // re-zeroed the gen table on abandon (or on the segment's transition to
-    // ABANDONED), this would read 0 and fail.
-    let gen_after = unsafe { gen_at(base, off) };
-    assert_eq!(
-        gen_after, gen_before,
-        "abandon_segments changed the generation table (before={gen_before}, \
-         after={gen_after}): the gen table must travel with the segment unchanged — \
-         abandon touches only owner_state, never metadata bytes"
-    );
-
-    // Drain the abandoned stack (cleanup — the segments stay mapped, but we
-    // pop them so they don't accumulate across serialized registry tests).
-    // SAFETY: the abandoned bases are segments pushed by `abandon_segments`
-    // above; they stay mapped (heap is recycled only after this drain), so each
-    // popped base is safe to dereference.
-    while unsafe { HeapRegistry::pop_abandoned_segment() }.is_some() {}
-
-    // SAFETY: `heap` was returned by `claim` and not yet recycled.
-    unsafe { HeapRegistry::recycle(heap) };
 }

@@ -112,17 +112,16 @@
 //! objects to DEREFERENCING a pointer whose provenance doesn't cover the
 //! memory it points at; a pointer that is only ever compared is fine.
 //!
-//! **2. `abandoned_segs` (this module) and the A1 deferred-large-free stack
-//! (`alloc_core::deferred_large`) are, by design, EXPOSED-provenance-only —
-//! full strict-provenance conformance is unreachable for them.** Both are
-//! cross-allocation intrusive Treiber stacks: the "next" link for segment
-//! `A` is stored INSIDE segment `A`'s own header, but the VALUE of that link
-//! is the address of a DIFFERENT segment `B`, which came from a distinct OS
-//! reservation with its own, unrelated provenance. A single `u64`/`AtomicU64`
-//! word (the stack head, or a header's link field) can carry only an
-//! address, not a provenance token, and there is no way to smuggle segment
-//! `B`'s provenance into a slot owned by segment `A`. This is a structural
-//! property of ANY tagged/intrusive lock-free stack that chains
+//! **2. The A1 deferred-large-free stack (`alloc_core::deferred_large`) is, by
+//! design, EXPOSED-provenance-only — full strict-provenance conformance is
+//! unreachable for it.** It is a cross-allocation intrusive Treiber stack:
+//! the "next" link for segment `A` is stored INSIDE segment `A`'s own header,
+//! but the VALUE of that link is the address of a DIFFERENT segment `B`, which
+//! came from a distinct OS reservation with its own, unrelated provenance. A
+//! single `u64`/`AtomicU64` word (the stack head, or a header's link field)
+//! can carry only an address, not a provenance token, and there is no way to
+//! smuggle segment `B`'s provenance into a slot owned by segment `A`. This is
+//! a structural property of ANY tagged/intrusive lock-free stack that chains
 //! cross-allocation nodes through packed integer words — not a gap specific
 //! to this codebase.
 //!
@@ -134,23 +133,21 @@
 //! calls [`core::ptr::with_exposed_provenance_mut`] (validly re-deriving a
 //! pointer with the previously-exposed provenance for that address). Every
 //! `expose_provenance` store site in this crate is paired with a
-//! `with_exposed_provenance_mut` load site — see [`pack_abandoned_head`]/
-//! [`unpack_abandoned_head`] below, `HeapRegistry::pop_abandoned_segment`/
-//! `push_abandoned_segment_into` in `heap_registry.rs`, and
+//! `with_exposed_provenance_mut` load site — see
 //! `push_large_deferred_free`/`drain_large_deferred_free` in
-//! `alloc_core::deferred_large`.
+//! `alloc_core::deferred_large`. (The `abandoned_segs` stack that previously
+//! shared this provenance class was removed — task #97 / R4-5.)
 //!
-//! **Consequence for miri:** the registry (and the A1 deferred-large stack)
+//! **Consequence for miri:** the registry and the A1 deferred-large stack
 //! validate cleanly under plain `cargo +nightly miri test` (the
 //! exposed-provenance model, miri's default) but are NOT expected to pass
 //! `-Zmiri-strict-provenance` — that flag will flag the
-//! `with_exposed_provenance_mut` reconstructions in `unpack_abandoned_head`/
-//! `pop_abandoned_segment`/`drain_large_deferred_free` as provenance
-//! violations, which is miri correctly reporting the documented structural
-//! limit above, not a bug. The `REGISTRY_PTR` sentinel handling (class 1) is
-//! the one part of this module's provenance story that DOES pass
-//! `-Zmiri-strict-provenance` — see the sentinel construction in
-//! `ensure_slow`/`dbg_rollback_sentinel_reenterable`.
+//! `with_exposed_provenance_mut` reconstructions in
+//! `drain_large_deferred_free` as provenance violations, which is miri
+//! correctly reporting the documented structural limit above, not a bug. The
+//! `REGISTRY_PTR` sentinel handling (class 1) is the one part of this
+//! module's provenance story that DOES pass `-Zmiri-strict-provenance` — see
+//! the sentinel construction in `ensure_slow`/`dbg_rollback_sentinel_reenterable`.
 
 // This file uses `unsafe` for two operations:
 //  1. Field-by-field in-place initialisation of the `Registry` object in
@@ -181,98 +178,8 @@ use super::tagged_ptr::TaggedPtr;
 /// use via `aligned_vmem::reserve_aligned`.
 pub const MAX_HEAPS: usize = 4096;
 
-/// The segment size used for the abandoned-segment address packing. Mirrors
-/// [`crate::alloc_core::os::SEGMENT`] (kept as a literal here to avoid a
-/// cross-feature dependency from the registry bootstrap — the value is
-/// structural, set in `ALLOC_PLAN.md`, and a `const _: () = assert!` below
-/// ties them together so they cannot drift).
-const ABANDON_SEG_SHIFT: u32 = 22; // log2(4 MiB)
-/// Only exists to feed the `alloc-core`-gated `const _: ()` tie-assert below;
-/// gated with the SAME `cfg` so it is not a dead constant on non-`alloc-core`
-/// builds. The `#[allow(dead_code)]` is for MSRV 1.88 only: its dead-code
-/// analysis does not count the `const _: ()` assert reference as a use, so it
-/// false-positives here (newer rustc counts it and needs no allow — the allow
-/// is simply inert there, not a suppressed real signal).
-#[cfg(feature = "alloc-core")]
-#[allow(dead_code)]
-const ABANDON_SEG_SIZE: u64 = 1u64 << ABANDON_SEG_SHIFT;
-/// Number of low bits available for the ABA tag in the abandoned-segment head
-/// packing (a segment base is `ABANDON_SEG_SIZE`-aligned, so its low
-/// `ABANDON_SEG_SHIFT = 22` bits are always zero — we reuse them for the tag).
-const ABANDON_TAG_BITS: u32 = ABANDON_SEG_SHIFT;
-pub(crate) const ABANDON_TAG_MASK: u64 = (1u64 << ABANDON_TAG_BITS) - 1;
-
-/// Compile-time tie: if the real `SEGMENT` ever diverges from
-/// `ABANDON_SEG_SIZE`, this fails to compile (the abandoned-segment packing
-/// would silently corrupt high address bits). `cfg`-gated so it only fires
-/// when `alloc-core` (and thus `os::SEGMENT`) is in the build graph.
-#[cfg(feature = "alloc-core")]
-const _: () = assert!(
-    ABANDON_SEG_SIZE == crate::alloc_core::os::SEGMENT as u64,
-    "ABANDON_SEG_SIZE must match os::SEGMENT (the abandoned-segment head packing relies on SEGMENT alignment)"
-);
-
-/// Pack `(base, tag)` into one `AtomicU64` head word for the
-/// abandoned-segments intrusive stack. `base` MUST be SEGMENT-aligned (its low
-/// `ABANDON_SEG_SHIFT` bits are zero — true for every segment base by
-/// construction); the tag occupies those low bits and is bumped on every push
-/// (ABA defence). The full 64-bit base is recoverable, so addresses above 4
-/// GiB (ASLR) are handled correctly (the bug fixed in Phase 12.4 — FINDINGS №1).
-///
-/// Not `const` because `*mut u8 as u64` is not stable in `const fn` (it needs
-/// `const_raw_ptr_to_int_transmute`, unstable). Runtime-only use.
-#[doc(hidden)]
-pub fn pack_abandoned_head(base: *mut u8, tag: u64) -> u64 {
-    // EXPOSED-PROVENANCE STORE SITE: `base` is a real, dereferenceable
-    // segment pointer whose address is about to be packed into a plain
-    // `u64` word (the Treiber head, later CASed into `Registry::abandoned_segs`
-    // and — after unpacking — dereferenced again by a popper, possibly on a
-    // different thread). `expose_provenance` is the explicit, sanctioned
-    // exposed-provenance API for exactly this pattern: it records `base`'s
-    // provenance in the global exposed-provenance table so that a LATER
-    // `with_exposed_provenance_mut` call on the same address can validly
-    // reconstruct a dereferenceable pointer. Paired load site:
-    // `unpack_abandoned_head` below (and every popper that dereferences the
-    // reconstructed base). See the module "Provenance model" section.
-    let addr = base.expose_provenance() as u64;
-    // The tag lives in the low ABANDON_TAG_BITS (which are zero in `addr`
-    // because `base` is SEGMENT-aligned). OR them together.
-    (addr & !ABANDON_TAG_MASK) | (tag & ABANDON_TAG_MASK)
-}
-
-/// Unpack the abandoned-segment head word back into `(base, tag)`. The base's
-/// low `ABANDON_TAG_BITS` are restored to zero.
-#[doc(hidden)]
-pub fn unpack_abandoned_head(word: u64) -> (*mut u8, u64) {
-    // EXPOSED-PROVENANCE LOAD SITE: reconstructs a dereferenceable pointer
-    // from a plain integer address under the exposed-provenance model.
-    // Sound ONLY because every producer of an `abandoned_segs` head word
-    // packed the address via `pack_abandoned_head`, which calls
-    // `expose_provenance` on the real segment pointer before storing it (see
-    // that function's doc comment) — `with_exposed_provenance_mut` may
-    // legally "re-derive" a pointer with that exposed provenance from a
-    // matching address. The empty-stack sentinel (address 0) is also a valid
-    // input: `with_exposed_provenance_mut(0)` yields a null pointer, which
-    // `abandoned_head_is_empty`/callers check for before any dereference.
-    let base = core::ptr::with_exposed_provenance_mut::<u8>((word & !ABANDON_TAG_MASK) as usize);
-    let tag = word & ABANDON_TAG_MASK;
-    (base, tag)
-}
-
-/// The empty-stack sentinel for the abandoned-segment head: base = null, tag = 0.
-/// A null base unambiguously denotes "empty" (no real segment base is null).
-#[doc(hidden)]
-pub const ABANDONED_HEAD_EMPTY: u64 = 0;
-
-/// Whether an abandoned-segment head word denotes the empty stack.
-#[doc(hidden)]
-pub fn abandoned_head_is_empty(word: u64) -> bool {
-    // Empty iff base is null (tag is irrelevant — only the base distinguishes).
-    (word & !ABANDON_TAG_MASK) == 0
-}
-
 /// The bootstrap outcome: the fixed slot array plus the dynamic atomics that
-/// drive `claim`/`recycle`/`abandon`. Allocated via `aligned_vmem::reserve_aligned`
+/// drive `claim`/`recycle`. Allocated via `aligned_vmem::reserve_aligned`
 /// on first call to [`ensure`] (NOT by `std::alloc` — M5-clean). Lives for
 /// the process lifetime (the reservation is leaked after init via `mem::forget`).
 ///
@@ -299,22 +206,13 @@ pub struct Registry {
     // downstream code complete the re-claim attack by pushing a slot back onto
     // the stack (`free_slots.store(dbg_pack(idx, ..))`).
     pub(crate) free_slots: core::sync::atomic::AtomicU64,
-    /// Phase 12.4: the intrusive abandoned-segments Treiber stack head. Packs
-    /// the full 64-bit segment base (in the high bits, since bases are
-    /// `SEGMENT`-aligned → low `ABANDON_SEG_SHIFT` bits are zero) with an
-    /// ABA tag in those low bits. Each abandoned segment's
-    /// `next_abandoned` header field chains to the next base. This fixes
-    /// FINDINGS №1 (the old `AtomicU64` packing truncated bases >4 GiB);
-    /// the full base is now preserved.
-    pub(crate) abandoned_segs: core::sync::atomic::AtomicU64,
 }
 
 // `Registry` is shared across threads via the `AtomicPtr`. All mutable access
-// to its fields goes through atomics (`count`, `free_slots`, `abandoned_segs`)
-// or the slot-level single-writer protocol (`slots`). Every field is ALREADY
-// `Sync`: the three `Atomic*` fields, and `[HeapSlot; MAX_HEAPS]` (which is
-// `Sync` because `HeapSlot` carries its own `unsafe impl Sync` — see
-// `heap_slot.rs`). So `Registry` AUTO-derives `Sync`; no `unsafe impl` is
+// to its fields goes through atomics (`count`, `free_slots`) or the slot-level
+// single-writer protocol (`slots`). Every field is ALREADY `Sync`: the two
+// `Atomic*` fields, and `[HeapSlot; MAX_HEAPS]` (which is `Sync` because
+// `HeapSlot` carries its own `unsafe impl Sync` — see `heap_slot.rs`). So `Registry` AUTO-derives `Sync`; no `unsafe impl` is
 // needed (task #21 / review L1). The former `unsafe impl Sync for Registry`
 // only restated the auto-impl but FROZE it: a future `!Sync` field (e.g. a
 // `Cell<..>` diagnostic) would silently keep `Registry: Sync` — unsound —
@@ -554,7 +452,7 @@ fn ensure_slow() -> &'static Registry {
             // NOT zero the bytes the way real OS pages do. The field-by-field
             // init below relies on OS zero-pages for every field it does not
             // explicitly write (see item 1 in the comment below): `state = 0`,
-            // `generation = 0`, `count = 0`, `abandoned_segs = 0`,
+            // `generation = 0`, `count = 0`,
             // `HeapSlot::initialised = 0`, etc. Under miri those reads would be
             // uninitialised-memory UB, which blocked miri from validating the
             // whole registry module (incl. the task #133 per-heap-counter
@@ -589,7 +487,7 @@ fn ensure_slow() -> &'static Registry {
             //     real link before any pop reads it, so the zero is never
             //     observed): `state = 0 = STATE_FREE`, `generation = 0`,
             //     `heap = MaybeUninit::uninit()` (unspecified bits, zeroes are
-            //     fine), `initialised = 0`, `count = 0`, `abandoned_segs = 0`.
+            //     fine), `initialised = 0`, `count = 0`.
             //
             //  2. The ONLY non-zero initial value is `Registry::free_slots =
             //     TaggedPtr::empty() = 0x0000_0000_0000_FFFF` (task W7a: the
@@ -655,11 +553,11 @@ fn ensure_slow() -> &'static Registry {
                 //
                 // Write `free_slots = TaggedPtr::empty()` (the ONE non-zero
                 // Registry field — a single 8-byte store, not 4096).
-                // `count` and `abandoned_segs` start at zero (already correct).
+                // `count` starts at zero (already correct).
                 core::ptr::addr_of_mut!((*base).free_slots)
                     .cast::<u64>()
                     .write(TaggedPtr::empty());
-                // `count` is already 0. `abandoned_segs` is already 0.
+                // `count` is already 0.
                 // The `Registry` at `base` is now fully initialised.
             }
 

@@ -90,9 +90,8 @@
 // anywhere else in the crate is a hard error. The `unsafe` surface here is:
 //   * dereferencing the cached `*mut HeapCore` into `&mut HeapCore` (sound
 //     under the single-writer invariant documented above), and
-//   * calling `HeapRegistry::recycle` / `abandon_segments` (which are
-//     `unsafe fn`s whose contract is "pointer previously returned by
-//     `claim`").
+//   * calling `HeapRegistry::recycle` (which is an `unsafe fn` whose
+//     contract is "pointer previously returned by `claim`").
 // Every `unsafe` block carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
@@ -280,9 +279,12 @@ impl Drop for AbandonGuard {
         // BinTable/header concurrently (a data race that tore the header and
         // corrupted free lists). The shard model restores the single-writer
         // invariant — a segment is written ONLY by its slot's current owner,
-        // full stop. The abandon/adopt primitives (abandoned_segs Treiber,
-        // owner_state CAS) remain as a loom-proven substrate for a future
-        // decommit-when-empty policy, but they are OFF the hot path.
+        // full stop. The abandon/adopt substrate (the `abandoned_segs` Treiber
+        // stack + `owner_state` ABANDONED→LIVE adoption CAS) has been REMOVED
+        // (task #97 / R4-5): it was unreachable on this whole-slot-reuse path
+        // and internally inconsistent; git history preserves it if a future
+        // decommit-when-empty policy ever needs to reintroduce segment
+        // transfer.
         //
         // `owner_thread_free` points at the slot's inline TFS, whose address is
         // stable for the process lifetime. Across release→claim it does NOT

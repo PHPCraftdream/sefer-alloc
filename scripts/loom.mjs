@@ -19,7 +19,6 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 const FEATURES = {
   loom_bootstrap_cas: 'alloc-global',
   loom_fallback_init: 'alloc-global',
-  loom_registry: 'alloc-global',
   loom_free_slots_aba: 'alloc-global',
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
   loom_remote_ring: 'alloc-core,alloc-xthread',

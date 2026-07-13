@@ -479,11 +479,12 @@ jobs:
       # #141: loom_free_slots_aba — Registry `free_slots` Treiber stack +
       # `TaggedPtr` ABA-tag model (`src/registry/heap_registry.rs`
       # pop_free_slot/push_free_slot + `src/registry/tagged_ptr.rs`).
+      # (loom_registry — the removed abandon/adopt adoption-CAS model — was
+      # deleted with that substrate in task #97 / R4-5.)
       - run: >-
           cargo test --release --features "alloc-global"
           --test loom_bootstrap_cas
           --test loom_fallback_init
-          --test loom_registry
           --test loom_free_slots_aba
 
   loom-xthread:

@@ -117,8 +117,9 @@ fn churn(worker_id: u64, rounds: u32) -> u64 {
 
 /// The headline multithreaded gate: spawn N worker threads that churn through
 /// the global allocator, with each thread EXITING mid-workload (so its heap is
-/// abandoned + recycled). A second wave of threads then runs and (via the
-/// cold-path `try_adopt`) reclaims the abandoned segments. The test asserts
+/// recycled). A second wave of threads then runs and reuses the recycled
+/// slots whole (Phase 12.5 whole-slot reuse: each `HeapCore` stays with its
+/// slot, and the next claimer reuses it in full). The test asserts
 /// the final accumulated checksum matches the expected deterministic value
 /// (non-vacuous — corruption changes it) and that no thread aborted.
 #[test]
@@ -141,8 +142,9 @@ fn global_allocator_serves_multithreaded_churn_with_thread_exit() {
                 let total = Arc::clone(&total);
                 std::thread::spawn(move || {
                     // Each worker churns and exits — on exit the AbandonGuard
-                    // abandons this thread's heap's segments to the registry
-                    // and recycles the slot. This is the abandon path.
+                    // recycles this thread's slot (Phase 12.5 whole-slot reuse:
+                    // the `HeapCore` stays whole for the next claimer; nothing
+                    // is abandoned).
                     let acc = churn(worker_id, ROUNDS);
                     total.fetch_add(acc, Ordering::Relaxed);
                     acc
@@ -150,9 +152,9 @@ fn global_allocator_serves_multithreaded_churn_with_thread_exit() {
             })
             .collect();
         // Join this wave BEFORE the next — the join hands off ownership of any
-        // cross-thread-freed blocks and forces the abandon to quiesce. The
-        // next wave's workers will adopt the abandoned segments on their cold
-        // path (the try_adopt wiring).
+        // cross-thread-freed blocks and forces the recycle to quiesce. The
+        // next wave's workers reuse the recycled slots whole (whole-slot
+        // reuse, Phase 12.5).
         for (i, h) in handles.into_iter().enumerate() {
             let acc = h.join().expect("worker thread must not abort/panic");
             expected_total = expected_total.wrapping_add(acc);

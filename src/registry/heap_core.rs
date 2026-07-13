@@ -309,9 +309,12 @@ pub struct HeapCore {
     /// owner pops), multi-producer (any remote may push) — a plain CAS-loop
     /// push needs no ABA tag. `null` VALUE = empty stack.
     ///
-    /// ⚠️ The `abandon_segments` reactivation hazard on the intrusive
-    /// `next_abandoned` link is unchanged — see
-    /// `HeapRegistry::abandon_segments`.
+    /// ⚠️ The `next_abandoned` header field this stack reuses as its intrusive
+    /// link was historically shared with the (now-removed) abandoned-segments
+    /// stack — see the "ABA defence" note in `heap_registry.rs`. With that
+    /// substrate gone (task #97 / R4-5), this stack is the SOLE user of
+    /// `next_abandoned`, so the field-sharing collision it warned about is no
+    /// longer possible.
     ///
     /// Stored as a SAFE `Option<&'static _>` (not a raw pointer): this module is
     /// `#![deny(unsafe_code)]`, so a raw-pointer deref would be a hard error.
@@ -425,11 +428,11 @@ pub struct HeapCore {
     ///   and compares against `self.id`; if the segment was recycled and its
     ///   `owner_state` reset to `OWNER_ID_NONE`, the comparison fails → slow
     ///   path re-stamps.
-    /// - *Abandoned-heap adoption* — if a future phase introduces inter-heap
-    ///   segment transfer, the code that adopts foreign segments MUST call
-    ///   `reset_stamp_cache()` so the stale cache entry is cleared before the
-    ///   next alloc. Currently no such path exists (the shard model: each
-    ///   segment stays with its original heap forever). See the TODO in
+    /// - *Inter-heap segment transfer* — if a future phase introduces
+    ///   transferring segments between heaps, the code doing the transfer MUST
+    ///   call `reset_stamp_cache()` so the stale cache entry is cleared before
+    ///   the next alloc. Currently no such path exists (the shard model: each
+    ///   segment stays with its original heap forever). See the doc on
     ///   `reset_stamp_cache`.
     ///
     /// Only present under `alloc-global` (the feature that enables
@@ -553,22 +556,19 @@ impl HeapCore {
         })
     }
 
-    /// The slot index this heap is bound to. Read by `recycle`/`abandon` to
-    /// locate the owning slot from a `*mut HeapCore`.
+    /// The slot index this heap is bound to. Read by `recycle` to locate the
+    /// owning slot from a `*mut HeapCore`.
     #[must_use]
     pub const fn id(&self) -> u32 {
         self.id
     }
 
-    /// Iterate over the segment bases this heap owns (read-only). Used by the
-    /// Phase 12.4 abandonment walk: `abandon_segments` stamps each segment's
-    /// `owner_state = ABANDONED` and pushes its base onto the global
-    /// abandoned-segments stack. Delegates to the substrate's segment-table
-    /// iterator. Phase 12.4 addition.
+    /// Iterate over the segment bases this heap owns (read-only). Delegates to
+    /// the substrate's segment-table iterator.
     ///
     /// `#[doc(hidden)] pub` so integration tests can obtain a real segment
-    /// base for the abandoned-stack round-trip test (the test-only pub
-    /// surface of the registry, documented in `mod.rs`).
+    /// base (the test-only pub surface of the registry, documented in
+    /// `mod.rs`).
     #[doc(hidden)]
     pub fn segment_bases(&self) -> impl Iterator<Item = *mut u8> {
         self.core.segment_bases()
@@ -614,26 +614,6 @@ impl HeapCore {
         counter: &'static core::sync::atomic::AtomicU64,
     ) {
         self.core.bind_large_cache_hits(counter);
-    }
-
-    /// Phase 12.4 adoption substrate: register an adopted segment base into
-    /// this heap's substrate table. Thin wrapper over
-    /// [`AllocCore::register_segment`]. Called by `try_adopt` after winning
-    /// the ABANDONED→LIVE CAS. Retained for the loom-proven abandon/adopt
-    /// substrate (a future decommit-when-empty policy); NOT on the hot path
-    /// of the shard model.
-    #[cfg(feature = "alloc-global")]
-    pub(crate) fn register_segment_internal(&mut self, base: *mut u8) -> Option<u32> {
-        self.core.register_segment(base)
-    }
-
-    /// Phase 12.4 adoption substrate: make `base` the current small segment so
-    /// new allocations carve from it. Thin wrapper over
-    /// [`AllocCore::set_small_current`]. Retained for the substrate; NOT on
-    /// the shard-model hot path.
-    #[cfg(feature = "alloc-global")]
-    pub(crate) fn set_small_current_internal(&mut self, base: *mut u8) {
-        self.core.set_small_current(base);
     }
 
     /// task H1: plant the stable `&'static` handle to THIS heap's slot-resident
@@ -2150,13 +2130,12 @@ impl HeapCore {
         issued
     }
 
-    /// Stamp a segment's header with this heap's ownership (Phase 12.4). Two
-    /// parts:
+    /// Stamp a segment's header with this heap's ownership. Two parts:
     ///
-    /// 1. **`owner_state = LIVE(self.id, 0)`** — the adoption-coherence field.
-    ///    Set on every alloc so the abandonment walk can identify our segments
-    ///    and an adopter's CAS has a well-defined expected value. Idempotent:
-    ///    a segment already stamped with our id is left alone.
+    /// 1. **`owner_state = LIVE(self.id, 0)`** — the ownership field. Set on
+    ///    every alloc so cross-thread free routing can resolve a segment's
+    ///    owning heap from its `owner_id`. Idempotent: a segment already
+    ///    stamped with our id is left alone.
     /// 2. **(alloc-xthread only) `owner_thread_free` head pointer** — the
     ///    cross-thread free routing target, so a remote freer can find this
     ///    heap's TFS. Idempotent: only stamps if currently null.
@@ -2220,12 +2199,13 @@ impl HeapCore {
         // warning under plain `alloc-global` where the branch is absent.
         #[allow(unused_mut)]
         let mut meta = SegmentMeta::new(base);
-        // 1. Stamp owner_state (adoption coherence).
+        // 1. Stamp owner_state (ownership resolution).
         let owner_atomic = meta.owner_state_atomic();
         let cur = owner_atomic.load(Ordering::Acquire);
         if unpack_owner_id(cur) != self.id {
             let me = pack_owner(OWNER_STATE_LIVE, self.id, 0);
-            // Release: a later abandon's Acquire CAS must observe our stamp.
+            // Release: a later cross-thread freer's Acquire read of owner_state
+            // (to resolve the owning heap) must observe our stamp.
             owner_atomic.store(me, Ordering::Release);
         }
         // 2. (alloc-xthread) Stamp the TFS head for cross-thread routing.
@@ -2300,9 +2280,8 @@ impl HeapCore {
     ///
     /// **Current status:** In the shard model (Phase 12.5+) segments never
     /// leave their original heap, so this method is not called from any
-    /// production path. It is provided as a safety hook for future phases.
-    /// TODO: call from `try_adopt` / `reclaim_abandoned` if those paths are
-    /// ever wired to transfer segments across heaps.
+    /// production path. It is provided as a safety hook for future phases
+    /// that might re-introduce cross-heap segment transfer.
     #[cfg(feature = "alloc-global")]
     #[allow(dead_code)]
     pub(crate) fn reset_stamp_cache(&mut self) {
