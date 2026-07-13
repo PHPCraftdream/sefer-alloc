@@ -1203,3 +1203,61 @@ alone already loses to the bootstrap cost at n=3 — but even the queue's extra
 link maintenance would need the large-n scan to amortise it (the same barrier
 X5 recorded).
 
+## R3 honest-reject (2026-07-13) — batching `MagazineBitmap`'s per-hit clear off the issue path
+
+Round4 remediation, task #99 experiment R3 (`performance_review.md` finding
+R3): RAD-5 (see above) made `MagazineBitmap::clear_magazine` run on EVERY
+magazine hit (issue), forcing a `segment_base_of_ptr` + bitmap RMW the hot
+path previously didn't pay. The round4 review proposed batching that update
+to refill/flush time instead, on the theory that an existing in-magazine scan
+could absorb the precision loss for the own-free double-free check.
+
+**NO-GO — the bitmap's exactness at the exact ISSUE moment is load-bearing at
+two sites, and the review's own proposed mitigation does not exist:**
+
+1. **Own-thread free oracle** (`heap_core.rs`, the `is_in_magazine` check
+   right before the flushed-DF oracle): under batching, a refilled block
+   keeps `bit=1` after being issued to the caller. A legitimate free of that
+   block then reads a stale `1`, the oracle treats it as an in-magazine
+   double-free, and the block is silently **leaked** (never freelisted).
+   `tests/regression_magazine_oracles.rs`'s `legit_free_after_pop_is_not_
+   swallowed` exists precisely to catch this and would go RED.
+2. **Cross-thread drain** (`alloc_core_small.rs`'s `reclaim_offset_checked`,
+   inside `AllocCore` which — by design — "has no magazine concept" and
+   relies on the bitmap as its ONLY window into magazine state): a stale
+   `bit=1` after issue makes a genuinely-arrived remote-free note look like
+   the duplicate leg of a cross-thread double-free, so it is DROPPED
+   (`return false`, no link, no `mark_free`) — the block is leaked.
+
+**Why the review's suggested fallback doesn't work:** the "in-magazine scan"
+it assumed still existed was the pre-RAD-5 Э10 branchless chunked scan over
+`slots[c][0..cnt]` — RAD-5 *deleted* that scan and replaced it *with* this
+bitmap. The only surviving `slots[0..n]` loops today are write-side
+(flush-clear, refill-mark), not a read-side membership scan. Re-adding a scan
+to cover the gap would only help site 1 (same `HeapCore`/magazine context);
+site 2 is unreachable from a scan by construction (`AllocCore` cannot see
+`tcache.slots`), so closing it would require re-adding the exact O(count) scan
+RAD-5 proved *more expensive* than the bitmap in the first place — a net
+regression that defeats the experiment's own purpose.
+
+**Verdict: NO-GO. Zero files touched** (`git status`/`git diff --stat` both
+empty — confirmed by the orchestrator independently, not just the sub-agent's
+claim). No iai baseline was taken; there is nothing to measure.
+
+### Separate read-only finding — cost of the `hardened`-only tcache guards
+
+While investigating R3, the currently-`hardened`-only interior-pointer / Large-
+as-Small guards' cost was measured (read-only, `production` vs `production
+hardened`, no code changed) as a data point for a SEPARATE, user-owned
+decision (not this experiment's call): on small-class churn
+(`small_churn_16b`/`aligned_churn_640b_a128`), the FULL `hardened` bundle
+(interior-pointer guard + Large-kind guard + the X7 generation table, sharing
+one feature gate — iai cannot isolate just the two guards R4-MS-2 asked
+about) costs **+7–9 Ir/op** — an upper bound on the specific guards, above the
+round4 plan's informal "≤ ~2 Ir/op = cheap" threshold. `churn_256b`/
+`churn_write_256b` showed a −1.9…+0.1 spread (cross-binary layout noise, not a
+real cost). Whether to move any `hardened` guard into `production` remains an
+open decision for the user, per the round4 remediation plan's escalation
+point — this number exists to inform that decision if it comes up, not to
+settle it.
+
