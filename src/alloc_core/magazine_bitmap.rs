@@ -51,36 +51,51 @@
 //! they are visible to the owner only after a ring-drain, which runs on the
 //! owner thread.
 //!
+//! ## Dedup (task #98 / R4-6)
+//!
+//! The bitmap MECHANISM (the `bits` field, `FOOTPRINT`, `new`, `init_in_place`,
+//! `locate`, bit test / set / clear) is identical to
+//! [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) — both are one-bit-per-
+//! `MIN_BLOCK`-slot single-writer views — so it lives once in the private
+//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). This type is a thin
+//! newtype wrapper that exposes ONLY the magazine-residency domain-named methods
+//! (`mark_magazine` / `clear_magazine` / `is_in_magazine`), so the two bitmap
+//! KINDS cannot be confused at a call site. Every method stays
+//! `#[inline(always)]` and forwards trivially, so generated code is unchanged
+//! (zero Ir delta on the hot path — see `docs/perf/IAI_BASELINE.md` and
+//! `npm run iai`).
+//!
 //! ## This file is PURE SAFE DATA + ARITHMETIC
 //!
-//! Every raw memory touch goes through the [`node`](super::node) seam,
-//! exactly like [`AllocBitmap`](super::alloc_bitmap::AllocBitmap). There is
-//! NO `unsafe` here.
+//! Every raw memory touch goes through the [`node`](super::node) seam — now via
+//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap), exactly like
+//! [`AllocBitmap`](super::alloc_bitmap::AllocBitmap). There is NO `unsafe` here.
 
-use super::node::Node;
-use super::os::SEGMENT;
-use super::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
+use super::segment_bitmap::SegmentBitmap;
 
 /// The per-segment magazine-residency bitmap view: one bit per `MIN_BLOCK`
-/// slot of the segment. A thin view over in-segment metadata carved at
+/// slot of the segment. A thin newtype over the shared
+/// [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap) mechanism; it owns no
+/// memory. Carved at
 /// [`Layout::magazine_bitmap_off`](super::segment_header::Layout::magazine_bitmap_off);
-/// it owns no memory. Mirrors [`AllocBitmap`](super::alloc_bitmap::AllocBitmap)
-/// exactly, with orthogonal semantics (see module doc).
-pub(crate) struct MagazineBitmap {
-    /// Absolute address of the first bitmap byte.
-    bits: *mut u8,
-}
+/// mirrors [`AllocBitmap`](super::alloc_bitmap::AllocBitmap) with orthogonal
+/// semantics (see module doc).
+#[repr(transparent)]
+pub(crate) struct MagazineBitmap(SegmentBitmap);
 
 impl MagazineBitmap {
-    /// Same geometry as `AllocBitmap::FOOTPRINT`: one bit per `MIN_BLOCK`
-    /// slot of the whole segment, rounded to whole bytes. 32 768 bytes (8
-    /// pages) for the default 4 MiB / 16 B pair.
-    pub(crate) const FOOTPRINT: usize = SEGMENT / MIN_BLOCK / 8;
+    /// The byte footprint of the bitmap in a segment. Re-exported from
+    /// [`SegmentBitmap::FOOTPRINT`] so call sites keep using
+    /// `MagazineBitmap::FOOTPRINT` unchanged. Same geometry as
+    /// `AllocBitmap::FOOTPRINT`: one bit per `MIN_BLOCK` slot of the whole
+    /// segment, rounded to whole bytes. 32 768 bytes (8 pages) for the default
+    /// 4 MiB / 16 B pair.
+    pub(crate) const FOOTPRINT: usize = SegmentBitmap::FOOTPRINT;
 
     /// Construct the view over an already-laid-down bitmap at `bits`.
     #[inline(always)]
     pub(crate) fn new(bits: *mut u8) -> Self {
-        Self { bits }
+        Self(SegmentBitmap::new(bits))
     }
 
     /// Initialise a fresh bitmap at `bits`: ALL ZEROS ("not magazine-resident").
@@ -95,11 +110,7 @@ impl MagazineBitmap {
     /// on decommit-reset (a non-virgin segment).
     #[cfg_attr(all(not(miri), not(feature = "alloc-decommit")), allow(dead_code))]
     pub(crate) fn init_in_place(bits: *mut u8) {
-        let mut i = 0;
-        while i < Self::FOOTPRINT {
-            Node::write_u8(Node::offset(bits, i), 0);
-            i += 1;
-        }
+        SegmentBitmap::init_in_place(bits)
     }
 
     /// Whether the block at segment offset `off` is currently magazine-resident.
@@ -108,9 +119,7 @@ impl MagazineBitmap {
     /// (`reclaim_offset_checked`'s `is_in_magazine` predicate).
     #[inline(always)]
     pub(crate) fn is_in_magazine(&self, off: u32) -> bool {
-        let (byte_idx, mask) = Self::locate(off);
-        let byte = Node::read_u8(Node::offset(self.bits, byte_idx));
-        (byte & mask) != 0
+        self.0.test(off)
     }
 
     /// Mark the block at segment offset `off` as magazine-resident (set its
@@ -118,28 +127,13 @@ impl MagazineBitmap {
     /// every block landing in the magazine (not the one immediately issued).
     #[inline(always)]
     pub(crate) fn mark_magazine(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte | mask);
+        self.0.set(off)
     }
 
     /// Clear the block at segment offset `off`'s magazine-resident bit.
     /// Called on magazine pop (alloc hit / refill issue) and magazine flush.
     #[inline(always)]
     pub(crate) fn clear_magazine(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte & !mask);
-    }
-
-    /// Map a segment offset to `(byte_index, bit_mask)`. Identical arithmetic
-    /// to `AllocBitmap::locate`.
-    #[inline(always)]
-    fn locate(off: u32) -> (usize, u8) {
-        let bit = (off >> MIN_BLOCK_SHIFT) as usize;
-        debug_assert!(bit < Self::FOOTPRINT * 8, "bitmap bit index out of range");
-        (bit >> 3, 1u8 << (bit & 7))
+        self.0.clear(off)
     }
 }

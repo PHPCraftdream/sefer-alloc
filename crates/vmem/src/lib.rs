@@ -116,12 +116,25 @@ impl Reservation {
 
     /// Whether the usable span is empty ([`len()`](Self::len) == `0`).
     ///
-    /// Every reservation reachable through the safe API is non-empty:
-    /// [`reserve_aligned`] rejects a zero `size`, and the unsafe
-    /// [`from_raw_parts`](Self::from_raw_parts) contract likewise requires a
-    /// non-zero `len`. Rather than hard-code `false`, this method reports the
-    /// actual length, so it stays correct should a future revision admit
-    /// zero-length spans — and so the type's state space is described honestly.
+    /// **Deprecated (task #98 / R4-6):** [`Reservation`] is a non-empty RAII
+    /// handle — [`reserve_aligned`] rejects a zero `size`, and the unsafe
+    /// [`from_raw_parts`](Self::from_raw_parts) `# Safety` contract likewise
+    /// requires a non-zero `len`. So `is_empty` is **always `false`** for every
+    /// *valid* `Reservation`: there is no reachable valid state in which it
+    /// would return `true`. (The previous test forced `len: 0` through
+    /// `from_raw_parts`, i.e. called the unsafe constructor in violation of its
+    /// own documented precondition — that proves nothing, since `unsafe` code
+    /// that breaks its contract has no defined behaviour to assert against.)
+    ///
+    /// The method is therefore meaningless and is kept only for semver
+    /// compatibility (this crate is independently publishable); prefer an
+    /// explicit [`len()`](Self::len) check if a length predicate is ever
+    /// needed. If zero-length spans ever become a real, well-defined state with
+    /// proper ownership/drop semantics, this deprecation can be lifted — but
+    /// that is a larger design decision than a low-risk cleanup.
+    #[deprecated(
+        note = "Reservation is a non-empty RAII handle; is_empty is always false for any valid instance. Use len() if a length check is needed."
+    )]
     #[must_use]
     #[inline]
     pub const fn is_empty(&self) -> bool {

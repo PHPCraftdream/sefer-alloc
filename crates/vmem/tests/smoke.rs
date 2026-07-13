@@ -1,7 +1,7 @@
 //! Smoke tests for `aligned-vmem`: reservation alignment, read/write, decommit
 //! round-trip, RAII vs manual release, and contract rejection.
 
-use aligned_vmem::{page_size, recommit, release, reserve_aligned, Reservation, PAGE};
+use aligned_vmem::{page_size, recommit, release, reserve_aligned, PAGE};
 
 const MIB: usize = 1024 * 1024;
 
@@ -13,7 +13,6 @@ fn reserve_is_aligned_and_writable() {
     assert!(!base.is_null());
     assert_eq!(base as usize % span, 0, "base must be span-aligned");
     assert_eq!(r.len(), span);
-    assert!(!r.is_empty());
 
     // Write/readback the whole span at page stride to fault pages in.
     // SAFETY: base is valid for r.len() bytes; we own it exclusively.
@@ -128,36 +127,4 @@ fn distinct_reservations_do_not_overlap() {
     let pb = b.as_ptr() as usize;
     // Non-overlapping usable spans.
     assert!(pa + span <= pb || pb + span <= pa, "reservations overlap");
-}
-
-#[test]
-fn is_empty_reflects_len() {
-    // Regression for cleanup#14: `Reservation::is_empty` must report the actual
-    // length, not hard-code `false`. The non-empty direction is reachable via
-    // the safe API; the empty direction is only reachable via the unsafe
-    // `from_raw_parts` with `len == 0` (every safe constructor forbids zero).
-
-    // Non-empty reservation: `is_empty` is false, `len` is the requested span.
-    let r = reserve_aligned(PAGE, PAGE).expect("reserve one page aligned");
-    assert_eq!(r.len(), PAGE);
-    assert!(!r.is_empty(), "a page-sized reservation is not empty");
-
-    // Empty reservation: take a live reservation's parts so the pointer/len/
-    // align describe a real OS reservation, then wrap a zero-usable-len view.
-    let (res_ptr, res_len, align) = r.into_parts();
-    // SAFETY: `res_ptr` is a live OS reservation obtained from `reserve_aligned`
-    // (via `into_parts`); only `len` deviates from the `from_raw_parts` contract
-    // (0 instead of a positive page multiple). This handle is `forget`ten before
-    // any drop, so it never triggers a release and no pointer is dereferenced
-    // through it; the single release of the underlying reservation happens via
-    // `release` below.
-    let empty = unsafe { Reservation::from_raw_parts(res_ptr, 0, res_ptr, res_len, align) };
-    assert_eq!(empty.len(), 0);
-    assert!(
-        empty.is_empty(),
-        "a zero-len reservation must report is_empty == true"
-    );
-    core::mem::forget(empty);
-    // SAFETY: the triple came from `into_parts` above and is released exactly once.
-    unsafe { release(res_ptr, res_len, align) };
 }

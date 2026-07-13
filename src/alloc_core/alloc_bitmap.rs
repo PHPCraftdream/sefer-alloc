@@ -26,11 +26,26 @@
 //!   reclaimed). Bit `0` = allocated, or not a block start. Fresh init is all
 //!   zeros ("everything allocated / not-a-block").
 //!
+//! ## Dedup (task #98 / R4-6)
+//!
+//! The bitmap MECHANISM (the `bits` field, `FOOTPRINT`, `new`, `init_in_place`,
+//! `locate`, bit test / set / clear) is identical to
+//! [`MagazineBitmap`](super::magazine_bitmap::MagazineBitmap) — both are one-bit-
+//! per-`MIN_BLOCK`-slot single-writer views — so it lives once in the private
+//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). This type is a thin
+//! newtype wrapper that exposes ONLY the free-vs-allocated domain-named methods
+//! (`is_free` / `mark_free` / `mark_alloc`), so the two bitmap KINDS cannot be
+//! confused at a call site. Every method stays `#[inline(always)]` and forwards
+//! trivially, so generated code is unchanged (zero Ir delta on the hot path —
+//! see `docs/perf/IAI_BASELINE.md` and `npm run iai`).
+//!
 //! ## This file is PURE SAFE DATA + ARITHMETIC
 //!
 //! Every raw memory touch goes through the [`node`](super::node) seam (exactly
 //! like [`PageMap`](super::segment_header::PageMap) /
-//! [`BinTable`](super::segment_header::BinTable)). There is NO `unsafe` here.
+//! [`BinTable`](super::segment_header::BinTable)) — now via
+//! [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap). There is NO `unsafe`
+//! here.
 //!
 //! ## No atomics (single-writer)
 //!
@@ -41,27 +56,21 @@
 //! and the owner sets the bit when it drains. So plain (non-atomic) byte
 //! reads/writes are race-free, matching the `bump`-cursor single-writer rule.
 
-use super::node::Node;
-use super::os::SEGMENT;
-use super::size_classes::{MIN_BLOCK, MIN_BLOCK_SHIFT};
+use super::segment_bitmap::SegmentBitmap;
 
 /// The per-segment allocation/free bitmap view: one bit per `MIN_BLOCK`-slot of
-/// the segment. A thin view over in-segment metadata carved by the bootstrap at
-/// [`Layout::alloc_bitmap_off`](super::segment_header::Layout::alloc_bitmap_off);
-/// it owns no memory.
-pub(crate) struct AllocBitmap {
-    /// Absolute address of the first bitmap byte (stored absolute so reads need
-    /// no segment-base arithmetic, like `PageMap`/`BinTable`).
-    bits: *mut u8,
-}
+/// the segment. A thin newtype over the shared
+/// [`SegmentBitmap`](super::segment_bitmap::SegmentBitmap) mechanism; it owns no
+/// memory. Carved by the bootstrap at
+/// [`Layout::alloc_bitmap_off`](super::segment_header::Layout::alloc_bitmap_off).
+#[repr(transparent)]
+pub(crate) struct AllocBitmap(SegmentBitmap);
 
 impl AllocBitmap {
-    /// The byte footprint of the bitmap in a segment: one bit per `MIN_BLOCK`
-    /// slot of the whole segment, rounded to whole bytes. For the default
-    /// 4 MiB / 16 B pair this is `4 MiB / 16 / 8 = 32 768` bytes (8 pages).
-    /// **Computed from the constants** so it cannot drift if `SEGMENT` /
-    /// `MIN_BLOCK` change.
-    pub(crate) const FOOTPRINT: usize = SEGMENT / MIN_BLOCK / 8;
+    /// The byte footprint of the bitmap in a segment. Re-exported from
+    /// [`SegmentBitmap::FOOTPRINT`] so call sites keep using
+    /// `AllocBitmap::FOOTPRINT` unchanged.
+    pub(crate) const FOOTPRINT: usize = SegmentBitmap::FOOTPRINT;
 
     /// Construct the view over an already-laid-down bitmap at `bits`. The
     /// bootstrap calls this AFTER zeroing the bytes via [`init_in_place`].
@@ -69,14 +78,13 @@ impl AllocBitmap {
     /// [`init_in_place`]: Self::init_in_place
     #[inline(always)]
     pub(crate) fn new(bits: *mut u8) -> Self {
-        Self { bits }
+        Self(SegmentBitmap::new(bits))
     }
 
     /// Initialise a fresh bitmap at `bits`: ALL ZEROS (every slot
-    /// "allocated / not-a-block-start"). Routes every byte write through
-    /// [`Node::write_u8`]. `bits` MUST point to [`FOOTPRINT`](Self::FOOTPRINT)
-    /// writable bytes inside the segment being initialised (caller's contract —
-    /// the bootstrap).
+    /// "allocated / not-a-block-start"). `bits` MUST point to
+    /// [`FOOTPRINT`](Self::FOOTPRINT) writable bytes inside the segment being
+    /// initialised (caller's contract — the bootstrap).
     ///
     /// PERF-PASS-2 (G5/C1, task #50): the two virgin-reserve call sites
     /// (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) now skip
@@ -88,11 +96,7 @@ impl AllocBitmap {
     /// `alloc-decommit` it IS called and the lint stays live.
     #[cfg_attr(all(not(miri), not(feature = "alloc-decommit")), allow(dead_code))]
     pub(crate) fn init_in_place(bits: *mut u8) {
-        let mut i = 0;
-        while i < Self::FOOTPRINT {
-            Node::write_u8(Node::offset(bits, i), 0);
-            i += 1;
-        }
+        SegmentBitmap::init_in_place(bits)
     }
 
     /// Whether the block at segment offset `off` is currently marked FREE
@@ -100,19 +104,14 @@ impl AllocBitmap {
     /// double-free test — `true` means the block is already on a free list.
     #[inline(always)]
     pub(crate) fn is_free(&self, off: u32) -> bool {
-        let (byte_idx, mask) = Self::locate(off);
-        let byte = Node::read_u8(Node::offset(self.bits, byte_idx));
-        (byte & mask) != 0
+        self.0.test(off)
     }
 
     /// Mark the block at segment offset `off` as FREE (set its bit). Called when
     /// the block is pushed onto a free list. O(1): byte load + OR + store.
     #[inline(always)]
     pub(crate) fn mark_free(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte | mask);
+        self.0.set(off)
     }
 
     /// Mark the block at segment offset `off` as ALLOCATED (clear its bit).
@@ -120,19 +119,6 @@ impl AllocBitmap {
     /// byte load + AND + store.
     #[inline(always)]
     pub(crate) fn mark_alloc(&mut self, off: u32) {
-        let (byte_idx, mask) = Self::locate(off);
-        let p = Node::offset(self.bits, byte_idx);
-        let byte = Node::read_u8(p);
-        Node::write_u8(p, byte & !mask);
-    }
-
-    /// Map a segment offset to `(byte_index, bit_mask)` within the bitmap. The
-    /// bit index is `off >> MIN_BLOCK_SHIFT` (the `MIN_BLOCK`-slot number);
-    /// byte = bit / 8, mask = 1 << (bit % 8). Pure arithmetic.
-    #[inline(always)]
-    fn locate(off: u32) -> (usize, u8) {
-        let bit = (off >> MIN_BLOCK_SHIFT) as usize;
-        debug_assert!(bit < Self::FOOTPRINT * 8, "bitmap bit index out of range");
-        (bit >> 3, 1u8 << (bit & 7))
+        self.0.clear(off)
     }
 }

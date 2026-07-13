@@ -76,6 +76,14 @@ pub mod remote_free_ring;
 #[cfg(feature = "alloc-runfreelist")]
 #[doc(hidden)]
 pub mod run_stack;
+/// The shared per-segment bitmap *mechanism* (the bit-test/set/clear
+/// arithmetic + `FOOTPRINT`) common to [`alloc_bitmap::AllocBitmap`] and
+/// [`magazine_bitmap::MagazineBitmap`]; task #98 / R4-6 dedup of
+/// `code_quality_review.md` finding #7. `pub(crate)` only because
+/// `alloc_core` itself is `#[doc(hidden)]`; the type is `pub(super)` so neither
+/// wrapper nor any other crate code can confuse the two bitmap KINDS at a call
+/// site. Nothing here is stable public API.
+pub(crate) mod segment_bitmap;
 /// The per-segment metadata layout + field-specific header accessors + (X7 Ф1)
 /// the generation-table byte-level accessors. `pub` (not `pub(crate)`) only
 /// because `alloc_core` itself is `#[doc(hidden)]` (see `lib.rs`): the public
