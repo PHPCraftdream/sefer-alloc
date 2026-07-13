@@ -15,8 +15,11 @@ mod alloc_core_large;
 #[cfg(feature = "alloc-decommit")]
 mod alloc_core_large_cache;
 mod alloc_core_small;
+mod alloc_core_small_diag;
+mod alloc_core_small_magazine;
 #[cfg(feature = "alloc-decommit")]
 mod alloc_core_small_pool;
+mod alloc_core_small_reclaim;
 mod bootstrap;
 /// The cross-thread deferred-free Treiber stack for Large/huge segments
 /// (task A1, extracted for #132). Used by the allocator face
