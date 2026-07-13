@@ -158,7 +158,7 @@ fn fresh_segment_gen_table_is_zeroed() {
             0,
             "offset is granule-aligned"
         );
-        let gen = gen_at(base as *mut u8, off);
+        let gen = unsafe { gen_at(base as *mut u8, off) };
         assert_eq!(
             gen, 0,
             "segment[{i}] base={base:#x}: a freshly carved block must read gen 0 \
@@ -355,7 +355,7 @@ fn abandon_segments_preserves_generation() {
     );
 
     // (2) Read P's generation BEFORE abandon. It is 1 (one issue pop).
-    let gen_before = gen_at(base, off);
+    let gen_before = unsafe { gen_at(base, off) };
     assert_eq!(
         gen_before, 1,
         "a freshly issued block should be at generation 1 under hardened"
@@ -371,7 +371,7 @@ fn abandon_segments_preserves_generation() {
     // touched only `owner_state`, not metadata bytes. If a future change
     // re-zeroed the gen table on abandon (or on the segment's transition to
     // ABANDONED), this would read 0 and fail.
-    let gen_after = gen_at(base, off);
+    let gen_after = unsafe { gen_at(base, off) };
     assert_eq!(
         gen_after, gen_before,
         "abandon_segments changed the generation table (before={gen_before}, \

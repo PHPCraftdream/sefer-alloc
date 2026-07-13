@@ -73,14 +73,14 @@ fn seg_base(ptr: *mut u8) -> usize {
 
 #[cfg(feature = "alloc-runfreelist")]
 fn runstack_peek(ptr: *mut u8, class: usize) -> Option<RunDesc> {
-    RunStack::peek(seg_base(ptr) as *mut u8, class)
+    unsafe { RunStack::peek(seg_base(ptr) as *mut u8, class) }
 }
 
 #[cfg(feature = "alloc-runfreelist")]
 fn runstack_drain_all(ptr: *mut u8, class: usize) -> Vec<RunDesc> {
     let base = seg_base(ptr) as *mut u8;
     let mut out = Vec::new();
-    while let Some(desc) = RunStack::pop(base, class) {
+    while let Some(desc) = unsafe { RunStack::pop(base, class) } {
         out.push(desc);
     }
     out
@@ -445,7 +445,8 @@ fn flush_run_classic_when_feature_off() {
     );
 
     let mut out = vec![core::ptr::null_mut::<u8>(); N + 4];
-    let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
     assert_eq!(drained, N, "classic drain must return exactly N blocks");
     let unique: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
     assert_eq!(unique.len(), N);
@@ -501,7 +502,8 @@ fn run_member_blocks_not_on_linked_list_drain() {
     // Ф3: drain now reconstructs the run-member blocks FIRST (stride
     // arithmetic), then drains the linked list. Returns ALL 4 flushed blocks.
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(
         drained, 4,
         "Ф3 drain returns all flushed blocks (3 run + 1 singleton)"

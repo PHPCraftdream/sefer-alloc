@@ -70,8 +70,12 @@ fn entry_for(n: u32) -> u32 {
 fn boundary_fifo_across_u32_wrap() {
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
-    let ring = RemoteFreeRing::over_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
+    // buffer (see `ring_buffer()`).
+    let ring = unsafe {
+        RemoteFreeRing::init_test_buffer(base);
+        RemoteFreeRing::over_test_buffer(base)
+    };
 
     let start = u32::MAX - 2;
     ring.dbg_set_cursors(start, start);
@@ -110,8 +114,12 @@ fn boundary_fifo_across_u32_wrap() {
 fn full_ring_overflow_across_wrap() {
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
-    let ring = RemoteFreeRing::over_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
+    // buffer (see `ring_buffer()`).
+    let ring = unsafe {
+        RemoteFreeRing::init_test_buffer(base);
+        RemoteFreeRing::over_test_buffer(base)
+    };
 
     // Start so that filling RING_CAP entries crosses u32::MAX.
     let start = u32::MAX - (RING_CAP as u32) / 2;
@@ -180,8 +188,12 @@ fn occupancy_across_wrap_is_wrapping_sub() {
     // drain returns exactly those 5 in order.
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
-    let ring = RemoteFreeRing::over_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, exclusively-owned
+    // buffer (see `ring_buffer()`).
+    let ring = unsafe {
+        RemoteFreeRing::init_test_buffer(base);
+        RemoteFreeRing::over_test_buffer(base)
+    };
 
     let start = u32::MAX - 1;
     ring.dbg_set_cursors(start, start);
@@ -215,14 +227,17 @@ fn concurrent_hammer_across_wrap() {
 
     let buf = Arc::new(ring_buffer());
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, aligned, owned buffer.
+    unsafe { RemoteFreeRing::init_test_buffer(base) };
     // Preset so the very first pushes cross u32::MAX.
     {
-        let r = RemoteFreeRing::over_test_buffer(base);
+        // SAFETY: same buffer, still live and exclusively owned.
+        let r = unsafe { RemoteFreeRing::over_test_buffer(base) };
         let start = u32::MAX - 5;
         r.dbg_set_cursors(start, start);
     }
-    let ring = Arc::new(SendRing(RemoteFreeRing::over_test_buffer(base)));
+    // SAFETY: same buffer.
+    let ring = Arc::new(SendRing(unsafe { RemoteFreeRing::over_test_buffer(base) }));
 
     let attempted = Arc::new(AtomicU64::new(0));
     let succeeded = Arc::new(AtomicU64::new(0));

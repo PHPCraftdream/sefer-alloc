@@ -37,16 +37,18 @@ fn bind_segment_on_no_node_is_noop() {
     // A dummy non-null address; we pass NO_NODE so bind_segment short-circuits
     // before making any OS call and never dereferences the pointer.
     let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
+    // SAFETY: NO_NODE makes bind_segment a no-op before any OS call.
     // Must not panic or crash.
-    numa::bind_segment(dummy, 4096, numa::NO_NODE);
+    unsafe { numa::bind_segment(dummy, 4096, numa::NO_NODE) };
 }
 
 /// Calling `bind_segment` with `len == 0` must be a no-op regardless of node.
 #[test]
 fn bind_segment_zero_len_is_noop() {
     let dummy: *mut u8 = std::ptr::dangling_mut::<u8>();
+    // SAFETY: len == 0 makes bind_segment a no-op before any OS call.
     // len == 0 early-return guard.
-    numa::bind_segment(dummy, 0, 0);
+    unsafe { numa::bind_segment(dummy, 0, 0) };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,10 +131,11 @@ fn bind_segment_with_real_node_does_not_panic() {
     let mut buf: Vec<u8> = vec![0u8; 4096];
     let ptr = buf.as_mut_ptr();
 
+    // SAFETY: `ptr` is a live, exclusively-owned mmap'd page.
     // Try to bind to node 0 (always exists, even on single-node machines).
     // mbind on a Rust-heap page is fine for testing the syscall path; the
     // kernel will simply ignore or accept the request.
-    numa::bind_segment(ptr, 4096, 0);
+    unsafe { numa::bind_segment(ptr, 4096, 0) };
 
     // Verify we can still read and write the buffer (no UAF / decommit).
     buf[0] = 42;

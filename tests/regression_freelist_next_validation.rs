@@ -87,7 +87,8 @@ fn pop_free_rejects_out_of_segment_next() {
     // pointer value (not a wild address like `0x1`), simulating a realistic
     // UAF corruption.
     let corrupt_next = (b as usize ^ SEGMENT) as *mut u8;
-    let corrupted = ac.dbg_corrupt_freelist_head_next(b, 0, corrupt_next);
+    // SAFETY: the ptr arg is a live allocation owned by the receiver.
+    let corrupted = unsafe { ac.dbg_corrupt_freelist_head_next(b, 0, corrupt_next) };
     assert!(
         corrupted,
         "test setup: free list for class 0 must be non-empty"
@@ -159,14 +160,16 @@ fn drain_freelist_batch_rejects_out_of_segment_next() {
     // Head is `c`; chain is c -> b -> a -> NULL. Corrupt `c`'s `next` (which
     // currently points at `b`) to an out-of-segment address.
     let corrupt_next = (c as usize ^ SEGMENT) as *mut u8;
-    let corrupted = ac.dbg_corrupt_freelist_head_next(c, class_idx, corrupt_next);
+    // SAFETY: the ptr arg is a live allocation owned by the receiver.
+    let corrupted = unsafe { ac.dbg_corrupt_freelist_head_next(c, class_idx, corrupt_next) };
     assert!(corrupted, "test setup: free list must be non-empty");
 
     // Drain up to 8 blocks (more than the 3 available) — the walk must stop
     // at `c` (the only block whose `next` is trustworthy) rather than
     // dereferencing the corrupted `next` to "reach" a bogus second entry.
     let mut out: [*mut u8; 8] = [core::ptr::null_mut(); 8];
-    let popped = ac.dbg_drain_freelist_batch(c, class_idx, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let popped = unsafe { ac.dbg_drain_freelist_batch(c, class_idx, &mut out) };
 
     assert_eq!(
         popped, 1,

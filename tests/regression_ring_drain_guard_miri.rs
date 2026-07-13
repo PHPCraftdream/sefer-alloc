@@ -107,7 +107,8 @@ fn guarded_scan_reclaims_cross_segment_push_and_skips_when_empty() {
     // emptying.
     let mut drain_buf = vec![std::ptr::null_mut::<u8>(); 64];
     loop {
-        let n = ac.dbg_drain_freelist_batch(seg_b_anchor, class_idx, &mut drain_buf);
+        // SAFETY: the first arg is a live allocation owned by the receiver.
+        let n = unsafe { ac.dbg_drain_freelist_batch(seg_b_anchor, class_idx, &mut drain_buf) };
         if n == 0 {
             break;
         }

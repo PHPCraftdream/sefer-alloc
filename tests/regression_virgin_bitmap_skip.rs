@@ -128,7 +128,8 @@ fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
 
     const FOOTPRINT: usize = 32 * 1024; // AllocBitmap::FOOTPRINT for the default SEGMENT/MIN_BLOCK pair
     let mut buf = vec![0u8; FOOTPRINT];
-    ac.dbg_alloc_bitmap_bytes_for(p, &mut buf);
+    // SAFETY: `p` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_alloc_bitmap_bytes_for(p, &mut buf) };
 
     // RAD-5 (E4) GO/NO-GO EXPERIMENT: the second (magazine-residency)
     // bitmap's virgin-init is skipped by the SAME `cfg(not(miri))` discipline
@@ -142,7 +143,8 @@ fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
     // observe non-zero garbage.
     const MAG_FOOTPRINT: usize = 32 * 1024; // MagazineBitmap::FOOTPRINT, same geometry as AllocBitmap
     let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
-    ac.dbg_magazine_bitmap_bytes_for(p, &mut mag_buf);
+    // SAFETY: `p` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_magazine_bitmap_bytes_for(p, &mut mag_buf) };
     assert!(
         mag_buf.iter().all(|&b| b == 0),
         "freshly-reserved primordial segment's MagazineBitmap (RAD-5) did \
@@ -241,14 +243,16 @@ fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
 
     const FOOTPRINT: usize = 32 * 1024;
     let mut buf = vec![0u8; FOOTPRINT];
-    ac.dbg_alloc_bitmap_bytes_for(fresh_ptr, &mut buf);
+    // SAFETY: `fresh_ptr` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_alloc_bitmap_bytes_for(fresh_ptr, &mut buf) };
 
     // RAD-5 (E4) GO/NO-GO EXPERIMENT: same unconditional whole-footprint
     // check as T1, for the second (non-primordial) virgin-reserve call site
     // (`AllocCore::reserve_small_segment`'s `MagazineBitmap` skip).
     const MAG_FOOTPRINT: usize = 32 * 1024;
     let mut mag_buf = vec![0u8; MAG_FOOTPRINT];
-    ac.dbg_magazine_bitmap_bytes_for(fresh_ptr, &mut mag_buf);
+    // SAFETY: `fresh_ptr` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_magazine_bitmap_bytes_for(fresh_ptr, &mut mag_buf) };
     assert!(
         mag_buf.iter().all(|&b| b == 0),
         "freshly-reserved (non-primordial) small segment's MagazineBitmap \

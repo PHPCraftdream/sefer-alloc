@@ -1568,17 +1568,29 @@ impl SegmentMeta {
 /// MUST be a `MIN_BLOCK`-aligned segment-relative offset of a live block (`off
 /// >> MIN_BLOCK_SHIFT < GEN_TABLE_FOOTPRINT`, which holds for any `off <
 /// SEGMENT`).
+///
+/// # Safety
+///
+/// `base` MUST point to a live, mapped, exclusively-owned small/primordial
+/// segment whose generation table (`GEN_TABLE_FOOTPRINT` bytes at
+/// [`Layout::gen_table_off`]) is carved and initialised. `off` MUST be a
+/// `MIN_BLOCK`-aligned segment-relative offset of a live block. The
+/// release-asserted index bound is necessary but NOT sufficient —
+/// validity/lifetime/exclusivity of `base` are the caller's invariants and
+/// cannot be checked by the callee. The atomic view is fabricated as
+/// `&'static` from `base`; a dangling or non-segment `base` is undefined
+/// behaviour.
 #[cfg(feature = "hardened")]
 #[doc(hidden)]
 #[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
 #[inline(always)]
-pub fn gen_at(base: *mut u8, off: usize) -> u8 {
+#[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+pub unsafe fn gen_at(base: *mut u8, off: usize) -> u8 {
     let idx = off >> MIN_BLOCK_SHIFT;
     // R2-3: release-surviving index bound (replaces a debug-only debug_assert!
     // that compiled out in release, leaving the atomic load unguarded). The
-    // base-validity half of the contract stays the caller's responsibility —
-    // this module is #![forbid(unsafe_code)], so the heap_registry-style
-    // `unsafe fn` discipline cannot apply here.
+    // base-validity half of the contract is expressed by the `unsafe fn`
+    // boundary above (task #101 / R4-MS-3).
     assert!(
         idx < GEN_TABLE_FOOTPRINT,
         "generation-table index out of range"
@@ -1604,17 +1616,24 @@ pub fn gen_at(base: *mut u8, off: usize) -> u8 {
 /// Same as [`gen_at`]: `base` is a live segment base with a carved generation
 /// table; `off` is a `MIN_BLOCK`-aligned segment-relative offset of a live
 /// block.
+///
+/// # Safety
+///
+/// Same as [`gen_at`](gen_at#safety): `base` MUST be a live, mapped,
+/// exclusively-owned segment with a carved generation table; `off` MUST be a
+/// `MIN_BLOCK`-aligned segment-relative offset. The release-asserted index
+/// bound is necessary but not sufficient.
 #[cfg(feature = "hardened")]
 #[doc(hidden)]
 #[allow(dead_code)] // wired in Ф1; consumed by Ф2/Ф3 + the layout test
 #[inline(always)]
-pub fn bump_gen(base: *mut u8, off: usize) -> u8 {
+#[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+pub unsafe fn bump_gen(base: *mut u8, off: usize) -> u8 {
     let idx = off >> MIN_BLOCK_SHIFT;
     // R2-3: release-surviving index bound (replaces a debug-only debug_assert!
     // that compiled out in release, leaving the atomic load unguarded). The
-    // base-validity half of the contract stays the caller's responsibility —
-    // this module is #![forbid(unsafe_code)], so the heap_registry-style
-    // `unsafe fn` discipline cannot apply here.
+    // base-validity half of the contract is expressed by the `unsafe fn`
+    // boundary above (task #101 / R4-MS-3).
     assert!(
         idx < GEN_TABLE_FOOTPRINT,
         "generation-table index out of range"
@@ -1651,9 +1670,18 @@ pub fn bump_gen(base: *mut u8, off: usize) -> u8 {
 /// `base` MUST be a live small/primordial segment base whose generation table
 /// (at [`Layout::gen_table_off`], [`GEN_TABLE_FOOTPRINT`] bytes) is carved and
 /// about to be consulted.
+///
+/// # Safety
+///
+/// `base` MUST point to a live, mapped, exclusively-owned small/primordial
+/// segment whose generation table (`GEN_TABLE_FOOTPRINT` bytes at
+/// [`Layout::gen_table_off`]) is carved and writable. The callee writes every
+/// cell to zero, so a too-short, dangling or shared `base` is undefined
+/// behaviour.
 #[cfg(feature = "hardened")]
 #[doc(hidden)]
-pub fn init_gen_table_in_place(base: *mut u8) {
+#[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+pub unsafe fn init_gen_table_in_place(base: *mut u8) {
     let table_off = Layout::gen_table_off();
     let mut i = 0;
     while i < GEN_TABLE_FOOTPRINT {

@@ -219,7 +219,8 @@ fn unregister_defends_against_mismatched_segment_id() {
     assert_ne!(a_id, b_id, "precondition: distinct segment ids");
 
     ac.dbg_stamp_segment_id(a, b_id); // corrupt a's stamped id to b's id
-    ac.dbg_unregister(a); // O(1) path reads the (corrupted) id -> finds `b` there -> no-op
+                                      // SAFETY: `a` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_unregister(a) }; // O(1) path reads the (corrupted) id -> finds `b` there -> no-op
 
     // Both must still be considered live (defensive no-op held): `a`'s slot
     // was never NULLed (the corrupted lookup landed on `b`'s slot, which

@@ -20,7 +20,7 @@
 //! ## RED→GREEN
 //!
 //! In a RELEASE build: before the fix `debug_assert!` compiled out, so
-//! `RunStack::is_empty(base, SMALL_CLASS_COUNT)` read one-past the `RunStack`
+//! `unsafe { RunStack::is_empty(base, SMALL_CLASS_COUNT) }` read one-past the `RunStack`
 //! region (the address stays inside the mapped segment, so it returned a bool
 //! rather than crashing) — RED. After the fix the `assert!` panics — GREEN.
 //! Debug-only distinction is impossible; run with `--release`.
@@ -49,14 +49,14 @@ fn run_stack_rejects_out_of_range_class() {
 
     // Non-regression: a VALID class does not panic (the segment's `RunStack` is
     // carved under `alloc-runfreelist`).
-    let _ = RunStack::is_empty(base, valid_class);
+    let _ = unsafe { RunStack::is_empty(base, valid_class) };
 
     // `class == SMALL_CLASS_COUNT` (== `SIZE_CLASS_TABLE.len()`) is one past the
     // last valid class index. The would-be read address (just past the
     // `RunStack` region) stays inside the mapped segment, so pre-fix release
     // returned a bool; the release-surviving `assert!` now panics.
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = RunStack::is_empty(base, class_count);
+        let _ = unsafe { RunStack::is_empty(base, class_count) };
     }));
     assert!(
         r.is_err(),

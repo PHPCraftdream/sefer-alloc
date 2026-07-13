@@ -169,7 +169,10 @@ impl AllocCore {
         // test, not fixable without doubling the ring footprint.
         #[cfg(feature = "hardened")]
         {
-            let current_gen = super::segment_header::gen_at(base, off);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset of a live block in it.
+            #[allow(unsafe_code)]
+            let current_gen = unsafe { super::segment_header::gen_at(base, off) };
             if stamped_gen != current_gen {
                 return false;
             }
@@ -346,7 +349,10 @@ impl AllocCore {
         // Sibling-block discipline mirrors `dealloc_routing`'s Variant-2 block.
         #[cfg(feature = "hardened")]
         {
-            let gen = super::segment_header::gen_at(base, off as usize);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset of a live block.
+            #[allow(unsafe_code)]
+            let gen = unsafe { super::segment_header::gen_at(base, off as usize) };
             let packed = super::remote_free_ring::pack_entry_hardened(gen, class_idx as u32, off);
             let ring = SegmentMeta::new(base).remote_ring();
             ring.push(packed).is_ok()
@@ -482,9 +488,19 @@ impl AllocCore {
     /// `alloc_core.rs`), applied to a freelist node's `next` word instead of a
     /// header field. Returns `false` (no-op) if the class's free list is
     /// currently empty (nothing to corrupt).
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
+    /// segment base is a real, mapped segment owned by this `AllocCore`. The
+    /// callee computes `base` from `ptr` and writes an arbitrary `next_raw` into
+    /// the head free-list node WITHOUT a membership check; passing an invalid,
+    /// interior, stale or foreign `ptr` corrupts allocator metadata or triggers
+    /// undefined behaviour.
     #[doc(hidden)]
     #[cfg(feature = "hardened")]
-    pub fn dbg_corrupt_freelist_head_next(
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_corrupt_freelist_head_next(
         &self,
         ptr: *mut u8,
         class_idx: usize,
@@ -507,8 +523,17 @@ impl AllocCore {
     /// `ptr`'s segment so a regression test can observe partial/full-drain
     /// behaviour (return count, resulting `set_head`, per-block bitmap state) in
     /// isolation from the surrounding `refill_class_bump` carve logic.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
+    /// segment is owned by this `AllocCore`. The callee computes `base` from
+    /// `ptr` and mutates the free list WITHOUT a membership check; an invalid,
+    /// interior, stale or foreign `ptr` corrupts allocator metadata or triggers
+    /// undefined behaviour.
     #[doc(hidden)]
-    pub fn dbg_drain_freelist_batch(
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_drain_freelist_batch(
         &self,
         ptr: *mut u8,
         class_idx: usize,
@@ -530,13 +555,20 @@ impl AllocCore {
     /// happens to read as allocated (which `dbg_is_free_for` alone cannot
     /// distinguish from "never written" vs "explicitly zeroed").
     ///
-    /// `out.len()` MUST be `<= AllocBitmap::FOOTPRINT` (debug-asserted); the
+    /// `out.len()` MUST be `<= AllocBitmap::FOOTPRINT` (release-asserted); the
     /// caller is responsible for not reading past the bitmap's own footprint
     /// (reading further would spill into the next metadata region, which this
     /// accessor does not guard against — test-only, not a production API).
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
+    /// segment is owned by this `AllocCore`. The callee computes `base` from
+    /// `ptr` and reads raw bitmap bytes WITHOUT a membership check.
     #[doc(hidden)]
-    pub fn dbg_alloc_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
-        debug_assert!(
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_alloc_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
+        assert!(
             out.len() <= super::alloc_bitmap::AllocBitmap::FOOTPRINT,
             "dbg_alloc_bitmap_bytes_for: out.len() exceeds AllocBitmap::FOOTPRINT"
         );
@@ -552,9 +584,15 @@ impl AllocCore {
     /// bitmap instead. Exists for the poison-then-assert counterfactual
     /// extension (`tests/regression_virgin_bitmap_skip.rs`) that proves the
     /// virgin-init skip is sound for this bitmap too, not just `AllocBitmap`.
+    ///
+    /// # Safety
+    ///
+    /// Same as [`dbg_alloc_bitmap_bytes_for`](Self::dbg_alloc_bitmap_bytes_for#safety):
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer.
     #[doc(hidden)]
-    pub fn dbg_magazine_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
-        debug_assert!(
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_magazine_bitmap_bytes_for(&self, ptr: *mut u8, out: &mut [u8]) {
+        assert!(
             out.len() <= super::magazine_bitmap::MagazineBitmap::FOOTPRINT,
             "dbg_magazine_bitmap_bytes_for: out.len() exceeds MagazineBitmap::FOOTPRINT"
         );
@@ -574,9 +612,17 @@ impl AllocCore {
     /// address (`base + k` for `k < payload_start`) without hardcoding the
     /// crate's private layout constants (`segment_header::Layout` is
     /// `pub(crate)`, unreachable from `tests/`).
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live, exclusively-owned allocation pointer whose
+    /// segment is owned by this `AllocCore`. The callee reads the segment kind
+    /// byte at the computed `base` WITHOUT a membership check; a dangling or
+    /// foreign `ptr` triggers undefined behaviour.
     #[doc(hidden)]
     #[must_use]
-    pub fn dbg_payload_start_for(&self, ptr: *mut u8) -> usize {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_payload_start_for(&self, ptr: *mut u8) -> usize {
         let base = os::segment_base_of_ptr(ptr);
         if SegmentHeader::kind_at(base) == SegmentKind::Primordial {
             SegLayout::primordial_meta_end()
@@ -1168,12 +1214,17 @@ impl AllocCore {
                     let run_len = j - i;
                     if run_len >= 2 {
                         let start_off = accepted_offs[idx[i]];
-                        if super::run_stack::RunStack::push(
-                            base,
-                            class_idx,
-                            start_off,
-                            run_len as u16,
-                        ) {
+                        // SAFETY: `base` is a live, exclusively-owned segment
+                        // whose RunStack region is carved.
+                        #[allow(unsafe_code)]
+                        if unsafe {
+                            super::run_stack::RunStack::push(
+                                base,
+                                class_idx,
+                                start_off,
+                                run_len as u16,
+                            )
+                        } {
                             let mut m = i;
                             while m < j {
                                 run_member[idx[m]] = true;
@@ -1764,7 +1815,12 @@ impl AllocCore {
         // on their later magazine pop. Compiled ONLY under `hardened`.
         #[cfg(feature = "hardened")]
         {
-            super::segment_header::bump_gen(segment, head_off as usize);
+            // SAFETY: `segment` is a live, exclusively-owned segment;
+            // `head_off` is a MIN_BLOCK-aligned offset of a live block.
+            #[allow(unsafe_code)]
+            unsafe {
+                super::segment_header::bump_gen(segment, head_off as usize)
+            };
         }
         let _ = block_size; // block_size is the caller's invariant; not needed here.
         Some(block_ptr)
@@ -1861,7 +1917,9 @@ impl AllocCore {
             // Pop descriptors one at a time; for each, reconstruct every member
             // offset, guard it, and hand it out. Stop as soon as `out` is full.
             while k < out.len() {
-                let desc = match super::run_stack::RunStack::pop(segment, class_idx) {
+                // SAFETY: `segment` is a live, exclusively-owned segment.
+                #[allow(unsafe_code)]
+                let desc = match unsafe { super::run_stack::RunStack::pop(segment, class_idx) } {
                     Some(d) => d,
                     None => break, // RunStack exhausted for this class → fall through.
                 };
@@ -1935,8 +1993,11 @@ impl AllocCore {
                 if i < desc.count as usize {
                     let rem_start = (start + i * block_size) as u32;
                     let rem_count = desc.count - i as u16;
-                    let pushed =
-                        super::run_stack::RunStack::push(segment, class_idx, rem_start, rem_count);
+                    // SAFETY: `segment` is a live, exclusively-owned segment.
+                    #[allow(unsafe_code)]
+                    let pushed = unsafe {
+                        super::run_stack::RunStack::push(segment, class_idx, rem_start, rem_count)
+                    };
                     // The pushback MUST succeed (we just freed one slot; single-
                     // writer). A `false` here would indicate a capacity
                     // invariant violation (more than `RUNSTACK_CAPACITY`
@@ -2500,7 +2561,12 @@ impl AllocCore {
         // numbering is continuous across decommit-reset by design).
         #[cfg(feature = "hardened")]
         {
-            super::segment_header::init_gen_table_in_place(base);
+            // SAFETY: `base` is a live, exclusively-owned segment whose
+            // generation table is carved and writable.
+            #[allow(unsafe_code)]
+            unsafe {
+                super::segment_header::init_gen_table_in_place(base)
+            };
         }
         // PERF-3 Ф1 (task #208): zero the per-segment run-encoded freelist
         // stack under `alloc-runfreelist`. Compiled ONLY under
@@ -2511,7 +2577,11 @@ impl AllocCore {
         // — the SAME two sites X7-Ф3 wired `init_gen_table_in_place` into).
         #[cfg(feature = "alloc-runfreelist")]
         {
-            super::run_stack::RunStack::init_in_place(base);
+            // SAFETY: `base` is a live, exclusively-owned segment.
+            #[allow(unsafe_code)]
+            unsafe {
+                super::run_stack::RunStack::init_in_place(base)
+            };
         }
         self.small_cur = base;
         Some(base)

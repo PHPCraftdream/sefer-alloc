@@ -699,7 +699,11 @@ impl AllocCore {
         //     identical to pre-Ф4 (the production-judge neutrality gate).
         #[cfg(feature = "alloc-runfreelist")]
         {
-            super::run_stack::RunStack::clear_all(base);
+            // SAFETY: `base` is a live, exclusively-owned segment.
+            #[allow(unsafe_code)]
+            unsafe {
+                super::run_stack::RunStack::clear_all(base)
+            };
         }
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);

@@ -1,21 +1,14 @@
 //! R2-3 regression: `RemoteFreeRing::over_test_buffer` / `init_test_buffer`
 //! reject null / misaligned bases via a RELEASE-surviving guard.
 //!
-//! Both surfaces are `#[doc(hidden)] pub` and accept an arbitrary `*mut u8`.
-//! Before this fix they validated NOTHING — a downstream safe caller could pass
-//! a null or misaligned base and the ring would construct a view (and, for
-//! `init_test_buffer`, write the cursor/slot bytes) over it with no `unsafe`
-//! keyword (round2 finding R2-3 / cleanup#2).
-//!
-//! ## Why a runtime guard (not `unsafe fn`)
-//!
-//! This module is `#![forbid(unsafe_code)]` (it is NOT a named seam like
-//! `heap_registry`, where T1 could use `pub unsafe fn`). The T1 pattern
-//! therefore cannot apply here; a release-surviving `assert!` on the documented
-//! null + 4-byte-alignment preconditions is the soundness fix. The
-//! `FOOTPRINT`-writability half of the contract is not runtime-checkable and
-//! stays the caller's responsibility (documented on the functions), exactly as
-//! for the `Node` seam primitives the ring delegates to.
+//! Both surfaces are `#[doc(hidden)] pub unsafe fn` (task #101 / R4-MS-3) and
+//! accept an arbitrary `*mut u8`. Before the R2-3 fix they validated NOTHING —
+//! a downstream safe caller could pass a null or misaligned base and the ring
+//! would construct a view (and, for `init_test_buffer`, write the cursor/slot
+//! bytes) over it. The R2-3 release-surviving `assert!` on null +
+//! 4-byte-alignment was the first layer; task #101 added the `unsafe fn`
+//! boundary so the unverifiable validity/size/lifetime contract lives in the
+//! signature, not in prose.
 //!
 //! ## RED→GREEN
 //!
@@ -38,7 +31,11 @@ fn over_test_buffer_rejects_misaligned_base() {
     // view over a bogus base with no validation at all.
     let bogus = 0x1001usize as *mut u8;
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = RemoteFreeRing::over_test_buffer(bogus);
+        // SAFETY: intentionally passing an invalid base to exercise the guard;
+        // the release `assert!` fires before any memory access.
+        unsafe {
+            let _ = RemoteFreeRing::over_test_buffer(bogus);
+        }
     }));
     assert!(
         r.is_err(),
@@ -50,7 +47,11 @@ fn over_test_buffer_rejects_misaligned_base() {
 #[test]
 fn over_test_buffer_rejects_null_base() {
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = RemoteFreeRing::over_test_buffer(core::ptr::null_mut());
+        // SAFETY: intentionally passing a null base to exercise the guard; the
+        // release `assert!` fires before any memory access.
+        unsafe {
+            let _ = RemoteFreeRing::over_test_buffer(core::ptr::null_mut());
+        }
     }));
     assert!(
         r.is_err(),
@@ -62,7 +63,11 @@ fn over_test_buffer_rejects_null_base() {
 #[test]
 fn init_test_buffer_rejects_null_base() {
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        RemoteFreeRing::init_test_buffer(core::ptr::null_mut());
+        // SAFETY: intentionally passing a null base to exercise the guard; the
+        // release `assert!` fires before any memory access.
+        unsafe {
+            RemoteFreeRing::init_test_buffer(core::ptr::null_mut());
+        }
     }));
     assert!(
         r.is_err(),
@@ -85,8 +90,12 @@ fn valid_aligned_buffer_is_accepted() {
         (base as usize).is_multiple_of(4),
         "test buffer must be 4-byte aligned"
     );
-    RemoteFreeRing::init_test_buffer(base);
-    let _ring = RemoteFreeRing::over_test_buffer(base);
+    // SAFETY: `base` points to `FOOTPRINT` writable, 4-byte-aligned, exclusively-
+    // owned bytes that live for the ring's use (the boxed `buf`).
+    unsafe {
+        RemoteFreeRing::init_test_buffer(base);
+        let _ring = RemoteFreeRing::over_test_buffer(base);
+    }
     // No assertion beyond not panicking: both calls accepted the valid buffer.
     let _ = &mut buf; // keep `buf` alive past the view construction
 }

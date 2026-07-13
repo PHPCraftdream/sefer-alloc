@@ -130,7 +130,7 @@ Each is a real crates.io crate (`cargo add aligned-vmem`, etc.). The
 extraction **improved the audit story**: the two OS-unsafe sub-problems are now
 small, single-responsibility crates that can be audited in complete isolation.
 
-### Confined unsafe seams (current inventory — verifiable with `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`)
+### Confined unsafe seams (current inventory — verifiable with `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`)
 
 **External publishable crates** (independently auditable):
 
@@ -141,7 +141,7 @@ small, single-responsibility crates that can be audited in complete isolation.
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to alloc_block/free_block/drain_mailbox helpers; every unsafe block carries `// SAFETY:`. Bench harness, not runtime. |
 | `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own unsafe (shown for contrast; does **not** match the grep above); slotmap's audited core owns the generational layout. |
 
-**Internal sefer-alloc seams** (10 src modules total; compiler-enforced):
+**Internal sefer-alloc seams — tier 1 (module-level)** (compiler-enforced):
 
 Under the recommended `production` feature
 (`alloc-global + alloc-xthread + alloc-decommit + fastbin`) the active
@@ -168,8 +168,10 @@ not pull it in.
 | [`src/alloc_core/numa.rs`](../src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding. | `numa-aware` |
 | [`src/concurrent/hand.rs`](../src/concurrent/hand.rs) | Epoch-based per-slot atomics for the lock-free concurrent Handle tier (3b-II; superseded by `alloc-xthread` for the global allocator; **deprecated, legacy/research-tier**). | `experimental` |
 
-Outside these modules, `unsafe` is a hard compile error
-(`#![deny(unsafe_code)]` when any of those features are active;
+Outside these tier-1 modules AND the tier-2 item-scoped allows (individual
+`unsafe fn` boundaries in otherwise-safe files — see README §"Where unsafe
+lives" for the tier-2 table, task #101 / R4-9), an `unsafe` token is a hard
+compile error (`#![deny(unsafe_code)]` when any of those features are active;
 `#![forbid(unsafe_code)]` with only the default `std` feature). The
 source-of-truth catalogue is in [`src/lib.rs`](../src/lib.rs) at the
 top-level comment.

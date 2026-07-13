@@ -97,9 +97,13 @@
 //
 // ── Unsafe inventory — the complete, verifiable picture ───────────────────────
 //
-// Source of truth: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
-// (line-anchored — the unanchored form also matches `//` comments that merely
-// mention the attribute, e.g. in this file and `src/registry/heap_overflow.rs`).
+// Source of truth: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+// — two tiers in one command: `#![...]` matches are the module-level seams
+// (tier 1), `#[...]` matches are item-scoped `unsafe fn` declarations and
+// their internal call-site `unsafe {}` blocks (tier 2, task #101 / R4-9).
+// Both are comment-proof: `^\s*#!?\[` requires the line to begin with the
+// attribute, not a `//` prefix (the unanchored form has false positives here
+// and in `src/registry/heap_overflow.rs`).
 //
 // EXTERNAL publishable crates (each independently auditable):
 //
@@ -166,7 +170,7 @@
 //      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
 //
 //  So "the `unsafe` lives in named modules" is enforced by the compiler in
-//  EVERY configuration. Verifiable: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
+//  EVERY configuration. Verifiable: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
 //
 // ── The soundness boundary is WIDER than the unsafe-syntax boundary ────────────
 //
@@ -190,8 +194,11 @@
 //      from the wrong place breaks it. (Non-test fields are `pub(crate)` to keep
 //      this membrane inside the crate — see that module's M7 note.)
 //  In short: the membrane pattern concentrates the *unsafe blocks* into a
-//  small named set of `#![allow(unsafe_code)]` files for audit (the ones
-//  inventoried above), but the *soundness argument* spans those safe callers too.
+//  small named set of `#![allow(unsafe_code)]` files (tier 1, inventoried
+//  above) PLUS item-scoped `#[allow(unsafe_code)]` sites (tier 2 — individual
+//  `unsafe fn` boundaries with unverifiable caller-pointer contracts, and the
+//  `unsafe {}` blocks at their internal call sites; task #101 / R4-9), for
+//  audit — but the *soundness argument* spans those safe callers too.
 //  This is a deliberate, worthwhile trade — named here so a future editor does
 //  not misread "no stray unsafe" as "no UB reachable from safe code".
 #![cfg_attr(

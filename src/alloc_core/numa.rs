@@ -43,15 +43,22 @@ pub fn current_node() -> u32 {
 /// established by the callers (`reserve_small_segment` / `alloc_large_slow`).
 ///
 /// No-op when `node == NO_NODE`, `len == 0`, or `base` is null.
+///
+/// # Safety
+///
+/// `(base, len)` MUST denote a live, mapped, exclusively-owned OS reservation
+/// (e.g. one obtained from `reserve_aligned_on_node` / `os::Segment::reserve`).
+/// The callee forwards `base` to the `mbind(2)` / `VirtualAllocExNuma` syscall
+/// without verifying that the range is a real reservation; passing an
+/// arbitrary, dangling, shared, or already-released `base` is undefined
+/// behaviour. The no-op early-out for `NO_NODE` / `len == 0` / null `base` is
+/// always safe.
 // Currently exercised only by `tests/numa_seam.rs` (NO_NODE / zero-len no-op
 // invariants) — `reserve_aligned_on_node` binds at reservation time. Kept
-// pub so the seam stays callable, with the SAFETY proof intact.
-// `not_unsafe_ptr_arg_deref` is conservative here: this function never
-// dereferences `base`; it forwards it to `numa_shim::bind_range` (an unsafe
-// fn) whose entire safety story is about an OS reservation existing, not
-// about Rust-level UB.
+// `pub unsafe fn` (task #101 / R4-MS-3) so the seam stays callable from tests,
+// with the `# Safety` contract in the signature rather than in prose.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn bind_segment(base: *mut u8, len: usize, node: u32) {
+pub unsafe fn bind_segment(base: *mut u8, len: usize, node: u32) {
     if node == NO_NODE || len == 0 || base.is_null() {
         return;
     }

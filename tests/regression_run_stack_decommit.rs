@@ -14,7 +14,7 @@
 //! descriptor would point into the now-unmapped payload region — a later
 //! `drain_freelist_batch` on this segment (before slot-recycle) would
 //! reconstruct `start_off + i*block_size` into dead memory. The fix
-//! (`RunStack::clear_all(base)` in `decommit_empty_segment`, AFTER the head-
+//! (`unsafe { RunStack::clear_all(base) }` in `decommit_empty_segment`, AFTER the head-
 //! zeroing loop and BEFORE `set_decommitted`) is the direct analogue of the
 //! existing `bt.set_head(c, FREE_LIST_NULL)` loop, and the structural opposite
 //! of X7's gen-table decommit policy (gen-table is deliberately NOT re-zeroed —
@@ -51,7 +51,7 @@
 //!
 //! ## Counterfactuals (non-vacuity)
 //!
-//! - Part A: if `RunStack::clear_all(base)` were removed from
+//! - Part A: if `unsafe { RunStack::clear_all(base) }` were removed from
 //!   `decommit_empty_segment`, the post-decommit drain would find the stale
 //!   descriptor and hand out a block from the unmapped region → the "drain
 //!   returns 0" assertion fails (verified manually: fix disabled → test fails
@@ -144,7 +144,7 @@ fn carve_contiguous(core: &mut AllocCore, c: usize, n: usize) -> Vec<*mut u8> {
 fn runstack_count(ptr: *mut u8, class: usize) -> usize {
     let base = seg_base(ptr) as *mut u8;
     let mut n = 0;
-    while RunStack::pop(base, class).is_some() {
+    while unsafe { RunStack::pop(base, class) }.is_some() {
         n += 1;
     }
     n
@@ -190,7 +190,7 @@ fn runstack_count(ptr: *mut u8, class: usize) -> usize {
 ///
 /// The RunStack-clear invariant is pinned THREE ways:
 ///   (a) **Source-structural** (this phase's review): `decommit_empty_segment`
-///       contains `RunStack::clear_all(base)` under
+///       contains `unsafe { RunStack::clear_all(base) }` under
 ///       `#[cfg(feature = "alloc-runfreelist")]`, AFTER the head-zeroing loop
 ///       and BEFORE `set_decommitted` (confirmed by re-reading the source at
 ///       `alloc_core.rs` `decommit_empty_segment`).
@@ -271,7 +271,8 @@ fn decommit_clears_runstack_no_stale_descriptor() {
     let run_batch: Vec<*mut u8> = middle_sorted[0..8].to_vec();
     core.flush_class(c, &run_batch);
     let base_ptr = middle_base as *mut u8;
-    let desc = RunStack::peek(base_ptr, c).expect("middle-segment flush must push a descriptor");
+    let desc = unsafe { RunStack::peek(base_ptr, c) }
+        .expect("middle-segment flush must push a descriptor");
     assert_eq!(
         desc.count, 8,
         "8 offset-adjacent blocks must encode as one count-8 descriptor"
@@ -374,28 +375,28 @@ fn clear_all_empties_every_class() {
     let c1 = c;
     let c2 = (c + 1) % 49;
     let c3 = (c + 2) % 49;
-    assert!(RunStack::push(base, c1, 0x1000, 2));
-    assert!(RunStack::push(base, c2, 0x2000, 3));
-    assert!(RunStack::push(base, c3, 0x3000, 4));
-    assert!(!RunStack::is_empty(base, c1));
-    assert!(!RunStack::is_empty(base, c2));
-    assert!(!RunStack::is_empty(base, c3));
+    assert!(unsafe { RunStack::push(base, c1, 0x1000, 2) });
+    assert!(unsafe { RunStack::push(base, c2, 0x2000, 3) });
+    assert!(unsafe { RunStack::push(base, c3, 0x3000, 4) });
+    assert!(!unsafe { RunStack::is_empty(base, c1) });
+    assert!(!unsafe { RunStack::is_empty(base, c2) });
+    assert!(!unsafe { RunStack::is_empty(base, c3) });
 
     // clear_all — the operation decommit_empty_segment calls.
-    RunStack::clear_all(base);
+    unsafe { RunStack::clear_all(base) };
 
     // Every class is now empty.
     for cls in 0..49 {
         assert!(
-            RunStack::is_empty(base, cls),
+            unsafe { RunStack::is_empty(base, cls) },
             "class {cls} must be empty after clear_all"
         );
     }
 
     // Idempotent: calling again is a no-op (still all empty).
-    RunStack::clear_all(base);
+    unsafe { RunStack::clear_all(base) };
     for cls in 0..49 {
-        assert!(RunStack::is_empty(base, cls));
+        assert!(unsafe { RunStack::is_empty(base, cls) });
     }
 
     core.dealloc(p, layout);
@@ -461,7 +462,7 @@ fn drain_overflow_no_leak_for_large_block_class() {
 
     // (3) Flush as one contiguous batch → one descriptor of count 8.
     core.flush_class(c, &buf);
-    let desc = RunStack::peek(base_ptr, c).expect("flush must push a descriptor");
+    let desc = unsafe { RunStack::peek(base_ptr, c) }.expect("flush must push a descriptor");
     assert_eq!(
         desc.count, 8,
         "8 offset-adjacent blocks must encode as one count-8 descriptor"
@@ -470,15 +471,16 @@ fn drain_overflow_no_leak_for_large_block_class() {
     // (4) First drain with out.len() = refill_n (4) — smaller than count (8).
     // The fix pushes a remainder (start + refill_n*bs, 8 - refill_n) back.
     let mut out1 = vec![core::ptr::null_mut::<u8>(); refill_n];
-    let drained1 = core.dbg_drain_freelist_batch(buf[0], c, &mut out1);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained1 = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out1) };
     assert_eq!(
         drained1, refill_n,
         "first drain must return exactly out.len() ({refill_n}) blocks"
     );
 
     // The RunStack must now hold the remainder descriptor.
-    let remainder =
-        RunStack::peek(base_ptr, c).expect("the truncated remainder must be on the RunStack");
+    let remainder = unsafe { RunStack::peek(base_ptr, c) }
+        .expect("the truncated remainder must be on the RunStack");
     let expected_rem_count = 8 - refill_n as u16;
     assert_eq!(
         remainder.count, expected_rem_count,
@@ -492,7 +494,8 @@ fn drain_overflow_no_leak_for_large_block_class() {
 
     // (5) Second drain — pops the remainder.
     let mut out2 = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained2 = core.dbg_drain_freelist_batch(buf[0], c, &mut out2);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained2 = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out2) };
     assert_eq!(
         drained2, expected_rem_count as usize,
         "second drain must return the remainder ({expected_rem_count} blocks)"
@@ -568,14 +571,16 @@ fn drain_overflow_one_at_a_time_no_leak() {
     let mut all_drained: Vec<*mut u8> = Vec::with_capacity(8);
     for call in 0..8 {
         let mut out = vec![core::ptr::null_mut::<u8>(); 1];
-        let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+        // SAFETY: the first arg is a live allocation owned by the receiver.
+        let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
         assert_eq!(drained, 1, "drain call {call} must return exactly 1 block");
         all_drained.push(out[0]);
     }
 
     // A 9th call must return 0 (RunStack empty, no linked list).
     let mut out = vec![core::ptr::null_mut::<u8>(); 1];
-    let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
     assert_eq!(
         drained, 0,
         "a 9th drain must return 0 (everything already drained)"

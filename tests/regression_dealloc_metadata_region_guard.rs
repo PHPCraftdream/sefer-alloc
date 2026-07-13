@@ -68,7 +68,8 @@ fn snapshot_header_and_bitmap(
     // `magic`/`kind` makes every subsequent segment lookup for this base
     // fail in a detectable way).
     let mut bitmap = vec![0u8; bitmap_len];
-    ac.dbg_alloc_bitmap_bytes_for(anchor, &mut bitmap);
+    // SAFETY: `anchor` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_alloc_bitmap_bytes_for(anchor, &mut bitmap) };
     (Vec::new(), bitmap)
 }
 
@@ -98,7 +99,8 @@ fn dealloc_metadata_region_offsets_are_noop() {
     // The compile-time payload lower bound for THIS segment's kind (primordial
     // for a fresh `AllocCore`'s first segment, per `Layout::primordial_meta_end()`
     // vs `Layout::small_meta_end()` — the exact split the fix branches on).
-    let payload_start = ac.dbg_payload_start_for(anchor);
+    // SAFETY: `anchor` is a live allocation owned by `ac`.
+    let payload_start = unsafe { ac.dbg_payload_start_for(anchor) };
     assert!(
         payload_start > SegmentLayout::PAGE,
         "sanity: metadata footprint expected to span more than one page"

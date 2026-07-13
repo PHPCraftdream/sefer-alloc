@@ -1245,12 +1245,20 @@ impl AllocCore {
     /// and its defensive `slots[id] == base` guard in isolation from any
     /// surrounding dealloc bookkeeping (the caller is responsible for
     /// whatever cleanup the test scenario needs afterwards).
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
+    /// this `AllocCore`. The callee computes `base` from `ptr` and mutates the
+    /// segment table WITHOUT a membership check; an invalid, stale or foreign
+    /// `ptr` may corrupt the segment table or trigger undefined behaviour.
     #[doc(hidden)]
     #[cfg_attr(
         not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
         allow(dead_code)
     )]
-    pub fn dbg_unregister(&mut self, ptr: *mut u8) {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_unregister(&mut self, ptr: *mut u8) {
         self.table.unregister(os::segment_base_of_ptr(ptr));
     }
 
@@ -1268,9 +1276,15 @@ impl AllocCore {
     /// After this call returns, `ptr`'s segment's OS reservation has been
     /// released (defensive tail) or released-and-slot-NULLed (main path) —
     /// either way the caller MUST NOT dereference `ptr`/`base` afterwards.
+    ///
+    /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
+    /// this `AllocCore`. The callee computes `base` from `ptr` and releases the
+    /// OS reservation WITHOUT a membership check; an invalid, stale or foreign
+    /// `ptr` may corrupt the segment table or release the wrong reservation.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
-    pub fn dbg_recycle(&mut self, ptr: *mut u8) {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_recycle(&mut self, ptr: *mut u8) {
         self.table.recycle(os::segment_base_of_ptr(ptr));
     }
 

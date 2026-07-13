@@ -217,56 +217,59 @@ fn push_peek_pop_round_trip() {
 
     // Fresh buffer is all-zero → every class empty.
     assert!(
-        RunStack::is_empty(base, class),
+        unsafe { RunStack::is_empty(base, class) },
         "freshly-init class should be empty"
     );
     assert!(
-        RunStack::pop(base, class).is_none(),
+        unsafe { RunStack::pop(base, class) }.is_none(),
         "pop on empty class returns None"
     );
     assert!(
-        RunStack::peek(base, class).is_none(),
+        unsafe { RunStack::peek(base, class) }.is_none(),
         "peek on empty class returns None"
     );
 
     // Push one descriptor.
     assert!(
-        RunStack::push(base, class, 0x1000, 4),
+        unsafe { RunStack::push(base, class, 0x1000, 4) },
         "push into an empty class must succeed"
     );
     assert!(
-        !RunStack::is_empty(base, class),
+        !unsafe { RunStack::is_empty(base, class) },
         "class with one descriptor is not empty"
     );
 
     // Peek sees it (non-destructive).
-    let peeked = RunStack::peek(base, class).expect("peek after push must see the descriptor");
+    let peeked =
+        unsafe { RunStack::peek(base, class) }.expect("peek after push must see the descriptor");
     assert_eq!(peeked.start_off, 0x1000);
     assert_eq!(peeked.count, 4);
     assert_eq!(peeked._spare, 0, "_spare is zero in v1 (plan §2.9)");
 
     // A second peek sees the SAME descriptor (peek did not consume it).
-    let peeked2 = RunStack::peek(base, class).expect("second peek must see the same descriptor");
+    let peeked2 =
+        unsafe { RunStack::peek(base, class) }.expect("second peek must see the same descriptor");
     assert_eq!(peeked2.start_off, 0x1000);
     assert_eq!(peeked2.count, 4);
 
     // Pop returns it and clears the slot.
-    let popped = RunStack::pop(base, class).expect("pop after push must return the descriptor");
+    let popped =
+        unsafe { RunStack::pop(base, class) }.expect("pop after push must return the descriptor");
     assert_eq!(popped.start_off, 0x1000);
     assert_eq!(popped.count, 4);
     assert_eq!(popped._spare, 0);
 
     // After pop the class is empty again.
     assert!(
-        RunStack::is_empty(base, class),
+        unsafe { RunStack::is_empty(base, class) },
         "class is empty after the only descriptor is popped"
     );
     assert!(
-        RunStack::pop(base, class).is_none(),
+        unsafe { RunStack::pop(base, class) }.is_none(),
         "second pop returns None"
     );
     assert!(
-        RunStack::peek(base, class).is_none(),
+        unsafe { RunStack::peek(base, class) }.is_none(),
         "peek after final pop returns None"
     );
 }
@@ -288,11 +291,11 @@ fn lowest_slot_first_multi_descriptor_push_pop() {
     // Push two descriptors. `push` scans from slot 0 and claims the first
     // empty slot, so the FIRST push lands in slot 0 and the SECOND in slot 1.
     assert!(
-        RunStack::push(base, class, 0x100, 1),
+        unsafe { RunStack::push(base, class, 0x100, 1) },
         "first push succeeds (slot 0)"
     );
     assert!(
-        RunStack::push(base, class, 0x200, 2),
+        unsafe { RunStack::push(base, class, 0x200, 2) },
         "second push succeeds (slot 1)"
     );
 
@@ -301,14 +304,14 @@ fn lowest_slot_first_multi_descriptor_push_pop() {
     // FIRST push) — FIFO for this simple case, not LIFO. See the `pop` doc
     // comment: ordering is "lowest occupied slot", not a specified
     // LIFO/FIFO discipline; Ф2/Ф3 never depend on drain order.
-    let p1 = RunStack::pop(base, class).expect("first pop returns a descriptor");
+    let p1 = unsafe { RunStack::pop(base, class) }.expect("first pop returns a descriptor");
     assert_eq!(
         p1.start_off, 0x100,
         "slot-0 (first-pushed) descriptor is returned first"
     );
     assert_eq!(p1.count, 1);
 
-    let p2 = RunStack::pop(base, class).expect("second pop returns a descriptor");
+    let p2 = unsafe { RunStack::pop(base, class) }.expect("second pop returns a descriptor");
     assert_eq!(
         p2.start_off, 0x200,
         "slot-1 (second-pushed) descriptor is returned second"
@@ -316,10 +319,10 @@ fn lowest_slot_first_multi_descriptor_push_pop() {
     assert_eq!(p2.count, 2);
 
     assert!(
-        RunStack::pop(base, class).is_none(),
+        unsafe { RunStack::pop(base, class) }.is_none(),
         "third pop returns None"
     );
-    assert!(RunStack::is_empty(base, class));
+    assert!(unsafe { RunStack::is_empty(base, class) });
 }
 
 /// **Test 5 — distinct classes are independent.** Pushing/popping class A
@@ -335,47 +338,50 @@ fn distinct_classes_are_independent() {
     let class_a = 5;
     let class_b = 30; // far apart — worst case for a stride bug
 
-    assert!(RunStack::is_empty(base, class_a));
-    assert!(RunStack::is_empty(base, class_b));
+    assert!(unsafe { RunStack::is_empty(base, class_a) });
+    assert!(unsafe { RunStack::is_empty(base, class_b) });
 
     // Push into class A; class B stays empty.
-    assert!(RunStack::push(base, class_a, 0x1000, 3));
+    assert!(unsafe { RunStack::push(base, class_a, 0x1000, 3) });
     assert!(
-        !RunStack::is_empty(base, class_a),
+        !unsafe { RunStack::is_empty(base, class_a) },
         "class A has a descriptor"
     );
     assert!(
-        RunStack::is_empty(base, class_b),
+        unsafe { RunStack::is_empty(base, class_b) },
         "class B must be unaffected by A's push"
     );
 
     // Push into class B; class A's descriptor is unchanged.
-    assert!(RunStack::push(base, class_b, 0x2000, 7));
-    assert!(!RunStack::is_empty(base, class_b));
+    assert!(unsafe { RunStack::push(base, class_b, 0x2000, 7) });
+    assert!(!unsafe { RunStack::is_empty(base, class_b) });
 
     // Peek both — neither interfered with the other.
-    let pa = RunStack::peek(base, class_a).expect("class A's descriptor is intact");
+    let pa = unsafe { RunStack::peek(base, class_a) }.expect("class A's descriptor is intact");
     assert_eq!(pa.start_off, 0x1000);
     assert_eq!(pa.count, 3);
-    let pb = RunStack::peek(base, class_b).expect("class B's descriptor is intact");
+    let pb = unsafe { RunStack::peek(base, class_b) }.expect("class B's descriptor is intact");
     assert_eq!(pb.start_off, 0x2000);
     assert_eq!(pb.count, 7);
 
     // Pop class A; class B still has its descriptor.
-    let popped_a = RunStack::pop(base, class_a).expect("pop class A");
+    let popped_a = unsafe { RunStack::pop(base, class_a) }.expect("pop class A");
     assert_eq!(popped_a.start_off, 0x1000);
     assert_eq!(popped_a.count, 3);
-    assert!(RunStack::is_empty(base, class_a), "class A is now empty");
     assert!(
-        !RunStack::is_empty(base, class_b),
+        unsafe { RunStack::is_empty(base, class_a) },
+        "class A is now empty"
+    );
+    assert!(
+        !unsafe { RunStack::is_empty(base, class_b) },
         "class B still has its descriptor after A's pop"
     );
 
     // Pop class B.
-    let popped_b = RunStack::pop(base, class_b).expect("pop class B");
+    let popped_b = unsafe { RunStack::pop(base, class_b) }.expect("pop class B");
     assert_eq!(popped_b.start_off, 0x2000);
     assert_eq!(popped_b.count, 7);
-    assert!(RunStack::is_empty(base, class_b));
+    assert!(unsafe { RunStack::is_empty(base, class_b) });
 }
 
 /// **Test 6 — capacity boundary + overflow signal.** Exactly
@@ -394,16 +400,17 @@ fn capacity_boundary_and_overflow_returns_false() {
     for i in 1..=RUNSTACK_CAPACITY {
         let start_off = (i as u32) * 0x100;
         assert!(
-            RunStack::push(base, class, start_off, i as u16),
+            unsafe { RunStack::push(base, class, start_off, i as u16) },
             "push #{} (of {}) into class must succeed (within capacity)",
             i,
             RUNSTACK_CAPACITY
         );
     }
-    assert!(!RunStack::is_empty(base, class));
+    assert!(!unsafe { RunStack::is_empty(base, class) });
 
     // The (CAPACITY+1)-th push must fail — overflow signal, NOT a panic.
-    let overflow_result = std::panic::catch_unwind(|| RunStack::push(base, class, 0xDEAD_BEEF, 99));
+    let overflow_result =
+        std::panic::catch_unwind(|| unsafe { RunStack::push(base, class, 0xDEAD_BEEF, 99) });
     assert!(
         overflow_result.is_ok(),
         "push on a full RunStack must NOT panic — it returns false (plan §2.6)"
@@ -415,7 +422,7 @@ fn capacity_boundary_and_overflow_returns_false() {
 
     // The overflow push did NOT corrupt any existing descriptor.
     assert_eq!(
-        RunStack::peek(base, class)
+        unsafe { RunStack::peek(base, class) }
             .expect("the CAPACITY existing descriptors are intact")
             .count,
         1,
@@ -423,23 +430,23 @@ fn capacity_boundary_and_overflow_returns_false() {
     );
 
     // Pop one → a slot is freed → the next push succeeds.
-    let popped = RunStack::pop(base, class).expect("pop frees a slot");
+    let popped = unsafe { RunStack::pop(base, class) }.expect("pop frees a slot");
     assert_eq!(popped.count, 1, "slot-0 descriptor returned");
     assert!(
-        RunStack::push(base, class, 0xCAFE_F00D, 42),
+        unsafe { RunStack::push(base, class, 0xCAFE_F00D, 42) },
         "after popping one, a new push succeeds (slot was recycled)"
     );
 
     // Clean up: drain the class to confirm the final state is consistent.
     let mut drained = 0;
-    while RunStack::pop(base, class).is_some() {
+    while unsafe { RunStack::pop(base, class) }.is_some() {
         drained += 1;
     }
     assert_eq!(
         drained, RUNSTACK_CAPACITY,
         "after re-push, exactly RUNSTACK_CAPACITY descriptors are drainable"
     );
-    assert!(RunStack::is_empty(base, class));
+    assert!(unsafe { RunStack::is_empty(base, class) });
 }
 
 /// **Test 7 — `init_in_place` zeros every descriptor.** A buffer with
@@ -456,12 +463,12 @@ fn init_in_place_zeros_every_descriptor() {
 
     // Contaminate several classes with descriptors.
     for class in [0usize, 1, 25, 48] {
-        assert!(RunStack::push(base, class, 0xBEEF, 9));
-        assert!(!RunStack::is_empty(base, class));
+        assert!(unsafe { RunStack::push(base, class, 0xBEEF, 9) });
+        assert!(!unsafe { RunStack::is_empty(base, class) });
     }
 
     // Re-init: every descriptor must be zeroed.
-    RunStack::init_in_place(base);
+    unsafe { RunStack::init_in_place(base) };
 
     // Every class must now be empty (spot-check first, last, middle, and the
     // contaminated classes — a full scan would be O(49*8) which is cheap but
@@ -469,7 +476,7 @@ fn init_in_place_zeros_every_descriptor() {
     // `is_empty` scan itself reads every slot).
     for class in [0usize, 1, 25, 48, 24] {
         assert!(
-            RunStack::is_empty(base, class),
+            unsafe { RunStack::is_empty(base, class) },
             "class {class} must be empty after init_in_place"
         );
     }
@@ -489,17 +496,17 @@ fn clear_all_zeros_every_descriptor() {
 
     // Contaminate a spread of classes.
     for class in [0usize, 10, 20, 30, 40, 48] {
-        assert!(RunStack::push(base, class, 0xDEAD, 1));
-        assert!(RunStack::push(base, class, 0xBEEF, 2));
-        assert!(!RunStack::is_empty(base, class));
+        assert!(unsafe { RunStack::push(base, class, 0xDEAD, 1) });
+        assert!(unsafe { RunStack::push(base, class, 0xBEEF, 2) });
+        assert!(!unsafe { RunStack::is_empty(base, class) });
     }
 
-    RunStack::clear_all(base);
+    unsafe { RunStack::clear_all(base) };
 
     // Every contaminated class must now be empty.
     for class in [0usize, 10, 20, 30, 40, 48] {
         assert!(
-            RunStack::is_empty(base, class),
+            unsafe { RunStack::is_empty(base, class) },
             "class {class} must be empty after clear_all (the Ф4 decommit primitive)"
         );
     }

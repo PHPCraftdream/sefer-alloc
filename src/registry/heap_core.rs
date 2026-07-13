@@ -1008,7 +1008,12 @@ impl HeapCore {
                         {
                             let base = os::segment_base_of_ptr(issued);
                             let off = (issued as usize) - (base as usize);
-                            crate::alloc_core::segment_header::bump_gen(base, off);
+                            // SAFETY: `base` is a live, exclusively-owned
+                            // segment; `off` is a MIN_BLOCK-aligned offset.
+                            #[allow(unsafe_code)]
+                            unsafe {
+                                crate::alloc_core::segment_header::bump_gen(base, off)
+                            };
                         }
                         return issued;
                     }
@@ -1796,7 +1801,10 @@ impl HeapCore {
         // Sibling-block discipline mirrors `Layout::small_meta_end()` (Ф1).
         #[cfg(feature = "hardened")]
         {
-            let gen = crate::alloc_core::segment_header::gen_at(base, off as usize);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset of a live block.
+            #[allow(unsafe_code)]
+            let gen = unsafe { crate::alloc_core::segment_header::gen_at(base, off as usize) };
             let packed =
                 crate::alloc_core::remote_free_ring::pack_entry_hardened(gen, class_idx, off);
             let ring = SegmentMeta::new(base).remote_ring();
@@ -2105,7 +2113,12 @@ impl HeapCore {
         {
             let base = os::segment_base_of_ptr(issued);
             let off = (issued as usize) - (base as usize);
-            crate::alloc_core::segment_header::bump_gen(base, off);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset.
+            #[allow(unsafe_code)]
+            unsafe {
+                crate::alloc_core::segment_header::bump_gen(base, off)
+            };
         }
         issued
     }

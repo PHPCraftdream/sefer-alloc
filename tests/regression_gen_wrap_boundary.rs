@@ -128,7 +128,7 @@ impl Drop for SegmentBuffer {
 /// pre-increment value — this test cares only about the FINAL readable state.
 fn bump_n_times(base: *mut u8, off: usize, n: u32) {
     for _ in 0..n {
-        let _pre = bump_gen(base, off);
+        let _pre = unsafe { bump_gen(base, off) };
     }
 }
 
@@ -204,10 +204,10 @@ fn drain_compare_at_exact_wrap_collides() {
         // each iteration at a known value (the previous iteration's final
         // state), we bump the delta. The first iteration starts at 0 (freshly
         // zeroed buffer).
-        let cur = gen_at(base, off);
+        let cur = unsafe { gen_at(base, off) };
         let delta = (n as u32).wrapping_sub(cur as u32) & 0xFF;
         bump_n_times(base, off, delta);
-        let stamped = gen_at(base, off);
+        let stamped = unsafe { gen_at(base, off) };
         assert_eq!(
             stamped, n,
             "setup: granule should be at starting gen {n} (was {cur}, bumped {delta})"
@@ -215,7 +215,7 @@ fn drain_compare_at_exact_wrap_collides() {
 
         // --- k = 255: NOT a collision (drain correctly DROPS the stale note).
         bump_n_times(base, off, 255);
-        let current_255 = gen_at(base, off);
+        let current_255 = unsafe { gen_at(base, off) };
         // current_255 = (n + 255) mod 256 = n - 1 (mod 256) != n (unless n wraps, but n+255 != n mod 256 for any n).
         assert_ne!(
             n, current_255,
@@ -230,8 +230,8 @@ fn drain_compare_at_exact_wrap_collides() {
         // --- k = 256 (i.e. 255 + 1 more): COLLISION (drain WRONGLY honours).
         // This is the accepted residual: 256 re-issues-without-drain ⇒ the
         // stale note's stamped gen coincidentally matches the current gen.
-        let _one_more = bump_gen(base, off); // 255 → 256 ≡ 0 mod 256 from the stamp point
-        let current_256 = gen_at(base, off);
+        let _one_more = unsafe { bump_gen(base, off) }; // 255 → 256 ≡ 0 mod 256 from the stamp point
+        let current_256 = unsafe { gen_at(base, off) };
         assert_eq!(
             n, current_256,
             "k=256: stamped gen {n} MUST equal current gen {current_256} — \
@@ -244,8 +244,8 @@ fn drain_compare_at_exact_wrap_collides() {
         );
 
         // --- k = 257 (256 + 1 more): NOT a collision again (drain drops).
-        let _ = bump_gen(base, off);
-        let current_257 = gen_at(base, off);
+        let _ = unsafe { bump_gen(base, off) };
+        let current_257 = unsafe { gen_at(base, off) };
         assert_ne!(
             n, current_257,
             "k=257: stamped gen {n} must NOT equal current gen {current_257} — \
@@ -278,21 +278,29 @@ fn second_wrap_at_512_also_collides() {
 
     // Start at a non-zero, non-edge generation so the wrap is unambiguous.
     let stamped = 42u8;
-    assert_eq!(gen_at(base, off), 0, "fresh granule should start at gen 0");
+    assert_eq!(
+        unsafe { gen_at(base, off) },
+        0,
+        "fresh granule should start at gen 0"
+    );
     bump_n_times(base, off, stamped as u32);
-    assert_eq!(gen_at(base, off), stamped, "setup to stamped gen {stamped}");
+    assert_eq!(
+        unsafe { gen_at(base, off) },
+        stamped,
+        "setup to stamped gen {stamped}"
+    );
 
     // --- k = 511: NOT a collision (drain drops).
     bump_n_times(base, off, 511);
-    let current_511 = gen_at(base, off);
+    let current_511 = unsafe { gen_at(base, off) };
     assert_ne!(
         stamped, current_511,
         "k=511: must NOT collide — only exact 256-multiples do"
     );
 
     // --- k = 512 (one more bump): COLLISION (the second period).
-    let _ = bump_gen(base, off);
-    let current_512 = gen_at(base, off);
+    let _ = unsafe { bump_gen(base, off) };
+    let current_512 = unsafe { gen_at(base, off) };
     assert_eq!(
         stamped, current_512,
         "k=512: stamped gen {stamped} MUST equal current gen {current_512} — \
@@ -300,8 +308,8 @@ fn second_wrap_at_512_also_collides() {
     );
 
     // --- k = 513 (one more bump): NOT a collision again.
-    let _ = bump_gen(base, off);
-    let current_513 = gen_at(base, off);
+    let _ = unsafe { bump_gen(base, off) };
+    let current_513 = unsafe { gen_at(base, off) };
     assert_ne!(
         stamped, current_513,
         "k=513: must NOT collide — the second-period boundary has the same ±1 shape"

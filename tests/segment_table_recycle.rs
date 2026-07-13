@@ -358,7 +358,8 @@ fn recycle_defensive_tail_evicts_hash_and_cache() {
     // Drive `a` through `recycle`'s defensive-mismatch tail. This releases
     // `a`'s OS reservation (to avoid a leak) but — under the fix — must ALSO
     // evict `a` from the hash table and the own-cache before doing so.
-    ac.dbg_recycle(a);
+    // SAFETY: `a` is a live allocation owned by `ac`.
+    unsafe { ac.dbg_recycle(a) };
 
     // The counterfactual assertion: `a` must no longer be considered a live,
     // routable segment. Pre-fix, the own-cache slot for `a` (filled above)

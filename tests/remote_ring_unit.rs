@@ -152,10 +152,12 @@ fn ring_isolated_mpsc_no_loss_no_dup() {
     // its base points to FOOTPRINT writable, 4-byte-aligned bytes. The ring
     // only touches bytes within `[base, base+FOOTPRINT)`.
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, 4-byte-aligned, owned buffer.
+    unsafe { RemoteFreeRing::init_test_buffer(base) };
     // One shared view, wrapped `Send`+`Sync` so it can be shared across threads
     // via `Arc`. All field access is race-free atomics via the node seam.
-    let ring = Arc::new(SendRing(RemoteFreeRing::over_test_buffer(base)));
+    // SAFETY: same buffer, still live.
+    let ring = Arc::new(SendRing(unsafe { RemoteFreeRing::over_test_buffer(base) }));
 
     // Attempt counter (every push call, Ok or Err).
     let attempted = Arc::new(AtomicU64::new(0));
@@ -328,8 +330,11 @@ fn ring_isolated_single_thread_basic() {
     let _wd = Watchdog::start("basic");
     let buf = ring_buffer();
     let base = buf.as_ptr() as *mut u8;
-    RemoteFreeRing::init_test_buffer(base);
-    let ring = RemoteFreeRing::over_test_buffer(base);
+    // SAFETY: `base` is a FOOTPRINT-sized, aligned, owned buffer.
+    let ring = unsafe {
+        RemoteFreeRing::init_test_buffer(base);
+        RemoteFreeRing::over_test_buffer(base)
+    };
 
     const N: u32 = 64;
     for i in 0..N {

@@ -112,15 +112,27 @@ Core instructions, mandatory for all code in this repository. They
   named seam modules that lift it with `#![allow(unsafe_code)]`, each with a
   single documented reason to hold `unsafe`. The seams are inventoried in
   README §"Where unsafe lives — the complete list" and mirrored in the
-  `src/lib.rs` header. Source of truth (self-verifying, never a hardcoded
-  count): `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/` — this
-  command, not a number written into prose, is the authoritative list; any
-  formal audit compares against its output, and a stray `unsafe` outside a
-  named seam is a hard compile error in every feature configuration. The
-  pattern is line-anchored (`^#![...]`) so it matches only the actual
-  crate/module attribute, not `//` comments that merely mention it (the
-  unanchored `grep -rln 'allow(unsafe_code)' ...` form has false positives,
-  e.g. in `src/lib.rs` and `src/registry/heap_overflow.rs`).
+  `src/lib.rs` header. There are two tiers of confined `unsafe`, both captured
+  by a single self-verifying command (never a hardcoded count):
+  `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+  — **tier 1** is the `#![...]` (module-level) matches: named seam modules
+  where `unsafe` is permitted anywhere inside the file; **tier 2** is the
+  `#[...]` (item-level) matches: individual `unsafe fn` declarations (and the
+  scoped `unsafe {}` blocks at their internal call sites) in files that are
+  otherwise safe code, each carrying its own `# Safety` doc and per-site
+  `// SAFETY:` comment. Both tiers are comment-proof: `^\s*#!?\[` requires the
+  line to begin with optional whitespace then the attribute, so `//` comments
+  that merely mention the attribute do not match (the unanchored
+  `grep -rln 'allow(unsafe_code)' ...` form has false positives, e.g. in
+  `src/lib.rs` and `src/registry/heap_overflow.rs`). Any formal audit
+  compares against this command's output, and an `unsafe` token not covered by
+  a tier-1 module or a tier-2 item-level allow is a hard compile error in every
+  feature configuration. The sanctioned exception categories (doc-hidden
+  test-only forwarders, protocol-constant clusters, single-file seam crates,
+  kani proofs — listed in the "File and module structure" section above) apply
+  to tier 1; tier 2 has its own rule: a single documented reason to hold
+  `unsafe` applies to each item-scoped site individually, not just to seam
+  modules.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.

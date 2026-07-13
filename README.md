@@ -332,10 +332,12 @@ through a large general-purpose allocator crate — they can audit `aligned-vmem
 purpose: NUMA syscalls) in complete isolation. Each has one responsibility,
 one reason to have `unsafe`, and its own `cargo test`.
 
-Source of truth: `grep -rlE '^#!\[allow\(unsafe_code\)\]' src/ crates/`
-(line-anchored so it matches the actual crate/module attribute, not `//`
-comments that merely mention it — the unanchored form has false positives in
-`src/lib.rs` and `src/registry/heap_overflow.rs`).
+Source of truth: `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`
+— **two tiers in one command**: `#![...]` matches are module-level seams
+(tier 1, listed below); `#[...]` matches are item-scoped `unsafe fn`
+declarations and their internal call-site blocks (tier 2, listed in the
+table after the seam table). Both are comment-proof: `^\s*#!?\[` requires
+the line to begin with the attribute, not a `//` prefix.
 
 **External publishable crates (each independently auditable):**
 
@@ -346,8 +348,9 @@ comments that merely mention it — the unanchored form has false positives in
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
 | `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe` (shown for contrast; does **not** match the grep above); `slotmap`'s audited core owns the generational layout |
 
-**Internal sefer-alloc seams** (compiler-enforced — a stray `unsafe` outside
-these named files is a hard compile error in every configuration):
+**Internal sefer-alloc seams — tier 1 (module-level)** — any `unsafe` token
+not covered by a tier-1 module OR a tier-2 item-level allow (see below) is a
+hard compile error in every configuration:
 
 | Module | What it owns | Loaded under |
 |---|---|---|
@@ -375,9 +378,29 @@ delegates to the independently-auditable `numa-shim` crate. `experimental`
 opens the older research-tier concurrent seam (now deprecated); the production
 build does not pull it in.
 
-That's the full list. Everywhere else in the crate is forbidden / denied
-`unsafe`; a stray `unsafe` outside these files is a hard compile error in
-every configuration.
+**Internal sefer-alloc item-scoped allows — tier 2 (task #101 / R4-9).**
+Each is a single `#[allow(unsafe_code)]` on an `unsafe fn` declaration (or on
+the `unsafe {}` block at its internal call site) inside a file that is
+otherwise safe code. Unlike tier 1 (where `unsafe` is permitted anywhere in
+the module), tier 2 confines `unsafe` to one function/block boundary with its
+own `# Safety` doc — the contract (validity/size/alignment/lifetime/exclusivity
+of a caller-supplied pointer) cannot be expressed in the type system and
+cannot be checked at runtime, so it lives in the signature, not in prose.
+
+| File | Sites | What they cover |
+|---|---|---|
+| [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
+| [`src/alloc_core/run_stack.rs`](src/alloc_core/run_stack.rs) | 6 | `push` / `pop` / `peek` / `is_empty` / `init_in_place` / `clear_all` — raw R/W by caller-controlled segment base |
+| [`src/alloc_core/segment_header.rs`](src/alloc_core/segment_header.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
+| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 13 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` (declarations) + 8 internal call-site blocks for `gen_at` / `bump_gen` / `init_gen_table_in_place` / RunStack hooks |
+| [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 2 | `dbg_unregister` / `dbg_recycle` — segment-table mutation by computed base |
+| [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 2 | Internal call-site blocks for `init_gen_table_in_place` / `RunStack::init_in_place` |
+| [`src/alloc_core/alloc_core_small_pool.rs`](src/alloc_core/alloc_core_small_pool.rs) | 1 | Internal call-site block for `RunStack::clear_all` |
+| [`src/registry/heap_core.rs`](src/registry/heap_core.rs) | 3 | Internal call-site blocks for `gen_at` / `bump_gen` |
+
+That's the full list (both tiers). Everywhere else in the crate is forbidden /
+denied `unsafe`; an `unsafe` token not covered by a tier-1 module or a tier-2
+item-level allow is a hard compile error in every configuration.
 
 ### The segment substrate (Phase 8)
 

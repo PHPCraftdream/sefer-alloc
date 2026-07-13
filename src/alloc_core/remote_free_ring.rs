@@ -488,25 +488,31 @@ impl RemoteFreeRing {
     /// arbitrary aligned byte buffer at offset 0. Used ONLY by the isolated
     /// ring unit test (`tests/remote_ring_unit.rs`), which builds a ring over a
     /// plain `Box<[u8]>` (NOT a segment, NOT an allocator) to prove the ring's
-    /// MPSC correctness in isolation from the allocator / ABA concerns. The
-    /// caller guarantees `base` points to at least `FOOTPRINT` writable,
-    /// 4-byte-aligned bytes that live for the ring's use (e.g. an
-    /// `alloc::vec![0u8; FOOTPRINT]` boxed slice).
+    /// MPSC correctness in isolation from the allocator / ABA concerns.
     ///
     /// Production code MUST use [`at`](Self::at) with a segment-relative offset
     /// from [`Layout::remote_ring_off`](super::segment_header::Layout::remote_ring_off).
     ///
     /// R2-3: the null + 4-byte-alignment preconditions are checked by a
     /// RELEASE-surviving `assert!` (not `debug_assert!`), so a null/misaligned
-    /// base panics in every build. The `FOOTPRINT`-writability / liveness half
-    /// of the contract cannot be checked at runtime (this module is
-    /// `#![forbid(unsafe_code)]`, so the `unsafe fn` discipline used by the
-    /// `heap_registry` seam does not apply here) and remains the caller's
-    /// responsibility — passing a `FOOTPRINT`-valid, aligned live buffer is the
-    /// only documented use.
+    /// base panics in every build.
+    ///
+    /// # Safety
+    ///
+    /// The caller MUST guarantee that `base` points to at least `FOOTPRINT`
+    /// writable, 4-byte-aligned bytes that are exclusively owned by the caller
+    /// and live for the ring's use (e.g. an `alloc::vec![0u8; FOOTPRINT]` boxed
+    /// slice). The `FOOTPRINT`-writability / liveness / exclusivity half of the
+    /// contract cannot be checked at runtime — the only documented use is an
+    /// owned boxed buffer. Passing a too-short, dangling, shared, or
+    /// non-`FOOTPRINT`-valid base is undefined behaviour.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
-    pub fn over_test_buffer(base: *mut u8) -> Self {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary — the
+                          // validity/size/alignment/lifetime/exclusivity of the caller-supplied
+                          // pointer is unverifiable by the callee, so the contract MUST live in the
+                          // signature, not in prose. The body is safe (delegates to `Self::at`).
+    pub unsafe fn over_test_buffer(base: *mut u8) -> Self {
         assert!(
             !base.is_null() && (base as usize).is_multiple_of(4),
             "over_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"
@@ -519,12 +525,19 @@ impl RemoteFreeRing {
     /// segment-relative offset). See [`over_test_buffer`](Self::over_test_buffer).
     ///
     /// R2-3: carries the same release-surviving null + 4-byte-alignment `assert!`
-    /// as [`over_test_buffer`](Self::over_test_buffer); the `FOOTPRINT`-writability
-    /// half of the contract stays the caller's responsibility (this module is
-    /// `#![forbid(unsafe_code)]`).
+    /// as [`over_test_buffer`](Self::over_test_buffer).
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`over_test_buffer`](Self::over_test_buffer#safety):
+    /// `base` MUST point to at least `FOOTPRINT` writable, 4-byte-aligned,
+    /// exclusively-owned bytes that are live for the ring's use. The callee
+    /// writes cursors and all slots starting at `base`, so a too-short, dangling
+    /// or shared buffer is undefined behaviour.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
-    pub fn init_test_buffer(base: *mut u8) {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn init_test_buffer(base: *mut u8) {
         assert!(
             !base.is_null() && (base as usize).is_multiple_of(4),
             "init_test_buffer: base must be non-null and 4-byte-aligned (R2-3 release guard)"

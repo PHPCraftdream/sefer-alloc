@@ -95,7 +95,7 @@ fn carve_contiguous(core: &mut AllocCore, c: usize, n: usize) -> Vec<*mut u8> {
 fn runstack_drain_all(ptr: *mut u8, class: usize) -> usize {
     let base = seg_base(ptr) as *mut u8;
     let mut n = 0;
-    while RunStack::pop(base, class).is_some() {
+    while unsafe { RunStack::pop(base, class) }.is_some() {
         n += 1;
     }
     n
@@ -110,7 +110,7 @@ fn runstack_count(ptr: *mut u8, class: usize) -> usize {
     // public `is_empty` + `pop`/push-back is not possible without mutation.
     // Instead, drain into a local vec and re-push (restoring state).
     let mut saved = Vec::new();
-    while let Some(d) = RunStack::pop(base, class) {
+    while let Some(d) = unsafe { RunStack::pop(base, class) } {
         saved.push(d);
     }
     let n = saved.len();
@@ -118,7 +118,7 @@ fn runstack_count(ptr: *mut u8, class: usize) -> usize {
     // first popped was at the lowest slot; pushing refills lowest-empty first,
     // so the round-trip preserves slot occupancy).
     for d in saved {
-        let ok = RunStack::push(base, class, d.start_off, d.count);
+        let ok = unsafe { RunStack::push(base, class, d.start_off, d.count) };
         debug_assert!(ok, "restore push must succeed (capacity was not exceeded)");
     }
     n
@@ -168,7 +168,8 @@ fn drain_equivalence_feature_on_matches_classic() {
 
     // Drain under feature-on: RunStack first, then linked list.
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(drained, 8, "drain must return all 8 flushed blocks");
 
     let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
@@ -240,7 +241,8 @@ fn mixed_drain_all_blocks_exactly_once() {
     core.flush_class(c, &batch);
 
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(drained, 8, "all 8 flushed blocks must drain");
 
     // Multiset check: every block exactly once.
@@ -310,7 +312,7 @@ fn m2_double_free_through_run_refused() {
 
     // Snapshot the run descriptor (must be one descriptor of count 4).
     let base = seg_base(buf[0]) as *mut u8;
-    let desc_before = RunStack::peek(base, c).expect("one run → one descriptor");
+    let desc_before = unsafe { RunStack::peek(base, c) }.expect("one run → one descriptor");
     assert_eq!(desc_before.count, 4);
 
     // Pick a run-member block (sorted[2]) and attempt a cross-thread-style
@@ -350,7 +352,7 @@ fn m2_double_free_through_run_refused() {
 
     // The run descriptor is UNCHANGED (reclaim did not corrupt it — reclaim
     // has no RunStack awareness and never touches the RunStack).
-    let desc_after = RunStack::peek(base, c).expect("descriptor still present");
+    let desc_after = unsafe { RunStack::peek(base, c) }.expect("descriptor still present");
     assert_eq!(
         desc_after, desc_before,
         "run descriptor must be byte-identical (reclaim does not touch RunStack)"
@@ -360,7 +362,8 @@ fn m2_double_free_through_run_refused() {
     // is_free guard in place, the run drain hands it out; the linked-list
     // drain finds nothing because reclaim refused to link it).
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
     assert_eq!(
         drained, 4,
         "all 4 run-member blocks drain, exactly once each"
@@ -429,7 +432,7 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
 
     let base = seg_base(buf[0]) as *mut u8;
     // One descriptor covering sorted[0..3].
-    let desc = RunStack::peek(base, c).expect("one run");
+    let desc = unsafe { RunStack::peek(base, c) }.expect("one run");
     assert_eq!(desc.count, 3);
 
     // Now DIRECTly push a SECOND descriptor that OVERLAPS the first — covering
@@ -437,7 +440,7 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     // This is the corrupt/overlapping state the guard must defend against.
     let overlap_start_off = (sorted[1] as usize - base as usize) as u32;
     assert!(
-        RunStack::push(base, c, overlap_start_off, 2),
+        unsafe { RunStack::push(base, c, overlap_start_off, 2) },
         "direct push of an overlapping descriptor must succeed"
     );
 
@@ -446,7 +449,8 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     // the guard: descriptor 1 hands out s0,s1,s2 (FREE→ALLOC); descriptor 2's
     // s1,s2 hit `is_free == false` → skip. Total: 3 distinct blocks, no dup.
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
     assert_eq!(
         drained, 3,
         "exactly 3 distinct blocks (overlap defended by the drain-side guard)"
@@ -502,7 +506,8 @@ fn drain_capacity_boundary() {
     // touched (RunStack pop order: lowest slot first; run_a was pushed first).
     let cap = 4;
     let mut out = vec![core::ptr::null_mut::<u8>(); cap];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(drained, cap, "drain bounded by out.len()");
 
     let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
@@ -522,7 +527,8 @@ fn drain_capacity_boundary() {
 
     // Cleanup: re-drain to recover run_b's blocks, then dealloc everything.
     let mut out2 = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained2 = core.dbg_drain_freelist_batch(batch[0], c, &mut out2);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained2 = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out2) };
     assert_eq!(drained2, 3, "second drain returns run_b");
     for &p in &out[..drained] {
         core.dealloc(p, layout);
@@ -565,14 +571,15 @@ fn empty_runstack_falls_back_to_linked_list() {
     // RunStack MUST be empty (three singletons, no contiguous run ≥ 2).
     let base = seg_base(buf[0]) as *mut u8;
     assert!(
-        RunStack::is_empty(base, c),
+        unsafe { RunStack::is_empty(base, c) },
         "RunStack must be empty (singletons only)"
     );
 
     // Drain must return all 3 singletons via the linked-list path. The two
     // live gap blocks are NOT on the freelist, so they do not appear.
     let mut out = vec![core::ptr::null_mut::<u8>(); 8];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(drained, 3, "all 3 singletons drain via linked-list path");
 
     let drained_set: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();
@@ -623,7 +630,8 @@ fn drain_order_runstack_first_then_linked_list() {
     core.flush_class(c, &batch);
 
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
-    let drained = core.dbg_drain_freelist_batch(batch[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out) };
     assert_eq!(drained, 7);
 
     // The first 6 slots are run-members (run_a=4 + run_b=2); the last slot is
@@ -694,7 +702,8 @@ fn drain_classic_when_feature_off() {
     );
 
     let mut out = vec![core::ptr::null_mut::<u8>(); N + 4];
-    let drained = core.dbg_drain_freelist_batch(buf[0], c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let drained = unsafe { core.dbg_drain_freelist_batch(buf[0], c, &mut out) };
     assert_eq!(drained, N, "classic drain must return exactly N blocks");
 
     let unique: HashSet<usize> = out[..drained].iter().map(|p| *p as usize).collect();

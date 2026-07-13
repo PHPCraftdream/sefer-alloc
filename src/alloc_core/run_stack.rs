@@ -202,8 +202,17 @@ impl RunStack {
     /// `base` MUST be a live small/primordial segment base whose `RunStack`
     /// region (`FOOTPRINT` bytes at `Self::OFF`) is carved and about to be
     /// consulted.
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST point to a live, mapped, exclusively-owned small/primordial
+    /// segment whose `RunStack` region (`SMALL_CLASS_COUNT * RUNSTACK_CAPACITY *
+    /// size_of::<RunDesc>()` bytes at `Self::OFF`) is carved and writable. The
+    /// callee cannot verify validity, extent, alignment, lifetime or exclusive
+    /// ownership of `base` — those are the caller's invariants.
     #[doc(hidden)]
-    pub fn init_in_place(base: *mut u8) {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn init_in_place(base: *mut u8) {
         let off = Self::OFF;
         let mut class = 0usize;
         while class < SMALL_CLASS_COUNT {
@@ -226,10 +235,19 @@ impl RunStack {
     ///
     /// `_spare` is written as 0 (unused in v1 — plan §2.9).
     ///
-    /// `class` MUST be `< SMALL_CLASS_COUNT` (debug-asserted; a corrupt class
+    /// `class` MUST be `< SMALL_CLASS_COUNT` (release-asserted; a corrupt class
     /// index would index out of the `RunStack` region).
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST point to a live, mapped, exclusively-owned
+    /// small/primordial segment whose `RunStack` region is carved and writable;
+    /// the release-asserted `class` bound is necessary but NOT sufficient —
+    /// validity/extent/lifetime/exclusivity of `base` are the caller's
+    /// invariants and cannot be checked by the callee.
     #[doc(hidden)]
-    pub fn push(base: *mut u8, class: usize, start_off: u32, count: u16) -> bool {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn push(base: *mut u8, class: usize, start_off: u32, count: u16) -> bool {
         // R2-3: release-surviving class bound (replaces debug_assert!).
         assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
@@ -275,8 +293,16 @@ impl RunStack {
     /// the slot is reusable by a future [`push`].
     ///
     /// [`push`]: Self::push
+    ///
+    /// # Safety
+    ///
+    /// Same as [`push`](Self::push#safety): `base` MUST be a live, mapped,
+    /// exclusively-owned small/primordial segment with a carved `RunStack`
+    /// region. The release-asserted `class` bound is necessary but not
+    /// sufficient.
     #[doc(hidden)]
-    pub fn pop(base: *mut u8, class: usize) -> Option<RunDesc> {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn pop(base: *mut u8, class: usize) -> Option<RunDesc> {
         // R2-3: release-surviving class bound (replaces debug_assert!).
         assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
@@ -300,8 +326,16 @@ impl RunStack {
     /// from slot 0); returns `None` if no non-empty descriptor exists.
     ///
     /// [`pop`]: Self::pop
+    ///
+    /// # Safety
+    ///
+    /// Same as [`push`](Self::push#safety): `base` MUST be a live, mapped,
+    /// exclusively-owned small/primordial segment with a carved `RunStack`
+    /// region. The release-asserted `class` bound is necessary but not
+    /// sufficient.
     #[doc(hidden)]
-    pub fn peek(base: *mut u8, class: usize) -> Option<RunDesc> {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn peek(base: *mut u8, class: usize) -> Option<RunDesc> {
         // R2-3: release-surviving class bound (replaces debug_assert!).
         assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
@@ -319,8 +353,16 @@ impl RunStack {
     }
 
     /// Whether `class` has zero non-empty descriptors.
+    ///
+    /// # Safety
+    ///
+    /// Same as [`push`](Self::push#safety): `base` MUST be a live, mapped,
+    /// exclusively-owned small/primordial segment with a carved `RunStack`
+    /// region. The release-asserted `class` bound is necessary but not
+    /// sufficient.
     #[doc(hidden)]
-    pub fn is_empty(base: *mut u8, class: usize) -> bool {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn is_empty(base: *mut u8, class: usize) -> bool {
         // R2-3: release-surviving class bound (replaces debug_assert!).
         assert!(class < SMALL_CLASS_COUNT, "class index out of range");
         let off = Self::OFF;
@@ -341,8 +383,15 @@ impl RunStack {
     /// §2.5: a decommit MUST clear the `RunStack` so stale descriptors cannot
     /// point into the re-carved payload after recommit). Implemented now since
     /// it is trivial; nothing calls it outside tests in this phase.
+    ///
+    /// # Safety
+    ///
+    /// Same as [`init_in_place`](Self::init_in_place#safety): `base` MUST be a
+    /// live, mapped, exclusively-owned small/primordial segment with a carved
+    /// `RunStack` region.
     #[doc(hidden)]
-    pub fn clear_all(base: *mut u8) {
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn clear_all(base: *mut u8) {
         // Identical to init_in_place (both zero every descriptor); kept as a
         // separate name so the Ф4 call site reads as "clear" semantically, and
         // so a future specialisation (e.g. only clear classes that were

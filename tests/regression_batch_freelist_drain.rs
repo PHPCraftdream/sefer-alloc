@@ -81,7 +81,8 @@ fn build_same_segment_freelist(
     // Drain any refill leftovers sitting on the freelist to empty.
     let mut scratch = vec![core::ptr::null_mut::<u8>(); 4096];
     loop {
-        let d = core.dbg_drain_freelist_batch(allocated[0], c, &mut scratch);
+        // SAFETY: the first arg is a live allocation owned by the receiver.
+        let d = unsafe { core.dbg_drain_freelist_batch(allocated[0], c, &mut scratch) };
         if d == 0 {
             break;
         }
@@ -123,7 +124,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
 
     // Drain the whole freelist in one batch.
     let mut out = vec![core::ptr::null_mut::<u8>(); M];
-    let k = core.dbg_drain_freelist_batch(anchor, c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let k = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut out) };
     assert_eq!(k, M, "batch drain short: {k}/{M}");
 
     // Every drained block: distinct, non-null, and bitmap-ALLOCATED (is_free
@@ -166,7 +168,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
     // Re-drain must still yield exactly M distinct blocks (no self-loop / no
     // duplicate injected by the double-frees).
     let mut out2 = vec![core::ptr::null_mut::<u8>(); M];
-    let k2 = core.dbg_drain_freelist_batch(anchor, c, &mut out2);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let k2 = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut out2) };
     assert_eq!(k2, M, "re-drain after double-free storm short: {k2}/{M}");
     let uniq2: HashSet<usize> = out2.iter().map(|p| *p as usize).collect();
     assert_eq!(uniq2.len(), M, "double-free corrupted the freelist (dupe)");
@@ -195,7 +198,8 @@ fn partial_and_bounded_drain_set_head_correct() {
 
     let want = 50usize; // > M
     let mut out = vec![core::ptr::null_mut::<u8>(); want];
-    let k = core.dbg_drain_freelist_batch(anchor, c, &mut out);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let k = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut out) };
     assert_eq!(k, M, "partial drain must yield exactly m={M}, got {k}");
     assert_eq!(
         core.dbg_freelist_head_for(anchor, c),
@@ -216,7 +220,8 @@ fn partial_and_bounded_drain_set_head_correct() {
     //     together cover all M.
     const W: usize = 7;
     let mut b1 = vec![core::ptr::null_mut::<u8>(); W];
-    let k1 = core.dbg_drain_freelist_batch(anchor, c, &mut b1);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let k1 = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut b1) };
     assert_eq!(k1, W, "bounded drain must yield exactly want={W}, got {k1}");
     // Head must now be a real (non-NULL) offset — M-W blocks remain.
     assert_ne!(
@@ -228,7 +233,8 @@ fn partial_and_bounded_drain_set_head_correct() {
 
     // Second drain yields the remaining M-W.
     let mut b2 = vec![core::ptr::null_mut::<u8>(); M];
-    let k2 = core.dbg_drain_freelist_batch(anchor, c, &mut b2);
+    // SAFETY: the first arg is a live allocation owned by the receiver.
+    let k2 = unsafe { core.dbg_drain_freelist_batch(anchor, c, &mut b2) };
     assert_eq!(k2, M - W, "continuation drain must yield m-want={}", M - W);
     assert_eq!(
         core.dbg_freelist_head_for(anchor, c),

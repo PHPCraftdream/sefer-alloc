@@ -53,14 +53,14 @@ fn gen_at_rejects_out_of_range_offset() {
 
     // Non-regression: a VALID, in-range offset is accepted (does not panic).
     let valid_off = (p as usize) - (base as usize);
-    let _ = gen_at(base, valid_off);
+    let _ = unsafe { gen_at(base, valid_off) };
 
     // `off == SEGMENT` ⇒ `idx == GEN_TABLE_FOOTPRINT` (out of range). The
     // would-be read address `gen_table_off + GEN_TABLE_FOOTPRINT` stays inside
     // the mapped segment, so pre-fix release returned a garbage byte; the
     // release-surviving `assert!` now panics.
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = gen_at(base, SegmentLayout::SEGMENT);
+        let _ = unsafe { gen_at(base, SegmentLayout::SEGMENT) };
     }));
     assert!(
         r.is_err(),

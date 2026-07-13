@@ -118,9 +118,9 @@ impl Drop for SegmentBuffer {
 /// `gen_at` so the caller does not need to know the starting value.
 #[cfg(feature = "hardened")]
 fn bump_n(base: *mut u8, off: usize, n: u32) -> u8 {
-    let mut last_pre = gen_at(base, off);
+    let mut last_pre = unsafe { gen_at(base, off) };
     for _ in 0..n {
-        last_pre = bump_gen(base, off);
+        last_pre = unsafe { bump_gen(base, off) };
     }
     last_pre.wrapping_add(1)
 }
@@ -139,7 +139,7 @@ fn gen_roundtrip_and_wrap() {
 
     // Freshly zeroed buffer: generation 0.
     assert_eq!(
-        gen_at(base, off),
+        unsafe { gen_at(base, off) },
         0,
         "fresh granule should have generation 0"
     );
@@ -153,13 +153,13 @@ fn gen_roundtrip_and_wrap() {
         "after {n} bumps the generation should be n mod 256"
     );
     assert_eq!(
-        gen_at(base, off),
+        unsafe { gen_at(base, off) },
         (n % 256) as u8,
         "gen_at should read the post-bump value"
     );
 
     // Boundary: exactly 256 bumps from any point returns to the same value.
-    let before = gen_at(base, off);
+    let before = unsafe { gen_at(base, off) };
     let after_256 = bump_n(base, off, 256);
     assert_eq!(
         after_256, before,
@@ -184,18 +184,18 @@ fn distinct_granules_are_independent() {
     let off_a = SegmentLayout::MIN_BLOCK;
     let off_b = SegmentLayout::MIN_BLOCK * 2;
 
-    assert_eq!(gen_at(base, off_a), 0);
-    assert_eq!(gen_at(base, off_b), 0);
+    assert_eq!(unsafe { gen_at(base, off_a) }, 0);
+    assert_eq!(unsafe { gen_at(base, off_b) }, 0);
 
     // Bump A five times; B must stay at 0.
     let _ = bump_n(base, off_a, 5);
     assert_eq!(
-        gen_at(base, off_a),
+        unsafe { gen_at(base, off_a) },
         5,
         "granule A should reflect its 5 bumps"
     );
     assert_eq!(
-        gen_at(base, off_b),
+        unsafe { gen_at(base, off_b) },
         0,
         "granule B must be unaffected by A's bumps"
     );
@@ -203,12 +203,12 @@ fn distinct_granules_are_independent() {
     // Bump B three times; A must stay at 5.
     let _ = bump_n(base, off_b, 3);
     assert_eq!(
-        gen_at(base, off_a),
+        unsafe { gen_at(base, off_a) },
         5,
         "granule A must be unaffected by B's bumps"
     );
     assert_eq!(
-        gen_at(base, off_b),
+        unsafe { gen_at(base, off_b) },
         3,
         "granule B should reflect its 3 bumps"
     );
@@ -265,7 +265,7 @@ fn relaxed_rmw_is_coherent() {
     // 256 bumps should walk 0→1→…→255→0 with no lost increments.
     let mut seen = [false; 256];
     for _ in 0..256 {
-        let pre = bump_gen(base, off);
+        let pre = unsafe { bump_gen(base, off) };
         let idx = pre as usize;
         assert!(
             !seen[idx],
@@ -278,7 +278,7 @@ fn relaxed_rmw_is_coherent() {
         "all 256 values must be visited exactly once in a full cycle"
     );
     assert_eq!(
-        gen_at(base, off),
+        unsafe { gen_at(base, off) },
         0,
         "after exactly 256 bumps the counter wraps to 0"
     );

@@ -120,7 +120,12 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // CONTINUOUS across decommit-reset, so old generations persist intentionally.
     #[cfg(feature = "hardened")]
     {
-        super::segment_header::init_gen_table_in_place(base);
+        // SAFETY: `base` is a live, exclusively-owned segment whose
+        // generation table is carved and writable.
+        #[allow(unsafe_code)]
+        unsafe {
+            super::segment_header::init_gen_table_in_place(base)
+        };
     }
     // PERF-3 Ф1 (task #208): zero the per-segment run-encoded freelist stack
     // under `alloc-runfreelist`. Compiled ONLY under `alloc-runfreelist`; under
@@ -133,7 +138,11 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // shape X7-Ф3 used for `init_gen_table_in_place` (the block above).
     #[cfg(feature = "alloc-runfreelist")]
     {
-        super::run_stack::RunStack::init_in_place(base);
+        // SAFETY: `base` is a live, exclusively-owned segment.
+        #[allow(unsafe_code)]
+        unsafe {
+            super::run_stack::RunStack::init_in_place(base)
+        };
     }
 
     // 4. Lay down the registry array at `reg_off`. Slot 0 is the primordial
