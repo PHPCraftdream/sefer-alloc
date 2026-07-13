@@ -1261,3 +1261,74 @@ open decision for the user, per the round4 remediation plan's escalation
 point — this number exists to inform that decision if it comes up, not to
 settle it.
 
+## R1 honest-reject (2026-07-13) — per-segment availability hint for `find_segment_with_free`
+
+Round4 remediation, task #99 experiment R1 (`performance_review.md` finding
+R1): `find_segment_with_free_impl` (`alloc_core_small.rs`) walks `slots[0..
+count)` linearly, checking each segment's `BinTable` for a free block of the
+target class — O(S) in the number of registered segments. This is the
+**fourth independent attempt** at speeding up this scan (after X5's
+per-segment `free_classes` bitmap and T10's per-class `[u16; 49]` hint array,
+both already recorded as honest-rejects above) — read those two entries
+first; this one confirms the same structural barrier a third time.
+
+**Design tried: a single verified pre-check hint.** `AllocCore::find_hint_slot:
+u32` (init `u32::MAX` = none), written on a successful full scan, consulted
+at the top of the NEXT call as a re-verified short-circuit (`base_at`
+non-null, `kind_at` small/primordial, `BinTable` head non-null for the target
+class, NUMA node local/unknown). Deliberately **zero hot-path maintenance
+cost** — the hint is written only on scan success, never touched by
+free/carve/ring-drain — the property that distinguishes it from X5's
+per-free-bit-flip bitmap (rejected at +9 Ir churn) and T10's per-refill array
+update (rejected at +44 Ir bootstrap). Correctness is sound BY CONSTRUCTION:
+the pre-check can only produce a false POSITIVE (verification fails, falls
+through to the full scan — wasted loads, never wrong), never a false
+NEGATIVE (it never asserts "definitely empty"). Verified via a property test
+(`tests/regression_r1_find_segment_hint.rs`, 2 deterministic guards + 2
+proptests at 64 cases) asserting no segment with a freed block is ever
+missed (no spurious carve) across partial-free and interleaved two-class
+churn scenarios — all green — plus the existing T10 multiseg-recovery guards,
+unchanged and passing.
+
+**iai verdict: NO-GO** against the campaign's own stated gate ("cold/recycle
+target: −15…−25 Ir/op minimum for a GO on R1/R3"):
+
+| bench | baseline Ir | hint Ir | Δ raw | Δ Ir/op* |
+|---|---:|---:|---:|---:|
+| small_churn_16b | 34,036 | 34,039 | +3 | 0.0 |
+| aligned_churn_640b_a128 | 34,046 | 34,049 | +3 | 0.0 |
+| cold_alloc_free_256x16b | 76,848 | 76,881 | +33 | +0.1 |
+| cold_alloc_free_256x64b | 76,851 | 76,884 | +33 | +0.1 |
+| recycle_alloc_free_256x16b | 125,341 | 125,359 | +18 | 0.0 |
+| recycle_alloc_free_256x64b | 125,404 | 125,422 | +18 | +0.1 |
+| churn_256b | 34,036 | 34,039 | +3 | 0.0 |
+| churn_write_256b | 34,292 | 34,295 | +3 | 0.0 |
+| **multiseg_cold_256k** | 60,102 | 59,811 | **−291** | **−4.3** |
+| **seg_cycle_decommit_256k** | 93,224 | 91,865 | **−1,359** | **−6.6** |
+
+Churn kill-gate (±10 Ir): PASS (+3, the best of all three attempts — better
+than T10's +46 and X5's +9). But the cold/recycle target was missed by a wide
+margin (+0.0…+0.1 Ir/op vs. a −15…−25 target) — those benches fit entirely in
+the primordial segment (n=1, a one-iteration scan), so no scan optimization
+of any shape can help them; only the two multi-segment judges moved, and only
+to the SAME −4.3/−6.6 Ir/op T10 already reached and was rejected for.
+
+**The structural barrier, now confirmed a fourth time (X5, T10, R1's Tier-A
+analysis during design, and this measured result):** every current bench
+models at most 3 live segments (`multiseg_cold_256k` spans exactly 3) — at
+that scale the scan is 3 cache-hot pointer-chases; no index, hint, or bitset
+shape can amortise its own maintenance/verification cost below that floor.
+The barrier is the BENCH SUITE's segment count, not any specific
+implementation idea. A future arc that adds a genuine ≥64-segment bench (or
+profiles a real long-lived-process workload with 100+ simultaneously-live
+small segments) is the prerequisite for re-opening R1/X5/T10 — not a new
+algorithmic attempt at the current bench scale. The correctness-proven hint
+shape here (verified pre-check, zero hot-path cost, sound-by-construction
+false-positive-only failure mode) is the recommended starting point if that
+day comes.
+
+Working tree confirmed byte-identical to pre-experiment (clean revert,
+`git status`/`git diff --stat` both empty, independently re-verified by the
+orchestrator via a fresh `npm run iai` run matching this table's baseline
+column exactly).
+
