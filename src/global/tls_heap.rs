@@ -5,9 +5,10 @@
 //! `RefCell<Option<Heap>>` binding for the global face. The keystone move:
 //! the heap is NOT owned by the TLS slot (RAII-dropped on thread exit); it
 //! is a slot in the global [`HeapRegistry`], and the TLS slot caches only a
-//! raw `*mut HeapCore` to it. Thread exit does NOT drop the heap; the
-//! `AbandonGuard` abandons its segments back to the registry and recycles
-//! the slot.
+//! raw `*mut HeapCore` to it. On thread exit, `AbandonGuard::drop` does NOT
+//! abandon segments — it recycles the slot (`LIVE → FREE`) with the `HeapCore`
+//! and all its segments staying whole, for reuse by whichever thread claims
+//! the slot next (whole-slot reuse, Phase 12.5).
 //!
 //! ## Why raw `Cell<*mut HeapCore>` (no `RefCell`)
 //!
@@ -27,8 +28,8 @@
 //! owning thread (the one that won the `FREE → LIVE` CAS in `claim`).
 //! `current()` is called only on the owning thread (it reads its own TLS),
 //! so the `&mut HeapCore` it yields is exclusive. No other thread writes
-//! these bins; cross-thread frees go through the `ThreadFreeStack`, not
-//! the bins directly. The registry's atomic protocol (M5-clean bootstrap,
+//! these bins; cross-thread frees go through the segment's `RemoteFreeRing`,
+//! not the bins directly. The registry's atomic protocol (M5-clean bootstrap,
 //! claim/recycle CAS) establishes the single writer; this file relies on
 //! that, it does not re-establish it.
 //!

@@ -101,14 +101,16 @@ pinning = ["experimental", "dep:core_affinity"]
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
 alloc-core = ["std", "dep:aligned-vmem"]
-# Phase 10: opt-in cross-thread free. Enables the lock-free Treiber stack
-# (`ThreadFreeStack`) for cross-thread `dealloc`, owner stamping on segment
-# headers, and the `dealloc_any_thread` entry point. Sound across thread death
-# via abandonment-leak (segments and the Treiber head are leaked on drop
-# so late cross-thread frees never touch unmapped memory). Full abandoned-heap
-# adoption (reclaiming leaked segments) is Phase 11. Without this feature, the
-# `alloc-core` substrate provides single-thread-only allocation (sound:
-# single owner, no cross-thread refs). Requires `alloc-core`.
+# Cross-thread free support. Adds per-segment `RemoteFreeRing`s (lock-free
+# SPSC rings) for cross-thread `dealloc`, the `dealloc_any_thread` entry point,
+# owner stamping on segment headers, and the whole-slot-reuse teardown model
+# (`AbandonGuard::drop` recycles the slot with the `HeapCore` staying whole —
+# all segments and their remote-free queues are preserved for the next claimant
+# to reclaim lazily). The abandon/adopt substrate (segment transfer between
+# heaps) remains in the codebase but is not invoked on the normal teardown
+# path. Without this feature, the `alloc-core` substrate provides
+# single-thread-only allocation (sound: single owner, no cross-thread refs).
+# Requires `alloc-core`.
 alloc-xthread = ["alloc-core"]
 # Phase 11: the drop-in `GlobalAlloc` face -- `SeferAlloc`. Installs over the
 # per-thread `HeapCore` substrate via the registry-backed raw-pointer TLS
@@ -120,8 +122,8 @@ alloc-xthread = ["alloc-core"]
 # panic/abort. Reentrancy-free (M5) is upheld structurally: no
 # `Vec`/`Box`/`HashSet`/`std::alloc`/`format!` on the path -- the TLS init is
 # the lazy allocation-free discipline. Requires `alloc-core`. Add `alloc-xthread`
-# alongside it for the multi-thread face (cross-thread `dealloc` via the Phase
-# 10 Treiber stack).
+# alongside it for the multi-thread face (cross-thread `dealloc` via
+# per-segment `RemoteFreeRing`s).
 alloc-global = ["alloc-core"]
 # Phase 35: M6 decommit — return the payload pages of an empty small segment to
 # the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its

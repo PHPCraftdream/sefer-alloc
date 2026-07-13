@@ -7,9 +7,10 @@
 **100 % Rust typed handle-addressed store — no C / C++ libraries.**
 
 A thin typed membrane over [`slotmap`](https://crates.io/crates/slotmap):
-values live in slotmap's dense, cache-friendly, always-compact backing store,
-and every operation exposes only typed `Handle<T>` values — raw `DefaultKey`s
-never escape the crate boundary. The original single-threaded face of
+values live in slotmap's slot array (resolved by a single indirection),
+but removed entries leave tombstone holes — iteration skips them, so the
+backing store is NOT always-compact. Every operation exposes only typed
+`Handle<T>` values — raw `DefaultKey`s never escape the crate boundary. The original single-threaded face of
 [`sefer-alloc`](https://crates.io/crates/sefer-alloc), extracted as a
 standalone crate.
 
@@ -18,7 +19,11 @@ standalone crate.
 `slotmap`'s `DefaultKey` is untyped: a key from one map compiles against another
 map of a different value type without error. `sefer-region` wraps it in
 `Handle<T>` — a `PhantomData<fn() -> T>`-branded key — so the compiler rejects
-cross-region handle confusion at the type level.
+cross-**type** handle confusion at the type level (a `Handle<Foo>` cannot be
+used where a `Handle<Bar>` is expected). Note: branding is by value type `T`,
+not by `Region` instance — a `Handle<T>` from one `Region<T>` is accepted by
+a *different* `Region<T>` of the same type and could silently access or remove
+a value keyed by the same `DefaultKey` in that other instance.
 
 The differentiator for the pure-Rust audience: **zero own unsafe** —
 `#![forbid(unsafe_code)]` at the top of this crate. The internal `unsafe` in

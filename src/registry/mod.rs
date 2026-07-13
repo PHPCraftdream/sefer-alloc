@@ -6,8 +6,10 @@
 //! a global, self-hosting table (the `Region` slot-table discipline, reflected
 //! one level deeper — the heap pool itself becomes a slot table). A thread
 //! does NOT own its heap; it caches a raw `*mut HeapCore` to a registry slot
-//! in TLS (12.3). Thread exit does not drop the heap; it abandons its
-//! segments back to the registry (12.3/12.4) and recycles the slot.
+//! in TLS (12.3). On thread exit, `AbandonGuard::drop` does NOT abandon or
+//! walk segments — it recycles the slot (`LIVE → FREE`) with the `HeapCore`
+//! and all its segments staying whole; a later thread that claims the recycled
+//! slot reuses the same `HeapCore` as-is (whole-slot reuse, Phase 12.5).
 //!
 //! ## `#[doc(hidden)]` — not public API
 //!

@@ -11,8 +11,9 @@ use crate::Handle;
 /// NOT always-compact, and iteration walks the slot array skipping holes
 /// (~30 % slower than a `DenseSlotMap`, which packs live values for dense
 /// iteration). Every operation delegates to `slotmap` while exposing only typed
-/// [`Handle<T>`] values (raw `DefaultKey`s never escape). All operations are
-/// `O(1)`.
+/// [`Handle<T>`] values (raw `DefaultKey`s never escape). Individual lookup,
+/// insertion, and removal are `O(1)`; iteration and [`clear`](Self::clear) are
+/// linear in the slot-array length; [`reserve`](Self::reserve) may reallocate.
 ///
 /// ## Invariants upheld
 ///
