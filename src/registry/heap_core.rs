@@ -1811,9 +1811,11 @@ impl HeapCore {
     /// conditional Release-store).
     ///
     /// Call this whenever segment ownership may have changed out of band —
-    /// specifically if a future phase introduces inter-heap segment adoption
-    /// (e.g., `try_adopt` transferring a segment from an abandoned heap into
-    /// this heap). Without a reset, the cache might hit on a segment whose
+    /// specifically if a future phase re-introduces inter-heap segment
+    /// adoption (the prior `try_adopt` mechanism that transferred a segment
+    /// from an abandoned heap into another one was removed — see
+    /// CHANGELOG.md — a hypothetical future equivalent is what this hook
+    /// exists for). Without a reset, the cache might hit on a segment whose
     /// `owner_state` has already been updated by the adopter's CAS, and the
     /// Relaxed-load fast-path check would detect the mismatch and fall
     /// through correctly — but defensive reset is cleaner.

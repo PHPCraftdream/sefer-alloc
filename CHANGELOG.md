@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — registry control-plane fields narrowed to `pub(crate)`
+
+`HeapSlot::state`, `HeapSlot::generation`, and `Registry`'s `slots`/`count`/
+`free_slots`/`abandoned_segs` fields were `pub` (reachable through the
+doc-hidden `pub mod registry` surface). Narrowed to `pub(crate)` to close
+R4-MS-4 (CRITICAL) — a public field let safe downstream code force a
+`LIVE → FREE` transition and re-push a slot onto `free_slots`, letting a
+second thread's ordinary `claim()` steal a slot a first thread still had
+cached, breaking the single-writer invariant `unsafe impl Sync for HeapSlot`
+depends on.
+
+**Why.** These fields were never intended as stable public API (every one
+carries a "NOT stable public API" doc note and exists only because the
+crate's `#[doc(hidden)] pub mod` test-only-export pattern requires the
+enclosing module to be `pub`). The narrowing closes a real capability-boundary
+gap; it does not change any documented, supported behavior.
+
+**What was removed:** direct field access to the items above from outside the
+crate. Replaced with narrow `#[doc(hidden)]` accessors on `Registry`
+(`dbg_slot_state`, `dbg_slot_generation`, and one `unsafe fn
+dbg_slot_preset_generation` for the one legitimate test that presets a
+generation) for the tests that legitimately needed to observe this state.
+
+**Migration.** No production code referenced these fields directly (they were
+never part of the crate's supported public API). A downstream crate that was
+relying on direct field access — an unsupported use of a `#[doc(hidden)]`
+surface — will fail to compile (E0616) and should route through
+`SeferAlloc`'s supported API instead; there is no supported use case this
+narrowing removes.
+
+### BREAKING CHANGE — public raw-memory test hooks narrowed to `unsafe fn`
+
+Eight doc-hidden `pub fn` hooks (`RemoteFreeRing::{init,over}_test_buffer`,
+`RunStack::{push,pop,peek,is_empty,init_in_place,clear_all}`,
+`segment_header::{gen_at,bump_gen,init_gen_table_in_place}`,
+`alloc_core_small.rs`'s `dbg_corrupt_freelist_head_next`/
+`dbg_drain_freelist_batch`/`dbg_alloc_bitmap_bytes_for`/
+`dbg_magazine_bitmap_bytes_for`/`dbg_payload_start_for`,
+`alloc_core.rs`'s `dbg_unregister`/`dbg_recycle`, `numa::bind_segment`)
+accepted a caller-supplied raw pointer/base with an unenforceable prose-only
+safety contract — a safe downstream call with an invalid pointer could
+trigger a library-side invalid read/write with zero `unsafe` at the call
+site (R4-MS-3).
+
+**Why.** The validity/size/alignment/lifetime/exclusivity of a caller-supplied
+pointer is fundamentally unverifiable by the callee; that contract belongs in
+the function signature (`unsafe fn` + `# Safety`), not in prose a caller can
+ignore without a compiler warning.
+
+**What changed:** each hook above is now `pub unsafe fn` with a `# Safety`
+doc section. This introduced a second, item-level tier of confined `unsafe`
+(alongside the existing 13 module-level seams) — see the source-of-truth
+inventory command in `CLAUDE.md`/`README.md`/`docs/ARCHITECTURE.md`/
+`src/lib.rs`, now `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`.
+
+**Migration.** These are `#[doc(hidden)]` items, never stable public API. Any
+downstream call site now needs an `unsafe { }` block; the safety contract
+itself is unchanged (only its enforcement moved from prose to the compiler).
+
 ### BREAKING CHANGE — removal of the abandon/adopt substrate
 
 The abandoned-segments / adoption substrate (the unreachable segment-transfer

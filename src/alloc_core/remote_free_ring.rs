@@ -780,8 +780,10 @@ impl RemoteFreeRing {
     ///     ONLY a pre-filter, never the operation that reads the pushed data.
     ///
     /// The slot re-claim boundary (a segment's ring surviving a `HeapSlot`
-    /// recycle→claim, per the shard-reuse discipline — see
-    /// `HeapRegistry::abandon_segments`'s module doc) needs NO extra fence
+    /// recycle→claim, per the whole-slot-reuse discipline — see
+    /// `crate::registry::heap_registry`'s module doc and
+    /// `AbandonGuard::drop`'s "Phase 12.5 (architectural turn)" note) needs NO
+    /// extra fence
     /// here: the cache lives in the segment's OWN header
     /// (`SegmentHeader::ring_drain_head`), which is reset to `0` only when a
     /// segment is freshly reserved (`SegmentHeader::small`), exactly mirroring
