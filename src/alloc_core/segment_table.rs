@@ -104,17 +104,6 @@ pub(crate) const OWN_CACHE_SIZE: usize = 4;
 /// `SegmentTable` methods before `from_primordial`).
 pub(crate) const SEGMENT_SHIFT: usize = 22;
 
-/// Tombstone marker for hash slots that held a base which was subsequently
-/// removed (unregister/recycle). Must be a value that can never be a real
-/// segment base: real bases are SEGMENT-aligned (aligned to 4 MiB = 1 << 22),
-/// so the value `1` (= 0x0000_0001) is unambiguously not a valid base.
-///
-/// Rule:
-/// - `null_mut()` → empty (never occupied)
-/// - `TOMBSTONE`  → was occupied, now removed (probe chain intact)
-/// - other        → live entry (a real SEGMENT-aligned base pointer)
-const TOMBSTONE: *mut u8 = core::ptr::without_provenance_mut::<u8>(1);
-
 /// A self-hosted segment registry: a fixed-capacity array of segment-base
 /// pointers plus a high-water count, carved from the primordial segment.
 ///
@@ -154,9 +143,9 @@ pub(crate) struct SegmentTable {
     count: u32,
     /// OPT-B: open-addressing hash table for O(1) `contains_base`. Lives in
     /// the primordial segment immediately after the slots array. Capacity is
-    /// `HASH_CAPACITY` entries. Encoding:
-    /// - `null_mut()` → empty (never occupied)
-    /// - `TOMBSTONE`  → removed entry (probe chain must be preserved)
+    /// `HASH_CAPACITY` entries. Two-state encoding (backward-shift deletion
+    /// in `hash_remove` — R4-8/N3 — never leaves tombstones):
+    /// - `null_mut()` → empty (terminates a probe chain)
     /// - other        → live segment base (SEGMENT-aligned pointer)
     hash_slots: *mut *mut u8,
     /// Task #135 (Part 1): a stack of recycled (NULL) slot indices, carved in
@@ -169,31 +158,6 @@ pub(crate) struct SegmentTable {
     /// right after `free_list`'s `FREE_LIST_CAPACITY` entries). The number of
     /// valid (push-order) entries currently on the free-list stack.
     free_top: *mut u32,
-    /// W2 (tombstone-rebuild) — number of TOMBSTONE entries currently present
-    /// in `hash_slots`. A PLAIN struct field (NOT primordial-resident memory):
-    /// the carved footprint (`slots`/`hash_slots`/`free_list`/`free_top`) is
-    /// unchanged; this counter is an inline field of the `SegmentTable` value
-    /// held by `AllocCore`, zero-initialised in `from_primordial`.
-    ///
-    /// ## Why it exists (the perf-metastability it kills)
-    ///
-    /// Tombstones are written by `hash_remove` and, pre-W2, NEVER converted
-    /// back to empty (no backward-shift deletion, no rebuild). Every
-    /// register/unregister cycle with a FRESH base (large-cache eviction,
-    /// decommit-recycle, ASLR) consumed one empty slot forever, so `#empty`
-    /// was monotonically non-increasing. Once `#empty` hit 0 (live ≤
-    /// `MAX_SEGMENTS`, tombstones ≥ `MAX_SEGMENTS`), a `hash_contains` of an
-    /// ABSENT base — the hot case, since every cross-thread free begins with a
-    /// `contains_base` MISS on the caller's own table — probed the ENTIRE
-    /// `HASH_CAPACITY` array before returning `false`. A long-running server
-    /// degraded to ~`HASH_CAPACITY` metadata loads per cross-thread free. Not
-    /// UB — a metastable perf collapse in exactly the DBMS/async profile the
-    /// crate targets.
-    ///
-    /// The counter is maintained EXACTLY (incremented by `hash_remove`,
-    /// decremented when `hash_insert` reuses a tombstone slot, reset to 0 by
-    /// `rebuild_hash`) so the rebuild trigger can fire deterministically.
-    tombstones: u32,
 }
 
 impl SegmentTable {
@@ -229,9 +193,6 @@ impl SegmentTable {
             hash_slots,
             free_list,
             free_top,
-            // W2: no tombstones exist in a freshly-carved hash table (the
-            // bootstrap zeroed every entry to `null_mut()` = empty).
-            tombstones: 0,
         }
     }
 
@@ -330,14 +291,9 @@ impl SegmentTable {
         }
         // NULL the slot — the OS reservation is NOT released here.
         super::node::Node::write_struct::<*mut u8>(slot, core::ptr::null_mut());
-        // OPT-B: remove from hash table (tombstone the entry).
+        // OPT-B: remove from hash table via backward-shift deletion (R4-8/N3:
+        // no tombstone, no rebuild — see `hash_remove`).
         self.hash_remove(base);
-        // W2: `hash_remove` just bumped `tombstones`. Amortise the rebuild onto
-        // this deletion if the table has crossed the threshold (see
-        // `maybe_rebuild_hash`). Rebuild lives on the DELETION path, not the
-        // read path, so `contains_base`/`hash_contains` stay branch-free of
-        // rebuild logic.
-        self.maybe_rebuild_hash();
         // PERF-P2 (Э3): `base` is leaving the table — it MUST NOT remain
         // cached. A stale cache slot surviving removal would let a future
         // `contains_base` HIT on an unregistered/recycled/unmapped base and
@@ -396,10 +352,11 @@ impl SegmentTable {
             let slot = Self::slot_ptr(self.slots, id as usize);
             let current = super::node::Node::read_struct::<*mut u8>(slot);
             if current == base {
-                // OPT-B: tombstone the hash entry BEFORE releasing the OS
-                // reservation. After `release_segment` the pointer value `base`
-                // remains valid as a key (we compare values, not dereference),
-                // but doing the hash update first is cleaner.
+                // OPT-B: remove the hash entry (backward-shift deletion)
+                // BEFORE releasing the OS reservation. After `release_segment`
+                // the pointer value `base` remains valid as a key (we compare
+                // values, not dereference), but doing the hash update first is
+                // cleaner.
                 self.hash_remove(base);
                 // PERF-P2 (Э3): evict `base` from the direct-mapped cache
                 // BEFORE releasing the OS reservation. After `release_segment`
@@ -419,13 +376,6 @@ impl SegmentTable {
                 // future `register`). Guarded by `current == base` above, so
                 // this index is pushed at most once per logical recycle.
                 self.free_list_push(id);
-                // W2: amortise a rebuild onto this deletion if the tombstone
-                // count crossed the threshold. Done AFTER the slot is NULLed so
-                // `rebuild_hash`'s live-base scan (over `slots[0..count]`) does
-                // NOT re-insert the just-recycled `base` (its slot is now
-                // NULL and skipped) — the rebuild must observe the table in its
-                // post-removal state.
-                self.maybe_rebuild_hash();
                 return;
             }
         }
@@ -481,10 +431,11 @@ impl SegmentTable {
     /// whose computed segment base is NOT in this set is foreign (not one of
     /// our allocations) and is treated as a no-op.
     ///
-    /// OPT-B: now O(1) average via the open-addressing hash table. Tombstone
-    /// entries are skipped (the probe chain must not stop at a tombstone).
-    /// The only time a result is `false` is when the probe chain reaches an
-    /// empty slot (`null_mut()`), meaning `base` was never inserted here.
+    /// OPT-B: now O(1) average via the open-addressing hash table. The only
+    /// time a result is `false` is when the probe chain reaches an empty slot
+    /// (`null_mut()`), meaning `base` was never inserted here (backward-shift
+    /// deletion — R4-8/N3 — leaves clean empty slots, never tombstones, so an
+    /// empty slot unambiguously terminates the probe).
     ///
     /// Recycled (NULL) slots are NOT considered as matching any base, so a
     /// use-after-recycle pointer is correctly treated as foreign.
@@ -693,9 +644,9 @@ impl SegmentTable {
     // OPT-B — open-addressing hash table helpers
     //
     // The hash table lives in the primordial segment immediately after the
-    // slots array. Capacity = HASH_CAPACITY (a power of two). Encoding:
-    //   - null_mut()  → empty  (never occupied; stops a probe chain)
-    //   - TOMBSTONE   → removed (probe chain must skip over this)
+    // slots array. Capacity = HASH_CAPACITY (a power of two). Two-state
+    // encoding (backward-shift deletion — R4-8/N3 — never leaves tombstones):
+    //   - null_mut()  → empty  (stops a probe chain)
     //   - other       → live segment base (SEGMENT-aligned, never null)
     //
     // All reads/writes go through the `node` seam, keeping this file
@@ -736,163 +687,143 @@ impl SegmentTable {
 
     /// Insert `base` into the hash table using linear probing.
     ///
-    /// Scans forward from `hash_index(base)` (with wrap-around) until an
-    /// empty slot OR a tombstone slot is found, then writes `base` there.
+    /// Scans forward from `hash_index(base)` (with wrap-around) until an empty
+    /// slot is found, then writes `base` there.
     ///
     /// **Precondition:** the caller guarantees `base` is not already in the
-    /// table AND at least one empty/tombstone slot exists (load factor ≤ 50%).
+    /// table AND at least one empty slot exists (load factor ≤ 50%).
     fn hash_insert(&mut self, base: *mut u8) {
         let start = Self::hash_index(base);
         let mut i = start;
         loop {
             let entry = self.hash_slot_read(i);
-            if entry.is_null() || entry == TOMBSTONE {
-                // Empty or tombstone: this slot is available.
-                if entry == TOMBSTONE {
-                    // W2: reusing a tombstone converts it back to live — the
-                    // ONLY tombstone→live transition. Keep `tombstones` exact
-                    // (it is otherwise only grown by `hash_remove` and reset by
-                    // `rebuild_hash`); an off-by-one here would let the rebuild
-                    // trigger fire early or late.
-                    self.tombstones -= 1;
-                }
+            if entry.is_null() {
+                // Empty slot: this slot is available.
                 self.hash_slot_write(i, base);
                 return;
             }
             i = (i + 1) & (HASH_CAPACITY - 1);
             // Under the load-factor ≤ 50% guarantee we will always find a
             // free slot before wrapping all the way around. The loop must
-            // terminate: at least HASH_CAPACITY/2 slots are empty/tombstone.
+            // terminate: at least HASH_CAPACITY/2 slots are empty.
             debug_assert!(i != start, "hash table full — load factor exceeded");
         }
     }
 
-    /// Remove `base` from the hash table (replace the entry with a tombstone).
+    /// Remove `base` from the hash table using **backward-shift deletion**
+    /// (R4-8/N3). This is the classic technique for open-addressing linear-
+    /// probing tables: deleting an entry by writing a tombstone would leave a
+    /// hole that future `hash_contains` probes must skip, and without periodic
+    /// rebuild those holes accumulate forever (the original W2 perf-metastable
+    /// collapse). Backward-shift deletion instead REPAIRS the probe chain at
+    /// delete time, leaving a clean empty slot — so no tombstones ever exist,
+    /// and no rebuild is ever needed.
     ///
-    /// Scans forward from `hash_index(base)` until `base` is found (replaced
-    /// with `TOMBSTONE`) or an empty slot is reached (base was never inserted;
-    /// defensive no-op). Tombstone slots are skipped during the probe.
+    /// The cost is bounded by the CURRENT cluster length (the run of live
+    /// entries that probed past `i`), NOT by `HASH_CAPACITY` — and it is paid
+    /// as a normal part of every delete, not as a periodic O(`HASH_CAPACITY`)
+    /// spike concentrated on one unlucky call (the N3 tail-latency regression).
     ///
-    /// Only called under `alloc-decommit` (from `recycle` and `unregister`);
-    /// the lint is suppressed for non-decommit builds to keep the code uniform.
-    #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
+    /// ## The shift-eligibility condition (the correctness crux)
+    ///
+    /// After nulling the slot at index `i` (the removed entry), we walk forward
+    /// from `i+1`. For each subsequent live entry `e` at index `j`, we must
+    /// decide: can `e` be moved back to fill the hole at `hole`, or must it
+    /// stay where it is? The rule is:
+    ///
+    /// **`e` is eligible to move back to `hole` iff `e` does NOT probe over
+    /// `hole` on its way to `j`** — i.e., moving `e` to `hole` does not skip
+    /// its own ideal bucket. Measure both distances FORWARD, mod `HASH_CAPACITY`
+    /// (call it `C`): `dist_to_hole = (hole - home_e) mod C` and
+    /// `dist_to_j = (j - home_e) mod C`. `e` is eligible iff
+    /// `dist_to_hole <= dist_to_j` — i.e. `hole` is reached from `home_e` no
+    /// later than `j` is. (Equality would imply `hole == j`, which never occurs
+    /// — `hole` always trails `j` by ≥ 1 along the walk.) When eligible, we copy
+    /// `e` to `hole`, and `j` becomes the new `hole`; we then continue scanning
+    /// forward from `j+1` to fill the new hole. When NOT eligible, `e` stays and
+    /// we scan forward from `j+1` (the hole at the OLD position is still open).
+    ///
+    /// Why this preserves `hash_contains` for EVERY key: a future probe for `e`
+    /// starts at `home_e` and walks forward. Pre-shift it would pass through
+    /// `hole` (then `hole+1..j`) to reach `e` at `j`. Post-shift `e` is at
+    /// `hole`, which is strictly EARLIER in probe order than `j` and still at
+    /// or after `home_e` (that is exactly the eligibility check), so the probe
+    /// still finds `e` — and finds it sooner. A key `e'` that probed PAST `j`
+    /// also probed past `hole` (since `hole` is before `j`), so moving the live
+    /// entry at `j` to `hole` does not insert a gap into `e'`'s probe chain —
+    /// the chain is contiguous live entries from `home_e'` to `e'`, and we only
+    /// ever relocate an entry to an earlier-or-equal probe position within that
+    /// same contiguous run. The final empty slot (where the shift ends) is the
+    /// gap that was ALWAYS there at the end of the cluster — it just moved left.
+    ///
+    /// Only called under `alloc-decommit` or `alloc-xthread` (from `recycle`
+    /// and `unregister`); the lint is suppressed for builds with neither, to
+    /// keep the code uniform.
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
     fn hash_remove(&mut self, base: *mut u8) {
         let start = Self::hash_index(base);
+        let mask = HASH_CAPACITY - 1;
         let mut i = start;
+        // 1. Find the slot currently holding `base`.
         loop {
             let entry = self.hash_slot_read(i);
             if entry.is_null() {
                 // Empty slot: probe chain terminates; base is not present.
-                // This indicates a caller bug (removing a non-inserted entry).
-                // Defensive no-op — do not corrupt the table.
+                // Defensive no-op (caller bug) — do not corrupt the table.
                 return;
             }
             if entry == base {
-                // Found the live entry: replace with tombstone so probe chains
-                // for other keys that passed through this slot remain intact.
-                self.hash_slot_write(i, TOMBSTONE);
-                // W2: the ONLY live→tombstone transition — bump the exact
-                // tombstone count so `unregister`/`recycle` can decide whether
-                // the table has accumulated enough tombstones to warrant a
-                // rebuild.
-                self.tombstones += 1;
-                return;
+                break;
             }
-            // TOMBSTONE or different live entry: skip and continue probing.
-            i = (i + 1) & (HASH_CAPACITY - 1);
+            // A different live entry: skip and continue probing.
+            i = (i + 1) & mask;
             debug_assert!(i != start, "hash_remove looped without finding base");
         }
-    }
-
-    /// W2 — rebuild trigger. Called on the deletion paths (`unregister`,
-    /// `recycle`) right after a tombstone was created (and the vacated slot
-    /// NULLed). Rebuilds only when tombstones exceed `HASH_CAPACITY / 4`.
-    ///
-    /// ## Threshold justification (why a quarter)
-    ///
-    /// A rebuild is O(`HASH_CAPACITY`) (clear the array + re-insert every live
-    /// base). If we trigger every time `tombstones > HASH_CAPACITY / 4`, then
-    /// between two rebuilds at least `HASH_CAPACITY / 4` *fresh* deletions must
-    /// have occurred (each rebuild resets the count to 0, and only a
-    /// live→tombstone removal grows it). So the O(`HASH_CAPACITY`) rebuild cost
-    /// is amortised over ≥ `HASH_CAPACITY / 4` deletions → **O(1) amortised**
-    /// per delete. A quarter (rather than a half) also keeps the *steady-state*
-    /// tombstone population ≤ `HASH_CAPACITY / 4`, so `#empty` stays ≥
-    /// `HASH_CAPACITY - MAX_SEGMENTS - HASH_CAPACITY/4` = well above zero (with
-    /// `HASH_CAPACITY = 2·MAX_SEGMENTS`, that is ≥ `HASH_CAPACITY/4` empty
-    /// slots always), which bounds the worst-case `hash_contains` probe length
-    /// and kills the metastable collapse this counter exists to prevent. A
-    /// smaller fraction would rebuild too often (cost); a larger one lets the
-    /// probe chains grow longer before reclaiming — a quarter is the balance.
-    #[cfg_attr(
-        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
-        allow(dead_code)
-    )]
-    #[inline]
-    fn maybe_rebuild_hash(&mut self) {
-        if self.tombstones > (HASH_CAPACITY / 4) as u32 {
-            self.rebuild_hash();
-        }
-    }
-
-    /// W2 — rebuild the open-addressing hash from the authoritative dense slot
-    /// registry, eliminating ALL tombstones. Clears `hash_slots` to empty,
-    /// re-inserts every LIVE base (`slots[0..count]`, skipping NULL/recycled
-    /// slots), resets `tombstones` to 0, and clears `own_cache`.
-    ///
-    /// This is TRANSPARENT: `contains_base`/`hash_contains` return the exact
-    /// same true/false for every base before and after (membership is defined
-    /// by the live slot set, which the rebuild reproduces exactly). The only
-    /// thing that changes is the probe *positions* — which is precisely why
-    /// `own_cache` MUST be reset: it caches `hash_contains`-proven bases, and a
-    /// rebuild moves entries, so a stale cache slot could point a probe at the
-    /// wrong position. Clearing it is the safe, correct move (it re-fills
-    /// lazily from won probes), and matches the eviction discipline of
-    /// `unregister`/`recycle`, which clear the cache in lockstep with hash
-    /// mutation.
-    #[cfg_attr(
-        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
-        allow(dead_code)
-    )]
-    fn rebuild_hash(&mut self) {
-        // 1. Clear the whole hash table to empty (null).
-        for i in 0..HASH_CAPACITY {
-            self.hash_slot_write(i, core::ptr::null_mut());
-        }
-        // 2. Tombstones are gone — reset the exact count BEFORE re-inserting so
-        //    the tombstone→live decrement in `hash_insert` (which cannot fire
-        //    now, since every slot is empty) never sees a stale value.
-        self.tombstones = 0;
-        // 3. Re-insert every LIVE base from the authoritative dense registry.
-        //    NULL (recycled) slots are skipped — they are not members. The
-        //    just-vacated base (in `recycle`/`unregister`) is already NULL in
-        //    `slots`, so it is correctly NOT re-inserted.
-        let n = self.count as usize;
-        for i in 0..n {
-            let slot = Self::slot_ptr(self.slots, i) as *const *mut u8;
-            let base = super::node::Node::read_struct::<*mut u8>(slot);
-            if !base.is_null() {
-                self.hash_insert(base);
+        // 2. Backward-shift deletion: fill the hole at `i` by pulling later
+        //    entries in the cluster back, preserving every probe chain. `hole`
+        //    is the gap in the probe chain we are filling; physically slot
+        //    `hole` may still hold a STALE value (the removed `base`, or a
+        //    just-moved entry's old copy) until it is overwritten or nulled —
+        //    it is never re-read as a candidate, because `j` only walks forward
+        //    past it. `j` scans forward for a candidate to fill `hole`.
+        let mut hole = i;
+        let mut j = (i + 1) & mask;
+        loop {
+            let entry = self.hash_slot_read(j);
+            if entry.is_null() {
+                // End of the cluster — nothing more to shift. The slot at
+                // `hole` stays empty, which is the correct terminal state.
+                break;
             }
-        }
-        // 4. Reset the proven-present cache: a rebuild moved probe positions, so
-        //    every cached (proven) entry may now be stale. Clearing is the
-        //    safe, correct move — it re-fills lazily from future won probes.
-        self.own_cache = [core::ptr::null_mut(); OWN_CACHE_SIZE];
-    }
+            // Eligibility: can `entry` (whose ideal slot is `home`) legally
+            // occupy `hole`? `entry` is eligible iff `hole` lies in the closed
+            // probe interval [home, j] (mod C) — i.e. moving it to `hole` does
+            // not place it before its own ideal bucket. Measure both distances
+            // FORWARD (mod C): `entry` is eligible iff the distance from `home`
+            // to `hole` is <= the distance from `home` to `j`. (Equal only when
+            // `hole == j`, which never occurs since `hole < j` along the walk.)
+            let home = Self::hash_index(entry);
+            let dist_hole = (hole.wrapping_sub(home)) & mask;
+            let dist_j = (j.wrapping_sub(home)) & mask;
+            let eligible = dist_hole <= dist_j;
 
-    /// W2 — TEST-ONLY observability seam: the current exact TOMBSTONE count in
-    /// the hash table. Mirrors the `dbg_*` convention used elsewhere in the
-    /// substrate (e.g. `count()` exposure via `AllocCore::dbg_table_count`).
-    /// Lets the counterfactual regression test observe that the rebuild fires
-    /// and keeps tombstones bounded. Zero production impact.
-    #[doc(hidden)]
-    #[cfg_attr(
-        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
-        allow(dead_code)
-    )]
-    pub(crate) fn dbg_hash_tombstones(&self) -> u32 {
-        self.tombstones
+            if eligible {
+                // Move `entry` back to `hole`; the vacated slot `j` becomes
+                // the new hole for the next iteration.
+                self.hash_slot_write(hole, entry);
+                hole = j;
+            }
+            j = (j + 1) & mask;
+            debug_assert!(
+                j != i,
+                "hash_remove backward-shift looped — no empty slot found in cluster"
+            );
+        }
+        // 3. The final hole is genuinely empty now (nothing shifted into it).
+        self.hash_slot_write(hole, core::ptr::null_mut());
     }
 
     /// Check whether `base` is present in the hash table (O(1) average).
@@ -900,7 +831,10 @@ impl SegmentTable {
     /// Scans forward from `hash_index(base)` until:
     /// - `base` is found → returns `true`
     /// - an empty slot (`null_mut()`) is reached → returns `false`
-    /// - a tombstone is encountered → skips it (probe chain continues)
+    ///
+    /// Backward-shift deletion (R4-8/N3) guarantees every non-live slot is
+    /// genuinely empty (no tombstones), so an empty slot unambiguously
+    /// terminates the probe — a `false` result is always correct.
     #[inline(always)]
     fn hash_contains(&self, base: *mut u8) -> bool {
         let start = Self::hash_index(base);
@@ -914,15 +848,122 @@ impl SegmentTable {
             if entry == base {
                 return true;
             }
-            // TOMBSTONE or a different live entry: skip and continue.
+            // A different live entry: skip and continue.
             i = (i + 1) & (HASH_CAPACITY - 1);
             if i == start {
                 // Wrapped all the way around without finding base or an empty
-                // slot. This can only happen if the table has no empty slots at
-                // all (all entries are live or tombstone). Under the guaranteed
-                // ≤ 50% load factor this cannot occur, but handle it defensively.
+                // slot. This can only happen if the table is completely full of
+                // live entries. Under the guaranteed ≤ 50% load factor this
+                // cannot occur, but handle it defensively.
                 return false;
             }
         }
+    }
+}
+
+// -----------------------------------------------------------------------
+// R4-8/N3 — TEST-ONLY harness for direct exercise of the open-addressing
+// hash operations with SYNTHETIC SEGMENT-aligned bases.
+//
+// `SegmentTable` is `pub(crate)` and its hash helpers (`hash_insert`/
+// `hash_remove`/`hash_contains`) are private, so the integration-test
+// property test (`tests/segment_table_backshift_proptest.rs`) cannot reach
+// them directly. This `#[doc(hidden)] pub` harness owns its own backing
+// storage and re-exposes the three hash operations, so the test drives the
+// EXACT backward-shift deletion code path with full control over which hash
+// indices are occupied — including the cyclic wrap-around past
+// `HASH_CAPACITY-1 → 0`, which is untestable through the real `AllocCore`
+// API because the OS hands out segment bases whose hash indices never
+// deterministically straddle the table boundary.
+//
+// The harness bases are SYNTHETIC pointer VALUES: they are stored in and
+// compared by the hash table but NEVER dereferenced, so any nonzero value is
+// safe. `SegmentHashHarness::base_for_index(h)` yields a distinct nonzero
+// SEGMENT-aligned value whose `hash_index` is exactly `h`.
+//
+// `pub` (not `pub(crate)`) only because `alloc_core` itself is
+// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
+// `#[doc(hidden)]` re-export in `mod.rs`), reachable by the isolated backshift
+// property test. Nothing here is stable public API.
+// -----------------------------------------------------------------------
+
+/// Test-only handle to a `SegmentTable`'s hash operations with synthetic
+/// (non-dereferenced) bases. See the module-level comment above.
+#[doc(hidden)]
+pub struct SegmentHashHarness {
+    table: SegmentTable,
+    // Owns the carved arrays so they outlive the `SegmentTable` view. Sized
+    // once at construction and never grown, so the raw pointers handed to
+    // `from_primordial` stay valid for the harness's lifetime.
+    _slots: Vec<*mut u8>,
+    _hash: Vec<*mut u8>,
+    _free_list: Vec<u32>,
+    _free_top: Vec<u32>,
+}
+
+#[doc(hidden)]
+impl SegmentHashHarness {
+    /// Build an EMPTY hash table over heap-owned backing storage. The slot
+    /// registry `count` is 0: the harness exercises the hash helpers
+    /// directly and never calls `register`/`unregister`/`recycle`.
+    pub fn new() -> Self {
+        let mut slots: Vec<*mut u8> = vec![core::ptr::null_mut(); MAX_SEGMENTS];
+        let mut hash: Vec<*mut u8> = vec![core::ptr::null_mut(); HASH_CAPACITY];
+        let mut free_list: Vec<u32> = vec![0u32; FREE_LIST_CAPACITY];
+        let mut free_top: Vec<u32> = vec![0u32; 1];
+        // `from_primordial` performs no memory operation — it only stores the
+        // pointers. The Vecs' heap allocations are stable across the move into
+        // `Self` and are never reallocated, so the stored pointers remain valid.
+        let table = SegmentTable::from_primordial(
+            slots.as_mut_ptr(),
+            0,
+            hash.as_mut_ptr(),
+            free_list.as_mut_ptr(),
+            free_top.as_mut_ptr(),
+        );
+        Self {
+            table,
+            _slots: slots,
+            _hash: hash,
+            _free_list: free_list,
+            _free_top: free_top,
+        }
+    }
+
+    /// Insert `base` (a synthetic nonzero SEGMENT-aligned pointer value; never
+    /// dereferenced). Precondition: `base` is not already present and the load
+    /// factor is ≤ 50%.
+    pub fn insert(&mut self, base: *mut u8) {
+        self.table.hash_insert(base);
+    }
+
+    /// Remove `base` via backward-shift deletion. Defensive no-op if `base` is
+    /// not present.
+    pub fn remove(&mut self, base: *mut u8) {
+        self.table.hash_remove(base);
+    }
+
+    /// O(1)-average membership test for `base`.
+    pub fn contains(&self, base: *mut u8) -> bool {
+        self.table.hash_contains(base)
+    }
+
+    /// A synthetic, distinct, nonzero, SEGMENT-aligned pointer VALUE whose
+    /// `hash_index` is exactly `index` (mod `HASH_CAPACITY`). The value is
+    /// never dereferenced — it is only stored/compared by the hash table.
+    /// Adding `HASH_CAPACITY` before shifting keeps every value nonzero (so it
+    /// is never confused with the `null_mut()` empty marker) for any `index`.
+    pub fn base_for_index(index: usize) -> *mut u8 {
+        core::ptr::without_provenance_mut::<u8>((index + HASH_CAPACITY) << SEGMENT_SHIFT)
+    }
+
+    /// The hash-table capacity (`HASH_CAPACITY`), re-exposed for the property
+    /// test so it can size universes and target the wrap boundary.
+    pub const CAPACITY: usize = HASH_CAPACITY;
+}
+
+impl Default for SegmentHashHarness {
+    fn default() -> Self {
+        Self::new()
     }
 }

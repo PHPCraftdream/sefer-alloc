@@ -1135,23 +1135,6 @@ impl AllocCore {
         self.table.count()
     }
 
-    /// TEST-ONLY (W2 tombstone-rebuild): the segment table's current exact
-    /// TOMBSTONE count in the open-addressing hash (see
-    /// `SegmentTable::dbg_hash_tombstones`). Used by
-    /// `tests/regression_segment_table_tombstone_rebuild.rs` to verify the
-    /// tombstone-threshold rebuild actually fires and keeps the count bounded
-    /// (the counterfactual: without the rebuild trigger this grows without
-    /// bound). Thin forwarder over the `pub(crate)` table seam, mirroring
-    /// `dbg_table_count`. Zero production impact.
-    #[doc(hidden)]
-    #[cfg_attr(
-        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
-        allow(dead_code)
-    )]
-    pub fn dbg_hash_tombstones(&self) -> u32 {
-        self.table.dbg_hash_tombstones()
-    }
-
     /// TEST-ONLY (task #135): public wrapper over `AllocCore::contains_base`
     /// for integration tests (which cannot see the `pub(crate)` version, nor
     /// the `pub(crate)` `os::segment_base_of_ptr` needed to derive a segment

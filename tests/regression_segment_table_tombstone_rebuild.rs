@@ -1,98 +1,99 @@
-//! W2 — regression: `SegmentTable` tombstone-rebuild kills the long-horizon
-//! perf-metastability ("tombstone wear").
+//! R4-8/N3 — regression: backward-shift hash deletion kills BOTH the original
+//! "tombstone wear" perf-metastability AND the synchronous rebuild spike that
+//! the prior W2 fix introduced.
 //!
-//! ## The bug this guards against
+//! ## History (why this test exists in this shape)
 //!
-//! `SegmentTable`'s open-addressing hash answers `contains_base` in O(1).
-//! Deletion (`unregister`/`recycle`) writes a `TOMBSTONE` sentinel. Pre-W2,
-//! tombstones NEVER converted back to empty (no backward-shift deletion, no
-//! rebuild): the transitions empty→live, live→tombstone, tombstone→live all
-//! existed but nothing→empty did not. So `#empty` was monotonically
-//! non-increasing over the process lifetime. Every register/unregister cycle
-//! with a FRESH base (large-cache eviction, decommit-recycle, ASLR) consumed
-//! one empty slot forever. Once `#empty` reached 0 (live ≤ 1024, tombstones ≥
-//! 1024), `hash_contains` of an ABSENT base — the HOT case, since every
-//! cross-thread free begins with a `contains_base` MISS on the caller's own
-//! table — probed the ENTIRE `HASH_CAPACITY` (2048) array before returning
-//! `false`. A long-running server degraded to ~2048 metadata loads per
-//! cross-thread free: a metastable perf collapse in exactly the DBMS/async
-//! profile the crate targets. Not UB — a should-tier perf cliff.
+//! **Pre-W2** `hash_remove` wrote a `TOMBSTONE` marker and never reclaimed it
+//! (no backward-shift, no rebuild): every register/unregister cycle with a
+//! FRESH base consumed one empty hash slot forever. Once `#empty` hit 0, a
+//! `hash_contains` of an ABSENT base — the hot case, since every cross-thread
+//! free begins with a `contains_base` MISS on the caller's own table — probed
+//! the ENTIRE `HASH_CAPACITY` (2048) array. A long-running server degraded to
+//! ~2048 metadata loads per cross-thread free: a metastable perf collapse.
 //!
-//! ## The fix (verified here)
+//! **W2** fixed the metastability by counting tombstones exactly and, on the
+//! deletion paths (`unregister`/`recycle`), rebuilding the hash from the dense
+//! slot registry once tombstones exceeded `HASH_CAPACITY / 4` (= 512). This was
+//! a genuine improvement (amortised O(1) per delete, bounded probe length) but
+//! it concentrated the O(`HASH_CAPACITY`) rebuild into ONE `unregister`/`recycle`
+//! call every ~512 deletions — a p99/p999 tail-latency spike (review N3).
 //!
-//! `SegmentTable` now counts tombstones exactly and, on the deletion paths
-//! (`unregister`/`recycle`), rebuilds the hash from the authoritative dense
-//! slot registry once tombstones exceed `HASH_CAPACITY / 4` (= 512). The
-//! rebuild clears all tombstones (resetting `#empty`) and is amortised O(1)
-//! per deletion.
+//! **R4-8/N3 (current fix): backward-shift deletion.** `hash_remove` now repairs
+//! the probe chain at delete time, leaving a clean empty slot — so NO tombstones
+//! ever exist and NO rebuild is ever needed. Both the metastable collapse AND
+//! the rebuild spike are gone; the per-delete cost is bounded by the current
+//! cluster length (never `HASH_CAPACITY`) and paid on every delete.
 //!
-//! ## How this test drives distinct bases (the mechanism that creates wear)
+//! ## What this test verifies
 //!
-//! One alloc/free at a time does NOT create tombstone wear: the OS immediately
-//! re-hands the just-freed virtual address, so the next `register` reuses the
-//! very tombstone the `unregister` just wrote (a tombstone→live transition,
-//! net zero). To force DISTINCT bases — the actual production trigger — we
-//! HOLD a wave of `W` simultaneously-live large segments (each in its own
-//! distinct 4 MiB+ segment, so the OS cannot reuse addresses across them),
-//! then drain the whole wave. Draining `W > 512` distinct bases in one wave
-//! guarantees the tombstone count crosses the rebuild threshold. We set the
-//! large-cache budget to 0 so each free eagerly releases its OS reservation
-//! (no cache retention masking the churn), matching the eviction/decommit
-//! profile the fix targets.
+//! (a) **Membership stays EXACTLY correct** across heavy distinct-base churn —
+//!     the correctness invariant backward-shift must preserve (a corrupted probe
+//!     chain makes a live base report `false` → `dealloc` misroutes → UB).
+//!
+//! (b) **No single `unregister`/`recycle` is a dramatic latency outlier** at the
+//!     exact churn boundary (511/512/513 distinct deletions) where the W2 rebuild
+//!     used to fire synchronously. Coarse wall-clock timing in-test (the
+//!     deterministic signal is `npm run iai`; wall-clock here is a best-effort
+//!     shape check, see the note on `MAX_VS_MEDIAN`).
+//!
+//! The detailed correctness backstop for the shift-eligibility condition
+//! (including the cyclic wrap boundary) lives in
+//! `tests/segment_table_backshift_proptest.rs`; this test exercises the real
+//! `AllocCore` alloc/dealloc path end-to-end.
 
 // ===========================================================================
-// (a) tombstone count stays BOUNDED (rebuild fires) AND
-// (b) `contains_base` stays CORRECT across rebuilds.
+// (a) + (b): drive a wave of W > 512 DISTINCT bases through the table, then
+// drain it — timing each dealloc — and assert (a) membership correctness
+// throughout and (b) no single dealloc is a dramatic outlier.
 // ===========================================================================
 
-/// Drive many waves of hold-then-drain with `W > HASH_CAPACITY/4` distinct
-/// bases per wave (so each wave crosses the rebuild threshold several times
-/// over the run) and assert:
+/// Hold-then-drain a wave of `W` simultaneously-live large segments (each in its
+/// own distinct 4 MiB segment, so the OS cannot reuse addresses across them and
+/// every free unregisters a DISTINCT base). With `W > 512`, the W2 rebuild would
+/// have fired synchronously on the 513th drain free (the spike); backward-shift
+/// deletes each with only cluster-length work. We assert:
 ///
-/// (a) `dbg_hash_tombstones()` stays BOUNDED — never exceeds
-///     `HASH_CAPACITY/4` + a small margin — i.e. the rebuild actually fires and
-///     resets the count. The counterfactual (verified by hand during
-///     development: comment out the `maybe_rebuild_hash()` calls in
-///     `segment_table.rs`) makes this counter climb monotonically past the
-///     threshold toward `W` and stay there — the assertion then FAILS.
+/// - (a) every held base reads `contains_base == true` while live, and flips to
+///   `false` immediately after its own free, AND every still-held base stays
+///   `true` across every other free (a probe-chain corruption would flip a
+///   survivor to `false`).
+/// - (b) the ratio of the SLOWEST single dealloc to the MEDIAN dealloc is below
+///   a generous bound. The W2 rebuild did ~`HASH_CAPACITY` extra writes on one
+///   call; backward-shift does O(cluster) on every call. Wall-clock here is
+///   coarse (the OS free dominates per-call time), so the bound is loose — it
+///   exists to catch a catastrophic O(`HASH_CAPACITY`)-per-delete regression,
+///   not to assert a precise speedup. The deterministic signal is `npm run iai`.
 ///
-/// (b) `contains_base` remains EXACTLY correct across rebuilds: every
-///     still-held base reads `true`; every freed base reads `false`. Checked
-///     both while a wave is fully live (all `true`) and immediately after each
-///     individual free (that base flips to `false`), so a rebuild that
-///     corrupted membership would be caught at the free that triggered it.
+/// `#[cfg_attr(miri, ignore)]` — reserves hundreds of 4 MiB OS segments.
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
-#[cfg_attr(miri, ignore)] // reserves hundreds of 4 MiB OS segments — too slow under miri.
+#[cfg_attr(miri, ignore)]
 #[test]
-fn tombstone_rebuild_bounds_count_and_preserves_membership() {
+fn backshift_no_latency_spike_at_threshold_boundary() {
     use core::alloc::Layout;
     use sefer_alloc::{alloc_core::AllocCore, SegmentLayout};
+    use std::time::Instant;
 
     let mut ac = AllocCore::new().expect("primordial");
-    // Budget 0: every large free is rejected by the large-cache and eagerly
-    // releases its OS reservation → the churn is not masked by cache retention.
+    // Budget 0: every large free eagerly releases its OS reservation → the churn
+    // is not masked by cache retention (mirrors the W2 test's driver).
     ac.dbg_set_large_cache_budget(Some(0));
 
-    // A Large allocation (> SMALL_MAX) gets its own dedicated segment, so each
-    // distinct pointer is a distinct segment base in the table.
     let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
     let layout = Layout::from_size_align(large_size, SegmentLayout::PAGE).unwrap();
 
-    // `HASH_CAPACITY = 2 * MAX_SEGMENTS = 2048`; the rebuild threshold is
-    // `HASH_CAPACITY / 4 = 512`. `W` must exceed 512 so a single wave's drain
-    // crosses the threshold. Mirrored here as a literal because the constants
-    // are `pub(crate)` (not reachable from an integration test).
-    const HASH_CAPACITY: u32 = 2048;
-    const THRESHOLD: u32 = HASH_CAPACITY / 4; // 512
-    const W: usize = 650; // > THRESHOLD (512), < MAX_SEGMENTS (1024)
-    const WAVES: usize = 4;
-    // The rebuild fires when tombstones EXCEED the threshold, so the observed
-    // post-deletion maximum is exactly `THRESHOLD`. Allow a tiny margin for
-    // robustness against off-by-one accounting.
-    const BOUND: u32 = THRESHOLD + 8;
+    // `HASH_CAPACITY = 2048`; the W2 rebuild threshold was `HASH_CAPACITY / 4`
+    // = 512, firing when tombstones EXCEEDED 512 (i.e. on the 513th). `W` must
+    // exceed 512 so a single wave's drain sweeps well past the old trigger.
+    const W: usize = 600; // > 512 (old threshold), < MAX_SEGMENTS (1024)
+    const WAVES: usize = 3;
 
-    let mut max_tombstones: u32 = 0;
-    let mut crossed_threshold_at_least_once = false;
+    // Generous bound: the slowest dealloc must not be more than this many × the
+    // median. The OS segment-release dominates per-call wall-clock and is itself
+    // variable, so this is a coarse guard against a catastrophic per-delete
+    // O(HASH_CAPACITY) regression, not a precise spike measurement. Valgrind Ir
+    // (npm run iai) is the deterministic judge.
+    const MAX_VS_MEDIAN: f64 = 30.0;
 
     for wave in 0..WAVES {
         // --- Hold: allocate W distinct live large segments. ---
@@ -103,68 +104,60 @@ fn tombstone_rebuild_bounds_count_and_preserves_membership() {
             ptrs.push(p);
         }
 
-        // (b) While the whole wave is live, EVERY held base must be contained.
+        // (a) While the whole wave is live, EVERY held base must be contained.
         for (i, &p) in ptrs.iter().enumerate() {
             assert!(
                 ac.dbg_contains_base(p),
-                "wave {wave}: held base i={i} not reported as contained \
-                 (membership broken while live)"
+                "wave {wave}: held base i={i} not reported contained (live)"
             );
         }
 
-        // --- Drain: free the whole wave. Each free unregisters/recycles a
-        //     DISTINCT base → a distinct tombstone. Crossing THRESHOLD fires a
-        //     rebuild. ---
+        // --- Drain: free the whole wave, timing each dealloc. ---
+        let mut durations_ns: Vec<u64> = Vec::with_capacity(W);
         for (i, &p) in ptrs.iter().enumerate() {
+            let t0 = Instant::now();
             ac.dealloc(p, layout);
+            let dt = t0.elapsed().as_nanos() as u64;
+            durations_ns.push(dt);
 
-            let t = ac.dbg_hash_tombstones();
-            max_tombstones = max_tombstones.max(t);
-            if t >= THRESHOLD {
-                crossed_threshold_at_least_once = true;
-            }
-
-            // (b) The just-freed base must now read as foreign (false),
-            //     regardless of whether this free triggered a rebuild.
+            // (a) The just-freed base must now read foreign (false).
             assert!(
                 !ac.dbg_contains_base(p),
                 "wave {wave}: freed base i={i} still reported contained \
-                 (membership corrupted, possibly by a rebuild)"
+                 (membership corrupted — a removed base is still present)"
             );
-
-            // (b) Every STILL-held base (later in the wave) must remain
-            //     contained across the rebuild that a threshold-crossing free
-            //     just performed. Only checked on the free that could have
-            //     triggered a rebuild (t just dropped back to ~THRESHOLD/2),
-            //     to keep the test fast: a rebuild that dropped a live base
-            //     would flip one of these to false.
-            if i + 1 < ptrs.len() && ac.dbg_hash_tombstones() < THRESHOLD / 2 {
-                for &q in &ptrs[i + 1..] {
-                    assert!(
-                        ac.dbg_contains_base(q),
-                        "wave {wave}: a still-held base vanished across a \
-                         rebuild triggered at free i={i} (rebuild dropped a \
-                         live entry)"
-                    );
-                }
+            // (a) Every STILL-held base (later in the wave) must remain
+            // contained across this free — a probe-chain corruption from
+            // backward-shift would flip a survivor to false.
+            for &q in &ptrs[i + 1..] {
+                assert!(
+                    ac.dbg_contains_base(q),
+                    "wave {wave}: a still-held base vanished across the free \
+                     at i={i} (backward-shift corrupted a survivor's probe \
+                     chain)"
+                );
             }
         }
-    }
 
-    // (a) The rebuild must actually have fired: without it, tombstones would
-    //     climb monotonically toward W (650) and stay there. With it, the
-    //     count is bounded at ~THRESHOLD.
-    assert!(
-        crossed_threshold_at_least_once,
-        "test did not exercise the rebuild path — tombstones never reached the \
-         threshold ({THRESHOLD}); driver is not creating enough distinct-base \
-         churn to be a valid counterfactual"
-    );
-    assert!(
-        max_tombstones <= BOUND,
-        "tombstone count reached {max_tombstones}, exceeding the bound {BOUND} \
-         (= HASH_CAPACITY/4 + margin) — the rebuild did NOT fire / did not \
-         reset the count. This is the tombstone-wear perf cliff: #empty is \
-         being consumed without bound."
-    );
+        // (b) No single dealloc is a dramatic outlier vs the median. The old W2
+        //     rebuild concentrated O(HASH_CAPACITY) work on the 513th call;
+        //     backward-shift spreads O(cluster) work uniformly. We assert the
+        //     max/median ratio is bounded (coarse — see MAX_VS_MEDIAN note).
+        let mut sorted = durations_ns.clone();
+        sorted.sort_unstable();
+        let median = sorted[sorted.len() / 2];
+        let max = *sorted.last().unwrap();
+        // Guard against a pathologically fast median (e.g. all-zero under a
+        // coarse clock): only assert when the median is nonzero and meaningful.
+        if median >= 100 {
+            let ratio = max as f64 / median as f64;
+            assert!(
+                ratio <= MAX_VS_MEDIAN,
+                "wave {wave}: slowest dealloc ({max} ns) is {ratio:.1}× the \
+                 median ({median} ns) — a single unregister dominates, \
+                 suggesting a per-delete O(HASH_CAPACITY) regression. \
+                 (Coarse wall-clock; confirm with `npm run iai`.)",
+            );
+        }
+    }
 }

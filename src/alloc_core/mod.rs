@@ -104,5 +104,13 @@ pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
 pub use segment_layout::SegmentLayout;
+/// R4-8/N3 test-only harness for direct exercise of `SegmentTable`'s
+/// open-addressing hash (backward-shift deletion). `pub` (not `pub(crate)`)
+/// only because `alloc_core` itself is `#[doc(hidden)]`: the public surface is
+/// test-only (the `#[doc(hidden)]` property test in `tests/`), reachable by
+/// `sefer_alloc::alloc_core::SegmentHashHarness`. Nothing here is stable
+/// public API.
+#[doc(hidden)]
+pub use segment_table::SegmentHashHarness;
 #[cfg(feature = "alloc-decommit")]
 pub use small_segment_pool_config::SmallSegmentPoolConfig;
