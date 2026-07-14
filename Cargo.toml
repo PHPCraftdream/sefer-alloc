@@ -431,6 +431,20 @@ name = "heap_fanin_production"
 harness = false
 required-features = ["alloc-global", "alloc-xthread"]
 
+# R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
+# isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
+# HeapCore::trim_for_recycle) from pure per-op allocation throughput. Reports
+# ops-only throughput, an isolated drain-only cost (via
+# SeferAlloc::dbg_trim_current_thread), and the full real thread-exit
+# lifecycle (spawn -> N ops -> join, letting AbandonGuard::drop run for
+# real) as SEPARATE bench groups, swept over N = 1 / 1_000 / 100_000
+# operations per thread lifetime. See the bench file's module doc for the
+# full rationale and the "subtract the empty-thread-spawn reference" method.
+[[bench]]
+name = "heap_lifecycle_teardown"
+harness = false
+required-features = ["alloc-global"]
+
 # Task #62 §A-2: synthetic async-like allocation pattern — mixed-size
 # alloc/dealloc/realloc (row buffers, accumulators, medium blobs) via
 # SeferAlloc::GlobalAlloc called directly. No tokio runtime noise, no
