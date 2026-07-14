@@ -19,6 +19,70 @@
 > Everything else (large alloc/free, realloc, cold-direct) is
 > methodology-unchanged across sections.
 
+> ## 0.3.x post-round4 re-measurement (2026-07-14) — after the round4 remediation batch
+
+> Full `npm run bench:table` re-run at `5806d1c`, after the round4
+> remediation batch (tasks #93–#102: registry control-plane soundness,
+> raw-test-surface `unsafe fn` narrowing, two point-bug fixes, teardown-trim +
+> config-conflict detection, doc sync, abandon/adopt substrate removal,
+> `AllocBitmap`/`MagazineBitmap` dedup, backward-shift hash deletion, the R4-7
+> RAD perf campaign, and the R4-10 file split). Same host/profile/caveats as
+> every section below (noisy Windows dev box, criterion `sample_size(10)`,
+> ±15–20 % — ratios are the signal, exact ns are not). This is a comparison
+> run, not a methodology change — directly comparable to the 2026-07-10
+> section immediately below. All values are **ns per op** as printed by
+> `scripts/bench-table.mjs`.
+>
+> **Churn + write** (each block written after alloc — the realistic pattern,
+> headline):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 22.8 ns |  22.3 ns | 141.2 ns | 1.02× slower | 6.2× faster |
+> | 64 B   | **23.8 ns** |  27.1 ns | 149.2 ns | **1.14× faster** | 6.3× faster |
+> | 256 B  | **24.3 ns** |  39.2 ns | 144.8 ns | **1.61× faster** | 6.0× faster |
+> | 1024 B | **26.3 ns** | 238.1 ns | 168.9 ns | **9.07× faster** | 6.4× faster |
+>
+> **Churn, non-writing** (the artificial no-write pattern):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 22.2 ns |  21.0 ns | 126.2 ns | 1.06× slower | 5.7× faster |
+> | 64 B   | **24.8 ns** |  26.9 ns | 141.8 ns | **1.08× faster** | 5.7× faster |
+> | 256 B  | **22.3 ns** |  40.6 ns | 149.0 ns | **1.82× faster** | 6.7× faster |
+> | 1024 B | **24.1 ns** | 237.9 ns | 165.9 ns | **9.89× faster** | 6.9× faster |
+>
+> **Cold/bulk direct** (`alloc N → free N`, no reuse — the documented magazine
+> worst-case):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 30.8 ns | **11.5 ns** | 109.2 ns | 2.67× slower | 3.5× faster |
+> | 64 B   | 42.1 ns | **21.4 ns** | 163.4 ns | 1.97× slower | 3.9× faster |
+> | 256 B  | 41.9 ns | **27.5 ns** | 143.7 ns | 1.52× slower | 3.4× faster |
+> | 1024 B | **44.7 ns** |  53.7 ns | 162.9 ns | **1.20× faster** | 3.6× faster |
+>
+> **`Vec_push`** (honest geometric `Vec<i64>` growth, 8 grow steps per op):
+> SeferAlloc 1040.4 ns, **1.16× faster** than mimalloc 1203.5 ns, vs System
+> 2058.6 ns (2.0× faster). The 2026-07-10 run measured this within-noise on
+> the *slower* side (1.08× behind) — the two runs bracket a within-noise tie,
+> read this as parity-plus, not a stable directional lead.
+>
+> **Verdict (2026-07-14):** the round4 remediation batch is wall-clock neutral
+> within this host's noise band — every deterministic `npm run iai` gate the
+> batch's perf-sensitive tasks ran (R4-6's bitmap dedup, R4-8's backward-shift
+> hash deletion, the R4-7 RAD campaign's R2/R3/R1 experiments, and R4-10's
+> file split) confirmed exact zero Ir delta or an honest revert; see
+> `docs/perf/IAI_BASELINE.md` for the deterministic record. The wall-clock
+> shape here is consistent with the 2026-07-10 section: leads at 64 B+ churn
+> (1.08–9.89× depending on size/pattern), a within-noise tie at 16 B churn (a
+> genuine flip in sign from the 2026-07-10 run, both sides of zero — not a
+> regression, see `docs/perf/IAI_BASELINE.md`), and the same cold-tiny residual
+> (now 1.5–2.7× vs 1.7–2.4× previously, within the documented noise band).
+> Large alloc/free and realloc were not re-run this pass — the 2026-07-06
+> post-X-arc rows stand. Where this section and the 2026-07-10 one disagree,
+> THIS one is current for churn/cold/`Vec_push`.
+
 > ## 0.3.x post-PERF-PASS re-measurement (2026-07-10) — after the five-pass perf arc
 >
 > Full `npm run bench:table` re-run at `e6b9b3a` after the PERF-PASS-1..5 arc
