@@ -576,10 +576,10 @@ allocates) — the headline:
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 22.8 ns |  22.3 ns | 141.2 ns | 1.02× slower |
-|   64 B | **23.8 ns** |  27.1 ns | 149.2 ns | **1.14× faster** |
-|  256 B | **24.3 ns** |  39.2 ns | 144.8 ns | **1.61× faster** |
-| 1024 B | **26.3 ns** | 238.1 ns | 168.9 ns | **9.07× faster** |
+|   16 B | 29.0 ns |  28.5 ns | 197.8 ns | 1.02× slower |
+|   64 B | **28.4 ns** |  31.3 ns | 175.5 ns | **1.10× faster** |
+|  256 B | **31.4 ns** |  40.3 ns | 161.4 ns | **1.28× faster** |
+| 1024 B | **32.1 ns** | 264.8 ns | 207.3 ns | **8.24× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
 alloc per op; the artificial pattern where the old stale-key slow path bit
@@ -587,10 +587,10 @@ hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 22.2 ns |  21.0 ns | 126.2 ns | 1.06× slower |
-|   64 B | **24.8 ns** |  26.9 ns | 141.8 ns | **1.08× faster** |
-|  256 B | **22.3 ns** |  40.6 ns | 149.0 ns | **1.82× faster** |
-| 1024 B | **24.1 ns** | 237.9 ns | 165.9 ns | **9.89× faster** |
+|   16 B | 29.3 ns |  29.1 ns | 170.2 ns | 1.01× slower |
+|   64 B | **29.5 ns** |  44.6 ns | 238.1 ns | **1.51× faster** |
+|  256 B | **29.0 ns** |  50.1 ns | 209.4 ns | **1.73× faster** |
+| 1024 B | **33.1 ns** | 331.8 ns | 261.5 ns | **10.04× faster** |
 
 **Cold direct** (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op; the
 "first touch" path, historically the worst case where mimalloc's cheaper
@@ -598,22 +598,34 @@ carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B |  30.8 ns |  11.5 ns | 109.2 ns | 2.67× slower |
-|   64 B |  42.1 ns |  21.4 ns | 163.4 ns | 1.97× slower |
-|  256 B |  41.9 ns |  27.5 ns | 143.7 ns | 1.52× slower |
-| 1024 B | **44.7 ns** |  53.7 ns | 162.9 ns | **1.20× faster** |
+|   16 B |  36.4 ns |  14.6 ns | 144.5 ns | 2.49× slower |
+|   64 B |  45.7 ns |  28.2 ns | 166.5 ns | 1.62× slower |
+|  256 B |  59.1 ns |  35.7 ns | 165.4 ns | 1.66× slower |
+| 1024 B | **56.9 ns** |  70.3 ns | 238.3 ns | **1.24× faster** |
 
-(Measured 2026-07-14 via `npm run bench:table` at `5806d1c`, after the
-round4 remediation batch — Windows dev host, criterion `sample_size(10)`, the
-same noisy-host caveat as every prior wall-clock row in this README. All
-absolute columns were re-recorded in this run; no figure is carried from an
-earlier measurement. The 16 B churn rows moved from a small "faster" to a
-small "slower" ratio vs the 2026-07-10 run (SeferAlloc 19.4→22.2 ns
-non-writing, 21.0→22.8 ns writing) — within this host's documented noise
-band, not attributable to any round4 change (round4's perf work was iai
-Ir-neutral or an honest no-op revert on every experiment that touched a hot
-path; see `docs/perf/IAI_BASELINE.md`'s R2/R3/R1 entries). vs `System`:
-~4–6× faster across the board.)
+(Measured 2026-07-14 via `npm run bench:table`, after round5's R5-R3 fix —
+Windows dev host, criterion `sample_size(10)`. **This is the first
+measurement taken with two measurement-methodology confounds removed**:
+`benches/global_alloc.rs` previously shared one TLS heap's leftover state
+across groups and always ran arms in the same SeferAlloc→mimalloc→System
+order; R5-R3 resets the heap between groups and rotates arm order per
+`(group, size)` — see `docs/agent_reviews_round5/performance_review.md`
+§4.1 items 2-3 and the R5-R3 commit for the full rationale. Every absolute
+column here moved up 20-40% from the prior (`5806d1c`) run — **including the
+mimalloc and System columns**, not just SeferAlloc's — which is the
+signature of host-level noise/session drift dominating this single run, not
+a real regression: an isolated single-run wall-clock delta on this host
+cannot distinguish "the code changed" from "the host was busier this time"
+(see `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`, which needed 20
+alternating paired repetitions to separate a real effect from this exact
+class of noise). The deterministic tie-breaker for this exact churn path is
+`npm run iai`: `docs/perf/IAI_BASELINE.md`'s R5-R2b entry shows `Ir` for
+`churn_256b`/`small_churn_16b` DROPPED 20.6% across the whole round4+round5
+window (42,880 → 34,036), i.e. the hot path got strictly cheaper by the one
+noise-free measure available — the wall-clock ratios above should be read
+as "SeferAlloc vs mimalloc/System, this run", not as "SeferAlloc got slower
+since the last table." vs `System`: ~4–7× faster across the board, same
+shape as before.)
 
 **The 256 B churn loss is GONE (Э6, P6) — and M2 got stronger, not weaker.**
 Through P5 sefer-alloc trailed mimalloc at 256 B churn (~1.16–1.25× slower), and
@@ -708,18 +720,22 @@ measurement as the "Cold direct" column of the Performance table above
 absolute ns/op for every allocator are now in the main Cold direct table
 above, re-measured 2026-07-14 via `npm run bench:table`):
 
-| Size | vs mimalloc (2026-07-14) | (pre-P3 was) |
+| Size | vs mimalloc (2026-07-14, post-R5-R3) | (pre-P3 was) |
 |---|---|---|
-|   16 B | 2.67× slower | 2.6× slower |
-|   64 B | 1.97× slower | 2.0× slower |
-|  256 B | 1.52× slower | 1.5× slower |
-| 1024 B | **1.20× faster** | 1.2× faster |
+|   16 B | 2.49× slower | 2.6× slower |
+|   64 B | 1.62× slower | 2.0× slower |
+|  256 B | 1.66× slower | 1.5× slower |
+| 1024 B | **1.24× faster** | 1.2× faster |
 
-(Cold-direct `vs mimalloc` ratios measured 2026-07-14, see
+(Cold-direct `vs mimalloc` ratios measured 2026-07-14 with R5-R3's
+methodology fix (TLS-state isolation + arm-order rotation), see
 [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md) and the main Performance table
-above — all absolute ns/op columns were re-recorded in this run. The "pre-P3
-was" column is the pre-X-arc historical run, kept for the before/after of the
-Э1 trajectory.)
+above — all absolute ns/op columns were re-recorded in this run, and per
+that table's note, the absolute deltas from the prior run are host-noise
+dominated (every column moved, not just SeferAlloc's), not a real shift; the
+qualitative shape — small sizes trail, 1024 B leads — is unchanged. The
+"pre-P3 was" column is the pre-X-arc historical run, kept for the
+before/after of the Э1 trajectory.)
 
 The P3 carve removed the tautological round-trip, but the cold tiny gap
 still sits at ~2–2.7× rather than the ~1.15–1.60× the earlier P3-era run
@@ -760,10 +776,10 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
   - **Cold first-touch after P3 (Э1 bump-direct carve):** the tautological
-    round-trip is gone; the 2026-07-14 re-measurement shows a 2.67× /
-    1.97× cold gap at 16/64 B (vs the 2.6× / 2.0× pre-P3 baseline on this
-    noisy host — 16 B sits at the edge of the pre-P3 figure, within the host's
-    documented noise) and cold 1024 B **1.20× faster**.
+    round-trip is gone; the 2026-07-14 post-R5-R3 re-measurement shows a
+    2.49× / 1.62× cold gap at 16/64 B (vs the 2.6× / 2.0× pre-P3 baseline on
+    this noisy host — both sit near the pre-P3 figures, within the host's
+    documented noise) and cold 1024 B **1.24× faster**.
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
     ~290× faster than `System`; `realloc_grow_neighbour_pressure` (formerly
     `realloc_in_place_unfavorable`) **~1,500× faster** (post-X-arc OPT-G
@@ -773,10 +789,12 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
     on mstress" was the 0.2.0 historical run — mstress is the noisier workload
     and the mimalloc column swung run-to-run this re-run).
-- **Where it ties:** `Vec_push` honest geometric growth (**1.16× faster** than
-  mimalloc as of 2026-07-14, previously measured within-noise on either side —
-  treat as parity-plus, not a stable lead); 16 B churn (see above); MT
-  mstress T = 2 within noise.
+- **Where it ties:** `Vec_push` honest geometric growth (1.12× slower than
+  mimalloc as of the 2026-07-14 post-R5-R3 re-measurement, vs 1.16× faster in
+  the immediately prior run — this bench has swung across parity in both
+  directions across successive re-measurements on this host and should be
+  read as within-noise, not a stable lead or loss in either direction); 16 B
+  churn (see above); MT mstress T = 2 within noise.
 - **Where it now leads (was a loss through P5):**
   - **256 B churn: eliminated the loss in P6 (Э6).** Was ~1.16–1.25× behind
     mimalloc. The real cause was a stale per-heap key stamped in the block body
@@ -786,7 +804,7 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     metadata and stopped touching the block body; the free path is now cheaper
     than mimalloc's (mimalloc writes `next` into the block body on every free;
     we write nothing to it). On the realistic writing pattern we now lead 256 B
-    by 1.61× (2026-07-14; non-writing 1.82×), and M2 was **strengthened** (the
+    by 1.28× (2026-07-14 post-R5-R3; non-writing 1.73×), and M2 was **strengthened** (the
     flushed-double-free-after-user-write hole is closed;
     `tests/regression_magazine_oracles.rs` test (c) is RED pre-Э6, GREEN on Э6).
 - **Where it loses:**

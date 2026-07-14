@@ -19,6 +19,90 @@
 > Everything else (large alloc/free, realloc, cold-direct) is
 > methodology-unchanged across sections.
 
+> ## 0.3.x post-round5 re-measurement (2026-07-14) — first run with R5-R3's measurement-methodology fix
+
+> Full `npm run bench:table` re-run at `e5afe60`, after the round5 remediation
+> batch (tasks R5-F1..F4, R5-R1..R5, plus the emergent R5-R2b honest-reject and
+> two drive-by fixes — a CI-breaking `alloc-global`-only build error, and a
+> flaky regression test). **This is the FIRST run since R5-R3 fixed two
+> measurement confounds in `benches/global_alloc.rs` itself**: `SeferAlloc::
+> new()` was returning the same TLS-cached heap across every `benchmark_group()`
+> in one process (so an EARLIER group's leftover segment/tcache/pool/cache
+> state biased a LATER group's numbers), and the three arms always registered
+> in the fixed order SeferAlloc→mimalloc→System (so any monotonic host drift
+> systematically favoured/penalised whichever arm ran first/last). R5-R3 resets
+> the heap between groups and rotates arm order per `(group, size)` — see
+> `docs/agent_reviews_round5/performance_review.md` §4.1 items 2-3. Same
+> host/profile/caveats as every section below (noisy Windows dev box, criterion
+> `sample_size(10)`, ±15–20 % — ratios are the signal, exact ns are not). All
+> values are **ns per op** as printed by `scripts/bench-table.mjs`.
+>
+> **Churn + write** (each block written after alloc — the realistic pattern,
+> headline):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 29.0 ns |  28.5 ns | 197.8 ns | 1.02× slower | 6.8× faster |
+> | 64 B   | **28.4 ns** |  31.3 ns | 175.5 ns | **1.10× faster** | 6.2× faster |
+> | 256 B  | **31.4 ns** |  40.3 ns | 161.4 ns | **1.28× faster** | 5.1× faster |
+> | 1024 B | **32.1 ns** | 264.8 ns | 207.3 ns | **8.24× faster** | 6.5× faster |
+>
+> **Churn, non-writing** (the artificial no-write pattern):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 29.3 ns |  29.1 ns | 170.2 ns | 1.01× slower | 5.8× faster |
+> | 64 B   | **29.5 ns** |  44.6 ns | 238.1 ns | **1.51× faster** | 8.1× faster |
+> | 256 B  | **29.0 ns** |  50.1 ns | 209.4 ns | **1.73× faster** | 7.2× faster |
+> | 1024 B | **33.1 ns** | 331.8 ns | 261.5 ns | **10.04× faster** | 7.9× faster |
+>
+> **Cold/bulk direct** (`alloc N → free N`, no reuse — the documented magazine
+> worst-case):
+>
+> | size   | SeferAlloc | mimalloc | System | vs mimalloc | vs System |
+> | ------ | ---------: | -------: | -----: | ----------: | --------: |
+> | 16 B   | 36.4 ns | **14.6 ns** | 144.5 ns | 2.49× slower | 4.0× faster |
+> | 64 B   | 45.7 ns | **28.2 ns** | 166.5 ns | 1.62× slower | 3.6× faster |
+> | 256 B  | 59.1 ns | **35.7 ns** | 165.4 ns | 1.66× slower | 2.8× faster |
+> | 1024 B | **56.9 ns** |  70.3 ns | 238.3 ns | **1.24× faster** | 4.2× faster |
+>
+> **`Vec_push`** (honest geometric `Vec<i64>` growth, 8 grow steps per op):
+> SeferAlloc 1715.1 ns, 1.12× **slower** than mimalloc's 1533.5 ns, vs System
+> 2700.4 ns (1.57× faster). The immediately prior (2026-07-14 post-round4)
+> section measured this 1.16× faster — a genuine sign flip, both sides of
+> parity, consistent with the "within-noise, no stable direction" read that
+> section already carried for this bench.
+>
+> **Verdict (2026-07-14, post-R5-R3):** every absolute column in every table
+> above moved up ~20–40 % from the immediately prior (`5806d1c`) section —
+> **including mimalloc's and System's own columns**, not just SeferAlloc's.
+> That is the signature of host-level noise/session drift dominating this
+> particular run, not a real regression: a change confined to SeferAlloc's own
+> code cannot move mimalloc's and System's numbers, which are called through
+> their own `GlobalAlloc` impls untouched by anything in round4 or round5. The
+> qualitative shape is unchanged from the prior section: SeferAlloc leads
+> churn at 64 B+ (1.10–10.04× depending on size/pattern), trails at cold tiny
+> (16–256 B, 1.24×–2.49×), and leads cold 1024 B. Two rows crossed parity in
+> direction (16 B churn stayed a within-noise near-tie on both sides;
+> `Vec_push` flipped from 1.16× faster to 1.12× slower) — both are read as
+> noise, not signal, per the same reasoning the immediately prior section
+> applied to its own 16 B churn flip. **The deterministic tie-breaker,
+> `npm run iai`, is unambiguous and disagrees with "things got slower":**
+> `docs/perf/IAI_BASELINE.md`'s R5-R2b entry shows `Ir` for `churn_256b` /
+> `small_churn_16b` DROPPED 20.6 % across the exact `e6b9b3a`→current window
+> (42,880 → 34,036 instructions), and `churn_write_256b` dropped 20.3 %
+> (43,007 → 34,292) — the hot path got strictly cheaper by the one
+> noise-free measure available, directly contradicting a same-window
+> wall-clock regression reading. A dedicated paired A/B investigation
+> (`docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`) needed 20 alternating
+> process-level repetitions to separate a real effect from exactly this class
+> of single-run host noise — this section is one such single run and should
+> be read accordingly. Large alloc/free and realloc were not re-run this pass
+> — the 2026-07-06 post-X-arc rows stand. Where this section and the
+> 2026-07-14 post-round4 one disagree, THIS one is current for churn/cold/
+> `Vec_push`, but read both against `npm run iai`'s deterministic numbers
+> before treating any single-run wall-clock delta as a real change.
+
 > ## 0.3.x post-round4 re-measurement (2026-07-14) — after the round4 remediation batch
 
 > Full `npm run bench:table` re-run at `5806d1c`, after the round4
