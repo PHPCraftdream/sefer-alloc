@@ -61,7 +61,8 @@ const RUNNER_VER_PREFIX = '0.14.';
 // (alloc-global + alloc-xthread + alloc-decommit + fastbin) — the real-world
 // default whose magazine/fastbin + large-cache fast paths are the whole point
 // of the gate. We match CI so the Ir baseline we record here is the SAME number
-// CI will produce. All eleven bench functions compile under `production`.
+// CI will produce. All twelve bench functions (benches/perf_gate_iai.rs's
+// `perf_gate` library_benchmark_group!) compile under `production`.
 //
 // X7-Ф5 (task #193): a `--features <set>` CLI override was added so the
 // hardened-tier cost table can be recorded WITHOUT forking the script. The

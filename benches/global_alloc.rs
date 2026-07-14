@@ -146,12 +146,16 @@ impl<'a, A: GlobalAlloc> Drop for ChurnTeardownGuard<'a, A> {
 /// This is the steady-state pattern a per-thread magazine (tcache) wins on:
 /// freed blocks re-enter the cache and are re-allocated without round-tripping
 /// the BinTable. Fixed PRNG seed = 0xCAFE for reproducibility. This loop's
-/// prefill is untimed (F7 fix), but `churn_teardown` runs inside the SAME
-/// timed `iter_batched` routine right after this call at every call site
-/// below — see the correction note on [`churn_teardown`]'s doc comment.
-/// `ops` (1024) is the count `bench-table.mjs` divides by; the timed region
-/// actually does `ops` churn pairs plus `CHURN_WORKING_SET` (256) teardown
-/// frees, so the reported ns/op understates the true per-op cost slightly.
+/// prefill is untimed (F7 fix). At most call sites below (`bench_global_alloc_churn`
+/// and `_write`), teardown ALSO runs outside the timed region — the routine
+/// closure returns a [`ChurnTeardownGuard`] instead of calling
+/// `churn_teardown` inline, so `iter_batched` times only `ops` churn pairs,
+/// and the reported ns/op divides cleanly by `ops` with no teardown skew. The
+/// ONE exception is [`bench_global_alloc_churn_with_teardown`], which calls
+/// `churn_teardown` directly inside the timed routine as a DELIBERATE
+/// diagnostic (see its own doc comment and [`churn_teardown`]'s) — only that
+/// variant's timed region does `ops` churn pairs plus `CHURN_WORKING_SET`
+/// (256) teardown frees, so only ITS reported ns/op includes teardown cost.
 fn churn_step<A: GlobalAlloc>(alloc: &A, layout: Layout, live: &mut [*mut u8], ops: usize) {
     let working_set = live.len();
     let mut rng = XorShift64::new(0xCAFE);
