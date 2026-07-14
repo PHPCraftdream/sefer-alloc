@@ -112,34 +112,50 @@ struct ShardedInner<T> {
     next_shard: AtomicUsize,
 }
 
-/// A type-erased thread-local guard that RELEASES its shard on `Drop` (thread
-/// exit). Owns an `Arc<[AtomicBool]>` of the occupied tokens (carrying no `T`)
-/// so it can flip the token even after the region-handling `&self` borrow is
-/// gone — the `Arc` keeps the tokens alive. `shard` is `None` for a thread
-/// that degraded to modulo sharing without an exclusive claim (in that case
-/// there is nothing to release).
+/// A type-erased thread-local guard that RELEASES every exclusively-claimed
+/// shard on `Drop` (thread exit). Each claim owns an `Arc<[AtomicBool]>` of the
+/// occupied tokens (carrying no `T`) so it can flip the token even after the
+/// region-handling `&self` borrow is gone — the `Arc` keeps the tokens alive.
+///
+/// A thread may hold MORE than one exclusive claim: e.g. it bound region A's
+/// shard `i`, then (the cached `MY_SHARD` being out of range for region B) re-
+/// scanned region B's `tokens` and won a CAS there — see `claim_or_get_shard`'s
+/// out-of-range fallback and the module note on one thread driving two regions.
+/// So the guard tracks ALL of the thread's won claims and releases each on
+/// `Drop`; an empty `claims` vector means the thread only ever degraded to
+/// modulo sharing (nothing to release).
 struct ErasedGuard {
+    /// Every exclusive claim THIS thread has won. Append-only across a thread's
+    /// lifetime; each is released on `Drop`. The scan in `claim_or_get_shard`
+    /// can never re-win an already-held shard (its `occupied` token is `true`),
+    /// so the list never holds a duplicate `(tokens, shard)`.
+    claims: Vec<ErasedClaim>,
+}
+
+/// One exclusive shard claim recorded for thread-exit release: the `tokens`
+/// array the CAS was won against (a region's `Arc<[AtomicBool]>`, type-erased
+/// so a single `thread_local!` registry serves every `T`) and the shard id
+/// within it. A thread may accumulate several when it wins claims against more
+/// than one shard or more than one region's `tokens` array.
+struct ErasedClaim {
     tokens: Arc<[AtomicBool]>,
-    /// `Some(id)` iff THIS thread exclusively claimed shard `id` (won the
-    /// `compare_exchange`). `None` for the modulo-degradation fallback (shared
-    /// shard — no exclusive release).
-    shard: Option<u16>,
+    shard: u16,
 }
 
 impl Drop for ErasedGuard {
     fn drop(&mut self) {
-        if let Some(id) = self.shard {
-            // We are the unique owner of this shard (the CAS that claimed it
-            // was atomic, and only THIS guard carries the claim for `id`).
-            // Release it so a new thread may adopt it. Release ordering pairs
-            // with the adopting thread's Acquire-on-success CAS, so the adopter
-            // observes the released state.
-            if let Some(occupied) = self.tokens.get(usize::from(id)) {
+        // Release EVERY exclusively-claimed shard this thread won. We are the
+        // unique owner of each (the claiming CAS was atomic, and only THIS
+        // guard carries the claim for that `(tokens, shard)` pair). Release
+        // ordering pairs with an adopting thread's Acquire-on-success CAS, so
+        // the adopter observes the released state.
+        for claim in &self.claims {
+            if let Some(occupied) = claim.tokens.get(usize::from(claim.shard)) {
                 occupied.store(false, Ordering::Release);
             }
         }
-        // If `shard` is None we degraded to modulo sharing — nothing to
-        // release (no exclusive claim was recorded).
+        // If `claims` is empty we only ever degraded to modulo sharing —
+        // nothing to release.
     }
 }
 
@@ -311,22 +327,29 @@ impl<T> ShardedRegion<T> {
         // Cache the id (fast path).
         MY_SHARD.with(|cell| cell.set(Some(id)));
         // Install (once per thread) the type-erased [`ErasedGuard`] whose `Drop`
-        // releases an exclusively-claimed shard on thread exit. The guard owns
-        // an `Arc::clone(&self.tokens)` so it outlives any `&self` borrow and
-        // can flip the token at thread-exit (the `Arc` keeps the tokens alive).
+        // releases every exclusively-claimed shard on thread exit. The guard
+        // owns an `Arc::clone(&self.tokens)` per claim so it outlives any
+        // `&self` borrow and can flip the token at thread-exit (the `Arc`
+        // keeps the tokens alive).
         ERASED_GUARD.with(|slot| {
-            // Idempotent: if a guard is already registered for this thread,
-            // do nothing. On the same thread subsequent claims return the
-            // cached id via `my_shard` and never reach here except on the
-            // very first claim.
+            // A guard may already exist from an EARLIER claim on this thread —
+            // possibly against a DIFFERENT region's `tokens` array (e.g. the
+            // cached `MY_SHARD` was out of range for THIS region, so we just
+            // re-scanned and won a CAS against THIS region's array; see the
+            // module note on one thread driving two regions). We APPEND the
+            // just-won claim rather than overwriting: every won token MUST be
+            // tracked, since only this guard's `Drop` can release it (dropping
+            // the claim here would leak the token — it would stay `occupied`
+            // forever). The scan above can never re-win an already-held shard
+            // (its token is `true`), so no duplicate is appended.
             let mut slot = slot.borrow_mut();
-            if slot.is_some() {
-                return;
+            let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
+            if let Some(won) = claimed_exclusively {
+                guard.claims.push(ErasedClaim {
+                    tokens: Arc::clone(&self.tokens),
+                    shard: won,
+                });
             }
-            *slot = Some(ErasedGuard {
-                tokens: Arc::clone(&self.tokens),
-                shard: claimed_exclusively,
-            });
         });
         id
     }
@@ -467,21 +490,23 @@ impl<T> ShardedRegion<T> {
             .is_ok();
         // Record the routing binding (fast-path TLS cache).
         MY_SHARD.with(|cell| cell.set(Some(shard)));
-        // Install (once per thread) the type-erased guard whose Drop releases an
-        // exclusively-claimed shard on thread exit. Idempotent: if a guard is
-        // already registered, we do NOT overwrite it (its existing claim, if
-        // any, is released at thread exit; overwriting would leak that claim).
-        // If this bind won its CAS but a guard already exists from a prior claim
-        // on a different shard, the just-won token is simply held until THIS
-        // thread exits and the prior guard's Drop runs — correct, just not
-        // released early. The thread-per-core runner binds once at startup, so
-        // the idempotent path is the norm.
+        // Install (once per thread) the type-erased guard whose `Drop` releases
+        // every exclusively-claimed shard on thread exit. A guard may already
+        // exist from an EARLIER claim (e.g. the thread first bound a DIFFERENT
+        // region's shard); we APPEND the just-won claim rather than overwrite,
+        // so every won token is tracked and released on `Drop` (dropping the
+        // claim here would leak the token — it would stay `occupied` forever,
+        // since only this guard's `Drop` can release it, and the prior claim's
+        // `tokens` array may be a different region's). The routing binding
+        // recorded above is unaffected. The thread-per-core runner binds once
+        // at startup, so this multi-claim path is not the norm.
         ERASED_GUARD.with(|slot| {
             let mut slot = slot.borrow_mut();
-            if slot.is_none() {
-                *slot = Some(ErasedGuard {
+            let guard = slot.get_or_insert_with(|| ErasedGuard { claims: Vec::new() });
+            if claimed_exclusively {
+                guard.claims.push(ErasedClaim {
                     tokens: Arc::clone(&self.tokens),
-                    shard: claimed_exclusively.then_some(shard),
+                    shard,
                 });
             }
         });

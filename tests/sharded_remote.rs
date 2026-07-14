@@ -394,3 +394,123 @@ fn concurrent_cross_thread_remove_never_double_frees_and_accounts() {
         "no double-free: drops ({observed_drops}) <= inserted ({inserted})"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 4. Shard-token leak regression: a won-but-untracked `occupied` token must
+//    be tracked and released at thread exit, not leaked forever.
+// ---------------------------------------------------------------------------
+//
+// Pre-fix, `ErasedGuard` tracked at most ONE exclusive claim per thread (its
+// single `shard` field). But two call sites can win an exclusive `occupied`
+// CAS for a shard the guard never records, if a guard already exists for this
+// thread:
+//
+//   (a) `bind_current_thread_to_shard`: a second bind (even on a DIFFERENT
+//       region) wins the new shard's CAS, but the install block sees the prior
+//       guard and (pre-fix) does nothing → the won token leaks.
+//   (b) `claim_or_get_shard`: when the cached `MY_SHARD` is out of range for
+//       the current region (one thread driving two regions of different sizes),
+//       it re-scans THIS region's `tokens` and may win a CAS against a DIFFERENT
+//       array than the existing guard's → the won token leaks.
+//
+// The fix makes `ErasedGuard` track EVERY exclusive claim a thread wins (an
+// append-only `Vec<ErasedClaim>` instead of a single `Option<u16>`), so both
+// call sites append the just-won `(tokens, shard)` pair instead of silently
+// dropping it. All tracked claims are released together in `Drop`, at thread
+// exit — not immediately at the second bind/claim.
+//
+// Both regressions are observable WITHOUT a test accessor because the claim scan
+// always takes the LOWEST free shard: if shard 0's token leaks, the next fresh
+// thread's scan skips it (CAS fails) and claims shard 1; after the fix worker
+// 1's exit releases shard 0 too, so the next claim is shard 0. The returned
+// handle's `shard` field distinguishes the two.
+
+/// Regression for leak site (a): `bind_current_thread_to_shard` winning a CAS
+/// while a guard already exists must give the just-won token back rather than
+/// leak it. Pre-fix the won token stays `occupied` forever (even after the
+/// thread exits), so a later fresh thread cannot claim that shard exclusively.
+#[test]
+fn rebind_with_existing_guard_does_not_leak_shard_token() {
+    // Region B is SHARED across the two worker threads (same `tokens` array).
+    let region_b = Arc::new(ShardedRegion::<u64>::with_shards(2, 8));
+
+    // Worker 1: install the ErasedGuard via region A (bind shard 0), then bind
+    // region B's shard 0. The region-B CAS WINS, but a guard already exists →
+    // pre-fix the region-B shard-0 token is untracked and leaks.
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            // A separate region installs the (type-erased) guard for THIS
+            // thread, tracking region A's shard 0.
+            let region_a = ShardedRegion::<u64>::with_shards(2, 8);
+            let _ = region_a.bind_current_thread_to_shard(0);
+            let _ = region_a.insert(0xAA);
+            // A SECOND bind, on a different region: wins region B's shard-0
+            // token, but the guard already exists and cannot track it.
+            let _ = region_b.bind_current_thread_to_shard(0);
+            let _ = region_b.insert(0xBB);
+        });
+    });
+    // Worker 1 has exited: its ErasedGuard dropped, releasing region A's shard
+    // 0. Region B's shard 0: pre-fix still `occupied` (leaked); post-fix given
+    // back immediately during the second bind.
+
+    // Worker 2 (fresh thread): inserts into region B. The claim scan takes the
+    // lowest free shard. Pre-fix shard 0 is leaked → worker 2 claims shard 1;
+    // post-fix shard 0 is free → worker 2 claims shard 0.
+    let h = std::thread::scope(|s| {
+        s.spawn(|| region_b.insert(0xCC).expect("region B has capacity"))
+            .join()
+            .expect("worker 2 panicked")
+    });
+    assert_eq!(
+        h.shard(),
+        0,
+        "region B's shard 0 must be reclaimable by a fresh thread after worker \
+         1 exited; got shard {} (1 would indicate a leaked occupied token)",
+        h.shard(),
+    );
+}
+
+/// Regression for leak site (b): `claim_or_get_shard`'s out-of-range re-claim
+/// (a thread bound to region A with MORE shards then inserting into region B
+/// with FEWER) wins a CAS against region B's `tokens`, but the existing guard
+/// (for region A) cannot track it → pre-fix the won token leaks.
+#[test]
+fn out_of_range_reclaim_with_existing_guard_does_not_leak_shard_token() {
+    // Region B is SHARED across the two worker threads (same `tokens` array).
+    let region_b = Arc::new(ShardedRegion::<u64>::with_shards(2, 8));
+
+    // Worker 1: bind region A (10 shards) to shard 5, which installs the
+    // ErasedGuard AND caches MY_SHARD = 5. Then insert into region B (2
+    // shards): 5 >= 2 is out of range → claim_or_get_shard re-scans region B's
+    // tokens and wins shard 0 (lowest free). The existing guard (region A's)
+    // cannot track it → pre-fix it leaks.
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let region_a = ShardedRegion::<u64>::with_shards(10, 8);
+            let _ = region_a.bind_current_thread_to_shard(5);
+            let _ = region_a.insert(0xAA);
+            // Cached MY_SHARD = 5; region B has 2 shards → 5 is out of range →
+            // forces the re-claim path against region B's (different) tokens.
+            let h = region_b.insert(0xBB).expect("region B has capacity");
+            assert_eq!(h.shard(), 0, "out-of-range re-claim lands in-region");
+        });
+    });
+    // Worker 1 has exited: its guard released region A's shard 5. Region B's
+    // shard 0: pre-fix still `occupied` (leaked); post-fix given back.
+
+    // Worker 2 (fresh): claims the lowest free shard in region B. Pre-fix shard
+    // 0 is leaked → worker 2 claims shard 1; post-fix shard 0 is free → 0.
+    let h = std::thread::scope(|s| {
+        s.spawn(|| region_b.insert(0xCC).expect("region B has capacity"))
+            .join()
+            .expect("worker 2 panicked")
+    });
+    assert_eq!(
+        h.shard(),
+        0,
+        "region B's shard 0 must be reclaimable after the out-of-range re-claim \
+         leaked no token; got shard {} (1 would indicate a leaked occupied token)",
+        h.shard(),
+    );
+}
