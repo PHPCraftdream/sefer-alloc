@@ -1332,3 +1332,79 @@ Working tree confirmed byte-identical to pre-experiment (clean revert,
 orchestrator via a fresh `npm run iai` run matching this table's baseline
 column exactly).
 
+## R5-R2b honest-reject (2026-07-14) — the wall-clock churn regression signal is not an algorithmic/Ir regression
+
+Round5 remediation follow-up to R5-R2
+(`docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`), which used a rigorous
+paired A/B wall-clock protocol (20 alternating process-level repetitions,
+paired t-stat 3.94–5.27, sign test 17–19/20) to confirm a REAL, non-noise
+~14–29% wall-clock slowdown on `global_alloc_churn`/SeferAlloc (non-write
+churn) between baseline `e6b9b3a` and current `HEAD`, and narrowed the cause
+to one of five round4 commits without pinning a single one.
+
+Per this project's own standing rule (`Ir` is the deterministic judge; wall
+clock is noise on this host — see the "Determinism" bullet near the top of
+this file) and an explicit user directive during this follow-up ("машина
+шумная" / "нужно мерить iai, а не факт времени" — measure IAI, not wall
+clock, because the host is noisy), the orchestrator re-measured the exact
+same window with `npm run iai` BEFORE delegating a bisection, rather than
+assuming the wall-clock finding implied an instruction-count regression to
+hunt for.
+
+**Measured directly (two independent `npm run iai` runs, one per commit, via
+`git worktree`), not taken from an older table:**
+
+| bench | `e6b9b3a` (baseline) Ir | current `HEAD` Ir | Δ raw | Δ % |
+|---|---:|---:|---:|---:|
+| small_churn_16b | 42,880 | 34,036 | −8,844 | **−20.6%** |
+| churn_256b | 42,880 | 34,036 | −8,844 | **−20.6%** |
+| churn_write_256b | 43,007 | 34,292 | −8,715 | **−20.3%** |
+
+`Ir` is deterministic — two back-to-back runs at the same commit reproduce
+byte-identical numbers (this file's own "Determinism" note); these are not
+noisy samples that could accidentally land on the wrong side of zero. The
+`L1`/`RAM` hit counts and Callgrind's `EstCycles` column move in the SAME
+direction by a similar or larger margin (e.g. `churn_256b` `EstCycles`:
+237,093 at `e6b9b3a` → 84,774 at `HEAD`, a −64% drop — RAM hits alone fall
+from 4,870 to 781), consistent with round4's memory-layout work (R4-6's
+bitmap dedup, R4-8's backward-shift deletion removing tombstone-rebuild
+metadata churn, and earlier PERF-PASS-5-era struct-layout tightening already
+on this branch) genuinely improving cache locality for this exact workload,
+not degrading it.
+
+**Verdict: honest-reject of the "algorithmic regression" hypothesis.** The
+deterministic, noise-free judge this project designates as authoritative
+shows the churn hot path got FASTER across the e6b9b3a→HEAD window by every
+metric it reports (Ir, L1 hits, RAM hits, EstCycles) — not slower. R5-R2b's
+originally planned IAI-based bisection (find which of 5 candidate commits
+regressed `Ir` and fix it) is therefore **moot by construction**: there is no
+`Ir` regression in this window to bisect. Closing R5-R2b without a source
+change.
+
+**What R5-R2's wall-clock finding still is, and is not:** R5-R2's paired
+statistic remains a methodologically sound result — it did not measure
+noise, it measured a real, repeatable wall-clock difference on THIS host.
+What this entry adds is that the difference is demonstrably **not** an
+increase in retired instructions or simulated cache misses on the code path
+in question. The most likely remaining explanation is a platform mismatch
+the two measurements never controlled for: `npm run iai` drives a
+Linux/WSL-compiled binary through Valgrind/Callgrind's simulated CPU (see
+this file's "How to reproduce" note), while R5-R2's wall-clock numbers came
+from a native Windows release build — two different compiled artifacts on
+two different OS/kernel/codegen stacks, not the same binary measured two
+ways. A real, Windows-specific effect invisible to Ir (real page-fault/
+`VirtualAlloc`/decommit costs, TLB behavior, ASLR/base-address-dependent
+cache conflicts, or a codegen/inlining divergence between the `x86_64-pc-
+windows-msvc` and WSL/Linux target triples for the SAME source across this
+commit range) is plausible but UNVERIFIED — no Windows-native instruction-
+or cycle-level profiling was performed in this pass. That investigation
+would need Windows-native tooling this project does not currently have
+wired up (ETW, a Windows perf-counter harness, or similar) and is
+explicitly out of scope for this session; if pursued, it is a NEW
+investigation, not a continuation of R5-R2b's now-closed algorithmic-
+regression hypothesis.
+
+Worktree used for the direct `e6b9b3a` re-measurement was removed on
+completion (`git worktree remove`); `git worktree list` confirmed clean
+before and after.
+
