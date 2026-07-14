@@ -62,23 +62,6 @@ pub(crate) mod os;
 /// isolated ring unit test. Nothing here is stable public API.
 #[doc(hidden)]
 pub mod remote_free_ring;
-/// PERF-3 Ф1 (task #208): the per-segment run-encoded freelist storage
-/// (`RunStack`) — compact `(start_off, count)` descriptors for contiguous
-/// freed-block runs, the storage/layout phase of the run-encoded freelist arc
-/// (docs/design/RUN_ENCODED_FREELIST_PLAN.md). Carved into segment metadata
-/// under `#[cfg(feature = "alloc-runfreelist")]` (an experimental opt-in
-/// perf feature, off by default and NOT part of `production`).
-///
-/// `pub` (not `pub(crate)`) only because `alloc_core` itself is
-/// `#[doc(hidden)]` (see `lib.rs`): the public surface is test-only (the
-/// `#[doc(hidden)] pub` accessors `push`/`pop`/`peek`/`is_empty`/
-/// `clear_all`/`init_in_place` + the `RunDesc`/`RUNSTACK_CAPACITY`/`FOOTPRINT`
-/// constants), reachable by the isolated run-stack layout test. Nothing here
-/// is stable public API. Compiled ONLY under `alloc-runfreelist`; outside it
-/// the module declaration itself is cfg'd out (the file is not even parsed).
-#[cfg(feature = "alloc-runfreelist")]
-#[doc(hidden)]
-pub mod run_stack;
 /// The shared per-segment bitmap *mechanism* (the bit-test/set/clear
 /// arithmetic + `FOOTPRINT`) common to [`alloc_bitmap::AllocBitmap`] and
 /// [`magazine_bitmap::MagazineBitmap`]; task #98 / R4-6 dedup of

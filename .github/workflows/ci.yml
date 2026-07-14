@@ -164,16 +164,12 @@ jobs:
         run: cargo test --features "production hardened" --no-fail-fast
 
   test-gated-bodies:
-    # C2 (bug-hunt review 2026-07-09): the first three steps below ship
-    # tests whose BODIES are gated behind `#[cfg(feature = "...")]`, so
-    # NO plain `cargo test` run exercises their behavior — the
-    # preprocessor strips the test bodies out entirely otherwise. They
-    # were only ever exercised locally via `npm run check`
-    # (scripts/check-all.mjs), a pre-push gate, not per-PR CI. A real
-    # leak bug (Ф4 remainder-pushback) had already been found in the
-    # `alloc-runfreelist` recycle path — guarded only by that pre-push
-    # gate. These steps run the gated test bodies per-PR:
-    #   - alloc-runfreelist: regression_run_stack_{flush,drain,decommit}
+    # C2 (bug-hunt review 2026-07-09): the steps below ship tests whose
+    # BODIES are gated behind `#[cfg(feature = "...")]`, so NO plain
+    # `cargo test` run exercises their behavior — the preprocessor strips
+    # the test bodies out entirely otherwise. They were only ever exercised
+    # locally via `npm run check` (scripts/check-all.mjs), a pre-push gate,
+    # not per-PR CI. These steps run the gated test bodies per-PR:
     #   - alloc-stats: the per-hit counter asserts (stats_reflects_activity)
     #   - pinning: the routing-binding tests in tests/pinning.rs
     # The feature-strings mirror scripts/check-all.mjs verbatim.
@@ -182,9 +178,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: test (--features "production alloc-runfreelist")
-        if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-runfreelist" --no-fail-fast
       - name: test (--features "production alloc-stats")
         if: ${{ !cancelled() }}
         run: cargo test --features "production alloc-stats" --no-fail-fast

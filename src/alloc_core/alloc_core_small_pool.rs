@@ -604,7 +604,7 @@ impl AllocCore {
     /// `reclaim_offset` / `dealloc_small`). Everything the full reset does beyond
     /// `set_bump` — the `os::decommit_pages` syscall on ~4 MiB of payload, zeroing
     /// 49 `BinTable` heads, re-marking ~1 KiB of page-map entries, the 32 KiB
-    /// `AllocBitmap` byte-wise re-init, and the `RunStack` clear — produces state
+    /// `AllocBitmap` byte-wise re-init — produces state
     /// that is unmapped microseconds later by the release. This variant elides all
     /// of it. The `set_decommitted(true)` flag is likewise unnecessary (the slot
     /// is about to be NULLed), but is kept cheap-and-harmless for semantic parity
@@ -677,35 +677,6 @@ impl AllocCore {
             base,
             SegLayout::magazine_bitmap_off(),
         ));
-        // 2e. PERF-3 Ф4 (task #211, plan §2.5): clear the per-segment `RunStack`
-        //     for EVERY class. After the payload pages are returned to the OS
-        //     (step 1) and `bump` is reset to the payload start (step 2a), any
-        //     stale run descriptor would point into the decommitted/unmapped
-        //     payload region; a later `drain_freelist_batch` on this segment
-        //     (before it is slot-recycled) would reconstruct `start_off +
-        //     i*block_size` into that dead region. Clearing the `RunStack` here
-        //     makes the post-decommit drain see an empty stack and return 0,
-        //     exactly as the head-zeroing in step 2b makes the linked-list drain
-        //     see `FREE_LIST_NULL` and return 0 — end-state byte-identical to
-        //     the pre-PERF-3 decommit for the drain path (both representations
-        //     empty). This mirrors the structural role of the `bt.set_head(c,
-        //     FREE_LIST_NULL)` loop above (NULL the per-class fast-path state)
-        //     and is the direct analogue of X7's decommit-lifecycle seam — with
-        //     the OPPOSITE policy: X7's gen table is deliberately NOT re-zeroed
-        //     (numbering is continuous across decommit, plan X7 §2.2), whereas
-        //     the `RunStack` MUST be re-zeroed (its descriptors are address
-        //     hints into the payload, which is now unmapped; stale hints are
-        //     unsafe, not merely stale). Compiled ONLY under
-        //     `alloc-runfreelist`; the non-feature decommit path is byte-
-        //     identical to pre-Ф4 (the production-judge neutrality gate).
-        #[cfg(feature = "alloc-runfreelist")]
-        {
-            // SAFETY: `base` is a live, exclusively-owned segment.
-            #[allow(unsafe_code)]
-            unsafe {
-                super::run_stack::RunStack::clear_all(base)
-            };
-        }
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);
     }

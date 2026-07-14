@@ -19,8 +19,7 @@
 //   3. cargo clippy --all-targets --features experimental -- -D warnings  (entry 2)
 //   4. cargo clippy --all-targets --all-features -- -D warnings           (entry 3)
 //   5. cargo test --features production                          (default prod suite)
-//   6. cargo test --features "production alloc-runfreelist"       (+ the opt-in arc)
-//   7. npm run iai                                                (deterministic judge,
+//   6. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -59,11 +58,6 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--features', 'production'],
   },
-  {
-    name: 'test (--features "production alloc-runfreelist")',
-    cmd: 'cargo',
-    args: ['test', '--features', 'production alloc-runfreelist'],
-  },
   // C2 (bug-hunt review 2026-07-09): kept in lockstep with the CI `test`
   // job's feature matrix (.github/workflows/ci.yml). These tiers carry
   // tests whose bodies are `#[cfg(feature = "...")]`-gated, so only a run
@@ -86,7 +80,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (fmt, clippy x3, test x2, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (fmt, clippy x3, test x4, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

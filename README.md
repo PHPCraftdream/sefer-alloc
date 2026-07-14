@@ -391,12 +391,10 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | File | Sites | What they cover |
 |---|---|---|
 | [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
-| [`src/alloc_core/run_stack.rs`](src/alloc_core/run_stack.rs) | 6 | `push` / `pop` / `peek` / `is_empty` / `init_in_place` / `clear_all` — raw R/W by caller-controlled segment base |
 | [`src/alloc_core/segment_header.rs`](src/alloc_core/segment_header.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 13 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` (declarations) + 8 internal call-site blocks for `gen_at` / `bump_gen` / `init_gen_table_in_place` / RunStack hooks |
+| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 10 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` (declarations) + 5 internal call-site blocks for `gen_at` / `bump_gen` / `init_gen_table_in_place` |
 | [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 2 | `dbg_unregister` / `dbg_recycle` — segment-table mutation by computed base |
-| [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 2 | Internal call-site blocks for `init_gen_table_in_place` / `RunStack::init_in_place` |
-| [`src/alloc_core/alloc_core_small_pool.rs`](src/alloc_core/alloc_core_small_pool.rs) | 1 | Internal call-site block for `RunStack::clear_all` |
+| [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` |
 | [`src/registry/heap_core.rs`](src/registry/heap_core.rs) | 3 | Internal call-site blocks for `gen_at` / `bump_gen` |
 
 That's the full list (both tiers). Everywhere else in the crate is forbidden /
@@ -659,8 +657,11 @@ was **honest-rejected** — it regressed every one of the 11 iai benches
 the regression direction and magnitude (+40 %/+43 % on the 16 B/64 B cold
 storm); see
 [`docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md`](docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md).
-The feature stays off / opt-in-only (not in `production`), so a reader does
-not need to wonder whether work on this gap is silently ongoing.
+The feature and its source (Ф1–Ф4: `run_stack.rs` + the gated branches in
+`alloc_core_small.rs` / `alloc_core_small_magazine.rs` / `alloc_core_small_pool.rs`
+/ `segment_header.rs`) have been **removed entirely** (R6-CQ-4); the experiment
+record stays as institutional memory, so a reader does not need to wonder
+whether work on this gap is silently ongoing.
 
 The DETERMINISTIC counterpart to these noisy single-host wall-clock ratios is
 the instruction-count `perf_gate_iai` gate (Valgrind, Linux-only CI): the P0

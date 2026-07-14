@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — `alloc-runfreelist` feature removed
+
+The `alloc-runfreelist` experimental performance feature (PERF-3, the
+run-encoded freelist / `RunStack`) has been **removed entirely** — the feature
+flag, the source module, the cfg-gated branches in shared hot-path files, the
+specialized test files, and the CI job that exercised the gated test bodies.
+This is a semver-breaking feature removal, the same treatment the
+abandon/adopt substrate got in round4.
+
+**Why.** The feature reached a documented NO-GO verdict (Ф5 honest-reject):
+it **regressed every one of the 11 iai benches**, including the four
+cold/recycle targets it was designed to improve, by **+23 %–+31 % (Ir)**
+instead of the predicted ≥5 % improvement. The wall-clock judge confirmed the
+regression direction and magnitude (**+40 %/+43 %** on the 16 B/64 B cold
+storm). See `docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md` §Verdict for the full
+measurement. The feature was never added to `production`, never recommended for
+use, and was not under active development; retaining it as a "ready starting
+point for a future re-run" was pure maintenance drag — every
+small-segment-lifecycle change since had to keep accounting for a
+known-losing implementation with its own metadata layout, hot/cold branches
+in shared hot-path files, and hundreds of lines of specialized tests. See
+`docs/agent_reviews_round5/code_quality_review.md` (finding #5) and
+`docs/reviews/2026-07-13-round4-remediation-plan.md` (#97 / R4-5, never done).
+
+**What was removed:**
+- The `alloc-runfreelist = ["alloc-core"]` feature declaration (`Cargo.toml`).
+- `src/alloc_core/run_stack.rs` (the `RunStack` type, `RunDesc`, `FOOTPRINT`,
+  `RUNSTACK_CAPACITY`, and all six accessors `init_in_place`/`push`/`pop`/
+  `peek`/`is_empty`/`clear_all`) and its `pub mod run_stack;` wiring in
+  `src/alloc_core/mod.rs`.
+- The `#[cfg(feature = "alloc-runfreelist")]` arms in `drain_freelist_batch`
+  (`alloc_core_small.rs`), `flush_run` (`alloc_core_small_magazine.rs`),
+  `decommit_empty_segment` (`alloc_core_small_pool.rs`), the bootstrap init
+  (`bootstrap.rs`), the recycle init (`alloc_core_small.rs`), and
+  `small_meta_end`/`run_stack_off` (`segment_header.rs`) — collapsed to just
+  the shipped (classic linked-list) path.
+- The tests `regression_r2_3_run_stack_class_guard.rs`,
+  `regression_run_stack_decommit.rs`, `regression_run_stack_drain.rs`,
+  `regression_run_stack_flush.rs`, `regression_run_stack_layout.rs`.
+- The `cargo test --features "production alloc-runfreelist"` step in
+  `scripts/check-all.mjs` and `.github/workflows/ci.yml` (`test-gated-bodies`).
+
+**What was kept (NOT removed):** `docs/perf/PERF3_RUN_FREELIST_EXPERIMENT.md`
+(the experiment's negative RESULT stays as institutional memory per this
+project's honest-reject convention) and `docs/design/RUN_ENCODED_FREELIST_PLAN.md`
+(the design plan that led to the experiment). The confined-`unsafe` count
+dropped by 12 (6 in `run_stack.rs` + 3 in `alloc_core_small.rs` + 1 in
+`alloc_core_small_magazine.rs` + 1 in `bootstrap.rs` + 1 in
+`alloc_core_small_pool.rs`).
+
+**Migration.** This feature was experimental and never recommended for use;
+it was not part of `production` and had no non-test consumer. There is no
+migration path because nothing depended on it. Any downstream `Cargo.toml`
+listing `alloc-runfreelist` in its feature list will get a Cargo error
+("unknown feature `alloc-runfreelist`") and should simply drop the feature.
+
 ### BREAKING CHANGE — `AllocCore`/`HeapCore::dbg_push_to_ring` narrowed to `unsafe fn`
 
 `AllocCore::dbg_push_to_ring` and its `HeapCore` thin-delegation wrapper were

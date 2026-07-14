@@ -8,8 +8,7 @@
 //! first word stores the `next` pointer of the chain. That word is inside
 //! memory the USER controls for as long as they hold (or, via a
 //! use-after-free, still write to) the block. Before this fix, `pop_free` and
-//! `drain_freelist_batch` (both `#[cfg(feature = "alloc-runfreelist")]` and
-//! the classic branch) trusted `next` unconditionally: they computed
+//! `drain_freelist_batch` (the classic branch) trusted `next` unconditionally: they computed
 //! `(next as usize - segment as usize) as u32` and stored the result as the
 //! new freelist head offset with NO check that `next` actually lies inside
 //! `segment`.

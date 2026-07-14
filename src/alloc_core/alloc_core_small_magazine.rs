@@ -463,25 +463,6 @@ impl AllocCore {
     #[inline]
     #[must_use]
     fn flush_run(&mut self, class_idx: usize, base: *mut u8, run: &[*mut u8]) -> bool {
-        // PERF-3 Ф2: under `alloc-runfreelist`, detect contiguous-accepted
-        // sub-runs (offset-adjacent blocks) and encode them as compact
-        // `(start_off, count)` descriptors on the per-segment `RunStack` instead
-        // of writing per-block `next` pointers — later drains reconstruct
-        // addresses by stride arithmetic, eliminating the dependent-load
-        // pointer chase that is this arc's target (plan §1). The detection
-        // strategy is SORT-then-detect: the magazine's LIFO refill returns
-        // blocks in DESCENDING address order within a refill batch, so an
-        // in-place scan of the flush batch finds ~0% offset-adjacent neighbours
-        // (empirically measured on the `bench_direct_alloc` pattern — see the Ф2
-        // design report); sorting the accepted offsets ASCENDING first turns
-        // that same batch into a ~100%-contiguous ascending run. Singletons
-        // (runs of 1) and runs whose `RunStack::push` overflows (the per-class
-        // `RUNSTACK_CAPACITY = 8` full) fall back to the EXACT classic LIFO-
-        // chain path — the linked-list representation and the run-stack coexist;
-        // Ф3's drain reads both. The bitmap (`mark_free`) fires for EVERY
-        // accepted block regardless of representation (plan §2.3). Under
-        // `not(feature = "alloc-runfreelist")` the body is byte-identical to the
-        // pre-Ф2 `flush_run` (the neutrality gate).
         let meta = SegmentMeta::new(base);
         let mut bt = meta.bin_table();
         let mut bm = meta.alloc_bitmap();
@@ -500,26 +481,6 @@ impl AllocCore {
         } else {
             SegLayout::small_meta_end()
         };
-
-        // PERF-3 Ф2: collect the offsets of ACCEPTED blocks for the run-
-        // detection pass below (under `alloc-runfreelist` only). The bound is
-        // `FLUSH_RUN_DETECT_CAP`: the production magazine's physical cap is 16
-        // (`TCACHE_CAP` in `registry::tcache`, not imported here to respect the
-        // `alloc_core` ← `registry` layering), and the overflow-flush batch is
-        // `FLUSH_N = TCACHE_CAP/2 = 8`. A same-segment run longer than 16 is a
-        // structural impossibility from the magazine; tests may call
-        // `flush_class` with larger slices, and those extra blocks simply stay
-        // on the classic linked list (the `accepted_n < CAP` guard drops them
-        // from the detection buffer — they remain correctly linked and
-        // `mark_free`'d by the classic path). M5: `AllocCore` allocates NO
-        // `Vec`/`Box` (the reentrancy-free invariant), so a fixed stack array
-        // is the only sound choice here.
-        #[cfg(feature = "alloc-runfreelist")]
-        const FLUSH_RUN_DETECT_CAP: usize = 16;
-        #[cfg(feature = "alloc-runfreelist")]
-        let mut accepted_offs: [u32; FLUSH_RUN_DETECT_CAP] = [0; FLUSH_RUN_DETECT_CAP];
-        #[cfg(feature = "alloc-runfreelist")]
-        let mut accepted_n: usize = 0;
 
         // Capture the segment's CURRENT freelist head ONCE — the first accepted
         // block links to this (matching the first sequential `dealloc_small`,
@@ -558,15 +519,6 @@ impl AllocCore {
                 Some(nn) => nn,
                 None => continue,
             };
-            // PERF-3 Ф2: record the accepted offset for the run-detection pass
-            // (under `alloc-runfreelist`). The guard `accepted_n < CAP` keeps
-            // the fixed array in bounds; an over-long run simply skips detection
-            // for the tail (those blocks stay correctly on the linked list).
-            #[cfg(feature = "alloc-runfreelist")]
-            if accepted_n < FLUSH_RUN_DETECT_CAP {
-                accepted_offs[accepted_n] = off;
-                accepted_n += 1;
-            }
             // Link this accepted block at the head of the run-local chain: its
             // `next` is the PRIOR accepted block's off (or the captured
             // `old_head` for the first accepted). Byte-identical to the LIFO
@@ -584,133 +536,6 @@ impl AllocCore {
             {
                 accepted_count += 1;
             }
-        }
-
-        // PERF-3 Ф2 (under `alloc-runfreelist` only): DIVERT contiguous-accepted
-        // sub-runs away from the linked list we just built, into `RunStack`
-        // descriptors. This runs AFTER the classic chain is fully built, so the
-        // non-feature path above is byte-identical. A run-encoded block's `next`
-        // word is never read on the drain path (Ф3 reconstructs by stride
-        // arithmetic), and the linked-list head is repaired below to reference
-        // ONLY the blocks that remain on the linked list. The bitmap stays
-        // `mark_free` for every accepted block either way (sole ground truth).
-        #[cfg(feature = "alloc-runfreelist")]
-        {
-            // `run_member[i]` is true iff `accepted_offs[i]` was successfully
-            // diverted to a `RunStack` descriptor. `linked_count` counts the
-            // blocks that STAY on the linked list (the complement).
-            let mut run_member = [false; FLUSH_RUN_DETECT_CAP];
-            let mut linked_count = accepted_n;
-            if accepted_n >= 2 {
-                // Step 1 — sort: build an index permutation `idx[..accepted_n]`
-                // that sorts `accepted_offs` ascending. We permute INDICES (not
-                // the array itself) so `run_member` lines up with the original
-                // source-order slots (which is what the rebuild walk scans).
-                // Insertion sort: n ≤ 16, branch-friendly, allocation-free.
-                let mut idx: [usize; FLUSH_RUN_DETECT_CAP] = [0; FLUSH_RUN_DETECT_CAP];
-                let mut k = 0;
-                while k < accepted_n {
-                    idx[k] = k;
-                    k += 1;
-                }
-                let mut a = 1;
-                while a < accepted_n {
-                    let mut b = a;
-                    while b > 0 && accepted_offs[idx[b - 1]] > accepted_offs[idx[b]] {
-                        idx.swap(b - 1, b);
-                        b -= 1;
-                    }
-                    a += 1;
-                }
-                // Step 2 — detect: scan the SORTED order for contiguous sub-runs
-                // of length ≥ 2 (offset-adjacent: `cur == prev + block_size`).
-                // For each, attempt `RunStack::push`; on success mark every
-                // member diverted. Overflow (push returns false) or a sub-run of
-                // length 1 → those offsets stay on the linked list.
-                let block_size = SizeClasses::block_size(class_idx);
-                let mut i = 0;
-                while i < accepted_n {
-                    let mut j = i + 1;
-                    while j < accepted_n {
-                        let prev = accepted_offs[idx[j - 1]] as usize;
-                        let cur = accepted_offs[idx[j]] as usize;
-                        if cur != prev + block_size {
-                            break;
-                        }
-                        j += 1;
-                    }
-                    let run_len = j - i;
-                    if run_len >= 2 {
-                        let start_off = accepted_offs[idx[i]];
-                        // SAFETY: `base` is a live, exclusively-owned segment
-                        // whose RunStack region is carved.
-                        #[allow(unsafe_code)]
-                        if unsafe {
-                            super::run_stack::RunStack::push(
-                                base,
-                                class_idx,
-                                start_off,
-                                run_len as u16,
-                            )
-                        } {
-                            let mut m = i;
-                            while m < j {
-                                run_member[idx[m]] = true;
-                                m += 1;
-                            }
-                            linked_count -= run_len;
-                        }
-                        // Overflow: the whole sub-run stays linked (run_member
-                        // remains false for every member) — the classic chain
-                        // built in the guard pass stands unchanged for them.
-                    }
-                    i = j;
-                }
-            }
-
-            // Step 3 — rebuild: if ANY offsets were diverted, re-link the
-            // COMPLEMENT (non-diverted blocks) into a fresh LIFO chain tipped by
-            // `old_head`, so the linked list references ONLY non-diverted
-            // blocks. We walk `accepted_offs` in SOURCE order (index 0..n),
-            // skipping diverted members; the resulting chain is a valid LIFO
-            // push of the complement onto `old_head` (the order among complement
-            // blocks does not matter for correctness — each becomes head in
-            // turn, pointing at the prior — and Ф3's drain walks the chain via
-            // `read_next`, not by offset order). If NOTHING was diverted,
-            // `linked_count == accepted_n` and the already-built chain stands.
-            if linked_count != accepted_n {
-                prev_off = old_head;
-                last_accepted = None;
-                let mut m = 0;
-                while m < accepted_n {
-                    if !run_member[m] {
-                        let off = accepted_offs[m];
-                        let block_ptr = Node::deref(base, off as usize);
-                        // `block_ptr` is a non-null in-segment address (it came
-                        // from a real accepted pointer); `NonNull::new` always
-                        // succeeds. The `None` arm is dead but handled for
-                        // robustness (skip on a paradoxical null).
-                        if let Some(nn) = NonNull::new(block_ptr) {
-                            let next_ptr = if prev_off == FREE_LIST_NULL {
-                                core::ptr::null_mut()
-                            } else {
-                                Node::deref(base, prev_off as usize)
-                            };
-                            // `mark_free` already fired in the guard pass — NOT
-                            // repeated (the bitmap is already correct; sole
-                            // ground truth, plan §2.3).
-                            Node::write_next(nn, next_ptr);
-                            prev_off = off;
-                            last_accepted = Some(off);
-                        }
-                    }
-                    m += 1;
-                }
-            }
-            // `accepted_count` (used by the decommit pass below) counts EVERY
-            // accepted block — including diverted ones — because every accepted
-            // block decrements `live_count` exactly once, regardless of
-            // representation. Do NOT substitute `linked_count` here.
         }
 
         // Write the new head ONCE (only if ≥1 block was accepted). Mirrors the

@@ -16,7 +16,7 @@
 //! view (the exploit path open) — RED. After the fix the `assert!` panics —
 //! GREEN. The guard is always-on (`assert!`, not `debug_assert!`), so this
 //! distinguishes in BOTH debug and release (unlike the `debug_assert!`→
-//! `assert!` upgrades used for the dbg_*/gen_*/RunStack surfaces, which are
+//! `assert!` upgrades used for the dbg_*/gen_* surfaces, which are
 //! only release-distinguishable because `debug_assert!` already panicked in
 //! debug).
 

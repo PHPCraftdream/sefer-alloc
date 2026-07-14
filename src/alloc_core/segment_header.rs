@@ -1071,46 +1071,20 @@ impl Layout {
     /// 2. **generation table** (X7 Ф1, `#[cfg(feature = "hardened")]` only):
     ///    one byte per `MIN_BLOCK` granule, 1-byte aligned, immediately after
     ///    the remote ring — see [`gen_table_off`] / [`GEN_TABLE_FOOTPRINT`].
-    /// 3. **run-encoded freelist stack** (PERF-3 Ф1, `#[cfg(feature =
-    ///    "alloc-runfreelist")]` only): one `RunDesc` row per small class,
-    ///    8-byte aligned, immediately after the generation table (or, if
-    ///    `hardened` is off, immediately after the remote ring) — see
-    ///    [`run_stack_off`] / [`super::run_stack::FOOTPRINT`].
     ///
     /// The final value is page-aligned past the last present region. Under
     /// every feature config the layout is the byte-for-byte composition of the
     /// regions that exist in that config — verified by the ungated
     /// `small_meta_end() + PAGE <= SEGMENT` const assert at the bottom of this
-    /// file, which re-compiles under each cfg combination (X7-Ф1's
-    /// neutrality argument, extended here to the runfreelist axis).
+    /// file (X7-Ф1's neutrality argument).
     pub(crate) const fn small_meta_end() -> usize {
-        // PERF-3 Ф1: under `alloc-runfreelist` the RunStack stacks on top of
-        // whatever the pre-runstack end is (base alone, OR base + gen-table
-        // under hardened). 8-byte aligned start, page-aligned end. This
-        // branch composes with the hardened branch above by going through
-        // `small_meta_end_pre_runstack()` (which already branches on
-        // hardened), NOT by replacing the hardened logic.
-        #[cfg(feature = "alloc-runfreelist")]
-        {
-            align_up_const(Self::run_stack_off() + super::run_stack::FOOTPRINT, PAGE)
-        }
-        // Non-runfreelist: page-aligned past the pre-runstack end ONLY. This
-        // branch is the sole compiled branch when `alloc-runfreelist` is off,
-        // so the byte layout is byte-identical to the pre-PERF-3 build under
-        // every `hardened` setting (the const assert at the bottom of this
-        // file pins the value under each cfg combination).
-        #[cfg(not(feature = "alloc-runfreelist"))]
-        {
-            align_up_const(Self::small_meta_end_pre_runstack(), PAGE)
-        }
+        align_up_const(Self::small_meta_end_pre_runstack(), PAGE)
     }
-    /// PERF-3 Ф1 (task #208): the end of the small-segment metadata BEFORE the
-    /// RunStack region and BEFORE final page-alignment — i.e. the unaligned
-    /// byte offset just past the last pre-runstack metadata region (the
+    /// The end of the small-segment metadata BEFORE final page-alignment — i.e.
+    /// the unaligned byte offset just past the last metadata region (the
     /// remote-free ring under non-hardened; the generation table under
-    /// `hardened`). This is the anchor [`run_stack_off`] aligns up from, and
-    /// the value [`small_meta_end`] page-aligns when `alloc-runfreelist` is
-    /// off. Private to this module; the public surface is [`small_meta_end`].
+    /// `hardened`). The value [`small_meta_end`] page-aligns. Private to this
+    /// module; the public surface is [`small_meta_end`].
     const fn small_meta_end_pre_runstack() -> usize {
         #[cfg(feature = "hardened")]
         {
@@ -1121,32 +1095,10 @@ impl Layout {
             Self::remote_ring_off() + super::remote_free_ring::FOOTPRINT
         }
     }
-    /// PERF-3 Ф1 (task #208): offset of the per-segment **run-encoded freelist
-    /// stack** (`RunStack`) — compact `(start_off, count)` descriptors for
-    /// contiguous freed-block runs, the storage phase of the run-encoded
-    /// freelist arc (docs/design/RUN_ENCODED_FREELIST_PLAN.md). 8-byte aligned
-    /// (each `RunDesc` is 8 bytes and the metadata region requires 8-byte
-    /// record alignment — plan §2.1/§2.2), placed immediately after the
-    /// pre-runstack metadata (remote ring under non-hardened; generation table
-    /// under `hardened`). Compiled ONLY under
-    /// `#[cfg(feature = "alloc-runfreelist")]`; under any other feature config
-    /// the `RunStack` does not exist and [`small_meta_end`] is byte-identical
-    /// to the pre-PERF-3 layout (plan §2.8 — production-judge-neutrality gate).
-    /// See [`super::run_stack::RunStack`] / [`super::run_stack::FOOTPRINT`] /
-    /// [`super::run_stack::RUNSTACK_CAPACITY`].
-    #[cfg(feature = "alloc-runfreelist")]
-    pub(crate) const fn run_stack_off() -> usize {
-        // 8-byte aligned (each RunDesc is 8 bytes). The pre-runstack end is
-        // at least 4-byte aligned (remote_ring_off is 4-aligned, ring FP is a
-        // multiple of 4; gen_table_off is 1-aligned but its FP is a whole
-        // number of bytes that is a multiple of 16 — MIN_BLOCK — so the
-        // post-gen-table end is also 16-aligned, trivially ≥ 8-aligned).
-        align_up_const(Self::small_meta_end_pre_runstack(), 8)
-    }
     /// Offset of the registry array in the primordial segment (page-aligned
     /// past ALL small-segment metadata — header + page map + bin table + alloc
-    /// bitmap + remote ring + [gen table under `hardened`] + [run-stack under
-    /// `alloc-runfreelist`]). The registry is primordial-only; it sits after
+    /// bitmap + remote ring + [gen table under `hardened`]). The registry is
+    /// primordial-only; it sits after
     /// `small_meta_end()` so it never overlaps any small-segment metadata
     /// region.
     ///
@@ -1753,19 +1705,6 @@ const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
 // `small_meta_end` past `SEGMENT`, the crate would fail to compile under
 // `--features hardened` here rather than silently overflowing the payload.
 #[cfg(feature = "hardened")]
-const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
-// PERF-3 Ф1 (task #208): under `alloc-runfreelist` the RunStack (~3 KiB / ≤ 1
-// page once page-aligned) is carved into segment metadata, shifting
-// `small_meta_end` up by that much. The RunStack is dramatically smaller than
-// the gen-table, so the capacity risk is negligible (<0.1% of the 4 MiB
-// segment), but the assertion above (ungated) already re-checks under every
-// feature config; this runfreelist-only assert pins the LARGER value explicitly
-// — load-bearing, not decorative: if a future change to `RunStack::FOOTPRINT`
-// or the upstream layout pushed the runfreelist `small_meta_end` past `SEGMENT`
-// (e.g. someone raises `RUNSTACK_CAPACITY` by 1000×), the crate would fail to
-// compile under `--features alloc-runfreelist` here rather than silently
-// overflowing the payload. Mirrors the X7-Ф1 hardened-only pinning above.
-#[cfg(feature = "alloc-runfreelist")]
 const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
 const _: () = assert!(super::size_classes::MIN_BLOCK >= super::node::NODE_SIZE);
 // Phase 35: adding the `live_count` / `decommitted` fields must NOT push the

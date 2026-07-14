@@ -89,7 +89,7 @@ Core instructions, mandatory for all code in this repository. They
 - **Run `npm run check` before pushing, every time.** It runs the fast subset
   of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all three
   CI feature-matrix entries (`""`, `--features experimental`, `--all-features`),
-  `cargo test` under `production` and `production alloc-runfreelist`, then
+  `cargo test` under `production`, then
   `npm run iai` (the deterministic judge) — and fails fast at the first red
   step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
   miri, loom, TSan, multi-arch, no_std, MSRV) but it catches the most common
