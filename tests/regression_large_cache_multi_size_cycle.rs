@@ -71,7 +71,8 @@ fn multi_size_cycle_produces_cache_hits() {
             ptrs.push(p);
         }
         for (p, l) in ptrs.into_iter().zip(layouts.iter()) {
-            ac.dealloc(p, *l);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, *l) };
         }
     }
 

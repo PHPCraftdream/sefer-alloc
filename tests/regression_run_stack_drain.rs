@@ -189,14 +189,16 @@ fn drain_equivalence_feature_on_matches_classic() {
 
     // Cleanup.
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in sorted[4..5]
         .iter()
         .chain(&sorted[8..9])
         .chain(&sorted[10..12])
     {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -264,7 +266,8 @@ fn mixed_drain_all_blocks_exactly_once() {
     }
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in sorted[3..4]
         .iter()
@@ -272,7 +275,8 @@ fn mixed_drain_all_blocks_exactly_once() {
         .chain(&sorted[9..10])
         .chain(&sorted[11..12])
     {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -385,7 +389,8 @@ fn m2_double_free_through_run_refused() {
     );
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -463,9 +468,11 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     assert_eq!(drained_set, expected, "drained set == the 3 run-members");
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
-    core.dealloc(sorted[3], layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(sorted[3], layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,13 +538,16 @@ fn drain_capacity_boundary() {
     let drained2 = unsafe { core.dbg_drain_freelist_batch(batch[0], c, &mut out2) };
     assert_eq!(drained2, 3, "second drain returns run_b");
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in &out2[..drained2] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in sorted[4..5].iter().chain(&sorted[8..10]) {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -589,10 +599,13 @@ fn empty_runstack_falls_back_to_linked_list() {
     // Cleanup: drain returned the 3 batch blocks (now allocated); re-free them
     // + the 2 live gap blocks.
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
-    core.dealloc(sorted[1], layout);
-    core.dealloc(sorted[3], layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(sorted[1], layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(sorted[3], layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -652,10 +665,12 @@ fn drain_order_runstack_first_then_linked_list() {
     );
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in sorted[4..6].iter().chain(&sorted[7..8]) {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -712,7 +727,8 @@ fn drain_classic_when_feature_off() {
     assert_eq!(unique, batch_set, "drained set == flushed set");
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 

@@ -95,12 +95,14 @@ fn run(seed: u64, with_large: bool, ops_n: usize, label: &str) {
         } else if choice < 70 && !live.is_empty() {
             let i = lcg(&mut st) as usize % live.len();
             let l = live.swap_remove(i);
-            heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
         } else if !live.is_empty() {
             let i = lcg(&mut st) as usize % live.len();
             let new_size = 1 + (lcg(&mut st) as usize % 4096);
             let old = Layout::from_size_align(live[i].size, live[i].align).unwrap();
-            let np = heap.realloc(live[i].ptr, old, new_size);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+            let np = unsafe { heap.realloc(live[i].ptr, old, new_size) };
             assert!(!np.is_null(), "{label}: realloc null op#{op}");
             assert_eq!(
                 (np as usize) % live[i].align,

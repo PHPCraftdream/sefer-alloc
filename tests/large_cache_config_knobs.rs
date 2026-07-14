@@ -89,7 +89,8 @@ fn budget_bytes_zero_disables_cache() {
     let layout = Layout::from_size_align(4 * MIB, 8).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null(), "allocation must succeed");
-    ac.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr, layout) };
 
     let used = ac.dbg_large_cache_used();
     assert_eq!(
@@ -112,7 +113,8 @@ fn budget_bytes_absent_is_unbounded() {
     let layout = Layout::from_size_align(4 * MIB, 8).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null(), "allocation must succeed");
-    ac.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr, layout) };
 
     let used = ac.dbg_large_cache_used();
     assert!(

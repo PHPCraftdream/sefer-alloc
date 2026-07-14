@@ -154,7 +154,8 @@ fn unbounded_recycle_within_single_scan() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 
@@ -322,6 +323,7 @@ fn unbounded_recycle_within_single_scan() {
         second_round.push(p);
     }
     for &p in &second_round {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }

@@ -129,13 +129,15 @@ fn m5_alloc_path_does_not_touch_global_allocator() {
                 live_n += 1;
             } else {
                 // Cap full: free in place to make room (still no Vec).
-                a.dealloc(ptr, *layout);
+                // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                unsafe { a.dealloc(ptr, *layout) };
             }
         }
         // Free the odd-indexed survivors each cycle (exercises dealloc).
         let mut i = 1;
         while i < live_n {
-            a.dealloc(live_ptrs[i], live_layouts[i]);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { a.dealloc(live_ptrs[i], live_layouts[i]) };
             // Compact: move last into slot i.
             live_n -= 1;
             live_ptrs[i] = live_ptrs[live_n];
@@ -150,10 +152,12 @@ fn m5_alloc_path_does_not_touch_global_allocator() {
             break;
         }
         let layout = live_layouts[i];
-        let grown = a.realloc(live_ptrs[i], layout, layout.size() * 2);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+        let grown = unsafe { a.realloc(live_ptrs[i], layout, layout.size() * 2) };
         assert!(!grown.is_null());
         let gl = Layout::from_size_align(layout.size() * 2, layout.align()).unwrap();
-        let shrunk = a.realloc(grown, gl, layout.size() / 2 + 1);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+        let shrunk = unsafe { a.realloc(grown, gl, layout.size() / 2 + 1) };
         assert!(!shrunk.is_null());
         live_ptrs[i] = shrunk;
         live_layouts[i] = Layout::from_size_align(layout.size() / 2 + 1, layout.align()).unwrap();

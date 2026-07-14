@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — `AllocCore`/`HeapCore::{dealloc,realloc}` narrowed to `unsafe fn`
+
+`AllocCore::dealloc`, `AllocCore::realloc`, `HeapCore::dealloc`, and
+`HeapCore::realloc` were safe `pub fn`s accepting a caller-supplied raw
+pointer and `Layout` with no way to verify the pointer is a live allocation
+start, that the `Layout` matches the actual block, or that the block hasn't
+already been freed — so fully safe Rust could trigger real memory-safety
+bugs (round5 memory_safety_review R5-MS-1/MS-2, CRITICAL, the fifth time this
+class of finding was raised, this time with concrete counterexamples):
+resurrecting a freed block via `realloc`'s same-class in-place branch,
+overlapping `copy_nonoverlapping` UB via a `realloc` racing a LIFO re-issue,
+releasing a live `Large` segment via an interior-pointer `dealloc`, and
+double-freeing a stale-after-reuse pointer.
+
+**Why.** These preconditions (valid live allocation start, matching layout,
+freed at most once) are exactly the class of caller obligation Rust expresses
+via `unsafe fn` + a `# Safety` doc, not prose a safe caller can violate
+without a compiler warning — the same reasoning as the prior raw-memory-hook
+narrowing above, applied to the allocator's two most load-bearing entry
+points.
+
+**What changed:** all four methods are now `pub unsafe fn` with full
+`# Safety` docs. The `#[global_allocator]` adapter (`SeferAlloc`'s
+`GlobalAlloc` impl) is unaffected at the API level — `GlobalAlloc::dealloc`/
+`realloc` were already `unsafe fn`; they now call the core methods inside
+their existing unsafe context. Every internal call site across `src/`,
+`tests/`, `benches/`, `fuzz/`, and `examples/` was updated with an `unsafe {}`
+block and a per-site `// SAFETY:` comment. The two-tier confined-unsafe
+inventory (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`,
+CLAUDE.md/README/ARCHITECTURE/`src/lib.rs`) grew by these four new
+item-level sites.
+
+The `#[ignore]`d residual test `regression_xthread_double_free_no_corruption`
+(which pinned a known cross-thread double-free residual as RED, tracked
+under task #164/X7) was removed: its scenario is a genuine caller-side
+double-free, which is now documented caller UB under the `unsafe fn`
+contract rather than a soundness gap a safe caller could trigger. The
+defence-in-depth regression coverage for the retained M2/X7 defensive
+drain logic (which must still degrade a contract-violating double-free
+benignly rather than corrupting memory) is preserved via the hardened
+sibling test in the same file.
+
+**Migration.** `AllocCore`/`HeapCore` are `#[doc(hidden)]` re-exports, never
+stable public API. Any downstream call site now needs an `unsafe {}` block
+around `dealloc`/`realloc`; the safety contract itself (valid live
+allocation, matching layout, freed once) is unchanged — only its enforcement
+moved from prose to the compiler. Code going through the public
+`#[global_allocator]`/`GlobalAlloc` surface is unaffected.
+
 ### BREAKING CHANGE — registry control-plane fields narrowed to `pub(crate)`
 
 `HeapSlot::state`, `HeapSlot::generation`, and `Registry`'s `slots`/`count`/

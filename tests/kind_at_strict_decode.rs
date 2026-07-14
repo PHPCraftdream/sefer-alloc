@@ -87,8 +87,10 @@ fn baseline_kind_at_decodes_legitimate_bytes() {
         "large alloc's decoded kind tag must be Large(2)"
     );
 
-    ac.dealloc(small_ptr, small_layout);
-    ac.dealloc(large_ptr, large_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(small_ptr, small_layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(large_ptr, large_layout) };
 }
 
 /// The counterfactual: corrupt a Large segment's `kind` byte to a value that
@@ -135,7 +137,8 @@ fn kind_at_rejects_corrupt_discriminant() {
     // metadata deliberately but must not leak the segment).
     ac.dbg_stamp_kind_byte(large_ptr, 2);
     assert_eq!(ac.dbg_kind_at_tag(large_ptr), 2, "restore failed");
-    ac.dealloc(large_ptr, large_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(large_ptr, large_layout) };
 }
 
 /// `AllocCore::dealloc`'s exhaustive `match SegmentHeader::kind_at(base)`
@@ -166,7 +169,8 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
         "precondition: Unknown tag"
     );
 
-    ac.dealloc(large_ptr, large_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(large_ptr, large_layout) };
 
     // No-op proof: the segment must still be registered (a real dealloc of a
     // Large segment always unregisters it — a no-op must not), and the
@@ -194,7 +198,8 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
     // does not leak for the rest of the test process.
     ac.dbg_stamp_kind_byte(large_ptr, 2);
     assert_eq!(ac.dbg_kind_at_tag(large_ptr), 2, "restore failed");
-    ac.dealloc(large_ptr, large_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(large_ptr, large_layout) };
     assert!(
         !ac.dbg_contains_base(large_ptr),
         "the RESTORED, legitimate dealloc must actually unregister the segment"

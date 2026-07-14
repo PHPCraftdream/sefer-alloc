@@ -32,7 +32,8 @@ fn register_many_then_contains_each() {
         ptrs.push(p);
     }
     for p in ptrs.drain(..) {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 
     // Second pass: allocate the same count again. If hash/slot bookkeeping is
@@ -46,7 +47,8 @@ fn register_many_then_contains_each() {
         ptrs.push(p);
     }
     for p in ptrs.drain(..) {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -71,13 +73,15 @@ fn dealloc_foreign_pointer_is_noop() {
 
     // This must NOT crash. `contains_base` must return false for `foreign`'s
     // segment base (a heap address, not one of our SEGMENT-aligned bases).
-    ac.dealloc(foreign, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(foreign, layout) };
 
     // Clean up: return the box and our own block.
     // SAFETY: `foreign` was obtained from `Box::into_raw` above and has not
     // been freed through any other path (the dealloc above was a no-op).
     unsafe { drop(Box::from_raw(foreign as *mut [u8; 64])) };
-    ac.dealloc(own, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(own, layout) };
 }
 
 /// Cycle through many alloc/dealloc rounds so that hash entries are inserted,
@@ -107,7 +111,8 @@ fn recycle_then_register_uses_hash_correctly() {
             ptrs.push(p);
         }
         for p in ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 }

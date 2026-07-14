@@ -80,7 +80,8 @@ fn t_refill_return_never_exceeds_outlen_contracted() {
     // Tidy up so the allocator state is clean.
     let layout = Layout::from_size_align(16, 8).unwrap();
     for &p in buf.iter().chain(buf2.iter().take(want)) {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -132,6 +133,7 @@ fn t_refill_return_clamped_when_want_exceeds_outlen() {
     // bounds); clean up exactly the `got` written pointers.
     let layout = Layout::from_size_align(16, 8).unwrap();
     for &p in buf.iter().take(got) {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }

@@ -93,7 +93,8 @@ fn build_same_segment_freelist(
     }
     // Now free exactly our m blocks → freelist length == m.
     for &p in &allocated {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     allocated
 }
@@ -152,7 +153,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
     // A single free of each is ACCEPTED (block was allocated) — it goes back on
     // the freelist, so is_free becomes true.
     for &p in &out {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
         assert!(
             core.dbg_is_free_for(p),
             "free of a drained block was not accepted (block was not allocated)"
@@ -162,7 +164,8 @@ fn drained_blocks_m2_inner(size: usize, align: usize) {
     // the freelist is not corrupted (a corrupt self-loop would be caught by a
     // subsequent drain of more than M blocks below).
     for &p in &out {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
         assert!(core.dbg_is_free_for(p), "double-free changed bitmap state");
     }
     // Re-drain must still yield exactly M distinct blocks (no self-loop / no
@@ -212,7 +215,8 @@ fn partial_and_bounded_drain_set_head_correct() {
     // Re-free those M so we can test the bounded case on a known freelist.
     let layout = Layout::from_size_align(size, align).unwrap();
     for &p in &out[..k] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     // --- Bounded: want < m. Drain W < M → yields W; remaining M-W yielded by the
@@ -263,7 +267,8 @@ fn partial_and_bounded_drain_set_head_correct() {
 
     // Cleanup.
     for &p in b1.iter().chain(b2[..k2].iter()) {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -305,7 +310,8 @@ fn d1_batch_drain_exact_cold_free_recycle() {
     let dec0 = AllocCore::dbg_decommit_count();
     // FREE storm.
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let dec1 = AllocCore::dbg_decommit_count();
     assert!(
@@ -329,7 +335,8 @@ fn d1_batch_drain_exact_cold_free_recycle() {
 
     let dec2 = AllocCore::dbg_decommit_count();
     for &p in &buf2 {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let dec3 = AllocCore::dbg_decommit_count();
     assert!(

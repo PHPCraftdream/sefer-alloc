@@ -152,7 +152,8 @@ fn a_ring_df_block_is_skipped_by_flush() {
     );
 
     for &q in &out[..n2] {
-        core.dealloc(q, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(q, layout) };
     }
 }
 
@@ -240,7 +241,8 @@ fn b_multi_segment_flush_routes_per_segment() {
     let ab: HashSet<usize> = mag.iter().map(|p| *p as usize).collect();
     for &p in &buf {
         if !ab.contains(&(p as usize)) {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 
@@ -284,7 +286,8 @@ fn b_multi_segment_flush_routes_per_segment() {
     for &p in &out {
         // touch the whole block to surface any freelist corruption
         unsafe { core::ptr::write_bytes(p, 0x7E, size) };
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let _ = (base_a, base_b);
 }
@@ -365,7 +368,8 @@ fn c_partial_flush_live_count_exact() {
     // Cleanup: free the rest.
     for &p in &buf {
         if !run.contains(&p) {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 }
@@ -564,7 +568,8 @@ fn d_second_run_after_mid_batch_recycle_is_skipped_not_uaf() {
     let probe = core.alloc(layout);
     assert!(!probe.is_null());
     let current_base = seg_base(probe);
-    core.dealloc(probe, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(probe, layout) };
 
     // Pick segment A: a NON-primordial, NON-current segment with >= 2 blocks
     // (the primordial NEVER decommits — `dec_live_and_maybe_decommit`'s
@@ -608,7 +613,8 @@ fn d_second_run_after_mid_batch_recycle_is_skipped_not_uaf() {
         .collect();
     for &p in &buf {
         if !ab.contains(&(p as usize)) {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 
@@ -687,6 +693,7 @@ fn d_second_run_after_mid_batch_recycle_is_skipped_not_uaf() {
                 "B block became unwritable/corrupted after A's mid-batch recycle"
             );
         }
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }

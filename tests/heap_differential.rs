@@ -125,7 +125,8 @@ proptest! {
                     if !live.is_empty() {
                         let i = i % live.len();
                         let l = live.swap_remove(i);
-                        heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+                        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                        unsafe { heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
                     }
                 }
                 Op::Realloc { i, new_size } => {
@@ -133,7 +134,8 @@ proptest! {
                         let i = i % live.len();
                         let l = live[i].clone();
                         let old_layout = Layout::from_size_align(l.size, l.align).unwrap();
-                        let new_ptr = heap.realloc(l.ptr, old_layout, new_size);
+                        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+                        let new_ptr = unsafe { heap.realloc(l.ptr, old_layout, new_size) };
                         if !new_ptr.is_null() {
                             prop_assert_eq!((new_ptr as usize) % l.align, 0);
                             // M1/realloc: the preserved prefix (the `min(old,new)`
@@ -172,7 +174,8 @@ proptest! {
 
         // Free all survivors.
         for l in &live {
-            heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { heap.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
         }
         drop(live);
         drop(heap);

@@ -16,18 +16,19 @@
 //!   that hand-carves self-hosted metadata; see [`bootstrap`]).
 //! - [`alloc`](AllocCore::alloc) / [`dealloc`](AllocCore::dealloc) /
 //!   [`realloc`](AllocCore::realloc) / [`alloc_zeroed`](AllocCore::alloc_zeroed)
-//!   — the single-threaded allocator entry points. All four are **safe** `pub fn`s:
-//!   there is no `unsafe` in any signature (this is not a typo — verify with
-//!   `grep -n "pub fn dealloc\|pub fn realloc" src/alloc_core/alloc_core.rs`).
-//!   The *semantic* precondition of `dealloc`/`realloc` mirrors `GlobalAlloc`'s
-//!   — a well-behaved caller passes a valid prior pointer/layout — but unlike an
-//!   `unsafe fn` (which would "trust the caller or else invoke UB"), this crate
-//!   additionally enforces a defensive **M2 contract at runtime**: a foreign or
-//!   already-freed pointer (before its address is reused) degrades to a no-op
-//!   rather than corrupting allocator state. The full M2 rationale and the
-//!   affirmed design decision live in **one** place — [`dealloc`](AllocCore::dealloc)'s
-//!   own doc comment — to avoid scattered restatements; read that, not this bullet.
-//!   None of the entry points panic or recurse.
+//!   — the single-threaded allocator entry points. `alloc`/`alloc_zeroed`
+//!   are **safe** `pub fn`s; `dealloc`/`realloc` are **`unsafe fn`s** (R6-MS-1/2)
+//!   carrying a `# Safety` contract that mirrors `GlobalAlloc`'s — a
+//!   well-behaved caller passes a valid prior pointer/layout (verify with
+//!   `grep -n "pub unsafe fn dealloc\|pub unsafe fn realloc" src/alloc_core/alloc_core.rs`).
+//!   The crate's former posture was a safe `pub fn` with a defensive **M2
+//!   contract at runtime** (a foreign or already-freed pointer degraded to a
+//!   no-op); that was reversed after the round5 `memory_safety_review` produced
+//!   concrete safe-Rust counterexamples proving the defensive checks
+//!   insufficient — see [`dealloc`](AllocCore::dealloc)'s `# Safety` section
+//!   for the full rationale and exploit catalogue, and `CHANGELOG.md`
+//!   (R6-MS-1/2) for the migration. The M2 defensive paths are RETAINED as
+//!   defence-in-depth. None of the entry points panic or recurse.
 //!
 //! ## Single-threaded
 //!
@@ -744,37 +745,26 @@ impl AllocCore {
     /// Deallocate memory previously returned by [`alloc`](Self::alloc) (or
     /// `alloc_zeroed`/`realloc`).
     ///
-    /// **Design decision — affirmed safe `pub fn`, NOT `unsafe fn` (do not
-    /// re-litigate without a new exploit).** This is the single authoritative
-    /// record of the decision; the module-level "## API" bullet and
-    /// `HeapCore::dealloc` both defer here. Round2 (T2/T3, commits `02a2625`
-    /// and `79ef418`) adopted the M2 "defensive-free" contract — matching
-    /// `free()` in mimalloc/glibc — and round3 re-affirmed it after independent
-    /// audits (R3-MS-1/2/3, cq#1/#2) proposed marking it `unsafe fn`. The
-    /// rationale, in one line: an `unsafe` marker does NOT remove the
-    /// information-theoretic limit on detecting a stale-pointer double-free
-    /// *after the address is reused* (no metadata survives to distinguish it
-    /// from a legitimate free of the current owner), while the signature change
-    /// would be a breaking cascade across every call-site — a change of
-    /// posture, not of safety. No new exploit survived verification in three
-    /// independent audit rounds.
+    /// This is an **`unsafe fn`**: it trusts its caller to honour the
+    /// [`GlobalAlloc::dealloc`](crate::global::SeferAlloc)-shaped contract (see
+    /// `# Safety`). The crate's former posture was a *safe* `pub fn` with an
+    /// M2 "defensive-free" guard (matching `free()` in mimalloc/glibc); that
+    /// posture was **reversed in R6-MS-1/2** after the round5
+    /// `memory_safety_review` produced concrete safe-Rust counterexamples
+    /// proving the defensive checks insufficient — a same-class in-place
+    /// realloc that *resurrects* a freed block (two live allocations at one
+    /// address), a fully-overlapping `copy_nonoverlapping(p, p, n)` in the
+    /// realloc move leg, and an interior `dealloc` of a Large segment
+    /// releasing the whole reservation of a still-live neighbour. Marking the
+    /// entry point `unsafe fn` makes a contract violation *documented caller
+    /// UB* rather than an unsound *safe* API. The M2 defensive paths
+    /// (foreign-pointer no-op, bitmap guard) are **retained as
+    /// defence-in-depth** — they no longer carry the soundness argument, but
+    /// they still make many accidental misuses benign at runtime.
     ///
-    /// This entry point is **safe**: a foreign pointer (not one of ours) or a
-    /// double-free **before the address is reused** is a **no-op** (M2 —
-    /// never UB, never corrupts the allocator), matching the defensive
-    /// contract the Phase 11 `GlobalAlloc` face will require. A well-behaved
-    /// caller passes a valid prior allocation of `layout`; the safety here is
-    /// defence-in-depth, not a licence to free garbage.
-    ///
-    /// This guarantee has the same information-theoretic limit as every
-    /// `free(ptr)`-shaped interface (mimalloc, glibc, ...): once an address
-    /// has been reused by a subsequent allocation, a second `dealloc` of the
-    /// stale pointer is byte-for-byte indistinguishable from a legitimate
-    /// free of the CURRENT owner's block — there is no metadata left to
-    /// detect it. `contains_base` protects against pointers that are foreign
-    /// or whose segment is unmapped/never allocated; it cannot and does not
-    /// promise anything about a stale pointer that aliases a live
-    /// reallocation.
+    /// See `docs/agent_reviews_round5/memory_safety_review.md` (R5-MS-1/MS-2)
+    /// for the full exploit catalogue and `CHANGELOG.md` (R6-MS-1/2) for the
+    /// migration.
     ///
     /// **Phase 13.3 — arithmetic own-thread free.** The hot path is now pure
     /// arithmetic + (at most) one field-specific header byte read, NOT a
@@ -805,8 +795,34 @@ impl AllocCore {
     /// On the trusted own-thread path, `contains_base` is the sole guard and
     /// the `Layout` is authoritative for the class — a full header load would
     /// be a dependent load on the free critical path with no correctness gain.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::dealloc`] contract for `ptr`
+    /// and `layout`. Concretely:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation owned by *this* `AllocCore`, returned by a prior
+    ///   [`alloc`](Self::alloc)/[`alloc_zeroed`](Self::alloc_zeroed)/
+    ///   [`realloc`](Self::realloc). It MUST NOT be an interior pointer
+    ///   (`base + interior_offset`): the foreign/interior defences are
+    ///   best-effort, not a soundness guarantee, and an interior Large free
+    ///   would release the whole reservation of a still-live neighbour.
+    /// - `layout` exactly matches the layout the allocation was made with.
+    /// - The allocation is freed **at most once**: a double-free, and any
+    ///   re-issue of `ptr` after this call (before a later `alloc` happens to
+    ///   reuse its address for a new owner), is UB.
+    /// - `ptr` is not a foreign / already-released-unmapped base (a pointer
+    ///   from another allocator or a segment whose OS reservation has been
+    ///   released).
+    ///
+    /// Null `ptr` is always safe (early return). The M2 defensive paths
+    /// (foreign-pointer no-op, bitmap guard) make several of these accidental
+    /// violations benign *at runtime*, but they are NOT a substitute for
+    /// honouring the contract — a violation this method cannot detect is UB.
     #[inline]
-    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
         }
@@ -1359,22 +1375,47 @@ impl AllocCore {
     /// check (`large_layout_consistent`).
     ///
     /// On growth the new tail is **uninitialised** (matching `GlobalAlloc`).
-    /// Returns null on failure, leaving the old allocation intact. Safe: a
-    /// null `ptr` returns null without touching state.
+    /// Returns null on failure, leaving the old allocation intact. Null `ptr`
+    /// returns null without touching state.
     ///
     /// A **foreign pointer** (its computed segment base is not one of ours)
     /// also returns null without touching state, symmetric with
     /// [`dealloc`](Self::dealloc)'s foreign-pointer no-op. This is a
-    /// substrate-level (`AllocCore`) safe entry point with no cross-heap
-    /// concept: unlike `HeapCore::realloc` (which has a design-load-bearing
-    /// foreign-leg for `alloc-xthread` — a pointer from another live heap in
-    /// the SAME process is legitimate there and `dealloc` routes it
-    /// cross-thread), a pointer this `AllocCore` does not recognise is never
-    /// legitimate. Falling through to the move-leg for such a pointer would
-    /// `ptr::copy_nonoverlapping` out of an arbitrary caller-supplied address
-    /// under a `pub fn` with no `unsafe` marker — an unsound safe API. See
-    /// the F1 finding in the UB/memory-safety audit.
-    pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+    /// substrate-level (`AllocCore`) entry point with no cross-heap concept:
+    /// unlike `HeapCore::realloc` (which has a design-load-bearing foreign-leg
+    /// for `alloc-xthread` — a pointer from another live heap in the SAME
+    /// process is legitimate there and `dealloc` routes it cross-thread), a
+    /// pointer this `AllocCore` does not recognise is never legitimate.
+    ///
+    /// This is an **`unsafe fn`** (R6-MS-1/2): the move leg's
+    /// [`Node::copy_nonoverlapping`](crate::alloc_core::node::Node) reads
+    /// `old_layout.size()` bytes out of `ptr`, and trusts the caller's
+    /// `old_layout`/`ptr` exactly as `GlobalAlloc::realloc` does. The crate's
+    /// former posture was a safe `pub fn` bounded by
+    /// [`safe_payload_read_span`](Self::safe_payload_read_span); that was
+    /// reversed after the round5 review showed the same-class in-place branch
+    /// resurrecting a freed block and the foreign/move legs being reachable
+    /// from safe code. See `# Safety` and `CHANGELOG.md` (R6-MS-1/2).
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::realloc`] contract for `ptr`
+    /// and `old_layout`:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation owned by *this* `AllocCore`, made with a `Layout` whose
+    ///   size/align match `old_layout`. It MUST NOT be an interior pointer.
+    /// - `old_layout` exactly matches the allocation's layout; in particular
+    ///   `old_layout.size()` must not exceed the block's true size (the move
+    ///   leg copies that many bytes out of `ptr`).
+    /// - On success (`!null` return) the OLD `ptr` is freed by this call — it
+    ///   MUST NOT be used or re-freed afterwards. On null return `ptr` is left
+    ///   intact and still owned by the caller.
+    /// - `ptr` is not a foreign / already-released-unmapped base.
+    ///
+    /// Null `ptr` is always safe (early return).
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
@@ -1428,7 +1469,13 @@ impl AllocCore {
         }
         let copy = old_layout.size().min(new_size);
         Node::copy_nonoverlapping(ptr, new_ptr, copy);
-        self.dealloc(ptr, old_layout);
+        // SAFETY: `ptr` is a live own-segment allocation (proven by
+        // `contains_base(base)` above) whose true size bounds the move-leg
+        // read (`old_layout.size() <= safe_payload_read_span`), made with
+        // `old_layout`; the fresh `new_ptr` holds the copied prefix, so
+        // freeing the old block once here completes the contract-honouring
+        // realloc move leg.
+        unsafe { self.dealloc(ptr, old_layout) };
         new_ptr
     }
 

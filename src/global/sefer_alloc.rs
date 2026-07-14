@@ -470,7 +470,11 @@ unsafe impl GlobalAlloc for SeferAlloc {
                 // Fallback path: dealloc under the spinlock. A failure here
                 // (true OOM at fallback init) is a safe no-op — the block
                 // is leaked, never corrupted.
-                let _ = fallback::with_heap(|h| h.dealloc(ptr, layout));
+                //
+                // SAFETY: `ptr`/`layout` are the caller-bound GlobalAlloc
+                // contract pair (this whole fn is `unsafe fn dealloc`); the
+                // closure forwards them to the fallback heap's `HeapCore::dealloc`.
+                let _ = fallback::with_heap(|h| unsafe { h.dealloc(ptr, layout) });
             }
             // SAFETY: as above. For a LIVE/MAPPED pointer this routes
             // correctly regardless of which thread allocated it (own-thread →
@@ -507,8 +511,13 @@ unsafe impl GlobalAlloc for SeferAlloc {
             return core::ptr::null_mut();
         }
         match self.current_heap() {
-            CurrentHeap::Fallback => fallback::with_heap(|h| h.realloc(ptr, old_layout, new_size))
-                .unwrap_or(core::ptr::null_mut()),
+            // SAFETY: `ptr`/`old_layout` are the caller-bound GlobalAlloc
+            // contract pair (this whole fn is `unsafe fn realloc`); the
+            // closure forwards them to the fallback heap's `HeapCore::realloc`.
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| unsafe { h.realloc(ptr, old_layout, new_size) })
+                    .unwrap_or(core::ptr::null_mut())
+            }
             // SAFETY: as in `alloc`. `realloc` takes the C2 in-place fast path
             // for a same-class / compatible resize of an own-thread block, and
             // otherwise falls back to alloc-new + copy + dealloc-old, leaving

@@ -92,13 +92,15 @@ fn many_align128_allocations_do_not_exhaust_segment_table() {
     // the new size class to confirm class_for is consistent across alloc
     // and dealloc paths (a divergence would corrupt the free list).
     for &p in &ptrs {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     // M2 (double-free guard): re-freeing every pointer must be a safe
     // no-op — neither corruption nor panic.
     for &p in &ptrs {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -130,7 +132,8 @@ fn align64_and_align256_also_resolve_to_small_path() {
             ptrs.push(p);
         }
         for &p in &ptrs {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 }

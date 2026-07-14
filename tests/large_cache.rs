@@ -24,7 +24,8 @@ fn alloc_dealloc_alloc_reuses_cached_large() {
 
     let ptr1 = ac.alloc(layout);
     assert!(!ptr1.is_null());
-    ac.dealloc(ptr1, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr1, layout) };
 
     // Re-alloc same size — should hit cache.
     let ptr2 = ac.alloc(layout);
@@ -38,7 +39,8 @@ fn alloc_dealloc_alloc_reuses_cached_large() {
         ptr2.write(0xAB);
         assert_eq!(ptr2.read(), 0xAB);
     }
-    ac.dealloc(ptr2, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr2, layout) };
 }
 
 /// A large segment that exceeds `MAX_CACHED_LARGE_BYTES` (default 64 MiB)
@@ -57,7 +59,8 @@ fn alloc_too_large_not_cached() {
     unsafe {
         ptr.write(0xCD);
     }
-    ac.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr, layout) };
     // No way to assert "not cached" through public API; this test mostly
     // proves the path doesn't crash. The smoke is meaningful.
 }
@@ -70,7 +73,8 @@ fn drop_releases_cached_reservations() {
     let layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null());
-    ac.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr, layout) };
     // Cache now has one entry. Drop ac.
     drop(ac);
     // No assertion needed — under miri or normal run, no panic = correctness.
@@ -88,7 +92,8 @@ fn alloc_dealloc_loop_does_not_grow_segment_table() {
     for _ in 0..100 {
         let ptr = ac.alloc(layout);
         assert!(!ptr.is_null(), "alloc must not fail in cache loop");
-        ac.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(ptr, layout) };
     }
     // If cache didn't work, after 100 iters we'd have 100 segments registered
     // → without recycle, this would hit MAX_SEGMENTS=1024 eventually. With
@@ -109,8 +114,10 @@ fn two_sizes_in_cache_no_cross_contamination() {
     assert!(!p4.is_null());
     let p8 = ac.alloc(layout_8m);
     assert!(!p8.is_null());
-    ac.dealloc(p4, layout_4m);
-    ac.dealloc(p8, layout_8m);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p4, layout_4m) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p8, layout_8m) };
 
     // Re-alloc both: each should come from the cache, not the OS.
     let p4b = ac.alloc(layout_4m);
@@ -126,6 +133,8 @@ fn two_sizes_in_cache_no_cross_contamination() {
         assert_eq!(p8b.read(), 0xBB);
     }
 
-    ac.dealloc(p4b, layout_4m);
-    ac.dealloc(p8b, layout_8m);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p4b, layout_4m) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p8b, layout_8m) };
 }

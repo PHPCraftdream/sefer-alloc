@@ -58,7 +58,8 @@ fn small_segment_carries_node_id() {
     );
 
     // Cleanup.
-    core.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr, layout) };
 }
 
 /// After allocating a LARGE block (> small class limit), the dedicated large
@@ -86,5 +87,6 @@ fn large_segment_carries_node_id() {
         "large segment node_id ({stamped_node}) != current_node() ({expected_node})"
     );
 
-    core.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr, layout) };
 }

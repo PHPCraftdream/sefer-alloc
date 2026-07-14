@@ -109,7 +109,8 @@ fn own_thread_large_dealloc_no_leak_without_decommit() {
         // under test. Sequential (not batched) so a leaking dealloc burns
         // exactly one slot per iteration, guaranteeing exhaustion by
         // iteration ~1024 pre-fix.
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -139,6 +140,7 @@ fn own_thread_large_dealloc_no_leak_with_decommit_admission_reject() {
             p.write(0xAB);
             p.add(SIZE - 1).write(0xCD);
         }
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }

@@ -149,7 +149,8 @@ fn heap_realloc_foreign_sefer_ptr_oversized_layout_returns_null() {
     // Cleanup: the foreign leg returned null without freeing `p` (magic+bound
     // rejected it before the copy/dealloc), so `p` is still owned by `ac`.
     // Reclaim it there with the CORRECT layout.
-    ac.dealloc(p, small);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, small) };
     // SAFETY: return the heap slot after exclusive use.
     unsafe { HeapRegistry::recycle(heap) };
 }
@@ -199,7 +200,8 @@ fn heap_realloc_foreign_sefer_ptr_correct_layout_succeeds() {
     // i.e. `p` stays live in `ac`). Reclaim it there. `new_ptr` lives on the
     // heap; free it with the new layout.
     // SAFETY: `p` is still valid for 16 bytes in `ac` (see comment).
-    ac.dealloc(p, small);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, small) };
     // SAFETY: exclusive `heap` access; `new_ptr` is a heap block of size 32.
     unsafe { (*heap).dealloc(new_ptr, Layout::from_size_align(32, 16).unwrap()) };
     // SAFETY: return the heap slot after exclusive use.

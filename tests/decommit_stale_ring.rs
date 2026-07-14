@@ -141,7 +141,8 @@ fn stale_ring_entry_rejected_by_bump_guard() {
         "duplicate pointer after stale drain — free-list corruption"
     );
     for &p in &ptrs2 {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -175,7 +176,8 @@ fn post_recycle_push_rejected_by_contains_base() {
     // Free all blocks via own-thread dealloc. Non-current Small segments that
     // reach live_count == 0 will decommit and have their slots recycled.
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 
     let decommit_after = AllocCore::dbg_decommit_count();
@@ -217,5 +219,6 @@ fn post_recycle_push_rejected_by_contains_base() {
     // Allocator must still be healthy.
     let p = ac.alloc(layout);
     assert!(!p.is_null(), "alloc failed after post-recycle push test");
-    ac.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
 }

@@ -416,7 +416,8 @@ fn sweep1_size_align_grid() {
                 unsafe { verify_canary(ptr, size, base, &case) };
             }
             for (ptr, _) in live.drain(..) {
-                core.dealloc(ptr, layout);
+                // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                unsafe { core.dealloc(ptr, layout) };
                 live_ptrs.remove(&(ptr as usize));
             }
 
@@ -439,7 +440,8 @@ fn sweep1_size_align_grid() {
                     write_canary(ptr, size, base);
                     verify_canary(ptr, size, base, &case);
                 }
-                core.dealloc(ptr, layout);
+                // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                unsafe { core.dealloc(ptr, layout) };
             }
         }
     }
@@ -448,7 +450,8 @@ fn sweep1_size_align_grid() {
     let l = Layout::from_size_align(64, 8).unwrap();
     let p = core.alloc(l);
     assert!(!p.is_null(), "allocator dead after sweep1");
-    core.dealloc(p, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(p, l) };
 
     eprintln!(
         "sweep1: {n_cases} valid (size,align) cases over {} sizes x {} aligns, \
@@ -553,13 +556,15 @@ fn sweep2_realloc_matrix() {
             // SAFETY: fresh live block of `from` bytes.
             unsafe { write_canary(old, from, old_base) };
 
-            let np = core.realloc(old, from_layout, to);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+            let np = unsafe { core.realloc(old, from_layout, to) };
             if np.is_null() {
                 // realloc failed: the OLD block is still live and intact. Verify
                 // then free it under the OLD layout (exactly once).
                 // SAFETY: `old` is still the same live block.
                 unsafe { verify_canary(old, from, old_base, &case) };
-                core.dealloc(old, from_layout);
+                // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                unsafe { core.dealloc(old, from_layout) };
                 continue;
             }
             n_reallocs += 1;
@@ -586,7 +591,8 @@ fn sweep2_realloc_matrix() {
                 verify_canary(np, to, new_base, &case);
             }
             // Free exactly once with the NEW layout (the GlobalAlloc contract).
-            core.dealloc(np, new_layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(np, new_layout) };
         }
     }
 
@@ -662,7 +668,8 @@ fn over_small_max_align_routes_to_segment() {
                 write_canary(p, size, base);
                 verify_canary(p, size, base, &case);
             }
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
         align <<= 1;
     }

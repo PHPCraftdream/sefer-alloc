@@ -75,13 +75,15 @@ fn t_refill_equiv_inner(size: usize, align: usize, n: usize) {
     // Round-trip: dealloc each individually through the public API.
     let layout = Layout::from_size_align(size, align).unwrap();
     for &ptr in &buf {
-        core.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(ptr, layout) };
     }
 
     // Allocator still works after the round-trip.
     let check = core.alloc(layout);
     assert!(!check.is_null(), "alloc after round-trip returned null");
-    core.dealloc(check, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(check, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +134,8 @@ fn t_refill_bump_equiv_inner(size: usize, align: usize, n: usize) {
     // DIFFERENT pointer (see the counterfactual in this file).
     let layout = Layout::from_size_align(size, align).unwrap();
     for &ptr in &buf {
-        core.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(ptr, layout) };
     }
 
     // Re-refill: the just-freed blocks (now on the BinTable) must be reused —
@@ -149,7 +152,8 @@ fn t_refill_bump_equiv_inner(size: usize, align: usize, n: usize) {
     );
 
     for &ptr in &buf2 {
-        core.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(ptr, layout) };
     }
 }
 
@@ -172,7 +176,8 @@ fn t_refill_bump_len_bound() {
     let layout = Layout::from_size_align(16, 8).unwrap();
     for &p in &buf {
         assert!(!p.is_null());
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -218,7 +223,8 @@ fn t_flush_equiv_inner(size: usize, align: usize, n: usize) {
     // Clean up.
     let layout = Layout::from_size_align(size, align).unwrap();
     for &ptr in &buf2 {
-        core.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(ptr, layout) };
     }
 }
 
@@ -273,7 +279,8 @@ fn t_refill_spans_segments() {
     // Clean up.
     let layout = Layout::from_size_align(size, align).unwrap();
     for &ptr in &buf {
-        core.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(ptr, layout) };
     }
 }
 
@@ -361,7 +368,8 @@ fn t_flush_null_defensive() {
     let layout = Layout::from_size_align(16, 8).unwrap();
     let ptr = core.alloc(layout);
     assert!(!ptr.is_null());
-    core.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -405,7 +413,8 @@ fn t_flush_double_free_is_noop() {
     let layout = Layout::from_size_align(64, 8).unwrap();
     let ptr = core.alloc(layout);
     assert!(!ptr.is_null());
-    core.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr, layout) };
 }
 
 // ---------------------------------------------------------------------------

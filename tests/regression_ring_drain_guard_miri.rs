@@ -170,11 +170,14 @@ fn guarded_scan_reclaims_cross_segment_push_and_skips_when_empty() {
     // confirms no residual corruption from the guarded scan.
     for &p in &ptrs {
         if p != seg_a_ptr {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
-    ac.dealloc(reclaimed, layout);
-    ac.dealloc(fresh, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(reclaimed, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(fresh, layout) };
 }
 
 /// `FREE_LIST_NULL`'s value, mirrored here (the constant is `pub(crate)` in

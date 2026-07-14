@@ -58,7 +58,8 @@ fn budget_none_caches_any_size() {
     assert_eq!(ac.dbg_large_cache_used(), 0);
     assert_used_bytes_invariant(&ac);
 
-    ac.dealloc(ptr1, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr1, l) };
 
     // After dealloc: the span should be in the cache (budget == None → admit any size).
     assert!(
@@ -80,7 +81,8 @@ fn budget_none_caches_any_size() {
         ptr2.write(0xAB);
         assert_eq!(ptr2.read(), 0xAB);
     }
-    ac.dealloc(ptr2, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr2, l) };
 }
 
 // ── test 2 ───────────────────────────────────────────────────────────────────
@@ -105,7 +107,8 @@ fn budget_set_evicts_when_full() {
         eprintln!("OOM — skip budget_set_evicts_when_full");
         return;
     }
-    ac.dealloc(p1, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p1, l) };
     assert_used_bytes_invariant(&ac);
 
     // Discover the real usable_size from what was actually deposited.
@@ -127,7 +130,8 @@ fn budget_set_evicts_when_full() {
 
     // Dealloc p2 → deposit it. Cache is now empty (p1's slot was consumed by
     // the cache hit above). Budget allows one_span → deposit succeeds.
-    ac.dealloc(p2, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p2, l) };
     assert_used_bytes_invariant(&ac);
     assert_eq!(
         ac.dbg_large_cache_used(),
@@ -146,7 +150,8 @@ fn budget_set_evicts_when_full() {
     assert_used_bytes_invariant(&ac);
 
     // Dealloc p3 → deposit it (budget = one_span, used_bytes = 0 → fits).
-    ac.dealloc(p3, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p3, l) };
     assert_used_bytes_invariant(&ac);
 
     // Now both slots may or may not be occupied, but used_bytes must never
@@ -179,7 +184,8 @@ fn budget_too_small_releases_immediately() {
     }
     unsafe { ptr.write(0xCD) };
 
-    ac.dealloc(ptr, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(ptr, l) };
 
     // The span (100 MiB) exceeds the budget (10 MiB); it must NOT be cached.
     assert_eq!(
@@ -216,7 +222,8 @@ fn config_sets_budget() {
         eprintln!("OOM — skip config_sets_budget");
         return;
     }
-    ac.dealloc(p1, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p1, l) };
     assert_used_bytes_invariant(&ac);
 
     let used = ac.dbg_large_cache_used();
@@ -235,7 +242,8 @@ fn config_sets_budget() {
         "cache hit must remove the span from used_bytes"
     );
     assert_used_bytes_invariant(&ac);
-    ac.dealloc(p2, l);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p2, l) };
     assert_used_bytes_invariant(&ac);
 
     // Invariant: used_bytes <= budget at all times.
@@ -273,22 +281,26 @@ fn large_cache_used_bytes_invariant() {
     assert_used_bytes_invariant(&ac);
 
     if !p8.is_null() {
-        ac.dealloc(p4, l4);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p4, l4) };
         assert_used_bytes_invariant(&ac);
 
-        ac.dealloc(p8, l8);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p8, l8) };
         assert_used_bytes_invariant(&ac);
 
         // Re-alloc 4 MiB — should hit cache (slot from the 4 MiB deposit).
         let p4b = ac.alloc(l4);
         assert_used_bytes_invariant(&ac);
         if !p4b.is_null() {
-            ac.dealloc(p4b, l4);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p4b, l4) };
             assert_used_bytes_invariant(&ac);
         }
     } else {
         // p8 OOM — just dealloc p4.
-        ac.dealloc(p4, l4);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p4, l4) };
         assert_used_bytes_invariant(&ac);
     }
 

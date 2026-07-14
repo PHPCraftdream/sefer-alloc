@@ -100,7 +100,8 @@ fn slot_recycle_lifts_cap() {
         }
         // Free all — non-current Small segments empty → decommit → recycle.
         for &p in &ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 
@@ -176,7 +177,8 @@ fn without_decommit_cap_is_hard() {
     // In the no-decommit path, `dealloc` for large segments marks them freed but
     // the OS reservation is held until drop.
     for (&p, _) in ptrs.iter().zip(std::iter::repeat(layout)) {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -234,7 +236,8 @@ fn recycled_slot_is_reused() {
 
     // Phase 2: free all. Non-current Small segments decommit → slots recycled.
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 
     let decommit_after = AllocCore::dbg_decommit_count();
@@ -271,7 +274,8 @@ fn recycled_slot_is_reused() {
 
     // Cleanup.
     for &p in &ptrs2 {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 

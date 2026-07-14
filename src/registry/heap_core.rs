@@ -981,8 +981,32 @@ impl HeapCore {
     /// head, route cross-thread via the TFS (the §2.2 protocol re-based on
     /// the registry). Foreign pointers (not a sefer segment) are a safe
     /// no-op.
+    ///
+    /// This is an **`unsafe fn`** (R6-MS-1/2): it forwards the
+    /// [`AllocCore::dealloc`] caller-pointer contract. The crate's former
+    /// posture was a safe `pub fn`; reversed after the round5 review — see
+    /// [`AllocCore::dealloc`]'s `# Safety` and `CHANGELOG.md` (R6-MS-1/2).
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::dealloc`] contract for `ptr`
+    /// and `layout`:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation made by *this* `HeapCore` (own segment, or — under
+    ///   `alloc-xthread` — a live segment owned by another heap in the same
+    ///   process that this call will route cross-thread). It MUST NOT be an
+    ///   interior pointer.
+    /// - `layout` exactly matches the allocation's layout.
+    /// - The allocation is freed **at most once**; `ptr` is not re-issued
+    ///   after this call.
+    /// - `ptr` is not a foreign / already-released-unmapped base.
+    ///
+    /// Null `ptr` is always safe (early return). The M2 defensive paths remain
+    /// as defence-in-depth, not a substitute for the contract.
     #[inline(always)]
-    pub fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
         if ptr.is_null() {
             return;
         }
@@ -1018,7 +1042,14 @@ impl HeapCore {
     #[inline(always)]
     pub(super) fn dealloc_own_thread(&mut self, ptr: *mut u8, layout: Layout) {
         // Non-fastbin own-thread free: no magazine — delegate to core.
-        self.core.dealloc(ptr, layout);
+        // SAFETY: this own-thread body is reached only from `HeapCore::dealloc`,
+        // an `unsafe fn` whose caller bound `ptr`/`layout` to the
+        // `GlobalAlloc::dealloc` contract (valid live start pointer, matching
+        // layout, freed once); we forward the same pair unchanged.
+        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
+        unsafe {
+            self.core.dealloc(ptr, layout)
+        };
     }
 
     /// Э9 (P7.1, task #160): own-thread dealloc body, taking a pre-computed
@@ -1304,7 +1335,15 @@ impl HeapCore {
             }
         }
         // Large / non-small / non-fastbin: delegate to core.
-        self.core.dealloc(ptr, layout);
+        // SAFETY: `dealloc_own_thread_with_base` is reached only from
+        // `HeapCore::dealloc` (own-thread or routing path) with a caller-bound
+        // `ptr`/`layout` honouring the `GlobalAlloc::dealloc` contract; the
+        // magazine oracles above already returned for the small fastbin case,
+        // and we forward the same pair to the substrate.
+        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `AllocCore::dealloc`.
+        unsafe {
+            self.core.dealloc(ptr, layout)
+        };
     }
 
     /// Shrink/grow an allocation. Returns null on OOM (leaving the old
@@ -1361,7 +1400,32 @@ impl HeapCore {
     /// cross-heap owner, so the foreign leg returns null outright (symmetric
     /// with `AllocCore::realloc`'s foreign-pointer null and `dealloc`'s
     /// foreign no-op).
-    pub fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
+    ///
+    /// This is an **`unsafe fn`** (R6-MS-1/2): the move legs' `copy_nonoverlapping`
+    /// read out of `ptr` trusts the caller's `old_layout`/`ptr` exactly as
+    /// `GlobalAlloc::realloc` does. Reversed from the former safe `pub fn`
+    /// posture after the round5 review — see [`AllocCore::realloc`]'s
+    /// `# Safety` and `CHANGELOG.md` (R6-MS-1/2).
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the [`GlobalAlloc::realloc`] contract for `ptr`
+    /// and `old_layout`:
+    ///
+    /// - `ptr` is **null** OR the exact **start** pointer of a currently-LIVE
+    ///   allocation (own segment, or — under `alloc-xthread` — a live segment
+    ///   owned by another heap in the same process). It MUST NOT be an
+    ///   interior pointer.
+    /// - `old_layout` exactly matches the allocation's layout; its `.size()`
+    ///   must not exceed the block's true size (the move legs copy that many
+    ///   bytes out of `ptr`).
+    /// - On success (`!null` return) the OLD `ptr` is freed; it MUST NOT be
+    ///   used or re-freed afterwards. On null return `ptr` is left intact.
+    /// - `ptr` is not a foreign / already-released-unmapped base.
+    ///
+    /// Null `ptr` is always safe (early return).
+    #[allow(unsafe_code)] // R6-MS-1/2: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn realloc(&mut self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         if ptr.is_null() {
             return core::ptr::null_mut();
         }
@@ -1461,7 +1525,12 @@ impl HeapCore {
                 }
                 let copy = old_layout.size().min(new_size);
                 crate::alloc_core::node::Node::copy_nonoverlapping(ptr, new_ptr, copy);
-                self.dealloc(ptr, old_layout);
+                // SAFETY: own-segment move leg — `contains_base(base)` proved
+                // `ptr`'s segment is ours & live, the read was bounded by
+                // `safe_payload_read_span`, and `new_ptr` holds the copied
+                // prefix; freeing the old block once completes the
+                // contract-honouring realloc.
+                unsafe { self.dealloc(ptr, old_layout) };
                 return new_ptr;
             }
         }
@@ -1519,7 +1588,13 @@ impl HeapCore {
             }
             let copy = old_layout.size().min(new_size);
             Node::copy_nonoverlapping(ptr, new_ptr, copy);
-            self.dealloc(ptr, old_layout);
+            // SAFETY: foreign move leg (alloc-xthread) — `ptr`'s base passed
+            // the segment-header magic check (live sefer segment) and the read
+            // was bounded by `safe_payload_read_span`; `new_ptr` holds the
+            // copied prefix, and `self.dealloc` routes the old block's free
+            // cross-thread. Freeing once completes the contract-honouring
+            // realloc.
+            unsafe { self.dealloc(ptr, old_layout) };
             new_ptr
         }
         #[cfg(not(feature = "alloc-xthread"))]

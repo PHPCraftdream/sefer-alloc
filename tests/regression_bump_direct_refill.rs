@@ -94,7 +94,8 @@ fn cold_storm_free_storm_churn_inner(size: usize, align: usize) {
 
     // Free storm: free everything.
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     // Churn: re-alloc/free the same count repeatedly. Free-drain runs first,
@@ -110,14 +111,16 @@ fn cold_storm_free_storm_churn_inner(size: usize, align: usize) {
             unsafe { core::ptr::write_bytes(p, 0x5A, size) };
         }
         for &p in &buf2 {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 
     // Allocator healthy after churn.
     let check = core.alloc(layout);
     assert!(!check.is_null(), "alloc after churn returned null");
-    core.dealloc(check, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(check, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +173,8 @@ fn d1_cold_storm_then_free_decommits() {
     // Free storm: return every block. Non-current Small segments that reach
     // live_count == 0 must decommit.
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     let decommit_after = AllocCore::dbg_decommit_count();

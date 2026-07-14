@@ -301,7 +301,8 @@ fn decommit_clears_runstack_no_stale_descriptor() {
     // followed by `table.recycle(base)` (unmapping the segment).
     let decommit_before = AllocCore::dbg_decommit_count();
     for &p in &middle_sorted[8..] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let decommit_after = AllocCore::dbg_decommit_count();
     assert!(
@@ -339,7 +340,8 @@ fn decommit_clears_runstack_no_stale_descriptor() {
             continue; // recycled — skip (its pointers are into unmapped memory)
         }
         for &p in blocks {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 
@@ -353,7 +355,8 @@ fn decommit_clears_runstack_no_stale_descriptor() {
             "write/readback must succeed after the decommit wave"
         );
     }
-    core.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(p, layout) };
 }
 
 /// **`clear_all` is idempotent and zeroes every class.** A focused unit test
@@ -399,7 +402,8 @@ fn clear_all_empties_every_class() {
         assert!(unsafe { RunStack::is_empty(base, cls) });
     }
 
-    core.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(p, layout) };
 }
 
 // ===========================================================================
@@ -544,7 +548,8 @@ fn drain_overflow_no_leak_for_large_block_class() {
 
     // Cleanup.
     for &addr in &drained_vec {
-        core.dealloc(addr as *mut u8, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(addr as *mut u8, layout) };
     }
 }
 
@@ -592,6 +597,7 @@ fn drain_overflow_one_at_a_time_no_leak() {
 
     for &p in &all_drained {
         assert!(!core.dbg_is_free_for(p), "drained block must be ALLOCATED");
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }

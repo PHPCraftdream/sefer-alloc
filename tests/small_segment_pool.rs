@@ -164,7 +164,8 @@ fn pool_fills_to_cap_and_no_more() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 
@@ -208,7 +209,8 @@ fn reuse_pooled_segment_skips_os_reservation() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
     for &p in survivors.values() {
@@ -259,7 +261,8 @@ fn reuse_pooled_segment_skips_os_reservation() {
 
     // Cleanup.
     for &p in &keep {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -282,7 +285,8 @@ fn disabled_pool_never_retains() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
     for &p in survivors.values() {
@@ -328,7 +332,8 @@ fn stale_free_into_pooled_segment_is_noop() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
     for &p in survivors.values() {
@@ -374,7 +379,8 @@ fn stale_free_into_pooled_segment_is_noop() {
         keep.push(p);
     }
     for &p in &keep {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -445,7 +451,8 @@ fn reuse_invariant_under_pool_churn() {
         }
         // Free everything → empties + pools segments for the next cycle.
         for &p in &ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 

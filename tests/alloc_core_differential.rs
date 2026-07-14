@@ -142,9 +142,11 @@ proptest! {
                         let i = i % live.len();
                         let l = live.swap_remove(i);
                         // SAFETY: `l.ptr` is a live allocation of `(l.size, l.align)`.
-                        alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+                        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                        unsafe { alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
                         // M2: double-free is a no-op (must not corrupt).
-                        alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+                        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                        unsafe { alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
                     }
                 }
                 Op::Realloc { i, new_size } => {
@@ -152,7 +154,8 @@ proptest! {
                         let i = i % live.len();
                         let l = live[i].clone();
                         let old_layout = Layout::from_size_align(l.size, l.align).unwrap();
-                        let new_ptr = alloc.realloc(l.ptr, old_layout, new_size);
+                        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+                        let new_ptr = unsafe { alloc.realloc(l.ptr, old_layout, new_size) };
                         if !new_ptr.is_null() {
                             // M1: new ptr aligned and non-null.
                             prop_assert_eq!((new_ptr as usize) % l.align, 0, "realloc not aligned");
@@ -203,7 +206,8 @@ proptest! {
         // drop walks the registry). No use-after-free: we do not touch `live`
         // after dropping `alloc`.
         for l in &live {
-            alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap());
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { alloc.dealloc(l.ptr, Layout::from_size_align(l.size, l.align).unwrap()) };
         }
         drop(live);
         drop(alloc);

@@ -105,7 +105,8 @@ fn reclaim_offset_single_threaded_roundtrip() {
         //    the working set bounded). Own-thread dealloc routes straight to the
         //    BinTable.
         for &p in &ptrs2 {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 }

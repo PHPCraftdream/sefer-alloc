@@ -68,7 +68,8 @@ fn free_list_cycle_reuses_slots_without_growing_count() {
     // `AllocCore::dealloc`'s Large branch); either way the table slot is
     // freed for reuse and pushed onto the free-list.
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 
     // Round 2: register N more large segments. If the free-list correctly
@@ -103,7 +104,8 @@ fn free_list_cycle_reuses_slots_without_growing_count() {
     }
 
     for &p in &ptrs2 {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -150,7 +152,8 @@ fn free_list_many_cycles_no_duplicate_or_lost_slots() {
             }
         }
         for &p in &ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
         let count_now = ac.dbg_table_count();
         max_count = max_count.max(count_now);
@@ -237,8 +240,10 @@ fn unregister_defends_against_mismatched_segment_id() {
 
     // Restore a's real id and clean up properly.
     ac.dbg_stamp_segment_id(a, a_id);
-    ac.dealloc(a, layout);
-    ac.dealloc(b, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(a, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(b, layout) };
 }
 
 // ===========================================================================
@@ -265,11 +270,13 @@ fn realloc_own_segment_still_works_after_o1_swap() {
     assert!(!p0.is_null());
     unsafe { core::ptr::write_bytes(p0, 0x42, 64) };
 
-    let p1 = ac.realloc(p0, l0, 96);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let p1 = unsafe { ac.realloc(p0, l0, 96) };
     assert!(!p1.is_null());
     let bytes = unsafe { core::slice::from_raw_parts(p1, 64) };
     assert!(bytes.iter().all(|&b| b == 0x42), "realloc lost data");
 
     let l1 = Layout::from_size_align(96, 8).unwrap();
-    ac.dealloc(p1, l1);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p1, l1) };
 }

@@ -129,7 +129,8 @@ fn dealloc_metadata_region_offsets_are_noop() {
         // The hazardous free: an in-segment, block-aligned address that was
         // NEVER carved (it points into the segment's own metadata). The H-1
         // guard must make this an unconditional no-op.
-        ac.dealloc(bogus, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(bogus, layout) };
     }
 
     // (i) The allocator's own metadata (alloc bitmap) is byte-for-byte
@@ -172,7 +173,8 @@ fn dealloc_metadata_region_offsets_are_noop() {
     // no-op) — no crash, no double-free artefact.
     for &off in &bogus_offsets {
         let bogus = unsafe { base.add(off) };
-        ac.dealloc(bogus, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(bogus, layout) };
     }
     let healthy = ac.alloc(layout);
     assert!(
@@ -182,7 +184,9 @@ fn dealloc_metadata_region_offsets_are_noop() {
 
     // Clean up the genuinely-issued blocks (not the bogus addresses).
     for p in issued {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
-    ac.dealloc(healthy, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(healthy, layout) };
 }

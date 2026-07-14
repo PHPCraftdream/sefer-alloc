@@ -99,7 +99,8 @@ fn recycle_evicts_own_segment_cache_no_stale_hit() {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 
@@ -117,7 +118,8 @@ fn recycle_evicts_own_segment_cache_no_stale_hit() {
     // recycled — the exact stale-hit hazard this test guards.
     let survivor_ptrs: Vec<*mut u8> = survivors.values().copied().collect();
     for &p in &survivor_ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 
     let decommit_after = AllocCore::dbg_decommit_count();
@@ -178,7 +180,8 @@ fn recycle_evicts_own_segment_cache_no_stale_hit() {
         .iter()
         .find(|&&p| ac.dbg_live_count_for(p).is_none())
     {
-        ac.dealloc(recycled_ptr, layout); // must be an M2 no-op
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(recycled_ptr, layout) }; // must be an M2 no-op
     }
 
     // Allocator stays healthy afterwards (reuses recycled slots, hands out
@@ -200,6 +203,7 @@ fn recycle_evicts_own_segment_cache_no_stale_hit() {
         "duplicate pointer — corruption"
     );
     for &p in &fresh {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }

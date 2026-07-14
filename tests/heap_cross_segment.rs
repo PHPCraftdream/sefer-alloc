@@ -72,7 +72,8 @@ fn cross_segment_free_blocks_are_reused() {
 
     // --- Free everything (blocks return to their segments' BinTables). ---
     for &p in &r1 {
-        heap.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { heap.dealloc(p, layout) };
     }
 
     // --- Round 2: must reuse — no allocation may land in a fresh segment. ---

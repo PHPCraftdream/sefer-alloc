@@ -78,13 +78,15 @@ fn m2_double_free_does_not_crash() {
     let mut h = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(64, 8).unwrap();
     let p = h.alloc(layout);
-    h.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { h.dealloc(p, layout) };
     // Second dealloc: the Phase 13.4a per-segment bitmap guard rejects this
     // double-free — the block is NOT pushed again (an earlier, pre-13.4a
     // version re-pushed, which was benign but not detectable). If the guard
     // were absent, the double-add would self-loop the free-list head, causing
     // the same block to be re-issued on consecutive allocs.
-    h.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { h.dealloc(p, layout) };
     // Two consecutive allocs must yield DISTINCT blocks: under a broken M2 the
     // looped head returns the same node twice. This assert is the detector.
     let p1 = h.alloc(layout);
@@ -165,7 +167,8 @@ fn free_list_reuses_freed_blocks() {
         ptrs.push(h.alloc(layout));
     }
     for &p in &ptrs {
-        h.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { h.dealloc(p, layout) };
     }
     // Re-allocate: should reuse without needing many new segments.
     for _ in 0..256 {
@@ -192,7 +195,8 @@ fn refill_works_after_draining_free_list() {
     }
     // Free all, then allocate again (hot-path pops from the rebuilt free list).
     for &p in &ptrs {
-        h.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { h.dealloc(p, layout) };
     }
     for _ in 0..64 {
         let p = h.alloc(layout);
@@ -216,7 +220,8 @@ fn realloc_preserves_prefix_bytes() {
         }
     }
     // Grow.
-    let new_p = h.realloc(p, layout, 512);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_p = unsafe { h.realloc(p, layout, 512) };
     assert!(!new_p.is_null());
     unsafe {
         for b in 0..initial {
@@ -229,7 +234,8 @@ fn realloc_preserves_prefix_bytes() {
     }
     // Shrink.
     let new_layout = Layout::from_size_align(512, 8).unwrap();
-    let shrunk = h.realloc(new_p, new_layout, 32);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let shrunk = unsafe { h.realloc(new_p, new_layout, 32) };
     assert!(!shrunk.is_null());
     unsafe {
         for b in 0..32 {
@@ -253,7 +259,8 @@ fn churn_keeps_heap_consistent() {
     for _ in 0..10_000 {
         let p = h.alloc(layout);
         assert!(!p.is_null());
-        h.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { h.dealloc(p, layout) };
     }
 }
 
@@ -286,7 +293,8 @@ fn multi_thread_own_heap_own_dealloc() {
                 }
                 // Dealloc on the owning thread.
                 for &p in &ptrs {
-                    h.dealloc(p, layout);
+                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                    unsafe { h.dealloc(p, layout) };
                 }
             })
         })

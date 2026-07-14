@@ -70,6 +70,8 @@ fn reclaim_offset_skips_garbled_out_of_range_class_without_panic() {
     // so `p` was never returned to a bin as a class-0 block via the bad path.
     // We simply confirm the allocator's own-thread free path still works, which
     // would trip on a corrupted free list.
-    ac.dealloc(p2, layout);
-    ac.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p2, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
 }

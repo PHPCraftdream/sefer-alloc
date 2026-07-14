@@ -78,7 +78,8 @@ fn realloc_of_foreign_pointer_returns_null() {
     let foreign_ptr = stack_buf.as_mut_ptr();
     let old_layout = Layout::from_size_align(64, 1).unwrap();
 
-    let result = a.realloc(foreign_ptr, old_layout, 128);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let result = unsafe { a.realloc(foreign_ptr, old_layout, 128) };
 
     assert!(
         result.is_null(),
@@ -114,7 +115,8 @@ fn realloc_of_foreign_pointer_does_not_touch_foreign_memory_or_allocator_state()
     let foreign_ptr = stack_buf.as_mut_ptr();
     let old_layout = Layout::from_size_align(64, 1).unwrap();
 
-    let result = a.realloc(foreign_ptr, old_layout, 128);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let result = unsafe { a.realloc(foreign_ptr, old_layout, 128) };
     assert!(result.is_null(), "expected null for foreign pointer");
 
     // The foreign stack buffer bytes are untouched.
@@ -138,5 +140,6 @@ fn realloc_of_foreign_pointer_does_not_touch_foreign_memory_or_allocator_state()
         }
     }
 
-    a.dealloc(live_ptr, live_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(live_ptr, live_layout) };
 }

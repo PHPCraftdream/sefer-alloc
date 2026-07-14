@@ -76,7 +76,8 @@ fn realloc_cross_class_shrink_relocates_not_aliases() {
     let p0 = a.alloc(l0);
     assert!(!p0.is_null(), "initial alloc failed");
 
-    let p1 = a.realloc(p0, l0, 4097); // grow → some class covering 4097
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let p1 = unsafe { a.realloc(p0, l0, 4097) }; // grow → some class covering 4097
     assert!(!p1.is_null(), "grow realloc failed");
 
     // Establish the precondition the bug needs: (4097, 1) and (3713, 1) must
@@ -94,7 +95,8 @@ fn realloc_cross_class_shrink_relocates_not_aliases() {
     );
 
     let l1 = Layout::from_size_align(4097, 1).unwrap();
-    let p2 = a.realloc(p1, l1, 3713); // cross-class shrink (the bug trigger)
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let p2 = unsafe { a.realloc(p1, l1, 3713) }; // cross-class shrink (the bug trigger)
     assert!(!p2.is_null(), "shrink realloc failed");
 
     // The load-bearing counterfactual assertion: a cross-class shrink MUST
@@ -118,5 +120,6 @@ fn realloc_cross_class_shrink_relocates_not_aliases() {
     }
 
     let l2 = Layout::from_size_align(3713, 1).unwrap();
-    a.dealloc(p2, l2);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(p2, l2) };
 }

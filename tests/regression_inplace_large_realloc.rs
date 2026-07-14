@@ -56,7 +56,8 @@ fn grow_within_span_returns_same_ptr() {
 
     // Grow to 1 MiB — still well within a single 4 MiB segment.
     let new_size = 1024 * 1024;
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
     assert_eq!(
         ptr, new_ptr,
@@ -91,7 +92,8 @@ fn grow_within_span_returns_same_ptr() {
         }
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 }
 
 /// (b) Same-size realloc of a Large alloc: returns the SAME pointer.
@@ -106,7 +108,8 @@ fn same_size_large_realloc_returns_same_ptr() {
 
     unsafe { ptr.write(0xCC) };
 
-    let new_ptr = ac.realloc(ptr, layout, size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, layout, size) };
     assert!(!new_ptr.is_null());
     assert_eq!(
         ptr, new_ptr,
@@ -114,7 +117,8 @@ fn same_size_large_realloc_returns_same_ptr() {
     );
     assert_eq!(unsafe { new_ptr.read() }, 0xCC, "marker must survive");
 
-    ac.dealloc(new_ptr, Layout::from_size_align(size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(size, 16).unwrap()) };
 }
 
 /// (c) Grow BEYOND span_usable: pointer may differ, data still preserved.
@@ -137,7 +141,8 @@ fn grow_beyond_span_relocates_and_preserves() {
     }
 
     let new_size = 5 * 1024 * 1024; // 5 MiB — exceeds one segment.
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+                                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
 
     // Data must be preserved (whether moved or not).
@@ -151,7 +156,8 @@ fn grow_beyond_span_relocates_and_preserves() {
         }
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 }
 
 /// (d) After an in-place grow, dealloc then a fresh large alloc works
@@ -167,12 +173,14 @@ fn dealloc_after_inplace_grow_then_reuse() {
 
     // In-place grow.
     let new_size = 1024 * 1024;
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
     assert_eq!(ptr, new_ptr, "must be in-place");
 
     // Free the grown block with the NEW layout.
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 
     // A fresh large alloc must succeed (the freed segment is available for
     // reuse or the table slot is free).
@@ -190,7 +198,8 @@ fn dealloc_after_inplace_grow_then_reuse() {
         assert_eq!(fresh_ptr.read(), 0xEE);
     }
 
-    ac.dealloc(fresh_ptr, fresh_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(fresh_ptr, fresh_layout) };
 }
 
 /// (f) OPT-G stores the CLAMPED `large_size` (>= MIN_BLOCK), not the raw
@@ -228,7 +237,8 @@ fn inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned() {
     // Realloc-grow to another sub-MIN_BLOCK size. OPT-G fires (same clamped
     // effective size, fits span). The stored large_size must remain MIN_BLOCK.
     let new_size = 12;
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
     assert_eq!(ptr, new_ptr, "must be in-place (OPT-G)");
 
@@ -239,7 +249,8 @@ fn inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned() {
          got {stored_after} (raw new_size={new_size} — the bug)"
     );
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, align).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, align).unwrap()) };
 }
 
 /// (e) Shrink of a Large alloc does NOT get pinned in the oversized segment.
@@ -265,7 +276,8 @@ fn shrink_large_does_not_pin() {
     // all.) Derived from the constant so a size-class rebuild cannot demote it.
     let new_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
     assert!(new_size > SegmentLayout::SMALL_MAX && new_size < old_size);
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
 
     // Data preserved across the min(old, new) prefix.
@@ -279,7 +291,8 @@ fn shrink_large_does_not_pin() {
         }
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 }
 
 /// (e2) Large → strictly-smaller-Large SHRINK across segment spans (multi-
@@ -314,7 +327,8 @@ fn shrink_large_to_smaller_large_relocates_and_preserves() {
     // relocating slow leg (alloc+copy+dealloc).
     let new_size = 5 * 1024 * 1024;
     assert!(new_size > SegmentLayout::SMALL_MAX && new_size < old_size);
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
 
     // The min(old,new) prefix must survive the move.
@@ -334,5 +348,6 @@ fn shrink_large_to_smaller_large_relocates_and_preserves() {
         assert_eq!(new_ptr.add(new_size - 1).read(), 0x99);
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 }

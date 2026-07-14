@@ -115,7 +115,8 @@ fn dealloc_uses_layout_class_not_page_map_on_mixed_class_page() {
     // Free the block with its CORRECT (Layout) class. Under Phase 13.3 this
     // routes via Layout → layout_class free list. Under a (buggy) page_map
     // derivation it would route via page_map_class free list.
-    a.dealloc(block, block_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(block, block_layout) };
 
     // Counterfactual probe A — the block must NOT resurface on a page_map-class
     // alloc. We allocate several page_map-class blocks; if any of them IS our
@@ -230,7 +231,8 @@ fn dealloc_uses_layout_class_big_then_tiny_mixed_page() {
     let canary: u64 = 0xCA_FE_BA_BE_12_34_56_78;
     // SAFETY: block is valid for block_layout.size() bytes (>= 16).
     unsafe { ptr::write(block.add(8) as *mut u64, canary) };
-    a.dealloc(block, block_layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(block, block_layout) };
 
     // Probe A: the block must not resurface on a page_map-class alloc.
     let mut pm_layout = None;

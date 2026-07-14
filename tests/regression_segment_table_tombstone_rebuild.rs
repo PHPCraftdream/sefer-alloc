@@ -116,7 +116,8 @@ fn backshift_no_latency_spike_at_threshold_boundary() {
         let mut durations_ns: Vec<u64> = Vec::with_capacity(W);
         for (i, &p) in ptrs.iter().enumerate() {
             let t0 = Instant::now();
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
             let dt = t0.elapsed().as_nanos() as u64;
             durations_ns.push(dt);
 

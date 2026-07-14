@@ -163,7 +163,8 @@ fn fresh_segment_gen_table_is_zeroed() {
 
     // Cleanup.
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -259,7 +260,8 @@ fn recycled_segment_ring_drain_is_safe() {
     // reach live_count == 0 will decommit and have their slots recycled.
     let decommit_before = AllocCore::dbg_decommit_count();
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
     let decommit_after = AllocCore::dbg_decommit_count();
 
@@ -289,7 +291,8 @@ fn recycled_segment_ring_drain_is_safe() {
                 "write/readback failed after post-recycle drain"
             );
         }
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
         ok += 1;
     }
     assert_eq!(ok, 100, "all post-recycle-drain allocs must succeed");

@@ -26,10 +26,13 @@ fn double_free_does_not_double_issue() {
     assert!(!p.is_null());
 
     // Free it ONCE (legitimate), then AGAIN (the double-free — must be a no-op).
-    ac.dealloc(p, layout);
-    ac.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
     // A third, for good measure: still a no-op.
-    ac.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
 
     // Now allocate several blocks. If the double-free had pushed `p` onto the
     // free list twice (or made a self-loop), the allocator would hand `p` back
@@ -52,7 +55,8 @@ fn double_free_does_not_double_issue() {
     // never more than once — the distinctness assert above already guarantees
     // that. Clean up.
     for q in got {
-        ac.dealloc(q, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(q, layout) };
     }
 }
 
@@ -67,7 +71,8 @@ fn realloc_same_address_is_refreeable() {
 
     let p1 = ac.alloc(layout);
     assert!(!p1.is_null());
-    ac.dealloc(p1, layout); // free → bit set
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p1, layout) }; // free → bit set
 
     // Re-alloc: the recycled block should be the same address (single-class,
     // single segment, LIFO free list), and its bit must now be CLEAR again.
@@ -79,14 +84,16 @@ fn realloc_same_address_is_refreeable() {
     // re-alloc. If the guard wrongly still saw it as free, this free would
     // no-op and the next alloc would have to carve a NEW block instead of
     // reusing p1.
-    ac.dealloc(p2, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p2, layout) };
     let p3 = ac.alloc(layout);
     assert_eq!(
         p3, p1,
         "re-freed block was not reusable — `mark_alloc` did not clear the \
          double-free bit on re-allocation"
     );
-    ac.dealloc(p3, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p3, layout) };
 }
 
 /// Many blocks, each double-freed: the working set must stay consistent and no
@@ -106,8 +113,10 @@ fn many_double_frees_keep_free_list_consistent() {
     }
     // Free each block TWICE (the second is a double-free → must no-op).
     for &p in &ptrs {
-        ac.dealloc(p, layout);
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
     // Re-allocate N blocks; every one must be a distinct, valid address. A
     // corrupted free list (from a double-add) would either loop, hand out a

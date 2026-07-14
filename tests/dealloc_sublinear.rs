@@ -48,7 +48,8 @@ fn free_phase_nanos(n: usize, layout: Layout) -> u128 {
     }
     let start = Instant::now();
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
     start.elapsed().as_nanos()
 }

@@ -146,7 +146,8 @@ fn contiguous_accepted_pushes_one_descriptor() {
     assert_eq!(drained[0].count, N as u16);
 
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -169,7 +170,8 @@ fn non_contiguous_gap_produces_split_descriptors() {
 
     // Dealloc sorted[6..10] — those become gap blocks (is_free → skipped).
     for &p in &sorted[6..10] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let mut batch: Vec<*mut u8> = Vec::with_capacity(12);
     batch.extend_from_slice(&sorted[0..6]);
@@ -197,7 +199,8 @@ fn non_contiguous_gap_produces_split_descriptors() {
     );
 
     for &p in &batch {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -229,7 +232,8 @@ fn overflow_falls_back_to_linked_list() {
         gap_blocks.push(sorted[3 * i + 2]);
     }
     for &p in &gap_blocks {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for g in &groups {
         assert_eq!((g[1] as usize) - (g[0] as usize), 16);
@@ -268,10 +272,12 @@ fn overflow_falls_back_to_linked_list() {
     );
 
     for &p in &first_batch {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     for &p in &overflow_batch {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -304,7 +310,8 @@ fn mixed_flush_populates_both_representations() {
         .chain(&sorted[8..9])
         .chain(&sorted[10..14])
     {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     let batch: Vec<*mut u8> = vec![
@@ -339,7 +346,8 @@ fn mixed_flush_populates_both_representations() {
     assert_eq!(counts, vec![2, 3], "run_a=3, run_b=2");
 
     for &p in &batch {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -407,7 +415,8 @@ fn guards_skip_already_free_block() {
     }
 
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -454,7 +463,8 @@ fn flush_run_classic_when_feature_off() {
     assert_eq!(unique, batch_set, "drained set == flushed set");
 
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -520,8 +530,11 @@ fn run_member_blocks_not_on_linked_list_drain() {
     // Cleanup: drain gave us all flushed blocks back (now allocated); re-free
     // them + the leftover live blocks.
     for &p in &out[..drained] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
-    core.dealloc(sorted[3], layout);
-    core.dealloc(sorted[5], layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(sorted[3], layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(sorted[5], layout) };
 }

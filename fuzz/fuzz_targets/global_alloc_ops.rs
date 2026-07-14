@@ -179,10 +179,12 @@ fuzz_target!(|data: &[u8]| {
                     let i = i % live.len();
                     let l = live.swap_remove(i);
                     let layout = Layout::from_size_align(l.size, l.align).unwrap();
-                    alloc.dealloc(l.ptr, layout);
+                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                    unsafe { alloc.dealloc(l.ptr, layout) };
                     // M2: a second dealloc of the same pointer must be a no-op
                     // that does not corrupt the allocator.
-                    alloc.dealloc(l.ptr, layout);
+                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                    unsafe { alloc.dealloc(l.ptr, layout) };
                 }
             }
             Op::Realloc { i, new_size } => {
@@ -192,7 +194,8 @@ fuzz_target!(|data: &[u8]| {
                     let l = &live[i];
                     let old_layout = Layout::from_size_align(l.size, l.align).unwrap();
                     let (old_ptr, old_size, align, old_fill) = (l.ptr, l.size, l.align, l.fill);
-                    let new_ptr = alloc.realloc(old_ptr, old_layout, new_size);
+                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+                    let new_ptr = unsafe { alloc.realloc(old_ptr, old_layout, new_size) };
                     if new_ptr.is_null() {
                         // Realloc failed: the old block is still live & valid.
                         continue;
@@ -239,7 +242,8 @@ fuzz_target!(|data: &[u8]| {
     // in the registry walk on drop).
     for l in &live {
         let layout = Layout::from_size_align(l.size, l.align).unwrap();
-        alloc.dealloc(l.ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { alloc.dealloc(l.ptr, layout) };
     }
     drop(live);
     drop(alloc);

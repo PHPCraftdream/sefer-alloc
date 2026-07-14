@@ -94,7 +94,8 @@ fn decommit_fires_and_recommit_roundtrips() {
         }
         // Free everything: this empties the non-current segments → decommit.
         for &p in &ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 
@@ -143,7 +144,8 @@ fn live_count_tracks_alloc_free_exactly() {
     // Free all; the segment containing ptrs[0] is the current carve target, so
     // it is reset of live but NOT decommitted while current.
     for &p in &ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
     let lc_after_free = ac
         .dbg_live_count_for(ptrs[0])

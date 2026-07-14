@@ -142,8 +142,10 @@ fn same_thread_segments_same_node() {
         assert_eq!((ptr_b as *const u8).read(), 0xBB, "ptr_b readback failed");
     }
 
-    core.dealloc(ptr_a, layout);
-    core.dealloc(ptr_b, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr_a, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(ptr_b, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +207,8 @@ fn find_segment_prefers_local_node() {
             tx.send((observed_node, stamped_node))
                 .expect("result channel send failed");
 
-            core.dealloc(ptr, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(ptr, layout) };
         }));
     }
     drop(tx); // close the sender so the rx loop below terminates

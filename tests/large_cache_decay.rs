@@ -32,7 +32,8 @@ fn fill_cache(ac: &mut AllocCore, l: Layout, count: usize) -> Option<usize> {
             // OOM — clean up what we got and bail.
             for p in &mut ptrs[..count] {
                 if !p.is_null() {
-                    ac.dealloc(*p, l);
+                    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                    unsafe { ac.dealloc(*p, l) };
                     *p = core::ptr::null_mut();
                 }
             }
@@ -40,7 +41,8 @@ fn fill_cache(ac: &mut AllocCore, l: Layout, count: usize) -> Option<usize> {
         }
     }
     for ptr in &mut ptrs[..count] {
-        ac.dealloc(*ptr, l);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(*ptr, l) };
         *ptr = core::ptr::null_mut();
     }
     Some(ac.dbg_large_cache_used())
@@ -112,16 +114,20 @@ fn decay_respects_headroom() {
     let p2 = ac.alloc(l_large);
     if p1.is_null() || p2.is_null() {
         if !p1.is_null() {
-            ac.dealloc(p1, l_small);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p1, l_small) };
         }
         if !p2.is_null() {
-            ac.dealloc(p2, l_large);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p2, l_large) };
         }
         eprintln!("OOM — skipping decay_respects_headroom");
         return;
     }
-    ac.dealloc(p1, l_small);
-    ac.dealloc(p2, l_large);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p1, l_small) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p2, l_large) };
 
     let used_before = ac.dbg_large_cache_used();
     if used_before == 0 {
@@ -228,7 +234,8 @@ fn decay_interval_respected() {
         if ptr.is_null() {
             break; // OOM — stop early but don't fail
         }
-        ac.dealloc(ptr, l);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(ptr, l) };
     }
 
     // The cache may have changed due to slot churn (new span replacing old), but

@@ -66,7 +66,8 @@ fn decommit_recommit_cycle_bookkeeping() {
         }
         // Free all → empties the fresh non-current Small segment → decommit.
         for &(p, _) in &ptrs {
-            ac.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { ac.dealloc(p, layout) };
         }
     }
 

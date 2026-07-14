@@ -81,7 +81,8 @@ fn find_segment_recovers_frees_across_segments_without_missed_segment() {
 
     // Free everything — each block returns to its OWN segment's BinTable.
     for &p in &alloced {
-        core.dealloc(p, LAYOUT);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, LAYOUT) };
     }
     // Re-allocate the same count. Every freed block must be recoverable.
     let mut realloced: Vec<*mut u8> = Vec::with_capacity(SPAN_COUNT);
@@ -140,7 +141,8 @@ fn find_segment_recovers_frees_through_segment_drain_transitions() {
     );
 
     for &p in &alloced {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     let mut realloced: Vec<*mut u8> = Vec::with_capacity(total);
     for _ in 0..total {

@@ -48,7 +48,8 @@ fn soak_segment_reuse_bounded() {
         }
         // Free all.
         for p in ptrs {
-            heap.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { heap.dealloc(p, layout) };
         }
     }
     // If we get here without OOM or crash, the free-list reuse is working

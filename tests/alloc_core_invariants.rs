@@ -81,13 +81,15 @@ fn m2_double_free_is_noop() {
     let mut a = AllocCore::new().unwrap();
     let layout = Layout::from_size_align(64, 8).unwrap();
     let ptr = a.alloc(layout);
-    a.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(ptr, layout) };
     // Second dealloc of the same pointer must be a no-op (Phase 13.4a: the
     // per-segment bitmap guard rejects the double-free — the block is NOT
     // pushed onto the free list a second time). If the guard were absent, the
     // second dealloc would corrupt the free list (a self-loop at the head), so
     // a subsequent alloc would re-issue the SAME looped block.
-    a.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(ptr, layout) };
     // Two consecutive allocs must yield DISTINCT blocks. Under a broken M2
     // (self-loop from the double-add) the head would keep returning the same
     // node, so ptr1 == ptr2 — this assert is the load-bearing detector.
@@ -110,7 +112,8 @@ fn m2_foreign_pointer_dealloc_is_noop() {
     let layout = Layout::from_size_align(8, 8).unwrap();
     // SAFETY: this is the defensive contract — a foreign pointer is a no-op,
     // not UB. We test that here.
-    a.dealloc(foreign_ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(foreign_ptr, layout) };
     // Allocator still works.
     let ptr = a.alloc(layout);
     assert!(!ptr.is_null());
@@ -239,7 +242,8 @@ fn m5_churn_keeps_allocator_consistent() {
     for _ in 0..10_000 {
         let ptr = a.alloc(layout);
         assert!(!ptr.is_null());
-        a.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(ptr, layout) };
     }
 }
 
@@ -260,7 +264,8 @@ fn realloc_preserves_prefix_bytes() {
         }
     }
     // Grow.
-    let new_ptr = a.realloc(ptr, layout, 512);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { a.realloc(ptr, layout, 512) };
     assert!(!new_ptr.is_null());
     // SAFETY: new_ptr valid for 512 bytes; first `initial` must be preserved.
     unsafe {
@@ -274,7 +279,8 @@ fn realloc_preserves_prefix_bytes() {
     }
     // Shrink.
     let new_layout = Layout::from_size_align(512, 8).unwrap();
-    let shrunk = a.realloc(new_ptr, new_layout, 32);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let shrunk = unsafe { a.realloc(new_ptr, new_layout, 32) };
     assert!(!shrunk.is_null());
     // SAFETY: first 32 bytes preserved.
     unsafe {
@@ -306,7 +312,8 @@ fn free_list_reuses_freed_blocks() {
         ptrs.push(a.alloc(layout));
     }
     for p in &ptrs {
-        a.dealloc(*p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(*p, layout) };
     }
     // Re-allocate the same count — if the free list works, this should not
     // need many new segments. We only assert it succeeds (the exact segment
@@ -335,6 +342,7 @@ fn many_large_allocs_then_free() {
         ptrs.push((p, layout));
     }
     for (p, l) in &ptrs {
-        a.dealloc(*p, *l);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(*p, *l) };
     }
 }

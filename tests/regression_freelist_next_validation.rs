@@ -71,8 +71,10 @@ fn pop_free_rejects_out_of_segment_next() {
     let b = ac.alloc(layout);
     assert!(!a.is_null() && !b.is_null());
     assert_ne!(a, b);
-    ac.dealloc(a, layout);
-    ac.dealloc(b, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(a, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(b, layout) };
 
     // Sanity: the free list head is `b` (LIFO).
     assert_eq!(ac.dbg_freelist_head_for(a, 0), {
@@ -132,7 +134,8 @@ fn pop_free_rejects_out_of_segment_next() {
     );
 
     for p in issued {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -153,9 +156,12 @@ fn drain_freelist_batch_rejects_out_of_segment_next() {
     assert!(!a.is_null() && !b.is_null() && !c.is_null());
 
     let layout = Layout::from_size_align(16, 8).unwrap();
-    ac.dealloc(a, layout);
-    ac.dealloc(b, layout);
-    ac.dealloc(c, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(a, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(b, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(c, layout) };
 
     // Head is `c`; chain is c -> b -> a -> NULL. Corrupt `c`'s `next` (which
     // currently points at `b`) to an out-of-segment address.
@@ -212,6 +218,7 @@ fn drain_freelist_batch_rejects_out_of_segment_next() {
     );
 
     for p in issued {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }

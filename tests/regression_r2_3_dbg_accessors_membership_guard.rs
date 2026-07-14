@@ -99,6 +99,8 @@ fn dbg_accessors_reject_foreign_segment() {
     let _ = ac1.dbg_kind_at_tag(ac1_ptr);
     let _ = ac1.dbg_large_size_of(ac1_ptr);
 
-    ac1.dealloc(ac1_ptr, layout);
-    ac2.dealloc(ac2_ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac1.dealloc(ac1_ptr, layout) };
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac2.dealloc(ac2_ptr, layout) };
 }

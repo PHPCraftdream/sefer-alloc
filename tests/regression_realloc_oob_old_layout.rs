@@ -56,7 +56,8 @@ fn realloc_with_oversized_old_layout_returns_null_not_oob() {
     unsafe { core::ptr::write_bytes(p, 0xA5, 16) };
 
     let bogus = Layout::from_size_align(BOGUS_OLD, 16).unwrap();
-    let result = ac.realloc(p, bogus, BOGUS_OLD);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let result = unsafe { ac.realloc(p, bogus, BOGUS_OLD) };
     assert!(
         result.is_null(),
         "realloc with a bogus oversized old_layout must return null (R2-1 bound), \
@@ -73,7 +74,8 @@ fn realloc_with_oversized_old_layout_returns_null_not_oob() {
             "original block disturbed by the rejected realloc"
         );
     }
-    ac.dealloc(p, small);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, small) };
 }
 
 /// Control: a CORRECT layout is never rejected by the new bound. Grow a
@@ -89,7 +91,8 @@ fn legit_realloc_still_succeeds_under_the_bound() {
     // SAFETY: `p` is valid for 16 bytes.
     unsafe { core::ptr::write_bytes(p, 0x5A, 16) };
 
-    let new_ptr = ac.realloc(p, old, 64);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(p, old, 64) };
     assert!(
         !new_ptr.is_null(),
         "a legit realloc (16 -> 64, correct layout) must succeed under the R2-1 bound"
@@ -106,7 +109,8 @@ fn legit_realloc_still_succeeds_under_the_bound() {
             );
         }
     }
-    ac.dealloc(new_ptr, Layout::from_size_align(64, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(64, 16).unwrap()) };
 }
 
 /// A Large block that FILLS its segment's span is NOT rejected: the bound is
@@ -129,7 +133,8 @@ fn realloc_large_block_filling_span_is_not_falsely_rejected() {
     // Grow 1 MiB -> 2 MiB: both fit one 4 MiB Large segment; OPT-G may take the
     // in-place path or the move leg runs — either way the bound must NOT
     // reject (2 MiB <= ~4 MiB span).
-    let new_ptr = ac.realloc(p, large, 2 * 1024 * 1024);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(p, large, 2 * 1024 * 1024) };
     assert!(
         !new_ptr.is_null(),
         "a legit large realloc (1 -> 2 MiB) must succeed under the R2-1 bound"
@@ -142,8 +147,12 @@ fn realloc_large_block_filling_span_is_not_falsely_rejected() {
             "large realloc did not preserve the prefix"
         );
     }
-    ac.dealloc(
-        new_ptr,
-        Layout::from_size_align(2 * 1024 * 1024, 16).unwrap(),
-    );
+    // SAFETY (R6-MS-1/2): `new_ptr` is the live result of the preceding
+    // `realloc`, made with the matching 2 MiB layout, freed exactly once here.
+    unsafe {
+        ac.dealloc(
+            new_ptr,
+            Layout::from_size_align(2 * 1024 * 1024, 16).unwrap(),
+        )
+    };
 }

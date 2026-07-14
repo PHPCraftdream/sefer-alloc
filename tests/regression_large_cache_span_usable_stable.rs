@@ -59,7 +59,8 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
     let la = layout(a_size);
     let pa = ac.alloc(la);
     assert!(!pa.is_null(), "OOM allocating A — cannot run test");
-    ac.dealloc(pa, la);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(pa, la) };
 
     let slot_sizes_after_a = ac.dbg_large_cache_slot_sizes();
     let usable_a = slot_sizes_after_a
@@ -111,7 +112,8 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
     );
 
     // Redeposit B (the reused, now-shrunk segment) into the cache.
-    ac.dealloc(pb, lb);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(pb, lb) };
 
     let slot_sizes_after_b = ac.dbg_large_cache_slot_sizes();
     let usable_after_redeposit = slot_sizes_after_b

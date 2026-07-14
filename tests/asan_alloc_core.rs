@@ -71,7 +71,8 @@ fn asan_small_alloc_write_realloc_dealloc() {
 
     // Grow realloc — exercises the copy leg (copy_nonoverlapping over the
     // segment payload), ASan's highest-value surface here.
-    let grown = a.realloc(ptr, layout, 512);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let grown = unsafe { a.realloc(ptr, layout, 512) };
     assert!(!grown.is_null());
     // SAFETY: `grown` valid for 512 bytes; first 64 preserved.
     unsafe {
@@ -85,7 +86,8 @@ fn asan_small_alloc_write_realloc_dealloc() {
     }
     // Shrink realloc back down.
     let big = Layout::from_size_align(512, 8).unwrap();
-    let shrunk = a.realloc(grown, big, 32);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let shrunk = unsafe { a.realloc(grown, big, 32) };
     assert!(!shrunk.is_null());
     // SAFETY: `shrunk` valid for 32 bytes; first 32 preserved.
     unsafe {
@@ -97,7 +99,8 @@ fn asan_small_alloc_write_realloc_dealloc() {
             );
         }
     }
-    a.dealloc(shrunk, Layout::from_size_align(32, 8).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(shrunk, Layout::from_size_align(32, 8).unwrap()) };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +126,8 @@ fn asan_mixed_sizes_aligns() {
         }
     }
     for (ptr, layout) in live {
-        a.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(ptr, layout) };
     }
 }
 
@@ -151,7 +155,8 @@ fn asan_large_segment_lifecycle() {
         ptr::write_bytes(ptr.add(size - 256), 0x77, 256);
         assert_eq!(ptr.add(size - 1).read(), 0x77);
     }
-    a.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(ptr, layout) };
     // After dealloc the large segment's reservation is released (munmap). We do
     // NOT touch `ptr` here — that would be the use-after-free the ASan runner's
     // injected-bug proof exercises. This clean test only validates the lifecycle
@@ -174,7 +179,8 @@ fn asan_alloc_zeroed_is_zero() {
             assert_eq!(ptr.add(b).read(), 0, "byte {b} not zero");
         }
     }
-    a.dealloc(ptr, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(ptr, layout) };
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +200,8 @@ fn asan_churn_reuse() {
             ptr::write_bytes(ptr, 0xE9, 96);
             assert_eq!(ptr.add(95).read(), 0xE9);
         }
-        a.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(ptr, layout) };
     }
 }
 
@@ -226,7 +233,8 @@ fn asan_realloc_chain_across_classes() {
         64,
     ] {
         let old_layout = Layout::from_size_align(cur_size, cur_align).unwrap();
-        let new = a.realloc(ptr, old_layout, next);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+        let new = unsafe { a.realloc(ptr, old_layout, next) };
         assert!(!new.is_null());
         let keep = cur_size.min(next);
         // SAFETY: `new` valid for `next`; first `keep` bytes preserved.
@@ -249,7 +257,8 @@ fn asan_realloc_chain_across_classes() {
         ptr = new;
         cur_size = next;
     }
-    a.dealloc(ptr, Layout::from_size_align(cur_size, cur_align).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { a.dealloc(ptr, Layout::from_size_align(cur_size, cur_align).unwrap()) };
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +282,7 @@ fn asan_many_live_then_reverse_free() {
     }
     // Reverse free to exercise a different reuse ordering than forward churn.
     while let Some(ptr) = ptrs.pop() {
-        a.dealloc(ptr, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { a.dealloc(ptr, layout) };
     }
 }

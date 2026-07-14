@@ -42,7 +42,8 @@ fn realloc_same_size_returns_same_ptr() {
     unsafe { ptr.write(0xAA) };
 
     // 64 → 64: trivially same class[3] (block_size=64).
-    let new_ptr = ac.realloc(ptr, layout, 64);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, layout, 64) };
     assert!(!new_ptr.is_null());
     assert_eq!(
         ptr, new_ptr,
@@ -50,7 +51,8 @@ fn realloc_same_size_returns_same_ptr() {
     );
     assert_eq!(unsafe { new_ptr.read() }, 0xAA, "marker must survive");
 
-    ac.dealloc(new_ptr, Layout::from_size_align(64, 8).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(64, 8).unwrap()) };
 }
 
 /// Realloc to a smaller size that stays in the same class (class[3]: 49..=64).
@@ -64,7 +66,8 @@ fn realloc_shrink_within_same_class_returns_same_ptr() {
     unsafe { ptr.write(0xBB) };
 
     // 64 → 56: still class[3] (block_size=64 covers 49..=64).
-    let new_ptr = ac.realloc(ptr, old_layout, 56);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, 56) };
     assert!(!new_ptr.is_null());
     assert_eq!(
         ptr, new_ptr,
@@ -72,7 +75,8 @@ fn realloc_shrink_within_same_class_returns_same_ptr() {
     );
     assert_eq!(unsafe { new_ptr.read() }, 0xBB, "marker must survive");
 
-    ac.dealloc(new_ptr, Layout::from_size_align(56, 8).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(56, 8).unwrap()) };
 }
 
 /// Realloc that shrinks ACROSS classes: old class[3] (block_size=64),
@@ -112,7 +116,8 @@ fn realloc_shrink_cross_class_down_relocates_and_preserves_data() {
 
     // 64 (class[3]) → 32 (class[1]): cross-class shrink → relocates under the
     // `==` rule. We do NOT assert ptr identity (the old `<=` bug did).
-    let new_ptr = ac.realloc(ptr, old_layout, 32);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, 32) };
     assert!(!new_ptr.is_null(), "realloc 64->32 must not return null");
 
     // The min(old,new)=32-byte prefix must be preserved regardless of whether
@@ -130,7 +135,8 @@ fn realloc_shrink_cross_class_down_relocates_and_preserves_data() {
     // Free with the NEW (32-byte) layout — the GlobalAlloc contract. This
     // must route to class[1]'s free list soundly (the whole point of the
     // relocation: the block now genuinely lives in class[1]).
-    ac.dealloc(new_ptr, Layout::from_size_align(32, 8).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(32, 8).unwrap()) };
 }
 
 /// Realloc that grows into a LARGER class: 64 (class[3]) → 65 (class[4],
@@ -153,7 +159,8 @@ fn realloc_cross_class_up_moves_and_preserves_data() {
     }
 
     // 64 (class[3]) → 65 (class[4]=80): definitely a different, larger class.
-    let new_ptr = ac.realloc(ptr, old_layout, 65);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, 65) };
     assert!(!new_ptr.is_null(), "realloc 64->65 must not return null");
 
     // The first 64 bytes of data must be preserved (copy happened).
@@ -168,7 +175,8 @@ fn realloc_cross_class_up_moves_and_preserves_data() {
         }
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(65, 8).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(65, 8).unwrap()) };
 }
 
 /// Sanity: realloc of a large allocation (size > SMALL_MAX) takes the slow
@@ -194,7 +202,8 @@ fn realloc_large_to_large_preserves_data() {
 
     let new_size = old_size + 512 * 1024; // grow, still Large
     assert!(new_size > SegmentLayout::SMALL_MAX);
-    let new_ptr = ac.realloc(ptr, old_layout, new_size);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
+    let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
 
     unsafe {
@@ -208,5 +217,6 @@ fn realloc_large_to_large_preserves_data() {
         }
     }
 
-    ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap());
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 }

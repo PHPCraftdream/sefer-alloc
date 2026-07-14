@@ -122,5 +122,6 @@ fn control_ordinary_large_alloc_with_page_scale_align_still_works() {
         p.add(SIZE - 1).write(0xCD);
     }
 
-    core.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(p, layout) };
 }

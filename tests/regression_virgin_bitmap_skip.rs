@@ -195,7 +195,8 @@ fn t1_primordial_bitmap_reads_zero_before_any_traffic() {
         buf[..touched_byte].iter().position(|&b| b != 0)
     );
 
-    ac.dealloc(p, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) };
 }
 
 /// T2: force a SECOND, non-primordial small-segment reservation
@@ -301,7 +302,8 @@ fn t2_fresh_small_segment_bitmap_reads_zero_for_untouched_classes() {
         buf[..touched_byte].iter().position(|&b| b != 0)
     );
     for p in ptrs {
-        ac.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(p, layout) };
     }
 }
 
@@ -331,9 +333,12 @@ fn t3_double_free_guard_still_correct_on_freshly_reserved_segment() {
          the init-elision left the bitmap in the wrong starting state"
     );
 
-    ac.dealloc(p, layout); // legitimate free -> bit set
-    ac.dealloc(p, layout); // double-free -> must no-op (M2 guard)
-    ac.dealloc(p, layout); // triple-free -> still a no-op
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) }; // legitimate free -> bit set
+                                      // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) }; // double-free -> must no-op (M2 guard)
+                                      // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { ac.dealloc(p, layout) }; // triple-free -> still a no-op
 
     const K: usize = 32;
     let mut seen: HashSet<usize> = HashSet::new();
@@ -350,6 +355,7 @@ fn t3_double_free_guard_still_correct_on_freshly_reserved_segment() {
         got.push(q);
     }
     for q in got {
-        ac.dealloc(q, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { ac.dealloc(q, layout) };
     }
 }

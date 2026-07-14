@@ -104,12 +104,14 @@ fn page_aligned_allocations_do_not_exhaust_segment_table() {
         }
 
         for &p in &ptrs {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
         // M2 (double-free guard): re-freeing every pointer must be a safe
         // no-op — neither corruption nor panic.
         for &p in &ptrs {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 }
@@ -142,7 +144,8 @@ fn small_page_aligned_shapes_resolve_to_small_class_not_large() {
             ptrs.push(p);
         }
         for &p in &ptrs {
-            core.dealloc(p, layout);
+            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+            unsafe { core.dealloc(p, layout) };
         }
     }
 }

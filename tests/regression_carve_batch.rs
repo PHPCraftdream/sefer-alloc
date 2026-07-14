@@ -86,7 +86,8 @@ fn carve_batch_wellformed_inner(size: usize, align: usize, n: usize) {
     //    below would be swallowed and re-alloc would hand a different set).
     let layout = Layout::from_size_align(size, align).unwrap();
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     // Re-alloc the same count through the public path; must reuse the freed set.
     let mut reused: HashSet<usize> = HashSet::new();
@@ -102,7 +103,8 @@ fn carve_batch_wellformed_inner(size: usize, align: usize, n: usize) {
         "freed carve_batch blocks were not reused by the next allocs"
     );
     for p in again {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
 
@@ -154,7 +156,8 @@ fn mixed_drain_then_carve_refill_roundtrips() {
     assert_eq!(core.refill_class_bump(c, &mut primed), 10);
     let freed: HashSet<usize> = primed[..4].iter().map(|p| *p as usize).collect();
     for &p in &primed[..4] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 
     // Refill 12: the first up-to-4 come from the drained free list, the rest
@@ -170,10 +173,12 @@ fn mixed_drain_then_carve_refill_roundtrips() {
         "drained free blocks were not reused first (source order broken)"
     );
     for &p in &buf {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
     // The still-held 6 primed blocks also free cleanly (no corruption).
     for &p in &primed[4..] {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }

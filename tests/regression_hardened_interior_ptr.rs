@@ -154,7 +154,8 @@ fn interior_ptr_free_substrate_is_noop() {
     assert_ne!(interior, anchor);
 
     // Hazardous own-thread substrate free of the interior pointer — no-op.
-    core.dealloc(interior, layout);
+    // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+    unsafe { core.dealloc(interior, layout) };
 
     // (i) The next alloc must NOT hand back the interior pointer.
     let after = core.alloc(layout);
@@ -189,6 +190,7 @@ fn interior_ptr_free_substrate_is_noop() {
     );
 
     for &p in &issued {
-        core.dealloc(p, layout);
+        // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+        unsafe { core.dealloc(p, layout) };
     }
 }
