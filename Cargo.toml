@@ -419,6 +419,18 @@ name = "heap_xthread"
 harness = false
 required-features = ["alloc-core", "alloc-xthread"]
 
+# R5-R5 (round5 performance review §6.2, §8.2 item 2, §10 Stage C): measures
+# `SegmentTable`'s backward-shift deletion (R4-8/N3) cost as a function of
+# probe-cluster length, via the `SegmentHashHarness` test-only seam (the same
+# one `tests/segment_table_backshift_proptest.rs` uses). Single-delete timing
+# with median/p95/p99/max reported via eprintln! (criterion's own summary
+# only surfaces mean/median). Only needs `alloc-core` (the feature
+# `SegmentHashHarness` is re-exported under).
+[[bench]]
+name = "segment_table_delete_cluster"
+harness = false
+required-features = ["alloc-core"]
+
 # R5-R1 (round5 performance review §4.3/§10 Stage A.2): PRODUCTION cross-thread
 # free path bench — real producer threads through HeapRegistry::claim /
 # HeapCore::alloc / HeapCore::dealloc / HeapRegistry::recycle (the same
