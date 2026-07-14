@@ -17,6 +17,42 @@
 //! replacing the global allocator mid-process (which SeferAlloc already
 //! occupies). This is an honest apples-to-apples comparison of the alloc/dealloc
 //! hot path.
+//!
+//! ## Two confounds fixed here (performance review §4.1 items 2-3, §10 Stage B.2)
+//!
+//! 1. **Cross-group TLS heap state.** `criterion_main!` runs every
+//!    `benchmark_group()` function below in the SAME process, on the SAME
+//!    thread. `SeferAlloc::new()` is a zero-cost constructor -- it does NOT
+//!    create an independent heap; every call on this thread resolves to the
+//!    SAME per-thread `HeapCore` via TLS (see `src/global/tls_heap.rs`'s
+//!    fast path). Without a reset, an EARLIER group's leftover tcache/pool/
+//!    large-cache/segment state is still resident when a LATER group starts,
+//!    biasing that group's numbers. Fixed by calling
+//!    `SeferAlloc::dbg_trim_current_thread` (a `#[doc(hidden)]` test/bench
+//!    hook delegating to the production `HeapCore::trim_for_recycle`
+//!    teardown-trim primitive) at the start of every group that measures
+//!    SeferAlloc, so each group starts from a comparable near-empty
+//!    baseline. Chosen over fresh-subprocess-per-group isolation: this bench
+//!    runs in a couple of minutes total (short-scenario policy, see
+//!    `CLAUDE.md`), and an in-process trim is a handful of extra segment
+//!    releases per group -- negligible next to spawning `cargo bench`'s
+//!    harness N times, and it keeps `scripts/bench-table.mjs`'s single-
+//!    invocation contract (one `cargo bench` run, one stdout to parse)
+//!    intact.
+//! 2. **Fixed SeferAlloc/mimalloc/System order.** Every 3-arm block
+//!    previously registered SeferAlloc, then mimalloc, then System, in that
+//!    exact order, every time -- so any monotonic host drift (frequency
+//!    scaling, thermal throttling, background load) would systematically
+//!    bias whichever arm always runs first/last rather than averaging out.
+//!    Fixed by [`arm_rotation`]: a rotation index computed once per process
+//!    (seeded from `SystemTime`, varying run to run -- this is bench-harness
+//!    setup, not a hot allocation path, so a wall-clock seed is fine here
+//!    even though the crate avoids that pattern in `alloc`/`dealloc`) that
+//!    picks one of the 3! = 6 permutations of `[SeferAlloc, mimalloc,
+//!    System]`, advanced deterministically per `(group, size)` call so
+//!    consecutive registrations within one run also rotate. Simpler to
+//!    reason about than per-call true randomization while still breaking
+//!    "always the same arm benefits/suffers from drift".
 
 #![cfg(feature = "alloc-global")]
 #![allow(
@@ -60,6 +96,94 @@ impl XorShift64 {
         x ^= x >> 27;
         self.0 = x;
         x.wrapping_mul(0x2545_F491_4F6C_DD1D) as usize
+    }
+}
+
+/// One of the three allocator arms compared throughout this bench file.
+/// Used only to describe/permute REGISTRATION ORDER (confound 2, see the
+/// module doc) -- not a `GlobalAlloc` abstraction; each arm's actual bench
+/// closure is still written by hand against its concrete type
+/// (`SeferAlloc` / `mimalloc::MiMalloc` / `System`), so the hot path being
+/// measured is byte-identical to before this fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Arm {
+    Sefer,
+    Mimalloc,
+    System,
+}
+
+/// All 3! = 6 permutations of the three arms, fixed and enumerable so
+/// [`arm_rotation`] can pick one deterministically by index.
+const ARM_PERMUTATIONS: [[Arm; 3]; 6] = [
+    [Arm::Sefer, Arm::Mimalloc, Arm::System],
+    [Arm::Sefer, Arm::System, Arm::Mimalloc],
+    [Arm::Mimalloc, Arm::Sefer, Arm::System],
+    [Arm::Mimalloc, Arm::System, Arm::Sefer],
+    [Arm::System, Arm::Sefer, Arm::Mimalloc],
+    [Arm::System, Arm::Mimalloc, Arm::Sefer],
+];
+
+/// Confound 2 fix (module doc item 2): a monotonically advancing rotation
+/// index, ONE GLOBAL COUNTER shared by every `(group, size)` 3-arm block in
+/// this file. Each call returns the next permutation of
+/// [`ARM_PERMUTATIONS`], so consecutive registrations rotate through all 6
+/// orders instead of always running SeferAlloc -> mimalloc -> System.
+///
+/// Seeded once per process from `SystemTime` (wall-clock is fine here -- this
+/// is bench-harness registration code that runs a handful of times per
+/// process, not the `alloc`/`dealloc` hot path the rest of the crate
+/// deliberately keeps free of wall-clock reads) so the STARTING permutation
+/// also varies run to run, rather than every invocation of `cargo bench`
+/// beginning at the same fixed order.
+fn arm_rotation() -> [Arm; 3] {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+    // Lazily seed the counter from the wall clock on first use; every
+    // subsequent call just advances it. `compare_exchange` avoids a data
+    // race if criterion ever called this from more than one thread (it
+    // doesn't today -- `criterion_main!` runs groups sequentially on the
+    // main thread -- but the seed-once logic is cheap to make robust anyway).
+    let mut seed = COUNTER.load(Ordering::Relaxed);
+    if seed == usize::MAX {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as usize)
+            .unwrap_or(0);
+        let init = now % ARM_PERMUTATIONS.len();
+        match COUNTER.compare_exchange(usize::MAX, init, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => seed = init,
+            Err(actual) => seed = actual,
+        }
+    }
+    let idx = seed % ARM_PERMUTATIONS.len();
+    COUNTER.store((seed + 1) % ARM_PERMUTATIONS.len(), Ordering::Relaxed);
+    ARM_PERMUTATIONS[idx]
+}
+
+/// Register a 3-arm `bench_function` triple in the rotated order returned by
+/// [`arm_rotation`], instead of the fixed SeferAlloc -> mimalloc -> System
+/// order. `sefer_fn`/`mi_fn`/`sys_fn` are `FnMut(&mut criterion::Bencher)`
+/// closures, one per arm, built by the caller exactly as before (same body,
+/// same captures) -- this helper only changes the ORDER `group.bench_function`
+/// is called in, not what each closure measures.
+fn bench_three_arms_rotated<'a>(
+    group: &mut criterion::BenchmarkGroup<'a, criterion::measurement::WallTime>,
+    sefer_name: String,
+    mut sefer_fn: impl FnMut(&mut criterion::Bencher) + 'a,
+    mi_name: String,
+    mut mi_fn: impl FnMut(&mut criterion::Bencher) + 'a,
+    sys_name: String,
+    mut sys_fn: impl FnMut(&mut criterion::Bencher) + 'a,
+) {
+    for arm in arm_rotation() {
+        match arm {
+            Arm::Sefer => group.bench_function(sefer_name.clone(), &mut sefer_fn),
+            Arm::Mimalloc => group.bench_function(mi_name.clone(), &mut mi_fn),
+            Arm::System => group.bench_function(sys_name.clone(), &mut sys_fn),
+        };
     }
 }
 
@@ -244,26 +368,42 @@ fn bench_global_alloc(c: &mut Criterion) {
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
+    // Confound 1 fix (module doc item 1): this is the FIRST group
+    // `criterion_main!` runs, so the trim here is a no-op on a fresh process
+    // (nothing to reset yet) -- kept anyway so `bench_global_alloc` is
+    // self-consistent with every other group and safe to reorder/re-invoke
+    // independently (e.g. via a criterion `--bench` filter).
+    sefer.dbg_trim_current_thread();
+
+    // `&sefer`/`&mi`/`&sys` themselves are `Copy` (shared references), so
+    // `move` closures below capture these BY VALUE (a pointer copy) instead
+    // of borrowing `sefer`/`mi`/`sys` for the group's whole lifetime `'a` --
+    // that lets each loop iteration build fresh closures without fighting
+    // the borrow checker over `layout` (loop-local, shorter-lived than `'a`)
+    // needing to be captured by value too.
+    let sefer_ref = &sefer;
+    let mi_ref = &mi;
+    let sys_ref = &sys;
+
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        // --- SeferAlloc (called directly through its GlobalAlloc impl, exactly
-        // like mimalloc and System below — a true apples-to-apples comparison of
-        // the alloc/dealloc hot path; SeferAlloc is NOT installed as the bench
-        // binary's global allocator, so we must call it directly) ---
-        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter(|| bench_direct_alloc(&sefer, layout))
-        });
-
-        // --- mimalloc (called directly) ---
-        group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter(|| bench_direct_alloc(&mi, layout))
-        });
-
-        // --- System (called directly) ---
-        group.bench_function(format!("System/{size}B"), |b| {
-            b.iter(|| bench_direct_alloc(&sys, layout))
-        });
+        // --- SeferAlloc / mimalloc / System (each called directly through its
+        // GlobalAlloc impl -- a true apples-to-apples comparison of the
+        // alloc/dealloc hot path; SeferAlloc is NOT installed as the bench
+        // binary's global allocator, so we must call it directly).
+        // Confound 2 fix (module doc item 2): registration order is rotated
+        // per `(group, size)` via `bench_three_arms_rotated` instead of
+        // always SeferAlloc -> mimalloc -> System. ---
+        bench_three_arms_rotated(
+            &mut group,
+            format!("SeferAlloc/{size}B"),
+            move |b| b.iter(|| bench_direct_alloc(sefer_ref, layout)),
+            format!("mimalloc/{size}B"),
+            move |b| b.iter(|| bench_direct_alloc(mi_ref, layout)),
+            format!("System/{size}B"),
+            move |b| b.iter(|| bench_direct_alloc(sys_ref, layout)),
+        );
     }
 
     // --- Real-world pattern: Vec<i64> push/grow churn ---
@@ -276,117 +416,125 @@ fn bench_global_alloc(c: &mut Criterion) {
     // tracked honestly across steps (mirroring the System arm) so every
     // dealloc matches the layout its block was allocated with.
     const VEC_PUSHES: usize = 512;
-    group.bench_function("Vec_push/SeferAlloc", |b| {
-        b.iter(|| {
-            // Manual Vec growth through SeferAlloc's GlobalAlloc directly, so
-            // the measurement is SeferAlloc (not the bench binary's default
-            // global allocator) — symmetric with the mimalloc/System arms below.
-            let mut ptr: *mut i64 = core::ptr::null_mut();
-            let mut cap: usize = 0;
-            let mut len: usize = 0;
-            for i in 0..VEC_PUSHES {
-                if len == cap {
-                    let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
-                    // SAFETY: realloc-like growth through SeferAlloc.
-                    let new_ptr = unsafe { sefer.alloc(new_layout) };
-                    if !new_ptr.is_null() && !ptr.is_null() {
-                        let old_layout = Layout::array::<i64>(cap).unwrap();
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
-                            sefer.dealloc(ptr as *mut u8, old_layout);
+    // Confound 2 fix: rotated registration order (see the module doc and
+    // `bench_direct_alloc`'s call site above) — same three closures as
+    // before, just no longer always registered SeferAlloc -> mimalloc ->
+    // System.
+    bench_three_arms_rotated(
+        &mut group,
+        "Vec_push/SeferAlloc".to_string(),
+        |b| {
+            b.iter(|| {
+                // Manual Vec growth through SeferAlloc's GlobalAlloc directly, so
+                // the measurement is SeferAlloc (not the bench binary's default
+                // global allocator) — symmetric with the mimalloc/System arms below.
+                let mut ptr: *mut i64 = core::ptr::null_mut();
+                let mut cap: usize = 0;
+                let mut len: usize = 0;
+                for i in 0..VEC_PUSHES {
+                    if len == cap {
+                        let new_cap = if cap == 0 { 4 } else { cap * 2 };
+                        let new_layout = Layout::array::<i64>(new_cap).unwrap();
+                        // SAFETY: realloc-like growth through SeferAlloc.
+                        let new_ptr = unsafe { sefer.alloc(new_layout) };
+                        if !new_ptr.is_null() && !ptr.is_null() {
+                            let old_layout = Layout::array::<i64>(cap).unwrap();
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
+                                sefer.dealloc(ptr as *mut u8, old_layout);
+                            }
                         }
+                        ptr = new_ptr as *mut i64;
+                        cap = new_cap;
                     }
-                    ptr = new_ptr as *mut i64;
-                    cap = new_cap;
+                    // SAFETY: ptr is valid for `cap` elements if non-null.
+                    if !ptr.is_null() {
+                        unsafe { ptr.add(len).write(i as i64) };
+                    }
+                    len += 1;
                 }
-                // SAFETY: ptr is valid for `cap` elements if non-null.
+                black_box(ptr);
+                black_box(len);
                 if !ptr.is_null() {
-                    unsafe { ptr.add(len).write(i as i64) };
+                    let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
+                    unsafe { sefer.dealloc(ptr as *mut u8, final_layout) };
                 }
-                len += 1;
-            }
-            black_box(ptr);
-            black_box(len);
-            if !ptr.is_null() {
-                let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
-                unsafe { sefer.dealloc(ptr as *mut u8, final_layout) };
-            }
-        })
-    });
-
-    group.bench_function("Vec_push/mimalloc", |b| {
-        b.iter(|| {
-            // mimalloc is NOT the global allocator here (SeferAlloc is), so we
-            // manually replicate Vec growth via mimalloc's GlobalAlloc.
-            let mut ptr: *mut i64 = core::ptr::null_mut();
-            let mut cap: usize = 0;
-            let mut len: usize = 0;
-            for i in 0..VEC_PUSHES {
-                if len == cap {
-                    let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
-                    // SAFETY: realloc-like growth through mimalloc.
-                    let new_ptr = unsafe { mi.alloc(new_layout) };
-                    if !new_ptr.is_null() && !ptr.is_null() {
-                        let old_layout = Layout::array::<i64>(cap).unwrap();
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
-                            mi.dealloc(ptr as *mut u8, old_layout);
+            })
+        },
+        "Vec_push/mimalloc".to_string(),
+        |b| {
+            b.iter(|| {
+                // mimalloc is NOT the global allocator here (SeferAlloc is), so we
+                // manually replicate Vec growth via mimalloc's GlobalAlloc.
+                let mut ptr: *mut i64 = core::ptr::null_mut();
+                let mut cap: usize = 0;
+                let mut len: usize = 0;
+                for i in 0..VEC_PUSHES {
+                    if len == cap {
+                        let new_cap = if cap == 0 { 4 } else { cap * 2 };
+                        let new_layout = Layout::array::<i64>(new_cap).unwrap();
+                        // SAFETY: realloc-like growth through mimalloc.
+                        let new_ptr = unsafe { mi.alloc(new_layout) };
+                        if !new_ptr.is_null() && !ptr.is_null() {
+                            let old_layout = Layout::array::<i64>(cap).unwrap();
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
+                                mi.dealloc(ptr as *mut u8, old_layout);
+                            }
                         }
+                        ptr = new_ptr as *mut i64;
+                        cap = new_cap;
                     }
-                    ptr = new_ptr as *mut i64;
-                    cap = new_cap;
+                    // SAFETY: ptr is valid for `cap` elements if non-null.
+                    if !ptr.is_null() {
+                        unsafe { ptr.add(len).write(i as i64) };
+                    }
+                    len += 1;
                 }
-                // SAFETY: ptr is valid for `cap` elements if non-null.
+                black_box(ptr);
+                black_box(len);
                 if !ptr.is_null() {
-                    unsafe { ptr.add(len).write(i as i64) };
+                    let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
+                    unsafe { mi.dealloc(ptr as *mut u8, final_layout) };
                 }
-                len += 1;
-            }
-            black_box(ptr);
-            black_box(len);
-            if !ptr.is_null() {
-                let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
-                unsafe { mi.dealloc(ptr as *mut u8, final_layout) };
-            }
-        })
-    });
-
-    group.bench_function("Vec_push/System", |b| {
-        b.iter(|| {
-            let mut ptr: *mut i64 = core::ptr::null_mut();
-            let mut cap: usize = 0;
-            let mut len: usize = 0;
-            for i in 0..VEC_PUSHES {
-                if len == cap {
-                    let new_cap = if cap == 0 { 4 } else { cap * 2 };
-                    let new_layout = Layout::array::<i64>(new_cap).unwrap();
-                    // SAFETY: realloc-like growth through System.
-                    let new_ptr = unsafe { sys.alloc(new_layout) };
-                    if !new_ptr.is_null() && !ptr.is_null() {
-                        let old_layout = Layout::array::<i64>(cap.max(1)).unwrap();
-                        unsafe {
-                            core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
-                            sys.dealloc(ptr as *mut u8, old_layout);
+            })
+        },
+        "Vec_push/System".to_string(),
+        |b| {
+            b.iter(|| {
+                let mut ptr: *mut i64 = core::ptr::null_mut();
+                let mut cap: usize = 0;
+                let mut len: usize = 0;
+                for i in 0..VEC_PUSHES {
+                    if len == cap {
+                        let new_cap = if cap == 0 { 4 } else { cap * 2 };
+                        let new_layout = Layout::array::<i64>(new_cap).unwrap();
+                        // SAFETY: realloc-like growth through System.
+                        let new_ptr = unsafe { sys.alloc(new_layout) };
+                        if !new_ptr.is_null() && !ptr.is_null() {
+                            let old_layout = Layout::array::<i64>(cap.max(1)).unwrap();
+                            unsafe {
+                                core::ptr::copy_nonoverlapping(ptr, new_ptr as *mut i64, len);
+                                sys.dealloc(ptr as *mut u8, old_layout);
+                            }
                         }
+                        ptr = new_ptr as *mut i64;
+                        cap = new_cap;
                     }
-                    ptr = new_ptr as *mut i64;
-                    cap = new_cap;
+                    if !ptr.is_null() {
+                        unsafe { ptr.add(len).write(i as i64) };
+                    }
+                    len += 1;
                 }
+                black_box(ptr);
+                black_box(len);
                 if !ptr.is_null() {
-                    unsafe { ptr.add(len).write(i as i64) };
+                    let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
+                    unsafe { sys.dealloc(ptr as *mut u8, final_layout) };
                 }
-                len += 1;
-            }
-            black_box(ptr);
-            black_box(len);
-            if !ptr.is_null() {
-                let final_layout = Layout::array::<i64>(cap.max(1)).unwrap();
-                unsafe { sys.dealloc(ptr as *mut u8, final_layout) };
-            }
-        })
-    });
+            })
+        },
+    );
 
     group.finish();
 }
@@ -401,6 +549,17 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
+    // Confound 1 fix: reset SeferAlloc's per-thread heap to a comparable
+    // baseline before this group's measurements begin, so leftover
+    // segment/tcache/pool/cache state from an EARLIER group in the same
+    // `criterion_main!` run (e.g. `global_alloc`'s Cold-direct arm, which
+    // runs before this group) does not bias "Churn, non-writing" — see the
+    // module doc's confound 1 writeup.
+    sefer.dbg_trim_current_thread();
+    let sefer_ref = &sefer;
+    let mi_ref = &mi;
+    let sys_ref = &sys;
+
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
@@ -411,51 +570,56 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
         // does NOT time (only the routine closure's own execution is timed) —
         // so the reported ns/op divides by exactly `OPS`, with neither the
         // ~25% cold-phase skew F7 fixed nor the ~85%-at-1024B teardown skew
-        // this pass fixes.
-        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&sefer, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&sefer, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &sefer,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&mi, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&mi, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &mi,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("System/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&sys, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&sys, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &sys,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        // this pass fixes. Confound 2 fix: rotated registration order (see
+        // module doc) instead of fixed SeferAlloc -> mimalloc -> System.
+        bench_three_arms_rotated(
+            &mut group,
+            format!("SeferAlloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(sefer_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(sefer_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: sefer_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("mimalloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(mi_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(mi_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: mi_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("System/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(sys_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(sys_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: sys_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 
     group.finish();
@@ -481,41 +645,52 @@ fn bench_global_alloc_churn_with_teardown(c: &mut Criterion) {
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
+    // Confound 1 fix — see `bench_global_alloc_churn`'s identical call.
+    sefer.dbg_trim_current_thread();
+    let sefer_ref = &sefer;
+    let mi_ref = &mi;
+    let sys_ref = &sys;
+
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
-        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&sefer, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&sefer, layout, &mut live, OPS);
-                    churn_teardown(&sefer, layout, &live);
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&mi, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&mi, layout, &mut live, OPS);
-                    churn_teardown(&mi, layout, &live);
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("System/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill(&sys, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step(&sys, layout, &mut live, OPS);
-                    churn_teardown(&sys, layout, &live);
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        // Confound 2 fix: rotated registration order (see module doc).
+        bench_three_arms_rotated(
+            &mut group,
+            format!("SeferAlloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(sefer_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(sefer_ref, layout, &mut live, OPS);
+                        churn_teardown(sefer_ref, layout, &live);
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("mimalloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(mi_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(mi_ref, layout, &mut live, OPS);
+                        churn_teardown(mi_ref, layout, &live);
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("System/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill(sys_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step(sys_ref, layout, &mut live, OPS);
+                        churn_teardown(sys_ref, layout, &live);
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 
     group.finish();
@@ -531,56 +706,67 @@ fn bench_global_alloc_churn_write(c: &mut Criterion) {
     let mi = mimalloc::MiMalloc;
     let sys = System;
 
+    // Confound 1 fix — see `bench_global_alloc_churn`'s identical call.
+    sefer.dbg_trim_current_thread();
+    let sefer_ref = &sefer;
+    let mi_ref = &mi;
+    let sys_ref = &sys;
+
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
         // F7 + PERF-PASS-1 (task #49, G3/A2a): time ONLY the churn loop (see
         // the non-writing group above) — teardown moved to the untimed
-        // `ChurnTeardownGuard::drop`.
-        group.bench_function(format!("SeferAlloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill_write(&sefer, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step_write(&sefer, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &sefer,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("mimalloc/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill_write(&mi, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step_write(&mi, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &mi,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
-
-        group.bench_function(format!("System/{size}B"), |b| {
-            b.iter_batched(
-                || churn_prefill_write(&sys, layout, CHURN_WORKING_SET),
-                |mut live| {
-                    churn_step_write(&sys, layout, &mut live, OPS);
-                    ChurnTeardownGuard {
-                        alloc: &sys,
-                        layout,
-                        live,
-                    }
-                },
-                BatchSize::SmallInput,
-            )
-        });
+        // `ChurnTeardownGuard::drop`. Confound 2 fix: rotated registration
+        // order (see module doc).
+        bench_three_arms_rotated(
+            &mut group,
+            format!("SeferAlloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill_write(sefer_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step_write(sefer_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: sefer_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("mimalloc/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill_write(mi_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step_write(mi_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: mi_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+            format!("System/{size}B"),
+            move |b| {
+                b.iter_batched(
+                    || churn_prefill_write(sys_ref, layout, CHURN_WORKING_SET),
+                    |mut live| {
+                        churn_step_write(sys_ref, layout, &mut live, OPS);
+                        ChurnTeardownGuard {
+                            alloc: sys_ref,
+                            layout,
+                            live,
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            },
+        );
     }
 
     group.finish();
@@ -647,15 +833,22 @@ fn bench_global_segment_decommit_cycle(c: &mut Criterion) {
     // second one non-current, which is what actually triggers decommit.
     let layout = Layout::from_size_align(258_752, 8).unwrap();
 
-    group.bench_function("SeferAlloc/253KiB", |b| {
-        b.iter(|| bench_segment_decommit_cycle(&sefer, layout))
-    });
-    group.bench_function("mimalloc/253KiB", |b| {
-        b.iter(|| bench_segment_decommit_cycle(&mi, layout))
-    });
-    group.bench_function("System/253KiB", |b| {
-        b.iter(|| bench_segment_decommit_cycle(&sys, layout))
-    });
+    // Confound 1 fix — see `bench_global_alloc_churn`'s identical call. This
+    // group deliberately fills/empties several 4 MiB segments, so leftover
+    // segment-table state from an earlier group is exactly the kind of
+    // carryover that would bias the decommit-trigger geometry here.
+    sefer.dbg_trim_current_thread();
+
+    // Confound 2 fix: rotated registration order (see module doc).
+    bench_three_arms_rotated(
+        &mut group,
+        "SeferAlloc/253KiB".to_string(),
+        |b| b.iter(|| bench_segment_decommit_cycle(&sefer, layout)),
+        "mimalloc/253KiB".to_string(),
+        |b| b.iter(|| bench_segment_decommit_cycle(&mi, layout)),
+        "System/253KiB".to_string(),
+        |b| b.iter(|| bench_segment_decommit_cycle(&sys, layout)),
+    );
 
     group.finish();
 }
@@ -739,6 +932,11 @@ fn bench_working_set_cycle(c: &mut Criterion) {
     group.measurement_time(Duration::from_millis(600));
 
     let sefer = SeferAlloc::new();
+
+    // Confound 1 fix — see `bench_global_alloc_churn`'s identical call. Only
+    // SeferAlloc is measured in this group (no mimalloc/System arm, so no
+    // confound-2 rotation applies here — see the group's own doc comment).
+    sefer.dbg_trim_current_thread();
 
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();

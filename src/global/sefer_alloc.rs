@@ -381,6 +381,51 @@ impl SeferAlloc {
             config_conflicts: 0,
         }
     }
+
+    /// TEST/BENCH-ONLY: trim the CALLING thread's own heap back to a
+    /// comparable empty-ish baseline — flush every tcache class's magazine,
+    /// drain the small-segment hysteresis pool, and evict the entire large
+    /// cache. Delegates to the exact production teardown-trim primitive
+    /// (`HeapCore::trim_for_recycle`, task #95/N1) that thread-exit already
+    /// runs before a registry slot is recycled; this hook just calls it
+    /// WITHOUT tearing down TLS or recycling the slot, so the calling
+    /// thread keeps using the SAME heap afterward (an alloc right after this
+    /// call takes the normal cold-claim-a-fresh-segment path instead of
+    /// hitting a warm tcache/pool/cache the previous phase left behind).
+    ///
+    /// **Why this exists.** `benches/global_alloc.rs`'s `criterion_main!`
+    /// invokes all registered `benchmark_group()` functions in the SAME
+    /// process, on the SAME thread. Every `SeferAlloc::new()` call inside
+    /// each group resolves to the SAME underlying per-thread `HeapCore` (TLS
+    /// caches the first-claimed heap for the thread's lifetime — see
+    /// `global::tls_heap`'s fast path), so segment high-water marks, tcache
+    /// occupancy, the small-segment pool, and the large cache from an
+    /// EARLIER group are still resident when a LATER group starts. Calling
+    /// this hook between `benchmark_group()` calls resets that shared state
+    /// to a comparable baseline without paying for a fresh subprocess per
+    /// group (cargo bench harness re-init, criterion setup) on every one of
+    /// the 7 groups this bench registers.
+    ///
+    /// On the fallback heap (TLS torn down / registry exhausted — never
+    /// expected mid-bench-run on a live thread) this is a no-op: there is no
+    /// per-thread heap to trim, and the fallback is process-shared, not
+    /// per-group state.
+    ///
+    /// `#[doc(hidden)]` — not part of the public API; the established
+    /// test-only export pattern documented in `src/lib.rs`'s `#[doc(hidden)]`
+    /// notes. Not reachable from normal production alloc/dealloc paths (those
+    /// never call `trim_for_recycle` except from `AbandonGuard::drop` on
+    /// thread exit).
+    #[doc(hidden)]
+    pub fn dbg_trim_current_thread(&self) {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
+            // just resolved it for the calling thread.
+            unsafe { (*heap).trim_for_recycle() };
+        }
+    }
 }
 
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/
