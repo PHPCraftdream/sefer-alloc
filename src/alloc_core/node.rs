@@ -258,9 +258,12 @@ impl Node {
     }
 
     /// Read a single `u32` from `src` (aligned). Used by the field-specific
-    /// segment-header accessor for `magic` (the sanity word written once at
-    /// segment init and only read thereafter — a field read does not race with
-    /// the owner's `bump` field writes because they touch disjoint bytes).
+    /// segment-header accessors for `segment_id` and `live_count` (single-word
+    /// owner-only / once-written fields — a field read does not race the
+    /// owner's `bump` field writes because they touch disjoint bytes). NOT used
+    /// for `magic`: that field is also atomically zeroed on recycle, so its
+    /// cross-thread read is an atomic Acquire load via [`atomic_u32_at`] (see
+    /// `SegmentHeader::magic_at`, R6-MS-5).
     ///
     /// `src` MUST be valid for 4 bytes, 4-byte aligned, in a live segment.
     // Used by the alloc-xthread cross-thread path; under `alloc-core` alone

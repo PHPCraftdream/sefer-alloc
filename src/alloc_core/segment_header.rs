@@ -630,10 +630,13 @@ impl SegmentHeader {
     /// dealloc-routing hot path needs just this together with `magic` and
     /// `owner_thread_free`; reading each field individually avoids the
     /// full-struct `read_at` that raced with the owner's `bump` field writes
-    /// (the §11 root cause — `kind`/`magic`/`owner_thread_free` are written
-    /// once at init/stamp time and only read cross-thread thereafter, so a
-    /// field read of any of them does not race with the owner's `bump` writes
-    /// on a disjoint field).
+    /// (the §11 root cause — `kind`/`owner_thread_free` are written once at
+    /// init/stamp time and only read cross-thread thereafter, with no atomic
+    /// writer anywhere, so a plain field read of either does not race the
+    /// owner's `bump` writes on a disjoint field. `magic` is read separately
+    /// by `magic_at` as an ATOMIC load because it IS atomically zeroed on
+    /// recycle — see that accessor and the R6-MS-5 audit note in the block
+    /// comment above `bump_of`).
     #[allow(dead_code)] // Used by Phase 9+ cross-thread routing; kept for that.
     #[inline(always)]
     pub(crate) fn kind_at(base: *mut u8) -> SegmentKind {
@@ -672,17 +675,42 @@ impl SegmentHeader {
         }
     }
 
-    /// Read the header's `magic` field only (field-specific `u32` load). Used
-    /// by the cross-thread dealloc-routing path to validate the segment base
-    /// without reading the whole mutable header. `magic` is written once at
-    /// segment init and only read thereafter, so this field read does not race
-    /// with the owner's `bump` field writes.
+    /// Read the header's `magic` field only (field-specific ATOMIC `u32`
+    /// load). Used by the cross-thread dealloc-routing path to validate the
+    /// segment base without reading the whole mutable header.
+    ///
+    /// `magic` is laid down as `SEGMENT_MAGIC` at segment construction (via a
+    /// full-struct `Node::write_struct`) and is then ATOMICALLY zeroed by the
+    /// large-object recycle/reclaim paths when a segment is returned to the
+    /// OS-reservation cache — `AllocCore::dealloc`'s Large-cache-deposit
+    /// branch (`alloc_core.rs`) and `AllocCore::alloc_large`'s eviction branch
+    /// (`alloc_core_large.rs`) both write it through
+    /// `Node::atomic_u32_at(base, off).store(0, Ordering::Release)`. A PLAIN
+    /// (non-atomic) read here, racing that atomic store from another thread,
+    /// is a data race under Rust's memory model (R6-MS-5 / U-R5-1) — and the
+    /// defensive-free contract exists precisely to stay safe under caller
+    /// misuse (a stale/duplicate remote free), which is exactly the misuse
+    /// that can interleave this read with the recycler's atomic zeroing store,
+    /// so this validation route must not itself become a data-race source.
+    ///
+    /// We therefore read through the same `&AtomicU32` view at `magic`'s
+    /// `offset_of!` offset the writers use, with `Ordering::Acquire` to pair
+    /// their `Release` store: this field is the FIRST thing the cross-thread
+    /// dealloc-routing path reads before touching any further header state
+    /// (`kind_at`/`owner_thread_free_at`/`large_size_at`), and an Acquire load
+    /// keeps those subsequent reads ordered after the header-write they
+    /// describe (a load observing `SEGMENT_MAGIC` sees a live, fully-
+    /// constructed header; a load observing `0` has synchronized-with the
+    /// recycler's Release and routes the base to the foreign/no-op branch). On
+    /// x86_64 an Acquire `u32` load compiles to a plain `mov` (no fence), so
+    /// this is not a pessimization of the hot free path — confirmed by the iai
+    /// before/after in the R6-MS-5 commit (Ir unchanged on the recycle bench).
     #[cfg(feature = "alloc-xthread")]
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn magic_at(base: *mut u8) -> u32 {
         let off = core::mem::offset_of!(SegmentHeader, magic);
-        Node::read_u32(Node::offset(base, off) as *const u32)
+        Node::atomic_u32_at(base, off).load(core::sync::atomic::Ordering::Acquire)
     }
 
     /// Read the header's `owner_thread_free` field only (field-specific pointer
@@ -1212,10 +1240,17 @@ impl SegmentMeta {
     //   - `bump_of` / `set_bump` — owner-only (the Owner is the sole writer
     //     and the sole reader of `bump`; no Remote ever reads it), so a plain
     //     field read/write is race-free.
-    //   - the cross-thread-read fields (`magic`, `kind`,
-    //     `owner_thread_free`) are written ONCE at init/stamp time and only
-    //     read cross-thread thereafter, so a field read of any of them does
-    //     not race with the owner's disjoint-field `bump` writes.
+    //   - the cross-thread-read fields split by access kind:
+    //     * `kind`, `owner_thread_free` are written ONCE at init/stamp time
+    //       and only read cross-thread thereafter — a plain field read of
+    //       either does not race the owner's disjoint-field `bump` writes
+    //       (verified R6-MS-5: no atomic writer exists for either field, so
+    //       there is no plain-read-vs-atomic-store access-kind mismatch).
+    //     * `magic` is the EXCEPTION — it is ALSO atomically zeroed on
+    //       Large-segment recycle-to-cache (UBFIX-6), so its cross-thread
+    //       read is an ATOMIC Acquire load (`magic_at` via `atomic_u32_at`),
+    //       NOT a plain field read, pairing the recycler's Release store.
+    //       (R6-MS-5 / U-R5-1 closed this access-kind mismatch.)
     // -------------------------------------------------------------------
 
     /// Read the owner-only `bump` cursor (the next uncarved payload byte
