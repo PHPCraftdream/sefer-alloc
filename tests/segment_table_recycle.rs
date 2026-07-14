@@ -357,7 +357,14 @@ fn recycle_defensive_tail_evicts_hash_and_cache() {
     // `unregister_defends_against_mismatched_segment_id` does for
     // `unregister`. `recycle`'s O(1) lookup will read `slots[b_id]`, find
     // `b` there (not `a`), and fall into the defensive tail.
-    ac.dbg_stamp_segment_id(a, b_id);
+    // SAFETY (R6-CQ-2): `a` is a live allocation owned by `ac`. The corrupted
+    // `b_id` is consumed ONLY by `dbg_recycle(a)` below — a test-only teardown
+    // whose `slots[id] == base` defensive guard reads `slots[b_id]`, finds `b`
+    // (not `a`), and takes the defensive tail (releasing `a`'s OS reservation)
+    // WITHOUT routing on the stamped id being correct. `ac` is then
+    // `mem::forget`-ed, so no safe `alloc`/`dealloc`/`Drop` ever routes on the
+    // corrupted value. Teardown-via-test-seam per the `# Safety` contract.
+    unsafe { ac.dbg_stamp_segment_id(a, b_id) };
 
     // Drive `a` through `recycle`'s defensive-mismatch tail. This releases
     // `a`'s OS reservation (to avoid a leak) but — under the fix — must ALSO

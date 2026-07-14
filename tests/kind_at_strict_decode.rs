@@ -115,7 +115,13 @@ fn kind_at_rejects_corrupt_discriminant() {
 
     // Corrupt the kind byte to an arbitrary out-of-range value.
     for &corrupt_byte in &[3u8, 7, 42, 0x7F, 0xFE] {
-        ac.dbg_stamp_kind_byte(large_ptr, corrupt_byte);
+        // SAFETY (R6-CQ-2): `large_ptr` is a live allocation owned by `ac`.
+        // While the byte holds each `corrupt_byte`, only READ-ONLY `dbg_*`
+        // accessors (`dbg_kind_byte_of`/`dbg_kind_at_tag`) touch the segment —
+        // no routing `alloc`/`dealloc`/`realloc`/`Drop` runs. The byte is
+        // restored to the true `Large` discriminant (2) after the loop, before
+        // `dealloc`. Restore-before-further-use per the `# Safety` contract.
+        unsafe { ac.dbg_stamp_kind_byte(large_ptr, corrupt_byte) };
         assert_eq!(
             ac.dbg_kind_byte_of(large_ptr),
             corrupt_byte,
@@ -135,7 +141,11 @@ fn kind_at_rejects_corrupt_discriminant() {
     // Restore the legitimate byte before cleanup so `dealloc`'s own
     // `kind_at` read routes this Large free correctly (this test corrupts
     // metadata deliberately but must not leak the segment).
-    ac.dbg_stamp_kind_byte(large_ptr, 2);
+    // SAFETY (R6-CQ-2): `large_ptr` is a live allocation owned by `ac`; `2` is
+    // the `Large` discriminant (the segment's true kind, asserted by the
+    // `dbg_kind_at_tag` below), so this stamp RESTORES the byte to its correct
+    // value before `dealloc`.
+    unsafe { ac.dbg_stamp_kind_byte(large_ptr, 2) };
     assert_eq!(ac.dbg_kind_at_tag(large_ptr), 2, "restore failed");
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(large_ptr, large_layout) };
@@ -162,7 +172,14 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
     // Corrupt to an unrecognised kind byte, then attempt to free it via the
     // PUBLIC `dealloc` entry point (not a `dbg_*` test seam) — this exercises
     // the actual production `match` arm this fix added.
-    ac.dbg_stamp_kind_byte(large_ptr, 0x99);
+    // SAFETY (R6-CQ-2): `large_ptr` is a live allocation owned by `ac`. The
+    // stamped `0x99` is outside {0,1,2}, so `kind_at` decodes it to `Unknown`
+    // and the `dealloc` that follows takes `dealloc`'s documented
+    // `SegmentKind::Unknown => {}` no-op arm (proven by this test) — it does
+    // NOT route the segment down any Small/Large/Primordial path. The byte is
+    // restored to the true `Large` discriminant below before the real `dealloc`.
+    // The documented-no-op-routing exception in the `# Safety` contract.
+    unsafe { ac.dbg_stamp_kind_byte(large_ptr, 0x99) };
     assert_eq!(
         ac.dbg_kind_at_tag(large_ptr),
         3,
@@ -196,7 +213,10 @@ fn dealloc_on_unknown_kind_is_noop_not_crash() {
 
     // Restore the legitimate kind byte and free it properly, so the segment
     // does not leak for the rest of the test process.
-    ac.dbg_stamp_kind_byte(large_ptr, 2);
+    // SAFETY (R6-CQ-2): `large_ptr` is a live allocation owned by `ac`; `2` is
+    // the `Large` discriminant (the segment's true kind), so this stamp
+    // RESTORES the byte to its correct value before the real `dealloc`.
+    unsafe { ac.dbg_stamp_kind_byte(large_ptr, 2) };
     assert_eq!(ac.dbg_kind_at_tag(large_ptr), 2, "restore failed");
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(large_ptr, large_layout) };

@@ -221,8 +221,14 @@ fn unregister_defends_against_mismatched_segment_id() {
     let b_id = ac.dbg_segment_id_of(b);
     assert_ne!(a_id, b_id, "precondition: distinct segment ids");
 
-    ac.dbg_stamp_segment_id(a, b_id); // corrupt a's stamped id to b's id
-                                      // SAFETY: `a` is a live allocation owned by `ac`.
+    // SAFETY (R6-CQ-2): `a` is a live allocation owned by `ac`. The corrupted
+    // `b_id` is restored to `a`'s true `a_id` below before any routing
+    // `dealloc` touches `a`; the only operation between this stamp and that
+    // restore is `dbg_unregister(a)` — a test-only teardown whose
+    // `slots[id] == base` defensive guard rejects the corrupted id as a no-op
+    // and does NOT route on the stamped value. Restore-before-further-use.
+    unsafe { ac.dbg_stamp_segment_id(a, b_id) }; // corrupt a's stamped id to b's id
+                                                 // SAFETY: `a` is a live allocation owned by `ac`.
     unsafe { ac.dbg_unregister(a) }; // O(1) path reads the (corrupted) id -> finds `b` there -> no-op
 
     // Both must still be considered live (defensive no-op held): `a`'s slot
@@ -239,7 +245,11 @@ fn unregister_defends_against_mismatched_segment_id() {
     );
 
     // Restore a's real id and clean up properly.
-    ac.dbg_stamp_segment_id(a, a_id);
+    // SAFETY (R6-CQ-2): `a` is a live allocation owned by `ac`; `a_id` is `a`'s
+    // true segment id (captured above via `dbg_segment_id_of`), so this stamp
+    // RESTORES the field to its correct value before the `dealloc(a)` that
+    // follows — no routing operation runs while the field is inconsistent.
+    unsafe { ac.dbg_stamp_segment_id(a, a_id) };
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(a, layout) };
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.

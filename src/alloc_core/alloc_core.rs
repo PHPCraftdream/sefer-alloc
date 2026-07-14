@@ -1186,8 +1186,41 @@ impl AllocCore {
     /// `ptr`'s segment (field-specific write). Used to construct the
     /// corrupted-id scenario exercised by
     /// `unregister_defends_against_mismatched_segment_id`.
+    ///
+    /// # Safety
+    ///
+    /// The stamped `segment_id` is load-bearing allocator metadata:
+    /// `SegmentTable`'s O(1) slot lookup indexes `slots[segment_id]` with it
+    /// (`unregister` / `recycle` / the hash/own-cache probes behind
+    /// `contains_base`), so an `id` inconsistent with the segment's true slot
+    /// can make a later lookup land on the WRONG slot — corrupting the O(1)
+    /// lookup for BOTH the stamped segment and the segment whose id was
+    /// borrowed. This is the same "writes raw / load-bearing metadata" class
+    /// that made [`dbg_unregister`](Self::dbg_unregister) /
+    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
+    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// restrict Rust reachability, so a fully-safe call could overwrite the
+    /// field with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
+    /// CRITICAL). The `contains_base_ro` assert below only proves the segment
+    /// BELONGS to this `AllocCore`; it does NOT preserve the field's invariant.
+    ///
+    /// The caller must guarantee that, between this stamp and the field being
+    /// restored to the segment's true `segment_id`, NO safe
+    /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
+    /// stamped value — i.e. one of:
+    ///
+    /// - the stamped `id` is restored to the segment's true value (captured
+    ///   beforehand via [`dbg_segment_id_of`](Self::dbg_segment_id_of)) before
+    ///   any further allocator operation touches the segment; OR
+    /// - the segment is consumed ONLY by a `#[doc(hidden)]` test-only teardown
+    ///   seam ([`dbg_unregister`](Self::dbg_unregister) /
+    ///   [`dbg_recycle`](Self::dbg_recycle)) whose `slots[id] == base`
+    ///   defensive guard rejects the corrupted id as a no-op / defensive tail
+    ///   and does NOT route on the stamped field being correct.
     #[doc(hidden)]
-    pub fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
+    #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
+    pub unsafe fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
         let base = os::segment_base_of_ptr(ptr);
         assert!(
             self.table.contains_base_ro(base),
@@ -1226,8 +1259,52 @@ impl AllocCore {
     /// Mirrors `dbg_stamp_segment_id`'s established test-only field-corruption
     /// pattern (`offset_of!` + `Node::write_*`), applied to the `kind` byte
     /// instead of `segment_id`.
+    ///
+    /// # Safety
+    ///
+    /// The stamped `kind` discriminant byte is load-bearing allocator metadata:
+    /// `dealloc` / `realloc` / `Drop` decode it via `SegmentHeader::kind_at` and
+    /// route the segment down the matching `Small` / `Large` / `Primordial`
+    /// path. A `raw` value inconsistent with the segment's true kind mis-routes
+    /// the segment — e.g. a `Large` segment whose `kind` byte is stamped to the
+    /// `Small` discriminant gets freed down the `Small` path, writing a
+    /// `BinTable` / free-list header into the live `Large` payload. (Any byte
+    /// outside {0,1,2} decodes to `Unknown`, whose `dealloc` arm is a documented
+    /// no-op — see [`dealloc`](AllocCore::dealloc) — so stamping such a byte and
+    /// then `dealloc`-ing exercises that no-op path, not a mis-route.) This is
+    /// the same "writes raw / load-bearing metadata" class that made
+    /// [`dbg_unregister`](Self::dbg_unregister) /
+    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
+    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// restrict Rust reachability, so a fully-safe call could overwrite the byte
+    /// with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
+    /// CRITICAL). The `contains_base_ro` assert below only proves the segment
+    /// BELONGS to this `AllocCore`; it does NOT preserve the byte's invariant.
+    ///
+    /// The caller must guarantee that, between this stamp and the byte being
+    /// restored to the segment's true `kind` discriminant, NO safe
+    /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
+    /// stamped value — i.e. one of:
+    ///
+    /// - the stamped byte is restored to the segment's true discriminant
+    ///   (captured beforehand via [`dbg_kind_byte_of`](Self::dbg_kind_byte_of))
+    ///   before any routing allocator operation touches the segment (read-only
+    ///   `dbg_*` accessors that do not route, such as
+    ///   [`dbg_kind_byte_of`](Self::dbg_kind_byte_of) /
+    ///   [`dbg_kind_at_tag`](Self::dbg_kind_at_tag), may run while the byte is
+    ///   corrupted); OR
+    /// - the only routing operation run while the byte is corrupted is one the
+    ///   allocator performs as a documented no-op regardless of the value, such
+    ///   as [`dealloc`](AllocCore::dealloc)'s `SegmentKind::Unknown => {}` arm;
+    ///   OR
+    /// - the segment is consumed ONLY by a `#[doc(hidden)]` test-only teardown
+    ///   seam ([`dbg_unregister`](Self::dbg_unregister) /
+    ///   [`dbg_recycle`](Self::dbg_recycle)) that does NOT route on the stamped
+    ///   byte being correct.
     #[doc(hidden)]
-    pub fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
+    #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
+    pub unsafe fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
         let base = os::segment_base_of_ptr(ptr);
         assert!(
             self.table.contains_base_ro(base),
