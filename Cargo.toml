@@ -419,6 +419,18 @@ name = "heap_xthread"
 harness = false
 required-features = ["alloc-core", "alloc-xthread"]
 
+# R5-R1 (round5 performance review §4.3/§10 Stage A.2): PRODUCTION cross-thread
+# free path bench — real producer threads through HeapRegistry::claim /
+# HeapCore::alloc / HeapCore::dealloc / HeapRegistry::recycle (the same
+# production path tests/remote_fanin.rs exercises), NOT the dbg_push_to_ring/
+# dbg_drain_all_rings test-only seam heap_xthread above uses. Sweeps a
+# 1/2/4/8/16/32 producer-count matrix across two owner states (active,
+# starved). See the bench file's module doc for the full rationale.
+[[bench]]
+name = "heap_fanin_production"
+harness = false
+required-features = ["alloc-global", "alloc-xthread"]
+
 # Task #62 §A-2: synthetic async-like allocation pattern — mixed-size
 # alloc/dealloc/realloc (row buffers, accumulators, medium blobs) via
 # SeferAlloc::GlobalAlloc called directly. No tokio runtime noise, no
