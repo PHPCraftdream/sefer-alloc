@@ -164,7 +164,8 @@ fn drain_equivalence_feature_on_matches_classic() {
         singleton_b,
     ];
     assert_eq!(batch.len(), 8);
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     // Drain under feature-on: RunStack first, then linked list.
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
@@ -240,7 +241,8 @@ fn mixed_drain_all_blocks_exactly_once() {
         singleton_b,
     ];
     assert_eq!(batch.len(), 8);
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
     // SAFETY: the first arg is a live allocation owned by the receiver.
@@ -312,7 +314,8 @@ fn m2_double_free_through_run_refused() {
     let buf = carve_contiguous(&mut core, c, 4);
     let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
-    core.flush_class(c, &sorted);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &sorted) };
 
     // Snapshot the run descriptor (must be one descriptor of count 4).
     let base = seg_base(buf[0]) as *mut u8;
@@ -433,7 +436,8 @@ fn drain_side_guard_prevents_cross_representation_double_issue() {
     let buf = carve_contiguous(&mut core, c, 4);
     let mut sorted: Vec<*mut u8> = buf.to_vec();
     sorted.sort_by_key(|p| *p as usize);
-    core.flush_class(c, &sorted[0..3]);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &sorted[0..3]) };
 
     let base = seg_base(buf[0]) as *mut u8;
     // One descriptor covering sorted[0..3].
@@ -507,7 +511,8 @@ fn drain_capacity_boundary() {
     let batch: Vec<*mut u8> = vec![
         run_a[0], run_a[1], run_a[2], run_a[3], run_b[0], run_b[1], run_b[2],
     ];
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     // Partial drain: capacity 4. run_a (count 4) fits exactly; run_b is NOT
     // touched (RunStack pop order: lowest slot first; run_a was pushed first).
@@ -576,7 +581,8 @@ fn empty_runstack_falls_back_to_linked_list() {
     sorted.sort_by_key(|p| *p as usize);
 
     let batch: Vec<*mut u8> = vec![sorted[0], sorted[2], sorted[4]];
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     // RunStack MUST be empty (three singletons, no contiguous run ≥ 2).
     let base = seg_base(buf[0]) as *mut u8;
@@ -640,7 +646,8 @@ fn drain_order_runstack_first_then_linked_list() {
     let batch: Vec<*mut u8> = vec![
         run_a[0], run_a[1], run_a[2], run_a[3], singleton, run_b[0], run_b[1],
     ];
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     let mut out = vec![core::ptr::null_mut::<u8>(); 16];
     // SAFETY: the first arg is a live allocation owned by the receiver.
@@ -700,7 +707,8 @@ fn drain_classic_when_feature_off() {
     assert_eq!(core.dbg_carve_batch(c, &mut buf), N);
     let base0 = seg_base(buf[0]);
 
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     for &p in &buf {
         assert!(

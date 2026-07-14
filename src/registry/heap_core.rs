@@ -1316,8 +1316,15 @@ impl HeapCore {
                             .clear_magazine(foff);
                     }
                     // Normal overflow: half-flush, then push.
-                    self.core
-                        .flush_class(c, &self.tcache.classes[c].slots[0..FLUSH_N]);
+                    // SAFETY (R6-MS-3): every slot in `slots[0..FLUSH_N]` is a
+                    // valid live small-class-`c` allocation owned by this core's
+                    // magazine (just freed into it under the alloc-xthread/fastbin
+                    // path); each is returned to the substrate exactly once here.
+                    #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+                    unsafe {
+                        self.core
+                            .flush_class(c, &self.tcache.classes[c].slots[0..FLUSH_N])
+                    };
                     // Compact: shift entries [FLUSH_N..CAP] down to [0..CAP-FLUSH_N].
                     let remaining = TCACHE_CAP - FLUSH_N;
                     for i in 0..remaining {
@@ -1936,8 +1943,14 @@ impl HeapCore {
                     .magazine_bitmap()
                     .clear_magazine(foff);
             }
-            self.core
-                .flush_class(c, &self.tcache.classes[c].slots[0..n]);
+            // SAFETY (R6-MS-3): every slot in `slots[0..n]` is a valid live
+            // small-class-`c` allocation owned by this core's magazine; the
+            // teardown trim returns each to the substrate exactly once.
+            #[allow(unsafe_code)] // R6-MS-3: unsafe call into `AllocCore::flush_class`.
+            unsafe {
+                self.core
+                    .flush_class(c, &self.tcache.classes[c].slots[0..n])
+            };
             self.tcache.classes[c].count = 0;
         }
     }

@@ -129,7 +129,8 @@ fn a_ring_df_block_is_skipped_by_flush() {
     // Flush the whole magazine (P included). The batch flush must SKIP P
     // (is_free == true) and link the other N-1 blocks normally. P must NOT be
     // linked a second time.
-    core.flush_class(c, &mag);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &mag) };
 
     // Re-refill: pull every free block of this class back out. P must appear at
     // most ONCE across the returned set (no double-issue). We pull generously.
@@ -247,7 +248,8 @@ fn b_multi_segment_flush_routes_per_segment() {
     }
 
     // Flush the interleaved A+B magazine.
-    core.flush_class(c, &mag);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &mag) };
 
     // Under decommit: correct routing → each of A and B is fully emptied:
     // live_count is either Some(0) (segment stayed committed — it was small_cur)
@@ -347,7 +349,8 @@ fn c_partial_flush_live_count_exact() {
     // Flush a STRICT subset (half) as a single same-segment run.
     let half = total / 2;
     let run: Vec<*mut u8> = blocks[..half].to_vec();
-    core.flush_class(c, &run);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &run) };
 
     // The segment is still live; live_count must be EXACTLY total - half.
     let expected = (total - half) as u32;
@@ -447,7 +450,8 @@ fn c_decommit_fires_once_per_emptied_segment() {
         );
 
         let before = AllocCore::dbg_decommit_count();
-        core.flush_class(c, &run);
+        // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+        unsafe { core.flush_class(c, &run) };
         let delta = AllocCore::dbg_decommit_count() - before;
         total_decommits += delta;
 
@@ -650,7 +654,8 @@ fn d_second_run_after_mid_batch_recycle_is_skipped_not_uaf() {
     // during this test's development). `dbg_live_count_for`/
     // `dbg_is_decommitted_for` below are PER-SEGMENT state, not shared
     // globals, so they give the same non-vacuousness proof without the race.
-    core.flush_class(c, &mag);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &mag) };
 
     // A must be gone (slot recycled) — the dbg getters return None. This is
     // simultaneously the non-vacuousness proof (A really did decommit+recycle

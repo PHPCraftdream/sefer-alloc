@@ -1107,10 +1107,10 @@ fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
         survivors.values().map(|&p| p as usize).collect();
     for &p in &all_ptrs {
         if !survivor_set.contains(&(p as usize)) {
-            // SAFETY: `p` was allocated by `ac.alloc` with `layout` above and
+            // SAFETY (R6-MS-1/2): `p` was allocated by `ac.alloc` with `layout` above and
             // is freed exactly once (non-survivors are freed here; survivors
             // are freed only via the ring-push/drain path below).
-            ac.dealloc(p, layout);
+            unsafe { ac.dealloc(p, layout) };
         }
     }
     for &p in survivors.values() {

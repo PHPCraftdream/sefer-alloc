@@ -921,16 +921,35 @@ impl BinTable {
 
     /// The segment-relative offset of the head free block of class `c`, or
     /// `FREE_LIST_NULL` if empty.
+    ///
+    /// R6-MS-3 (round5 memory_safety_review R5-MS-3): an out-of-range `c`
+    /// (`>= SMALL_CLASS_COUNT`) is a RELEASE-MODE no-op returning
+    /// `FREE_LIST_NULL`, NOT merely a `debug_assert!`. The previous guard
+    /// compiled out under the `production` profile, so a caller-controlled
+    /// `class_idx` (e.g. via `flush_class`/`dbg_freelist_head_for`) could raw-
+    /// read `heads + c * 4` out of bounds. The check lives here, inside the
+    /// lowest-level accessor, so EVERY caller (production `dealloc_small`/
+    /// `flush_run`, and the doc-hidden `dbg_*` seams) is protected uniformly;
+    /// the `debug_assert!` is retained as a debug-mode tripwire.
     #[inline(always)]
     pub(crate) fn head(&self, c: usize) -> u32 {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
+        if c >= SMALL_CLASS_COUNT {
+            return FREE_LIST_NULL;
+        }
         Node::read_u32_unaligned(self.heads_at_const(c))
     }
 
     /// Set the head of class `c`'s free list to `off`.
+    ///
+    /// R6-MS-3: an out-of-range `c` (`>= SMALL_CLASS_COUNT`) is a RELEASE-MODE
+    /// no-op, NOT merely a `debug_assert!` (same rationale as [`head`](Self::head)).
     #[inline(always)]
     pub(crate) fn set_head(&mut self, c: usize, off: u32) {
         debug_assert!(c < SMALL_CLASS_COUNT, "class index out of range");
+        if c >= SMALL_CLASS_COUNT {
+            return;
+        }
         Node::write_u32_unaligned(self.heads_at_const(c), off);
     }
 

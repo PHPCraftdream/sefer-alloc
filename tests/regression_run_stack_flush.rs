@@ -123,7 +123,8 @@ fn contiguous_accepted_pushes_one_descriptor() {
     let base0 = seg_base(buf[0]);
     let expected_start_off = (buf.iter().map(|p| *p as usize).min().unwrap() - base0) as u32;
 
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     let desc = runstack_peek(buf[0], c).expect("a contiguous run must produce a descriptor");
     assert_eq!(desc.start_off, expected_start_off);
@@ -181,7 +182,8 @@ fn non_contiguous_gap_produces_split_descriptors() {
     let gap = (sorted[10] as usize) - (sorted[5] as usize);
     assert!(gap > 16, "gap must exist between the two groups");
 
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     for &p in &batch {
         assert!(core.dbg_is_free_for(p), "every batch block must be FREE");
@@ -244,11 +246,13 @@ fn overflow_falls_back_to_linked_list() {
     for g in &groups[..RUNSTACK_CAPACITY] {
         first_batch.extend_from_slice(g);
     }
-    core.flush_class(c, &first_batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &first_batch) };
 
     // Flush 9th group — MUST overflow → linked-list fallback.
     let overflow_batch: Vec<*mut u8> = groups[RUNSTACK_CAPACITY].clone();
-    core.flush_class(c, &overflow_batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &overflow_batch) };
 
     for &p in &overflow_batch {
         assert!(core.dbg_is_free_for(p), "overflow block must be FREE");
@@ -323,7 +327,8 @@ fn mixed_flush_populates_both_representations() {
         run_b[1],
         singleton_b,
     ];
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     for &p in &batch {
         assert!(core.dbg_is_free_for(p), "every batch block must be FREE");
@@ -387,7 +392,8 @@ fn guards_skip_already_free_block() {
         "block must be FREE before flush"
     );
 
-    core.flush_class(c, &sorted);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &sorted) };
 
     // The already-free block was SKIPPED by the flush guard (it did not go
     // through mark_free/write_next again, nor into any RunStack descriptor).
@@ -437,7 +443,8 @@ fn flush_run_classic_when_feature_off() {
     assert_eq!(core.dbg_carve_batch(c, &mut buf), N);
     let base0 = seg_base(buf[0]);
 
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     for &p in &buf {
         assert!(
@@ -503,7 +510,8 @@ fn run_member_blocks_not_on_linked_list_drain() {
     // sorted[3] and sorted[5] stay LIVE (allocated) — NOT freed, NOT in batch.
 
     let batch: Vec<*mut u8> = vec![run_blocks[0], run_blocks[1], run_blocks[2], singleton];
-    core.flush_class(c, &batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &batch) };
 
     let peeked = runstack_peek(batch[0], c);
     assert!(peeked.is_some(), "one run → one descriptor");

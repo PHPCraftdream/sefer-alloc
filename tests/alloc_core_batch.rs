@@ -206,7 +206,8 @@ fn t_flush_equiv_inner(size: usize, align: usize, n: usize) {
     assert_eq!(got, n);
 
     // Phase 2: flush all back.
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     // Phase 3: re-refill — the flushed blocks should be reusable. The
     // allocator may hand them back in any order (the BinTable is LIFO), but
@@ -337,7 +338,8 @@ fn t_flush_decommit() {
     // their live_count reaches 0. The primordial never decommits (by design:
     // it hosts the self-hosted registry). The current segment (small_cur)
     // won't decommit either.
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     let after = AllocCore::dbg_decommit_count();
     // At least one Small segment (the second one that filled up) should have
@@ -362,7 +364,8 @@ fn t_flush_null_defensive() {
 
     // A slice containing only nulls — should be a no-op.
     let nulls = [core::ptr::null_mut::<u8>(); 4];
-    core.flush_class(c, &nulls);
+    // SAFETY (R6-MS-3): the slice holds only null entries, which the flush contract permits and skips.
+    unsafe { core.flush_class(c, &nulls) };
 
     // Allocator still works.
     let layout = Layout::from_size_align(16, 8).unwrap();
@@ -405,9 +408,11 @@ fn t_flush_double_free_is_noop() {
     assert_eq!(got, n);
 
     // First flush — normal.
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
     // Second flush of the same pointers — M2 double-free guard should no-op.
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     // Allocator still works.
     let layout = Layout::from_size_align(64, 8).unwrap();

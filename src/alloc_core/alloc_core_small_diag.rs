@@ -13,7 +13,7 @@ use super::os;
 use super::segment_header::{
     Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta, FREE_LIST_NULL,
 };
-use super::size_classes::SizeClasses;
+use super::size_classes::{SizeClasses, SMALL_CLASS_COUNT};
 
 use super::alloc_core::AllocCore;
 
@@ -38,6 +38,15 @@ impl AllocCore {
     pub fn dbg_freelist_head_for(&self, ptr: *mut u8, class_idx: usize) -> u32 {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
+            return FREE_LIST_NULL;
+        }
+        // R6-MS-3 (round5 memory_safety_review R5-MS-3): release-mode class-index
+        // bounds guard. Belt-and-suspenders alongside `BinTable::head`'s own
+        // check — this is a doc-hidden test hook taking a raw caller-controlled
+        // `class_idx`, so an out-of-range value must short-circuit here (and not
+        // rely on the callee) before any raw `BinTable` access. Under the old
+        // `debug_assert!`-only guard this read out of bounds in `production`.
+        if class_idx >= SMALL_CLASS_COUNT {
             return FREE_LIST_NULL;
         }
         SegmentMeta::new(base).bin_table().head(class_idx)

@@ -333,9 +333,41 @@ impl AllocCore {
     /// last block's decommit does the same after its own `set_head`); there is
     /// no subsequent block in the run to be affected, since `live` can only reach
     /// 0 at the last.
+    /// # Safety
+    ///
+    /// The caller must honour the batch-free contract for every entry in
+    /// `blocks`. This is the batched analogue of [`dealloc`](AllocCore::dealloc)'s
+    /// `# Safety` contract — the same reasoning that made `dealloc`/`realloc`
+    /// `unsafe fn` in R6-MS-1/2 applies here: the method derives each block's
+    /// segment `base` arithmetically (`os::segment_base_of_ptr`) and reads/writes
+    /// that segment's `SegmentMeta`/`BinTable`/alloc-bitmap/`bump`/`kind` with NO
+    /// `contains_base` membership check before the raw access, so a safe entry
+    /// point accepting caller-controlled raw pointers was a soundness gap (round5
+    /// `memory_safety_review` R5-MS-3). Concretely:
+    ///
+    /// - every NON-NULL entry of `blocks` is the exact **start** pointer of a
+    ///   currently-LIVE small-class allocation owned by *this* `AllocCore`,
+    ///   whose size class is exactly `class_idx`. It MUST NOT be an interior
+    ///   pointer, a foreign pointer, or a pointer into a segment whose OS
+    ///   reservation has already been released/unmapped.
+    /// - `class_idx < SMALL_CLASS_COUNT`. (Release-checked inside
+    ///   `BinTable::head`/`set_head` — an out-of-range index degrades to a safe
+    ///   no-op rather than an out-of-bounds raw access — but a caller MUST still
+    ///   pass a valid index.)
+    /// - each entry is freed **at most once** within this call (and not re-freed
+    ///   afterwards). A duplicate entry within the slice, or a block already on
+    ///   the free list, is contract UB; the per-block M2 `is_free` /
+    ///   `off >= bump` guards degrade several such cases benignly *at runtime*,
+    ///   but they are defence-in-depth, NOT a substitute for honouring the
+    ///   contract.
+    /// - NULL entries are permitted and skipped (matching the per-block
+    ///   `dealloc_small` path).
+    ///
+    /// Null `ptr` is always safe (early return).
     #[doc(hidden)]
     #[inline]
-    pub fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+    #[allow(unsafe_code)] // R6-MS-3: `unsafe fn` boundary (caller-pointer contract).
+    pub unsafe fn flush_class(&mut self, class_idx: usize, blocks: &[*mut u8]) {
         // L-4 (UBFIX-11): a per-CALL record of segment bases already recycled
         // (decommitted-and-released OR pooled) by an EARLIER run within this
         // same `flush_class` invocation. `flush_class` groups `blocks` into

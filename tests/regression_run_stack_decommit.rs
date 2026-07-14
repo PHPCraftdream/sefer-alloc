@@ -269,7 +269,8 @@ fn decommit_clears_runstack_no_stale_descriptor() {
     // middle segment's RunStack. These 8 transition LIVE→FREE; the flush's
     // batched `sub_live(8)` decrements live_count by 8.
     let run_batch: Vec<*mut u8> = middle_sorted[0..8].to_vec();
-    core.flush_class(c, &run_batch);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &run_batch) };
     let base_ptr = middle_base as *mut u8;
     let desc = unsafe { RunStack::peek(base_ptr, c) }
         .expect("middle-segment flush must push a descriptor");
@@ -465,7 +466,8 @@ fn drain_overflow_no_leak_for_large_block_class() {
     let base_ptr = seg_base(buf[0]) as *mut u8;
 
     // (3) Flush as one contiguous batch → one descriptor of count 8.
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
     let desc = unsafe { RunStack::peek(base_ptr, c) }.expect("flush must push a descriptor");
     assert_eq!(
         desc.count, 8,
@@ -570,7 +572,8 @@ fn drain_overflow_one_at_a_time_no_leak() {
     let layout = Layout::from_size_align(block_size, 16).unwrap();
 
     let buf = carve_contiguous(&mut core, c, 8);
-    core.flush_class(c, &buf);
+    // SAFETY (R6-MS-3): blocks are prior matching allocs of class `c`, live, owned by this core, freed exactly once here.
+    unsafe { core.flush_class(c, &buf) };
 
     // Drain one block at a time, 8 times.
     let mut all_drained: Vec<*mut u8> = Vec::with_capacity(8);
