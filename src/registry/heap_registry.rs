@@ -239,6 +239,23 @@ impl HeapRegistry {
                     // one increment per mismatched bind, not a hot-path RMW
                     // worth gating behind `alloc-stats`).
                     CONFIG_CONFLICTS.fetch_add(1, Ordering::Relaxed);
+                    // R6-CQ-3 (panic-safety): arm a rollback guard BEFORE the
+                    // debug_assert! below. The FREE→LIVE CAS at the top of
+                    // this loop iteration already popped this slot off
+                    // `free_slots` (or minted it via `count`); the
+                    // `debug_assert!` panics in debug builds, and without this
+                    // guard the panic would propagate before the `return`
+                    // below — leaking the slot as LIVE-but-caller-never-
+                    // received-the-pointer (stuck LIVE forever, never
+                    // reclaimable). The guard's `Drop` restores the slot to
+                    // FREE + `free_slots` (identical to `recycle` /
+                    // `push_back_after_oom`) DURING the unwind, BEFORE the
+                    // panic crosses this function's frame.
+                    let guard = ConflictRollback {
+                        reg,
+                        slot,
+                        idx: idx as u32,
+                    };
                     // Development-time loud signal. In release this is
                     // compiled out, leaving the counter as the silent signal.
                     // The counter was already incremented above, so even if
@@ -250,6 +267,13 @@ impl HeapRegistry {
                          requested one (check SeferAlloc::stats().config_conflicts)",
                         idx
                     );
+                    // Reached only in release (the assert is compiled out) —
+                    // forget the guard so its `Drop` does NOT restore the
+                    // slot, leaving it LIVE for the `return` below as
+                    // intended. On the debug-build panic path this line is
+                    // never reached, so the guard drops during unwind and
+                    // performs the rollback.
+                    core::mem::forget(guard);
                 }
             }
             // SAFETY: slot is LIVE and initialised; we are sole writer.
@@ -409,6 +433,52 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
 fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
     let _ = slot.cas_state(STATE_LIVE, STATE_FREE, Ordering::Release, Ordering::Relaxed);
     push_free_slot(reg, idx);
+}
+
+/// R6-CQ-3 (panic-safety): RAII rollback guard armed in the config-conflict
+/// branch of [`HeapRegistry::claim_with_config`]. When dropped, it performs
+/// the SAME `LIVE → FREE` CAS + `free_slots` push as
+/// [`push_back_after_oom`] / [`HeapRegistry::recycle`], restoring the slot
+/// to the free pool.
+///
+/// **Why this guard exists:** by the time `claim_with_config` reaches the
+/// config-mismatch branch it has already won the `FREE → LIVE` CAS (popping
+/// the slot off `free_slots`, or minting it via `count`). The mismatch is
+/// signalled with a `debug_assert!`, which PANICS in debug builds. Without a
+/// rollback that panic propagates before the function's `return`, so the
+/// caller never receives the `*mut HeapCore`, can never call `recycle` on
+/// it, and the slot is stuck `LIVE` forever — a genuine leak that shrinks
+/// the reachable `MAX_HEAPS` pool by one per conflict. Arming this guard
+/// around the `debug_assert!` means the slot is restored to `FREE` +
+/// `free_slots` DURING the unwind, BEFORE the panic crosses the function
+/// boundary, so the leak cannot occur regardless of whether the caller
+/// catches the panic.
+///
+/// **Disarm (non-panic path):** the owning code calls [`core::mem::forget`]
+/// on the guard once the `debug_assert!` has returned without panicking
+/// (release builds, where the assert is compiled out). `forget` suppresses
+/// `Drop`, so a normal `return` leaves the slot `LIVE` for the caller as
+/// intended. On the panic path `forget` is never reached and `Drop` runs
+/// during the unwind — the guard is therefore "armed iff not yet forgotten".
+///
+/// **Panic-safety of `Drop` itself:** `Drop` only runs a CAS and
+/// `push_free_slot` (both atomic; neither panics), and the `&'static`
+/// slot/registry references it holds remain valid for the entire unwind, so
+/// there is no double-panic/abort risk and no `catch_unwind` /
+/// `AssertUnwindSafe` is needed at the source level — the guard drops during
+/// natural unwinding. (Under `panic = "abort"` the `debug_assert!` aborts the
+/// process and the guard never runs, but then there is no leak either: the
+/// process is gone.)
+struct ConflictRollback {
+    reg: &'static Registry,
+    slot: &'static HeapSlot,
+    idx: u32,
+}
+
+impl Drop for ConflictRollback {
+    fn drop(&mut self) {
+        push_back_after_oom(self.reg, self.slot, self.idx);
+    }
 }
 
 // ---------------------------------------------------------------------------
