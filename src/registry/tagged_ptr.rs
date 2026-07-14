@@ -44,9 +44,10 @@
 //! free-list stays loss/duplication-free. A counterfactual with the tag
 //! removed (bare `AtomicU32` head) proves the harness is non-vacuous: loom
 //! finds the same interleaving corrupting the untagged free-list.
-//! `tests/loom_registry.rs` (Phase 12.4) remains a model of a DIFFERENT,
-//! unreachable protocol (the segment `owner_state` adoption CAS) — see that
-//! file's own honesty note; it is untouched by this resolution.
+//! (The segment `owner_state` adoption CAS — formerly modelled by
+//! `tests/loom_registry.rs` — was removed in task #97 / R4-5 along with that
+//! test; see CHANGELOG.md. It was always a separate, unreachable protocol,
+//! not the free-list tag model verified here.)
 //!
 //! ## This file is pure safe arithmetic
 //!

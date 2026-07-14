@@ -400,7 +400,7 @@ impl AllocCore {
                 // branch: a single atomic `&AtomicU32` store at `magic`'s
                 // `offset_of!` offset (the same field-wise-atomic-write pattern
                 // `SegmentMeta::owner_state_atomic` already uses for the
-                // adoption CAS — this crate's §11 discipline).
+                // cross-thread owner-state read — this crate's §11 discipline).
                 let magic_off = core::mem::offset_of!(SegmentHeader, magic);
                 Node::atomic_u32_at(base, magic_off)
                     .store(0, core::sync::atomic::Ordering::Release);

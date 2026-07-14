@@ -17,8 +17,8 @@
 //! Phase 12.3 replaces that with [`tls_heap::current`](super::tls_heap::current):
 //! a raw `Cell<*mut HeapCore>` TLS cache (no borrow state to fail) over the
 //! global [`HeapRegistry`](crate::registry::HeapRegistry). The heap lives in
-//! a registry slot (not in TLS); thread exit abandons + recycles the slot
-//! (not drops the heap). The alloc face is therefore **reentrancy-safe**
+//! a registry slot (not in TLS); thread exit recycles the slot (whole-slot
+//! reuse — the `HeapCore` stays whole, not dropped). The alloc face is therefore **reentrancy-safe**
 //! (M5) and **never-null** (M10): [`current`] returns a non-null pointer in
 //! every case (cached slot, fresh claim, or the process-global fallback
 //! heap).
@@ -117,10 +117,11 @@ use super::AllocStats;
 /// routes through the Phase 10 Treiber stack, now stamped from the
 /// registry-resident heap (12.3 owner stamping).
 ///
-/// Thread exit abandons the heap's segments back to the registry (a no-op
-/// stub in 12.3 -- segments leak until 12.4 adoption; bounded and sound) and
-/// recycles the slot for reuse. A primordial fallback heap (§2.3) serves
-/// the pre-TLS / post-teardown windows, so the face is **never-null for a
+/// Thread exit recycles the slot for whole-slot reuse (Phase 12.5): the
+/// `HeapCore` and ALL its segments (plus their remote-free queues) stay
+/// whole in the slot, and the next claimer reuses them in full — nothing is
+/// abandoned or leaked. A primordial fallback heap (§2.3) serves the
+/// pre-TLS / post-teardown windows, so the face is **never-null for a
 /// serviceable request** (M10).
 ///
 /// This is the **alloc face** of one substrate; the **handle face**

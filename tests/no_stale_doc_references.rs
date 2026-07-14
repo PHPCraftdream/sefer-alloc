@@ -168,6 +168,83 @@ fn no_stale_pre_h1_thread_free_prose() {
     );
 }
 
+/// Regression-guard against doc/comment drift back to the removed
+/// abandon/adopt segment-transfer substrate (round4 task #97 / R4-5, commit
+/// `65d441a`).
+///
+/// The abandoned-segments Treiber stack + adoption CAS (`HeapRegistry::{
+/// abandon_segments, push_abandoned_segment, pop_abandoned_segment,
+/// try_adopt}`, `Registry::abandoned_segs`, `OWNER_STATE_ABANDONED`) is gone;
+/// TLS teardown (`src/global/tls_heap.rs`) does whole-slot reuse instead — the
+/// `HeapCore` stays whole in its slot for the next claimant, nothing is
+/// abandoned or adopted. This test bans the removed API's exact identifiers
+/// outside the handful of files that legitimately name them in the PAST
+/// tense while explaining the removal.
+///
+/// This is deliberately narrower than a blanket "abandon"/"adopt" word-stem
+/// ban: those stems are ALSO the live [`AbandonGuard`] type name in
+/// `global/tls_heap.rs` (the TLS destructor guard — a name that outlived the
+/// behaviour it was named for, not renamed by this guard's scope), the
+/// `ABANDONED_TAIL` sentinel used by the still-live `deferred_large`
+/// cross-thread-free stack ([`crate::alloc_core::segment_header`]), and
+/// "adopting thread" prose in `concurrent/sharded_region.rs` describing an
+/// unrelated, still-live shard-reuse mechanism — all correct and not the
+/// target of this guard.
+///
+/// Doc-only guard: reads source text, never links the crate, so it runs in
+/// every feature configuration.
+#[test]
+fn no_stale_abandon_adopt_substrate_references() {
+    // Exact identifiers from the removed API surface (commit 65d441a's
+    // message enumerates the full removed list). None of these collide with
+    // `AbandonGuard`, `ABANDONED_TAIL`, or generic "adopt"/"abandon" prose.
+    let forbidden_tokens: &[&str] = &[
+        "try_adopt",
+        "abandon_segments",
+        "push_abandoned_segment",
+        "pop_abandoned_segment",
+        "abandoned_segs",
+        "OWNER_STATE_ABANDONED",
+    ];
+
+    // Files allowed to mention the removed identifiers — each does so only in
+    // a module-doc sentence that explicitly frames it as removed/historical
+    // (grep-verified at the time this guard was written; see the file diffs
+    // for the exact "previously ... was removed" phrasing).
+    let allowed: &[&str] = &["global/tls_heap.rs", "registry/bootstrap.rs"];
+    let allowed_paths: Vec<PathBuf> = allowed
+        .iter()
+        .map(|rel| src_dir().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)))
+        .collect();
+
+    let mut files = Vec::new();
+    rs_files(&src_dir(), &mut files);
+
+    let mut offenders = Vec::new();
+    for file in &files {
+        if allowed_paths.contains(file) {
+            continue;
+        }
+        let text = fs::read_to_string(file).expect("read source");
+        for (i, line) in text.lines().enumerate() {
+            for token in forbidden_tokens {
+                if line.contains(token) {
+                    offenders.push(format!("{}:{}: {}", file.display(), i + 1, line.trim()));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "the abandon/adopt segment-transfer substrate was removed in round4 \
+         (task #97 / R4-5, commit 65d441a); TLS teardown does whole-slot \
+         reuse instead. These lines reference the removed API's identifiers \
+         outside the files allowed to name them historically:\n{}",
+        offenders.join("\n"),
+    );
+}
+
 /// Regression-guard for a checkable NUMERIC claim in the overview docs.
 ///
 /// `docs/ARCHITECTURE.md` states the count of integration-test files as

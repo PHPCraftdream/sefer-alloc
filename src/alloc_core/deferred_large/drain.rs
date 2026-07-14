@@ -51,7 +51,7 @@ pub(crate) fn drain_large_deferred_free(head: &AtomicPtr<u8>, core: &mut AllocCo
             return;
         }
         let meta = SegmentMeta::new(cur);
-        let next_link = meta.next_abandoned_atomic().load(Ordering::Acquire);
+        let next_link = meta.deferred_next_atomic().load(Ordering::Acquire);
         // `DEFERRED_LARGE_TAIL` (not `ABANDONED_TAIL`) is this stack's own
         // "no next" encoding — see `push_large_deferred_free`'s doc comment
         // on why the two sentinels must differ.

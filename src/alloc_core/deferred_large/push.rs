@@ -16,8 +16,8 @@ use crate::alloc_core::segment_header::{SegmentMeta, ABANDONED_TAIL};
 /// requires NO `unsafe`/pointer seam of its own). Called from each face's
 /// cross-thread dealloc routing in place of a permanent-leak no-op.
 ///
-/// Classic Treiber push: read `base`'s `next_abandoned` link (repurposed
-/// here as this stack's intrusive link), point it at the current head, CAS
+/// Classic Treiber push: read `base`'s `deferred_next` link (this stack's
+/// intrusive link word), point it at the current head, CAS
 /// the head to `base`. Multi-producer (any number of remote threads may race
 /// this push); single-consumer (only the owner ever pops, in
 /// [`drain_large_deferred_free`](super::drain::drain_large_deferred_free)),
@@ -34,7 +34,7 @@ use crate::alloc_core::segment_header::{SegmentMeta, ABANDONED_TAIL};
 ///
 /// ## Double-push guard (0.3.0 hardening, post-A1)
 ///
-/// `base`'s `next_abandoned` field starts life as `ABANDONED_TAIL` (both
+/// `base`'s `deferred_next` field starts life as `ABANDONED_TAIL` (both
 /// `SegmentHeader::small`/`large` constructors set it, and a segment
 /// reclaimed via `AllocCore::reclaim_large_segment` is either unmapped or has
 /// its header zeroed/rewritten before any future reuse — so a `base` that is
@@ -44,12 +44,12 @@ use crate::alloc_core::segment_header::{SegmentMeta, ABANDONED_TAIL};
 /// allocator otherwise degrades safely on via the M2 double-free guard
 /// everywhere else) used to be able to push `base` onto this stack TWICE
 /// before a drain: the second push would read `head == base` (the result of
-/// the first push's CAS) and write `base.next_abandoned = base` — a
+/// the first push's CAS) and write `base.deferred_next = base` — a
 /// self-loop. A drain would then pop `base` once, reclaim it (unregister the
 /// slot + hand the segment to `os::release_segment`/the large-cache — i.e.
 /// UNMAP or recycle it), and, because the self-loop pop never advanced
 /// `head` away from `base`, the *next* loop iteration would read
-/// `next_abandoned` off the now-unmapped memory (a use-after-free) and could
+/// `deferred_next` off the now-unmapped memory (a use-after-free) and could
 /// reclaim the same `base` a second time (a double-unmap).
 ///
 /// The fix has two parts:
@@ -69,11 +69,11 @@ use crate::alloc_core::segment_header::{SegmentMeta, ABANDONED_TAIL};
 ///
 /// This guard is scoped to a single `base`'s link word — it does NOT block
 /// concurrent pushes of DIFFERENT bases (`base1 != base2`): each has its own
-/// `next_abandoned` field, so two remote threads freeing two distinct Large
+/// `deferred_next` field, so two remote threads freeing two distinct Large
 /// segments still race only on the shared `head` CAS, exactly as before.
 /// Lock-free multi-producer push (for distinct bases) is preserved.
 pub(crate) fn push_large_deferred_free(head: &AtomicPtr<u8>, base: *mut u8) {
-    let next_atomic = SegmentMeta::new(base).next_abandoned_atomic();
+    let next_atomic = SegmentMeta::new(base).deferred_next_atomic();
     let mut cur = head.load(Ordering::Acquire);
     // Link `base` to the current head (or the "empty" sentinel,
     // `core::ptr::null_mut()`, encoded as `DEFERRED_LARGE_TAIL` — THIS stack's

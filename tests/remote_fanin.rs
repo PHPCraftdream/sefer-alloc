@@ -31,7 +31,7 @@
 //! node storage (reopening the `#[global_allocator]` reentrancy hazard) —
 //! see that module's doc comment for the full design comparison
 //! (real-backpressure/blocking `dealloc`, a provenance-exposed
-//! `SegmentHeader` field, and properly tagging `next_abandoned` were all
+//! `SegmentHeader` field, and properly tagging `deferred_next` were all
 //! considered and are documented there, alongside the one HONEST caveat this
 //! fix still carries: `HEAP_OVERFLOW_CAP` is a fixed bound, not an infinite
 //! one — no bounded, non-blocking, `Box`-free mechanism can give a

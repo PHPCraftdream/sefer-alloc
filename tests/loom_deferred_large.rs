@@ -11,7 +11,7 @@
 //! the EXACT protocol shape:
 //!
 //! - `head: AtomicPtr<u8>` (the owner's stack head), intrusive per-node
-//!   `next_abandoned: AtomicU64` link (repurposed as the stack link word,
+//!   `deferred_next: AtomicU64` link (repurposed as the stack link word,
 //!   exactly as the real code does).
 //! - Two sentinels: `ABANDONED_TAIL` (`u64::MAX`, "not on any stack" — the
 //!   node's rest state) and `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on THIS
@@ -88,10 +88,10 @@ const ABANDONED_TAIL: u64 = u64::MAX;
 const DEFERRED_LARGE_TAIL: u64 = u64::MAX - 1;
 
 /// A model "segment" node: the intrusive Treiber-stack link. In the real code
-/// this is `SegmentHeader::next_abandoned`; loom needs its own tiny
+/// this is `SegmentHeader::deferred_next`; loom needs its own tiny
 /// heap-allocated node since loom's model doesn't have real segment memory.
 struct Node {
-    next_abandoned: AtomicU64,
+    deferred_next: AtomicU64,
     /// Stable identity for the node (mirrors the segment `base` pointer's
     /// role as identity — loom nodes are heap boxes, so we tag them with an
     /// id instead of comparing addresses across `expose_provenance` cycles,
@@ -124,7 +124,7 @@ impl Stack {
         // duration of the check; only ever dereferenced by this stack's
         // single consumer (drain) or by a push racing on the SAME node's own
         // link word (guarded below).
-        let next_atomic = unsafe { &(*node).next_abandoned };
+        let next_atomic = unsafe { &(*node).deferred_next };
         let mut cur = self.head.load(Ordering::Acquire);
         let next_link = if cur.is_null() {
             DEFERRED_LARGE_TAIL
@@ -182,7 +182,7 @@ impl Stack {
             }
             // SAFETY (model): single consumer; `cur` is still linked (not yet
             // popped), so its link word is stable until our CAS below.
-            let next_link = unsafe { (*cur).next_abandoned.load(Ordering::Acquire) };
+            let next_link = unsafe { (*cur).deferred_next.load(Ordering::Acquire) };
             let next = if next_link == DEFERRED_LARGE_TAIL {
                 null_mut()
             } else {
@@ -215,11 +215,11 @@ fn distinct_pushes_all_drained_exactly_once() {
         let stack = Stack::new();
 
         let node_a = Box::into_raw(Box::new(Node {
-            next_abandoned: AtomicU64::new(ABANDONED_TAIL),
+            deferred_next: AtomicU64::new(ABANDONED_TAIL),
             id: 1,
         }));
         let node_b = Box::into_raw(Box::new(Node {
-            next_abandoned: AtomicU64::new(ABANDONED_TAIL),
+            deferred_next: AtomicU64::new(ABANDONED_TAIL),
             id: 2,
         }));
 
@@ -266,7 +266,7 @@ fn double_push_same_base_extracted_once() {
         let stack = Stack::new();
 
         let node = Box::into_raw(Box::new(Node {
-            next_abandoned: AtomicU64::new(ABANDONED_TAIL),
+            deferred_next: AtomicU64::new(ABANDONED_TAIL),
             id: 42,
         }));
         let n_usize = node as usize;
@@ -314,7 +314,7 @@ fn double_push_same_base_extracted_once() {
 /// already linked. Mirrors the pre-hardening bug described in `push.rs`'s
 /// doc comment (a self-loop / double-link that a drain can traverse twice).
 fn push_broken_no_guard(stack: &Stack, node: *mut Node) {
-    let next_atomic = unsafe { &(*node).next_abandoned };
+    let next_atomic = unsafe { &(*node).deferred_next };
     let mut cur = stack.head.load(Ordering::Acquire);
     loop {
         let next_link = if cur.is_null() {
@@ -345,7 +345,7 @@ fn counterfactual_no_guard_double_extracts_or_corrupts() {
         let stack = Stack::new();
 
         let node = Box::into_raw(Box::new(Node {
-            next_abandoned: AtomicU64::new(ABANDONED_TAIL),
+            deferred_next: AtomicU64::new(ABANDONED_TAIL),
             id: 42,
         }));
         let n_usize = node as usize;
@@ -373,7 +373,7 @@ fn counterfactual_no_guard_double_extracts_or_corrupts() {
                 break;
             }
             pops += 1;
-            let next_link = unsafe { (*cur).next_abandoned.load(Ordering::Acquire) };
+            let next_link = unsafe { (*cur).deferred_next.load(Ordering::Acquire) };
             let next = if next_link == DEFERRED_LARGE_TAIL {
                 null_mut()
             } else {

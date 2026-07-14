@@ -15,7 +15,7 @@
 //! `Layout` is stale) — it is the same class of limit every allocator has for
 //! a use-after-free-shaped double-free. The PRE-reuse window (before any
 //! reclaim/reuse happens) is airtight — see `push_large_deferred_free`'s
-//! double-push guard (CAS on `next_abandoned` from `ABANDONED_TAIL`) and the
+//! double-push guard (CAS on `deferred_next` from `ABANDONED_TAIL`) and the
 //! `magic == 0` check on release; this module does not touch that guarantee.
 //!
 //! ## The mitigation

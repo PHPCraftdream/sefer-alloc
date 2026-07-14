@@ -217,10 +217,10 @@ fn xthread_large_free_reclaims_segments_no_leak() {
 /// allocator otherwise degrades SAFELY on (a no-op) via the M2 double-free
 /// guard used everywhere else — used to corrupt this particular stack: the
 /// second push would read `head == base` (from the first push's CAS) and
-/// write `base.next_abandoned = base`, a self-loop. A drain would pop `base`
+/// write `base.deferred_next = base`, a self-loop. A drain would pop `base`
 /// once, reclaim it (unregister + unmap/recycle), and then — because the
 /// self-loop pop never advanced `head` away from `base` — read
-/// `next_abandoned` off the now-unmapped memory on the NEXT loop iteration
+/// `deferred_next` off the now-unmapped memory on the NEXT loop iteration
 /// (a use-after-free) and could reclaim the same segment a second time (a
 /// double-unmap).
 ///
@@ -254,7 +254,7 @@ fn xthread_large_free_reclaims_segments_no_leak() {
 /// chain drops some segments off the tail entirely — those slots leak instead
 /// of double-free crashing, since a self-loop pop terminates the drain loop
 /// at that node). Whether a GIVEN run additionally segfaults on the
-/// use-after-free read of `next_abandoned` on now-unmapped memory is
+/// use-after-free read of `deferred_next` on now-unmapped memory is
 /// UB-dependent (page reuse timing, allocator-internal unmap granularity) —
 /// this repo does not rely on a guaranteed crash to prove the bug; the
 /// `reclaimed == N` symptom is the deterministic, portable oracle used here.

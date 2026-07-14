@@ -31,7 +31,7 @@
 //!   overflow ring that absorbs a cross-thread free once a segment's
 //!   `RemoteFreeRing` AND its bounded retry are both exhausted.
 //! - [`bootstrap`] — the process-global `Registry` + atomic state-machine.
-//! - [`heap_registry`] — the claim/recycle/abandon API.
+//! - [`heap_registry`] — the claim/recycle API (whole-slot reuse).
 //!
 //! [`heap_core`]: self::heap_core
 //! [`heap_slot`]: self::heap_slot

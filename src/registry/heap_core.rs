@@ -138,10 +138,10 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 //
 // ## Why retry (not a new Treiber stack of block-payload nodes)
 //
-// The plan's own precedent for a heap-level MPSC fallback is `abandoned_segs`
-// / the A1 deferred-large-free stack (`HeapCore::thread_free`, reused as a
+// The plan's own precedent for a heap-level MPSC fallback is the A1
+// deferred-large-free stack (`HeapCore::thread_free`, reused as a
 // Treiber-stack head over segment BASES, chained through each segment's own
-// `next_abandoned` header field — see that field's doc comment). That idiom
+// `deferred_next` header field — see that field's doc comment). That idiom
 // works because A1's payload IS a segment identity (the whole segment is the
 // thing being queued) — no separate node storage is needed beyond the
 // segment's own pre-reserved header bytes.
@@ -164,13 +164,15 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 //     segment-metadata layout change, explicitly out of scope for E3a: see
 //     the implementation plan's Phase 4 vs. the gated, higher-risk Phase 7
 //     dirty-segment queue);
-//   - reusing `next_abandoned` for LIVE Small segments too (it is unused
-//     while a Small segment is live) — rejected: the UB audit already flags
-//     `next_abandoned` sharing between `abandoned_segs` and A1 as a latent,
-//     documented reactivation hazard (Finding 5 / M-7 in
-//     `docs/reviews/2026-07-10-ub-audit-registry.md`); adding a THIRD
-//     consumer of the same link field on LIVE segments widens that hazard's
-//     blast radius instead of leaving it exactly as dormant as it is today.
+//   - reusing `deferred_next` for LIVE Small segments too (it is unused
+//     while a Small segment is live — the deferred-large stack chains only
+//     Large segments) — rejected: making a field that is exclusively the
+//     deferred-large (Large-segment) link also carry small-segment overflow
+//     data introduces a field-sharing collision the UB audit already flags
+//     as a latent, documented reactivation hazard (Finding 5 / M-7 in
+//     `docs/reviews/2026-07-10-ub-audit-registry.md`); adding a SECOND
+//     consumer of the same link field widens that hazard's blast radius
+//     instead of leaving `deferred_next` with its single current owner.
 //
 // Retrying the push needs none of that: it adds no new struct, no new
 // header field, no new slot wiring, and never touches block bytes or the
@@ -282,9 +284,10 @@ pub static DBG_RING_PUSH_RETRY_EXHAUSTED: core::sync::atomic::AtomicU64 =
 /// `*mut HeapCore`. Single-writer invariant (the owning thread is the only
 /// mutator of its heap's bins) makes the `UnsafeCell` sound.
 pub struct HeapCore {
-    /// The owning slot's index in the registry. Used by `recycle`/`abandon`
-    /// to find the slot back from a `*mut HeapCore` (12.3 stamps this into
-    /// segment headers as the ownership key).
+    /// The owning slot's index in the registry. Used by
+    /// [`recycle`](super::heap_registry::HeapRegistry::recycle) to find the
+    /// slot back from a `*mut HeapCore` (12.3 stamps this into segment
+    /// headers as the ownership key).
     /// `u32::MAX` is reserved as "not yet bound to a slot" (a freshly-init'd
     /// slot has `id = u32::MAX` until `claim` overwrites it).
     pub(crate) id: u32,
@@ -339,11 +342,11 @@ pub struct HeapCore {
     /// owner pops), multi-producer (any remote may push) — a plain CAS-loop
     /// push needs no ABA tag. `null` VALUE = empty stack.
     ///
-    /// ⚠️ The `next_abandoned` header field this stack reuses as its intrusive
+    /// ⚠️ The `deferred_next` header field this stack reuses as its intrusive
     /// link was historically shared with the (now-removed) abandoned-segments
     /// stack — see the "ABA defence" note in `heap_registry.rs`. With that
     /// substrate gone (task #97 / R4-5), this stack is the SOLE user of
-    /// `next_abandoned`, so the field-sharing collision it warned about is no
+    /// `deferred_next`, so the field-sharing collision it warned about is no
     /// longer possible.
     ///
     /// Stored as a SAFE `Option<&'static _>` (not a raw pointer): this module is

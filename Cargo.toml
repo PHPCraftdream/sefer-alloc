@@ -6,7 +6,7 @@ edition = "2021"
 # build on much older toolchains, but we pin a known-good MSRV from day one.
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
-description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferAlloc) over one verified segment substrate, with #![forbid(unsafe_code)] at the top."
+description = "A safe-by-construction, 100% Rust memory toolkit (no C/C++ libraries — no libnuma/mimalloc/jemalloc/snmalloc/tcmalloc): a single-threaded handle store (Region<T>) and a drop-in #[global_allocator] (SeferAlloc) over one verified segment substrate. The base crate is #![forbid(unsafe_code)]; the allocator features flip the crate root to #![deny(unsafe_code)] with unsafe confined to a small, audited seam set (see the README unsafe-boundary section)."
 readme = "README.md"
 repository = "https://github.com/PHPCraftdream/sefer-alloc"
 homepage = "https://github.com/PHPCraftdream/sefer-alloc"
@@ -106,11 +106,10 @@ alloc-core = ["std", "dep:aligned-vmem"]
 # owner stamping on segment headers, and the whole-slot-reuse teardown model
 # (`AbandonGuard::drop` recycles the slot with the `HeapCore` staying whole —
 # all segments and their remote-free queues are preserved for the next claimant
-# to reclaim lazily). The abandon/adopt substrate (segment transfer between
-# heaps) remains in the codebase but is not invoked on the normal teardown
-# path. Without this feature, the `alloc-core` substrate provides
-# single-thread-only allocation (sound: single owner, no cross-thread refs).
-# Requires `alloc-core`.
+# to reclaim lazily; the old abandon/adopt segment-transfer substrate was
+# removed in task #97 / R4-5 — see CHANGELOG.md). Without this feature, the
+# `alloc-core` substrate provides single-thread-only allocation (sound: single
+# owner, no cross-thread refs). Requires `alloc-core`.
 alloc-xthread = ["alloc-core"]
 # Phase 11: the drop-in `GlobalAlloc` face -- `SeferAlloc`. Installs over the
 # per-thread `HeapCore` substrate via the registry-backed raw-pointer TLS

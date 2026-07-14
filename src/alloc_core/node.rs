@@ -437,9 +437,11 @@ impl Node {
     }
 
     /// Return a `&'static AtomicU64` view over the 8 aligned bytes at
-    /// `base + off`. Used by the Phase 12.4 adoption path to obtain an atomic
-    /// view over a segment header field (the `owner_state` CAS is the M9
-    /// linearization point; a plain struct-field read would be a data race).
+    /// `base + off`. Used to obtain a race-free atomic view over an
+    /// 8-byte-aligned `u64` field in a segment header (e.g. `owner_state`
+    /// for cross-thread owner-id reads, `deferred_next` for the deferred-
+    /// large stack link); a plain struct-field read would race a concurrent
+    /// atomic store.
     ///
     /// # Caller's contract
     ///

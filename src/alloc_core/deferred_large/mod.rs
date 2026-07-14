@@ -14,15 +14,13 @@
 //!
 //! ## Provenance model (task #140)
 //!
-//! Like `registry::bootstrap`'s `abandoned_segs` stack, this is a
-//! cross-allocation intrusive Treiber stack: segment `A`'s `next_abandoned`
-//! header field (repurposed as this stack's link) holds the address of
+//! This is a cross-allocation intrusive Treiber stack: segment `A`'s
+//! `deferred_next` header field (this stack's link word) holds the address of
 //! segment `B`, a DIFFERENT OS reservation with unrelated provenance — no
 //! single `u64` link word can carry both an address and a provenance token
 //! for a foreign allocation. Full strict-provenance conformance is therefore
-//! unreachable for this stack by the same structural argument as
-//! `abandoned_segs`; see `registry::bootstrap`'s "Provenance model" section
-//! for the full explanation. `push_large_deferred_free` calls
+//! unreachable for this stack by a structural argument that holds for any
+//! cross-allocation intrusive link. `push_large_deferred_free` calls
 //! `expose_provenance` on every real head pointer before packing its address
 //! into the link word; `drain_large_deferred_free` reconstructs via
 //! `with_exposed_provenance_mut` on load — this crate's sanctioned

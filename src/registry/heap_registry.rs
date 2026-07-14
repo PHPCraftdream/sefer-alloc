@@ -29,7 +29,7 @@
 //! (The abandoned-segments intrusive Treiber stack that previously also lived
 //! here was removed — task #97 / R4-5. It was unreachable on the production
 //! whole-slot-reuse path and internally inconsistent; git history preserves
-//! it. The `next_abandoned` header field it shared with the
+//! it. The `deferred_next` header field it shared with the
 //! `deferred_large` cross-thread-free stack REMAINS — that stack is a
 //! separate, live feature and is untouched by this removal.)
 

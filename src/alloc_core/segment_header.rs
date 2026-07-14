@@ -236,7 +236,9 @@ impl PageClass {
 ///
 /// The small-segment per-operation hot set — `bump` (refill/carve cursor,
 /// rewritten on every `carve_block`), `owner_thread_free` (cross-thread free
-/// routing), `owner_state` (adoption CAS + owner-id compare), `magic`
+/// routing), `owner_state` (owner-id compare — the state bit is
+/// structurally always LIVE since the adoption substrate that wrote
+/// `ABANDONED` was removed, task #97 / R4-5), `magic`
 /// (dealloc-routing base validation), `live_count` / `decommitted` (M6
 /// decommit bookkeeping, touched on every own-thread free/carve under
 /// `alloc-decommit`), `ring_drain_head` (task #52's drain-guard cache,
@@ -247,7 +249,7 @@ impl PageClass {
 /// with no INTERNAL gaps, so the whole hot set occupies bytes 0..41 —
 /// comfortably inside the first 64-byte cache line. The Large-only /
 /// teardown-only / unregister-only cold fields (`large_size`, `large_align`,
-/// `span_usable`, `reservation`, `reservation_len`, `next_abandoned`,
+/// `span_usable`, `reservation`, `reservation_len`, `deferred_next`,
 /// `pool_next`, `pool_prev`, `segment_id`, `node_id`) are declared AFTER,
 /// likewise alignment-descending; a 7-byte tail-alignment gap after `kind`
 /// (offset 41..48, needed to re-align the first cold 8-byte field,
@@ -267,7 +269,7 @@ impl PageClass {
 /// fields follow. `size_of::<SegmentHeader>()` is confirmed by the
 /// field-by-field accounting: 3×8 + 4×4 + 1 + 7 pad (hot set, bytes 0..48) +
 /// 8×8 + 2×4 (cold set: `large_size`, `large_align`, `span_usable`,
-/// `reservation`, `reservation_len`, `next_abandoned`, `pool_next`,
+/// `reservation`, `reservation_len`, `deferred_next`, `pool_next`,
 /// `pool_prev`, then `segment_id`, `node_id`) = 48 + 72 = 120, verified via
 /// `-Zprint-type-sizes` while adding these fields. `Layout::page_map_off()`
 /// (`align_up(size_of::<SegmentHeader>(), PAGE)`) is `align_up(120, 4096) ==
@@ -303,17 +305,22 @@ pub(crate) struct SegmentHeader {
     /// fallback `FALLBACK_TFS` static atomic (post-W3, task #13 — no longer a
     /// `Box`).
     pub owner_thread_free: *const core::sync::atomic::AtomicPtr<u8>,
-    /// Phase 12.4: the segment's ownership state — packed
+    /// The segment's ownership state — packed
     /// `(state, owner_heap_id, generation)` (see the [`OWNER_STATE_*`] /
-    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The
-    /// Abandoned→Live CAS on this word is the SINGLE linearization point of
-    /// adoption (M9). Stored as a plain `u64` so the `#[repr(C)] Copy`
+    /// [`OWNER_ID_*`] / [`OWNER_GEN_*`] constants above). The state bit is
+    /// structurally always `LIVE` (the abandoned-segments / adoption
+    /// substrate that wrote the `ABANDONED` value was removed — task #97 /
+    /// R4-5; the bit is retained only for layout stability), and
+    /// `generation` is always `0` for the same reason. The LIVE value this
+    /// word carries is the owning heap's slot index (`owner_heap_id`),
+    /// stamped at claim time and read by cross-thread free routing to
+    /// recognise ownership. Stored as a plain `u64` so the `#[repr(C)] Copy`
     /// `SegmentHeader` remains a plain bit-pattern (the bootstrap lays it down
     /// via `Node::write_struct`, and `SegmentMeta::header` reads it back as a
-    /// unit). The adoption path accesses it through the dedicated
+    /// unit). Cross-thread readers access it through the dedicated
     /// [`owner_state_atomic`](SegmentMeta::owner_state_atomic) view (`&AtomicU64`
-    /// at the same fixed offset), because a plain struct-field read would be a
-    /// non-atomic data race under the concurrent adoption CAS.
+    /// at the same fixed offset), because a plain struct-field read would
+    /// race a concurrent owner-stamp store.
     pub owner_state: u64,
     /// Sanity magic — every segment starts with this. A computed segment base
     /// that does not have this magic is not one of our segments (foreign ptr).
@@ -336,7 +343,7 @@ pub(crate) struct SegmentHeader {
     ///
     /// The field is present in EVERY build's layout (so the header byte layout
     /// is stable regardless of feature config — like `owner_state`/
-    /// `next_abandoned`); it is read/mutated ONLY under `alloc-decommit`. Without
+    /// `deferred_next`); it is read/mutated ONLY under `alloc-decommit`. Without
     /// that feature it is dead data (silenced below).
     pub live_count: u32,
     /// Phase 35 (M6 decommit): owner-only flag (0 / 1) recording whether this
@@ -429,16 +436,29 @@ pub(crate) struct SegmentHeader {
     /// The full size of the OS reservation (head + usable + tail). Paired with
     /// `reservation` for the OS free call.
     pub reservation_len: usize,
-    /// Phase 12.4: the intrusive link for the global abandoned-segments
-    /// Treiber stack. While a segment is ABANDONED and on the stack, this
-    /// holds the segment-relative OFFSET of the NEXT abandoned segment's base
-    /// (or [`ABANDONED_TAIL`] if this is the stack tail). Stored as an offset
-    /// (not a pointer) so the field is plain `Copy` data inside the header.
-    /// Live (non-abandoned) segments carry [`ABANDONED_TAIL`] here ("not on
-    /// the stack"). Accessed atomically through
-    /// [`next_abandoned_atomic`](SegmentMeta::next_abandoned_atomic) on the
-    /// abandon/adopt path.
-    pub next_abandoned: u64,
+    /// The intrusive link for the cross-thread deferred-large-free Treiber
+    /// stack (see `alloc_core::deferred_large`): while a Large segment `base`
+    /// is queued for its owning heap to reclaim, this field holds the ADDRESS
+    /// of the NEXT queued base (packed as an exposed-provenance `u64`), or a
+    /// sentinel. Stored as a plain `u64` (not a pointer) so the field is plain
+    /// `Copy` data inside the header; the address↔pointer reconstruction is
+    /// done at the push/drain call sites via `expose_provenance` /
+    /// `with_exposed_provenance_mut` (the crate's sanctioned exposed-provenance
+    /// pairing — see `deferred_large::push`/`drain`).
+    ///
+    /// Two sentinels: [`ABANDONED_TAIL`] (`u64::MAX`, "not linked into any
+    /// stack" — every fresh/reclaimed segment starts here, and the
+    /// double-push guard claims the link word FROM this value) and
+    /// `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on this stack, no next" — the
+    /// bottom-of-stack marker). Accessed atomically through
+    /// [`deferred_next_atomic`](SegmentMeta::deferred_next_atomic).
+    ///
+    /// Historically this field was the link for the abandoned-segments stack of
+    /// the segment-transfer substrate; that substrate was removed (task #97 /
+    /// R4-5) and the field was repurposed for the deferred-large stack, which
+    /// is its sole current consumer. The `ABANDONED_TAIL` sentinel keeps its
+    /// historical name for the same reason (it is that link's "free" marker).
+    pub deferred_next: u64,
     /// RAD-3 (E2, task #56) — the intrusive DOUBLY-linked list link to the
     /// NEXT more-recently-pooled segment in the empty-small-segment
     /// hysteresis pool (Mechanism 2), or `null` if this is the pool's HEAD
@@ -455,9 +475,9 @@ pub(crate) struct SegmentHeader {
     /// single-threaded bookkeeping — every push/pop/remove happens on the
     /// segment's owning thread inside `AllocCore`'s pool methods (mirroring
     /// `bump`/`live_count`'s owner-only discipline); no cross-thread reader
-    /// ever touches these fields (unlike `next_abandoned`, which the
-    /// CROSS-THREAD abandon/adopt protocol accesses via a `&AtomicU64` view —
-    /// hence THAT field stays a `u64` offset/pointer hybrid with exposed
+    /// ever touches these fields (unlike `deferred_next`, which the
+    /// CROSS-THREAD deferred-large-free protocol accesses via a `&AtomicU64`
+    /// view — hence THAT field stays a `u64` address/sentinel hybrid with exposed
     /// provenance, while these can be plain `*mut u8` pointers accessed
     /// through ordinary field-specific reads/writes, see
     /// [`SegmentMeta::pool_next_of`]/[`SegmentMeta::set_pool_next`]).
@@ -506,10 +526,22 @@ pub(crate) struct SegmentHeader {
     pub node_id: u32,
 }
 
-/// Sentinel for "no next abandoned segment" (the intrusive stack tail) AND
-/// "this segment is not currently on the abandoned stack". A real
-/// segment-relative offset is always `< SEGMENT` (`1 << 22`), so `u64::MAX`
-/// is unambiguous.
+/// Sentinel for the [`deferred_next`](SegmentHeader::deferred_next) link
+/// word meaning "not currently linked into any stack" — the rest value
+/// every fresh/reclaimed segment header starts with, and the value the
+/// deferred-large double-push guard claims the link word FROM (see
+/// `alloc_core::deferred_large::push`). Deliberately distinct from
+/// `DEFERRED_LARGE_TAIL` (`u64::MAX - 1`, "on this stack, no next"): if the
+/// two coincided, a `base` pushed onto an EMPTY deferred-large stack would
+/// read back as "never pushed", silently defeating the guard the first time
+/// it ran. Neither `u64::MAX` nor `u64::MAX - 1` is ever a real link value
+/// (a queued base address cast to `u64` is SEGMENT-aligned and nowhere near
+/// `usize::MAX`), so both are unambiguous.
+///
+/// The `ABANDONED_` prefix is historical: this sentinel pre-dates the
+/// deferred-large repurposing of `deferred_next` (it was the abandoned-
+/// segments stack tail). The name is retained; the value is now the
+/// deferred-large link's "free" marker.
 #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
 pub(crate) const ABANDONED_TAIL: u64 = u64::MAX;
 
@@ -527,8 +559,8 @@ impl SegmentHeader {
     /// payload carving may begin (just past the metadata region).
     ///
     /// The segment starts in the LIVE owner-state bound to `OWNER_ID_NONE`
-    /// (not yet stamped with a real heap id); the abandonment/adopt path
-    /// stamps it when the segment is bound to a heap.
+    /// (not yet stamped with a real heap id); the claim path stamps it when
+    /// the segment is bound to a heap.
     pub(crate) const fn small(
         segment_id: u32,
         bump: usize,
@@ -547,7 +579,7 @@ impl SegmentHeader {
             reservation_len,
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
-            next_abandoned: ABANDONED_TAIL,
+            deferred_next: ABANDONED_TAIL,
             // RAD-3 (E2): a fresh segment is not on the empty-segment pool's
             // list yet — both links start null (the "not pooled" sentinel).
             pool_next: core::ptr::null_mut(),
@@ -599,7 +631,7 @@ impl SegmentHeader {
             reservation_len,
             owner_thread_free: core::ptr::null(),
             owner_state: pack_owner(OWNER_STATE_LIVE, OWNER_ID_NONE, 0),
-            next_abandoned: ABANDONED_TAIL,
+            deferred_next: ABANDONED_TAIL,
             // RAD-3 (E2): Large segments never join the small-segment pool —
             // inert, like live_count/decommitted below.
             pool_next: core::ptr::null_mut(),
@@ -1491,9 +1523,9 @@ impl SegmentMeta {
     }
 
     // -------------------------------------------------------------------
-    // Phase 12.4 — atomic views over the owner-state / next_abandoned
-    // fields. These return `&AtomicU64` at the field's fixed offset so the
-    // adoption CAS is a genuine atomic operation (NOT a non-atomic struct
+    // Atomic views over the owner-state / deferred_next fields. These
+    // return `&AtomicU64` at the field's fixed offset so a cross-thread
+    // read/store is a genuine atomic operation (NOT a non-atomic struct
     // field read, which would be a data race under concurrency). The single
     // `unsafe` dereference lives in the [`node`](super::node) seam
     // (`Node::atomic_u64_at`); the field offset is computed by the safe
@@ -1501,16 +1533,19 @@ impl SegmentMeta {
     // stays unsafe-free, as it has been since Phase 8.
     // -------------------------------------------------------------------
 
-    /// A `&AtomicU64` view over this segment's `owner_state` field. The
-    /// adoption path uses this for the Abandoned→Live CAS (the M9
-    /// linearization point). The view aliases the header byte range; access
-    /// is atomic so there is no data race with a concurrent header read.
+    /// A `&AtomicU64` view over this segment's `owner_state` field.
+    /// Cross-thread free routing uses this for a race-free read of the
+    /// owning heap's id (`owner_state`'s `owner_heap_id` field); the
+    /// owner-stamp path uses it for the atomic store. The view aliases the
+    /// header byte range; access is atomic so there is no data race with a
+    /// concurrent header read.
     ///
     /// # Caller's contract
     ///
     /// `self.base` MUST be a live small/primordial segment base with a valid
-    /// header at offset 0 (the caller — the abandon/adopt path — guarantees
-    /// this; the segment is registered and has a valid header).
+    /// header at offset 0 (the caller — cross-thread free routing / owner
+    /// stamping — guarantees this; the segment is registered and has a valid
+    /// header).
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
     #[inline(always)]
     pub(crate) fn owner_state_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
@@ -1521,11 +1556,12 @@ impl SegmentMeta {
         Node::atomic_u64_at(self.base, off)
     }
 
-    /// A `&AtomicU64` view over this segment's `next_abandoned` intrusive-link
-    /// field. Used by the abandon (push) and adopt (pop chain-walk) paths.
+    /// A `&AtomicU64` view over this segment's `deferred_next` intrusive-link
+    /// field. Used by the deferred-large-free push (remote producer) and
+    /// drain (owner) paths — see `alloc_core::deferred_large`.
     #[cfg_attr(not(feature = "alloc-global"), allow(dead_code))]
-    pub(crate) fn next_abandoned_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
-        let off = core::mem::offset_of!(SegmentHeader, next_abandoned);
+    pub(crate) fn deferred_next_atomic(&self) -> &'static core::sync::atomic::AtomicU64 {
+        let off = core::mem::offset_of!(SegmentHeader, deferred_next);
         Node::atomic_u64_at(self.base, off)
     }
 }
@@ -1537,7 +1573,8 @@ impl SegmentMeta {
 // alloc bitmap), NOT a `SegmentHeader` field, so its accessors are free
 // functions (not `offset_of!`-on-header field reads). Each cell is an
 // `AtomicU8` obtained through the `node` seam (`Node::atomic_u8_at`), mirroring
-// how the adoption path obtains `&AtomicU64` views over header fields.
+// how the atomic-view accessors (`owner_state_atomic` / `deferred_next_atomic`)
+// obtain `&AtomicU64` views over header fields.
 //
 // Memory model (X7 plan §2): owner writes Relaxed (single-writer at block issue
 // — that is Ф3, not this phase); remote reads Relaxed (also Ф3). Both orderings

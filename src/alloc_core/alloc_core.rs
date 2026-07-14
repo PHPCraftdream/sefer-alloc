@@ -970,7 +970,7 @@ impl AllocCore {
                         // `magic`. Restoring this file's own §11 discipline
                         // ("remote-readable field ⇒ atomic single-word access",
                         // the same pattern `SegmentMeta::owner_state_atomic`
-                        // already uses for the adoption CAS): write only the
+                        // already uses for cross-thread owner-state reads): write only the
                         // `magic` field, through an `&AtomicU32` view at its
                         // `offset_of!` offset, so a concurrent remote
                         // `magic_at`/`kind_at`/`large_size_at`/`span_usable_at`

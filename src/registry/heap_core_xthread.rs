@@ -40,14 +40,14 @@ impl HeapCore {
     /// mechanism and the double-push-guard hardening rationale). The
     /// primitive takes `&AtomicPtr<u8>` directly, so the pointer-to-reference
     /// deref of `head` stays HERE (via the `alloc_core::node` seam, same
-    /// discipline as `next_abandoned_atomic`/`owner_state_atomic`) rather
+    /// discipline as `deferred_next_atomic`/`owner_state_atomic`) rather
     /// than inside the shared (seam-free) module.
     #[cfg(feature = "alloc-xthread")]
     fn push_large_deferred_free(head: *const AtomicPtr<u8>, base: *mut u8) {
         // `heap_core.rs` is NOT an allowed `unsafe` seam (see `src/lib.rs`'s
         // seam whitelist), so the pointer-to-reference deref is delegated to
         // `Node::atomic_ptr_ref` (the `alloc_core::node` seam), same
-        // discipline as `next_abandoned_atomic`/`owner_state_atomic`.
+        // discipline as `deferred_next_atomic`/`owner_state_atomic`.
         let head_ref: &AtomicPtr<u8> = Node::atomic_ptr_ref(head);
         crate::alloc_core::deferred_large::push_large_deferred_free(head_ref, base);
     }

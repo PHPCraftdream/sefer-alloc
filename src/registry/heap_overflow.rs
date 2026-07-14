@@ -23,13 +23,13 @@
 //! module doc walks the three rejected full-durability designs: writing into
 //! the block's own bytes reopens the H1-class UAF the ring exists to close;
 //! `Box::new` reopens the `#[global_allocator]` reentrancy hazard; reusing
-//! `next_abandoned` widens the M-7 dormant reactivation hazard).
+//! `deferred_next` widens the M-7 dormant reactivation hazard).
 //!
 //! This module is the FOURTH design this task's investigation considered (see
 //! `docs/perf/IAI_BASELINE.md`'s "RAD-4b" entry for the full comparison
 //! against the three candidates the task brief posed — real backpressure/
 //! blocking `dealloc`, a slot-resident buffer keyed by segment pointer +
-//! provenance-exposed header stamp, and properly tagging `next_abandoned`).
+//! provenance-exposed header stamp, and properly tagging `deferred_next`).
 //! It keeps option 2's SHAPE (slot-resident, pre-reserved at claim time, no
 //! `Box`, no block-byte writes) but resolves the "how does a remote producer
 //! find the owning `HeapSlot`" question WITHOUT any new `SegmentHeader`
@@ -80,7 +80,7 @@
 //! true of this queue exactly as it was true of `RemoteFreeRing` itself (a
 //! bigger `RING_CAP` is not "unbounded", it is "a bigger bound"). The three
 //! designs this task's investigation rejected (blocking `dealloc`, `Box`
-//! nodes, reusing `next_abandoned`) do not change this fact — the blocking
+//! nodes, reusing `deferred_next`) do not change this fact — the blocking
 //! design "solves" it only by converting the residual into an unrecoverable
 //! deadlock instead of a bounded leak the moment the owner thread is
 //! genuinely gone, which is a worse failure mode for a general-purpose

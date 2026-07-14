@@ -6,11 +6,11 @@
 //!
 //! This MUST be distinct from
 //! [`ABANDONED_TAIL`](crate::alloc_core::segment_header::ABANDONED_TAIL)
-//! (`u64::MAX`), which the same `next_abandoned` header field uses to mean
+//! (`u64::MAX`), which the same `deferred_next` header field uses to mean
 //! "not linked into ANY stack" (the value every fresh/reclaimed segment
 //! header starts with). If the two sentinels were the same value, a `base`
 //! pushed onto an EMPTY deferred-free stack would end this push with
-//! `next_abandoned == ABANDONED_TAIL` — indistinguishable from "never
+//! `deferred_next == ABANDONED_TAIL` — indistinguishable from "never
 //! pushed" — silently defeating the double-push guard in
 //! [`push_large_deferred_free`](super::push::push_large_deferred_free) for
 //! the common case (an idle heap, empty stack) the very first time it's
