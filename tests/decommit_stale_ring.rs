@@ -94,7 +94,11 @@ fn stale_ring_entry_rejected_by_bump_guard() {
     // succeeded.
     let mut pushed_ptrs = Vec::new();
     for &p in &ptrs {
-        if ac.dbg_push_to_ring(p, class_idx) {
+        // SAFETY (R6-MS-4): `p` is a live allocation owned by `ac`; this push is
+        // its single logical remote free — the block is reclaimed by the
+        // `dbg_drain_all_rings` below (no dealloc / re-issue of `p` before that).
+        // `class_idx` is the actual class.
+        if unsafe { ac.dbg_push_to_ring(p, class_idx) } {
             pushed_ptrs.push(p);
         }
     }
@@ -111,7 +115,14 @@ fn stale_ring_entry_rejected_by_bump_guard() {
     // The duplicate push may fail if the ring is now full; that's fine — the test
     // still exercises the K-entry drain path. We just won't have the duplicate to
     // guard, but the drain itself is still valid.
-    let _ = ac.dbg_push_to_ring(stale_ptr, class_idx);
+    //
+    // SAFETY (R6-MS-4): `stale_ptr` is a DUPLICATE push of an already-pushed
+    // block owned by `ac` — a DELIBERATE contract-stress of the drain's
+    // `off >= bump` guard (after the unique entries decommit the segment and
+    // reset bump, this duplicate's offset is `>= bump` → no-op, never touching
+    // the decommitted page). `class_idx` is the actual class. Sound by the bump
+    // guard; not a contract-honoring single remote free.
+    let _ = unsafe { ac.dbg_push_to_ring(stale_ptr, class_idx) };
 
     // Drain all rings. Within the drain for each segment:
     //   - unique entries: reclaim blocks, dec live_count
@@ -210,7 +221,13 @@ fn post_recycle_push_rejected_by_contains_base() {
 
     // The post-recycle push MUST be rejected: `contains_base` returns `false`
     // for the recycled segment, so `dbg_push_to_ring` returns `false`.
-    let pushed = ac.dbg_push_to_ring(stale, class_idx);
+    //
+    // SAFETY (R6-MS-4): `stale` points into a RECYCLED segment (its slot was
+    // NULLed); the function's own `contains_base_ro` check returns `false` and
+    // creates NO note — a deliberate exercise of that membership guard. Because
+    // no note is created there is no free at drain and no hazard. `class_idx` is
+    // the actual class.
+    let pushed = unsafe { ac.dbg_push_to_ring(stale, class_idx) };
     assert!(
         !pushed,
         "push to a recycled segment's ring was accepted — contains_base check missing"

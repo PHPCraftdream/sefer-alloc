@@ -1114,7 +1114,13 @@ fn pool_cap_sweep_spread_and_drain(cap: usize, size: usize) -> u64 {
         }
     }
     for &p in survivors.values() {
-        ac.dbg_push_to_ring(p, class_idx);
+        // SAFETY (R6-MS-4): `p` is a live allocation owned by `ac`; this push is
+        // its SINGLE logical remote free — survivors are freed ONLY via this
+        // ring-push/drain path (the non-survivors were dealloc'd above, and the
+        // survivors were deliberately excluded from that dealloc loop), with no
+        // re-issue before the `dbg_drain_all_rings` below. `class_idx` is the
+        // block's actual class.
+        unsafe { ac.dbg_push_to_ring(p, class_idx) };
     }
 
     let before = sefer_alloc::AllocCore::dbg_decommit_count();

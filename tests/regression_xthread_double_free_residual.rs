@@ -171,6 +171,14 @@ fn drain_resident_xthread_double_free_no_corruption() {
     assert!(!p.is_null());
 
     // (2) simulate the REMOTE cross-thread free of P.
+    // SAFETY (R6-MS-4 + raw-deref): `(*heap)` is the live heap claimed above;
+    // `p` is a live allocation it owns; `c` is `p`'s actual class. This push +
+    // the dealloc in step (3) DELIBERATELY double-manage `p` to exercise the
+    // #164 magazine defensive guard: at drain (4) `reclaim_offset_checked`'s
+    // magazine predicate detects `p` is magazine-resident and drops the stale
+    // note (no `write_next`/`mark_free`), so `p` is issued exactly once in (5).
+    // Sound under this file's `fastbin` gate; a contract-stress of the drain
+    // guard, not a contract-honoring single remote free.
     let pushed = unsafe { (*heap).dbg_push_to_ring(p, c) };
     assert!(pushed, "ring push failed (ring full or P not owned)");
 
@@ -262,6 +270,13 @@ fn realloc_path_drain_respects_magazine() {
     assert!(!p.is_null());
 
     // (2) simulate remote cross-thread free of P.
+    // SAFETY (R6-MS-4 + raw-deref): `(*heap)` is the live heap claimed above;
+    // `p` is a live allocation it owns; `c0` is `p`'s actual class. This push +
+    // the dealloc in step (3) DELIBERATELY double-manage `p` to exercise the
+    // #164 magazine defensive guard (sound under this file's `fastbin` gate): at
+    // drain the magazine predicate drops the stale note, so `p` is issued
+    // exactly once in (6). A contract-stress of the drain guard, not a
+    // contract-honoring single remote free.
     let pushed = unsafe { (*heap).dbg_push_to_ring(p, c0) };
     assert!(pushed, "ring push failed");
 
@@ -363,6 +378,14 @@ fn residual_xthread_double_free_no_corruption_hardened() {
 
     // (2) simulate the REMOTE cross-thread free of P. Under hardened, touch
     //     (b) stamps P's CURRENT generation (1) into the ring note.
+    // SAFETY (R6-MS-4 + raw-deref): `(*heap)` is the live heap claimed above;
+    // `p` is a live allocation it owns; `c` is `p`'s actual class. This push +
+    // the dealloc (3) + alloc-reissue (4) DELIBERATELY construct the stale-note
+    // hazard to exercise the generation defensive guard (this test is
+    // `#[cfg(feature = "hardened")]`): at drain (5) the stamped gen (1) != P's
+    // current gen (2) → the note is dropped (no `write_next`), so P's sentinel
+    // survives. Sound under `hardened`; a contract-stress of the drain guard,
+    // not a contract-honoring single remote free.
     let pushed = unsafe { (*heap).dbg_push_to_ring(p, c) };
     assert!(pushed, "ring push failed (ring full or P not owned)");
 

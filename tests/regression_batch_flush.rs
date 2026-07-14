@@ -117,7 +117,11 @@ fn a_ring_df_block_is_skipped_by_flush() {
     // resident in `mag`.
     let p = mag[3];
     assert!(
-        core.dbg_push_to_ring(p, c),
+        // SAFETY (R6-MS-4): `p` (= mag[3]) is a live allocation owned by `core`;
+        // this push is its single logical remote free — it is reclaimed onto the
+        // BinTable freelist by the `dbg_drain_all_rings` below (no dealloc /
+        // re-issue of `p` in between). `c` is the block's actual class.
+        unsafe { core.dbg_push_to_ring(p, c) },
         "ring push failed (ring full or P not owned)"
     );
     core.dbg_drain_all_rings();

@@ -129,7 +129,13 @@ fn bench_ring_push_drain(c: &mut Criterion) {
                 let mut core = core.borrow_mut();
                 let mut pushed = 0usize;
                 for &ptr in &ptrs {
-                    if core.dbg_push_to_ring(ptr, CLASS_IDX) {
+                    // SAFETY (R6-MS-4): `ptr` is a fresh live allocation owned by
+                    // `core` (allocated in the setup closure above); this push is
+                    // its single logical remote free — the block is NOT dealloc'd
+                    // nor re-issued before the `dbg_drain_all_rings` below reclaims
+                    // it. `CLASS_IDX` is the block's actual class (asserted by
+                    // `assert_class_idx_matches_alloc_path` above).
+                    if unsafe { core.dbg_push_to_ring(ptr, CLASS_IDX) } {
                         pushed += 1;
                     }
                 }
@@ -164,7 +170,12 @@ fn bench_ring_push_drain(c: &mut Criterion) {
             // Push to ring (simulated cross-thread free).
             let mut pushed = 0usize;
             for &ptr in &ptrs {
-                if !ptr.is_null() && core.dbg_push_to_ring(ptr, CLASS_IDX) {
+                // SAFETY (R6-MS-4): `ptr` is a fresh live allocation owned by
+                // `core`; this push is its single logical remote free — the block
+                // is reclaimed by the `dbg_drain_all_rings` below (no dealloc /
+                // re-issue of `ptr` in between). `CLASS_IDX` is the actual class
+                // (asserted by `assert_class_idx_matches_alloc_path` above).
+                if !ptr.is_null() && unsafe { core.dbg_push_to_ring(ptr, CLASS_IDX) } {
                     pushed += 1;
                 }
             }

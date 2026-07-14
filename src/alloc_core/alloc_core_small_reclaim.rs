@@ -329,9 +329,67 @@ impl AllocCore {
     /// supplies `class_idx` (the class it allocated the block under) because the
     /// reclaim contract carries the class in the ring entry — the owner must
     /// never re-derive it from `page_map` (the §13 root cause).
+    ///
+    /// # Safety
+    ///
+    /// Pushing a ring note is the **producer** side of the cross-thread free
+    /// simulation; the note is later consumed by a drain
+    /// ([`dbg_drain_all_rings`](Self::dbg_drain_all_rings) / the production
+    /// `find_segment_with_free` lazy drain), which reclaims the block back into
+    /// its segment's `BinTable` (`write_next` + `set_head` + `mark_free`). The
+    /// same reasoning that made [`dealloc`](AllocCore::dealloc)/`realloc`
+    /// (R6-MS-1/2) and [`flush_class`](AllocCore::flush_class) (R6-MS-3)
+    /// `unsafe fn` applies to this producer: a SAFE entry point accepting a
+    /// caller-controlled `ptr` was a soundness gap (round5
+    /// `memory_safety_review` R5-MS-4). Fully-safe Rust could push a "remote
+    /// free" note for a LIVE block, then `dealloc` it and `alloc`-re-issue the
+    /// same address before the drain consumed the stale note — at drain the
+    /// block's bitmap reads "allocated" (the re-issue set it), the magazine
+    /// predicate is always-false on a bare `AllocCore`, and the generational
+    /// guard is compiled out under `production`, so `reclaim_offset` would
+    /// `write_next`/`mark_free` the LIVE re-issue, yielding two live owners of
+    /// one range — with NO `unsafe` block on the caller side.
+    ///
+    /// The caller must guarantee:
+    ///
+    /// - `ptr` is the exact start of a block in a segment owned by THIS
+    ///   `AllocCore`. (The function's own `contains_base_ro` check enforces this
+    ///   and returns `false` otherwise, so a foreign/recycled-segment pointer is
+    ///   a safe no-op rather than UB; this bullet states the obligation for the
+    ///   case where the push SUCCEEDS, i.e. a note is actually created.) The
+    ///   derived `off = ptr - base` is then a valid in-segment offset.
+    /// - This push represents AT MOST ONE logical remote free of `ptr`. Between
+    ///   this push and the drain that consumes this note, `ptr` must NOT be
+    ///   freed via any other path ([`dealloc`](AllocCore::dealloc) /
+    ///   [`flush_class`](AllocCore::flush_class)) and must NOT be re-issued (a
+    ///   subsequent [`alloc`](AllocCore::alloc) returning the same address).
+    ///   Equivalently: treat `ptr` as consumed by this push (logically freed)
+    ///   and do not touch it again until after the drain has processed this note
+    ///   and the block is re-issued as a fresh allocation. This is the
+    ///   load-bearing obligation: it is what prevents the stale-note→double-issue
+    ///   chain above.
+    /// - `class_idx` is the block's actual allocated size class, so the note is
+    ///   honoured by drain at the correct `block_size`. (`reclaim_offset`
+    ///   bounds-checks `class_idx < SMALL_CLASS_COUNT` and rejects an out-of-
+    ///   range value as a no-op — defence-in-depth, matching the "garbled ring
+    ///   entry" contract documented on `reclaim_offset`; pushing an out-of-range
+    ///   class purely to exercise that guard is permitted and is NOT
+    ///   memory-unsafe, since such a note causes no free at drain.)
+    ///
+    /// The drain's own guards (the `is_free` bitmap check, the magazine
+    /// predicate under `fastbin`, the generational guard under `hardened`)
+    /// degrade several CONTRACT VIOLATIONS benignly as defence-in-depth — but
+    /// they are NOT a substitute for honouring this contract, and under the
+    /// `production` feature set (no `hardened`, bare-`AllocCore` always-false
+    /// magazine predicate) they are insufficient, which is exactly why this
+    /// entry point is `unsafe fn`. Under `hardened` this function additionally
+    /// reads the block's stamped generation (so the drain's generational guard
+    /// compares against a real gen); that read is sound given `ptr` is a live
+    /// in-segment block per the first bullet.
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
-    pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
+    #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (remote-free-note producer contract).
+    pub unsafe fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
             return false;

@@ -383,7 +383,13 @@ fn guards_skip_already_free_block() {
     // so the only freelist entries after flush are the ones we just flushed.
     let already_free = sorted[3];
     assert!(
-        core.dbg_push_to_ring(already_free, c),
+        // SAFETY (R6-MS-4): `already_free` is owned by `core` and `c` is its
+        // actual class. `already_free` is ALREADY FREE (Ring-DF target) — this is
+        // a DELIBERATE contract-stress of reclaim's `is_free` defensive guard: at
+        // drain the bitmap reads free → `reclaim_offset` returns false (no
+        // `write_next`/`mark_free`), so no double-link occurs. Sound by the
+        // unconditional bitmap guard.
+        unsafe { core.dbg_push_to_ring(already_free, c) },
         "ring push must succeed"
     );
     core.dbg_drain_all_rings();

@@ -250,7 +250,14 @@ fn recycled_segment_ring_drain_is_safe() {
     // segments that will shortly be recycled.
     let mut pushed = 0usize;
     for &p in ptrs.iter().step_by(50) {
-        if ac.dbg_push_to_ring(p, class_idx) {
+        // SAFETY (R6-MS-4): `p` is owned by `ac` and `class_idx` is its actual
+        // class. These pushed blocks are ALSO own-thread-dealloc'd below, so this
+        // is a DELIBERATE contract-stress of the drain's `is_free` defensive
+        // guard (a stale note for an already-freed block), not a contract-honoring
+        // single remote free. It is sound because `reclaim_offset`'s
+        // `bm.is_free(off)` check runs unconditionally and returns false for the
+        // already-freed block, so no `write_next`/`mark_free` runs on a live owner.
+        if unsafe { ac.dbg_push_to_ring(p, class_idx) } {
             pushed += 1;
         }
     }

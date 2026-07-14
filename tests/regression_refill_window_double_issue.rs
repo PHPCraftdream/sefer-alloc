@@ -161,6 +161,14 @@ fn refill_window_does_not_double_issue_in_out_buffer_resident_block() {
     unsafe { (*heap).dealloc(p, layout) };
 
     // (4) plant the stale cross-thread free note for P.
+    // SAFETY (R6-MS-4 + raw-deref): `(*heap)` is the live heap claimed above;
+    // `p` is a live allocation it owns; `c` is `p`'s actual class. This push +
+    // the dealloc (3) + flush (5) DELIBERATELY construct the refill-window
+    // stale-note hazard to exercise the #164 magazine defensive guard (sound
+    // under this file's `fastbin` gate): at the drain inside the alloc loop (6)
+    // the magazine predicate drops the stale note, so `p` is issued exactly
+    // once. A contract-stress of the drain guard, not a contract-honoring
+    // single remote free.
     let pushed = unsafe { (*heap).dbg_push_to_ring(p, c) };
     assert!(pushed, "ring push failed (ring full or P not owned)");
 

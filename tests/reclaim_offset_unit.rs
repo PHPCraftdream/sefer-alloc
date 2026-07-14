@@ -59,7 +59,12 @@ fn reclaim_offset_single_threaded_roundtrip() {
         const CLASS_IDX: usize = 0;
         let mut pushed = 0usize;
         for &p in &ptrs {
-            if ac.dbg_push_to_ring(p, CLASS_IDX) {
+            // SAFETY (R6-MS-4): `p` is a live allocation owned by `ac`; this push
+            // is its single logical remote free — the block is reclaimed by the
+            // `dbg_drain_all_rings` below (no dealloc / re-issue of `p` in
+            // between). `CLASS_IDX` is the block's actual class (0 for the 8/8
+            // layout).
+            if unsafe { ac.dbg_push_to_ring(p, CLASS_IDX) } {
                 pushed += 1;
             }
         }

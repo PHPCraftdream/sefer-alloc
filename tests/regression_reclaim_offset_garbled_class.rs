@@ -48,7 +48,15 @@ fn reclaim_offset_skips_garbled_out_of_range_class_without_panic() {
     // Fabricate the garbled ring entry: a valid offset, an out-of-range class.
     // `dbg_push_to_ring` packs the class verbatim, so this is a genuine garbled
     // packed value — exactly what a metadata-corrupting overflow could leave.
-    let pushed = ac.dbg_push_to_ring(p, GARBLED_CLASS);
+    // SAFETY (R6-MS-4): `p` is a live allocation owned by `ac` in one of its
+    // segments (so the offset arithmetic is valid). `GARBLED_CLASS` is
+    // intentionally OUT OF RANGE to exercise `reclaim_offset`'s class-bounds
+    // guard: reclaim bounds-checks `class_idx < SMALL_CLASS_COUNT`, returns
+    // false, and the note causes NO free at drain — `p` is later freed exactly
+    // once via the normal `dealloc`. This is the permitted defensive case in the
+    // `# Safety` contract (an out-of-range class is a safe no-op note), not a
+    // contract-honoring single remote free.
+    let pushed = unsafe { ac.dbg_push_to_ring(p, GARBLED_CLASS) };
     assert!(
         pushed,
         "failed to push the fabricated garbled entry into the ring"

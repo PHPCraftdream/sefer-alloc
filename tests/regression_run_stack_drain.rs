@@ -332,7 +332,13 @@ fn m2_double_free_through_run_refused() {
         "victim must be FREE (run member) before the double-free attempt"
     );
     assert!(
-        core.dbg_push_to_ring(victim, c),
+        // SAFETY (R6-MS-4): `victim` is owned by `core` and `c` is its actual
+        // class. `victim` is ALREADY FREE (a run member) — this is a DELIBERATE
+        // contract-stress of reclaim's `is_free` defensive guard: at drain the
+        // bitmap reads free → `reclaim_offset` returns false (no `write_next`,
+        // no `mark_free`), so no double-link occurs. Sound by the unconditional
+        // bitmap guard, not a contract-honoring single remote free.
+        unsafe { core.dbg_push_to_ring(victim, c) },
         "ring push must succeed (the ring accepts any entry)"
     );
 

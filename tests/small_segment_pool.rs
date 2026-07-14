@@ -171,7 +171,12 @@ fn pool_fills_to_cap_and_no_more() {
 
     // Push each survivor into its own ring (cross-thread free of the last block).
     for &p in survivors.values() {
-        assert!(ac.dbg_push_to_ring(p, class_idx));
+        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`;
+        // this push is its single logical remote free — survivors are freed ONLY
+        // via this ring-push/drain path (the non-survivors were dealloc'd above),
+        // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
+        // the block's actual class.
+        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
     }
 
     assert_eq!(ac.dbg_pooled_count(), 0, "pool must start empty");
@@ -214,7 +219,12 @@ fn reuse_pooled_segment_skips_os_reservation() {
         }
     }
     for &p in survivors.values() {
-        assert!(ac.dbg_push_to_ring(p, class_idx));
+        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`;
+        // this push is its single logical remote free — survivors are freed ONLY
+        // via this ring-push/drain path (the non-survivors were dealloc'd above),
+        // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
+        // the block's actual class.
+        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
     }
     ac.dbg_drain_all_rings();
     let pooled = ac.dbg_pooled_count();
@@ -290,7 +300,12 @@ fn disabled_pool_never_retains() {
         }
     }
     for &p in survivors.values() {
-        assert!(ac.dbg_push_to_ring(p, class_idx));
+        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`;
+        // this push is its single logical remote free — survivors are freed ONLY
+        // via this ring-push/drain path (the non-survivors were dealloc'd above),
+        // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
+        // the block's actual class.
+        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
     }
     ac.dbg_drain_all_rings();
 
@@ -337,7 +352,12 @@ fn stale_free_into_pooled_segment_is_noop() {
         }
     }
     for &p in survivors.values() {
-        assert!(ac.dbg_push_to_ring(p, class_idx));
+        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`;
+        // this push is its single logical remote free — survivors are freed ONLY
+        // via this ring-push/drain path (the non-survivors were dealloc'd above),
+        // with no re-issue before the `dbg_drain_all_rings` below. `class_idx` is
+        // the block's actual class.
+        assert!(unsafe { ac.dbg_push_to_ring(p, class_idx) });
     }
     ac.dbg_drain_all_rings();
     assert!(ac.dbg_pooled_count() > 0);
@@ -358,7 +378,14 @@ fn stale_free_into_pooled_segment_is_noop() {
     // a stale/duplicate cross-thread free. Then drain. It must be a no-op:
     // live_count stays 0, no crash.
     assert!(
-        ac.dbg_push_to_ring(pooled_ptr, class_idx),
+        // SAFETY (R6-MS-4): `pooled_ptr` is owned by `ac` and `class_idx` is its
+        // actual class. `pooled_ptr` is ALREADY FREE (its pooled segment has
+        // live_count 0) — this is a DELIBERATE contract-stress of the drain's
+        // `is_free` defensive guard: at drain the bitmap reads free →
+        // `reclaim_offset` returns false (no `write_next`/`mark_free`), so
+        // live_count stays 0 and no corruption occurs. Sound by the
+        // unconditional bitmap guard.
+        unsafe { ac.dbg_push_to_ring(pooled_ptr, class_idx) },
         "push into a registered pooled segment must succeed at the ring level"
     );
     ac.dbg_drain_all_rings();

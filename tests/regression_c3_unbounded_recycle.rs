@@ -174,7 +174,11 @@ fn unbounded_recycle_within_single_scan() {
     // production code path.
     let mut pushed = 0usize;
     for &p in survivors.values() {
-        if ac.dbg_push_to_ring(p, class_idx) {
+        // SAFETY (R6-MS-4): `p` is a live survivor allocation owned by `ac`; this
+        // push is its single logical remote free — survivors are reclaimed by the
+        // `dbg_drain_all_rings` below (no dealloc / re-issue of `p` before that).
+        // `class_idx` is the block's actual class.
+        if unsafe { ac.dbg_push_to_ring(p, class_idx) } {
             pushed += 1;
         }
     }

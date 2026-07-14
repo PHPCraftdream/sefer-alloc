@@ -87,10 +87,28 @@ impl HeapCore {
     /// `false` if the ring was full or `ptr` is not one of this heap's segments.
     /// Zero production impact: `#[doc(hidden)]`, test-only, delegates to an
     /// existing hook.
+    ///
+    /// # Safety
+    ///
+    /// `unsafe fn` (R6-MS-4) for exactly the same reason as
+    /// [`AllocCore::dbg_push_to_ring`]: this thin delegation is the producer
+    /// side of the cross-thread free simulation, and a safe wrapper would leave
+    /// the round5 `memory_safety_review` R5-MS-4 stale-note→double-issue chain
+    /// open through `HeapCore` (the residual tests reach the seam through this
+    /// very wrapper). The caller must honour the identical contract: `ptr` is a
+    /// live block in a segment owned by this heap; this push is at most one
+    /// logical remote free (no `dealloc`/`flush_class`/`alloc`-re-issue of `ptr`
+    /// between this push and the consuming drain); and `class_idx` is the
+    /// block's actual allocated class. See the delegated fn's `# Safety` section
+    /// for the full rationale and the defensive-guard caveats.
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
-    pub fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
-        self.core.dbg_push_to_ring(ptr, class_idx)
+    #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (delegation to the unsafe producer).
+    pub unsafe fn dbg_push_to_ring(&self, ptr: *mut u8, class_idx: usize) -> bool {
+        // SAFETY (R6-MS-4): this method carries the identical `# Safety`
+        // contract as the delegated `AllocCore::dbg_push_to_ring` and is itself
+        // `unsafe fn`, so the obligation is forwarded to THIS caller verbatim.
+        unsafe { self.core.dbg_push_to_ring(ptr, class_idx) }
     }
 
     /// TEST-ONLY (task R2/#154): drain every owned segment's `RemoteFreeRing`

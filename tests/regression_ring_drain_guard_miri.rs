@@ -123,7 +123,11 @@ fn guarded_scan_reclaims_cross_segment_push_and_skips_when_empty() {
     // Phase 3: simulate a cross-thread free of the segment-A block — push its
     // offset into segment A's ring (segment A's local BinTable free list is
     // otherwise empty; the only route back to this block is the ring).
-    let pushed = ac.dbg_push_to_ring(seg_a_ptr, class_idx);
+    // SAFETY (R6-MS-4): `seg_a_ptr` is a live allocation owned by `ac`; this
+    // push is its single logical remote free — it is reclaimed by the drain
+    // triggered inside the `alloc` in phase 4 below (no dealloc / re-issue of
+    // `seg_a_ptr` in between). `class_idx` is the block's actual class.
+    let pushed = unsafe { ac.dbg_push_to_ring(seg_a_ptr, class_idx) };
     assert!(pushed, "dbg_push_to_ring failed for the segment-A pointer");
 
     // Phase 4: a genuine free-list-miss alloc call. `small_cur` (segment B)

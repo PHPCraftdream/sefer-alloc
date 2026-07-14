@@ -123,7 +123,11 @@ fn reclaim_uses_carried_layout_class_not_page_map() {
     // Drive the cross-thread path: push (offset, CORRECT Layout class) into the
     // segment's RemoteFreeRing, then drain via reclaim_offset.
     assert!(
-        a.dbg_push_to_ring(block, layout_class),
+        // SAFETY (R6-MS-4): `block` is a live allocation owned by `a`; this push
+        // is its single logical remote free — it is reclaimed by the
+        // `dbg_drain_all_rings` below (no dealloc / re-issue of `block` in
+        // between). `layout_class` is the block's actual class.
+        unsafe { a.dbg_push_to_ring(block, layout_class) },
         "ring push failed (ring full?)"
     );
     a.dbg_drain_all_rings();
@@ -166,7 +170,14 @@ fn reclaim_routes_by_carried_class_counterfactual() {
     // Push with the WRONG (page_map) class on purpose. reclaim_offset trusts the
     // carried class, so the block lands on the page_map class's free list.
     assert!(
-        a.dbg_push_to_ring(block, page_map_class),
+        // SAFETY (R6-MS-4): `block` is a live allocation owned by `a`; this push
+        // is its single logical remote free (reclaimed by the drain below, no
+        // dealloc / re-issue in between). `page_map_class` is a VALID in-range
+        // class, pushed DELIBERATELY wrong to prove reclaim routes by the carried
+        // class — the block is still freed exactly once via the ring, just routed
+        // to the page_map freelist; reclaim's magic/align/bump/is_free guards keep
+        // the mislabel sound. Not memory-unsafe.
+        unsafe { a.dbg_push_to_ring(block, page_map_class) },
         "ring push failed"
     );
     a.dbg_drain_all_rings();

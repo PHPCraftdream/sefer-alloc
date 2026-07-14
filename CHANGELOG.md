@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGE — `AllocCore`/`HeapCore::dbg_push_to_ring` narrowed to `unsafe fn`
+
+`AllocCore::dbg_push_to_ring` and its `HeapCore` thin-delegation wrapper were
+safe `#[doc(hidden)]` test hooks — the PRODUCER side of the cross-thread free
+simulation — so fully-safe Rust could drive a deterministic stale-note→double-
+issue chain under the `production` feature set (round5 `memory_safety_review`
+R5-MS-4, HIGH): `alloc` a block, `dbg_push_to_ring` a "remote free" note for it
+(no liveness/uniqueness check), `dealloc` it (own-thread free), `alloc`-re-issue
+the same address (the hot path pops the freelist before draining the ring), then
+`dbg_drain_all_rings` processes the STALE note — the re-issued block's bitmap
+reads "allocated", the magazine predicate is always-false on a bare `AllocCore`,
+and the generational guard is compiled out under `production`, so drain does
+`write_next`/`mark_free` on the LIVE re-issue, yielding two live owners of one
+range. No threads, no `unsafe` blocks, no type-system violation downstream — the
+unsoundness was in the seam's contract, not any one caller's misuse (R5-F1 had
+already fixed a `heap_xthread.rs` caller that misused this seam; this fix closes
+the seam itself).
+
+**Why.** The obligation the producer must uphold — "this push is at most one
+logical remote free; the block is not freed/re-issued between the push and the
+consuming drain" — is exactly the class of caller obligation Rust expresses via
+`unsafe fn` + a `# Safety` doc, the same reasoning as R6-MS-1/2
+(`dealloc`/`realloc`) and R6-MS-3 (`flush_class`). Under `production` the drain's
+own guards are insufficient on their own, so the boundary moved from prose to the
+compiler.
+
+**What changed:** both `dbg_push_to_ring` entry points are now `pub unsafe fn`
+with full `# Safety` docs and a tier-2 item-level `#[allow(unsafe_code)]` (the
+`HeapCore` wrapper is `unsafe fn` too, so the chain is not left reachable
+through it — mirroring R6-MS-1/2 making both `AllocCore` and `HeapCore`
+`dealloc`/`realloc` unsafe). Every call site across `tests/`/`benches/` got an
+`unsafe {}` block and a per-site `// SAFETY:` comment; the honoring callers
+(single remote free) state the contract, the defensive callers (deliberate
+contract-stress of the drain's `is_free`/magazine/generation guards) state which
+guard recovers benignly. The drain side (`dbg_drain_all_rings` and the
+`_checked`/`_impl` siblings) is LEFT safe — it is the consumer, and with the
+producer now `unsafe fn` a contract-honoring caller can never produce a stale
+note, so drain can never hit the chain; its reclaim guards remain defence-in-
+depth. The `hardened`-only generational guard is NOT made unconditional — a
+contract-honoring caller cannot hit the wrap-1/256 residual, so it stays a
+probabilistic misuse backstop, not the primary soundness mechanism. New
+`tests/regression_push_to_ring_unsafe_boundary.rs` proves the compile boundary
+and the contract-honoring single-owner path. The two-tier confined-unsafe
+inventory (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`) grew by
+two item-level sites (54 → 56).
+
 ### BREAKING CHANGE — `AllocCore`/`HeapCore::{dealloc,realloc}` narrowed to `unsafe fn`
 
 `AllocCore::dealloc`, `AllocCore::realloc`, `HeapCore::dealloc`, and
