@@ -15,8 +15,14 @@ use crate::alloc_core::segment_header::SegmentMeta;
 use crate::alloc_core::segment_header::{SegmentHeader, SegmentKind, SEGMENT_MAGIC};
 use crate::alloc_core::{node::Node, AllocCore};
 
+use super::heap_core::HeapCore;
+// Only used by the `#[cfg(feature = "alloc-xthread")]` push_with_overflow_retry
+// method below — the items themselves are gated the same way in `heap_core.rs`,
+// so this import must match or `alloc-global`-without-`alloc-xthread` fails
+// with E0432 (no such item exists to import under that feature set).
+#[cfg(feature = "alloc-xthread")]
 use super::heap_core::{
-    HeapCore, DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
+    DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
 };
 
 impl HeapCore {
