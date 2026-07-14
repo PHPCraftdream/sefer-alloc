@@ -553,45 +553,8 @@ impl AllocCore {
         Some(SegmentMeta::new(base).is_decommitted())
     }
 
-    /// Decommit an empty small segment's payload and reset it to a clean blank.
-    /// Precondition (caller's invariant): `live_count == 0` for this segment, so
-    /// the entire payload `[small_meta_end, SEGMENT)` holds no live block.
-    ///
-    /// Steps (design §3):
-    ///   1. Return the payload pages `[small_meta_end, SEGMENT)` to the OS. The
-    ///      metadata pages (header / page-map / bin-table / alloc-bitmap / ring)
-    ///      stay committed — cross-thread readers touch them, and `recycle` will
-    ///      read the header reservation info AFTER this function returns.
-    ///   2. Reset the segment to clean-empty: `bump = small_meta_end`, every
-    ///      `BinTable` head = `FREE_LIST_NULL`, every payload page-map entry =
-    ///      `Free`, the alloc bitmap = all-zeros. Safe because `live_count == 0`:
-    ///      no block is live, every free-list node we are dropping is itself free.
-    ///   3. Set the `decommitted` flag so the next carve recommits first.
-    ///
-    /// **Slot recycle** (task #60) is NOT done here — it happens after the
-    /// drain loop that called `reclaim_offset` finishes (so that subsequent
-    /// stale ring entries for the same segment still find the metadata
-    /// readable). The caller is responsible for calling `self.table.recycle(base)`
-    /// once no further `reclaim_offset` calls will target `base`. See
-    /// `dealloc_small` and `find_segment_with_free` for the two call sites.
-    ///
-    /// PERF-4 (task #14): this FULL-reset variant is retained for the case where
-    /// a segment is decommitted but LEFT IN THE TABLE for a future
-    /// recommit-on-reuse carve (`carve_block`/`carve_batch`'s `is_decommitted()`
-    /// branch). In the current production stream that case never arises — all
-    /// three empty-observing sites recycle the slot the instant decommit fires, so
-    /// they use [`decommit_empty_segment_for_release`] (the cheap variant). Kept
-    /// (`#[allow(dead_code)]`) as the correct implementation should a
-    /// decommit-without-immediate-release path ever be reintroduced (e.g. a
-    /// hysteresis pool of empty committed segments — Mechanism 2, deferred).
-    #[cfg(feature = "alloc-decommit")]
-    #[allow(dead_code)]
-    fn decommit_empty_segment(meta: &mut SegmentMeta, base: *mut u8) {
-        Self::decommit_empty_segment_impl(meta, base, false);
-    }
-
-    /// PERF-4 (task #14): the release-follows-immediately variant of
-    /// [`decommit_empty_segment`]. Every production caller that observes a
+    /// PERF-4 (task #14): the production decommit-on-empty primitive. Every
+    /// production caller that observes a
     /// segment empty (`dealloc_small`, the ring-drain in `find_segment_with_free`,
     /// `flush_run`) calls `self.table.recycle(base)` the instant decommit fires —
     /// and `recycle` returns the ENTIRE reservation to the OS

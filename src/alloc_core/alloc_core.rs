@@ -190,8 +190,8 @@ pub(super) struct CachedLarge {
 }
 
 /// TEST-ONLY (Phase 35): process-wide M6-decommit invocation counter. Bumped in
-/// [`AllocCore::decommit_empty_segment`]; read by the soak test via
-/// [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
+/// `decommit_empty_segment_impl` (the shared decommit body); read by the soak
+/// test via [`AllocCore::dbg_decommit_count`]. Diagnostic only (relaxed).
 #[cfg(feature = "alloc-decommit")]
 pub(super) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);

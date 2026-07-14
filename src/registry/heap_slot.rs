@@ -126,8 +126,8 @@ pub const NEXT_FREE_TAIL: u32 = u32::MAX;
 /// per-slot stride up to a 64-multiple).
 ///
 /// Field ORDER inside is unchanged from the flat layout (still `#[repr(C)]`,
-/// still initialised the same way in [`HeapSlot::new_uninit`] and the
-/// bootstrap's `addr_of_mut!` writes) — only the GROUPING and alignment
+/// still initialised the same way by the bootstrap's `addr_of_mut!`
+/// writes) — only the GROUPING and alignment
 /// changed. Every external reference (`&'static AtomicU64`/`&'static
 /// AtomicPtr<u8>` handles bound at `claim` time — see
 /// `heap_registry::bind_slot_counters`) is unaffected: a Rust field
@@ -201,22 +201,6 @@ pub(crate) struct HeapSlotRemote {
     /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
-}
-
-impl HeapSlotRemote {
-    /// Construct in the bootstrap's initial state: every counter zero, the
-    /// TFS head null. Mirrors [`HeapSlot::new_uninit`].
-    #[allow(dead_code)]
-    pub(crate) const fn new_uninit() -> Self {
-        Self {
-            #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
-            tcache_hits: AtomicU64::new(0),
-            #[cfg(feature = "alloc-decommit")]
-            large_cache_hits: AtomicU64::new(0),
-            #[cfg(feature = "alloc-xthread")]
-            thread_free: AtomicPtr::new(core::ptr::null_mut()),
-        }
-    }
 }
 
 /// One registry slot. `#[repr(C, align(64))]`: `repr(C)` so the bootstrap can
@@ -358,36 +342,6 @@ pub struct HeapSlot {
 }
 
 impl HeapSlot {
-    /// Construct a slot in its bootstrap state: `FREE`, generation 0,
-    /// `next_free = NEXT_FREE_TAIL`, heap uninitialised.
-    ///
-    /// Previously used by `Registry::new_zeroed()` to populate a `static`
-    /// initialiser. Now retained as a self-documenting spec of the slot's
-    /// initial state. NOTE (RAD-1): the actual heap-allocated registry
-    /// (see [`super::bootstrap::ensure`]) NO LONGER pre-populates `next_free`
-    /// per slot — it relies on the OS-zeroed reservation and lets
-    /// `push_free_slot` write `next_free` lazily before any pop reads it (this
-    /// killed a ~16 MiB first-touch under `production`). So this const spec's
-    /// `next_free = NEXT_FREE_TAIL` differs from the live bootstrap's
-    /// `next_free = 0` — an intentional, observationally-equivalent divergence
-    /// (the sentinel is dead until the first push overwrites it), not a bug.
-    /// Every OTHER field here matches the bootstrap's OS-zeroed initial state.
-    ///
-    /// This does NOT allocate a `HeapCore` — that is deferred to `claim`.
-    #[allow(dead_code)]
-    pub(crate) const fn new_uninit() -> Self {
-        Self {
-            state: AtomicU8::new(STATE_FREE),
-            generation: AtomicU64::new(0),
-            heap: UnsafeCell::new(MaybeUninit::uninit()),
-            next_free: AtomicU32::new(NEXT_FREE_TAIL),
-            initialised: AtomicBool::new(false),
-            remote: HeapSlotRemote::new_uninit(),
-            #[cfg(feature = "alloc-xthread")]
-            overflow: HeapOverflow::new_uninit(),
-        }
-    }
-
     /// CAS the slot's state from `expected` to `new` with the given ordering.
     /// Returns `Ok` on success. The linearization point of claim/recycle.
     #[inline]

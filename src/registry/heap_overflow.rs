@@ -217,8 +217,8 @@ pub struct HeapOverflow {
 
 impl HeapOverflow {
     /// Construct the ring in its bootstrap state: cursors zero, every entry
-    /// `ENTRY_EMPTY_BASE`. Used by [`HeapSlot::new_uninit`](super::heap_slot::HeapSlot::new_uninit)'s
-    /// const spec (mirrors [`HeapSlotRemote::new_uninit`](super::heap_slot::HeapSlotRemote::new_uninit)).
+    /// `ENTRY_EMPTY_BASE`. Used by [`new_boxed_for_test`](Self::new_boxed_for_test)
+    /// to build a standalone ring for isolated protocol testing.
     ///
     /// All-zero — the SAME state the OS-zeroed registry reservation already
     /// provides (see [`HEAP_OVERFLOW_CAP`]'s RSS-discipline note) — so this

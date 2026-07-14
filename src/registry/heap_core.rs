@@ -446,8 +446,7 @@ pub struct HeapCore {
     /// conditional Release-store. This eliminates the costly Release-store on
     /// the 99 % of allocations that stay in the hot segment.
     ///
-    /// **Null** means "no segment cached yet" (initial state, or after
-    /// [`reset_stamp_cache`](Self::reset_stamp_cache) was called).
+    /// **Null** means "no segment cached yet" (initial state).
     ///
     /// **Cache invalidation safety:**
     /// - *Segment migration* — when the active segment changes (new small
@@ -460,10 +459,9 @@ pub struct HeapCore {
     ///   path re-stamps.
     /// - *Inter-heap segment transfer* — if a future phase introduces
     ///   transferring segments between heaps, the code doing the transfer MUST
-    ///   call `reset_stamp_cache()` so the stale cache entry is cleared before
-    ///   the next alloc. Currently no such path exists (the shard model: each
-    ///   segment stays with its original heap forever). See the doc on
-    ///   `reset_stamp_cache`.
+    ///   null this cache field (`last_stamped_segment = null`) so the stale
+    ///   entry is cleared before the next alloc. Currently no such path exists
+    ///   (the shard model: each segment stays with its original heap forever).
     ///
     /// Only present under `alloc-global` (the feature that enables
     /// `stamp_segment_owner`).
@@ -1884,32 +1882,6 @@ impl HeapCore {
         // Slow path succeeded: cache the segment base so the next alloc from
         // the same segment takes the fast path.
         self.last_stamped_segment = base;
-    }
-
-    /// OPT-C (task #66): reset the stamp cache.
-    ///
-    /// Sets `last_stamped_segment` to null, forcing the next call to
-    /// `stamp_segment_owner` to take the slow path (Acquire-load +
-    /// conditional Release-store).
-    ///
-    /// Call this whenever segment ownership may have changed out of band —
-    /// specifically if a future phase re-introduces inter-heap segment
-    /// adoption (the prior `try_adopt` mechanism that transferred a segment
-    /// from an abandoned heap into another one was removed — see
-    /// CHANGELOG.md — a hypothetical future equivalent is what this hook
-    /// exists for). Without a reset, the cache might hit on a segment whose
-    /// `owner_state` has already been updated by the adopter's CAS, and the
-    /// Relaxed-load fast-path check would detect the mismatch and fall
-    /// through correctly — but defensive reset is cleaner.
-    ///
-    /// **Current status:** In the shard model (Phase 12.5+) segments never
-    /// leave their original heap, so this method is not called from any
-    /// production path. It is provided as a safety hook for future phases
-    /// that might re-introduce cross-heap segment transfer.
-    #[cfg(feature = "alloc-global")]
-    #[allow(dead_code)]
-    pub(crate) fn reset_stamp_cache(&mut self) {
-        self.last_stamped_segment = core::ptr::null_mut();
     }
 
     /// Flush every tcache class's magazine back to the substrate via
