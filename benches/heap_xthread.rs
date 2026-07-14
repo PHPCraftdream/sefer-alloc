@@ -26,11 +26,12 @@
 )]
 
 use std::alloc::Layout;
+use std::cell::RefCell;
 use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use sefer_alloc::AllocCore;
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use sefer_alloc::{AllocCore, SegmentLayout};
 
 /// Number of push/drain cycles per bench iteration.
 const BATCH: usize = 256;
@@ -39,6 +40,43 @@ const BATCH: usize = 256;
 /// fits many blocks per segment page.
 const BLOCK_SIZE: usize = 64;
 
+/// The size-class index production `AllocCore::alloc` resolves a `BLOCK_SIZE` /
+/// alignment-8 layout to. Computed via the SAME public mapping the allocator
+/// uses ([`SegmentLayout::class_for`] delegates to `SizeClasses::class_for`,
+/// which `AllocCore::classify` calls) so the bench cannot drift from
+/// production if size classes are retuned. Passed to `dbg_push_to_ring` per
+/// the seam contract (`src/alloc_core/alloc_core_small_reclaim.rs:324-363`):
+/// the caller MUST supply the class the block was actually allocated under —
+/// the owner must never re-derive it from `page_map`.
+const CLASS_IDX: usize = {
+    let Some(idx) = SegmentLayout::class_for(BLOCK_SIZE, 8) else {
+        panic!("BLOCK_SIZE must resolve to a small size class");
+    };
+    idx
+};
+
+/// Verify `CLASS_IDX` is the same index `AllocCore`'s own allocation path
+/// derives for `BLOCK_SIZE`. Counterfactual guard so a future retune of the
+/// size-class table cannot silently make the `const CLASS_IDX` above disagree
+/// with `AllocCore::classify` (e.g. someone tunes the table but forgets to
+/// rebuild this bench). Called once at bench setup, not in the hot loop.
+///
+/// Uses a real `assert_eq!` (not `debug_assert_eq!`): benches run under the
+/// release `bench` profile, where `debug_assert` compiles out — a no-op guard
+/// would defeat the point. The single `dbg_layout_class_for` call is setup-only
+/// (once per `bench_function`, outside the timed region), so its cost is
+/// irrelevant to the measurement.
+fn assert_class_idx_matches_alloc_path(core: &AllocCore, layout: Layout) {
+    let derived = core
+        .dbg_layout_class_for(layout)
+        .expect("BLOCK_SIZE must classify as a small class under AllocCore");
+    assert_eq!(
+        derived, CLASS_IDX,
+        "CLASS_IDX ({CLASS_IDX}) disagrees with AllocCore::classify ({derived}) for BLOCK_SIZE={BLOCK_SIZE}; \
+         the const lookup and the production classify path have drifted — update CLASS_IDX's source."
+    );
+}
+
 /// Bench the full push→drain cycle:
 ///   1. Alloc `BATCH` blocks (primes the free list / segment state).
 ///   2. Push each block's offset into the ring via `dbg_push_to_ring`
@@ -46,8 +84,12 @@ const BLOCK_SIZE: usize = 64;
 ///   3. Drain all rings via `dbg_drain_all_rings` (simulates the owner's lazy
 ///      reclaim on its next alloc miss).
 ///
-/// The timing loop covers steps 2 and 3 only; step 1 is in the setup closure
-/// so the free lists are warm before each sample.
+/// The timing loop covers steps 2 and 3 only; step 1 is in the per-sample
+/// setup closure so each criterion sample operates on fresh, validly-allocated
+/// blocks (a prior version allocated once for the whole `bench_function` and
+/// then republished already-freed pointers on every iteration past the first,
+/// measuring duplicate/stale-free handling instead of a realistic cross-thread
+/// free stream).
 fn bench_ring_push_drain(c: &mut Criterion) {
     let mut group = c.benchmark_group("heap_xthread_ring");
     group.sample_size(10);
@@ -57,55 +99,72 @@ fn bench_ring_push_drain(c: &mut Criterion) {
     let layout = Layout::from_size_align(BLOCK_SIZE, 8).unwrap();
 
     group.bench_function("push_drain_256", |b| {
-        // Setup: create a fresh AllocCore and pre-alloc BATCH blocks so the
-        // segment is seeded and the free list is populated.
-        let mut core = AllocCore::new().unwrap();
+        // One long-lived `AllocCore` (so the segment is seeded once), wrapped
+        // in a `RefCell` because `iter_batched` holds the setup and routine
+        // closures simultaneously and both need `&mut AllocCore` (alloc in
+        // setup, push+drain in routine). The borrow is uncontended — only the
+        // routine or the setup is ever active on the single bench thread.
+        let core = RefCell::new(AllocCore::new().unwrap());
+        assert_class_idx_matches_alloc_path(&core.borrow(), layout);
 
-        // Pre-alloc: put BATCH blocks in flight.
-        let mut ptrs: [*mut u8; BATCH] = [core::ptr::null_mut(); BATCH];
-        for slot in ptrs.iter_mut() {
-            let p = core.alloc(layout);
-            assert!(!p.is_null(), "pre-alloc OOM");
-            *slot = p;
-        }
-
-        b.iter(|| {
-            // Timed region: push all block offsets into the ring (simulated
-            // cross-thread free), then drain (owner reclaim).
-            let mut pushed = 0usize;
-            for &ptr in &ptrs {
-                if core.dbg_push_to_ring(ptr, 0) {
-                    pushed += 1;
+        b.iter_batched(
+            || {
+                // Untimed per-sample setup: allocate a FRESH batch of blocks.
+                // After the routine closure runs the previous batch is freed
+                // by the drain, so reusing those pointers would publish
+                // already-freed memory; re-allocating here keeps every sample
+                // honest.
+                let mut core = core.borrow_mut();
+                let mut ptrs: [*mut u8; BATCH] = [core::ptr::null_mut(); BATCH];
+                for slot in ptrs.iter_mut() {
+                    let p = core.alloc(layout);
+                    assert!(!p.is_null(), "pre-alloc OOM");
+                    *slot = p;
                 }
-            }
-            black_box(pushed);
+                ptrs
+            },
+            |ptrs| {
+                // Timed region: push all block offsets into the ring
+                // (simulated cross-thread free), then drain (owner reclaim).
+                let mut core = core.borrow_mut();
+                let mut pushed = 0usize;
+                for &ptr in &ptrs {
+                    if core.dbg_push_to_ring(ptr, CLASS_IDX) {
+                        pushed += 1;
+                    }
+                }
+                black_box(pushed);
 
-            core.dbg_drain_all_rings();
-            black_box(&core);
-        });
+                core.dbg_drain_all_rings();
+                black_box(&mut *core);
+            },
+            BatchSize::SmallInput,
+        );
 
         // (AllocCore drops here — segments are released via `Drop`.)
     });
 
     // Variant: alloc + push + drain in the hot loop (no setup separation).
     // This measures the fully-integrated path including the alloc cost —
-    // closer to a real async-task allocation pattern.
+    // closer to a real async-task allocation pattern. This bench is already
+    // correct on Defect 2 (it re-allocates `ptrs` fresh inside `b.iter` each
+    // sample); only Defect 1 (the hardcoded class) was fixed here.
     group.bench_function("alloc_push_drain_256", |b| {
         let mut core = AllocCore::new().unwrap();
-        let layout64 = Layout::from_size_align(64, 8).unwrap();
+        assert_class_idx_matches_alloc_path(&core, layout);
 
         b.iter(|| {
             // Alloc BATCH blocks.
             let mut ptrs: [*mut u8; BATCH] = [core::ptr::null_mut(); BATCH];
             for slot in ptrs.iter_mut() {
-                *slot = core.alloc(layout64);
+                *slot = core.alloc(layout);
             }
             black_box(&ptrs);
 
             // Push to ring (simulated cross-thread free).
             let mut pushed = 0usize;
             for &ptr in &ptrs {
-                if !ptr.is_null() && core.dbg_push_to_ring(ptr, 0) {
+                if !ptr.is_null() && core.dbg_push_to_ring(ptr, CLASS_IDX) {
                     pushed += 1;
                 }
             }
