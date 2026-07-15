@@ -425,6 +425,31 @@ name = "heap_fanin_persistent"
 harness = false
 required-features = ["alloc-global", "alloc-xthread"]
 
+# R6-OPT-A3 (radical_optimization_review §4 P0-3 measurement plan / §5.5 item
+# 8 / §6 Stage A.5): independent-alloc/free sweep JUDGE for the SMALL_MAX
+# architectural cliff (258,752 B, per-segment small path -> 262,144 B literal
+# 256 KiB, one dedicated 4 MiB span per object). Custom timing-loop binary
+# (harness = false — see the bench file's own module doc for why Criterion
+# does not fit: it cannot express "alloc N, hold live, batched-time the free"
+# with percentile output, nor read this crate's own segment/table diagnostic
+# counters at precise checkpoints). Sweeps size x cardinality x access-pattern
+# (cold / repeated-reuse / random-lifetime / same-thread / cross-thread, the
+# last gated on alloc-xthread) via --reduced/--full-matrix tiers mirroring
+# R6-OPT-A2's pattern. Reports ns/op (alloc, free) with p50/p99/mean, OS
+# segment-reservation-count deltas (the number that shows the cliff directly),
+# SegmentTable occupancy, RSS/commit-charge snapshots (Windows
+# PagefileUsage/WorkingSetSize, mirroring R6-OPT-A1's probe), and a computed
+# internal-fragmentation ratio. This is Stage A — a measurement harness, not a
+# source change; it exists so the blocked-on-this-task R6-OPT-P0-3 (a
+# prototype "medium allocator" for 256 KiB-2 MiB) can honestly prove its
+# claimed win against a real baseline. Only requires `alloc-core`; the
+# cross-thread variant additionally needs `alloc-global` + `alloc-xthread`
+# (gracefully skipped, with a clear message, when absent).
+[[bench]]
+name = "medium_size_sweep"
+harness = false
+required-features = ["alloc-core"]
+
 # R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
 # isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
 # HeapCore::trim_for_recycle) from pure per-op allocation throughput. Reports
