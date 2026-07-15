@@ -450,6 +450,38 @@ name = "medium_size_sweep"
 harness = false
 required-features = ["alloc-core"]
 
+# R6-OPT-A4 (radical_optimization_review §4 P1-6 measurement plan / §5.5 item
+# 7 / §6 Stage A.5): deterministic multi-segment directory-scan JUDGE for
+# `AllocCore::find_segment_with_free_impl`'s O(segments) scan
+# (`src/alloc_core/alloc_core_small.rs`). Three prior optimisation attempts
+# (X5, T10, R5-R1) measured ~zero improvement because the only existing judge
+# that exercises this scan, `perf_gate_iai.rs`'s `multiseg_cold_256k`, builds
+# only 3 segments — deep in the flat region of any O(S) curve. This harness
+# deterministically constructs exactly S in {1, 3, 16, 64, 256, 1023}
+# registered segments (verified via the pre-existing `dbg_table_count` test
+# seam, never assumed), sweeps hole fractions {0, 25, 50, 75}% and (a
+# representative subset of, tiered via --reduced/--full-matrix) all 49 small
+# classes, and reports segment-scan-triggering alloc() wall-clock
+# (mean/p50/p99) plus the analytically-known worst-case segment count walked
+# (deterministic by construction at holes=0%). A separate alloc-xthread-gated
+# matrix seeds a controlled fraction of segments with genuinely pending
+# cross-thread-freed blocks via real `HeapCore`/`HeapRegistry::claim`
+# cross-thread `dealloc` calls (never the `dbg_push_to_ring` test seam).
+# Custom timing-loop binary (harness = false) — same reasoning as the R6-OPT-
+# A2/A3 siblings: Criterion's b.iter() model does not fit "construct S
+# segments once (untimed), time a batch of scan-triggering allocs, tear down,
+# repeat". Stage A — a measurement harness only; `find_segment_with_free_impl`
+# and its callers are read-only inputs, untouched by this task. Exists so a
+# later task (R6-OPT-P1-6, a full per-class segment directory) can be
+# honestly evaluated against a judge that actually crosses into the region
+# where O(S) bites. Only requires `alloc-core`; the remote-dirty-density
+# matrix additionally needs `alloc-global` + `alloc-xthread` (gracefully
+# skipped, with a clear message, when absent).
+[[bench]]
+name = "segment_directory_sweep"
+harness = false
+required-features = ["alloc-core"]
+
 # R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
 # isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
 # HeapCore::trim_for_recycle) from pure per-op allocation throughput. Reports
