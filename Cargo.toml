@@ -348,6 +348,19 @@ required-features = ["alloc-global"]
 name = "first_alloc_process"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 
+# R6-OPT-A5 / Stage A.5: process-per-sample judge for "a thread that only ever
+# FREES a foreign block, never allocates" — measures SeferAlloc::dealloc's
+# unconditional current_heap() heap-bind cost for a never-before-bound
+# worker thread, and the treatment (free-only) vs control (alloc-then-free)
+# delta this task exists to make visible for the later P0-1 fix. Requires
+# only `alloc-global` (installs SeferAlloc as the real #[global_allocator]);
+# `alloc-xthread` is optional (affects which cross-thread free path is
+# exercised, not whether the harness runs). Driven by
+# `scripts/dealloc-only-bench.mjs`. See the example's module docs.
+[[example]]
+name = "dealloc_only_unbound_thread"
+required-features = ["alloc-global"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
