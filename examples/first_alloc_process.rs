@@ -30,6 +30,10 @@
 //! RESULT rss_after_8_heaps_kib=<n>
 //! RESULT rss_after_64_heaps_kib=<n>
 //! RESULT peak_rss_kib=<n>
+//! RESULT commit_before_kib=<n>
+//! RESULT commit_after_1_heap_kib=<n>
+//! RESULT commit_after_8_heaps_kib=<n>
+//! RESULT commit_after_64_heaps_kib=<n>
 //! RESULT first_alloc_latency_ns=<n>
 //! RESULT heaps_claimed_high_water=<n>
 //! ```
@@ -40,6 +44,17 @@
 //! (~0.1 MiB). `peak_rss_kib` is a Windows-only cross-check (peak working set,
 //! not trimmed by the OS) confirming the first-touch pages were made resident.
 //!
+//! `commit_*_kib` is a SEPARATE axis from RSS (R6-OPT-A1, radical_optimization_
+//! review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows, `crates/vmem`
+//! commits the FULL exact size of the Registry + inline `HeapOverflow` array in
+//! one `VirtualAlloc(MEM_COMMIT)` call, which shows up as Windows commit charge
+//! (`PagefileUsage`) even though it is largely demand-zero and therefore
+//! invisible to `WorkingSetSize`/RSS. Expect `commit_after_1_heap_kib −
+//! commit_before_kib` to be dramatically larger than the corresponding RSS
+//! delta (on the order of ~125 MiB: ≈29 MiB registry + ≈96 MiB inline
+//! `HeapOverflow` across 4096 slots) — that gap is the whole point of this
+//! metric; it is a real cost the RSS-only judge could never see.
+//!
 //! ## Platform honesty
 //!
 //! RSS is read directly from the OS:
@@ -49,6 +64,18 @@
 //!   and may use `unsafe`; the library stays `#![forbid(unsafe_code)]`).
 //! - **Other (macOS/BSD):** RSS is reported as `0` (unavailable) — the latency
 //!   figure is still valid. This limitation is documented, not faked.
+//!
+//! Commit charge (`commit_*_kib`) is read the same way, platform by platform:
+//! - **Windows:** the SAME `GetProcessMemoryInfo` call already made for RSS
+//!   already reads `PagefileUsage` into the counters struct — no extra
+//!   syscall. `PagefileUsage` is the standard Windows "commit charge" figure
+//!   (total private + shareable bytes charged against the system commit
+//!   limit), and is on the base `PROCESS_MEMORY_COUNTERS` struct already used
+//!   here (no widening to the `_EX` variant/`PrivateUsage` needed).
+//! - **Linux:** `/proc/self/statm` field 0 (total program size, i.e. virtual
+//!   memory) × page size — the nearest Linux analogue of "committed", though
+//!   Linux's overcommit model differs from Windows' commit-charge accounting.
+//! - **Other:** reported as `0` (unavailable), mirroring the RSS fallback.
 //!
 //! Latency is a coarse single-shot `Instant` measurement of the FIRST `alloc`
 //! call (which triggers the whole bootstrap). Because it is one sample in one
@@ -118,6 +145,23 @@ fn rss_kib() -> u64 {
     resident_pages * 4
 }
 
+/// Linux commit-charge control (R6-OPT-A1). `/proc/self/statm` field 0
+/// (0-indexed) is total program SIZE — the process's total virtual memory —
+/// the nearest Linux analogue of Windows' "commit charge", though Linux's
+/// overcommit accounting model is not identical to Windows'. Printed via the
+/// SAME `RESULT commit_*_kib=` line names as the Windows probe so the
+/// aggregator script needs no per-platform branching.
+#[cfg(target_os = "linux")]
+fn commit_kib() -> u64 {
+    let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
+    let total_pages: u64 = statm
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    total_pages * 4
+}
+
 #[cfg(windows)]
 fn rss_kib() -> u64 {
     // GetProcessMemoryInfo via the K32-prefixed export (available on every
@@ -157,6 +201,54 @@ fn rss_kib() -> u64 {
             0
         } else {
             (counters.working_set_size / 1024) as u64
+        }
+    }
+}
+
+/// Windows commit-charge probe (R6-OPT-A1 — Stage A judge fix). Reads
+/// `PagefileUsage` from the SAME `GetProcessMemoryInfo` call shape used by
+/// `rss_kib`/`peak_rss_kib` above (the field is already declared on the
+/// `ProcessMemoryCounters` layout in this file; it was simply never
+/// surfaced). `PagefileUsage` is the standard Windows "commit charge" figure
+/// — bytes charged against the system commit limit — and is present on the
+/// BASE `PROCESS_MEMORY_COUNTERS` struct (no need to widen to the `_EX`
+/// variant / add `PrivateUsage`). This is the metric that exposes the full
+/// `VirtualAlloc(MEM_COMMIT)` cost that RSS (demand-zero, not yet
+/// page-faulted-in) cannot see.
+#[cfg(windows)]
+fn commit_kib() -> u64 {
+    #[repr(C)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+
+    extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn K32GetProcessMemoryInfo(
+            process: isize,
+            counters: *mut ProcessMemoryCounters,
+            cb: u32,
+        ) -> i32;
+    }
+
+    // SAFETY: see `rss_kib` above — identical documented calling convention.
+    unsafe {
+        let mut counters: ProcessMemoryCounters = core::mem::zeroed();
+        counters.cb = core::mem::size_of::<ProcessMemoryCounters>() as u32;
+        let ok = K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb);
+        if ok == 0 {
+            0
+        } else {
+            (counters.pagefile_usage / 1024) as u64
         }
     }
 }
@@ -216,6 +308,14 @@ fn rss_kib() -> u64 {
     0
 }
 
+/// Commit-charge fallback for platforms with neither a Windows nor a Linux
+/// probe (R6-OPT-A1). Mirrors `rss_kib`'s unavailable-platform convention:
+/// report `0`, not a fabricated number.
+#[cfg(not(any(target_os = "linux", windows)))]
+fn commit_kib() -> u64 {
+    0
+}
+
 // ---------------------------------------------------------------------------
 // N concurrently-live heap claims.
 // ---------------------------------------------------------------------------
@@ -232,7 +332,12 @@ fn rss_kib() -> u64 {
 /// barriers make this honest: `claimed` gates the RSS snapshot until every
 /// worker has claimed (via its first `alloc`) and is holding its block open;
 /// `release` then lets all workers free and exit together.
-fn rss_with_n_concurrent_heaps(sefer: &'static SeferAlloc, n: usize) -> u64 {
+///
+/// Returns `(rss_kib, commit_kib)` — both snapshotted at the SAME instant
+/// (all `n` heaps concurrently live), so a `commit − rss` comparison at this
+/// point is apples-to-apples (R6-OPT-A1: commit-charge is a separate axis
+/// from RSS, added alongside it here rather than replacing it).
+fn rss_with_n_concurrent_heaps(sefer: &'static SeferAlloc, n: usize) -> (u64, u64) {
     use std::sync::{Arc, Barrier};
 
     let claimed = Arc::new(Barrier::new(n + 1));
@@ -263,12 +368,13 @@ fn rss_with_n_concurrent_heaps(sefer: &'static SeferAlloc, n: usize) -> u64 {
 
     claimed.wait(); // blocks until all `n` workers have claimed
     let rss = rss_kib(); // all `n` heaps are concurrently live here
+    let commit = commit_kib();
     release.wait(); // let workers free + exit
 
     for h in handles {
         h.join().expect("heap-claim thread panicked");
     }
-    rss
+    (rss, commit)
 }
 
 fn main() {
@@ -278,6 +384,7 @@ fn main() {
     let sefer: &'static SeferAlloc = Box::leak(Box::new(SeferAlloc::new()));
 
     let rss_before = rss_kib();
+    let commit_before = commit_kib();
 
     // ── First allocation on the MAIN thread ──────────────────────────────
     // This is THE bootstrap trigger: `registry::ensure()` materialises the
@@ -297,12 +404,13 @@ fn main() {
     }
 
     let rss_after_1_heap = rss_kib();
+    let commit_after_1_heap = commit_kib();
 
     // ── 8 CONCURRENTLY-live heaps ─────────────────────────────────────────
-    let rss_after_8_heaps = rss_with_n_concurrent_heaps(sefer, 8);
+    let (rss_after_8_heaps, commit_after_8_heaps) = rss_with_n_concurrent_heaps(sefer, 8);
 
     // ── 64 CONCURRENTLY-live heaps ────────────────────────────────────────
-    let rss_after_64_heaps = rss_with_n_concurrent_heaps(sefer, 64);
+    let (rss_after_64_heaps, commit_after_64_heaps) = rss_with_n_concurrent_heaps(sefer, 64);
 
     let high_water = sefer.stats().heaps_claimed_high_water;
     let peak_rss = peak_rss_kib();
@@ -314,6 +422,10 @@ fn main() {
     println!("RESULT rss_after_8_heaps_kib={rss_after_8_heaps}");
     println!("RESULT rss_after_64_heaps_kib={rss_after_64_heaps}");
     println!("RESULT peak_rss_kib={peak_rss}");
+    println!("RESULT commit_before_kib={commit_before}");
+    println!("RESULT commit_after_1_heap_kib={commit_after_1_heap}");
+    println!("RESULT commit_after_8_heaps_kib={commit_after_8_heaps}");
+    println!("RESULT commit_after_64_heaps_kib={commit_after_64_heaps}");
     println!("RESULT first_alloc_latency_ns={first_alloc_latency_ns}");
     println!("RESULT heaps_claimed_high_water={high_water}");
 }

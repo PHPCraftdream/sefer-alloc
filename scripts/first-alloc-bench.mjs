@@ -139,6 +139,11 @@ try {
   const rss8 = []; //         rss_after_8_heaps − rss_before
   const rss64 = []; //        rss_after_64_heaps − rss_before
   const latency = [];
+  // R6-OPT-A1 (Stage A judge fix): commit charge is a SEPARATE axis from RSS,
+  // aggregated alongside it (not replacing it) the same min/median/max way.
+  const bootstrapCommit = []; // commit_after_1_heap − commit_before
+  const commit8 = []; //        commit_after_8_heaps − commit_before
+  const commit64 = []; //       commit_after_64_heaps − commit_before
   let lastHighWater = null;
 
   for (let i = 0; i < SAMPLES; i++) {
@@ -151,6 +156,15 @@ try {
     }
     if (r.rss_before_kib != null && r.rss_after_64_heaps_kib != null) {
       rss64.push(r.rss_after_64_heaps_kib - r.rss_before_kib);
+    }
+    if (r.commit_before_kib != null && r.commit_after_1_heap_kib != null) {
+      bootstrapCommit.push(r.commit_after_1_heap_kib - r.commit_before_kib);
+    }
+    if (r.commit_before_kib != null && r.commit_after_8_heaps_kib != null) {
+      commit8.push(r.commit_after_8_heaps_kib - r.commit_before_kib);
+    }
+    if (r.commit_before_kib != null && r.commit_after_64_heaps_kib != null) {
+      commit64.push(r.commit_after_64_heaps_kib - r.commit_before_kib);
     }
     if (r.first_alloc_latency_ns != null) {
       latency.push(r.first_alloc_latency_ns);
@@ -166,6 +180,9 @@ try {
   const s8 = stat(rss8);
   const s64 = stat(rss64);
   const l = stat(latency);
+  const cb = stat(bootstrapCommit);
+  const c8 = stat(commit8);
+  const c64 = stat(commit64);
 
   console.log('  metric                                   min / median / max');
   console.log('  ---------------------------------------  ------------------------------------------------');
@@ -188,6 +205,36 @@ try {
       '    ~7488 B stride under `production` = 4096 distinct pages). AFTER the fix it\n' +
       '    collapses to the primordial-segment cost only (~0.1 MiB). Measured on this\n' +
       '    host: 16.11 MiB → 0.11 MiB; first-alloc latency 8.6 ms → 0.17 ms.',
+  );
+
+  // ── Commit charge (R6-OPT-A1: Stage A judge fix — NEW axis, not a replacement) ──
+  console.log(
+    '\n  metric (commit charge)                   min / median / max',
+  );
+  console.log('  ---------------------------------------  ------------------------------------------------');
+  console.log(
+    `  Commit Δ  1 heap  (bootstrap)             ${fmtKib(cb.min)}  /  ${fmtKib(cb.med)}  /  ${fmtKib(cb.max)}`,
+  );
+  console.log(
+    `  Commit Δ  8 heaps                         ${fmtKib(c8.min)}  /  ${fmtKib(c8.med)}  /  ${fmtKib(c8.max)}`,
+  );
+  console.log(
+    `  Commit Δ 64 heaps                         ${fmtKib(c64.min)}  /  ${fmtKib(c64.med)}  /  ${fmtKib(c64.max)}`,
+  );
+  console.log(
+    '\n  * Commit charge (Windows `PagefileUsage` / Linux `/proc/self/statm` field 0,\n' +
+      '    total VM size) is a SEPARATE axis from RSS, added here — it does NOT\n' +
+      '    replace the RSS numbers above. WHY IT EXISTS (R6-OPT-A1, radical_\n' +
+      '    optimization_review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows,\n' +
+      '    `crates/vmem` commits the FULL exact size of the Registry + inline\n' +
+      '    `HeapOverflow` array in one `VirtualAlloc(MEM_COMMIT)` call, which is\n' +
+      '    largely demand-zero and therefore invisible to RSS/`WorkingSetSize` until\n' +
+      '    pages are actually touched — RSS alone hides this cost entirely. Expect\n' +
+      '    "Commit Δ 1 heap" to be ~125 MiB LARGER than "RSS Δ 1 heap" (≈29 MiB\n' +
+      '    registry + ≈96 MiB inline `HeapOverflow` across 4096 slots): that gap IS\n' +
+      '    the metric this axis exists to surface, and is the quantity the follow-up\n' +
+      '    task R6-OPT-P0-2 (chunked Registry + lazy HeapOverflow sidecar) is meant\n' +
+      '    to shrink.',
   );
 
   ok = bootstrapRss.length > 0 || latency.length > 0;
