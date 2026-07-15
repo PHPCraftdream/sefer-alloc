@@ -74,7 +74,7 @@ use core::mem::MaybeUninit;
 use core::ptr::addr_of_mut;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::registry::HeapCore;
 
@@ -119,6 +119,28 @@ static mut FALLBACK: MaybeUninit<HeapCore> = MaybeUninit::uninit();
 
 /// The bootstrap state-machine word: `UNINIT → INITIALIZING → READY`.
 static INIT_STATE: AtomicU8 = AtomicU8::new(STATE_UNINIT);
+
+/// R6-OPT-P0-1: process-wide count of [`LOCK`] acquisitions (i.e. of
+/// [`with_heap`] calls that got past the null check and entered the guarded
+/// section). Diagnostic-only, `Relaxed` — mirrors the crate's existing
+/// cold-path counter discipline (e.g. `CONFIG_CONFLICTS` in
+/// `registry::heap_registry`): always compiled in (not gated behind
+/// `alloc-stats`), since acquiring the fallback lock is definitionally a
+/// cold/rare path already, not a hot-path tax this counter would visibly add
+/// to.
+///
+/// Exists so a test can prove a negative — "the fallback spinlock was NOT
+/// taken for this dealloc" — which is otherwise unobservable from outside
+/// this module (`LOCK` itself is private). See
+/// [`dbg_fallback_lock_acquisitions`] and
+/// `tests/dealloc_only_no_bind_torn.rs`'s TORN-thread test, which snapshots
+/// this counter immediately before and after a TORN-thread dealloc and
+/// asserts it did not move (R6-OPT-P0-1's `current_for_dealloc` routes a
+/// TORN thread's dealloc directly through `HeapCore::dealloc_foreign_routing`
+/// without ever calling `with_heap`). `u64` (not `u8`/`u32`) so a long-running
+/// process/test-binary that legitimately calls `with_heap` many times cannot
+/// wrap this counter around and produce a false "unchanged" reading.
+static LOCK_ACQUISITIONS: AtomicU64 = AtomicU64::new(0);
 
 /// The fallback-heap spinlock. Held while a thread is performing an
 /// alloc/dealloc/realloc on the fallback; ensures mutual exclusion so the
@@ -278,6 +300,10 @@ impl LockGuard {
             // typically single-threaded), so the spin is academic.
             core::hint::spin_loop();
         }
+        // R6-OPT-P0-1: diagnostic-only, `Relaxed` — see `LOCK_ACQUISITIONS`'s
+        // doc comment. Bumped once per successful acquisition (this point is
+        // reached only after the CAS loop above wins).
+        LOCK_ACQUISITIONS.fetch_add(1, Ordering::Relaxed);
         LockGuard
     }
 }
@@ -322,4 +348,15 @@ pub fn dbg_panic_in_with_heap_releases_lock() -> bool {
     // Second: a NON-panicking closure. If the lock is still held (regression),
     // this spins forever; if the guard released it, this returns immediately.
     with_heap(|_heap| ()).is_some()
+}
+
+/// `#[doc(hidden)]` test hook (R6-OPT-P0-1) — not part of the public API.
+/// Reads [`LOCK_ACQUISITIONS`], the process-wide count of successful fallback
+/// spinlock acquisitions since process start. A test proves "this dealloc did
+/// NOT take the fallback lock" by snapshotting this value immediately before
+/// and after the call under test and asserting it did not move.
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_fallback_lock_acquisitions() -> u64 {
+    LOCK_ACQUISITIONS.load(Ordering::Relaxed)
 }

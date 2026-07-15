@@ -264,15 +264,63 @@ impl HeapCore {
     /// the existing `refill_magazine_slow` outlining pattern (`#[cold]
     /// #[inline(never)]`, called once behind a single cold branch).
     ///
-    /// Pure code motion: the body is byte-identical to the pre-split
-    /// `dealloc_routing` tail (same statements, same order, same `return`
-    /// points — only now behind a call boundary instead of inlined). `base`
-    /// is passed in (already computed by the caller's `contains_base` check)
-    /// so it is not recomputed.
+    /// Thin wrapper (R6-OPT-P0-1): computes `our_head` (the ONE piece of this
+    /// routing that genuinely needs `&self` — see
+    /// [`dealloc_foreign_routing`]'s doc comment for why every other step is
+    /// heap-instance-independent) and delegates to the shared, `&self`-free
+    /// [`dealloc_foreign_routing`] with `Some(our_head)`, preserving this
+    /// bound-thread caller's behavior byte-for-byte (the `owner_tf ==
+    /// our_head` defensive no-op branch still fires exactly as before).
     #[cfg(feature = "alloc-xthread")]
     #[cold]
     #[inline(never)]
     fn dealloc_foreign_slow(&mut self, ptr: *mut u8, base: *mut u8, layout: Layout) {
+        let our_head = self.thread_free_head();
+        Self::dealloc_foreign_routing(ptr, base, layout, Some(our_head));
+    }
+
+    /// R6-OPT-P0-1: the heap-instance-independent core of the cross-thread
+    /// dealloc routing tail, shared by two callers:
+    ///
+    /// - [`dealloc_foreign_slow`](Self::dealloc_foreign_slow) (a BOUND
+    ///   thread's cold cross-thread-free path, via `dealloc_routing`) passes
+    ///   `Some(our_head)` — `our_head` being ITS `thread_free_head()` — so the
+    ///   `owner_tf == our_head` defensive no-op guard (see below) still
+    ///   applies exactly as before this split.
+    /// - a bind-less thread's dealloc resolver (`global::tls_heap`'s
+    ///   `current_for_dealloc`, reached from `SeferAlloc::dealloc` WITHOUT
+    ///   constructing or dereferencing any `*mut HeapCore`) passes `None` —
+    ///   there is no "our_head" to compare against, because a bind-less
+    ///   thread (TLS never bound, or `TORN` — its slot already recycled) has
+    ///   no live heap of its own to compare the segment's owner stamp
+    ///   against. Every valid pointer reaching `dealloc` on such a thread is
+    ///   foreign BY CONSTRUCTION: `SeferAlloc::alloc` always binds a heap on
+    ///   first use, so a thread whose TLS is null/TORN never allocated
+    ///   anything itself under this allocator instance — the pointer, if
+    ///   valid, was necessarily produced by (and stamped with the owner of)
+    ///   some OTHER thread's heap.
+    ///
+    /// Byte-identical body to the pre-split `dealloc_foreign_slow` tail (same
+    /// statements, same order, same `return` points) EXCEPT that the
+    /// `owner_tf == our_head` half of the defensive check is skipped entirely
+    /// when `our_head` is `None` — see the `match our_head` below. Every
+    /// other call in this function is already an associated function taking
+    /// no `&self`/`&mut self` (`Self::push_large_deferred_free`,
+    /// `Self::push_with_overflow_retry`) — they operate purely on
+    /// `base`/`packed`/`head` parameters and the process-global registry via
+    /// `super::bootstrap::ensure()` — which is what makes this split
+    /// possible at all: routing a foreign pointer never actually needed a
+    /// live `&mut HeapCore`, only (for a bound thread) its own head for the
+    /// self-check.
+    #[cfg(feature = "alloc-xthread")]
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn dealloc_foreign_routing(
+        ptr: *mut u8,
+        base: *mut u8,
+        layout: Layout,
+        our_head: Option<*const AtomicPtr<u8>>,
+    ) {
         // `base` is not one of OUR segments. Two possibilities:
         //   (a) a LIVE segment owned by ANOTHER heap — mapped, its owner's
         //       table contains it (just not ours) — reading its header is
@@ -318,18 +366,31 @@ impl HeapCore {
         if SegmentHeader::magic_at(base) != SEGMENT_MAGIC {
             return;
         }
-        let our_head = self.thread_free_head();
         let owner_tf = SegmentHeader::owner_thread_free_at(base);
-        if owner_tf.is_null() || owner_tf == our_head {
-            // `contains_base` was false, yet the header claims this segment is
-            // unstamped or stamped as ours — this can only happen for a
+        // R6-OPT-P0-1: `Some(head)` preserves the exact bound-thread
+        // defensive check (`owner_tf.is_null() || owner_tf == head`).
+        // `None` (bind-less caller) skips the `== head` half entirely — there
+        // is no "us" to compare against — but keeps the `is_null()` no-op
+        // (an unstamped segment; defensive, should not happen for a live
+        // block, same as today).
+        let is_self_or_unstamped = match our_head {
+            Some(head) => owner_tf.is_null() || owner_tf == head,
+            None => owner_tf.is_null(),
+        };
+        if is_self_or_unstamped {
+            // `contains_base` was false (for the bound-thread caller) — or
+            // there simply is no `contains_base` table to consult (the
+            // bind-less caller has no heap at all) — yet the header claims
+            // this segment is unstamped, or (bound-thread only) stamped as
+            // ours. For the bound-thread case this can only happen for a
             // segment that used to be ours and was released (case (b) above,
             // reading now-decommitted-but-still-committed metadata pages of a
             // NOT-YET-actually-unmapped segment is impossible in this
             // process — metadata pages are only unmapped by `os::release_segment`,
             // at which point this read would fault, not return a stale value).
             // Defensive no-op: do NOT route to ourselves via a table state we
-            // just proved does not list this segment.
+            // just proved does not list this segment (or, for the bind-less
+            // caller, do not touch an unstamped segment at all).
             return;
         }
         if SegmentHeader::kind_at(base) == SegmentKind::Large {

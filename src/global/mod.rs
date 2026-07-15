@@ -39,3 +39,9 @@ pub use sefer_alloc::SeferAlloc;
 #[cfg(feature = "std")]
 #[doc(hidden)]
 pub use fallback::dbg_panic_in_with_heap_releases_lock;
+// `#[doc(hidden)]` test-only hook (R6-OPT-P0-1): lets
+// `tests/dealloc_only_no_bind_torn.rs` observe whether a TORN thread's
+// dealloc took the fallback spinlock — see `LOCK_ACQUISITIONS`'s doc comment
+// in `fallback.rs`. Same established test-only-export pattern.
+#[doc(hidden)]
+pub use fallback::dbg_fallback_lock_acquisitions;

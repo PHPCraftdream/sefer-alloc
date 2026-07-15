@@ -418,6 +418,91 @@ pub fn current_for_alloc() -> CurrentHeap {
     }
 }
 
+/// R6-OPT-P0-1: which heap [`current_for_dealloc`] resolved to, for the
+/// **dealloc-only** entry point. Distinct from [`CurrentHeap`] because the
+/// bind-less case here is NOT the fallback heap — it is "definitely a
+/// foreign pointer, route it WITHOUT ever materialising (binding OR
+/// fallback-locking) a `HeapCore` at all". See [`current_for_dealloc`]'s doc
+/// comment for the full rationale.
+#[cfg(feature = "alloc-xthread")]
+#[must_use]
+pub enum CurrentHeapForDealloc {
+    /// A registry slot owned by this thread (identical fast path to
+    /// [`CurrentHeap::Own`] — the thread has a real, bound heap).
+    Own(*mut HeapCore),
+    /// This thread never bound a heap (TLS still null), or its heap's slot
+    /// was already recycled (`TORN`), or its TLS is torn down (`Err`). Any
+    /// pointer reaching `dealloc` on such a thread is foreign BY
+    /// CONSTRUCTION (see module-level rationale in `current_for_dealloc`) —
+    /// route it directly through the heap-instance-independent
+    /// [`HeapCore::dealloc_foreign_routing`] with `our_head = None`, WITHOUT
+    /// claiming a registry slot and WITHOUT taking the fallback spinlock.
+    ForeignNoBind,
+}
+
+/// R6-OPT-P0-1: a **dealloc-only** resolver — reads `LOCAL` exactly like
+/// [`current_for_alloc`], but the bind-less case (`null` / `TORN` / `Err`)
+/// does **not** bind a heap or resolve the fallback pointer at all. This is
+/// the fix for the diagnosed defect: `SeferAlloc::dealloc` used to call
+/// `current_heap()` (== `current_for_alloc`) unconditionally, which for a
+/// thread whose TLS is `null` (never allocated anything itself — e.g. a
+/// worker thread that only ever receives a pointer via a channel from a
+/// producer thread, frees it, and exits) called `bind_slow_tagged()` →
+/// `HeapRegistry::claim()` → materialised a FULL `HeapCore` → reserved/
+/// committed a 4 MiB primordial segment, JUST to free one foreign pointer.
+/// For a `TORN` thread it instead routed through `fallback::with_heap`,
+/// taking the fallback's spinlock, to service what is — in the
+/// overwhelming majority of cases — a foreign pointer that does not even
+/// belong to the fallback heap.
+///
+/// **Passive, read-only.** This resolver reads `LOCAL` and nothing else — it
+/// never writes `LOCAL`, never calls `HeapRegistry::claim`, and never calls
+/// `fallback::with_heap`. Only present under `alloc-xthread`: without
+/// cross-thread routing there is no heap-independent way to route a foreign
+/// pointer at all (see `SeferAlloc::dealloc`'s `not(alloc-xthread)` arm,
+/// which keeps the OLD `current_for_alloc` + bind/fallback behavior for that
+/// configuration).
+///
+/// - real pointer (own heap bound) → [`CurrentHeapForDealloc::Own`] —
+///   identical fast path to [`current_for_alloc`]'s `Own` arm, unchanged.
+/// - `null` (never bound) → [`CurrentHeapForDealloc::ForeignNoBind`]. Does
+///   **not** call `bind_slow`/`bind_slow_tagged` — that is the entire point
+///   of this task: a thread whose TLS is null has never allocated anything
+///   of its own under this allocator instance (`SeferAlloc::alloc` always
+///   binds on first use), so any pointer reaching `dealloc` here must have
+///   arrived from elsewhere (e.g. a channel) — it is foreign by
+///   construction, and the caller routes it via
+///   `HeapCore::dealloc_foreign_routing(ptr, base, layout, None)` without
+///   ever touching the registry.
+/// - `TORN` (this thread's `AbandonGuard` already recycled its slot) →
+///   ALSO [`CurrentHeapForDealloc::ForeignNoBind`] — see the module doc's
+///   "TLS teardown and the TORN sentinel" section for why the cached
+///   pointer must not be dereferenced. Unlike [`current_for_alloc`], this
+///   does NOT route through `fallback::with_heap` (no fallback spinlock is
+///   taken) — see this function's own module-level trade-off note in
+///   `sefer_alloc.rs`'s `dealloc` for the deliberate, documented narrowing
+///   this causes for the rare "TORN AND the pointer happens to be
+///   fallback-owned" case.
+/// - `Err` (TLS destroyed) → same `ForeignNoBind` treatment as `TORN`.
+#[cfg(feature = "alloc-xthread")]
+#[inline(always)]
+pub fn current_for_dealloc() -> CurrentHeapForDealloc {
+    match LOCAL.try_with(|c| c.get()) {
+        // Same Э2 (task #145) one-branch collapse as `current_for_alloc`:
+        // real p → `< MAX-1` → Own (fast); null (0) and TORN (MAX) both fall
+        // to the cold arm below, where THIS resolver (unlike
+        // `current_for_alloc`) maps BOTH to `ForeignNoBind` — neither binds
+        // a slot nor resolves the fallback pointer.
+        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => CurrentHeapForDealloc::Own(p),
+        // null (first call ever, on this thread) OR TORN (slot already
+        // recycled): both are "no live heap of our own to consult" — route
+        // as foreign, no bind, no fallback lock.
+        Ok(_) => CurrentHeapForDealloc::ForeignNoBind,
+        // TLS destroyed: same treatment.
+        Err(_) => CurrentHeapForDealloc::ForeignNoBind,
+    }
+}
+
 /// Like [`current_for_alloc`] but plumbs `config` into the newly claimed
 /// `HeapCore` on first call (the TLS bind slow path). On subsequent calls
 /// (TLS pointer already set) the fast path returns the cached pointer
@@ -602,4 +687,60 @@ pub fn dbg_teardown_then_resolve_is_fallback() -> bool {
     let result = current_for_alloc();
     LOCAL.with(|c| c.set(saved));
     matches!(result, CurrentHeap::Fallback)
+}
+
+/// Test-only hook (R6-OPT-P0-1): the [`current_for_dealloc`] analogue of
+/// [`dbg_teardown_then_resolve_is_fallback`] above — same technique (poison
+/// `LOCAL` via the exact production [`mark_local_torn`] function, resolve,
+/// restore), but checks that a TORN thread's DEALLOC resolver reports
+/// [`CurrentHeapForDealloc::ForeignNoBind`] rather than re-arming a bind or
+/// (unlike the alloc-side hook) routing through the fallback at all — this
+/// resolver's whole point is that TORN does NOT touch the fallback lock.
+///
+/// `#[doc(hidden)]` — not part of the public API; exists solely so the
+/// integration test in `tests/` can reach this otherwise-private teardown
+/// behaviour, mirroring the established `dbg_teardown_then_resolve_is_fallback`
+/// pattern.
+#[cfg(feature = "alloc-xthread")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_teardown_then_resolve_is_foreign_no_bind() -> bool {
+    let saved = LOCAL.with(|c| c.get());
+    mark_local_torn();
+    let result = current_for_dealloc();
+    LOCAL.with(|c| c.set(saved));
+    matches!(result, CurrentHeapForDealloc::ForeignNoBind)
+}
+
+/// Test-only hook (R6-OPT-P0-1): poison THIS thread's `LOCAL` to [`TORN`]
+/// (via the exact production [`mark_local_torn`] function — not a
+/// reimplementation) and return the PRE-poison value, so a test can drive a
+/// real end-to-end call (e.g. a real `SeferAlloc::dealloc`) under the TORN
+/// state and later restore the saved value via
+/// [`dbg_restore_local_for_test`]. Unlike
+/// [`dbg_teardown_then_resolve_is_foreign_no_bind`] (which pokes, resolves,
+/// and restores all in one call), this pair lets the poisoned state persist
+/// across an arbitrary caller-supplied operation in between — needed to
+/// exercise the REAL `dealloc` entry point (not just the resolver) under
+/// TORN from a test.
+///
+/// `#[doc(hidden)]` — not part of the public API; exists solely so
+/// `tests/dealloc_only_no_bind_torn.rs` can reach this otherwise-private
+/// teardown behaviour, mirroring the established test-only-export pattern.
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
+    let saved = LOCAL.with(|c| c.get());
+    mark_local_torn();
+    saved
+}
+
+/// Test-only hook (R6-OPT-P0-1): restore `LOCAL` to a value previously
+/// returned by [`dbg_mark_local_torn_for_test`]. Pairs with that function;
+/// see its doc comment.
+///
+/// `#[doc(hidden)]` — not part of the public API.
+#[doc(hidden)]
+pub fn dbg_restore_local_for_test(saved: *mut HeapCore) {
+    let _ = LOCAL.try_with(|c| c.set(saved));
 }
