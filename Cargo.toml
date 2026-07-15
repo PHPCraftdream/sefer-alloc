@@ -410,6 +410,21 @@ name = "heap_fanin_production"
 harness = false
 required-features = ["alloc-global", "alloc-xthread"]
 
+# R6-OPT-A2 (radical_optimization_review §4 P0-4 measurement plan / §5.5 item
+# 5 / §6 Stage A.4): persistent-thread fan-in throughput/latency JUDGE — a
+# clean successor to heap_fanin_production above, fixing its one structural
+# flaw (thread spawn/join happening INSIDE the timed region). Threads are
+# spawned ONCE per matrix cell, parked on std::sync::Barrier, and only the
+# dealloc burst itself is timed. Custom timing-loop binary (harness = false,
+# no criterion_main! — see the bench file's own module doc for why Criterion
+# does not fit this matrix), reporting p50/p99/max per-op latency plus the
+# same DBG_RING_* diagnostics heap_fanin_production already reads. Does NOT
+# replace heap_fanin_production (kept as the correctness/stress control).
+[[bench]]
+name = "heap_fanin_persistent"
+harness = false
+required-features = ["alloc-global", "alloc-xthread"]
+
 # R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
 # isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
 # HeapCore::trim_for_recycle) from pure per-op allocation throughput. Reports
