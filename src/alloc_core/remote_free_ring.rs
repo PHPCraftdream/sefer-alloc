@@ -668,6 +668,57 @@ impl RemoteFreeRing {
         }
     }
 
+    /// R6-OPT-P0-4: byte-identical push/CAS/publish protocol to [`push`](
+    /// Self::push), EXCEPT the "ring full" branch does NOT bump either
+    /// diagnostic counter (`self.overflow()` / [`DBG_RING_OVERFLOW`]).
+    ///
+    /// Exists ONLY for `HeapCore::push_with_overflow_retry`'s bounded
+    /// spin-retry loop, which (under the R6-OPT-P0-4 "overflow-first"
+    /// policy) is now reached only in the genuinely rare case where BOTH the
+    /// segment ring's one counted attempt AND an immediate
+    /// `push_to_heap_overflow` attempt have already failed — i.e. every
+    /// failed poll inside that loop is a re-check of an already-known-full
+    /// ring, not a new diagnostic event. Counting each of up to
+    /// `RING_PUSH_RETRY_SPINS` (8,192) re-polls would tax the diagnostic
+    /// counters with a locked RMW per poll for no informational gain: the ONE
+    /// counted [`push`](Self::push) attempt the caller already made is the
+    /// signal "this ring overflowed at all"; the retry loop's OWN outcome is
+    /// separately, meaningfully counted by the caller via
+    /// `DBG_RING_PUSH_RETRIED` (single bump, on eventual success) and
+    /// `DBG_RING_PUSH_RETRY_EXHAUSTED` (single bump, if the whole budget is
+    /// exhausted) — see that caller's doc comment for the full accounting.
+    ///
+    /// `offset` MUST be `< SEGMENT` (a real block offset, not the sentinel) —
+    /// same contract as [`push`](Self::push).
+    #[cfg(feature = "alloc-xthread")]
+    pub fn try_push_uncounted(&self, offset: u32) -> Result<(), PushOverflow> {
+        debug_assert_ne!(offset, RING_SLOT_EMPTY, "offset must not be the sentinel");
+        loop {
+            let t = self.tail().load(Ordering::Relaxed);
+            // Full check: identical to `push` — Acquire on `head` to see the
+            // consumer's Release head advance.
+            let h = self.head().load(Ordering::Acquire);
+            if t.wrapping_sub(h) >= RING_CAP as u32 {
+                // Ring full: bounded leak, SAME as `push` — but deliberately
+                // uncounted (see doc comment above for why).
+                return Err(PushOverflow);
+            }
+            // Reserve slot `t`: identical CAS/publish protocol to `push`.
+            match self.tail().compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slot(t as usize).store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue, // Another producer reserved `t`; retry.
+            }
+        }
+    }
+
     /// Drain all published offsets from the ring, passing each to `reclaim`.
     /// Called ONLY by the owning thread (single consumer). `reclaim` receives
     /// the block's segment-relative offset; the caller turns it back into a

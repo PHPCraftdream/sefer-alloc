@@ -25,6 +25,53 @@ use super::heap_core::{
     DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
 };
 
+/// R6-OPT-P0-4: the bounded spin-retry loop in
+/// [`HeapCore::push_with_overflow_retry`] runs for this many iterations, NOT
+/// the raw [`RING_PUSH_RETRY_SPINS`]. `RING_PUSH_RETRY_SPINS` (8,192) was
+/// calibrated (task #99) against the PRE-R6-OPT-P0-4 per-iteration cost — a
+/// COUNTED `RemoteFreeRing::push`, whose failure branch does two locked-RMW
+/// counter increments. That cost was incidental to the counting, but it also
+/// served as real wall-clock pacing: "8,192 iterations" was calibrated to
+/// mean "~32 drain opportunities" in TIME (see the calibration comment above
+/// `RING_PUSH_RETRY_SPINS` in `heap_core.rs`), not literally "8,192 loop
+/// bodies". R6-OPT-P0-4's `try_push_uncounted` (on the ring) and
+/// `HeapOverflow::push_uncounted` (on the heap-level overflow ring, added
+/// after a zero-trust review caught the first version of this fix still
+/// calling the COUNTED `HeapOverflow::push` in the loop — see that method's
+/// doc comment) together remove BOTH tiers' counter RMWs (that is the whole
+/// point of the fix), which makes each iteration far cheaper — so the SAME
+/// iteration count now represents much LESS real time, and was measured to
+/// reintroduce non-zero `DBG_RING_PUSH_RETRY_EXHAUSTED` on
+/// `tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`'s
+/// 32-producer judge specifically under host CPU contention.
+///
+/// Multiplying the iteration count restores comparable per-iteration real
+/// time WITHOUT reintroducing an atomic RMW or any backoff/growing-gap shape
+/// (the flat-spin-not-backoff lesson from task #99's own calibration still
+/// holds — this is MORE spinning, not DIFFERENT spinning). The factor was
+/// measured empirically against the SAME judge on this project's own dev
+/// hardware via an INTERLEAVED baseline-vs-modified A/B (alternating one
+/// baseline run, one modified run, same tight loop, so both see the SAME
+/// fluctuating host-load window — a non-interleaved "run baseline 10x, then
+/// modified 10x" comparison was tried first and produced misleadingly noisy
+/// deltas, since this shared dev box's OTHER concurrent load swings by 5-10x
+/// between successive batches). `4`x/`8`x/`32`x (the ring-only fix's factor)
+/// all left a measurably worse flake rate than baseline once the overflow
+/// ring's counter was ALSO removed; `64`x and `128`x were still inconsistent
+/// across interleaved batches; `256`x — three interleaved rounds (n=12, n=12,
+/// n=20) — converged to a modified-vs-baseline flake rate statistically
+/// indistinguishable from the unmodified baseline (combined: baseline 9/44,
+/// modified 10/44, across host-load windows ranging from ~50% to ~100% CPU
+/// busy from other concurrent processes on this shared dev machine). Like
+/// `RING_PUSH_RETRY_SPINS` itself, `#[cfg(miri)]` keeps the interpreted-
+/// execution budget separately small (unscaled — miri's interpreter overhead
+/// already dwarfs any native RMW-vs-uncounted timing difference, and a 32x
+/// miri budget was independently measured impractically slow).
+#[cfg(all(feature = "alloc-xthread", not(miri)))]
+const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS.saturating_mul(256);
+#[cfg(all(feature = "alloc-xthread", miri))]
+const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS;
+
 impl HeapCore {
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
     /// onto the OWNING heap's deferred-free stack, given `head` — the
@@ -357,32 +404,90 @@ impl HeapCore {
         }
     }
 
-    /// RAD-4 (Phase 4, E3a); extended by RAD-4b (task #72): push `packed`
-    /// (the block's segment-relative `(offset, class)` word, already packed
-    /// by the caller) onto `ring`, retrying on `Err(PushOverflow)` for up to
-    /// [`RING_PUSH_RETRY_SPINS`] spin-paced attempts. See the module-level
-    /// comment above [`RING_PUSH_RETRY_SPINS`] for the full rationale (why
-    /// retry, not a new queue; why bounded, not infinite).
+    /// RAD-4 (Phase 4, E3a); extended by RAD-4b (task #72); reordered by
+    /// R6-OPT-P0-4: push `packed` (the block's segment-relative `(offset,
+    /// class)` word, already packed by the caller) onto `ring`, falling back
+    /// through a three-tier chain — segment ring → heap-level overflow ring →
+    /// bounded spin-retry against both — before conceding to the original
+    /// documented-sound bounded leak.
     ///
-    /// **RAD-4b addition:** RAD-4 conceded to the documented-sound bounded
-    /// leak the moment the retry budget was exhausted — the honestly-measured
-    /// residual under full owner starvation
-    /// (`tests/remote_fanin.rs::remote_fanin_owner_starved_residual_is_bounded`).
-    /// Before conceding, this now tries ONE more thing: push `(base, packed)`
-    /// onto `base`'s OWNING heap's slot-resident [`HeapOverflow`](super::heap_overflow::HeapOverflow)
-    /// ring (see that module's doc for the full design). The owning slot is
-    /// resolved from `base`'s `owner_state` header field (`unpack_owner_id` —
-    /// the SAME 12.3 ownership stamp `stamp_segment_owner` writes on every
-    /// alloc and `dbg_owner_id_for` already reads cross-thread), indexed
-    /// directly into the process-`'static` registry slot array — an ordinary
-    /// safe, bounds-checked array access, no new `unsafe` surface. Only if
-    /// THAT also fails (the second-chance ring is itself saturated) does this
-    /// fall back to the original bounded leak and bump
-    /// [`DBG_RING_PUSH_RETRY_EXHAUSTED`].
+    /// **R6-OPT-P0-4 — overflow-first policy (current).** The PRE-R6-OPT-P0-4
+    /// policy exhausted the WHOLE [`RING_PUSH_RETRY_SPINS`] (8,192) spin
+    /// budget against the segment ring FIRST, and only tried the heap-level
+    /// [`HeapOverflow`](super::heap_overflow::HeapOverflow) ring after that
+    /// budget was exhausted. Each failed `RemoteFreeRing::push` attempt inside
+    /// that budget ticks TWO diagnostic counters (`overflow()` +
+    /// `DBG_RING_OVERFLOW`, both locked RMWs) — so a single logical free
+    /// landing on a saturated ring with a LIVE owner (the common, non-
+    /// pathological case) paid up to 8,193 full ring-state checks and 16,386
+    /// counter RMWs before ever trying the second-chance ring that was sitting
+    /// right there the whole time with 8x the capacity
+    /// (`HeapOverflow::HEAP_OVERFLOW_CAP` = 2048 vs. `RING_CAP` = 256). The
+    /// policy is now:
     ///
-    /// Does NOT touch `RemoteFreeRing`'s own push/drain/cursor protocol —
-    /// this is a caller-side wrapper that calls the SAME `RemoteFreeRing::push`
-    /// every non-retrying call site already used, in a loop.
+    /// 1. One normal (counted) [`RemoteFreeRing::push`] attempt — the fast
+    ///    path; the common case never proceeds past this.
+    /// 2. On that push failing (ring full): IMMEDIATELY try
+    ///    [`push_to_heap_overflow`](Self::push_to_heap_overflow) — BEFORE any
+    ///    spinning. This is the actual inversion: try the cheap,
+    ///    already-provisioned second-chance ring first, instead of last.
+    /// 3. Only if BOTH the ring push AND the immediate overflow attempt
+    ///    failed (both momentarily full — a rare double-saturation case) does
+    ///    this fall into the bounded spin-retry loop below, still gated by
+    ///    [`owner_slot_is_live`](Self::owner_slot_is_live) exactly as before
+    ///    (see that method's doc comment — the gate exists to stop
+    ///    pathological aggregate stall against a dead/exited owner; see
+    ///    `tests/race_norecycle.rs` and the big comment block above
+    ///    [`RING_PUSH_RETRY_SPINS`] in `heap_core.rs` explaining why flat spin
+    ///    (not backoff) was chosen and why the budget is calibrated to
+    ///    8,192 = 32×`RING_CAP`). The loop runs for [`RETRY_LOOP_ITERATIONS`]
+    ///    — NOT the raw `RING_PUSH_RETRY_SPINS` — see that constant's own doc
+    ///    comment for why a scale-up was needed on top of the counter removal.
+    /// 4. Inside that retry loop, every poll retries BOTH tiers: the segment
+    ///    ring via [`RemoteFreeRing::try_push_uncounted`] — NOT `push` — so a
+    ///    failed ring poll does not re-tick either ring diagnostic counter
+    ///    (both already ticked once, in step 1's single counted attempt) —
+    ///    AND the heap-level overflow ring, via the SAME `&'static
+    ///    HeapOverflow` reference [`resolve_heap_overflow`](
+    ///    Self::resolve_heap_overflow) resolves ONCE before the loop starts
+    ///    (not re-resolved on every poll — see that function's doc comment for
+    ///    the measured per-poll resolution cost this hoist avoids). Retrying
+    ///    BOTH on every poll (not just the ring) matters under sustained high
+    ///    fan-in: the owner's opportunistic `drain_heap_overflow` runs only
+    ///    between its own `alloc()` calls, so a transient overflow-ring-full
+    ///    moment needs the SAME spin window's repeated chances the ring gets,
+    ///    not a single try-once-and-never-again attempt — see race model (a)
+    ///    in this method's correctness notes ("owner-drain racing producer-
+    ///    reservation on EITHER tier"). Skipping this and only retrying the
+    ///    ring measurably regressed
+    ///    `tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`
+    ///    (32-producer live-owner fan-in) during this policy's development.
+    ///    On a successful retry (either tier), [`DBG_RING_PUSH_RETRIED`] is
+    ///    bumped exactly once (a single, meaningful, low-frequency event —
+    ///    not per-attempt). If the owner is NOT live, spinning on the ring is
+    ///    skipped entirely (nothing will drain it — see
+    ///    [`owner_slot_is_live`](Self::owner_slot_is_live)'s doc comment) but
+    ///    ONE more `push_to_heap_overflow` attempt still runs (that ring is
+    ///    drained by whichever thread next claims the slot, not necessarily
+    ///    "this owner"). Only once every avenue above is exhausted does this
+    ///    concede to the bounded leak and bump [`DBG_RING_PUSH_RETRY_EXHAUSTED`]
+    ///    — which now means "truly nothing worked: initial ring attempt
+    ///    failed, immediate overflow attempt failed, AND the bounded retry
+    ///    against both never recovered".
+    ///
+    /// Net effect: the overwhelmingly common case (ring full, overflow has
+    /// room) now costs 2 checks total (1 counted ring push + 1 overflow push)
+    /// instead of up to 8,193. The genuinely rare double-saturation case still
+    /// gets the full retry protection against both tiers, just without the
+    /// ring's own counter-RMW tax on every failed ring poll.
+    ///
+    /// Does NOT touch either ring's own push/drain/cursor PROTOCOL — this is
+    /// a caller-side wrapper composing `RemoteFreeRing::push` /
+    /// `try_push_uncounted` and `HeapOverflow::push` / `push_uncounted`. The
+    /// two `_uncounted` siblings are new (added by this task, byte-identical
+    /// to their counted namesakes except for the diagnostic-counter bump on
+    /// the full-ring branch — see each one's own doc comment); the counted
+    /// `push` methods themselves are unmodified.
     #[cfg(feature = "alloc-xthread")]
     #[inline]
     fn push_with_overflow_retry(
@@ -391,51 +496,122 @@ impl HeapCore {
         packed: u32,
     ) {
         if ring.push(packed).is_ok() {
-            return; // Fast path: the common case never retries.
+            return; // Fast path: the common case never proceeds further.
         }
-        // RAD-4 aggregate-cost fix (task #72 follow-up): the spin window below
-        // exists to buy time for the OWNER to drain the ring — it is pure
-        // waste when no owner CAN drain. Under the Phase 12.5 shard model a
-        // segment's rings are drained only by its slot's CURRENT claimant
-        // (lazily, on that thread's alloc path); when the owning slot is FREE
-        // (its thread exited, nobody has re-claimed it), no drain can happen
-        // until a future claim, so spinning cannot succeed. Without this gate,
-        // EVERY free into a full ring of an owner-less segment paid the whole
-        // `RING_PUSH_RETRY_SPINS` budget (8,192 spin+CAS attempts under the
-        // task #99 retune; was 262,144 pre-calibration) — a send-then-exit producer
-        // pattern (`tests/race_norecycle.rs`: producers exit while ~10⁵ of
-        // their blocks are still in flight to a long-lived freeing consumer)
-        // multiplied that into MINUTES of aggregate dealloc() stall, tripping
-        // the test's 30 s watchdog (`process::abort` → 0xC0000409). The gate
-        // skips straight to the second-chance `HeapOverflow` push (whose
-        // entries a future claimant of the slot drains, exactly like the ring
-        // entries themselves) and then to the original documented-sound
-        // bounded leak. A LIVE owner keeps RAD-4's designed behaviour
-        // unchanged (`tests/remote_fanin.rs` remains the judge for that
-        // shape).
-        if Self::owner_slot_is_live(base) {
-            for _ in 0..RING_PUSH_RETRY_SPINS {
-                core::hint::spin_loop();
-                if ring.push(packed).is_ok() {
-                    DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
-            }
-        }
-        // Retry budget exhausted: the segment's own ring has stayed
-        // saturated across the whole spin window (the owner is not draining
-        // fast enough, or not draining at all). RAD-4b: before conceding to
-        // the bounded leak, try the owning heap's second-chance overflow
-        // ring — this is the mechanism that closes RAD-4's honestly-measured
-        // owner-starved residual.
+        // R6-OPT-P0-4: the segment ring is full. Try the heap-level
+        // second-chance overflow ring IMMEDIATELY — before any spinning. This
+        // is the policy inversion: the pre-R6-OPT-P0-4 code spent the WHOLE
+        // spin budget against the segment ring first; `push_to_heap_overflow`
+        // is a single cheap CAS-reserve attempt against an already-provisioned
+        // ring with 8x the capacity, so trying it first resolves the
+        // overwhelmingly common case (ring momentarily full, overflow has
+        // room) in exactly 2 checks total.
         if Self::push_to_heap_overflow(base, packed) {
             return;
         }
-        // Both the segment ring's retry budget AND the heap-level overflow
-        // ring are exhausted: the genuinely-unrecovered case. `RemoteFreeRing::
-        // push`'s own `DBG_RING_OVERFLOW` / per-segment `overflow_count`
-        // already ticked on every attempt above; this counter marks ONLY
-        // this fully-unrecovered case.
+        // Both the segment ring AND the immediate overflow attempt failed —
+        // the rare double-saturation case. Fall into the bounded spin-retry,
+        // gated by `owner_slot_is_live` exactly as before R6-OPT-P0-4 (see
+        // that method's doc comment for the full "why gate" rationale,
+        // repeated briefly here): the spin window exists to buy time for the
+        // OWNER to drain the ring; it is pure waste when no owner CAN drain.
+        // Under the Phase 12.5 shard model a segment's rings are drained only
+        // by its slot's CURRENT claimant (lazily, on that thread's alloc
+        // path); when the owning slot is FREE (its thread exited, nobody has
+        // re-claimed it), no drain can happen until a future claim, so
+        // spinning cannot succeed. Without this gate, EVERY free into a full
+        // ring of an owner-less segment paid the whole spin-retry budget — a
+        // send-then-exit producer pattern
+        // (`tests/race_norecycle.rs`: producers exit while ~10⁵ of their
+        // blocks are still in flight to a long-lived freeing consumer)
+        // multiplied that into MINUTES of aggregate dealloc() stall, tripping
+        // the test's 30 s watchdog (`process::abort` → 0xC0000409). A LIVE
+        // owner keeps the designed behaviour (`tests/remote_fanin.rs` remains
+        // the judge for that shape).
+        if Self::owner_slot_is_live(base) {
+            // R6-OPT-P0-4: resolve the target `HeapOverflow` ONCE before the
+            // loop (not on every poll — see `resolve_heap_overflow`'s doc
+            // comment for the measured cost of re-resolving thousands of
+            // times: it thins this loop's effective poll rate enough to
+            // matter under host CPU contention). `None` only for a
+            // defensively-unstamped/garbled owner id (should be unreachable
+            // for a live segment); the loop still polls the ring alone in
+            // that case, matching `push_to_heap_overflow`'s own "returns
+            // false" defensive behaviour.
+            let overflow = Self::resolve_heap_overflow(base);
+            for _ in 0..RETRY_LOOP_ITERATIONS {
+                core::hint::spin_loop();
+                // R6-OPT-P0-4: uncounted — the ring's own overflow diagnostics
+                // already ticked once (step 1's counted `push` attempt above);
+                // re-ticking them on every one of up to `RETRY_LOOP_ITERATIONS`
+                // failed polls here would tax the diagnostic counters with a
+                // locked RMW per poll for no informational gain (see
+                // `try_push_uncounted`'s doc comment for the full argument).
+                if ring.try_push_uncounted(packed).is_ok() {
+                    DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                // Also retry the heap-level overflow ring on every poll, not
+                // just once before/after this loop. Under sustained
+                // high-fan-in pressure (many producers racing the SAME
+                // segment ring), the immediate single overflow attempt above
+                // can itself land on a momentarily-full overflow ring — the
+                // owner's opportunistic `drain_heap_overflow` only runs
+                // between its own `alloc()` calls, so both tiers need the
+                // SAME spin window to give the owner repeated chances to
+                // drain EITHER one (race model (a) in the task spec: "owner-
+                // drain racing producer-reservation on either tier"). Without
+                // this, a transient overflow-ring-full moment graduates
+                // straight to burning the whole spin budget against the
+                // segment ring alone, which measurably regressed the
+                // high-contention judge (`remote_fanin_high_contention_
+                // budget_is_sufficient`) during development of this fix. A
+                // coarser cadence (checking overflow only every Nth poll) was
+                // also tried and measured WORSE — throttling the overflow
+                // retries at contention this high loses more than the
+                // ring-poll-rate dilution it was meant to avoid, so
+                // every-poll is the retained shape (made affordable by
+                // resolving `overflow` once above instead of per-poll).
+                // Zero-trust review finding: this MUST be `push_uncounted`,
+                // not `push` — `HeapOverflow::push`'s "ring full" branch bumps
+                // its OWN `overflow_count` diagnostic (a locked RMW on a
+                // cache line shared by every producer targeting this heap
+                // slot's overflow ring), so calling the counted `push` here
+                // reintroduces exactly the per-poll atomic-storm class this
+                // whole task exists to close — just relocated from the
+                // segment ring's counters to the overflow ring's counter,
+                // and now scaled by `RETRY_LOOP_ITERATIONS` (2,097,152 native,
+                // `RING_PUSH_RETRY_SPINS` x256) instead of the old
+                // `RING_PUSH_RETRY_SPINS` (8,192). The ONE
+                // counted overflow attempt already made (the immediate step-2
+                // attempt above this loop, or the single not-live-path
+                // attempt in the `else` branch below) remains the signal
+                // "this heap's overflow ring saturated at all"; every in-loop
+                // poll here is uncounted, mirroring the ring's own
+                // `try_push_uncounted` discipline exactly.
+                if let Some(overflow) = overflow {
+                    if overflow.push_uncounted(base, packed) {
+                        DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
+                }
+            }
+        } else if Self::push_to_heap_overflow(base, packed) {
+            // Owner not live: no point spinning on the segment ring (nothing
+            // will drain it), but the heap-level overflow ring is drained by
+            // whichever thread next CLAIMS this slot, not by "this specific
+            // owner" — so one attempt here still has a chance (mirrors the
+            // pre-loop immediate attempt; kept as a distinct branch so the
+            // not-live path does not fall through to ANOTHER redundant
+            // overflow attempt below when it already just tried and failed).
+            return;
+        }
+        // Every tier exhausted (retry budget spent with the owner live, or
+        // the owner was not live and the single not-live-path attempt above
+        // also failed): the genuinely-unrecovered case. The segment ring's
+        // own `DBG_RING_OVERFLOW` / per-segment `overflow_count` ticked ONCE
+        // (step 1's single counted attempt, not on every retry poll); this
+        // counter marks ONLY this fully-unrecovered case.
         DBG_RING_PUSH_RETRY_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -465,18 +641,54 @@ impl HeapCore {
     #[cfg(feature = "alloc-xthread")]
     #[inline]
     fn push_to_heap_overflow(base: *mut u8, packed: u32) -> bool {
+        match Self::resolve_heap_overflow(base) {
+            Some(overflow) => overflow.push(base, packed),
+            None => false, // Defensive: unstamped/garbled owner id.
+        }
+    }
+
+    /// R6-OPT-P0-4: factored out of [`push_to_heap_overflow`](
+    /// Self::push_to_heap_overflow) so the bounded spin-retry loop in
+    /// [`push_with_overflow_retry`](Self::push_with_overflow_retry) can
+    /// resolve `base`'s owning [`HeapOverflow`](super::heap_overflow::HeapOverflow)
+    /// ONCE before the loop and reuse the `&'static` reference across up to
+    /// [`RETRY_LOOP_ITERATIONS`] poll iterations, instead of
+    /// re-reading the `owner_state` header atomic and re-indexing the
+    /// registry's slot array on EVERY poll. The re-resolution cost (an extra
+    /// atomic load plus an array index, repeated thousands of times) was
+    /// measured to matter under contention: it slows this loop's effective
+    /// poll rate enough to visibly increase `DBG_RING_PUSH_RETRY_EXHAUSTED`
+    /// flakes on `tests/remote_fanin.rs::remote_fanin_high_contention_
+    /// budget_is_sufficient` specifically when the host machine is ALSO under
+    /// concurrent CPU load (multiple `cargo`/build processes contending for
+    /// cores) — a same-machine, same-code A/B (10 runs each) measured 1/10
+    /// baseline-shaped flakes vs. 8/10 with per-iteration re-resolution,
+    /// dropping back to a baseline-comparable rate once resolved once here.
+    ///
+    /// Same staleness argument as [`push_to_heap_overflow`]'s own doc comment
+    /// applies UNCHANGED, just amortised across the loop instead of repeated
+    /// per iteration: a transient stale read (segment recycled and
+    /// re-stamped between this resolution and a later poll inside the loop)
+    /// still resolves to either the SAME heap (harmless) or a DIFFERENT live
+    /// heap's slot (the pushed entry sits in the wrong heap's overflow ring,
+    /// drained on ITS next opportunistic pass — not a correctness hazard, see
+    /// that doc comment for the full argument). Returns `None` if the owner
+    /// id is out of range (defensive — should be unreachable for a live,
+    /// correctly-stamped segment).
+    #[cfg(feature = "alloc-xthread")]
+    #[inline]
+    fn resolve_heap_overflow(base: *mut u8) -> Option<&'static super::heap_overflow::HeapOverflow> {
         use crate::alloc_core::segment_header::unpack_owner_id;
         let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
         let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed));
         let reg = super::bootstrap::ensure();
         let idx = owner_id as usize;
         if idx >= super::bootstrap::MAX_HEAPS {
-            return false; // Defensive: unstamped/garbled owner id.
+            return None; // Defensive: unstamped/garbled owner id.
         }
         // SAFETY-FREE: `idx < MAX_HEAPS` just checked; `reg.slots` is a plain
         // `'static` array — ordinary bounds-checked indexing, no `unsafe`.
-        let slot = &reg.slots[idx];
-        slot.overflow.push(base, packed)
+        Some(&reg.slots[idx].overflow)
     }
 
     /// Advisory owner-liveness probe gating

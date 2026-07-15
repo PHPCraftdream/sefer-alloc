@@ -41,6 +41,28 @@
 //! the configured capacity — which is exactly what harness 2 below now
 //! proves for its own (deliberately pathological) burst size).
 //!
+//! **R6-OPT-P0-4 (2026-07) reordered, but did not remove, this fallback
+//! chain.** The paragraphs above describe RAD-4/RAD-4b's original ordering:
+//! spin against the segment ring FIRST (for the whole `RING_PUSH_RETRY_SPINS`
+//! budget), THEN try `HeapOverflow` only once that budget was exhausted.
+//! R6-OPT-P0-4 inverted this: `push_to_heap_overflow` is now tried
+//! IMMEDIATELY after the first counted `RemoteFreeRing::push` fails, BEFORE
+//! any spinning — the bounded spin-retry loop (now polling via
+//! `RemoteFreeRing::try_push_uncounted`, which does not tick the ring's own
+//! overflow counters on every failed poll) only runs if BOTH the ring push
+//! AND the immediate overflow attempt fail (the rare double-saturation case).
+//! See `HeapCore::push_with_overflow_retry`'s doc comment
+//! (`src/registry/heap_core_xthread.rs`) for the full current policy. This
+//! reordering changes WHEN and HOW OFTEN `DBG_RING_OVERFLOW` /
+//! `DBG_RING_PUSH_RETRIED` / `DBG_RING_PUSH_RETRY_EXHAUSTED` tick (each now
+//! fires at most once per logical free that ever saw a full segment ring,
+//! rather than once per failed spin-poll), but does NOT change the
+//! qualitative fallback chain (ring → overflow → bounded spin against both →
+//! documented-sound bounded leak) this file's three harnesses judge — every
+//! assertion below is either `> 0` (an event happened at all) or `== 0` (the
+//! fully-unrecovered tier was never reached), both still the correct oracle
+//! under the new ordering.
+//!
 //! This file has three harnesses:
 //!
 //! 1. [`remote_fanin_concurrent_overflow_is_recovered`] — the REALISTIC

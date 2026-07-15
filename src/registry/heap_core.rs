@@ -182,13 +182,41 @@ pub(crate) type TcacheHitCounter = core::sync::atomic::AtomicU64;
 // slots in one pass) reopens enough room for the retry to succeed — so the
 // bound only matters for a truly pathological, sustained-overflow workload;
 // the `remote_fanin` harness (`tests/remote_fanin.rs`) is the empirical judge
-// of whether this bound is generous enough in practice. If the bound is
-// exhausted, the push falls through to RAD-4b's `HeapOverflow` second-chance
-// ring (and only if THAT is also saturated, the original documented-sound
-// bounded leak) — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY this
-// genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which ticks
-// on every individual full-ring push ATTEMPT, including ones a retry goes on
-// to recover).
+// of whether this bound is generous enough in practice.
+//
+// ## R6-OPT-P0-4 — overflow-first, spin last (current ordering)
+//
+// The paragraph above describes the SPIN window's own bound; the ORDER in
+// which `push_with_overflow_retry` reaches for the three tiers (segment ring
+// → heap-level `HeapOverflow` second-chance ring → this spin loop) changed
+// under R6-OPT-P0-4. Originally (RAD-4/RAD-4b), the spin loop ran FIRST,
+// retrying the segment ring for the FULL `RING_PUSH_RETRY_SPINS` budget
+// before ever trying `HeapOverflow` — and every failed poll inside that
+// budget ticked BOTH `RemoteFreeRing`'s diagnostic counters (`overflow()` +
+// `DBG_RING_OVERFLOW`, each a locked RMW), so a single logical free landing
+// on a saturated ring with a LIVE owner (the common case) could pay up to
+// 8,193 full ring-state checks and 16,386 counter RMWs before ever trying the
+// second-chance ring that was sitting right there the whole time with 8x the
+// capacity (`HeapOverflow::HEAP_OVERFLOW_CAP` = 2048 vs. `RING_CAP` = 256).
+// The policy is now: one counted `RemoteFreeRing::push` attempt, then
+// IMMEDIATELY `push_to_heap_overflow` on failure — BEFORE any spinning — and
+// only if BOTH fail does the spin loop below run. Every poll inside that loop
+// retries BOTH tiers: the segment ring via `RemoteFreeRing::try_push_uncounted`
+// (not `push`, so a failed poll does not re-tick either ring counter) AND the
+// heap-level overflow ring via another `push_to_heap_overflow` call (retrying
+// ONLY the ring inside the loop was tried first and measurably regressed the
+// high-fan-in judge — see `HeapCore::push_with_overflow_retry`'s doc comment
+// for the measured numbers). See that doc comment (`heap_core_xthread.rs`)
+// for the full four-step policy and the `owner_slot_is_live` gate this
+// reordering does NOT change. If the owner is not live (nothing to spin for
+// on the ring), a single further `push_to_heap_overflow` attempt still runs
+// (that ring is drained by whichever thread next claims the slot); only if
+// every avenue fails does the push fall through to the original documented-
+// sound bounded leak — `DBG_RING_PUSH_RETRY_EXHAUSTED` (below) counts ONLY
+// this genuinely-unrecovered case, distinct from `DBG_RING_OVERFLOW` (which
+// now ticks exactly ONCE per logical free that ever saw a full segment ring —
+// the single counted attempt in step 1 — not on every retry poll, since the
+// spin loop's ring polls are uncounted).
 //
 // ## Calibrated budget (task #99 / round4 finding R2)
 //
@@ -236,28 +264,38 @@ pub(super) const RING_PUSH_RETRY_SPINS: u32 = 8_192;
 #[cfg(all(feature = "alloc-xthread", miri))]
 pub(super) const RING_PUSH_RETRY_SPINS: u32 = 64;
 
-/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a): process-wide count of small-block
-/// ring pushes that retried at least once (i.e. hit `Err(PushOverflow)` on
-/// their first attempt) and EVENTUALLY succeeded within
-/// [`RING_PUSH_RETRY_SPINS`]. A non-zero value means the fan-in pressure was
-/// high enough to transiently fill a ring, but the retry recovered every one
-/// of those blocks — the leak this task closes. Relaxed: diagnostic only,
-/// like `DBG_LARGE_XTHREAD_RECLAIMED` / `DBG_RING_OVERFLOW`.
+/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4): process-
+/// wide count of small-block ring pushes that reached the BOUNDED SPIN-RETRY
+/// tier (i.e. both the initial counted `RemoteFreeRing::push` AND an
+/// immediate `push_to_heap_overflow` attempt already failed — see
+/// `HeapCore::push_with_overflow_retry`'s doc comment for the current
+/// four-step policy) and EVENTUALLY succeeded within
+/// [`RING_PUSH_RETRY_SPINS`]. Bumped exactly ONCE per push that took this
+/// path and recovered — not per spin-loop poll (the loop's own polls use
+/// `RemoteFreeRing::try_push_uncounted`, which ticks no counter on failure).
+/// A non-zero value means the fan-in pressure was high enough to
+/// double-saturate BOTH the segment ring and the heap-level overflow ring
+/// transiently, but the retry recovered every one of those blocks. Relaxed:
+/// diagnostic only, like `DBG_LARGE_XTHREAD_RECLAIMED` / `DBG_RING_OVERFLOW`.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
 pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a): process-wide count of small-block
-/// ring pushes that exhausted [`RING_PUSH_RETRY_SPINS`] retries WITHOUT the
-/// ring ever draining enough to accept the push — the genuinely-unrecovered
-/// residual of the original bounded-leak behaviour. Distinct from
-/// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which counts
-/// every individual full-ring push attempt (including ones a retry later
-/// recovers). A `remote_fanin`-style harness asserts this stays at (or very
-/// near) zero to demonstrate the fix; a non-zero value here — not just a
-/// non-zero `DBG_RING_OVERFLOW` — is the honest signal of an actual lost
-/// block under this fix.
+/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4): process-
+/// wide count of small-block ring pushes for which EVERY tier of the fallback
+/// chain failed — the initial counted `RemoteFreeRing::push`, the immediate
+/// `push_to_heap_overflow` attempt, the full `RING_PUSH_RETRY_SPINS` bounded
+/// spin-retry (uncounted polls), AND a final `push_to_heap_overflow` retry
+/// after the spin budget ran out — the genuinely-unrecovered residual of the
+/// original bounded-leak behaviour. Distinct from
+/// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which (as of
+/// R6-OPT-P0-4) ticks exactly ONCE per logical free that ever saw a full
+/// segment ring (the single counted attempt in step 1 of
+/// `push_with_overflow_retry`), not on every retry poll — a `remote_fanin`-
+/// style harness asserts this stays at (or very near) zero to demonstrate the
+/// fix; a non-zero value here — not just a non-zero `DBG_RING_OVERFLOW` — is
+/// the honest signal of an actual lost block under this fix.
 #[cfg(feature = "alloc-xthread")]
 #[doc(hidden)]
 pub static DBG_RING_PUSH_RETRY_EXHAUSTED: core::sync::atomic::AtomicU64 =

@@ -309,6 +309,63 @@ impl HeapOverflow {
         }
     }
 
+    /// R6-OPT-P0-4: byte-identical push/CAS/publish protocol to [`push`](
+    /// Self::push), EXCEPT the "ring full" branch does NOT bump
+    /// `overflow_count`.
+    ///
+    /// Exists ONLY for `HeapCore::push_with_overflow_retry`'s bounded
+    /// spin-retry loop — the rare double-saturation tier reached only after
+    /// BOTH the segment ring's one counted attempt AND an immediate
+    /// `push_to_heap_overflow` attempt have already failed. Every poll inside
+    /// that loop is a re-check of an already-known-full-or-recovering ring,
+    /// not a new diagnostic event; counting each of up to
+    /// `RETRY_LOOP_ITERATIONS` re-polls would tax `overflow_count` with a
+    /// locked RMW per poll for no informational gain — mirrors
+    /// `RemoteFreeRing::try_push_uncounted`'s identical rationale (see that
+    /// method's doc comment) applied to this ring's own counter. The ONE
+    /// counted `push` attempt the caller already made (the immediate
+    /// step-2 attempt in `push_with_overflow_retry`, or the single
+    /// owner-not-live attempt) remains the signal "this heap's overflow ring
+    /// saturated at all"; this uncounted variant must never be used at either
+    /// of those two one-shot call sites, only inside the bounded retry loop.
+    ///
+    /// `base` MUST be a real, non-null segment base — same contract as
+    /// [`push`](Self::push).
+    ///
+    /// `pub` (doc-hidden, not stable API) for the same reason as
+    /// [`push`](Self::push) — kept `pub` for test-surface symmetry even
+    /// though production code reaches it only through `HeapCore`.
+    #[doc(hidden)]
+    pub fn push_uncounted(&self, base: *mut u8, packed: u32) -> bool {
+        let base_addr = base as usize;
+        debug_assert_ne!(base_addr, ENTRY_EMPTY_BASE, "segment base must not be null");
+        loop {
+            let t = self.tail.load(Ordering::Relaxed);
+            let h = self.head.load(Ordering::Acquire);
+            if t.wrapping_sub(h) >= HEAP_OVERFLOW_CAP {
+                // Ring full: bounded leak, SAME as `push` — but deliberately
+                // uncounted (see doc comment above for why).
+                return false;
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    let idx = t % HEAP_OVERFLOW_CAP;
+                    // Publish order identical to `push` — see that method's
+                    // comment for the Release/Acquire handshake rationale.
+                    self.packed[idx].store(packed, Ordering::Relaxed);
+                    self.bases[idx].store(base_addr, Ordering::Release);
+                    return true;
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
     /// PERF-PASS-4 (G9/C2)-style pre-drain empty-guard: a single `Relaxed`
     /// load of `tail` ONLY, compared against a CALLER-cached `usize` (see
     /// [`HeapCore::overflow_tail_cache`](super::heap_core::HeapCore) — the
