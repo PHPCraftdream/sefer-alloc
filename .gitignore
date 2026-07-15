@@ -2,3 +2,6 @@
 /.crush
 /.idea
 /tmp
+# R6-OPT-A6: per-run raw provenance dumps from scripts/paired-ab-runner.mjs --
+# generated output, accumulates one timestamped JSON per invocation, not source.
+/docs/perf/paired_ab_runs/

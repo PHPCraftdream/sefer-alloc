@@ -361,6 +361,31 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin
 name = "dealloc_only_unbound_thread"
 required-features = ["alloc-global"]
 
+# R6-OPT-A6 (radical_optimization_review §5.5 item 1 / §5.6 / §6 Stage
+# A.1-2): three standalone binaries, each ACTUALLY installing its own
+# `#[global_allocator]` (SeferAlloc / mimalloc / System), driving the exact
+# same `include!`d shared workload (`examples/_shared/paired_ab_workload.rs`)
+# so `scripts/paired-ab-runner.mjs` can launch them as alternating separate
+# OS processes (A/B/B/A protocol) and pair their wall-clock timings. This is
+# the complement to `benches/global_alloc.rs`'s direct-call, single-process
+# comparison — see that bench's module doc and the workload file's module doc
+# for why the real-installed-allocator process-level shape is a different,
+# also-needed judge. `examples/_shared/paired_ab_workload.rs` is NOT
+# separately registered here: it lives in a subdirectory (`examples/_shared/`)
+# specifically so Cargo's `autoexamples` auto-discovery (which only picks up
+# `examples/*.rs` and `examples/*/main.rs`) does not try to build it as its
+# own binary target (it has no `main`) — each `paired_ab_*` binary pulls it in
+# via `include!`, not `mod`/`use`.
+[[example]]
+name = "paired_ab_sefer"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "paired_ab_mimalloc"
+
+[[example]]
+name = "paired_ab_system"
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
