@@ -35,10 +35,14 @@
 
 // The crate is `#![deny(unsafe_code)]` with `alloc-global` on (see
 // `src/lib.rs`); this is the documented registry seam (the pointer handoff
-// `*mut HeapCore` out of a slot's `UnsafeCell`, plus `get_unchecked` on the
-// `'static` slot array under range-checked indices). `allow` lifts the
-// crate-level `deny` for this file only — `unsafe` anywhere else in the crate
-// is a hard error. Every `unsafe` block carries a `// SAFETY:` proof.
+// `*mut HeapCore` out of a slot's `UnsafeCell`). R6-OPT-P0-2 (round 1): the
+// former `get_unchecked` on a `'static` inline slot array is gone — every
+// slot-array access now goes through `Registry::slot(idx)`
+// (`bootstrap.rs`), the single chunk-resolving accessor, which is safe
+// (range-checked via `debug_assert!` and array-index, not `get_unchecked`).
+// `allow` lifts the crate-level `deny` for this file only — `unsafe`
+// anywhere else in the crate is a hard error. Every remaining `unsafe` block
+// carries a `// SAFETY:` proof.
 #![allow(unsafe_code)]
 
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -115,8 +119,9 @@ impl HeapRegistry {
                 None => return core::ptr::null_mut(),
             };
             let reg = ensure();
-            // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
-            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // R6-OPT-P0-2: `slot()` resolves the index through the chunked
+            // slot array, lazily materialising the owning chunk if needed.
+            let slot = reg.slot(idx);
 
             if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
                 == Err(STATE_LIVE)
@@ -192,8 +197,9 @@ impl HeapRegistry {
                 None => return core::ptr::null_mut(),
             };
             let reg = ensure();
-            // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
-            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // R6-OPT-P0-2: `slot()` resolves the index through the chunked
+            // slot array, lazily materialising the owning chunk if needed.
+            let slot = reg.slot(idx);
 
             if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
                 == Err(STATE_LIVE)
@@ -320,8 +326,10 @@ impl HeapRegistry {
         if idx >= MAX_HEAPS {
             return;
         }
-        // SAFETY: `idx < MAX_HEAPS`, checked above.
-        let slot = unsafe { reg.slots.get_unchecked(idx) };
+        // R6-OPT-P0-2: `idx < MAX_HEAPS`, checked above; `slot()` resolves it
+        // through the chunked slot array (the chunk is already materialised —
+        // this index was returned by a prior `claim`, which touched it).
+        let slot = reg.slot(idx);
 
         // CAS LIVE → FREE. Release on success: a later claim's Acquire load
         // of `state` (via its CAS) sees the slot's recycled state and the
@@ -510,8 +518,12 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
             // valid indices).
             return None;
         }
-        // SAFETY: `idx < MAX_HEAPS`, checked above.
-        let slot: &HeapSlot = unsafe { reg.slots.get_unchecked(idx as usize) };
+        // R6-OPT-P0-2: `idx < MAX_HEAPS`, checked above; `slot()` resolves it
+        // through the chunked slot array (materialising the owning chunk if
+        // this is the first touch of an index in that range — see `slot()`'s
+        // doc comment: every slot-array access in the crate funnels through
+        // it).
+        let slot: &HeapSlot = reg.slot(idx as usize);
         // Read the next link BEFORE the CAS (the push stored it under
         // Release; our Acquire load of `head` + this Acquire read see it).
         let next = slot.next_free.load(Ordering::Acquire);
@@ -554,9 +566,11 @@ fn pop_free_slot(reg: &Registry) -> Option<usize> {
 /// Push a slot index onto the `free_slots` stack. Sets the slot's `next_free`
 /// link first (so a later pop can restore the chain), then CASes the head.
 fn push_free_slot(reg: &Registry, idx: u32) {
-    // SAFETY: `idx < MAX_HEAPS` (the caller — recycle — derived it from a
-    // valid heap pointer).
-    let slot: &HeapSlot = unsafe { reg.slots.get_unchecked(idx as usize) };
+    // R6-OPT-P0-2: `idx < MAX_HEAPS` (the caller — recycle — derived it from
+    // a valid heap pointer); `slot()` resolves it through the chunked slot
+    // array (the chunk is already materialised at this point in every call
+    // path — see the call sites of `push_free_slot`).
+    let slot: &HeapSlot = reg.slot(idx as usize);
     let mut head = reg.free_slots.load(Ordering::Acquire);
     loop {
         // The next link this slot will chain to: the current head's index,
@@ -724,9 +738,19 @@ pub fn tcache_hits_total() -> u64 {
         let count = reg.count.load(Ordering::Acquire) as usize;
         let mut total: u64 = 0;
         for idx in 0..count.min(MAX_HEAPS) {
-            // SAFETY: `idx < count <= MAX_HEAPS`, so this is in range of the
-            // `'static` slot array.
-            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. `slot()` transparently
+            // materialises (or finds already-materialised) exactly the
+            // chunks this `count`-bounded walk touches — no special-casing
+            // needed: every index in `0..count` was, by construction, either
+            // freshly minted by `bump_count` or popped off `free_slots`, both
+            // of which already call `slot()` on it, so its owning chunk is
+            // ALREADY materialised by the time this walk reaches it. The call
+            // here is therefore always a fast-path hit (one Acquire load, two
+            // comparisons), never a fresh chunk materialisation — but it is
+            // still correct even in the hypothetical where it wasn't, because
+            // `slot()` unconditionally guarantees the chunk exists before
+            // returning.
+            let slot = reg.slot(idx);
             // The `initialised` gate (task #133): keep it for the documented
             // ordering. With the W3 move it is no longer load-bearing for SAFETY
             // (the counter lives in the slot itself — an un-bound slot's
@@ -795,9 +819,12 @@ pub fn large_cache_hits_total() -> u64 {
         let count = reg.count.load(Ordering::Acquire) as usize;
         let mut total: u64 = 0;
         for idx in 0..count.min(MAX_HEAPS) {
-            // SAFETY: `idx < count <= MAX_HEAPS` is in range of the `'static`
-            // slot array.
-            let slot = unsafe { reg.slots.get_unchecked(idx) };
+            // R6-OPT-P0-2: `idx < count <= MAX_HEAPS`. See the identical
+            // reasoning in `tcache_hits_total` above — every index in
+            // `0..count` was minted/popped through `slot()` already, so its
+            // chunk is already materialised; `slot()` is still the correct
+            // (and only sanctioned) way to resolve it.
+            let slot = reg.slot(idx);
             // The `initialised` gate — see `tcache_hits_total`'s (identical
             // rationale): kept for the documented ordering, no longer load-bearing
             // for safety after the W3 move (the counter is in the slot itself).
@@ -862,8 +889,9 @@ pub fn large_cache_hits_total() -> u64 {
 pub fn dbg_claim_then_simulate_oom() -> Option<u32> {
     let idx = HeapRegistry::pick_slot()?;
     let reg = ensure();
-    // SAFETY: `idx < MAX_HEAPS` by `pick_slot`.
-    let slot = unsafe { reg.slots.get_unchecked(idx) };
+    // R6-OPT-P0-2: `idx < MAX_HEAPS` by `pick_slot`; `slot()` resolves it
+    // through the chunked slot array.
+    let slot = reg.slot(idx);
     if slot.cas_state(STATE_FREE, STATE_LIVE, Ordering::AcqRel, Ordering::Acquire)
         == Err(STATE_LIVE)
     {
@@ -894,7 +922,8 @@ pub fn dbg_slot_initialised(idx: u32) -> bool {
     if idx as usize >= MAX_HEAPS {
         return false;
     }
-    // SAFETY: range-checked above.
-    let slot = unsafe { reg.slots.get_unchecked(idx as usize) };
+    // R6-OPT-P0-2: range-checked above; `slot()` resolves it through the
+    // chunked slot array.
+    let slot = reg.slot(idx as usize);
     slot.initialised.load(Ordering::Acquire)
 }

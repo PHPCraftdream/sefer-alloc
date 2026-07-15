@@ -329,7 +329,7 @@ pub struct HeapSlot {
     /// `&'static HeapSlot` the registry already hands out, with no separate
     /// claim-time wiring step (unlike `HeapCore::thread_free`'s `&'static`
     /// handle, this ring needs no handle at all — a remote producer resolves
-    /// it directly from `bootstrap::ensure().slots[owner_id]`, see
+    /// it directly from `bootstrap::ensure().slot(owner_id)`, see
     /// `HeapCore::push_with_overflow_retry`).
     ///
     /// Only present under `alloc-xthread` (the cross-thread feature this

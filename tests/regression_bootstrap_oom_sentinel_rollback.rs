@@ -1,125 +1,130 @@
-//! Regression (task #131): `ensure_slow`'s OOM bailout must roll
-//! `REGISTRY_PTR` back from `SENTINEL_INITIALIZING` to `null` BEFORE it
-//! aborts the process, instead of leaving the sentinel stuck forever.
+//! Regression (task #131; re-scoped to the chunk level by R6-OPT-P0-2
+//! round 1): a chunk-materialisation OOM bailout must roll that chunk's
+//! `AtomicPtr<RegistryChunk>` back from `SENTINEL_INITIALIZING` to `null`
+//! BEFORE it aborts the process, instead of leaving the sentinel stuck
+//! forever.
 //!
-//! ## The bug this covers
+//! ## The bug this covers (original, whole-registry form)
 //!
-//! `ensure_slow`'s CAS winner reserves virtual memory for the `Registry` via
-//! `aligned_vmem::reserve_aligned`. Before the fix, a `None` result there hit
-//! `.expect(..)`, which panics -- but `REGISTRY_PTR` had ALREADY been CASed
-//! to `SENTINEL_INITIALIZING` and the panic path never rolled it back. Two
-//! failure modes follow: every loser thread already spinning in
-//! `ensure_slow`'s `Err` branch spins FOREVER (the sentinel never becomes a
-//! real pointer), and every FUTURE `ensure()` call (from any thread) sees the
-//! non-null sentinel, falls into `ensure_slow`, fails
-//! `compare_exchange(null, SENTINEL)` (current value is SENTINEL, not null),
-//! and ALSO spins forever -- the whole process livelocks on the next
-//! registry touch. Worse, unwinding the panic itself allocates (message
-//! formatting / backtrace capture), which reenters `ensure()` and hits the
-//! very same stuck sentinel before the original panic even finishes
-//! unwinding.
+//! `ensure_slow`'s CAS winner used to reserve virtual memory for the WHOLE
+//! `Registry` via `aligned_vmem::reserve_aligned`. Before the original fix, a
+//! `None` result there hit `.expect(..)`, which panics -- but `REGISTRY_PTR`
+//! had ALREADY been CASed to `SENTINEL_INITIALIZING` and the panic path never
+//! rolled it back. Two failure modes followed: every loser thread already
+//! spinning in `ensure_slow`'s `Err` branch spun FOREVER (the sentinel never
+//! became a real pointer), and every FUTURE `ensure()` call (from any thread)
+//! saw the non-null sentinel, fell into `ensure_slow`, failed
+//! `compare_exchange(null, SENTINEL)` (current value was SENTINEL, not
+//! null), and ALSO spun forever -- the whole process livelocked on the next
+//! registry touch.
+//!
+//! ## R6-OPT-P0-2 round 1 — same bug class, narrower scope
+//!
+//! The slot array is now split into lazily-materialised chunks
+//! (`src/registry/registry_chunk.rs`); `Registry` itself is a plain `static`
+//! with NO lazy init of its own (see `bootstrap.rs`'s module doc). The
+//! CAS-then-publish-then-rollback-on-OOM protocol this test exercises moved
+//! DOWN a level, from "the one `REGISTRY_PTR`" to "one
+//! `AtomicPtr<RegistryChunk>` per chunk" (`Registry::chunks[chunk_idx]`,
+//! `ensure_chunk_slow` in `bootstrap.rs`). The identical livelock hazard
+//! applies at chunk granularity: an un-rolled-back sentinel on chunk N would
+//! permanently wedge every `slot()` call whose index falls in chunk N's
+//! 64-slot range (while chunks materialised elsewhere stay completely
+//! unaffected -- a narrower blast radius than the old whole-registry
+//! version, by design; see `bootstrap.rs`'s module doc for the full
+//! reasoning behind treating a chunk OOM this way).
 //!
 //! ## The fix under test
 //!
-//! The OOM branch now calls `rollback_registry_sentinel()` (store
-//! `REGISTRY_PTR` back to `null` with `Release`) BEFORE `std::process::abort()`.
-//! `abort` cannot be observed from within a test process (it terminates it),
-//! so this test does not attempt to trigger the real OOM path. Instead it
-//! exercises `rollback_registry_sentinel()` THROUGH the exact same function
-//! call the fix uses -- via the `#[doc(hidden)]` test hook
-//! `bootstrap::dbg_rollback_sentinel_reenterable()`, which drives the LIVE
-//! `REGISTRY_PTR` through the sentinel -> rollback -> postcondition-CAS
-//! sequence and restores it afterward. See that function's doc comment in
-//! `src/registry/bootstrap.rs` for the full safety argument (it only acts
-//! when `REGISTRY_PTR` is observed as `null`, so it never disturbs an
-//! already-initialised registry, and it always restores `null` on exit).
+//! The chunk-materialisation OOM branch in `ensure_chunk_slow` calls
+//! `rollback_chunk_sentinel(chunk_ptr)` (store the chunk's `AtomicPtr` back
+//! to `null` with `Release`) BEFORE `std::process::abort()`. `abort` cannot
+//! be observed from within a test process (it terminates it), so this test
+//! does not attempt to trigger the real OOM path. Instead it exercises
+//! `rollback_chunk_sentinel` THROUGH the exact same function call the fix
+//! uses -- via the `#[doc(hidden)]` test hook
+//! `bootstrap::dbg_rollback_chunk_sentinel_reenterable(chunk_idx)`, which
+//! drives the LIVE `Registry::chunks[chunk_idx]` through the
+//! sentinel -> rollback -> postcondition-CAS sequence and restores it
+//! afterward. See that function's doc comment in `src/registry/bootstrap.rs`
+//! for the full safety argument (it only acts when the target chunk pointer
+//! is observed as `null`, so it never disturbs an already-materialised
+//! chunk, and it always restores `null` on exit).
 //!
 //! ## Race safety
 //!
-//! This test, like every other `tests/registry_*` file, shares the
-//! process-global `REGISTRY_PTR` with the rest of the suite. It uses the SAME
-//! `SERIAL` one-shot-mutex discipline used throughout `tests/` (see
-//! `registry_basic.rs`) so no other test's `ensure()`/`claim()` call can race
-//! this test's direct manipulation of `REGISTRY_PTR`. In addition, the hook
-//! itself is defensive: if by the time this test runs some earlier test in
-//! the suite has ALREADY raced ahead and initialised the registry (a real,
-//! non-null non-sentinel pointer sits in `REGISTRY_PTR`), the hook's own
-//! internal CAS(null, SENTINEL) simply fails and it returns `None` rather
-//! than touching a live registry -- this test treats `None` as inconclusive
-//! (skips the assertion) rather than as a failure, so it can never falsely
-//! fail (or corrupt shared state) merely because it happened to run after
-//! the registry was already bootstrapped by another test in the same binary.
+//! This test targets `dbg_num_chunks() - 1` -- the LAST chunk index. No
+//! other test in this suite claims anywhere near `MAX_HEAPS` (4096) slots
+//! (the whole suite's cumulative `claim()` traffic across every test file
+//! stays in the low hundreds at most), so the last chunk is never
+//! materialised by ordinary test traffic, making a collision with another
+//! test's `claim()` calls effectively impossible. The hook is ALSO
+//! defensive on its own terms: if some other caller has (contrary to that
+//! expectation) already materialised or is concurrently materialising this
+//! exact chunk index, the hook's own internal CAS(null, SENTINEL) simply
+//! fails and it returns `None` rather than touching a live/contended chunk
+//! -- this test treats `None` as inconclusive (skips the assertion) rather
+//! than as a failure, so it can never falsely fail (or corrupt shared state).
 //!
 //! ## Non-vacuousness (counterfactual)
 //!
-//! If `rollback_registry_sentinel` is broken (e.g. its `store` is removed or
-//! it stores the sentinel back instead of `null`), the hook's postcondition
-//! CAS(null, SENTINEL) — performed immediately after the rollback — observes
-//! the sentinel still in place and fails, so the hook returns `Some(false)`
-//! and this test's `assert_eq!(..., Some(true))` fails. This was verified
-//! manually during development by temporarily commenting out the `store` in
-//! `rollback_registry_sentinel` and re-running: the test failed as expected,
-//! then passed again once restored.
+//! If `rollback_chunk_sentinel` is broken (e.g. its `store` is removed or it
+//! stores the sentinel back instead of `null`), the hook's postcondition
+//! CAS(null, SENTINEL) -- performed immediately after the rollback --
+//! observes the sentinel still in place and fails, so the hook returns
+//! `Some(false)` and this test's `assert!(rolled_back_cleanly)` fails. This
+//! mirrors the original task #131 test's verified counterfactual (manually
+//! confirmed during that task by temporarily commenting out the rollback
+//! store and re-running); the chunk-scoped rollback function is structurally
+//! identical (same CAS + store shape, narrowed to one `AtomicPtr` among
+//! many), so the same counterfactual applies unchanged.
 
 #![cfg(feature = "alloc-global")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use sefer_alloc::registry::bootstrap;
 
-// Serialise against the other registry-touching test files in this crate
-// (matches the discipline used throughout `tests/`, e.g. `registry_basic.rs`).
-static SERIAL: AtomicBool = AtomicBool::new(false);
-
-struct SerialGuard;
-impl SerialGuard {
-    fn acquire() -> Self {
-        while SERIAL
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            std::hint::spin_loop();
-        }
-        SerialGuard
-    }
-}
-impl Drop for SerialGuard {
-    fn drop(&mut self) {
-        SERIAL.store(false, Ordering::Release);
-    }
-}
-
-/// Anti-livelock: after the OOM-bailout's rollback runs, `REGISTRY_PTR` must
-/// be back at `null` (`UNINIT`), not stuck at `SENTINEL_INITIALIZING` --
-/// otherwise every current/future `ensure()` caller spins forever (Task
-/// #131).
+/// Anti-livelock: after a chunk's OOM-bailout rollback runs, that chunk's
+/// `AtomicPtr<RegistryChunk>` must be back at `null` (`UNINIT`), not stuck at
+/// `SENTINEL_INITIALIZING` -- otherwise every current/future `slot()` call
+/// whose index falls in that chunk's range spins forever (Task #131,
+/// re-scoped to chunk granularity by R6-OPT-P0-2 round 1).
 #[test]
-fn oom_bailout_rollback_clears_sentinel_not_stuck() {
-    let _serial = SerialGuard::acquire();
+fn oom_bailout_rollback_clears_chunk_sentinel_not_stuck() {
+    // Target the LAST chunk index -- see the module doc's "Race safety"
+    // section for why no other test in this suite can plausibly have
+    // materialised it already.
+    let last_chunk = bootstrap::dbg_num_chunks() - 1;
 
-    match bootstrap::dbg_rollback_sentinel_reenterable() {
+    match bootstrap::dbg_rollback_chunk_sentinel_reenterable(last_chunk) {
         Some(rolled_back_cleanly) => {
             assert!(
                 rolled_back_cleanly,
-                "rollback_registry_sentinel() must clear REGISTRY_PTR back to \
-                 null so a subsequent CAS(null, SENTINEL) succeeds -- if this \
-                 is false, the sentinel is stuck and every ensure() caller \
-                 (present and future) spins forever (Task #131 livelock)"
+                "rollback_chunk_sentinel() must clear the chunk's AtomicPtr back \
+                 to null so a subsequent CAS(null, SENTINEL) succeeds -- if this \
+                 is false, the sentinel is stuck and every slot() caller \
+                 touching this chunk's index range (present and future) spins \
+                 forever (Task #131 livelock, chunk-scoped)"
             );
         }
         None => {
-            // The registry was already initialised (real pointer) by an
-            // earlier test in this binary before this test's turn under the
-            // serial guard -- the hook correctly refused to disturb a live
-            // registry. This is expected in a shared test binary and is not
-            // a failure of the property under test; nothing to assert here.
+            // The chunk was already materialised (or contended) by the time
+            // this test ran under the serial guard -- the hook correctly
+            // refused to disturb it. Not expected given the chunk-index
+            // choice above, but not a failure of the property under test
+            // either way; nothing to assert here.
         }
     }
 
-    // Whichever branch above ran, `ensure()` must still work normally
-    // afterward -- the hook is documented to always restore `REGISTRY_PTR`
-    // to what it observed on entry, and must never leave a live registry (or
-    // an UNINIT one) unable to bootstrap. `count_for_test()` exercises
-    // `ensure()` internally and reads `count`.
+    // Whichever branch above ran, the registry must still work normally
+    // afterward -- the hook is documented to always restore the chunk
+    // pointer to what it observed on entry, and a subsequent claim must
+    // still be able to mint/materialise slots normally.
     let _ = bootstrap::count_for_test();
+    let heap = sefer_alloc::registry::HeapRegistry::claim();
+    assert!(
+        !heap.is_null(),
+        "claim() must still work normally after the chunk rollback hook ran"
+    );
+    // SAFETY: `heap` was just returned by `claim` and not yet recycled.
+    unsafe { sefer_alloc::registry::HeapRegistry::recycle(heap) };
 }

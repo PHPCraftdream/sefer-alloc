@@ -747,9 +747,13 @@ impl HeapCore {
         if idx >= super::bootstrap::MAX_HEAPS {
             return None; // Defensive: unstamped/garbled owner id.
         }
-        // SAFETY-FREE: `idx < MAX_HEAPS` just checked; `reg.slots` is a plain
-        // `'static` array — ordinary bounds-checked indexing, no `unsafe`.
-        Some(&reg.slots[idx].overflow)
+        // R6-OPT-P0-2: `idx < MAX_HEAPS` just checked; `slot()` resolves it
+        // through the chunked slot array (materialising the owning chunk if
+        // needed — sound here because this index was read off a LIVE
+        // segment's owner stamp, i.e. some earlier `claim()` already
+        // materialised this chunk; a fresh materialisation would still be
+        // correct, just redundant with that earlier one).
+        Some(&reg.slot(idx).overflow)
     }
 
     /// Advisory owner-liveness probe gating
@@ -788,7 +792,11 @@ impl HeapCore {
         if idx >= super::bootstrap::MAX_HEAPS {
             return true;
         }
-        super::bootstrap::ensure().slots[idx]
+        // R6-OPT-P0-2: `slot()` resolves through the chunked slot array —
+        // see `resolve_heap_overflow`'s identical rationale above for why a
+        // (redundant, in practice) chunk materialisation here is sound.
+        super::bootstrap::ensure()
+            .slot(idx)
             .state
             .load(Ordering::Relaxed)
             == super::heap_slot::STATE_LIVE

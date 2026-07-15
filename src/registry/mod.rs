@@ -27,10 +27,14 @@
 //! - `tagged_ptr` — the packed `(value | tag)` ABA-defence word.
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
+//! - `registry_chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
+//!   fixed-size shard of the slot array (`RegistryChunk`), so a process only
+//!   ever pays the OS commit cost for the chunks it actually touches.
 //! - [`heap_overflow`] — RAD-4b: the slot-resident second-chance MPSC
 //!   overflow ring that absorbs a cross-thread free once a segment's
 //!   `RemoteFreeRing` AND its bounded retry are both exhausted.
-//! - [`bootstrap`] — the process-global `Registry` + atomic state-machine.
+//! - [`bootstrap`] — the process-global `Registry` + per-chunk atomic
+//!   state-machine.
 //! - [`heap_registry`] — the claim/recycle API (whole-slot reuse).
 //!
 //! [`heap_core`]: self::heap_core
@@ -63,6 +67,7 @@ pub mod heap_overflow;
 pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
+mod registry_chunk;
 // `pub` (doc-hidden) only so `tests/regression_counter_wrap.rs` can reach the
 // `dbg_*` pack/unpack forwarders for the W7a tag-wrap counterfactual. The
 // `TaggedPtr` type itself stays `pub(crate)`; only the thin test forwarders

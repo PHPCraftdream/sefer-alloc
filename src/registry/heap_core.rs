@@ -393,7 +393,7 @@ pub struct HeapCore {
     /// (via `bind_slot_counters` → [`bind_overflow`](Self::bind_overflow)),
     /// mirroring [`thread_free`](Self::thread_free) /
     /// [`tcache_hits`](Self::tcache_hits) exactly — same rationale: resolving
-    /// `&reg.slots[idx].overflow` fresh on every
+    /// `&reg.slot(idx).overflow` fresh on every
     /// [`drain_heap_overflow`](Self::drain_heap_overflow) call (a
     /// `bootstrap::ensure()` + array index) is strictly more work than a
     /// pre-resolved `'static` reference, and this field is on the
@@ -406,7 +406,7 @@ pub struct HeapCore {
     /// `push_to_heap_overflow` is a free function called from a REMOTE
     /// thread targeting `base`'s OWNER — a different heap than `self` — so it
     /// cannot use this field (which is `self`'s OWN handle); it still
-    /// resolves the owner's slot via `bootstrap::ensure().slots[owner_id]`
+    /// resolves the owner's slot via `bootstrap::ensure().slot(owner_id)`
     /// (unavoidable — the whole point is finding a heap this thread does not
     /// own). This hoist applies ONLY to the OWNER's own opportunistic drain,
     /// the hot(ter) path the churn benches actually measure.

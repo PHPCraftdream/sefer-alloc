@@ -39,13 +39,14 @@
 //! `dbg_owner_id_for` and the M-7 audit note already document as the 12.3
 //! "owner stamping" mechanism). A remote producer that already reads
 //! `owner_state` (it does, for the M-8/M-9-adjacent ownership checks
-//! elsewhere) can resolve the owning `&'static HeapSlot` with a single
-//! bounds-checked array index into the process-`'static` registry —
-//! `bootstrap::ensure().slots[owner_id]` — a **safe**, ordinary Rust array
-//! access, not a raw-pointer `container_of` trick and not a new provenance
-//! surface. `SegmentHeader` is untouched (zero layout risk to that
-//! already-heavily-audited struct); `owner_thread_free`'s existing
-//! provenance-exposure machinery is not reused or extended.
+//! elsewhere) can resolve the owning `&'static HeapSlot` with a single call
+//! into the process-`'static` registry — `bootstrap::ensure().slot(owner_id)`
+//! (R6-OPT-P0-2: the slot array is chunked and lazily materialised; `slot()`
+//! is the single accessor that resolves an index, materialising the owning
+//! chunk first if needed) — a **safe** call, not a raw-pointer `container_of`
+//! trick and not a new provenance surface. `SegmentHeader` is untouched (zero
+//! layout risk to that already-heavily-audited struct); `owner_thread_free`'s
+//! existing provenance-exposure machinery is not reused or extended.
 //!
 //! ## What this queue IS and IS NOT
 //!
