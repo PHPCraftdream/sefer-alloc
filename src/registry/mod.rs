@@ -43,7 +43,11 @@
 pub mod bootstrap;
 #[doc(hidden)]
 pub mod heap_core;
+mod heap_core_alloc;
 mod heap_core_diag;
+mod heap_core_free;
+mod heap_core_ownership;
+mod heap_core_tcache;
 mod heap_core_xthread;
 // `pub` (doc-hidden) only so a standalone miri UB-detection test
 // (`tests/miri_heap_overflow_unit.rs`) can reach `HeapOverflow`'s
