@@ -79,6 +79,16 @@ pub(crate) mod segment_bitmap;
 /// by the isolated gen-table layout test. Nothing here is stable public API.
 #[doc(hidden)]
 pub mod segment_header;
+/// X7 Ф1 (task #189) generation-table byte-level accessors (`gen_at`/
+/// `bump_gen`/`init_gen_table_in_place`) — split out of `segment_header.rs`
+/// (task R6-CQ-7c). Compiled only under `hardened` (every item in the file is
+/// `#[cfg(feature = "hardened")]`), so the module declaration itself is gated
+/// the same way.
+#[cfg(feature = "hardened")]
+mod segment_header_gen_table;
+mod segment_header_layout;
+mod segment_header_meta_fields;
+mod segment_header_views;
 mod segment_layout;
 pub(crate) mod segment_table;
 pub(crate) mod size_classes;
