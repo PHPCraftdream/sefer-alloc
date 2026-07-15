@@ -85,10 +85,12 @@ fn magic_at_atomic_load_survives_recycle_xthread_race() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    // 512 KiB — comfortably above `SMALL_MAX`, so every allocation is
-    // unambiguously routed to the Large path (whose dealloc-to-cache branch
-    // performs the atomic `magic = 0` Release store this test races against).
-    const SIZE: usize = 512 * 1024;
+    // 2 MiB — comfortably above `SMALL_MAX` in every feature combination
+    // (even `medium-classes`, which raises it to 1 MiB), so every allocation
+    // is unambiguously routed to the Large path (whose dealloc-to-cache
+    // branch performs the atomic `magic = 0` Release store this test races
+    // against).
+    const SIZE: usize = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
     // Modest batch — stays within the large cache's slot count so the owner's

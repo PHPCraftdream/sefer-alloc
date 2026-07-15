@@ -80,8 +80,10 @@ fn xthread_large_free_mismatched_layout_is_dropped() {
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
-    // 512 KiB — comfortably above SMALL_MAX, unambiguously routed to Large.
-    const SIZE: usize = 512 * 1024;
+    // 2 MiB — comfortably above SMALL_MAX in every feature combination (even
+    // `medium-classes`, which raises it to 1 MiB), unambiguously routed to
+    // Large.
+    const SIZE: usize = 2 * 1024 * 1024;
     // Enough slow-path large allocations after the bogus free to guarantee
     // `drain_large_deferred_free` runs repeatedly (it runs once per
     // `alloc_large` slow-path call).
@@ -193,7 +195,7 @@ fn xthread_large_free_consistent_layout_is_reclaimed() {
     let _ = bootstrap::ensure();
 
     const N: usize = 20;
-    const SIZE: usize = 512 * 1024;
+    const SIZE: usize = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
     let heap = HeapRegistry::claim();
@@ -266,11 +268,26 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
     let _ = bootstrap::ensure();
 
     const N: usize = 8;
-    // size 8 < MIN_BLOCK (16); align 32 KiB > SMALL_MAX (16 KiB) → the
-    // request is unambiguously routed to the Large path (class_for → None),
-    // with header.large_size = 16 (clamped) while the caller's layout.size()
-    // stays 8.
-    let layout = Layout::from_size_align(8, 32 * 1024).unwrap();
+    // size 8 < MIN_BLOCK (16); align 2 MiB > SMALL_MAX (~253 KiB normally, 1
+    // MiB under `medium-classes`) and < SEGMENT (4 MiB) → the request is
+    // unambiguously routed to the Large path (class_for → None), with
+    // header.large_size = 16 (clamped) while the caller's layout.size() stays
+    // 8.
+    //
+    // R6-OPT-P0-3a note: the ORIGINAL align (32 KiB) is exactly divisible by
+    // every one of `medium-classes`' 6 new exact class sizes (256 KiB..1 MiB
+    // are all multiples of 32 KiB), so under that feature `class_for`'s
+    // divisibility-walk slow path would have resolved this request to a SMALL
+    // (medium) class instead of falling through to Large — silently
+    // invalidating this test's entire premise (a legitimate Large
+    // cross-thread free never happens; `DBG_LARGE_XTHREAD_RECLAIMED` never
+    // advances). Confirmed by running `cargo test --all-features` against
+    // this file before the fix, which failed with delta 0. 2 MiB is not a
+    // multiple of any class this crate can produce (every class tops out at
+    // 1 MiB even under `medium-classes`), so it stays a genuine Large request
+    // regardless of feature combination.
+    let align = 2 * 1024 * 1024;
+    let layout = Layout::from_size_align(8, align).unwrap();
 
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
@@ -282,9 +299,9 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
         let p = unsafe { (*heap).alloc(layout) };
         assert!(!p.is_null(), "alloc[{i}] returned null");
         assert_eq!(
-            (p as usize) % (32 * 1024),
+            (p as usize) % align,
             0,
-            "alloc[{i}] not aligned to the requested 32 KiB"
+            "alloc[{i}] not aligned to the requested 2 MiB"
         );
         ptrs.push(p);
     }

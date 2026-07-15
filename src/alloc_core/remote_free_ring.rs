@@ -132,6 +132,7 @@
 use core::sync::atomic::Ordering;
 
 use super::node::Node;
+use super::size_classes::SMALL_CLASS_COUNT;
 
 /// TEST/DIAGNOSTIC-ONLY (task D2): process-wide count of ring-push overflows
 /// (a cross-thread free that found its target segment's ring full and
@@ -196,10 +197,35 @@ pub(crate) const ENTRY_OFF_BITS: u32 = 22;
 /// Mask for the offset field of a packed ring entry.
 pub(crate) const ENTRY_OFF_MASK: u32 = (1 << ENTRY_OFF_BITS) - 1;
 
+// R6-OPT-P0-3a (correctness-surface item #6, "cross-thread free" / packed
+// `(offset, class)` bit budget): the non-hardened packing above reserves 22
+// bits for `off` and the remaining `32 - 22 = 10` bits (values 0..=1023) for
+// `class_idx`. `medium-classes` (R6-OPT-P0-3a) grows `SMALL_CLASS_COUNT` from
+// 49 to 55 — nowhere near the 10-bit ceiling, so this packing has ample
+// headroom (the review's own §4 P0-3 correctness-surface list explicitly
+// calls for verifying this, even when it "technically still fits" — see the
+// task's final report). Two things must hold for every real
+// `(off, class_idx)` pair: `class_idx` must fit in the 10 high bits
+// (`SMALL_CLASS_COUNT <= 1024`), and the packed word must never equal
+// `RING_SLOT_EMPTY` (`u32::MAX`) — which only happens when EVERY bit is 1,
+// i.e. `off == ENTRY_OFF_MASK` (0x3FFFFF, a real reachable last-block offset)
+// AND `class_idx == 1023` (0x3FF). The second conjunct is what this assert
+// closes: as long as the maximum REAL class index (`SMALL_CLASS_COUNT - 1`)
+// stays strictly below 1023, no real pair can produce the sentinel. (Compare
+// the `hardened` packing's identical-shaped guard further down this file,
+// which pins the SAME property for its own, much tighter 6-bit class field.)
+const _: () = assert!(
+    (SMALL_CLASS_COUNT as u32) < (1u32 << (32 - ENTRY_OFF_BITS)) - 1,
+    "the non-hardened ring entry's class field is 32 - ENTRY_OFF_BITS bits wide; \
+     SMALL_CLASS_COUNT must stay strictly below its all-ones value so a real \
+     (offset, class) pair can never collide with RING_SLOT_EMPTY (u32::MAX)"
+);
+
 /// Pack a `(offset, class_idx)` pair into a single `u32` ring entry.
-/// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 49)`,
-/// so the result is `< 2^32` and never collides with `RING_SLOT_EMPTY`
-/// (`u32::MAX`) for any real block.
+/// `off < 2^22` (a segment offset) and `class_idx < SMALL_CLASS_COUNT (= 49
+/// without `medium-classes`, 55 with it)`, so the result is `< 2^32` and
+/// never collides with `RING_SLOT_EMPTY` (`u32::MAX`) for any real block —
+/// see the compile-time pin immediately above.
 #[cfg_attr(
     any(not(feature = "alloc-xthread"), feature = "hardened"),
     allow(dead_code)
@@ -254,15 +280,33 @@ pub(crate) fn unpack_entry(packed: u32) -> (u32, u32) {
 // `gen=0xFF`, `class=0x3F` (=63), `off16=0x3_FFFF`. `off16=0x3_FFFF` IS
 // reachable (it is `SEGMENT - MIN_BLOCK` >> 4, a real last block start), and
 // `gen=0xFF` is reachable (the u8 wrap). BUT `class=63` is NOT: the maximum
-// real small class index is `SMALL_CLASS_COUNT - 1 = 48` (`0x30`), so the
-// class field never reaches `0x3F`. The maximum packed word over real ranges
-// is therefore `0xFFC3_FFFF < u32::MAX` (computed and pinned by the
-// `entry_never_collides_with_ring_slot_empty` regression test). This safety
-// HOLDS ONLY WHILE `SMALL_CLASS_COUNT <= 49` — the const-assert below pins
-// that the class field's all-ones value (`2^ENTRY_CLASS_BITS - 1 = 63`) stays
-// strictly above `SMALL_CLASS_COUNT - 1`, so a future bump of
-// `SMALL_CLASS_COUNT` past 63 cannot silently reintroduce a collision. Ф3's
-// ring `push`/`drain` reuse is sound under that invariant.
+// real small class index is `SMALL_CLASS_COUNT - 1 = 48` (`0x30`) without
+// `medium-classes`, or `54` (`0x36`) WITH it (R6-OPT-P0-3a: 49 -> 55
+// classes), so the class field never reaches `0x3F` either way. The maximum
+// packed word over real ranges is therefore `0xFFC3_FFFF < u32::MAX` without
+// `medium-classes` (computed and pinned by the
+// `entry_never_collides_with_ring_slot_empty` regression test) — WITH
+// `medium-classes` the maximum real class value shifts from `0x30` to `0x36`
+// but stays strictly below `0x3F`, so the same non-collision argument holds,
+// just with a NARROWER margin. This safety HOLDS ONLY WHILE
+// `SMALL_CLASS_COUNT <= 62` — the const-assert below pins that the class
+// field's all-ones value (`2^ENTRY_CLASS_BITS - 1 = 63`) stays strictly above
+// `SMALL_CLASS_COUNT - 1`, so a future bump of `SMALL_CLASS_COUNT` past 62
+// cannot silently reintroduce a collision. Ф3's ring `push`/`drain` reuse is
+// sound under that invariant.
+//
+// R6-OPT-P0-3a HONEST MARGIN NOTE (correctness-surface item #6, "cross-thread
+// free" — the task's own instruction to flag a tight fit explicitly even when
+// it technically still fits): `medium-classes` consumes 6 of the 6-bit
+// field's 14 headroom values (49 -> 55 used, ceiling 62) — plenty of room for
+// THIS experiment (55 << 62), but this field is measurably tighter than the
+// non-hardened packing's 10-bit field (ceiling 1022, headroom in the
+// hundreds). A THIRD source of classes stacked on top of `medium-classes`
+// under `hardened` (e.g. a future page-run layer's own per-run classes, if
+// P0-3b ever reuses this SAME packed-word scheme rather than a dedicated one)
+// would need to re-check this 62-class ceiling explicitly — it is the first
+// of this crate's two ring-entry encodings to feel `medium-classes`' growth
+// at all.
 // ---------------------------------------------------------------------------
 
 /// X7 Ф2: bits of a hardened ring entry reserved for `off16` (the offset in

@@ -71,10 +71,12 @@ fn large_ptr_small_layout_free_is_noop() {
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
 
-    // 512 KiB, align 8 (< SEGMENT) — unambiguously routed to the dedicated
-    // Large-segment path (class_for → None), yet owned by THIS heap so the
-    // own-thread routing (`contains_base`) reaches the magazine free body.
-    const LARGE_SIZE: usize = 512 * 1024;
+    // 2 MiB, align 8 (< SEGMENT) — unambiguously routed to the dedicated
+    // Large-segment path (class_for → None) in every feature combination
+    // (including `medium-classes`, which raises SMALL_MAX to 1 MiB), yet
+    // owned by THIS heap so the own-thread routing (`contains_base`) reaches
+    // the magazine free body.
+    const LARGE_SIZE: usize = 2 * 1024 * 1024;
     let large_layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
     // A small layout whose `class_for` is `Some(c)` — the mismatched size the
     // buggy caller uses to free the Large pointer.

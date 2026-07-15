@@ -30,6 +30,27 @@
 //!   plain geometric progression is ever a multiple of 512, so every
 //!   `align >= 512` request fell through `class_for`'s divisibility walk to
 //!   `None`, i.e. Large, however small `size` was).
+//! - **Medium classes (task R6-OPT-P0-3a, `#[cfg(feature = "medium-classes")]`,
+//!   purely opt-in — NOT part of `production`):** six more EXACT classes —
+//!   262144 (256 KiB), 327680 (320 KiB), 393216 (384 KiB), 524288 (512 KiB),
+//!   786432 (768 KiB), 1048576 (1 MiB) — merged into the SAME sorted table as
+//!   a FOURTH source (alongside the geometric run, [`PAGE_ALIGNED_EXTRA`], and
+//!   [`EXACT_EXTRA`]), taking `SMALL_CLASS_COUNT` from 49 to 55 and `SMALL_MAX`
+//!   from ~253 KiB to 1 MiB. This is the review's own "cheap first experiment"
+//!   (`docs/agent_reviews_us/radical_optimization_review.md` §4 P0-3): the
+//!   pre-existing small-segment substrate (one segment, one size class,
+//!   BinTable/PageMap/bump-carve — see `alloc_core_small.rs`) already serves
+//!   ANY class size correctly with no new mechanism; the only reason this was
+//!   never done is that every allocation `> SMALL_MAX` used to get its own
+//!   dedicated 4 MiB `Segment` (see "Large" below) even when only a few KiB
+//!   over the old ~253 KiB ceiling — burning a whole 4 MiB span + a
+//!   `SegmentTable` slot for what a shared segment could serve ~15 of. Gated
+//!   behind its own feature (not folded into the unconditional 49-entry table)
+//!   because growing `SMALL_MAX` to 1 MiB grows the derived `SIZE2CLASS` O(1)
+//!   lookup table from ~16 KiB to ~64 KiB of `.rodata` — a real cost every
+//!   OTHER build should not pay for an unproven experiment. See
+//!   [`MEDIUM_EXTRA`]'s doc comment for the exact class list and rationale, and
+//!   `benches/medium_size_sweep.rs` for the before/after measurement.
 //! - **Large:** allocations whose requested size exceeds `SMALL_MAX` get a
 //!   dedicated whole-segment span — one `Segment` per large allocation. No
 //!   size class; the segment is sized to fit. `segment_of(ptr)` still finds
@@ -81,12 +102,22 @@ pub(crate) const MIN_BLOCK_SHIFT: u32 = MIN_BLOCK.trailing_zeros();
 /// "small-path alignment ceiling".
 pub(crate) const SMALL_ALIGN_MAX: usize = MIN_BLOCK;
 
+/// The total number of small-class table entries in THIS build: 49 without
+/// `medium-classes`, 55 with it (49 + [`MEDIUM_EXTRA`]'s 6 entries). A single
+/// named constant (rather than repeating the `#[cfg(...)]` arithmetic at every
+/// use site) so [`SIZE_CLASS_TABLE`]'s array length, [`build_table`]'s return
+/// type, and every call site that needs the count stay in lockstep.
+#[cfg(not(feature = "medium-classes"))]
+pub(crate) const TABLE_LEN: usize = 49;
+#[cfg(feature = "medium-classes")]
+pub(crate) const TABLE_LEN: usize = 49 + MEDIUM_EXTRA.len();
+
 /// The table of fine small size classes, in strictly increasing order. Each
 /// entry is a multiple of `MIN_BLOCK` and `>=` the previous entry. Constructed
 /// at compile time by [`build_table`] so the spacing is visible as code, not
 /// magic numbers. This is the **single source of truth** for the small-class
 /// geometry; [`SIZE2CLASS`] is derived from it by [`build_size2class`].
-pub(crate) const SIZE_CLASS_TABLE: [usize; 49] = build_table();
+pub(crate) const SIZE_CLASS_TABLE: [usize; TABLE_LEN] = build_table();
 
 /// Number of small size classes (length of [`SIZE_CLASS_TABLE`]).
 pub(crate) const SMALL_CLASS_COUNT: usize = SIZE_CLASS_TABLE.len();
@@ -107,7 +138,18 @@ pub(crate) const SMALL_MAX: usize = *SIZE_CLASS_TABLE.last().unwrap();
 /// Entry type is `u8` because [`SMALL_CLASS_COUNT`] (currently 49; grows as
 /// the table gains classes) is far below 256; a compile-time assertion in
 /// [`build_size2class`] makes that invariant explicit.
-pub(crate) const SIZE2CLASS: [u8; (SMALL_MAX / MIN_BLOCK) + 1] = build_size2class();
+///
+/// `static`, not `const` (R6-OPT-P0-3a): a `const` array is a VALUE that gets
+/// inlined at every use site, potentially duplicating its bytes in `.rodata`
+/// per call site; a `static` is a single fixed-address item shared by every
+/// reference. This was harmless at the pre-existing ~16 KiB size (49 classes)
+/// but `medium-classes` grows it to ~64 KiB (`SMALL_MAX` 253 KiB -> 1 MiB), at
+/// which point `clippy::large_const_arrays` (`-D warnings` under
+/// `--all-features`, this crate's CI gate) correctly flags the duplication
+/// risk. The value is still produced by the same compile-time
+/// [`build_size2class`] call — only the storage CLASS changed, not how it is
+/// computed.
+pub(crate) static SIZE2CLASS: [u8; (SMALL_MAX / MIN_BLOCK) + 1] = build_size2class();
 
 /// The huge threshold: allocations of this size or larger are flagged "huge"
 /// so future phases can apply distinct policy (guard pages, eager decommit).
@@ -250,6 +292,32 @@ const PAGE_ALIGNED_EXTRA: [usize; 8] = [512, 1024, 2048, 4096, 6144, 8192, 12288
 /// below the top entry).
 const EXACT_EXTRA: [usize; 1] = [256];
 
+/// R6-OPT-P0-3a: six exact "medium" classes, `#[cfg(feature =
+/// "medium-classes")]` only — the review's own suggested set
+/// (`radical_optimization_review.md` §4 P0-3), used verbatim without
+/// deviation: 256 KiB / 320 KiB / 384 KiB / 512 KiB / 768 KiB / 1 MiB. All six
+/// are exact multiples of `MIN_BLOCK` (indeed of `PAGE` = 4096), strictly
+/// increasing, and strictly greater than the top of the pre-existing 49-entry
+/// table (~253 KiB / 259072... — see [`build_table`]'s doc comment for the
+/// exact geometric ceiling) and of [`PAGE_ALIGNED_EXTRA`]'s top entry
+/// (16384), so a plain APPEND after the 49-entry merge (not a full re-merge)
+/// keeps the combined table strictly increasing — see [`build_table`].
+///
+/// Kept as a SEPARATE array (rather than folded into [`PAGE_ALIGNED_EXTRA`])
+/// so the feature gate is a single, local `#[cfg]` on this one array plus the
+/// `TABLE_LEN`/`build_table` arithmetic that consumes it — nothing about the
+/// unconditional 49-class geometric+page-aligned+exact-256 merge changes
+/// shape when this feature is off.
+#[cfg(feature = "medium-classes")]
+const MEDIUM_EXTRA: [usize; 6] = [
+    256 * 1024,
+    320 * 1024,
+    384 * 1024,
+    512 * 1024,
+    768 * 1024,
+    1024 * 1024,
+];
+
 /// Build the small size-class table at compile time. Spacing: start at
 /// `MIN_BLOCK`, then each next class is `round_up(prev * 5 / 4, MIN_BLOCK)`
 /// (a 1.25× geometric step rounded to the alignment), with a minimum step of
@@ -262,7 +330,19 @@ const EXACT_EXTRA: [usize; 1] = [256];
 /// [`build_size2class`]'s O(1) derivation rely on) and every entry stays a
 /// multiple of `MIN_BLOCK` (256 = 16×16, and all `PAGE_ALIGNED_EXTRA` values
 /// are multiples of 512, hence of `MIN_BLOCK` = 16).
-const fn build_table() -> [usize; 49] {
+///
+/// R6-OPT-P0-3a (`#[cfg(feature = "medium-classes")]` only): after the
+/// unconditional 49-entry merge above, [`MEDIUM_EXTRA`]'s 6 classes (256 KiB
+/// .. 1 MiB) are APPENDED — a fourth source merged the same sorted-append way
+/// the 49-entry table already merges three (geometric + page-aligned +
+/// exact-256). A plain append (not a full sorted-merge) is correct here
+/// specifically because every `MEDIUM_EXTRA` value is already `>` the
+/// 49-entry table's top (the top geometric/page-aligned/exact class is
+/// `SIZE_CLASS_TABLE_49[48]`, well under 256 KiB — pinned by the
+/// `medium_extra_starts_above_the_49_entry_table` regression test), so no
+/// interleaving is needed to keep the combined 55-entry table strictly
+/// increasing.
+const fn build_table() -> [usize; TABLE_LEN] {
     // Build the 40-entry geometric progression first (unchanged from before
     // task B1).
     let mut geo = [0usize; 40];
@@ -298,10 +378,11 @@ const fn build_table() -> [usize; 49] {
 
     // Merge `geo` (40, sorted) with `extra` (9, sorted, and known at
     // construction time to be disjoint from `geo` — verified by the
-    // `no_duplicate_class_sizes` test) into one sorted 49-entry table. A plain
-    // sorted-merge (both inputs are already sorted), since `const fn` cannot
-    // call `slice::sort` (no heap, no trait objects in const context).
-    let mut out = [0usize; 49];
+    // `no_duplicate_class_sizes` test) into one sorted 49-entry prefix of
+    // `out`. A plain sorted-merge (both inputs are already sorted), since
+    // `const fn` cannot call `slice::sort` (no heap, no trait objects in
+    // const context).
+    let mut out = [0usize; TABLE_LEN];
     let mut gi = 0; // index into geo
     let mut ei = 0; // index into extra
     let mut oi = 0; // index into out
@@ -321,6 +402,21 @@ const fn build_table() -> [usize; 49] {
             ei += 1;
         }
         oi += 1;
+    }
+    // R6-OPT-P0-3a: append MEDIUM_EXTRA's 6 classes (256 KiB..1 MiB). Every
+    // MEDIUM_EXTRA value is strictly greater than the 49-entry prefix's top
+    // (262144 > the largest of the geometric/page-aligned/exact-256 classes —
+    // pinned by the `medium_extra_starts_above_the_49_entry_table` regression
+    // test), so a plain append keeps `out` strictly increasing without a
+    // sorted-merge.
+    #[cfg(feature = "medium-classes")]
+    {
+        let mut mi = 0;
+        while mi < MEDIUM_EXTRA.len() {
+            out[oi] = MEDIUM_EXTRA[mi];
+            oi += 1;
+            mi += 1;
+        }
     }
     out
 }

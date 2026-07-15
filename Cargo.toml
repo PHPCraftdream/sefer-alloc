@@ -184,6 +184,45 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
 # count. Safe (every real caller already builds it `alongside production`,
 # which pulls `alloc-core`) and a strictly stronger guard than a doc note.
 alloc-stats = ["alloc-core"]
+# R6-OPT-P0-3a: EXPERIMENTAL "medium" exact size classes — the cheap first
+# experiment `docs/agent_reviews_us/radical_optimization_review.md` §4 P0-3
+# recommends running BEFORE committing to the larger page-run-layer redesign
+# (P0-3b, a separate, not-yet-started task). Extends `SIZE_CLASS_TABLE` with
+# six exact classes — 256 KiB / 320 KiB / 384 KiB / 512 KiB / 768 KiB / 1 MiB
+# — reusing the EXISTING small-segment substrate verbatim (one segment, one
+# size class, BinTable/PageMap/bump-carve — no new segment kind, no page-run
+# layer). Without this feature, any allocation above ~253 KiB (`SMALL_MAX`)
+# gets a DEDICATED 4 MiB `Segment` + `SegmentTable` slot, however small the
+# excess over the old ceiling (`benches/medium_size_sweep.rs`, task R6-OPT-A3,
+# documents the resulting ~16x segment-count/fragmentation cliff at the
+# 258,752 B -> 262,144 B boundary). With it, e.g. a 256 KiB object shares a
+# 4 MiB segment with ~15 same-class siblings instead of owning a whole span.
+#
+# Additive over `alloc-core` (the size-class table is core substrate, not
+# global/xthread/decommit-specific) — matches this crate's established
+# "additive over the smallest feature that needs it" convention (compare
+# `alloc-stats`/`numa-aware`, both `["alloc-core"]`).
+#
+# Purely opt-in, like every other experimental feature this crate has ever
+# shipped (`experimental`, `pinning`, `numa-aware`, `hardened`) — NOT part of
+# `production` or any other default-on bundle, and NOT implied by any of
+# them. `--all-features` pulls it in (as it does every other opt-in feature
+# here), which is intended: that build tier exists specifically to compile
+# and test every feature combination, not to describe a recommended
+# deployment profile.
+#
+# Cost when ON: `SIZE2CLASS` (the O(1) size->class lookup table, one byte per
+# `MIN_BLOCK` bucket up to `SMALL_MAX`) grows from ~16 KiB to ~64 KiB of
+# `.rodata` — the review's own "acceptable for an experiment" number. Cost
+# when OFF: zero — every table/constant this feature touches is behind
+# `#[cfg(feature = "medium-classes")]` or derives its size from a `TABLE_LEN`
+# constant that is 49 (unchanged) without it, so a non-`medium-classes` build
+# is byte-for-byte identical to a build predating this feature.
+#
+# See `src/alloc_core/size_classes.rs` module doc for the full scheme and
+# `benches/medium_size_sweep.rs` for the before/after measurement this
+# feature is judged against. Requires `alloc-core`.
+medium-classes = ["alloc-core"]
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
 # NOT free enough to enable unconditionally. Default OFF; NOT part of

@@ -40,9 +40,11 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 fn grow_within_span_returns_same_ptr() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    // 512 KiB — definitely Large. The segment's span_usable is at least one
-    // full SEGMENT (4 MiB), so growing to 1 MiB fits easily.
-    let old_size = 512 * 1024;
+    // 1.5 MiB — definitely Large regardless of feature combination (even
+    // `medium-classes`, which raises SMALL_MAX to 1 MiB, still leaves 1.5 MiB
+    // above it). The segment's span_usable is at least one full SEGMENT
+    // (4 MiB), so growing to 3 MiB fits easily.
+    let old_size = 3 * 512 * 1024; // 1.5 MiB
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
@@ -54,8 +56,8 @@ fn grow_within_span_returns_same_ptr() {
         }
     }
 
-    // Grow to 1 MiB — still well within a single 4 MiB segment.
-    let new_size = 1024 * 1024;
+    // Grow to 3 MiB — still well within a single 4 MiB segment.
+    let new_size = 3 * 1024 * 1024;
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
     let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
@@ -101,7 +103,8 @@ fn grow_within_span_returns_same_ptr() {
 fn same_size_large_realloc_returns_same_ptr() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    let size = 512 * 1024;
+    // 1.5 MiB — definitely Large even under `medium-classes` (SMALL_MAX=1 MiB).
+    let size = 3 * 512 * 1024;
     let layout = Layout::from_size_align(size, 16).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null());
@@ -166,13 +169,14 @@ fn grow_beyond_span_relocates_and_preserves() {
 fn dealloc_after_inplace_grow_then_reuse() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    let old_size = 512 * 1024;
+    // 1.5 MiB — definitely Large even under `medium-classes` (SMALL_MAX=1 MiB).
+    let old_size = 3 * 512 * 1024;
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
 
-    // In-place grow.
-    let new_size = 1024 * 1024;
+    // In-place grow (still well within one 4 MiB segment).
+    let new_size = 3 * 1024 * 1024;
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
     let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
@@ -183,8 +187,9 @@ fn dealloc_after_inplace_grow_then_reuse() {
     unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 
     // A fresh large alloc must succeed (the freed segment is available for
-    // reuse or the table slot is free).
-    let fresh_size = 256 * 1024;
+    // reuse or the table slot is free). 1.5 MiB, same reasoning as `old_size`
+    // above: definitely Large even under `medium-classes`.
+    let fresh_size = 3 * 512 * 1024;
     let fresh_layout = Layout::from_size_align(fresh_size, 16).unwrap();
     let fresh_ptr = ac.alloc(fresh_layout);
     assert!(
@@ -215,9 +220,16 @@ fn dealloc_after_inplace_grow_then_reuse() {
 fn inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    // A tiny size with align > SMALL_MAX forces the Large path. align = 512 KiB
-    // is comfortably above SMALL_MAX (~253 KiB) and below SEGMENT (4 MiB).
-    let align = 512 * 1024;
+    // A tiny size with align > SMALL_MAX forces the Large path. align = 2 MiB
+    // is comfortably above SMALL_MAX in every feature combination (~253 KiB
+    // normally, 1 MiB under `medium-classes`) and below SEGMENT (4 MiB).
+    // R6-OPT-P0-3a note: the ORIGINAL 512 KiB align is one of medium-classes'
+    // OWN exact class block sizes, so under that feature it would resolve via
+    // `class_for`'s slow path to a SMALL class (the class whose block_size ==
+    // align, trivially divisible by itself) instead of forcing Large — which
+    // would have silently invalidated this test's entire premise. Caught by
+    // running `cargo test --all-features` against this file.
+    let align = 2 * 1024 * 1024;
     let old_size = 8;
     let old_layout = Layout::from_size_align(old_size, align).unwrap();
     let ptr = ac.alloc(old_layout);
@@ -259,7 +271,15 @@ fn inplace_grow_stores_clamped_large_size_for_tiny_huge_aligned() {
 fn shrink_large_does_not_pin() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    let old_size = 1024 * 1024; // 1 MiB
+    // R6-OPT-P0-3a note: this was originally a literal `1024 * 1024` (1 MiB).
+    // Under `medium-classes` SMALL_MAX itself becomes 1 MiB, so the literal
+    // collided EXACTLY with the shrink target's lower bound below
+    // (`new_size > SMALL_MAX`, but `old_size` was no longer `> new_size`) —
+    // caught by running `cargo test --all-features` against this file, which
+    // failed the `new_size < old_size` assertion. Derived from `SMALL_MAX`
+    // with headroom instead, so `old_size` always stays genuinely larger than
+    // the shrink target regardless of where `SMALL_MAX` currently sits.
+    let old_size = SegmentLayout::SMALL_MAX + 2 * SegmentLayout::PAGE + SegmentLayout::SEGMENT;
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());

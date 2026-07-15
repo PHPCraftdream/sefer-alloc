@@ -677,30 +677,56 @@ const QUICK_CARDINALITIES: &[usize] = &[1, 8, 64];
 /// here instead of silently measuring the wrong geometry (this harness has
 /// no access to the `pub(crate)` `size_classes::SMALL_MAX` from `benches/`,
 /// so the cross-check is via the public `dbg_layout_class_for` seam instead).
+///
+/// R6-OPT-P0-3a: under the `medium-classes` feature (the very feature this
+/// harness exists to judge — see the module doc's "Run" section), `SMALL_MAX`
+/// deliberately grows past `SMALL_MAX_CONTROL` (and past `POST_CLIFF_CONTROL`
+/// too — 262144 B is itself one of the six new exact medium classes), so the
+/// "one past the OLD ceiling must be Large" and "262144 must be Large" checks
+/// are EXPECTED to fail under that feature — that is the entire point of the
+/// experiment. Both checks below are compiled out under `medium-classes`
+/// (rather than silently weakened) — a build WITHOUT the feature keeps the
+/// full three-way check unchanged; a build WITH it keeps only the assertion
+/// that is still universally true (SMALL_MAX_CONTROL itself still classifies
+/// small, since 258,752 B is `< SMALL_MAX` in both configurations).
 fn assert_small_max_control_points(core: &AllocCore) {
     let at_control = Layout::from_size_align(SMALL_MAX_CONTROL, 8).unwrap();
-    let one_past = Layout::from_size_align(SMALL_MAX_CONTROL + 1, 8).unwrap();
     assert!(
         core.dbg_layout_class_for(at_control).is_some(),
         "SMALL_MAX_CONTROL ({SMALL_MAX_CONTROL}) no longer classifies as a small class — \
          the size-class table has been retuned; update this harness's control-point literal."
     );
-    assert!(
-        core.dbg_layout_class_for(one_past).is_none(),
-        "SMALL_MAX_CONTROL + 1 ({}) still classifies as a small class — \
-         SMALL_MAX has grown past this harness's assumed control point; update the literal.",
-        SMALL_MAX_CONTROL + 1
-    );
-    assert!(
-        core.dbg_layout_class_for(Layout::from_size_align(POST_CLIFF_CONTROL, 8).unwrap())
-            .is_none(),
-        "POST_CLIFF_CONTROL (262144) unexpectedly classifies as a SMALL class — \
-         the cliff has moved past literal 256 KiB; this harness's premise no longer holds."
-    );
-    eprintln!(
-        "control-point check: SMALL_MAX_CONTROL={SMALL_MAX_CONTROL}B classifies small, \
-         SMALL_MAX_CONTROL+1B and POST_CLIFF_CONTROL={POST_CLIFF_CONTROL}B classify large. OK."
-    );
+    #[cfg(not(feature = "medium-classes"))]
+    {
+        let one_past = Layout::from_size_align(SMALL_MAX_CONTROL + 1, 8).unwrap();
+        assert!(
+            core.dbg_layout_class_for(one_past).is_none(),
+            "SMALL_MAX_CONTROL + 1 ({}) still classifies as a small class — \
+             SMALL_MAX has grown past this harness's assumed control point; update the literal.",
+            SMALL_MAX_CONTROL + 1
+        );
+        assert!(
+            core.dbg_layout_class_for(Layout::from_size_align(POST_CLIFF_CONTROL, 8).unwrap())
+                .is_none(),
+            "POST_CLIFF_CONTROL (262144) unexpectedly classifies as a SMALL class — \
+             the cliff has moved past literal 256 KiB; this harness's premise no longer holds."
+        );
+        eprintln!(
+            "control-point check: SMALL_MAX_CONTROL={SMALL_MAX_CONTROL}B classifies small, \
+             SMALL_MAX_CONTROL+1B and POST_CLIFF_CONTROL={POST_CLIFF_CONTROL}B classify large. OK."
+        );
+    }
+    #[cfg(feature = "medium-classes")]
+    {
+        eprintln!(
+            "control-point check (medium-classes ON): SMALL_MAX_CONTROL={SMALL_MAX_CONTROL}B \
+             classifies small (as always); SMALL_MAX_CONTROL+1B and POST_CLIFF_CONTROL \
+             ({POST_CLIFF_CONTROL}B) are EXPECTED to ALSO classify small under this feature \
+             (262144 B is one of the six new exact medium classes) — skipping the two \
+             OLD-cliff-specific assertions rather than failing on the very shift this feature \
+             is designed to produce."
+        );
+    }
 }
 
 // ===========================================================================

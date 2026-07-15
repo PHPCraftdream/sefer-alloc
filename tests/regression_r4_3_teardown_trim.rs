@@ -62,7 +62,17 @@ fn drive_activity(a: &SeferAlloc) {
     // Large-object alloc then free: the freed span is deposited into the
     // per-thread large cache (budget is unbounded by default). This is the
     // span that teardown `evict_all` will release.
-    let large = Layout::from_size_align(1 << 20, 8).unwrap(); // 1 MiB
+    //
+    // R6-OPT-P0-3a note: this was originally `1 << 20` (1 MiB) — under the
+    // `medium-classes` feature (which raises SMALL_MAX to exactly 1 MiB, with
+    // 1 MiB itself being the LARGEST new medium class), 1 MiB reclassifies
+    // from Large to Small and never touches `large_cache` at all, making this
+    // whole test vacuous (`segments_released_total` never advances via the
+    // large-cache evict path this test exists to verify). Caught by running
+    // `cargo test --all-features` against this file, which failed with delta
+    // 0. `2 << 20` (2 MiB) stays genuinely Large in every feature
+    // combination this crate can build.
+    let large = Layout::from_size_align(2 << 20, 8).unwrap(); // 2 MiB
                                                               // SAFETY: valid layout.
     let p = unsafe { a.alloc(large) };
     assert!(!p.is_null());

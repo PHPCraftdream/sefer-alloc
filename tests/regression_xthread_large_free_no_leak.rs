@@ -52,12 +52,27 @@
 //! Directly against `HeapRegistry`/`HeapCore` (the registry substrate the
 //! bug lives in), mirroring the `tests/heap_core_tcache_stamp.rs` /
 //! `tests/heap_cross_thread.rs` harness patterns: claim a heap on the "owner"
-//! thread, do `N` large allocations (size > `SMALL_MAX`, using 512 KiB so
+//! thread, do `N` large allocations (size > `SMALL_MAX`, using 2 MiB so
 //! each allocation is unambiguously routed to the Large path), hand the
 //! pointers to a second ("remote") thread which frees every one of them via
 //! `dealloc_routing`, then have the owner do a second round of `N` large
 //! allocations (forcing `alloc_large`'s slow path to run, and therefore the
 //! drain). `DBG_LARGE_XTHREAD_RECLAIMED` must be `> 0` afterward.
+//!
+//! **R6-OPT-P0-3a note:** `SIZE` was originally 512 KiB ("comfortably above
+//! `SMALL_MAX`, a few KiB" at the time). The `medium-classes` feature
+//! (task R6-OPT-P0-3a) raises `SMALL_MAX` to 1 MiB when enabled, which would
+//! have silently made 512 KiB a Small (medium-class) allocation instead of
+//! Large under `--all-features` — this test's entire premise (exercising
+//! `AllocCore::reclaim_large_segment`, the Large-only cross-thread reclaim
+//! path) would then no-op instead of testing anything, and
+//! `DBG_LARGE_XTHREAD_RECLAIMED` would never advance (confirmed: this was
+//! caught by actually running `cargo test --all-features` against this file
+//! while implementing R6-OPT-P0-3a, which failed all three tests in this
+//! file with exactly that symptom). `SIZE` is now 2 MiB — safely above the
+//! largest `SMALL_MAX` this crate can produce under any current feature
+//! combination — so this test stays a genuine Large-path exercise
+//! regardless of whether `medium-classes` is enabled.
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 
@@ -124,9 +139,10 @@ fn xthread_large_free_reclaims_segments_no_leak() {
     const N: usize = 100;
     #[cfg(miri)]
     const N: usize = 10;
-    // 512 KiB — comfortably above `SMALL_MAX` (a few KiB), so every
-    // allocation is unambiguously routed to `AllocCore::alloc_large`.
-    const SIZE: usize = 512 * 1024;
+    // 2 MiB — comfortably above `SMALL_MAX` even under `medium-classes`
+    // (which raises it to 1 MiB), so every allocation is unambiguously
+    // routed to `AllocCore::alloc_large` regardless of feature combination.
+    const SIZE: usize = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
     let heap = HeapRegistry::claim();
@@ -269,7 +285,7 @@ fn xthread_large_double_free_no_double_reclaim() {
     const N: usize = 50;
     #[cfg(miri)]
     const N: usize = 10;
-    const SIZE: usize = 512 * 1024;
+    const SIZE: usize = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
     let heap = HeapRegistry::claim();
@@ -365,7 +381,7 @@ fn xthread_large_free_reclaim_counter_advances_again() {
     const N: usize = 20;
     #[cfg(miri)]
     const N: usize = 6;
-    const SIZE: usize = 512 * 1024;
+    const SIZE: usize = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
 
     let heap = HeapRegistry::claim();

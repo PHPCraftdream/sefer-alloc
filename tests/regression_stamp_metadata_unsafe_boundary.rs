@@ -52,7 +52,7 @@ use sefer_alloc::alloc_core::AllocCore;
 #[test]
 fn dbg_stamp_segment_id_is_unsafe_fn_boundary_and_restore_honoring_path_works() {
     let mut ac = AllocCore::new().expect("primordial");
-    let large = Layout::from_size_align(512 * 1024, 8).unwrap();
+    let large = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let p = ac.alloc(large);
     assert!(!p.is_null(), "large alloc failed");
 
@@ -96,13 +96,13 @@ fn dbg_stamp_segment_id_is_unsafe_fn_boundary_and_restore_honoring_path_works() 
 #[test]
 fn dbg_stamp_kind_byte_is_unsafe_fn_boundary_and_restore_honoring_path_works() {
     let mut ac = AllocCore::new().expect("primordial");
-    let large = Layout::from_size_align(512 * 1024, 8).unwrap();
+    let large = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let p = ac.alloc(large);
     assert!(!p.is_null(), "large alloc failed");
     assert_eq!(
         ac.dbg_kind_at_tag(p),
         2,
-        "precondition: a 512 KiB alloc must be a Large segment"
+        "precondition: a 2 MiB alloc must be a Large segment"
     );
 
     let true_byte = ac.dbg_kind_byte_of(p);

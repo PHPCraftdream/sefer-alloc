@@ -88,7 +88,7 @@ fn xthread_thread_free_write_overlaps_owner_alloc_mut() {
     // real CAS. Kept small (miri is ~1e5× slower than native; each Large alloc
     // reserves an OS segment).
     const LARGE_N: usize = 8;
-    const LARGE_SIZE: usize = 512 * 1024; // > SMALL_MAX → routed to alloc_large
+    const LARGE_SIZE: usize = 2 * 1024 * 1024; // > SMALL_MAX → routed to alloc_large
     let large_layout = Layout::from_size_align(LARGE_SIZE, 8).unwrap();
 
     // Small allocs the owner spins concurrently (OPT-C cache-hit path — forms

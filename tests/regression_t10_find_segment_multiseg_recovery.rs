@@ -32,6 +32,36 @@
 //! `segment_base_of` (the primordial segment hosts the registry, so it holds
 //! fewer blocks than a normal segment — a fixed blocks-per-segment divisor
 //! would be wrong).
+//!
+//! ## R6-OPT-P0-3a — pool-cap interaction with the medium-classes feature
+//!
+//! `find_segment_recovers_frees_across_segments_without_missed_segment`'s
+//! "no NEW segment may be carved" assertion is only a scan-correctness
+//! invariant when NO segment is genuinely RELEASED (to the OS) during the
+//! free-all pass — a release is a legitimate, DIFFERENT reason for the base
+//! set to change, unrelated to whether the scan found a segment's free
+//! blocks. Under `alloc-decommit` (part of `production`, which this file's
+//! CI-mandated feature matrix includes), an emptied segment is pooled up to
+//! `SmallSegmentPoolConfig::DEFAULT_POOL_SEGMENTS` (4) and released beyond
+//! that cap. `SMALL_MAX` classes ~15+ blocks per 4 MiB segment (pre-existing,
+//! ~253 KiB), so a 48-allocation sweep spans only ~3-4 segments — always
+//! within the pool cap, so no release ever fires and the test's invariant
+//! holds by construction. `medium-classes` (R6-OPT-P0-3a) raises `SMALL_MAX`
+//! to 1 MiB, which fits only ~3-4 blocks per segment — the SAME 48-allocation
+//! sweep now spans ~13-16 segments, comfortably EXCEEDING the pool cap of 4,
+//! so several segments are legitimately released during the free-all pass
+//! and the base set genuinely changes on re-alloc — not a missed segment.
+//! Confirmed empirically (a debug instrumentation pass, not kept in this
+//! file, showed `pooled_count=4` (cap reached) and `released_delta=10` for a
+//! 48×1-MiB sweep) and by the observed ~50% flaky-failure rate this
+//! produced under `cargo test --all-features` before this fix.
+//!
+//! Fixed by explicitly configuring a pool cap large enough that NO segment
+//! this test can produce is ever released, restoring the test's original
+//! scan-only invariant regardless of which small-class geometry is in play.
+//! `alloc-decommit`-gated (the config API only exists under that feature);
+//! without `alloc-decommit` there is no pool/release at all, so the
+//! plain `AllocCore::new()` path already carries no release hazard.
 
 #![cfg(feature = "alloc-core")]
 
@@ -54,6 +84,33 @@ fn base_of(p: *mut u8) -> usize {
     SegmentLayout::segment_base_of(p as usize)
 }
 
+/// Build an `AllocCore` with a pool cap generously larger than any segment
+/// count this test's sweeps can produce (`SPAN_COUNT` blocks of `SMALL_MAX`
+/// size, worst case ~1 segment per block under `medium-classes`, plus the
+/// `drain_transitions` test's 3072-block/4096-byte sweep spanning far more
+/// segments than that but at ~1000+ blocks/segment so it never approaches
+/// the default cap either way) — see the module doc's "pool-cap interaction"
+/// section for why this is necessary specifically under `medium-classes`.
+/// Under `alloc-decommit` this uses an explicit config; without it, plain
+/// `AllocCore::new()` has no pool/release mechanism at all, so no
+/// configuration is needed.
+fn new_core_with_generous_pool() -> AllocCore {
+    #[cfg(feature = "alloc-decommit")]
+    {
+        use sefer_alloc::{LargeCacheConfig, SmallSegmentPoolConfig};
+        let cfg = LargeCacheConfig::new().pool(
+            SmallSegmentPoolConfig::new()
+                .pool_segments(4096)
+                .pool_byte_cap(4096 * SegmentLayout::SEGMENT),
+        );
+        AllocCore::new_with_config(cfg).expect("AllocCore::new_with_config")
+    }
+    #[cfg(not(feature = "alloc-decommit"))]
+    {
+        AllocCore::new().expect("AllocCore::new")
+    }
+}
+
 #[test]
 fn find_segment_recovers_frees_across_segments_without_missed_segment() {
     // The "missed segment" case: if `find_segment_with_free` ever skipped a
@@ -62,7 +119,7 @@ fn find_segment_recovers_frees_across_segments_without_missed_segment() {
     // segment with a brand-new base). All segments are full after the fill, so
     // a carve is ONLY reachable via the scan returning None — a missed segment.
     // The segment-base set after re-alloc must therefore EQUAL the set before.
-    let mut core = AllocCore::new().expect("AllocCore::new");
+    let mut core = new_core_with_generous_pool();
     let mut alloced: Vec<*mut u8> = Vec::with_capacity(SPAN_COUNT);
     for _ in 0..SPAN_COUNT {
         let p = core.alloc(LAYOUT);
@@ -122,7 +179,7 @@ fn find_segment_recovers_frees_through_segment_drain_transitions() {
     // be stranded and a fresh segment carved. Same no-new-segment assertion,
     // under a geometry with many more blocks per segment (4096 B → 1024
     // blocks/segment) → many more drain transitions per segment.
-    let mut core = AllocCore::new().expect("AllocCore::new");
+    let mut core = new_core_with_generous_pool();
     let layout = Layout::from_size_align(4096, 8).unwrap();
     let total = 3072;
     let mut alloced: Vec<*mut u8> = Vec::with_capacity(total);

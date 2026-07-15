@@ -47,7 +47,9 @@ impl AllocCore {
     ///
     /// `packed` layout: `off = packed & OFF_MASK` (low 22 bits, since
     /// `SEGMENT = 1 << 22` so every offset is `< 2^22`), `class_idx = packed >>
-    /// OFF_BITS` (high bits; `SMALL_CLASS_COUNT = 49 ≪ 2^10`, so it fits).
+    /// OFF_BITS` (high bits; `SMALL_CLASS_COUNT` is 49 normally, 55 under
+    /// `medium-classes` (R6-OPT-P0-3a) — either way `≪ 2^10`, so it fits; see
+    /// `remote_free_ring.rs`'s compile-time pin on this field).
     ///
     /// Safe: a foreign segment (magic mismatch), a large segment, or an offset
     /// that is not `block_size`-aligned is a no-op (defence-in-depth). Applies

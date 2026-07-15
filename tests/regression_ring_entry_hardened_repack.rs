@@ -37,10 +37,16 @@
 //!   `ENTRY_*_BITS` constants.
 //! - **`RING_SLOT_EMPTY` non-collision**: the maximum packed word over real
 //!   ranges (gen∈[0,256), class∈[0,SMALL_CLASS_COUNT), off16∈[0,2^18)) is
-//!   `0xFFC3_FFFF < u32::MAX`. The collision `(255, 63, max-off16)` is
-//!   unreachable because `class=63 >= SMALL_CLASS_COUNT=49`. Pinned here AND by
-//!   a load-bearing const-assert in the source (so a future bump of
-//!   `SMALL_CLASS_COUNT` past 63 fails to compile, not silently collides).
+//!   strictly below `u32::MAX` — computed from the LIVE `SMALL_CLASS_COUNT`
+//!   (49 normally, 55 under `medium-classes`, R6-OPT-P0-3a), not a hardcoded
+//!   literal (an earlier version of this test hardcoded `0xFFC3_FFFF`, which
+//!   only held for `SMALL_CLASS_COUNT=49` and broke under `--all-features`
+//!   once `medium-classes` changed the max real class from 48 to 54). The
+//!   collision `(255, 63, max-off16)` is unreachable because
+//!   `class=63 >= SMALL_CLASS_COUNT` in every feature configuration this
+//!   crate builds. Pinned here AND by a load-bearing const-assert in the
+//!   source (so a future bump of `SMALL_CLASS_COUNT` past 62 fails to
+//!   compile, not silently collides).
 //! - **Misaligned-offset guard**: a non-`MIN_BLOCK`-multiple `off`
 //!   debug-asserts in `pack_entry_hardened` (mirrors Ф1's `gen_at`/`bump_gen`
 //!   precedent, which document `MIN_BLOCK`-alignment as a caller contract but
@@ -223,13 +229,29 @@ fn entry_never_collides_with_ring_slot_empty() {
     let mb = SegmentLayout::MIN_BLOCK as u32;
     let max_off = max_aligned_off();
 
-    // The absolute maximum over real ranges: gen=255, class=48 (max real), off
+    // The absolute maximum over real ranges: gen=255, class=<max real>, off
     // = SEGMENT - MIN_BLOCK (max off16). Any other real triple is <= this.
+    //
+    // R6-OPT-P0-3a note: the expected packed word used to be hardcoded as the
+    // literal `0xFFC3_FFFF` (computed for `SMALL_CLASS_COUNT=49`, max real
+    // class 48 = 0x30). The `medium-classes` feature raises
+    // `SMALL_CLASS_COUNT` to 55 (max real class 54 = 0x36), which changes
+    // this literal — the hardcoded assertion silently assumed exactly 49
+    // classes and broke under `cargo test --all-features` once
+    // `medium-classes` was added (confirmed: this was the actual failure
+    // symptom during R6-OPT-P0-3a implementation). Recomputed from
+    // `max_real_class` directly (the same bit arithmetic
+    // `pack_entry_hardened` itself performs) instead of a hardcoded literal,
+    // so this test stays correct across any future `SMALL_CLASS_COUNT`
+    // change, not just the two values seen so far.
     let max_real_class = (small_class_count() - 1) as u32;
     let max_packed = pack_entry_hardened(255, max_real_class, max_off);
+    let off16_at_max = max_off >> SegmentLayout::MIN_BLOCK_SHIFT;
+    let expected_max_packed = off16_at_max | (max_real_class << 18) | (255u32 << 24);
     assert_eq!(
-        max_packed, 0xFFC3_FFFF,
-        "max real packed word should be 0xFFC3_FFFF (gen=0xFF, class=0x30, off16=0x3_FFFF)"
+        max_packed, expected_max_packed,
+        "max real packed word should be gen=0xFF, class={max_real_class:#04x}, off16={off16_at_max:#07x} \
+         packed as {expected_max_packed:#010x}"
     );
     assert_ne!(
         max_packed, RING_SLOT_EMPTY,

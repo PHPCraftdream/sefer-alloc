@@ -143,7 +143,7 @@ fn alloc_zeroed_is_all_zero_after_reuse() {
     // cache path when that feature is enabled; without it, a fresh OS
     // mmap/VirtualAlloc is still required to be zero -- either way the
     // contract must hold).
-    let large_size = 512 * 1024; // 512 KiB, above SMALL_MAX
+    let large_size = 2 * 1024 * 1024; // 2 MiB, above SMALL_MAX even under medium-classes (1 MiB)
     let large_layout = Layout::from_size_align(large_size, 1).unwrap();
 
     let l1 = unsafe { (*heap).alloc_zeroed(large_layout) };

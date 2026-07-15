@@ -196,6 +196,24 @@ pub(crate) enum PageClass {
     Meta = 0xFE,
 }
 
+// R6-OPT-P0-3a (correctness-surface item #4, "page map"): `PageClass` encodes
+// a class index as a plain `u8` sharing its value space with the two sentinel
+// discriminants `Free = 0xFF` / `Meta = 0xFE`. `encode_class`/`decode` are
+// sound only while every real class index stays strictly below 0xFE (254) —
+// otherwise a class-254 or class-255 page would be indistinguishable from
+// `Meta`/`Free` and `decode` would silently misreport it as "not a class
+// page". `medium-classes` (R6-OPT-P0-3a) grows `SMALL_CLASS_COUNT` from 49 to
+// 55 — nowhere near 254 — but this pins the invariant at compile time (for
+// EVERY feature configuration, not just `medium-classes`) rather than leaving
+// it as an unstated assumption a much later class-count grower could violate
+// silently.
+const _: () = assert!(
+    SMALL_CLASS_COUNT < 0xFE,
+    "PageClass encodes class indices as a u8 sharing its value space with the \
+     Free (0xFF) / Meta (0xFE) sentinels; SMALL_CLASS_COUNT must stay strictly \
+     below 0xFE (254) so no real class index can collide with either sentinel"
+);
+
 impl PageClass {
     /// Encode a small-class index as a `PageClass::Class(c)` byte.
     pub(crate) const fn encode_class(c: usize) -> u8 {

@@ -60,6 +60,20 @@ pub(crate) const TCACHE_CAP: usize = 16;
 /// Task D3 replaced the former unconditional `REFILL_N = TCACHE_CAP` constant
 /// (used for every class regardless of `block_size`) with this budget, read
 /// through [`refill_n_for_class`].
+///
+/// **R6-OPT-P0-3a (`medium-classes`, correctness-surface item #2 — "a refill
+/// batch size... assumption a 3-4-block segment would violate"):** this byte
+/// budget already generalises correctly to the new 256 KiB..1 MiB classes
+/// with NO code change needed — it was designed (task D3) for exactly this
+/// shape of problem (a large `block_size` shrinking the per-refill block
+/// count), just never previously exercised past ~253 KiB. For the new 1 MiB
+/// class, `REFILL_BYTE_BUDGET / block_size = 65536 / 1048576 = 0`, which
+/// [`refill_n_for_class`] clamps to `1` (its documented "never 0" floor): a
+/// magazine miss for the 1 MiB class refills exactly ONE block, not 16 — so a
+/// 4 MiB segment holding only ~4 such blocks (see `alloc_core_small.rs`'s
+/// carve/refill machinery) is never asked to refill more blocks than it can
+/// hold. Verified by the `refill_n_for_medium_classes_is_bounded_by_budget`
+/// test (`medium_classes` feature).
 pub(crate) const REFILL_BYTE_BUDGET: usize = 64 * 1024;
 
 /// Compute the refill amount (number of blocks) for a class with the given

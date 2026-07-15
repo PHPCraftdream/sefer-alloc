@@ -75,10 +75,11 @@ use std::alloc::Layout;
 
 use sefer_alloc::AllocCore;
 
-// 512 KiB — comfortably above `SMALL_MAX`, so every allocation is
+// 2 MiB — comfortably above `SMALL_MAX` in every feature combination (even
+// `medium-classes`, which raises it to 1 MiB), so every allocation is
 // unambiguously routed through `AllocCore::alloc_large` / the Large dealloc
 // branch.
-const SIZE: usize = 512 * 1024;
+const SIZE: usize = 2 * 1024 * 1024;
 // > MAX_SEGMENTS (1024): if a single own-thread large free ever failed to
 // release its slot, exhaustion would occur strictly before this many
 // sequential alloc+dealloc cycles complete.

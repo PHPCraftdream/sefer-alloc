@@ -73,7 +73,7 @@ fn baseline_kind_at_decodes_legitimate_bytes() {
     );
 
     // A dedicated Large segment: kind byte 2 → Large tag 2.
-    let large_layout = Layout::from_size_align(512 * 1024, 8).unwrap();
+    let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let large_ptr = ac.alloc(large_layout);
     assert!(!large_ptr.is_null());
     assert_eq!(
@@ -104,7 +104,7 @@ fn baseline_kind_at_decodes_legitimate_bytes() {
 fn kind_at_rejects_corrupt_discriminant() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    let large_layout = Layout::from_size_align(512 * 1024, 8).unwrap();
+    let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let large_ptr = ac.alloc(large_layout);
     assert!(!large_ptr.is_null());
     assert_eq!(
@@ -164,7 +164,7 @@ fn kind_at_rejects_corrupt_discriminant() {
 fn dealloc_on_unknown_kind_is_noop_not_crash() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    let large_layout = Layout::from_size_align(512 * 1024, 8).unwrap();
+    let large_layout = Layout::from_size_align(2 * 1024 * 1024, 8).unwrap();
     let large_ptr = ac.alloc(large_layout);
     assert!(!large_ptr.is_null());
     unsafe { core::ptr::write_bytes(large_ptr, 0xCD, 4096) };
