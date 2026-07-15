@@ -11,6 +11,7 @@
 pub(crate) mod alloc_bitmap;
 #[allow(clippy::module_inception)]
 mod alloc_core;
+mod alloc_core_core_diag;
 mod alloc_core_large;
 #[cfg(feature = "alloc-decommit")]
 mod alloc_core_large_cache;

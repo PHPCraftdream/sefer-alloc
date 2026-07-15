@@ -1,0 +1,391 @@
+//! Core/general diagnostics for [`AllocCore`] (mechanical split of
+//! `alloc_core.rs`, task R6-CQ-7a).
+//!
+//! This file holds the `impl AllocCore { .. }` block for the `dbg_*`
+//! diagnostic/test-only hooks that are NOT specific to the small-allocator
+//! subsystem (see `alloc_core_small_diag.rs` for that cluster): segment
+//! reservation/release counters, NUMA node lookup, page-map/layout-class
+//! introspection, segment-id/kind-byte read+corrupt hooks, and the
+//! table/registry teardown test seams (`dbg_unregister`/`dbg_recycle`).
+//! Pure code-movement sibling of `alloc_core.rs`; no behavior changed.
+
+use core::alloc::Layout;
+
+use super::node::Node;
+use super::os;
+use super::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+use super::size_classes::{AllocKind, SizeClasses};
+
+use super::alloc_core::{AllocCore, FOREIGN_OR_UNROUTABLE_FREES};
+
+impl AllocCore {
+    /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls
+    /// that hit the foreign-or-unroutable no-op branch (a `ptr` not in any of
+    /// this heap's registered segments — silently dropped). Backs
+    /// [`AllocStats::foreign_or_unroutable_frees`](crate::AllocStats::foreign_or_unroutable_frees).
+    /// See [`FOREIGN_OR_UNROUTABLE_FREES`] for the full rationale (the
+    /// `alloc-global`-without-`alloc-xthread` cross-thread-free leak footgun).
+    /// A plain relaxed atomic load — diagnostic only, no ordering obligation.
+    /// Reads `0` unless the per-event increment was compiled in (`alloc-stats`).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-core")]
+    pub fn dbg_foreign_or_unroutable_frees() -> u64 {
+        FOREIGN_OR_UNROUTABLE_FREES.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
+    /// reservations since process start (every `os::Segment::reserve`
+    /// success plus NUMA-pinned reservations). Monotonic, relaxed — pairs
+    /// with [`AllocCore::dbg_segments_released_total`]; the difference is
+    /// the current process-wide live segment count. Always compiled (not
+    /// feature-gated) — every build reserves segments via `os::Segment::reserve`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_reserved_total() -> u64 {
+        super::os::segments_reserved_total()
+    }
+
+    /// DIAGNOSTIC (task E1): process-wide count of successful OS segment
+    /// releases since process start. Monotonic, relaxed. See
+    /// [`AllocCore::dbg_segments_reserved_total`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_segments_released_total() -> u64 {
+        super::os::segments_released_total()
+    }
+
+    /// TEST-ONLY (Phase B/C): the NUMA `node_id` stored in `ptr`'s segment
+    /// header, or `None` if `ptr` is foreign. Returns `u32::MAX` (`NO_NODE_RAW`)
+    /// for a segment that was not bound to a specific NUMA node (e.g. on a
+    /// non-NUMA platform, or when `numa-aware` is off). The field is present in
+    /// EVERY build's layout (layout-stable across feature configs); this accessor
+    /// is only compiled under `numa-aware` because the test that reads it is also
+    /// gated on that feature.
+    #[doc(hidden)]
+    #[cfg(feature = "numa-aware")]
+    pub fn dbg_node_id_for(&self, ptr: *mut u8) -> Option<u32> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).node_id_of())
+    }
+
+    /// TEST-ONLY (Phase 13.3): reveal the size class `page_map` would assign
+    /// to `ptr`'s page, so the counterfactual test for "own-thread dealloc
+    /// derives the class from `Layout`, not `page_map`" can prove it is
+    /// non-vacuous. Returns `None` if `ptr` is foreign, the segment is not
+    /// small/primordial, or the page is uncarved. This is the (now-removed)
+    /// `page_map`-class derivation the old intrusive-TFS drain used — kept here
+    /// as a pure read so the test can prove the Layout-class and page_map-class
+    /// genuinely differ on a mixed-class page (the §13 counterfactual).
+    /// `#[doc(hidden)] pub` per the established test-only surface.
+    #[doc(hidden)]
+    pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        let meta = SegmentMeta::new(base);
+        let page_idx = (ptr as usize - base as usize) / super::os::PAGE;
+        meta.page_map().class_of(page_idx)
+    }
+
+    /// TEST-ONLY (Phase 13.3): the size class the own-thread `dealloc` SHOULD
+    /// derive from `layout` (i.e. what `Self::classify` resolves to). Returns
+    /// `None` for a Large layout. Exposed so the counterfactual test can
+    /// compare the Layout-derived class against the `page_map`-derived class
+    /// on a mixed-class page and prove the two genuinely differ (otherwise
+    /// the test would be vacuous).
+    /// TEST-ONLY (task #135): the segment table's high-water slot count (see
+    /// `SegmentTable::count`). Used by `tests/segment_table_o1.rs` to verify
+    /// the O(1) free-list actually recycles vacated indices instead of
+    /// letting the high-water mark grow unbounded.
+    #[doc(hidden)]
+    pub fn dbg_table_count(&self) -> u32 {
+        self.table.count()
+    }
+
+    /// TEST-ONLY (task #135): public wrapper over `AllocCore::contains_base`
+    /// for integration tests (which cannot see the `pub(crate)` version, nor
+    /// the `pub(crate)` `os::segment_base_of_ptr` needed to derive a segment
+    /// base from an arbitrary in-segment pointer). Takes any pointer
+    /// previously returned by `alloc`/`alloc_large` (not necessarily the
+    /// segment base itself) and derives the base internally, matching the
+    /// convention of the other `dbg_*_for` accessors in this file.
+    #[doc(hidden)]
+    pub fn dbg_contains_base(&self, ptr: *mut u8) -> bool {
+        self.table.contains_base_ro(os::segment_base_of_ptr(ptr))
+    }
+
+    /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
+    /// segment (field-specific read, mirrors what
+    /// `SegmentTable::unregister`/`recycle` now use internally for their O(1)
+    /// slot lookup).
+    #[doc(hidden)]
+    pub fn dbg_segment_id_of(&self, ptr: *mut u8) -> u32 {
+        let base = os::segment_base_of_ptr(ptr);
+        // R2-3: release-surviving membership guard (replaces a debug-only
+        // debug_assert! that compiled out in release, leaving the raw header
+        // read unguarded). This module is #![forbid(unsafe_code)], so the
+        // heap_registry-style `unsafe fn` discipline does not apply — a real
+        // runtime guard is the soundness fix here.
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_segment_id_of: ptr's segment is not owned by this AllocCore"
+        );
+        SegmentHeader::segment_id_at(base)
+    }
+
+    /// TEST-ONLY (task #135): overwrite the stamped `segment_id` field of
+    /// `ptr`'s segment (field-specific write). Used to construct the
+    /// corrupted-id scenario exercised by
+    /// `unregister_defends_against_mismatched_segment_id`.
+    ///
+    /// # Safety
+    ///
+    /// The stamped `segment_id` is load-bearing allocator metadata:
+    /// `SegmentTable`'s O(1) slot lookup indexes `slots[segment_id]` with it
+    /// (`unregister` / `recycle` / the hash/own-cache probes behind
+    /// `contains_base`), so an `id` inconsistent with the segment's true slot
+    /// can make a later lookup land on the WRONG slot — corrupting the O(1)
+    /// lookup for BOTH the stamped segment and the segment whose id was
+    /// borrowed. This is the same "writes raw / load-bearing metadata" class
+    /// that made [`dbg_unregister`](Self::dbg_unregister) /
+    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
+    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// restrict Rust reachability, so a fully-safe call could overwrite the
+    /// field with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
+    /// CRITICAL). The `contains_base_ro` assert below only proves the segment
+    /// BELONGS to this `AllocCore`; it does NOT preserve the field's invariant.
+    ///
+    /// The caller must guarantee that, between this stamp and the field being
+    /// restored to the segment's true `segment_id`, NO safe
+    /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
+    /// stamped value — i.e. one of:
+    ///
+    /// - the stamped `id` is restored to the segment's true value (captured
+    ///   beforehand via [`dbg_segment_id_of`](Self::dbg_segment_id_of)) before
+    ///   any further allocator operation touches the segment; OR
+    /// - the segment is consumed ONLY by a `#[doc(hidden)]` test-only teardown
+    ///   seam ([`dbg_unregister`](Self::dbg_unregister) /
+    ///   [`dbg_recycle`](Self::dbg_recycle)) whose `slots[id] == base`
+    ///   defensive guard rejects the corrupted id as a no-op / defensive tail
+    ///   and does NOT route on the stamped field being correct.
+    #[doc(hidden)]
+    #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
+    pub unsafe fn dbg_stamp_segment_id(&self, ptr: *mut u8, id: u32) {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_stamp_segment_id: ptr's segment is not owned by this AllocCore"
+        );
+        SegmentHeader::set_segment_id_at(base, id);
+    }
+
+    /// TEST-ONLY (L-5, UBFIX-11): read the RAW `kind` discriminant byte of
+    /// `ptr`'s segment header (not decoded through `SegmentHeader::kind_at` —
+    /// the exact byte at the `kind` field's offset). Lets a test capture the
+    /// legitimate byte before corrupting it, and confirm the corruption
+    /// actually landed.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_kind_byte_of(&self, ptr: *mut u8) -> u8 {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_kind_byte_of: ptr's segment is not owned by this AllocCore"
+        );
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        Node::read_u8(Node::offset(base, off) as *const u8)
+    }
+
+    /// TEST-ONLY (L-5, UBFIX-11): overwrite the RAW `kind` discriminant byte
+    /// of `ptr`'s segment header with an arbitrary value — including bytes
+    /// that are NOT one of the three legitimate `SegmentKind` discriminants
+    /// (0/1/2), simulating a corrupted/garbled header byte (a wild write from
+    /// an unrelated bug, or the aftermath of an H-1-class defect before its
+    /// fix). Used to construct the corrupted-kind scenario exercised by
+    /// `kind_at_rejects_corrupt_discriminant` — proves `SegmentHeader::
+    /// kind_at`'s strict decode maps any byte outside {0,1,2} to
+    /// `SegmentKind::Unknown` rather than silently defaulting to `Small`.
+    ///
+    /// Mirrors `dbg_stamp_segment_id`'s established test-only field-corruption
+    /// pattern (`offset_of!` + `Node::write_*`), applied to the `kind` byte
+    /// instead of `segment_id`.
+    ///
+    /// # Safety
+    ///
+    /// The stamped `kind` discriminant byte is load-bearing allocator metadata:
+    /// `dealloc` / `realloc` / `Drop` decode it via `SegmentHeader::kind_at` and
+    /// route the segment down the matching `Small` / `Large` / `Primordial`
+    /// path. A `raw` value inconsistent with the segment's true kind mis-routes
+    /// the segment — e.g. a `Large` segment whose `kind` byte is stamped to the
+    /// `Small` discriminant gets freed down the `Small` path, writing a
+    /// `BinTable` / free-list header into the live `Large` payload. (Any byte
+    /// outside {0,1,2} decodes to `Unknown`, whose `dealloc` arm is a documented
+    /// no-op — see [`dealloc`](AllocCore::dealloc) — so stamping such a byte and
+    /// then `dealloc`-ing exercises that no-op path, not a mis-route.) This is
+    /// the same "writes raw / load-bearing metadata" class that made
+    /// [`dbg_unregister`](Self::dbg_unregister) /
+    /// [`dbg_recycle`](Self::dbg_recycle) (task #101 / R4-MS-3) and
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (R6-MS-4) `unsafe fn` in
+    /// this file: `#[doc(hidden)]` only hides from generated docs, it does NOT
+    /// restrict Rust reachability, so a fully-safe call could overwrite the byte
+    /// with an arbitrary value (round5 `code_quality_review` R6-CQ-2,
+    /// CRITICAL). The `contains_base_ro` assert below only proves the segment
+    /// BELONGS to this `AllocCore`; it does NOT preserve the byte's invariant.
+    ///
+    /// The caller must guarantee that, between this stamp and the byte being
+    /// restored to the segment's true `kind` discriminant, NO safe
+    /// `alloc` / `dealloc` / `realloc` / `Drop` call routes the segment on the
+    /// stamped value — i.e. one of:
+    ///
+    /// - the stamped byte is restored to the segment's true discriminant
+    ///   (captured beforehand via [`dbg_kind_byte_of`](Self::dbg_kind_byte_of))
+    ///   before any routing allocator operation touches the segment (read-only
+    ///   `dbg_*` accessors that do not route, such as
+    ///   [`dbg_kind_byte_of`](Self::dbg_kind_byte_of) /
+    ///   [`dbg_kind_at_tag`](Self::dbg_kind_at_tag), may run while the byte is
+    ///   corrupted); OR
+    /// - the only routing operation run while the byte is corrupted is one the
+    ///   allocator performs as a documented no-op regardless of the value, such
+    ///   as [`dealloc`](AllocCore::dealloc)'s `SegmentKind::Unknown => {}` arm;
+    ///   OR
+    /// - the segment is consumed ONLY by a `#[doc(hidden)]` test-only teardown
+    ///   seam ([`dbg_unregister`](Self::dbg_unregister) /
+    ///   [`dbg_recycle`](Self::dbg_recycle)) that does NOT route on the stamped
+    ///   byte being correct.
+    #[doc(hidden)]
+    #[allow(unsafe_code)] // R6-CQ-2: `unsafe fn` boundary (raw metadata write).
+    pub unsafe fn dbg_stamp_kind_byte(&self, ptr: *mut u8, raw: u8) {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_stamp_kind_byte: ptr's segment is not owned by this AllocCore"
+        );
+        let off = core::mem::offset_of!(SegmentHeader, kind);
+        Node::write_u8(Node::offset(base, off), raw);
+    }
+
+    /// TEST-ONLY (L-5, UBFIX-11): the DECODED `SegmentKind` of `ptr`'s
+    /// segment, as `SegmentHeader::kind_at` (the strict decode this task
+    /// hardened) resolves it — returned as a small tag so `tests/` (which
+    /// cannot see the `pub(crate)` `SegmentKind` enum) can assert on it:
+    /// `0` = `Primordial`, `1` = `Small`, `2` = `Large`, `3` = `Unknown` (the
+    /// L-5 reject sentinel for any byte outside {0,1,2}). Distinct from
+    /// [`dbg_kind_byte_of`](Self::dbg_kind_byte_of), which reads the RAW byte
+    /// without going through `kind_at`'s decode at all — this accessor is
+    /// what actually proves the decode's behaviour.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_kind_at_tag: ptr's segment is not owned by this AllocCore"
+        );
+        match SegmentHeader::kind_at(base) {
+            SegmentKind::Primordial => 0,
+            SegmentKind::Small => 1,
+            SegmentKind::Large => 2,
+            SegmentKind::Unknown => 3,
+        }
+    }
+
+    /// TEST-ONLY (OPT-G regression): read the `large_size` field from the
+    /// header of `ptr`'s segment. Uses a direct field read (same pattern as
+    /// `large_size_at` but without the `alloc-xthread` feature gate) so
+    /// integration tests can verify the stored value after an in-place realloc.
+    #[doc(hidden)]
+    pub fn dbg_large_size_of(&self, ptr: *mut u8) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_large_size_of: ptr's segment is not owned by this AllocCore"
+        );
+        let off = core::mem::offset_of!(SegmentHeader, large_size);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
+    /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
+    /// `ptr`'s segment, for a public integration test (which cannot call the
+    /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed lookup
+    /// and its defensive `slots[id] == base` guard in isolation from any
+    /// surrounding dealloc bookkeeping (the caller is responsible for
+    /// whatever cleanup the test scenario needs afterwards).
+    ///
+    /// # Safety
+    ///
+    /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
+    /// this `AllocCore`. The callee computes `base` from `ptr` and mutates the
+    /// segment table WITHOUT a membership check; an invalid, stale or foreign
+    /// `ptr` may corrupt the segment table or trigger undefined behaviour.
+    #[doc(hidden)]
+    #[cfg_attr(
+        not(any(feature = "alloc-decommit", feature = "alloc-xthread")),
+        allow(dead_code)
+    )]
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_unregister(&mut self, ptr: *mut u8) {
+        self.table.unregister(os::segment_base_of_ptr(ptr));
+    }
+
+    /// TEST-ONLY (L-3, UBFIX-11): directly invoke `SegmentTable::recycle` for
+    /// `ptr`'s segment, for a public integration test (which cannot call the
+    /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed slot
+    /// lookup AND its defensive mismatch tail (`slots[id] != base` /
+    /// `id >= count`) in isolation — mirrors `dbg_unregister`'s role for
+    /// `SegmentTable::unregister`. The caller is responsible for constructing
+    /// whatever corrupted-`segment_id` scenario the test needs beforehand
+    /// (e.g. via `dbg_stamp_segment_id`) and for any cleanup afterwards.
+    ///
+    /// # Safety contract mirrors `SegmentTable::recycle`'s caller contract
+    ///
+    /// After this call returns, `ptr`'s segment's OS reservation has been
+    /// released (defensive tail) or released-and-slot-NULLed (main path) —
+    /// either way the caller MUST NOT dereference `ptr`/`base` afterwards.
+    ///
+    /// `ptr` MUST be a valid, live allocation pointer whose segment is owned by
+    /// this `AllocCore`. The callee computes `base` from `ptr` and releases the
+    /// OS reservation WITHOUT a membership check; an invalid, stale or foreign
+    /// `ptr` may corrupt the segment table or release the wrong reservation.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
+    pub unsafe fn dbg_recycle(&mut self, ptr: *mut u8) {
+        self.table.recycle(os::segment_base_of_ptr(ptr));
+    }
+
+    /// TEST-ONLY (E2, task W4): the `block_size` of a small class, so the
+    /// `refill_n` LUT-vs-formula equivalence test can feed the same input to
+    /// both without needing `pub(crate)` access to `SIZE_CLASS_TABLE`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_block_size(class_idx: usize) -> usize {
+        SizeClasses::block_size(class_idx)
+    }
+
+    /// TEST-ONLY (E2, task W4): number of small size classes.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_small_class_count() -> usize {
+        super::size_classes::SMALL_CLASS_COUNT
+    }
+
+    #[doc(hidden)]
+    pub fn dbg_layout_class_for(&self, layout: Layout) -> Option<usize> {
+        let size = layout.size().max(super::size_classes::MIN_BLOCK);
+        match Self::classify(size, layout.align()) {
+            AllocKind::Small { class_idx } => Some(class_idx),
+            AllocKind::Large => None,
+        }
+    }
+}
