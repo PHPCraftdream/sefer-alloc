@@ -23,24 +23,50 @@ use super::size_classes::SizeClasses;
 
 use super::alloc_core::{base_add, AllocCore};
 
+/// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
+/// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
+/// `alloc-lazy-commit`. Tests observe this to verify that `carve_batch` does
+/// ONE commit per batch (not per block) and that chunk boundary crossings
+/// trigger the expected number of commits.
+#[cfg(feature = "alloc-lazy-commit")]
+pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
 /// small segment is lazily reserved under `alloc-lazy-commit`. Only the
 /// metadata region `[0, small_meta_end)` plus this chunk are committed at
 /// reservation time; the rest of the 4 MiB segment stays reserved-but-
-/// uncommitted until B2 wires the grow-on-carve path.
+/// uncommitted. B2's grow-on-carve logic commits additional chunks
+/// (sized by [`GROW_CHUNK`]) as the bump cursor advances past the frontier.
 ///
 /// 256 KiB is large enough to hold many initial carve batches without faulting
 /// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
 /// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
 /// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
-/// conservative default that keeps B1 non-faulting on its own without B2.
+/// conservative default.
 ///
 /// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
 #[cfg(feature = "alloc-lazy-commit")]
 pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
 
-// B1: compile-time sanity — the initial commit (metadata + first chunk) must
-// fit within one segment, and the first chunk must be page-aligned and non-zero.
+/// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
+/// past its initial value during bump-carve. When a `carve_block` or
+/// `carve_batch` would write past `committed_payload_end`, the grow logic
+/// commits `[frontier, round_up(carve_end, GROW_CHUNK))` (clamped to
+/// `SEGMENT`) and advances the frontier.
+///
+/// Set equal to `LAZY_FIRST_CHUNK` (256 KiB): both are B5-swept constants
+/// (64/128/256/512 KiB); using the same value for initial and grow chunks
+/// keeps the model simple and the sweep surface small. A separate value is
+/// a trivial constant rename if B5 data motivates it.
+///
+/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
+#[cfg(feature = "alloc-lazy-commit")]
+pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
+
+// B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
+// fit within one segment, and both chunk constants must be page-aligned and
+// non-zero.
 #[cfg(feature = "alloc-lazy-commit")]
 const _: () = {
     assert!(
@@ -50,6 +76,10 @@ const _: () = {
     assert!(
         super::segment_header::Layout::small_meta_end() + LAZY_FIRST_CHUNK <= super::os::SEGMENT,
         "metadata + LAZY_FIRST_CHUNK must fit within one SEGMENT"
+    );
+    assert!(
+        GROW_CHUNK > 0 && GROW_CHUNK.is_multiple_of(super::os::PAGE),
+        "GROW_CHUNK must be a non-zero multiple of PAGE"
     );
 };
 
@@ -961,31 +991,38 @@ impl AllocCore {
             #[cfg(feature = "alloc-lazy-commit")]
             meta.set_committed_payload_end(SEGMENT);
         }
-        // B1 SAFETY NET (R7 Workstream B, temporary — B2 replaces with
-        // incremental grow-on-carve): if this carve would write past the
-        // committed frontier, commit the ENTIRE remaining payload in one
-        // shot. This defeats the lazy-commit purpose for this segment (it
-        // becomes fully committed, identical to the eager path), but keeps
-        // B1 non-faulting on its own without B2's grow logic. B2 will
-        // replace this block with `commit_range(segment, frontier,
-        // new_frontier)` + advance `committed_payload_end`.
+        // B2 (R7 Workstream B): incremental grow-on-carve. If this carve
+        // would write past the committed frontier, commit the rounded chunk
+        // range `[frontier, round_up(carve_end, GROW_CHUNK))` clamped to
+        // SEGMENT. Only AFTER a successful commit do we advance the bump
+        // cursor, live_count, page map, and hand out the pointer. On failure
+        // everything stays unchanged and we return None ("segment full").
         //
-        // This is a no-op on the eager path (committed_payload_end == SEGMENT,
-        // so the condition is never true) and on Unix/miri (the eager fallback
-        // already committed everything). It fires only on the Windows lazy
-        // path when carving past the first chunk.
+        // No-op on the eager path (committed_payload_end == SEGMENT, so the
+        // condition is never true) and on Unix/miri (the eager fallback
+        // already committed everything). Fires only on the Windows lazy
+        // path when carving past the current frontier.
         #[cfg(feature = "alloc-lazy-commit")]
         {
             let frontier = meta.committed_payload_end_of();
-            if aligned_bump + block_size > frontier && frontier < SEGMENT {
-                // Commit the entire remaining payload: [frontier, SEGMENT).
-                if !os::commit_pages(segment, frontier, SEGMENT) {
+            let carve_end = aligned_bump + block_size;
+            if carve_end > frontier {
+                // `frontier == SEGMENT` means fully committed (eager path or
+                // already grown to the end) — the condition above is always
+                // false in that case, so we never reach here on the eager path.
+                // Round the carve end UP to the next GROW_CHUNK boundary,
+                // clamped to SEGMENT (never commit past the segment end).
+                let new_frontier = align_up(carve_end, GROW_CHUNK).min(SEGMENT);
+                if !os::commit_pages(segment, frontier, new_frontier) {
                     // Commit-charge exhaustion: cannot grow the frontier.
                     // Report "segment full" so the caller falls back (fresh
-                    // segment / null), matching the reserve path.
+                    // segment / null), matching the reserve path. Everything
+                    // unchanged: bump not moved, committed_payload_end not
+                    // moved, live_count unchanged, page map unwritten.
                     return None;
                 }
-                meta.set_committed_payload_end(SEGMENT);
+                GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                meta.set_committed_payload_end(new_frontier);
             }
         }
         // Update ONLY the bump cursor.
@@ -1086,24 +1123,32 @@ impl AllocCore {
             #[cfg(feature = "alloc-lazy-commit")]
             meta.set_committed_payload_end(SEGMENT);
         }
-        // B1 SAFETY NET (temporary — B2 replaces with incremental
-        // grow-on-carve): same as `carve_block`'s safety net above, but for
-        // the batched carve path. If the batch end would exceed the committed
-        // frontier, commit the entire remaining payload. This fires at most
-        // once per segment per batch.
+        // B2 (R7 Workstream B): incremental grow-on-carve for the batched
+        // path. ONE commit covers the WHOLE batch — not a syscall per block.
+        // Compute the batch's final end, commit once up to the rounded chunk
+        // boundary that covers it, then carve the batch. On commit failure
+        // everything stays unchanged and we return 0.
+        //
+        // No-op on the eager path (committed_payload_end == SEGMENT — the
+        // condition is always false). Fires only on the Windows lazy path.
         #[cfg(feature = "alloc-lazy-commit")]
         {
             let frontier = meta.committed_payload_end_of();
-            // Compute the end of this batch: if it exceeds the committed
-            // frontier, commit the entire remaining payload (B1 safety net).
             let batch_room = (SEGMENT - aligned_start) / block_size;
             let batch_n = out.len().min(batch_room);
             let batch_end = aligned_start + batch_n * block_size;
-            if batch_end > frontier && frontier < SEGMENT {
-                if !os::commit_pages(segment, frontier, SEGMENT) {
+            if batch_end > frontier {
+                // Round the batch end UP to the next GROW_CHUNK boundary,
+                // clamped to SEGMENT (never commit past the segment end).
+                let new_frontier = align_up(batch_end, GROW_CHUNK).min(SEGMENT);
+                if !os::commit_pages(segment, frontier, new_frontier) {
+                    // Commit-charge exhaustion: cannot grow the frontier.
+                    // Everything unchanged: bump not moved, live_count
+                    // unchanged, page map unwritten, no blocks handed out.
                     return 0;
                 }
-                meta.set_committed_payload_end(SEGMENT);
+                GROW_COMMIT_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                meta.set_committed_payload_end(new_frontier);
             }
         }
         // How many blocks fit from `aligned_start` to the segment end, capped by
@@ -1424,16 +1469,13 @@ impl AllocCore {
         // false on the eager path (no behavior change), and correctly reflects
         // the partial commit on the lazy path.
         //
-        // TODO(B2): wire grow-on-carve — when a carve would exceed
-        // committed_payload_end, commit the next chunk(s) and advance the
-        // frontier before advancing bump. Until B2 lands, the first chunk is
-        // large enough (256 KiB) that typical initial carving stays within it.
-        // As a B1 safety net, the carve path is unchanged (it does not check
-        // the frontier), and the first chunk is sized to cover the initial
-        // refill batch even for the largest small class. If a pathological
-        // workload carves past the first chunk before B2 is wired, the lazy
-        // path on Windows would fault — B2 must land before this is
-        // production-safe. On Unix/miri the eager fallback prevents any fault.
+        // B2 wired: grow-on-carve is live — when a carve would exceed
+        // committed_payload_end, the carve path commits the next chunk(s) and
+        // advances the frontier before advancing bump. The first chunk
+        // (LAZY_FIRST_CHUNK) covers initial carving; subsequent chunks are
+        // grown incrementally (GROW_CHUNK) by carve_block/carve_batch.
+        // B3 will reset the frontier after a decommit; B5 sweeps the chunk
+        // sizes.
         #[cfg(feature = "alloc-lazy-commit")]
         {
             // On the NUMA path the reservation is always eager (P2 gate:

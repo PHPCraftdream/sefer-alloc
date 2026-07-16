@@ -221,6 +221,36 @@ impl AllocCore {
         Some(SegmentMeta::new(base).committed_payload_end_of())
     }
 
+    /// TEST-ONLY (B2, R7 Workstream B): snapshot of the process-wide
+    /// grow-commit counter. Returns the number of successful `commit_pages`
+    /// calls on the grow-on-carve path since process start.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_grow_commit_count(&self) -> u64 {
+        super::alloc_core_small::GROW_COMMIT_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TEST-ONLY (B2, R7 Workstream B): arm the commit-failure fault injector.
+    /// The next `n` calls to `os::commit_pages` will return `false` without
+    /// touching the OS, simulating commit-charge exhaustion. After `n` failures
+    /// subsequent calls proceed normally.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_arm_commit_fail(&self, n: u32) {
+        os::COMMIT_FAIL_ARMED.store(n, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// TEST-ONLY (B2, R7 Workstream B): the `GROW_CHUNK` constant (bytes).
+    /// Exposed so tests can compute expected frontier values without
+    /// hardcoding the crate's private constant.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_grow_chunk(&self) -> usize {
+        super::alloc_core_small::GROW_CHUNK
+    }
+
     /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
     /// payload lower bound for `ptr`'s segment — the same `payload_start`
     /// (`Layout::primordial_meta_end()` for a primordial segment, else

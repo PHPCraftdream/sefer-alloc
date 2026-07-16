@@ -350,6 +350,20 @@ pub(crate) fn deref_directory_sidecar_mut(
     unsafe { &mut *p }
 }
 
+/// B2 (R7 Workstream B) fault-injection hook: when `> 0`, the NEXT
+/// `commit_pages` call returns `false` without touching the OS and
+/// decrements this counter. Test-only (gated on
+/// `alloc-lazy-commit`). B4 will formalize this into a richer
+/// "fail N-th commit" framework; this minimal hook is enough for B2's
+/// commit-failure tests.
+///
+/// Owner-only: set by the test thread before an allocation, read (and
+/// decremented) by `commit_pages` on the same thread. A `Relaxed` atomic is
+/// sufficient (no cross-thread ordering required).
+#[cfg(feature = "alloc-lazy-commit")]
+pub(crate) static COMMIT_FAIL_ARMED: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(0);
+
 /// Commit a sub-range within a segment whose payload was only partially
 /// committed (the lazy-commit path). Thin wrapper over
 /// [`aligned_vmem::commit_range`].
@@ -367,6 +381,14 @@ pub(crate) fn deref_directory_sidecar_mut(
 #[must_use]
 #[cfg(feature = "alloc-lazy-commit")]
 pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
+    // B2 fault-injection: if armed, fail without calling the OS.
+    {
+        let armed = COMMIT_FAIL_ARMED.load(core::sync::atomic::Ordering::Relaxed);
+        if armed > 0 {
+            COMMIT_FAIL_ARMED.store(armed - 1, core::sync::atomic::Ordering::Relaxed);
+            return false;
+        }
+    }
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees `[base + start_offset, base + end_offset)` is
     // within the segment's VA reservation and currently reserved-but-
