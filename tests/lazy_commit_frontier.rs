@@ -12,6 +12,16 @@
 //!   - Unix/miri: eager (identical to feature-OFF).
 
 #![cfg(feature = "alloc-lazy-commit")]
+#![cfg_attr(
+    feature = "numa-aware",
+    allow(
+        unused_variables,
+        unused_mut,
+        dead_code,
+        unused_imports,
+        clippy::needless_return
+    )
+)]
 
 use std::alloc::Layout;
 
@@ -67,7 +77,7 @@ fn fresh_small_segment_frontier_is_correct() {
     // Determine the expected frontier based on the platform:
     // - Windows (not miri): lazy path → meta_end + LAZY_FIRST_CHUNK
     // - Unix / miri: eager fallback → SEGMENT
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let expected = small_meta_end() + 256 * 1024; // LAZY_FIRST_CHUNK = 256 KiB
         assert_eq!(
@@ -77,7 +87,7 @@ fn fresh_small_segment_frontier_is_correct() {
              got {frontier}"
         );
     }
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         assert_eq!(
             frontier, SEGMENT,

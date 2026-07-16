@@ -14,6 +14,16 @@
 //!   - Feature-OFF + Unix/miri identical (the eager path is a pure no-op).
 
 #![cfg(feature = "alloc-lazy-commit")]
+#![cfg_attr(
+    feature = "numa-aware",
+    allow(
+        unused_variables,
+        unused_mut,
+        dead_code,
+        unused_imports,
+        clippy::needless_return
+    )
+)]
 
 use std::alloc::Layout;
 
@@ -73,13 +83,13 @@ fn carve_at_frontier_commits_next_chunk() {
 
     // On Unix/miri the eager fallback sets frontier = SEGMENT; the grow check
     // is always false, so this test is a no-op there. Verify the invariant.
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         assert_eq!(initial_frontier, SEGMENT);
         return; // nothing to test on the eager path
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let expected_initial = small_meta_end() + grow_chunk; // LAZY_FIRST_CHUNK == GROW_CHUNK
         assert_eq!(
@@ -144,13 +154,13 @@ fn carve_batch_one_commit_per_batch() {
     let _grow_chunk = a.dbg_grow_chunk();
 
     // On Unix/miri this is a no-op (eager path, no commits).
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -231,13 +241,13 @@ fn batch_crossing_several_boundaries_one_commit() {
     // multiple chunk boundaries in one shot.
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let _base = seg_base(second_ptr);
@@ -298,7 +308,7 @@ fn commit_failure_leaves_state_unchanged() {
     // it doesn't break anything.
     let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         // On the eager path, frontier == SEGMENT, so commit_pages is never
         // called in carve. Arm the fault hook and verify alloc still works.
@@ -310,7 +320,7 @@ fn commit_failure_leaves_state_unchanged() {
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         assert!(initial_frontier < SEGMENT, "expected lazy frontier");
         let base = seg_base(second_ptr);
@@ -424,13 +434,13 @@ fn fill_entire_lazy_segment() {
 fn carve_batch_commit_failure_returns_zero() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -492,7 +502,7 @@ fn eager_path_is_noop() {
     // No grow commits should have fired on the primordial.
     // (The counter may be > 0 if a prior test grew a lazy segment, but
     // on Unix/miri it should be 0.)
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     assert_eq!(
         a.dbg_grow_commit_count(),
         0,

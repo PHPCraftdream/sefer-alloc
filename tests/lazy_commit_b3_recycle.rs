@@ -16,6 +16,16 @@
 //!   - The eager path (feature-OFF, Unix, miri) is unchanged.
 
 #![cfg(feature = "alloc-lazy-commit")]
+#![cfg_attr(
+    feature = "numa-aware",
+    allow(
+        unused_variables,
+        unused_mut,
+        dead_code,
+        unused_imports,
+        clippy::needless_return
+    )
+)]
 
 use std::alloc::Layout;
 
@@ -108,13 +118,13 @@ fn frontier_resets_on_decommit_pool() {
 
     // On Unix/miri the eager path sets frontier = SEGMENT throughout.
     // The pool path does not decommit-reset. This test is a no-op there.
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = (second_ptr, lazy_first_chunk, _grow_chunk);
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let expected_initial = small_meta_end() + lazy_first_chunk;
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -153,13 +163,13 @@ fn reused_segment_grows_incrementally() {
     let grow_chunk = a.dbg_grow_chunk();
     let lazy_first_chunk = a.dbg_lazy_first_chunk();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = (second_ptr, grow_chunk, lazy_first_chunk);
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let expected_initial = small_meta_end() + lazy_first_chunk;
 
@@ -246,13 +256,13 @@ fn repeated_cycles_keep_frontier_lazy() {
     let (mut a, second_ptr) = alloc_past_primordial();
     let lazy_first_chunk = a.dbg_lazy_first_chunk();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = (second_ptr, lazy_first_chunk);
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let expected_initial = small_meta_end() + lazy_first_chunk;
 
@@ -305,13 +315,13 @@ fn alloc_zeroed_after_recommit() {
     let (mut a, second_ptr) = alloc_past_primordial();
     let _lazy_first_chunk = a.dbg_lazy_first_chunk();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = (second_ptr, _lazy_first_chunk);
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let lazy_first_chunk = _lazy_first_chunk;
         let initial_chunk_end = small_meta_end() + lazy_first_chunk;
@@ -379,13 +389,13 @@ fn alloc_zeroed_after_recommit() {
 fn metadata_survives_decommit_cycle() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
 
@@ -434,7 +444,7 @@ fn eager_path_pool_unchanged() {
     );
 
     // On Unix/miri, a non-primordial segment also has frontier == SEGMENT.
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let (a2, second) = alloc_past_primordial();
         let f2 = a2.dbg_committed_payload_end_for(second).unwrap();

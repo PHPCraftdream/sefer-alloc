@@ -24,6 +24,16 @@
 //! to B2's `dbg_arm_commit_fail`; B2/B3 tests remain green.
 
 #![cfg(all(feature = "alloc-lazy-commit", feature = "alloc-decommit"))]
+#![cfg_attr(
+    feature = "numa-aware",
+    allow(
+        unused_variables,
+        unused_mut,
+        dead_code,
+        unused_imports,
+        clippy::needless_return
+    )
+)]
 
 use std::alloc::Layout;
 
@@ -113,7 +123,7 @@ fn fill_and_empty_segment(a: &mut AllocCore, seg_ptr: *mut u8) -> (usize, Vec<*m
 fn first_block_of_each_chunk() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         // Eager path: frontier == SEGMENT, no commits needed.
         let frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -121,7 +131,7 @@ fn first_block_of_each_chunk() {
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -188,13 +198,13 @@ fn first_block_of_each_chunk() {
 fn block_exactly_on_chunk_boundary() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -242,13 +252,13 @@ fn block_exactly_on_chunk_boundary() {
 fn batch_crosses_one_boundary_one_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -303,13 +313,13 @@ fn batch_crosses_one_boundary_one_commit() {
 fn batch_crosses_several_boundaries() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let _grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -362,13 +372,13 @@ fn batch_crosses_several_boundaries() {
 fn carve_block_commit_failure_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -433,13 +443,13 @@ fn carve_block_commit_failure_state_unchanged() {
 fn carve_batch_commit_failure_returns_zero_blocks() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -490,13 +500,13 @@ fn carve_batch_commit_failure_returns_zero_blocks() {
 fn kth_commit_fails_carve_block() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let grow_chunk = a.dbg_grow_chunk();
@@ -571,13 +581,13 @@ fn kth_commit_fails_carve_block() {
 fn kth_commit_fails_carve_batch() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let _base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -623,13 +633,13 @@ fn kth_commit_fails_carve_batch() {
 fn retry_after_failure_succeeds() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -689,13 +699,13 @@ fn retry_after_failure_succeeds() {
 fn decommit_partial_recommit_continue() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let _grow_chunk = a.dbg_grow_chunk();
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -751,13 +761,13 @@ fn decommit_partial_recommit_continue() {
 fn pool_reuse_with_fault_mid_reuse() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
         let base = seg_base(second_ptr);
@@ -819,13 +829,13 @@ fn pool_reuse_with_fault_mid_reuse() {
 fn pool_eviction_release_partial_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
 
@@ -888,13 +898,13 @@ fn pool_eviction_release_partial_commit() {
 fn cross_thread_free_partial_segment() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -958,12 +968,12 @@ fn cross_thread_free_partial_segment() {
 fn allocator_drop_partial_commit_no_fault() {
     // Create an allocator, allocate from a lazy segment (partially committed),
     // and drop the allocator. If the release path is buggy, this faults.
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let (mut a, second_ptr) = alloc_past_primordial();
         let base = seg_base(second_ptr);
@@ -1025,13 +1035,13 @@ fn primordial_always_eager() {
 fn alloc_zeroed_on_fresh_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -1109,7 +1119,7 @@ fn numa_lazy_commit_gate() {
         );
     }
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         assert_eq!(
             frontier, SEGMENT,
@@ -1135,7 +1145,7 @@ fn eager_path_is_pure_noop() {
     assert_eq!(frontier, SEGMENT, "eager segment must have full frontier");
 
     // On Unix/miri, non-primordial is also eager.
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let (a2, second) = alloc_past_primordial();
         let f2 = a2.dbg_committed_payload_end_for(second).unwrap();
@@ -1163,13 +1173,13 @@ fn eager_path_is_pure_noop() {
 fn full_lazy_segment_lifecycle() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -1218,13 +1228,13 @@ fn full_lazy_segment_lifecycle() {
 fn multiple_size_classes_lazy() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let _base = seg_base(second_ptr);
 
@@ -1267,13 +1277,13 @@ fn multiple_size_classes_lazy() {
 fn b4_hook_does_not_break_b2() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri))]
+    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri)))]
+    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
