@@ -198,6 +198,29 @@ impl AllocCore {
         }
     }
 
+    /// TEST-ONLY (B1, R7 Workstream B): the `committed_payload_end` frontier
+    /// of `ptr`'s segment — the byte offset from the segment base up to which
+    /// payload pages are committed. Returns `None` if `ptr` is foreign or not
+    /// a small/primordial segment. Returns `SEGMENT` on the eager path
+    /// (feature-OFF, Unix, miri, or `numa-aware`); on the lazy path returns
+    /// `small_meta_end() + LAZY_FIRST_CHUNK` for a fresh segment.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_committed_payload_end_for(&self, ptr: *mut u8) -> Option<usize> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).committed_payload_end_of())
+    }
+
     /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
     /// payload lower bound for `ptr`'s segment — the same `payload_start`
     /// (`Layout::primordial_meta_end()` for a primordial segment, else

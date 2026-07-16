@@ -182,6 +182,33 @@ impl SegmentMeta {
     }
 
     // -------------------------------------------------------------------
+    // B1 (R7 Workstream B) — field-specific owner-only accessors for the
+    // `committed_payload_end` frontier. Identical discipline to
+    // `live_count`/`decommitted`: a single-word load/store at the field's
+    // `offset_of!` offset through the `node` seam. Owner-only: only the
+    // owning thread reads/writes this field (at segment-init time and,
+    // in B2, when growing the commit frontier on a carve that would exceed
+    // the current frontier). A plain field read/write is race-free.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-only `committed_payload_end` frontier (the byte offset
+    /// from the segment base up to which payload pages are committed).
+    #[cfg(feature = "alloc-lazy-commit")]
+    #[inline(always)]
+    pub(crate) fn committed_payload_end_of(&self) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, committed_payload_end);
+        Node::read_usize(Node::offset(self.base, off) as *const usize)
+    }
+
+    /// Write the owner-only `committed_payload_end` frontier.
+    #[cfg(feature = "alloc-lazy-commit")]
+    #[inline(always)]
+    pub(crate) fn set_committed_payload_end(&mut self, value: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, committed_payload_end);
+        Node::write_usize(Node::offset(self.base, off) as *mut usize, value);
+    }
+
+    // -------------------------------------------------------------------
     // PERF-PASS-4 (G9/C2, task #52) — field-specific owner-only accessor for
     // the `ring_drain_head` drain-guard cache. Identical discipline to
     // `live_count`/`decommitted`/`node_id`: a single-word load/store at the

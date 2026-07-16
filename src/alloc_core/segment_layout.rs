@@ -82,6 +82,12 @@ impl SegmentLayout {
         super::size_classes::SizeClasses::class_for(size, align)
     }
 
+    /// The end of the small-segment metadata region (page-aligned past the
+    /// last metadata structure). Payload carving begins at this offset.
+    /// Exposed so tests can reason about the metadata/payload boundary without
+    /// depending on the private `segment_header::Layout` module.
+    pub const SMALL_META_END: usize = super::segment_header::Layout::small_meta_end();
+
     /// Convert an address to the SEGMENT-aligned base of the segment that
     /// contains it (the O(1) owner-lookup primitive).
     #[must_use]

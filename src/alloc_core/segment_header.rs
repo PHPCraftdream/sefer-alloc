@@ -515,6 +515,36 @@ pub(crate) struct SegmentHeader {
     /// the pool's TAIL entry or a non-pooled segment. Same owner-only, plain
     /// pointer discipline as [`pool_next`](Self::pool_next).
     pub pool_prev: *mut u8,
+    /// B1 (R7 Workstream B): the owner-only, page-aligned frontier recording
+    /// how far the payload has been committed. On the lazy-commit path
+    /// (feature `alloc-lazy-commit`, Windows, not `numa-aware`) a fresh small
+    /// segment starts with only a small initial chunk committed; the rest is
+    /// reserved-but-uncommitted. `committed_payload_end` records the byte
+    /// offset (from the segment base) up to which pages are committed. B2
+    /// will grow this frontier on demand when a carve would exceed it.
+    ///
+    /// On the eager path (feature-OFF, Unix, miri, or `numa-aware`), the
+    /// entire segment is committed at reservation time, so this field is set
+    /// to `SEGMENT` (the full span) — every "is X above the frontier?" check
+    /// is trivially false and the code behaves identically to pre-B1.
+    ///
+    /// **Present in EVERY build's layout** — the byte layout of
+    /// `SegmentHeader` is identical regardless of feature config (same
+    /// discipline as `live_count`/`node_id`/`ring_drain_head`). The field is
+    /// READ and WRITTEN only under `#[cfg(feature = "alloc-lazy-commit")]`;
+    /// without that feature it is inert dead data (lint silenced below).
+    /// Adding this 8-byte field grows `size_of::<SegmentHeader>()` from 120
+    /// to 128, but `Layout::page_map_off()` (`align_up(128, 4096)`) remains
+    /// 4096, so every downstream metadata offset is UNCHANGED.
+    ///
+    /// **Not atomic — owner-only.** Written at segment-init time and (B2,
+    /// future) when the owner grows the frontier. The cross-thread freer
+    /// NEVER touches this field (it pushes into the `RemoteFreeRing`; the
+    /// owner grows when it drains). Accessed via the field-specific
+    /// `committed_payload_end_of` / `set_committed_payload_end` accessor pair
+    /// (same `offset_of!` discipline as `bump` and `live_count`).
+    #[cfg_attr(not(feature = "alloc-lazy-commit"), allow(dead_code))]
+    pub committed_payload_end: usize,
     /// The segment's index in the global registry. `u32::MAX` until registered
     /// (the primordial segment is index 0). Unregister/recycle-only read.
     pub segment_id: u32,
@@ -605,6 +635,13 @@ impl SegmentHeader {
             // A fresh small segment has no live blocks and a committed payload.
             live_count: 0,
             decommitted: 0,
+            // B1 (R7 Workstream B): the committed-payload frontier. The
+            // constructor sets it to 0 (placeholder); the caller
+            // (reserve_small_segment) stamps the real value immediately after
+            // writing the header via set_committed_payload_end. On the eager
+            // path: SEGMENT (full span). On the lazy path: metadata_end +
+            // first chunk.
+            committed_payload_end: 0,
             // Phase B: NUMA node is unknown at construction time; the caller
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
@@ -659,6 +696,9 @@ impl SegmentHeader {
             // are inert for a Large header.
             live_count: 0,
             decommitted: 0,
+            // B1 (R7 Workstream B): inert for Large segments (they hold one
+            // allocation and are freed wholesale — no incremental commit).
+            committed_payload_end: 0,
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,

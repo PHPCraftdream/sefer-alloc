@@ -12,7 +12,7 @@ use core::ptr::NonNull;
 use super::node::{Node, NODE_SIZE};
 #[cfg(feature = "numa-aware")]
 use super::numa;
-#[cfg(not(feature = "numa-aware"))]
+#[cfg(not(any(feature = "numa-aware", feature = "alloc-lazy-commit")))]
 use super::os::Segment;
 use super::os::{self, SEGMENT};
 use super::segment_header::{
@@ -22,6 +22,36 @@ use super::segment_header::{
 use super::size_classes::SizeClasses;
 
 use super::alloc_core::{base_add, AllocCore};
+
+/// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
+/// small segment is lazily reserved under `alloc-lazy-commit`. Only the
+/// metadata region `[0, small_meta_end)` plus this chunk are committed at
+/// reservation time; the rest of the 4 MiB segment stays reserved-but-
+/// uncommitted until B2 wires the grow-on-carve path.
+///
+/// 256 KiB is large enough to hold many initial carve batches without faulting
+/// (the refill batch is 31 blocks; even at the largest small class of ~8 KiB
+/// that is ~248 KiB, comfortably within one chunk). B5 will sweep this value
+/// (64/128/256/512 KiB) against the first-heap commit judge; 256 KiB is the
+/// conservative default that keeps B1 non-faulting on its own without B2.
+///
+/// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
+#[cfg(feature = "alloc-lazy-commit")]
+pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
+
+// B1: compile-time sanity — the initial commit (metadata + first chunk) must
+// fit within one segment, and the first chunk must be page-aligned and non-zero.
+#[cfg(feature = "alloc-lazy-commit")]
+const _: () = {
+    assert!(
+        LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(super::os::PAGE),
+        "LAZY_FIRST_CHUNK must be a non-zero multiple of PAGE"
+    );
+    assert!(
+        super::segment_header::Layout::small_meta_end() + LAZY_FIRST_CHUNK <= super::os::SEGMENT,
+        "metadata + LAZY_FIRST_CHUNK must fit within one SEGMENT"
+    );
+};
 
 impl AllocCore {
     /// Allocate a small block of the given class. Routes through the current
@@ -925,6 +955,38 @@ impl AllocCore {
                 return None;
             }
             meta.set_decommitted(false);
+            // B1 (R7 Workstream B): after a full-payload recommit the entire
+            // segment is committed — reset the frontier to SEGMENT so B2's
+            // grow-on-carve check sees no uncommitted region.
+            #[cfg(feature = "alloc-lazy-commit")]
+            meta.set_committed_payload_end(SEGMENT);
+        }
+        // B1 SAFETY NET (R7 Workstream B, temporary — B2 replaces with
+        // incremental grow-on-carve): if this carve would write past the
+        // committed frontier, commit the ENTIRE remaining payload in one
+        // shot. This defeats the lazy-commit purpose for this segment (it
+        // becomes fully committed, identical to the eager path), but keeps
+        // B1 non-faulting on its own without B2's grow logic. B2 will
+        // replace this block with `commit_range(segment, frontier,
+        // new_frontier)` + advance `committed_payload_end`.
+        //
+        // This is a no-op on the eager path (committed_payload_end == SEGMENT,
+        // so the condition is never true) and on Unix/miri (the eager fallback
+        // already committed everything). It fires only on the Windows lazy
+        // path when carving past the first chunk.
+        #[cfg(feature = "alloc-lazy-commit")]
+        {
+            let frontier = meta.committed_payload_end_of();
+            if aligned_bump + block_size > frontier && frontier < SEGMENT {
+                // Commit the entire remaining payload: [frontier, SEGMENT).
+                if !os::commit_pages(segment, frontier, SEGMENT) {
+                    // Commit-charge exhaustion: cannot grow the frontier.
+                    // Report "segment full" so the caller falls back (fresh
+                    // segment / null), matching the reserve path.
+                    return None;
+                }
+                meta.set_committed_payload_end(SEGMENT);
+            }
         }
         // Update ONLY the bump cursor.
         meta.set_bump(aligned_bump + block_size);
@@ -1019,6 +1081,30 @@ impl AllocCore {
                 return 0;
             }
             meta.set_decommitted(false);
+            // B1: after a full-payload recommit, reset the frontier (see
+            // `carve_block`'s identical block).
+            #[cfg(feature = "alloc-lazy-commit")]
+            meta.set_committed_payload_end(SEGMENT);
+        }
+        // B1 SAFETY NET (temporary — B2 replaces with incremental
+        // grow-on-carve): same as `carve_block`'s safety net above, but for
+        // the batched carve path. If the batch end would exceed the committed
+        // frontier, commit the entire remaining payload. This fires at most
+        // once per segment per batch.
+        #[cfg(feature = "alloc-lazy-commit")]
+        {
+            let frontier = meta.committed_payload_end_of();
+            // Compute the end of this batch: if it exceeds the committed
+            // frontier, commit the entire remaining payload (B1 safety net).
+            let batch_room = (SEGMENT - aligned_start) / block_size;
+            let batch_n = out.len().min(batch_room);
+            let batch_end = aligned_start + batch_n * block_size;
+            if batch_end > frontier && frontier < SEGMENT {
+                if !os::commit_pages(segment, frontier, SEGMENT) {
+                    return 0;
+                }
+                meta.set_committed_payload_end(SEGMENT);
+            }
         }
         // How many blocks fit from `aligned_start` to the segment end, capped by
         // the caller's slice.
@@ -1222,20 +1308,77 @@ impl AllocCore {
         };
         #[cfg(not(feature = "numa-aware"))]
         let (base, reservation, reservation_len) = {
+            // B1 (R7 Workstream B): under `alloc-lazy-commit` (Windows-only
+            // lazy path; Unix/miri eager fallback), reserve the 4 MiB segment
+            // WITHOUT committing the whole payload. Only the metadata region
+            // and the first payload chunk are committed; the rest stays
+            // reserved-but-uncommitted. On the eager path (feature-OFF) or
+            // under miri/Unix, `reserve_aligned_lazy` falls back to the eager
+            // `reserve_aligned` internally, so the observable behavior is
+            // identical.
+            //
+            // The NUMA path (above) always uses the eager
+            // `reserve_aligned_on_node` — NUMA reservations go through
+            // VirtualAllocExNuma and must not be disturbed (P2 gate).
+            #[cfg(feature = "alloc-lazy-commit")]
+            let mut seg = {
+                let meta_end = SegLayout::small_meta_end();
+                // initial_commit = metadata pages + first payload chunk.
+                // Both `meta_end` and `LAZY_FIRST_CHUNK` are page-aligned,
+                // so their sum is page-aligned (vmem contract).
+                let initial_commit = meta_end + LAZY_FIRST_CHUNK;
+                // `initial_commit <= SEGMENT` by construction: meta_end is
+                // ~80 KiB (non-hardened) or ~336 KiB (hardened), and
+                // LAZY_FIRST_CHUNK is 256 KiB, so their sum is well under
+                // 4 MiB. The const-assert below pins this.
+                debug_assert!(initial_commit <= SEGMENT);
+                aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit).inspect(|_| {
+                    os::SEGMENTS_RESERVED_TOTAL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                })
+            };
+            #[cfg(not(feature = "alloc-lazy-commit"))]
             let mut seg = Segment::reserve(SEGMENT);
             // Mechanism 2 (task #51 / follow-up): same pool-drain-and-retry
             // guard as the numa-aware arm above.
             #[cfg(feature = "alloc-decommit")]
             if seg.is_none() && self.pooled_count > 0 {
                 self.drain_small_pool();
-                seg = Segment::reserve(SEGMENT);
+                #[cfg(feature = "alloc-lazy-commit")]
+                {
+                    let meta_end = SegLayout::small_meta_end();
+                    let initial_commit = meta_end + LAZY_FIRST_CHUNK;
+                    seg = aligned_vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)
+                        .inspect(|_| {
+                            os::SEGMENTS_RESERVED_TOTAL
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        });
+                }
+                #[cfg(not(feature = "alloc-lazy-commit"))]
+                {
+                    seg = Segment::reserve(SEGMENT);
+                }
             }
-            let segment = seg?;
-            let b = segment.as_ptr();
-            let r = segment.reservation();
-            let rl = segment.reservation_len();
-            core::mem::forget(segment);
-            (b, r, rl)
+            #[cfg(feature = "alloc-lazy-commit")]
+            {
+                let reservation = seg?;
+                let b = reservation.as_ptr();
+                // `reservation_ptr()` is always non-null per the
+                // aligned_vmem::Reservation contract (checked at construction).
+                // Use `new` + `?` to propagate as OOM rather than panic.
+                let r = core::ptr::NonNull::new(reservation.reservation_ptr())?;
+                let rl = reservation.reservation_len();
+                core::mem::forget(reservation);
+                (b, r, rl)
+            }
+            #[cfg(not(feature = "alloc-lazy-commit"))]
+            {
+                let segment = seg?;
+                let b = segment.as_ptr();
+                let r = segment.reservation();
+                let rl = segment.reservation_len();
+                core::mem::forget(segment);
+                (b, r, rl)
+            }
         };
 
         // no-panic: register returns None if the segment table is full. We
@@ -1266,6 +1409,41 @@ impl AllocCore {
         // node on the very first scan that includes this segment.
         #[cfg(feature = "numa-aware")]
         meta.set_node_id(my_node);
+
+        // B1 (R7 Workstream B): stamp the committed-payload frontier.
+        //
+        // On the lazy path (alloc-lazy-commit + not(numa-aware) + Windows):
+        //   committed_payload_end = meta_end + LAZY_FIRST_CHUNK
+        //   (only the metadata + first chunk were committed by
+        //   reserve_aligned_lazy above).
+        //
+        // On the eager path (feature-OFF, or numa-aware, or Unix/miri):
+        //   committed_payload_end = SEGMENT (the entire segment is committed).
+        //
+        // This ensures B2's "is X above the frontier?" check is trivially
+        // false on the eager path (no behavior change), and correctly reflects
+        // the partial commit on the lazy path.
+        //
+        // TODO(B2): wire grow-on-carve — when a carve would exceed
+        // committed_payload_end, commit the next chunk(s) and advance the
+        // frontier before advancing bump. Until B2 lands, the first chunk is
+        // large enough (256 KiB) that typical initial carving stays within it.
+        // As a B1 safety net, the carve path is unchanged (it does not check
+        // the frontier), and the first chunk is sized to cover the initial
+        // refill batch even for the largest small class. If a pathological
+        // workload carves past the first chunk before B2 is wired, the lazy
+        // path on Windows would fault — B2 must land before this is
+        // production-safe. On Unix/miri the eager fallback prevents any fault.
+        #[cfg(feature = "alloc-lazy-commit")]
+        {
+            // On the NUMA path the reservation is always eager (P2 gate:
+            // VirtualAllocExNuma reservations must not be disturbed), so set
+            // the frontier to SEGMENT regardless of the lazy-commit feature.
+            #[cfg(feature = "numa-aware")]
+            meta.set_committed_payload_end(SEGMENT);
+            #[cfg(not(feature = "numa-aware"))]
+            meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+        }
 
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);

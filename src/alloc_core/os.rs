@@ -350,6 +350,31 @@ pub(crate) fn deref_directory_sidecar_mut(
     unsafe { &mut *p }
 }
 
+/// Commit a sub-range within a segment whose payload was only partially
+/// committed (the lazy-commit path). Thin wrapper over
+/// [`aligned_vmem::commit_range`].
+///
+/// Returns `true` if the range is now committed, `false` if the OS refused.
+/// On `false` the caller MUST NOT write into the range.
+///
+/// ## Difference from [`recommit_pages`]
+///
+/// [`recommit_pages`] re-commits pages that were PREVIOUSLY committed and then
+/// decommitted via [`decommit_pages`]. `commit_pages` commits pages that were
+/// NEVER committed in the first place (reserved via the lazy path). The
+/// underlying Windows syscall is the same (`VirtualAlloc(MEM_COMMIT)`), but
+/// the semantic intent differs.
+#[must_use]
+#[cfg(feature = "alloc-lazy-commit")]
+pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
+    // SAFETY: `base` is the base of a live segment owned by this allocator.
+    // The caller guarantees `[base + start_offset, base + end_offset)` is
+    // within the segment's VA reservation and currently reserved-but-
+    // uncommitted (or already committed — idempotent). `aligned_vmem::
+    // commit_range` validates only the offset alignment and `start < end`.
+    unsafe { vmem::commit_range(base, start_offset, end_offset) }
+}
+
 /// Recommit previously-decommitted pages within a segment. Thin wrapper over
 /// [`aligned_vmem::recommit`].
 ///

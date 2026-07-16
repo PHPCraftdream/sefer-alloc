@@ -186,6 +186,13 @@ pub(crate) fn primordial() -> Option<Primordial> {
     hdr.bump = meta_end;
     meta.write_header(hdr);
 
+    // B1 (R7 Workstream B): the primordial segment is ALWAYS eagerly committed
+    // (it predates the lazy-commit path and uses `Segment::reserve` — the
+    // eager OS path). Set the frontier to SEGMENT so B2's "is X above the
+    // frontier?" check is trivially false.
+    #[cfg(feature = "alloc-lazy-commit")]
+    meta.set_committed_payload_end(super::os::SEGMENT);
+
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.
