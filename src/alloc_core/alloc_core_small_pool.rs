@@ -240,6 +240,22 @@ impl AllocCore {
         // segment becomes the new HEAD — the warmest entry, mirroring the old
         // array's "push at pooled_count" LIFO insertion).
         if self.pooled_count < self.pool_cap {
+            // B3 (R7 Workstream B): under `alloc-lazy-commit`, decommit the
+            // payload above the initial chunk and reset metadata BEFORE pooling.
+            // This turns the pooled segment into a clean carve target with only
+            // the initial lazy chunk committed — reuse via `reserve_small_segment`
+            // (not `find_segment_with_free`, since free lists are now cleared)
+            // avoids the full-payload recommit that would erase B1/B2's savings.
+            //
+            // On the eager path (feature-OFF), the pool admission is unchanged:
+            // the segment stays fully committed with free lists intact, and reuse
+            // happens via `find_segment_with_free`'s free-list path.
+            #[cfg(feature = "alloc-lazy-commit")]
+            Self::decommit_empty_segment_impl(
+                &mut SegmentMeta::new(base),
+                base,
+                false, // retain — full metadata reset + lazy decommit
+            );
             Self::pool_push_front(
                 &mut self.pool_head,
                 &mut self.pool_tail,
@@ -352,7 +368,7 @@ impl AllocCore {
     /// by maintaining the order structurally).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    fn pop_pooled_segment(&mut self) -> Option<*mut u8> {
+    pub(super) fn pop_pooled_segment(&mut self) -> Option<*mut u8> {
         if self.pool_head.is_null() {
             debug_assert_eq!(self.pooled_count, 0, "head null but pooled_count != 0");
             return None;
@@ -598,7 +614,7 @@ impl AllocCore {
         Self::decommit_empty_segment_impl(meta, base, true);
     }
 
-    /// Shared body of the two decommit variants. `release_follows == true` means
+    /// Shared body of the decommit variants. `release_follows == true` means
     /// the caller recycles (releases the whole reservation to the OS) immediately
     /// after this returns, so every metadata reset except the `bump` cursor is
     /// dead work and is skipped. `release_follows == false` is the full reset that
@@ -619,8 +635,38 @@ impl AllocCore {
             meta.set_decommitted(true);
             return;
         }
-        // 1. Return the payload pages to the OS (no-op under miri).
-        os::decommit_pages(base, payload_start, SEGMENT);
+        // B3 (R7 Workstream B): lazy-commit-aware retain decommit.
+        //
+        // Under `alloc-lazy-commit`, decommit ONLY the payload pages ABOVE the
+        // initial lazy chunk: `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)`. The
+        // initial chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)` stays committed
+        // so the reused segment is immediately carveable without a recommit
+        // syscall (fault-free, matching a freshly reserved lazy segment). The
+        // frontier is reset to `meta_end + LAZY_FIRST_CHUNK` — the same value a
+        // fresh `reserve_small_segment` sets under the lazy path.
+        //
+        // On the eager path (feature-OFF, Unix, miri, numa-aware), the whole
+        // payload `[meta_end, SEGMENT)` is decommitted as before, and the
+        // frontier is not touched (it is SEGMENT throughout on the eager path).
+        // This keeps the feature-OFF behaviour byte-identical.
+        //
+        // Metadata and the remote-free ring are NEVER decommitted: they live in
+        // `[0, meta_end)`, which is entirely below the decommit range.
+        #[cfg(feature = "alloc-lazy-commit")]
+        let decommit_start = {
+            let initial_frontier = payload_start + super::alloc_core_small::LAZY_FIRST_CHUNK;
+            // Decommit only above the initial chunk.
+            os::decommit_pages(base, initial_frontier, SEGMENT);
+            meta.set_committed_payload_end(initial_frontier);
+            payload_start // bump still resets to payload_start for stale-free guard
+        };
+        #[cfg(not(feature = "alloc-lazy-commit"))]
+        let decommit_start = {
+            // 1. Return the payload pages to the OS (no-op under miri).
+            os::decommit_pages(base, payload_start, SEGMENT);
+            payload_start
+        };
+        let _ = decommit_start;
         // 2a. Reset the bump cursor to the payload start (segment is blank). This
         //     is the load-bearing reset for the post-decommit stale-free guard:
         //     after this, every prior block offset in the payload is `>= bump`, so

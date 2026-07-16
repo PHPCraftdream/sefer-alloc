@@ -251,6 +251,16 @@ impl AllocCore {
         super::alloc_core_small::GROW_CHUNK
     }
 
+    /// TEST-ONLY (B3, R7 Workstream B): the `LAZY_FIRST_CHUNK` constant
+    /// (bytes). Exposed so tests can compute the initial lazy frontier
+    /// without hardcoding the crate's private constant.
+    #[doc(hidden)]
+    #[must_use]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_lazy_first_chunk(&self) -> usize {
+        super::alloc_core_small::LAZY_FIRST_CHUNK
+    }
+
     /// TEST-ONLY (UBFIX-3, H-1/M-1 counterfactual): the segment-relative
     /// payload lower bound for `ptr`'s segment — the same `payload_start`
     /// (`Layout::primordial_meta_end()` for a primordial segment, else

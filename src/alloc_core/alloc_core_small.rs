@@ -965,31 +965,48 @@ impl AllocCore {
         }
         // Phase 35 (M6 recommit): if this segment's payload was decommitted (it
         // emptied and we returned its pages to the OS), we are about to write
-        // into the payload — recommit the whole payload range and clear the flag
-        // BEFORE the bump cursor advances / the page-map / the block is touched.
-        // The reset that accompanied decommit left `bump == small_meta_end`, so
-        // a decommitted segment is always carved from its payload start; the
-        // simplest correct recommit is the whole `[small_meta_end, SEGMENT)`
-        // payload at once (per §4 of the design — pessimistic but correct, and
-        // a recommit only happens on the first reuse after an empty→decommit).
+        // into the payload — recommit and clear the flag BEFORE the bump cursor
+        // advances / the page-map / the block is touched.
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
-            if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
-                // Honest OOM: the OS refused to re-commit the payload
-                // (commit-charge exhaustion). Do NOT clear `decommitted` and do
-                // NOT advance the bump — writing into the still-reserved page
-                // would fault, and clearing the flag would poison the segment
-                // (future carves would skip recommit and hit the same
-                // uncommitted page). Report "segment full" so the caller falls
-                // back (fresh segment / null), matching the reserve path.
-                return None;
-            }
-            meta.set_decommitted(false);
-            // B1 (R7 Workstream B): after a full-payload recommit the entire
-            // segment is committed — reset the frontier to SEGMENT so B2's
-            // grow-on-carve check sees no uncommitted region.
+            // B3 (R7 Workstream B): lazy-commit-aware recommit on reuse.
+            //
+            // Under `alloc-lazy-commit`, the retain-decommit (B3) only
+            // decommitted `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)` and kept
+            // the initial chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)`
+            // committed. The frontier was already reset to
+            // `meta_end + LAZY_FIRST_CHUNK` by the decommit path. So we do
+            // NOT need a recommit syscall here — the first chunk is already
+            // committed and ready for carving. Just clear the `decommitted`
+            // flag and let B2's grow-on-carve logic recommit additional
+            // chunks incrementally as the bump cursor advances past the
+            // frontier. This is the lazy savings: reuse never touches the
+            // upper payload until it is actually needed.
+            //
+            // On the eager path (feature-OFF), the full-payload recommit is
+            // kept: the decommit decommitted the WHOLE payload
+            // `[meta_end, SEGMENT)`, so recommit must bring it all back.
             #[cfg(feature = "alloc-lazy-commit")]
-            meta.set_committed_payload_end(SEGMENT);
+            {
+                // The initial chunk is already committed. The frontier was
+                // reset by the decommit path. Just clear the flag.
+                meta.set_decommitted(false);
+            }
+            #[cfg(not(feature = "alloc-lazy-commit"))]
+            {
+                if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                    // Honest OOM: the OS refused to re-commit the payload
+                    // (commit-charge exhaustion). Do NOT clear `decommitted`
+                    // and do NOT advance the bump — writing into the
+                    // still-reserved page would fault, and clearing the flag
+                    // would poison the segment (future carves would skip
+                    // recommit and hit the same uncommitted page). Report
+                    // "segment full" so the caller falls back (fresh segment
+                    // / null), matching the reserve path.
+                    return None;
+                }
+                meta.set_decommitted(false);
+            }
         }
         // B2 (R7 Workstream B): incremental grow-on-carve. If this carve
         // would write past the committed frontier, commit the rounded chunk
@@ -1110,18 +1127,23 @@ impl AllocCore {
         // mid-run, so one check covers the whole run).
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
-            if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
-                // Honest OOM (see `carve_block`): leave the segment marked
-                // decommitted, do not advance the bump, and carve nothing so the
-                // caller falls back (fresh segment / null) instead of writing
-                // into a still-reserved page.
-                return 0;
-            }
-            meta.set_decommitted(false);
-            // B1: after a full-payload recommit, reset the frontier (see
-            // `carve_block`'s identical block).
+            // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
+            // identical block for the full rationale).
             #[cfg(feature = "alloc-lazy-commit")]
-            meta.set_committed_payload_end(SEGMENT);
+            {
+                meta.set_decommitted(false);
+            }
+            #[cfg(not(feature = "alloc-lazy-commit"))]
+            {
+                if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                    // Honest OOM (see `carve_block`): leave the segment marked
+                    // decommitted, do not advance the bump, and carve nothing
+                    // so the caller falls back (fresh segment / null) instead
+                    // of writing into a still-reserved page.
+                    return 0;
+                }
+                meta.set_decommitted(false);
+            }
         }
         // B2 (R7 Workstream B): incremental grow-on-carve for the batched
         // path. ONE commit covers the WHOLE batch — not a syscall per block.
@@ -1304,16 +1326,43 @@ impl AllocCore {
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
     pub(super) fn reserve_small_segment(&mut self) -> Option<*mut u8> {
+        // B3 (R7 Workstream B): under `alloc-lazy-commit`, pooled segments have
+        // been decommit-reset (bump at payload_start, free lists cleared, initial
+        // chunk committed, `is_decommitted=true`), so they are clean carve
+        // targets. Pop one from the pool BEFORE going to the OS — this avoids an
+        // OS reserve syscall and reuses the existing VA reservation. The first
+        // `carve_block` call on this segment clears `is_decommitted` (the initial
+        // chunk is committed, no recommit syscall needed) and B2's grow-on-carve
+        // recommits additional chunks incrementally as the bump cursor advances
+        // past the frontier.
+        //
+        // On the eager path (feature-OFF), pooled segments still have intact
+        // free lists (no decommit-reset on pool admission) and are reused via
+        // `find_segment_with_free`'s free-list path — this pool-pop is skipped.
+        #[cfg(all(feature = "alloc-decommit", feature = "alloc-lazy-commit"))]
+        if self.pooled_count > 0 {
+            if let Some(base) = self.pop_pooled_segment() {
+                // The segment is already registered, metadata reset, initial
+                // chunk committed, `is_decommitted=true`, `committed_payload_end`
+                // = `meta_end + LAZY_FIRST_CHUNK`. Set it as `small_cur` and
+                // return. `carve_block` will clear `is_decommitted` on the first
+                // carve.
+                self.small_cur = base;
+                return Some(base);
+            }
+        }
+
         // Mechanism 2 (task #51): this path is reached only when NO registered
         // segment — including any POOLED empty segment — has a free block of the
         // requested class (`find_segment_with_free` already scanned them all,
-        // pooled included, and REMOVED any it reused from the pool). A pooled
-        // segment is fully-carved (bump near `SEGMENT` end), so it cannot serve
-        // as a FRESH carve target for a class its free list lacks — that is why
-        // the pool is drawn from via `find_segment_with_free`'s free-list reuse
-        // (the hysteresis win: the emptied segment's blocks are re-served with
-        // no OS work), NOT as `small_cur` here. So this function always reserves
-        // a genuinely fresh, carve-capable OS segment.
+        // pooled included, and REMOVED any it reused from the pool). On the
+        // eager path a pooled segment is fully-carved (bump near `SEGMENT` end),
+        // so it cannot serve as a FRESH carve target for a class its free list
+        // lacks — that is why the pool is drawn from via
+        // `find_segment_with_free`'s free-list reuse (the hysteresis win: the
+        // emptied segment's blocks are re-served with no OS work), NOT as
+        // `small_cur` here. Under `alloc-lazy-commit`, pooled segments ARE
+        // reused as carve targets above (B3).
         //
         // This is the cold small-path clock edge, so trim any stale pooled
         // segment here (cheap: fast early-exit when the pool is empty; one

@@ -407,6 +407,11 @@ pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
 /// carve, never a fault or panic (`sefer_alloc` OOM contract).
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
+// B3: under `alloc-lazy-commit` the recommit path in carve_block/carve_batch
+// is replaced by a lazy clear-decommitted-flag (the initial chunk is already
+// committed), so this function has no callers. It IS called when
+// `alloc-decommit` is ON but `alloc-lazy-commit` is OFF.
+#[cfg_attr(feature = "alloc-lazy-commit", allow(dead_code))]
 pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator,
     // and `[base + start_offset, base + end_offset)` was previously decommitted.
