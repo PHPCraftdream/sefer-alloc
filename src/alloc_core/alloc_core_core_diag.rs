@@ -446,4 +446,93 @@ impl AllocCore {
     pub fn dbg_full_scan_slots_examined() -> u64 {
         directory_stats::FULL_SCAN_SLOTS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
     }
+
+    // ── R7-A1: directory sidecar introspection ────────────────────────────
+
+    /// R7-A1: whether the per-class segment directory sidecar has been
+    /// materialised for this `AllocCore`. `true` iff the sidecar pointer is
+    /// non-null (the threshold was crossed and the OS reservation succeeded).
+    /// Always returns `false` when `alloc-segment-directory` is OFF.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_is_materialised(&self) -> bool {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            !self.directory_sidecar.is_null()
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            false
+        }
+    }
+
+    /// R7-A1: read a single bit from the materialised directory sidecar.
+    /// Returns `None` if the directory is not materialised (below threshold,
+    /// feature OFF, or sidecar OOM). Returns `Some(true/false)` otherwise.
+    ///
+    /// Test-only — lets integration tests verify the rebuilt bitmap matches
+    /// the actual `BinTable` state.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_get_bit(&self, class_idx: usize, slot_idx: usize) -> Option<bool> {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            self.directory().map(|dir| dir.get_bit(class_idx, slot_idx))
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            let _ = (class_idx, slot_idx);
+            None
+        }
+    }
+
+    /// R7-A1: the materialisation threshold constant (test introspection).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_materialize_threshold() -> u32 {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            super::segment_directory::DIRECTORY_MATERIALIZE_THRESHOLD
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            0
+        }
+    }
+
+    /// R7-A1 TEST-ONLY: re-run the full rebuild of the directory sidecar
+    /// from the current `SegmentTable` state. Returns `true` if the
+    /// directory was materialised (and thus rebuilt), `false` if it has not
+    /// been materialised yet. This lets a test: (a) allocate enough to
+    /// cross the threshold (directory materialised with all-zero BinTable
+    /// heads), (b) free some blocks (creating non-empty BinTable entries),
+    /// (c) call this to rebuild, (d) verify the bits match.
+    #[doc(hidden)]
+    pub fn dbg_rebuild_directory(&mut self) -> bool {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            let ptr = self.directory_sidecar;
+            if ptr.is_null() {
+                return false;
+            }
+            // Obtain a `&mut SegmentDirectory` from the raw pointer — the
+            // same dereference `directory_mut()` does, but done BEFORE
+            // borrowing `self.table` so the borrow checker sees two
+            // disjoint borrows (the sidecar memory is heap-allocated, not
+            // a field of `self`).
+            let dir = os::deref_directory_sidecar_mut(ptr);
+            // Zero out all bits first, then rebuild from scratch.
+            for c in 0..super::size_classes::SMALL_CLASS_COUNT {
+                for w in 0..super::segment_directory::WORDS_PER_CLASS {
+                    dir.class_nonempty[c][w] = 0;
+                }
+            }
+            dir.rebuild_from_table(&self.table);
+            true
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            false
+        }
+    }
 }

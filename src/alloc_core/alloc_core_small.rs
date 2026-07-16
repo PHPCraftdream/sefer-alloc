@@ -1113,7 +1113,78 @@ impl AllocCore {
                 super::segment_header::init_gen_table_in_place(base)
             };
         }
+        // R7-A1: check whether the segment count has crossed the directory
+        // materialisation threshold. If so, materialize the sidecar and do
+        // the one-time rebuild. This is a lazy, one-shot operation: once the
+        // pointer is non-null, subsequent calls are a single null-check.
+        #[cfg(feature = "alloc-segment-directory")]
+        self.maybe_materialize_directory();
+
         self.small_cur = base;
         Some(base)
+    }
+}
+
+// ── R7-A1: directory sidecar materialisation ────────────────────────────────
+#[cfg(feature = "alloc-segment-directory")]
+impl AllocCore {
+    /// Check whether the directory sidecar should be materialised and, if
+    /// so, reserve it and rebuild the bitmap from the current segment table.
+    ///
+    /// Called after every successful `table.register()` on the small-segment
+    /// path. Fast path (already materialised OR below threshold): one
+    /// null-check + one u32 comparison. Slow path (first materialisation):
+    /// one OS VM reservation + one full-table-scan rebuild.
+    ///
+    /// Sidecar OOM is NOT allocator OOM: on reserve failure, the pointer
+    /// stays null and the mechanism is simply off (the linear scan fallback
+    /// is used, unchanged from today). Never abort.
+    pub(super) fn maybe_materialize_directory(&mut self) {
+        // Fast path: already materialised.
+        if !self.directory_sidecar.is_null() {
+            return;
+        }
+        // Below threshold: not worth materialising yet.
+        if self.table.count() < super::segment_directory::DIRECTORY_MATERIALIZE_THRESHOLD {
+            return;
+        }
+        // Slow path: reserve the sidecar via direct OS VM (M5-clean).
+        let ptr = match os::reserve_directory_sidecar() {
+            Some(p) => p,
+            None => return, // OOM — mechanism stays off, not an error.
+        };
+        // One-time rebuild: walk every registered small/primordial segment,
+        // read each class's BinTable head, set the exact class_nonempty bits.
+        // The sidecar was OS-zeroed (all bits clear), so only non-empty heads
+        // need to be SET.
+        let dir = os::deref_directory_sidecar_mut(ptr);
+        dir.rebuild_from_table(&self.table);
+
+        self.directory_sidecar = ptr;
+    }
+
+    /// Return a shared reference to the materialised directory sidecar, or
+    /// `None` if not yet materialised.
+    #[inline]
+    pub(super) fn directory(&self) -> Option<&super::segment_directory::SegmentDirectory> {
+        if self.directory_sidecar.is_null() {
+            None
+        } else {
+            Some(os::deref_directory_sidecar(self.directory_sidecar))
+        }
+    }
+
+    /// Return a mutable reference to the materialised directory sidecar, or
+    /// `None` if not yet materialised.
+    #[inline]
+    #[allow(dead_code)] // A2 scope — used when transitions are centralised.
+    pub(super) fn directory_mut(
+        &mut self,
+    ) -> Option<&mut super::segment_directory::SegmentDirectory> {
+        if self.directory_sidecar.is_null() {
+            None
+        } else {
+            Some(os::deref_directory_sidecar_mut(self.directory_sidecar))
+        }
     }
 }

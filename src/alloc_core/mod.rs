@@ -76,6 +76,13 @@ pub mod remote_free_ring;
 /// wrapper nor any other crate code can confuse the two bitmap KINDS at a call
 /// site. Nothing here is stable public API.
 pub(crate) mod segment_bitmap;
+/// R7-A1: per-class `class_nonempty` bitmap sidecar for O(1)
+/// directory-driven segment lookup. Feature-gated behind
+/// `alloc-segment-directory` (experimental, off by default). The module
+/// defines the `SegmentDirectory` struct, the materialisation threshold
+/// constant, and the one-time rebuild routine. Lookup wiring is A3 scope.
+#[cfg(feature = "alloc-segment-directory")]
+pub(crate) mod segment_directory;
 /// The per-segment metadata layout + field-specific header accessors + (X7 Ф1)
 /// the generation-table byte-level accessors. `pub` (not `pub(crate)`) only
 /// because `alloc_core` itself is `#[doc(hidden)]` (see `lib.rs`): the public

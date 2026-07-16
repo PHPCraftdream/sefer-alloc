@@ -504,6 +504,23 @@ pub struct AllocCore {
     /// makes retention TEMPORARY, not merely bounded).
     #[cfg(feature = "alloc-decommit")]
     pub(super) last_pool_decay_tick: Option<std::time::Instant>,
+
+    // ── R7-A1: per-class segment directory sidecar ──────────────────────────
+    /// Lazily-materialised `SegmentDirectory` sidecar — null until
+    /// `table.count() >= DIRECTORY_MATERIALIZE_THRESHOLD` (32). Owner-only
+    /// (plain `*mut`, not `AtomicPtr`): only the owning thread reads/writes
+    /// this pointer and the sidecar it points to.
+    ///
+    /// `null` = directory not yet materialised (either below threshold, or
+    /// sidecar OOM). A non-null value is a valid, OS-zeroed-or-rebuilt
+    /// `*mut SegmentDirectory` leaked for the process lifetime. Dereferenced
+    /// via `os::deref_directory_sidecar[_mut]`.
+    ///
+    /// Nothing queries this directory for lookups yet (A3 scope). A1 adds
+    /// only the storage, lazy materialisation, one-time rebuild, and the dbg
+    /// accessor.
+    #[cfg(feature = "alloc-segment-directory")]
+    pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
 }
 
 impl AllocCore {
@@ -712,6 +729,8 @@ impl AllocCore {
                 ),
             #[cfg(feature = "alloc-decommit")]
             last_pool_decay_tick: None,
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_sidecar: core::ptr::null_mut(),
         })
     }
 
