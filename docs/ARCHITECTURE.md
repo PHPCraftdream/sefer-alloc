@@ -479,10 +479,10 @@ steers each pinned thread's fresh segments to its node.
 
 | Tool | What it verifies | Location |
 |---|---|---|
-| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (165 files, as of R7-A4) |
+| Unit tests | Construction, edge cases, invariants | `tests/*.rs` (170 files, as of R7-A5) |
 | proptest differential | Op-stream agreement between `AllocCore` and a reference model | [`tests/alloc_core_differential.rs`](../tests/alloc_core_differential.rs), [`tests/differential.rs`](../tests/differential.rs) |
 | miri (strict-provenance) | UAF, races at byte level, double-free, out-of-bounds | `tests/region_invariants.rs`, `tests/decommit_miri_cycle.rs`, `tests/reclaim_offset_unit.rs`, `tests/regression_ring_drain_guard_miri.rs` |
-| loom | Cross-thread protocol correctness under bounded interleavings (16 models) | `tests/loom_bootstrap_cas.rs`, `tests/loom_chunk_cas.rs`, `tests/loom_deferred_large.rs`, `tests/loom_epoch.rs`, `tests/loom_fallback_init.rs`, `tests/loom_free_slots_aba.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_sidecar_cas.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
+| loom | Cross-thread protocol correctness under bounded interleavings (18 models) | `tests/loom_bootstrap_cas.rs`, `tests/loom_chunk_cas.rs`, `tests/loom_deferred_large.rs`, `tests/loom_dirty_multi_segment.rs`, `tests/loom_dirty_publish.rs`, `tests/loom_epoch.rs`, `tests/loom_fallback_init.rs`, `tests/loom_free_slots_aba.rs`, `tests/loom_heap_overflow.rs`, `tests/loom_heap_overflow_drain_guard.rs`, `tests/loom_magazine_ring_compose.rs`, `tests/loom_overflow_first_retry.rs`, `tests/loom_overflow_sidecar_cas.rs`, `tests/loom_remote_ring.rs`, `tests/loom_remote_ring_drain_guard.rs`, `tests/loom_sharded.rs`, `tests/loom_thread_free.rs`, `tests/loom_xthread_protocol.rs` |
 | ThreadSanitizer | Real cross-thread data races (not model-checked) | CI job + manual (verified x3: cross-thread path + decommit path) |
 | Valgrind memcheck | UAF, leaks at process level | CI job + manual (verified clean) |
 | aarch64 (qemu-user) | Code-gen correctness + relaxed-memory smoke | CI job + manual (verified 13/13 test suites) |

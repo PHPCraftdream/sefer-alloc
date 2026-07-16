@@ -74,6 +74,11 @@ const MATRIX = [
   // reproduces the pre-W3 UB on demand (run with `-- --ignored`). Tiny and
   // fast under miri (no segment reservation — it models the aliasing shape).
   ['std', 'regression_w3_stats_aliasing_miri'],
+  // R7-A5: directory sidecar below-threshold path under strict provenance.
+  // The above-threshold path (materialising 32+ segments) is impractically
+  // slow under miri; the below-threshold path exercises the null-pointer
+  // guard + publish helpers + try_materialise early return.
+  ['alloc-segment-directory', 'segment_directory_a5_miri'],
   // `regression_own_segment_cache_invalidation` deferred from the miri set
   // (R3, #155): ~100k interpreted allocations (18_000 blocks × 6 segments,
   // count is invariant-load-bearing so it cannot be cfg(miri)-capped) does not

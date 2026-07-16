@@ -1,9 +1,9 @@
 //! R7-A4 concurrency tests — dirty-segment routing.
 //!
-//! Every test is feature-gated behind `alloc-segment-directory` + the features
-//! it needs (typically `production` which implies `alloc-global` + `alloc-xthread`
-//! + `alloc-decommit`). Under feature-OFF builds this file compiles as an empty
-//! test binary (0 tests, pass by absence).
+//! Every test is feature-gated behind `alloc-segment-directory` plus the
+//! features it needs (typically `production`, which implies `alloc-global`,
+//! `alloc-xthread`, and `alloc-decommit`). Under feature-OFF builds this file
+//! compiles as an empty test binary (0 tests, pass by absence).
 //!
 //! ## Test inventory
 //!

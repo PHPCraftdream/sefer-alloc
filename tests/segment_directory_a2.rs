@@ -12,12 +12,6 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
-const SMALL_CLASS_COUNT: usize = {
-    // Mirror what the crate uses; available via the dbg accessor.
-    // Verified at the start of each test that needs it.
-    49
-};
-
 /// Allocate until `table.count() > threshold`, returning pointers + class.
 fn push_past_threshold(core: &mut AllocCore) -> (Vec<*mut u8>, usize) {
     let threshold = AllocCore::dbg_directory_materialize_threshold();
@@ -82,12 +76,6 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 #[test]
 fn single_free_sets_bit() {
     let mut core = AllocCore::new().unwrap();
-    assert_eq!(
-        AllocCore::dbg_small_class_count(),
-        SMALL_CLASS_COUNT,
-        "SMALL_CLASS_COUNT assumption"
-    );
-
     let (mut ptrs, _class_idx) = push_past_threshold(&mut core);
     assert!(core.dbg_directory_is_materialised());
 

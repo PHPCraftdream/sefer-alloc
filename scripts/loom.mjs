@@ -40,6 +40,9 @@ const FEATURES = {
   loom_thread_free: '',
   // R7-A4: dirty-segment publish/swap/lost-wakeup model.
   loom_dirty_publish: 'alloc-core,alloc-xthread',
+  // R7-A5: dirty word with multiple segments — two producers set bits for
+  // different segments in the same u64 word.
+  loom_dirty_multi_segment: 'alloc-core,alloc-xthread',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };
