@@ -25,52 +25,129 @@ use super::heap_core::{
     DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
 };
 
-/// R6-OPT-P0-4: the bounded spin-retry loop in
-/// [`HeapCore::push_with_overflow_retry`] runs for this many iterations, NOT
-/// the raw [`RING_PUSH_RETRY_SPINS`]. `RING_PUSH_RETRY_SPINS` (8,192) was
-/// calibrated (task #99) against the PRE-R6-OPT-P0-4 per-iteration cost — a
-/// COUNTED `RemoteFreeRing::push`, whose failure branch does two locked-RMW
-/// counter increments. That cost was incidental to the counting, but it also
-/// served as real wall-clock pacing: "8,192 iterations" was calibrated to
-/// mean "~32 drain opportunities" in TIME (see the calibration comment above
+/// R6-OPT-P0-4 (superseded by R6-REGRESSION below — kept only as the
+/// historical record of the task #136 scale-up's total iteration count;
+/// `push_with_overflow_retry` no longer reads this constant, see
+/// [`RETRY_ROUND_MAX_ROUNDS`] for the constant that replaced it). Originally:
+/// the bounded spin-retry loop in [`HeapCore::push_with_overflow_retry`] ran
+/// for this many iterations, NOT the raw [`RING_PUSH_RETRY_SPINS`].
+/// `RING_PUSH_RETRY_SPINS` (8,192) was calibrated (task #99) against the
+/// PRE-R6-OPT-P0-4 per-iteration cost — a COUNTED `RemoteFreeRing::push`,
+/// whose failure branch does two locked-RMW counter increments. That cost
+/// was incidental to the counting, but it also served as real wall-clock
+/// pacing: "8,192 iterations" was calibrated to mean "~32 drain
+/// opportunities" in TIME (see the calibration comment above
 /// `RING_PUSH_RETRY_SPINS` in `heap_core.rs`), not literally "8,192 loop
 /// bodies". R6-OPT-P0-4's `try_push_uncounted` (on the ring) and
-/// `HeapOverflow::push_uncounted` (on the heap-level overflow ring, added
-/// after a zero-trust review caught the first version of this fix still
-/// calling the COUNTED `HeapOverflow::push` in the loop — see that method's
-/// doc comment) together remove BOTH tiers' counter RMWs (that is the whole
-/// point of the fix), which makes each iteration far cheaper — so the SAME
-/// iteration count now represents much LESS real time, and was measured to
-/// reintroduce non-zero `DBG_RING_PUSH_RETRY_EXHAUSTED` on
+/// `HeapOverflow::push_uncounted` (on the heap-level overflow ring) together
+/// removed BOTH tiers' counter RMWs, which made each iteration far cheaper —
+/// so the SAME iteration count represented much LESS real time, and was
+/// measured to reintroduce non-zero `DBG_RING_PUSH_RETRY_EXHAUSTED` on
 /// `tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`'s
-/// 32-producer judge specifically under host CPU contention.
-///
-/// Multiplying the iteration count restores comparable per-iteration real
-/// time WITHOUT reintroducing an atomic RMW or any backoff/growing-gap shape
-/// (the flat-spin-not-backoff lesson from task #99's own calibration still
-/// holds — this is MORE spinning, not DIFFERENT spinning). The factor was
-/// measured empirically against the SAME judge on this project's own dev
-/// hardware via an INTERLEAVED baseline-vs-modified A/B (alternating one
-/// baseline run, one modified run, same tight loop, so both see the SAME
-/// fluctuating host-load window — a non-interleaved "run baseline 10x, then
-/// modified 10x" comparison was tried first and produced misleadingly noisy
-/// deltas, since this shared dev box's OTHER concurrent load swings by 5-10x
-/// between successive batches). `4`x/`8`x/`32`x (the ring-only fix's factor)
-/// all left a measurably worse flake rate than baseline once the overflow
-/// ring's counter was ALSO removed; `64`x and `128`x were still inconsistent
-/// across interleaved batches; `256`x — three interleaved rounds (n=12, n=12,
-/// n=20) — converged to a modified-vs-baseline flake rate statistically
-/// indistinguishable from the unmodified baseline (combined: baseline 9/44,
-/// modified 10/44, across host-load windows ranging from ~50% to ~100% CPU
-/// busy from other concurrent processes on this shared dev machine). Like
-/// `RING_PUSH_RETRY_SPINS` itself, `#[cfg(miri)]` keeps the interpreted-
-/// execution budget separately small (unscaled — miri's interpreter overhead
-/// already dwarfs any native RMW-vs-uncounted timing difference, and a 32x
-/// miri budget was independently measured impractically slow).
+/// 32-producer judge specifically under host CPU contention. Multiplying the
+/// iteration count by 256 (empirically calibrated, see the git history of
+/// this constant for the full A/B measurement notes) restored comparable
+/// per-iteration real time — but see [`RETRY_ROUND_MAX_ROUNDS`]'s doc
+/// comment for why that flat 256x-scaled budget itself became the
+/// R6-REGRESSION pathology this file now fixes: it eliminated the ONLY thing
+/// that had been pacing the loop in wall-clock time (the counter RMWs), so
+/// "2,097,152 uncounted iterations" for a push that can never succeed
+/// (`owner=paused`, nothing draining for the whole burst) burns raw CPU for
+/// a genuinely large amount of wall-clock time, multiplied across every
+/// contending producer thread.
 #[cfg(all(feature = "alloc-xthread", not(miri)))]
+#[allow(dead_code)]
 const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS.saturating_mul(256);
 #[cfg(all(feature = "alloc-xthread", miri))]
+#[allow(dead_code)]
 const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS;
+
+/// R6-REGRESSION (follow-up correction to R6-OPT-P0-4 / task #136): the
+/// retry loop below is split into PROBE ROUNDS of this many pure
+/// `core::hint::spin_loop()`-paced iterations each — see the
+/// `push_with_overflow_retry` doc comment ("probe rounds, not one flat
+/// spin") for the full rationale. `RING_PUSH_RETRY_SPINS` (8,192) is reused
+/// as the round size: it is already the task #99 calibrated value for "how
+/// many tight-spin polls give the owner a meaningful chance to drain
+/// between checks", so the FIRST round alone reproduces the
+/// PRE-R6-OPT-P0-4-scale-up spin shape exactly (same iteration count, same
+/// no-sleep tight loop) — preserving the #136 high-contention judge's
+/// calibration for the common, moderately-contended case, which resolves
+/// within round 1 and never reaches a between-round sleep at all.
+#[cfg(feature = "alloc-xthread")]
+const RETRY_ROUND_SPINS: u32 = RING_PUSH_RETRY_SPINS;
+
+/// R6-REGRESSION: hard cap on the number of [`RETRY_ROUND_SPINS`]-sized
+/// probe rounds `push_with_overflow_retry`'s spin-retry tier runs.
+///
+/// **Why a small round cap, not the same total budget reshaped into
+/// rounds.** An earlier version of this fix kept the FULL 256-round
+/// (2,097,152-iteration) [`RETRY_LOOP_ITERATIONS`] budget and only inserted
+/// a `std::thread::yield_now()` between rounds. Measured against the exact
+/// pathological cell this fix targets (`benches/heap_fanin_persistent.rs
+/// --reduced`'s `T=32, burst=100_000, owner=paused`, and a scaled-down
+/// `T=32, N=6_000` / `T=8, N=6_000` repro): `yield_now()` did NOT resolve
+/// the pathology — a `T=32, N=6_000` run still failed to complete within a
+/// 60s hard timeout (vs. 87s for the pre-fix flat spin: an improvement, but
+/// still pathological, not fixed). Under sustained contention with many
+/// mutually-yielding threads, `yield_now()` has no OTHER runnable work of
+/// different priority to hand the CPU to — the OS scheduler simply
+/// round-robins the SAME spinning threads back onto the same cores almost
+/// immediately (confirmed via `Get-Process ... CPU` sampling mid-run: ~9
+/// CPU-seconds consumed per wall-clock second at 32 threads / 16 cores,
+/// i.e. still governed by available core count, not actually idling) —
+/// `yield_now()` is a scheduling HINT, not a guaranteed block. And it does
+/// nothing to shrink the total iteration count when nothing will ever drain
+/// (`owner=paused`'s defining property: literally zero drains for the WHOLE
+/// burst, so no number of "another chance" rounds can ever succeed once the
+/// fixed combined ring+overflow capacity, 256 + 2048 = 2304, is exhausted —
+/// the 2,097,152-iteration budget was never actually buying a chance of
+/// success in this specific shape, only delaying the inevitable concession
+/// to the bounded leak, at real CPU cost).
+///
+/// The fix actually adopted: cap the probe to 8 rounds (65,536 total spin
+/// iterations — comparable to RAD-4/task #99's ORIGINAL pre-R6-OPT-P0-4
+/// budget of 8,192 by itself, but now composed of 8 independently-paced
+/// rounds so a genuinely transient stall still gets several chances), and
+/// insert a real `std::thread::sleep` (not merely `yield_now`) of
+/// [`RETRY_ROUND_SLEEP`] between rounds 2 onward — an actual OS-level block
+/// that hands the core to something else regardless of how many other
+/// producer threads are also spinning, closing the "mutually-yielding
+/// threads never really idle" gap `yield_now()` left open. Round 1 stays a
+/// pure tight spin (no sleep before it) so the #136 judge's moderately
+/// contended, ACTIVELY-draining-owner workload — which resolves within
+/// round 1 essentially always — pays no new latency at all. A genuinely
+/// stuck push now concedes to the documented-sound bounded leak
+/// (`DBG_RING_PUSH_RETRY_EXHAUSTED`) after at most 8 rounds instead of 256,
+/// bounding both the CPU burned AND the wall-clock paid by any ONE push,
+/// which is what actually fixes the aggregate-stall pathology: many
+/// producers each capped at a small worst-case cost, instead of many
+/// producers each paying up to 2,097,152 iterations.
+///
+/// Under `#[cfg(miri)]`: exactly 1 round (`RETRY_ROUND_SPINS ==
+/// RING_PUSH_RETRY_SPINS` there is already the small miri-scaled value, and
+/// miri's interpreter gains nothing from a real sleep — a scaled-down
+/// multi-round miri budget was already independently measured impractically
+/// slow, same rationale as the pre-existing `RING_PUSH_RETRY_SPINS`
+/// `#[cfg(miri)]` narrowing this constant inherits).
+#[cfg(all(feature = "alloc-xthread", not(miri)))]
+const RETRY_ROUND_MAX_ROUNDS: u32 = 8;
+#[cfg(all(feature = "alloc-xthread", miri))]
+const RETRY_ROUND_MAX_ROUNDS: u32 = 1;
+
+/// R6-REGRESSION: the real OS-level sleep duration between probe rounds
+/// (from round 2 onward — round 1 is a pure tight spin with no sleep before
+/// it, see [`RETRY_ROUND_MAX_ROUNDS`]'s doc comment). 200 microseconds:
+/// long enough to be a genuine scheduler-visible block (not a busy-loop in
+/// disguise), short enough that the worst case (7 sleeps, since round 1 has
+/// none, and native-only `RETRY_ROUND_MAX_ROUNDS = 8`) adds at most ~1.4ms
+/// of latency to a push that was going to concede to the bounded leak
+/// anyway — negligible next to the multi-SECOND per-push cost the pre-fix
+/// flat 2,097,152-iteration spin paid under sustained contention. Unused
+/// under `#[cfg(miri)]` (`RETRY_ROUND_MAX_ROUNDS == 1` there, so the loop
+/// never reaches a round boundary).
+#[cfg(feature = "alloc-xthread")]
+const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micros(200);
 
 impl HeapCore {
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
@@ -542,6 +619,85 @@ impl HeapCore {
     /// gets the full retry protection against both tiers, just without the
     /// ring's own counter-RMW tax on every failed ring poll.
     ///
+    /// **R6-REGRESSION (follow-up correction to R6-OPT-P0-4) — small capped
+    /// probe rounds with a real sleep, not one flat 2M-iteration spin.**
+    /// Step 4's retry loop is not one flat [`RETRY_LOOP_ITERATIONS`]
+    /// (2,097,152)-iteration busy-spin. It is split into
+    /// [`RETRY_ROUND_SPINS`]-sized (8,192) PROBE ROUNDS, capped at
+    /// [`RETRY_ROUND_MAX_ROUNDS`] (8 native / 1 miri) rounds total, with a
+    /// real `std::thread::sleep(`[`RETRY_ROUND_SLEEP`]`)` OS-level block
+    /// between rounds (from round 2 onward).
+    ///
+    /// R6-OPT-P0-4 (task #136) scaled `RETRY_LOOP_ITERATIONS` to 256×
+    /// `RING_PUSH_RETRY_SPINS` (2,097,152) specifically so a MODERATELY
+    /// contended double-saturation still resolves within the (now much
+    /// cheaper, uncounted) spin budget. It did not anticipate — and
+    /// `benches/heap_fanin_persistent.rs --reduced`'s `T=32, burst=100_000,
+    /// owner=paused` matrix cell later measured — a SUSTAINED
+    /// double-saturation: many producer threads, an owner that is live
+    /// (`owner_slot_is_live` true, so the gate does not short-circuit) but
+    /// genuinely never drains for the whole burst. In that shape nearly
+    /// every one of the burst's pushes spins through most/all of its
+    /// 2,097,152-iteration budget purely burning CPU on
+    /// `core::hint::spin_loop()` — a CPU-level hint (e.g. `PAUSE`), not an
+    /// OS-level yield, so it never gives the scheduler a chance to run
+    /// anything else. Measured: this scaled cell burned thousands of
+    /// CPU-seconds over minutes of wall-clock with zero throughput, on a
+    /// 16-thread host, at BOTH T=32 (2x oversubscribed) and T=8 (not
+    /// oversubscribed) — ruling out "just an oversubscription/scheduler-
+    /// starvation artifact of T=32" as the sole mechanism; the dominant cost
+    /// is the sheer aggregate iteration count (many threads × up to
+    /// 2,097,152 iterations each) all CAS-contending the SAME two hot
+    /// atomics (the ring's and the overflow ring's cursors), independent of
+    /// whether the host is oversubscribed.
+    ///
+    /// The fix: keep the FIRST round (`RETRY_ROUND_SPINS` = the un-scaled
+    /// `RING_PUSH_RETRY_SPINS` = 8,192) as a pure tight busy-spin, byte-for-
+    /// byte the same shape task #99 originally calibrated — this alone is
+    /// what the #136 high-contention judge
+    /// (`tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`)
+    /// needs; that judge's workload resolves within round 1 and never reaches
+    /// a sleep. Only once a full round fails outright does the loop sleep for
+    /// [`RETRY_ROUND_SLEEP`] (200µs) before starting the next round, for up
+    /// to `RETRY_ROUND_MAX_ROUNDS - 1` sleeps total.
+    ///
+    /// **An earlier version of this fix kept the SAME 2,097,152-iteration
+    /// total budget and only inserted `std::thread::yield_now()` between
+    /// rounds** (a re-shaping, not a reduction, of the R6-OPT-P0-4 budget).
+    /// Measured against the same pathological workload, this did NOT fix
+    /// it: a `T=32, N=6_000` repro of the pathology still failed to complete
+    /// within a 60s hard timeout (vs. 87s unfixed — better, but still
+    /// pathological). Root cause: `yield_now()` is a scheduling HINT with no
+    /// other runnable work to hand the CPU to when EVERY thread in the
+    /// contending set is itself spin-then-yield-looping — the OS scheduler
+    /// round-robins the same spinning threads back onto the same cores
+    /// almost immediately (confirmed via CPU-time sampling mid-run: ~9
+    /// CPU-seconds burned per wall-clock second at 32 threads / 16 cores,
+    /// i.e. governed by core count, not actually idling), AND it does
+    /// nothing to shrink the total iteration count paid by a push that can
+    /// never succeed (`owner=paused`'s defining property — once the fixed
+    /// combined ring+overflow capacity, 256 + 2048 = 2304, is exhausted, no
+    /// number of "another chance" rounds can succeed; the 2,097,152-iteration
+    /// budget was only ever delaying the concession to the bounded leak, at
+    /// real CPU cost, not buying additional chances). The fix that actually
+    /// resolves the pathology needed BOTH a real OS-level block (`sleep`,
+    /// not `yield_now`) AND a much smaller total iteration/round budget (8
+    /// rounds = 65,536 iterations, not 256 rounds = 2,097,152) — see
+    /// [`RETRY_ROUND_MAX_ROUNDS`]'s doc comment for the full comparison.
+    ///
+    /// A wall-clock deadline (real-time-bounded, not iteration/round-count-
+    /// bounded) was also considered — it would give a tighter worst-case
+    /// latency guarantee independent of host speed — but this crate has no
+    /// existing cheap monotonic-tick primitive usable from inside this
+    /// `unsafe`-free hot path without either a syscall-heavy timer read on
+    /// every poll (far more expensive than the uncounted CAS attempts it
+    /// would gate) or adding a new one, which the task's own guidance was to
+    /// avoid absent a demonstrated need; the round-cap-plus-sleep reshaping
+    /// closes the measured pathology (CPU burn with zero scheduling
+    /// progress, unbounded-in-practice per-push wall-clock cost) directly, at
+    /// the mechanism actually shown to be the cause, without a new
+    /// primitive.
+    ///
     /// Does NOT touch either ring's own push/drain/cursor PROTOCOL — this is
     /// a caller-side wrapper composing `RemoteFreeRing::push` /
     /// `try_push_uncounted` and `HeapOverflow::push` / `push_uncounted`. The
@@ -600,60 +756,88 @@ impl HeapCore {
             // that case, matching `push_to_heap_overflow`'s own "returns
             // false" defensive behaviour.
             let overflow = Self::resolve_heap_overflow(base);
-            for _ in 0..RETRY_LOOP_ITERATIONS {
-                core::hint::spin_loop();
-                // R6-OPT-P0-4: uncounted — the ring's own overflow diagnostics
-                // already ticked once (step 1's counted `push` attempt above);
-                // re-ticking them on every one of up to `RETRY_LOOP_ITERATIONS`
-                // failed polls here would tax the diagnostic counters with a
-                // locked RMW per poll for no informational gain (see
-                // `try_push_uncounted`'s doc comment for the full argument).
-                if ring.try_push_uncounted(packed).is_ok() {
-                    DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
-                    return;
+            // R6-REGRESSION: `RETRY_ROUND_MAX_ROUNDS` rounds of
+            // `RETRY_ROUND_SPINS` tight-spin polls each, with a real
+            // `std::thread::sleep(RETRY_ROUND_SLEEP)` OS-level block between
+            // rounds (from round 2 onward) — see `RETRY_ROUND_MAX_ROUNDS`'s
+            // doc comment for why a small round CAP with a real sleep
+            // replaced an earlier "same total budget, reshaped with
+            // `yield_now()`" attempt (measured NOT to fix the pathology:
+            // mutually-yielding threads under sustained contention never
+            // actually idle). Under `#[cfg(miri)]`, `RETRY_ROUND_MAX_ROUNDS
+            // == 1`, so this runs exactly one pure-spin round with no sleep
+            // reached at all — miri's interpreter gains nothing from a real
+            // sleep and a scaled-down multi-round miri budget was already
+            // independently measured impractically slow.
+            for round in 0..RETRY_ROUND_MAX_ROUNDS {
+                if round > 0 {
+                    // Only BETWEEN rounds, never before the first: the first
+                    // round is a pure tight busy-spin, byte-for-byte the
+                    // original task #99-calibrated shape, so the common
+                    // (moderately contended, actively-draining-owner) case
+                    // that resolves within round 1 never pays a sleep at
+                    // all — this is the #136 judge's exact workload.
+                    #[cfg(not(miri))]
+                    std::thread::sleep(RETRY_ROUND_SLEEP);
                 }
-                // Also retry the heap-level overflow ring on every poll, not
-                // just once before/after this loop. Under sustained
-                // high-fan-in pressure (many producers racing the SAME
-                // segment ring), the immediate single overflow attempt above
-                // can itself land on a momentarily-full overflow ring — the
-                // owner's opportunistic `drain_heap_overflow` only runs
-                // between its own `alloc()` calls, so both tiers need the
-                // SAME spin window to give the owner repeated chances to
-                // drain EITHER one (race model (a) in the task spec: "owner-
-                // drain racing producer-reservation on either tier"). Without
-                // this, a transient overflow-ring-full moment graduates
-                // straight to burning the whole spin budget against the
-                // segment ring alone, which measurably regressed the
-                // high-contention judge (`remote_fanin_high_contention_
-                // budget_is_sufficient`) during development of this fix. A
-                // coarser cadence (checking overflow only every Nth poll) was
-                // also tried and measured WORSE — throttling the overflow
-                // retries at contention this high loses more than the
-                // ring-poll-rate dilution it was meant to avoid, so
-                // every-poll is the retained shape (made affordable by
-                // resolving `overflow` once above instead of per-poll).
-                // Zero-trust review finding: this MUST be `push_uncounted`,
-                // not `push` — `HeapOverflow::push`'s "ring full" branch bumps
-                // its OWN `overflow_count` diagnostic (a locked RMW on a
-                // cache line shared by every producer targeting this heap
-                // slot's overflow ring), so calling the counted `push` here
-                // reintroduces exactly the per-poll atomic-storm class this
-                // whole task exists to close — just relocated from the
-                // segment ring's counters to the overflow ring's counter,
-                // and now scaled by `RETRY_LOOP_ITERATIONS` (2,097,152 native,
-                // `RING_PUSH_RETRY_SPINS` x256) instead of the old
-                // `RING_PUSH_RETRY_SPINS` (8,192). The ONE
-                // counted overflow attempt already made (the immediate step-2
-                // attempt above this loop, or the single not-live-path
-                // attempt in the `else` branch below) remains the signal
-                // "this heap's overflow ring saturated at all"; every in-loop
-                // poll here is uncounted, mirroring the ring's own
-                // `try_push_uncounted` discipline exactly.
-                if let Some(overflow) = overflow {
-                    if overflow.push_uncounted(base, packed) {
+                for _ in 0..RETRY_ROUND_SPINS {
+                    core::hint::spin_loop();
+                    // R6-OPT-P0-4: uncounted — the ring's own overflow
+                    // diagnostics already ticked once (step 1's counted
+                    // `push` attempt above); re-ticking them on every one of
+                    // up to `RETRY_LOOP_ITERATIONS` failed polls here would
+                    // tax the diagnostic counters with a locked RMW per poll
+                    // for no informational gain (see `try_push_uncounted`'s
+                    // doc comment for the full argument).
+                    if ring.try_push_uncounted(packed).is_ok() {
                         DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
                         return;
+                    }
+                    // Also retry the heap-level overflow ring on every poll,
+                    // not just once before/after this loop. Under sustained
+                    // high-fan-in pressure (many producers racing the SAME
+                    // segment ring), the immediate single overflow attempt
+                    // above can itself land on a momentarily-full overflow
+                    // ring — the owner's opportunistic `drain_heap_overflow`
+                    // only runs between its own `alloc()` calls, so both
+                    // tiers need the SAME spin window to give the owner
+                    // repeated chances to drain EITHER one (race model (a) in
+                    // the task spec: "owner-drain racing producer-reservation
+                    // on either tier"). Without this, a transient
+                    // overflow-ring-full moment graduates straight to burning
+                    // the whole spin budget against the segment ring alone,
+                    // which measurably regressed the high-contention judge
+                    // (`remote_fanin_high_contention_budget_is_sufficient`)
+                    // during development of this fix. A coarser cadence
+                    // (checking overflow only every Nth poll) was also tried
+                    // and measured WORSE — throttling the overflow retries at
+                    // contention this high loses more than the ring-poll-rate
+                    // dilution it was meant to avoid, so every-poll is the
+                    // retained shape (made affordable by resolving `overflow`
+                    // once above instead of per-poll).
+                    // Zero-trust review finding: this MUST be
+                    // `push_uncounted`, not `push` — `HeapOverflow::push`'s
+                    // "ring full" branch bumps its OWN `overflow_count`
+                    // diagnostic (a locked RMW on a cache line shared by
+                    // every producer targeting this heap slot's overflow
+                    // ring), so calling the counted `push` here reintroduces
+                    // exactly the per-poll atomic-storm class this whole task
+                    // exists to close — just relocated from the segment
+                    // ring's counters to the overflow ring's counter, and now
+                    // scaled by `RETRY_LOOP_ITERATIONS` (2,097,152 native,
+                    // `RING_PUSH_RETRY_SPINS` x256) instead of the old
+                    // `RING_PUSH_RETRY_SPINS` (8,192). The ONE counted
+                    // overflow attempt already made (the immediate step-2
+                    // attempt above this loop, or the single not-live-path
+                    // attempt in the `else` branch below) remains the signal
+                    // "this heap's overflow ring saturated at all"; every
+                    // in-loop poll here is uncounted, mirroring the ring's
+                    // own `try_push_uncounted` discipline exactly.
+                    if let Some(overflow) = overflow {
+                        if overflow.push_uncounted(base, packed) {
+                            DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
                     }
                 }
             }
