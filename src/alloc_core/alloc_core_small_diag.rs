@@ -241,6 +241,22 @@ impl AllocCore {
         os::COMMIT_FAIL_ARMED.store(n, core::sync::atomic::Ordering::Relaxed);
     }
 
+    /// TEST-ONLY (B4, R7 Workstream B): arm the "fail the k-th commit" fault
+    /// injector. The k-th `commit_pages` call from now (1-based) returns
+    /// `false`; all other calls succeed normally. One-shot: after firing, the
+    /// hook disarms itself. `k == 0` disarms without firing.
+    ///
+    /// ADDITIVE to `dbg_arm_commit_fail`: B2's "fail next N" hook is checked
+    /// first (and has priority); B4's "fail the k-th" is checked second. Both
+    /// can be armed simultaneously (B2 fails the first N, then B4 fails the
+    /// k-th of the remaining calls).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-lazy-commit")]
+    pub fn dbg_arm_commit_fail_at(&self, k: u32) {
+        os::COMMIT_FAIL_AT_COUNTER.store(0, core::sync::atomic::Ordering::Relaxed);
+        os::COMMIT_FAIL_AT_TARGET.store(k, core::sync::atomic::Ordering::Relaxed);
+    }
+
     /// TEST-ONLY (B2, R7 Workstream B): the `GROW_CHUNK` constant (bytes).
     /// Exposed so tests can compute expected frontier values without
     /// hardcoding the crate's private constant.
