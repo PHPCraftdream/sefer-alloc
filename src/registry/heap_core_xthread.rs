@@ -282,6 +282,53 @@ const RETRY_ROUND_SAFETY_CAP: u32 = 1;
 #[cfg(feature = "alloc-xthread")]
 const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micros(200);
 
+/// R7-A4: set the dirty bit for segment `base` in the owning HeapSlot's
+/// `dirty_segments` bitmap. Called by `push_with_overflow_retry` AFTER a
+/// successful `RemoteFreeRing::push` or `try_push_uncounted` — i.e. after
+/// a ring entry has been published for this segment.
+///
+/// Resolves the owning HeapSlot via the segment's `owner_state` header stamp
+/// (the SAME `unpack_owner_id` → `slot(idx)` path `resolve_heap_overflow`
+/// uses). Reads the immutable `segment_id` from the segment header to compute
+/// `(word, bit)` in the 16-word dirty bitmap.
+///
+/// **Ordering:** `fetch_or(bit, Release)` — the `Release` pairs with the
+/// owner's `swap(0, Acquire)` in the dirty-drain loop, establishing
+/// happens-before from the producer's ring publish (which completed before
+/// this call) to the owner's dirty-drain iteration.
+///
+/// **Defensive:** if the owner id is out of range (should be unreachable for
+/// a live, correctly-stamped segment — same argument as
+/// `resolve_heap_overflow`'s `None` branch), the dirty bit is simply not set;
+/// the linear-scan fallback eventually finds the ring entry anyway (P4
+/// contract — see `remote_free_ring.rs` module doc).
+#[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+#[inline]
+fn set_dirty_bit_for_segment(base: *mut u8) {
+    use crate::alloc_core::segment_header::{unpack_owner_id, SegmentHeader, SegmentMeta};
+
+    let segment_id = SegmentHeader::segment_id_at(base) as usize;
+    let owner_atomic = SegmentMeta::new(base).owner_state_atomic();
+    let owner_id = unpack_owner_id(owner_atomic.load(Ordering::Relaxed)) as usize;
+    let reg = super::bootstrap::ensure();
+    if owner_id >= super::bootstrap::MAX_HEAPS {
+        return; // Defensive: unstamped/garbled owner id.
+    }
+    let slot = reg.slot(owner_id);
+    let word = segment_id / 64;
+    let bit = 1u64 << (segment_id % 64);
+    // The WORDS_PER_CLASS compile-time bound check: segment_id < MAX_SEGMENTS
+    // is an invariant of the SegmentTable (register rejects overflow), so
+    // word < DIRTY_BITMAP_WORDS by construction. debug_assert for defence.
+    debug_assert!(
+        word < super::heap_slot::DIRTY_BITMAP_WORDS,
+        "segment_id {segment_id} out of dirty bitmap range"
+    );
+    if word < super::heap_slot::DIRTY_BITMAP_WORDS {
+        slot.remote.dirty_segments[word].fetch_or(bit, Ordering::Release);
+    }
+}
+
 impl HeapCore {
     /// 0.3.0 (task A1); extracted for #132: push a Large/huge segment `base`
     /// onto the OWNING heap's deferred-free stack, given `head` — the
@@ -888,6 +935,10 @@ impl HeapCore {
         packed: u32,
     ) {
         if ring.push(packed).is_ok() {
+            // R7-A4 (P3): set the dirty bit for this segment after a
+            // successful ring publish — the fast-path producer site.
+            #[cfg(feature = "alloc-segment-directory")]
+            set_dirty_bit_for_segment(base);
             return; // Fast path: the common case never proceeds further.
         }
         // R6-OPT-P0-4: the segment ring is full. Try the heap-level
@@ -992,6 +1043,11 @@ impl HeapCore {
                     // (see `try_push_uncounted`'s doc comment for the full
                     // argument).
                     if ring.try_push_uncounted(packed).is_ok() {
+                        // R7-A4 (P3): set the dirty bit — the retry-path
+                        // producer site (try_push_uncounted in the bounded
+                        // spin-retry loop, the R6-REGRESSION-2 path).
+                        #[cfg(feature = "alloc-segment-directory")]
+                        set_dirty_bit_for_segment(base);
                         DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
                         return;
                     }

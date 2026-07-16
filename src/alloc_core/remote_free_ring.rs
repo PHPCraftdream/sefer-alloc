@@ -111,6 +111,33 @@
 //! - consumer head store: `Release`.
 //! - producer full-check head load: `Acquire`.
 //!
+//! ## P4 — visibility contract change (R7-A4, dirty routing)
+//!
+//! With the A4 dirty-routing mechanism (`alloc-segment-directory` +
+//! `alloc-xthread`), a cross-thread freer sets a per-slot dirty bit AFTER
+//! a successful ring publish. A producer stalled between `push`/
+//! `try_push_uncounted` (the ring entry is visible in the ring) and
+//! `fetch_or` on the dirty bitmap (the owning slot's dirty word) is
+//! INVISIBLE to the owner's dirty-routing drain until the bit lands.
+//! This is bounded deferral of the same class as the existing "later
+//! drain picks it up" contract (above): the entry is in the ring and
+//! will be found by:
+//!   (a) the next dirty-routing drain pass, once the producer's
+//!       `fetch_or` completes and a subsequent owner `swap(0, Acquire)`
+//!       observes it;
+//!   (b) the guarded linear-scan fallback, which still drains every
+//!       ring unconditionally (the scan body is unchanged and always
+//!       reachable as the directory-miss path);
+//!   (c) any drain triggered by a DIFFERENT cross-thread free to the
+//!       SAME segment that DID complete its `fetch_or` — that drain
+//!       reads the ring up to the current `tail`, which includes the
+//!       stalled producer's entry.
+//! A producer that crashes between `push` and `fetch_or` (e.g. a
+//! process-level abort after the CAS but before the fetch_or) leaves
+//! the ring entry orphaned from the dirty bitmap, but the linear-scan
+//! fallback (path (b)) eventually finds it. No ring entry is ever lost
+//! — only its discoverability via the fast dirty path is deferred.
+//!
 //! ## Overflow semantics (the honest remainder)
 //!
 //! When the ring is full (`tail - head == CAP`), a push returns

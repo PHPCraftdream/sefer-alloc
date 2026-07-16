@@ -46,6 +46,18 @@ impl HeapCore {
         self.overflow = Some(overflow);
     }
 
+    /// R7-A4: plant the stable `&'static` handle to THIS heap's slot-resident
+    /// `dirty_segments` bitmap. Same discipline as `bind_overflow` / `bind_thread_free`.
+    /// Called once, right after the slot binds, from `bind_slot_counters`.
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    pub(crate) fn bind_dirty_segments(
+        &mut self,
+        ds: &'static [core::sync::atomic::AtomicU64;
+                     crate::alloc_core::segment_directory::WORDS_PER_CLASS],
+    ) {
+        self.core.dirty_segments = Some(ds);
+    }
+
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
     /// null in the transient pre-bind window (no cross-thread stamping has
     /// happened yet → cross-thread frees to this heap's segments are a safe

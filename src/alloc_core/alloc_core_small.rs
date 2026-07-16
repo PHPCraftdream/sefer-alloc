@@ -274,6 +274,27 @@ impl AllocCore {
         // compatibility: both features compile together, but the
         // directory is a write-only index under `numa-aware` until
         // node-aware queries are implemented.
+        // ── R7-A4: dirty-segment drain ──────────────────────────────────────
+        //
+        // Before querying the directory, drain ALL dirty segments' rings.
+        // This ensures the directory bits reflect the latest cross-thread
+        // frees: a producer that set a dirty bit after publishing a ring
+        // entry has its entry drained HERE, and the directory is updated
+        // accordingly (sync_directory_for_segment inside drain_dirty_segments).
+        // After this, the directory lookup below can skip the per-candidate
+        // ring drain for segments that were already drained in this pass.
+        #[cfg(all(
+            feature = "alloc-segment-directory",
+            feature = "alloc-xthread",
+            not(feature = "numa-aware")
+        ))]
+        {
+            #[cfg(feature = "fastbin")]
+            self.drain_dirty_segments(is_in_magazine);
+            #[cfg(not(feature = "fastbin"))]
+            self.drain_dirty_segments();
+        }
+
         #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
         if !self.directory_sidecar.is_null() {
             let dir = os::deref_directory_sidecar(self.directory_sidecar);
@@ -1452,6 +1473,130 @@ impl AllocCore {
                 } else {
                     dir.clear_bit(c, slot_idx);
                 }
+            }
+        }
+    }
+
+    /// R7-A4: drain all dirty segments' remote-free rings. Called at the top
+    /// of `find_segment_with_free_impl` BEFORE the directory scan, so the
+    /// directory bits reflect the latest cross-thread frees.
+    ///
+    /// For each dirty word, `swap(0, Acquire)`. For each set bit:
+    ///   1. `base_at(slot_idx)` — skip if null (recycled slot, stale bit).
+    ///   2. Validate kind is Small/Primordial.
+    ///   3. Validate `segment_id_at(base) == slot_idx` (revalidation: a slot
+    ///      may have been recycled and reused for a different segment since
+    ///      the producer set the bit).
+    ///   4. Drain the segment's remote-free ring (REUSING the existing
+    ///      drain body from the directory-hit path — P1-compliant).
+    ///   5. `sync_directory_for_segment` to publish reclaimed blocks into
+    ///      the directory.
+    ///   6. Handle decommit/pool hysteresis.
+    ///   7. Refresh the `ring_drain_head` cache.
+    ///
+    /// Increments the `dirty_segments_drained` A0 counter per drained segment.
+    ///
+    /// No-op if `dirty_segments` is not bound (pre-bind window) or the
+    /// directory sidecar is not materialised.
+    #[cfg(feature = "alloc-xthread")]
+    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
+    pub(super) fn drain_dirty_segments<
+        #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
+    >(
+        &mut self,
+        #[cfg(feature = "fastbin")] is_in_magazine: &F,
+    ) {
+        let ds = match self.dirty_segments {
+            Some(ds) => ds,
+            None => return, // Pre-bind: no dirty bitmap.
+        };
+        // The directory must be materialised for dirty routing to be useful.
+        if self.directory_sidecar.is_null() {
+            return;
+        }
+        let small_cur = self.small_cur;
+
+        for (w, ds_word) in ds.iter().enumerate() {
+            // Acquire: pairs with the producer's Release fetch_or.
+            let dirty = ds_word.swap(0, core::sync::atomic::Ordering::Acquire);
+            if dirty == 0 {
+                continue;
+            }
+            let mut bits = dirty;
+            while bits != 0 {
+                let j = bits.trailing_zeros() as usize;
+                bits &= bits - 1; // clear lowest set bit
+                let slot_idx = w * 64 + j;
+
+                // Validation 1: base must be non-null.
+                let base = self.table.base_at(slot_idx);
+                if base.is_null() {
+                    continue; // Recycled slot, stale dirty bit.
+                }
+
+                // Validation 2: must be Small/Primordial.
+                if !matches!(
+                    SegmentHeader::kind_at(base),
+                    SegmentKind::Small | SegmentKind::Primordial
+                ) {
+                    continue;
+                }
+
+                // Validation 3: segment_id must match slot_idx (revalidation
+                // against slot recycle — a recycled-then-reused slot may hold
+                // a different segment whose segment_id != the old slot_idx
+                // the producer saw when setting the bit).
+                if SegmentHeader::segment_id_at(base) as usize != slot_idx {
+                    continue;
+                }
+
+                // REUSE the existing A3/scan drain body (P1-compliant).
+                let mut meta_for_ring = SegmentMeta::new(base);
+                let ring = meta_for_ring.remote_ring();
+                let cached_head = meta_for_ring.ring_drain_head_of();
+                if ring.tail_relaxed() != cached_head {
+                    #[cfg(feature = "alloc-decommit")]
+                    let mut decommit_happened = false;
+                    let new_head = ring.drain(|off| {
+                        #[cfg(feature = "fastbin")]
+                        let reclaimed =
+                            Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
+                        #[cfg(not(feature = "fastbin"))]
+                        let reclaimed = Self::reclaim_offset(base, off, small_cur);
+                        #[cfg(feature = "alloc-decommit")]
+                        if reclaimed {
+                            decommit_happened = true;
+                        }
+                        #[cfg(not(feature = "alloc-decommit"))]
+                        {
+                            let _ = reclaimed;
+                        }
+                    });
+                    // A2 post-drain directory sync.
+                    {
+                        let sid = SegmentHeader::segment_id_at(base) as usize;
+                        self.sync_directory_for_segment(base, sid);
+                    }
+                    // P1-b: decommit/pool hysteresis.
+                    #[cfg(feature = "alloc-decommit")]
+                    if decommit_happened {
+                        self.release_or_pool_empty_segment(base);
+                        // The segment is now released/pooled; skip the head
+                        // refresh (the segment may be unmapped).
+                        // R7-A0: count this dirty segment as drained.
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRTY_SEGMENTS_DRAINED
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        continue;
+                    }
+                    // P1-d: refresh the ring_drain_head cache.
+                    meta_for_ring.set_ring_drain_head(new_head);
+                }
+
+                // R7-A0: count this dirty segment as drained.
+                #[cfg(feature = "alloc-stats")]
+                super::directory_stats::DIRTY_SEGMENTS_DRAINED
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             }
         }
     }

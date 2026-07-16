@@ -201,7 +201,53 @@ pub(crate) struct HeapSlotRemote {
     /// `null`-initialised (empty stack). Only present under `alloc-xthread`.
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
+
+    /// R7-A4: per-slot dirty-segment bitmap — 16 `AtomicU64` words covering
+    /// all 1024 segment-table slot indices (`MAX_SEGMENTS / 64 = 16`).
+    ///
+    /// A cross-thread freer (producer) sets bit `segment_id % 64` of word
+    /// `segment_id / 64` via `fetch_or(bit, Release)` AFTER a successful
+    /// `RemoteFreeRing::push` / `try_push_uncounted`. The owning thread
+    /// (consumer) `swap(0, Acquire)`s each word, iterates set bits, and
+    /// drains ONLY those segments' rings — replacing the O(S) "drain every
+    /// ring" scan with O(dirty) targeted drains.
+    ///
+    /// Lives in `HeapSlotRemote` (the STABLE, cross-thread-reachable part of
+    /// the slot) so producers can reach it from any thread via the registry's
+    /// `slot(owner_id)` — the same resolution path `push_to_heap_overflow`
+    /// and `resolve_heap_overflow` use. Zero-initialised (OS-zeroed pages):
+    /// no segment is dirty until a producer sets a bit.
+    ///
+    /// **Lost-wakeup safety:** the producer sets the bit AFTER publishing
+    /// the ring entry (the `Release` store on `push`/`try_push_uncounted`
+    /// happens-before the `Release` `fetch_or` here). A producer arriving
+    /// after the owner's `swap(0, Acquire)` re-sets the bit for the next
+    /// drain pass. A push during a drain is either seen by that drain
+    /// (the ring's `drain` reads up to the current `tail`) or leaves the
+    /// bit set for the next pass. Slot reuse is always revalidated via
+    /// `base_at(slot) + kind + segment_id` checks before draining.
+    ///
+    /// **P4 (visibility contract change):** a producer stalled between
+    /// `push` and `fetch_or` is invisible to the dirty-routing drain until
+    /// its bit lands (or until the linear-scan fallback, which still drains
+    /// every ring unconditionally, eventually finds it). This is bounded
+    /// deferral of the same class as the existing "later drain picks it up"
+    /// contract. See `remote_free_ring.rs` module doc for the pinned note.
+    ///
+    /// Only compiled under `alloc-xthread` AND `alloc-segment-directory`
+    /// (the dirty routing only matters when the directory drives the drain).
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    pub(crate) dirty_segments: [AtomicU64; DIRTY_BITMAP_WORDS],
 }
+
+/// R7-A4: number of `AtomicU64` words in the per-slot dirty-segment bitmap.
+/// `MAX_SEGMENTS / 64 = 16`. Mirrors `segment_directory::WORDS_PER_CLASS` but
+/// defined here so this module does not depend on the `alloc-segment-directory`-
+/// gated `segment_directory` module at the type level (the array size must be
+/// available whenever both `alloc-xthread` and `alloc-segment-directory` are
+/// active, without requiring a cfg-conditional import of the directory module).
+#[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+pub(crate) const DIRTY_BITMAP_WORDS: usize = crate::alloc_core::segment_table::MAX_SEGMENTS / 64;
 
 /// One registry slot. `#[repr(C, align(64))]`: `repr(C)` so the bootstrap can
 /// compute the slot array's footprint deterministically and lay it down at a

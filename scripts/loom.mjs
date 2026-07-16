@@ -38,6 +38,8 @@ const FEATURES = {
   // EMPTY feature set, which is exactly what the ci.yml `loom` matrix runs
   // (`- test: loom_thread_free / features: ""`). Mirror CI: empty feature set.
   loom_thread_free: '',
+  // R7-A4: dirty-segment publish/swap/lost-wakeup model.
+  loom_dirty_publish: 'alloc-core,alloc-xthread',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };

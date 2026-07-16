@@ -521,6 +521,20 @@ pub struct AllocCore {
     /// accessor.
     #[cfg(feature = "alloc-segment-directory")]
     pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
+
+    /// R7-A4: reference to the owning HeapSlot's `dirty_segments` bitmap
+    /// (planted by `HeapCore` at bind time). `None` until bound (the
+    /// pre-bind AllocCore is standalone and has no registry slot). The
+    /// reference is `&'static` because the HeapSlot lives in the process-
+    /// global registry array, leaked for the process lifetime.
+    ///
+    /// Used by `find_segment_with_free_impl` to drain ONLY dirty segments'
+    /// rings instead of polling every ring. Feature-gated: the dirty routing
+    /// only matters when both `alloc-xthread` (cross-thread frees exist) and
+    /// `alloc-segment-directory` (the directory drives the drain) are active.
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    pub(crate) dirty_segments:
+        Option<&'static [core::sync::atomic::AtomicU64; super::segment_directory::WORDS_PER_CLASS]>,
 }
 
 impl AllocCore {
@@ -731,6 +745,8 @@ impl AllocCore {
             last_pool_decay_tick: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_sidecar: core::ptr::null_mut(),
+            #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+            dirty_segments: None,
         })
     }
 

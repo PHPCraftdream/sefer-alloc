@@ -407,6 +407,12 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // discipline as `bind_thread_free`/`bind_tcache_hits` above.
     #[cfg(feature = "alloc-xthread")]
     heap_ref.bind_overflow(&slot.overflow);
+    // R7-A4: plant the stable `&'static` handle to this slot's per-slot
+    // dirty-segment bitmap. Same claim-time-binding discipline as
+    // `bind_overflow` above. The dirty bitmap lives in `HeapSlotRemote`
+    // (cross-thread-reachable, process-`'static`).
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    heap_ref.bind_dirty_segments(&slot.remote.dirty_segments);
 }
 
 /// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`
