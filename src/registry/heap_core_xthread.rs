@@ -28,7 +28,8 @@ use super::heap_core::{
 /// R6-OPT-P0-4 (superseded by R6-REGRESSION below — kept only as the
 /// historical record of the task #136 scale-up's total iteration count;
 /// `push_with_overflow_retry` no longer reads this constant, see
-/// [`RETRY_ROUND_MAX_ROUNDS`] for the constant that replaced it). Originally:
+/// [`RETRY_STALLED_ROUNDS_GIVE_UP`] / [`RETRY_ROUND_SAFETY_CAP`] for the
+/// constants that replaced it). Originally:
 /// the bounded spin-retry loop in [`HeapCore::push_with_overflow_retry`] ran
 /// for this many iterations, NOT the raw [`RING_PUSH_RETRY_SPINS`].
 /// `RING_PUSH_RETRY_SPINS` (8,192) was calibrated (task #99) against the
@@ -47,7 +48,7 @@ use super::heap_core::{
 /// 32-producer judge specifically under host CPU contention. Multiplying the
 /// iteration count by 256 (empirically calibrated, see the git history of
 /// this constant for the full A/B measurement notes) restored comparable
-/// per-iteration real time — but see [`RETRY_ROUND_MAX_ROUNDS`]'s doc
+/// per-iteration real time — but see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s doc
 /// comment for why that flat 256x-scaled budget itself became the
 /// R6-REGRESSION pathology this file now fixes: it eliminated the ONLY thing
 /// that had been pacing the loop in wall-clock time (the counter RMWs), so
@@ -77,75 +78,163 @@ const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS;
 #[cfg(feature = "alloc-xthread")]
 const RETRY_ROUND_SPINS: u32 = RING_PUSH_RETRY_SPINS;
 
-/// R6-REGRESSION: hard cap on the number of [`RETRY_ROUND_SPINS`]-sized
-/// probe rounds `push_with_overflow_retry`'s spin-retry tier runs.
+/// R6-REGRESSION-2 (progress-detection stop condition — the follow-up
+/// completing the R6-REGRESSION round/sleep reshaping): number of
+/// CONSECUTIVE zero-drain-progress probe rounds after which
+/// `push_with_overflow_retry`'s spin-retry tier concedes to the documented
+/// bounded leak.
 ///
-/// **Why a small round cap, not the same total budget reshaped into
-/// rounds.** An earlier version of this fix kept the FULL 256-round
-/// (2,097,152-iteration) [`RETRY_LOOP_ITERATIONS`] budget and only inserted
-/// a `std::thread::yield_now()` between rounds. Measured against the exact
-/// pathological cell this fix targets (`benches/heap_fanin_persistent.rs
-/// --reduced`'s `T=32, burst=100_000, owner=paused`, and a scaled-down
-/// `T=32, N=6_000` / `T=8, N=6_000` repro): `yield_now()` did NOT resolve
-/// the pathology — a `T=32, N=6_000` run still failed to complete within a
-/// 60s hard timeout (vs. 87s for the pre-fix flat spin: an improvement, but
-/// still pathological, not fixed). Under sustained contention with many
-/// mutually-yielding threads, `yield_now()` has no OTHER runnable work of
-/// different priority to hand the CPU to — the OS scheduler simply
-/// round-robins the SAME spinning threads back onto the same cores almost
-/// immediately (confirmed via `Get-Process ... CPU` sampling mid-run: ~9
-/// CPU-seconds consumed per wall-clock second at 32 threads / 16 cores,
-/// i.e. still governed by available core count, not actually idling) —
-/// `yield_now()` is a scheduling HINT, not a guaranteed block. And it does
-/// nothing to shrink the total iteration count when nothing will ever drain
-/// (`owner=paused`'s defining property: literally zero drains for the WHOLE
-/// burst, so no number of "another chance" rounds can ever succeed once the
-/// fixed combined ring+overflow capacity, 256 + 2048 = 2304, is exhausted —
-/// the 2,097,152-iteration budget was never actually buying a chance of
-/// success in this specific shape, only delaying the inevitable concession
-/// to the bounded leak, at real CPU cost).
+/// **Why progress detection, not a fixed round count.** The R6-REGRESSION
+/// commit (`ba34fd5`) capped the retry at a FLAT 8 rounds. That fixed the
+/// paused-owner CPU-burn pathology (see [`RETRY_ROUND_SLEEP`]'s history) but
+/// reintroduced — under host CPU load — the exact throughput regression task
+/// #136 exists to prevent: with a LIVE owner that is draining but CPU-starved
+/// (descheduled between drain passes, or draining slower than 32 producers
+/// can re-saturate the rings), a fixed ~8-round (~couple-ms) budget expires
+/// while the owner is mid-recovery, and the push concedes even though waiting
+/// WOULD have succeeded — measured as a flaky non-zero
+/// `DBG_RING_PUSH_RETRY_EXHAUSTED` on `tests/remote_fanin.rs::
+/// remote_fanin_high_contention_budget_is_sufficient` (exhausted_delta=821
+/// observed during a host load spike; 0 when calm). No fixed round/iteration
+/// budget can distinguish the two shapes this loop must treat oppositely:
 ///
-/// The fix actually adopted: cap the probe to 8 rounds (65,536 total spin
-/// iterations — comparable to RAD-4/task #99's ORIGINAL pre-R6-OPT-P0-4
-/// budget of 8,192 by itself, but now composed of 8 independently-paced
-/// rounds so a genuinely transient stall still gets several chances), and
-/// insert a real `std::thread::sleep` (not merely `yield_now`) of
-/// [`RETRY_ROUND_SLEEP`] between rounds 2 onward — an actual OS-level block
-/// that hands the core to something else regardless of how many other
-/// producer threads are also spinning, closing the "mutually-yielding
-/// threads never really idle" gap `yield_now()` left open. Round 1 stays a
-/// pure tight spin (no sleep before it) so the #136 judge's moderately
-/// contended, ACTIVELY-draining-owner workload — which resolves within
-/// round 1 essentially always — pays no new latency at all. A genuinely
-/// stuck push now concedes to the documented-sound bounded leak
-/// (`DBG_RING_PUSH_RETRY_EXHAUSTED`) after at most 8 rounds instead of 256,
-/// bounding both the CPU burned AND the wall-clock paid by any ONE push,
-/// which is what actually fixes the aggregate-stall pathology: many
-/// producers each capped at a small worst-case cost, instead of many
-/// producers each paying up to 2,097,152 iterations.
+/// - **paused owner (never drains):** any waiting is pure waste — give up
+///   FAST (the R6-REGRESSION pathology was precisely waiting too long here);
+/// - **live-but-slow owner under load:** the owner IS draining — stay
+///   patient (conceding here is the #136 regression).
 ///
-/// Under `#[cfg(miri)]`: exactly 1 round (`RETRY_ROUND_SPINS ==
-/// RING_PUSH_RETRY_SPINS` there is already the small miri-scaled value, and
-/// miri's interpreter gains nothing from a real sleep — a scaled-down
-/// multi-round miri budget was already independently measured impractically
-/// slow, same rationale as the pre-existing `RING_PUSH_RETRY_SPINS`
-/// `#[cfg(miri)]` narrowing this constant inherits).
+/// The distinguishing signal is whether the owner is making DRAIN PROGRESS,
+/// and both rings expose it for free: each ring's `head` cursor is advanced
+/// ONLY by the owner's drain (`RemoteFreeRing::head_relaxed` /
+/// `HeapOverflow::head_relaxed` — cheap `Relaxed` loads of monotonic
+/// cursors; see each accessor's doc comment for the soundness argument). The
+/// loop snapshots both heads before round 1 and re-reads them after every
+/// fully-failed round: if EITHER moved, the owner drained something in that
+/// window — reset the stall counter and keep waiting; if NEITHER moved for
+/// this many CONSECUTIVE rounds, the owner made zero progress across the
+/// whole window — genuinely stalled/paused — concede.
+///
+/// **Why 128.** A stalled round's wall-clock is dominated by the
+/// between-round sleep: [`RETRY_ROUND_SLEEP`] requests 200µs but the OS
+/// timer's effective granularity on this project's dev host was MEASURED
+/// anywhere from ~2ms to ~15ms per sleep (classic Windows timer
+/// quantization, and it varies with whatever process currently holds the
+/// system timer resolution — derived from
+/// `tests/regression_paused_owner_wallclock.rs`'s per-concession cost
+/// across runs), so 128 consecutive stalled rounds ≈ ~0.3–2s of
+/// CONTINUOUSLY observed zero drain progress before the FIRST concession.
+/// A small K is empirically too impatient: the owner's drains are BURSTY
+/// (an entire ring is drained at once on the owner's alloc slow path, then
+/// nothing until the next slow-path visit) and the owner thread itself can
+/// be descheduled for tens of milliseconds under host load — K=4 measured
+/// 6/10 failures on the #136 judge on an OTHERWISE IDLE host
+/// (exhausted_delta 3..=696). K=128 measured 10/10 clean calm plus 8/8
+/// clean under a deliberate 16-thread CPU-hog load (after the judge's own
+/// harness-liveness race was separately fixed — see the R6-REGRESSION-2
+/// note in `tests/remote_fanin.rs`). The generous first-concession patience
+/// is affordable because it is paid at most ONCE per observed stall per
+/// thread — see [`LAST_STALL_CONCESSION`] for the fast-concede memo that
+/// keeps the paused-owner shapes
+/// (`tests/regression_paused_owner_wallclock.rs`, the
+/// `benches/heap_fanin_persistent.rs --reduced` paused cell) from re-paying
+/// it on every subsequent push into the same unchanged stall.
+///
+/// Under `#[cfg(miri)]`: 1 (together with `RETRY_ROUND_SAFETY_CAP = 1` this
+/// preserves the pre-existing exactly-one-round miri shape — miri's
+/// interpreter gains nothing from sleeps or multi-round patience, and a
+/// multi-round miri budget was independently measured impractically slow).
 #[cfg(all(feature = "alloc-xthread", not(miri)))]
-const RETRY_ROUND_MAX_ROUNDS: u32 = 8;
+const RETRY_STALLED_ROUNDS_GIVE_UP: u32 = 128;
 #[cfg(all(feature = "alloc-xthread", miri))]
-const RETRY_ROUND_MAX_ROUNDS: u32 = 1;
+const RETRY_STALLED_ROUNDS_GIVE_UP: u32 = 1;
+
+#[cfg(feature = "alloc-xthread")]
+std::thread_local! {
+    /// R6-REGRESSION-2: per-thread fast-concede memo — `(segment base, ring
+    /// drain head, overflow drain head)` recorded at this thread's most recent
+    /// live-owner retry CONCESSION. Purely caller-side state (neither ring's
+    /// protocol or layout is touched); read/written only by
+    /// `push_with_overflow_retry`'s live-owner branch.
+    ///
+    /// **Why it exists.** The progress-detected stop condition deliberately
+    /// waits a long time (up to [`RETRY_STALLED_ROUNDS_GIVE_UP`] ≈ ~0.3–2s of
+    /// observed zero drain progress) before conceding — that generosity is what
+    /// makes the #136 judge robust under host load. But in the sustained
+    /// paused-owner shape (`owner=paused`: zero drains for an entire
+    /// 100_000-push burst) EVERY push past the combined ring+overflow capacity
+    /// must eventually concede, and re-paying up to ~2s per push would turn the
+    /// paused benchmark cell into HOURS of (sleepy, but still
+    /// pathological) stall — reintroducing the R6-REGRESSION wall-clock
+    /// pathology in a politer form. This memo bounds that: once a thread has
+    /// paid the FULL patience for a stall and conceded, it records the exact
+    /// cursor snapshot it conceded against; a subsequent push into the SAME
+    /// segment that observes BOTH drain cursors still at the recorded values is
+    /// provably inside the same continuous zero-progress stall (both cursors
+    /// are owner-advanced and monotonic — equality means literally nothing was
+    /// drained since the concession), so it concedes after a single probe round
+    /// instead of re-paying the full patience. The moment either cursor moves,
+    /// the memo no longer matches (monotonic cursors never return to an old
+    /// value short of a 2^32/2^64 wrap) and full patience is restored.
+    ///
+    /// **Why this cannot affect the #136 judge.** The memo is written ONLY on a
+    /// concession, and the judge asserts zero concessions — on any run where the
+    /// judge's invariant holds, the memo is never populated and the retry loop's
+    /// behavior is byte-identical to the memo-less version. It changes only how
+    /// CHEAPLY pushes AFTER a first concession give up — and any first
+    /// concession already is the bounded-leak event the judge forbids.
+    ///
+    /// **Why `thread_local!` is safe here.** Const-initialized `Cell` of a
+    /// `Copy` type: no lazy initialization, no allocation (critical — this runs
+    /// inside the global allocator's dealloc path), no `Drop` registration (so
+    /// it is accessible even during another TLS destructor's cross-thread
+    /// frees). Stale cross-workload state is self-correcting: the memo only
+    /// matches while both cursors are EXACTLY at the recorded values, and a
+    /// mismatch (the overwhelmingly common case for unrelated later traffic)
+    /// falls back to full patience; a false match requires the same segment
+    /// base AND both monotonic cursors at the recorded values, and its worst
+    /// case is one cheap concession to the already-documented bounded leak.
+    static LAST_STALL_CONCESSION: core::cell::Cell<Option<(usize, u32, Option<usize>)>> =
+        const { core::cell::Cell::new(None) };
+}
+
+/// R6-REGRESSION-2: absolute safety cap on TOTAL probe rounds (progressed or
+/// not) per push — the backstop that keeps a single push's wall-clock
+/// bounded even if the owner keeps making drain progress that this producer
+/// somehow never converts into a successful push (e.g. every freed slot is
+/// perpetually won by other producers). 4096 rounds (≈ tens of seconds at
+/// the measured worst-case ~15ms effective sleep granularity) is far above
+/// what the #136 judge needs even under heavy host load (its stuck pushes
+/// resolve as soon as the starved owner gets a timeslice and drains —
+/// observed well within tens of rounds), yet still a hard, finite bound: a
+/// push can never wait unboundedly, preserving the loop's "mathematically
+/// bounded" contract. In the paused-owner shape this cap is never reached —
+/// zero progress trips [`RETRY_STALLED_ROUNDS_GIVE_UP`] (128 rounds) long
+/// before it.
+///
+/// Under `#[cfg(miri)]`: 1 — see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s miri
+/// note (exactly one pure-spin round, no sleep, as before).
+#[cfg(all(feature = "alloc-xthread", not(miri)))]
+const RETRY_ROUND_SAFETY_CAP: u32 = 4096;
+#[cfg(all(feature = "alloc-xthread", miri))]
+const RETRY_ROUND_SAFETY_CAP: u32 = 1;
 
 /// R6-REGRESSION: the real OS-level sleep duration between probe rounds
 /// (from round 2 onward — round 1 is a pure tight spin with no sleep before
-/// it, see [`RETRY_ROUND_MAX_ROUNDS`]'s doc comment). 200 microseconds:
-/// long enough to be a genuine scheduler-visible block (not a busy-loop in
-/// disguise), short enough that the worst case (7 sleeps, since round 1 has
-/// none, and native-only `RETRY_ROUND_MAX_ROUNDS = 8`) adds at most ~1.4ms
-/// of latency to a push that was going to concede to the bounded leak
-/// anyway — negligible next to the multi-SECOND per-push cost the pre-fix
-/// flat 2,097,152-iteration spin paid under sustained contention. Unused
-/// under `#[cfg(miri)]` (`RETRY_ROUND_MAX_ROUNDS == 1` there, so the loop
-/// never reaches a round boundary).
+/// it). 200 microseconds: long enough to be a genuine scheduler-visible
+/// block (not a busy-loop in disguise — an earlier `yield_now()` attempt was
+/// measured NOT to fix the paused-owner CPU-burn pathology, see
+/// `push_with_overflow_retry`'s doc comment). NOTE the requested 200µs is a
+/// floor, not the real cost: the effective granularity was measured at
+/// ~15ms per sleep on this project's dev host (Windows timer quantization —
+/// see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s doc comment for the measurement),
+/// which is why the give-up cost budget is managed in ROUNDS with the
+/// [`LAST_STALL_CONCESSION`] fast-concede memo rather than by shrinking
+/// this Duration further (a sub-granularity request cannot get cheaper).
+/// This sleep is load-bearing for the paused-owner fix: it is the OS-level
+/// block that stopped the aggregate CPU burn (a genuinely idle wait, unlike
+/// `spin_loop`/`yield_now`). Unused under `#[cfg(miri)]`
+/// (`RETRY_ROUND_SAFETY_CAP == 1` there, so the loop never reaches a round
+/// boundary).
 #[cfg(feature = "alloc-xthread")]
 const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micros(200);
 
@@ -619,14 +708,40 @@ impl HeapCore {
     /// gets the full retry protection against both tiers, just without the
     /// ring's own counter-RMW tax on every failed ring poll.
     ///
-    /// **R6-REGRESSION (follow-up correction to R6-OPT-P0-4) — small capped
-    /// probe rounds with a real sleep, not one flat 2M-iteration spin.**
-    /// Step 4's retry loop is not one flat [`RETRY_LOOP_ITERATIONS`]
+    /// **R6-REGRESSION + R6-REGRESSION-2 (follow-up corrections to
+    /// R6-OPT-P0-4) — progress-detected probe rounds with a real sleep, not
+    /// one flat 2M-iteration spin and not a fixed round count.** Step 4's
+    /// retry loop is not one flat [`RETRY_LOOP_ITERATIONS`]
     /// (2,097,152)-iteration busy-spin. It is split into
-    /// [`RETRY_ROUND_SPINS`]-sized (8,192) PROBE ROUNDS, capped at
-    /// [`RETRY_ROUND_MAX_ROUNDS`] (8 native / 1 miri) rounds total, with a
-    /// real `std::thread::sleep(`[`RETRY_ROUND_SLEEP`]`)` OS-level block
-    /// between rounds (from round 2 onward).
+    /// [`RETRY_ROUND_SPINS`]-sized (8,192) PROBE ROUNDS with a real
+    /// `std::thread::sleep(`[`RETRY_ROUND_SLEEP`]`)` OS-level block between
+    /// rounds (from round 2 onward), and its STOP CONDITION is
+    /// drain-progress detection, not a fixed round budget: before round 1
+    /// and after every fully-failed round the loop reads both tiers' DRAIN
+    /// cursors (`RemoteFreeRing::head_relaxed` /
+    /// `HeapOverflow::head_relaxed` — each advanced ONLY by the owner's
+    /// drain). If either cursor moved, the owner drained something in that
+    /// window — the stall counter resets and the loop keeps waiting (the
+    /// owner is live-but-slow; conceding here is exactly the #136
+    /// regression). Only after [`RETRY_STALLED_ROUNDS_GIVE_UP`] (128 native /
+    /// 1 miri) CONSECUTIVE rounds in which NEITHER cursor advanced — the
+    /// owner made zero drain progress across the whole observed window,
+    /// i.e. it is genuinely stalled/paused — does the push concede to the
+    /// documented bounded leak. An absolute [`RETRY_ROUND_SAFETY_CAP`] (4096
+    /// native / 1 miri) on total rounds backstops the pathological
+    /// "owner keeps draining but this producer never wins a slot" shape so
+    /// a single push stays hard-bounded in wall-clock regardless. And so
+    /// that a SUSTAINED stall (the paused-owner burst shape, where every
+    /// push past capacity must eventually concede) does not re-pay the full
+    /// first-concession patience on every subsequent push, each concession
+    /// memoizes its cursor snapshot per-thread ([`LAST_STALL_CONCESSION`]):
+    /// a following push that finds both cursors still exactly at a
+    /// snapshot it previously conceded against is provably inside the same
+    /// continuous stall and concedes after a single probe round. See
+    /// [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s and [`LAST_STALL_CONCESSION`]'s
+    /// doc comments for the full two-shapes tension (paused owner must give
+    /// up cheaply; slow-live owner under host load must be waited out) and
+    /// why no fixed budget can resolve both.
     ///
     /// R6-OPT-P0-4 (task #136) scaled `RETRY_LOOP_ITERATIONS` to 256×
     /// `RING_PUSH_RETRY_SPINS` (2,097,152) specifically so a MODERATELY
@@ -656,10 +771,13 @@ impl HeapCore {
     /// byte the same shape task #99 originally calibrated — this alone is
     /// what the #136 high-contention judge
     /// (`tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`)
-    /// needs; that judge's workload resolves within round 1 and never reaches
-    /// a sleep. Only once a full round fails outright does the loop sleep for
-    /// [`RETRY_ROUND_SLEEP`] (200µs) before starting the next round, for up
-    /// to `RETRY_ROUND_MAX_ROUNDS - 1` sleeps total.
+    /// needs in the CALM case; that judge's workload resolves within round 1
+    /// essentially always when the host is idle and never reaches a sleep.
+    /// Only once a full round fails outright does the loop sleep for
+    /// [`RETRY_ROUND_SLEEP`] (200µs) before starting the next round —
+    /// continuing for as long as the owner keeps making drain progress
+    /// (R6-REGRESSION-2, see above), up to [`RETRY_ROUND_SAFETY_CAP`] rounds
+    /// total.
     ///
     /// **An earlier version of this fix kept the SAME 2,097,152-iteration
     /// total budget and only inserted `std::thread::yield_now()` between
@@ -681,9 +799,13 @@ impl HeapCore {
     /// budget was only ever delaying the concession to the bounded leak, at
     /// real CPU cost, not buying additional chances). The fix that actually
     /// resolves the pathology needed BOTH a real OS-level block (`sleep`,
-    /// not `yield_now`) AND a much smaller total iteration/round budget (8
-    /// rounds = 65,536 iterations, not 256 rounds = 2,097,152) — see
-    /// [`RETRY_ROUND_MAX_ROUNDS`]'s doc comment for the full comparison.
+    /// not `yield_now`) AND a way to stop waiting quickly when nothing is
+    /// draining — which R6-REGRESSION first approximated with a fixed 8-round
+    /// cap, and R6-REGRESSION-2 replaced with the drain-progress stop
+    /// condition (a fixed cap small enough to keep the paused case fast was
+    /// measured too impatient for a live-but-CPU-starved owner under host
+    /// load — see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s doc comment for the full
+    /// comparison).
     ///
     /// A wall-clock deadline (real-time-bounded, not iteration/round-count-
     /// bounded) was also considered — it would give a tighter worst-case
@@ -756,20 +878,45 @@ impl HeapCore {
             // that case, matching `push_to_heap_overflow`'s own "returns
             // false" defensive behaviour.
             let overflow = Self::resolve_heap_overflow(base);
-            // R6-REGRESSION: `RETRY_ROUND_MAX_ROUNDS` rounds of
-            // `RETRY_ROUND_SPINS` tight-spin polls each, with a real
-            // `std::thread::sleep(RETRY_ROUND_SLEEP)` OS-level block between
-            // rounds (from round 2 onward) — see `RETRY_ROUND_MAX_ROUNDS`'s
-            // doc comment for why a small round CAP with a real sleep
-            // replaced an earlier "same total budget, reshaped with
-            // `yield_now()`" attempt (measured NOT to fix the pathology:
-            // mutually-yielding threads under sustained contention never
-            // actually idle). Under `#[cfg(miri)]`, `RETRY_ROUND_MAX_ROUNDS
-            // == 1`, so this runs exactly one pure-spin round with no sleep
-            // reached at all — miri's interpreter gains nothing from a real
-            // sleep and a scaled-down multi-round miri budget was already
-            // independently measured impractically slow.
-            for round in 0..RETRY_ROUND_MAX_ROUNDS {
+            // R6-REGRESSION-2: probe rounds of `RETRY_ROUND_SPINS` tight-spin
+            // polls each, with a real `std::thread::sleep(RETRY_ROUND_SLEEP)`
+            // OS-level block between rounds (from round 2 onward — the sleep
+            // is load-bearing: it is what stopped the paused-owner aggregate
+            // CPU burn), stopped by DRAIN-PROGRESS detection rather than a
+            // fixed round count: snapshot both tiers' drain cursors before
+            // round 1, re-read them after every fully-failed round, and give
+            // up only after `RETRY_STALLED_ROUNDS_GIVE_UP` CONSECUTIVE rounds
+            // in which NEITHER cursor advanced (the owner drained nothing
+            // across the whole observed window — genuinely stalled/paused).
+            // Any observed advance resets the stall counter: the owner is
+            // draining, however slowly (e.g. CPU-starved under host load),
+            // so waiting remains meaningful — see
+            // `RETRY_STALLED_ROUNDS_GIVE_UP`'s doc comment for the measured
+            // failure both fixed budgets (large AND small) exhibited.
+            // `RETRY_ROUND_SAFETY_CAP` hard-bounds the total wait regardless
+            // of progress. Under `#[cfg(miri)]` both constants are 1, so
+            // this runs exactly one pure-spin round with no sleep reached at
+            // all — miri's interpreter gains nothing from a real sleep and a
+            // scaled-down multi-round miri budget was already independently
+            // measured impractically slow.
+            let mut prev_ring_head = ring.head_relaxed();
+            let mut prev_overflow_head = overflow.map(|o| o.head_relaxed());
+            // R6-REGRESSION-2 fast-concede: if THIS thread already paid the
+            // full stall patience for THIS segment and neither drain cursor
+            // has moved since that concession, this push is inside the same
+            // continuous zero-progress stall — concede after a single probe
+            // round instead of re-paying the full patience. See
+            // `LAST_STALL_CONCESSION`'s doc comment for why this cannot
+            // affect the zero-concession (#136 judge) case at all.
+            let mut give_up_after = if LAST_STALL_CONCESSION
+                .with(|c| c.get() == Some((base as usize, prev_ring_head, prev_overflow_head)))
+            {
+                1
+            } else {
+                RETRY_STALLED_ROUNDS_GIVE_UP
+            };
+            let mut stalled_rounds: u32 = 0;
+            for round in 0..RETRY_ROUND_SAFETY_CAP {
                 if round > 0 {
                     // Only BETWEEN rounds, never before the first: the first
                     // round is a pure tight busy-spin, byte-for-byte the
@@ -840,7 +987,41 @@ impl HeapCore {
                         }
                     }
                 }
+                // R6-REGRESSION-2: the whole round failed — did the owner
+                // drain ANYTHING (either tier) since the last check? Both
+                // heads are owner-advanced monotonic cursors, so inequality
+                // is an exact "a drain happened in this window" signal (a
+                // stale Relaxed read can only under-report progress by one
+                // round, never fabricate it — see each accessor's doc
+                // comment).
+                let ring_head = ring.head_relaxed();
+                let overflow_head = overflow.map(|o| o.head_relaxed());
+                if ring_head != prev_ring_head || overflow_head != prev_overflow_head {
+                    prev_ring_head = ring_head;
+                    prev_overflow_head = overflow_head;
+                    stalled_rounds = 0;
+                    // The owner drained something: any fast-concede memo is
+                    // out of date — restore the full patience for the rest
+                    // of THIS push too (the memo comparison below records
+                    // fresh cursors if this push still ends in concession).
+                    give_up_after = RETRY_STALLED_ROUNDS_GIVE_UP;
+                } else {
+                    stalled_rounds += 1;
+                    if stalled_rounds >= give_up_after {
+                        break; // Zero drain progress for K consecutive rounds.
+                    }
+                }
             }
+            // Conceding with a LIVE owner: memoize the exact cursor snapshot
+            // this thread conceded against, so consecutive pushes into the
+            // SAME still-unchanged stall give up cheaply instead of each
+            // re-paying the full patience — see `LAST_STALL_CONCESSION`'s
+            // doc comment. (`prev_*` are current here: the loop only exits
+            // through consecutive stalled rounds — or the safety cap, where
+            // an at-most-one-round-stale snapshot merely under-matches and
+            // costs the next push nothing but full patience.)
+            LAST_STALL_CONCESSION
+                .with(|c| c.set(Some((base as usize, prev_ring_head, prev_overflow_head))));
         } else if Self::push_to_heap_overflow(base, packed) {
             // Owner not live: no point spinning on the segment ring (nothing
             // will drain it), but the heap-level overflow ring is drained by
@@ -851,9 +1032,12 @@ impl HeapCore {
             // overflow attempt below when it already just tried and failed).
             return;
         }
-        // Every tier exhausted (retry budget spent with the owner live, or
-        // the owner was not live and the single not-live-path attempt above
-        // also failed): the genuinely-unrecovered case. The segment ring's
+        // Every tier exhausted (the owner was live but made zero drain
+        // progress for `RETRY_STALLED_ROUNDS_GIVE_UP` consecutive probe
+        // rounds — or kept trickling progress this producer never converted
+        // into a push for `RETRY_ROUND_SAFETY_CAP` rounds — or the owner was
+        // not live and the single not-live-path attempt above also failed):
+        // the genuinely-unrecovered case. The segment ring's
         // own `DBG_RING_OVERFLOW` / per-segment `overflow_count` ticked ONCE
         // (step 1's single counted attempt, not on every retry poll); this
         // counter marks ONLY this fully-unrecovered case.

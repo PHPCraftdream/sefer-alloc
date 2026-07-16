@@ -67,7 +67,7 @@
 //! **Native-only** (`#[cfg(not(miri))]`): a genuine timing-sensitive stress
 //! test (thousands of ops across many threads); miri's interpreter overhead
 //! makes wall-clock assertions meaningless there, and the retry loop's own
-//! `#[cfg(miri)]`-narrowed budget (`RETRY_ROUND_MAX_ROUNDS = 1`) is already
+//! `#[cfg(miri)]`-narrowed budget (`RETRY_ROUND_SAFETY_CAP = 1`) is already
 //! covered for UB (not timing) by
 //! `tests/remote_fanin.rs::remote_fanin_miri_minimal_retry_ub_check`.
 

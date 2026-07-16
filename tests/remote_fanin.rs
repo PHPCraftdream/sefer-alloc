@@ -245,23 +245,46 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
     // allocated would keep refilling `small_cur`'s own free list and NEVER
     // reach the ring-draining path at all (a self-defeating harness that
     // looks concurrent but never actually drains). Instead this loop
-    // accumulates a growing batch WITHOUT self-freeing, forcing
-    // `small_cur`'s free list to stay empty and every `alloc()` call to
-    // fall through to `find_segment_with_free` — genuinely draining the
-    // rings the producers are hammering — then frees the whole batch in
-    // one shot at the end (own-thread free; does not touch the ring path).
+    // accumulates a batch WITHOUT immediate self-freeing, forcing
+    // `small_cur`'s free list to stay empty and `alloc()` calls to fall
+    // through to `find_segment_with_free` — genuinely draining the rings
+    // the producers are hammering — releasing the batch (own-thread free;
+    // does not touch the ring path) only at OWNER_BATCH-sized cycle
+    // boundaries.
+    //
+    // R6-REGRESSION-2 harness-liveness fix (see harness 2.5's identical
+    // note for the probe evidence): this loop used to be time-bounded at a
+    // fixed `N * 2` allocs, but the `exhausted_delta == 0` assertion below
+    // presumes an owner "alive and cycling the whole time" the producers
+    // run — under heavy host CPU load the starved producers can outlive a
+    // fixed window, and every push conceding AFTER the owner's last drain
+    // is the (documented-sound) paused-owner bounded leak, not the
+    // live-owner budget property this harness asserts. The owner now runs
+    // at least `N * 2` allocs AND until every producer has finished.
+    const OWNER_BATCH: usize = 4_096;
+    let producers_done = std::sync::Arc::new(AtomicBool::new(false));
+    let producers_done_owner = std::sync::Arc::clone(&producers_done);
     let owner_rounds: thread::JoinHandle<()> = thread::spawn(move || {
         let heap = heap_addr as *mut sefer_alloc::registry::HeapCore;
-        let mut batch: Vec<*mut u8> = Vec::with_capacity(N * 2);
-        for i in 0..(N * 2) {
+        let mut batch: Vec<*mut u8> = Vec::with_capacity(OWNER_BATCH);
+        let mut i = 0usize;
+        loop {
             let p = unsafe { (*heap).alloc(layout) };
-            if p.is_null() {
-                continue; // Transient OOM under pressure — not the property under test.
+            if !p.is_null() {
+                unsafe {
+                    std::ptr::write_bytes(p, (i & 0xFF) as u8, BLOCK_SIZE);
+                }
+                batch.push(p);
             }
-            unsafe {
-                std::ptr::write_bytes(p, (i & 0xFF) as u8, BLOCK_SIZE);
+            i += 1;
+            if batch.len() >= OWNER_BATCH {
+                for p in batch.drain(..) {
+                    unsafe { (*heap).dealloc(p, layout) };
+                }
             }
-            batch.push(p);
+            if i >= N * 2 && producers_done_owner.load(Ordering::Acquire) {
+                break;
+            }
         }
         for p in batch {
             unsafe { (*heap).dealloc(p, layout) };
@@ -271,6 +294,7 @@ fn remote_fanin_concurrent_overflow_is_recovered() {
     for h in handles {
         h.join().expect("producer thread must not panic");
     }
+    producers_done.store(true, Ordering::Release);
     owner_rounds.join().expect("owner thread must not panic");
 
     // This harness is only a valid counterfactual if it actually forced an
@@ -518,18 +542,52 @@ fn remote_fanin_high_contention_budget_is_sufficient() {
     // The OWNER concurrently allocates WITHOUT self-freeing, forcing every
     // alloc() to fall through to find_segment_with_free → ring drain — the
     // same live-owner drain pattern harness 1 uses.
+    // R6-REGRESSION-2 harness-liveness fix: the owner loop below used to be
+    // time-bounded (a fixed `N * 2` allocs, measured completing in
+    // ~100-200ms) while this judge's premise — and its `exhausted_delta ==
+    // 0` HARD assertion — requires an owner that is "alive and cycling the
+    // whole time" the producers run. Under heavy host CPU load the STARVED
+    // PRODUCERS can outlive that fixed window: a probe instrumentation run
+    // (16-thread deliberate CPU hog) showed every failing run's concessions
+    // occurring strictly AFTER the owner's alloc loop had already completed
+    // (exhausted_so_far == 0 at owner-loop-end, hundreds after), at which
+    // point NO retry policy can avoid the documented bounded leak — nothing
+    // will ever drain again. That is the "paused owner" shape (covered by
+    // `tests/regression_paused_owner_wallclock.rs`), not the live-owner
+    // budget property THIS judge asserts. Fix: the owner keeps allocating
+    // (and therefore draining) until every producer has finished — at least
+    // `N * 2` allocs as before, then as many more as the producers' actual
+    // (load-dependent) lifetime requires — so the judge's liveness premise
+    // holds by construction at ANY host load level. The batch is drained
+    // (own-thread freed) every OWNER_BATCH allocs so an arbitrarily long
+    // producer burst cannot grow owner memory unboundedly; each cycle's
+    // frees refill `small_cur`'s free list, the next OWNER_BATCH allocs
+    // empty it again, and `find_segment_with_free` (the ring/overflow
+    // drain) is re-reached every cycle.
+    const OWNER_BATCH: usize = 4_096;
+    let producers_done = std::sync::Arc::new(AtomicBool::new(false));
+    let producers_done_owner = std::sync::Arc::clone(&producers_done);
     let owner_rounds: thread::JoinHandle<()> = thread::spawn(move || {
         let heap = heap_addr as *mut sefer_alloc::registry::HeapCore;
-        let mut batch: Vec<*mut u8> = Vec::with_capacity(N * 2);
-        for i in 0..(N * 2) {
+        let mut batch: Vec<*mut u8> = Vec::with_capacity(OWNER_BATCH);
+        let mut i = 0usize;
+        loop {
             let p = unsafe { (*heap).alloc(layout) };
-            if p.is_null() {
-                continue;
+            if !p.is_null() {
+                unsafe {
+                    std::ptr::write_bytes(p, (i & 0xFF) as u8, BLOCK_SIZE);
+                }
+                batch.push(p);
             }
-            unsafe {
-                std::ptr::write_bytes(p, (i & 0xFF) as u8, BLOCK_SIZE);
+            i += 1;
+            if batch.len() >= OWNER_BATCH {
+                for p in batch.drain(..) {
+                    unsafe { (*heap).dealloc(p, layout) };
+                }
             }
-            batch.push(p);
+            if i >= N * 2 && producers_done_owner.load(Ordering::Acquire) {
+                break;
+            }
         }
         for p in batch {
             unsafe { (*heap).dealloc(p, layout) };
@@ -539,6 +597,7 @@ fn remote_fanin_high_contention_budget_is_sufficient() {
     for h in handles {
         h.join().expect("producer thread must not panic");
     }
+    producers_done.store(true, Ordering::Release);
     owner_rounds.join().expect("owner thread must not panic");
 
     let overflow_delta = DBG_RING_OVERFLOW.load(Ordering::Relaxed) - overflow_before;

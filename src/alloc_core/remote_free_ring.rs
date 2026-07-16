@@ -894,4 +894,38 @@ impl RemoteFreeRing {
     pub(crate) fn tail_relaxed(&self) -> u32 {
         self.tail().load(Ordering::Relaxed)
     }
+
+    /// R6-REGRESSION-2 (progress-detection stop condition in
+    /// `HeapCore::push_with_overflow_retry`): the ring's current DRAIN cursor
+    /// (`head`) as a single `Relaxed` load — the production (non-`dbg_*`)
+    /// sibling of the test-only [`dbg_cursors`](Self::dbg_cursors) hook,
+    /// exposing ONLY the consumer-advanced half of the cursor pair.
+    ///
+    /// **Purpose.** A producer stuck in the bounded retry loop needs to
+    /// distinguish "the owner is draining, however slowly" (keep waiting)
+    /// from "the owner is making zero drain progress" (concede to the
+    /// documented bounded leak). `head` is advanced ONLY by the owner's
+    /// [`drain`](Self::drain) — producers never write it — so observing it
+    /// move between probe rounds is an exact "the owner drained something"
+    /// signal, and observing it NOT move is an exact "the owner drained
+    /// nothing in that window" signal.
+    ///
+    /// **Why `Relaxed` is sound (same monotonicity argument as
+    /// [`tail_relaxed`](Self::tail_relaxed), applied to `head`):** `head` is
+    /// monotonic (only ever advanced by the single consumer's `Release`
+    /// store), so a `Relaxed` load returns either the latest value or an
+    /// older one — never a fabricated future value. The caller compares two
+    /// such loads taken hundreds of microseconds apart purely to detect
+    /// MOVEMENT: a stale read can only UNDER-report progress (delaying the
+    /// "progressed" verdict to the next probe round — one extra cheap round,
+    /// never a correctness hazard), and can never fabricate progress that did
+    /// not happen. No payload is read through this value, so no
+    /// Acquire-ordered visibility is needed here — the retry loop's own
+    /// `try_push_uncounted` re-establishes ordering via its `Acquire` head
+    /// load when it actually attempts the push.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn head_relaxed(&self) -> u32 {
+        self.head().load(Ordering::Relaxed)
+    }
 }

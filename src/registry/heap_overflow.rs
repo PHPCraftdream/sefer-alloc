@@ -688,6 +688,30 @@ impl HeapOverflow {
         self.tail.load(Ordering::Relaxed) == cached_tail
     }
 
+    /// R6-REGRESSION-2 (progress-detection stop condition in
+    /// `HeapCore::push_with_overflow_retry`): this ring's current DRAIN
+    /// cursor (`head`) as a single `Relaxed` load — the `HeapOverflow`
+    /// analogue of `RemoteFreeRing::head_relaxed` (see that method's doc
+    /// comment for the full rationale; restated briefly here for this ring's
+    /// own field conventions).
+    ///
+    /// `head` is advanced ONLY by the single consumer's [`drain`](Self::drain)
+    /// (`Release` store at the end of each drain pass) — producers never
+    /// write it — so a producer stuck in the bounded retry loop can compare
+    /// two loads of it taken one probe round apart as an exact "did the owner
+    /// drain anything from this ring in that window" signal. `Relaxed` is
+    /// sound by the same monotonicity argument [`is_likely_empty`](
+    /// Self::is_likely_empty) documents for `tail`: a monotonic cursor read
+    /// `Relaxed` can be stale (under-reporting progress by at most one probe
+    /// round — benign) but can never fabricate an advance that did not
+    /// happen; and no payload is ever read through this value (the retry
+    /// loop's actual push attempt, [`push_uncounted`](Self::push_uncounted),
+    /// re-establishes ordering via its own `Acquire` head load).
+    #[inline(always)]
+    pub(crate) fn head_relaxed(&self) -> usize {
+        self.head.load(Ordering::Relaxed)
+    }
+
     /// Drain every published entry, invoking `reclaim(base, packed)` for
     /// each. Called ONLY by the owning thread (single consumer — the same
     /// discipline `RemoteFreeRing::drain` documents), on the SAME schedule
