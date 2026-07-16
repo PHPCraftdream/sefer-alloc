@@ -12,4 +12,14 @@ documentation = "https://docs.rs/aligned-vmem"
 keywords = ["mmap", "virtualalloc", "memory", "decommit", "aligned"]
 categories = ["memory-management", "os", "no-std::no-alloc"]
 
+[features]
+# B0 (R7 Workstream B): EXPERIMENTAL incremental-commit foundation.
+# When enabled, exposes `reserve_aligned_lazy` (reserve VA + commit only an
+# initial sub-range) and `commit_range` (commit additional pages within an
+# existing reservation). Windows-only optimisation: on non-Windows and under
+# miri the lazy path falls back to the eager `reserve_aligned` (all pages
+# committed up front, identical observable behaviour). Off by default — NOT
+# part of any default bundle. Feature-OFF builds are byte-for-byte identical.
+alloc-lazy-commit = []
+
 [dependencies]

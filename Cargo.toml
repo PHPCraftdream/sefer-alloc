@@ -255,6 +255,16 @@ hardened = ["fastbin"]
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
 # macOS: no-op (no public NUMA API). Default OFF. Requires `alloc-core`.
 numa-aware = ["alloc-core", "dep:numa-shim"]
+# R7-B0: EXPERIMENTAL incremental Windows commit foundation. Exposes
+# `aligned_vmem::reserve_aligned_lazy` (reserve VA + commit only an initial
+# sub-range) and `aligned_vmem::commit_range` (commit additional pages within
+# an existing reservation). Windows-only optimisation — on non-Windows and
+# under miri the lazy path falls back to eager (identical observable
+# behaviour). Under `numa-aware`, the lazy path is disabled (falls back to
+# eager) to preserve NUMA placement — mirrors the A3 directory approach.
+# Additive over `alloc-core`; off by default, NOT part of `production` or
+# any default-on bundle. Feature-OFF builds are byte-for-byte identical.
+alloc-lazy-commit = ["alloc-core", "aligned-vmem/alloc-lazy-commit"]
 
 [dependencies]
 # Phase 1: typed handle store (Region<T> + Handle<T> + SyncRegion<T>), extracted

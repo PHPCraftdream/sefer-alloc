@@ -354,6 +354,118 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// B0 (R7 Workstream B): incremental-commit foundation.
+// ---------------------------------------------------------------------------
+
+/// Commit pages `[base + start, base + end)` within an existing reservation.
+///
+/// This is the incremental-commit building block: after a
+/// [`reserve_aligned_lazy`] call that left some pages reserved-but-uncommitted,
+/// `commit_range` commits exactly the requested sub-range so it becomes
+/// writable. On Windows this issues `VirtualAlloc(MEM_COMMIT)`; on Unix and
+/// under miri the pages are already accessible (lazy-reserve falls back to
+/// eager), so this is a no-op that always returns `true`.
+///
+/// `start` and `end` must be multiples of [`PAGE`] and `start < end`. A
+/// contract violation (misaligned offsets or `start >= end`) is a no-op
+/// returning `true` (matching [`recommit`]'s convention).
+///
+/// Returns `true` if the range is now committed, `false` if the OS refused
+/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT
+/// write into the range. Never panics.
+///
+/// # Difference from [`recommit`]
+///
+/// [`recommit`] re-commits pages that were PREVIOUSLY committed and then
+/// decommitted via [`decommit`]. `commit_range` commits pages that were
+/// NEVER committed in the first place (reserved via the lazy path). The
+/// underlying Windows syscall is the same (`VirtualAlloc(MEM_COMMIT)`), but
+/// the semantic intent differs: `recommit` restores, `commit_range` grows.
+/// On non-Windows platforms both are no-ops.
+///
+/// # Safety
+///
+/// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation,
+/// and `[base+start, base+end)` must fall within that reservation's usable
+/// span (i.e. `end <= len`). The range must be currently reserved but not
+/// yet committed (or already committed — recommitting an already-committed
+/// range is harmless on Windows).
+#[must_use]
+#[cfg(feature = "alloc-lazy-commit")]
+pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
+    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return true;
+    }
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { commit_range_impl(base, start, end) }
+}
+
+/// Reserve `size` bytes of anonymous virtual memory whose base is aligned to
+/// `align`, committing ONLY the first `initial_commit` bytes — the rest is
+/// reserved but NOT committed (on Windows; on Unix/miri ALL pages are
+/// committed, matching the eager path).
+///
+/// This is the lazy-commit counterpart of [`reserve_aligned`]: the VA
+/// reservation is identical (same base, same length, same alignment, same
+/// single-object-freed-once semantics), but on Windows only
+/// `[base, base + initial_commit)` is backed by committed physical pages.
+/// The remaining `[base + initial_commit, base + size)` range is reserved
+/// address space without commit charge — touching those pages before a
+/// [`commit_range`] call will fault (`STATUS_ACCESS_VIOLATION`).
+///
+/// ## Parameters
+///
+/// - `size`: total usable span (same contract as [`reserve_aligned`]).
+/// - `align`: alignment (same contract as [`reserve_aligned`]).
+/// - `initial_commit`: how many bytes to commit starting from the aligned
+///   base. Must be a non-zero multiple of [`PAGE`] and `<= size`. If these
+///   constraints are violated, the function returns `None`.
+///
+/// ## Drop / release
+///
+/// The returned [`Reservation`] frees the ENTIRE VA reservation on drop
+/// (via `VirtualFree(MEM_RELEASE)` / `munmap` / `std::alloc::dealloc`),
+/// regardless of how much was committed. Partial commit does NOT change
+/// the release path — the single-reservation-freed-once invariant holds.
+///
+/// ## Platform behaviour
+///
+/// | Platform | Behaviour |
+/// |----------|-----------|
+/// | Windows  | Reserve full VA, commit only `initial_commit` bytes |
+/// | Unix     | Eager (all pages committed) — Unix has no commit charge |
+/// | Miri     | Eager (all pages committed) — miri cannot model commit |
+///
+/// Returns `None` on a contract violation or OOM. Never panics.
+#[must_use]
+#[cfg(feature = "alloc-lazy-commit")]
+pub fn reserve_aligned_lazy(
+    size: usize,
+    align: usize,
+    initial_commit: usize,
+) -> Option<Reservation> {
+    if size == 0
+        || !align.is_power_of_two()
+        || align < PAGE
+        || !size.is_multiple_of(PAGE)
+        || initial_commit == 0
+        || !initial_commit.is_multiple_of(PAGE)
+        || initial_commit > size
+    {
+        return None;
+    }
+    reserve_aligned_lazy_raw(size, align, initial_commit).map(
+        |(base, reservation, reservation_len)| Reservation {
+            base,
+            len: size,
+            reservation,
+            reservation_len,
+            align,
+        },
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Windows path: VirtualAlloc / VirtualFree. Raw bindings declared locally so
 // the crate has NO winapi/windows-sys dependency. std always links kernel32.
 // ---------------------------------------------------------------------------
@@ -480,6 +592,87 @@ unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> bool {
         )
     };
     !committed.is_null()
+}
+
+// B0: commit_range — commit a sub-range within an existing reservation.
+// Semantically identical to recommit_pages_impl (same VirtualAlloc(MEM_COMMIT)
+// call), but exists as a separate function for clarity: recommit restores
+// previously-decommitted pages; commit_range grows the committed frontier of a
+// lazy reservation. The Windows syscall is the same — MEM_COMMIT is idempotent.
+#[cfg(all(windows, not(miri), feature = "alloc-lazy-commit"))]
+unsafe fn commit_range_impl(base: *mut u8, start: usize, end: usize) -> bool {
+    let len = end - start;
+    // SAFETY: caller guarantees `[base+start, +len)` is within an address-space
+    // reservation owned by them. `VirtualAlloc(MEM_COMMIT)` commits pages that
+    // are currently reserved-but-uncommitted (or already committed — idempotent).
+    // Returns the base address on success, NULL on commit-charge exhaustion.
+    let addr = unsafe { base.add(start) };
+    let committed = unsafe {
+        VirtualAlloc(
+            addr as *mut core::ffi::c_void,
+            len,
+            MEM_COMMIT,
+            PAGE_READWRITE,
+        )
+    };
+    !committed.is_null()
+}
+
+// B0: lazy reserve — reserve VA, commit only `initial_commit` bytes.
+// The over-reserve + align logic mirrors `reserve_aligned_raw` exactly; only the
+// final commit step differs (commit `initial_commit` bytes instead of `size`).
+#[cfg(all(windows, not(miri), feature = "alloc-lazy-commit"))]
+fn reserve_aligned_lazy_raw(
+    size: usize,
+    align: usize,
+    initial_commit: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    let over = size.checked_add(align)?;
+    let region = unsafe {
+        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
+        // reserves `over` bytes of address space without committing.
+        let p = winapi_virtual_reserve(over);
+        NonNull::new(p as *mut u8)?
+    };
+    let region_ptr = region.as_ptr();
+    let region_addr = region_ptr as usize;
+    let fits = align_up_addr(region_addr, align).and_then(|a| {
+        let end = a.checked_add(size)?;
+        let region_end = region_addr.checked_add(over)?;
+        (end <= region_end).then_some(a)
+    });
+    let base_addr = match fits {
+        Some(a) => a,
+        None => {
+            unsafe {
+                // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
+                // call immediately above; releasing before handing to a caller.
+                winapi_virtual_release(region_ptr);
+            }
+            return None;
+        }
+    };
+    let base = unsafe {
+        // SAFETY: `base_addr` is non-null (>= region_addr), within the reserved
+        // region, aligned to `align`.
+        NonNull::new_unchecked(base_addr as *mut u8)
+    };
+    // B0: commit ONLY the initial sub-range [base_addr, base_addr + initial_commit),
+    // NOT the full [base_addr, base_addr + size). The rest remains reserved but
+    // uncommitted — commit_range will grow it later.
+    // SAFETY: `[base_addr, base_addr + initial_commit)` is within the just-reserved
+    // region; `initial_commit <= size` (validated by the public API).
+    let committed = unsafe { winapi_virtual_commit(base_addr as *mut u8, initial_commit) };
+    if committed.is_null() {
+        // Commit failed: release the whole reservation (same pattern as
+        // reserve_aligned_raw's commit-failure path).
+        unsafe {
+            // SAFETY: `region` was returned by `VirtualAlloc(MEM_RESERVE)` above.
+            winapi_virtual_release(region_ptr);
+        }
+        return None;
+    }
+    Some((base, region, over))
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -711,6 +904,30 @@ unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> boo
     true
 }
 
+// B0: Unix commit_range — no-op. Unix has no commit/uncommit distinction for
+// anonymous mmap'd memory: all pages are demand-paged and accessible. The
+// lazy-reserve path falls back to eager on Unix, so commit_range is never
+// needed, but the function must still exist so feature-gated callers compile
+// on all platforms.
+#[cfg(all(unix, not(miri), feature = "alloc-lazy-commit"))]
+unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
+    // Unix: pages are already accessible (eager mmap). Always succeeds.
+    true
+}
+
+// B0: Unix reserve_aligned_lazy — falls back to the eager path. Unix mmap does
+// not have a reserve-without-commit concept for anonymous memory (all pages are
+// demand-paged); `initial_commit` is ignored and the full span is mapped.
+#[cfg(all(unix, not(miri), feature = "alloc-lazy-commit"))]
+fn reserve_aligned_lazy_raw(
+    size: usize,
+    align: usize,
+    _initial_commit: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    // Delegate to the eager path — identical observable behaviour.
+    reserve_aligned_raw(size, align)
+}
+
 #[cfg(all(unix, not(miri)))]
 const PROT_READ: i32 = 0x1;
 #[cfg(all(unix, not(miri)))]
@@ -829,6 +1046,24 @@ unsafe fn decommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) {
 unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
     // Miri: decommit was a no-op, so recommit is too — always succeeds.
     true
+}
+
+// B0: Miri commit_range — no-op. Under miri the lazy-reserve falls back to
+// eager (std::alloc, all bytes accessible), so commit_range always succeeds.
+#[cfg(all(miri, feature = "alloc-lazy-commit"))]
+unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
+    true
+}
+
+// B0: Miri reserve_aligned_lazy — falls back to eager. Miri cannot model
+// reserved-but-uncommitted pages; `initial_commit` is ignored.
+#[cfg(all(miri, feature = "alloc-lazy-commit"))]
+fn reserve_aligned_lazy_raw(
+    size: usize,
+    align: usize,
+    _initial_commit: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    reserve_aligned_raw(size, align)
 }
 
 /// Round `addr` up to the next multiple of `align` (a power of two).
