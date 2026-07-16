@@ -484,6 +484,32 @@ per-bench commentary live in
 `cargo bench --features production` for your own numbers. **Lower is better**
 (latency).
 
+### Cross-version comparison (0.2.1 → pre-round6 → current)
+
+A same-harness three-way run (published **0.2.1** vs the tree immediately
+**before the round6 wave** vs **current HEAD**) separates the pre-round6 gains
+from the round6 wave's own effect — full tables, methodology and caveats in
+[`docs/perf/R6_CROSS_VERSION_BENCH.md`](docs/perf/R6_CROSS_VERSION_BENCH.md).
+Headline (vs-mimalloc ratio, host-drift-normalised):
+
+- **All the large wall-clock wins landed between 0.2.1 and pre-round6**, not in
+  the wave: `realloc_grow` went from copy-and-free (ms-scale, ~7× *slower* than
+  mimalloc at 0.2.1) to in-place (µs-scale, ~30–1000× faster) via OPT-G; 256 B
+  churn flipped from ~1.25× slower to ~1.6× faster and 1024 B churn rose to
+  ~9–10× faster via Э6 — all before `345fa9b`.
+- **The round6 wave itself is flat-to-slightly-better on throughput and
+  regresses no family beyond host noise** (probable modest wins on 4 MiB
+  large-alloc/free and the 1024 B teardown/decommit diagnostic). This is by
+  design: round6 P0 work targeted **OS commit charge** (≈7.4× lower for the
+  first heap), **cross-thread-free tail latency**, and **the SMALL_MAX
+  fragmentation cliff** (opt-in `medium-classes`) — axes `bench:table` does not
+  measure (see the R6-OPT-A judges). The wave delivered its targeted wins
+  without costing throughput.
+
+The 0.2.1 column carries the current harness ported onto the release tag, kept
+as the local `bench/0.2.1` branch so 0.2.1 stays re-measurable
+(`git worktree add ../sa-021 bench/0.2.1 && cd ../sa-021 && npm run bench:table`).
+
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
 `alloc(N) + free` round-trip served by the OPT-E large-cache
