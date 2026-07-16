@@ -479,6 +479,14 @@ impl AllocCore {
                     let _ = reclaimed;
                 }
             });
+            // R7-A2: sync the directory for this segment after the drain
+            // completed (same logic as the production
+            // `find_segment_with_free_impl` drain site).
+            #[cfg(feature = "alloc-segment-directory")]
+            {
+                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                self.sync_directory_for_segment(base, slot_idx);
+            }
             #[cfg(feature = "alloc-decommit")]
             if decommit_happened {
                 // Mechanism 2 (task #51): same pool-or-release routing as the

@@ -542,6 +542,14 @@ impl AllocCore {
         // final `set_head` of the last sequential `dealloc_small` in the run.
         if let Some(off) = last_accepted {
             bt.set_head(class_idx, off);
+            // R7-A2: directory bitmap maintenance — the new head is always
+            // non-null (`off`), so the only transition is empty→non-empty
+            // when old_head was FREE_LIST_NULL.
+            #[cfg(feature = "alloc-segment-directory")]
+            if old_head == FREE_LIST_NULL {
+                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                self.publish_nonempty(class_idx, slot_idx);
+            }
         }
 
         // E3 (task W4): batched `dec_live` (AFTER `set_head`, matching the

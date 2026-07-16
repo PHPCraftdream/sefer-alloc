@@ -249,6 +249,14 @@ impl AllocCore {
             return; // pooled — base still valid/registered
         }
         // Pool disabled or full: release immediately (pre-Mechanism-2 path).
+        // R7-A2: clear directory bits BEFORE the slot is recycled (the segment
+        // metadata is still readable here; after recycle the slot is NULL and
+        // the OS reservation may be released).
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            self.clear_segment_directory(slot_idx);
+        }
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
         self.table.recycle(base);
     }
@@ -444,6 +452,12 @@ impl AllocCore {
             &mut self.pooled_count,
             base,
         );
+        // R7-A2: clear directory bits before the slot is recycled.
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            self.clear_segment_directory(slot_idx);
+        }
         Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
         self.table.recycle(base);
     }
@@ -528,6 +542,12 @@ impl AllocCore {
     pub(crate) fn drain_small_pool(&mut self) -> usize {
         let mut drained = 0usize;
         while let Some(base) = self.pop_pooled_segment() {
+            // R7-A2: clear directory bits before the slot is recycled.
+            #[cfg(feature = "alloc-segment-directory")]
+            {
+                let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                self.clear_segment_directory(slot_idx);
+            }
             Self::release_empty_segment_now(&mut SegmentMeta::new(base), base);
             self.table.recycle(base);
             drained += 1;

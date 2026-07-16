@@ -361,6 +361,16 @@ impl AllocCore {
                             let _ = reclaimed;
                         }
                     });
+                    // R7-A2: sync the directory for this segment after the drain
+                    // completed. The drain may have reclaimed blocks into
+                    // multiple classes, creating empty→non-empty transitions.
+                    // A per-segment sweep (O(SMALL_CLASS_COUNT)) is the correct
+                    // incremental update for the self-less reclaim path.
+                    #[cfg(feature = "alloc-segment-directory")]
+                    {
+                        let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                        self.sync_directory_for_segment(base, slot_idx);
+                    }
                     // Mechanism 2 (task #51): now that the drain is complete, the
                     // emptied segment is routed through the pool/release
                     // decision — either RETAINED in the pool (kept registered +
@@ -460,7 +470,12 @@ impl AllocCore {
     /// null if the free list is empty. Writes the block's `next` word to null
     /// (it becomes the new head) via the node seam.
     #[inline(always)]
-    fn pop_free(&self, segment: *mut u8, class_idx: usize, block_size: usize) -> Option<*mut u8> {
+    fn pop_free(
+        &mut self,
+        segment: *mut u8,
+        class_idx: usize,
+        block_size: usize,
+    ) -> Option<*mut u8> {
         #[cfg(feature = "alloc-decommit")]
         let mut meta = SegmentMeta::new(segment);
         #[cfg(not(feature = "alloc-decommit"))]
@@ -509,6 +524,14 @@ impl AllocCore {
             (next as usize - segment as usize) as u32
         };
         bt.set_head(class_idx, new_head);
+        // R7-A2: directory bitmap maintenance — the old head was non-null
+        // (we passed the FREE_LIST_NULL guard above), so the only transition
+        // is non-empty→empty when new_head is FREE_LIST_NULL.
+        #[cfg(feature = "alloc-segment-directory")]
+        if new_head == FREE_LIST_NULL {
+            let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+            self.publish_empty(class_idx, slot_idx);
+        }
         // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
         // and is handed to the caller, so a subsequent free must NOT see it as
         // already-free (and the next legitimate free must be able to re-mark it).
@@ -588,13 +611,13 @@ impl AllocCore {
     ///     `pop_free`/drain therefore yields exactly the remaining blocks in the
     ///     same order.
     ///
-    /// `&self` (not `&mut self`): identical borrow profile to `pop_free` — it
-    /// touches only `segment` metadata via `SegmentMeta`, never `self.table`,
-    /// so `refill_class_bump` can call it on a `find_segment_with_free`-returned
-    /// base without an aliasing conflict.
+    /// R7-A2: `&mut self` (upgraded from `&self`) so the directory bitmap can
+    /// be maintained at the single choke point. Touches only `segment` metadata
+    /// via `SegmentMeta` for the freelist walk, then calls `publish_empty` on
+    /// the directory sidecar (if materialised) when the drain empties the list.
     #[inline]
     pub(super) fn drain_freelist_batch(
-        &self,
+        &mut self,
         segment: *mut u8,
         class_idx: usize,
         out: &mut [*mut u8],
@@ -655,6 +678,14 @@ impl AllocCore {
             }
             // Write the new head ONCE: the first un-popped node, or NULL.
             bt.set_head(class_idx, head_off);
+            // R7-A2: directory bitmap maintenance — the old head was non-null
+            // (early return above), so the only transition is non-empty→empty
+            // when the drain exhausted the chain (head_off == FREE_LIST_NULL).
+            #[cfg(feature = "alloc-segment-directory")]
+            if head_off == FREE_LIST_NULL {
+                let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
+                self.publish_empty(class_idx, slot_idx);
+            }
             // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
             // popped block always comes from a COMMITTED payload (a decommitted
             // segment was reset to an empty free list, so the drain finds nothing
@@ -926,6 +957,14 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off);
         bm.mark_free(off);
+        // R7-A2: directory bitmap maintenance — the new head is always non-null
+        // (we just pushed `off`), so the only transition is empty→non-empty
+        // when old_head was FREE_LIST_NULL.
+        #[cfg(feature = "alloc-segment-directory")]
+        if old_head == FREE_LIST_NULL {
+            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            self.publish_nonempty(class_idx, slot_idx);
+        }
         // Phase 35 (M6): one fewer live block in this segment; if it just
         // emptied and is not the current carve target, route it through the
         // Mechanism-2 (task #51) pool/release decision. Own-thread free runs on
@@ -1177,7 +1216,6 @@ impl AllocCore {
     /// Return a mutable reference to the materialised directory sidecar, or
     /// `None` if not yet materialised.
     #[inline]
-    #[allow(dead_code)] // A2 scope — used when transitions are centralised.
     pub(super) fn directory_mut(
         &mut self,
     ) -> Option<&mut super::segment_directory::SegmentDirectory> {
@@ -1185,6 +1223,71 @@ impl AllocCore {
             None
         } else {
             Some(os::deref_directory_sidecar_mut(self.directory_sidecar))
+        }
+    }
+
+    // ── R7-A2: centralized empty↔non-empty transition helpers ──────────────
+    //
+    // These are the SINGLE choke point for directory bitmap maintenance. Every
+    // site that mutates a per-class BinTable head calls one of these three
+    // helpers to keep the directory in sync. The helpers are cheap no-ops when
+    // the sidecar is not materialised (below threshold, OOM-disabled, or
+    // feature OFF).
+
+    /// R7-A2: notify the directory that class `class_idx` in segment slot
+    /// `slot_idx` transitioned from empty to non-empty (old_head was
+    /// FREE_LIST_NULL, new_head is not). Sets the corresponding bit.
+    ///
+    /// No-op if the directory is not materialised.
+    #[inline]
+    pub(super) fn publish_nonempty(&mut self, class_idx: usize, slot_idx: usize) {
+        if let Some(dir) = self.directory_mut() {
+            dir.set_bit(class_idx, slot_idx);
+        }
+    }
+
+    /// R7-A2: notify the directory that class `class_idx` in segment slot
+    /// `slot_idx` transitioned from non-empty to empty (old_head was not
+    /// FREE_LIST_NULL, new_head is FREE_LIST_NULL). Clears the corresponding
+    /// bit.
+    ///
+    /// No-op if the directory is not materialised.
+    #[inline]
+    pub(super) fn publish_empty(&mut self, class_idx: usize, slot_idx: usize) {
+        if let Some(dir) = self.directory_mut() {
+            dir.clear_bit(class_idx, slot_idx);
+        }
+    }
+
+    /// R7-A2: clear ALL class bits for segment slot `slot_idx`. Called on
+    /// segment recycle/release so a reused slot does not inherit stale bits
+    /// from the old segment lifetime.
+    ///
+    /// No-op if the directory is not materialised.
+    #[inline]
+    pub(super) fn clear_segment_directory(&mut self, slot_idx: usize) {
+        if let Some(dir) = self.directory_mut() {
+            dir.clear_slot(slot_idx);
+        }
+    }
+
+    /// R7-A2: sweep all class bits for segment at `base` / `slot_idx` to
+    /// match the actual `BinTable` state. Called after a ring drain that may
+    /// have created empty→non-empty transitions for multiple classes in one
+    /// pass. O(SMALL_CLASS_COUNT) reads — acceptable on the cold drain path.
+    ///
+    /// No-op if the directory is not materialised.
+    pub(super) fn sync_directory_for_segment(&mut self, base: *mut u8, slot_idx: usize) {
+        if let Some(dir) = self.directory_mut() {
+            let meta = SegmentMeta::new(base);
+            let bt = meta.bin_table();
+            for c in 0..super::size_classes::SMALL_CLASS_COUNT {
+                if bt.head(c) != FREE_LIST_NULL {
+                    dir.set_bit(c, slot_idx);
+                } else {
+                    dir.clear_bit(c, slot_idx);
+                }
+            }
         }
     }
 }

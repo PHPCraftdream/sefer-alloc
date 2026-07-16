@@ -116,7 +116,6 @@ impl SegmentDirectory {
 
     /// Clear the bit for slot `slot_idx` in class `class_idx`.
     #[inline]
-    #[allow(dead_code)] // A2 scope — wired when transitions are centralised.
     pub(crate) fn clear_bit(&mut self, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
@@ -138,7 +137,6 @@ impl SegmentDirectory {
     /// Clear ALL classes for a given slot (used on segment recycle — A2
     /// scope, but the primitive belongs here alongside the other bit ops).
     #[inline]
-    #[allow(dead_code)] // A2 scope — wired when transitions are centralised.
     pub(crate) fn clear_slot(&mut self, slot_idx: usize) {
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let word = slot_idx / 64;

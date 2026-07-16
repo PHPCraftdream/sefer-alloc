@@ -362,7 +362,14 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_recycle(&mut self, ptr: *mut u8) {
-        self.table.recycle(os::segment_base_of_ptr(ptr));
+        let base = os::segment_base_of_ptr(ptr);
+        // R7-A2: clear directory bits before the slot is recycled.
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+            self.clear_segment_directory(slot_idx);
+        }
+        self.table.recycle(base);
     }
 
     /// TEST-ONLY (E2, task W4): the `block_size` of a small class, so the

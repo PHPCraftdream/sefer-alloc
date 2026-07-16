@@ -64,23 +64,43 @@ fn directory_rebuild_matches_bintable_after_frees() {
 
     let count = core.dbg_table_count();
 
-    // ── Phase 1: verify initial rebuild ────────────────────────────────
-    // At materialisation time, all blocks were allocated (none freed), so
-    // all BinTable heads should be FREE_LIST_NULL. The directory bits
-    // should all be 0 — that is CORRECT.
+    // ── Phase 1: verify initial state matches a rebuild ─────────────
+    // After materialisation + A2 wiring, some segments may have non-empty
+    // free-list entries from the refill batch (carve_block_with_refill
+    // pushes 31 extra blocks onto the BinTable, and not all may have been
+    // consumed). The A2 bitmap maintenance keeps the directory accurate,
+    // so we verify by rebuilding and comparing.
     let class_count = AllocCore::dbg_small_class_count();
-    for slot in 0..1024usize {
-        for c in 0..class_count {
-            // Slots beyond count: must be 0.
-            // Slots within count: also 0 (all blocks consumed, no free-list
-            // entries). We verify this holistically.
-            let bit = core.dbg_directory_get_bit(c, slot);
-            assert_eq!(
-                bit,
-                Some(false),
-                "initial rebuild: slot {slot} class {c} should be false \
-                 (all blocks allocated, no free-list entries)"
-            );
+    {
+        // Snapshot the incremental directory.
+        let mut snap = vec![vec![false; 1024]; class_count];
+        for (c, row) in snap.iter_mut().enumerate() {
+            for (s, cell) in row.iter_mut().enumerate() {
+                *cell = core.dbg_directory_get_bit(c, s).unwrap_or(false);
+            }
+        }
+        // Rebuild from scratch and compare.
+        let rebuilt = core.dbg_rebuild_directory();
+        assert!(rebuilt, "rebuild should succeed on materialised directory");
+        for (c, row) in snap.iter().enumerate() {
+            for (s, &inc_val) in row.iter().enumerate() {
+                let fresh = core.dbg_directory_get_bit(c, s).unwrap_or(false);
+                assert_eq!(
+                    inc_val, fresh,
+                    "initial state mismatch: slot {s} class {c}: \
+                     incremental={inc_val}, rebuild={fresh}"
+                );
+            }
+        }
+        // Slots beyond table count must be 0 for all classes.
+        for slot in count as usize..1024 {
+            for c in 0..class_count {
+                assert_eq!(
+                    core.dbg_directory_get_bit(c, slot),
+                    Some(false),
+                    "initial: slot {slot} class {c} beyond count should be false"
+                );
+            }
         }
     }
 

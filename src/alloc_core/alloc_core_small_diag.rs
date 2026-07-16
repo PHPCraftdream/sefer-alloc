@@ -129,7 +129,7 @@ impl AllocCore {
     #[doc(hidden)]
     #[allow(unsafe_code)] // task #101 / R4-MS-3: `unsafe fn` boundary.
     pub unsafe fn dbg_drain_freelist_batch(
-        &self,
+        &mut self,
         ptr: *mut u8,
         class_idx: usize,
         out: &mut [*mut u8],
