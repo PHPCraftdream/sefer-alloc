@@ -281,6 +281,12 @@ impl AllocCore {
         let mut fallback: Option<*mut u8> = None;
 
         for i in 0..n {
+            // R7-A0: count every slot visited by the linear scan (including
+            // null/skipped slots) so the baseline has a live scan-cost counter.
+            // Gated behind `alloc-stats` so feature-OFF builds are unchanged.
+            #[cfg(feature = "alloc-stats")]
+            super::directory_stats::FULL_SCAN_SLOTS_EXAMINED
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             let base = self.table.base_at(i);
             if base.is_null() {
                 // Recycled (NULL) slot — skip. `base_at` also returns NULL for

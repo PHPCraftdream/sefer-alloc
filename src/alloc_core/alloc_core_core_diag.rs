@@ -17,6 +17,7 @@ use super::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
 use super::size_classes::{AllocKind, SizeClasses};
 
 use super::alloc_core::{AllocCore, FOREIGN_OR_UNROUTABLE_FREES};
+use super::directory_stats;
 
 impl AllocCore {
     /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls
@@ -387,5 +388,62 @@ impl AllocCore {
             AllocKind::Small { class_idx } => Some(class_idx),
             AllocKind::Large => None,
         }
+    }
+
+    // ── R7-A0: directory diagnostic counter accessors ───────────────────────
+    //
+    // Process-wide counters (Relaxed loads -- diagnostic only, no ordering).
+    // Storage is always compiled; per-event increments are `alloc-stats`-gated.
+    // Reads 0 when the increment was not compiled in. See
+    // `directory_stats.rs` for the counter inventory.
+
+    /// R7-A0: process-wide count of directory lookup hits (A3). Reads 0 until
+    /// A3 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_hits() -> u64 {
+        directory_stats::DIRECTORY_HITS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R7-A0: process-wide count of stale directory hits (A3). Reads 0 until
+    /// A3 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_stale_hits() -> u64 {
+        directory_stats::DIRECTORY_STALE_HITS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R7-A0: process-wide count of directory fallback scans (A3). Reads 0
+    /// until A3 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_fallback_scans() -> u64 {
+        directory_stats::DIRECTORY_FALLBACK_SCANS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R7-A0: process-wide count of directory bitmap words examined (A3).
+    /// Reads 0 until A3 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_words_examined() -> u64 {
+        directory_stats::DIRECTORY_WORDS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R7-A0: process-wide count of dirty segments drained (A4). Reads 0
+    /// until A4 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_dirty_segments_drained() -> u64 {
+        directory_stats::DIRTY_SEGMENTS_DRAINED.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R7-A0: process-wide count of slots examined by
+    /// `find_segment_with_free_impl` (the linear scan). This is the primary
+    /// scan-cost counter -- it is LIVE in A0 (incremented per slot visited
+    /// under `alloc-stats`).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_full_scan_slots_examined() -> u64 {
+        directory_stats::FULL_SCAN_SLOTS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
     }
 }

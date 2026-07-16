@@ -559,6 +559,14 @@ name = "segment_directory_sweep"
 harness = false
 required-features = ["alloc-core"]
 
+# R7-A0: transition-zone probe for the P5 directory-materialization threshold.
+# Measures S = 32..63 at SMALL_MAX, holes = 0 — the gap between the main
+# sweep's S = 16 and S = 64 points.
+[[bench]]
+name = "directory_threshold_probe"
+harness = false
+required-features = ["alloc-core"]
+
 # R5-R4 (round5 performance review §3 N1, §8.2 item 1, §10 Stage A.3/C):
 # isolates round4's N1 change's teardown cost (AbandonGuard::drop wiring ->
 # HeapCore::trim_for_recycle) from pure per-op allocation throughput. Reports

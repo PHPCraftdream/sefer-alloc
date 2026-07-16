@@ -32,6 +32,11 @@ mod bootstrap;
 /// re-exported (via `registry`) as a `#[doc(hidden)]` test-only diagnostic.
 #[doc(hidden)]
 pub mod deferred_large;
+/// R7-A0 diagnostic counters for the per-class segment directory
+/// (observability phase). Storage is always compiled; per-event increments
+/// are gated behind `alloc-stats`. See the module doc for the counter
+/// inventory.
+pub(crate) mod directory_stats;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]
