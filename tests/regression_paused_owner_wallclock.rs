@@ -8,7 +8,9 @@
 //! `345fa9b` scaled the bounded spin-retry loop in
 //! `HeapCore::push_with_overflow_retry` (`src/registry/heap_core_xthread.rs`)
 //! from `RING_PUSH_RETRY_SPINS` (8,192 native) to `RETRY_LOOP_ITERATIONS`
-//! (2,097,152 = 8,192 × 256), as a flat, uninterrupted
+//! (2,097,152 = 8,192 × 256; a historical constant, since deleted —
+//! R6-REVIEW-F5 — the loop is now bounded by the probe-round model,
+//! `RETRY_ROUND_SPINS` × `RETRY_ROUND_SAFETY_CAP`), as a flat, uninterrupted
 //! `core::hint::spin_loop()`-paced busy-spin — a pure CPU-level hint, never
 //! an OS-level yield or block. Under the "double-saturation" condition (both
 //! the per-segment `RemoteFreeRing` — `RING_CAP = 256` — AND the heap-level

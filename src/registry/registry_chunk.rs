@@ -42,13 +42,13 @@
 //! `&slot.overflow`) — those references stay valid only because the chunk
 //! backing them is never freed or moved.
 
-// This file uses `unsafe` for exactly one thing: computing chunk byte-size
-// and slot-array layout via `core::mem::size_of`/`align_of`, which needs no
-// `unsafe` at all — actually this module has NO unsafe of its own; the
-// `unsafe` operations (raw-pointer field init, dereferencing a published
-// chunk pointer) live in `bootstrap.rs`'s `Registry::slot`/`ensure_chunk_slow`,
-// which already carries the crate's `#![allow(unsafe_code)]` seam. This file
-// stays plain safe Rust (no `#![allow(unsafe_code)]` needed).
+// This module is plain safe Rust — it has NO `unsafe` of its own (no
+// `#![allow(unsafe_code)]` needed). The `unsafe` operations that back chunk
+// materialisation (raw-pointer field init, dereferencing a published chunk
+// pointer) live in `bootstrap.rs`'s `Registry::slot` / `ensure_chunk_slow`,
+// which already carries the crate's `#![allow(unsafe_code)]` seam. All this
+// file contributes is the chunk byte-size / slot-array layout constants,
+// computed with `core::mem::size_of`/`align_of` (safe).
 
 use super::heap_slot::HeapSlot;
 

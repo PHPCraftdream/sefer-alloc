@@ -566,7 +566,9 @@ impl HeapOverflow {
     /// `push_to_heap_overflow` attempt have already failed. Every poll inside
     /// that loop is a re-check of an already-known-full-or-recovering ring,
     /// not a new diagnostic event; counting each of up to
-    /// `RETRY_LOOP_ITERATIONS` re-polls would tax `overflow_count` with a
+    /// `RETRY_ROUND_SPINS` × `RETRY_ROUND_SAFETY_CAP` re-polls (see
+    /// `heap_core_xthread.rs`'s probe-round model) would tax `overflow_count`
+    /// with a
     /// locked RMW per poll for no informational gain — mirrors
     /// `RemoteFreeRing::try_push_uncounted`'s identical rationale (see that
     /// method's doc comment) applied to this ring's own counter. The ONE

@@ -25,43 +25,17 @@ use super::heap_core::{
     DBG_RING_PUSH_RETRIED, DBG_RING_PUSH_RETRY_EXHAUSTED, RING_PUSH_RETRY_SPINS,
 };
 
-/// R6-OPT-P0-4 (superseded by R6-REGRESSION below — kept only as the
-/// historical record of the task #136 scale-up's total iteration count;
-/// `push_with_overflow_retry` no longer reads this constant, see
-/// [`RETRY_STALLED_ROUNDS_GIVE_UP`] / [`RETRY_ROUND_SAFETY_CAP`] for the
-/// constants that replaced it). Originally:
-/// the bounded spin-retry loop in [`HeapCore::push_with_overflow_retry`] ran
-/// for this many iterations, NOT the raw [`RING_PUSH_RETRY_SPINS`].
-/// `RING_PUSH_RETRY_SPINS` (8,192) was calibrated (task #99) against the
-/// PRE-R6-OPT-P0-4 per-iteration cost — a COUNTED `RemoteFreeRing::push`,
-/// whose failure branch does two locked-RMW counter increments. That cost
-/// was incidental to the counting, but it also served as real wall-clock
-/// pacing: "8,192 iterations" was calibrated to mean "~32 drain
-/// opportunities" in TIME (see the calibration comment above
-/// `RING_PUSH_RETRY_SPINS` in `heap_core.rs`), not literally "8,192 loop
-/// bodies". R6-OPT-P0-4's `try_push_uncounted` (on the ring) and
-/// `HeapOverflow::push_uncounted` (on the heap-level overflow ring) together
-/// removed BOTH tiers' counter RMWs, which made each iteration far cheaper —
-/// so the SAME iteration count represented much LESS real time, and was
-/// measured to reintroduce non-zero `DBG_RING_PUSH_RETRY_EXHAUSTED` on
-/// `tests/remote_fanin.rs::remote_fanin_high_contention_budget_is_sufficient`'s
-/// 32-producer judge specifically under host CPU contention. Multiplying the
-/// iteration count by 256 (empirically calibrated, see the git history of
-/// this constant for the full A/B measurement notes) restored comparable
-/// per-iteration real time — but see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s doc
-/// comment for why that flat 256x-scaled budget itself became the
-/// R6-REGRESSION pathology this file now fixes: it eliminated the ONLY thing
-/// that had been pacing the loop in wall-clock time (the counter RMWs), so
-/// "2,097,152 uncounted iterations" for a push that can never succeed
-/// (`owner=paused`, nothing draining for the whole burst) burns raw CPU for
-/// a genuinely large amount of wall-clock time, multiplied across every
-/// contending producer thread.
-#[cfg(all(feature = "alloc-xthread", not(miri)))]
-#[allow(dead_code)]
-const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS.saturating_mul(256);
-#[cfg(all(feature = "alloc-xthread", miri))]
-#[allow(dead_code)]
-const RETRY_LOOP_ITERATIONS: u32 = RING_PUSH_RETRY_SPINS;
+// R6-REVIEW-F5: the R6-OPT-P0-4 flat scaled budget `RETRY_LOOP_ITERATIONS`
+// (= `RING_PUSH_RETRY_SPINS` × 256 = 2,097,152 native) that once bounded the
+// retry loop was DELETED — the loop's shape is now probe rounds of
+// [`RETRY_ROUND_SPINS`] polls each, stopped by drain-progress detection
+// ([`RETRY_STALLED_ROUNDS_GIVE_UP`]) under an absolute
+// [`RETRY_ROUND_SAFETY_CAP`] round cap; no code read the historical constant
+// anymore. Its calibration story (why the #136 scale-up existed and why the
+// flat scaled budget became the R6-REGRESSION pathology) is preserved in
+// `push_with_overflow_retry`'s doc comment below and in
+// `RETRY_STALLED_ROUNDS_GIVE_UP`'s; the full A/B measurement notes remain in
+// this constant's git history.
 
 /// R6-REGRESSION (follow-up correction to R6-OPT-P0-4 / task #136): the
 /// retry loop below is split into PROBE ROUNDS of this many pure
@@ -133,8 +107,8 @@ const RETRY_ROUND_SPINS: u32 = RING_PUSH_RETRY_SPINS;
 /// harness-liveness race was separately fixed — see the R6-REGRESSION-2
 /// note in `tests/remote_fanin.rs`). The generous first-concession patience
 /// is affordable because it is paid at most ONCE per observed stall per
-/// thread — see [`LAST_STALL_CONCESSION`] for the fast-concede memo that
-/// keeps the paused-owner shapes
+/// thread — see [`LAST_STALL_CONCESSIONS`] for the fast-concede memo cache
+/// that keeps the paused-owner shapes
 /// (`tests/regression_paused_owner_wallclock.rs`, the
 /// `benches/heap_fanin_persistent.rs --reduced` paused cell) from re-paying
 /// it on every subsequent push into the same unchanged stall.
@@ -148,11 +122,44 @@ const RETRY_STALLED_ROUNDS_GIVE_UP: u32 = 128;
 #[cfg(all(feature = "alloc-xthread", miri))]
 const RETRY_STALLED_ROUNDS_GIVE_UP: u32 = 1;
 
+/// R6-REVIEW-F2: arity of the per-thread [`LAST_STALL_CONCESSIONS`]
+/// fast-concede cache — how many DISTINCT stalled segments a thread can hold
+/// concession snapshots for simultaneously. 4 was chosen as the smallest
+/// power of two that covers the realistic paused-owner multi-segment shapes
+/// this cache exists for (a paused owner's blocks interleaved across a
+/// handful of 4 MiB segments — see
+/// `tests/regression_paused_owner_multisegment.rs`): a producer alternating
+/// frees across up to 4 stalled segments never evicts a snapshot it is about
+/// to need, while the whole cache stays a tiny `Copy` array (no allocation,
+/// no `Drop` — see `LAST_STALL_CONCESSIONS`'s TLS-safety note). More ways
+/// would only matter for 5+ SIMULTANEOUSLY-stalled segments interleaved by
+/// one producer — and even then the cost of an eviction is graceful (one
+/// full-patience re-payment per evicted segment per rotation, not
+/// unboundedly repeated per push, because round-robin eviction cycles
+/// through slots rather than pathologically pinning one).
+#[cfg(feature = "alloc-xthread")]
+const STALL_CONCESSION_WAYS: usize = 4;
+
+/// R6-REVIEW-F2: one recorded concession snapshot — `(segment base, segment
+/// ring drain head, heap-overflow drain head)` as captured at the moment a
+/// live-owner retry conceded. See [`LAST_STALL_CONCESSIONS`].
+#[cfg(feature = "alloc-xthread")]
+type StallSnapshot = (usize, u32, Option<usize>);
+
+/// R6-REVIEW-F2: the per-thread cache payload — [`STALL_CONCESSION_WAYS`]
+/// snapshot slots plus the round-robin write cursor. A plain `Copy` tuple so
+/// the whole thing lives in a const-initialized `Cell` (no allocation, no
+/// `Drop` — see [`LAST_STALL_CONCESSIONS`]'s TLS-safety note).
+#[cfg(feature = "alloc-xthread")]
+type StallConcessionCache = ([Option<StallSnapshot>; STALL_CONCESSION_WAYS], usize);
+
 #[cfg(feature = "alloc-xthread")]
 std::thread_local! {
-    /// R6-REGRESSION-2: per-thread fast-concede memo — `(segment base, ring
-    /// drain head, overflow drain head)` recorded at this thread's most recent
-    /// live-owner retry CONCESSION. Purely caller-side state (neither ring's
+    /// R6-REGRESSION-2 (arity widened by R6-REVIEW-F2): per-thread
+    /// fast-concede memo cache — up to [`STALL_CONCESSION_WAYS`] `(segment
+    /// base, ring drain head, overflow drain head)` snapshots, each recorded
+    /// at one of this thread's recent live-owner retry CONCESSIONS, plus a
+    /// round-robin write cursor. Purely caller-side state (neither ring's
     /// protocol or layout is touched); read/written only by
     /// `push_with_overflow_retry`'s live-owner branch.
     ///
@@ -165,36 +172,73 @@ std::thread_local! {
     /// must eventually concede, and re-paying up to ~2s per push would turn the
     /// paused benchmark cell into HOURS of (sleepy, but still
     /// pathological) stall — reintroducing the R6-REGRESSION wall-clock
-    /// pathology in a politer form. This memo bounds that: once a thread has
+    /// pathology in a politer form. This cache bounds that: once a thread has
     /// paid the FULL patience for a stall and conceded, it records the exact
-    /// cursor snapshot it conceded against; a subsequent push into the SAME
-    /// segment that observes BOTH drain cursors still at the recorded values is
-    /// provably inside the same continuous zero-progress stall (both cursors
-    /// are owner-advanced and monotonic — equality means literally nothing was
-    /// drained since the concession), so it concedes after a single probe round
-    /// instead of re-paying the full patience. The moment either cursor moves,
-    /// the memo no longer matches (monotonic cursors never return to an old
-    /// value short of a 2^32/2^64 wrap) and full patience is restored.
+    /// cursor snapshot it conceded against; a subsequent push into a segment
+    /// whose `(base, ring head, overflow head)` triple exactly matches ANY
+    /// cached snapshot is provably inside the same continuous zero-progress
+    /// stall for THAT segment (both cursors are owner-advanced and monotonic —
+    /// equality means literally nothing was drained since the concession), so
+    /// it concedes after a single probe round instead of re-paying the full
+    /// patience. The moment either cursor moves, that snapshot no longer
+    /// matches (monotonic cursors never return to an old value short of a
+    /// 2^32/2^64 wrap) and full patience is restored for that segment.
     ///
-    /// **Why this cannot affect the #136 judge.** The memo is written ONLY on a
-    /// concession, and the judge asserts zero concessions — on any run where the
-    /// judge's invariant holds, the memo is never populated and the retry loop's
-    /// behavior is byte-identical to the memo-less version. It changes only how
-    /// CHEAPLY pushes AFTER a first concession give up — and any first
-    /// concession already is the bounded-leak event the judge forbids.
+    /// **Why N ways, not one (R6-REVIEW-F2).** The original single-entry memo
+    /// was overwritten on EVERY concession — a paused owner holding 2+
+    /// saturated segments, with a producer whose frees interleave across them
+    /// (A, B, A, B, …), replaced the memo with the OTHER segment's snapshot on
+    /// every push, so the memo never matched and every push re-paid the full
+    /// ~128-round patience: a linear-in-push-count wall-clock wall (in polite
+    /// sleep form) that the memo exists to bound, reachable by any workload
+    /// whose paused blocks span more than one 4 MiB segment (guarded by
+    /// `tests/regression_paused_owner_multisegment.rs`). With
+    /// [`STALL_CONCESSION_WAYS`] independent slots keyed by segment base, each
+    /// concurrently-stalled segment keeps its own snapshot: a concession
+    /// UPDATES the slot already holding its segment's base if one exists
+    /// (so one segment never occupies two slots and repeated concessions
+    /// against the same segment don't evict its neighbors), and otherwise
+    /// fills the slot at the round-robin cursor, advancing the cursor.
+    /// Round-robin (not true LRU) eviction: at 4 entries the difference is
+    /// immaterial — the cache's job is "hold the handful of segments this
+    /// thread is currently interleaving across", and any workload cycling
+    /// through ≤ N stalled segments reaches a steady state where every
+    /// segment keeps its slot regardless of replacement order; tracking
+    /// recency would add bookkeeping to the allocator's dealloc path for
+    /// no observable difference at this size.
+    ///
+    /// **Why this cannot affect the #136 judge (unchanged by the N-way
+    /// widening).** The cache is written ONLY on a concession — for every
+    /// slot, not just the first — and the judge asserts zero concessions: on
+    /// any run where the judge's invariant holds, no slot is ever populated
+    /// and the retry loop's behavior is byte-identical to the memo-less
+    /// version. It changes only how CHEAPLY pushes AFTER a first concession
+    /// give up — and any first concession already is the bounded-leak event
+    /// the judge forbids. Likewise the premature-concession guard is
+    /// per-push, not per-slot: a cache hit only lowers the INITIAL give-up
+    /// threshold; the post-round progress check restores full patience
+    /// (`give_up_after = RETRY_STALLED_ROUNDS_GIVE_UP`) the moment either
+    /// cursor advances, so a stale hit against an owner that is actually
+    /// draining costs at most one probe round of reduced patience before the
+    /// first observed advance re-arms the full budget — for N entries exactly
+    /// as it did for one, because at most ONE entry can match a given
+    /// `(base, heads)` triple (slots are unique per base by the
+    /// update-in-place rule) and the match only ever feeds that same single
+    /// `give_up_after` initialization.
     ///
     /// **Why `thread_local!` is safe here.** Const-initialized `Cell` of a
-    /// `Copy` type: no lazy initialization, no allocation (critical — this runs
+    /// `Copy` type (a fixed-size array of `Option` tuples plus a `usize`
+    /// cursor): no lazy initialization, no allocation (critical — this runs
     /// inside the global allocator's dealloc path), no `Drop` registration (so
     /// it is accessible even during another TLS destructor's cross-thread
-    /// frees). Stale cross-workload state is self-correcting: the memo only
+    /// frees). Stale cross-workload state is self-correcting: a slot only
     /// matches while both cursors are EXACTLY at the recorded values, and a
     /// mismatch (the overwhelmingly common case for unrelated later traffic)
     /// falls back to full patience; a false match requires the same segment
     /// base AND both monotonic cursors at the recorded values, and its worst
     /// case is one cheap concession to the already-documented bounded leak.
-    static LAST_STALL_CONCESSION: core::cell::Cell<Option<(usize, u32, Option<usize>)>> =
-        const { core::cell::Cell::new(None) };
+    static LAST_STALL_CONCESSIONS: core::cell::Cell<StallConcessionCache> =
+        const { core::cell::Cell::new(([None; STALL_CONCESSION_WAYS], 0)) };
 }
 
 /// R6-REGRESSION-2: absolute safety cap on TOTAL probe rounds (progressed or
@@ -228,7 +272,7 @@ const RETRY_ROUND_SAFETY_CAP: u32 = 1;
 /// ~15ms per sleep on this project's dev host (Windows timer quantization —
 /// see [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s doc comment for the measurement),
 /// which is why the give-up cost budget is managed in ROUNDS with the
-/// [`LAST_STALL_CONCESSION`] fast-concede memo rather than by shrinking
+/// [`LAST_STALL_CONCESSIONS`] fast-concede memo cache rather than by shrinking
 /// this Duration further (a sub-granularity request cannot get cheaper).
 /// This sleep is load-bearing for the paused-owner fix: it is the OS-level
 /// block that stopped the aggregate CPU burn (a genuinely idle wait, unlike
@@ -667,9 +711,12 @@ impl HeapCore {
     ///    `tests/race_norecycle.rs` and the big comment block above
     ///    [`RING_PUSH_RETRY_SPINS`] in `heap_core.rs` explaining why flat spin
     ///    (not backoff) was chosen and why the budget is calibrated to
-    ///    8,192 = 32×`RING_CAP`). The loop runs for [`RETRY_LOOP_ITERATIONS`]
-    ///    — NOT the raw `RING_PUSH_RETRY_SPINS` — see that constant's own doc
-    ///    comment for why a scale-up was needed on top of the counter removal.
+    ///    8,192 = 32×`RING_CAP`). The loop runs as probe rounds of
+    ///    [`RETRY_ROUND_SPINS`] polls each, stopped by drain-progress
+    ///    detection ([`RETRY_STALLED_ROUNDS_GIVE_UP`]) under the absolute
+    ///    [`RETRY_ROUND_SAFETY_CAP`] — NOT one flat `RING_PUSH_RETRY_SPINS`
+    ///    (or scaled) iteration budget; see the R6-REGRESSION section below
+    ///    for how the loop's bound evolved to this shape.
     /// 4. Inside that retry loop, every poll retries BOTH tiers: the segment
     ///    ring via [`RemoteFreeRing::try_push_uncounted`] — NOT `push` — so a
     ///    failed ring poll does not re-tick either ring diagnostic counter
@@ -711,8 +758,9 @@ impl HeapCore {
     /// **R6-REGRESSION + R6-REGRESSION-2 (follow-up corrections to
     /// R6-OPT-P0-4) — progress-detected probe rounds with a real sleep, not
     /// one flat 2M-iteration spin and not a fixed round count.** Step 4's
-    /// retry loop is not one flat [`RETRY_LOOP_ITERATIONS`]
-    /// (2,097,152)-iteration busy-spin. It is split into
+    /// retry loop is not one flat 2,097,152-iteration busy-spin (the
+    /// historical `RETRY_LOOP_ITERATIONS` budget, since deleted —
+    /// R6-REVIEW-F5). It is split into
     /// [`RETRY_ROUND_SPINS`]-sized (8,192) PROBE ROUNDS with a real
     /// `std::thread::sleep(`[`RETRY_ROUND_SLEEP`]`)` OS-level block between
     /// rounds (from round 2 onward), and its STOP CONDITION is
@@ -734,17 +782,22 @@ impl HeapCore {
     /// that a SUSTAINED stall (the paused-owner burst shape, where every
     /// push past capacity must eventually concede) does not re-pay the full
     /// first-concession patience on every subsequent push, each concession
-    /// memoizes its cursor snapshot per-thread ([`LAST_STALL_CONCESSION`]):
-    /// a following push that finds both cursors still exactly at a
-    /// snapshot it previously conceded against is provably inside the same
-    /// continuous stall and concedes after a single probe round. See
-    /// [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s and [`LAST_STALL_CONCESSION`]'s
+    /// memoizes its cursor snapshot per-thread into a small
+    /// [`STALL_CONCESSION_WAYS`]-way cache keyed by segment base
+    /// ([`LAST_STALL_CONCESSIONS`]): a following push that finds both cursors
+    /// still exactly at a snapshot it previously conceded against (for ANY of
+    /// the cached segments — the multi-way arity is what keeps frees
+    /// interleaved across SEVERAL simultaneously-stalled segments from
+    /// evicting each other's snapshots, R6-REVIEW-F2) is provably inside the
+    /// same continuous stall and concedes after a single probe round. See
+    /// [`RETRY_STALLED_ROUNDS_GIVE_UP`]'s and [`LAST_STALL_CONCESSIONS`]'s
     /// doc comments for the full two-shapes tension (paused owner must give
     /// up cheaply; slow-live owner under host load must be waited out) and
     /// why no fixed budget can resolve both.
     ///
-    /// R6-OPT-P0-4 (task #136) scaled `RETRY_LOOP_ITERATIONS` to 256×
-    /// `RING_PUSH_RETRY_SPINS` (2,097,152) specifically so a MODERATELY
+    /// R6-OPT-P0-4 (task #136) scaled the then-current flat retry budget
+    /// (`RETRY_LOOP_ITERATIONS`, historical — deleted by R6-REVIEW-F5) to
+    /// 256× `RING_PUSH_RETRY_SPINS` (2,097,152) specifically so a MODERATELY
     /// contended double-saturation still resolves within the (now much
     /// cheaper, uncounted) spin budget. It did not anticipate — and
     /// `benches/heap_fanin_persistent.rs --reduced`'s `T=32, burst=100_000,
@@ -901,20 +954,21 @@ impl HeapCore {
             // measured impractically slow.
             let mut prev_ring_head = ring.head_relaxed();
             let mut prev_overflow_head = overflow.map(|o| o.head_relaxed());
-            // R6-REGRESSION-2 fast-concede: if THIS thread already paid the
-            // full stall patience for THIS segment and neither drain cursor
-            // has moved since that concession, this push is inside the same
-            // continuous zero-progress stall — concede after a single probe
-            // round instead of re-paying the full patience. See
-            // `LAST_STALL_CONCESSION`'s doc comment for why this cannot
+            // R6-REGRESSION-2 fast-concede (R6-REVIEW-F2: N-way): if THIS
+            // thread already paid the full stall patience for THIS segment
+            // (any of its cached concession snapshots matches) and neither
+            // drain cursor has moved since that concession, this push is
+            // inside the same continuous zero-progress stall — concede after
+            // a single probe round instead of re-paying the full patience.
+            // See `LAST_STALL_CONCESSIONS`'s doc comment for why this cannot
             // affect the zero-concession (#136 judge) case at all.
-            let mut give_up_after = if LAST_STALL_CONCESSION
-                .with(|c| c.get() == Some((base as usize, prev_ring_head, prev_overflow_head)))
-            {
-                1
-            } else {
-                RETRY_STALLED_ROUNDS_GIVE_UP
-            };
+            let snapshot = Some((base as usize, prev_ring_head, prev_overflow_head));
+            let mut give_up_after =
+                if LAST_STALL_CONCESSIONS.with(|c| c.get().0.contains(&snapshot)) {
+                    1
+                } else {
+                    RETRY_STALLED_ROUNDS_GIVE_UP
+                };
             let mut stalled_rounds: u32 = 0;
             for round in 0..RETRY_ROUND_SAFETY_CAP {
                 if round > 0 {
@@ -932,10 +986,11 @@ impl HeapCore {
                     // R6-OPT-P0-4: uncounted — the ring's own overflow
                     // diagnostics already ticked once (step 1's counted
                     // `push` attempt above); re-ticking them on every one of
-                    // up to `RETRY_LOOP_ITERATIONS` failed polls here would
-                    // tax the diagnostic counters with a locked RMW per poll
-                    // for no informational gain (see `try_push_uncounted`'s
-                    // doc comment for the full argument).
+                    // up to `RETRY_ROUND_SPINS` × `RETRY_ROUND_SAFETY_CAP`
+                    // failed polls here would tax the diagnostic counters
+                    // with a locked RMW per poll for no informational gain
+                    // (see `try_push_uncounted`'s doc comment for the full
+                    // argument).
                     if ring.try_push_uncounted(packed).is_ok() {
                         DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
                         return;
@@ -971,9 +1026,10 @@ impl HeapCore {
                     // exactly the per-poll atomic-storm class this whole task
                     // exists to close — just relocated from the segment
                     // ring's counters to the overflow ring's counter, and now
-                    // scaled by `RETRY_LOOP_ITERATIONS` (2,097,152 native,
-                    // `RING_PUSH_RETRY_SPINS` x256) instead of the old
-                    // `RING_PUSH_RETRY_SPINS` (8,192). The ONE counted
+                    // scaled by up to `RETRY_ROUND_SPINS` ×
+                    // `RETRY_ROUND_SAFETY_CAP` polls instead of the old
+                    // single-round `RING_PUSH_RETRY_SPINS` (8,192). The ONE
+                    // counted
                     // overflow attempt already made (the immediate step-2
                     // attempt above this loop, or the single not-live-path
                     // attempt in the `else` branch below) remains the signal
@@ -1013,15 +1069,34 @@ impl HeapCore {
                 }
             }
             // Conceding with a LIVE owner: memoize the exact cursor snapshot
-            // this thread conceded against, so consecutive pushes into the
+            // this thread conceded against, so subsequent pushes into the
             // SAME still-unchanged stall give up cheaply instead of each
-            // re-paying the full patience — see `LAST_STALL_CONCESSION`'s
+            // re-paying the full patience — see `LAST_STALL_CONCESSIONS`'s
             // doc comment. (`prev_*` are current here: the loop only exits
             // through consecutive stalled rounds — or the safety cap, where
             // an at-most-one-round-stale snapshot merely under-matches and
             // costs the next push nothing but full patience.)
-            LAST_STALL_CONCESSION
-                .with(|c| c.set(Some((base as usize, prev_ring_head, prev_overflow_head))));
+            //
+            // R6-REVIEW-F2 write policy: update-in-place if some slot already
+            // holds THIS segment's base (a segment never occupies two slots,
+            // and refreshing its own snapshot must not evict a neighboring
+            // stalled segment's), else fill the round-robin cursor's slot and
+            // advance the cursor — see `LAST_STALL_CONCESSIONS`'s doc comment
+            // for why round-robin (not LRU) suffices at this arity.
+            LAST_STALL_CONCESSIONS.with(|c| {
+                let (mut slots, mut cursor) = c.get();
+                let snap = Some((base as usize, prev_ring_head, prev_overflow_head));
+                if let Some(slot) = slots
+                    .iter_mut()
+                    .find(|s| matches!(s, Some((b, _, _)) if *b == base as usize))
+                {
+                    *slot = snap;
+                } else {
+                    slots[cursor] = snap;
+                    cursor = (cursor + 1) % STALL_CONCESSION_WAYS;
+                }
+                c.set((slots, cursor));
+            });
         } else if Self::push_to_heap_overflow(base, packed) {
             // Owner not live: no point spinning on the segment ring (nothing
             // will drain it), but the heap-level overflow ring is drained by
@@ -1081,7 +1156,8 @@ impl HeapCore {
     /// [`push_with_overflow_retry`](Self::push_with_overflow_retry) can
     /// resolve `base`'s owning [`HeapOverflow`](super::heap_overflow::HeapOverflow)
     /// ONCE before the loop and reuse the `&'static` reference across up to
-    /// [`RETRY_LOOP_ITERATIONS`] poll iterations, instead of
+    /// [`RETRY_ROUND_SPINS`] × [`RETRY_ROUND_SAFETY_CAP`] poll iterations,
+    /// instead of
     /// re-reading the `owner_state` header atomic and re-indexing the
     /// registry's slot array on EVERY poll. The re-resolution cost (an extra
     /// atomic load plus an array index, repeated thousands of times) was

@@ -282,13 +282,22 @@ pub(super) const RING_PUSH_RETRY_SPINS: u32 = 64;
 pub static DBG_RING_PUSH_RETRIED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
-/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4): process-
-/// wide count of small-block ring pushes for which EVERY tier of the fallback
-/// chain failed — the initial counted `RemoteFreeRing::push`, the immediate
-/// `push_to_heap_overflow` attempt, the full `RING_PUSH_RETRY_SPINS` bounded
-/// spin-retry (uncounted polls), AND a final `push_to_heap_overflow` retry
-/// after the spin budget ran out — the genuinely-unrecovered residual of the
-/// original bounded-leak behaviour. Distinct from
+/// TEST/DIAGNOSTIC-ONLY (RAD-4, task E3a; reordered by R6-OPT-P0-4; retry
+/// shape reworked by R6-REGRESSION/R6-REGRESSION-2): process-wide count of
+/// small-block ring pushes for which EVERY tier of the fallback chain failed
+/// — the initial counted `RemoteFreeRing::push`, the immediate
+/// `push_to_heap_overflow` attempt, and then EITHER (live owner) the bounded
+/// probe-round spin-retry — which re-polls BOTH the segment ring and the
+/// heap-level overflow ring on every uncounted poll, and concedes only after
+/// `RETRY_STALLED_ROUNDS_GIVE_UP` consecutive zero-drain-progress rounds (or
+/// the absolute `RETRY_ROUND_SAFETY_CAP`) — OR (owner not live, so nothing
+/// can drain the segment ring: the retry loop is skipped) one further
+/// one-shot `push_to_heap_overflow` attempt. (There is NO separate post-loop
+/// overflow retry on the live-owner path: the in-loop every-poll overflow
+/// retry subsumed it — see `HeapCore::push_with_overflow_retry`,
+/// `heap_core_xthread.rs`, for the exact control flow.) This counter marks
+/// the genuinely-unrecovered residual of the original bounded-leak
+/// behaviour. Distinct from
 /// [`crate::alloc_core::remote_free_ring::DBG_RING_OVERFLOW`], which (as of
 /// R6-OPT-P0-4) ticks exactly ONCE per logical free that ever saw a full
 /// segment ring (the single counted attempt in step 1 of
