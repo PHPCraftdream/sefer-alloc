@@ -834,6 +834,7 @@ dependencies = [
  "crossbeam-epoch",
  "iai-callgrind",
  "loom",
+ "malloc-bench-rs",
  "mimalloc",
  "numa-shim",
  "proptest",

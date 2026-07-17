@@ -59,6 +59,28 @@ for (t, ops) in results {
 }
 ```
 
+## Per-thread start hook (core pinning)
+
+`run_with` / `sweep_with` take an `on_thread_start(thread_index)` closure that
+runs on each worker thread *before* the start barrier and its first allocation.
+Use it to pin worker *i* to core *i* (or for any per-thread setup: NUMA node,
+priority, thread name). `run` / `sweep` are the no-pin defaults — they forward
+to the `_with` forms with a no-op hook.
+
+```rust
+use malloc_bench_rs::{sweep_with, Config, Workload};
+use std::alloc::System;
+
+let cfg = Config::default();
+let results = sweep_with(Workload::Larson, &cfg, &[1, 2, 4], || System, |thread_index| {
+    // e.g. core_affinity::set_for_current(cores[thread_index]);
+    let _ = thread_index;
+});
+for (t, ops) in results {
+    println!("T={t}: {:.2} M ops/sec", ops / 1e6);
+}
+```
+
 ## Workloads
 
 ### larson

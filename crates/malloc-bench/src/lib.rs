@@ -37,18 +37,17 @@
 //! A dependency-free xorshift64 PRNG with a fixed per-thread seed, so runs
 //! are reproducible. No external `rand` crate is required.
 //!
-//! # Relationship to `examples/malloc_macro.rs` (deliberate duplication)
+//! # Per-thread start hook (core pinning)
 //!
-//! The root crate's `examples/malloc_macro.rs` contains an INDEPENDENT SECOND
-//! COPY of this same larson/mstress workload. That copy predates this crate's
-//! extraction and is kept separate on purpose: it also carries the
-//! `pinning`/`PinnedRunner` core-affinity integration (a two-mode pinned-vs-
-//! unpinned sweep), which the current [`run`] API — a plain `fn() -> A`
-//! constructor with no per-thread pin hook — cannot express, and it produces
-//! the README MT-table numbers that were not re-plumbed onto this crate under
-//! time pressure. The two copies WILL drift; if you change the workload
-//! semantics in one, mirror it in the other. See task #28 (the 1.2
-//! maintainability finding).
+//! [`run_with`] / [`sweep_with`] accept an `on_thread_start(thread_index)`
+//! closure that runs on each worker thread *before* the barrier and its first
+//! allocation. This is the hook a caller uses to pin worker *i* to core *i*
+//! (e.g. via a `core_affinity`-style crate) so each thread's heap stays warm on
+//! one core's cache. [`run`] / [`sweep`] are the no-pin defaults: they forward
+//! to the `_with` forms with a no-op hook. The root crate's
+//! `examples/malloc_macro.rs` drives this harness through `run_with` to express
+//! its `pinning`/`PinnedRunner` sweep, so there is no second copy of the
+//! workload to keep in sync.
 //!
 //! # No `#[global_allocator]`
 //!
@@ -444,6 +443,12 @@ impl Default for Config {
 /// trait is `unsafe`); those calls follow the safety contracts of
 /// [`GlobalAlloc`].
 ///
+/// # Per-thread start hook
+///
+/// This is the no-pin form: it forwards to [`run_with`] with a no-op
+/// `on_thread_start`. Use [`run_with`] when you need to pin each worker to a
+/// core (or run any other per-thread setup) before the timed region begins.
+///
 /// # Example
 ///
 /// ```text
@@ -458,6 +463,53 @@ pub fn run<A>(workload: Workload, config: &Config, make_alloc: fn() -> A) -> f64
 where
     A: GlobalAlloc + Send + 'static,
 {
+    run_with(workload, config, make_alloc, |_| {})
+}
+
+/// A per-thread start hook: `on_thread_start(thread_index)` runs on worker
+/// `thread_index` before it reaches the start barrier and issues its first
+/// allocation.
+///
+/// It must be `Fn` (invoked once per worker, possibly concurrently),
+/// `Send + Sync` (shared across the spawned workers via `Arc`), and `'static`.
+pub type OnThreadStart = Arc<dyn Fn(usize) + Send + Sync + 'static>;
+
+/// Like [`run`], but runs `on_thread_start(thread_index)` on each worker thread
+/// before the start barrier and its first allocation.
+///
+/// The primary use is **core pinning**: pin worker *i* to core *i* so its
+/// per-thread heap and segments stay resident on one core's cache. The hook
+/// runs before the barrier, so all pinning is in place before the timed
+/// steady-state region begins. Any per-thread setup (affinity, priority,
+/// NUMA node selection, thread naming) is expressible here.
+///
+/// Everything else is identical to [`run`] (same workloads, same
+/// free-exactly-once discipline, same barrier-aligned steady-state timing).
+///
+/// # Example
+///
+/// ```text
+/// use malloc_bench_rs::{run_with, Config, Workload};
+/// use std::alloc::System;
+///
+/// let cfg = Config { threads: 2, steps_per_thread: 1_000, working_set: 64, mstress_blocks: 32 };
+/// // Pin worker `i` to core `i` here (best-effort).
+/// let ops = run_with(Workload::Larson, &cfg, || System, |thread_index| {
+///     let _ = thread_index; // e.g. core_affinity::set_for_current(cores[thread_index]);
+/// });
+/// assert!(ops > 0.0);
+/// ```
+pub fn run_with<A, F>(
+    workload: Workload,
+    config: &Config,
+    make_alloc: fn() -> A,
+    on_thread_start: F,
+) -> f64
+where
+    A: GlobalAlloc + Send + 'static,
+    F: Fn(usize) + Send + Sync + 'static,
+{
+    let on_thread_start: OnThreadStart = Arc::new(on_thread_start);
     let threads = config.threads.max(1);
     let steps = config.steps_per_thread;
     let working_set = config.working_set.max(1);
@@ -487,8 +539,13 @@ where
             .wrapping_mul(t as u64 + 1)
             .wrapping_add(0xDEAD_BEEF);
         let alloc = make_alloc();
+        let on_thread_start = Arc::clone(&on_thread_start);
 
         let handle = thread::spawn(move || {
+            // Per-thread start hook (e.g. pin this worker to a core) BEFORE the
+            // barrier and before any allocation, so the setup is in place for
+            // the whole timed steady-state region.
+            on_thread_start(t);
             // Each worker waits at the barrier so all start together.
             barrier.wait();
 
@@ -591,12 +648,46 @@ pub fn sweep<A>(
 where
     A: GlobalAlloc + Send + 'static,
 {
+    sweep_with(workload, config, threads_sweep, make_alloc, |_| {})
+}
+
+/// Like [`sweep`], but runs `on_thread_start(thread_index)` on each worker
+/// thread of every run in the sweep (see [`run_with`]).
+///
+/// The hook receives the worker's index *within its run* (`0..T` for the
+/// `T`-thread entry), which is exactly the per-run core-pinning identity.
+///
+/// # Example
+///
+/// ```text
+/// use malloc_bench_rs::{sweep_with, Config, Workload};
+/// use std::alloc::System;
+///
+/// let cfg = Config { threads: 1, steps_per_thread: 1_000, working_set: 64, mstress_blocks: 32 };
+/// let results = sweep_with(Workload::Larson, &cfg, &[1, 2], || System, |thread_index| {
+///     let _ = thread_index; // pin worker `thread_index` to a core here
+/// });
+/// assert_eq!(results.len(), 2);
+/// ```
+pub fn sweep_with<A, F>(
+    workload: Workload,
+    config: &Config,
+    threads_sweep: &[usize],
+    make_alloc: fn() -> A,
+    on_thread_start: F,
+) -> Vec<(usize, f64)>
+where
+    A: GlobalAlloc + Send + 'static,
+    F: Fn(usize) + Send + Sync + 'static,
+{
+    let on_thread_start: OnThreadStart = Arc::new(on_thread_start);
     threads_sweep
         .iter()
         .map(|&t| {
             let mut cfg = config.clone();
             cfg.threads = t;
-            let ops = run(workload, &cfg, make_alloc);
+            let hook = Arc::clone(&on_thread_start);
+            let ops = run_with(workload, &cfg, make_alloc, move |i| hook(i));
             (t, ops)
         })
         .collect()

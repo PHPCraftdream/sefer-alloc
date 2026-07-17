@@ -326,6 +326,10 @@ criterion = "0.5"
 # alloc/dealloc hot path vs a state-of-the-art allocator. Dev-only — NOT a
 # runtime dependency.
 mimalloc = "0.1"
+# CRATE-P1: the extracted larson/mstress macro-benchmark harness. Dev-only —
+# `examples/malloc_macro.rs` drives it (through its `run_with` per-thread pin
+# hook) instead of carrying a second copy of the workload. NOT a runtime dep.
+malloc-bench-rs = { path = "crates/malloc-bench" }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom
