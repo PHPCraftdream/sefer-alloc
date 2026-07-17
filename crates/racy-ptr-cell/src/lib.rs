@@ -76,12 +76,14 @@
 // toolchains) requires no `unsafe`; the only genuinely `unsafe` surface is the
 // pointer-sentinel comparison discipline plus the caller-facing accessors that
 // hand back the raw pointer. All raw-pointer *dereferencing* is the CALLER's
-// responsibility (this crate never reads through `T`), so the crate body itself
-// contains no `unsafe {}` blocks at all — the `#![allow(unsafe_code)]` is
-// retained (rather than `#![forbid]`) only so the crate can expose the raw
-// `*mut T` / `NonNull<T>` seam types in its public API without the upper-world
-// `forbid` fighting the intent, and so a future in-crate deref helper has an
-// already-sanctioned home. Every `unsafe fn` below carries a `# Safety` clause.
+// responsibility (this crate never reads through `T`). The crate body's own
+// `unsafe` is confined to two audited kinds: `unsafe impl Send/Sync` for the
+// `AtomicPtr`-backed cell (justified below), and `unsafe { NonNull::new_unchecked(p) }`
+// at the accessor sites where `p` was already proven non-null by an
+// `is_ready`/`!= 0` check. The `#![allow(unsafe_code)]` is retained (rather than
+// `#![forbid]`) so the crate can expose the raw `*mut T` / `NonNull<T>` seam
+// types and those confined sites. Every `unsafe fn` / `unsafe impl` carries a
+// `# Safety` / `// SAFETY:` justification.
 #![allow(unsafe_code)]
 #![cfg_attr(not(test), no_std)]
 

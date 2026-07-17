@@ -268,7 +268,7 @@ use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 /// goes through the registry now pays only the inline tier's cost, and the
 /// sidecar's OS-reservation path is exercised ONLY by tests that explicitly
 /// construct a standalone ring with a miri-inapplicable capacity assumption
-/// (none do; see `tests/loom_overflow_sidecar_cas.rs`, which models the CAS
+/// (none do; see `crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs` (CRATE-P3, which replaced the former `tests/loom_overflow_sidecar_cas.rs`), which models the CAS
 /// protocol in isolation with `loom::sync::atomic`, not the real miri-gated
 /// constant). Native keeps the full `2048` — this bound's native honesty
 /// argument (the paragraph above) is unaffected, since real OS lazy paging
@@ -541,7 +541,7 @@ impl HeapOverflow {
     /// advanced, so no reservation is ever left stranded, so `drain` can
     /// never wedge on an unhonourable index. See the module doc's "wedge
     /// hazard" section for the full argument and
-    /// `tests/loom_overflow_sidecar_cas.rs` / the sidecar-OOM unit test for
+    /// `crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs` (CRATE-P3, which replaced the former `tests/loom_overflow_sidecar_cas.rs`) / the sidecar-OOM unit test for
     /// the proof.
     ///
     /// `base` MUST be a real, non-null segment base (never

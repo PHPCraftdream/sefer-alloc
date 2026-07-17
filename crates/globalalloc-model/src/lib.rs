@@ -240,9 +240,10 @@ pub fn ranges_overlap(a: usize, asize: usize, b: usize, bsize: usize) -> bool {
 ///
 /// # Panics
 ///
-/// On any oracle violation: a null return where memory was not exhausted, a
-/// misaligned pointer, a live-block overlap, a byte that does not read back, a
-/// non-zero byte from `alloc_zeroed`, or a lost realloc prefix byte.
+/// On any oracle violation: a null return (M1 validity — the harness does not
+/// model allocator OOM, so ANY null is a failure), a misaligned pointer, a
+/// live-block overlap, a byte that does not read back, a non-zero byte from
+/// `alloc_zeroed`, or a lost realloc prefix byte.
 pub fn drive<A: RawAllocator>(alloc: &A, config: Config, ops: &[Op]) {
     let mut live: Vec<Live> = Vec::new();
     let mut next_fill: u8 = 1;

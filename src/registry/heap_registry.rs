@@ -536,6 +536,12 @@ impl tagged_index_stack::Links for RegistryLinks<'_> {
         // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
         // holds indices that `push_free_slot` put there, and those are valid
         // slot indices); `slot()` resolves it through the chunked slot array.
+        // NOTE (CRATE-P7): the pre-swap inline `pop_free_slot` carried a
+        // defensive `idx >= MAX_HEAPS -> None` early return; the crate delegation
+        // intentionally drops it in favour of FAIL-LOUD — a head word so
+        // corrupted that it names an out-of-range index now panics (OOB in
+        // `slot()`) rather than silently returning an empty stack, which is the
+        // preferable failure mode for an unreachable-by-construction invariant.
         self.reg
             .slot(index as usize)
             .next_free

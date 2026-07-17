@@ -336,12 +336,121 @@ mod loom_shim {
             Some(held)
         }
     }
+
+    // -----------------------------------------------------------------------
+    // CRATE-P7: const-capable, `core`-atomic stand-in for
+    // `tagged_index_stack::TaggedIndexStack<16>`.
+    // -----------------------------------------------------------------------
+
+    use core::sync::atomic::AtomicU64;
+    // The PACKING (`TaggedIndex`) is pure `const fn` bit arithmetic with no
+    // atomics, and the `Links` trait / `TAIL` sentinel carry no atomics either —
+    // all are loom-agnostic, so the shim reuses the REAL crate types for them and
+    // only re-implements the `AtomicU64` head on `core` atomics. This keeps the
+    // shim's push/pop a FAITHFUL byte-for-byte replica of the crate's algorithm
+    // (same H-2 running-tag empty transition, same Acquire/Release/Relaxed
+    // orderings, same RAD-1 lazy links — `store_next` only ever fires inside
+    // `push`), differing from the shipped type ONLY in which `AtomicU64` backs the
+    // head.
+    use tagged_index_stack::{Links, TaggedIndex, TAIL};
+
+    /// Const-capable stand-in for `tagged_index_stack::TaggedIndexStack<16>` used
+    /// ONLY under `--cfg loom`, so `static REGISTRY: Registry = Registry::new()`
+    /// still const-evaluates (loom's `AtomicU64::new` is non-`const`). Never on a
+    /// loom-modeled interleaving — the real-type verification is the crate's own
+    /// `loom_aba` suite. Fixed at `INDEX_BITS = 16` (the only width the registry
+    /// uses), so it needs no const generic.
+    pub(crate) struct TaggedIndexStack<const INDEX_BITS: u32> {
+        head: AtomicU64,
+    }
+
+    impl<const INDEX_BITS: u32> TaggedIndexStack<INDEX_BITS> {
+        pub(crate) const fn new() -> Self {
+            TaggedIndexStack {
+                head: AtomicU64::new(TaggedIndex::<INDEX_BITS>::empty()),
+            }
+        }
+
+        /// Faithful replica of `TaggedIndexStack::push` (Release CAS, tag bump,
+        /// RAD-1 lazy link write inside push only).
+        pub(crate) fn push<L: Links + ?Sized>(&self, links: &L, index: u32) {
+            let mut head = self.head.load(Ordering::Acquire);
+            loop {
+                let next_link = if TaggedIndex::<INDEX_BITS>::is_empty(head) {
+                    TAIL
+                } else {
+                    let (cur_idx, _tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+                    cur_idx as u32
+                };
+                links.store_next(index, next_link);
+                let (_cur_idx, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+                let new_tag = tag.wrapping_add(1);
+                let new_head = TaggedIndex::<INDEX_BITS>::pack(index as u64, new_tag);
+                match self.head.compare_exchange(
+                    head,
+                    new_head,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return,
+                    Err(actual) => head = actual,
+                }
+            }
+        }
+
+        /// Faithful replica of `TaggedIndexStack::pop` (Acquire CAS, same tag;
+        /// H-2 running-tag preservation on the empty transition).
+        pub(crate) fn pop<L: Links + ?Sized>(&self, links: &L) -> Option<u32> {
+            let mut head = self.head.load(Ordering::Acquire);
+            loop {
+                if TaggedIndex::<INDEX_BITS>::is_empty(head) {
+                    return None;
+                }
+                let (idx_v, tag) = TaggedIndex::<INDEX_BITS>::unpack(head);
+                let index = idx_v as u32;
+                let next = links.load_next(index);
+                let new_head = if next == TAIL {
+                    // H-2: preserve the RUNNING tag across the empty transition.
+                    TaggedIndex::<INDEX_BITS>::pack(TaggedIndex::<INDEX_BITS>::empty_index(), tag)
+                } else {
+                    TaggedIndex::<INDEX_BITS>::pack(next as u64, tag)
+                };
+                match self.head.compare_exchange(
+                    head,
+                    new_head,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return Some(index),
+                    Err(actual) => head = actual,
+                }
+            }
+        }
+    }
 }
 
 #[cfg(feature = "alloc-xthread")]
 use super::heap_overflow::{HeapOverflowSidecar, SIDECAR_CAP, SIDECAR_SENTINEL_INITIALIZING};
 use super::heap_slot::HeapSlot;
 use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
+// CRATE-P7: the `free_slots` stack. Under a NORMAL/`production` build sefer uses
+// the real `tagged_index_stack::TaggedIndexStack`. Under `--cfg loom` the crate
+// aliases its atomics to `loom`, so `TaggedIndexStack::new` is NOT `const`
+// (loom's `AtomicU64::new` has no const ctor) and `static REGISTRY: Registry =
+// Registry::new()` would fail to const-evaluate — the SAME const-static hazard
+// the `RacyPtrCell` shim above solves. So under loom we swap in a const-capable,
+// `core`-atomic shim with the identical `new`/`push`/`pop` API `bootstrap` and
+// `heap_registry` use (over the REAL `tagged_index_stack::Links` trait — only
+// the `AtomicU64` head must be `core`, not `loom`, for const-ness). This is
+// sound: the real-type loom VERIFICATION of the tagged stack lives in the
+// crate's OWN suite (`crates/tagged-index-stack/tests/loom_aba.rs`, run via
+// `-p tagged-index-stack`); sefer's loom harnesses never exercise `free_slots`
+// contention (the former in-tree `loom_free_slots_aba` model was replaced by
+// that crate suite), so the shim is NEVER on any modeled interleaving — it
+// exists only to keep the const static compiling.
+#[cfg(loom)]
+use loom_shim::TaggedIndexStack;
+#[cfg(not(loom))]
 use tagged_index_stack::TaggedIndexStack;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one

@@ -1,6 +1,7 @@
 //! loom model-check of the **A1 `deferred_large` push/drain Treiber stack**
-//! protocol (task #141 — closing the loom-debt documented in
-//! `src/registry/tagged_ptr.rs` and the #138 audit report).
+//! protocol (task #141 — closing the loom-debt documented in the
+//! `tagged-index-stack` crate — CRATE-P7, which replaced
+//! `src/registry/tagged_ptr.rs` — and the #138 audit report).
 //!
 //! # Scope — what loom covers
 //!
