@@ -4,7 +4,7 @@
 //
 // Usage (from repo root):
 //   node scripts/tsan.mjs                 # default cross-thread test set
-//   node scripts/tsan.mjs race_repro heap_cross_thread   # explicit tests
+//   node scripts/tsan.mjs race_repro global_alloc_mt      # explicit tests
 //   npm run tsan
 //
 // Requires: WSL with a nightly toolchain + `rust-src` component (for
@@ -26,7 +26,12 @@ const DEFAULT_TESTS = [
   'race_repro',
   'race_norecycle',
   'global_alloc_mt',
-  'heap_cross_thread',
+  // task #204: `heap_cross_thread` was removed along with the `Heap` type it
+  // exercised (no faithful HeapCore-facing substitute — see the CI `tsan` job
+  // comment). `regression_xthread_large_free_no_leak` is the surviving
+  // cross-thread reclaim test (drives a remote free of a Large segment over
+  // the current `HeapCore` face) and compiles under this pass's feature set.
+  'regression_xthread_large_free_no_leak',
 ];
 
 const tests = process.argv.slice(2).length
@@ -42,7 +47,10 @@ const wslRoot = winToWsl(REPO_ROOT);
 // read.
 const PROD_TESTS = [
   'global_alloc_mt',
-  'heap_cross_thread',
+  // task #204: `heap_cross_thread` (the `Heap`-face MT test formerly listed
+  // here) was removed with no faithful HeapCore-facing substitute; its
+  // coverage lives on via the other MT tests in this list (see the CI `tsan`
+  // job comment).
   'tls_heap_teardown_ordering_stress',
   'regression_percounter_perheap_aggregation',
   // W6: the Large cross-thread FREE path (A1 deferred-large / abandoned-seg
@@ -51,11 +59,13 @@ const PROD_TESTS = [
   // reads. Both of these are genuine MT tests (each spawns a non-owner thread
   // that remotely frees a Large segment, then joins): `regression_realloc_
   // xthread_stamp` drives the W4/MUST-1 realloc → cross-thread-free path, and
-  // `regression_heap_xthread_large_free_no_leak` drives the A1 Large
-  // cross-thread reclaim over the `Heap` public face. Both compile under the
-  // `production` set (production ⊇ alloc-global ⊇ alloc, + alloc-xthread).
+  // `regression_xthread_large_free_no_leak` drives the A1 Large cross-thread
+  // reclaim over the `HeapCore` face (task #204 renamed it from
+  // `regression_heap_xthread_large_free_no_leak` when the `Heap` type it
+  // originally referenced was removed). Both compile under the `production`
+  // set (production ⊇ alloc-global ⊇ alloc, + alloc-xthread).
   'regression_realloc_xthread_stamp',
-  'regression_heap_xthread_large_free_no_leak',
+  'regression_xthread_large_free_no_leak',
   // S3 (#168): the concurrent boundary-stress hammer (S1) under TSan — the
   // highest-value race surface (magazine / RemoteFreeRing / Э5 counters under
   // boundary pressure). Its per-thread op budget and thread cap are slashed for
