@@ -106,7 +106,7 @@ fn run_sweep(steps_per_thread: usize, thread_sweep: &[usize], pinned: bool) {
             "{:>3}  {:>16}  {:>16}  {:>16}",
             "T", "SeferAlloc", "mimalloc", "System"
         );
-        let sefer = sweep_alloc(workload, &cfg, thread_sweep, || SeferAlloc::new(), pinned);
+        let sefer = sweep_alloc(workload, &cfg, thread_sweep, SeferAlloc::new, pinned);
         let mi = sweep_alloc(workload, &cfg, thread_sweep, || mimalloc::MiMalloc, pinned);
         let sys = sweep_alloc(workload, &cfg, thread_sweep, || System, pinned);
         for (((t, sefer), (_, mi)), (_, sys)) in sefer.iter().zip(mi.iter()).zip(sys.iter()) {
