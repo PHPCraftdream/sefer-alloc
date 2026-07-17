@@ -134,6 +134,37 @@ impl Segment {
         Some(Segment(reservation))
     }
 
+    /// Reserve a SEGMENT-aligned, exactly-`SEGMENT`-sized span from the OS,
+    /// committing only the first `initial_commit` bytes — the rest stays
+    /// reserved-but-uncommitted (Windows lazy-commit path; falls back to the
+    /// eager, fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback).
+    ///
+    /// R7-B6 (primordial lazy commit): the primordial-segment analogue of
+    /// [`reserve_small_segment`](super::alloc_core_small)'s lazy branch,
+    /// factored here so `bootstrap::primordial` can call it without
+    /// duplicating the raw `aligned_vmem` plumbing outside this seam.
+    /// `initial_commit` must be a non-zero multiple of `PAGE` and
+    /// `<= SEGMENT`; the caller (`bootstrap::primordial`) upholds this via a
+    /// `debug_assert!` mirroring `reserve_small_segment`'s identical
+    /// contract. Returns `None` on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: the sole caller (`bootstrap::primordial`) only
+    /// takes this branch when `numa-aware` is off, mirroring
+    /// `reserve_small_segment`'s own NUMA exclusion (P2 gate: NUMA
+    /// reservations must not be disturbed by the lazy path) — see that call
+    /// site's doc for the full rationale. Gating the definition here too
+    /// (rather than leaving it reachable-but-uncalled) keeps `--all-features`
+    /// (which enables `numa-aware` alongside `alloc-lazy-commit`) free of a
+    /// dead-code warning.
+    #[must_use]
+    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+    pub(crate) fn reserve_lazy(initial_commit: usize) -> Option<Self> {
+        let reservation = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?;
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
     /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
     /// valid for [`len`](Self::len) bytes, aligned to `SEGMENT`.
     #[must_use]

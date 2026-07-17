@@ -16,6 +16,8 @@
 //! there is NO `unsafe` block in this file. So the crate's structural promise
 //! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
 
+#[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+use super::alloc_core_small::LAZY_FIRST_CHUNK;
 use super::os::Segment;
 use super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
 use super::segment_table::{self, SegmentTable};
@@ -42,6 +44,57 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 1. Reserve the primordial segment (SEGMENT-aligned, SEGMENT bytes). This
     //    is the ONLY OS allocation primitive on the bootstrap path; everything
     //    else is safe composition over the segment's bytes.
+    //
+    // R7-B6 (primordial lazy commit): under `alloc-lazy-commit` AND NOT
+    // `numa-aware` (Windows; Unix/miri fall back to the eager, fully-committed
+    // path inside `aligned_vmem::reserve_aligned_lazy` itself), commit ONLY
+    // `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` up front instead of the
+    // whole 4 MiB segment. `primordial_meta_end()` is the exact byte offset
+    // past every region this function writes below (header, page map, bin
+    // table, [bitmaps under miri], remote ring, registry array, hash table,
+    // free-list array + top) — see `Layout::primordial_meta_end`'s doc and
+    // the const-assert in `segment_header.rs` pinning
+    // `primordial_meta_end() + LAZY_FIRST_CHUNK <= SEGMENT`. Everything this
+    // function writes therefore lands strictly inside the committed prefix by
+    // construction — there is no write-before-commit hazard: the whole
+    // metadata region is committed BEFORE any of the writes below run, not
+    // committed incrementally alongside them. `LAZY_FIRST_CHUNK` beyond
+    // `meta_end` additionally covers the FIRST payload carve (the immediate
+    // post-bootstrap allocation reuses the primordial as its first small
+    // segment, `AllocCore::new_inner`'s `small_cur = primordial_base`), so
+    // that allocation does not need a grow-on-carve commit either. Any carve
+    // that grows past this initial frontier goes through the SAME
+    // `carve_block`/`carve_batch` grow-on-carve path (`alloc_core_small.rs`)
+    // that already handles ordinary small segments — that path reads/writes
+    // `committed_payload_end` generically over `SegmentKind::Small |
+    // SegmentKind::Primordial` (see e.g. `dealloc_small`'s existing
+    // Primordial-aware `payload_start` branch), so no new carve-path code is
+    // needed here.
+    //
+    // `numa-aware` exclusion: the primordial reservation itself never goes
+    // through `numa::reserve_aligned_on_node` (it predates NUMA awareness —
+    // see `AllocCore::new_inner`'s comment), so there is no P2-gate conflict
+    // in the same sense `reserve_small_segment` has. This exclusion is kept
+    // anyway for two reasons: (1) it matches the `alloc-lazy-commit` feature
+    // doc's own blanket statement in `Cargo.toml` ("Under `numa-aware`, the
+    // lazy path is disabled ... to preserve NUMA placement"), so the
+    // primordial does not silently become the one exception to a documented,
+    // crate-wide policy; (2) it keeps `Segment::reserve` (the plain eager
+    // path) reachable under `--all-features` (which enables BOTH
+    // `alloc-lazy-commit` and `numa-aware` together) — without this
+    // exclusion `Segment::reserve` would have no remaining caller in that
+    // configuration once the small-segment AND primordial paths both moved to
+    // their NUMA-gated lazy/eager arms, tripping `-D warnings`' dead-code lint.
+    //
+    // On the eager path (feature-OFF, or `numa-aware`), `Segment::reserve` is
+    // unchanged — byte-identical to pre-R7-B6 behaviour.
+    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+    let segment = {
+        let initial_commit = Layout::primordial_meta_end() + LAZY_FIRST_CHUNK;
+        debug_assert!(initial_commit <= super::os::SEGMENT);
+        Segment::reserve_lazy(initial_commit)?
+    };
+    #[cfg(not(all(feature = "alloc-lazy-commit", not(feature = "numa-aware"))))]
     let segment = Segment::reserve(super::os::SEGMENT)?;
     let base = segment.as_ptr();
     let reservation = segment.reservation();
@@ -186,11 +239,33 @@ pub(crate) fn primordial() -> Option<Primordial> {
     hdr.bump = meta_end;
     meta.write_header(hdr);
 
-    // B1 (R7 Workstream B): the primordial segment is ALWAYS eagerly committed
-    // (it predates the lazy-commit path and uses `Segment::reserve` — the
-    // eager OS path). Set the frontier to SEGMENT so B2's "is X above the
-    // frontier?" check is trivially false.
-    #[cfg(feature = "alloc-lazy-commit")]
+    // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
+    // committed-payload frontier, mirroring `reserve_small_segment`'s
+    // identical stamping for ordinary small segments (same
+    // `alloc-lazy-commit` + `numa-aware` gating, same
+    // `meta_end + LAZY_FIRST_CHUNK` / `SEGMENT` values) — this MUST match
+    // step 1's reservation gate exactly, since it stamps what step 1 actually
+    // committed.
+    //
+    // - Lazy path (`alloc-lazy-commit` AND NOT `numa-aware`; on Windows this
+    //   is a real partial commit via `Segment::reserve_lazy` above; on
+    //   Unix/miri `reserve_aligned_lazy` internally commits the WHOLE segment
+    //   despite the `initial_commit` argument, but understating the frontier
+    //   at `meta_end + LAZY_FIRST_CHUNK` there is still SOUND — it only means
+    //   B2's grow-on-carve fires a `commit_pages` call once the bump cursor
+    //   crosses that already-committed point, and `commit_pages` is a
+    //   correctness no-op on those platforms; see `os.rs::commit_pages`'s
+    //   doc): the frontier is `meta_end + LAZY_FIRST_CHUNK`. Any carve past
+    //   this frontier goes through the existing B2 grow-on-carve path in
+    //   `carve_block`/`carve_batch`, which already treats `Primordial` and
+    //   `Small` segments identically.
+    // - Eager path (feature-OFF, or `numa-aware` — step 1 used the plain
+    //   `Segment::reserve`, which commits the ENTIRE segment): the frontier
+    //   must read `SEGMENT`, exactly like `reserve_small_segment`'s
+    //   `numa-aware` arm.
+    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+    meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+    #[cfg(all(feature = "alloc-lazy-commit", feature = "numa-aware"))]
     meta.set_committed_payload_end(super::os::SEGMENT);
 
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it

@@ -998,29 +998,58 @@ fn allocator_drop_partial_commit_no_fault() {
 }
 
 // ============================================================================
-// SCENARIO 15: Primordial metadata untouched (always eager)
+// SCENARIO 15: Primordial metadata committed up front (R7-B6 lazy primordial)
 // ============================================================================
 
-/// The primordial segment is always fully committed (eager path). Its
-/// frontier is SEGMENT. The lazy-commit path does NOT affect it.
-/// Counterfactual: if the primordial were lazily committed, its initial
-/// allocations would fault (metadata + ring not committed).
+/// R7-B6 (primordial lazy commit): under `alloc-lazy-commit` AND NOT
+/// `numa-aware`, the primordial segment's metadata region (header, page map,
+/// bin table, remote ring, registry array, hash table, free-list array + top
+/// — everything `bootstrap::primordial` writes) plus one initial payload
+/// chunk are committed UP FRONT by `Segment::reserve_lazy`, BEFORE any of
+/// those writes run — there is no write-before-commit hazard. Its frontier is
+/// therefore `primordial_meta_end() + LAZY_FIRST_CHUNK`, not the pre-R7-B6
+/// `SEGMENT` (full span). Under `numa-aware` the primordial reservation is
+/// still the plain eager `Segment::reserve` (mirroring
+/// `reserve_small_segment`'s own NUMA exclusion), so the frontier there
+/// remains `SEGMENT`, unchanged.
+///
+/// Counterfactual this test still guards against: if the primordial's
+/// `initial_commit` argument were computed WRONG (too small — e.g. omitting
+/// a metadata region `bootstrap::primordial` actually writes), the very
+/// first allocation's metadata writes would fault. This test's mere SUCCESS
+/// (the `alloc` above returns non-null and every later test in this suite
+/// keeps working) is therefore part of the correctness signal, not just the
+/// frontier-value assertion below.
 #[test]
-fn primordial_always_eager() {
+fn primordial_metadata_committed_up_front() {
     let mut a = AllocCore::new().unwrap();
     let p = a.alloc(Layout::from_size_align(64, 8).unwrap());
     assert!(!p.is_null());
 
     let frontier = a.dbg_committed_payload_end_for(p).unwrap();
-    assert_eq!(
-        frontier, SEGMENT,
-        "primordial segment must have frontier == SEGMENT (always eager)"
-    );
+    // SAFETY: `p` is the pointer just returned by `a.alloc` above — live,
+    // exclusively owned, and its segment is owned by `a`.
+    let payload_start = unsafe { a.dbg_payload_start_for(p) };
 
-    // The grow commit count should not have incremented for the primordial.
-    // (It's already fully committed, so no grows needed.)
+    #[cfg(not(feature = "numa-aware"))]
+    assert_eq!(
+        frontier,
+        payload_start + a.dbg_lazy_first_chunk(),
+        "primordial segment must start with the lazy initial-chunk frontier"
+    );
+    #[cfg(feature = "numa-aware")]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "under numa-aware the primordial segment must have frontier == SEGMENT (eager)"
+        );
+    }
+
+    // The grow commit count should not have incremented for the primordial's
+    // FIRST, tiny allocation (it lands well inside the initial chunk).
     // NOTE: this is a weaker check — other tests in the same process may have
-    // incremented it. We just check it's readable.
+    // incremented the process-global counter. We just check it's readable.
     let _count = a.dbg_grow_commit_count();
 }
 
@@ -1088,7 +1117,8 @@ fn alloc_zeroed_on_fresh_commit() {
 /// Since `numa-aware` and `alloc-lazy-commit` are independent features, we
 /// verify at compile time (via the cfg gate in the reserve path) that the
 /// lazy arm is never taken when `numa-aware` is on. At runtime, we verify
-/// the primordial is always eager (covered by primordial_always_eager).
+/// the primordial's frontier matches this same gate (covered by
+/// `primordial_metadata_committed_up_front`, R7-B6).
 ///
 /// The cfg gate in alloc_core_small.rs:
 ///   `#[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware"), ...))]`
@@ -1132,19 +1162,35 @@ fn numa_lazy_commit_gate() {
 // SCENARIO 18: Eager-path feature-OFF is a pure no-op
 // ============================================================================
 
-/// On the eager path (Unix, miri, or feature-OFF), the grow-on-carve check
-/// is never true (frontier == SEGMENT), zero commits fire, and the behavior
-/// is byte-identical to the pre-B1 code.
+/// On the eager path (Unix, miri, `numa-aware`, or feature-OFF), the
+/// grow-on-carve check is never true (frontier == SEGMENT), zero commits
+/// fire, and the behavior is byte-identical to the pre-B1 code.
+///
+/// R7-B6 (primordial lazy commit): under THIS test file's own build
+/// (`alloc-lazy-commit` ON, `numa-aware` OFF), the primordial is now lazily
+/// committed too (see `primordial_metadata_committed_up_front`), so it is
+/// EXCLUDED from the "eager" claim this test makes — the primordial's own
+/// frontier is only `SEGMENT` when `numa-aware` is on.
 #[test]
 fn eager_path_is_pure_noop() {
     let mut a = AllocCore::new().unwrap();
-    // Primordial is always eager.
     let p = a.alloc(Layout::from_size_align(64, 8).unwrap());
     assert!(!p.is_null());
     let frontier = a.dbg_committed_payload_end_for(p).unwrap();
-    assert_eq!(frontier, SEGMENT, "eager segment must have full frontier");
+    // SAFETY: `p` is the pointer just returned by `a.alloc` above — live,
+    // exclusively owned, and its segment is owned by `a`.
+    let payload_start = unsafe { a.dbg_payload_start_for(p) };
 
-    // On Unix/miri, non-primordial is also eager.
+    #[cfg(feature = "numa-aware")]
+    assert_eq!(frontier, SEGMENT, "eager segment must have full frontier");
+    #[cfg(not(feature = "numa-aware"))]
+    assert_eq!(
+        frontier,
+        payload_start + a.dbg_lazy_first_chunk(),
+        "primordial segment must start with the lazy initial-chunk frontier"
+    );
+
+    // On Unix/miri/numa-aware, non-primordial is also eager.
     #[cfg(any(not(windows), miri, feature = "numa-aware"))]
     {
         let (a2, second) = alloc_past_primordial();
@@ -1153,7 +1199,11 @@ fn eager_path_is_pure_noop() {
             f2, SEGMENT,
             "non-primordial eager segment must have full frontier"
         );
-        // No grow commits should have fired.
+        // No grow commits should have fired. This inner block only compiles
+        // under `not(windows) | miri | numa-aware`, none of which race
+        // against this test file's OTHER (Windows lazy-commit) tests in the
+        // same run — those tests are compiled out entirely on this leg, so
+        // the process-global counter has no concurrent writer here.
         assert_eq!(
             a2.dbg_grow_commit_count(),
             0,

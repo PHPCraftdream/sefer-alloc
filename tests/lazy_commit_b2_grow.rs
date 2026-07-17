@@ -339,9 +339,16 @@ fn commit_failure_leaves_state_unchanged() {
             }
         }
 
-        // Snapshot state BEFORE the fault.
+        // Snapshot state BEFORE the fault. (`dbg_grow_commit_count` is a
+        // process-global counter shared by every `#[test]` in this binary —
+        // running on parallel test threads by default — so it is NOT used
+        // here as a before/after oracle: an unrelated concurrent test in this
+        // same file, e.g. `fill_entire_lazy_segment`, can bump it during this
+        // test's own `for _ in 0..1000` allocation loop, producing a
+        // false-failure race unrelated to this test's own fault injection.
+        // The segment-LOCAL frontier below is process-safe and is the
+        // load-bearing oracle for "no successful commit happened.")
         let frontier_before = a.dbg_committed_payload_end_for(second_ptr).unwrap();
-        let commits_before = a.dbg_grow_commit_count();
 
         // Arm the fault injector: the next commit_pages call will fail.
         a.dbg_arm_commit_fail(1);
@@ -365,14 +372,9 @@ fn commit_failure_leaves_state_unchanged() {
 
         // The frontier should NOT have advanced (the commit failed).
         let frontier_after = a.dbg_committed_payload_end_for(second_ptr).unwrap();
-        let commits_after = a.dbg_grow_commit_count();
         assert_eq!(
             frontier_before, frontier_after,
             "frontier should not advance on commit failure"
-        );
-        assert_eq!(
-            commits_before, commits_after,
-            "no successful commit should have been counted"
         );
 
         // The fault hook is disarmed now (it was armed for 1 failure).
@@ -483,29 +485,62 @@ fn carve_batch_commit_failure_returns_zero() {
     }
 }
 
-// ── Test: eager path is a no-op ─────────────────────────────────────────────
+// ── Test: primordial frontier matches its reservation gate ─────────────────
 
-/// On the eager path (Unix/miri, or feature-OFF), the grow-on-carve logic
-/// is a no-op: frontier == SEGMENT, the condition is never true, zero added
-/// work.
+/// R7-B6 (primordial lazy commit): the primordial segment's initial
+/// `committed_payload_end` frontier must match EXACTLY what
+/// `bootstrap::primordial` committed:
+///
+/// - Under `alloc-lazy-commit` AND NOT `numa-aware` (this test file's default
+///   build; on Windows a REAL partial commit, on Unix/miri the
+///   `reserve_aligned_lazy` internal eager fallback): the frontier is
+///   `primordial_meta_end() + LAZY_FIRST_CHUNK` — the primordial is now
+///   lazily committed too, mirroring an ordinary small segment's own initial
+///   frontier. No grow commits have fired yet (the first allocation lands
+///   inside the initial chunk).
+/// - Under `numa-aware` (the primordial reservation still uses the plain
+///   eager `Segment::reserve`, matching `reserve_small_segment`'s own NUMA
+///   exclusion — see `bootstrap.rs`'s doc): the frontier is `SEGMENT`, the
+///   pre-R7-B6 eager behaviour, unchanged.
+///
+/// This replaces the old `eager_path_is_noop` test, which asserted the
+/// primordial ALWAYS has a full-span frontier — true before R7-B6, false
+/// now that the primordial participates in lazy commit like any other small
+/// segment.
 #[test]
-fn eager_path_is_noop() {
+fn primordial_frontier_matches_reservation_gate() {
     let mut a = AllocCore::new().unwrap();
-    // The primordial is always eager.
     let p = a.alloc(Layout::from_size_align(64, 8).unwrap());
     assert!(!p.is_null());
     let frontier = a.dbg_committed_payload_end_for(p).unwrap();
-    assert_eq!(
-        frontier, SEGMENT,
-        "eager (primordial) segment must have full-span frontier"
-    );
-    // No grow commits should have fired on the primordial.
-    // (The counter may be > 0 if a prior test grew a lazy segment, but
-    // on Unix/miri it should be 0.)
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
-    assert_eq!(
-        a.dbg_grow_commit_count(),
-        0,
-        "no grow commits on the eager path"
-    );
+    // SAFETY: `p` is the pointer just returned by `a.alloc` above — live,
+    // exclusively owned, and its segment is owned by `a`.
+    let payload_start = unsafe { a.dbg_payload_start_for(p) };
+
+    // NOTE: `dbg_grow_commit_count` is a process-global counter shared by
+    // every `#[test]` in this binary, running on parallel test threads by
+    // default — it cannot be asserted on here without a false-failure race
+    // against unrelated tests (`carve_at_frontier_commits_next_chunk` and
+    // friends in this same file deliberately grow it). The frontier equality
+    // check below is the load-bearing, deterministic assertion; the
+    // dedicated grow-commit tests elsewhere in this file already cover the
+    // counter's own correctness.
+    #[cfg(not(feature = "numa-aware"))]
+    {
+        let expected = payload_start + a.dbg_lazy_first_chunk();
+        assert_eq!(
+            frontier, expected,
+            "primordial segment must start with the lazy initial-chunk frontier \
+             (meta_end + LAZY_FIRST_CHUNK), matching an ordinary small segment"
+        );
+    }
+    #[cfg(feature = "numa-aware")]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "under numa-aware the primordial reservation is still eager \
+             (Segment::reserve), so the frontier must be the full span"
+        );
+    }
 }

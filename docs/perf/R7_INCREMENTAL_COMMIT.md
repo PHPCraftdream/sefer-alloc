@@ -1,5 +1,16 @@
 # R7 Workstream B — Incremental Windows Commit (B5 GO/NO-GO)
 
+> **UPDATE — R7-B6 (#181), 2026-07-17: the headline IS now achieved.** B5's
+> headline NO-GO below was because the 4 MiB **primordial** segment stayed
+> eagerly committed and dominated the first-heap charge. R7-B6 made the
+> primordial lazy too (Option A — commit only `primordial_meta_end() +
+> LAZY_FIRST_CHUNK` up front, the exact bootstrap footprint; the 4 MiB tail is
+> reserved-only and grows via the existing grow-on-carve path — no
+> commit-before-write risk). Measured first-heap **commit Δ: 4.52 MiB → ~0.887
+> MiB** (~5.2×), inside the ≤0.9 MiB target. Still gated `alloc-lazy-commit AND
+> NOT numa-aware`; the eager path is byte-identical when off. See
+> `src/alloc_core/bootstrap.rs` (`primordial` via `Segment::reserve_lazy`).
+
 **Date:** 2026-07-17
 **Base revision:** `main` (post B0–B4 commits: B0 vmem lazy-commit API, B1
 commit frontier, B2 fallible bump growth, B3 decommit/recommit integration,

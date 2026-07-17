@@ -1059,6 +1059,17 @@ pub(crate) const fn align_up_const(n: usize, a: usize) -> usize {
 // free-list node.
 const _: () = assert!(Layout::primordial_meta_end() + PAGE <= super::os::SEGMENT);
 const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
+// R7-B6 (primordial lazy commit): mirrors `alloc_core_small.rs`'s identical
+// `small_meta_end() + LAZY_FIRST_CHUNK <= SEGMENT` assert, for the primordial
+// segment's (larger) metadata footprint. `bootstrap::primordial` commits
+// exactly `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` under
+// `alloc-lazy-commit`; this pins that sum within one segment at compile time
+// so a future metadata-region growth (e.g. a wider registry/hash table) fails
+// the build here rather than overflowing the payload at runtime.
+#[cfg(feature = "alloc-lazy-commit")]
+const _: () = assert!(
+    Layout::primordial_meta_end() + super::alloc_core_small::LAZY_FIRST_CHUNK <= super::os::SEGMENT
+);
 // X7 Ф1 (task #189): under `hardened` the generation table (~256 KiB / 64 pages)
 // is carved into segment metadata, shifting `small_meta_end` up by that much.
 // This is exactly the capacity risk the X7 plan §4 "Risks" calls out ("Ёмкость

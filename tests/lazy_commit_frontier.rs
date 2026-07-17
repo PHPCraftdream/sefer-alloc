@@ -41,17 +41,35 @@ fn small_meta_end() -> usize {
 /// has `committed_payload_end` set to the expected value:
 ///   - On the lazy path (Windows, not numa-aware): `meta_end + LAZY_FIRST_CHUNK`
 ///   - On the eager path (Unix, miri, numa-aware): `SEGMENT`
+///
+/// R7-B6 (primordial lazy commit): the primordial segment ITSELF now follows
+/// the identical rule (see `primordial_frontier_is_correct` below) rather
+/// than always being eager, so this test starts from the primordial's own
+/// frontier check before moving on to the SECOND (ordinary small) segment.
 #[test]
 fn fresh_small_segment_frontier_is_correct() {
     let mut a = AllocCore::new().unwrap();
-    // The primordial segment is always eager — its frontier must be SEGMENT.
     let prim_ptr = a.alloc(Layout::from_size_align(16, 8).unwrap());
     assert!(!prim_ptr.is_null());
     let prim_frontier = a.dbg_committed_payload_end_for(prim_ptr).unwrap();
+    // SAFETY: `prim_ptr` is the pointer just returned by `a.alloc` above —
+    // live, exclusively owned, and its segment is owned by `a`.
+    let prim_payload_start = unsafe { a.dbg_payload_start_for(prim_ptr) };
+    #[cfg(not(feature = "numa-aware"))]
     assert_eq!(
-        prim_frontier, SEGMENT,
-        "primordial segment must have committed_payload_end == SEGMENT (always eager)"
+        prim_frontier,
+        prim_payload_start + a.dbg_lazy_first_chunk(),
+        "primordial segment must start with the lazy initial-chunk frontier"
     );
+    #[cfg(feature = "numa-aware")]
+    {
+        let _ = prim_payload_start;
+        assert_eq!(
+            prim_frontier, SEGMENT,
+            "under numa-aware the primordial segment must have \
+             committed_payload_end == SEGMENT (eager)"
+        );
+    }
 
     // Exhaust the primordial by allocating many blocks until a new segment
     // is reserved. We detect the segment switch by checking when the segment
@@ -203,19 +221,58 @@ fn header_layout_asserts_hold() {
     );
 }
 
-// ── Feature-OFF equivalence ───────────────────────────────────────────────
-// (This test runs ONLY when `alloc-lazy-commit` is ON, but verifies that the
-// primordial — which is always eager — has the full-span frontier.)
+// ── numa-aware equivalence ─────────────────────────────────────────────────
+// (This test runs ONLY when `alloc-lazy-commit` is ON. R7-B6: the primordial
+// is no longer unconditionally eager — see `primordial_frontier_is_correct`
+// below for its general rule. This test isolates the ONE case that still IS
+// unconditionally eager: `numa-aware`, where every segment — primordial
+// included — uses the plain `Segment::reserve`/`reserve_aligned_on_node` path.)
 
 #[test]
+#[cfg(feature = "numa-aware")]
 fn eager_segment_has_full_span_frontier() {
     let mut a = AllocCore::new().unwrap();
     let p = a.alloc(Layout::from_size_align(64, 8).unwrap());
     assert!(!p.is_null());
-    // The primordial is always eager.
     let frontier = a.dbg_committed_payload_end_for(p).unwrap();
     assert_eq!(
         frontier, SEGMENT,
-        "eager (primordial) segment must have full-span frontier"
+        "under numa-aware the primordial segment must have full-span frontier"
     );
+}
+
+// ── R7-B6: primordial frontier follows the same lazy-commit rule ──────────
+
+/// The primordial segment's `committed_payload_end` frontier follows the
+/// SAME lazy-vs-eager rule as an ordinary fresh small segment (see
+/// `fresh_small_segment_frontier_is_correct` above):
+///   - Lazy path (`alloc-lazy-commit` AND NOT `numa-aware`): `payload_start +
+///     LAZY_FIRST_CHUNK`, where `payload_start` is the primordial's (larger)
+///     `primordial_meta_end()`, not the ordinary small segment's
+///     `small_meta_end()`.
+///   - Eager path (`numa-aware`): `SEGMENT`.
+#[test]
+fn primordial_frontier_is_correct() {
+    let mut a = AllocCore::new().unwrap();
+    let p = a.alloc(Layout::from_size_align(64, 8).unwrap());
+    assert!(!p.is_null());
+    let frontier = a.dbg_committed_payload_end_for(p).unwrap();
+    // SAFETY: `p` is the pointer just returned by `a.alloc` above — live,
+    // exclusively owned, and its segment is owned by `a`.
+    let payload_start = unsafe { a.dbg_payload_start_for(p) };
+
+    #[cfg(not(feature = "numa-aware"))]
+    assert_eq!(
+        frontier,
+        payload_start + a.dbg_lazy_first_chunk(),
+        "primordial segment must start with the lazy initial-chunk frontier"
+    );
+    #[cfg(feature = "numa-aware")]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "under numa-aware the primordial segment must have full-span frontier"
+        );
+    }
 }
