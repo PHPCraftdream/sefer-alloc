@@ -1,0 +1,18 @@
+[package]
+name = "size-classes"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Const-built mimalloc-style size-class tables with a compile-time-derived O(1) size->class lookup and an alignment-divisibility classifier (the align>=512 'falls to a whole segment' bug class, fixed). no_std, zero deps, #![forbid(unsafe_code)]."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/size-classes"
+documentation = "https://docs.rs/size-classes"
+keywords = ["allocator", "size-class", "slab", "alignment", "no-std"]
+categories = ["memory-management", "data-structures", "no-std::no-alloc"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

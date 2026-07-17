@@ -50,11 +50,15 @@ features = ["production"]
 #                                             NOT yet in sefer-alloc's runtime dep tree — the
 #                                             in-tree RemoteFreeRing/HeapOverflow swap is a
 #                                             filed follow-up (see CRATE-P4 report).
+#   - size-classes    (crates/size-classes)  — const-built size-class table + derived
+#                                             O(1) size->class lookup + alignment-jump
+#                                             classifier; #![forbid(unsafe_code)], no_std.
+#                                             sefer's size_classes.rs is a thin shim over it.
 # Each is a real crates.io crate someone can `cargo add` on its own; sefer-alloc
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes"]
 resolver = "2"
 
 [lints.rust]
@@ -108,7 +112,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std", "dep:aligned-vmem", "dep:racy-ptr-cell"]
+alloc-core = ["std", "dep:aligned-vmem", "dep:racy-ptr-cell", "dep:size-classes"]
 # Cross-thread free support. Adds per-segment `RemoteFreeRing`s (lock-free
 # SPSC rings) for cross-thread `dealloc`, the `dealloc_any_thread` entry point,
 # owner stamping on segment headers, and the whole-slot-reuse teardown model
@@ -316,6 +320,14 @@ aligned-vmem = { path = "crates/vmem", version = "0.2", optional = true }
 # that depends on it), since the state machine lives on the allocator bootstrap
 # path. See `crates/racy-ptr-cell/src/lib.rs`.
 racy-ptr-cell = { path = "crates/racy-ptr-cell", version = "0.1", optional = true }
+# CRATE-P5: const-built size-class table + compile-time-derived O(1) size->class
+# lookup + alignment-divisibility classifier, extracted from
+# `src/alloc_core/size_classes.rs` (pure safe const arithmetic — no unsafe, no
+# memory). `src/alloc_core/size_classes.rs` is now a thin compat shim that wires
+# sefer's one concrete instantiation of the crate's const-generic builder and
+# re-exports the exact `super::size_classes::*` surface every in-tree call site
+# already uses. Pulled in ONLY by `alloc-core`. See `crates/size-classes`.
+size-classes = { path = "crates/size-classes", version = "0.1", optional = true }
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.
