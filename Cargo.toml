@@ -50,6 +50,10 @@ features = ["production"]
 #                                             NOT yet in sefer-alloc's runtime dep tree — the
 #                                             in-tree RemoteFreeRing/HeapOverflow swap is a
 #                                             filed follow-up (see CRATE-P4 report).
+#   - globalalloc-model (crates/globalalloc-model) — differential op-stream harness:
+#                                             GlobalAlloc-vs-model M1-M4 oracles +
+#                                             proptest/arbitrary front-ends; dev-only
+#                                             test infra, NOT in sefer's runtime dep tree.
 #   - size-classes    (crates/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
@@ -58,7 +62,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model"]
 resolver = "2"
 
 [lints.rust]
@@ -359,6 +363,14 @@ mimalloc = "0.1"
 # `examples/malloc_macro.rs` drives it (through its `run_with` per-thread pin
 # hook) instead of carrying a second copy of the workload. NOT a runtime dep.
 malloc-bench-rs = { path = "crates/malloc-bench" }
+# CRATE-P6: the extracted differential op-stream harness (reference model +
+# M1-M4 oracles). Dev-only — `tests/alloc_core_differential.rs` and
+# `tests/heap_differential.rs` are thin consumers of its `proptest` front-end
+# (the third consumer, `fuzz/fuzz_targets/global_alloc_ops.rs`, uses the
+# `arbitrary` front-end from its own workspace). The M1-M4 oracle logic lives
+# ONLY in the crate now, so an oracle improvement reaches all three at once.
+# NOT a runtime dep.
+globalalloc-model = { path = "crates/globalalloc-model", features = ["proptest"] }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom

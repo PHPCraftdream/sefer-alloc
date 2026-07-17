@@ -1,0 +1,28 @@
+[package]
+name = "globalalloc-model"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Differential-test any GlobalAlloc against a reference model: a random op-stream (alloc/dealloc/realloc/alloc_zeroed) driver plus the M1-M4 correctness oracles (validity/alignment, double-free-is-no-op, no live-block byte overlap, fill-pattern read-back, zeroed contract, realloc prefix preservation). proptest + arbitrary front-ends behind optional dev-only features; a normal build has zero non-dev deps. The correctness twin of malloc-bench-rs."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/globalalloc-model"
+documentation = "https://docs.rs/globalalloc-model"
+keywords = ["allocator", "differential", "proptest", "fuzz", "globalalloc"]
+categories = ["memory-management", "development-tools::testing", "no-std"]
+
+[features]
+# The op-stream generator + reference model + oracles are always available and
+# pull in NO dependencies (a normal build has zero non-dev deps). The two
+# front-ends over that one model are behind optional features:
+#   - `proptest`  — a `Strategy<Value = Vec<Op>>` for `cargo test` / miri.
+#   - `arbitrary` — `impl Arbitrary for OpStream` for `cargo fuzz` / libFuzzer.
+# Both are additive and independent; enable whichever front-end you need.
+default = []
+proptest = ["dep:proptest"]
+arbitrary = ["dep:arbitrary"]
+
+[dependencies]
+proptest = { version = "1", optional = true }
+arbitrary = { version = "1", features = ["derive"], optional = true }

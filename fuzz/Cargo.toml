@@ -37,6 +37,12 @@ sefer-alloc = { path = "..", features = ["production"] }
 arbitrary = { version = "1", features = ["derive"] }
 libfuzzer-sys = "0.4"
 
+# CRATE-P6: the shared differential harness (reference model + M1-M4 oracles).
+# `global_alloc_ops` is its third consumer, via the `arbitrary` front-end
+# (`OpStream`). The M1-M4 oracle logic lives ONLY in this crate now. The two
+# proptest consumers (tests/*_differential.rs) use its `proptest` front-end.
+globalalloc-model = { path = "../crates/globalalloc-model", features = ["arbitrary"] }
+
 [[bin]]
 name = "region_ops"
 path = "fuzz_targets/region_ops.rs"
