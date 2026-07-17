@@ -27,90 +27,11 @@ use std::time::Instant;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-// ---------------------------------------------------------------------------
-// RSS / commit-charge probes — identical technique to the SeferAlloc arm
-// (see that file's module doc for the shared-crate rationale).
-// ---------------------------------------------------------------------------
-
-#[cfg(target_os = "linux")]
-fn rss_kib() -> u64 {
-    let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
-    let resident_pages: u64 = statm
-        .split_whitespace()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    resident_pages * 4
-}
-
-#[cfg(target_os = "linux")]
-fn commit_kib() -> u64 {
-    let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
-    let total_pages: u64 = statm
-        .split_whitespace()
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    total_pages * 4
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct ProcessMemoryCounters {
-    cb: u32,
-    page_fault_count: u32,
-    peak_working_set_size: usize,
-    working_set_size: usize,
-    quota_peak_paged_pool_usage: usize,
-    quota_paged_pool_usage: usize,
-    quota_peak_non_paged_pool_usage: usize,
-    quota_non_paged_pool_usage: usize,
-    pagefile_usage: usize,
-    peak_pagefile_usage: usize,
-}
-
-#[cfg(windows)]
-extern "system" {
-    fn GetCurrentProcess() -> isize;
-    fn K32GetProcessMemoryInfo(
-        process: isize,
-        counters: *mut ProcessMemoryCounters,
-        cb: u32,
-    ) -> i32;
-}
-
-#[cfg(windows)]
-fn read_counters() -> ProcessMemoryCounters {
-    // SAFETY: `counters` is a valid, sufficiently-sized, mutable out-parameter;
-    // `GetCurrentProcess` returns a pseudo-handle that needs no close. Same
-    // documented usage as the sibling Stage-A harnesses.
-    unsafe {
-        let mut counters: ProcessMemoryCounters = core::mem::zeroed();
-        counters.cb = core::mem::size_of::<ProcessMemoryCounters>() as u32;
-        K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb);
-        counters
-    }
-}
-
-#[cfg(windows)]
-fn rss_kib() -> u64 {
-    (read_counters().working_set_size / 1024) as u64
-}
-
-#[cfg(windows)]
-fn commit_kib() -> u64 {
-    (read_counters().pagefile_usage / 1024) as u64
-}
-
-#[cfg(not(any(target_os = "linux", windows)))]
-fn rss_kib() -> u64 {
-    0
-}
-
-#[cfg(not(any(target_os = "linux", windows)))]
-fn commit_kib() -> u64 {
-    0
-}
+// The RSS / commit-charge probes (`rss_kib` / `commit_kib`) are now defined
+// ONCE in `examples/_shared/paired_ab_workload.rs` (thin wrappers over the
+// `proc-memstat` crate's `snapshot()`), `include!`d below — so the OS FFI that
+// used to be copy-pasted into each of the three `paired_ab_*` binaries lives
+// in one place.
 
 // Shared workload body — see `examples/_shared/paired_ab_workload.rs`'s module
 // doc. Byte-identical across all three `paired_ab_*` binaries. Provides

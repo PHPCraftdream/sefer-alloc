@@ -131,92 +131,19 @@ use sefer_alloc::SeferAlloc;
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // ---------------------------------------------------------------------------
-// RSS / commit-charge probes — identical technique to
-// `examples/first_alloc_process.rs` (R6-OPT-A1). Kept as a self-contained
-// copy (not a shared module) because examples are separate compilation units
-// and this project has no shared examples-support crate; duplicating a small,
-// stable probe is the established pattern (see that file's own module doc).
+// RSS / commit-charge probes — thin KiB wrappers over the `proc-memstat`
+// crate's same-instant `snapshot()` (bytes). The OS FFI that used to be a
+// self-contained copy here now lives in ONE place (`crates/proc-memstat`),
+// shared with `examples/first_alloc_process.rs` and the `paired_ab_*` trio.
+// Printed line names/units are unchanged.
 // ---------------------------------------------------------------------------
 
-#[cfg(target_os = "linux")]
 fn rss_kib() -> u64 {
-    let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
-    let resident_pages: u64 = statm
-        .split_whitespace()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    resident_pages * 4
+    proc_memstat::snapshot().rss / 1024
 }
 
-#[cfg(target_os = "linux")]
 fn commit_kib() -> u64 {
-    let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
-    let total_pages: u64 = statm
-        .split_whitespace()
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    total_pages * 4
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct ProcessMemoryCounters {
-    cb: u32,
-    page_fault_count: u32,
-    peak_working_set_size: usize,
-    working_set_size: usize,
-    quota_peak_paged_pool_usage: usize,
-    quota_paged_pool_usage: usize,
-    quota_peak_non_paged_pool_usage: usize,
-    quota_non_paged_pool_usage: usize,
-    pagefile_usage: usize,
-    peak_pagefile_usage: usize,
-}
-
-#[cfg(windows)]
-extern "system" {
-    fn GetCurrentProcess() -> isize;
-    fn K32GetProcessMemoryInfo(
-        process: isize,
-        counters: *mut ProcessMemoryCounters,
-        cb: u32,
-    ) -> i32;
-}
-
-#[cfg(windows)]
-fn read_counters() -> ProcessMemoryCounters {
-    // SAFETY: `counters` is a valid, sufficiently-sized, mutable out-parameter;
-    // `GetCurrentProcess` returns a pseudo-handle that needs no close. This is
-    // the documented calling convention for `GetProcessMemoryInfo` — identical
-    // usage to `examples/first_alloc_process.rs`.
-    unsafe {
-        let mut counters: ProcessMemoryCounters = core::mem::zeroed();
-        counters.cb = core::mem::size_of::<ProcessMemoryCounters>() as u32;
-        K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb);
-        counters
-    }
-}
-
-#[cfg(windows)]
-fn rss_kib() -> u64 {
-    (read_counters().working_set_size / 1024) as u64
-}
-
-#[cfg(windows)]
-fn commit_kib() -> u64 {
-    (read_counters().pagefile_usage / 1024) as u64
-}
-
-#[cfg(not(any(target_os = "linux", windows)))]
-fn rss_kib() -> u64 {
-    0
-}
-
-#[cfg(not(any(target_os = "linux", windows)))]
-fn commit_kib() -> u64 {
-    0
+    proc_memstat::snapshot().commit / 1024
 }
 
 // ---------------------------------------------------------------------------

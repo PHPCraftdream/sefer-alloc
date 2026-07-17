@@ -60,6 +60,12 @@ features = ["production"]
 #                                             INDEX_BITS, slot-resident OR owned links.
 #                                             #![forbid(unsafe_code)], no_std, real-type
 #                                             loom. sefer's registry `free_slots` uses it.
+#   - proc-memstat    (crates/proc-memstat) — same-instant RSS + commit-charge + peak-RSS
+#                                             self-probe (bytes, one snapshot call);
+#                                             #![allow(unsafe_code)] tier-1 seam (Windows
+#                                             K32GetProcessMemoryInfo / macOS task_info /
+#                                             Linux /proc). Dev-only: the three process-probe
+#                                             examples consume it; NOT in sefer's runtime dep tree.
 #   - size-classes    (crates/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
@@ -68,7 +74,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat"]
 resolver = "2"
 
 [lints.rust]
@@ -386,6 +392,13 @@ malloc-bench-rs = { path = "crates/malloc-bench" }
 # ONLY in the crate now, so an oracle improvement reaches all three at once.
 # NOT a runtime dep.
 globalalloc-model = { path = "crates/globalalloc-model", features = ["proptest"] }
+# CRATE-P8: the extracted same-instant RSS + commit-charge + peak-RSS process
+# self-probe. Dev-only — the three process-probe examples
+# (`first_alloc_process`, `dealloc_only_unbound_thread`, the `paired_ab_*`
+# trio) fold their previously-triplicated `K32GetProcessMemoryInfo` /
+# `/proc/self/statm` FFI onto this crate's `snapshot()`. The FFI now lives in
+# ONE place. NOT a runtime dep.
+proc-memstat = { path = "crates/proc-memstat" }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom

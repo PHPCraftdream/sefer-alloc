@@ -66,6 +66,24 @@
 
 use std::hint::black_box;
 
+// ---------------------------------------------------------------------------
+// RSS / commit-charge probes — thin KiB wrappers over the `proc-memstat`
+// crate's same-instant `snapshot()` (bytes). Defined ONCE here (this file is
+// `include!`d verbatim into all three `paired_ab_*` binaries), so the OS FFI
+// that used to be copy-pasted into each of the three binaries now lives in ONE
+// place (`crates/proc-memstat`). Printed line names/units are unchanged.
+// ---------------------------------------------------------------------------
+
+/// Resident set size in KiB (bytes / 1024 from `proc_memstat::snapshot`).
+fn rss_kib() -> u64 {
+    proc_memstat::snapshot().rss / 1024
+}
+
+/// Commit charge in KiB (bytes / 1024 from `proc_memstat::snapshot`).
+fn commit_kib() -> u64 {
+    proc_memstat::snapshot().commit / 1024
+}
+
 /// Same sizes `benches/global_alloc.rs::SIZES` sweeps.
 const SIZES: &[usize] = &[16, 64, 256, 1024];
 

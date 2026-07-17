@@ -1,0 +1,15 @@
+[package]
+name = "proc-memstat"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Same-instant self-probe of a process's own memory: RSS + commit charge + peak RSS, in bytes, from ONE snapshot call. Commit charge (rarely surfaced elsewhere) is a separate axis from RSS. 100% Rust — no C libraries (no sysinfo, no libc-heavy dep): Linux /proc parsing, Windows K32GetProcessMemoryInfo, macOS task_info, all via locally-declared FFI. Zero crate deps."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/proc-memstat"
+documentation = "https://docs.rs/proc-memstat"
+keywords = ["rss", "memory", "commit-charge", "process", "peak-rss"]
+categories = ["os", "memory-management", "development-tools::profiling"]
+
+[dependencies]
