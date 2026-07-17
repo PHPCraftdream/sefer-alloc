@@ -510,6 +510,34 @@ The 0.2.1 column carries the current harness ported onto the release tag, kept
 as the local `bench/0.2.1` branch so 0.2.1 stays re-measurable
 (`git worktree add ../sa-021 bench/0.2.1 && cd ../sa-021 && npm run bench:table`).
 
+### Cross-version comparison — 0.2.1 → 0.3.0 (post-round7)
+
+A fresh same-harness run of published **0.2.1** vs **current 0.3.0** (`49046ef`,
+all Round7 landed), mimalloc/System as reference — full 7-group tables + the two
+ratio columns (`vs 0.2.1`, `vs mimalloc`) in
+[`docs/perf/R7_CROSS_VERSION_BENCH.md`](docs/perf/R7_CROSS_VERSION_BENCH.md).
+Headline (ns/op, lower is better; 0.3.0's improvement over 0.2.1):
+
+| Workload (1024 B) | 0.2.1 | 0.3.0 | vs 0.2.1 | vs mimalloc |
+|---|---:|---:|---|---|
+| churn (reuse) | 45.4 | 21.4 | **2.12× faster** | **10.7× faster** |
+| churn + write | 38.6 | 23.2 | **1.66× faster** | **8.6× faster** |
+| `segment_decommit_cycle` (ns/batch) | 405 980 | 1 277 | **~318× faster** | **4.5× faster** |
+| `working_set_cycle` (ns/batch) | 1 031 300 | 256 100 | **4.03× faster** | — |
+
+- **The ~318× decommit-cycle win** comes from retaining emptied segments instead
+  of releasing them to the OS: the **Mechanism-2 small-segment hysteresis pool**
+  (default 4 seg / 16 MiB, presets in
+  [`R7_POOL_CAP_PRESETS.md`](docs/perf/R7_POOL_CAP_PRESETS.md)) + the OPT-E
+  large-segment cache turn an empty→reuse cycle from a `VirtualAlloc`+`MEM_COMMIT`
+  syscall storm into a cheap pool-pop over the existing reservation.
+- Separately, the **chunked Registry** (R6-OPT-P0-2, `e4b3e1d`+`8dc6fe8`) cut the
+  Windows **first-alloc commit charge from ≈128 MiB to ≈6 MiB (~21.7×)** —
+  replacing a monolithic `[HeapSlot; 4096]` inline array (committed whole on first
+  alloc) with 64 lazily-materialised 64-slot chunks.
+- 0.3.0 loses to mimalloc only on the cold path at small sizes (16–64 B,
+  ~1.9–2.7× slower); churn at 64 B+ is a clean win (up to 10.7×).
+
 ### Large alloc / free (`benches/large_realloc.rs`, headline)
 
 `alloc(N) + free` round-trip served by the OPT-E large-cache
