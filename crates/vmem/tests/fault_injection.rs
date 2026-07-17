@@ -20,8 +20,18 @@
 
 use aligned_vmem::fault_injection::{arm_fail_at, arm_fail_next};
 use aligned_vmem::{commit_range, reserve_aligned_lazy, PAGE};
+use std::sync::Mutex;
 
 const MIB: usize = 1024 * 1024;
+
+/// The `fault-injection` hooks are PROCESS-GLOBAL atomics; libtest runs the
+/// tests in this file on parallel threads, so their arm/fire/disarm sequences
+/// would otherwise interleave against the shared state (one test's disarm or
+/// commit consuming another's just-armed one-shot). Every test takes this lock
+/// for its whole body so the process-global hook is exercised single-threaded.
+/// `unwrap_or_else(into_inner)` recovers from a poisoned lock so one failing
+/// test does not cascade into spurious failures of the rest.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 /// `arm_fail_next(1)` forces exactly the NEXT real `commit_range` call to
 /// fail without touching the OS; the call after that succeeds normally
@@ -29,6 +39,7 @@ const MIB: usize = 1024 * 1024;
 /// the OS), and the post-fault commit genuinely makes the range writable.
 #[test]
 fn fail_next_forces_exactly_one_real_commit_failure() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     arm_fail_next(0); // disarm any residue from a prior test in this binary
     let chunk = 16 * PAGE; // 64 KiB
     let span = 4 * MIB;
@@ -62,6 +73,7 @@ fn fail_next_forces_exactly_one_real_commit_failure() {
 /// real backend, and that a call after the k-th succeeds again.
 #[test]
 fn fail_at_fails_exactly_the_kth_real_commit() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     arm_fail_at(0); // disarm any residue
     let chunk = 16 * PAGE;
     let span = 4 * MIB;
@@ -99,6 +111,7 @@ fn fail_at_fails_exactly_the_kth_real_commit() {
 /// simultaneously: the "next N" hook fires first.
 #[test]
 fn fail_next_has_priority_over_fail_at() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     arm_fail_next(0);
     arm_fail_at(0);
     let chunk = 16 * PAGE;
@@ -133,6 +146,7 @@ fn fail_next_has_priority_over_fail_at() {
 /// a real commit proceeds normally.
 #[test]
 fn zero_arming_is_a_pure_disarm() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     arm_fail_next(0);
     arm_fail_at(0);
     let chunk = 16 * PAGE;

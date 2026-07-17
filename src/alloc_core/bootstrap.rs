@@ -91,7 +91,16 @@ pub(crate) fn primordial() -> Option<Primordial> {
     #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
     let segment = {
         let initial_commit = Layout::primordial_meta_end() + LAZY_FIRST_CHUNK;
-        debug_assert!(initial_commit <= super::os::SEGMENT);
+        // Uphold `reserve_lazy`'s full documented contract (non-zero, PAGE
+        // multiple, `<= SEGMENT`), not just the size bound — both hold by
+        // construction here (`primordial_meta_end()` is `align_up(_, PAGE)` and
+        // `LAZY_FIRST_CHUNK` is a const-asserted PAGE multiple), but assert all
+        // three so a future layout change that broke either fails loudly.
+        debug_assert!(
+            initial_commit != 0
+                && initial_commit.is_multiple_of(aligned_vmem::PAGE)
+                && initial_commit <= super::os::SEGMENT
+        );
         Segment::reserve_lazy(initial_commit)?
     };
     #[cfg(not(all(feature = "alloc-lazy-commit", not(feature = "numa-aware"))))]
