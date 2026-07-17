@@ -1,0 +1,24 @@
+[package]
+name = "proc-probe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "The one-dependency toolkit a fresh-process measurement probe needs: emit `RESULT key=value` lines to stdout (the machine-parseable protocol a per-sample runner greps), plus a re-export of proc-memstat's same-instant RSS + commit-charge + peak-RSS `snapshot()`. Measure your process, report it in one line. no_std-friendly core, zero non-std deps beyond proc-memstat, #![forbid(unsafe_code)]."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/proc-probe"
+documentation = "https://docs.rs/proc-probe"
+keywords = ["benchmark", "process", "memory", "rss", "probe"]
+categories = ["development-tools::profiling", "os", "memory-management"]
+
+[features]
+# The `emit*` functions write to stdout, which needs `std`. Default-on so a
+# probe binary gets the emit family with a plain `cargo add proc-probe`. Disable
+# (`default-features = false`) for a `no_std` consumer that only wants the
+# protocol constant / the `proc-memstat` re-export and supplies its own sink.
+default = ["std"]
+std = []
+
+[dependencies]
+proc-memstat = { path = "../proc-memstat", version = "0.1" }

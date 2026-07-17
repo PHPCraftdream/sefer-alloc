@@ -57,9 +57,10 @@
 //!
 //! ## Platform honesty
 //!
-//! RSS, commit charge, and peak RSS are read from the `proc-memstat` crate's
-//! [`proc_memstat::snapshot`] (`crates/proc-memstat`), which holds the OS FFI
-//! in ONE audited place (the readers used to be triplicated in this file):
+//! RSS, commit charge, and peak RSS are read from the `proc-probe` crate's
+//! re-export of `proc-memstat`'s `snapshot()` (`crates/proc-memstat`), which
+//! holds the OS FFI in ONE audited place (the readers used to be triplicated in
+//! this file); the `RESULT` lines are emitted via `proc_probe::emit_*`:
 //! - **Linux:** `/proc/self/statm` resident/size pages × page size, plus
 //!   `/proc/self/status` `VmHWM` for peak RSS.
 //! - **Windows:** `K32GetProcessMemoryInfo` — `WorkingSetSize` (rss),
@@ -115,23 +116,25 @@ use sefer_alloc::SeferAlloc;
 
 // ---------------------------------------------------------------------------
 // RSS / commit-charge / peak-RSS probes — thin KiB wrappers over the
-// `proc-memstat` crate's same-instant `snapshot()` (bytes). The OS FFI that
-// used to be triplicated in this file now lives in ONE place
-// (`crates/proc-memstat`). Printed line names/units are unchanged.
+// `proc-probe` crate's re-export of `proc-memstat`'s same-instant `snapshot()`
+// (bytes). The OS FFI that used to be triplicated in this file now lives in ONE
+// place (`crates/proc-memstat`, reached via `proc-probe`'s "measure + report"
+// re-export). The `RESULT` lines are emitted via `proc_probe::emit_*` (see
+// `main`). Printed line names/units are unchanged.
 // ---------------------------------------------------------------------------
 
 fn rss_kib() -> u64 {
-    proc_memstat::snapshot().rss / 1024
+    proc_probe::snapshot().rss / 1024
 }
 
 fn commit_kib() -> u64 {
-    proc_memstat::snapshot().commit / 1024
+    proc_probe::snapshot().commit / 1024
 }
 
 fn peak_rss_kib() -> u64 {
     // `None` (platform without a peak counter) prints as 0, matching this
     // harness's prior "not applicable = 0" convention.
-    proc_memstat::snapshot().peak_rss.unwrap_or(0) / 1024
+    proc_probe::snapshot().peak_rss.unwrap_or(0) / 1024
 }
 
 // NOTE: we deliberately do NOT install SeferAlloc as the `#[global_allocator]`
@@ -242,17 +245,17 @@ fn main() {
     let high_water = sefer.stats().heaps_claimed_high_water;
     let peak_rss = peak_rss_kib();
 
-    // Machine-parseable results (prefixed so the runner can grep them out of
-    // any surrounding noise). One metric per line.
-    println!("RESULT rss_before_kib={rss_before}");
-    println!("RESULT rss_after_1_heap_kib={rss_after_1_heap}");
-    println!("RESULT rss_after_8_heaps_kib={rss_after_8_heaps}");
-    println!("RESULT rss_after_64_heaps_kib={rss_after_64_heaps}");
-    println!("RESULT peak_rss_kib={peak_rss}");
-    println!("RESULT commit_before_kib={commit_before}");
-    println!("RESULT commit_after_1_heap_kib={commit_after_1_heap}");
-    println!("RESULT commit_after_8_heaps_kib={commit_after_8_heaps}");
-    println!("RESULT commit_after_64_heaps_kib={commit_after_64_heaps}");
-    println!("RESULT first_alloc_latency_ns={first_alloc_latency_ns}");
-    println!("RESULT heaps_claimed_high_water={high_water}");
+    // Machine-parseable results (emitted via `proc_probe::emit_*` so the runner
+    // can grep them out of any surrounding noise). One metric per line.
+    proc_probe::emit_u64("rss_before_kib", rss_before);
+    proc_probe::emit_u64("rss_after_1_heap_kib", rss_after_1_heap);
+    proc_probe::emit_u64("rss_after_8_heaps_kib", rss_after_8_heaps);
+    proc_probe::emit_u64("rss_after_64_heaps_kib", rss_after_64_heaps);
+    proc_probe::emit_u64("peak_rss_kib", peak_rss);
+    proc_probe::emit_u64("commit_before_kib", commit_before);
+    proc_probe::emit_u64("commit_after_1_heap_kib", commit_after_1_heap);
+    proc_probe::emit_u64("commit_after_8_heaps_kib", commit_after_8_heaps);
+    proc_probe::emit_u64("commit_after_64_heaps_kib", commit_after_64_heaps);
+    proc_probe::emit_ns("first_alloc_latency_ns", first_alloc_latency_ns);
+    proc_probe::emit_u64("heaps_claimed_high_water", high_water);
 }

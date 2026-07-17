@@ -131,19 +131,21 @@ use sefer_alloc::SeferAlloc;
 static GLOBAL: SeferAlloc = SeferAlloc::new();
 
 // ---------------------------------------------------------------------------
-// RSS / commit-charge probes — thin KiB wrappers over the `proc-memstat`
-// crate's same-instant `snapshot()` (bytes). The OS FFI that used to be a
-// self-contained copy here now lives in ONE place (`crates/proc-memstat`),
-// shared with `examples/first_alloc_process.rs` and the `paired_ab_*` trio.
-// Printed line names/units are unchanged.
+// RSS / commit-charge probes — thin KiB wrappers over the `proc-probe` crate's
+// re-export of `proc-memstat`'s same-instant `snapshot()` (bytes). The OS FFI
+// that used to be a self-contained copy here now lives in ONE place
+// (`crates/proc-memstat`, reached via `proc-probe`'s "measure + report"
+// re-export), shared with `examples/first_alloc_process.rs` and the
+// `paired_ab_*` trio. The `RESULT` lines are emitted via `proc_probe::emit_*`
+// (see `main`). Printed line names/units are unchanged.
 // ---------------------------------------------------------------------------
 
 fn rss_kib() -> u64 {
-    proc_memstat::snapshot().rss / 1024
+    proc_probe::snapshot().rss / 1024
 }
 
 fn commit_kib() -> u64 {
-    proc_memstat::snapshot().commit / 1024
+    proc_probe::snapshot().commit / 1024
 }
 
 // ---------------------------------------------------------------------------
@@ -350,40 +352,28 @@ fn main() {
 
     let metrics = run_cell(b, t, mode);
 
-    println!(
-        "RESULT mode={}",
+    proc_probe::emit(
+        "mode",
         if mode == Mode::Control {
             "control"
         } else {
             "treatment"
-        }
+        },
     );
-    println!("RESULT b={b}");
-    println!("RESULT t={t}");
-    println!("RESULT rss_before_kib={}", metrics.rss_before);
-    println!("RESULT rss_after_kib={}", metrics.rss_after);
-    println!("RESULT rss_after_join_kib={}", metrics.rss_after_join);
-    println!("RESULT commit_before_kib={}", metrics.commit_before);
-    println!("RESULT commit_after_kib={}", metrics.commit_after);
-    println!("RESULT commit_after_join_kib={}", metrics.commit_after_join);
-    println!(
-        "RESULT first_dealloc_latency_ns={}",
-        metrics.first_dealloc_latency_ns
+    proc_probe::emit_u64("b", b as u64);
+    proc_probe::emit_u64("t", t as u64);
+    proc_probe::emit_u64("rss_before_kib", metrics.rss_before);
+    proc_probe::emit_u64("rss_after_kib", metrics.rss_after);
+    proc_probe::emit_u64("rss_after_join_kib", metrics.rss_after_join);
+    proc_probe::emit_u64("commit_before_kib", metrics.commit_before);
+    proc_probe::emit_u64("commit_after_kib", metrics.commit_after);
+    proc_probe::emit_u64("commit_after_join_kib", metrics.commit_after_join);
+    proc_probe::emit_ns("first_dealloc_latency_ns", metrics.first_dealloc_latency_ns);
+    proc_probe::emit_ns(
+        "steady_dealloc_latency_ns",
+        metrics.steady_dealloc_latency_ns,
     );
-    println!(
-        "RESULT steady_dealloc_latency_ns={}",
-        metrics.steady_dealloc_latency_ns
-    );
-    println!(
-        "RESULT heaps_claimed_high_water={}",
-        metrics.heaps_claimed_high_water
-    );
-    println!(
-        "RESULT segments_reserved_before={}",
-        metrics.segments_reserved_before
-    );
-    println!(
-        "RESULT segments_reserved_after={}",
-        metrics.segments_reserved_after
-    );
+    proc_probe::emit_u64("heaps_claimed_high_water", metrics.heaps_claimed_high_water);
+    proc_probe::emit_u64("segments_reserved_before", metrics.segments_reserved_before);
+    proc_probe::emit_u64("segments_reserved_after", metrics.segments_reserved_after);
 }

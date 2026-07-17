@@ -66,6 +66,13 @@ features = ["production"]
 #                                             K32GetProcessMemoryInfo / macOS task_info /
 #                                             Linux /proc). Dev-only: the three process-probe
 #                                             examples consume it; NOT in sefer's runtime dep tree.
+#   - proc-probe      (crates/proc-probe)    — the `RESULT key=value` stdout protocol every
+#                                             fresh-process judge shares (`emit`/`emit_u64`/…),
+#                                             re-exporting proc-memstat's `snapshot`/`MemStat`
+#                                             so a probe has ONE "measure + report" dependency.
+#                                             #![forbid(unsafe_code)] (FFI stays in proc-memstat).
+#                                             Dev-only: the process-probe examples emit through it;
+#                                             NOT in sefer's runtime dep tree.
 #   - size-classes    (crates/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
@@ -74,7 +81,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
 resolver = "2"
 
 [lints.rust]
@@ -399,6 +406,14 @@ globalalloc-model = { path = "crates/globalalloc-model", features = ["proptest"]
 # `/proc/self/statm` FFI onto this crate's `snapshot()`. The FFI now lives in
 # ONE place. NOT a runtime dep.
 proc-memstat = { path = "crates/proc-memstat" }
+# CRATE-P9: the extracted `RESULT key=value` stdout protocol
+# (`proc_probe::emit`/`emit_u64`/`emit_ns`/… + a re-export of proc-memstat's
+# `snapshot`/`MemStat`). Dev-only — the process-probe examples
+# (`first_alloc_process`, `dealloc_only_unbound_thread`, the `paired_ab_*`
+# trio) emit their `RESULT` lines through it and read memory via its re-export,
+# so a probe binary has ONE "measure + report" dependency and the emit format
+# can never drift from what `scripts/*.mjs` parse. NOT a runtime dep.
+proc-probe = { path = "crates/proc-probe" }
 
 # Phase 3b-II: loom model-checks the publication PROTOCOL (generation/value
 # ordering) of the epoch tier. loom and crossbeam-epoch do NOT compose (loom

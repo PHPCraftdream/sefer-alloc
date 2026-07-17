@@ -668,6 +668,13 @@ name = "proc-memstat"
 version = "0.1.0"
 
 [[package]]
+name = "proc-probe"
+version = "0.1.0"
+dependencies = [
+ "proc-memstat",
+]
+
+[[package]]
 name = "proptest"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -885,6 +892,7 @@ dependencies = [
  "mimalloc",
  "numa-shim",
  "proc-memstat",
+ "proc-probe",
  "proptest",
  "racy-ptr-cell",
  "sefer-region",

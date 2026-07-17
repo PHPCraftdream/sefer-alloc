@@ -51,12 +51,9 @@ fn main() {
 
     let stats = GLOBAL.stats();
 
-    println!("RESULT arm=sefer");
-    println!("RESULT elapsed_ns={elapsed_ns}");
-    println!(
-        "RESULT segments_reserved_total={}",
-        stats.segments_reserved_total
-    );
-    println!("RESULT rss_after_kib={}", rss_kib());
-    println!("RESULT commit_after_kib={}", commit_kib());
+    proc_probe::emit("arm", "sefer");
+    proc_probe::emit_ns("elapsed_ns", elapsed_ns);
+    proc_probe::emit_u64("segments_reserved_total", stats.segments_reserved_total);
+    proc_probe::emit_u64("rss_after_kib", rss_kib());
+    proc_probe::emit_u64("commit_after_kib", commit_kib());
 }

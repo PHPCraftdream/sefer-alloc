@@ -51,15 +51,45 @@
 // `R5_R2_CHURN_REGRESSION_PAIRED_AB.md` used (see that file's "Paired
 // statistic" section), not a different statistical approach.
 //
+// GENERALIZATION (CRATE-P9). This runner is the reusable A/B/B/A paired judge
+// for ANY two commands, not just sefer's three example arms. Its default
+// behaviour is UNCHANGED — with no `--config` it drives the built-in
+// `paired_ab_{sefer,mimalloc,system}` examples exactly as before (same RESULT
+// keys, same stats, same provenance shape, same installed-allocator sanity
+// gate). Pass `--config <file.json>` to run two ARBITRARY commands as arms:
+//
+//   {
+//     "metric": "elapsed_ns",          // the RESULT key paired across launches
+//     "build": {                        // optional: a command run once up front
+//       "command": "cargo",
+//       "args": ["build", "--release", "--example", "my_probe"]
+//     },
+//     "arms": {
+//       "A": { "command": "./a.exe", "args": [] },
+//       "B": { "command": "./b.exe", "args": [] }
+//     },
+//     "sanity": {                       // optional installed-allocator-style gate
+//       "key": "segments_reserved_total",
+//       "nonzero_arms": ["A"]           // must be > 0 in these arms, == 0 elsewhere
+//     }
+//   }
+//
+// The paired t-test, sign test, A/B/B/A order, same-vs-same control, and
+// provenance JSON are IDENTICAL for the config path and the built-in path — the
+// only thing config changes is WHICH command each arm launches and WHICH RESULT
+// key is the metric.
+//
 // USAGE:
 //   node scripts/paired-ab-runner.mjs                       # full run: 20 pairs, sefer vs mimalloc AND sefer vs system
 //   node scripts/paired-ab-runner.mjs --quick                # smoke-test: 4 pairs
 //   node scripts/paired-ab-runner.mjs --pairs 30              # override pair count
 //   node scripts/paired-ab-runner.mjs --arms sefer,sefer      # same-vs-same control run (the honesty check)
 //   node scripts/paired-ab-runner.mjs --arms sefer,mimalloc   # one specific comparison
+//   node scripts/paired-ab-runner.mjs --config run.json       # two ARBITRARY commands as arms A vs B
+//   node scripts/paired-ab-runner.mjs --config run.json --arms A,A  # same-vs-same control over a config arm
 //   npm run paired-ab                                          # if wired in package.json
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { REPO_ROOT, run } from './lib.mjs';
 
@@ -69,6 +99,7 @@ const args = process.argv.slice(2);
 const quick = args.includes('--quick');
 const pairsArg = args.find((a, i) => args[i - 1] === '--pairs');
 const armsArg = args.find((a, i) => args[i - 1] === '--arms');
+const configArg = args.find((a, i) => args[i - 1] === '--config');
 const verifyOnly = args.includes('--verify-only');
 
 // Per the task's own explicit threshold: "at least 20 paired repetitions ...
@@ -76,34 +107,145 @@ const verifyOnly = args.includes('--verify-only');
 // --quick drops this to a fast smoke-test count for iteration.
 const PAIRS = pairsArg ? Number(pairsArg) : quick ? 4 : 20;
 
-const ALL_ARMS = ['sefer', 'mimalloc', 'system'];
-const REQUESTED_ARMS = armsArg ? armsArg.split(',').map((s) => s.trim()) : null;
-
 const OUT_DIR = `${REPO_ROOT}/docs/perf/paired_ab_runs`;
 
-function exePath(arm) {
-  const name = isWin ? `paired_ab_${arm}.exe` : `paired_ab_${arm}`;
+// ── Config: built-in sefer arms by default, arbitrary commands via --config ──
+//
+// The CONFIG object is the single source of truth for "which arm launches
+// which command", "which RESULT key is the metric", and "what the sanity gate
+// checks". With no `--config` flag it is the built-in sefer profile below —
+// byte-for-byte the same behaviour this runner always had.
+function exePath(exampleName) {
+  const isWinLocal = process.platform === 'win32';
+  const name = isWinLocal ? `${exampleName}.exe` : exampleName;
   const targetDir = process.env.CARGO_TARGET_DIR
     ? process.env.CARGO_TARGET_DIR.replace(/\\/g, '/')
     : `${REPO_ROOT}/target`;
   return `${targetDir}/release/examples/${name}`;
 }
 
+/** The built-in sefer profile: the three `paired_ab_*` example arms. */
+function seferConfig() {
+  const mkArm = (arm) => ({
+    command: exePath(`paired_ab_${arm}`),
+    args: [],
+  });
+  return {
+    metric: 'elapsed_ns',
+    // Built-in build step: all requested example arms in ONE cargo invocation
+    // with alloc-global on (harmless to the mimalloc/system arms), matching the
+    // prior `buildArms` behaviour. Wired lazily in `buildArms` because it needs
+    // the concrete requested arm list.
+    build: null, // sentinel: sefer profile uses the bespoke buildArms path
+    arms: {
+      sefer: mkArm('sefer'),
+      mimalloc: mkArm('mimalloc'),
+      system: mkArm('system'),
+    },
+    sanity: {
+      // SeferAlloc's own diagnostic counter must move (> 0) ONLY in the sefer
+      // arm and read exactly 0 in the others — the installed-allocator check.
+      key: 'segments_reserved_total',
+      nonzero_arms: ['sefer'],
+    },
+    // Default comparison set when no explicit --arms is given.
+    default_comparisons: [
+      ['sefer', 'mimalloc'],
+      ['sefer', 'system'],
+    ],
+    features_note: 'alloc-global',
+    is_sefer_builtin: true,
+  };
+}
+
+function loadConfig() {
+  if (!configArg) return seferConfig();
+  const path = configArg;
+  if (!existsSync(path)) throw new Error(`--config file not found: ${path}`);
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new Error(`--config ${path} is not valid JSON: ${e.message}`);
+  }
+  if (!raw.arms || typeof raw.arms !== 'object' || !Object.keys(raw.arms).length) {
+    throw new Error(`--config ${path}: "arms" must be a non-empty object of {name: {command, args}}`);
+  }
+  for (const [name, arm] of Object.entries(raw.arms)) {
+    if (!arm || typeof arm.command !== 'string' || !arm.command) {
+      throw new Error(`--config ${path}: arm "${name}" must have a string "command"`);
+    }
+    if (arm.args != null && !Array.isArray(arm.args)) {
+      throw new Error(`--config ${path}: arm "${name}".args must be an array of strings`);
+    }
+  }
+  const armNames = Object.keys(raw.arms);
+  const cfg = {
+    metric: raw.metric || 'elapsed_ns',
+    build: raw.build ?? null,
+    arms: raw.arms,
+    sanity: raw.sanity ?? null,
+    // Default: if exactly 2 arms are defined, compare them; else require --arms.
+    default_comparisons:
+      raw.default_comparisons ?? (armNames.length === 2 ? [[armNames[0], armNames[1]]] : null),
+    features_note: raw.features_note ?? '(via --config)',
+    is_sefer_builtin: false,
+  };
+  if (cfg.build && (typeof cfg.build.command !== 'string' || !Array.isArray(cfg.build.args ?? []))) {
+    throw new Error(`--config ${path}: "build" must be {command: string, args?: string[]}`);
+  }
+  if (cfg.sanity) {
+    if (typeof cfg.sanity.key !== 'string' || !Array.isArray(cfg.sanity.nonzero_arms ?? [])) {
+      throw new Error(`--config ${path}: "sanity" must be {key: string, nonzero_arms?: string[]}`);
+    }
+    cfg.sanity.nonzero_arms = cfg.sanity.nonzero_arms ?? [];
+  }
+  return cfg;
+}
+
+const CONFIG = loadConfig();
+const ALL_ARMS = Object.keys(CONFIG.arms);
+const METRIC = CONFIG.metric;
+const REQUESTED_ARMS = armsArg ? armsArg.split(',').map((s) => s.trim()) : null;
+
+/** Resolve an arm name to its `{command, args}` from the active CONFIG. */
+function armSpec(arm) {
+  const spec = CONFIG.arms[arm];
+  if (!spec) throw new Error(`unknown arm '${arm}' — must be one of ${ALL_ARMS.join(', ')}`);
+  return { command: spec.command, args: spec.args ?? [] };
+}
+
 async function buildArms(arms) {
   const unique = [...new Set(arms)];
-  console.log(`[paired-ab] building example(s): ${unique.map((a) => `paired_ab_${a}`).join(', ')}...`);
-  const exampleFlags = unique.flatMap((a) => ['--example', `paired_ab_${a}`]);
-  // paired_ab_sefer requires alloc-global; the other two build fine without
-  // any feature but also compile cleanly WITH it (mimalloc/System arms never
-  // reference SeferAlloc, so the feature flag is harmless to them) — building
-  // all three in ONE cargo invocation with alloc-global on keeps this simple
-  // and matches the sibling runners' one-shot build step.
-  const { code } = await run(
-    'cargo',
-    ['build', '--release', ...exampleFlags, '--features', 'alloc-global'],
-    { cwd: REPO_ROOT, shell: isWin },
-  );
-  if (code !== 0) throw new Error(`cargo build failed (exit ${code})`);
+  if (CONFIG.is_sefer_builtin) {
+    // Built-in sefer profile: build all requested `paired_ab_*` examples in ONE
+    // cargo invocation with alloc-global on (harmless to the mimalloc/System
+    // arms, which never reference SeferAlloc) — byte-for-byte the prior build
+    // step. This bespoke path is kept (rather than a generic per-arm build)
+    // because it is a single cargo call across all arms, which the generic
+    // config `build` shape (one command) cannot express as cleanly.
+    console.log(`[paired-ab] building example(s): ${unique.map((a) => `paired_ab_${a}`).join(', ')}...`);
+    const exampleFlags = unique.flatMap((a) => ['--example', `paired_ab_${a}`]);
+    const { code } = await run(
+      'cargo',
+      ['build', '--release', ...exampleFlags, '--features', 'alloc-global'],
+      { cwd: REPO_ROOT, shell: isWin },
+    );
+    if (code !== 0) throw new Error(`cargo build failed (exit ${code})`);
+    return;
+  }
+  // Config profile: run the single optional `build` command once up front (if
+  // provided). Arbitrary arm commands are assumed already built/present.
+  if (CONFIG.build) {
+    console.log(`[paired-ab] running config build step: ${CONFIG.build.command} ${(CONFIG.build.args ?? []).join(' ')}`);
+    const { code } = await run(CONFIG.build.command, CONFIG.build.args ?? [], {
+      cwd: REPO_ROOT,
+      shell: isWin,
+    });
+    if (code !== 0) throw new Error(`config build step failed (exit ${code})`);
+  } else {
+    console.log('[paired-ab] --config has no "build" step; assuming arm commands are already built.');
+  }
 }
 
 function parseResult(out) {
@@ -116,32 +258,42 @@ function parseResult(out) {
 }
 
 async function runOnce(arm) {
-  const { out } = await run(exePath(arm), [], { cwd: REPO_ROOT });
+  const { command, args: cmdArgs } = armSpec(arm);
+  const { out } = await run(command, cmdArgs, { cwd: REPO_ROOT });
   const r = parseResult(out);
-  if (r.elapsed_ns == null) {
-    throw new Error(`paired_ab_${arm} produced no RESULT elapsed_ns line — harness bug (raw output:\n${out}\n)`);
+  if (r[METRIC] == null) {
+    throw new Error(
+      `arm '${arm}' (${command}) produced no RESULT ${METRIC} line — harness bug (raw output:\n${out}\n)`,
+    );
   }
   return r;
 }
 
 // ── Installed-allocator sanity check (task's own verification requirement) ──
-// SeferAlloc's own diagnostic counter (`segments_reserved_total`) must move
-// (be > 0) ONLY in the sefer binary, and read exactly 0 in mimalloc/system —
-// confirming the three binaries genuinely differ in which allocator is
-// globally installed, not just in name.
+// The sanity gate is a diagnostic counter (default: SeferAlloc's own
+// `segments_reserved_total`) that must move (be > 0) ONLY in the designated
+// arm(s) and read exactly 0 in every other arm — confirming the binaries
+// genuinely differ in which allocator is globally installed, not just in name.
+// The key + the "must-be-nonzero" arm set come from CONFIG.sanity (the built-in
+// sefer profile hardcodes segments_reserved_total > 0 in the `sefer` arm). If a
+// config supplies no sanity block, the gate is skipped (still an honest choice
+// for arms that expose no such counter).
 function checkInstalledAllocator(arm, sample) {
-  const seg = sample.segments_reserved_total;
-  if (arm === 'sefer') {
-    if (!(seg > 0)) {
+  const gate = CONFIG.sanity;
+  if (!gate) return;
+  const val = sample[gate.key];
+  const mustBeNonzero = gate.nonzero_arms.includes(arm);
+  if (mustBeNonzero) {
+    if (!(val > 0)) {
       throw new Error(
-        `installed-allocator check FAILED: paired_ab_sefer reported segments_reserved_total=${seg} ` +
-          `(expected > 0) — SeferAlloc does not appear to be genuinely installed/exercised.`,
+        `installed-allocator check FAILED: arm '${arm}' reported ${gate.key}=${val} ` +
+          `(expected > 0) — the expected allocator does not appear to be genuinely installed/exercised.`,
       );
     }
-  } else if (seg !== 0) {
+  } else if (val !== 0) {
     throw new Error(
-      `installed-allocator check FAILED: paired_ab_${arm} reported segments_reserved_total=${seg} ` +
-        `(expected exactly 0 — SeferAlloc must never be constructed in this binary).`,
+      `installed-allocator check FAILED: arm '${arm}' reported ${gate.key}=${val} ` +
+        `(expected exactly 0 — the sentinel allocator must never be constructed in this arm).`,
     );
   }
 }
@@ -278,8 +430,8 @@ async function runPairedComparison(armA, armB, pairs) {
     // the mean of the block's 2 same-arm samples (both A's, both B's) as
     // that block's representative value, which also cancels a little
     // within-block jitter while still yielding exactly `pairs` paired deltas.
-    const meanA = blockSamples.A.reduce((s, r) => s + r.elapsed_ns, 0) / blockSamples.A.length;
-    const meanB = blockSamples.B.reduce((s, r) => s + r.elapsed_ns, 0) / blockSamples.B.length;
+    const meanA = blockSamples.A.reduce((s, r) => s + r[METRIC], 0) / blockSamples.A.length;
+    const meanB = blockSamples.B.reduce((s, r) => s + r[METRIC], 0) / blockSamples.B.length;
     samplesA.push(meanA);
     samplesB.push(meanB);
   }
@@ -322,7 +474,7 @@ function printComparison(result) {
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
 
-  const arms = REQUESTED_ARMS ?? ['sefer', 'mimalloc', 'system'];
+  const arms = REQUESTED_ARMS ?? ALL_ARMS;
   for (const a of arms) {
     if (!ALL_ARMS.includes(a)) throw new Error(`unknown arm '${a}' — must be one of ${ALL_ARMS.join(', ')}`);
   }
@@ -331,14 +483,16 @@ async function main() {
 
   if (verifyOnly) {
     // Quick structural check only: run each requested arm once, confirm the
-    // installed-allocator counter behaves as expected, then exit. Used by
-    // this task's own verification step 1 ("confirm each of the three
-    // executables genuinely installs its own allocator").
-    console.log('\n[paired-ab] --verify-only: one sample per arm, checking installed-allocator counters...');
+    // sanity counter behaves as expected, then exit. Used by this task's own
+    // verification step 1 ("confirm each executable genuinely installs its own
+    // allocator").
+    console.log('\n[paired-ab] --verify-only: one sample per arm, checking sanity counters...');
+    const sanityKey = CONFIG.sanity?.key;
     for (const arm of [...new Set(arms)]) {
       const s = await runOnce(arm);
       checkInstalledAllocator(arm, s);
-      console.log(`  paired_ab_${arm}: elapsed_ns=${s.elapsed_ns} segments_reserved_total=${s.segments_reserved_total} -- OK`);
+      const sanityStr = sanityKey ? ` ${sanityKey}=${s[sanityKey]}` : '';
+      console.log(`  ${arm}: ${METRIC}=${s[METRIC]}${sanityStr} -- OK`);
     }
     console.log('\n[paired-ab] PASS -- all requested arms genuinely install their own (or no) allocator as claimed.');
     return;
@@ -346,15 +500,20 @@ async function main() {
 
   // Comparisons: if the caller passed exactly 2 arms via --arms, run exactly
   // that one comparison (this is how the same-vs-same honesty check and any
-  // single ad-hoc comparison are invoked). Otherwise (the default 3-arm
-  // case), run sefer-vs-mimalloc and sefer-vs-system.
-  const comparisons =
-    REQUESTED_ARMS && REQUESTED_ARMS.length === 2
-      ? [[REQUESTED_ARMS[0], REQUESTED_ARMS[1]]]
-      : [
-          ['sefer', 'mimalloc'],
-          ['sefer', 'system'],
-        ];
+  // single ad-hoc comparison are invoked). Otherwise fall back to the config's
+  // default comparison set (the built-in sefer profile: sefer-vs-mimalloc and
+  // sefer-vs-system).
+  let comparisons;
+  if (REQUESTED_ARMS && REQUESTED_ARMS.length === 2) {
+    comparisons = [[REQUESTED_ARMS[0], REQUESTED_ARMS[1]]];
+  } else if (CONFIG.default_comparisons) {
+    comparisons = CONFIG.default_comparisons;
+  } else {
+    throw new Error(
+      `--config defines ${ALL_ARMS.length} arms (${ALL_ARMS.join(', ')}) and no "default_comparisons"; ` +
+        `pass --arms X,Y to pick the pair to compare.`,
+    );
+  }
 
   const results = [];
   for (const [a, b] of comparisons) {
@@ -374,7 +533,8 @@ async function main() {
     cpu_info: cpuInfo(),
     power_plan: powerPlan(),
     platform: process.platform,
-    cargo_features_built_with: 'alloc-global',
+    cargo_features_built_with: CONFIG.features_note,
+    metric: METRIC,
     protocol: 'A/B/B/A, pairs = one block of 4 launches (A B B A), block value = mean of the 2 same-arm samples',
     pairs_per_comparison: PAIRS,
     comparisons: results.map((r) => ({

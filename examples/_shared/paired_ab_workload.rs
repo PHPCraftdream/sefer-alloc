@@ -67,21 +67,25 @@
 use std::hint::black_box;
 
 // ---------------------------------------------------------------------------
-// RSS / commit-charge probes — thin KiB wrappers over the `proc-memstat`
-// crate's same-instant `snapshot()` (bytes). Defined ONCE here (this file is
-// `include!`d verbatim into all three `paired_ab_*` binaries), so the OS FFI
-// that used to be copy-pasted into each of the three binaries now lives in ONE
-// place (`crates/proc-memstat`). Printed line names/units are unchanged.
+// RSS / commit-charge probes — thin KiB wrappers over the `proc-probe` crate's
+// re-export of `proc-memstat`'s same-instant `snapshot()` (bytes). Defined ONCE
+// here (this file is `include!`d verbatim into all three `paired_ab_*`
+// binaries), so the OS FFI that used to be copy-pasted into each of the three
+// binaries now lives in ONE place (`crates/proc-memstat`, reached via
+// `proc-probe`'s "measure + report" re-export). Printed line names/units are
+// unchanged. The `RESULT` lines themselves are emitted via `proc_probe::emit_*`
+// (see each binary's `main`), so the stdout protocol the runner parses can
+// never drift from a hand-rolled `println!`.
 // ---------------------------------------------------------------------------
 
-/// Resident set size in KiB (bytes / 1024 from `proc_memstat::snapshot`).
+/// Resident set size in KiB (bytes / 1024 from `proc_probe::snapshot`).
 fn rss_kib() -> u64 {
-    proc_memstat::snapshot().rss / 1024
+    proc_probe::snapshot().rss / 1024
 }
 
-/// Commit charge in KiB (bytes / 1024 from `proc_memstat::snapshot`).
+/// Commit charge in KiB (bytes / 1024 from `proc_probe::snapshot`).
 fn commit_kib() -> u64 {
-    proc_memstat::snapshot().commit / 1024
+    proc_probe::snapshot().commit / 1024
 }
 
 /// Same sizes `benches/global_alloc.rs::SIZES` sweeps.
