@@ -14,8 +14,9 @@
 //!   model concurrency (see the `hand_proofs` module comment on `pin()`), so
 //!   the CAS-uniqueness / no-torn-read properties are covered by loom, not here.
 //! - `pack_proofs` — bounded round-trip / no-panic proofs over symbolic input
-//!   for the registry's pure bit-packing arithmetic (`TaggedPtr::pack/unpack`
-//!   for the `free_slots` stack). This is where Kani is genuinely strong:
+//!   for the registry's pure bit-packing arithmetic
+//!   (`tagged_index_stack::TaggedIndex::pack/unpack` at `INDEX_BITS = 16`, the
+//!   extracted `free_slots` packing — CRATE-P7). This is where Kani is genuinely strong:
 //!   exhaustive-over-all-inputs bounded proofs with no concurrency and no
 //!   caller contract to assume. (The abandoned-segment head-packing proofs
 //!   that previously also lived here were removed with that substrate — task
@@ -175,9 +176,15 @@ mod hand_proofs {
 // let a tag bleed into the value half would fail here).
 #[cfg(all(kani, feature = "alloc-global"))]
 mod pack_proofs {
-    use crate::registry::tagged_ptr::{dbg_pack, dbg_unpack, INDEX_BITS};
+    // CRATE-P7: the `free_slots` packing now lives in the `tagged-index-stack`
+    // crate (`TaggedIndex<INDEX_BITS>`); the registry uses `INDEX_BITS = 16`.
+    // These proofs bind the crate's `pack`/`unpack` at that width.
+    use tagged_index_stack::TaggedIndex;
 
-    // ── 1. TaggedPtr pack→unpack round-trip ──────────────────────────────
+    const INDEX_BITS: u32 = 16;
+    type Packed = TaggedIndex<INDEX_BITS>;
+
+    // ── 1. TaggedIndex pack→unpack round-trip ────────────────────────────
     //
     // For any value that fits the low INDEX_BITS and any tag that fits the
     // high (64 - INDEX_BITS), pack then unpack recovers BOTH halves exactly.
@@ -191,13 +198,13 @@ mod pack_proofs {
         kani::assume(value <= index_mask);
         kani::assume(tag < (1u64 << (64 - INDEX_BITS)));
 
-        let word = dbg_pack(value, tag);
-        let (got_value, got_tag) = dbg_unpack(word);
+        let word = Packed::pack(value, tag);
+        let (got_value, got_tag) = Packed::unpack(word);
         assert_eq!(got_value, value);
         assert_eq!(got_tag, tag);
     }
 
-    // ── 2. TaggedPtr unpack never loses / mixes bits on ANY word ─────────
+    // ── 2. TaggedIndex unpack never loses / mixes bits on ANY word ───────
     //
     // For a fully arbitrary 64-bit word (no assumptions), unpack splits it at
     // the INDEX_BITS boundary with no overlap: value is exactly the low bits,
@@ -206,10 +213,10 @@ mod pack_proofs {
     fn tagged_unpack_is_clean_split() {
         let index_mask: u64 = (1u64 << INDEX_BITS) - 1;
         let word: u64 = kani::any();
-        let (value, tag) = dbg_unpack(word);
+        let (value, tag) = Packed::unpack(word);
         // Halves never overlap: value occupies only the low bits.
         assert!(value <= index_mask);
         // The split is lossless: recombining reproduces the original word.
-        assert_eq!(dbg_pack(value, tag), word);
+        assert_eq!(Packed::pack(value, tag), word);
     }
 }

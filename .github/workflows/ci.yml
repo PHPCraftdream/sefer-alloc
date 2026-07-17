@@ -474,14 +474,18 @@ jobs:
       # extracted crate aliases its atomics to `loom` under `--cfg loom`). It
       # runs against the crate directly (`-p racy-ptr-cell`, no sefer
       # features) — see the `loom_racy_ptr_cell` step below.
-      # #141: loom_free_slots_aba — Registry `free_slots` Treiber stack +
-      # `TaggedPtr` ABA-tag model (`src/registry/heap_registry.rs`
-      # pop_free_slot/push_free_slot + `src/registry/tagged_ptr.rs`).
-      # (loom_registry — the removed abandon/adopt adoption-CAS model — was
-      # deleted with that substrate in task #97 / R4-5.)
+      # CRATE-P7: real-type `TaggedIndexStack` loom suite (replaces the in-tree
+      # `loom_free_slots_aba` shadow model). The Registry `free_slots` Treiber
+      # stack + `TaggedPtr` ABA-tag model was extracted to the
+      # `tagged-index-stack` crate (`heap_registry.rs` pop_free_slot/
+      # push_free_slot now consume `TaggedIndexStack<16>`); the crate aliases its
+      # atomics to `loom` under `--cfg loom` so this suite model-checks the REAL
+      # shipping type, with the untagged-corruption and H-2 empty-transition
+      # tag-reset `#[should_panic]` counterfactuals proving non-vacuousness. Runs
+      # against the crate directly (`-p tagged-index-stack`, no sefer features).
       - run: >-
-          cargo test --release --features "alloc-global"
-          --test loom_free_slots_aba
+          cargo test --release -p tagged-index-stack
+          --test loom_aba
       # CRATE-P3: real-type `RacyPtrCell` loom suite (replaces the 4 shadow
       # models above). Includes the Relaxed-publish and spin-on-READY-livelock
       # `#[should_panic]` counterfactuals proving the harness is non-vacuous.

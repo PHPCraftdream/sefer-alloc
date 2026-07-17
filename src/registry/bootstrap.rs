@@ -195,12 +195,12 @@
 use core::hint::spin_loop;
 #[cfg(feature = "alloc-xthread")]
 use core::sync::atomic::AtomicPtr;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 // The extracted lazy CAS-published pointer cell (CRATE-P3). Under a NORMAL or
 // `production` build sefer uses the real crate type. Under `--cfg loom`, this
 // file is compiled to link sefer's OWN shadow-model loom harnesses (e.g.
-// `loom_free_slots_aba`) — which model UNRELATED protocols and never touch the
+// `loom_xthread_protocol`) — which model UNRELATED protocols and never touch the
 // chunk cells; but `RUSTFLAGS=--cfg loom` is global, so the real crate would
 // then be built in its loom-aliased mode, where `RacyPtrCell::new` is NOT
 // `const` (loom's `AtomicPtr::new` has no const constructor) and sefer's
@@ -342,7 +342,7 @@ mod loom_shim {
 use super::heap_overflow::{HeapOverflowSidecar, SIDECAR_CAP, SIDECAR_SENTINEL_INITIALIZING};
 use super::heap_slot::HeapSlot;
 use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
-use super::tagged_ptr::TaggedPtr;
+use tagged_index_stack::TaggedIndexStack;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
 /// slot for its heap; `recycle` returns it. 4096 is generous for realistic
@@ -379,10 +379,17 @@ pub struct Registry {
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
     pub(crate) count: AtomicU32,
-    /// Tagged-Treiber head of the `free_slots` stack: low 16 = slot index,
-    /// high 48 = ABA tag (bumped per push; see `TaggedPtr`, repacked in W7a).
-    /// Initialised empty.
-    pub(crate) free_slots: AtomicU64,
+    /// The `free_slots` recycler: the ABA-tagged Treiber free-index stack,
+    /// extracted to the `tagged-index-stack` crate (CRATE-P7). Its head is one
+    /// `AtomicU64` packing `(index:16 | tag:48)`; the per-slot next links live
+    /// slot-resident in [`HeapSlot::next_free`] and are reached through the
+    /// crate's `Links` trait (see `heap_registry`'s `RegistryLinks` adapter and
+    /// `pop_free_slot`/`push_free_slot`). The H-2 empty-transition tag
+    /// preservation and the RAD-1 lazy-link discipline both live inside the
+    /// crate now. `INDEX_BITS = 16` holds every valid slot index
+    /// (`0..MAX_HEAPS = 4096`) with the empty sentinel `0xFFFF` reserved above
+    /// the cap, leaving the 48-bit ABA tag (the W7a repack). Initialised empty.
+    pub(crate) free_slots: TaggedIndexStack<16>,
 }
 
 impl Registry {
@@ -403,7 +410,7 @@ impl Registry {
         Registry {
             chunks: [const { RacyPtrCell::new() }; NUM_CHUNKS],
             count: AtomicU32::new(0),
-            free_slots: AtomicU64::new(TaggedPtr::empty()),
+            free_slots: TaggedIndexStack::new(),
         }
     }
 
@@ -672,7 +679,7 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> &'static Regist
 /// signature — `RegistryChunk` is deliberately `pub(crate)`, mirroring the
 /// established pattern elsewhere in this module of keeping the real type
 /// private and exposing only thin `pub` forwarders that operate on indices/
-/// primitives, e.g. `tagged_ptr::dbg_pack`/`dbg_unpack`). Callers MUST pick a
+/// primitives). Callers MUST pick a
 /// `chunk_idx` they can guarantee is not concurrently materialised by another
 /// test running in the same process (e.g. a high chunk index no other test
 /// in the suite claims enough slots to reach) — step 1 below is the runtime

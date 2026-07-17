@@ -23,8 +23,12 @@
 //! high bits of its `AtomicU64` head (48 bits — the low 16 hold the slot
 //! index, task W7a), bumped on every push. This defeats the classic ABA
 //! (pop-X, re-push-X while a racer is parked with head=X): the re-push bumps
-//! the tag, so the racer's CAS on `(X, old_tag)` fails. See
-//! `super::tagged_ptr::TaggedPtr` for the tag-width-vs-churn analysis.
+//! the tag, so the racer's CAS on `(X, old_tag)` fails. The stack itself — the
+//! tagged head, the ABA guard, the H-2 empty-transition tag preservation, the
+//! RAD-1 lazy links, and the tag-width-vs-churn (~89-year) budget analysis —
+//! lives in the `tagged-index-stack` crate (CRATE-P7); `free_slots` is a
+//! `tagged_index_stack::TaggedIndexStack<16>` and `pop_free_slot` /
+//! `push_free_slot` below delegate to it over the slot-resident links.
 //!
 //! (The abandoned-segments intrusive Treiber stack that previously also lived
 //! here was removed — task #97 / R4-5. It was unreachable on the production
@@ -50,7 +54,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::bootstrap::{ensure, Registry, MAX_HEAPS};
 use super::heap_core::HeapCore;
 use super::heap_slot::{HeapSlot, NEXT_FREE_TAIL, STATE_FREE, STATE_LIVE};
-use super::tagged_ptr::TaggedPtr;
 
 /// DIAGNOSTIC (task #95 / N2): process-wide count of config-conflict events
 /// — times `claim_with_config` found an already-materialised slot whose live
@@ -496,119 +499,82 @@ impl Drop for ConflictRollback {
 }
 
 // ---------------------------------------------------------------------------
-// Treiber-stack primitives on the `free_slots` stack. Module-private.
+// Treiber-stack primitives on the `free_slots` stack.
+//
+// The stack itself — the tagged head word, the ABA guard, the H-2
+// empty-transition tag preservation, and the RAD-1 lazy-link discipline — now
+// lives in the `tagged-index-stack` crate (CRATE-P7); `Registry::free_slots` is
+// a `TaggedIndexStack<16>`. The registry supplies only the SLOT-RESIDENT links,
+// through the `RegistryLinks` adapter below, so the crate's `push`/`pop` write
+// each slot's next link into the slot's own `next_free: AtomicU32` field (never
+// a second array) exactly as the hand-rolled Treiber loop used to — preserving
+// the lazy-links saving (the crate only ever writes a link inside `push`).
 // ---------------------------------------------------------------------------
 
-/// Pop a free slot index off the `free_slots` stack (classic Treiber pop),
-/// or `None` if empty.
+/// Adapts `Registry`'s slot-resident `next_free` links to the crate's `Links`
+/// trait. `load_next`/`store_next` funnel through `reg.slot(idx)` (the single
+/// chunk-materialising slot accessor), so the crate's stack reaches the exact
+/// per-slot `AtomicU32` the previous inline Treiber loop used — with the same
+/// `Acquire`/`Release` orderings the crate's contract requires.
 ///
-/// This is the textbook Treiber pop: load the (tagged) head, read its
-/// `next_free` link, then CAS the head to that next link. The tag in the high
-/// 48 bits defeats the ABA problem: if between our load and our CAS another
-/// thread pops the head and re-pushes the SAME slot index, the tag will have
-/// advanced, our CAS fails, and we retry — never observing a stale chain.
-///
-/// **Ordering:** `Acquire` on the success CAS so we see the `next_free` link
-/// the pusher wrote under `Release`; `Relaxed` on failure (retry, no
-/// side-effect).
-fn pop_free_slot(reg: &Registry) -> Option<usize> {
-    let mut head = reg.free_slots.load(Ordering::Acquire);
-    loop {
-        if TaggedPtr::is_empty(head) {
-            return None;
-        }
-        let (idx_v, _tag) = TaggedPtr::unpack(head);
-        let idx = idx_v as u32;
-        if idx as usize >= MAX_HEAPS {
-            // Defensive: cannot happen by construction (push only stores
-            // valid indices).
-            return None;
-        }
-        // R6-OPT-P0-2: `idx < MAX_HEAPS`, checked above; `slot()` resolves it
-        // through the chunked slot array (materialising the owning chunk if
-        // this is the first touch of an index in that range — see `slot()`'s
-        // doc comment: every slot-array access in the crate funnels through
-        // it).
-        let slot: &HeapSlot = reg.slot(idx as usize);
-        // Read the next link BEFORE the CAS (the push stored it under
-        // Release; our Acquire load of `head` + this Acquire read see it).
-        let next = slot.next_free.load(Ordering::Acquire);
-        // The new head is `next` (or the empty sentinel if
-        // `next == NEXT_FREE_TAIL`) with the SAME tag we observed — the tag
-        // is bumped only on PUSH, so a pop preserves it. A concurrent
-        // re-push of `idx` will bump the tag and fail our CAS (the ABA fix).
-        //
-        // H-2 FIX: on the empty transition we must NOT reset the tag to 0
-        // (`TaggedPtr::empty()` hardcodes tag=0). If we did, a parked racer
-        // holding a stale `(idx, tag)` snapshot from BEFORE the stack emptied
-        // could see the tag sequence restart from 0 on the next push and
-        // spuriously match its stale tag, letting a stale CAS succeed onto a
-        // freshly-repushed-but-different chain — the exact ABA corruption the
-        // tag exists to prevent. Instead we pack the empty sentinel's index
-        // half (`INDEX_MASK`) with the RUNNING tag we just read (`_tag`, the
-        // tag observed on the head we are popping off) — `TaggedPtr::is_empty`
-        // only inspects the index half, so this is still unambiguously empty,
-        // but the tag keeps counting forward across the empty transition
-        // exactly as it would across any other pop. `push_free_slot` already
-        // reads the tag out of the current head (empty or not) and bumps it,
-        // so this composes correctly with no other change needed.
-        let new_head = if next == NEXT_FREE_TAIL {
-            TaggedPtr::pack(TaggedPtr::empty_index(), _tag)
-        } else {
-            TaggedPtr::pack(next as u64, _tag)
-        };
-        // CAS the head to `new_head`. Acquire on success (see the push's
-        // Release store of `next_free`); Relaxed on failure (retry).
-        match reg
-            .free_slots
-            .compare_exchange(head, new_head, Ordering::Acquire, Ordering::Relaxed)
-        {
-            Ok(_) => return Some(idx as usize),
-            Err(actual) => head = actual, // retry with the new head
-        }
+/// The crate's `TAIL` sentinel (`u32::MAX`) is numerically identical to
+/// [`NEXT_FREE_TAIL`], so a slot link written by `push` reads back as the
+/// familiar tail sentinel; the `debug_assert` below pins that equivalence so a
+/// future divergence fails loudly rather than silently corrupting a chain.
+struct RegistryLinks<'a> {
+    reg: &'a Registry,
+}
+
+const _: () = assert!(
+    NEXT_FREE_TAIL == tagged_index_stack::TAIL,
+    "the registry's tail sentinel must equal the crate's TAIL so slot links \
+     round-trip through TaggedIndexStack unchanged"
+);
+
+impl tagged_index_stack::Links for RegistryLinks<'_> {
+    fn load_next(&self, index: u32) -> u32 {
+        // R6-OPT-P0-2: `index < MAX_HEAPS` by construction (the stack only ever
+        // holds indices that `push_free_slot` put there, and those are valid
+        // slot indices); `slot()` resolves it through the chunked slot array.
+        self.reg
+            .slot(index as usize)
+            .next_free
+            .load(Ordering::Acquire)
+    }
+
+    fn store_next(&self, index: u32, next: u32) {
+        self.reg
+            .slot(index as usize)
+            .next_free
+            .store(next, Ordering::Release);
     }
 }
 
-/// Push a slot index onto the `free_slots` stack. Sets the slot's `next_free`
-/// link first (so a later pop can restore the chain), then CASes the head.
+/// Pop a free slot index off the `free_slots` stack, or `None` if empty.
+///
+/// Delegates to [`TaggedIndexStack::pop`](tagged_index_stack::TaggedIndexStack::pop)
+/// over the slot-resident links: the crate performs the tagged Treiber pop (the
+/// ABA guard and the H-2 empty-transition tag preservation are inside it),
+/// reading the popped slot's `next_free` link via [`RegistryLinks`].
+fn pop_free_slot(reg: &Registry) -> Option<usize> {
+    let links = RegistryLinks { reg };
+    reg.free_slots.pop(&links).map(|idx| idx as usize)
+}
+
+/// Push a slot index onto the `free_slots` stack.
+///
+/// Delegates to [`TaggedIndexStack::push`](tagged_index_stack::TaggedIndexStack::push)
+/// over the slot-resident links: the crate writes this slot's `next_free` link
+/// (via [`RegistryLinks`]) and bumps the ABA tag on the CAS. `idx < MAX_HEAPS`
+/// (the caller derived it from a valid heap pointer), so it fits the 16-bit
+/// index half with room below the empty sentinel.
 fn push_free_slot(reg: &Registry, idx: u32) {
-    // R6-OPT-P0-2: `idx < MAX_HEAPS` (the caller — recycle — derived it from
-    // a valid heap pointer); `slot()` resolves it through the chunked slot
-    // array (the chunk is already materialised at this point in every call
-    // path — see the call sites of `push_free_slot`).
-    let slot: &HeapSlot = reg.slot(idx as usize);
-    let mut head = reg.free_slots.load(Ordering::Acquire);
-    loop {
-        // The next link this slot will chain to: the current head's index,
-        // or NEXT_FREE_TAIL if the stack is empty (so a later pop sees the
-        // tail sentinel and knows the chain ends here). Note: the empty
-        // sentinel packs `INDEX_MASK` in the low bits, which numerically
-        // equals `NEXT_FREE_TAIL` (`u32::MAX`), but we spell the empty→tail
-        // mapping out explicitly so the invariant does not rest on the
-        // accidental value coincidence.
-        let next_link = if TaggedPtr::is_empty(head) {
-            NEXT_FREE_TAIL
-        } else {
-            let (cur_idx, _tag) = TaggedPtr::unpack(head);
-            cur_idx as u32
-        };
-        // Write the link under Release so a concurrent pop's Acquire read of
-        // `next_free` (after observing this slot as the head) sees it.
-        slot.next_free.store(next_link, Ordering::Release);
-        // Advance the tag (the ABA fix) and CAS the head to this slot.
-        let (_cur_idx, tag) = TaggedPtr::unpack(head);
-        let new_tag = tag.wrapping_add(1);
-        let new_head = TaggedPtr::pack(idx as u64, new_tag);
-        // CAS: Release on success so a pop's Acquire sees the `next_free`
-        // link we just wrote. Relaxed on failure (retry).
-        match reg
-            .free_slots
-            .compare_exchange(head, new_head, Ordering::Release, Ordering::Relaxed)
-        {
-            Ok(_) => return,
-            Err(actual) => head = actual,
-        }
-    }
+    debug_assert!(
+        (idx as usize) < MAX_HEAPS,
+        "push_free_slot given an out-of-range slot index"
+    );
+    let links = RegistryLinks { reg };
+    reg.free_slots.push(&links, idx);
 }
 
 /// Mint a fresh slot by bumping `count`. Returns the new slot's index, or

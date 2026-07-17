@@ -54,6 +54,12 @@ features = ["production"]
 #                                             GlobalAlloc-vs-model M1-M4 oracles +
 #                                             proptest/arbitrary front-ends; dev-only
 #                                             test infra, NOT in sefer's runtime dep tree.
+#   - tagged-index-stack (crates/tagged-index-stack) — ABA-tagged Treiber free-index
+#                                             stack (a slot recycler): packed
+#                                             `index | tag` head word, const-generic
+#                                             INDEX_BITS, slot-resident OR owned links.
+#                                             #![forbid(unsafe_code)], no_std, real-type
+#                                             loom. sefer's registry `free_slots` uses it.
 #   - size-classes    (crates/size-classes)  — const-built size-class table + derived
 #                                             O(1) size->class lookup + alignment-jump
 #                                             classifier; #![forbid(unsafe_code)], no_std.
@@ -62,7 +68,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack"]
 resolver = "2"
 
 [lints.rust]
@@ -139,7 +145,7 @@ alloc-xthread = ["alloc-core"]
 # the lazy allocation-free discipline. Requires `alloc-core`. Add `alloc-xthread`
 # alongside it for the multi-thread face (cross-thread `dealloc` via
 # per-segment `RemoteFreeRing`s).
-alloc-global = ["alloc-core"]
+alloc-global = ["alloc-core", "dep:tagged-index-stack"]
 # Phase 35: M6 decommit — return the payload pages of an empty small segment to
 # the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its
 # live-block count drops to zero, recommitting on first reuse. Additive over
@@ -332,6 +338,15 @@ racy-ptr-cell = { path = "crates/racy-ptr-cell", version = "0.1", optional = tru
 # re-exports the exact `super::size_classes::*` surface every in-tree call site
 # already uses. Pulled in ONLY by `alloc-core`. See `crates/size-classes`.
 size-classes = { path = "crates/size-classes", version = "0.1", optional = true }
+# CRATE-P7: the ABA-tagged Treiber free-index stack (a slot recycler), extracted
+# from `registry/tagged_ptr.rs` (the packed `index:16 | tag:48` word) +
+# `heap_registry.rs`'s `pop_free_slot`/`push_free_slot` Treiber loop. The
+# registry's `free_slots` is now a `TaggedIndexStack<16>` and its slot-resident
+# `next_free` links reach the crate through a `Links` adapter; the H-2
+# empty-transition tag preservation and the RAD-1 lazy-link discipline live in
+# the crate. Pulled in ONLY by `alloc-global` (and every feature that depends on
+# it), since the registry is `alloc-global`-gated. See `crates/tagged-index-stack`.
+tagged-index-stack = { path = "crates/tagged-index-stack", version = "0.1", optional = true }
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.

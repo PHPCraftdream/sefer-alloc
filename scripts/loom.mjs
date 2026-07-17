@@ -40,7 +40,14 @@ const FEATURES = {
   // must remain until that swap lands — otherwise the actual shipping rings
   // would have NO loom coverage.
   loom_ring_mpsc: `${CRATE_PREFIX}ring-mpsc`,
-  loom_free_slots_aba: 'alloc-global',
+  // CRATE-P7: the extracted `tagged-index-stack` crate ships a real-type loom
+  // suite for the ABA-tagged Treiber free-index stack (the crate aliases its
+  // atomics to `loom` under `--cfg loom`), run with `-p tagged-index-stack` and
+  // no sefer features — flagged by the `crate:` prefix. This REPLACES the
+  // in-tree `loom_free_slots_aba` shadow model below: `heap_registry.rs` now
+  // consumes the crate's `TaggedIndexStack`, so the crate's real-type suite IS
+  // the coverage for the shipping code (the shadow model is deleted).
+  loom_aba: `${CRATE_PREFIX}tagged-index-stack`,
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
   loom_remote_ring: 'alloc-core,alloc-xthread',
   // task #52 (PERF-PASS-4, G9/C2): the ring-drain empty-guard model.

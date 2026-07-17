@@ -24,7 +24,6 @@
 //!
 //! Per the one-export-per-file rule, no logic lives here. The files:
 //!
-//! - `tagged_ptr` — the packed `(value | tag)` ABA-defence word.
 //! - [`heap_core`] — the thin, slot-resident heap value (`HeapCore`).
 //! - [`heap_slot`] — one slot (`HeapSlot`): state / generation / heap / link.
 //! - `registry_chunk` — R6-OPT-P0-2 (round 1): a lazily-materialised,
@@ -68,12 +67,6 @@ pub mod heap_registry;
 #[doc(hidden)]
 pub mod heap_slot;
 mod registry_chunk;
-// `pub` (doc-hidden) only so `tests/regression_counter_wrap.rs` can reach the
-// `dbg_*` pack/unpack forwarders for the W7a tag-wrap counterfactual. The
-// `TaggedPtr` type itself stays `pub(crate)`; only the thin test forwarders
-// are `pub`. Not part of the supported public surface.
-#[doc(hidden)]
-pub mod tagged_ptr;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 pub(crate) mod tcache;
 

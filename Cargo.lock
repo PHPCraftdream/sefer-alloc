@@ -885,6 +885,7 @@ dependencies = [
  "sefer-region",
  "size-classes",
  "slotmap",
+ "tagged-index-stack",
  "tokio",
 ]
 
@@ -996,6 +997,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tagged-index-stack"
+version = "0.1.0"
+dependencies = [
+ "loom",
 ]
 
 [[package]]
