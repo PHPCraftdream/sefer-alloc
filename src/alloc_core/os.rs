@@ -338,49 +338,28 @@ pub(crate) fn deref_directory_sidecar_mut(
     unsafe { &mut *p }
 }
 
-/// B2 (R7 Workstream B) fault-injection hook: when `> 0`, the NEXT
-/// `commit_pages` call returns `false` without touching the OS and
-/// decrements this counter. Test-only (gated on
-/// `alloc-lazy-commit`). B4 formalizes this into a richer
-/// "fail N-th commit" framework; this minimal hook is preserved for
-/// backward compatibility with B2/B3 tests.
-///
-/// Owner-only: set by the test thread before an allocation, read (and
-/// decremented) by `commit_pages` on the same thread. A `Relaxed` atomic is
-/// sufficient (no cross-thread ordering required).
-#[cfg(feature = "alloc-lazy-commit")]
-pub(crate) static COMMIT_FAIL_ARMED: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
-
-/// B4 (R7 Workstream B) fault-injection: "fail the k-th commit" hook.
-///
-/// When `COMMIT_FAIL_AT_TARGET > 0`, the fault injector counts calls to
-/// `commit_pages` via `COMMIT_FAIL_AT_COUNTER`. When the counter reaches
-/// `COMMIT_FAIL_AT_TARGET`, that specific call returns `false` (and the
-/// target is reset to 0 — one-shot). All other calls succeed normally.
-///
-/// This is ADDITIVE to B2's `COMMIT_FAIL_ARMED`: B2's hook is checked
-/// first (fail the next N), B4's hook is checked second (fail exactly the
-/// k-th from now). Both can be 0 simultaneously (no fault injection).
-///
-/// Owner-only, `Relaxed`, gated on `alloc-lazy-commit`. Zero new `unsafe`.
-#[cfg(feature = "alloc-lazy-commit")]
-pub(crate) static COMMIT_FAIL_AT_TARGET: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
-
-/// B4: running counter of `commit_pages` calls since the last
-/// `dbg_arm_commit_fail_at` arming. Incremented on every `commit_pages`
-/// entry when `COMMIT_FAIL_AT_TARGET > 0`. Reset to 0 by the arming call.
-#[cfg(feature = "alloc-lazy-commit")]
-pub(crate) static COMMIT_FAIL_AT_COUNTER: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
-
 /// Commit a sub-range within a segment whose payload was only partially
 /// committed (the lazy-commit path). Thin wrapper over
 /// [`aligned_vmem::commit_range`].
 ///
 /// Returns `true` if the range is now committed, `false` if the OS refused.
 /// On `false` the caller MUST NOT write into the range.
+///
+/// ## Fault injection (CRATE-P2 follow-up: absorbed into vmem)
+///
+/// The B2/B4 "fail the next N" / "fail the k-th" commit-failure fault
+/// injectors used to live here as sefer-local `COMMIT_FAIL_*` atomics. They
+/// have been absorbed into `aligned_vmem::fault_injection` (feature
+/// `aligned-vmem/fault-injection`, pulled in additively by
+/// `alloc-lazy-commit`): the hook now lives on vmem's REAL commit path
+/// (`try_commit_range`, checked immediately before the real syscall), so
+/// this function needs no fault-injection logic of its own — arming is done
+/// directly against `aligned_vmem::fault_injection::{arm_fail_next,
+/// arm_fail_at}` (see `AllocCore::dbg_arm_commit_fail` /
+/// `dbg_arm_commit_fail_at`). This is DISTINCT from vmem's `mock` feature,
+/// which replaces the whole backend (sefer needs the real segment
+/// reservation + real commit accounting under test, so it cannot build with
+/// `mock`).
 ///
 /// ## Difference from [`recommit_pages`]
 ///
@@ -392,36 +371,13 @@ pub(crate) static COMMIT_FAIL_AT_COUNTER: core::sync::atomic::AtomicU32 =
 #[must_use]
 #[cfg(feature = "alloc-lazy-commit")]
 pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
-    // B2 fault-injection: if armed, fail without calling the OS.
-    {
-        let armed = COMMIT_FAIL_ARMED.load(core::sync::atomic::Ordering::Relaxed);
-        if armed > 0 {
-            COMMIT_FAIL_ARMED.store(armed - 1, core::sync::atomic::Ordering::Relaxed);
-            return false;
-        }
-    }
-    // B4 fault-injection: fail exactly the k-th commit (1-based).
-    // Checked AFTER B2 so that B2's "fail next N" has priority. When both
-    // are 0 both blocks are no-ops (two relaxed loads, branch-predicted
-    // not-taken — zero overhead on the production path under the feature).
-    {
-        let target = COMMIT_FAIL_AT_TARGET.load(core::sync::atomic::Ordering::Relaxed);
-        if target > 0 {
-            let prev = COMMIT_FAIL_AT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            let call_number = prev + 1; // 1-based
-            if call_number == target {
-                // One-shot: disarm after firing.
-                COMMIT_FAIL_AT_TARGET.store(0, core::sync::atomic::Ordering::Relaxed);
-                COMMIT_FAIL_AT_COUNTER.store(0, core::sync::atomic::Ordering::Relaxed);
-                return false;
-            }
-        }
-    }
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees `[base + start_offset, base + end_offset)` is
     // within the segment's VA reservation and currently reserved-but-
     // uncommitted (or already committed — idempotent). `aligned_vmem::
     // commit_range` validates only the offset alignment and `start < end`.
+    // The fault-injection check (when armed) happens INSIDE `commit_range`,
+    // immediately before the real syscall.
     unsafe { vmem::commit_range(base, start_offset, end_offset) }
 }
 

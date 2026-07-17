@@ -43,4 +43,16 @@ huge-pages = []
 # default; NOT part of any bundle.
 mock = []
 
+# Real-path commit fault injection: an armed "fail the next N / fail exactly
+# the k-th" hook on the REAL `try_commit_range` syscall path (`lazy-commit`),
+# DISTINCT from `mock` — `mock` replaces the whole backend (reservations still
+# hit the OS, but commit/decommit/recommit never do), so a consumer that needs
+# the real backend under test (real segment reservations, real commit
+# accounting) cannot use `mock`. `fault-injection` changes nothing about which
+# backend runs; it only splices two checks in front of the real commit syscall
+# so a test can deterministically force it to report OS-refused. Off by
+# default; NOT part of any bundle; zero cost when disabled (the hook body is
+# compiled out entirely, not just branched around at runtime).
+fault-injection = []
+
 [dependencies]

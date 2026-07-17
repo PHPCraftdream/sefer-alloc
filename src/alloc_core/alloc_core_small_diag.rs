@@ -232,13 +232,16 @@ impl AllocCore {
     }
 
     /// TEST-ONLY (B2, R7 Workstream B): arm the commit-failure fault injector.
-    /// The next `n` calls to `os::commit_pages` will return `false` without
-    /// touching the OS, simulating commit-charge exhaustion. After `n` failures
-    /// subsequent calls proceed normally.
+    /// The next `n` calls to the real `os::commit_pages` path will return
+    /// `false` without touching the OS, simulating commit-charge exhaustion.
+    /// After `n` failures subsequent calls proceed normally.
+    ///
+    /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
+    /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_ARMED`).
     #[doc(hidden)]
     #[cfg(feature = "alloc-lazy-commit")]
     pub fn dbg_arm_commit_fail(&self, n: u32) {
-        os::COMMIT_FAIL_ARMED.store(n, core::sync::atomic::Ordering::Relaxed);
+        aligned_vmem::fault_injection::arm_fail_next(n);
     }
 
     /// TEST-ONLY (B4, R7 Workstream B): arm the "fail the k-th commit" fault
@@ -250,11 +253,13 @@ impl AllocCore {
     /// first (and has priority); B4's "fail the k-th" is checked second. Both
     /// can be armed simultaneously (B2 fails the first N, then B4 fails the
     /// k-th of the remaining calls).
+    ///
+    /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
+    /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_AT_*`).
     #[doc(hidden)]
     #[cfg(feature = "alloc-lazy-commit")]
     pub fn dbg_arm_commit_fail_at(&self, k: u32) {
-        os::COMMIT_FAIL_AT_COUNTER.store(0, core::sync::atomic::Ordering::Relaxed);
-        os::COMMIT_FAIL_AT_TARGET.store(k, core::sync::atomic::Ordering::Relaxed);
+        aligned_vmem::fault_injection::arm_fail_at(k);
     }
 
     /// TEST-ONLY (B2, R7 Workstream B): the `GROW_CHUNK` constant (bytes).

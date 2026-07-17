@@ -299,7 +299,19 @@ numa-aware = ["alloc-core", "dep:numa-shim"]
 # eager) to preserve NUMA placement — mirrors the A3 directory approach.
 # Additive over `alloc-core`; off by default, NOT part of `production` or
 # any default-on bundle. Feature-OFF builds are byte-for-byte identical.
-alloc-lazy-commit = ["alloc-core", "aligned-vmem/alloc-lazy-commit"]
+#
+# Also pulls in `aligned-vmem/fault-injection`: the R7-B4 grow-on-carve
+# rollback tests need to force a REAL commit to fail at an exact point in a
+# live allocation sequence (not `aligned-vmem/mock`, which replaces the whole
+# backend — sefer needs the real segment reservation + real commit
+# accounting under test). `os::commit_pages` delegates to
+# `aligned_vmem::fault_injection`'s hook instead of carrying its own
+# COMMIT_FAIL_* atomics (absorbed into vmem, CRATE-P2 follow-up).
+alloc-lazy-commit = [
+    "alloc-core",
+    "aligned-vmem/alloc-lazy-commit",
+    "aligned-vmem/fault-injection",
+]
 
 [dependencies]
 # Phase 1: typed handle store (Region<T> + Handle<T> + SyncRegion<T>), extracted

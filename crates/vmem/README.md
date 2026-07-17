@@ -52,9 +52,14 @@ Every fallible entry point has an infallible `Option`/`bool` counterpart that
 discards the cause. Optional features: `lazy-commit` (incremental commit:
 `reserve_aligned_lazy` + `commit_range`; formerly `alloc-lazy-commit`, still
 accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
-`MEM_LARGE_PAGES`, best-effort with fallback), and `mock` (recording call log +
+`MEM_LARGE_PAGES`, best-effort with fallback), `mock` (recording call log +
 `fail_next_reserve` / `fail_next_commit` fault injection for deterministic
-OOM-path tests on any target).
+OOM-path tests on any target — **replaces** the commit/decommit/recommit
+backend with a stub), and `fault-injection` (`fault_injection::arm_fail_next` /
+`arm_fail_at` — an armed hook on the REAL `try_commit_range` syscall path,
+DISTINCT from `mock`: it changes nothing about which backend runs, it only
+forces a specific real commit call to report failure, for a consumer that
+needs the genuine OS backend under test).
 
 Backends: `mmap`/`munmap`/`madvise` on Unix,
 `VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, `std::alloc`

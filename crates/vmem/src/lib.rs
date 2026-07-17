@@ -79,6 +79,15 @@
 // legitimately unused. Suppress dead-code only in that configuration; the code
 // must still compile everywhere.
 #![cfg_attr(feature = "mock", allow(dead_code))]
+// `fault_injection`'s hook is only consulted from `try_commit_range`, which is
+// itself gated on `lazy-commit`. A caller who enables `fault-injection`
+// without `lazy-commit` gets a compiled-but-unreachable hook (harmless — the
+// feature is additive and test-only); suppress dead-code only in that
+// specific combination.
+#![cfg_attr(
+    all(feature = "fault-injection", not(feature = "lazy-commit")),
+    allow(dead_code)
+)]
 
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -88,6 +97,9 @@ pub use error::VmemError;
 
 #[cfg(feature = "mock")]
 pub mod mock;
+
+#[cfg(feature = "fault-injection")]
+pub mod fault_injection;
 
 /// The minimum page size this crate assumes for decommit/recommit granularity:
 /// 4 KiB, the smallest unit both `mmap` and `VirtualAlloc` will commit/decommit
@@ -578,9 +590,18 @@ pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Resul
         mock::take_commit_fault().map_or(Ok(()), Err)
     }
     #[cfg(not(feature = "mock"))]
-    // SAFETY: forwarded from the caller's contract.
-    unsafe {
-        commit_range_impl(base, start, end)
+    {
+        // Real-path fault injection (feature `fault-injection`, DISTINCT from
+        // `mock`): consult the armed hooks immediately before the real
+        // syscall. When neither hook is armed this is two relaxed loads that
+        // branch-predict not-taken — negligible on the production path, and
+        // compiled out entirely when the feature is off.
+        #[cfg(feature = "fault-injection")]
+        if fault_injection::should_fail_commit() {
+            return Err(VmemError::last_os_error());
+        }
+        // SAFETY: forwarded from the caller's contract.
+        unsafe { commit_range_impl(base, start, end) }
     }
 }
 
