@@ -156,28 +156,187 @@
 //!
 //! ## Provenance model (task #140)
 //!
-//! Unchanged from before this round: the chunk-pointer sentinel handling
-//! below is the SAME `without_provenance_mut` idiom the old whole-registry
-//! `ensure_slow` used (a bare marker address, never dereferenced — see
-//! [`SENTINEL_INITIALIZING`]'s use sites in [`ensure_chunk_slow`]), so it
-//! stays strict-provenance-clean under `-Zmiri-strict-provenance`. The A1
-//! deferred-large-free stack's exposed-provenance story
+//! The chunk-pointer sentinel handling now lives inside
+//! [`racy_ptr_cell::RacyPtrCell`] (CRATE-P3 extraction), which uses the SAME
+//! `without_provenance_mut` idiom the old whole-registry `ensure_slow` used (a
+//! bare marker address, never dereferenced — only compared), so it stays
+//! strict-provenance-clean under `-Zmiri-strict-provenance`. This file's own
+//! remaining raw-pointer work is (1) casting the leaked `leak_zeroed_pages`
+//! reservation to `*mut RegistryChunk` and dereferencing the published pointer
+//! the cell hands back, and (2) the `alloc-xthread` overflow-sidecar path below
+//! (still spelled out inline — see the CRATE-P3 note in [`ensure_chunk_slow`]).
+//! The A1 deferred-large-free stack's exposed-provenance story
 //! (`alloc_core::deferred_large`) is untouched by this round — see that
 //! module for its own provenance documentation.
 
-// This file uses `unsafe` for two operations, unchanged in kind from before
-// this round (now applied per-chunk instead of once for the whole registry):
-//  1. Field-by-field in-place initialisation of a `RegistryChunk` in a
-//     freshly reserved OS memory block (pointer arithmetic + writes; see
-//     `ensure_chunk_slow`).
-//  2. `unsafe { &*p }` — dereferencing a published chunk/registry pointer
-//     after observing it under `Acquire` (sound because the initialiser's
-//     `Release` store establishes happens-before).
+// This file uses `unsafe` for these operations. The CAS-reserve / sentinel /
+// Release-publish / spin-while-INITIALIZING / OOM-rollback STATE MACHINE that
+// drove the per-chunk pointer transition inline used to live here; CRATE-P3
+// extracted it into `racy_ptr_cell::RacyPtrCell` (aliasing its atomics to
+// `loom` so the shipped loom suite exercises the real type). What remains here:
+//  1. Casting the leaked `aligned_vmem::leak_zeroed_pages` reservation to
+//     `*mut RegistryChunk` and dereferencing the pointer the cell publishes
+//     (`p.as_ref()` in `ensure_chunk`/`ensure_chunk_slow`) after the cell
+//     observed it under `Acquire` — sound because the cell's `Release` publish
+//     establishes happens-before (OS-zeroed pages are already a valid
+//     `RegistryChunk`).
+//  2. The `alloc-xthread` overflow-sidecar path (still an inline instance of
+//     the same protocol — see the CRATE-P3 note in `ensure_chunk_slow` for why
+//     that one did NOT migrate onto `RacyPtrCell`): its own CAS/reserve/publish/
+//     spin and `unsafe { &*p }` deref, each with its own `// SAFETY:` proof.
 // Every `unsafe` block carries a `// SAFETY:` proof below.
 #![allow(unsafe_code)]
 
+// `spin_loop` and `AtomicPtr` are used ONLY by the `alloc-xthread`
+// overflow-sidecar module below (the chunk path now goes through
+// `RacyPtrCell`, which owns its own spin + atomic internally), so gate their
+// imports on that feature to stay warning-clean on the non-xthread builds.
+#[cfg(feature = "alloc-xthread")]
 use core::hint::spin_loop;
-use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
+#[cfg(feature = "alloc-xthread")]
+use core::sync::atomic::AtomicPtr;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+// The extracted lazy CAS-published pointer cell (CRATE-P3). Under a NORMAL or
+// `production` build sefer uses the real crate type. Under `--cfg loom`, this
+// file is compiled to link sefer's OWN shadow-model loom harnesses (e.g.
+// `loom_free_slots_aba`) — which model UNRELATED protocols and never touch the
+// chunk cells; but `RUSTFLAGS=--cfg loom` is global, so the real crate would
+// then be built in its loom-aliased mode, where `RacyPtrCell::new` is NOT
+// `const` (loom's `AtomicPtr::new` has no const constructor) and sefer's
+// `static REGISTRY: Registry = Registry::new()` would fail to const-evaluate.
+// Sefer already keeps its OWN production atomics on `core::sync::atomic` under
+// loom (see the imports above) for exactly this reason. So under loom we swap in
+// a const-capable, core-atomic shim with the identical API surface `bootstrap`
+// uses. This is sound: the real-type loom VERIFICATION of `RacyPtrCell` lives in
+// the crate's OWN suite (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`, run
+// via `-p racy-ptr-cell`), which is the whole point of the extraction; sefer's
+// loom harnesses never exercise these chunk cells, so the shim is never on any
+// modeled interleaving — it exists only to keep the const static compiling.
+#[cfg(loom)]
+use loom_shim::RacyPtrCell;
+#[cfg(not(loom))]
+use racy_ptr_cell::RacyPtrCell;
+
+#[cfg(loom)]
+mod loom_shim {
+    //! Const-capable, `core::sync::atomic`-backed stand-in for
+    //! `racy_ptr_cell::RacyPtrCell`, used ONLY under `--cfg loom` so sefer's own
+    //! (unrelated) shadow-model loom harnesses can link the crate with its const
+    //! `REGISTRY` static intact — see the import-site comment above. Mirrors the
+    //! real cell's API surface `bootstrap.rs` calls; behaviourally faithful (same
+    //! CAS/Release-publish/spin/rollback), but built on `core` atomics so `new`
+    //! stays `const`. It is NEVER on a loom-modeled interleaving (sefer's loom
+    //! tests do not touch chunk cells), so it needs no loom atomics.
+    use core::marker::PhantomData;
+    use core::ptr::NonNull;
+    use core::sync::atomic::{AtomicPtr, Ordering};
+
+    const SENTINEL_INITIALIZING: usize = 1;
+
+    pub(crate) struct RacyPtrCell<T> {
+        ptr: AtomicPtr<T>,
+        _marker: PhantomData<*mut T>,
+    }
+
+    // SAFETY: mirrors the real cell — only a raw `*mut T` ever crosses threads.
+    unsafe impl<T> Send for RacyPtrCell<T> {}
+    // SAFETY: see the `Send` impl.
+    unsafe impl<T> Sync for RacyPtrCell<T> {}
+
+    impl<T> RacyPtrCell<T> {
+        pub(crate) const fn new() -> Self {
+            RacyPtrCell {
+                ptr: AtomicPtr::new(core::ptr::null_mut()),
+                _marker: PhantomData,
+            }
+        }
+
+        fn is_ready(p: *mut T) -> bool {
+            let a = p.addr();
+            a != 0 && a != SENTINEL_INITIALIZING
+        }
+
+        pub(crate) fn get(&self) -> Option<NonNull<T>> {
+            let p = self.ptr.load(Ordering::Acquire);
+            if Self::is_ready(p) {
+                Some(unsafe { NonNull::new_unchecked(p) })
+            } else {
+                None
+            }
+        }
+
+        pub(crate) fn get_or_try_init<F>(&self, mut init: F) -> Option<NonNull<T>>
+        where
+            F: FnMut() -> Option<NonNull<T>>,
+        {
+            let sentinel = core::ptr::without_provenance_mut::<T>(SENTINEL_INITIALIZING);
+            loop {
+                let p = self.ptr.load(Ordering::Acquire);
+                if Self::is_ready(p) {
+                    return Some(unsafe { NonNull::new_unchecked(p) });
+                }
+                match self.ptr.compare_exchange(
+                    core::ptr::null_mut(),
+                    sentinel,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => match init() {
+                        Some(ptr) => {
+                            self.ptr.store(ptr.as_ptr(), Ordering::Release);
+                            return Some(ptr);
+                        }
+                        None => {
+                            self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+                            return None;
+                        }
+                    },
+                    Err(_) => loop {
+                        let p = self.ptr.load(Ordering::Acquire);
+                        let a = p.addr();
+                        if a == SENTINEL_INITIALIZING {
+                            core::hint::spin_loop();
+                            continue;
+                        }
+                        if a != 0 {
+                            return Some(unsafe { NonNull::new_unchecked(p) });
+                        }
+                        break;
+                    },
+                }
+            }
+        }
+
+        pub(crate) fn dbg_is_ready(&self) -> bool {
+            Self::is_ready(self.ptr.load(Ordering::Acquire))
+        }
+
+        pub(crate) fn dbg_rollback_reenterable(&self) -> Option<bool> {
+            let sentinel = core::ptr::without_provenance_mut::<T>(SENTINEL_INITIALIZING);
+            self.ptr
+                .compare_exchange(
+                    core::ptr::null_mut(),
+                    sentinel,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .ok()?;
+            self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+            let held = self
+                .ptr
+                .compare_exchange(
+                    core::ptr::null_mut(),
+                    sentinel,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok();
+            self.ptr.store(core::ptr::null_mut(), Ordering::Release);
+            Some(held)
+        }
+    }
+}
 
 #[cfg(feature = "alloc-xthread")]
 use super::heap_overflow::{HeapOverflowSidecar, SIDECAR_CAP, SIDECAR_SENTINEL_INITIALIZING};
@@ -196,14 +355,6 @@ use super::tagged_ptr::TaggedPtr;
 /// longer a single whole-array reservation either.
 pub const MAX_HEAPS: usize = 4096;
 
-/// Sentinel: a non-null, non-real address that means "one thread is currently
-/// initialising [something]". Aligned to 1 (the raw integer 1 is not a valid
-/// pointer for any type this crate stores behind an `AtomicPtr` here — every
-/// such type has alignment >= 4). Reused for BOTH the (former) whole-registry
-/// slot and the per-chunk slot below — same bit pattern, same "never
-/// dereferenced, only compared" contract in both uses.
-const SENTINEL_INITIALIZING: usize = 1;
-
 /// The bootstrap outcome: [`registry_chunk::NUM_CHUNKS`] lazily-materialised
 /// chunk pointers plus the dynamic atomics that drive `claim`/`recycle`.
 ///
@@ -214,12 +365,16 @@ const SENTINEL_INITIALIZING: usize = 1;
 /// — this struct is const-initialisable and lives as a genuine
 /// `static REGISTRY: Registry = Registry::new()`. See [`ensure`].
 pub struct Registry {
-    /// One pointer per chunk of the slot space. `null` = chunk not yet
-    /// materialised; [`SENTINEL_INITIALIZING`] = a thread is currently
-    /// materialising it; a real pointer = the chunk is `READY` and safe to
-    /// dereference. See [`Registry::slot`] for the resolver and
-    /// [`ensure_chunk_slow`] for the per-chunk materialisation protocol.
-    chunks: [AtomicPtr<RegistryChunk>; NUM_CHUNKS],
+    /// One lazy CAS-published pointer cell per chunk of the slot space
+    /// ([`racy_ptr_cell::RacyPtrCell`], the extracted `UNINIT -> INITIALIZING
+    /// -> READY` state machine — see [`Registry::ensure_chunk`] /
+    /// [`ensure_chunk_slow`]). `RacyPtrCell` internally drives the same
+    /// `null -> sentinel(1) -> real *mut RegistryChunk` transition this field
+    /// used to spell out inline, with the identical Release-publish +
+    /// spin-`Acquire`-while-INITIALIZING + OOM-rollback-then-re-race discipline;
+    /// the seam here only reserves the OS pages and dereferences the published
+    /// pointer.
+    chunks: [RacyPtrCell<RegistryChunk>; NUM_CHUNKS],
     /// High-water mark of allocated slots (the next unused slot index). A
     /// `claim` that finds `free_slots` empty `fetch_add`s this to mint a new
     /// slot. Capped at `MAX_HEAPS`.
@@ -246,7 +401,7 @@ impl Registry {
     /// unnecessary here since the inline-const form is directly available).
     const fn new() -> Self {
         Registry {
-            chunks: [const { AtomicPtr::new(core::ptr::null_mut()) }; NUM_CHUNKS],
+            chunks: [const { RacyPtrCell::new() }; NUM_CHUNKS],
             count: AtomicU32::new(0),
             free_slots: AtomicU64::new(TaggedPtr::empty()),
         }
@@ -283,22 +438,23 @@ impl Registry {
     }
 
     /// Ensure chunk `chunk_idx` is materialised, then return a `&'static
-    /// RegistryChunk` reference to it. Fast path: one `Acquire` load, two
-    /// comparisons. Slow path (first touch or race): [`ensure_chunk_slow`].
+    /// RegistryChunk` reference to it. Fast path: [`RacyPtrCell::get`] (one
+    /// `Acquire` load + non-null/non-sentinel check, inside the cell). Slow
+    /// path (first touch or race): [`ensure_chunk_slow`], which drives the
+    /// cell's `get_or_try_init` (CAS-reserve, OS reservation, Release-publish,
+    /// spin-while-INITIALIZING loser, OOM rollback).
     #[inline]
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
-        let p = self.chunks[chunk_idx].load(Ordering::Acquire);
-        let p_usize = p.addr();
-        if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
-            // SAFETY: we observed a real non-null non-sentinel pointer under
-            // Acquire. The initialising thread stored this pointer with
-            // Release AFTER completing the field-by-field in-place
-            // initialisation of the `RegistryChunk`, so this Acquire load
-            // sees all the bytes written. The pointer remains valid for the
-            // process lifetime (the OS reservation is leaked via
-            // `mem::forget`). Casting to `&'static` is sound because the
-            // allocation outlives any reference derived from it.
-            return unsafe { &*p };
+        if let Some(p) = self.chunks[chunk_idx].get() {
+            // SAFETY: `RacyPtrCell::get` returned `Some` only after observing
+            // a real (non-null, non-sentinel) pointer under `Acquire`. The
+            // initialising thread published it with `Release` AFTER the OS
+            // reservation's pages were fully valid (OS-zeroed pages already
+            // form a valid `RegistryChunk` — see `ensure_chunk_slow`), so this
+            // Acquire-observed pointer sees all those bytes. The reservation is
+            // leaked (`leak_zeroed_pages`) and lives for the process lifetime,
+            // so `&'static` is sound.
+            return unsafe { p.as_ref() };
         }
         ensure_chunk_slow(&self.chunks[chunk_idx])
     }
@@ -380,9 +536,7 @@ impl Registry {
     #[inline]
     #[must_use]
     pub fn dbg_chunk_is_materialised(&self, chunk_idx: usize) -> bool {
-        let p = self.chunks[chunk_idx].load(Ordering::Acquire);
-        let p_usize = p.addr();
-        p_usize != 0 && p_usize != SENTINEL_INITIALIZING
+        self.chunks[chunk_idx].dbg_is_ready()
     }
 }
 
@@ -407,252 +561,102 @@ pub fn ensure() -> &'static Registry {
     &REGISTRY
 }
 
-/// Roll a chunk's pointer back from `SENTINEL_INITIALIZING` to `null`
-/// (`UNINIT`).
+/// Slow path for [`Registry::ensure_chunk`]: drive the chunk's
+/// [`racy_ptr_cell::RacyPtrCell`] through its `get_or_try_init` — the CAS-reserve
+/// / OS-reserve / Release-publish / spin-while-INITIALIZING-loser / OOM-rollback
+/// protocol now lives INSIDE the cell (the extracted `UNINIT -> INITIALIZING ->
+/// READY` state machine). This function supplies only the two things the cell
+/// leaves to the caller: the winner's fallible OS reservation closure, and the
+/// process-abort OOM policy this specific call site keeps.
 ///
-/// Single point of truth for the anti-livelock rollback used by the
-/// OOM-bailout in [`ensure_chunk_slow`] — kept as its own function so the
-/// test-only hook below exercises EXACTLY the same code the production
-/// bailout runs, rather than a duplicated copy that could drift out of sync.
-/// Generalises the pre-chunking `rollback_registry_sentinel` from "the one
-/// whole-registry pointer" to "a specific chunk's pointer".
+/// The cell guarantees exactly-once init, a single published pointer for all
+/// racers, Release/Acquire happens-before, and — critically for M5 — that a
+/// loser observing the OOM rollback (sentinel back to null) re-races the CAS
+/// rather than spinning forever on a READY that will never come.
 ///
-/// `Release` ordering: a thread that later retries `ensure_chunk_slow` on
-/// this SAME chunk performs `compare_exchange(null, SENTINEL, Acquire, ..)`;
-/// pairing that Acquire with this Release ensures the retrying thread does
-/// not need to observe anything about the failed attempt beyond "the chunk
-/// slot is free again" — there is no partially-initialised `RegistryChunk`
-/// state to synchronise (the failed attempt never got past the VM
-/// reservation).
+/// ## CRATE-P3 — why the overflow-sidecar path below did NOT also migrate
+///
+/// The chunk site maps cleanly onto `RacyPtrCell<RegistryChunk>`: it wants a
+/// `&'static RegistryChunk`, aborts on OOM, and `RegistryChunk` is never a ZST.
+/// The `alloc-xthread` overflow-sidecar path (`ensure_overflow_sidecar` below)
+/// deliberately stays spelled out inline because it does NOT fit the generic
+/// cell's shape without weakening it: (a) it returns a `bool`
+/// materialised-or-not and the DEREF happens separately in
+/// `deref_overflow_sidecar` (a different membrane split than the chunk's
+/// `&'static`-returning resolver); (b) its OOM contract is "return `false`, let
+/// the caller's existing bounded-leak path retry LATER" — a loser that observes
+/// the rollback returns `false` immediately rather than re-racing within the
+/// same call, the opposite of the cell's re-race-now liveness; and (c) under
+/// miri `SIDECAR_CAP == 0` makes `HeapOverflowSidecar` a ZST (align 1), which
+/// would trip `RacyPtrCell`'s `align_of >= 2` sentinel-collision guard at
+/// `const` construction. Forcing it would risk the M5-critical wedge-hazard
+/// ordering for no real dedup gain, so it is left as an honest inline second
+/// instance — the shared protocol it relies on is still proved by the crate's
+/// real-type loom suite.
 #[cold]
-fn rollback_chunk_sentinel(chunk_ptr: &AtomicPtr<RegistryChunk>) {
-    chunk_ptr.store(core::ptr::null_mut(), Ordering::Release);
-}
+fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> &'static RegistryChunk {
+    let published = chunk_cell.get_or_try_init(|| {
+        // ── Winner init closure ───────────────────────────────────────────
+        // We hold the cell's INITIALIZING sentinel; we are the SOLE
+        // initialiser of THIS chunk. Allocate it from OS VM.
+        //
+        // M5 (reentrancy-free) proof: unchanged from the pre-extraction inline
+        // winner branch — `aligned_vmem::leak_zeroed_pages` is a direct OS
+        // syscall (reserve + zero-under-miri + `mem::forget`-leak), no
+        // `std::alloc`/`Box`/`Vec`, no transitive dependency on
+        // `sefer_alloc::registry::*`. Under miri it falls back to `std::alloc`,
+        // but under miri we are NOT the global allocator, so no reentrancy.
+        // The whole `CHUNK_SIZE` span is guaranteed zeroed on every backend, so
+        // `base` points at a fully valid all-zero `RegistryChunk`:
+        //   next_free   = 0 (NOT NEXT_FREE_TAIL — lazy init, RAD-1)
+        //   state       = 0 = STATE_FREE
+        //   generation  = 0
+        //   heap        = MaybeUninit::uninit() (zero is fine)
+        //   initialised = 0 = false
+        //   remote.*    = 0 / null
+        //   overflow    = all-zero `HeapOverflow`
+        // — genuinely nothing to write; OS-zeroed pages ARE a valid state. The
+        // reservation is PAGE-aligned (>= `align_of::<RegistryChunk>()` <= 64)
+        // and leaked for the process lifetime, so the `&'static` references
+        // `heap_registry::bind_slot_counters` plants into slot fields stay
+        // valid forever.
+        //
+        // Returning `None` on OS refusal makes the cell roll its sentinel back
+        // to null (anti-livelock — losers re-race) BEFORE we get control back
+        // to run the abort policy below.
+        let p = aligned_vmem::leak_zeroed_pages(CHUNK_SIZE)?;
+        Some(p.cast::<RegistryChunk>())
+    });
 
-/// Slow path for [`Registry::ensure_chunk`]: race to materialise ONE chunk
-/// via a CAS on its `AtomicPtr<RegistryChunk>` slot. Exactly one caller wins,
-/// allocates via `aligned_vmem::reserve_aligned`, constructs the chunk
-/// in-place, and publishes the pointer. All others spin-wait on a tiny
-/// window. Structurally identical to the pre-chunking whole-registry
-/// `ensure_slow`, narrowed to operate on one `AtomicPtr<RegistryChunk>`
-/// instead of the single `REGISTRY_PTR`.
-#[cold]
-fn ensure_chunk_slow(chunk_ptr: &AtomicPtr<RegistryChunk>) -> &'static RegistryChunk {
-    // Race: try to acquire the INITIALIZING sentinel via CAS(null, SENTINEL).
-    // Only ONE thread wins this CAS; the rest observe SENTINEL (or null then
-    // fail the CAS) and fall into the spin branch.
-    // SENTINEL_INITIALIZING is a bare marker address, NEVER dereferenced (only
-    // compared for pointer equality against `chunk_ptr`'s CAS operand and the
-    // loads in `ensure_chunk`/the spin loop below). `without_provenance_mut`
-    // constructs a pointer that carries NO provenance at all — exactly the
-    // right semantics for a value that exists purely as an integer tag riding
-    // inside an `AtomicPtr<RegistryChunk>` and must never be read through.
-    // This is strict-provenance-clean: no `expose_provenance`/
-    // `with_exposed_provenance` pairing is needed because the value is never
-    // turned back into a dereferenceable pointer. Pointer equality (`==`, and
-    // `AtomicPtr`'s CAS) compares addresses regardless of provenance.
-    let sentinel = core::ptr::without_provenance_mut::<RegistryChunk>(SENTINEL_INITIALIZING);
-    match chunk_ptr.compare_exchange(
-        core::ptr::null_mut(),
-        sentinel,
-        // Acquire on success: pairs with our later Release store of the real
-        // pointer, establishing the happens-before for future Acquire readers.
-        Ordering::Acquire,
-        // Relaxed on failure: we re-load below in the spin loop.
-        Ordering::Relaxed,
-    ) {
-        Ok(_) => {
-            // ── Winner branch ─────────────────────────────────────────────
-            // We are the SOLE initialiser of THIS chunk. Allocate it from OS
-            // VM.
-            //
-            // M5 (reentrancy-free) proof: identical to the pre-chunking
-            // `ensure_slow` — `aligned_vmem::reserve_aligned` is a direct OS
-            // syscall, no `std::alloc`/`Box`/`Vec`, no transitive dependency
-            // on `sefer_alloc::registry::*`. Under miri it falls back to
-            // `std::alloc`, but under miri we are NOT the global allocator,
-            // so no reentrancy.
-            // CRATE-P2 (item g): reserve + zero-under-miri + leak folded into
-            // `aligned_vmem::leak_zeroed_pages`, which guarantees the span is
-            // zeroed on EVERY backend (including the miri `std::alloc` fallback,
-            // where the old explicit `write_bytes(0)` used to live) and
-            // `mem::forget`-leaks it for the process lifetime. `CHUNK_ALIGN`
-            // (PAGE) is subsumed: `leak_zeroed_pages` always reserves
-            // PAGE-aligned, which is >= `align_of::<RegistryChunk>()` (<= 64).
-            let base = match aligned_vmem::leak_zeroed_pages(CHUNK_SIZE) {
-                Some(p) => p.as_ptr() as *mut RegistryChunk,
-                None => {
-                    // Chunk-materialisation OOM (R6-OPT-P0-2 round 1 design
-                    // decision — see the module doc for the full reasoning):
-                    // treat this as ORDINARY claim-failure, NOT
-                    // `std::process::abort()`.
-                    //
-                    // The pre-chunking whole-registry OOM aborted because "the
-                    // allocator cannot even materialise its own core
-                    // bookkeeping structure" — losing the registry meant
-                    // losing EVERY heap the process could ever claim, present
-                    // or future; there was no narrower failure to report. A
-                    // single missing CHUNK has a strictly narrower blast
-                    // radius: heaps already live in OTHER, already-materialised
-                    // chunks are completely unaffected (their slots, `state`,
-                    // `heap`, `next_free` all live in separate OS reservations
-                    // that this failure never touches); the process merely
-                    // cannot mint any MORE heaps whose index falls in this
-                    // particular 64-slot range. `pick_slot`/`claim` already
-                    // have a documented `None`/null-return contract for
-                    // registry exhaustion (`bump_count` returning `None` when
-                    // `count >= MAX_HEAPS`) — a chunk that fails to
-                    // materialise is the SAME shape of failure ("this index
-                    // range is currently unusable"), just triggered by VM
-                    // pressure instead of the index cap. Piping it through the
-                    // existing exhaustion path (this function returns to
-                    // `Registry::slot`, which currently has no way to
-                    // propagate a chunk-materialisation failure as `None` —
-                    // see the follow-up note below) is the right shape for a
-                    // narrow, recoverable failure.
-                    //
-                    // We still MUST roll back the sentinel first (exactly the
-                    // pre-chunking anti-livelock argument, narrowed to this
-                    // chunk): if we bailed out here WITHOUT rolling
-                    // `chunk_ptr` back to null, every loser thread spinning in
-                    // the `Err` branch below spins FOREVER on this chunk (the
-                    // sentinel is never replaced by a real pointer), and every
-                    // FUTURE `slot()` call touching an index in this chunk's
-                    // range would ALSO fail the `compare_exchange(null,
-                    // SENTINEL)` CAS (current value is SENTINEL, not null) and
-                    // spin forever too — a livelock scoped to this chunk's
-                    // 64-slot index range, not the whole process.
-                    rollback_chunk_sentinel(chunk_ptr);
-                    // `Registry::slot` (and its callers `pick_slot`/`claim`)
-                    // currently assume `slot()` always succeeds — the type is
-                    // `&'static HeapSlot`, not `Option<&'static HeapSlot>`.
-                    // Making the failure fully non-fatal end-to-end (returning
-                    // `null` from `claim` on a failed chunk materialisation,
-                    // the way `bump_count`'s `None` already does for index
-                    // exhaustion) would require widening `slot()`'s signature
-                    // and every call site's handling — a real API change this
-                    // round deliberately does NOT make (see the final report's
-                    // "left out of scope" note): a chunk-materialisation OOM
-                    // is exceedingly rare in practice (it needs the OS to
-                    // refuse a `CHUNK_SIZE`-byte reservation — tens of KiB to
-                    // low MiB depending on feature set — when the process is
-                    // already so starved that a `HeapCore::new()` segment
-                    // reservation a few lines later would fail anyway), and
-                    // retrofitting a full `Option` thread-through is exactly
-                    // the kind of "widen while here" scope creep the isolated
-                    // round-1/round-2 split was designed to avoid. We
-                    // therefore abort here too, for now — narrower in cause
-                    // than the old whole-registry abort, but not yet narrower
-                    // in EFFECT (the process still exits). The rollback above
-                    // is still correct and is exercised by
-                    // `dbg_rollback_chunk_sentinel_reenterable` below,
-                    // establishing the mechanism a future `Option`-returning
-                    // `slot()` could build on without redoing this work.
-                    std::process::abort();
-                }
-            };
-
-            // `leak_zeroed_pages` already guaranteed the whole `CHUNK_SIZE`
-            // span is zeroed on every backend (the miri-specific `write_bytes`
-            // that used to live here is folded into that helper), so `base`
-            // points at a fully valid all-zero `RegistryChunk`.
-
-            // In-place initialisation of the `RegistryChunk` — no field
-            // writes needed at all.
-            //
-            // We do NOT use `ptr::write(base, RegistryChunk { .. })` for the
-            // SAME reason the pre-chunking `ensure_slow` avoided constructing
-            // a whole `Registry` value: `RegistryChunk` can be tens to
-            // hundreds of KiB (`CHUNK_SLOTS = 64` times a feature-dependent
-            // `HeapSlot` size), too large to safely build as a stack/const
-            // temporary.
-            //
-            // Every `HeapSlot` field inside a chunk starts at its correct
-            // zero value from OS-zeroed pages, with NO non-zero field to
-            // fix up (unlike the top-level `Registry`, which had exactly one
-            // non-zero field — `free_slots = TaggedPtr::empty()` — that field
-            // now lives in `Registry::new()`'s const-initialiser instead,
-            // since `Registry` itself is const-constructed up front, not
-            // lazily per-chunk):
-            //   next_free   = 0 (NOT NEXT_FREE_TAIL — lazy init, RAD-1: a
-            //     slot's `next_free` is read ONLY by `pop_free_slot`, always
-            //     AFTER a `push_free_slot` has written the real link for that
-            //     same slot under Release; a freshly-minted slot goes
-            //     straight to `claim` and is never read through `next_free`
-            //     before its first push, so the zero is never observed)
-            //   state       = 0 = STATE_FREE
-            //   generation  = 0
-            //   heap        = MaybeUninit::uninit() (unspecified bits, zero
-            //     is fine)
-            //   initialised = 0 = false
-            //   remote.{tcache_hits, large_cache_hits, thread_free} = 0 /
-            //     null (zero-initialised counters / empty stack head)
-            //   overflow    = all-zero `HeapOverflow` (an unclaimed slot
-            //     never first-touches its ring beyond this page-zero, per
-            //     `HeapOverflow`'s own RSS-discipline doc — round 2's
-            //     concern, unaffected by this round)
-            //
-            // So there is genuinely nothing to write here — the chunk is
-            // fully initialised the moment its pages are OS-zeroed. This
-            // block is kept (rather than removed) so the SAFETY proof for
-            // dereferencing `base` below has an explicit anchor, and so a
-            // FUTURE field that needs a non-zero bootstrap value has an
-            // obvious, already-audited place to add the write (mirroring the
-            // pattern the old `free_slots` write established at the
-            // `Registry` level).
-            //
-            // SAFETY: `base` is non-null, aligned to `CHUNK_ALIGN` (PAGE =
-            // 4096, which is >= `align_of::<RegistryChunk>()` — at most 64
-            // bytes, `HeapSlot`'s `repr(align(64))`), and valid for
-            // `CHUNK_SIZE` bytes (>= `size_of::<RegistryChunk>()`). We are
-            // the sole writer (only one CAS winner can reach this branch).
-            // The memory is OS-provided zero-initialised pages, which is
-            // already a fully valid `RegistryChunk` bit-pattern per the
-            // field-by-field audit above — no writes are needed to reach a
-            // valid state.
-
-            // Publish the real pointer with Release so every subsequent
-            // Acquire load in `Registry::ensure_chunk`'s fast path sees the
-            // fully written chunk. This pairs with the Acquire load in the
-            // fast path and with the Acquire loads in the spin loop below.
-            chunk_ptr.store(base, Ordering::Release);
-
-            // The reservation was already leaked for the process lifetime by
-            // `leak_zeroed_pages` (`mem::forget` internally) — the chunk is
-            // never dropped, so the `&'static` references
-            // `heap_registry::bind_slot_counters` plants into slot fields stay
-            // valid forever.
-
-            // SAFETY: we fully initialised the `RegistryChunk` at `base`
-            // (OS-zeroed pages ARE a fully valid state — see the audit above)
-            // and published it with Release. The allocation outlives any
-            // reference derived from it (leaked via `mem::forget`).
-            // Dereferencing `base` as `&'static RegistryChunk` is sound.
-            unsafe { &*base }
+    match published {
+        Some(p) => {
+            // SAFETY: `RacyPtrCell::get_or_try_init` returned `Some` only after
+            // the winner published a real (non-null, non-sentinel) pointer with
+            // `Release` and every other racer observed it under `Acquire`. The
+            // pointee is the fully-zeroed `RegistryChunk` reserved above (a
+            // valid state), leaked for the process lifetime, so `&'static` is
+            // sound.
+            unsafe { p.as_ref() }
         }
-        Err(_) => {
-            // ── Loser branch ─────────────────────────────────────────────
-            // Another thread is (or was) initialising THIS chunk. Spin until
-            // we observe a real (non-null, non-sentinel) pointer. This
-            // window is small: one OS reservation of `CHUNK_SIZE` bytes plus
-            // one publish store, with NO per-slot write loop at all (unlike
-            // even the RAD-1-optimised whole-registry path, this chunk path
-            // never had one to remove — see the in-place-init block above).
-            loop {
-                let p = chunk_ptr.load(Ordering::Acquire);
-                // See the identical `.addr()` rationale in `ensure_chunk`'s
-                // fast path: pure integer comparison, no provenance use.
-                let p_usize = p.addr();
-                if p_usize != 0 && p_usize != SENTINEL_INITIALIZING {
-                    // SAFETY: same argument as the fast path in
-                    // `Registry::ensure_chunk`. We observed the real pointer
-                    // under Acquire, which pairs with the winner's Release
-                    // store of the pointer. The `RegistryChunk` is fully
-                    // initialised.
-                    return unsafe { &*p };
-                }
-                spin_loop();
-            }
+        None => {
+            // Chunk-materialisation OOM. The cell has ALREADY rolled its
+            // sentinel back to null (so no loser is wedged and a future
+            // `slot()` call can retry this chunk index) — that is the
+            // anti-livelock guarantee the inline code used to spell out via
+            // `rollback_chunk_sentinel`, now internal to `RacyPtrCell`.
+            //
+            // We keep the historic ABORT policy for THIS call site (unchanged
+            // in EFFECT from before the extraction): `Registry::slot` /
+            // `pick_slot` / `claim` assume `slot()` always succeeds (`&'static
+            // HeapSlot`, not `Option<..>`), so a chunk that cannot be
+            // materialised has no non-fatal propagation path yet. A
+            // chunk-materialisation OOM is exceedingly rare (the OS refusing a
+            // tens-of-KiB-to-low-MiB reservation while the process is already
+            // so starved that the `HeapCore::new()` segment reservation a few
+            // lines later would fail anyway); widening `slot()` to `Option` is
+            // deliberately out of scope. The cell's rollback establishes the
+            // mechanism a future `Option`-returning `slot()` could build on.
+            std::process::abort();
         }
     }
 }
@@ -716,44 +720,18 @@ fn ensure_chunk_slow(chunk_ptr: &AtomicPtr<RegistryChunk>) -> &'static RegistryC
 /// applicable", never as failure).
 #[doc(hidden)]
 pub fn dbg_rollback_chunk_sentinel_reenterable(chunk_idx: usize) -> Option<bool> {
-    let chunk_ptr = &REGISTRY.chunks[chunk_idx];
-
-    // See the identical construction (and its SAFETY/provenance rationale) in
-    // `ensure_chunk_slow` above: a bare marker address, never dereferenced.
-    let sentinel = core::ptr::without_provenance_mut::<RegistryChunk>(SENTINEL_INITIALIZING);
-
-    // Step 1: only proceed if the chunk is still UNINIT (null). If it is
-    // already real (or contended by another caller), do not touch it.
-    chunk_ptr
-        .compare_exchange(
-            core::ptr::null_mut(),
-            sentinel,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        )
-        .ok()?;
-
-    // Step 2: run the EXACT rollback the production OOM-bailout runs.
-    rollback_chunk_sentinel(chunk_ptr);
-
-    // Step 3: prove the anti-livelock postcondition — a fresh CAS(null,
-    // SENTINEL) must now succeed, meaning a real materialisation winner (or
-    // any future `slot()` caller touching this chunk) would NOT spin forever
-    // on a stuck sentinel.
-    let postcondition_holds = chunk_ptr
-        .compare_exchange(
-            core::ptr::null_mut(),
-            sentinel,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        )
-        .is_ok();
-
-    // Step 4: restore the chunk pointer to null, exactly as observed on
-    // entry, regardless of the postcondition outcome.
-    chunk_ptr.store(core::ptr::null_mut(), Ordering::Release);
-
-    Some(postcondition_holds)
+    // Forward to `RacyPtrCell::dbg_rollback_reenterable`, which drives the
+    // chunk's REAL cell through the EXACT `null -> sentinel -> rollback ->
+    // re-CAS` sequence the internal OOM-bailout runs and proves the
+    // anti-livelock postcondition (after rollback, a fresh CAS(null -> sentinel)
+    // succeeds — no future materialisation winner or spinning loser is wedged).
+    // The rollback logic now lives inside `RacyPtrCell` (the extracted state
+    // machine), so this hook exercises the shipped code path, not a copy — and
+    // on the LIVE process-global registry chunk, exactly as before the
+    // extraction. The cell's own entry CAS is the "only touch it if UNINIT"
+    // guard (returns `None` on a materialised/contended chunk), so a
+    // caller-chosen high chunk index no other test claims stays safe.
+    REGISTRY.chunks[chunk_idx].dbg_rollback_reenterable()
 }
 
 /// Test-only re-export (R6-OPT-P0-2 round 1) of

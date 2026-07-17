@@ -16,9 +16,17 @@ import { REPO_ROOT, run, verdict } from './lib.mjs';
 // `#![cfg(feature = "experimental")]` gate excluded the whole file → "0 tests"
 // that looks like a pass). Each model now builds under the exact features its
 // `#![cfg(...)]` gate requires — identical to what CI runs.
+// CRATE-P3: the four in-tree shadow-model harnesses (loom_bootstrap_cas,
+// loom_chunk_cas, loom_overflow_sidecar_cas, loom_fallback_init) collapsed into
+// ONE suite that model-checks the REAL `racy_ptr_cell::RacyPtrCell` type (the
+// crate aliases its atomics to `loom` under `--cfg loom`). It lives in the
+// `racy-ptr-cell` crate, not sefer's `tests/`, so it is run with `-p
+// racy-ptr-cell` and no sefer features — flagged by the `crate:` prefix on its
+// feature-map value, handled specially in the run loop below.
+const CRATE_PREFIX = 'crate:';
+
 const FEATURES = {
-  loom_bootstrap_cas: 'alloc-global',
-  loom_fallback_init: 'alloc-global',
+  loom_racy_ptr_cell: `${CRATE_PREFIX}racy-ptr-cell`,
   loom_free_slots_aba: 'alloc-global',
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
   loom_remote_ring: 'alloc-core,alloc-xthread',
@@ -87,16 +95,28 @@ console.log('');
 
 let allOk = true;
 for (const [features, group] of byFeature) {
-  const label = features === '' ? '(no features)' : `--features ${features}`;
+  const isCrate = features.startsWith(CRATE_PREFIX);
+  const crateName = isCrate ? features.slice(CRATE_PREFIX.length) : null;
+  const label = isCrate
+    ? `-p ${crateName}`
+    : features === ''
+      ? '(no features)'
+      : `--features ${features}`;
   console.log(`\n[loom] ${label}: ${group.join(', ')}`);
   const testArgs = group.flatMap((t) => ['--test', t]);
-  // An empty feature set must OMIT `--features` entirely — cargo rejects an
-  // empty `--features ''` argument. This mirrors the ci.yml matrix entry for
-  // `loom_thread_free` (features: "").
-  const featureArgs = features === '' ? [] : ['--features', features];
+  // A `crate:<name>` entry runs the extracted crate's own real-type loom suite
+  // via `-p <name>` and NO sefer features (the crate has none). Otherwise:
+  // an empty feature set must OMIT `--features` entirely — cargo rejects an
+  // empty `--features ''` argument (mirrors the ci.yml `loom_thread_free`
+  // features: "" entry).
+  const scopeArgs = isCrate
+    ? ['-p', crateName]
+    : features === ''
+      ? []
+      : ['--features', features];
   const { code, out } = await run(
     'cargo',
-    ['test', '--release', ...featureArgs, ...testArgs],
+    ['test', '--release', ...scopeArgs, ...testArgs],
     {
       cwd: REPO_ROOT,
       env: { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ''} --cfg loom`.trim() },

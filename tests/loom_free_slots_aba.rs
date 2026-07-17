@@ -158,7 +158,9 @@ impl Registry {
     /// Both slots start pushed (index 0 on top, chained to index 1, chained
     /// to the tail), tag = 0 — mirrors the bootstrap-time "all slots free"
     /// initial state closely enough for this protocol-only model (the real
-    /// bootstrap path is covered by `loom_bootstrap_cas.rs`, not here).
+    /// bootstrap path is covered by the `racy-ptr-cell` crate's real-type loom
+    /// suite — CRATE-P3, which replaced the former `loom_bootstrap_cas.rs` — not
+    /// here).
     fn new_both_free() -> Arc<Self> {
         Arc::new(Registry {
             // head = (idx=0, tag=0), slot 0 -> slot 1 -> TAIL.

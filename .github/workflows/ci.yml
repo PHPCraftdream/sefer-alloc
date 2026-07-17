@@ -466,9 +466,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      # #137: loom_fallback_init (the fallback-heap lazy-init state machine)
-      # existed but was never wired into the loom matrix — its model was
-      # checked locally but not gated in CI.
+      # CRATE-P3: the four in-tree shadow-model harnesses
+      # (loom_bootstrap_cas, loom_chunk_cas, loom_overflow_sidecar_cas,
+      # loom_fallback_init) that each transcribed the `UNINIT -> INITIALIZING
+      # -> READY` CAS-publish/OOM-rollback protocol were collapsed into ONE
+      # suite that model-checks the REAL `racy_ptr_cell::RacyPtrCell` type (the
+      # extracted crate aliases its atomics to `loom` under `--cfg loom`). It
+      # runs against the crate directly (`-p racy-ptr-cell`, no sefer
+      # features) — see the `loom_racy_ptr_cell` step below.
       # #141: loom_free_slots_aba — Registry `free_slots` Treiber stack +
       # `TaggedPtr` ABA-tag model (`src/registry/heap_registry.rs`
       # pop_free_slot/push_free_slot + `src/registry/tagged_ptr.rs`).
@@ -476,9 +481,13 @@ jobs:
       # deleted with that substrate in task #97 / R4-5.)
       - run: >-
           cargo test --release --features "alloc-global"
-          --test loom_bootstrap_cas
-          --test loom_fallback_init
           --test loom_free_slots_aba
+      # CRATE-P3: real-type `RacyPtrCell` loom suite (replaces the 4 shadow
+      # models above). Includes the Relaxed-publish and spin-on-READY-livelock
+      # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
+      - run: >-
+          cargo test --release -p racy-ptr-cell
+          --test loom_racy_ptr_cell
 
   loom-xthread:
     name: loom (alloc-core alloc-xthread)

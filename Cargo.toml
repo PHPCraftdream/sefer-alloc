@@ -46,7 +46,7 @@ features = ["production"]
 # re-exports sefer-region's surface for backward compatibility, and delegates its
 # OS-unsafe seams to aligned-vmem and numa-shim (thin interop wrappers).
 [workspace]
-members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region"]
+members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell"]
 resolver = "2"
 
 [lints.rust]
@@ -100,7 +100,7 @@ pinning = ["experimental", "dep:core_affinity"]
 # discipline) — so the crate switches to `deny(unsafe_code)` with this feature
 # on; `unsafe` outside those modules stays a hard error. Requires `std` (the OS
 # syscalls are std-gated). See `docs/ALLOC_PLAN.md` §5 P8 and §6.
-alloc-core = ["std", "dep:aligned-vmem"]
+alloc-core = ["std", "dep:aligned-vmem", "dep:racy-ptr-cell"]
 # Cross-thread free support. Adds per-segment `RemoteFreeRing`s (lock-free
 # SPSC rings) for cross-thread `dealloc`, the `dealloc_any_thread` entry point,
 # owner stamping on segment headers, and the whole-slot-reuse teardown model
@@ -299,6 +299,15 @@ core_affinity = { version = "0.8", optional = true }
 # crate so it can be used and published independently. Pulled in ONLY by the
 # `alloc-core` feature (and every feature that depends on it).
 aligned-vmem = { path = "crates/vmem", version = "0.2", optional = true }
+# CRATE-P3: the lazy CAS-published pointer cell (UNINIT -> INITIALIZING -> READY
+# with OOM rollback + loser re-race), extracted from `registry/bootstrap.rs`'s
+# per-chunk / overflow-sidecar materialisation state machine and
+# `global/fallback.rs`'s init state-word. Allocation-free and
+# `#[global_allocator]`-safe (no std sync, no reentrancy) — the exact niche the
+# registry bootstrap needs. Pulled in ONLY by `alloc-core` (and every feature
+# that depends on it), since the state machine lives on the allocator bootstrap
+# path. See `crates/racy-ptr-cell/src/lib.rs`.
+racy-ptr-cell = { path = "crates/racy-ptr-cell", version = "0.1", optional = true }
 # Phase 78 (numa-aware) NUMA seam: dependency-free NUMA detection + binding,
 # extracted from sefer-alloc into a standalone crate so it can be published
 # independently. Pulled in ONLY by the `numa-aware` feature.
