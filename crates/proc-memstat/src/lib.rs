@@ -28,15 +28,19 @@
 //!
 //! | Platform | `rss` | `commit` | `peak_rss` |
 //! |----------|-------|----------|------------|
-//! | Linux    | `/proc/self/statm` resident × page size | `/proc/self/statm` size (total VM) × page size | `/proc/self/status` `VmHWM` (`Some`) |
+//! | Linux    | `/proc/self/status` `VmRSS` | `/proc/self/status` `VmSize` (total VM) | `/proc/self/status` `VmHWM` (`Some`) |
 //! | Windows  | `K32GetProcessMemoryInfo` `WorkingSetSize` | `PagefileUsage` | `PeakWorkingSetSize` (`Some`) |
 //! | macOS    | `task_info(MACH_TASK_BASIC_INFO)` `resident_size` | `virtual_size` | `resident_size_max` (`Some`) |
 //! | other    | `0` | `0` | `None` |
 //!
 //! Linux's overcommit accounting is not identical to Windows' commit-charge
 //! model; `commit` there is "total program size" (virtual memory), the nearest
-//! Linux analogue. On unknown targets the crate reports honest zeros rather
-//! than a fabricated number.
+//! Linux analogue. All three Linux fields come from `/proc/self/status`, whose
+//! values are reported in kB regardless of the kernel's base page size — unlike
+//! `/proc/self/statm` (expressed in pages), this needs no page-size query and
+//! stays correct on 16 KiB/64 KiB-page kernels (aarch64, ppc64, etc.). On
+//! unknown targets the crate reports honest zeros rather than a fabricated
+//! number.
 //!
 //! Runnable form of the examples: `tests/monotonicity.rs`.
 
@@ -51,8 +55,8 @@
 /// A same-instant snapshot of the calling process's own memory usage, in
 /// **bytes**.
 ///
-/// Produced by [`snapshot`]. The three fields are read from one OS query (or,
-/// on Linux, two adjacent `/proc` reads) so that comparing `commit` against
+/// Produced by [`snapshot`]. The three fields are read from one OS query (on
+/// Linux, one `/proc/self/status` read) so that comparing `commit` against
 /// `rss` is apples-to-apples: both describe the same moment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemStat {
@@ -90,41 +94,26 @@ pub fn snapshot() -> MemStat {
 mod platform {
     use super::MemStat;
 
-    /// Page size in bytes. `sysconf(_SC_PAGESIZE)` would need libc; 4 KiB is
-    /// correct on every x86_64/aarch64-4k Linux host this crate is exercised
-    /// on, and `/proc/self/statm` is expressed in pages. Documented as a rough
-    /// probe, not a precise accountant on exotic 16k/64k-page kernels.
-    const PAGE_SIZE: u64 = 4096;
-
     pub(super) fn snapshot() -> MemStat {
-        let (rss_pages, size_pages) = read_statm();
+        let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
         MemStat {
-            rss: rss_pages * PAGE_SIZE,
-            commit: size_pages * PAGE_SIZE,
-            peak_rss: read_vmhwm_bytes(),
+            rss: read_kib_field(&status, "VmRSS:").unwrap_or(0) * 1024,
+            commit: read_kib_field(&status, "VmSize:").unwrap_or(0) * 1024,
+            peak_rss: read_kib_field(&status, "VmHWM:").map(|kib| kib * 1024),
         }
     }
 
-    /// `(resident_pages, size_pages)` from `/proc/self/statm`
-    /// ("size resident shared text lib data dt", in pages): field 1 is
-    /// resident, field 0 is total program size (virtual memory).
-    fn read_statm() -> (u64, u64) {
-        let statm = std::fs::read_to_string("/proc/self/statm").unwrap_or_default();
-        let mut it = statm.split_whitespace();
-        let size = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-        let resident = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-        (resident, size)
-    }
-
-    /// Peak RSS from `/proc/self/status`'s `VmHWM:` line (reported in KiB),
-    /// converted to bytes. `None` if the field is absent/unreadable.
-    fn read_vmhwm_bytes() -> Option<u64> {
-        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    /// Read a `<prefix>\t   1234 kB` line from `/proc/self/status` and return
+    /// the numeric field, in kB — page-size-independent (unlike
+    /// `/proc/self/statm`, which is expressed in pages and would require a
+    /// `sysconf(_SC_PAGESIZE)` query to convert correctly on non-4-KiB-page
+    /// kernels such as aarch64/ppc64 hosts using 16 KiB or 64 KiB pages).
+    /// `None` if the field is absent/unreadable.
+    fn read_kib_field(status: &str, prefix: &str) -> Option<u64> {
         for line in status.lines() {
-            if let Some(rest) = line.strip_prefix("VmHWM:") {
-                // Format: "VmHWM:\t   1234 kB"
-                let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
-                return Some(kib * 1024);
+            if let Some(rest) = line.strip_prefix(prefix) {
+                // Format: "VmRSS:\t   1234 kB"
+                return rest.split_whitespace().next()?.parse().ok();
             }
         }
         None
