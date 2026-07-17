@@ -182,7 +182,7 @@ use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 #[cfg(feature = "alloc-xthread")]
 use super::heap_overflow::{HeapOverflowSidecar, SIDECAR_CAP, SIDECAR_SENTINEL_INITIALIZING};
 use super::heap_slot::HeapSlot;
-use super::registry_chunk::{RegistryChunk, CHUNK_ALIGN, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
+use super::registry_chunk::{RegistryChunk, CHUNK_SIZE, CHUNK_SLOTS, NUM_CHUNKS};
 use super::tagged_ptr::TaggedPtr;
 
 /// Maximum number of heaps the registry can hold. Each live thread claims one
@@ -472,8 +472,15 @@ fn ensure_chunk_slow(chunk_ptr: &AtomicPtr<RegistryChunk>) -> &'static RegistryC
             // on `sefer_alloc::registry::*`. Under miri it falls back to
             // `std::alloc`, but under miri we are NOT the global allocator,
             // so no reentrancy.
-            let reservation = match aligned_vmem::reserve_aligned(CHUNK_SIZE, CHUNK_ALIGN) {
-                Some(r) => r,
+            // CRATE-P2 (item g): reserve + zero-under-miri + leak folded into
+            // `aligned_vmem::leak_zeroed_pages`, which guarantees the span is
+            // zeroed on EVERY backend (including the miri `std::alloc` fallback,
+            // where the old explicit `write_bytes(0)` used to live) and
+            // `mem::forget`-leaks it for the process lifetime. `CHUNK_ALIGN`
+            // (PAGE) is subsumed: `leak_zeroed_pages` always reserves
+            // PAGE-aligned, which is >= `align_of::<RegistryChunk>()` (<= 64).
+            let base = match aligned_vmem::leak_zeroed_pages(CHUNK_SIZE) {
+                Some(p) => p.as_ptr() as *mut RegistryChunk,
                 None => {
                     // Chunk-materialisation OOM (R6-OPT-P0-2 round 1 design
                     // decision — see the module doc for the full reasoning):
@@ -545,27 +552,10 @@ fn ensure_chunk_slow(chunk_ptr: &AtomicPtr<RegistryChunk>) -> &'static RegistryC
                 }
             };
 
-            let base = reservation.as_ptr() as *mut RegistryChunk;
-
-            // Task #139 (carried forward, chunk-scoped): under miri,
-            // `aligned_vmem::reserve_aligned` falls back to `std::alloc`
-            // (miri has no `VirtualAlloc`/`mmap`), which does NOT zero the
-            // bytes the way real OS pages do. Every `HeapSlot` field this
-            // in-place init does not explicitly write relies on OS
-            // zero-pages (`state = 0`, `generation = 0`, `initialised = 0`,
-            // `next_free = 0`, etc.) — see the identical reasoning the
-            // pre-chunking `ensure_slow` documented for the whole registry,
-            // now scoped to `CHUNK_SIZE` bytes. Compiled out entirely on real
-            // targets — zero cost in production.
-            //
-            // SAFETY: `base` is a fresh `CHUNK_SIZE`-byte reservation we
-            // solely own (the CAS winner), not yet published; zero is a valid
-            // bit-pattern for every `HeapSlot` field (`AtomicU8/U32/U64/Bool`
-            // = 0, `MaybeUninit<HeapCore>` = any bytes).
-            #[cfg(miri)]
-            unsafe {
-                core::ptr::write_bytes(base as *mut u8, 0, CHUNK_SIZE);
-            }
+            // `leak_zeroed_pages` already guaranteed the whole `CHUNK_SIZE`
+            // span is zeroed on every backend (the miri-specific `write_bytes`
+            // that used to live here is folded into that helper), so `base`
+            // points at a fully valid all-zero `RegistryChunk`.
 
             // In-place initialisation of the `RegistryChunk` — no field
             // writes needed at all.
@@ -627,14 +617,11 @@ fn ensure_chunk_slow(chunk_ptr: &AtomicPtr<RegistryChunk>) -> &'static RegistryC
             // fast path and with the Acquire loads in the spin loop below.
             chunk_ptr.store(base, Ordering::Release);
 
-            // Leak the reservation intentionally. The chunk lives for the
-            // process lifetime and is never dropped. `mem::forget` suppresses
-            // the `Drop` impl that would call `VirtualFree`/`munmap`, which
-            // would be catastrophic (a live `'static` reference would
-            // dangle) — see `heap_registry::bind_slot_counters`, which plants
-            // `&'static` references into slot fields that must remain valid
-            // forever.
-            core::mem::forget(reservation);
+            // The reservation was already leaked for the process lifetime by
+            // `leak_zeroed_pages` (`mem::forget` internally) — the chunk is
+            // never dropped, so the `&'static` references
+            // `heap_registry::bind_slot_counters` plants into slot fields stay
+            // valid forever.
 
             // SAFETY: we fully initialised the `RegistryChunk` at `base`
             // (OS-zeroed pages ARE a fully valid state — see the audit above)
@@ -830,13 +817,6 @@ mod overflow_sidecar {
         }
     };
 
-    /// Alignment for the sidecar's `reserve_aligned` call — mirrors
-    /// `registry_chunk::CHUNK_ALIGN`'s identical reasoning: the sidecar's
-    /// natural alignment (`AtomicUsize`/`AtomicU32` arrays, 8-byte alignment
-    /// at most) is well under a page, and `reserve_aligned` requires `align
-    /// >= PAGE` anyway, so we use `PAGE` directly.
-    pub(super) const SIDECAR_ALIGN: usize = aligned_vmem::PAGE;
-
     /// Ensure `sidecar_ptr`'s [`HeapOverflowSidecar`] is materialised,
     /// returning `true` once it is safe to index (real, non-null,
     /// non-sentinel pointer observed), or `false` if materialisation failed
@@ -918,8 +898,15 @@ mod overflow_sidecar {
                 // under miri means this branch is unreachable there — see the
                 // guard in `ensure_overflow_sidecar` above — but the proof
                 // holds regardless.)
-                let reservation = match aligned_vmem::reserve_aligned(SIDECAR_SIZE, SIDECAR_ALIGN) {
-                    Some(r) => r,
+                // CRATE-P2 (item g): reserve + zero-under-miri + leak folded
+                // into `aligned_vmem::leak_zeroed_pages` (the miri `write_bytes`
+                // that used to sit below is now inside that helper). `base`
+                // points at a fully-zeroed `SIDECAR_SIZE` span leaked for the
+                // process lifetime; `SIDECAR_ALIGN` (PAGE) is subsumed because
+                // `leak_zeroed_pages` always reserves PAGE-aligned (>=
+                // `align_of::<HeapOverflowSidecar>()`).
+                let base = match aligned_vmem::leak_zeroed_pages(SIDECAR_SIZE) {
+                    Some(p) => p.as_ptr() as *mut HeapOverflowSidecar,
                     None => {
                         // OOM: roll the sentinel back (anti-livelock — see
                         // `rollback_chunk_sentinel`'s identical argument,
@@ -932,30 +919,6 @@ mod overflow_sidecar {
                         return false;
                     }
                 };
-
-                let base = reservation.as_ptr() as *mut HeapOverflowSidecar;
-
-                // Task #139-identical accommodation (carried forward, sidecar-
-                // scoped): under miri, `reserve_aligned` falls back to
-                // `std::alloc`, which does NOT zero the bytes the way real OS
-                // pages do. Every `HeapOverflowSidecar` field this in-place
-                // init does not explicitly write relies on OS zero-pages
-                // (`bases[i] == 0 == ENTRY_EMPTY_BASE`, `packed[i] == 0`) —
-                // identical reasoning to `ensure_chunk_slow`'s own comment,
-                // scoped to `SIDECAR_SIZE` bytes. Compiled out entirely on
-                // real targets. (Unreachable in practice under miri per the
-                // `SIDECAR_CAP == 0` guard above; kept for defence-in-depth
-                // exactly as `ensure_chunk_slow` keeps its own.)
-                //
-                // SAFETY: `base` is a fresh `SIDECAR_SIZE`-byte reservation we
-                // solely own (the CAS winner), not yet published; zero is a
-                // valid bit-pattern for every `HeapOverflowSidecar` field
-                // (`AtomicUsize`/`AtomicU32` arrays, all-zero = a valid
-                // initial state).
-                #[cfg(miri)]
-                unsafe {
-                    core::ptr::write_bytes(base as *mut u8, 0, SIDECAR_SIZE);
-                }
 
                 // In-place initialisation: no field writes needed at all —
                 // OS-zeroed pages already form a fully valid
@@ -976,11 +939,9 @@ mod overflow_sidecar {
                 // fast path above) sees the fully written sidecar.
                 sidecar_ptr.store(base, Ordering::Release);
 
-                // Leak the reservation intentionally — same discipline as
-                // every other lazy-materialisation site in this crate
-                // (`RegistryChunk`, the pre-round-1 whole registry): the
-                // sidecar lives for the process lifetime.
-                core::mem::forget(reservation);
+                // The reservation was already leaked for the process lifetime by
+                // `leak_zeroed_pages` — same discipline as every other
+                // lazy-materialisation site in this crate.
 
                 true
             }

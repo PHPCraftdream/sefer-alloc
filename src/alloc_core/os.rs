@@ -261,12 +261,6 @@ const DIRECTORY_SIDECAR_SIZE: usize = {
     }
 };
 
-/// Alignment for the directory sidecar's `reserve_aligned` call.
-/// `SegmentDirectory`'s natural alignment is 8 (array of `u64`), well under
-/// a page; `reserve_aligned` requires `align >= PAGE`, so we use `PAGE`.
-#[cfg(feature = "alloc-segment-directory")]
-const DIRECTORY_SIDECAR_ALIGN: usize = vmem::PAGE;
-
 /// Reserve and construct a [`SegmentDirectory`] sidecar via direct OS VM
 /// reservation (M5-clean). Returns `Some(ptr)` on success (the pointer is
 /// valid for the process lifetime, OS-zeroed, a fully valid initial state),
@@ -290,21 +284,15 @@ const DIRECTORY_SIDECAR_ALIGN: usize = vmem::PAGE;
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) fn reserve_directory_sidecar() -> Option<*mut super::segment_directory::SegmentDirectory>
 {
-    let reservation = vmem::reserve_aligned(DIRECTORY_SIDECAR_SIZE, DIRECTORY_SIDECAR_ALIGN)?;
-    let base = reservation.as_ptr() as *mut super::segment_directory::SegmentDirectory;
-
-    // Under miri, `reserve_aligned` falls back to `std::alloc`, which does
-    // NOT zero the bytes. Zero explicitly so the all-zero initial state
-    // (every bitmap bit clear) holds under miri too.
-    #[cfg(miri)]
-    unsafe {
-        core::ptr::write_bytes(base as *mut u8, 0, DIRECTORY_SIDECAR_SIZE);
-    }
-
-    // Leak the reservation: the sidecar lives for the process lifetime.
-    core::mem::forget(reservation);
-
-    Some(base)
+    // CRATE-P2 (item g): the leaked-zeroed-sidecar pattern (reserve, zero under
+    // miri, `mem::forget`) is folded into `aligned_vmem::leak_zeroed_pages`,
+    // which guarantees the span is zeroed on every backend (INCLUDING the miri
+    // `std::alloc` fallback) and leaks it for the process lifetime. `align` is
+    // `PAGE` (leak_zeroed_pages always reserves PAGE-aligned); `SegmentDirectory`
+    // needs only `align_of == 8`, well under a page, so PAGE alignment is more
+    // than sufficient. Size is rounded up to a PAGE multiple internally.
+    let base = vmem::leak_zeroed_pages(DIRECTORY_SIDECAR_SIZE)?;
+    Some(base.as_ptr() as *mut super::segment_directory::SegmentDirectory)
 }
 
 /// Dereference a materialised directory sidecar pointer as

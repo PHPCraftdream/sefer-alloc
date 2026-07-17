@@ -21,4 +21,4 @@ vmem-integration = ["dep:aligned-vmem"]
 mock = []
 
 [dependencies]
-aligned-vmem = { version = "0.1", path = "../vmem", optional = true }
+aligned-vmem = { version = "0.2", path = "../vmem", optional = true }

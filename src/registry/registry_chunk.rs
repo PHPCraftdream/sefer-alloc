@@ -101,9 +101,3 @@ pub(crate) const CHUNK_SIZE: usize = {
     let page = aligned_vmem::PAGE;
     (raw + page - 1) & !(page - 1)
 };
-
-/// Alignment for the chunk's `reserve_aligned` call. `RegistryChunk`'s
-/// natural alignment is `HeapSlot`'s (64 bytes, `#[repr(align(64))]`), well
-/// under a page; `reserve_aligned` requires `align >= PAGE`, so we use `PAGE`
-/// directly — the chunk occupies whole pages anyway.
-pub(crate) const CHUNK_ALIGN: usize = aligned_vmem::PAGE;

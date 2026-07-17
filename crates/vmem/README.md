@@ -13,7 +13,7 @@ through `extern "system"` / `extern "C"`, the same way `std` itself links
 
 ```toml
 [dependencies]
-aligned-vmem = "0.1"
+aligned-vmem = "0.2"
 ```
 
 ```rust
@@ -42,9 +42,21 @@ unsafe { release(raw, raw_len, raw_align) };
 | `Reservation::into_parts() -> (ptr, len, align)` | Take the raw reservation, suppress `Drop`, for self-hosted release. |
 | `release(ptr, len, align)` (unsafe) | Release a reservation taken via `into_parts`, exactly once. |
 | `decommit(base, start, end)` / `recommit(base, start, end)` (unsafe) | Return page-granular physical backing to the OS / re-commit it. |
-| `page_size() -> usize` / `PAGE` | Decommit/recommit granularity (4 KiB). |
+| `decommit_lazy(base, start, end)` (unsafe) | Cheaper lazy reclaim — Linux `MADV_FREE`, macOS `MADV_FREE_REUSABLE`, Windows falls back to `decommit`. |
+| `page_size() -> usize` | Real OS page size, queried once (`sysconf`/`GetSystemInfo`) — 16 KiB on Apple Silicon, not the 4 KiB `PAGE` minimum. |
+| `PAGE` | Minimum decommit/recommit granularity constant (4 KiB). |
+| `leak_zeroed_pages(size) -> Option<NonNull<u8>>` | Reserve zeroed, process-lifetime-leaked pages (for pre-main / `GlobalAlloc` bookkeeping). |
+| `try_reserve_aligned` / `try_recommit` / `try_commit_range` … `-> Result<_, VmemError>` | Fallible forms carrying the OS `errno`/`GetLastError` cause. |
 
-Backends: `mmap`/`munmap`/`madvise(MADV_DONTNEED)` on Unix,
+Every fallible entry point has an infallible `Option`/`bool` counterpart that
+discards the cause. Optional features: `lazy-commit` (incremental commit:
+`reserve_aligned_lazy` + `commit_range`; formerly `alloc-lazy-commit`, still
+accepted as an alias), `huge-pages` (`reserve_aligned_huge` — `MAP_HUGETLB` /
+`MEM_LARGE_PAGES`, best-effort with fallback), and `mock` (recording call log +
+`fail_next_reserve` / `fail_next_commit` fault injection for deterministic
+OOM-path tests on any target).
+
+Backends: `mmap`/`munmap`/`madvise` on Unix,
 `VirtualAlloc`/`VirtualFree(MEM_DECOMMIT/MEM_RELEASE)` on Windows, `std::alloc`
 fallback under miri (so consumers stay miri-testable).
 

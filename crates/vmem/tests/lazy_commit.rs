@@ -4,7 +4,7 @@
 //! These tests verify the vmem-layer foundation that B1/B2 will build on.
 //! They do NOT touch any alloc-core / segment-header code.
 
-#![cfg(feature = "alloc-lazy-commit")]
+#![cfg(feature = "lazy-commit")]
 
 use aligned_vmem::{commit_range, reserve_aligned, reserve_aligned_lazy, PAGE};
 

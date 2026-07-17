@@ -1,6 +1,6 @@
 [package]
 name = "aligned-vmem"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
@@ -13,13 +13,34 @@ keywords = ["mmap", "virtualalloc", "memory", "decommit", "aligned"]
 categories = ["memory-management", "os", "no-std::no-alloc"]
 
 [features]
-# B0 (R7 Workstream B): EXPERIMENTAL incremental-commit foundation.
-# When enabled, exposes `reserve_aligned_lazy` (reserve VA + commit only an
-# initial sub-range) and `commit_range` (commit additional pages within an
-# existing reservation). Windows-only optimisation: on non-Windows and under
+# Incremental-commit primitives: `reserve_aligned_lazy` (reserve VA + commit
+# only an initial sub-range) and `commit_range` (commit additional pages within
+# an existing reservation). Windows-only optimisation: on non-Windows and under
 # miri the lazy path falls back to the eager `reserve_aligned` (all pages
-# committed up front, identical observable behaviour). Off by default — NOT
-# part of any default bundle. Feature-OFF builds are byte-for-byte identical.
-alloc-lazy-commit = []
+# committed up front, identical observable behaviour). Off by default — NOT part
+# of any default bundle. Feature-OFF builds are byte-for-byte identical.
+#
+# 0.2: renamed from the sefer-internal `alloc-lazy-commit` (allocator feature-
+# bundle vocabulary) to the crate-local `lazy-commit`. `alloc-lazy-commit` is
+# kept as a thin alias for one release so downstream consumers pinning the old
+# name keep building.
+lazy-commit = []
+alloc-lazy-commit = ["lazy-commit"]
+
+# Optional huge/large pages: `reserve_aligned_huge` requesting OS large pages
+# (Linux `MAP_HUGETLB`, macOS `VM_FLAGS_SUPERPAGE` best-effort via `MADV_HUGEPAGE`,
+# Windows `MEM_LARGE_PAGES`). Off by default so the zero-deps core stays tiny.
+# The reservation transparently falls back to ordinary pages when the OS refuses
+# the large-page request, so the API never fails purely because huge pages are
+# unavailable.
+huge-pages = []
+
+# Recording mock + fault injection: replaces the real OS syscalls with a
+# thread-local recording backend (mirrors `numa-shim`'s `mock` feature) plus
+# `mock::fail_next_reserve(n)` / `mock::fail_next_commit(n)` fault injectors.
+# Lets any consumer deterministically test its OOM-handling on any target
+# (including macOS and miri) without exhausting real commit charge. Off by
+# default; NOT part of any bundle.
+mock = []
 
 [dependencies]

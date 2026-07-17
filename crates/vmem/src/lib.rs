@@ -23,6 +23,18 @@
 //! allocator, an arena, or a slab and need "give me a 4 MiB-aligned 4 MiB
 //! span", this is the small focused tool.
 //!
+//! # Fallible vs infallible API (0.2)
+//!
+//! Every reservation/commit entry point has two forms:
+//! - the historical infallible form returning `Option`/`bool`
+//!   ([`reserve_aligned`], [`recommit`], …), and
+//! - a `try_*` form returning [`Result<_, VmemError>`] whose error carries the
+//!   OS `errno` / `GetLastError` cause ([`try_reserve_aligned`],
+//!   [`try_recommit`], …).
+//!
+//! The infallible forms forward to the `try_*` forms and discard the cause, so
+//! both stay in perfect lockstep.
+//!
 //! # Example
 //!
 //! ```text
@@ -47,28 +59,104 @@
 //!
 //! # Alignment contract
 //!
-//! `align` must be a power of two and at least [`page_size`]. `size` must be a
-//! non-zero multiple of [`page_size`] (so decommit ranges land on page
-//! boundaries). Violations return `None` rather than panicking.
+//! `align` must be a power of two and at least [`PAGE`]. `size` must be a
+//! non-zero multiple of [`PAGE`] (so decommit ranges land on page boundaries).
+//! Violations return `None` / `Err(VmemError::invalid_argument())` rather than
+//! panicking.
+//!
+//! # Page size ([`page_size`])
+//!
+//! [`PAGE`] (4 KiB) is the crate's *minimum decommit granularity* — the
+//! validation constant. [`page_size`] returns the **actual OS page size**
+//! queried once via `sysconf(_SC_PAGESIZE)` (Unix) / `GetSystemInfo` (Windows).
+//! On Apple Silicon macOS this is 16 KiB; callers computing decommit offsets
+//! must round to `page_size()`, not `PAGE`, to avoid partial decommits.
 
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
+// Under `mock` the real platform syscalls (decommit/recommit/commit_range) are
+// bypassed by the recording backend, so their per-OS `*_impl` helpers become
+// legitimately unused. Suppress dead-code only in that configuration; the code
+// must still compile everywhere.
+#![cfg_attr(feature = "mock", allow(dead_code))]
 
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-/// The page size this crate assumes for decommit/recommit granularity: 4 KiB,
-/// the smallest unit both `mmap` and `VirtualAlloc` will commit/decommit on the
-/// platforms this crate targets. Decommit/recommit offsets must be multiples of
-/// this value.
+pub mod error;
+pub use error::VmemError;
+
+#[cfg(feature = "mock")]
+pub mod mock;
+
+/// The minimum page size this crate assumes for decommit/recommit granularity:
+/// 4 KiB, the smallest unit both `mmap` and `VirtualAlloc` will commit/decommit
+/// on the platforms this crate targets. Decommit/recommit offsets passed to the
+/// validation in [`decommit`] / [`recommit`] must be multiples of this value.
+///
+/// This is a compile-time constant (the *minimum*); the real OS page size may
+/// be larger — query it with [`page_size`].
 pub const PAGE: usize = 1 << 12;
 
-/// Return the page size used for [`decommit`] / [`recommit`] granularity.
+/// Cache for [`page_size`]. `0` means "not yet queried"; a real page size is
+/// always a non-zero power of two so `0` is an unambiguous sentinel.
+static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
+
+/// Return the OS page size in bytes, querying the OS once and caching the
+/// result.
 ///
-/// Currently a compile-time constant ([`PAGE`] = 4 KiB); exposed as a function
-/// so a future version can query the OS without a breaking change.
+/// Uses `sysconf(_SC_PAGESIZE)` on Unix and `GetSystemInfo` on Windows; under
+/// miri (or if the OS query returns a nonsensical value) it falls back to
+/// [`PAGE`] (4 KiB). The value is cached in a process-wide atomic after the
+/// first call, so repeated calls are a single relaxed load.
+///
+/// **Correctness:** on Apple Silicon macOS the page size is 16 KiB, and on some
+/// Linux configurations 64 KiB. A caller that decommits at 4 KiB-but-not-page
+/// multiples would silently do partial work; use this value (not [`PAGE`]) to
+/// round decommit offsets.
 #[must_use]
-#[inline]
 pub fn page_size() -> usize {
+    let cached = PAGE_SIZE_CACHE.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    let queried = query_os_page_size();
+    // Guard against an OS returning 0 or a non-power-of-two (never observed in
+    // practice, but a hostile/broken value would corrupt every rounding
+    // computation downstream). Fall back to PAGE.
+    let value = if queried != 0 && queried.is_power_of_two() {
+        queried
+    } else {
+        PAGE
+    };
+    PAGE_SIZE_CACHE.store(value, Ordering::Relaxed);
+    value
+}
+
+#[cfg(all(unix, not(miri)))]
+fn query_os_page_size() -> usize {
+    // SAFETY: `sysconf(_SC_PAGESIZE)` takes an integer name and returns a
+    // `c_long` (the page size, or -1 on error). No pointers involved.
+    let v = unsafe { sysconf(_SC_PAGESIZE) };
+    if v <= 0 {
+        0
+    } else {
+        v as usize
+    }
+}
+
+#[cfg(all(windows, not(miri)))]
+fn query_os_page_size() -> usize {
+    // SAFETY: `GetSystemInfo` fills the caller-provided `SYSTEM_INFO`; the
+    // struct is stack-allocated and fully written by the call.
+    let mut info = SystemInfo::default();
+    unsafe { GetSystemInfo(&mut info) };
+    info.dw_page_size as usize
+}
+
+#[cfg(miri)]
+fn query_os_page_size() -> usize {
+    // Miri has no real OS page; use the crate's constant granularity.
     PAGE
 }
 
@@ -121,17 +209,7 @@ impl Reservation {
     /// [`from_raw_parts`](Self::from_raw_parts) `# Safety` contract likewise
     /// requires a non-zero `len`. So `is_empty` is **always `false`** for every
     /// *valid* `Reservation`: there is no reachable valid state in which it
-    /// would return `true`. (The previous test forced `len: 0` through
-    /// `from_raw_parts`, i.e. called the unsafe constructor in violation of its
-    /// own documented precondition — that proves nothing, since `unsafe` code
-    /// that breaks its contract has no defined behaviour to assert against.)
-    ///
-    /// The method is therefore meaningless and is kept only for semver
-    /// compatibility (this crate is independently publishable); prefer an
-    /// explicit [`len()`](Self::len) check if a length predicate is ever
-    /// needed. If zero-length spans ever become a real, well-defined state with
-    /// proper ownership/drop semantics, this deprecation can be lifted — but
-    /// that is a larger design decision than a low-risk cleanup.
+    /// would return `true`.
     #[deprecated(
         note = "Reservation is a non-empty RAII handle; is_empty is always false for any valid instance. Use len() if a length check is needed."
     )]
@@ -186,9 +264,7 @@ impl Reservation {
     /// This is the inverse of [`into_parts`](Self::into_parts) and exists for
     /// the cross-crate handoff pattern: a sibling crate (`numa-shim` on
     /// Windows) issues a platform-specific reservation call that `aligned-vmem`
-    /// itself does not wrap, then adopts the result via this constructor so
-    /// downstream code can hold a uniform [`Reservation`] regardless of which
-    /// syscall produced it.
+    /// itself does not wrap, then adopts the result via this constructor.
     ///
     /// # Safety
     ///
@@ -203,9 +279,7 @@ impl Reservation {
     /// - `reservation_len` is the full size of the OS reservation, a non-zero
     ///   multiple of [`PAGE`], `reservation_len >= len + (base - reservation)`.
     /// - `align` is a power of two `>= PAGE` and matches the alignment the OS
-    ///   reservation was created with. The native release paths
-    ///   (`VirtualFree` / `munmap`) ignore it; the miri fallback uses it to
-    ///   reconstruct the exact `Layout`.
+    ///   reservation was created with.
     ///
     /// The reservation must be released **exactly once** — by dropping this
     /// handle, or by extracting via `into_parts` and calling [`release`]
@@ -214,8 +288,6 @@ impl Reservation {
     ///
     /// On Windows specifically, the reservation MUST have been created with
     /// `MEM_RESERVE | MEM_COMMIT` so `VirtualFree(MEM_RELEASE)` accepts it.
-    /// (`VirtualAllocExNuma(..., MEM_RESERVE | MEM_COMMIT, ...)` satisfies
-    /// this — that is the intended call site.)
     #[must_use]
     pub unsafe fn from_raw_parts(
         base: *mut u8,
@@ -224,10 +296,6 @@ impl Reservation {
         reservation_len: usize,
         align: usize,
     ) -> Self {
-        // The contract is enforced by the caller's `unsafe`. We only assert
-        // the non-null invariant: a null pointer here would corrupt the
-        // `Drop` path which would then call `release_reservation(null, ...)`.
-        // In a well-formed call this branch is dead.
         let base_nn = NonNull::new(base).expect("from_raw_parts: base must be non-null");
         let res_nn =
             NonNull::new(reservation).expect("from_raw_parts: reservation must be non-null");
@@ -257,6 +325,10 @@ impl Drop for Reservation {
 // affinity).
 unsafe impl Send for Reservation {}
 
+// ---------------------------------------------------------------------------
+// Reserve
+// ---------------------------------------------------------------------------
+
 /// Reserve `size` bytes of anonymous virtual memory whose base is aligned to
 /// `align`, via the over-reserve + trim technique.
 ///
@@ -265,19 +337,40 @@ unsafe impl Send for Reservation {}
 ///
 /// Returns `None` on a contract violation or if the OS refuses the reservation
 /// (OOM) — never panics, so it is safe to call from inside a `GlobalAlloc`
-/// implementation.
+/// implementation. For the failure cause use [`try_reserve_aligned`].
 #[must_use]
 pub fn reserve_aligned(size: usize, align: usize) -> Option<Reservation> {
+    try_reserve_aligned(size, align).ok()
+}
+
+/// Fallible [`reserve_aligned`]: returns a [`VmemError`] carrying the OS cause
+/// (`errno` / `GetLastError`) on failure instead of a bare `None`.
+///
+/// A contract violation (bad `size`/`align`) returns
+/// [`VmemError::invalid_argument`] without touching the OS.
+pub fn try_reserve_aligned(size: usize, align: usize) -> Result<Reservation, VmemError> {
     if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
-        return None;
+        return Err(VmemError::invalid_argument());
     }
-    reserve_aligned_raw(size, align).map(|(base, reservation, reservation_len)| Reservation {
-        base,
-        len: size,
-        reservation,
-        reservation_len,
-        align,
-    })
+    // Mock fault-injection: honour a scripted reserve failure first.
+    #[cfg(feature = "mock")]
+    if let Some(e) = mock::take_reserve_fault() {
+        mock::record(mock::Call::Reserve { size, align });
+        return Err(e);
+    }
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::Reserve { size, align });
+
+    match reserve_aligned_raw(size, align) {
+        Some((base, reservation, reservation_len)) => Ok(Reservation {
+            base,
+            len: size,
+            reservation,
+            reservation_len,
+            align,
+        }),
+        None => Err(VmemError::last_os_error()),
+    }
 }
 
 /// Release a whole OS reservation obtained from [`Reservation::into_parts`].
@@ -287,23 +380,31 @@ pub fn reserve_aligned(size: usize, align: usize) -> Option<Reservation> {
 /// `reservation`, `reservation_len` and `align` must be the three values
 /// returned by [`Reservation::into_parts`] (or, for a self-hosting caller that
 /// always uses one alignment, that same alignment constant), and the
-/// reservation must be released **exactly once**. A double release is a
-/// contract violation. The native (`munmap` / `VirtualFree`) paths ignore
-/// `align`; it is consulted only by the miri fallback to reconstruct the exact
-/// `Layout`.
+/// reservation must be released **exactly once**. The native (`munmap` /
+/// `VirtualFree`) paths ignore `align`; it is consulted only by the miri
+/// fallback to reconstruct the exact `Layout`.
 pub unsafe fn release(reservation: *mut u8, reservation_len: usize, align: usize) {
     let nn = match NonNull::new(reservation) {
         Some(n) => n,
         None => return,
     };
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::Release {
+        reservation: reservation as usize,
+        reservation_len,
+    });
     // SAFETY: forwarded from the caller's contract above.
     unsafe { release_reservation(nn, reservation_len, align) };
 }
 
+// ---------------------------------------------------------------------------
+// Decommit / recommit
+// ---------------------------------------------------------------------------
+
 /// Decommit pages `[base + start, base + end)`: return their physical backing
-/// to the OS while keeping the address-space reservation alive. Re-access after
-/// decommit produces fresh zero-filled pages (after [`recommit`] on Windows;
-/// implicitly on Unix).
+/// to the OS while keeping the address-space reservation alive (Linux
+/// `MADV_DONTNEED`, Windows `MEM_DECOMMIT`). Re-access after decommit produces
+/// fresh zero-filled pages (after [`recommit`] on Windows; implicitly on Unix).
 ///
 /// `start` and `end` must be multiples of [`PAGE`] and within the span. A
 /// no-op if the range is empty.
@@ -317,9 +418,52 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
     if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
         return;
     }
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::Decommit {
+        base: base as usize,
+        start,
+        end,
+    });
+    #[cfg(not(feature = "mock"))]
     // SAFETY: forwarded from the caller's contract; the per-OS routine touches
     // only kernel page-state, never the bytes.
-    unsafe { decommit_pages_impl(base, start, end) };
+    unsafe {
+        decommit_pages_impl(base, start, end, DecommitKind::Eager)
+    };
+}
+
+/// Lazy decommit variant: hint the OS it MAY reclaim `[base+start, base+end)`
+/// under memory pressure, cheaper than [`decommit`] (Linux `MADV_FREE`, macOS
+/// `MADV_FREE_REUSABLE`, other Unix falls back to `MADV_DONTNEED`; Windows falls
+/// back to the eager [`decommit`] path, which has no lazy equivalent).
+///
+/// Unlike [`decommit`], on Linux the pages are NOT necessarily zeroed on next
+/// access if the kernel has not yet reclaimed them (a write before reclamation
+/// keeps the old contents and cancels the free) — so this is appropriate only
+/// for memory whose contents the caller no longer needs but has not yet
+/// overwritten. Cheaper reclaim; the kernel takes pages only under pressure.
+///
+/// `start`/`end` contract and safety are identical to [`decommit`].
+///
+/// # Safety
+///
+/// Same as [`decommit`].
+pub unsafe fn decommit_lazy(base: *mut u8, start: usize, end: usize) {
+    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return;
+    }
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::DecommitLazy {
+        base: base as usize,
+        start,
+        end,
+    });
+    #[cfg(not(feature = "mock"))]
+    // SAFETY: forwarded from the caller's contract; the per-OS routine touches
+    // only kernel page-state, never the bytes.
+    unsafe {
+        decommit_pages_impl(base, start, end, DecommitKind::Lazy)
+    };
 }
 
 /// Recommit pages `[base + start, base + end)` previously passed to
@@ -327,18 +471,14 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// (`VirtualAlloc(MEM_COMMIT)`); on Unix re-access is implicit so this is a
 /// no-op.
 ///
-/// `start` and `end` must be multiples of [`PAGE`] and within the span.
-///
 /// Returns `true` if the range is now committed (or the call was a well-formed
 /// no-op — empty range), and `false` if the OS refused to commit the pages
 /// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT write
-/// into `[base+start, base+end)`: the pages are still merely reserved, and a
-/// write would fault (`STATUS_ACCESS_VIOLATION` on Windows). Never panics, so
-/// it is safe to call from inside a `GlobalAlloc` implementation.
+/// into `[base+start, base+end)`. Never panics. For the cause use
+/// [`try_recommit`].
 ///
 /// A contract violation on the offsets (misaligned, or `start >= end`) returns
-/// `true` as a no-op — no pages are touched, matching the pre-fallible
-/// behaviour. Only a genuine OS commit failure yields `false`.
+/// `true` as a no-op.
 ///
 /// # Safety
 ///
@@ -346,15 +486,39 @@ pub unsafe fn decommit(base: *mut u8, start: usize, end: usize) {
 /// whose `[base+start, base+end)` range was previously decommitted.
 #[must_use]
 pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
-        return true;
-    }
     // SAFETY: forwarded from the caller's contract.
-    unsafe { recommit_pages_impl(base, start, end) }
+    unsafe { try_recommit(base, start, end).is_ok() }
+}
+
+/// Fallible [`recommit`]: `Ok(())` if the range is now committed (or was a
+/// well-formed no-op), `Err(VmemError)` carrying the OS cause on commit
+/// failure.
+///
+/// # Safety
+///
+/// Same as [`recommit`].
+pub unsafe fn try_recommit(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return Ok(());
+    }
+    #[cfg(feature = "mock")]
+    {
+        mock::record(mock::Call::Recommit {
+            base: base as usize,
+            start,
+            end,
+        });
+        mock::take_commit_fault().map_or(Ok(()), Err)
+    }
+    #[cfg(not(feature = "mock"))]
+    // SAFETY: forwarded from the caller's contract.
+    unsafe {
+        recommit_pages_impl(base, start, end)
+    }
 }
 
 // ---------------------------------------------------------------------------
-// B0 (R7 Workstream B): incremental-commit foundation.
+// Incremental commit (feature `lazy-commit`).
 // ---------------------------------------------------------------------------
 
 /// Commit pages `[base + start, base + end)` within an existing reservation.
@@ -363,87 +527,91 @@ pub unsafe fn recommit(base: *mut u8, start: usize, end: usize) -> bool {
 /// [`reserve_aligned_lazy`] call that left some pages reserved-but-uncommitted,
 /// `commit_range` commits exactly the requested sub-range so it becomes
 /// writable. On Windows this issues `VirtualAlloc(MEM_COMMIT)`; on Unix and
-/// under miri the pages are already accessible (lazy-reserve falls back to
-/// eager), so this is a no-op that always returns `true`.
+/// under miri the pages are already accessible, so this is a no-op that always
+/// returns `true`.
 ///
 /// `start` and `end` must be multiples of [`PAGE`] and `start < end`. A
-/// contract violation (misaligned offsets or `start >= end`) is a no-op
-/// returning `true` (matching [`recommit`]'s convention).
+/// contract violation is a no-op returning `true`.
 ///
 /// Returns `true` if the range is now committed, `false` if the OS refused
-/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT
-/// write into the range. Never panics.
+/// (commit-charge exhaustion / true OOM). On `false` the caller MUST NOT write
+/// into the range. Never panics. For the cause use [`try_commit_range`].
 ///
 /// # Difference from [`recommit`]
 ///
 /// [`recommit`] re-commits pages that were PREVIOUSLY committed and then
-/// decommitted via [`decommit`]. `commit_range` commits pages that were
-/// NEVER committed in the first place (reserved via the lazy path). The
-/// underlying Windows syscall is the same (`VirtualAlloc(MEM_COMMIT)`), but
-/// the semantic intent differs: `recommit` restores, `commit_range` grows.
-/// On non-Windows platforms both are no-ops.
+/// decommitted via [`decommit`]. `commit_range` commits pages that were NEVER
+/// committed (reserved via the lazy path). The underlying Windows syscall is
+/// the same; the semantic intent differs.
 ///
 /// # Safety
 ///
 /// `base` must be the [`as_ptr`](Reservation::as_ptr) of a live reservation,
-/// and `[base+start, base+end)` must fall within that reservation's usable
-/// span (i.e. `end <= len`). The range must be currently reserved but not
-/// yet committed (or already committed — recommitting an already-committed
-/// range is harmless on Windows).
+/// and `[base+start, base+end)` must fall within that reservation's usable span
+/// (i.e. `end <= len`). The range must be currently reserved but not yet
+/// committed (or already committed — recommitting is harmless on Windows).
 #[must_use]
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(feature = "lazy-commit")]
 pub unsafe fn commit_range(base: *mut u8, start: usize, end: usize) -> bool {
-    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
-        return true;
-    }
     // SAFETY: forwarded from the caller's contract.
-    unsafe { commit_range_impl(base, start, end) }
+    unsafe { try_commit_range(base, start, end).is_ok() }
+}
+
+/// Fallible [`commit_range`]: `Ok(())` on success (or well-formed no-op),
+/// `Err(VmemError)` carrying the OS cause on commit failure.
+///
+/// # Safety
+///
+/// Same as [`commit_range`].
+#[cfg(feature = "lazy-commit")]
+pub unsafe fn try_commit_range(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    if start >= end || !start.is_multiple_of(PAGE) || !end.is_multiple_of(PAGE) {
+        return Ok(());
+    }
+    #[cfg(feature = "mock")]
+    {
+        mock::record(mock::Call::CommitRange {
+            base: base as usize,
+            start,
+            end,
+        });
+        mock::take_commit_fault().map_or(Ok(()), Err)
+    }
+    #[cfg(not(feature = "mock"))]
+    // SAFETY: forwarded from the caller's contract.
+    unsafe {
+        commit_range_impl(base, start, end)
+    }
 }
 
 /// Reserve `size` bytes of anonymous virtual memory whose base is aligned to
 /// `align`, committing ONLY the first `initial_commit` bytes — the rest is
-/// reserved but NOT committed (on Windows; on Unix/miri ALL pages are
-/// committed, matching the eager path).
+/// reserved but NOT committed (on Windows; on Unix/miri ALL pages are committed,
+/// matching the eager path).
 ///
-/// This is the lazy-commit counterpart of [`reserve_aligned`]: the VA
-/// reservation is identical (same base, same length, same alignment, same
-/// single-object-freed-once semantics), but on Windows only
-/// `[base, base + initial_commit)` is backed by committed physical pages.
-/// The remaining `[base + initial_commit, base + size)` range is reserved
-/// address space without commit charge — touching those pages before a
-/// [`commit_range`] call will fault (`STATUS_ACCESS_VIOLATION`).
-///
-/// ## Parameters
-///
-/// - `size`: total usable span (same contract as [`reserve_aligned`]).
-/// - `align`: alignment (same contract as [`reserve_aligned`]).
-/// - `initial_commit`: how many bytes to commit starting from the aligned
-///   base. Must be a non-zero multiple of [`PAGE`] and `<= size`. If these
-///   constraints are violated, the function returns `None`.
-///
-/// ## Drop / release
+/// See [`reserve_aligned`] for the base/align contract. `initial_commit` must
+/// be a non-zero multiple of [`PAGE`] and `<= size`; violations return `None`.
 ///
 /// The returned [`Reservation`] frees the ENTIRE VA reservation on drop
-/// (via `VirtualFree(MEM_RELEASE)` / `munmap` / `std::alloc::dealloc`),
-/// regardless of how much was committed. Partial commit does NOT change
-/// the release path — the single-reservation-freed-once invariant holds.
-///
-/// ## Platform behaviour
-///
-/// | Platform | Behaviour |
-/// |----------|-----------|
-/// | Windows  | Reserve full VA, commit only `initial_commit` bytes |
-/// | Unix     | Eager (all pages committed) — Unix has no commit charge |
-/// | Miri     | Eager (all pages committed) — miri cannot model commit |
-///
-/// Returns `None` on a contract violation or OOM. Never panics.
+/// regardless of how much was committed. For the failure cause use
+/// [`try_reserve_aligned_lazy`].
 #[must_use]
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(feature = "lazy-commit")]
 pub fn reserve_aligned_lazy(
     size: usize,
     align: usize,
     initial_commit: usize,
 ) -> Option<Reservation> {
+    try_reserve_aligned_lazy(size, align, initial_commit).ok()
+}
+
+/// Fallible [`reserve_aligned_lazy`].
+#[cfg(feature = "lazy-commit")]
+pub fn try_reserve_aligned_lazy(
+    size: usize,
+    align: usize,
+    initial_commit: usize,
+) -> Result<Reservation, VmemError> {
     if size == 0
         || !align.is_power_of_two()
         || align < PAGE
@@ -452,56 +620,179 @@ pub fn reserve_aligned_lazy(
         || !initial_commit.is_multiple_of(PAGE)
         || initial_commit > size
     {
-        return None;
+        return Err(VmemError::invalid_argument());
     }
-    reserve_aligned_lazy_raw(size, align, initial_commit).map(
-        |(base, reservation, reservation_len)| Reservation {
+    #[cfg(feature = "mock")]
+    if let Some(e) = mock::take_reserve_fault() {
+        mock::record(mock::Call::ReserveLazy {
+            size,
+            align,
+            initial_commit,
+        });
+        return Err(e);
+    }
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::ReserveLazy {
+        size,
+        align,
+        initial_commit,
+    });
+
+    // Under `mock` the OS partial-commit is bypassed: `commit_range` records-
+    // and-returns without touching the OS, so a genuinely partially-committed
+    // Windows reservation would leave the tail unwritable and fault when the
+    // consumer's mocked "commit" is a no-op. Chain to the EAGER (fully
+    // committed) backend instead, so the returned span is entirely usable while
+    // the mock still records the `ReserveLazy` call for assertion.
+    #[cfg(feature = "mock")]
+    let raw = reserve_aligned_raw(size, align);
+    #[cfg(not(feature = "mock"))]
+    let raw = reserve_aligned_lazy_raw(size, align, initial_commit);
+
+    match raw {
+        Some((base, reservation, reservation_len)) => Ok(Reservation {
             base,
             len: size,
             reservation,
             reservation_len,
             align,
-        },
-    )
+        }),
+        None => Err(VmemError::last_os_error()),
+    }
 }
 
 // ---------------------------------------------------------------------------
+// Huge / large pages (feature `huge-pages`).
+// ---------------------------------------------------------------------------
+
+/// Reserve `size` bytes aligned to `align`, requesting OS **large / huge
+/// pages** (Linux `MAP_HUGETLB`, macOS best-effort `MADV_HUGEPAGE`, Windows
+/// `MEM_LARGE_PAGES`).
+///
+/// Large pages reduce TLB pressure for big allocator segments. The request is
+/// **best-effort**: if the OS refuses large pages (none configured, no
+/// privilege), the reservation transparently falls back to ordinary pages, so
+/// this never fails purely because huge pages are unavailable — it fails only
+/// on a genuine reservation error (OOM) or a contract violation.
+///
+/// Base/align/size contract is identical to [`reserve_aligned`]. For the
+/// failure cause use [`try_reserve_aligned_huge`].
+#[must_use]
+#[cfg(feature = "huge-pages")]
+pub fn reserve_aligned_huge(size: usize, align: usize) -> Option<Reservation> {
+    try_reserve_aligned_huge(size, align).ok()
+}
+
+/// Fallible [`reserve_aligned_huge`].
+#[cfg(feature = "huge-pages")]
+pub fn try_reserve_aligned_huge(size: usize, align: usize) -> Result<Reservation, VmemError> {
+    if size == 0 || !align.is_power_of_two() || align < PAGE || !size.is_multiple_of(PAGE) {
+        return Err(VmemError::invalid_argument());
+    }
+    #[cfg(feature = "mock")]
+    if let Some(e) = mock::take_reserve_fault() {
+        mock::record(mock::Call::ReserveHuge { size, align });
+        return Err(e);
+    }
+    #[cfg(feature = "mock")]
+    mock::record(mock::Call::ReserveHuge { size, align });
+
+    match reserve_aligned_huge_raw(size, align) {
+        Some((base, reservation, reservation_len)) => Ok(Reservation {
+            base,
+            len: size,
+            reservation,
+            reservation_len,
+            align,
+        }),
+        None => Err(VmemError::last_os_error()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// leak_zeroed_pages: static-lifetime OS-zeroed sidecar.
+// ---------------------------------------------------------------------------
+
+/// Reserve `size` bytes of **zero-initialised** anonymous virtual memory and
+/// **leak** it for the process lifetime, returning the base pointer.
+///
+/// Folds the leaked-zeroed-sidecar pattern (used by allocators for pre-main
+/// bookkeeping structures that must not route through the very allocator they
+/// implement) into one helper:
+///
+/// - `size` is rounded up to a multiple of [`PAGE`] internally (any non-zero
+///   `size` is accepted; a zero `size` returns `None`).
+/// - the span is guaranteed all-zero on every backend, INCLUDING the miri
+///   fallback (`std::alloc` does not zero; this helper zeroes explicitly under
+///   miri), so the returned memory is a valid all-zero initial state.
+/// - the reservation is `mem::forget`-leaked: it lives for the process lifetime
+///   and is never released.
+///
+/// Returns `None` on OOM or a zero `size`. The returned pointer is non-null,
+/// [`PAGE`]-aligned, and valid for the rounded-up size for the whole process
+/// lifetime. Because the reservation is leaked, the returned pointer may be
+/// safely turned into a `&'static` by the caller (subject to the caller's own
+/// aliasing discipline).
+#[must_use]
+pub fn leak_zeroed_pages(size: usize) -> Option<NonNull<u8>> {
+    if size == 0 {
+        return None;
+    }
+    let rounded = size.checked_add(PAGE - 1)? & !(PAGE - 1);
+    let reservation = reserve_aligned(rounded, PAGE)?;
+    let base = reservation.as_ptr();
+
+    // Under miri, `reserve_aligned` falls back to `std::alloc`, which does NOT
+    // zero the bytes; every real OS backend hands back zeroed pages. Zero
+    // explicitly under miri so the all-zero initial-state guarantee holds on
+    // every backend.
+    #[cfg(miri)]
+    // SAFETY: `base` is a fresh, exclusively-owned reservation of `rounded`
+    // bytes; nothing else references it yet, so writing zeros is sound.
+    unsafe {
+        core::ptr::write_bytes(base, 0, rounded);
+    }
+
+    // Leak: the sidecar lives for the process lifetime, never released.
+    core::mem::forget(reservation);
+
+    // SAFETY: `base` is the non-null `as_ptr` of a successful reservation.
+    Some(unsafe { NonNull::new_unchecked(base) })
+}
+
+// ===========================================================================
 // Windows path: VirtualAlloc / VirtualFree. Raw bindings declared locally so
 // the crate has NO winapi/windows-sys dependency. std always links kernel32.
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 #[cfg(all(windows, not(miri)))]
 fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    win_reserve_commit(size, align, size, 0)
+}
+
+/// Windows over-reserve + commit helper shared by the eager, lazy and huge
+/// paths. Reserves `size + align` bytes, finds the aligned base, and commits
+/// `commit_len` bytes (with `extra_flags` OR-ed into `MEM_COMMIT`, e.g.
+/// `MEM_LARGE_PAGES`). Returns the aligned base, the reservation base and the
+/// full reservation length. On commit failure the whole reservation is
+/// released and `None` returned.
+#[cfg(all(windows, not(miri)))]
+fn win_reserve_commit(
+    size: usize,
+    align: usize,
+    commit_len: usize,
+    extra_commit_flags: u32,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     let over = size.checked_add(align)?;
-    // PERF-PASS-1 (task #49, G4/A3): two-step reserve-then-commit instead of
-    // reserve+commit-the-whole-over-allocation-then-trim. The old path
-    // committed `over` (up to 2x `size`) bytes via
-    // `MEM_RESERVE | MEM_COMMIT`, then `MEM_DECOMMIT`-trimmed the head/tail —
-    // a transient 2x commit-charge spike and page-table population for pages
-    // discarded microseconds later, plus 3 syscalls total. `MEM_RESERVE`
-    // alone (no commit) reserves address space without touching the commit
-    // charge or the page tables; only the exact `size`-byte aligned span is
-    // then committed — 2 syscalls, zero over-commit. The release path is
-    // unchanged: `VirtualFree(region, 0, MEM_RELEASE)` releases the WHOLE
-    // reservation regardless of which sub-range was committed, so trimming is
-    // no longer needed at all (not even a decommit-trim — the head/tail bytes
-    // are simply never committed in the first place).
     let region = unsafe {
         // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
         // reserves (but does not commit) `over` bytes of address space,
-        // returning the base (granularity-aligned) or NULL on OOM/refusal. We
-        // check for NULL immediately.
+        // returning the base or NULL on OOM/refusal. NULL is checked below.
         let p = winapi_virtual_reserve(over);
         NonNull::new(p as *mut u8)?
     };
     let region_ptr = region.as_ptr();
     let region_addr = region_ptr as usize;
-    // `align_up_addr`/the fit check below are release-mode (not
-    // `debug_assert!`-only, L-9d): `region_addr` comes straight from the OS
-    // and is not attacker-controlled in practice, but treating a would-be
-    // overflow/out-of-range result as an ordinary OOM costs nothing and
-    // removes the UB-shaped landmine of trusting unchecked arithmetic on an
-    // address.
     let fits = align_up_addr(region_addr, align).and_then(|a| {
         let end = a.checked_add(size)?;
         let region_end = region_addr.checked_add(over)?;
@@ -510,39 +801,44 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
     let base_addr = match fits {
         Some(a) => a,
         None => {
-            unsafe {
-                // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
-                // call immediately above and has not been released yet; releasing
-                // it here (before ever handing it to a caller) cannot double-free.
-                winapi_virtual_release(region_ptr);
-            }
+            // SAFETY: `region` was returned by the `MEM_RESERVE` call above and
+            // has not been released yet; releasing before handing to a caller
+            // cannot double-free.
+            unsafe { winapi_virtual_release(region_ptr) };
             return None;
         }
     };
-    let base = unsafe {
-        // SAFETY: `base_addr` is non-null (>= region_addr) and within the
-        // reserved `over`-byte region; aligned to `align`.
-        NonNull::new_unchecked(base_addr as *mut u8)
+    // SAFETY: `base_addr >= region_addr`, within the reserved region, aligned.
+    let base = unsafe { NonNull::new_unchecked(base_addr as *mut u8) };
+    // SAFETY: `[base_addr, base_addr+commit_len)` is within the just-reserved
+    // region (`commit_len <= size`, validated by callers); `MEM_COMMIT` commits
+    // exactly this aligned sub-range. NULL indicates commit-charge exhaustion.
+    let committed = unsafe {
+        VirtualAlloc(
+            base_addr as *mut core::ffi::c_void,
+            commit_len,
+            MEM_COMMIT | extra_commit_flags,
+            PAGE_READWRITE,
+        )
     };
-    // SAFETY: `[base_addr, base_addr+size)` is within the just-reserved
-    // `over`-byte region (asserted above); `MEM_COMMIT` commits exactly this
-    // aligned sub-range, matching the fallible-recommit convention this crate
-    // already uses (`recommit_pages_impl`, task-referenced commit 617518f):
-    // check `VirtualAlloc`'s return for NULL rather than assuming success.
-    let committed = unsafe { winapi_virtual_commit(base_addr as *mut u8, size) };
     if committed.is_null() {
-        // Commit failed (commit-charge exhaustion): mirror the reserve path's
-        // existing "never panic, return None on OOM" contract. The
-        // reservation itself succeeded, so it must still be released before
-        // reporting failure — otherwise this leaks the address-space
-        // reservation (not physical memory, since nothing was committed, but
-        // a leaked VA range nonetheless).
-        unsafe {
-            // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
-            // call immediately above and has not been released yet; releasing
-            // it here (before ever handing it to a caller) cannot double-free.
-            winapi_virtual_release(region_ptr);
+        if extra_commit_flags != 0 {
+            // Best-effort large pages: retry the commit with ordinary pages.
+            // SAFETY: same range within the same live reservation.
+            let plain = unsafe {
+                VirtualAlloc(
+                    base_addr as *mut core::ffi::c_void,
+                    commit_len,
+                    MEM_COMMIT,
+                    PAGE_READWRITE,
+                )
+            };
+            if !plain.is_null() {
+                return Some((base, region, over));
+            }
         }
+        // SAFETY: `region` reserved above, not yet handed out — release once.
+        unsafe { winapi_virtual_release(region_ptr) };
         return None;
     }
     Some((base, region, over))
@@ -551,37 +847,28 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
 #[cfg(all(windows, not(miri)))]
 unsafe fn release_reservation(reservation: NonNull<u8>, _reservation_len: usize, _align: usize) {
     // SAFETY: `reservation` was returned by a prior `VirtualAlloc(.., MEM_RESERVE,
-    // ..)` (PERF-PASS-1, task #49: reserve-only, no longer MEM_COMMIT — see
-    // `reserve_aligned_raw` above) with an inner aligned sub-range separately
-    // committed via `MEM_COMMIT`. `VirtualFree(.., 0, MEM_RELEASE)` releases
-    // the ENTIRE region reserved in that one `VirtualAlloc` call regardless of
-    // which (if any) sub-range was subsequently committed — `dwSize` MUST be 0
-    // in this mode. This path is intentionally UNCHANGED by the reserve/commit
-    // split: it always released the whole reservation, independent of commit
-    // state, so it stays correct without modification.
+    // ..)` with an inner aligned sub-range separately committed. `VirtualFree(..,
+    // 0, MEM_RELEASE)` releases the ENTIRE region regardless of commit state.
     winapi_virtual_release(reservation.as_ptr());
 }
 
 #[cfg(all(windows, not(miri)))]
-unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize) {
+unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, _kind: DecommitKind) {
     let len = end - start;
-    // SAFETY: caller guarantees `[base+start, base+start+len)` is within a
-    // committed reservation; `MEM_DECOMMIT` returns the physical pages.
+    // Windows has no lazy `MADV_FREE` equivalent — both eager and lazy map to
+    // `MEM_DECOMMIT`.
+    // SAFETY: caller guarantees `[base+start, +len)` is within a committed
+    // reservation; `MEM_DECOMMIT` returns the physical pages.
     let addr = unsafe { base.add(start) };
     unsafe { winapi_virtual_decommit(addr, len) };
 }
 
 #[cfg(all(windows, not(miri)))]
-unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> bool {
+unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
     let len = end - start;
-    // SAFETY: caller guarantees `[base+start, +len)` is within an address-space
-    // reservation owned by them; `MEM_COMMIT` re-commits the physical pages.
-    // `VirtualAlloc(MEM_COMMIT)` returns the base address on success or NULL when
-    // the system cannot back the commit (commit-charge exhaustion). We MUST
-    // surface that NULL — writing into a reserved-but-uncommitted page faults
-    // (`STATUS_ACCESS_VIOLATION`). Unlike the reserve path we do not need the
-    // returned pointer's value (the range is already at a fixed address); only
-    // its non-NULL-ness matters.
+    // SAFETY: caller guarantees `[base+start, +len)` is within a reservation
+    // owned by them; `MEM_COMMIT` re-commits the physical pages. NULL indicates
+    // commit-charge exhaustion.
     let addr = unsafe { base.add(start) };
     let committed = unsafe {
         VirtualAlloc(
@@ -591,88 +878,35 @@ unsafe fn recommit_pages_impl(base: *mut u8, start: usize, end: usize) -> bool {
             PAGE_READWRITE,
         )
     };
-    !committed.is_null()
+    if committed.is_null() {
+        Err(VmemError::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
-// B0: commit_range — commit a sub-range within an existing reservation.
-// Semantically identical to recommit_pages_impl (same VirtualAlloc(MEM_COMMIT)
-// call), but exists as a separate function for clarity: recommit restores
-// previously-decommitted pages; commit_range grows the committed frontier of a
-// lazy reservation. The Windows syscall is the same — MEM_COMMIT is idempotent.
-#[cfg(all(windows, not(miri), feature = "alloc-lazy-commit"))]
-unsafe fn commit_range_impl(base: *mut u8, start: usize, end: usize) -> bool {
-    let len = end - start;
-    // SAFETY: caller guarantees `[base+start, +len)` is within an address-space
-    // reservation owned by them. `VirtualAlloc(MEM_COMMIT)` commits pages that
-    // are currently reserved-but-uncommitted (or already committed — idempotent).
-    // Returns the base address on success, NULL on commit-charge exhaustion.
-    let addr = unsafe { base.add(start) };
-    let committed = unsafe {
-        VirtualAlloc(
-            addr as *mut core::ffi::c_void,
-            len,
-            MEM_COMMIT,
-            PAGE_READWRITE,
-        )
-    };
-    !committed.is_null()
+#[cfg(all(windows, not(miri), feature = "lazy-commit"))]
+unsafe fn commit_range_impl(base: *mut u8, start: usize, end: usize) -> Result<(), VmemError> {
+    // Same MEM_COMMIT call as recommit (idempotent on Windows).
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { recommit_pages_impl(base, start, end) }
 }
 
-// B0: lazy reserve — reserve VA, commit only `initial_commit` bytes.
-// The over-reserve + align logic mirrors `reserve_aligned_raw` exactly; only the
-// final commit step differs (commit `initial_commit` bytes instead of `size`).
-#[cfg(all(windows, not(miri), feature = "alloc-lazy-commit"))]
+#[cfg(all(windows, not(miri), feature = "lazy-commit"))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
     initial_commit: usize,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
-    let over = size.checked_add(align)?;
-    let region = unsafe {
-        // SAFETY: `VirtualAlloc(NULL, over, MEM_RESERVE, PAGE_READWRITE)`
-        // reserves `over` bytes of address space without committing.
-        let p = winapi_virtual_reserve(over);
-        NonNull::new(p as *mut u8)?
-    };
-    let region_ptr = region.as_ptr();
-    let region_addr = region_ptr as usize;
-    let fits = align_up_addr(region_addr, align).and_then(|a| {
-        let end = a.checked_add(size)?;
-        let region_end = region_addr.checked_add(over)?;
-        (end <= region_end).then_some(a)
-    });
-    let base_addr = match fits {
-        Some(a) => a,
-        None => {
-            unsafe {
-                // SAFETY: `region` was returned by the `VirtualAlloc(MEM_RESERVE)`
-                // call immediately above; releasing before handing to a caller.
-                winapi_virtual_release(region_ptr);
-            }
-            return None;
-        }
-    };
-    let base = unsafe {
-        // SAFETY: `base_addr` is non-null (>= region_addr), within the reserved
-        // region, aligned to `align`.
-        NonNull::new_unchecked(base_addr as *mut u8)
-    };
-    // B0: commit ONLY the initial sub-range [base_addr, base_addr + initial_commit),
-    // NOT the full [base_addr, base_addr + size). The rest remains reserved but
-    // uncommitted — commit_range will grow it later.
-    // SAFETY: `[base_addr, base_addr + initial_commit)` is within the just-reserved
-    // region; `initial_commit <= size` (validated by the public API).
-    let committed = unsafe { winapi_virtual_commit(base_addr as *mut u8, initial_commit) };
-    if committed.is_null() {
-        // Commit failed: release the whole reservation (same pattern as
-        // reserve_aligned_raw's commit-failure path).
-        unsafe {
-            // SAFETY: `region` was returned by `VirtualAlloc(MEM_RESERVE)` above.
-            winapi_virtual_release(region_ptr);
-        }
-        return None;
-    }
-    Some((base, region, over))
+    win_reserve_commit(size, align, initial_commit, 0)
+}
+
+#[cfg(all(windows, not(miri), feature = "huge-pages"))]
+fn reserve_aligned_huge_raw(
+    size: usize,
+    align: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    win_reserve_commit(size, align, size, MEM_LARGE_PAGES)
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -684,6 +918,44 @@ extern "system" {
         fl_protect: u32,
     ) -> *mut core::ffi::c_void;
     fn VirtualFree(lp_address: *mut core::ffi::c_void, dw_size: usize, dw_free_type: u32) -> i32;
+    fn GetSystemInfo(lp_system_info: *mut SystemInfo);
+}
+
+/// Mirrors the Windows `SYSTEM_INFO` struct — only `dwPageSize` is read.
+#[cfg(all(windows, not(miri)))]
+#[repr(C)]
+struct SystemInfo {
+    w_processor_architecture: u16,
+    w_reserved: u16,
+    dw_page_size: u32,
+    lp_minimum_application_address: *mut core::ffi::c_void,
+    lp_maximum_application_address: *mut core::ffi::c_void,
+    dw_active_processor_mask: usize,
+    dw_number_of_processors: u32,
+    dw_processor_type: u32,
+    dw_allocation_granularity: u32,
+    w_processor_level: u16,
+    w_processor_revision: u16,
+}
+
+#[cfg(all(windows, not(miri)))]
+impl Default for SystemInfo {
+    fn default() -> Self {
+        // Zeroed; `GetSystemInfo` overwrites the fields it defines.
+        Self {
+            w_processor_architecture: 0,
+            w_reserved: 0,
+            dw_page_size: 0,
+            lp_minimum_application_address: core::ptr::null_mut(),
+            lp_maximum_application_address: core::ptr::null_mut(),
+            dw_active_processor_mask: 0,
+            dw_number_of_processors: 0,
+            dw_processor_type: 0,
+            dw_allocation_granularity: 0,
+            w_processor_level: 0,
+            w_processor_revision: 0,
+        }
+    }
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -694,29 +966,15 @@ const MEM_RESERVE: u32 = 0x0000_2000;
 const MEM_DECOMMIT: u32 = 0x0000_4000;
 #[cfg(all(windows, not(miri)))]
 const MEM_RELEASE: u32 = 0x0000_8000;
+#[cfg(all(windows, not(miri), feature = "huge-pages"))]
+const MEM_LARGE_PAGES: u32 = 0x2000_0000;
 #[cfg(all(windows, not(miri)))]
 const PAGE_READWRITE: u32 = 0x04;
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_reserve(over: usize) -> *mut core::ffi::c_void {
-    // PERF-PASS-1 (task #49, G4/A3): `MEM_RESERVE` only — no `MEM_COMMIT`.
-    // SAFETY: non-zero `over` + documented reserve-only + RW protection flags
-    // (the protection flags apply once the sub-range is later committed).
+    // SAFETY: `MEM_RESERVE` only — reserve address space without commit.
     VirtualAlloc(core::ptr::null_mut(), over, MEM_RESERVE, PAGE_READWRITE)
-}
-
-#[cfg(all(windows, not(miri)))]
-unsafe fn winapi_virtual_commit(addr: *mut u8, len: usize) -> *mut core::ffi::c_void {
-    // PERF-PASS-1 (task #49, G4/A3): commit exactly the aligned `[addr,
-    // addr+len)` sub-range within an already-reserved region.
-    // SAFETY: caller (`reserve_aligned_raw`) guarantees `[addr, addr+len)` is
-    // within a region just reserved via `winapi_virtual_reserve`.
-    VirtualAlloc(
-        addr as *mut core::ffi::c_void,
-        len,
-        MEM_COMMIT,
-        PAGE_READWRITE,
-    )
 }
 
 #[cfg(all(windows, not(miri)))]
@@ -727,59 +985,57 @@ unsafe fn winapi_virtual_decommit(addr: *mut u8, len: usize) {
 
 #[cfg(all(windows, not(miri)))]
 unsafe fn winapi_virtual_release(addr: *mut u8) {
-    // SAFETY: caller guarantees `addr` is the base of a region reserved via
-    // `VirtualAlloc(.., MEM_RESERVE, ..)` (PERF-PASS-1: reserve-only, with an
-    // inner sub-range separately `MEM_COMMIT`ted — see `reserve_aligned_raw`);
-    // `MEM_RELEASE` + size 0 releases the entire reservation regardless of
-    // commit state.
+    // SAFETY: caller guarantees `addr` is the base of a `MEM_RESERVE` region;
+    // `MEM_RELEASE` + size 0 releases the entire reservation.
     VirtualFree(addr as *mut core::ffi::c_void, 0, MEM_RELEASE);
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Unix path: mmap / munmap / madvise. Raw bindings declared locally — no libc
 // dependency.
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 #[cfg(all(unix, not(miri)))]
 fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
-    // PERF-PASS-1 (task #49, G4/A3): try an EXACT-size `mmap(size)` first (1
-    // syscall). Linux's top-down mmap placement heuristic (and, in the
-    // decommit->recycle->re-reserve cycle, the kernel handing back the same
-    // hole just `munmap`ped) often returns an address that already satisfies
-    // `align` for a whole-segment-sized request, especially once the process
-    // has done a few of these reservations. If the returned address happens
-    // to already be `align`-aligned, use it directly. This mirrors mimalloc's
-    // own opportunistic-alignment trick.
-    if let Some(exact) = try_reserve_aligned_exact(size, align) {
+    unix_reserve(size, align, false)
+}
+
+/// Unix reservation shared by the eager and huge paths. When `huge` is `true`
+/// the exact-size fast path and over-reserve fallback both request
+/// `MAP_HUGETLB` (Linux) and fall back to ordinary pages if the huge mapping
+/// fails.
+#[cfg(all(unix, not(miri)))]
+fn unix_reserve(
+    size: usize,
+    align: usize,
+    huge: bool,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    if let Some(exact) = try_reserve_aligned_exact(size, align, huge) {
         return Some(exact);
     }
-    // Fallback: NOT aligned (or the exact-size mmap failed for a reason
-    // unrelated to alignment, e.g. transient OOM at this exact size — retried
-    // below with the larger allocation is a legitimate reattempt, not
-    // incorrect). Over-reserve `size + align` and trim head/tail exactly as
-    // before this pass — functionally identical to the pre-existing
-    // behavior, so this path is a strict fallback: never worse than today,
-    // worst case `1 (failed exact attempt, if it returned an unaligned
-    // mapping) + 1 (munmap of that mapping) + 1 (over-reserve mmap) + up to 2
-    // (trim munmaps)` = up to 5 syscalls, same ceiling the review names.
     let over = size.checked_add(align)?;
     let region_ptr = unsafe {
-        // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` requests an
-        // anonymous private mapping of `over` bytes; the kernel chooses the
-        // (page-aligned) address or returns MAP_FAILED.
-        let p = libc_mmap(over);
+        // SAFETY: `mmap(NULL, over, RW, PRIVATE|ANON, -1, 0)` — anonymous
+        // private mapping; the kernel chooses the address or returns MAP_FAILED
+        // (mapped to null by `libc_mmap`).
+        let p = libc_mmap(over, huge);
         if p.is_null() {
-            return None;
+            // Retry without huge pages if the huge request was the cause.
+            if huge {
+                // SAFETY: same call, ordinary pages.
+                let p2 = unsafe { libc_mmap(over, false) };
+                if p2.is_null() {
+                    return None;
+                }
+                p2
+            } else {
+                return None;
+            }
+        } else {
+            p
         }
-        p
     };
     let region_addr = region_ptr as usize;
-    // `align_up_addr`/the fit check below are release-mode (not
-    // `debug_assert!`-only, L-9d): `region_addr` comes straight from the OS
-    // and is not attacker-controlled in practice, but treating a would-be
-    // overflow/out-of-range result as an ordinary OOM costs nothing and
-    // removes the UB-shaped landmine of trusting unchecked arithmetic on an
-    // address.
     let fits = align_up_addr(region_addr, align).and_then(|a| {
         let tail_start = a.checked_add(size)?;
         let region_end = region_addr.checked_add(over)?;
@@ -788,59 +1044,44 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
     let (base_addr, tail_start, region_end) = match fits {
         Some(t) => t,
         None => {
-            unsafe {
-                // SAFETY: `region_ptr` was returned by the `mmap` call
-                // immediately above and has not been trimmed/released yet;
-                // releasing the whole `over`-byte mapping here (before ever
-                // handing it to a caller) cannot double-free.
-                libc_munmap(region_ptr as *mut u8, over);
-            }
+            // SAFETY: `region_ptr` was returned by `mmap` above; releasing the
+            // whole `over`-byte mapping before handing to a caller is sound.
+            unsafe { libc_munmap(region_ptr as *mut u8, over) };
             return None;
         }
     };
-    let base = unsafe {
-        // SAFETY: `base_addr` is non-null (>= region_addr) and `align`-aligned.
-        NonNull::new_unchecked(base_addr as *mut u8)
-    };
+    // SAFETY: `base_addr >= region_addr` and `align`-aligned.
+    let base = unsafe { NonNull::new_unchecked(base_addr as *mut u8) };
     let head = base_addr - region_addr;
     let tail_len = region_end - tail_start;
     if head > 0 {
-        unsafe {
-            // SAFETY: `[region_addr, region_addr + head)` is within the freshly
-            // mapped region; `munmap` returns it to the kernel.
-            libc_munmap(region_ptr as *mut u8, head);
-        }
+        // SAFETY: `[region_addr, region_addr+head)` is within the mapping.
+        unsafe { libc_munmap(region_ptr as *mut u8, head) };
     }
     if tail_len > 0 {
-        unsafe {
-            // SAFETY: `[tail_start, tail_start + tail_len)` is within the region
-            // and after the usable span; `munmap` returns it.
-            libc_munmap(tail_start as *mut u8, tail_len);
-        }
+        // SAFETY: `[tail_start, tail_start+tail_len)` is within the mapping.
+        unsafe { libc_munmap(tail_start as *mut u8, tail_len) };
+    }
+    #[cfg(feature = "huge-pages")]
+    if huge {
+        // SAFETY: `base` is the start of a live `size`-byte mapping; a
+        // best-effort `MADV_HUGEPAGE` hint touches only kernel metadata.
+        unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
     }
     Some((base, base, size))
 }
 
-/// PERF-PASS-1 (task #49, G4/A3): attempt the 1-syscall exact-size mmap fast
-/// path. Returns `Some((base, base, size))` (matching the over-reserve path's
-/// return shape, where `reservation == base` because there is no head/tail to
-/// keep track of) if the kernel happened to hand back an already-aligned
-/// address; returns `None` (after `munmap`-ing the unaligned mapping, if one
-/// was obtained) so the caller can fall back to the over-reserve path. A
-/// `None` here is NOT necessarily an OOM signal — it may just mean "not
-/// aligned" — so the caller must retry via the fallback, not propagate `None`
-/// as final failure.
+/// 1-syscall exact-size mmap fast path (see the 0.1 doc). `huge` requests
+/// `MAP_HUGETLB`.
 #[cfg(all(unix, not(miri)))]
 fn try_reserve_aligned_exact(
     size: usize,
     align: usize,
+    huge: bool,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     let region_ptr = unsafe {
-        // SAFETY: `mmap(NULL, size, RW, PRIVATE|ANON, -1, 0)` requests an
-        // anonymous private mapping of exactly `size` bytes; the kernel
-        // chooses the (page-aligned) address or returns MAP_FAILED (mapped to
-        // null by `libc_mmap`).
-        let p = libc_mmap(size);
+        // SAFETY: anonymous private mapping of exactly `size` bytes.
+        let p = libc_mmap(size, huge);
         if p.is_null() {
             return None;
         }
@@ -848,84 +1089,86 @@ fn try_reserve_aligned_exact(
     };
     let region_addr = region_ptr as usize;
     if !region_addr.is_multiple_of(align) {
-        // Not aligned — this exact-size mapping is useless for the caller's
-        // alignment contract. Give it back to the kernel immediately so the
-        // fallback's over-reserve attempt doesn't compete with it for address
-        // space, then signal "try the fallback" via `None`.
-        unsafe {
-            // SAFETY: `region_ptr` was just returned by `mmap` above with
-            // length `size`, and is unmapped here exactly once (this whole
-            // mapping is being discarded, not partially trimmed).
-            libc_munmap(region_ptr as *mut u8, size);
-        }
+        // SAFETY: `region_ptr` was just mapped with length `size`; unmap once.
+        unsafe { libc_munmap(region_ptr as *mut u8, size) };
         return None;
     }
-    let base = unsafe {
-        // SAFETY: `region_ptr` is non-null (checked above) and now proven
-        // `align`-aligned.
-        NonNull::new_unchecked(region_ptr as *mut u8)
-    };
-    // `reservation == base` and `reservation_len == size`: there is no
-    // head/tail trim in this path, so the entire mapping IS the usable span,
-    // identical in shape to the over-reserve path's post-trim invariant.
+    // SAFETY: non-null and proven `align`-aligned.
+    let base = unsafe { NonNull::new_unchecked(region_ptr as *mut u8) };
+    #[cfg(feature = "huge-pages")]
+    if huge {
+        // SAFETY: `base` is a live `size`-byte mapping; hint-only.
+        unsafe { libc_madvise_hugepage(base.as_ptr(), size) };
+    }
     Some((base, base, size))
 }
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, _align: usize) {
-    // SAFETY: on unix the head/tail are unmapped so `reservation` IS the start of
-    // the remaining mapping of length `reservation_len`; `munmap` returns it.
+    // SAFETY: on unix `reservation` IS the start of the remaining mapping of
+    // length `reservation_len`; `munmap` returns it.
     libc_munmap(reservation.as_ptr(), reservation_len);
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize) {
-    // PLATFORM NOTE (XNU/macOS honesty): on Linux `MADV_DONTNEED` is eager —
-    // pages are dropped immediately and the next access is guaranteed to
-    // zero-fill. On macOS/XNU (and the *BSDs) `MADV_DONTNEED` is ADVISORY and
-    // LAZY: it does NOT carry Linux's zero-fill-on-next-access guarantee, and
-    // RSS reclamation is best-effort, not prompt. sefer-alloc's CORRECTNESS is
-    // unaffected — every `alloc_zeroed` path zeroes explicitly (`Node::zero` in
-    // the callers), so nothing relies on the kernel zeroing decommitted pages.
-    // Only the RSS-reclaim timing differs on Darwin.
+unsafe fn decommit_pages_impl(base: *mut u8, start: usize, end: usize, kind: DecommitKind) {
     let len = end - start;
-    // SAFETY: caller guarantees `[base+start, +len)` is within a live mapping;
-    // `madvise(MADV_DONTNEED)` discards the backing pages (on Linux re-access
-    // zero-fills; on XNU/*BSD the hint is lazy — see the platform note above).
     let addr = unsafe { base.add(start) };
-    unsafe { libc_madvise_dontneed(addr, len) };
+    match kind {
+        // SAFETY: caller guarantees `[base+start, +len)` is within a live
+        // mapping; `madvise` touches only kernel page-state.
+        DecommitKind::Eager => unsafe { libc_madvise(addr, len, MADV_DONTNEED) },
+        DecommitKind::Lazy => unsafe { libc_madvise(addr, len, madv_free_advice()) },
+    }
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
-    // On unix, re-access after MADV_DONTNEED is implicit — the kernel provides
-    // fresh zeroed pages on demand. No syscall needed, and this path physically
-    // cannot fail (no eager commit to refuse), so always report success.
-    true
+unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
+    // On unix, re-access after MADV_DONTNEED is implicit — fresh zeroed pages on
+    // demand. No syscall, cannot fail.
+    Ok(())
 }
 
-// B0: Unix commit_range — no-op. Unix has no commit/uncommit distinction for
-// anonymous mmap'd memory: all pages are demand-paged and accessible. The
-// lazy-reserve path falls back to eager on Unix, so commit_range is never
-// needed, but the function must still exist so feature-gated callers compile
-// on all platforms.
-#[cfg(all(unix, not(miri), feature = "alloc-lazy-commit"))]
-unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
+#[cfg(all(unix, not(miri), feature = "lazy-commit"))]
+unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
     // Unix: pages are already accessible (eager mmap). Always succeeds.
-    true
+    Ok(())
 }
 
-// B0: Unix reserve_aligned_lazy — falls back to the eager path. Unix mmap does
-// not have a reserve-without-commit concept for anonymous memory (all pages are
-// demand-paged); `initial_commit` is ignored and the full span is mapped.
-#[cfg(all(unix, not(miri), feature = "alloc-lazy-commit"))]
+#[cfg(all(unix, not(miri), feature = "lazy-commit"))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
     _initial_commit: usize,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
-    // Delegate to the eager path — identical observable behaviour.
     reserve_aligned_raw(size, align)
+}
+
+#[cfg(all(unix, not(miri), feature = "huge-pages"))]
+fn reserve_aligned_huge_raw(
+    size: usize,
+    align: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    unix_reserve(size, align, true)
+}
+
+/// Select the lazy-decommit `madvise` advice for this platform.
+/// Linux: `MADV_FREE`; macOS: `MADV_FREE_REUSABLE`; other Unix: `MADV_DONTNEED`.
+#[cfg(all(unix, not(miri)))]
+#[inline]
+fn madv_free_advice() -> i32 {
+    #[cfg(target_os = "linux")]
+    {
+        MADV_FREE
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        MADV_FREE_REUSABLE
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+    {
+        MADV_DONTNEED
+    }
 }
 
 #[cfg(all(unix, not(miri)))]
@@ -934,10 +1177,6 @@ const PROT_READ: i32 = 0x1;
 const PROT_WRITE: i32 = 0x2;
 #[cfg(all(unix, not(miri)))]
 const MAP_PRIVATE: i32 = 0x02;
-// MAP_ANON value differs across BSD vs Linux. macOS / *BSD use 0x1000,
-// Linux uses 0x20. Wrong value silently turns mmap into a file-backed
-// mapping attempt (with fd=-1 → EBADF → MAP_FAILED → reserve_aligned
-// returns None). Tested in CI's macOS job.
 #[cfg(all(unix, not(miri), target_os = "linux"))]
 const MAP_ANON: i32 = 0x20;
 #[cfg(all(
@@ -955,10 +1194,34 @@ const MAP_ANON: i32 = 0x20;
     )
 ))]
 const MAP_ANON: i32 = 0x1000;
+/// Linux `MAP_HUGETLB` (request huge pages at mmap time).
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+const MAP_HUGETLB: i32 = 0x40000;
 #[cfg(all(unix, not(miri)))]
 const MAP_FAILED: usize = usize::MAX;
 #[cfg(all(unix, not(miri)))]
 const MADV_DONTNEED: i32 = 4;
+/// Linux `MADV_FREE` (lazy reclaim under pressure).
+#[cfg(all(unix, not(miri), target_os = "linux"))]
+const MADV_FREE: i32 = 8;
+/// macOS `MADV_FREE_REUSABLE` (lazy reclaim; page reusable).
+#[cfg(all(unix, not(miri), any(target_os = "macos", target_os = "ios")))]
+const MADV_FREE_REUSABLE: i32 = 7;
+/// Linux `MADV_HUGEPAGE` (transparent-huge-page hint).
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+const MADV_HUGEPAGE: i32 = 14;
+#[cfg(all(unix, not(miri)))]
+const _SC_PAGESIZE: i32 = {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        29
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        // Linux and most other unices use 30 for _SC_PAGESIZE / _SC_PAGE_SIZE.
+        30
+    }
+};
 
 #[cfg(all(unix, not(miri)))]
 extern "C" {
@@ -972,17 +1235,23 @@ extern "C" {
     ) -> *mut core::ffi::c_void;
     fn munmap(addr: *mut core::ffi::c_void, length: usize) -> i32;
     fn madvise(addr: *mut core::ffi::c_void, length: usize, advice: i32) -> i32;
+    fn sysconf(name: i32) -> core::ffi::c_long;
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn libc_mmap(len: usize) -> *mut core::ffi::c_void {
-    // SAFETY: `mmap(NULL, len, RW, PRIVATE|ANON, -1, 0)` — anonymous private
-    // mapping; the kernel chooses the address.
+unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
+    let mut flags = MAP_PRIVATE | MAP_ANON;
+    #[cfg(all(target_os = "linux", feature = "huge-pages"))]
+    if huge {
+        flags |= MAP_HUGETLB;
+    }
+    let _ = huge; // silence unused on non-linux / no huge-pages builds
+                  // SAFETY: anonymous private mapping; kernel chooses the address.
     let p = mmap(
         core::ptr::null_mut(),
         len,
         PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANON,
+        flags,
         -1,
         0,
     );
@@ -995,32 +1264,40 @@ unsafe fn libc_mmap(len: usize) -> *mut core::ffi::c_void {
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn libc_munmap(addr: *mut u8, len: usize) {
-    // SAFETY: caller guarantees `[addr, addr+len)` was returned by `mmap` and is
-    // unmapped exactly once.
+    // SAFETY: caller guarantees `[addr, addr+len)` was mmap'd and is unmapped once.
     let _ = munmap(addr as *mut core::ffi::c_void, len);
 }
 
 #[cfg(all(unix, not(miri)))]
-unsafe fn libc_madvise_dontneed(addr: *mut u8, len: usize) {
+unsafe fn libc_madvise(addr: *mut u8, len: usize, advice: i32) {
     // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region.
-    let _ = madvise(addr as *mut core::ffi::c_void, len, MADV_DONTNEED);
+    let _ = madvise(addr as *mut core::ffi::c_void, len, advice);
 }
 
-// ---------------------------------------------------------------------------
-// Miri aperture: miri cannot execute raw FFI, so fall back to `std::alloc` with
-// the requested alignment. Sound because under miri the consumer is NOT the
-// global allocator — the host allocator backs the test harness.
-// ---------------------------------------------------------------------------
+#[cfg(all(unix, not(miri), target_os = "linux", feature = "huge-pages"))]
+unsafe fn libc_madvise_hugepage(addr: *mut u8, len: usize) {
+    // SAFETY: caller guarantees `[addr, addr+len)` is within a live mmap region;
+    // `MADV_HUGEPAGE` is a best-effort hint (errors ignored).
+    let _ = madvise(addr as *mut core::ffi::c_void, len, MADV_HUGEPAGE);
+}
+
+#[cfg(all(unix, not(miri), not(target_os = "linux"), feature = "huge-pages"))]
+unsafe fn libc_madvise_hugepage(_addr: *mut u8, _len: usize) {
+    // Non-Linux Unix: no transparent-huge-page madvise; the mmap fallback
+    // already yielded ordinary pages. No-op.
+}
+
+// ===========================================================================
+// Miri aperture: miri cannot execute raw FFI, so fall back to `std::alloc`.
+// ===========================================================================
 
 #[cfg(miri)]
 fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
     use std::alloc::Layout;
     let layout = Layout::from_size_align(size, align).ok()?;
-    let ptr = unsafe {
-        // SAFETY: `layout` has non-zero size and power-of-two alignment; under
-        // miri the consumer is not the global allocator, so no reentrancy.
-        std::alloc::alloc(layout)
-    };
+    // SAFETY: `layout` has non-zero size and pow2 align; under miri the consumer
+    // is not the global allocator, so no reentrancy.
+    let ptr = unsafe { std::alloc::alloc(layout) };
     let base = NonNull::new(ptr)?;
     Some((base, base, size))
 }
@@ -1029,35 +1306,27 @@ fn reserve_aligned_raw(size: usize, align: usize) -> Option<(NonNull<u8>, NonNul
 unsafe fn release_reservation(reservation: NonNull<u8>, reservation_len: usize, align: usize) {
     use std::alloc::Layout;
     // SAFETY: `reservation` was returned by `std::alloc::alloc` with exactly
-    // `Layout::from_size_align(reservation_len, align)` in `reserve_aligned_raw`
-    // (the `align` is threaded through `Reservation`/`into_parts`/`release` so
-    // the reconstructed layout matches the allocation), and is freed once.
+    // this layout in `reserve_aligned_raw`; freed once.
     let layout = Layout::from_size_align(reservation_len, align).expect("release: invalid layout");
     std::alloc::dealloc(reservation.as_ptr(), layout);
 }
 
 #[cfg(miri)]
-unsafe fn decommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) {
-    // Miri models no RSS; decommit is a no-op (pages stay accessible — the
-    // caller already proved nothing live remains in the range).
+unsafe fn decommit_pages_impl(_base: *mut u8, _start: usize, _end: usize, _kind: DecommitKind) {
+    // Miri models no RSS; decommit is a no-op.
 }
 
 #[cfg(miri)]
-unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
-    // Miri: decommit was a no-op, so recommit is too — always succeeds.
-    true
+unsafe fn recommit_pages_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
+    Ok(())
 }
 
-// B0: Miri commit_range — no-op. Under miri the lazy-reserve falls back to
-// eager (std::alloc, all bytes accessible), so commit_range always succeeds.
-#[cfg(all(miri, feature = "alloc-lazy-commit"))]
-unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> bool {
-    true
+#[cfg(all(miri, feature = "lazy-commit"))]
+unsafe fn commit_range_impl(_base: *mut u8, _start: usize, _end: usize) -> Result<(), VmemError> {
+    Ok(())
 }
 
-// B0: Miri reserve_aligned_lazy — falls back to eager. Miri cannot model
-// reserved-but-uncommitted pages; `initial_commit` is ignored.
-#[cfg(all(miri, feature = "alloc-lazy-commit"))]
+#[cfg(all(miri, feature = "lazy-commit"))]
 fn reserve_aligned_lazy_raw(
     size: usize,
     align: usize,
@@ -1066,10 +1335,31 @@ fn reserve_aligned_lazy_raw(
     reserve_aligned_raw(size, align)
 }
 
+#[cfg(all(miri, feature = "huge-pages"))]
+fn reserve_aligned_huge_raw(
+    size: usize,
+    align: usize,
+) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    // Miri has no huge pages; ordinary allocation is observably identical.
+    reserve_aligned_raw(size, align)
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers.
+// ---------------------------------------------------------------------------
+
+/// Discriminates the eager (`MADV_DONTNEED` / `MEM_DECOMMIT`) vs lazy
+/// (`MADV_FREE`) decommit paths. Threaded into `decommit_pages_impl` so both
+/// [`decommit`] and [`decommit_lazy`] share one platform routine.
+#[derive(Clone, Copy)]
+#[allow(dead_code)] // unused under the `mock` feature (syscalls bypassed)
+enum DecommitKind {
+    Eager,
+    Lazy,
+}
+
 /// Round `addr` up to the next multiple of `align` (a power of two).
-/// Returns `None` on overflow (the rounded-up value would not fit in
-/// `usize`) instead of wrapping — the caller treats this exactly like any
-/// other OS-level reservation failure (OOM), never a panic or silent wrap.
+/// Returns `None` on overflow instead of wrapping.
 #[cfg(not(miri))]
 fn align_up_addr(addr: usize, align: usize) -> Option<usize> {
     debug_assert!(align.is_power_of_two());
