@@ -27,6 +27,19 @@ const CRATE_PREFIX = 'crate:';
 
 const FEATURES = {
   loom_racy_ptr_cell: `${CRATE_PREFIX}racy-ptr-cell`,
+  // CRATE-P4: the extracted `ring-mpsc` crate ships a real-type loom suite for
+  // the MPSC ring + DirtyRouter protocols (the crate aliases its atomics to
+  // `loom` under `--cfg loom`), run with `-p ring-mpsc` and no sefer features —
+  // flagged by the `crate:` prefix, handled specially in the run loop below.
+  // This is ADDITIVE: the seven in-tree shadow models below (loom_remote_ring,
+  // loom_remote_ring_drain_guard, loom_heap_overflow,
+  // loom_heap_overflow_drain_guard, loom_overflow_first_retry,
+  // loom_dirty_publish, loom_dirty_multi_segment) STAY, because the shipping
+  // in-tree `RemoteFreeRing`/`HeapOverflow` rings are NOT yet wired onto the
+  // crate (the in-tree swap is a deferred follow-up), so their own loom coverage
+  // must remain until that swap lands — otherwise the actual shipping rings
+  // would have NO loom coverage.
+  loom_ring_mpsc: `${CRATE_PREFIX}ring-mpsc`,
   loom_free_slots_aba: 'alloc-global',
   loom_xthread_protocol: 'alloc-core,alloc-xthread',
   loom_remote_ring: 'alloc-core,alloc-xthread',
@@ -51,6 +64,13 @@ const FEATURES = {
   // R7-A5: dirty word with multiple segments — two producers set bits for
   // different segments in the same u64 word.
   loom_dirty_multi_segment: 'alloc-core,alloc-xthread',
+  // R6-OPT-P0-4: overflow-first composition (segment ring -> heap overflow ring
+  // -> bounded spin-retry) double-saturation model + its counterfactual.
+  loom_overflow_first_retry: 'alloc-global,alloc-xthread',
+  // RAD-4b: HeapOverflow two-field-entry MPSC ring (torn-read counterfactual).
+  loom_heap_overflow: 'alloc-global,alloc-xthread',
+  // R2-4: HeapOverflow drain-guard (the return-actual-stop-position contract).
+  loom_heap_overflow_drain_guard: 'alloc-global,alloc-xthread',
   loom_sharded: 'experimental',
   loom_epoch: 'experimental',
 };

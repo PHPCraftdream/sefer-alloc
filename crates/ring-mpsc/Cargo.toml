@@ -1,0 +1,30 @@
+[package]
+name = "ring-mpsc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Allocation-free, no_std bounded MPSC index ring (Vyukov-style CAS-reserve / single-consumer drain) usable over an OWNED array OR caller-supplied RAW memory (shared-memory IPC, DMA mailboxes, in-arena metadata). Explicit reserved-but-unpublished drain semantics, overflow-as-bounded-loss policy, one- and two-word payload entries, plus a lost-wakeup-safe DirtyRouter. Ships executable loom proofs run against the real type, with #[should_panic] counterfactuals."
+readme = "README.md"
+repository = "https://github.com/PHPCraftdream/sefer-alloc"
+homepage = "https://github.com/PHPCraftdream/sefer-alloc/tree/main/crates/ring-mpsc"
+documentation = "https://docs.rs/ring-mpsc"
+keywords = ["mpsc", "lock-free", "ring", "no-std", "shared-memory"]
+categories = ["concurrency", "data-structures", "no-std::no-alloc"]
+
+[lints.rust]
+# `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that swaps the
+# ring's atomics for `loom::sync::atomic` so the shipped loom tests exercise the
+# REAL `MpscRing` / `DirtyRouter` types. Declare it so `unexpected_cfgs` stays
+# silent.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+[dependencies]
+# Zero non-std deps in a NORMAL build. Under `--cfg loom` ONLY, the ring aliases
+# its atomics to `loom::sync::atomic` so the shipped loom tests exercise the
+# REAL types — so `loom` is a `cfg(loom)`-gated LIBRARY dependency (not merely a
+# dev-dependency): the crate's own `src/lib.rs` references it. A normal
+# `cargo build` (no `--cfg loom`) pulls in zero non-std deps.
+
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
