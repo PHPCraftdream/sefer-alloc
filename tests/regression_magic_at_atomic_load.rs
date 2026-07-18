@@ -45,8 +45,62 @@
 //! the owner here performs ONLY dealloc-to-cache (whose sole header effect is
 //! the atomic `magic = 0` store, per UBFIX-6) — no concurrent alloc-reuse, so
 //! no `write_struct` runs against the remote's reads.
+//!
+//! ## cfg gate: why this test also requires `alloc-decommit`
+//!
+//! The setup is a deliberate stale/duplicate cross-thread free of Large
+//! segments (caller misuse under the `unsafe fn` dealloc contract — see the
+//! per-call `SAFETY` notes in the body) CONCURRENT with the owner's own-thread
+//! dealloc of those same segments. R6-MS-5's atomic-load fix makes the `magic`
+//! field's ACCESS-KIND pair correctly under that race (atomic Acquire load ↔
+//! atomic Release store). It does NOT, and cannot, keep the segment's PAYLOAD
+//! PAGES mapped while the race runs — that is a property of the Large dealloc
+//! backend, which is feature-dependent:
+//!
+//!   - WITH `alloc-decommit`: the owner's Large dealloc deposits the segment
+//!     into the per-thread large cache, which KEEPS its pages committed/mapped
+//!     and atomically zeroes `magic` (the very zeroing store this test races
+//!     against, UBFIX-6). The remote's `magic_at` load therefore reads live,
+//!     mapped memory — the access-kind mismatch is the only hazard in flight,
+//!     and R6-MS-5 closes it.
+//!   - WITHOUT `alloc-decommit`: the owner's Large dealloc calls
+//!     `os::release_segment` (Windows `VirtualFree` with `MEM_RELEASE` / Unix
+//!     `munmap`) on the spot — an actual unmap, not a decommit. The remote
+//!     thread's subsequent `magic_at` load then races the unmap and touches
+//!     unmapped VA → SIGSEGV on Unix / `STATUS_ACCESS_VIOLATION` (0xc0000005)
+//!     on Windows. That is a DIFFERENT and strictly out-of-contract hazard
+//!     than the access-kind mismatch R6-MS-5 targets: it is not a data race
+//!     on a mapped field, it is a use-after-unmap of the segment header
+//!     itself.
+//!
+//! The out-of-contract status of that read is documented at the production
+//! routing site: `src/registry/heap_core_xthread.rs:585-594` (case (b): "a
+//! double-free of a released, unmapped segment is fundamentally UB (as with
+//! any allocator) and is NOT fixed by this change — only guarded for the
+//! live/mapped case, which is what M2 promises") and `:643-647` (the same
+//! distinction restated for the `owner_thread_free` read). The sibling file
+//! `tests/regression_xthread_double_free_residual.rs:71-89` records the
+//! identical framing for a related test: a deliberate double-free setup like
+//! this one is caller UB under the `unsafe fn` dealloc contract, NOT a
+//! safe-code-reachable soundness bug, so a regression test for it is only
+//! meaningful in a feature configuration where the misuse degrades benignly
+//! rather than crashing the process. Requiring `alloc-decommit` here selects
+//! exactly that configuration — the one where the segment stays mapped
+//! through the race, so the only thing R6-MS-5 needs to defend (the atomicity
+//! mismatch) is the only thing that can actually happen.
+//!
+//! Narrowing the gate does NOT weaken the test's assertions (no crash + heap
+//! still usable afterward): those are unchanged, and they still run under
+//! every feature set where this binary compiles at all. The test simply no
+//! longer compiles into a binary in feature sets where its setup is
+//! structurally a use-after-unmap rather than the atomicity race it exists to
+//! exercise; in those sets it would crash for a reason R6-MS-5 does not own,
+//! masking the regression it is here to catch. Empirically (this binary,
+//! Windows): 40/40 runs under `alloc-global alloc-xthread` (no decommit)
+//! crashed with `STATUS_ACCESS_VIOLATION`; 40/40 runs under `alloc-global
+//! alloc-xthread alloc-decommit` passed.
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+#![cfg(all(feature = "alloc-global", feature = "alloc-xthread", feature = "alloc-decommit"))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};
