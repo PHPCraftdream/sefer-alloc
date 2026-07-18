@@ -88,6 +88,17 @@ impl SegmentLayout {
     /// depending on the private `segment_header::Layout` module.
     pub const SMALL_META_END: usize = super::segment_header::Layout::small_meta_end();
 
+    /// The end of the primordial segment's metadata region (page-aligned past
+    /// the free-list top counter). The primordial segment additionally carries
+    /// the registry array + hash table + free-list stack past the small-segment
+    /// metadata, so this is `>=` [`SMALL_META_END`](Self::SMALL_META_END). Like
+    /// [`SMALL_META_END`](Self::SMALL_META_END) it is a decommit/recommit
+    /// boundary (PLAT-1, task #205): it is aligned to a conservative upper
+    /// bound on every real OS page size (64 KiB), not just the 4 KiB `PAGE`,
+    /// so it lands on a real-page boundary on 16 KiB / 64 KiB-page machines too.
+    /// Exposed so tests can assert the boundary is real-page-aligned.
+    pub const PRIMORDIAL_META_END: usize = super::segment_header::Layout::primordial_meta_end();
+
     /// Convert an address to the SEGMENT-aligned base of the segment that
     /// contains it (the O(1) owner-lookup primitive).
     #[must_use]

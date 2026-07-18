@@ -1,7 +1,7 @@
 //! Segment layout / offset arithmetic for [`Layout`] (mechanical split of
 //! `segment_header.rs`, task R6-CQ-7c).
 
-use super::os::PAGE;
+use super::os::{MAX_REALISTIC_PAGE_SIZE, PAGE};
 #[cfg(feature = "hardened")]
 use super::segment_header::GEN_TABLE_FOOTPRINT;
 use super::segment_header::{align_up_const, BinTable, Layout, PageMap, SegmentHeader};
@@ -90,7 +90,15 @@ impl Layout {
     /// `small_meta_end() + PAGE <= SEGMENT` const assert at the bottom of this
     /// file (X7-Ф1's neutrality argument).
     pub(crate) const fn small_meta_end() -> usize {
-        align_up_const(Self::small_meta_end_pre_runstack(), PAGE)
+        // PLAT-1 (task #205): align to MAX_REALISTIC_PAGE_SIZE (64 KiB), NOT
+        // PAGE (4 KiB). This offset is a decommit/recommit boundary (see
+        // `alloc_core_small.rs` / `alloc_core_small_pool.rs`); on a 16 KiB- or
+        // 64 KiB-page machine a 4 KiB-aligned boundary lands mid-real-page and
+        // `madvise`/`VirtualFree` silently round it, reclaiming the wrong byte
+        // range. 64 KiB alignment is a superset of every real page size up to
+        // 64 KiB. Cannot use the runtime `aligned_vmem::page_size()` here —
+        // this is a `const fn` evaluated in true `const` contexts.
+        align_up_const(Self::small_meta_end_pre_runstack(), MAX_REALISTIC_PAGE_SIZE)
     }
     /// The end of the small-segment metadata BEFORE final page-alignment — i.e.
     /// the unaligned byte offset just past the last metadata region (the
@@ -152,7 +160,9 @@ impl Layout {
     /// End of the primordial metadata (page-aligned past the free-list top
     /// counter).
     pub(crate) const fn primordial_meta_end() -> usize {
-        align_up_const(Self::primordial_free_top_off() + 4, PAGE)
+        // PLAT-1 (task #205): same decommit/recommit-boundary rationale as
+        // `small_meta_end` — align to MAX_REALISTIC_PAGE_SIZE, not PAGE.
+        align_up_const(Self::primordial_free_top_off() + 4, MAX_REALISTIC_PAGE_SIZE)
     }
     /// Number of metadata pages in a small segment.
     pub(crate) const fn small_meta_pages() -> usize {

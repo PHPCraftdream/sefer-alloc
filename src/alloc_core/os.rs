@@ -72,6 +72,26 @@ pub(crate) const SEGMENT: usize = 1 << 22;
 /// Re-exported from `aligned_vmem::PAGE` for a single source of truth.
 pub(crate) const PAGE: usize = vmem::PAGE;
 
+/// A conservative compile-time upper bound on every realistic real-world OS
+/// page size. 64 KiB covers the page sizes `aligned_vmem::page_size()` can
+/// actually return at runtime — 4 KiB (x86-64 default), 16 KiB (Apple Silicon
+/// macOS), and 64 KiB (some Linux/aarch64 configs). Being a power of two,
+/// alignment to it implies alignment to every smaller power-of-two page size.
+///
+/// This is a compile-time *superset* bound, used in place of the runtime
+/// `aligned_vmem::page_size()` wherever a decommit/recommit boundary offset
+/// (`Layout::small_meta_end` / `Layout::primordial_meta_end`) must be
+/// const-evaluated: those are `const fn` and cannot call the runtime query,
+/// but they MUST land on a real-page boundary on every platform, because
+/// `madvise`/`VirtualFree` silently round non-page-aligned offsets to the
+/// nearest real page (M6 would silently reclaim the wrong byte range — see
+/// `docs/reviews/2026-07-17-deep-audit/10-platform-portability.md`). Using
+/// `PAGE` (4 KiB) here was the latent bug: a 16 KiB-page machine got a
+/// boundary mid-page. Cost: at most ~64 KiB of extra committed-but-unused
+/// metadata slack per segment in the worst case (negligible against
+/// [`SEGMENT`] = 4 MiB).
+pub(crate) const MAX_REALISTIC_PAGE_SIZE: usize = 1 << 16;
+
 /// Convert an address to the SEGMENT-aligned base it falls within.
 ///
 /// Pure safe arithmetic — this is part of the Cartographer and lives outside
