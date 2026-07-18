@@ -100,7 +100,11 @@
 //! crashed with `STATUS_ACCESS_VIOLATION`; 40/40 runs under `alloc-global
 //! alloc-xthread alloc-decommit` passed.
 
-#![cfg(all(feature = "alloc-global", feature = "alloc-xthread", feature = "alloc-decommit"))]
+#![cfg(all(
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "alloc-decommit"
+))]
 
 use std::alloc::Layout;
 use std::sync::atomic::{AtomicBool, Ordering};

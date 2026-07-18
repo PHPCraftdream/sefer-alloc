@@ -286,3 +286,102 @@ fn architecture_test_file_count_matches_reality() {
          Update the `tests/*.rs (<N> files, as of commit ...)` line to {count}.",
     );
 }
+
+/// Regression-guard against doc-drift in the `unsafe` inventory counts in
+/// `README.md`.
+///
+/// The README's "Where `unsafe` lives" section pins two verifiable counts as
+/// exact tokens in its summary line below the tier-2 table: the tier-1
+/// module-level seam count and the tier-2 item-scoped allow count + file
+/// count. Those numbers silently rot every time a seam is added/removed or a
+/// tier-2 `#[allow(unsafe_code)]` site is introduced (the R6 file-splits, for
+/// example, scattered the old `segment_header.rs` / `heap_core.rs` tier-2
+/// sites across new files and the README was not updated — task #203 /
+/// DOCS-SYNC). This test recomputes the true counts from the SAME grep the
+/// README documents as source-of-truth
+/// (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`) and asserts
+/// the README's tokens match, so a future drift fails CI at the source rather
+/// than being discovered by a human reader.
+///
+/// Companion to `architecture_test_file_count_matches_reality` (which pins the
+/// integration-test-file count the same way).
+///
+/// Doc-only guard: reads source text + README, never links the crate, so it
+/// runs in every feature configuration.
+#[test]
+fn readme_unsafe_inventory_counts_match_reality() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    // Collect every `*.rs` file under src/ AND crates/ recursively (the same
+    // two trees the README's grep command spans).
+    let mut files = Vec::new();
+    rs_files(&manifest.join("src"), &mut files);
+    rs_files(&manifest.join("crates"), &mut files);
+    assert!(
+        !files.is_empty(),
+        "no source files found under src/ or crates/"
+    );
+
+    // Replicate `^\s*#!?\[allow\(unsafe_code\)\]` from the README, split into
+    // the two tiers: tier 1 = `#![...]` (module-level seam), tier 2 = `#[...]`
+    // (item-scoped). Comment-proof by construction: after `trim_start()` a
+    // `//`-prefixed line begins with `//`, not `#!?`+`[`, so it cannot match.
+    const TIER1_PREFIX: &str = "#![allow(unsafe_code)]";
+    const TIER2_PREFIX: &str = "#[allow(unsafe_code)]";
+
+    let mut tier1 = 0usize;
+    let mut tier2 = 0usize;
+    let mut tier2_files: Vec<PathBuf> = Vec::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("read source");
+        for line in text.lines() {
+            let stripped = line.trim_start();
+            if stripped.starts_with(TIER1_PREFIX) {
+                tier1 += 1;
+            } else if stripped.starts_with(TIER2_PREFIX) {
+                tier2 += 1;
+                if !tier2_files.contains(file) {
+                    tier2_files.push(file.clone());
+                }
+            }
+        }
+    }
+    assert!(tier1 > 0, "no tier-1 `#![allow(unsafe_code)]` seams found");
+    assert!(tier2 > 0, "no tier-2 `#[allow(unsafe_code)]` sites found");
+
+    let readme = fs::read_to_string(manifest.join("README.md")).expect("read README.md");
+    // Collapse whitespace runs (including newlines) to a single space so the
+    // check is resilient to markdown line-wrapping — the tokens are pinned in
+    // the prose summary, which may reflow across line breaks.
+    let readme_flat: String = readme
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Tier-1 token: README summary says e.g. "**17** tier-1 module-level seams".
+    let t1_needle = format!("**{tier1}** tier-1 module-level seams");
+    assert!(
+        readme_flat.contains(&t1_needle),
+        "README.md tier-1 count drifted: re-grep found {tier1} `#![allow(unsafe_code)]` \
+         module-level seams but the README does not contain the token `{t1_needle}`. \
+         Update the tier-1 count in the summary line below the tier-2 table.",
+    );
+
+    // Tier-2 tokens: README summary says e.g. "**33** tier-2 item-scoped allows
+    // across **14** files" — pin BOTH the site count and the distinct-file count.
+    let t2_sites_needle = format!("**{tier2}** tier-2 item-scoped allows");
+    let t2_files_needle = format!("across **{}** files", tier2_files.len());
+    assert!(
+        readme_flat.contains(&t2_sites_needle),
+        "README.md tier-2 site count drifted: re-grep found {tier2} \
+         `#[allow(unsafe_code)]` item-scoped sites but the README does not contain \
+         the token `{t2_sites_needle}`. Update the tier-2 summary.",
+    );
+    assert!(
+        readme_flat.contains(&t2_files_needle),
+        "README.md tier-2 file count drifted: re-grep found tier-2 sites across \
+         {} distinct files but the README does not contain the token \
+         `{t2_files_needle}`. Update the tier-2 summary.",
+        tier2_files.len(),
+    );
+}

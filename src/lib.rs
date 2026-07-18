@@ -86,14 +86,23 @@
 //!
 //! Runnable form: `tests/region_invariants.rs`.
 
-// ── Workspace: four independently-publishable companion crates ────────────────
+// ── Workspace: eleven independently-publishable companion crates ─────────────
 //
-// The workspace extracted four building blocks that can also be used standalone:
+// The workspace extracted eleven building blocks that can also be used
+// standalone. Six are pulled into sefer-alloc's runtime dep tree under named
+// feature gates; the other five are dev-only / standalone infra:
 //
-//   sefer-region    (crates/region)       — typed handle store (this re-export)
-//   aligned-vmem    (crates/vmem)         — OS virtual-memory aperture
-//   numa-shim       (crates/numa)         — NUMA detection + binding
-//   malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc bench harness
+//   sefer-region       (crates/region)             — typed handle store (this re-export; runtime, no feature gate)
+//   aligned-vmem       (crates/vmem)               — OS virtual-memory aperture          (feature: alloc-core)
+//   numa-shim          (crates/numa)               — NUMA detection + binding            (feature: numa-aware)
+//   racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell     (feature: alloc-core)
+//   size-classes       (crates/size-classes)       — const-built size-class tables       (feature: alloc-core)
+//   tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack         (feature: alloc-global)
+//   malloc-bench-rs    (crates/malloc-bench)       — portable GlobalAlloc bench harness  (dev-only)
+//   globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness (dev-only)
+//   proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (dev-only)
+//   proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol    (dev-only)
+//   ring-mpsc          (crates/ring-mpsc)          — bounded MPSC index ring + DirtyRouter (standalone; CRATE-P4 swap-in filed)
 //
 // ── Unsafe inventory — the complete, verifiable picture ───────────────────────
 //
@@ -121,9 +130,43 @@
 //     every unsafe call carries a // SAFETY: comment. Bench harness, not runtime.
 //     Callers must supply a stateless-facade `A` (see `run`'s contract doc).
 //
-//   sefer-region  (crates/region/src/lib.rs)       — #![forbid(unsafe_code)]
+//   racy-ptr-cell (crates/racy-ptr-cell/src/lib.rs) — #![allow(unsafe_code)]
+//     Single documented reason: `unsafe impl Send/Sync` for the AtomicPtr-backed
+//     cell + `NonNull::new_unchecked`. Lazy CAS-published pointer cell; every
+//     site has `# Safety` / `// SAFETY:`. Pulled in under `alloc-core`.
+//
+//   ring-mpsc     (crates/ring-mpsc/src/lib.rs)     — #![allow(unsafe_code)]
+//     Single documented reason: `unsafe fn over_raw` materialises `&AtomicUN`
+//     views over caller-supplied raw memory (slot_at + raw-pointer
+//     materialisation carry `// SAFETY:`). Standalone today; in-tree
+//     RemoteFreeRing/HeapOverflow swap filed as follow-up CRATE-P4.
+//
+//   globalalloc-model (crates/globalalloc-model/src/lib.rs) — #![allow(unsafe_code)]
+//     Single documented reason: the `unsafe trait RawAllocator` (impls must
+//     return valid pointers for the requested layout); every impl + call
+//     carries `// SAFETY:`. Dev-only differential-test harness.
+//
+//   proc-memstat  (crates/proc-memstat/src/lib.rs)  — #![allow(unsafe_code)]
+//     Sole purpose: OS-FFI self-probe (Windows K32GetProcessMemoryInfo, macOS
+//     task_info, Linux /proc). Every block carries `// SAFETY:`. Dev-only.
+//
+//   sefer-region  (crates/region/src/lib.rs)        — #![forbid(unsafe_code)]
 //     Handle<T> / Region<T> / SyncRegion<T>. Zero own unsafe; slotmap's
 //     audited unsafe owns the generational layout.
+//
+//   size-classes  (crates/size-classes/src/lib.rs)  — #![forbid(unsafe_code)]
+//     const-evaluated size-class tables + derived O(1) size→class lookup +
+//     alignment classifier. no_std, zero-dependency, no raw pointers anywhere.
+//     sefer's size_classes.rs is a thin shim over it. Pulled in under `alloc-core`.
+//
+//   tagged-index-stack (crates/tagged-index-stack/src/lib.rs) — #![forbid(unsafe_code)]
+//     ABA-tagged Treiber free-index stack via a single packed AtomicUsize head
+//     word (monotonic tag in the high bits). no_std, no raw-pointer derefs.
+//     sefer's registry free_slots uses it. Pulled in under `alloc-global`.
+//
+//   proc-probe    (crates/proc-probe/src/lib.rs)    — #![forbid(unsafe_code)]
+//     The RESULT key=value stdout protocol + a re-export of proc-memstat's
+//     snapshot. Pure protocol crate; the OS FFI stays in proc-memstat. Dev-only.
 //
 // INTERNAL sefer-alloc seams (compiler-enforced — a stray `unsafe` outside
 // these named modules is a hard compile error in every configuration):

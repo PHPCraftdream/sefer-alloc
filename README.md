@@ -298,22 +298,33 @@ The deliberate inversion: all the intelligence lives in the safe Cartographer,
 so the Hand stays mechanical and small. Verification is over a total Membrane
 and an integer algorithm, not a tangle of pointer math.
 
-### Workspace: four independently-publishable companion crates
+### Workspace: eleven independently-publishable companion crates
 
-The workspace extracted four building blocks. Each is a real crates.io crate
+The workspace extracted eleven building blocks. Each is a real crates.io crate
 someone can `cargo add` on its own — they are not internal implementation
 details but independently useful libraries:
 
 ```
 sefer-alloc
- ├── sefer-region    (crates/region)       — typed handle store (Handle<T>/Region<T>)
- ├── aligned-vmem    (crates/vmem)         — OS virtual-memory aperture  (feature: alloc-core)
- ├── numa-shim       (crates/numa)         — NUMA detection + binding    (feature: numa-aware)
- └── malloc-bench-rs (crates/malloc-bench) — portable GlobalAlloc bench harness (standalone)
+ ├── sefer-region       (crates/region)             — typed handle store (Handle<T>/Region<T>)
+ ├── aligned-vmem       (crates/vmem)               — OS virtual-memory aperture           (feature: alloc-core)
+ ├── numa-shim          (crates/numa)               — NUMA detection + binding             (feature: numa-aware)
+ ├── malloc-bench-rs    (crates/malloc-bench)       — portable GlobalAlloc bench harness   (standalone, dev-only)
+ ├── racy-ptr-cell      (crates/racy-ptr-cell)      — lazy CAS-published pointer cell      (feature: alloc-core)
+ ├── ring-mpsc          (crates/ring-mpsc)          — bounded MPSC index ring + DirtyRouter (standalone; swap-in filed as CRATE-P4)
+ ├── size-classes       (crates/size-classes)       — const-built size-class tables + lookup (feature: alloc-core)
+ ├── tagged-index-stack (crates/tagged-index-stack) — ABA-tagged free-index stack          (feature: alloc-global)
+ ├── globalalloc-model  (crates/globalalloc-model)  — differential op-stream test harness   (standalone, dev-only)
+ ├── proc-memstat       (crates/proc-memstat)       — same-instant RSS / commit self-probe (standalone, dev-only)
+ └── proc-probe         (crates/proc-probe)         — RESULT key=value stdout protocol     (standalone, dev-only)
 ```
 
-`malloc-bench-rs` is not in sefer-alloc's runtime dependency tree — it exists
-for anyone who wants to benchmark their own `GlobalAlloc` implementation.
+`malloc-bench-rs`, `globalalloc-model`, `proc-memstat`, and `proc-probe` are
+not in sefer-alloc's runtime dependency tree — they are dev-only / example
+infra. `ring-mpsc` is likewise standalone today (its swap-in for the in-tree
+`RemoteFreeRing`/`HeapOverflow` is filed as follow-up CRATE-P4). The other
+six are pulled in under the feature gates noted above (`alloc-core`,
+`alloc-global`, `numa-aware`).
 
 Per-crate status:
 
@@ -323,6 +334,13 @@ Per-crate status:
 | `aligned-vmem` | [![Crates.io](https://img.shields.io/crates/v/aligned-vmem.svg)](https://crates.io/crates/aligned-vmem) | [![Documentation](https://docs.rs/aligned-vmem/badge.svg)](https://docs.rs/aligned-vmem) |
 | `numa-shim` | [![Crates.io](https://img.shields.io/crates/v/numa-shim.svg)](https://crates.io/crates/numa-shim) | [![Documentation](https://docs.rs/numa-shim/badge.svg)](https://docs.rs/numa-shim) |
 | `malloc-bench-rs` | [![Crates.io](https://img.shields.io/crates/v/malloc-bench-rs.svg)](https://crates.io/crates/malloc-bench-rs) | [![Documentation](https://docs.rs/malloc-bench-rs/badge.svg)](https://docs.rs/malloc-bench-rs) |
+| `racy-ptr-cell` | [![Crates.io](https://img.shields.io/crates/v/racy-ptr-cell.svg)](https://crates.io/crates/racy-ptr-cell) | [![Documentation](https://docs.rs/racy-ptr-cell/badge.svg)](https://docs.rs/racy-ptr-cell) |
+| `ring-mpsc` | [![Crates.io](https://img.shields.io/crates/v/ring-mpsc.svg)](https://crates.io/crates/ring-mpsc) | [![Documentation](https://docs.rs/ring-mpsc/badge.svg)](https://docs.rs/ring-mpsc) |
+| `size-classes` | [![Crates.io](https://img.shields.io/crates/v/size-classes.svg)](https://crates.io/crates/size-classes) | [![Documentation](https://docs.rs/size-classes/badge.svg)](https://docs.rs/size-classes) |
+| `tagged-index-stack` | [![Crates.io](https://img.shields.io/crates/v/tagged-index-stack.svg)](https://crates.io/crates/tagged-index-stack) | [![Documentation](https://docs.rs/tagged-index-stack/badge.svg)](https://docs.rs/tagged-index-stack) |
+| `globalalloc-model` | [![Crates.io](https://img.shields.io/crates/v/globalalloc-model.svg)](https://crates.io/crates/globalalloc-model) | [![Documentation](https://docs.rs/globalalloc-model/badge.svg)](https://docs.rs/globalalloc-model) |
+| `proc-memstat` | [![Crates.io](https://img.shields.io/crates/v/proc-memstat.svg)](https://crates.io/crates/proc-memstat) | [![Documentation](https://docs.rs/proc-memstat/badge.svg)](https://docs.rs/proc-memstat) |
+| `proc-probe` | [![Crates.io](https://img.shields.io/crates/v/proc-probe.svg)](https://crates.io/crates/proc-probe) | [![Documentation](https://docs.rs/proc-probe/badge.svg)](https://docs.rs/proc-probe) |
 
 ### Where `unsafe` lives (the complete list)
 
@@ -347,7 +365,14 @@ the line to begin with the attribute, not a `//` prefix.
 | `aligned-vmem` | `crates/vmem/` | `#![allow(unsafe_code)]` — entire crate IS the OS aperture (`mmap`/`VirtualAlloc`/decommit); single responsibility, small, audit in isolation |
 | `numa-shim` | `crates/numa/` | `#![allow(unsafe_code)]` — entire crate IS the NUMA syscall shim (`mbind`/`VirtualAllocExNuma`); single responsibility, small, audit in isolation |
 | `malloc-bench-rs` | `crates/malloc-bench/` | `#![allow(unsafe_code)]` — confined to `alloc_block`/`free_block`/`drain_mailbox` helpers; every block carries `// SAFETY:` |
-| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe` (shown for contrast; does **not** match the grep above); `slotmap`'s audited core owns the generational layout |
+| `racy-ptr-cell` | `crates/racy-ptr-cell/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe impl Send/Sync` for the `AtomicPtr`-backed cell + `NonNull::new_unchecked`; every site has `# Safety` / `// SAFETY:` |
+| `ring-mpsc` | `crates/ring-mpsc/` | `#![allow(unsafe_code)]` — single documented reason: `unsafe fn over_raw` materialises `&AtomicUN` views over caller-supplied raw memory; `slot_at` + every raw-pointer materialisation carries `// SAFETY:` |
+| `globalalloc-model` | `crates/globalalloc-model/` | `#![allow(unsafe_code)]` — single documented reason: the `unsafe trait RawAllocator` (its impls must return valid pointers for the requested layout); every impl + call carries `// SAFETY:` |
+| `proc-memstat` | `crates/proc-memstat/` | `#![allow(unsafe_code)]` — entire crate IS the OS-FFI self-probe (Windows `K32GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc`); every block carries `// SAFETY:` |
+| `sefer-region` | `crates/region/` | `#![forbid(unsafe_code)]` — zero own `unsafe`; `slotmap`'s audited core owns the generational layout |
+| `size-classes` | `crates/size-classes/` | `#![forbid(unsafe_code)]` — `const`-evaluated, `no_std`, zero-dependency; no raw pointers anywhere |
+| `tagged-index-stack` | `crates/tagged-index-stack/` | `#![forbid(unsafe_code)]` — lock-free via a single packed `AtomicUsize` head word; ABA tag in the high bits, no raw-pointer derefs |
+| `proc-probe` | `crates/proc-probe/` | `#![forbid(unsafe_code)]` — pure protocol + re-export crate; the OS FFI stays in `proc-memstat` |
 
 **Internal sefer-alloc seams — tier 1 (module-level)** — any `unsafe` token
 not covered by a tier-1 module OR a tier-2 item-level allow (see below) is a
@@ -390,16 +415,26 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 
 | File | Sites | What they cover |
 |---|---|---|
+| [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 2 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract) |
+| [`src/alloc_core/alloc_core_core_diag.rs`](src/alloc_core/alloc_core_core_diag.rs) | 4 | `dbg_stamp_segment_id` / `dbg_stamp_kind_byte` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
+| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 2 | Internal call-site blocks: `bump_gen` (in `pop_free`) / `init_gen_table_in_place` (in `reserve_small_segment`), hardened path |
+| [`src/alloc_core/alloc_core_small_diag.rs`](src/alloc_core/alloc_core_small_diag.rs) | 5 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations |
+| [`src/alloc_core/alloc_core_small_magazine.rs`](src/alloc_core/alloc_core_small_magazine.rs) | 1 | `flush_class` — `unsafe fn` boundary (caller-pointer contract) |
+| [`src/alloc_core/alloc_core_small_reclaim.rs`](src/alloc_core/alloc_core_small_reclaim.rs) | 3 | Internal `gen_at` call-site blocks (dealloc_routing + hardened `pack_entry_hardened`) + `dbg_push_to_ring` declaration |
+| [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` (primordial carve, hardened path) |
 | [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
-| [`src/alloc_core/segment_header.rs`](src/alloc_core/segment_header.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 10 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` (declarations) + 5 internal call-site blocks for `gen_at` / `bump_gen` / `init_gen_table_in_place` |
-| [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 2 | `dbg_unregister` / `dbg_recycle` — segment-table mutation by computed base |
-| [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` |
-| [`src/registry/heap_core.rs`](src/registry/heap_core.rs) | 3 | Internal call-site blocks for `gen_at` / `bump_gen` |
+| [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
+| [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 2 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` (hardened path) |
+| [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 1 | `dbg_push_to_ring` — `unsafe fn` boundary (delegation to the unsafe producer) |
+| [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 5 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` |
+| [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
+| [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
-That's the full list (both tiers). Everywhere else in the crate is forbidden /
-denied `unsafe`; an `unsafe` token not covered by a tier-1 module or a tier-2
-item-level allow is a hard compile error in every configuration.
+That's the full list (both tiers): **17** tier-1 module-level seams (10 in
+`src/`, 7 in `crates/`) plus **33** tier-2 item-scoped allows across **14**
+files. Everywhere else in the crate is forbidden / denied `unsafe`; an
+`unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
+a hard compile error in every configuration.
 
 ### The segment substrate (Phase 8)
 

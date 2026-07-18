@@ -133,7 +133,7 @@ impl Tracked {
     /// a unique sentinel into the first AND last 8 bytes, and register it in
     /// the shared live table — panicking loudly if the new allocation's
     /// `[addr, addr+size)` range overlaps any currently-live entry (M3
-/// violation) or if the address is already registered under an exact-base
+    /// violation) or if the address is already registered under an exact-base
     /// alias.
     fn new(size: usize, table: Arc<Mutex<LiveTable>>) -> Tracked {
         assert!(size >= 16, "size classes must hold sentinels at both ends");
@@ -188,11 +188,25 @@ impl Tracked {
                 }
             }
 
-            live.insert(addr, LiveEntry { end: new_end, size, sentinel, data: Arc::clone(&data) });
+            live.insert(
+                addr,
+                LiveEntry {
+                    end: new_end,
+                    size,
+                    sentinel,
+                    data: Arc::clone(&data),
+                },
+            );
         }
 
         TOTAL_ALLOCS.fetch_add(1, Ordering::Relaxed);
-        Tracked { addr, size, sentinel, data, table }
+        Tracked {
+            addr,
+            size,
+            sentinel,
+            data,
+            table,
+        }
     }
 }
 
@@ -203,22 +217,28 @@ impl Drop for Tracked {
         // live allocation clobbered them, this fires — the strongest M1 signal.
         let near = u64::from_le_bytes(self.data[0..8].try_into().unwrap());
         assert_eq!(
-            near, self.sentinel,
+            near,
+            self.sentinel,
             "M1 VIOLATION — near-end sentinel clobbered in still-live alloc at \
              [{:#x}, {:#x}): wrote {:#x} at construction, read back {:#x}. Another \
              allocation overwrote memory we still own (aliasing).",
-            self.addr, self.addr + self.size, self.sentinel, near,
+            self.addr,
+            self.addr + self.size,
+            self.sentinel,
+            near,
         );
-        let far = u64::from_le_bytes(
-            self.data[self.size - 8..self.size].try_into().unwrap(),
-        );
+        let far = u64::from_le_bytes(self.data[self.size - 8..self.size].try_into().unwrap());
         assert_eq!(
-            far, self.sentinel,
+            far,
+            self.sentinel,
             "M1 VIOLATION — far-end sentinel clobbered in still-live alloc at \
              [{:#x}, {:#x}): wrote {:#x} at construction, read back {:#x}. The \
              allocation was not valid for the full requested size, or another \
              allocation overwrote its tail (aliasing).",
-            self.addr, self.addr + self.size, self.sentinel, far,
+            self.addr,
+            self.addr + self.size,
+            self.sentinel,
+            far,
         );
 
         // (2) Deregister from the shared live table. The table's Arc clone is
@@ -255,9 +275,7 @@ fn verify_all_sentinels(table: &Mutex<LiveTable>) -> usize {
              allocation overwrote memory we still own (aliasing).",
             addr, entry.sentinel, near,
         );
-        let far = u64::from_le_bytes(
-            entry.data[entry.size - 8..entry.size].try_into().unwrap(),
-        );
+        let far = u64::from_le_bytes(entry.data[entry.size - 8..entry.size].try_into().unwrap());
         assert_eq!(
             far, entry.sentinel,
             "M1 VIOLATION — far-end sentinel clobbered in still-live alloc at \
