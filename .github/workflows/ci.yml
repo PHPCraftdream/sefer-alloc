@@ -492,15 +492,22 @@ jobs:
       - run: >-
           cargo test --release -p racy-ptr-cell
           --test loom_racy_ptr_cell
-      # CRATE-P4: real-type `MpscRing` / `DirtyRouter` loom suite. Collapses the
-      # SEVEN in-tree ring/dirty shadow models (loom_remote_ring,
-      # loom_remote_ring_drain_guard, loom_heap_overflow,
-      # loom_heap_overflow_drain_guard, loom_overflow_first_retry,
-      # loom_dirty_publish, loom_dirty_multi_segment) into one suite against the
-      # REAL `ring-mpsc` types (the crate aliases its atomics to `loom` under
-      # `--cfg loom`). Ships the drain-without-break / drain-without-clear /
-      # wrong-pair-publish-order / R2-4-return-tail `#[should_panic]`
-      # counterfactuals proving the harness is non-vacuous.
+      # CRATE-P4: real-type `MpscRing` / `DirtyRouter` loom suite for the
+      # STANDALONE `ring-mpsc` crate only. The crate aliases its atomics to
+      # `loom` under `--cfg loom`, and ships the drain-without-break /
+      # drain-without-clear / wrong-pair-publish-order / R2-4-return-tail
+      # `#[should_panic]` counterfactuals proving the harness is non-vacuous.
+      # This does NOT cover sefer's shipping in-tree `RemoteFreeRing` /
+      # `HeapOverflow` / dirty-segment protocols: the in-tree swap (wiring
+      # the shipping types onto the extracted `ring-mpsc` crate) was
+      # investigated and found NO-GO (commit d062798 — the shipping rings
+      # and the crate's rings are structurally similar but are NOT the same
+      # types). The real loom coverage of those shipping protocols is the
+      # seven in-tree files (loom_remote_ring, loom_remote_ring_drain_guard,
+      # loom_dirty_publish, loom_dirty_multi_segment in the `loom-xthread`
+      # job below; loom_overflow_first_retry, loom_heap_overflow,
+      # loom_heap_overflow_drain_guard in the `loom-misc` job below) wired
+      # into CI by task #204.
       - run: >-
           cargo test --release -p ring-mpsc
           --test loom_ring_mpsc
@@ -521,6 +528,9 @@ jobs:
           --test loom_xthread_protocol
           --test loom_remote_ring
           --test loom_deferred_large
+          --test loom_remote_ring_drain_guard
+          --test loom_dirty_publish
+          --test loom_dirty_multi_segment
 
   loom-experimental:
     name: loom (experimental)
@@ -536,10 +546,13 @@ jobs:
           --test loom_epoch
 
   loom-misc:
-    # The two remaining models don't share a feature string with each other
-    # or with any of the three groups above, so they run as two sequential
-    # steps (still one job, one checkout/toolchain) rather than each
-    # justifying its own job.
+    # Two distinct feature strings share one job (still one checkout /
+    # toolchain) rather than each justifying its own job: the empty-feature
+    # `loom_thread_free` model, and the `alloc-global,alloc-xthread` group
+    # (`loom_magazine_ring_compose` + task #204's three shipping HeapOverflow
+    # / overflow-composition models — see CRATE-P4 above for why these
+    # in-tree files, not the standalone `ring-mpsc` crate, are the real
+    # coverage of those protocols).
     name: loom (misc)
     runs-on: ubuntu-latest
     env:
@@ -559,8 +572,21 @@ jobs:
       # residual hole — it stays green exactly while the hole exists, and
       # goes red the moment a fix (or a regression) changes the composition,
       # forcing the model to be updated alongside #164.
+      # task #204: the three shipping HeapOverflow / overflow-composition
+      # models (loom_overflow_first_retry, loom_heap_overflow,
+      # loom_heap_overflow_drain_guard) share this step's `alloc-global
+      # alloc-xthread` feature string, so they fold into this same `cargo
+      # test` invocation (one compile) per the file's consolidation
+      # convention — they are the real coverage of the shipping HeapOverflow
+      # ring + overflow-first composition referenced in the CRATE-P4 note
+      # above.
       - name: loom_magazine_ring_compose
-        run: cargo test --release --features "alloc-global alloc-xthread" --test loom_magazine_ring_compose
+        run: >-
+          cargo test --release --features "alloc-global alloc-xthread"
+          --test loom_magazine_ring_compose
+          --test loom_overflow_first_retry
+          --test loom_heap_overflow
+          --test loom_heap_overflow_drain_guard
 
   tsan:
     # ThreadSanitizer (weak-memory / data-race detector) gate for the
