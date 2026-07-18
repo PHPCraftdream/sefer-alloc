@@ -46,7 +46,23 @@ source: `docs/ALLOC_PLAN.md` §4. Encoded in `tests/alloc_core_*.rs`.
   Pinned by `tests/regression_xthread_double_free_residual.rs`; modelled by
   `tests/loom_magazine_ring_compose.rs`. Full note in
   `docs/FASTBIN_DESIGN.md`.
-- **M3 — no overlap.** Two simultaneously-live allocations never share a byte.
+
+  > **UB-vs-soundness distinction (task #202/#213).** A double-free or UAF
+  > through the crate's own `unsafe fn dealloc`/`realloc` (or via manual
+  > `GlobalAlloc` trait calls) is *documented caller UB* under the `unsafe fn`
+  > contract — identical in kind to std's own `GlobalAlloc::dealloc` contract,
+  > and to every other allocator (System / jemalloc / mimalloc). It is **not** a
+  > soundness bug reachable from safe code. This framing is established precedent
+  > in `tests/regression_xthread_double_free_residual.rs:71-89`; the task #202
+  > SIGSEGV (fixed in `f165ced`) is a concrete worked example: the bug was a
+  > cfg-gated path reachable only through deliberate `unsafe` misuse, not a
+  > violation of M1/M3 that safe callers could hit. The real soundness boundary
+  > depends on M1 (validity) and M3 (no overlap): as long as `alloc` never
+  > hands out aliasing pointers, no purely-safe `Box`/`Vec`/`Rc`/`Arc` usage can
+  > trigger memory corruption — empirically confirmed by
+  > `tests/stress_safe_surface_no_aliasing.rs` (task #212, `403e216`).
+
+- **M3 — no overlap (soundness-critical).** Two simultaneously-live allocations never share a byte. This is the invariant the crate's "impossible from safe code" soundness claim rests on: as long as `alloc` never hands out a pointer aliasing a still-live allocation, no combination of purely-safe `Box`/`Vec`/`Rc`/`Arc` usage can trigger a double-free or UAF, regardless of what `unsafe` misuse elsewhere in the process might do — safe code cannot reach the misuse path. Proven structurally (two independent static code-reading passes during task #202's investigation found no violation path) and at runtime by `tests/stress_safe_surface_no_aliasing.rs` (6 threads × 1500 iters × 6 size classes spanning small/medium/Large paths; pure-safe-API sentinel + address-sorted overlap tracking; zero M1/M3 violations across 30+ independent runs).
 - **M4 — alignment & size fidelity.** The class chosen always satisfies size and
   alignment; large/huge allocations honour alignment up to `SEGMENT` (4 MiB) via
   a dedicated segment. Requests with `align >= SEGMENT` are rejected with `null`
