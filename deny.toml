@@ -73,10 +73,12 @@ version = 2
 # current full-feature dependency tree (not copied blindly from the audit's
 # §2.2 inventory — see the task #202 report for the reconciliation). The audit
 # listed BSD-2-Clause (zerocopy) and others as "in the dev tree", but the
-# current tree resolves to exactly these three SPDX identifiers.
+# current tree resolves to exactly these four SPDX identifiers (Unicode-3.0
+# added for unicode-ident, reached via iai-callgrind's proc-macro2 chain).
 allow = [
-    "MIT",
     "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
     "Zlib",
 ]
 # Per the task spec: do NOT ship a config that would immediately fail CI on
