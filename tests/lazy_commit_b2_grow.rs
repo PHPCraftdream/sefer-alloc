@@ -81,15 +81,17 @@ fn carve_at_frontier_commits_next_chunk() {
     // The second segment starts with frontier = meta_end + LAZY_FIRST_CHUNK.
     let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    // On Unix/miri the eager fallback sets frontier = SEGMENT; the grow check
-    // is always false, so this test is a no-op there. Verify the invariant.
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    // Under `numa-aware` the reservation is eager (frontier = SEGMENT), so the
+    // grow check is always false and this test has nothing to exercise. The
+    // lazy path (`alloc-lazy-commit` AND NOT `numa-aware`, every platform) is
+    // where grow-on-carve fires.
+    #[cfg(feature = "numa-aware")]
     {
         assert_eq!(initial_frontier, SEGMENT);
         return; // nothing to test on the eager path
     }
 
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    #[cfg(not(feature = "numa-aware"))]
     {
         let expected_initial = small_meta_end() + grow_chunk; // LAZY_FIRST_CHUNK == GROW_CHUNK
         assert_eq!(
@@ -153,14 +155,14 @@ fn carve_batch_one_commit_per_batch() {
     let (mut a, second_ptr) = alloc_past_primordial();
     let _grow_chunk = a.dbg_grow_chunk();
 
-    // On Unix/miri this is a no-op (eager path, no commits).
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    // Under `numa-aware` the path is eager (no grow commits to observe).
+    #[cfg(feature = "numa-aware")]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    #[cfg(not(feature = "numa-aware"))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -241,13 +243,13 @@ fn batch_crossing_several_boundaries_one_commit() {
     // multiple chunk boundaries in one shot.
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    #[cfg(feature = "numa-aware")]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    #[cfg(not(feature = "numa-aware"))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let _base = seg_base(second_ptr);
@@ -303,12 +305,13 @@ fn batch_crossing_several_boundaries_one_commit() {
 fn commit_failure_leaves_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    // On Unix/miri the eager path never calls commit_pages on carve, so the
-    // fault hook has no effect in carve_block. We can still test that arming
-    // it doesn't break anything.
+    // Under `numa-aware` the eager path never calls commit_pages on carve, so
+    // the fault hook has no effect in carve_block. We can still test that
+    // arming it doesn't break anything. (The lazy path under NOT `numa-aware`
+    // — every platform — is covered by the second cfg branch below.)
     let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    #[cfg(feature = "numa-aware")]
     {
         // On the eager path, frontier == SEGMENT, so commit_pages is never
         // called in carve. Arm the fault hook and verify alloc still works.
@@ -320,7 +323,7 @@ fn commit_failure_leaves_state_unchanged() {
         return;
     }
 
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    #[cfg(not(feature = "numa-aware"))]
     {
         assert!(initial_frontier < SEGMENT, "expected lazy frontier");
         let base = seg_base(second_ptr);
@@ -436,13 +439,13 @@ fn fill_entire_lazy_segment() {
 fn carve_batch_commit_failure_returns_zero() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    #[cfg(feature = "numa-aware")]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    #[cfg(not(feature = "numa-aware"))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();

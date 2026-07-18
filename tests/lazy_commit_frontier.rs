@@ -92,24 +92,31 @@ fn fresh_small_segment_frontier_is_correct() {
 
     let frontier = a.dbg_committed_payload_end_for(second_seg_ptr).unwrap();
 
-    // Determine the expected frontier based on the platform:
-    // - Windows (not miri): lazy path → meta_end + LAZY_FIRST_CHUNK
-    // - Unix / miri: eager fallback → SEGMENT
-    #[cfg(all(windows, not(miri), not(feature = "numa-aware")))]
+    // Determine the expected frontier based on the lazy-commit mode.
+    // `reserve_small_segment` (alloc_core_small.rs:1528-1537) sets the frontier
+    // with NO platform gate — only `cfg(feature = "numa-aware")`:
+    //   - Lazy path (`alloc-lazy-commit` AND NOT `numa-aware`), every platform
+    //     (Windows, Unix, miri): `meta_end + LAZY_FIRST_CHUNK`. The OS-level
+    //     reservation differs by platform (Windows does a real 2-phase
+    //     reserve+partial-commit; Unix/miri just `mmap` the whole range), but
+    //     the allocator's OWN `committed_payload_end` field is identical.
+    //   - Eager path (`numa-aware`): `SEGMENT` (NUMA reservations must stay
+    //     fully eager — P2 gate).
+    #[cfg(not(feature = "numa-aware"))]
     {
         let expected = small_meta_end() + 256 * 1024; // LAZY_FIRST_CHUNK = 256 KiB
         assert_eq!(
             frontier, expected,
-            "fresh small segment (Windows lazy path) must have \
+            "fresh small segment (lazy path) must have \
              committed_payload_end == meta_end + LAZY_FIRST_CHUNK ({expected}), \
              got {frontier}"
         );
     }
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    #[cfg(feature = "numa-aware")]
     {
         assert_eq!(
             frontier, SEGMENT,
-            "fresh small segment (Unix/miri eager path) must have \
+            "fresh small segment (numa-aware eager path) must have \
              committed_payload_end == SEGMENT, got {frontier}"
         );
     }
