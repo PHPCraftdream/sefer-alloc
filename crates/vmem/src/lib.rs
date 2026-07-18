@@ -1044,7 +1044,7 @@ fn unix_reserve(
             // Retry without huge pages if the huge request was the cause.
             if huge {
                 // SAFETY: same call, ordinary pages.
-                let p2 = unsafe { libc_mmap(over, false) };
+                let p2 = libc_mmap(over, false);
                 if p2.is_null() {
                     return None;
                 }
@@ -1261,6 +1261,7 @@ extern "C" {
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
+    #[cfg_attr(not(all(target_os = "linux", feature = "huge-pages")), allow(unused_mut))]
     let mut flags = MAP_PRIVATE | MAP_ANON;
     #[cfg(all(target_os = "linux", feature = "huge-pages"))]
     if huge {
