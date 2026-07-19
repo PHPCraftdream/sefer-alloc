@@ -684,7 +684,7 @@ impl RemoteFreeRing {
     }
     /// The `&AtomicU32` overflow counter (diagnostic; number of discarded
     /// pushes due to a full ring).
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
     fn overflow(&self) -> &'static core::sync::atomic::AtomicU32 {
         Node::atomic_u32_at(self.base, OVERFLOW_OFF)
     }
@@ -857,17 +857,6 @@ impl RemoteFreeRing {
         // Release: pairs with their Acquire head load in `push`.
         self.head().store(h, Ordering::Release);
         h
-    }
-
-    /// Whether the ring is likely empty (momentary observation). Heuristic —
-    /// another thread may push immediately after this returns `true`. Used to
-    /// skip the drain path when the ring is likely empty.
-    #[cfg(feature = "alloc-xthread")]
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
-        let t = self.tail().load(Ordering::Acquire);
-        let h = self.head().load(Ordering::Acquire);
-        t == h
     }
 
     /// PERF-PASS-4 (G9/C2, task #52) — pre-drain empty-guard primitive: a

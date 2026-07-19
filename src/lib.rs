@@ -138,8 +138,10 @@
 //   ring-mpsc     (crates/ring-mpsc/src/lib.rs)     — #![allow(unsafe_code)]
 //     Single documented reason: `unsafe fn over_raw` materialises `&AtomicUN`
 //     views over caller-supplied raw memory (slot_at + raw-pointer
-//     materialisation carry `// SAFETY:`). Standalone today; in-tree
-//     RemoteFreeRing/HeapOverflow swap filed as follow-up CRATE-P4.
+//     materialisation carry `// SAFETY:`). Standalone today — zero production
+//     consumers: the in-tree RemoteFreeRing/HeapOverflow swap was investigated
+//     and found NO-GO (commit d062798, see CRATE_P4_FOLLOWUP_NOGO.md); a
+//     real, well-tested workspace member, flagged so it doesn't silently bit-rot.
 //
 //   globalalloc-model (crates/globalalloc-model/src/lib.rs) — #![allow(unsafe_code)]
 //     Single documented reason: the `unsafe trait RawAllocator` (impls must

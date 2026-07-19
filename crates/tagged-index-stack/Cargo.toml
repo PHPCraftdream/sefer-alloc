@@ -12,11 +12,10 @@ documentation = "https://docs.rs/tagged-index-stack"
 keywords = ["lock-free", "aba", "free-list", "slab", "no-std"]
 categories = ["concurrency", "data-structures", "no-std::no-alloc"]
 
-[lints.rust]
-# `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that swaps the
-# stack's atomics for `loom::sync::atomic` so the shipped loom tests exercise
-# the REAL `TaggedIndexStack` type. Declare it so `unexpected_cfgs` stays silent.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+[lints]
+# `loom` / `kani` cfg declarations are shared at the workspace root
+# (`[workspace.lints.rust]`); `kani` is root-only and harmlessly unused here.
+workspace = true
 
 [dependencies]
 # Zero non-std deps in a NORMAL build. Under `--cfg loom` ONLY, the stack aliases

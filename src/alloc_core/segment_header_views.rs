@@ -194,7 +194,7 @@ impl SegmentHeader {
     /// `AllocCore::dbg_stamp_segment_id` to exercise `SegmentTable::unregister`'s
     /// defensive `slots[id] == base` guard against a corrupted `segment_id`
     /// (see `tests/segment_table_o1.rs`). Never called on any production path.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // TEST-ONLY hook, see `///` doc above (task #135)
     pub(crate) fn set_segment_id_at(base: *mut u8, id: u32) {
         let off = core::mem::offset_of!(SegmentHeader, segment_id);
         Node::write_u32(Node::offset(base, off) as *mut u32, id);

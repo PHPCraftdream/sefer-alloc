@@ -68,6 +68,7 @@ pub mod mock {
     use core::cell::RefCell;
 
     /// One recorded invocation of a public NUMA function.
+    #[non_exhaustive]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum MockCall {
         /// `current_node()` was called; the inner value is what was returned.

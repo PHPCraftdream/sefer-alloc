@@ -27,6 +27,7 @@ use core::cell::RefCell;
 use crate::error::VmemError;
 
 /// One recorded invocation of a public `aligned-vmem` function under the mock.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Call {
     /// [`crate::try_reserve_aligned`] / [`crate::reserve_aligned`].

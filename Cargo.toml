@@ -84,10 +84,20 @@ features = ["production"]
 members = ["crates/vmem", "crates/numa", "crates/malloc-bench", "crates/region", "crates/racy-ptr-cell", "crates/ring-mpsc", "crates/size-classes", "crates/globalalloc-model", "crates/tagged-index-stack", "crates/proc-memstat", "crates/proc-probe"]
 resolver = "2"
 
-[lints.rust]
+# Workspace-shared lint table — every loom-aware member (this root package +
+# racy-ptr-cell + ring-mpsc + tagged-index-stack) inherits it via
+# `[lints] workspace = true`, so the `loom` / `kani` build-time cfgs are declared
+# once for the whole tree. `kani` is root-only; a member that never sets it just
+# has a harmless unused check-cfg entry.
+[workspace.lints.rust]
 # `loom` is a build-time cfg (set via `RUSTFLAGS="--cfg loom"`) that gates the
-# loom model-check harness. Declare it so `unexpected cfg` warnings are silent.
+# loom model-check harness; `kani` gates the kani proof harnesses (root only).
+# Declare both so `unexpected cfg` warnings are silent across the workspace.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(kani)'] }
+
+[lints]
+# Inherit the workspace-shared lint table above ([workspace.lints.rust]).
+workspace = true
 
 [features]
 # The single-threaded core (`Region<T>` / `Handle<T>`) needs only `alloc` and
