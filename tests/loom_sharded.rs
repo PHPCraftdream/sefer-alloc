@@ -103,6 +103,28 @@ impl Slot {
         Some(self.value.swap(VACANT, Ordering::AcqRel))
     }
 
+    /// COUNTERFACTUAL: the naive off-mutex protocol the file's own doc comment
+    /// (lines 23-29) describes as UNSOUND — "load `generation`, compare to
+    /// `expected_gen`, then unconditionally `swap(value → VACANT)`". Between the
+    /// generation load and the value swap the owner can win its CAS at
+    /// `expected_gen` (bumping generation to `expected_gen+1`) AND install a
+    /// new live value at `expected_gen+1`; the stale remover's subsequent
+    /// `swap(value → VACANT)` then destroys that newer live value — the
+    /// lost-live-value hazard. The CAS in the correct `try_evict_at` above
+    /// closes this window by making the generation check and the value swap a
+    /// single linearization point. Used only by the
+    /// `counterfactual_naive_load_then_swap_loses_live_value` test below.
+    fn try_evict_at_naive(&self, expected_gen: u64) -> Option<usize> {
+        let g = self.generation.load(Ordering::Acquire);
+        if g != expected_gen {
+            return None;
+        }
+        // BUG: unconditional swap, NOT atomic with the generation check above.
+        // The owner can evict-and-reinstall at gen+1 in the gap between the
+        // load and this swap; this swap then destroys the gen+1 live value.
+        Some(self.value.swap(VACANT, Ordering::AcqRel))
+    }
+
     /// Mirror of `AtomicSlot::read_with` (seqlock validation) at `expected_gen`.
     fn read_with(&self, expected_gen: u64) -> Option<usize> {
         let g1 = self.generation.load(Ordering::Acquire);
@@ -300,5 +322,89 @@ fn stale_remove_after_owner_evict_is_a_noop() {
                 "if the remover won the gen-0 CAS, it must have swapped PUB0 (the gen-0 value)"
             );
         }
+    });
+}
+
+// =========================================================================
+// Counterfactual — naive load-then-swap (no CAS) loses a live value.
+// =========================================================================
+
+/// COUNTERFACTUAL for `remote_remove_protocol_never_loses_a_live_value`:
+/// proves the harness is non-vacuous by running the SAME owner/remover/reader
+/// thread structure against a DELIBERATELY BROKEN remover that uses
+/// `try_evict_at_naive` (load `generation` → compare to `expected_gen` →
+/// unconditionally `swap(value → VACANT)`) instead of the correct
+/// `compare_exchange`-based `try_evict_at`. The owner STILL uses the correct
+/// CAS protocol — this isolates the bug to the remover's path, exactly as the
+/// file's own doc comment (lines 23-29) describes:
+///
+/// > between the check and the swap the owner can evict AND reinstall at
+/// > `gen+1`, and the stale remover's swap destroys that newer value.
+///
+/// This backs the doc-comment claim (previously asserted only in prose: "replacing
+/// it with the naive load-then-swap makes the `stale_remove_never_destroys_a_
+/// newer_value` assertion FAIL (verified by temporarily breaking it — see the
+/// report)") with an executable regression.
+///
+/// The race loom finds: (a) remover loads `generation = 0`, the naive check
+/// passes; (b) owner wins its CAS at gen 0 (bumping `generation` to 1, swapping
+/// `value` to VACANT); (c) owner installs `PUB1` (value = PUB1, generation still
+/// 1); (d) remover's subsequent unconditional `swap(value → VACANT)` returns
+/// `PUB1` — the owner's gen-1 live value, destroyed by a stale gen-0 remover.
+///
+/// Only the `lost_live_value == 0` assertion is kept (the specific property the
+/// naive protocol violates); the double-free and reader-coherence assertions
+/// are omitted from the counterfactual to keep the panic message unambiguous.
+///
+/// `#[should_panic]` because loom explores all interleavings with
+/// `preemption_bound = 3` and FINDS the one where the naive remover destroys
+/// PUB1. If this passes (does not panic), the counterfactual is vacuous.
+#[test]
+#[should_panic(expected = "lost-live-value")]
+fn counterfactual_naive_load_then_swap_loses_live_value() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let slot = Arc::new(Slot::new());
+        let lost_live_value = Arc::new(AtomicUsize::new(0));
+
+        // The owner publishes PUB0 at gen 0 first.
+        slot.install(PUB0);
+
+        // --- remote remover: holds a handle at gen 0, uses the BROKEN naive
+        //     load-then-swap instead of the CAS protocol. ---
+        let r_slot = Arc::clone(&slot);
+        let r_lost = Arc::clone(&lost_live_value);
+        let remover = thread::spawn(move || {
+            if let Some(swapped) = r_slot.try_evict_at_naive(0) {
+                // The swapped value MUST be PUB0 (or VACANT) — NEVER PUB1.
+                // PUB1 is the owner's gen-1 publication; swapping it out via a
+                // stale gen-0 handle is the lost-live-value bug.
+                if swapped == PUB1 {
+                    r_lost.store(1, Ordering::Release);
+                }
+            }
+        });
+
+        // --- owner (main loom thread): CORRECT CAS evict gen 0, then publish
+        //     PUB1 at gen 1 if it won the CAS. The owner's path is unchanged
+        //     from the positive test — the bug is isolated to the remover. ---
+        let owner_won_gen0 = slot.try_evict_at(0).is_some();
+        if owner_won_gen0 {
+            slot.install(PUB1);
+        }
+
+        remover.join().expect("remover panicked");
+
+        // The naive remover destroyed PUB1 (the gen-1 live value) via a stale
+        // gen-0 handle in some interleaving loom explores.
+        assert_eq!(
+            lost_live_value.load(Ordering::Acquire),
+            0,
+            "lost-live-value: the naive load-then-swap let a stale gen-0 remove \
+             destroy PUB1 (the gen-1 publication) — loom found the interleaving \
+             where the owner evicted-and-reinstalled between the remover's \
+             generation check and its unconditional swap"
+        );
     });
 }

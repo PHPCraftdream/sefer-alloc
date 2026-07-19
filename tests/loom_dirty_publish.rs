@@ -104,6 +104,44 @@ impl DirtyModel {
         self.ring_head.store(h, Ordering::Release);
         (count, was_dirty)
     }
+
+    /// COUNTERFACTUAL producer push: replaces the `compare_exchange_weak` on
+    /// `ring_tail` with a non-atomic load-store (a classic lost-update RMW).
+    /// Two producers can both load the SAME tail `t`, both store `t+1`, and
+    /// both write to `slot[t % 2]` — one overwrites the other's entry, so only
+    /// one of the two pushed offsets is ever observable to the drain. Used only
+    /// by the `counterfactual_non_atomic_push_loses_entry` test below.
+    ///
+    /// This break is genuinely non-vacuous for THIS file's existing tests (all
+    /// of which join producers before draining), unlike two other candidates
+    /// that were considered and rejected:
+    ///
+    /// 1. **Remove the `if off == RING_SLOT_EMPTY { break; }` early-stop** —
+    ///    vacuous here because producers join before the drain runs, so every
+    ///    reserved slot is already published and the drain never observes
+    ///    `RING_SLOT_EMPTY` (this break is non-vacuous in `loom_remote_ring.rs`
+    ///    only because that file's counterfactual uses a concurrent consumer
+    ///    racing in-flight producers).
+    /// 2. **Downgrade `ring_slots` ordering `Release`/`Acquire` → `Relaxed`** —
+    ///    vacuous because the dirty word's `fetch_or(Release)` ↔ `swap(Acquire)`
+    ///    pair already establishes the happens-before chain from producer
+    ///    `slot.store` to consumer `slot.load`, and the `join()` before drain is
+    ///    itself a sync point.
+    fn push_and_mark_broken_non_atomic(&self, offset: u32, segment_bit: u64) -> bool {
+        let t = self.ring_tail.load(Ordering::Relaxed);
+        let h = self.ring_head.load(Ordering::Acquire);
+        if t.wrapping_sub(h) >= 2 {
+            return false; // Ring full.
+        }
+        // BUG: non-atomic load-store instead of compare_exchange_weak. Two
+        // producers can both read the same `t` and both store `t+1`, landing
+        // both writes in `slot[t % 2]` — a lost-update race the CAS exists to
+        // prevent. The second store silently overwrites the first.
+        self.ring_tail.store(t.wrapping_add(1), Ordering::Relaxed);
+        self.ring_slots[(t as usize) % 2].store(offset, Ordering::Release);
+        self.dirty.fetch_or(segment_bit, Ordering::Release);
+        true
+    }
 }
 
 /// 2 producers push distinct offsets and set the dirty bit; the consumer
@@ -201,5 +239,85 @@ fn empty_dirty_no_drain() {
         let (count, was_dirty) = model.swap_and_drain();
         assert_eq!(count, 0, "empty dirty: drained {count} entries (want 0)");
         assert!(!was_dirty, "empty dirty: dirty word was non-zero");
+    });
+}
+
+// =========================================================================
+// Counterfactual — non-atomic ring-tail reservation loses an entry.
+// =========================================================================
+
+/// COUNTERFACTUAL for `dirty_publish_swap_never_loses_entry` (and the other
+/// two positive tests above, which share the same `push_and_mark` producer
+/// path): proves the harness is non-vacuous by running the SAME 2-producer /
+/// 1-consumer thread structure against a DELIBERATELY BROKEN producer push
+/// (`push_and_mark_broken_non_atomic`) that replaces the
+/// `ring_tail.compare_exchange_weak` with a non-atomic load-store.
+///
+/// Why this specific break (and not the two natural alternatives): the file's
+/// three existing tests ALL `join()` both producers before draining, so the
+/// ring slots are fully published and globally visible by the time the drain
+/// runs. Under that join-before-drain shape:
+///
+/// - **Remove the `RING_SLOT_EMPTY` early-stop in `swap_and_drain`** is vacuous
+///   (the drain never observes an unpublished slot — every reservation was
+///   followed through to publication before the join).
+/// - **Downgrade `ring_slots` ordering to `Relaxed`** is vacuous (the dirty
+///   word's `Release`/`Acquire` already carries the happens-before, and the
+///   join itself is a sync point).
+///
+/// The CAS push, by contrast, races producer-vs-producer BEFORE the join — so
+/// breaking it is observable in the post-join drain. Two producers both load
+/// `ring_tail = 0`, both store `ring_tail = 1`, and both write to
+/// `ring_slots[0]`; the second store silently overwrites the first. The drain
+/// then sees `tail = 1` (only one reservation's worth of cursor advance) and
+/// reclaims only ONE entry across both drain passes.
+///
+/// This mirrors `loom_remote_ring.rs`'s established `counterfactual_drain_*
+///` pattern (the closest precedent for breaking a CAS-ring protocol in this
+/// repo), but applied to the PUSH side rather than the DRAIN side because that
+/// is the side this file's join-before-drain shape leaves observable.
+///
+/// `#[should_panic]` because loom explores all interleavings with
+/// `preemption_bound = 3` and FINDS the one where both producers race on the
+/// same tail index. If this passes (does not panic), the counterfactual is
+/// vacuous.
+#[test]
+#[should_panic(expected = "non-atomic")]
+fn counterfactual_non_atomic_push_loses_entry() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = DirtyModel::new();
+
+        // Producer A: BROKEN push of offset 10.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark_broken_non_atomic(10, 1 << 0);
+        });
+
+        // Producer B: BROKEN push of offset 20.
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark_broken_non_atomic(20, 1 << 1);
+        });
+
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // Consumer: two drain passes (same shape as the positive test).
+        let (c1, _) = model.swap_and_drain();
+        let (c2, _) = model.swap_and_drain();
+
+        // With the broken non-atomic push, both producers can land in the same
+        // slot (one overwriting the other), so the drain reclaims only ONE
+        // entry across both passes instead of two.
+        assert_eq!(
+            c1 + c2,
+            2,
+            "non-atomic push: drained {} entries across 2 passes (want 2) — \
+             loom found the interleaving where both producers raced on the same \
+             ring_tail index and one overwrote the other's slot",
+            c1 + c2
+        );
     });
 }

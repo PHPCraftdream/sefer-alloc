@@ -102,6 +102,28 @@ impl PubState {
         }
         Some(v)
     }
+
+    /// COUNTERFACTUAL: `read_with` WITHOUT the seqlock re-check (g2). Accepts
+    /// the value based on `g1 == expected_gen` alone — between the g1 load and
+    /// the value load the writer can evict (bumping generation) AND install a
+    /// new value at the next generation, so the reader's value load returns a
+    /// value belonging to a different generation than `expected_gen`. Used only
+    /// by the `counterfactual_no_recheck_yields_torn_read` test below.
+    fn read_with_no_recheck(&self, expected_gen: u64) -> Option<usize> {
+        let g1 = self.generation.load(Ordering::Acquire);
+        if g1 != expected_gen {
+            return None;
+        }
+        let v = self.value.load(Ordering::Acquire);
+        // BUG: no re-check of g2. A writer racing evict → install at gen+1
+        // between the g1 load and this value load makes us return a value
+        // belonging to gen+1 while the caller still believes it is at
+        // `expected_gen` — a torn read the seqlock re-check exists to prevent.
+        if v == VACANT {
+            return None;
+        }
+        Some(v)
+    }
 }
 
 /// loom model-check: 1 writer + 1 reader over a single `(generation, value)`
@@ -155,6 +177,69 @@ fn publication_protocol_never_yields_a_mismatched_value() {
         // Writer (main loom thread): churn install → evict across a generation
         // boundary (gen 0 → 1 → 2), the minimum to exhibit install/evict/
         // reinstall while the reader is mid-read.
+        for target_gen in 0..2_u64 {
+            state.install(make_value(target_gen));
+            state.evict();
+        }
+
+        reader.join().expect("reader panicked");
+    });
+}
+
+// =========================================================================
+// Counterfactual — `read_with` WITHOUT the seqlock g2 re-check.
+// =========================================================================
+
+/// COUNTERFACTUAL for `publication_protocol_never_yields_a_mismatched_value`:
+/// proves the harness is non-vacuous by running the SAME 1-writer/1-reader
+/// thread structure against a DELIBERATELY BROKEN reader (`read_with_no_recheck`)
+/// that accepts a value based on `g1 == expected_gen` alone, WITHOUT re-loading
+/// `generation` to confirm no evict-and-reinstall happened between the g1 load
+/// and the value load.
+///
+/// This directly backs the file's existing doc-comment claim (line 118 of the
+/// positive test: "removing the seqlock re-check in `read_with` makes loom fail
+/// here") — the claim was previously asserted only in prose; this test makes it
+/// an executable regression.
+///
+/// The race loom finds: (a) reader loads `expected = generation = 0`; (b) reader
+/// loads `g1 = 0`, passes the check; (c) writer evicts gen 0 (→ gen 1, value =
+/// VACANT) then installs `make_value(1) = 1007` (value = 1007, gen still 1);
+/// (d) reader loads `value = 1007`; (e) WITHOUT the g2 re-check the reader
+/// returns `Some(1007)`, which mismatches `make_value(expected) = make_value(0)
+/// = 7` — the assertion fires.
+///
+/// `#[should_panic]` because loom explores all interleavings with
+/// `preemption_bound = 3` and FINDS the one where the broken reader surfaces a
+/// torn read. If this passes (does not panic), the counterfactual is vacuous
+/// and the harness is broken.
+#[test]
+#[should_panic(expected = "torn read")]
+fn counterfactual_no_recheck_yields_torn_read() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let state = Arc::new(PubState::new());
+        let r_state = Arc::clone(&state);
+
+        const STEP: usize = 1000;
+        const WRITER_TAG: usize = 7;
+        let make_value = |gen: u64| usize::try_from(gen).unwrap_or(0) * STEP + WRITER_TAG;
+
+        let reader = thread::spawn(move || {
+            for _ in 0..2 {
+                let expected = r_state.generation.load(Ordering::Acquire);
+                // BROKEN reader: no g2 re-check.
+                if let Some(v) = r_state.read_with_no_recheck(expected) {
+                    assert_eq!(
+                        v,
+                        make_value(expected),
+                        "torn read: resolved a value belonging to a different generation"
+                    );
+                }
+            }
+        });
+
         for target_gen in 0..2_u64 {
             state.install(make_value(target_gen));
             state.evict();
