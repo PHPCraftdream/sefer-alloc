@@ -52,6 +52,13 @@ during bootstrap. Lazy-committing it would require restructuring the bootstrap
 to commit pages before each metadata write, for negligible benefit (the
 primordial is allocated exactly once per process).
 
+> **Superseded by R7-B6 (see update banner at the top of this file).** The
+> above describes the B5-era architecture (base revision, this report's own
+> measurement date). Since commit `8977e88`, the primordial segment is ALSO
+> lazily committed via `Segment::reserve_lazy` — see
+> `src/alloc_core/bootstrap.rs`. The "Consequence" analysis below is historical
+> context for why B5 hit its NO-GO; it is not a description of current behavior.
+
 ### Consequence for the first-heap commit judge
 
 The R7 plan's B5 primary criterion targets the **first-heap Windows commit
@@ -265,6 +272,12 @@ green (all tests, including cross-thread, teardown ordering, and frontier tests)
 
 ### Verdict: **NO-GO on the primary criterion (K1)**
 
+> **This was the B5 verdict only — R7-B6 (commit `8977e88`) subsequently closed
+> K1**: measured first-heap commit Δ is now ~0.887 MiB, inside the ≤0.9 MiB
+> target (see the update banner at the top of this file). The B5 analysis below
+> explains why THIS report's original measurement failed K1; it does not
+> describe the current codebase.
+
 The first-heap commit charge is **unchanged** at 4.52 MiB because the
 primordial segment is always eagerly committed and dominates the first-heap
 commit. `alloc-lazy-commit` saves commit charge only on SUBSEQUENT small
@@ -328,6 +341,11 @@ only consumers who explicitly enable it.
 ---
 
 ## 10. Recommendations
+
+> **Both sub-sections below describe the B5-era recommendation and are
+> superseded by R7-B6 (commit `8977e88`, see the update banner at the top of
+> this file) — lazy primordial has been implemented, not deferred.** Retained
+> for historical record of the original B5 recommendation.
 
 ### 10.1 `alloc-lazy-commit` stays opt-in
 
@@ -396,8 +414,9 @@ measures lifecycle cost (latency), not commit charge.
    that later runs avoided. The first-alloc-process numbers (commit charge,
    latency) are unaffected by this (they measure runtime, not compile time).
 
-5. **Primary criterion target was unreachable by design.** The plan's 0.9 MiB
-   target for first-heap commit assumed the primordial segment would participate
-   in lazy commit. The B1 implementation (commit `0c981d7`) explicitly chose to
-   keep the primordial always-eager. This is a design-plan mismatch, not a
-   measurement failure.
+5. (Historical — see the update banner at the top of this file: R7-B6 later
+   reversed this design choice.) **Primary criterion target was unreachable by
+   design.** The plan's 0.9 MiB target for first-heap commit assumed the
+   primordial segment would participate in lazy commit. The B1 implementation
+   (commit `0c981d7`) explicitly chose to keep the primordial always-eager.
+   This is a design-plan mismatch, not a measurement failure.

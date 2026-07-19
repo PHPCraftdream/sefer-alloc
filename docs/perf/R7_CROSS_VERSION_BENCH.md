@@ -141,10 +141,14 @@ first-alloc commit charge (the residual ~6 MiB is dominated by the 4 MiB
 primordial segment + the first lazy chunk). This is a Windows **commit-charge**
 reduction, not an RSS one.
 
-*(Note: Round7's own `alloc-lazy-commit` targeted the primordial's own 4 MiB —
-that was a documented NO-GO because the primordial is always eager; see
-`docs/perf/R7_INCREMENTAL_COMMIT.md`. The 128→6 MiB win above is the earlier
-chunked-registry work, not R7-B.)*
+*(Note: Round7's own `alloc-lazy-commit` originally targeted the primordial's
+own 4 MiB and hit a NO-GO on first measurement (see
+`docs/perf/R7_INCREMENTAL_COMMIT.md`) — but a later commit, R7-B6 (`8977e88`),
+made the primordial lazy too and closed that gap (measured first-heap commit
+Δ: 4.52 MiB → ~0.887 MiB). The 128→6 MiB win above is the separate, earlier
+chunked-registry work (R6-OPT-P0-2), not R7-B — the two are independent axes
+(memory-charge-at-different-scale vs commit-charge-reduction) and both are
+now landed.)*
 
 ---
 
