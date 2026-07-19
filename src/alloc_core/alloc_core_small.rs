@@ -1606,34 +1606,53 @@ impl AllocCore {
 
         // B1 (R7 Workstream B): stamp the committed-payload frontier.
         //
-        // On the lazy path (alloc-lazy-commit + not(numa-aware) + Windows):
-        //   committed_payload_end = meta_end + LAZY_FIRST_CHUNK
-        //   (only the metadata + first chunk were committed by
-        //   reserve_aligned_lazy above).
+        // Three-way split, mirroring the THREE platform-specific
+        // `reserve_aligned_lazy_raw` implementations in
+        // `crates/vmem/src/lib.rs` (the OS-level reservation this function
+        // just completed via `Segment::reserve_lazy`):
         //
-        // On the eager path (feature-OFF, or numa-aware, or Unix/miri):
-        //   committed_payload_end = SEGMENT (the entire segment is committed).
+        //   1. `numa-aware` (any platform): `SEGMENT`. NUMA reservations go
+        //      through `numa::reserve_aligned_on_node`, which is ALWAYS eager
+        //      (P2 gate — `VirtualAllocExNuma` reservations must not be
+        //      disturbed by a later partial commit).
         //
-        // This ensures B2's "is X above the frontier?" check is trivially
-        // false on the eager path (no behavior change), and correctly reflects
-        // the partial commit on the lazy path.
+        //   2. `alloc-lazy-commit` AND NOT `numa-aware` AND real Windows (not
+        //      miri): `meta_end + LAZY_FIRST_CHUNK`. This is the ONLY platform
+        //      where `reserve_aligned_lazy_raw` is GENUINELY lazy — a real
+        //      2-phase `VirtualAlloc(MEM_RESERVE)` then
+        //      `VirtualAlloc(MEM_COMMIT)` on the metadata + first chunk
+        //      prefix. The frontier accurately reflects that partial commit.
         //
-        // B2 wired: grow-on-carve is live — when a carve would exceed
-        // committed_payload_end, the carve path commits the next chunk(s) and
-        // advances the frontier before advancing bump. The first chunk
-        // (LAZY_FIRST_CHUNK) covers initial carving; subsequent chunks are
-        // grown incrementally (GROW_CHUNK) by carve_block/carve_batch.
-        // B3 will reset the frontier after a decommit; B5 sweeps the chunk
-        // sizes.
+        //   3. `alloc-lazy-commit` AND NOT `numa-aware` AND Unix/miri:
+        //      `SEGMENT`. Here `reserve_aligned_lazy_raw` ignores
+        //      `_initial_commit` and `mmap`s / `alloc`s the WHOLE segment up
+        //      front (Unix has no separate reserve/commit distinction the way
+        //      Windows does; miri models no RSS). Understating the frontier
+        //      at `meta_end + LAZY_FIRST_CHUNK` here used to be SOUND but
+        //      POINTLESS (R8-5, task #218): every carve past the artificial
+        //      frontier still ran through B2's grow-on-carve path (bounds
+        //      check + a `commit_pages` call that is a correctness no-op on
+        //      these platforms per `crates/vmem`'s own `commit_range_impl`
+        //      for unix/miri + an atomic `GROW_COMMIT_COUNT` bump) for zero
+        //      behavioral benefit. Stamping `SEGMENT` immediately restores
+        //      the `alloc-lazy-commit` feature's promised zero-cost-when-
+        //      unneeded property on Unix/miri.
+        //
+        // B2 wired: grow-on-carve is still live on the genuine Windows-lazy
+        // path (case 2) — when a carve would exceed `committed_payload_end`,
+        // the carve path commits the next chunk(s) and advances the frontier
+        // before advancing bump. The first chunk (LAZY_FIRST_CHUNK) covers
+        // initial carving; subsequent chunks are grown incrementally
+        // (GROW_CHUNK) by carve_block/carve_batch. B3 will reset the frontier
+        // after a decommit; B5 sweeps the chunk sizes.
         #[cfg(feature = "alloc-lazy-commit")]
         {
-            // On the NUMA path the reservation is always eager (P2 gate:
-            // VirtualAllocExNuma reservations must not be disturbed), so set
-            // the frontier to SEGMENT regardless of the lazy-commit feature.
             #[cfg(feature = "numa-aware")]
             meta.set_committed_payload_end(SEGMENT);
-            #[cfg(not(feature = "numa-aware"))]
+            #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
             meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+            #[cfg(all(not(feature = "numa-aware"), any(not(windows), miri)))]
+            meta.set_committed_payload_end(SEGMENT);
         }
 
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);

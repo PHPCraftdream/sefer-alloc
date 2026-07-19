@@ -250,31 +250,49 @@ pub(crate) fn primordial() -> Option<Primordial> {
 
     // B1 (R7 Workstream B) / R7-B6 (primordial lazy commit): stamp the
     // committed-payload frontier, mirroring `reserve_small_segment`'s
-    // identical stamping for ordinary small segments (same
-    // `alloc-lazy-commit` + `numa-aware` gating, same
-    // `meta_end + LAZY_FIRST_CHUNK` / `SEGMENT` values) — this MUST match
-    // step 1's reservation gate exactly, since it stamps what step 1 actually
-    // committed.
+    // identical 3-way stamping for ordinary small segments (R8-5, task #218)
+    // — this MUST match step 1's reservation gate exactly, since it stamps
+    // what step 1 actually committed.
     //
-    // - Lazy path (`alloc-lazy-commit` AND NOT `numa-aware`; on Windows this
-    //   is a real partial commit via `Segment::reserve_lazy` above; on
-    //   Unix/miri `reserve_aligned_lazy` internally commits the WHOLE segment
-    //   despite the `initial_commit` argument, but understating the frontier
-    //   at `meta_end + LAZY_FIRST_CHUNK` there is still SOUND — it only means
-    //   B2's grow-on-carve fires a `commit_pages` call once the bump cursor
-    //   crosses that already-committed point, and `commit_pages` is a
-    //   correctness no-op on those platforms; see `os.rs::commit_pages`'s
-    //   doc): the frontier is `meta_end + LAZY_FIRST_CHUNK`. Any carve past
-    //   this frontier goes through the existing B2 grow-on-carve path in
-    //   `carve_block`/`carve_batch`, which already treats `Primordial` and
-    //   `Small` segments identically.
-    // - Eager path (feature-OFF, or `numa-aware` — step 1 used the plain
-    //   `Segment::reserve`, which commits the ENTIRE segment): the frontier
-    //   must read `SEGMENT`, exactly like `reserve_small_segment`'s
-    //   `numa-aware` arm.
-    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
-    meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+    //   1. `numa-aware` (any platform): `SEGMENT`. The primordial reservation
+    //      uses the plain eager `Segment::reserve`, and NUMA reservations
+    //      stay fully eager (P2 gate).
+    //
+    //   2. `alloc-lazy-commit` AND NOT `numa-aware` AND real Windows (not
+    //      miri): `meta_end + LAZY_FIRST_CHUNK`. `Segment::reserve_lazy` did
+    //      a REAL partial commit via the Windows 2-phase
+    //      `VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)` prefix,
+    //      and the frontier accurately reflects it.
+    //
+    //   3. `alloc-lazy-commit` AND NOT `numa-aware` AND Unix/miri: `SEGMENT`.
+    //      `reserve_aligned_lazy` internally ignores `initial_commit` and
+    //      `mmap`s / `alloc`s the WHOLE segment up front (Unix has no separate
+    //      reserve/commit distinction; miri models no RSS). Pre-R8-5 the
+    //      frontier was understated at `meta_end + LAZY_FIRST_CHUNK` here too
+    //      — sound but pointless, since B2's grow-on-carve then ran a
+    //      `commit_pages` (a correctness no-op on these platforms) on every
+    //      carve past the artificial frontier. R8-5 stamps `SEGMENT`
+    //      immediately, matching the OS-level reality and restoring the
+    //      feature's zero-cost-when-unneeded property on Unix/miri.
+    //
+    // The genuine Windows-lazy case (2) still goes through B2's grow-on-carve
+    // path on later carves past the frontier; this primordial stamp only
+    // changes the frontier's STARTING value on Unix/miri, not the grow-on-
+    // carve mechanism.
     #[cfg(all(feature = "alloc-lazy-commit", feature = "numa-aware"))]
+    meta.set_committed_payload_end(super::os::SEGMENT);
+    #[cfg(all(
+        feature = "alloc-lazy-commit",
+        not(feature = "numa-aware"),
+        windows,
+        not(miri)
+    ))]
+    meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+    #[cfg(all(
+        feature = "alloc-lazy-commit",
+        not(feature = "numa-aware"),
+        any(not(windows), miri)
+    ))]
     meta.set_committed_payload_end(super::os::SEGMENT);
 
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it

@@ -16,8 +16,12 @@
 //!   - The eager path (feature-OFF, Unix, miri) is unchanged.
 
 #![cfg(feature = "alloc-lazy-commit")]
+// R8-5 (task #218): on every leg EXCEPT genuine Windows-lazy, the lazy-arm
+// cfg branches in the tests below compile out and leave their bindings
+// (`payload_start`, `lazy_first_chunk`, etc.) unused. Silence the lint
+// family on the eager legs.
 #![cfg_attr(
-    feature = "numa-aware",
+    any(not(windows), miri, feature = "numa-aware"),
     allow(
         unused_variables,
         unused_mut,
@@ -425,13 +429,20 @@ fn metadata_survives_decommit_cycle() {
 
 // ── Test: primordial + first small segment frontier matches the reservation gate ──
 
-/// R7-B6 (primordial lazy commit): the primordial segment's initial frontier
-/// now matches an ordinary small segment's own lazy initial-chunk frontier
-/// (both understate to `meta_end + LAZY_FIRST_CHUNK` under `alloc-lazy-commit`
-/// and NOT `numa-aware`), rather than the pre-R7-B6 always-`SEGMENT` eager
-/// value. Under `numa-aware` (or on the eager/feature-OFF/Unix/miri legs for
-/// the non-primordial half of this test), the pool admission does NOT
-/// decommit-reset and the frontier stays at `SEGMENT`, unchanged.
+/// R7-B6 (primordial lazy commit), updated for R8-5 (task #218): the
+/// primordial segment's initial frontier matches an ordinary small
+/// segment's own initial frontier under a 3-way split mirroring
+/// `bootstrap::primordial`'s stamping and `reserve_small_segment`'s:
+///   - Genuine Windows-lazy (`alloc-lazy-commit` AND NOT `numa-aware` AND
+///     real-Windows-not-miri): `meta_end + LAZY_FIRST_CHUNK`.
+///   - `numa-aware` (any platform), OR Unix/miri (where R8-5 made the
+///     lazy reservation itself commit the whole segment): `SEGMENT`.
+///
+/// (The post-pool reset tests elsewhere in this file —
+/// `frontier_resets_on_decommit_pool` etc. — still exercise the B3
+/// decommit-reset path on the genuine Windows-lazy leg only; on every eager
+/// leg the pool admission does NOT decommit-reset and the frontier stays at
+/// `SEGMENT`, unchanged.)
 #[test]
 fn primordial_and_pool_frontier_matches_reservation_gate() {
     let mut a = AllocCore::new().unwrap();
@@ -442,51 +453,44 @@ fn primordial_and_pool_frontier_matches_reservation_gate() {
     // exclusively owned, and its segment is owned by `a`.
     let payload_start = unsafe { a.dbg_payload_start_for(p) };
 
-    // R7-B6 (primordial lazy commit): under `alloc-lazy-commit` AND NOT
-    // `numa-aware` (this test file's own default build), the primordial
-    // segment now participates in lazy commit too — its frontier is the
-    // initial lazy chunk, `meta_end + LAZY_FIRST_CHUNK`, NOT `SEGMENT`. Only
-    // `numa-aware` keeps the primordial (and every other segment) fully
-    // eager — see `bootstrap.rs`'s doc for why the primordial predates NUMA
-    // awareness but still respects the same `numa-aware` exclusion the
-    // small-segment lazy path uses.
-    #[cfg(not(feature = "numa-aware"))]
+    // R8-5 (task #218): primordial frontier, 3-way split.
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     assert_eq!(
         frontier,
         payload_start + a.dbg_lazy_first_chunk(),
-        "primordial segment must start with the lazy initial-chunk frontier"
+        "primordial segment (Windows-lazy) must start with the lazy initial-chunk frontier"
     );
-    #[cfg(feature = "numa-aware")]
-    assert_eq!(
-        frontier, SEGMENT,
-        "under numa-aware the primordial segment has a full-span frontier (eager path)"
-    );
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "primordial segment on every eager leg (numa-aware OR Unix/miri) \
+             must have frontier == SEGMENT (R8-5)"
+        );
+    }
 
-    // On Unix/miri, a non-primordial segment also has frontier == SEGMENT —
-    // UNLESS `alloc-lazy-commit` is on and `numa-aware` is off, in which case
-    // `reserve_small_segment` takes the SAME lazy branch (see that
-    // function's own doc) and understates the frontier at
-    // `small_meta_end() + LAZY_FIRST_CHUNK`, exactly like the primordial
-    // above (both fall back to a full internal commit on Unix/miri, but the
-    // frontier bookkeeping is deliberately understated — see
-    // `os.rs::commit_pages`'s doc on why that is sound).
-    #[cfg(any(not(windows), miri, feature = "numa-aware"))]
+    // Non-primordial segment frontier mirrors `reserve_small_segment`'s own
+    // 3-way cfg gate (R8-5): genuine Windows-lazy → lazy value; every other
+    // leg → SEGMENT.
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let (a2, second) = alloc_past_primordial();
         let f2 = a2.dbg_committed_payload_end_for(second).unwrap();
-        #[cfg(feature = "numa-aware")]
+        let expected = small_meta_end() + a2.dbg_lazy_first_chunk();
+        assert_eq!(
+            f2, expected,
+            "non-primordial lazy segment must start with the lazy initial-chunk frontier"
+        );
+    }
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
+    {
+        let (a2, second) = alloc_past_primordial();
+        let f2 = a2.dbg_committed_payload_end_for(second).unwrap();
         assert_eq!(
             f2, SEGMENT,
-            "non-primordial eager segment must have full-span frontier"
+            "non-primordial eager segment must have full-span frontier (R8-5)"
         );
-        #[cfg(not(feature = "numa-aware"))]
-        {
-            let expected = small_meta_end() + a2.dbg_lazy_first_chunk();
-            assert_eq!(
-                f2, expected,
-                "non-primordial lazy segment must start with the lazy initial-chunk frontier"
-            );
-        }
     }
     let _ = a;
 }

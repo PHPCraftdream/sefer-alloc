@@ -11,11 +11,22 @@
 //!     allocation fails cleanly (fault-injection).
 //!   - A freshly-lazy segment can be fully filled (carve across all chunks
 //!     up to SEGMENT) with correct data at every block.
-//!   - Feature-OFF + Unix/miri identical (the eager path is a pure no-op).
+//!   - Feature-OFF, Unix/miri, AND `numa-aware` are all eager no-ops (R8-5,
+//!     task #218: on Unix/miri the lazy reservation itself commits the WHOLE
+//!     segment up front, so the allocator's frontier starts at `SEGMENT` and
+//!     grow-on-carve never fires). Only genuine Windows-lazy (real Windows,
+//!     not miri, `alloc-lazy-commit` ON, `numa-aware` OFF) actually exercises
+//!     the grow path — every test below early-returns on every other leg.
 
 #![cfg(feature = "alloc-lazy-commit")]
+// Every test in this file has an eager early-return leg
+// (`any(numa-aware, not(windows), miri)`) and a lazy-exercise leg
+// (`all(not(numa-aware), windows, not(miri))`). On the eager leg the
+// lazy-exercise bindings (`second_ptr`, `grow_chunk`, `initial_frontier`,
+// etc.) compile out unused. Silence the lint family on every leg that is
+// NOT the genuine Windows-lazy one.
 #![cfg_attr(
-    feature = "numa-aware",
+    any(not(windows), miri, feature = "numa-aware"),
     allow(
         unused_variables,
         unused_mut,
@@ -81,17 +92,20 @@ fn carve_at_frontier_commits_next_chunk() {
     // The second segment starts with frontier = meta_end + LAZY_FIRST_CHUNK.
     let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    // Under `numa-aware` the reservation is eager (frontier = SEGMENT), so the
-    // grow check is always false and this test has nothing to exercise. The
-    // lazy path (`alloc-lazy-commit` AND NOT `numa-aware`, every platform) is
-    // where grow-on-carve fires.
-    #[cfg(feature = "numa-aware")]
+    // R8-5 (task #218): on every leg EXCEPT genuine Windows-lazy (i.e. on
+    // `numa-aware`, OR Unix/miri where `reserve_aligned_lazy` already
+    // committed the whole segment), the reservation is eager and the
+    // frontier starts at SEGMENT — so the grow check is always false and
+    // this test has nothing to exercise. Only the real Windows-lazy leg
+    // (alloc-lazy-commit AND NOT numa-aware AND Windows-not-miri) actually
+    // runs grow-on-carve.
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         assert_eq!(initial_frontier, SEGMENT);
         return; // nothing to test on the eager path
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let expected_initial = small_meta_end() + grow_chunk; // LAZY_FIRST_CHUNK == GROW_CHUNK
         assert_eq!(
@@ -155,14 +169,16 @@ fn carve_batch_one_commit_per_batch() {
     let (mut a, second_ptr) = alloc_past_primordial();
     let _grow_chunk = a.dbg_grow_chunk();
 
-    // Under `numa-aware` the path is eager (no grow commits to observe).
-    #[cfg(feature = "numa-aware")]
+    // R8-5: eager legs (`numa-aware`, OR Unix/miri where the reservation
+    // already committed the whole segment) have nothing to observe — no
+    // grow commits fire.
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -243,13 +259,15 @@ fn batch_crossing_several_boundaries_one_commit() {
     // multiple chunk boundaries in one shot.
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    // R8-5: eager legs early-return (only genuine Windows-lazy exercises
+    // multi-boundary batches).
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let _base = seg_base(second_ptr);
@@ -305,13 +323,15 @@ fn batch_crossing_several_boundaries_one_commit() {
 fn commit_failure_leaves_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    // Under `numa-aware` the eager path never calls commit_pages on carve, so
-    // the fault hook has no effect in carve_block. We can still test that
-    // arming it doesn't break anything. (The lazy path under NOT `numa-aware`
-    // — every platform — is covered by the second cfg branch below.)
+    // R8-5: on the eager legs (`numa-aware`, OR Unix/miri where the
+    // reservation already committed the whole segment), carve never calls
+    // commit_pages, so the fault hook has no effect in carve_block. We can
+    // still test that arming it doesn't break anything. The genuine
+    // Windows-lazy leg (alloc-lazy-commit AND NOT numa-aware AND
+    // Windows-not-miri) is covered by the second cfg branch below.
     let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         // On the eager path, frontier == SEGMENT, so commit_pages is never
         // called in carve. Arm the fault hook and verify alloc still works.
@@ -323,7 +343,7 @@ fn commit_failure_leaves_state_unchanged() {
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         assert!(initial_frontier < SEGMENT, "expected lazy frontier");
         let base = seg_base(second_ptr);
@@ -439,13 +459,13 @@ fn fill_entire_lazy_segment() {
 fn carve_batch_commit_failure_returns_zero() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -490,21 +510,24 @@ fn carve_batch_commit_failure_returns_zero() {
 
 // ── Test: primordial frontier matches its reservation gate ─────────────────
 
-/// R7-B6 (primordial lazy commit): the primordial segment's initial
-/// `committed_payload_end` frontier must match EXACTLY what
-/// `bootstrap::primordial` committed:
+/// R7-B6 (primordial lazy commit), updated for R8-5 (task #218): the
+/// primordial segment's initial `committed_payload_end` frontier must match
+/// EXACTLY what `bootstrap::primordial` stamps — a 3-way split:
 ///
-/// - Under `alloc-lazy-commit` AND NOT `numa-aware` (this test file's default
-///   build; on Windows a REAL partial commit, on Unix/miri the
-///   `reserve_aligned_lazy` internal eager fallback): the frontier is
-///   `primordial_meta_end() + LAZY_FIRST_CHUNK` — the primordial is now
-///   lazily committed too, mirroring an ordinary small segment's own initial
+/// - Genuine Windows-lazy (`alloc-lazy-commit` AND NOT `numa-aware` AND
+///   real-Windows-not-miri): a REAL partial commit via
+///   `Segment::reserve_lazy`, so the frontier is
+///   `primordial_meta_end() + LAZY_FIRST_CHUNK` — the primordial is lazily
+///   committed too, mirroring an ordinary small segment's own initial
 ///   frontier. No grow commits have fired yet (the first allocation lands
 ///   inside the initial chunk).
-/// - Under `numa-aware` (the primordial reservation still uses the plain
-///   eager `Segment::reserve`, matching `reserve_small_segment`'s own NUMA
-///   exclusion — see `bootstrap.rs`'s doc): the frontier is `SEGMENT`, the
-///   pre-R7-B6 eager behaviour, unchanged.
+/// - `numa-aware` (any platform): the primordial reservation still uses the
+///   plain eager `Segment::reserve`, matching `reserve_small_segment`'s own
+///   NUMA exclusion (P2 gate — see `bootstrap.rs`'s doc). Frontier = SEGMENT.
+/// - Unix/miri (`alloc-lazy-commit` AND NOT `numa-aware`): `reserve_aligned_lazy`
+///   internally `mmap`s/`alloc`s the WHOLE segment up front, so R8-5 stamps
+///   the frontier at SEGMENT to match that reality (instead of the pre-R8-5
+///   wasteful understatement at `LAZY_FIRST_CHUNK`).
 ///
 /// This replaces the old `eager_path_is_noop` test, which asserted the
 /// primordial ALWAYS has a full-span frontier — true before R7-B6, false
@@ -528,13 +551,27 @@ fn primordial_frontier_matches_reservation_gate() {
     // check below is the load-bearing, deterministic assertion; the
     // dedicated grow-commit tests elsewhere in this file already cover the
     // counter's own correctness.
-    #[cfg(not(feature = "numa-aware"))]
+    //
+    // R8-5 (task #218): 3-way split mirroring `bootstrap::primordial`'s own
+    // stamping — genuine Windows-lazy gets the lazy value; Unix/miri (where
+    // `reserve_aligned_lazy` already committed the whole segment) gets
+    // SEGMENT; `numa-aware` stays eager SEGMENT (P2 gate).
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let expected = payload_start + a.dbg_lazy_first_chunk();
         assert_eq!(
             frontier, expected,
             "primordial segment must start with the lazy initial-chunk frontier \
              (meta_end + LAZY_FIRST_CHUNK), matching an ordinary small segment"
+        );
+    }
+    #[cfg(all(not(feature = "numa-aware"), any(not(windows), miri)))]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "primordial segment on Unix/miri must have frontier == SEGMENT \
+             (R8-5: reserve_aligned_lazy already committed the whole segment)"
         );
     }
     #[cfg(feature = "numa-aware")]

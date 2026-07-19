@@ -18,14 +18,27 @@
 //!     committed (no double-free, no decommit-of-uncommitted UB).
 //!   - Primordial metadata untouched (always eager).
 //!   - alloc_zeroed correctness on freshly-committed pages.
-//!   - Windows NUMA combination gate (lazy path is gated not(numa-aware)).
+//!   - Windows NUMA combination gate (lazy path is gated on the genuine
+//!     Windows-lazy leg: `all(not(numa-aware), windows, not(miri))`).
+//!
+//! R8-5 (task #218): every test's eager early-return leg expanded from
+//! `numa-aware` to `any(numa-aware, not(windows), miri)` because on Unix/miri
+//! `reserve_aligned_lazy` already commits the whole segment (the OS has no
+//! partial-commit distinction there / miri models no RSS), so the allocator's
+//! own frontier now starts at SEGMENT there too and grow-on-carve never fires.
+//! Only the genuine Windows-lazy leg exercises the grow/fault bodies.
 //!
 //! The B4 "fail the k-th commit" hook (`dbg_arm_commit_fail_at`) is ADDITIVE
 //! to B2's `dbg_arm_commit_fail`; B2/B3 tests remain green.
 
 #![cfg(all(feature = "alloc-lazy-commit", feature = "alloc-decommit"))]
+// Every test in this file has an eager early-return leg
+// (`any(numa-aware, not(windows), miri)`) and a lazy-exercise leg
+// (`all(not(numa-aware), windows, not(miri))`). On the eager leg the
+// lazy-exercise bindings compile out unused. Silence the lint family on
+// every leg that is NOT the genuine Windows-lazy one (R8-5, task #218).
 #![cfg_attr(
-    feature = "numa-aware",
+    any(not(windows), miri, feature = "numa-aware"),
     allow(
         unused_variables,
         unused_mut,
@@ -123,7 +136,7 @@ fn fill_and_empty_segment(a: &mut AllocCore, seg_ptr: *mut u8) -> (usize, Vec<*m
 fn first_block_of_each_chunk() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         // Eager path: frontier == SEGMENT, no commits needed.
         let frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -131,7 +144,7 @@ fn first_block_of_each_chunk() {
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -198,13 +211,13 @@ fn first_block_of_each_chunk() {
 fn block_exactly_on_chunk_boundary() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -252,13 +265,13 @@ fn block_exactly_on_chunk_boundary() {
 fn batch_crosses_one_boundary_one_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let grow_chunk = a.dbg_grow_chunk();
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -313,13 +326,13 @@ fn batch_crosses_one_boundary_one_commit() {
 fn batch_crosses_several_boundaries() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let _grow_chunk = a.dbg_grow_chunk();
         let base = seg_base(second_ptr);
@@ -372,13 +385,13 @@ fn batch_crosses_several_boundaries() {
 fn carve_block_commit_failure_state_unchanged() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -443,13 +456,13 @@ fn carve_block_commit_failure_state_unchanged() {
 fn carve_batch_commit_failure_returns_zero_blocks() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -500,13 +513,13 @@ fn carve_batch_commit_failure_returns_zero_blocks() {
 fn kth_commit_fails_carve_block() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let grow_chunk = a.dbg_grow_chunk();
@@ -581,13 +594,13 @@ fn kth_commit_fails_carve_block() {
 fn kth_commit_fails_carve_batch() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let _base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -633,13 +646,13 @@ fn kth_commit_fails_carve_batch() {
 fn retry_after_failure_succeeds() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -699,13 +712,13 @@ fn retry_after_failure_succeeds() {
 fn decommit_partial_recommit_continue() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let _grow_chunk = a.dbg_grow_chunk();
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -761,13 +774,13 @@ fn decommit_partial_recommit_continue() {
 fn pool_reuse_with_fault_mid_reuse() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
         let base = seg_base(second_ptr);
@@ -829,13 +842,13 @@ fn pool_reuse_with_fault_mid_reuse() {
 fn pool_eviction_release_partial_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
 
@@ -898,13 +911,13 @@ fn pool_eviction_release_partial_commit() {
 fn cross_thread_free_partial_segment() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
@@ -968,12 +981,15 @@ fn cross_thread_free_partial_segment() {
 fn allocator_drop_partial_commit_no_fault() {
     // Create an allocator, allocate from a lazy segment (partially committed),
     // and drop the allocator. If the release path is buggy, this faults.
-    #[cfg(feature = "numa-aware")]
+    // R8-5: only the genuine Windows-lazy leg produces a partially-committed
+    // segment; every eager leg (numa-aware OR Unix/miri) has frontier = SEGMENT
+    // and there is no partial-commit drop scenario to exercise.
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let (mut a, second_ptr) = alloc_past_primordial();
         let base = seg_base(second_ptr);
@@ -1031,12 +1047,21 @@ fn primordial_metadata_committed_up_front() {
     // exclusively owned, and its segment is owned by `a`.
     let payload_start = unsafe { a.dbg_payload_start_for(p) };
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     assert_eq!(
         frontier,
         payload_start + a.dbg_lazy_first_chunk(),
         "primordial segment must start with the lazy initial-chunk frontier"
     );
+    #[cfg(all(not(feature = "numa-aware"), any(not(windows), miri)))]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "primordial segment on Unix/miri must have frontier == SEGMENT \
+             (R8-5: reserve_aligned_lazy already committed the whole segment)"
+        );
+    }
     #[cfg(feature = "numa-aware")]
     {
         let _ = payload_start;
@@ -1064,13 +1089,13 @@ fn primordial_metadata_committed_up_front() {
 fn alloc_zeroed_on_fresh_commit() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -1110,9 +1135,13 @@ fn alloc_zeroed_on_fresh_commit() {
 // SCENARIO 17: Windows NUMA combination gate
 // ============================================================================
 
-/// The lazy-commit path is gated on `not(numa-aware)`. When `numa-aware` is
+/// The lazy-commit path is gated on the genuine Windows-lazy leg
+/// (`all(not(numa-aware), windows, not(miri))`). When `numa-aware` is
 /// enabled, the reserve path uses `VirtualAllocExNuma` (eager, node-pinned)
-/// and the frontier is SEGMENT. This test asserts the compile-time gate.
+/// and the frontier is SEGMENT. R8-5 (task #218): on Unix/miri the lazy
+/// reservation itself commits the whole segment (no partial-commit
+/// distinction there), so the frontier is ALSO SEGMENT there. This test
+/// asserts the compile-time gate.
 ///
 /// Since `numa-aware` and `alloc-lazy-commit` are independent features, we
 /// verify at compile time (via the cfg gate in the reserve path) that the
@@ -1120,34 +1149,36 @@ fn alloc_zeroed_on_fresh_commit() {
 /// the primordial's frontier matches this same gate (covered by
 /// `primordial_metadata_committed_up_front`, R7-B6).
 ///
-/// The cfg gate in alloc_core_small.rs:
-///   `#[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware"), ...))]`
-/// ensures that NUMA + lazy-commit = eager behavior (frontier == SEGMENT).
+/// The cfg gate in alloc_core_small.rs (R8-5):
+///   `#[cfg(all(not(numa-aware), windows, not(miri)))]` → lazy frontier
+///   every other leg → `SEGMENT`
+/// ensures that NUMA + lazy-commit = eager, AND that Unix/miri + lazy-commit
+/// = eager (frontier == SEGMENT).
 #[test]
 fn numa_lazy_commit_gate() {
     // This test verifies the COMPILE-TIME gate exists by observing its effect.
     // The non-primordial segment's frontier mirrors `reserve_small_segment`'s
-    // own cfg gate (alloc_core_small.rs:1528-1537): `numa-aware` → SEGMENT
-    // (eager), NOT `numa-aware` → lazy (`meta_end + LAZY_FIRST_CHUNK`), on
-    // every platform (Windows, Unix, miri).
+    // own 3-way cfg gate (R8-5, task #218): genuine Windows-lazy
+    // (`all(not(numa-aware), windows, not(miri))`) → lazy
+    // (`meta_end + LAZY_FIRST_CHUNK`); every other leg → SEGMENT.
     let (a, second_ptr) = alloc_past_primordial();
     let frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         assert!(
             frontier < SEGMENT,
-            "with alloc-lazy-commit ON and numa-aware OFF, \
+            "with alloc-lazy-commit ON and numa-aware OFF on real Windows, \
              the segment should be lazily committed (frontier < SEGMENT)"
         );
     }
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         assert_eq!(
             frontier, SEGMENT,
-            "with numa-aware ON, the segment must be eagerly committed \
-             (frontier == SEGMENT), even if alloc-lazy-commit is ON"
+            "with numa-aware ON, OR on Unix/miri (where reserve_aligned_lazy \
+             commits the whole segment), the frontier must be SEGMENT (R8-5)"
         );
     }
 }
@@ -1160,11 +1191,12 @@ fn numa_lazy_commit_gate() {
 /// grow-on-carve check is never true (frontier == SEGMENT), zero commits
 /// fire, and the behavior is byte-identical to the pre-B1 code.
 ///
-/// R7-B6 (primordial lazy commit): under THIS test file's own build
-/// (`alloc-lazy-commit` ON, `numa-aware` OFF), the primordial is now lazily
-/// committed too (see `primordial_metadata_committed_up_front`), so it is
-/// EXCLUDED from the "eager" claim this test makes — the primordial's own
-/// frontier is only `SEGMENT` when `numa-aware` is on.
+/// R8-5 (task #218): on Unix/miri the lazy reservation itself commits the
+/// whole segment, so the primordial AND non-primordial frontiers both start
+/// at SEGMENT there too — the "eager" claim now covers every leg EXCEPT
+/// genuine Windows-lazy (`all(not(numa-aware), windows, not(miri))`), which
+/// is the only configuration where the frontier starts at the lazy value
+/// and grow-on-carve can fire.
 #[test]
 fn eager_path_is_pure_noop() {
     let mut a = AllocCore::new().unwrap();
@@ -1175,20 +1207,28 @@ fn eager_path_is_pure_noop() {
     // exclusively owned, and its segment is owned by `a`.
     let payload_start = unsafe { a.dbg_payload_start_for(p) };
 
-    #[cfg(feature = "numa-aware")]
-    assert_eq!(frontier, SEGMENT, "eager segment must have full frontier");
-    #[cfg(not(feature = "numa-aware"))]
+    // Primordial frontier: 3-way split mirroring `bootstrap::primordial`'s
+    // own stamping (R8-5).
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     assert_eq!(
         frontier,
         payload_start + a.dbg_lazy_first_chunk(),
-        "primordial segment must start with the lazy initial-chunk frontier"
+        "primordial segment (Windows-lazy) must start with the lazy initial-chunk frontier"
     );
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
+    {
+        let _ = payload_start;
+        assert_eq!(
+            frontier, SEGMENT,
+            "primordial segment on every eager leg (numa-aware OR Unix/miri) \
+             must have frontier == SEGMENT (R8-5)"
+        );
+    }
 
     // Non-primordial segment frontier mirrors `reserve_small_segment`'s own
-    // cfg gate (alloc_core_small.rs:1528-1537): `numa-aware` → SEGMENT
-    // (eager), NOT `numa-aware` → `meta_end + LAZY_FIRST_CHUNK` (lazy, every
-    // platform — Windows, Unix, miri).
-    #[cfg(feature = "numa-aware")]
+    // 3-way cfg gate (R8-5): genuine Windows-lazy → lazy value; every other
+    // leg → SEGMENT.
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let (a2, second) = alloc_past_primordial();
         let f2 = a2.dbg_committed_payload_end_for(second).unwrap();
@@ -1196,10 +1236,11 @@ fn eager_path_is_pure_noop() {
             f2, SEGMENT,
             "non-primordial eager segment must have full frontier"
         );
-        // No grow commits should have fired on the eager path. Under
-        // `numa-aware` every OTHER test in this file early-returns without
-        // allocating (their lazy branches are gated on `not(numa-aware)`),
-        // so the process-global counter has no concurrent writer here.
+        // No grow commits should have fired on the eager path. Under every
+        // eager leg every OTHER test in this file early-returns without
+        // allocating (their lazy branches are gated on the genuine
+        // Windows-lazy leg), so the process-global counter has no concurrent
+        // writer here.
         assert_eq!(
             a2.dbg_grow_commit_count(),
             0,
@@ -1207,14 +1248,14 @@ fn eager_path_is_pure_noop() {
         );
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
-        // Under `alloc-lazy-commit` AND NOT `numa-aware` (every platform),
-        // the non-primordial segment is lazily committed: its initial frontier
-        // is `meta_end + LAZY_FIRST_CHUNK` (< SEGMENT). Grow-on-carve fires as
-        // soon as carving exceeds that frontier, so the process-global
-        // grow-commit counter is NOT asserted here (it races with the other
-        // lazy-path tests in this binary that allocate in parallel).
+        // Genuine Windows-lazy leg ONLY: the non-primordial segment is lazily
+        // committed, its initial frontier is `meta_end + LAZY_FIRST_CHUNK`
+        // (< SEGMENT). Grow-on-carve fires as soon as carving exceeds that
+        // frontier, so the process-global grow-commit counter is NOT
+        // asserted here (it races with the other lazy-path tests in this
+        // binary that allocate in parallel).
         let (a2, second) = alloc_past_primordial();
         let f2 = a2.dbg_committed_payload_end_for(second).unwrap();
         assert!(
@@ -1236,13 +1277,13 @@ fn eager_path_is_pure_noop() {
 fn full_lazy_segment_lifecycle() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let lazy_first_chunk = a.dbg_lazy_first_chunk();
@@ -1291,13 +1332,13 @@ fn full_lazy_segment_lifecycle() {
 fn multiple_size_classes_lazy() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let _base = seg_base(second_ptr);
 
@@ -1340,13 +1381,13 @@ fn multiple_size_classes_lazy() {
 fn b4_hook_does_not_break_b2() {
     let (mut a, second_ptr) = alloc_past_primordial();
 
-    #[cfg(feature = "numa-aware")]
+    #[cfg(any(feature = "numa-aware", not(windows), miri))]
     {
         let _ = second_ptr;
         return;
     }
 
-    #[cfg(not(feature = "numa-aware"))]
+    #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
     {
         let base = seg_base(second_ptr);
         let initial_frontier = a.dbg_committed_payload_end_for(second_ptr).unwrap();
