@@ -182,7 +182,7 @@
 //  `#![deny(unsafe_code)]` (any `unsafe` outside an allowed module is a hard
 //  error), and the confined modules lift this with `#![allow(unsafe_code)]`:
 //
-//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin):
+//    Production path (`production` = alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory):
 //      * `alloc_core::os`   — thin interop wrapper around aligned-vmem; any
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `alloc-core`)

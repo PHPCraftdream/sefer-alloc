@@ -36,7 +36,7 @@ cargo add sefer-alloc --features production
 
 The `production` feature is the recommended set for any long-running
 multi-thread or async workload. It is shorthand for
-`alloc-global + alloc-xthread + alloc-decommit + fastbin` — the drop-in
+`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory` — the drop-in
 `GlobalAlloc` face, lock-free cross-thread free, OS page decommit, and
 the per-thread fast-bin magazine. Without `alloc-decommit` the
 `SegmentTable`'s free-list still recycles freed large-segment slots
@@ -392,7 +392,7 @@ hard compile error in every configuration:
 | [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit + fastbin`) the active
+(`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory`) the active
 internal seams are **eight** — `alloc_core::{os, node}` plus
 `global::{sefer_alloc, tls_heap, fallback}` plus
 `registry::{bootstrap, heap_slot, heap_registry}`. `alloc-xthread`,
@@ -996,7 +996,7 @@ The full safety stack and the relationship between layers is documented in
 | `alloc-decommit` | `alloc-core` | Return empty-segment payload pages to OS + `SegmentTable` slot-recycle | off | long-running / DBMS workloads |
 | `numa-aware` | `alloc-core` | NUMA-node stamping + local-node preference (Linux `mbind`, Windows `VirtualAllocExNuma`) | off | multi-socket NUMA hardware |
 | `fastbin` | `alloc-global + alloc-xthread` | Per-thread magazine (tcache) fast path — array-based per-class pop/push, M2 protected by hot-metadata oracles (no block-body touch) | off (on under `production`) | server-churn / mixed-size multi-threaded workloads |
-| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin` | **The recommended combo for long-running multi-thread workloads.** The fast default — no paid caller-misuse checks on the free hot path. | off | **DBMS, async runtimes, anything that allocates over hours.** |
+| **`production`** | `alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory` | **The recommended combo for long-running multi-thread workloads.** The fast default — no paid caller-misuse checks on the free hot path. | off | **DBMS, async runtimes, anything that allocates over hours.** |
 | `alloc-stats` | — | Per-hit **diagnostic** counters: bumps `stats().tcache_hits` (magazine) and `stats().large_cache_hits` (large cache) on each hit. Default OFF and **NOT** in `production` — the per-hit increment is compiled out of the churn/large-cache hot paths, and without it those two `stats()` fields read `0` (all other `stats()` fields are unaffected). The counter storage lives in the shared registry slot, so toggling this never changes layout/ABI. | off | you poll `stats().tcache_hits` / `.large_cache_hits` and want the real hit counts (add alongside `production`) |
 | `hardened` | `fastbin` | **Paranoid deploys.** Additive over `production`. Adds opt-in defence-in-depth against UNSAFE-CALLER misuse that costs cycles: currently the interior-pointer free guard on **both** own-thread free faces — the `SeferAlloc` magazine (`HeapCore`) and the `AllocCore` substrate (`dealloc_small`) — rejecting a free of a pointer that is not the block start (`off % block_size != 0`) as a detected no-op instead of a mis-indexed bitmap read → double-issue. The check is a modulo-per-free (a real division), so it is **NOT** on the production fast path. (Cross-thread frees are already guarded unconditionally by `reclaim_offset`.) **X7 closure:** under `hardened`, a per-granule generation counter also closes the *re-issue-before-drain* leg of the ring↔magazine cross-thread double-free residual (the third leg of M2, open under plain `production`) — the ring note is stamped with the block's generation and dropped on drain if it has advanced — **except the 1/256 wrap** (≥256 re-issues without an intervening drain collide mod 256), the accepted probabilistic residual-of-the-residual. See [`docs/DURABILITY.md`](docs/DURABILITY.md) (ledger entry + X7 §). | off | untrusted / adversarial callers, forensic hardening |
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |

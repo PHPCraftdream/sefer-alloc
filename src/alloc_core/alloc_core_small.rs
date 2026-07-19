@@ -312,7 +312,12 @@ impl AllocCore {
         // materialised / `numa-aware` skipped the directory path" (no heal,
         // since there is no miss to repair and healing under `numa-aware`
         // would muddy the `DIRECTORY_MISS_SELF_HEAL` canary signal).
+        // Under `numa-aware` the directory-driven lookup block below (which is
+        // the ONLY site that writes `true`) is compiled out entirely (gated
+        // `not(feature = "numa-aware")`), so this binding is read-only in that
+        // configuration — `mut` would be a warning under `--all-features`.
         #[cfg(feature = "alloc-segment-directory")]
+        #[cfg_attr(feature = "numa-aware", allow(unused_mut))]
         let mut periodic_revalidation_active = false;
         // ── R7-A3: directory-accelerated path ──────────────────────────────
         //

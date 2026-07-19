@@ -120,6 +120,10 @@ impl Drop for SerialGuard {
     }
 }
 
+// Only used by `residual_xthread_double_free_no_corruption_hardened` below
+// (`#[cfg(feature = "hardened")]`) — without `hardened` (e.g. `production`
+// alone) this constant is otherwise unused.
+#[cfg(feature = "hardened")]
 const SENTINEL: usize = 0x5EFE_5EFE_5EFE_5EFE;
 
 // R6-MS-1/2: the former `#[ignore]`d `residual_xthread_double_free_no_corruption`

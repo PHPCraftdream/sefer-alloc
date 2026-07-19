@@ -206,7 +206,21 @@ alloc-decommit = ["alloc-core"]
 # without it. See also the `compile_error!` defence-in-depth guard in
 # `src/lib.rs`.
 fastbin = ["alloc-global", "alloc-xthread"]
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin"]
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory"]
+# R8-3 (task #216): `alloc-segment-directory` joined `production` once the two
+# regressions that had kept it opt-in were both landed — #214 (commit af7b039,
+# R8-1: the O(D×49) remote-dirty directory-sync regression) and #215 (commit
+# 09237e0, R8-2: the O(S) linear-scan-on-every-miss, replaced by an
+# authoritative directory miss with a periodic self-heal safety net). The
+# feature now delivers a net speedup with no known regression: the full
+# production test suite passes clean under the combination (175/175 binaries
+# green, exit 0, on `cargo test --release --features "production
+# alloc-segment-directory" --no-fail-fast`). It opens NO new `unsafe` seam —
+# the directory's VM reservation and raw-pointer dereference live in the
+# EXISTING `alloc_core::os` `#![allow(unsafe_code)]` seam already counted in
+# the production seam inventory (`reserve_directory_sidecar` /
+# `deref_directory_sidecar[_mut]`), so the README's "eight active seams"
+# figure is unchanged by this promotion.
 # Task W3 (0.3.0): opt-in per-hit DIAGNOSTIC counters. When ON, the magazine
 # (tcache) and large-segment cache HIT fast paths each bump their heap's
 # slot-resident `AtomicU64` hit counter (a Relaxed load+store, ~2 mem-ops per
