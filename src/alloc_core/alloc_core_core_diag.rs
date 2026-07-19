@@ -454,6 +454,26 @@ impl AllocCore {
         directory_stats::FULL_SCAN_SLOTS_EXAMINED.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// R8-2 (task #215): process-wide count of genuine directory misses where
+    /// the directory was TRUSTED authoritative and the O(S) linear-scan
+    /// fallback was SKIPPED. Reads 0 until R8-2 wires the increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_authoritative_miss() -> u64 {
+        directory_stats::DIRECTORY_AUTHORITATIVE_MISS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R8-2 (task #215): process-wide count of periodic re-validation full
+    /// scans that found a segment the directory had missed and repaired its
+    /// bit in-place. Expected to stay 0 in normal operation; a nonzero value
+    /// is a canary for a directory-tracking bug. Reads 0 until R8-2 wires the
+    /// increment.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_miss_self_heal() -> u64 {
+        directory_stats::DIRECTORY_MISS_SELF_HEAL.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     // ── R7-A1: directory sidecar introspection ────────────────────────────
 
     /// R7-A1: whether the per-class segment directory sidecar has been
@@ -493,6 +513,34 @@ impl AllocCore {
         }
     }
 
+    /// R8-2 (task #215) TEST-ONLY: directly clear a single bit in the
+    /// materialised directory sidecar, BYPASSING the normal invariant (which
+    /// only clears a bit in response to a real non-empty→empty transition).
+    /// This is a test tool to SIMULATE directory drift — manufacture a
+    /// directory bit that is stale-clear while the underlying `BinTable` still
+    /// has a free block — so the R8-2 self-heal path (periodic re-validation
+    /// full scan finds a segment the directory missed) can be exercised by a
+    /// test. No real production code path should ever call this: every other
+    /// call site of `publish_empty` is gated on an actual BinTable head
+    /// transition to `FREE_LIST_NULL`. Returns `true` if the directory was
+    /// materialised (and the bit cleared), `false` otherwise.
+    #[doc(hidden)]
+    pub fn dbg_directory_force_clear_bit(&mut self, class_idx: usize, slot_idx: usize) -> bool {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            if self.directory_sidecar.is_null() {
+                return false;
+            }
+            self.publish_empty(class_idx, slot_idx);
+            true
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            let _ = (class_idx, slot_idx);
+            false
+        }
+    }
+
     /// R7-A1: the materialisation threshold constant (test introspection).
     #[doc(hidden)]
     #[must_use]
@@ -500,6 +548,37 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         {
             super::segment_directory::DIRECTORY_MATERIALIZE_THRESHOLD
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            0
+        }
+    }
+
+    /// R8-2 (task #215) TEST-ONLY: reset the per-instance `directory_miss_streak`
+    /// counter to 0. The streak is internal optimisation state that
+    /// `push_past_threshold` (and any other alloc sequence) leaves in an
+    /// unknown residual value; tests that need to assert on the periodic
+    /// re-validation boundary behaviour call this to put the streak in a known
+    /// state before driving misses. No production code path touches the streak
+    /// outside `find_segment_with_free_impl`'s directory-miss branch.
+    #[doc(hidden)]
+    pub fn dbg_directory_reset_miss_streak(&mut self) {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            self.directory_miss_streak = 0;
+        }
+    }
+
+    /// R8-2 (task #215): the periodic re-validation full-scan period constant
+    /// (test introspection) — the streak length after which a genuine
+    /// directory miss runs the full linear scan as a re-validation pass.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_miss_full_scan_period() -> u32 {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            super::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
         }
         #[cfg(not(feature = "alloc-segment-directory"))]
         {

@@ -19,6 +19,8 @@
 //! | `directory_words_examined`    | A3 bitmap word scan     | storage only|
 //! | `dirty_segments_drained`      | A4 dirty-drain loop     | storage only|
 //! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
+//! | `directory_authoritative_miss`| R8-2 authoritative-miss fast path (O(S) scan SKIPPED) | storage only|
+//! | `directory_miss_self_heal`    | R8-2 periodic re-validation found a directory-missed segment | storage only|
 
 use core::sync::atomic::AtomicU64;
 
@@ -52,3 +54,18 @@ pub(crate) static DIRTY_SEGMENTS_DRAINED: AtomicU64 = AtomicU64::new(0);
 /// observability counter for A0: it directly measures the O(S) cost the
 /// directory is meant to eliminate.
 pub(crate) static FULL_SCAN_SLOTS_EXAMINED: AtomicU64 = AtomicU64::new(0);
+
+/// Genuine directory misses where the directory was TRUSTED (the full
+/// linear-scan fallback was SKIPPED) — R8-2 (task #215)'s authoritative-miss
+/// fast path. This is the primary observability counter for the fix: it
+/// directly measures how often the O(S) scan is now avoided.
+pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
+
+/// A periodic re-validation full scan (R8-2, task #215) found a segment the
+/// directory's own lookup had missed, and the directory bit was repaired
+/// in-place. Expected to stay at 0 in normal operation — the incrementally-
+/// maintained directory is proven correct in every scenario task #214's test
+/// suite covers. A nonzero value here in real testing/CI is a canary
+/// indicating a genuine directory-tracking bug and warrants investigation,
+/// NOT a normal/expected event to silence.
+pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);

@@ -303,6 +303,17 @@ impl AllocCore {
         class_idx: usize,
         #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
     ) -> Option<*mut u8> {
+        // R8-2 (task #215): set to `true` ONLY when the periodic
+        // re-validation branch below actually runs (directory feature ON,
+        // sidecar materialised, streak hit the period). The linear-scan
+        // success paths read it to decide whether to self-heal a directory
+        // bit — distinguishing "scan ran as periodic re-validation" (heal)
+        // from "scan ran because the directory feature is OFF / sidecar not
+        // materialised / `numa-aware` skipped the directory path" (no heal,
+        // since there is no miss to repair and healing under `numa-aware`
+        // would muddy the `DIRECTORY_MISS_SELF_HEAL` canary signal).
+        #[cfg(feature = "alloc-segment-directory")]
+        let mut periodic_revalidation_active = false;
         // ── R7-A3: directory-accelerated path ──────────────────────────────
         //
         // When `alloc-segment-directory` is compiled in AND the sidecar is
@@ -320,9 +331,14 @@ impl AllocCore {
         // pool hysteresis (P1-b) + ring_drain_head refresh (P1-d).
         // On a valid hit, `unpool_if_present(base)` is called (P1-c).
         //
-        // On a directory MISS (no set bit yields a valid hit), we fall
-        // through to the full linear scan below (the correctness oracle /
-        // OOM degradation path — A3 scope keeps the fallback).
+        // On a directory MISS (no set bit yields a valid hit), R8-2 (task
+        // #215) makes the directory AUTHORITATIVE in the common case: the
+        // miss is trusted and we return `None` immediately (no O(S) scan),
+        // so the caller carves a fresh segment as if the directory's "empty
+        // for this class" were the truth. Every
+        // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses a periodic re-validation
+        // full scan still runs as a safety net (and self-heals any drift it
+        // finds — see the success path of the linear scan below).
         //
         // P2 (NUMA two-pass preference): when `numa-aware` is active,
         // the directory-driven lookup is DISABLED — the linear-scan
@@ -481,8 +497,38 @@ impl AllocCore {
                     return Some(base);
                 }
             }
-            // Directory miss: no set bit yielded a valid hit. Fall through to
-            // the guarded linear-scan fallback.
+            // Directory miss: no set bit yielded a valid hit.
+            //
+            // R8-2 (task #215): in the common case, TRUST the directory — the
+            // incremental-sync invariants (task #214, proven by the
+            // `assert_directory_equals_rebuild` oracle across the directory
+            // test suite) mean a genuine miss is authoritative and the O(S)
+            // scan below is unnecessary defense. Every
+            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses, run the full scan
+            // anyway as a periodic re-validation safety net: if it finds
+            // something the directory missed, the success-path self-heal
+            // (below in the linear scan) repairs the bit in-place and bumps
+            // `DIRECTORY_MISS_SELF_HEAL` as a canary counter.
+            #[cfg(feature = "alloc-segment-directory")]
+            {
+                self.directory_miss_streak = self.directory_miss_streak.saturating_add(1);
+                if self.directory_miss_streak
+                    < super::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
+                {
+                    // R8-2: trust the directory. Skip the O(S) scan entirely.
+                    #[cfg(feature = "alloc-stats")]
+                    super::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    return None;
+                }
+                // Periodic re-validation: run the full scan below anyway, and
+                // reset the streak regardless of whether it finds anything.
+                self.directory_miss_streak = 0;
+                periodic_revalidation_active = true;
+            }
+            // `DIRECTORY_FALLBACK_SCANS` still means "we are about to run the
+            // fallback scan" — after R8-2 that just fires less often (only on
+            // the periodic re-validation pass), the meaning is unchanged.
             #[cfg(feature = "alloc-stats")]
             super::directory_stats::DIRECTORY_FALLBACK_SCANS
                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -491,9 +537,11 @@ impl AllocCore {
         // ── Guarded linear-scan fallback (the existing scan) ───────────────
         //
         // When the directory feature is OFF, or the sidecar is not
-        // materialised (count < threshold), or the directory missed, this
-        // scan runs. It is byte-for-byte semantically identical to the
-        // pre-A3 scan body.
+        // materialised (count < threshold), or R8-2's periodic
+        // re-validation pass fires (every `DIRECTORY_MISS_FULL_SCAN_PERIOD`
+        // consecutive misses), this scan runs. It is byte-for-byte
+        // semantically identical to the pre-A3 scan body; R8-2 only ADDED an
+        // early `return None` branch above for the trusted-miss common case.
 
         // Index-driven scan (task #126): walk slots `[0, count)` by index via
         // `SegmentTable::base_at`, instead of pre-collecting every live base
@@ -694,6 +742,19 @@ impl AllocCore {
                     // re-served here with no OS reserve/release round-trip.
                     #[cfg(feature = "alloc-decommit")]
                     self.unpool_if_present(base);
+                    // R8-2 (task #215): if we reached the linear scan via the
+                    // periodic re-validation branch (directory feature ON and
+                    // streak hit the period), the directory's MISS was wrong —
+                    // this segment actually has a free block. Self-heal the bit
+                    // in-place and bump the canary counter.
+                    #[cfg(feature = "alloc-segment-directory")]
+                    if periodic_revalidation_active {
+                        let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                        self.publish_nonempty(class_idx, slot_idx);
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
                     return Some(base);
                 }
                 // Without numa-aware: same as before — return the first match.
@@ -703,6 +764,16 @@ impl AllocCore {
                     // numa-aware arm above for the double-pool rationale).
                     #[cfg(feature = "alloc-decommit")]
                     self.unpool_if_present(base);
+                    // R8-2 (task #215): periodic-re-validation self-heal —
+                    // see the numa-aware arm above for the full rationale.
+                    #[cfg(feature = "alloc-segment-directory")]
+                    if periodic_revalidation_active {
+                        let slot_idx = SegmentHeader::segment_id_at(base) as usize;
+                        self.publish_nonempty(class_idx, slot_idx);
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
                     return Some(base);
                 }
             }
@@ -716,6 +787,19 @@ impl AllocCore {
             #[cfg(feature = "alloc-decommit")]
             if let Some(fb) = fallback {
                 self.unpool_if_present(fb);
+            }
+            // R8-2 (task #215): periodic-re-validation self-heal — see the
+            // local-hit arm above for the full rationale. Fires on the
+            // foreign-fallback success path under the same condition.
+            #[cfg(feature = "alloc-segment-directory")]
+            if periodic_revalidation_active {
+                if let Some(fb) = fallback {
+                    let slot_idx = SegmentHeader::segment_id_at(fb) as usize;
+                    self.publish_nonempty(class_idx, slot_idx);
+                    #[cfg(feature = "alloc-stats")]
+                    super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
             }
             fallback
         }

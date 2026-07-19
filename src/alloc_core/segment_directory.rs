@@ -73,6 +73,17 @@ use super::size_classes::SMALL_CLASS_COUNT;
 /// satisfied by definition: S < 32 keeps the current linear scan unchanged.
 pub(crate) const DIRECTORY_MATERIALIZE_THRESHOLD: u32 = 32;
 
+/// R8-2 (task #215): once the directory is materialised, a genuine directory
+/// MISS (no candidate validated) is trusted authoritative for this many
+/// consecutive misses before a full linear-scan re-validation pass runs. This
+/// bounds the cost of any undiscovered incremental-sync drift (task #214's
+/// test suite establishes the directory tracks true state correctly in every
+/// tested scenario, but a periodic safety net catches anything that isn't) —
+/// see `AllocCore::find_segment_with_free_impl`'s directory-miss handling.
+/// Chosen from the review's own suggested range (256-1024 misses); 256 is the
+/// more conservative (safer, slightly more full-scan overhead) end.
+pub(crate) const DIRECTORY_MISS_FULL_SCAN_PERIOD: u32 = 256;
+
 /// Number of `u64` words per class in the `class_nonempty` bitmap.
 /// `MAX_SEGMENTS = 1024`, so 1024 / 64 = 16 words cover the full slot space.
 pub(crate) const WORDS_PER_CLASS: usize = MAX_SEGMENTS / 64;

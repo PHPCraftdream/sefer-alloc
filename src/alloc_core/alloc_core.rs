@@ -522,6 +522,13 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-segment-directory")]
     pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
 
+    /// R8-2 (task #215): consecutive genuine directory misses (no candidate
+    /// validated) since the last full-scan re-validation pass. Reset to 0 every
+    /// time a periodic re-validation scan actually runs (whether or not it finds
+    /// anything). See `DIRECTORY_MISS_FULL_SCAN_PERIOD`.
+    #[cfg(feature = "alloc-segment-directory")]
+    pub(super) directory_miss_streak: u32,
+
     /// R7-A4: reference to the owning HeapSlot's `dirty_segments` bitmap
     /// (planted by `HeapCore` at bind time). `None` until bound (the
     /// pre-bind AllocCore is standalone and has no registry slot). The
@@ -745,6 +752,8 @@ impl AllocCore {
             last_pool_decay_tick: None,
             #[cfg(feature = "alloc-segment-directory")]
             directory_sidecar: core::ptr::null_mut(),
+            #[cfg(feature = "alloc-segment-directory")]
+            directory_miss_streak: 0,
             #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
             dirty_segments: None,
         })
