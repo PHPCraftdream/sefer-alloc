@@ -80,7 +80,7 @@ ordering в коде.
 | **CONC-1** | Low | High | 02 (F1) | `tests/loom_dirty_publish.rs:112-191`, `loom_dirty_multi_segment.rs:89-161` | Dirty-bitmap loom-harness'ы всегда `join()`-ят продюсеров ДО запуска consumer'а — настоящая конкурентная гонка `fetch_or(Release)` vs `swap(Acquire)` никогда не исследуется loom'ом, хотя именно так работает в проде |
 | **CONC-2** | Low | Medium | 02 (F2) | `src/alloc_core/segment_directory.rs:96-181` | `SegmentDirectory` bitmap без loom/stress-покрытия межмодульной хореографии remote-push→dirty-bit→drain→sync; single-writer-аргумент логически верен по инспекции, но не машинно проверен |
 | **TEST-3** | Low | High | 08 (#5) | `loom_dirty_publish.rs`, `loom_epoch.rs`, `loom_sharded.rs`, `loom_dirty_multi_segment.rs` | 4 из 13 loom-файлов без `#[should_panic]`-контрфактуала; claim «ломает при регрессии» держится на doc-комментарии, не на исполняемом тесте |
-| **DEBT-2** | Low | CONFIRMED (by construction) | 06 (#5) | `crates/vmem/tests/fault_injection.rs` | 4 теста делят process-global атомики без сериализации между потоками libtest (F1 из follow-up-review); не воспроизведено (4/0 в последнем прогоне), но flaky-by-construction; фикс не применён |
+| **DEBT-2** | Low | **RESOLVED** (see note) | 06 (#5) | `crates/vmem/tests/fault_injection.rs` | 4 теста делят process-global атомики без сериализации между потоками libtest (F1 из follow-up-review). **Пост-аудит апдейт (task #208):** фикс уже был применён коммитом `ffd3215` (17 июля, тот же follow-up-review batch, до старта этого 10-агентного аудита) — `static SERIAL: Mutex<()>` взводится в начале каждого теста; находка была устаревшей на момент аудита. Лично перепроверено: 4/4 зелёных. |
 | **DEBT-3** | Low | — | 06 (#6) | `Cargo.toml:307-313` | `alloc-lazy-commit` безусловно тянет `aligned-vmem/fault-injection` даже для non-test потребителей — дизайн-решение, не задокументировано явно в README (F3 из follow-up-review) |
 | **DEBT-4** | Low (nit) | — | 06 (#7) | `os.rs:148-150` vs `bootstrap.rs:94` | Doc `reserve_lazy` заявляет 2 инварианта в debug_assert, факт проверяет только 1 (F4 из follow-up-review); не эксплуатируемо (vmem перепроверяет) |
 | **API-1** | Low | — | 09 (F1), 03 (косвенно) | `crates/ring-mpsc/Cargo.toml` | Workspace-член с нулём потребителей в дереве (NO-GO задокументирован в `d062798`); не бит-протухнет незаметно только если добавить README-аннотацию |
@@ -207,9 +207,9 @@ docs-фиксы идут первыми не потому что важнее п
 7. **P2 — TEST-3 (4 loom-файла без should_panic-контрфактуала).** Добавить
    `#[should_panic]`-вариант по образцу `loom_deferred_large.rs`, чтобы
    регрессия seqlock/CAS-протокола не полагалась на doc-комментарий.
-8. **P2 — DEBT-2 (fault_injection.rs test-race).** Гвард `Mutex` или
-   `--test-threads=1` для 4 тестов, делящих process-global атомики (F1 из
-   follow-up-review, до сих пор не применён).
+8. ~~**P2 — DEBT-2 (fault_injection.rs test-race).**~~ **Уже исправлено**
+   коммитом `ffd3215` до старта этого аудита (см. пост-аудит апдейт в таблице
+   выше) — task #208 закрыт без изменений кода, только перепроверкой.
 9. **P2 — CONC-2 (SegmentDirectory без loom).** Ниже приоритета CONC-1 —
    single-writer-аргумент логически прочен; добавить, когда область снова
    меняется, не отдельным заходом.
