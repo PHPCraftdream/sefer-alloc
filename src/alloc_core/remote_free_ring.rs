@@ -472,6 +472,53 @@ pub fn unpack_entry_hardened(packed: u32) -> (u8, u32, u32) {
     (gen, class_idx, off)
 }
 
+/// R8-1 (task #214): extract ONLY the class index from a packed ring entry,
+/// without paying for the full unpack (offset/generation are not needed by the
+/// ring-drain call sites that just want to know WHICH classes a drain pass
+/// touched, so they can drive an incremental directory sync instead of
+/// re-sweeping all `SMALL_CLASS_COUNT` classes — see
+/// `AllocCore::sync_directory_for_segment_classes`).
+///
+/// Dispatches to the existing [`unpack_entry`] / [`unpack_entry_hardened`]
+/// (matching the build's packing scheme) rather than re-deriving the bit
+/// layout, so this stays correct by construction if either packing changes.
+///
+/// Compiled under `alloc-xthread` (the only build where ring drains run); the
+/// `hardened`/non-hardened split lives in the BODY (not on the function's own
+/// cfg), so the function is reachable in both hardened and non-hardened
+/// `alloc-xthread` builds. `hardened` implies `fastbin` implies
+/// `alloc-xthread`, so [`unpack_entry_hardened`] is always in scope when this
+/// function's hardened arm compiles.
+#[cfg(feature = "alloc-xthread")]
+#[inline(always)]
+pub(crate) fn entry_class_idx(packed: u32) -> usize {
+    #[cfg(feature = "hardened")]
+    {
+        let (_gen, class_idx, _off) = unpack_entry_hardened(packed);
+        class_idx as usize
+    }
+    #[cfg(not(feature = "hardened"))]
+    {
+        let (_off, class_idx) = unpack_entry(packed);
+        class_idx as usize
+    }
+}
+
+// R8-1 (task #214): the incremental directory sync driven by
+// `entry_class_idx` packs the classes a drain pass touched into a `u64`
+// bitmask (one bit per class). That design is valid only while
+// `SMALL_CLASS_COUNT <= 64` (a wider class space would need a wider mask).
+// Pin it at compile time so a future bump past 64 fails HERE instead of
+// silently truncating the bitmask at runtime. `SMALL_CLASS_COUNT` is already
+// imported at the top of this file (`use super::size_classes::...`), matching
+// the sibling const-assert above that references the same constant.
+#[cfg(feature = "alloc-xthread")]
+const _: () = assert!(
+    SMALL_CLASS_COUNT <= 64,
+    "entry_class_idx-based incremental directory sync packs touched classes \
+     into a u64 bitmask; SMALL_CLASS_COUNT must stay <= 64"
+);
+
 /// The cursor block: `head`, `tail`, `overflow`, padded up to 128 bytes — two
 /// full cache lines, so `head` (consumer-only) and `tail`/`overflow`
 /// (producer-touched) each start their OWN 64-byte-aligned line.

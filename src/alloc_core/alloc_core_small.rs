@@ -340,7 +340,7 @@ impl AllocCore {
         // This ensures the directory bits reflect the latest cross-thread
         // frees: a producer that set a dirty bit after publishing a ring
         // entry has its entry drained HERE, and the directory is updated
-        // accordingly (sync_directory_for_segment inside drain_dirty_segments).
+        // accordingly (sync_directory_for_segment_classes inside drain_dirty_segments).
         // After this, the directory lookup below can skip the per-candidate
         // ring drain for segments that were already drained in this pass.
         #[cfg(all(
@@ -412,6 +412,10 @@ impl AllocCore {
                             let small_cur = self.small_cur;
                             #[cfg(feature = "alloc-decommit")]
                             let mut decommit_happened = false;
+                            // R8-1 (task #214): accumulate the set of classes
+                            // this drain pass touches, for an O(popcount)
+                            // post-drain directory sync.
+                            let mut changed_classes: u64 = 0;
                             let new_head = ring.drain(|off| {
                                 #[cfg(feature = "fastbin")]
                                 let reclaimed = Self::reclaim_offset_checked(
@@ -430,11 +434,13 @@ impl AllocCore {
                                 {
                                     let _ = reclaimed;
                                 }
+                                changed_classes |=
+                                    1u64 << super::remote_free_ring::entry_class_idx(off);
                             });
                             // A2 post-drain directory sync.
                             {
                                 let sid = SegmentHeader::segment_id_at(base) as usize;
-                                self.sync_directory_for_segment(base, sid);
+                                self.sync_directory_for_segment_classes(base, sid, changed_classes);
                             }
                             // P1-b: decommit/pool hysteresis — same as the
                             // linear scan. A decommitted segment must be
@@ -588,6 +594,10 @@ impl AllocCore {
                     let small_cur = self.small_cur;
                     #[cfg(feature = "alloc-decommit")]
                     let mut decommit_happened = false;
+                    // R8-1 (task #214): accumulate the set of classes this
+                    // drain pass touches, for an O(popcount) post-drain
+                    // directory sync.
+                    let mut changed_classes: u64 = 0;
                     let new_head = ring.drain(|off| {
                         // Task #164: when a magazine exists (fastbin), use the
                         // checked variant that consults the magazine predicate
@@ -606,16 +616,17 @@ impl AllocCore {
                         {
                             let _ = reclaimed;
                         }
+                        changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
                     });
                     // R7-A2: sync the directory for this segment after the drain
                     // completed. The drain may have reclaimed blocks into
                     // multiple classes, creating empty→non-empty transitions.
-                    // A per-segment sweep (O(SMALL_CLASS_COUNT)) is the correct
-                    // incremental update for the self-less reclaim path.
+                    // R8-1: only the classes the drain touched are inspected
+                    // (O(popcount(changed_classes))), not all SMALL_CLASS_COUNT.
                     #[cfg(feature = "alloc-segment-directory")]
                     {
                         let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                        self.sync_directory_for_segment(base, slot_idx);
+                        self.sync_directory_for_segment_classes(base, slot_idx, changed_classes);
                     }
                     // Mechanism 2 (task #51): now that the drain is complete, the
                     // emptied segment is routed through the pool/release
@@ -1726,17 +1737,36 @@ impl AllocCore {
         }
     }
 
-    /// R7-A2: sweep all class bits for segment at `base` / `slot_idx` to
-    /// match the actual `BinTable` state. Called after a ring drain that may
-    /// have created empty→non-empty transitions for multiple classes in one
-    /// pass. O(SMALL_CLASS_COUNT) reads — acceptable on the cold drain path.
+    /// R8-1 (task #214): sync the directory for segment at `base` / `slot_idx`
+    /// by inspecting ONLY the classes whose bit is set in `changed_classes` —
+    /// the set of classes a ring-drain pass actually touched — instead of
+    /// sweeping all `SMALL_CLASS_COUNT` classes. O(popcount(`changed_classes`))
+    /// reads instead of O(`SMALL_CLASS_COUNT`). This closes the
+    /// O(D × SMALL_CLASS_COUNT) remote-dirty directory-sync regression: a
+    /// drain that reclaims blocks of (say) 2 classes does 2 reads, not 49.
     ///
-    /// No-op if the directory is not materialised.
-    pub(super) fn sync_directory_for_segment(&mut self, base: *mut u8, slot_idx: usize) {
+    /// `changed_classes` is accumulated by a ring-drain closure via
+    /// `changed_classes |= 1u64 << entry_class_idx(off)` for every drained
+    /// entry, so it carries every distinct class the pass touched regardless of
+    /// how many entries each class contributed.
+    ///
+    /// No-op if the directory is not materialised or `changed_classes == 0`.
+    pub(super) fn sync_directory_for_segment_classes(
+        &mut self,
+        base: *mut u8,
+        slot_idx: usize,
+        changed_classes: u64,
+    ) {
+        if changed_classes == 0 {
+            return;
+        }
         if let Some(dir) = self.directory_mut() {
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
-            for c in 0..super::size_classes::SMALL_CLASS_COUNT {
+            let mut bits = changed_classes;
+            while bits != 0 {
+                let c = bits.trailing_zeros() as usize;
+                bits &= bits - 1; // clear lowest set bit
                 if bt.head(c) != FREE_LIST_NULL {
                     dir.set_bit(c, slot_idx);
                 } else {
@@ -1758,8 +1788,8 @@ impl AllocCore {
     ///      the producer set the bit).
     ///   4. Drain the segment's remote-free ring (REUSING the existing
     ///      drain body from the directory-hit path — P1-compliant).
-    ///   5. `sync_directory_for_segment` to publish reclaimed blocks into
-    ///      the directory.
+    ///   5. `sync_directory_for_segment_classes` to publish reclaimed blocks
+    ///      into the directory (R8-1: only the classes the drain touched).
     ///   6. Handle decommit/pool hysteresis.
     ///   7. Refresh the `ring_drain_head` cache.
     ///
@@ -1826,6 +1856,11 @@ impl AllocCore {
                 if ring.tail_relaxed() != cached_head {
                     #[cfg(feature = "alloc-decommit")]
                     let mut decommit_happened = false;
+                    // R8-1 (task #214): accumulate the set of classes this drain
+                    // pass touches, so the post-drain directory sync inspects
+                    // ONLY those classes (O(popcount)) instead of re-sweeping
+                    // all SMALL_CLASS_COUNT classes.
+                    let mut changed_classes: u64 = 0;
                     let new_head = ring.drain(|off| {
                         #[cfg(feature = "fastbin")]
                         let reclaimed =
@@ -1840,11 +1875,12 @@ impl AllocCore {
                         {
                             let _ = reclaimed;
                         }
+                        changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
                     });
                     // A2 post-drain directory sync.
                     {
                         let sid = SegmentHeader::segment_id_at(base) as usize;
-                        self.sync_directory_for_segment(base, sid);
+                        self.sync_directory_for_segment_classes(base, sid, changed_classes);
                     }
                     // P1-b: decommit/pool hysteresis.
                     #[cfg(feature = "alloc-decommit")]

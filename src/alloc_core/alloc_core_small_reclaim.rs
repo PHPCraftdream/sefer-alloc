@@ -465,6 +465,10 @@ impl AllocCore {
             let small_cur = self.small_cur;
             #[cfg(feature = "alloc-decommit")]
             let mut decommit_happened = false;
+            // R8-1 (task #214): accumulate the set of classes this drain pass
+            // touches, for an O(popcount) post-drain directory sync (mirroring
+            // the production `find_segment_with_free_impl` drain sites).
+            let mut changed_classes: u64 = 0;
             ring.drain(|off| {
                 #[cfg(feature = "fastbin")]
                 let reclaimed = Self::reclaim_offset_checked(base, off, small_cur, is_in_magazine);
@@ -478,6 +482,7 @@ impl AllocCore {
                 {
                     let _ = reclaimed;
                 }
+                changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
             });
             // R7-A2: sync the directory for this segment after the drain
             // completed (same logic as the production
@@ -485,7 +490,7 @@ impl AllocCore {
             #[cfg(feature = "alloc-segment-directory")]
             {
                 let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                self.sync_directory_for_segment(base, slot_idx);
+                self.sync_directory_for_segment_classes(base, slot_idx, changed_classes);
             }
             #[cfg(feature = "alloc-decommit")]
             if decommit_happened {
