@@ -200,3 +200,186 @@ fn same_segment_two_producers_same_bit() {
         );
     });
 }
+
+// =========================================================================
+// CONC-1 (task #206): genuinely-concurrent producer-vs-consumer.
+// =========================================================================
+
+/// Concurrent producer-vs-consumer variant — the gap from CONC-1
+/// (deep-audit `02-concurrency-lockfree.md` F1).
+///
+/// Unlike the three tests above, the consumer thread here runs CONCURRENTLY
+/// with both producers — no `.join()` serializes a producer's in-flight
+/// `dirty.fetch_or(bit, Release)` against the consumer's `dirty.swap(0,
+/// Acquire)`. loom therefore explores the RMW-vs-RMW interleaving space that
+/// matches production (a drain can start at any moment relative to any number
+/// of live remote-freeing threads; nothing serializes them).
+///
+/// Per the model's documented `# Invariant` ("no bit is permanently
+/// invisible" — at-least-once, bounded deferral), the CONCURRENT drain alone
+/// is NOT claimed to catch every entry: a producer whose `fetch_or` lands
+/// after the consumer's `swap` is legitimately missed on this pass. The
+/// correctness argument is that the missed bit remains set and is visible to
+/// the NEXT drain. So we assert the TOTAL across (concurrent drain + one
+/// guaranteed synchronous drain on the main thread) equals 2 — that final
+/// drain models the real system's periodic fallback rescan / next drain
+/// cycle that the design explicitly relies on.
+#[test]
+fn concurrent_producer_consumer_eventual_visibility() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = MultiSegDirtyModel::new();
+
+        // Producer A: push to segment 0.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_segment(0, 100);
+        });
+
+        // Producer B: push to segment 1.
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_segment(1, 200);
+        });
+
+        // Consumer: races against BOTH producers — NOT joined-first. This is
+        // the structural difference from the three tests above.
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || m_c.swap_and_drain());
+
+        let concurrent_count = tc.join().unwrap();
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // Guaranteed synchronous final drain — models the next drain cycle /
+        // periodic fallback rescan that the design relies on for any bit the
+        // racy concurrent pass legitimately missed.
+        let final_count = model.swap_and_drain();
+
+        assert_eq!(
+            concurrent_count + final_count,
+            2,
+            "concurrent producer-vs-consumer: drained {} entries across \
+             concurrent + final passes (want 2)",
+            concurrent_count + final_count
+        );
+    });
+}
+
+// =========================================================================
+// Counterfactual — Relaxed on the dirty word severs the visibility signal.
+// =========================================================================
+
+/// Broken variant of `MultiSegDirtyModel`: the dirty word uses `Relaxed`
+/// instead of `Release`/`Acquire`, severing the happens-before chain from
+/// producer `slot.store(Release)` to consumer `slot.load(Acquire)`. Used only
+/// by the `counterfactual_relaxed_dirty_loses_entry` test below.
+struct MultiSegDirtyModelRelaxed {
+    seg0_slot: AtomicU32,
+    seg1_slot: AtomicU32,
+    dirty: AtomicU64,
+}
+
+impl MultiSegDirtyModelRelaxed {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            seg0_slot: AtomicU32::new(RING_SLOT_EMPTY),
+            seg1_slot: AtomicU32::new(RING_SLOT_EMPTY),
+            dirty: AtomicU64::new(0),
+        })
+    }
+
+    /// Producer — BROKEN: `Relaxed` on the dirty word (should be `Release`).
+    fn push_segment(&self, segment: u32, offset: u32) {
+        let slot = match segment {
+            0 => &self.seg0_slot,
+            1 => &self.seg1_slot,
+            _ => unreachable!(),
+        };
+        slot.store(offset, Ordering::Release);
+        // BROKEN: Relaxed instead of Release — the dirty word no longer
+        // "carries" the slot.store's synchronization to the consumer.
+        self.dirty.fetch_or(1u64 << segment, Ordering::Relaxed);
+    }
+
+    /// Consumer — BROKEN: `Relaxed` on the dirty word (should be `Acquire`).
+    fn swap_and_drain(&self) -> u32 {
+        // BROKEN: Relaxed instead of Acquire.
+        let bits = self.dirty.swap(0, Ordering::Relaxed);
+        let mut count = 0;
+        if bits & 1 != 0 {
+            let off = self.seg0_slot.load(Ordering::Acquire);
+            if off != RING_SLOT_EMPTY {
+                count += 1;
+                self.seg0_slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            }
+        }
+        if bits & 2 != 0 {
+            let off = self.seg1_slot.load(Ordering::Acquire);
+            if off != RING_SLOT_EMPTY {
+                count += 1;
+                self.seg1_slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            }
+        }
+        count
+    }
+}
+
+/// Counterfactual for `concurrent_producer_consumer_eventual_visibility`:
+/// proves the harness is non-vacuous by running the SAME concurrent-thread
+/// structure against a DELIBERATELY BROKEN model where the dirty word uses
+/// `Relaxed` instead of `Release`/`Acquire`.
+///
+/// The dirty word IS the visibility signal in this protocol — its
+/// `fetch_or(Release)` ↔ `swap(Acquire)` pair is what establishes the
+/// happens-before chain from a producer's `slot.store(Release)` to the
+/// consumer's `slot.load(Acquire)`. Downgrading the dirty word to `Relaxed`
+/// severs that chain: loom finds an interleaving where the consumer's
+/// `slot.load(Acquire)` returns `RING_SLOT_EMPTY` despite the bit being set
+/// in the swapped-out word (no synchronization forces the load to see the
+/// producer's store), and the entry is permanently lost across both drains.
+///
+/// `#[should_panic]` because loom explores all interleavings and FINDS the
+/// one where the broken model loses an entry. If this passes (does not
+/// panic), the counterfactual is vacuous and the harness is broken.
+#[test]
+#[should_panic(expected = "relaxed")]
+fn counterfactual_relaxed_dirty_loses_entry() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = MultiSegDirtyModelRelaxed::new();
+
+        // Producer A: push to segment 0.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_segment(0, 100);
+        });
+
+        // Producer B: push to segment 1.
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_segment(1, 200);
+        });
+
+        // Consumer: same concurrent structure as the positive test.
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || m_c.swap_and_drain());
+
+        let concurrent_count = tc.join().unwrap();
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        let final_count = model.swap_and_drain();
+
+        assert_eq!(
+            concurrent_count + final_count,
+            2,
+            "relaxed-dirty counterfactual: lost an entry ({} of 2 found) — \
+             loom found the interleaving where the broken visibility signal \
+             lets slot.load see RING_SLOT_EMPTY despite the bit being set",
+            concurrent_count + final_count
+        );
+    });
+}
