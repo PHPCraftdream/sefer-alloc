@@ -325,14 +325,18 @@ fn misaligned_offset_guard() {
         );
     } else {
         // Release build: the debug_assert is inert; the misaligned offset is
-        // silently truncated to off16 = (mb+1) >> MIN_BLOCK_SHIFT = 0 (since
-        // mb+1 < 2*mb). Documented as caller's responsibility. We assert the
-        // truncation so the release-build behaviour is pinned, not implicit.
+        // silently truncated to off16 = (mb+1) >> MIN_BLOCK_SHIFT = 1 (floor
+        // division by MIN_BLOCK), which unpacks back to `mb` — the low bit
+        // that made it misaligned is lost, flooring to the nearest MIN_BLOCK
+        // boundary BELOW it (not to zero). Documented as caller's
+        // responsibility. We assert the truncation so the release-build
+        // behaviour is pinned, not implicit.
         let packed = pack_entry_hardened(0, 0, misaligned);
         let (_, _, off) = unpack_entry_hardened(packed);
         assert_eq!(
-            off, 0,
-            "release build: misaligned off={misaligned} truncates to off16=0 (caller's responsibility)"
+            off, mb,
+            "release build: misaligned off={misaligned} truncates to the nearest \
+             MIN_BLOCK boundary below it ({mb}), caller's responsibility"
         );
         // And the silent truncation is a LOSS: round-trip does NOT recover the
         // original misaligned offset. This is the COST of the caller's contract
