@@ -1619,6 +1619,345 @@ the R7 perf reports as superseded by R7-B6 — no numeric measurement changed,
 just inline annotations pointing back to `8977e88` so the historical B5 numbers
 stay accurate for what B5 measured while never reading as present-tense fact.
 
+### Round 8 — directory promotion, Large zero-skip, medium-classes GO verdict, lazy-commit pool Phase 1 (R8-1..R8-10)
+
+Round 8 — 15 commits (`af7b039`..`68f5da7`), 2026-07-19..20 — the external
+perf/correctness review's R8 task queue. Three workstreams: finishing the
+Round 7 segment-directory story (R8-1..R8-3, ending in the directory's
+**first-time promotion into the `production` bundle**), a set of
+constant-factor / layout / zero-skip optimizations (R8-5, R8-6, R8-8), and
+two measurement-only GO/NO-GO verdicts (R8-7 batch ceiling, R8-9
+medium-classes) plus one lazy-commit pool tradeoff (R8-10 Phase 1). Honest
+verdicts throughout: GO on the directory sub-chain and the medium-classes
+feature, GO-but-measurement-only on the batch ceiling (later downgraded by
+R9-9), and an explicit acknowledgment that R8-8's Large zero-skip shipped
+with a Miri correctness bug found and fixed in the next round (R9-1).
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** This is the round where the segment directory first
+went **default-on instead of opt-in**. `production` is now
+`["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin",
+"alloc-segment-directory"]` — the last entry added by R8-3:
+
+- **Landed in `production` (default behavior changed):**
+  - **R8-3 (`ec7ac34`)** — promotes `alloc-segment-directory` into the
+    `production` bundle. The single behavior-shifting promotion of the
+    round: every default `--features production` build now pulls in the
+    directory, so the 166–254× refill-miss speedup from Round 7's r7-a6
+    (and the R8-1/R8-2 fixes below) reaches ordinary users for the first
+    time. First time the directory went default-on instead of opt-in.
+  - **R8-2 (`09237e0`)** — authoritative directory-miss. The miss path's
+    early-return becomes reachable from production as a consequence of
+    R8-3's promotion (the logic is gated on `alloc-segment-directory`).
+  - **R8-6 (`e9db718`)** — segment-layout `payload_start`/`decommit_start`
+    split. Always compiled (no feature gate); tightens the payload
+    boundary on 4 KiB-page systems in every config including production.
+  - **R8-8 (`93dba14`)** — Large-path zero-skip in `alloc_zeroed`. Always
+    compiled (the `alloc_large` path); skips the explicit `Node::zero`
+    pass on genuinely fresh OS reservations in every config including
+    production. *(Shipped with a Miri correctness bug — see the R8-8
+    entry below and the R9-1 forward-reference; on real OS backends the
+    optimization is correct as shipped.)*
+  - **R8-5 (`fa2c064`)** — frontier-stamp fix. The source change lands in
+    production-compiled files, but the behavioral change is feature-gated
+    inside `alloc-lazy-commit` (which `production` does not enable), so it
+    is **inert under stock production** and only active for opt-in
+    `alloc-lazy-commit` users. Listed in this group because the code is
+    in the production-compiled tree, not because production behavior
+    shifts.
+- **Stayed opt-in (NOT in `production`):**
+  - **`medium-classes`** — R8-9's GO verdict is measurement-only; the
+    feature itself remains experimental/opt-in.
+  - **`alloc-lazy-commit` pool changes** — R8-10 Phase 1's
+    stop-decommitting-on-admission fix is gated on `alloc-lazy-commit`
+    (not in `production`).
+
+**Directory sub-chain — R8-1..R8-3, finishing Round 7's Workstream A.**
+Round 7 shipped the segment directory behind an opt-in feature and proved
+its HIT speedup, but two regressions kept it opt-in: an O(D×49)
+post-drain resweep (R7-A1's full-sweep `sync_directory_for_segment` at
+every ring drain) and an O(S) linear-scan fallback on every genuine
+directory MISS. R8 closes both, then promotes the result.
+
+- **R8-1 (`af7b039`) — incremental per-class directory sync.** Each
+  ring-drain closure now accumulates a `u64` bitmask of the classes it
+  actually touched (`entry_class_idx` unpacks just the class from the
+  packed ring entry), and the post-drain sync
+  (`sync_directory_for_segment_classes`) re-checks only those classes —
+  `O(popcount(changed_classes))` instead of `O(SMALL_CLASS_COUNT)`. The
+  old full-sweep `sync_directory_for_segment` is deleted (zero callers
+  after migrating all 4 drain sites). Eliminates the review's measured
+  **1.4–2× regression at dirty ≥ 10% density** (the O(D×49) per-lookup
+  cost). `tests/dirty_directory_incremental_sync.rs` proves the
+  load-bearing case no existing directory test covered — a single drain
+  reclaiming blocks of TWO different classes into the SAME segment must
+  set BOTH classes' bits (a last-class-only bug would pass every
+  existing test); verified non-vacuous by reverting the OR-accumulation
+  to overwrite and watching the test go red.
+- **R8-2 (`09237e0`) — authoritative directory-miss with periodic
+  self-heal.** The HIT-only speedup left the MISS path unchanged: a
+  genuine miss unconditionally fell through to the O(S) linear scan, so
+  a miss cost the same as if the directory didn't exist — defeating the
+  directory's whole point for cold-growth/carve-storm workloads. Fix:
+  trust a genuine directory miss as authoritative in the common case
+  (immediate `return None`, skipping the O(S) scan — the caller carves a
+  fresh segment, same as it would after a full scan also finds nothing),
+  bounded by a periodic safety net: every `DIRECTORY_MISS_FULL_SCAN_PERIOD`
+  (256) misses a re-validation full scan still runs, and if it finds a
+  segment the directory missed the bit is repaired in-place (self-heal)
+  with a canary counter (`DIRECTORY_MISS_SELF_HEAL`) expected to stay 0.
+  Two new stats counters
+  (`DIRECTORY_AUTHORITATIVE_MISS`, `DIRECTORY_MISS_SELF_HEAL`).
+  `tests/directory_authoritative_miss.rs` proves (1) a genuine miss skips
+  the O(S) scan via a counter-delta proof independent of wall-clock
+  noise, (2) the periodic pass fires exactly at the period boundary, (3)
+  self-heal repairs manufactured directory drift. **R8-2 follow-up
+  (`38f4108`)** excludes `numa-aware` from that test file: under
+  `numa-aware` the entire directory-driven lookup block (including this
+  task's authoritative-miss and self-heal logic) is compiled out, so
+  under `--all-features` every genuine miss silently fell through with
+  counters at 0, failing the first assertion — caught by `npm run
+  check`'s `--all-features` matrix entry.
+- **R8-3 (`ec7ac34`) — promote `alloc-segment-directory` into the
+  `production` bundle.** With both keeping-it-opt-in regressions fixed
+  (R8-1, R8-2), `production` now also pulls in
+  `alloc-segment-directory`. Verified before promoting (not just
+  delegated): full production suite with the feature explicitly combined
+  (175 binaries, 397 tests, 0 failed), then re-run with just
+  `--features production` to confirm the promotion took effect. Synced
+  the 3 living doc references that spell out production's constituent
+  feature list (README ×2, `src/lib.rs` ×1); left dated historical
+  review snapshots untouched. Found and fixed two clippy regressions
+  that would have broken `npm run check`'s `--all-features` gate and a
+  plain `--features production` build before landing (an `unused_mut`
+  under `numa-aware` from R8-2's own `periodic_revalidation_active`, and
+  a `dead_code` `SENTINEL` under production-without-`hardened`), plus a
+  stale `tests/*.rs` count in `ARCHITECTURE.md` (**171 → 173**,
+  `180bb8a`).
+
+**Lazy-commit frontier — R8-5 (`fa2c064`).** `reserve_aligned_lazy` is
+genuinely lazy (partial 2-phase reserve+commit) ONLY on real Windows; the
+Unix and miri `reserve_aligned_lazy_raw` implementations ignore
+`initial_commit` and commit/mmap the whole segment up front. Despite this,
+both production sites that stamp `committed_payload_end` after a lazy
+reservation (`reserve_small_segment`, `bootstrap::primordial`) used only a
+`numa-aware` cfg split, so Unix/miri understated the frontier at
+`meta_end + LAZY_FIRST_CHUNK` even though the OS had already committed
+everything — every carve past that artificial frontier still ran through
+the grow-on-carve path (bounds check + a commit syscall that is a
+correctness no-op on those platforms + an atomic counter bump) for zero
+benefit. Fix: 3-way split at both sites — `numa-aware` stays `SEGMENT`
+(unchanged), real Windows-not-miri keeps the genuine lazy value, Unix/miri
+now also gets `SEGMENT` immediately, matching OS-level reality and
+restoring `alloc-lazy-commit`'s promised zero-cost-when-unneeded property
+there. Deliberately reverses part of this session's own earlier task #191
+(`e9d179b`), which had simplified 26 test-assertion sites down to a
+`numa-aware`-only split (correct at the time, since the production code
+had no platform gate); those sites are re-split to match. **Stays opt-in:
+`production` does not enable `alloc-lazy-commit`, so this is inert under
+stock production**; verified on the Windows-lazy leg (39/39) and the
+numa-aware leg (34/34). The true-Unix (non-miri) leg could not be tested
+directly this session (no Linux environment) — covered by code review + a
+passing miri run that exercises the same branch, to be confirmed by CI.
+
+**Segment layout — R8-6 (`e9db718`), split `payload_start` from
+`decommit_start`.** Task #205 (`65ae170`, Round 7) fixed a real platform
+bug — `small_meta_end()`/`primordial_meta_end()` were aligned to the
+compile-time `PAGE` (4 KiB) constant, but decommit/recommit operate on the
+REAL OS page size (16/64 KiB on ARM/some Linux); a 4 KiB-aligned decommit
+boundary on those platforms lands mid-real-page and the OS silently rounds
+it, reclaiming the wrong byte range. #205's fix over-aligned both
+functions to `MAX_REALISTIC_PAGE_SIZE` (64 KiB) — correct, but it
+conflated two distinct concepts and cost ~56–64 KiB of payload per 4 MiB
+segment on ordinary 4 KiB-page systems (`SMALL_META_END` jumped 73728 →
+131072) even though those systems never needed the extra margin. Fix:
+split into (1) `small_meta_end()`/`primordial_meta_end()`, reverted to
+tight `PAGE`-alignment — used by bump init, the H-1 "is this offset in
+metadata" guard, primordial registry/hash/free-list placement, and
+page-map marking, none of which have any OS-page interaction; and (2) new
+`small_decommit_start()`/`primordial_decommit_start()`, runtime
+(non-const) functions that round the tight boundary up to the REAL
+`aligned_vmem::page_size()` — used ONLY by the 3 actual decommit/recommit
+syscall sites. On 4 KiB-page systems `small_decommit_start()` collapses to
+exactly `small_meta_end()` — zero waste; on 16/64 KiB-page systems it
+returns the same value #205 used to force unconditionally, so the
+real-page-safety guarantee is unchanged. `MAX_REALISTIC_PAGE_SIZE` stays
+load-bearing (wired into a `debug_assert` in both new functions guarding
+the "superset of every real page size" invariant). Measured payload
+recovery on this 4 KiB-page host: `SMALL_META_END` **131072 → 73728, 56.0
+KiB recovered** per segment. Independently re-run under `cargo +nightly
+miri test` (96s, 3/3 pass) — miri's strict-provenance checking is exactly
+the tool that would catch a boundary off-by-one in this class of change.
+
+**Large-path zero-skip — R8-8 (`93dba14`) — SHIPPED WITH A MIRI BUG, FIXED
+BY R9-1.** `AllocCore::alloc_large`/`alloc_large_slow` now return
+`(*mut u8, bool)`, where the bool is true iff the pointer is a genuinely
+fresh OS reservation (unconditionally OS-zero-filled on every real
+platform) rather than a `large_cache` HIT (a reused segment that may still
+hold the prior occupant's bytes). `AllocCore::alloc_zeroed` and
+`HeapCore::alloc_zeroed` dispatch on this signal for Large-classified
+requests and skip the explicit `Node::zero` pass only when the reservation
+is fresh; a cache hit is still zeroed explicitly. Small-classified
+requests are unaffected (explicitly out of scope — the small-path
+equivalent is R9-5, design-only). `tests/alloc_zeroed_fresh_large_skip.rs`
+includes a byte-level regression guard that plants a `0xAA` pattern into a
+freed large segment, forces a confirmed cache-hit re-allocation via
+`alloc_zeroed`, and asserts the returned memory is fully zeroed (i.e. the
+skip must NOT fire on a cache hit); verified non-vacuous by inverting the
+`is_fresh` condition and confirming the test fails exactly on the planted
+pattern.
+
+> **⚠ Forward-reference — Miri correctness bug, fixed in the next round
+> (R9-1 / `860d897`).** R8-8 as shipped reported `is_fresh = true`
+> unconditionally, but miri's `std::alloc` fallback in `crates/vmem` does
+> NOT zero (unlike every real OS backend). A fresh Large `alloc_zeroed`
+> under miri could therefore skip the explicit `Node::zero` pass and
+> return uninitialized memory, violating the `alloc_zeroed` contract.
+> This is not a clean unqualified win: R9-1 (`860d897`) withholds the
+> skip under miri (`alloc_large_slow` returns `cfg!(not(miri))` instead
+> of unconditional `true`) and adds the `LARGE_ZERO_PASS_CALLS` /
+> `dbg_large_zero_pass_count` diagnostic counter the original R8-8 test
+> lacked (the original test would stay green even with an unconditional
+> memset reintroduced — it proved the cache-hit zeroing but not that the
+> optimization itself fired). On real OS backends R8-8's optimization is
+> correct as shipped; the bug is miri-specific. The fix itself belongs to
+> the Round 9 section; this entry acknowledges the gap honestly rather
+> than reading as a standalone clean win.
+
+**Medium-classes 256 KiB–1 MiB — R8-9 (`9afba66`), verdict GO
+(measurement-only, feature stayed opt-in).** Runs the
+`benches/medium_size_sweep.rs` harness (R6-OPT-A3, built as Stage A but
+never previously run for a verdict — this is the missing Stage B) at
+quick then `--reduced` tiers, `medium-classes` OFF vs ON. Findings: the
+review's "16× fewer segments near the 253 KiB cliff" claim is **confirmed
+precisely at n=64** (64 → 4 segments; cardinality caveat: ~15× at n=1024,
+formally infinite at n≤8 where the pre-cliff side fits in the primordial
+segment); free latency improves **48–600× across the covered range** (e.g.
+256 KiB n=64: 93,234 → 200 ns, ~466×); the n=1024 address-space OOM is
+eliminated for every covered size (the OFF path literally cannot reserve
+the ~4 GiB 1024 dedicated 4 MiB spans demand, exhausting at object 1023);
+a real warm freelist exists where the Large path structurally cannot have
+one (256 KiB reuse rounds: ~90 µs → ~60 ns free from round 1 on, +0 segs;
+the Large path re-reserves and re-releases 64 spans every round). No
+regression for sizes whose path doesn't change (240/252 KiB, 258,752 B,
+1.5/2/4 MiB byte-identical across configs). New finding: a **second cliff
+now sits at the new `SMALL_MAX` = 1 MiB** — 1.5/2 MiB still pay the full
+dedicated-span cost in both configs. Verdict: **GO (strongly) on the
+existing 6 classes**; **CONDITIONAL GO, split, on extending further** —
+clear case for closing the 1 MiB–2 MiB gap (design call: fixed classes vs
+general page-run layer, left open), weak case for finer sub-1 MiB
+granularity (rounding waste bounded ~20–31%, already-covered common
+sizes). Measurement-only: no `src/` touched. **The feature stays
+experimental / opt-in — promotion is a separate decision this report only
+supplies evidence for.** Full method, raw numbers, and caveats in
+[`docs/perf/R8_9_MEDIUM_CLASSES_VERDICT.md`](docs/perf/R8_9_MEDIUM_CLASSES_VERDICT.md).
+
+**Batch-alloc ceiling — R8-7 (`de4c4ae`), verdict GO but measurement-only
+(later downgraded by R9-9).** An external perf review speculated a public
+batch/scoped alloc API (`alloc_batch`/`dealloc_batch`) could give 1.5–3×
+on bulk small-object patterns by amortising TLS lookup/classification/
+routing over many blocks per call. Contemplative analysis flagged the
+trap: no consumer of such an API exists in this repo today, so a bench
+purpose-built around a not-yet-existing signature would only prove the
+mechanism works, not that it's worth shipping — circular. Instead:
+measure the ceiling via the already-existing internal batch primitives
+(`AllocCore::refill_class_bump` / `flush_class`, already used in
+production on the magazine-miss/overflow paths) called directly from a
+new bench arm, zero new public API. Measured (3 runs, 1024-block cold
+bulk, criterion fast profile): **16 B: 2.73× average ceiling (GO, clears
+the review's 1.5× floor); 64 B: 1.71× (GO); 256 B: 1.20× (NO-GO, below
+floor)**. Verdict GO — task graduates to the signature-design phase
+(explicitly not started here). This is a **ceiling, not a
+shippable-API forecast** — a real public API pays extra argument
+validation the raw internal call does not. Full method, raw per-run
+numbers, and caveats in
+[`docs/perf/R8_7_BATCH_CEILING_MEASUREMENT.md`](docs/perf/R8_7_BATCH_CEILING_MEASUREMENT.md).
+*(Forward-reference: R9-9 / `5e467ec` later downgraded this measurement
+by sweeping smaller batch sizes — 8/16/32/64, not just 1024 — and adding
+a real-`SeferAlloc` arm; the small-batch numbers compress the ceiling
+materially. The R9-9 numbers and verdict belong to the Round 9 section;
+this entry records the R8-7 result as measured and flags the downgrade
+honestly.)*
+
+**Lazy-commit pool — R8-10 Phase 1 (`852828e`), stop decommitting pooled
+small segments on admission.** An external perf review found
+empty→pool→reuse→refill cycles on Windows `alloc-lazy-commit` cost
+**50–75× more commit/decommit syscalls** than the eager path for the
+identical cycle. Root cause: `release_or_pool_empty_segment` decommitted
+the payload above the initial lazy chunk and reset all metadata (bump,
+free lists, `is_decommitted`) the instant a segment was admitted to the
+hysteresis pool — defeating the pool's own purpose (a segment pushed to
+the front as "the warmest entry, expected back imminently" was
+immediately decommitted, so first reuse always paid a recommit). Fix,
+both sites together (removing one without the other is a correctness
+bug, not just a missed optimization): `alloc_core_small_pool.rs` removes
+the `alloc-lazy-commit` decommit block from
+`release_or_pool_empty_segment` (pool admission now behaves identically
+on the eager and lazy-commit legs — nothing is reset, the segment stays
+exactly as committed as it was on emptying); `alloc_core_small.rs`
+removes the matching pop-pooled-segment-as-carve-target block in
+`reserve_small_segment` (which relied on admission having reset the
+segment into a clean carve target; pooled-segment reuse now goes
+exclusively through `find_segment_with_free`'s free-list path, same as
+the eager leg). `tests/lazy_commit_b3_recycle.rs` rewritten under the
+new invariant: a full empty→pool→reuse→refill cycle costs exactly zero
+`GROW_COMMIT_COUNT` and zero `dbg_decommit_count()` deltas; verified
+non-vacuous by reverting only the two src files and confirming 4/5 tests
+go red (a `GROW_COMMIT_COUNT` delta of 15 and a decommit delta of 2,
+matching the review's 50–75× claim). **Stays opt-in (`alloc-lazy-commit`,
+not in `production`).**
+
+> **⚠ Forward-reference — the latency-first RSS tradeoff this lands was
+> criticized by R9-7.** R8-10 Phase 1 is a latency-first tradeoff: by not
+> decommitting pooled segments it cuts reuse latency, but it costs RSS —
+> today's pool retains **exactly 16 MiB of committed payload per
+> materialized heap** while pooled
+> (`DEFAULT_POOL_SEGMENTS = 4` × `SEGMENT = 4 MiB`; the only drain is
+> `maybe_decay_small_pool`, which fully releases one FIFO-oldest segment
+> per `decay_interval`, default 1 s — no intermediate
+> "committed-but-cheap-to-revive" state). Round 9's R9-7
+> (`docs/perf/R9_7_LAZY_COMMIT_POLICY_DESIGN.md`, design-only, no code
+> change) characterized this tradeoff explicitly and designed (but did
+> not ship) a third "decommitted-but-still-pooled" state that would let a
+> memory-constrained deployment trade some latency back for lower
+> committed RSS. The R9-7 design itself belongs to the Round 9 section;
+> this entry records that R8-10's latency-first choice is the one R9-7
+> later pushed back on, not a free win.
+
+**Misc — test/formatting/doc fixes.**
+
+- **`180bb8a`** — fixes a stale `tests/*.rs` file count in
+  `ARCHITECTURE.md` (**171 → 173**, a side effect of R8-1/R8-2 each
+  adding one new test file); caught by the self-verifying
+  `architecture_test_file_count_matches_reality` test.
+- **`f919d5b`** — lands session checkpoint files.
+- **`f97cf1f`** — fixes pre-existing rustfmt drift in
+  `crates/vmem/src/lib.rs` (pure line-wrapping of one `#[cfg_attr(...)]`
+  attribute, no semantic change; pre-existing since task #210 never ran
+  `cargo fmt`; blocked a clean `npm run check`).
+- **`ac110b6`** — corrects `misaligned_offset_guard`'s release-build
+  truncation math. The release-build branch asserted that packing a
+  `MIN_BLOCK+1` offset truncates to `off16=0` on round-trip; that's wrong
+  (`off16 = off >> MIN_BLOCK_SHIFT` is a floor division, so
+  `(MIN_BLOCK+1) >> MIN_BLOCK_SHIFT == 1`, unpacking back to `MIN_BLOCK`,
+  not 0). The assertion was never exercised under a normal `cargo test`
+  (which runs the `debug_assertions` branch, where `pack_entry_hardened`
+  panics instead), only under `--release --all-features` — a combination
+  no CI matrix entry or prior `npm run check` happened to hit. Found
+  while zero-trust reviewing R8-10 and running the full suite under
+  `--all-features`; confirmed unrelated by reproducing against pristine
+  HEAD 3×.
+- **`68f5da7`** (the round's final commit) — hardens the
+  `backshift_no_latency_spike_at_threshold_boundary` regression test's
+  per-dealloc wall-clock max/median ≤ 30× check against OS noise (a
+  single dealloc occasionally stalls multi-ms from scheduler preemption,
+  page faults, AV I/O hooks — reproduced repeatedly this session with no
+  code change, ratios varying 42×–607×, 1/6 to 6/6 pass rate). Wraps
+  only the noisy max/median ratio check in a bounded 3-attempt retry; the
+  membership/correctness assertions stay unconditional (a genuine
+  per-delete `O(HASH_CAPACITY)` regression reproduces deterministically
+  every attempt, so detection power is preserved).
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
