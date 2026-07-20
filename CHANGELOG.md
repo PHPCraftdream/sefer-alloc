@@ -1958,6 +1958,357 @@ not in `production`).**
   per-delete `O(HASH_CAPACITY)` regression reproduces deterministically
   every attempt, so detection power is preserved).
 
+### Round 9 — Miri correctness fix, medium-classes-wide prototype, directory drift hardening, honest downgrades (R9-1..R9-9)
+
+Round 9 — 11 commits (`860d897`..`d26e042`), 2026-07-20 (a single day) —
+the external review's follow-up queue against the Round 8 HEAD. This round
+is overwhelmingly **research / measurement / design work, not production
+hot-path changes**: of the nine R9-numbered tasks, only **two** touch
+production-compiled source for real (R9-1's Miri correctness fix and
+R9-8's directory-drift bound); the other seven are measurement reports
+(R9-2, R9-3, R9-6, R9-9), a new opt-in prototype feature that stays
+opt-in (R9-4), or design-only docs (R9-5, R9-7). The round's character is
+honest verdicts over shipped wins: two **downgrades** of prior GOs (R9-4's
+density came in below the review's guess; R9-9 downgraded R8-7's batch
+ceiling to CONDITIONAL-NO-GO), two **CONDITIONAL-GOs** that defer to a
+future wall-clock measurement (R9-3's promotion gate, R9-6's class-aware
+dirty routing), and two **design-only** outcomes (R9-5, R9-7) that are
+treated as fully successful results, not shortfalls — each found a real
+reason a rushed prototype would have been dead code or unsound, and
+declined to ship that.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** Round 9 is the first round since the directory's R8-3
+promotion where the production bundle itself is stable: no feature is
+added to or removed from `production` this round. Only two code changes
+reach production-compiled source:
+
+- **R9-1 (`860d897`)** — Large zero-pass Miri fix. Always compiled (the
+  `alloc_large` path), but the behavior change is **miri-only**: on every
+  real OS backend R8-8's optimization was already correct, so
+  `cfg!(not(miri))` evaluates the same as the old unconditional `true`
+  there. No real-OS user sees a behavior shift; only a miri run does.
+- **R9-8 (`5a4ba62`)** — directory drift recovery. The directory is in
+  `production` since R8-3, so the per-class miss-streak + OOM-rescue scan
+  reach production users — but as **defense-in-depth against a
+  hypothetical drift the invariant-preserving API cannot construct**
+  (task #214's `assert_directory_equals_rebuild` oracle proves the
+  incremental directory tracks true state in every tested scenario), not
+  a fix for a known bug.
+- **Everything else is measurement/design/opt-in:** R9-2 / R9-3 / R9-6 /
+  R9-9 are `docs/perf/*.md` + benches/tests only (no `src/`); R9-5 / R9-7
+  are `docs/perf/*.md` design docs only; and R9-4's `medium-classes-wide`
+  is a new opt-in feature (not in `production`, not in any default bundle,
+  and its own follow-up fix `78fd98d` keeps it from regressing
+  `--all-features`).
+
+**R9-1 (`860d897`) — Miri correctness fix for R8-8's Large zero-skip.**
+Closes the P0 bug R8-8 shipped with (flagged forward in the R8-8 entry
+above). `alloc_large_slow` reported `is_fresh = true` unconditionally, but
+miri's `std::alloc` fallback in `crates/vmem` does NOT zero (unlike every
+real OS backend), so a fresh Large `alloc_zeroed` under miri could skip
+the explicit `Node::zero` pass and return uninitialized memory — violating
+the `alloc_zeroed` contract. Confirmed by reading the vmem miri fallback
+directly before fixing anything. Fix: `alloc_large_slow` now returns
+`cfg!(not(miri))` instead of unconditional `true`; both consumers
+(`AllocCore::alloc_zeroed`, `HeapCore::alloc_zeroed`) are otherwise
+unchanged since they already branch on the freshness bool. The original
+R8-8 test also couldn't prove the optimization itself fired — it would
+stay green even with an unconditional `memset` reintroduced. Added a
+process-wide diagnostic counter (`LARGE_ZERO_PASS_CALLS` /
+`dbg_large_zero_pass_count`) bumped at both zero-pass call sites, and
+rewrote `tests/alloc_zeroed_fresh_large_skip.rs` to assert exact deltas
+per platform (0 under a real OS, 1 under miri). Verified non-vacuous by
+counterfactual (reverting the `!is_fresh` guard turns the rewritten test
+red with the expected delta mismatch), then re-confirmed under real miri
+(the miri-only workload was shrunk `LARGE` 2 MiB → 1 MiB+4 KiB, `ITERS`
+80 → 4 under `cfg(miri)` only, since the logic under test has no size- or
+iteration-count-dependent branch — cut the miri run from hours to ~17 min
+without weakening native-path coverage). Also lands doc drift the same
+review flagged (Cargo.toml's `alloc-segment-directory` comment still
+calling it experimental post-R8-3; ARCHITECTURE.md's M6 decommit section
+describing the pre-R8-10 lifecycle; `segment_directory_a5.rs`'s pooled-
+segment test doc).
+
+**R9-2 (`3021b16`) — fresh post-Round8 cross-version bench, verdict: Round
+8 did not move the default-bundle wall-clock past the noise floor.**
+Refreshes the cross-version wall-clock comparison (0.3.0 = current `main`
+vs 0.2.1 = `bench/0.2.1`) anchored at current HEAD (`860d897`, Round 8 +
+R9-1), same methodology as Round 7's. *(Filename/content note: this
+report lives at `docs/perf/R8_CROSS_VERSION_BENCH.md` — the filename says
+"R8" but the file IS the R9-2 deliverable, a fresh post-Round8 re-anchor
+of R7's methodology; there is no R9-named cross-version file, matching the
+R7→R8 continuation convention.)* Top-line: the production wall-clock
+bundle did not move meaningfully vs R7 — Round 8 + R9-1 were correctness /
+feature-gated opt-in (`medium-classes`, `alloc-lazy-commit`) /
+constant-factor work, none of which the default production bundle would
+be expected to surface. The Round 7 multiplicative reuse-cycle wins are
+re-confirmed intact: the decommit cycle **~292× faster**, the oscillating
+working-set cycle up to **~3.44× faster at 1024 B**, and the churn family
+at 64 B+ still winning **~1.4–2.0× at 64–256 B and ~2.0–10.8× at 1024 B**
+(vs 0.2.1). No real regression; the ns/op columns stay within the
+documented ±15–20% inter-run host-noise floor. Full method and numbers in
+[`docs/perf/R8_CROSS_VERSION_BENCH.md`](docs/perf/R8_CROSS_VERSION_BENCH.md).
+
+**R9-3 (`c8f5f32`) — `medium-classes` production-promotion gate, verdict GO
+(by IAI) / status stayed CONDITIONAL-GO.** R8-9 gave a GO verdict for
+`medium-classes` but only measured its own target range (256 KiB–1 MiB)
+via `AllocCore` directly. The external review flagged three structural
+side-effects hitting every build that R8-9 did not check — `SIZE_CLASS_TABLE`
+growing 49→55, per-`HeapCore` tcache footprint growth, and first-heap
+commit charge — so this task runs all three plus the deterministic IAI
+instruction-count gate for the unaffected sizes (16–1024 B) through the
+real `HeapCore`/`GlobalAlloc` production path. Findings: tcache footprint
+exactly **+816 B/HeapCore** (`PerClass`=136 B × 6 new classes — confirmed,
+not estimated, matching the review's estimate exactly); IAI Ir on the
+small-size gates **+0.49% to +0.67% total, +0.1% to +0.5% per-op marginal**
+(bootstrap-spread from the larger table zero-init, not a per-op cost);
+first-heap commit charge **+48 KiB at the 1-heap bootstrap** (within one
+page of the chunked-registry chunk-0 prediction) and **+4 KiB/slot
+steady-state** (noise-floor). The criterion wall-clock showed **+37–56%
+uniform across ALL sizes including 16 B** — declared a host-load artifact
+and overruled by IAI (a real regression could not be uniform at 16 B,
+which has zero interaction with the new classes). This wall-clock overrule
+is methodologically debatable and was later criticized by external review,
+so the status stayed **CONDITIONAL-GO**: the gate evidence is GO by the
+deterministic judge, but the report does NOT itself flip the `Cargo.toml`
+bundle, so the feature remains experimental/opt-in and promotion is not
+enacted. The one large deterministic delta found — `realloc_grow` **+173.9%
+Ir / +101.3% EstCycles** — is the feature working as designed on sizes it
+targets (the geometric realloc sweep now passes through the new 256 KiB–1
+MiB classes doing real small-path work where the Large path previously did
+almost nothing), not a regression on the unaffected sizes this gate
+protects. Full method, raw numbers, and the K-table in
+[`docs/perf/R9_3_MEDIUM_CLASSES_PRODUCTION_GATES.md`](docs/perf/R9_3_MEDIUM_CLASSES_PRODUCTION_GATES.md).
+
+**R9-4 (`f469343`) — `medium-classes-wide` prototype (1.25/1.5/1.75 MiB),
+verdict: do-not-promote-as-is (density under-delivered).** Adds a new
+opt-in feature `medium-classes-wide` (requires `medium-classes`,
+transitively `alloc-core`; not in `production` or any default bundle) that
+appends three exact classes (1.25 / 1.5 / 1.75 MiB) on top of the existing
+six-class `medium-classes` `EXTRAS` list, growing `SMALL_CLASS_COUNT`
+55→58 and `SMALL_MAX` 1 MiB→1.75 MiB. Purely additive: the existing
+six-class `EXTRAS` list is byte-identical to pre-R9-4 (verified by test),
+so R9-3's just-landed promotion-gate measurements stay valid. The external
+review guessed ~3×/2×/2× objects-per-segment density for the three new
+classes; this task **measured the real density empirically instead of
+trusting the guess and found it 2×/1×/1×** — one block lower than guessed
+for every class, because `carve_block`'s `align_up(bump, block_size)`
+requirement (load-bearing: the free path derives block start via
+`align_down(ptr, block_size)`) wastes one block of segment capacity at the
+start, so `empirical_density = floor(SEGMENT / block_size) - 1`. Only
+**1.25 MiB** delivers a real density win (2× vs the Large path's 1×); **1.5
+and 1.75 MiB fit exactly 1 block per segment** (same 1× as the existing
+Large path, though they still gain the warm-freelist win R8-9 measured for
+same-size reuse — ~90 µs free → ~60 ns freelist push/pop). A new mini-cliff
+sits at ~1.3 MiB (the rounding threshold into the 1.5 MiB class). 12 new
+tests in `tests/medium_classes_wide_correctness.rs` pin class placement,
+boundary routing (both directions), encoding-headroom ceilings, the
+density finding (pinned by actual carve+segment-residency checks, not just
+arithmetic), and topology non-disturbance of the 6-class substrate.
+Recommendation: **do not promote as-is**; if promoted, restrict to just the
+1.25 MiB class, or pair with a future page-run layer for 1.5–2 MiB (2 MiB
+itself is out of scope here — it would also be 1×, needs a larger
+medium-arena segment). This is an honest downgrade the sub-agent found
+itself, reported against the review's optimistic guess. Full method,
+geometry, and the verdict in
+[`docs/perf/R9_4_1_75MIB_CLASSES_PROTOTYPE.md`](docs/perf/R9_4_1_75MIB_CLASSES_PROTOTYPE.md).
+
+**R9-4 follow-up (`78fd98d`) — `--all-features` test-regression fix.**
+R9-4's `medium-classes-wide` appends 3 classes on top of `medium-classes`
+when both are enabled (exactly what `--all-features` does), which silently
+broke three pre-existing tests that hardcoded plain-`medium-classes`
+topology (55 classes / `SMALL_MAX` = 1 MiB) without accounting for
+`medium-classes-wide` raising those to 58 / 1.75 MiB:
+`tests/medium_classes_correctness.rs` and
+`tests/segment_directory_a5.rs` (hardcoded 55-class assumptions, made
+conditional on `cfg!(feature = "medium-classes-wide")`), and
+`tests/regression_inplace_large_realloc.rs` (three tests used 1.5 MiB as a
+hardcoded "definitely Large" size — no longer true under
+`medium-classes-wide` where `SMALL_MAX` = 1.75 MiB, so 1.5 MiB routes
+through the Small path and breaks the Large-path in-place-grow
+optimization these tests exist to verify; bumped to 2 MiB, matching the
+"unambiguously Large under every feature combination" convention).
+Discovered by the orchestrator's own verification of R9-9 (running the
+full suite under `--all-features`, not just isolated feature combos) and
+fixed in a separate commit before R9-9 landed — an oversight during R9-4's
+own review (each feature combo had been tested in isolation, never both
+on at once). Verified: full `cargo test --release --all-features` now green
+(180 test binaries).
+
+**R9-5 (`7bdbc0f`) — virgin zero-skip for Small `alloc_zeroed`,
+DESIGN-ONLY.** Designs a per-segment `payload_virgin` bool that would let
+`alloc_zeroed` skip the explicit zero pass for a genuinely virgin
+(never-before-carved) small block, mirroring the Large-path skip (R8-8 /
+R9-1) at a finer (per-carve, not per-segment-reservation) granularity. All
+five correctness risk areas the task enumerated (pooling, lazy-commit
+incremental commit, release-vs-decommit+recommit macOS crux, batched
+carve, remote-free reclaim) are resolved with file:line evidence and
+independently spot-checked in this review. This exact idea was a
+documented **NO-GO on 2026-07-10** (two blocking reasons: no per-block
+virgin state, and an unresolved macOS `MADV_DONTNEED` risk) and was
+re-flagged as unresolved by a 2026-07-19 deep audit; this design shows
+R8-10 (2026-07-20, the day after that audit) removed the only production
+code path that produced the macOS-dangerous decommit-then-reuse state,
+dissolving that risk. The remaining objection (narrow win, cold-path
+only) is acknowledged, not rebutted. **No code shipped:** a
+substrate-only prototype (`AllocCore::alloc_zeroed`'s small arm) would be
+fully testable but **production-inert**, since `HeapCore::alloc_zeroed`'s
+small arm never delegates to `AllocCore::alloc_zeroed` (grep-confirmed
+zero call sites) — the production win requires plumbing the virgin bit
+through the magazine refill path, an open storage-design question staged
+as a future 4-stage plan (measurement gate → substrate prototype →
+magazine plumbing → promotion gate). Estimated win ceiling (analytical,
+memset bandwidth): **~130 ns at 4 KiB to ~70–90 µs at 1 MiB** per
+genuinely-virgin call; zero benefit on steady-state churn. Design-only is
+the correct outcome here, not a shortfall: shipping the substrate
+prototype would have been dead code. Full design in
+[`docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md`](docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md).
+
+**R9-6 (`fd28ff8`) — class-aware dirty routing waste, verdict CONDITIONAL-GO.**
+The external review found `drain_dirty_segments` (R7-A4) drains EVERY dirty
+segment regardless of which size class `find_segment_with_free_impl` is
+currently searching for — O(D) where D = dirty segment count, when per-
+(segment, class) tracking could make it O(D_class). This task judges the
+claim via one new diagnostic counter, not an implementation: `WASTED_DIRTY_DRAINS`
+(directory_stats.rs) + `dbg_wasted_dirty_drains()`, bumped when a drain
+visit produces zero reclaimed blocks of the sought `class_idx` (the sought
+class is already available at the call site; `drain_dirty_segments` gained
+one additive `class_idx` parameter, no control-flow change). Purely
+diagnostic, Relaxed ordering, gated behind `alloc-stats` — zero behavior
+change to the drain algorithm. The new judge test
+(`tests/r9_6_class_aware_dirty_judge.rs`) drives a genuine mixed-class
+remote-fan-in workload (N=1/2/4/8 producer threads each freeing a distinct
+class into a shared owner while the owner continuously allocates one of
+those classes) through the real `HeapCore::dealloc` cross-thread-free path.
+Measured (3-run median): waste scales **super-linearly** with class count —
+**~2% at N=1, ~56% at N=2, ~82% at N=4, ~95% at N=8**, consistently ABOVE
+the naive (N−1)/N bound because the actively-consumed target class's dirty
+bit clears faster than the collateral classes'. Confirms the review's
+mechanism is real. Verdict **CONDITIONAL-GO**, not unconditional — this
+measures counter ratios, not wall-clock win, and the absolute drain counts
+are modest in this bench's shape (up to ~823 wasted drains per 4000 owner
+allocs at N=8); next step before implementing is a wall-clock criterion
+bench on the same workload shape (a >5% win at N=4 upgrades to GO). Full
+method, raw counts, and the recommendation in
+[`docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md`](docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md).
+
+**R9-7 (`021c098`) — low-RSS pool policy for the lazy-commit tradeoff,
+DESIGN-ONLY.** Designs a third pooled-segment state (decay-gated
+decommit-and-reset to a blank carve target) to let a memory-constrained
+deployment trade some latency back for lower committed RSS, addressing the
+R8-10 latency-first tradeoff the R8-10 entry forward-references above
+(R8-10's pool retains **exactly 16 MiB of committed payload per
+materialized heap** while pooled — `DEFAULT_POOL_SEGMENTS = 4` × `SEGMENT`
+= 4 MiB — with no intermediate "committed-but-cheap-to-revive" state).
+**Central finding: the review's own suggested shape (decommit the payload,
+keep free-list metadata intact) is UNSOUND.** The free-list `next` link is
+stored in the first word of each free block's BODY (`Node::write_next` /
+`read_next` write/read block payload directly), not in metadata — so
+decommitting the payload destroys the chain. On Windows/Linux this
+silently leaks every block past the head; on macOS (non-zero-guaranteed
+recommit) it produces wild pointers, UB in production (hardened's
+membership guard is not in the production bundle). Corrected design: reuse
+the existing full-reset decommit primitive (`release_follows=false`) to
+produce a blank carve target, reused via fresh carve rather than
+free-list pop. Explains why decay-gating (vs R8-10's rejected
+admission-gating) avoids the 50–75× commit/decommit blowup: the decommit
+rate is bounded by the decay clock, not the allocation rate, and is zero
+for any workload that stays hot. Cross-references R9-5: this design's
+age-0→1 transition is exactly the "new decommit policy" R9-5 flagged as
+needing a `payload_virgin=false` reset if R9-5's virgin-zero-skip ever
+ships. **No prototype shipped:** the implementation surface (4
+touch-points, including re-introducing a primitive R9-5 characterized as
+fragile-to-reintroduce) exceeds this task's minimal/safe bar — ships a
+safe zero-new-surface interim stopgap (shrink `pool_segments` + shorten
+`decay_interval`, existing knobs only) plus a staged 4-phase plan for a
+future task. Design-only is the correct outcome: the review's shape was
+wrong, and shipping it would have been a silent-leak bug. Full design in
+[`docs/perf/R9_7_LAZY_COMMIT_POLICY_DESIGN.md`](docs/perf/R9_7_LAZY_COMMIT_POLICY_DESIGN.md).
+
+**R9-8 (`5a4ba62`) — directory drift recovery (per-class miss-streak +
+OOM-rescue scan), verdict GO (implemented).** Two defense-in-depth fixes
+to the R8-2 directory-authoritative-miss fast path (which trusts a
+directory MISS for up to `DIRECTORY_MISS_FULL_SCAN_PERIOD - 1` consecutive
+misses before a periodic re-validation scan). The external review found
+R8-2 tracked that streak with a SINGLE `u32` shared across every size
+class — so a drift-affected class's rescan could be delayed by cross-class
+traffic, worst case ~255 wasted 4 MiB segments (~1 GiB VA) before the
+shared counter trips. Two fixes, both verified non-vacuous by
+counterfactual:
+
+1. **Per-class miss-streak** — `directory_miss_streak` is now
+   `[u8; SMALL_CLASS_COUNT]`, indexed by `class_idx`; each class trips its
+   own rescan independent of other classes' traffic. Period dropped
+   **256 → 64 (per-class)**, capping the worst-case drift bound at 64
+   segments = **256 MiB, 4× tighter** than before (and strictly improving
+   detection for a low-activity drifted class the shared counter could
+   starve indefinitely).
+2. **Rescue scan before OOM** — right before `reserve_small_segment`
+   surfaces an OOM (table full or OS reservation failure), a forced O(S)
+   linear scan runs as a last resort, bypassing the directory-trust fast
+   path; if it finds a real free block the directory hid it self-heals the
+   bit and serves that block instead of OOMing. Wired into both small-alloc
+   OOM branches (`alloc_small`, and the magazine refill path via the
+   checked variant to avoid a cross-thread double-issue). A new
+   `DIRECTORY_RESCUE_OOM_AVOIDED` counter keeps this distinguishable from
+   the periodic `DIRECTORY_MISS_SELF_HEAL` canary. Large allocations don't
+   consult the directory (no `BinTable`), so no rescue is needed there.
+
+A genuine drift remains **essentially impossible to construct** through the
+invariant-preserving API (task #214's oracle proves the incremental
+directory tracks true state in every tested scenario) — these are a safety
+net against an undiscovered edge case or future regression, not a fix for
+a known bug. Verified non-vacuous by counterfactual: temporarily routing
+all classes through streak slot 0 (simulating the old shared counter) makes
+the new decoupling test fail at its exact load-bearing assertion; reverted
+and confirmed green. Also fixes a stale test-file-count assertion in
+`docs/ARCHITECTURE.md` (**175 → 178**) that R9-6 had left behind. Full
+design, counterfactuals, and the worst-case math in
+[`docs/perf/R9_8_DIRECTORY_DRIFT_RECOVERY.md`](docs/perf/R9_8_DIRECTORY_DRIFT_RECOVERY.md).
+
+**R9-9 (`5e467ec`) — batch-API realistic-size follow-up, verdict
+CONDITIONAL-NO-GO (DOWNGRADE of R8-7).** R8-7 measured a 2.73×/1.71×/1.20×
+GO/GO/NO-GO batch-alloc ceiling, but only at **batch=1024** and only
+comparing **AllocCore-direct** arms (both bypassing `SeferAlloc`/TLS/
+registry entirely). The external review's follow-up asked for realistic
+batch sizes (8–64) and a comparison against the real public
+`SeferAlloc`/`GlobalAlloc` scalar path. Added a sibling criterion group
+sweeping N ∈ {8, 16, 32, 64, 1024} at the same three sizes (16/64/256 B)
+with a third arm measuring `sefer.alloc`/`dealloc` through the real
+`GlobalAlloc` impl; R8-7's own group is left untouched as the historical
+batch=1024 baseline. Two findings:
+
+- **The batch/scalar ceiling degrades sharply at realistic batch sizes.**
+  16 B drops from 2.60× (n=1024) to **1.24–1.50× (n=8–64)**; 64 B from
+  1.67× to **1.13–1.51×**; 256 B stays near 1.1× throughout. Two
+  compounding causes: amortization thins out with fewer calls to amortize
+  over, and a fixed cold-page-fault cost (fresh `AllocCore` per iteration)
+  compresses the ratio toward 1.0 at small N.
+- **The three-way comparison is the more decisive finding.** At every
+  realistic batch size, the real `SeferAlloc` scalar path (warm per-thread
+  tcache) is **2–30× FASTER than the `AllocCore` batch primitive** — the
+  tcache already amortizes per-call overhead for small N, leaving nothing
+  for a batch API to amortize until N is large enough to overflow the
+  tcache. Even at n=1024 the batch primitive only beats real `SeferAlloc`
+  scalar at 16 B (1.96×); it loses at 64 B and 256 B.
+
+**Updated verdict: CONDITIONAL-NO-GO for realistic callers.** R8-7's GO at
+16 B/64 B was specific to the unrealistic batch=1024 case. The one
+surviving signal is narrow: 16 B at batch ≥ ~1024 for a caller that
+genuinely issues such batches (no such caller exists in this repo today —
+the same circularity concern R8-7 already flagged). For the 8–64 range the
+review asked about, the verdict is **NO-GO**. The R8-7 report stays valid
+as the historical batch=1024 / AllocCore-only baseline; nothing here
+contradicts it. This is an honest downgrade of a prior GO, reported as
+such. Full method, the three-arm grid, and the per-size verdict table in
+[`docs/perf/R9_9_BATCH_BENCH_FOLLOWUP.md`](docs/perf/R9_9_BATCH_BENCH_FOLLOWUP.md).
+
+**Misc — `d26e042` (the round's final commit) — checkpoint-only.** Lands
+the Round 9 completion checkpoint
+(`docs/checkpoints/2026-07-20-r9-complete.md`); no `src/`, test, or
+`Cargo.toml` change.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
