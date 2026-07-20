@@ -371,9 +371,9 @@ impl AllocCore {
         ))]
         {
             #[cfg(feature = "fastbin")]
-            self.drain_dirty_segments(is_in_magazine);
+            self.drain_dirty_segments(class_idx, is_in_magazine);
             #[cfg(not(feature = "fastbin"))]
-            self.drain_dirty_segments();
+            self.drain_dirty_segments(class_idx);
         }
 
         #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
@@ -1886,6 +1886,15 @@ impl AllocCore {
     ///
     /// Increments the `dirty_segments_drained` A0 counter per drained segment.
     ///
+    /// R9-6 (class-aware dirty routing judge, measurement-only): additionally
+    /// increments `wasted_dirty_drains` for each drained segment whose ring,
+    /// once drained, produced ZERO reclaimed blocks of the `class_idx` the
+    /// caller is searching for — those are drains that per-(segment,class)
+    /// dirty routing would have avoided entirely. This is purely diagnostic
+    /// (no algorithmic change); the comparison happens once per successful
+    /// drain against the R8-1 `changed_classes` bitmap the loop already
+    /// accumulates.
+    ///
     /// No-op if `dirty_segments` is not bound (pre-bind window) or the
     /// directory sidecar is not materialised.
     #[cfg(feature = "alloc-xthread")]
@@ -1894,6 +1903,7 @@ impl AllocCore {
         #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
     >(
         &mut self,
+        #[cfg_attr(not(feature = "alloc-stats"), allow(unused_variables))] class_idx: usize,
         #[cfg(feature = "fastbin")] is_in_magazine: &F,
     ) {
         let ds = match self.dirty_segments {
@@ -1972,6 +1982,18 @@ impl AllocCore {
                     {
                         let sid = SegmentHeader::segment_id_at(base) as usize;
                         self.sync_directory_for_segment_classes(base, sid, changed_classes);
+                    }
+                    // R9-6 (class-aware dirty routing judge, measurement-only):
+                    // if this drain — triggered by a `find_segment_with_free_impl(class_idx)`
+                    // call — produced ZERO reclaimed blocks of the sought class
+                    // (the sought class's bit is NOT in `changed_classes`), it
+                    // was wasted work from THAT caller's perspective. Per-(segment,
+                    // class) dirty routing would have avoided visiting this segment
+                    // entirely. Purely diagnostic — no algorithmic effect.
+                    #[cfg(feature = "alloc-stats")]
+                    if changed_classes & (1u64 << class_idx) == 0 {
+                        super::directory_stats::WASTED_DIRTY_DRAINS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     // P1-b: decommit/pool hysteresis.
                     #[cfg(feature = "alloc-decommit")]

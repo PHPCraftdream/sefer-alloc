@@ -18,6 +18,7 @@
 //! | `directory_fallback_scans`    | A3 fallback scan entry  | storage only|
 //! | `directory_words_examined`    | A3 bitmap word scan     | storage only|
 //! | `dirty_segments_drained`      | A4 dirty-drain loop     | storage only|
+//! | `wasted_dirty_drains`         | R9-6 dirty-drain loop (drain produced zero sought-class blocks) | storage only|
 //! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
 //! | `directory_authoritative_miss`| R8-2 authoritative-miss fast path (O(S) scan SKIPPED) | storage only|
 //! | `directory_miss_self_heal`    | R8-2 periodic re-validation found a directory-missed segment | storage only|
@@ -47,6 +48,17 @@ pub(crate) static DIRECTORY_WORDS_EXAMINED: AtomicU64 = AtomicU64::new(0);
 /// ring was drained by the directory-driven lookup). Reads 0 until A4 wires
 /// the increment.
 pub(crate) static DIRTY_SEGMENTS_DRAINED: AtomicU64 = AtomicU64::new(0);
+
+/// R9-6 (class-aware dirty routing judge): counts the subset of
+/// `DIRTY_SEGMENTS_DRAINED` events where the segment's ring, once drained in
+/// response to a `find_segment_with_free_impl(class_idx)` call, produced ZERO
+/// reclaimed blocks of the sought `class_idx` — i.e. from THAT caller's
+/// perspective the drain was wasted work that class-aware dirty routing (a
+/// per-(segment,class) dirty bitmap) would have avoided entirely. Diagnostic
+/// only; does not influence the drain algorithm. Reads 0 unless `alloc-stats`
+/// is on (the increment site is gated) and `alloc-xthread` + not-`numa-aware`
+/// (the drain itself is gated).
+pub(crate) static WASTED_DIRTY_DRAINS: AtomicU64 = AtomicU64::new(0);
 
 /// Slots examined in the CURRENT linear scan (`find_segment_with_free_impl`).
 /// Incremented once per slot visited (including null/skipped slots) so the

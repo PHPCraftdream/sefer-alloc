@@ -457,6 +457,20 @@ impl AllocCore {
         directory_stats::DIRTY_SEGMENTS_DRAINED.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// R9-6 (class-aware dirty routing judge): process-wide count of
+    /// `drain_dirty_segments` visits where the segment's ring, once drained in
+    /// response to a `find_segment_with_free_impl(class_idx)` call, produced
+    /// ZERO reclaimed blocks of the sought `class_idx` — i.e. wasted work from
+    /// THAT caller's perspective that per-(segment,class) dirty routing would
+    /// have avoided. The denominator is `dbg_dirty_segments_drained()`. The
+    /// ratio wasted/total directly characterises the O(D) vs O(D_class) gap
+    /// the review flagged. Diagnostic only; reads 0 unless `alloc-stats` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_wasted_dirty_drains() -> u64 {
+        directory_stats::WASTED_DIRTY_DRAINS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// R7-A0: process-wide count of slots examined by
     /// `find_segment_with_free_impl` (the linear scan). This is the primary
     /// scan-cost counter -- it is LIVE in A0 (incremented per slot visited
