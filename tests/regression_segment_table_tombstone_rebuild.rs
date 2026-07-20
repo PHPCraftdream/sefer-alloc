@@ -94,71 +94,110 @@ fn backshift_no_latency_spike_at_threshold_boundary() {
     // O(HASH_CAPACITY) regression, not a precise spike measurement. Valgrind Ir
     // (npm run iai) is the deterministic judge.
     const MAX_VS_MEDIAN: f64 = 30.0;
+    // A single dealloc's wall-clock time is occasionally dominated by OS-level
+    // noise unrelated to the allocator (scheduler preemption, a page fault,
+    // antivirus I/O hooks, etc.) — a one-off multi-millisecond stall on ONE of
+    // the W calls, unrelated to any O(HASH_CAPACITY) regression. A REAL
+    // per-delete algorithmic regression reproduces on every attempt (it is a
+    // deterministic property of the code, not a transient OS event); a noise
+    // spike does not. So retry the timing measurement for a wave up to this
+    // many extra times, accepting the FIRST attempt that clears the bound —
+    // only fail if every attempt is over. This preserves full detection power
+    // for a genuine regression while filtering one-off external stalls (the
+    // exact failure mode observed in CI: ratios varying 40x-600x run to run
+    // with no code change, always concentrated in a single outlier call).
+    const RETRY_ATTEMPTS: u32 = 3;
 
     for wave in 0..WAVES {
-        // --- Hold: allocate W distinct live large segments. ---
-        let mut ptrs = Vec::with_capacity(W);
-        for i in 0..W {
-            let p = ac.alloc(layout);
-            assert!(!p.is_null(), "wave {wave}: alloc null at i={i}");
-            ptrs.push(p);
-        }
+        let mut last_failure: Option<String> = None;
+        let mut passed = false;
 
-        // (a) While the whole wave is live, EVERY held base must be contained.
-        for (i, &p) in ptrs.iter().enumerate() {
-            assert!(
-                ac.dbg_contains_base(p),
-                "wave {wave}: held base i={i} not reported contained (live)"
-            );
-        }
+        for attempt in 0..RETRY_ATTEMPTS {
+            // --- Hold: allocate W distinct live large segments. ---
+            let mut ptrs = Vec::with_capacity(W);
+            for i in 0..W {
+                let p = ac.alloc(layout);
+                assert!(!p.is_null(), "wave {wave}: alloc null at i={i}");
+                ptrs.push(p);
+            }
 
-        // --- Drain: free the whole wave, timing each dealloc. ---
-        let mut durations_ns: Vec<u64> = Vec::with_capacity(W);
-        for (i, &p) in ptrs.iter().enumerate() {
-            let t0 = Instant::now();
-            // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
-            unsafe { ac.dealloc(p, layout) };
-            let dt = t0.elapsed().as_nanos() as u64;
-            durations_ns.push(dt);
-
-            // (a) The just-freed base must now read foreign (false).
-            assert!(
-                !ac.dbg_contains_base(p),
-                "wave {wave}: freed base i={i} still reported contained \
-                 (membership corrupted — a removed base is still present)"
-            );
-            // (a) Every STILL-held base (later in the wave) must remain
-            // contained across this free — a probe-chain corruption from
-            // backward-shift would flip a survivor to false.
-            for &q in &ptrs[i + 1..] {
+            // (a) While the whole wave is live, EVERY held base must be
+            // contained. Correctness — asserted unconditionally, every
+            // attempt, never retried-away: a probe-chain corruption must fail
+            // the test outright.
+            for (i, &p) in ptrs.iter().enumerate() {
                 assert!(
-                    ac.dbg_contains_base(q),
-                    "wave {wave}: a still-held base vanished across the free \
-                     at i={i} (backward-shift corrupted a survivor's probe \
-                     chain)"
+                    ac.dbg_contains_base(p),
+                    "wave {wave}: held base i={i} not reported contained (live)"
                 );
             }
+
+            // --- Drain: free the whole wave, timing each dealloc. ---
+            let mut durations_ns: Vec<u64> = Vec::with_capacity(W);
+            for (i, &p) in ptrs.iter().enumerate() {
+                let t0 = Instant::now();
+                // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
+                unsafe { ac.dealloc(p, layout) };
+                let dt = t0.elapsed().as_nanos() as u64;
+                durations_ns.push(dt);
+
+                // (a) The just-freed base must now read foreign (false).
+                // Correctness — unconditional, every attempt.
+                assert!(
+                    !ac.dbg_contains_base(p),
+                    "wave {wave}: freed base i={i} still reported contained \
+                     (membership corrupted — a removed base is still present)"
+                );
+                // (a) Every STILL-held base (later in the wave) must remain
+                // contained across this free — a probe-chain corruption from
+                // backward-shift would flip a survivor to false. Correctness
+                // — unconditional, every attempt.
+                for &q in &ptrs[i + 1..] {
+                    assert!(
+                        ac.dbg_contains_base(q),
+                        "wave {wave}: a still-held base vanished across the \
+                         free at i={i} (backward-shift corrupted a \
+                         survivor's probe chain)"
+                    );
+                }
+            }
+
+            // (b) No single dealloc is a dramatic outlier vs the median. The
+            //     old W2 rebuild concentrated O(HASH_CAPACITY) work on the
+            //     513th call; backward-shift spreads O(cluster) work
+            //     uniformly. We assert the max/median ratio is bounded
+            //     (coarse — see MAX_VS_MEDIAN note). THIS is the noisy check
+            //     that gets retried, never the correctness checks above.
+            let mut sorted = durations_ns.clone();
+            sorted.sort_unstable();
+            let median = sorted[sorted.len() / 2];
+            let max = *sorted.last().unwrap();
+            // Guard against a pathologically fast median (e.g. all-zero under
+            // a coarse clock): treat as trivially passing when the median is
+            // too small to be meaningful.
+            if median < 100 {
+                passed = true;
+                break;
+            }
+            let ratio = max as f64 / median as f64;
+            if ratio <= MAX_VS_MEDIAN {
+                passed = true;
+                break;
+            }
+            last_failure = Some(format!(
+                "wave {wave} attempt {attempt}: slowest dealloc ({max} ns) is \
+                 {ratio:.1}× the median ({median} ns) — a single unregister \
+                 dominates, suggesting a per-delete O(HASH_CAPACITY) \
+                 regression. (Coarse wall-clock; confirm with `npm run iai`.)",
+            ));
         }
 
-        // (b) No single dealloc is a dramatic outlier vs the median. The old W2
-        //     rebuild concentrated O(HASH_CAPACITY) work on the 513th call;
-        //     backward-shift spreads O(cluster) work uniformly. We assert the
-        //     max/median ratio is bounded (coarse — see MAX_VS_MEDIAN note).
-        let mut sorted = durations_ns.clone();
-        sorted.sort_unstable();
-        let median = sorted[sorted.len() / 2];
-        let max = *sorted.last().unwrap();
-        // Guard against a pathologically fast median (e.g. all-zero under a
-        // coarse clock): only assert when the median is nonzero and meaningful.
-        if median >= 100 {
-            let ratio = max as f64 / median as f64;
-            assert!(
-                ratio <= MAX_VS_MEDIAN,
-                "wave {wave}: slowest dealloc ({max} ns) is {ratio:.1}× the \
-                 median ({median} ns) — a single unregister dominates, \
-                 suggesting a per-delete O(HASH_CAPACITY) regression. \
-                 (Coarse wall-clock; confirm with `npm run iai`.)",
-            );
-        }
+        assert!(
+            passed,
+            "{}",
+            last_failure.unwrap_or_else(|| format!(
+                "wave {wave}: unreachable — loop exited without recording a failure"
+            ))
+        );
     }
 }
