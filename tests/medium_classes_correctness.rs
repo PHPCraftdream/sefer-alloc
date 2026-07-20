@@ -53,10 +53,24 @@ fn linear_scan_class_for(size: usize, align: usize) -> Option<usize> {
 #[test]
 fn medium_classes_present_in_table_at_the_right_sorted_position() {
     let table = SegmentLayout::SIZE_CLASS_TABLE;
+    // R9-4 (task #226): `medium-classes-wide` appends 3 more exact classes
+    // ON TOP of these 6 when it is ALSO enabled (e.g. under `--all-features`,
+    // which turns on every feature simultaneously) -- the table then has 58
+    // entries, not 55. The 6 medium classes checked below still land at the
+    // same table[49..55] positions in both cases (the wide feature only
+    // APPENDS, never mutates -- see
+    // `tests/medium_classes_wide_correctness.rs::wide_does_not_disturb_six_class_medium_table_topology`),
+    // so only this length assertion needs to branch.
+    let expected_len = if cfg!(feature = "medium-classes-wide") {
+        58
+    } else {
+        55
+    };
     assert_eq!(
         table.len(),
-        55,
-        "medium-classes must add exactly 6 entries to the 49-entry base table"
+        expected_len,
+        "medium-classes must add exactly 6 entries to the 49-entry base table \
+         (58 if medium-classes-wide is also enabled)"
     );
     // Every MEDIUM_SIZES value appears verbatim in the table, strictly after
     // every pre-existing (< 256 KiB) class.
@@ -98,10 +112,20 @@ fn medium_classes_present_in_table_at_the_right_sorted_position() {
 
 #[test]
 fn small_max_updates_to_one_mib() {
+    // R9-4 (task #226): with `medium-classes-wide` ALSO enabled (e.g.
+    // `--all-features`), SMALL_MAX is the wide feature's top class (1.75 MiB),
+    // not plain `medium-classes`'s 1 MiB -- see this file's `medium_classes_
+    // present_in_table_at_the_right_sorted_position` for the same branch.
+    let expected_small_max = if cfg!(feature = "medium-classes-wide") {
+        1792 * 1024
+    } else {
+        1024 * 1024
+    };
     assert_eq!(
         SegmentLayout::SMALL_MAX,
-        1024 * 1024,
-        "SMALL_MAX must equal the last (largest) medium class, 1 MiB"
+        expected_small_max,
+        "SMALL_MAX must equal the last (largest) medium class, 1 MiB \
+         (1.75 MiB if medium-classes-wide is also enabled)"
     );
 }
 
@@ -344,10 +368,19 @@ fn item4_small_class_count_stays_below_page_class_sentinel_range() {
     // time (`segment_header.rs`'s `const _: () = assert!(SMALL_CLASS_COUNT <
     // 0xFE, ...)`), but re-asserting it at the public dbg surface documents
     // the property where a test reader will look for it.
+    // R9-4 (task #226): 58 if `medium-classes-wide` is ALSO enabled (e.g.
+    // `--all-features`) -- see the branch in `medium_classes_present_in_table_
+    // at_the_right_sorted_position` above for the same reasoning.
+    let expected_count = if cfg!(feature = "medium-classes-wide") {
+        58
+    } else {
+        55
+    };
     let count = AllocCore::dbg_small_class_count();
     assert_eq!(
-        count, 55,
-        "medium-classes must bring the count to 49 + 6 = 55"
+        count, expected_count,
+        "medium-classes must bring the count to 49 + 6 = 55 \
+         (58 if medium-classes-wide is also enabled)"
     );
     assert!(
         count < 0xFE,

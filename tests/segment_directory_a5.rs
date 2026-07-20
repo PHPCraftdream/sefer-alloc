@@ -150,11 +150,19 @@ fn decommit_recommit_directory_consistency() {
 fn medium_classes_directory_rebuild() {
     let mut core = AllocCore::new().unwrap();
 
-    // With medium-classes, SMALL_CLASS_COUNT should be 55.
+    // With medium-classes, SMALL_CLASS_COUNT should be 55 -- or 58 if
+    // `medium-classes-wide` (R9-4, task #226) is ALSO enabled (e.g.
+    // `--all-features`), which appends 3 more classes on top.
+    let expected_class_count = if cfg!(feature = "medium-classes-wide") {
+        58
+    } else {
+        55
+    };
     let class_count = AllocCore::dbg_small_class_count();
     assert_eq!(
-        class_count, 55,
-        "medium-classes should give 55 small classes, got {class_count}"
+        class_count, expected_class_count,
+        "medium-classes should give 55 small classes (58 if medium-classes-wide \
+         is also enabled), got {class_count}"
     );
 
     let (mut ptrs, _class) = push_past_threshold(&mut core);

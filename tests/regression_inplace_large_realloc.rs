@@ -40,11 +40,11 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 fn grow_within_span_returns_same_ptr() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    // 1.5 MiB — definitely Large regardless of feature combination (even
-    // `medium-classes`, which raises SMALL_MAX to 1 MiB, still leaves 1.5 MiB
-    // above it). The segment's span_usable is at least one full SEGMENT
-    // (4 MiB), so growing to 3 MiB fits easily.
-    let old_size = 3 * 512 * 1024; // 1.5 MiB
+    // 2 MiB — definitely Large regardless of feature combination (even
+    // `medium-classes-wide`, R9-4/task #226, which raises SMALL_MAX to
+    // 1.75 MiB, still leaves 2 MiB above it). The segment's span_usable is at
+    // least one full SEGMENT (4 MiB), so growing to 3 MiB fits easily.
+    let old_size = 2 * 1024 * 1024; // 2 MiB
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
@@ -103,8 +103,9 @@ fn grow_within_span_returns_same_ptr() {
 fn same_size_large_realloc_returns_same_ptr() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    // 1.5 MiB — definitely Large even under `medium-classes` (SMALL_MAX=1 MiB).
-    let size = 3 * 512 * 1024;
+    // 2 MiB — definitely Large even under `medium-classes-wide`
+    // (SMALL_MAX=1.75 MiB, R9-4/task #226).
+    let size = 2 * 1024 * 1024;
     let layout = Layout::from_size_align(size, 16).unwrap();
     let ptr = ac.alloc(layout);
     assert!(!ptr.is_null());
@@ -169,8 +170,9 @@ fn grow_beyond_span_relocates_and_preserves() {
 fn dealloc_after_inplace_grow_then_reuse() {
     let mut ac = AllocCore::new().expect("primordial");
 
-    // 1.5 MiB — definitely Large even under `medium-classes` (SMALL_MAX=1 MiB).
-    let old_size = 3 * 512 * 1024;
+    // 2 MiB — definitely Large even under `medium-classes-wide`
+    // (SMALL_MAX=1.75 MiB, R9-4/task #226).
+    let old_size = 2 * 1024 * 1024;
     let old_layout = Layout::from_size_align(old_size, 16).unwrap();
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
@@ -187,9 +189,9 @@ fn dealloc_after_inplace_grow_then_reuse() {
     unsafe { ac.dealloc(new_ptr, Layout::from_size_align(new_size, 16).unwrap()) };
 
     // A fresh large alloc must succeed (the freed segment is available for
-    // reuse or the table slot is free). 1.5 MiB, same reasoning as `old_size`
-    // above: definitely Large even under `medium-classes`.
-    let fresh_size = 3 * 512 * 1024;
+    // reuse or the table slot is free). 2 MiB, same reasoning as `old_size`
+    // above: definitely Large even under `medium-classes-wide`.
+    let fresh_size = 2 * 1024 * 1024;
     let fresh_layout = Layout::from_size_align(fresh_size, 16).unwrap();
     let fresh_ptr = ac.alloc(fresh_layout);
     assert!(
