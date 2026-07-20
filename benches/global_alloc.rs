@@ -1185,6 +1185,15 @@ const BATCH_CEILING_SIZES: &[usize] = &[16, 64, 256];
 /// directly comparable at 1:1 op count.
 const BATCH_CEILING_OPS: usize = OPS;
 
+/// R9-9 follow-up — batch sizes swept by [`bench_batch_ceiling_followup`].
+/// R8-7 measured only batch=1024 (via [`BATCH_CEILING_OPS`]); a realistic
+/// caller (`calloc`-style bulk allocation, collection pre-sizing) is far
+/// more likely to request 8-64 items at once, and the amortisation win from
+/// batching (one classification / routing call instead of N) shrinks as the
+/// batch size shrinks. 1024 is kept for continuity with R8-7's reported
+/// numbers so the same `cargo bench` run reproduces the R8-7 data point.
+const BATCH_CEILING_COUNTS: &[usize] = &[8, 16, 32, 64, BATCH_CEILING_OPS];
+
 /// R8-7 (task #220) — **measure, don't design.** An external perf review
 /// speculated that a public batch/scoped alloc API (`alloc_batch`/
 /// `dealloc_batch`) could give 1.5-3x on bulk small-object patterns by
@@ -1291,6 +1300,156 @@ fn bench_batch_ceiling(c: &mut Criterion) {
     group.finish();
 }
 
+/// R9-9 (follow-up to R8-7 / task #220) — extends the batch-ceiling
+/// measurement along TWO axes the R8-7 report's external review flagged.
+/// See `docs/perf/R9_9_BATCH_BENCH_FOLLOWUP.md` for the verdict; this bench
+/// only produces the raw numbers. Measurement-only: no `src/` surface
+/// touched, same `#[doc(hidden)]` primitives R8-7 used (`refill_class_bump`,
+/// `flush_class`, `dbg_layout_class_for`), which all take arbitrary-length
+/// `&mut [*mut u8]` / `&[*mut u8]` slices so no new primitive is needed for
+/// the smaller batch sizes.
+///
+/// ## Axis 1 — batch-size sweep
+///
+/// R8-7 measured only batch=1024. This sweep adds N in {8, 16, 32, 64}
+/// (1024 kept for continuity) at the same three sizes (16/64/256 B), so the
+/// ratio table reveals whether the ceiling holds up at realistic small
+/// batch sizes or degrades as the per-call amortisation thins out.
+///
+/// ## Axis 2 — third arm: real `SeferAlloc`/`GlobalAlloc` scalar path
+///
+/// R8-7's two arms BOTH bypass `SeferAlloc`/TLS/registry (calling
+/// `AllocCore` directly) to isolate the batching mechanism. But a public
+/// batch API built ON TOP OF `SeferAlloc` could ALSO amortise the TLS heap
+/// lookup + registry dispatch that `SeferAlloc::alloc`/`GlobalAlloc::alloc`
+/// pays on EVERY scalar call — which neither AllocCore-direct arm captures.
+/// This third arm measures the real production entry point
+/// (`sefer.alloc`/`sefer.dealloc` through `GlobalAlloc`, same pattern
+/// `bench_direct_alloc` uses for the `global_alloc` group) at the same
+/// (size, N) grid. The three-way comparison separates:
+/// - (b vs a) "batching amortises routing work" — the R8-7 batch win.
+/// - (c vs a) "real production scalar vs bare AllocCore scalar" — the
+///   TLS/registry term. NOTE the warmth asymmetry: arm (c) reuses the
+///   shared `SeferAlloc` heap across iterations (warm tcache after
+///   criterion's warmup), whereas arms (a)/(b) use a fresh `AllocCore` per
+///   iteration (cold carve). So (c vs a) measures TLS+registry overhead
+///   NET of warm-tcache savings, not the overhead in isolation — see the
+///   report's mechanism read for why that cut is still the useful one.
+///
+/// All three arms pre-size a `Vec<*mut u8>` of length N in the untimed
+/// `iter_batched` setup and write/read it identically, so the only timed
+/// difference between arms is the alloc/dealloc mechanism itself (the
+/// `Vec`'s own alloc/free via the bench binary's default allocator runs
+/// in setup / return-drop, outside the timed region — matching how
+/// `bench_global_alloc_churn` already excludes `ChurnTeardownGuard`'s
+/// drop from timing).
+fn bench_batch_ceiling_followup(c: &mut Criterion) {
+    let mut group = c.benchmark_group("batch_ceiling_followup");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    let sefer = SeferAlloc::new();
+    // Confound 1 fix (module doc item 1): reset SeferAlloc's per-thread heap
+    // so leftover state from earlier groups does not bias arm (c).
+    sefer.dbg_trim_current_thread();
+
+    for &size in BATCH_CEILING_SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+        let class_idx = {
+            let ac = AllocCore::new().expect("primordial reservation");
+            ac.dbg_layout_class_for(layout)
+                .expect("bench sizes are all small classes")
+        };
+
+        for &n in BATCH_CEILING_COUNTS {
+            // ── (a) AllocCore scalar: N `alloc` + N `dealloc`, fresh
+            //    `AllocCore` per iteration (untimed setup). Matches R8-7's
+            //    arm (a) methodology, parameterised over N. ──────────────
+            group.bench_function(format!("scalar_core/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || {
+                        (
+                            AllocCore::new().expect("primordial reservation"),
+                            vec![core::ptr::null_mut(); n],
+                        )
+                    },
+                    |(mut ac, mut ptrs)| {
+                        for slot in ptrs.iter_mut() {
+                            let p = ac.alloc(layout);
+                            assert!(!p.is_null(), "scalar_core alloc null");
+                            *slot = p;
+                        }
+                        black_box(&ptrs);
+                        for &p in &ptrs {
+                            // SAFETY: `p` from `ac.alloc` above, freed once here.
+                            unsafe { ac.dealloc(p, layout) };
+                        }
+                        (ac, ptrs)
+                    },
+                    BatchSize::SmallInput,
+                );
+            });
+
+            // ── (b) AllocCore batch: ONE `refill_class_bump` + ONE
+            //    `flush_class` for N blocks. Matches R8-7's arm (b),
+            //    parameterised over N. ───────────────────────────────────
+            group.bench_function(format!("batch_core/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || {
+                        (
+                            AllocCore::new().expect("primordial reservation"),
+                            vec![core::ptr::null_mut(); n],
+                        )
+                    },
+                    |(mut ac, mut ptrs)| {
+                        let filled = ac.refill_class_bump(class_idx, &mut ptrs);
+                        assert_eq!(filled, n, "batch_core refill under-filled (n={n})");
+                        black_box(&ptrs);
+                        // SAFETY (R6-MS-3): every entry of `ptrs` was produced
+                        // by the `refill_class_bump` call immediately above — a
+                        // live, bitmap-allocated block of `class_idx` owned by
+                        // this same `ac`, each appearing exactly once, freed
+                        // once here, in this single call.
+                        unsafe { ac.flush_class(class_idx, &ptrs) };
+                        (ac, ptrs)
+                    },
+                    BatchSize::SmallInput,
+                );
+            });
+
+            // ── (c) Real SeferAlloc/`GlobalAlloc` scalar: N `alloc` + N
+            //    `dealloc` through the production `GlobalAlloc` impl (TLS
+            //    heap lookup + registry dispatch every call), shared heap
+            //    with warm tcache after warmup. Same pattern
+            //    `bench_direct_alloc` uses for the `global_alloc` group,
+            //    scaled to batch size N. ─────────────────────────────────
+            group.bench_function(format!("scalar_sefer/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || vec![core::ptr::null_mut(); n],
+                    |mut ptrs| {
+                        for slot in ptrs.iter_mut() {
+                            // SAFETY: layout has non-zero size and valid alignment.
+                            let p = unsafe { sefer.alloc(layout) };
+                            assert!(!p.is_null(), "scalar_sefer alloc null");
+                            *slot = p;
+                        }
+                        black_box(&ptrs);
+                        for &p in &ptrs {
+                            // SAFETY: `p` from `sefer.alloc` above, freed once here.
+                            unsafe { sefer.dealloc(p, layout) };
+                        }
+                        ptrs
+                    },
+                    BatchSize::SmallInput,
+                );
+            });
+        }
+    }
+
+    group.finish();
+}
+
 #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
 criterion_group!(
     benches,
@@ -1301,7 +1460,8 @@ criterion_group!(
     bench_global_segment_decommit_cycle,
     bench_working_set_cycle,
     bench_pool_cap_sweep,
-    bench_batch_ceiling
+    bench_batch_ceiling,
+    bench_batch_ceiling_followup
 );
 #[cfg(not(all(feature = "alloc-decommit", feature = "alloc-xthread")))]
 criterion_group!(
@@ -1312,6 +1472,7 @@ criterion_group!(
     bench_global_alloc_churn_write,
     bench_global_segment_decommit_cycle,
     bench_working_set_cycle,
-    bench_batch_ceiling
+    bench_batch_ceiling,
+    bench_batch_ceiling_followup
 );
 criterion_main!(benches);
