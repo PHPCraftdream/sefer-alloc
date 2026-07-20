@@ -704,10 +704,16 @@ fn retry_after_failure_succeeds() {
 // SCENARIO 10: Decommit -> partial recommit -> continue
 // ============================================================================
 
-/// After a decommit-pool-reuse cycle, the segment is partially committed
-/// (only the initial chunk). Further carves grow the frontier incrementally
-/// via grow-on-carve. Counterfactual: if decommit reset the frontier to
-/// SEGMENT (eager), no grows would fire.
+/// R8-10 (task #223): after a fill-empty-pool cycle, the segment stays
+/// FULLY committed (pool admission no longer decommits/resets it — see
+/// `release_or_pool_empty_segment`'s doc comment). Reuse goes through the
+/// free-list path and costs zero additional grow-commits, since the frontier
+/// was already fully grown by the time the segment emptied (it had to be, to
+/// have carved every block that was later freed).
+///
+/// Counterfactual (pre-fix, B3 design): decommit-on-admission reset the
+/// frontier back to the initial lazy chunk, so reuse re-grew it incrementally
+/// via grow-on-carve — this test used to assert exactly that re-growth.
 #[test]
 fn decommit_partial_recommit_continue() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -729,37 +735,36 @@ fn decommit_partial_recommit_continue() {
         let (_base, _ptrs) = fill_and_empty_segment(&mut a, second_ptr);
         assert!(a.dbg_pooled_count() > 0, "segment should be pooled");
 
-        // Verify frontier reset to initial lazy value.
+        // R8-10: pool admission does NOT reset the frontier — it stays at
+        // whatever it grew to while the segment was being filled (which must
+        // be > the initial lazy chunk, since filling the whole segment
+        // necessarily carved past it).
         let frontier_after_pool = a.dbg_committed_payload_end_for(base as *mut u8).unwrap();
-        assert_eq!(
-            frontier_after_pool, expected_initial,
-            "after pool, frontier should reset to initial lazy value"
+        assert!(
+            frontier_after_pool > expected_initial,
+            "after pool, frontier should stay at its fully-grown value \
+             (> initial lazy value {expected_initial}), got {frontier_after_pool}"
         );
 
-        // Allocate into the reused segment and track frontier growth.
-        let block_size = 4096;
-        let mut saw_grow = false;
+        // Reuse the pooled segment via the free-list path: this costs ZERO
+        // additional grow-commits, since the frontier is already where it
+        // needs to be for every free-listed block.
         let commits_before = a.dbg_grow_commit_count();
-
+        let mut reused = false;
         for _ in 0..600_000 {
-            let p = a.alloc(Layout::from_size_align(block_size, 8).unwrap());
+            let p = a.alloc(Layout::from_size_align(16, 8).unwrap());
             assert!(!p.is_null());
             if (p as usize) & !(SEGMENT - 1) == base {
-                let f = a.dbg_committed_payload_end_for(p).unwrap();
-                if f > expected_initial {
-                    saw_grow = true;
-                    break;
-                }
+                reused = true;
+                break;
             }
         }
-
-        if saw_grow {
-            let commits_after = a.dbg_grow_commit_count();
-            assert!(
-                commits_after > commits_before,
-                "a grow commit should have fired after reuse"
-            );
-        }
+        assert!(reused, "expected the pooled segment to be reused");
+        let commits_after = a.dbg_grow_commit_count();
+        assert_eq!(
+            commits_after, commits_before,
+            "reuse via the free-list path should not fire any grow commits"
+        );
     }
 }
 
@@ -767,9 +772,20 @@ fn decommit_partial_recommit_continue() {
 // SCENARIO 11: Pool retain/reuse with a fault mid-reuse
 // ============================================================================
 
-/// After a segment is pooled and reused, inject a fault on the first grow
-/// commit of the reused segment. The reuse should fail gracefully (the
-/// allocator falls back to a fresh segment).
+/// R8-10 (task #223): a pooled segment's reuse (via the free-list path) never
+/// issues a grow-commit — the frontier was already fully grown before the
+/// segment emptied, and pool admission does not reset it. So a commit-fault
+/// armed right after pooling can only fire on a DIFFERENT (fresh) segment's
+/// growth, not on the reused one. This test verifies that: the pooled
+/// segment's own frontier and free-list-driven reuse are completely
+/// unaffected by a fault injected on the next grow-commit elsewhere, and the
+/// allocator stays functional throughout (falling back to a fresh segment /
+/// null on the injected fault, per the honest-OOM contract).
+///
+/// Counterfactual (pre-fix, B3 design): reuse popped the pooled segment as a
+/// fresh carve target and the FIRST carve into it re-grew the frontier via a
+/// real grow-commit, so arming a fault at commit #1 directly targeted the
+/// reused segment's own recommit.
 #[test]
 fn pool_reuse_with_fault_mid_reuse() {
     let (mut a, second_ptr) = alloc_past_primordial();
@@ -790,15 +806,33 @@ fn pool_reuse_with_fault_mid_reuse() {
         let (_base, _ptrs) = fill_and_empty_segment(&mut a, second_ptr);
         assert!(a.dbg_pooled_count() > 0, "segment should be pooled");
 
-        // Verify frontier reset.
+        // R8-10: frontier stays fully grown (not reset) after pool admission.
         let frontier_pooled = a.dbg_committed_payload_end_for(base as *mut u8).unwrap();
-        assert_eq!(frontier_pooled, expected_initial);
+        assert!(frontier_pooled > expected_initial);
 
-        // Arm B4 hook: fail the 1st commit (the first grow on reuse).
+        // Reuse the pooled segment via the free-list path BEFORE arming any
+        // fault: this must succeed unconditionally (no grow-commit involved).
+        let mut reused = false;
+        for _ in 0..1000 {
+            let p = a.alloc(Layout::from_size_align(16, 8).unwrap());
+            assert!(!p.is_null());
+            if (p as usize) & !(SEGMENT - 1) == base {
+                reused = true;
+                break;
+            }
+        }
+        assert!(
+            reused,
+            "reuse of the pooled segment must succeed unconditionally \
+             (no grow-commit on the free-list reuse path to fault)"
+        );
+
+        // Now arm the B4 fault hook: the NEXT grow-commit (necessarily on
+        // some other, fresh or growing segment, since the reused one carves
+        // from its intact free list with no commit involved) should fail
+        // gracefully — allocator stays functional (falls back / returns null
+        // per the honest-OOM contract), never crashes.
         a.dbg_arm_commit_fail_at(1);
-
-        // Allocate blocks. The reused segment should get its first grow
-        // commit failed, and the allocator should fall back.
         let block_size = 4096;
         let mut allocations_succeeded = 0;
         for _ in 0..600_000 {
@@ -807,21 +841,15 @@ fn pool_reuse_with_fault_mid_reuse() {
                 break;
             }
             allocations_succeeded += 1;
-            // We just need to verify the allocator doesn't crash.
         }
-
-        // The allocator should still be functional (fell back to another segment).
         assert!(
             allocations_succeeded > 0,
-            "allocator should remain functional after a mid-reuse fault"
+            "allocator should remain functional after a fault on some \
+             later segment's grow-commit"
         );
 
-        // The frontier of the original segment may or may not have advanced
-        // depending on whether the B4 fault fired on THIS segment's commit
-        // or on another segment's commit (the counter is process-wide). The
-        // key invariant is that the allocator remained functional: it either
-        // grew the reused segment or fell back to a fresh segment without
-        // crashing. Verify the frontier is still readable (not faulting).
+        // The pooled/reused segment's own frontier is unaffected by a fault
+        // that fired elsewhere; still readable, still >= its grown value.
         let frontier_after = a.dbg_committed_payload_end_for(base as *mut u8).unwrap();
         assert!(
             frontier_after >= expected_initial,
@@ -1297,23 +1325,28 @@ fn full_lazy_segment_lifecycle() {
         let (_base, _ptrs) = fill_and_empty_segment(&mut a, second_ptr);
         assert!(a.dbg_pooled_count() > 0, "segment should be pooled");
 
-        // Phase 3: Verify frontier reset.
+        // Phase 3: R8-10 — frontier is NOT reset by pool admission; it stays
+        // at its fully-grown value (the segment was completely filled before
+        // it emptied, so its frontier necessarily grew past the initial
+        // lazy chunk).
         let f3 = a.dbg_committed_payload_end_for(base as *mut u8).unwrap();
-        assert_eq!(f3, expected_initial, "frontier should reset after pool");
+        assert!(
+            f3 > expected_initial,
+            "frontier should stay fully grown after pool, not reset"
+        );
 
-        // Phase 4: Allocate into the reused segment.
-        let block_size = 4096;
+        // Phase 4: Allocate — should land back in the reused segment via the
+        // free-list path.
+        let mut reused = false;
         for _ in 0..600_000 {
-            let p = a.alloc(Layout::from_size_align(block_size, 8).unwrap());
+            let p = a.alloc(Layout::from_size_align(16, 8).unwrap());
             assert!(!p.is_null());
             if (p as usize) & !(SEGMENT - 1) == base {
-                let f = a.dbg_committed_payload_end_for(p).unwrap();
-                // Should have grown from the initial value.
-                if f > expected_initial {
-                    break;
-                }
+                reused = true;
+                break;
             }
         }
+        assert!(reused, "expected reuse of the pooled segment");
 
         // Phase 5: Drop the allocator. If the release of a partially-committed
         // reused segment faults, this crashes.

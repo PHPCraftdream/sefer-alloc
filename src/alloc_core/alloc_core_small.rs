@@ -1426,43 +1426,26 @@ impl AllocCore {
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
     pub(super) fn reserve_small_segment(&mut self) -> Option<*mut u8> {
-        // B3 (R7 Workstream B): under `alloc-lazy-commit`, pooled segments have
-        // been decommit-reset (bump at payload_start, free lists cleared, initial
-        // chunk committed, `is_decommitted=true`), so they are clean carve
-        // targets. Pop one from the pool BEFORE going to the OS — this avoids an
-        // OS reserve syscall and reuses the existing VA reservation. The first
-        // `carve_block` call on this segment clears `is_decommitted` (the initial
-        // chunk is committed, no recommit syscall needed) and B2's grow-on-carve
-        // recommits additional chunks incrementally as the bump cursor advances
-        // past the frontier.
-        //
-        // On the eager path (feature-OFF), pooled segments still have intact
-        // free lists (no decommit-reset on pool admission) and are reused via
-        // `find_segment_with_free`'s free-list path — this pool-pop is skipped.
-        #[cfg(all(feature = "alloc-decommit", feature = "alloc-lazy-commit"))]
-        if self.pooled_count > 0 {
-            if let Some(base) = self.pop_pooled_segment() {
-                // The segment is already registered, metadata reset, initial
-                // chunk committed, `is_decommitted=true`, `committed_payload_end`
-                // = `meta_end + LAZY_FIRST_CHUNK`. Set it as `small_cur` and
-                // return. `carve_block` will clear `is_decommitted` on the first
-                // carve.
-                self.small_cur = base;
-                return Some(base);
-            }
-        }
-
         // Mechanism 2 (task #51): this path is reached only when NO registered
         // segment — including any POOLED empty segment — has a free block of the
         // requested class (`find_segment_with_free` already scanned them all,
-        // pooled included, and REMOVED any it reused from the pool). On the
-        // eager path a pooled segment is fully-carved (bump near `SEGMENT` end),
-        // so it cannot serve as a FRESH carve target for a class its free list
-        // lacks — that is why the pool is drawn from via
-        // `find_segment_with_free`'s free-list reuse (the hysteresis win: the
-        // emptied segment's blocks are re-served with no OS work), NOT as
-        // `small_cur` here. Under `alloc-lazy-commit`, pooled segments ARE
-        // reused as carve targets above (B3).
+        // pooled included, and REMOVED any it reused from the pool). A pooled
+        // segment is fully-carved (bump near `SEGMENT` end), so it cannot serve
+        // as a FRESH carve target for a class its free list lacks — that is why
+        // the pool is drawn from via `find_segment_with_free`'s free-list reuse
+        // (the hysteresis win: the emptied segment's blocks are re-served with
+        // no OS work), NOT popped as `small_cur` here.
+        //
+        // R8-10 (task #223): this holds identically under `alloc-lazy-commit`.
+        // A prior design (B3, R7 Workstream B) popped a pooled segment here as
+        // a "clean carve target", relying on pool admission having decommit-
+        // reset it (bump at payload_start, free lists cleared,
+        // `is_decommitted=true`). That reset was itself the 50-75× regression
+        // (see `release_or_pool_empty_segment`'s doc comment) — with admission
+        // fixed to never reset, a pooled segment under lazy-commit is a
+        // partially-carved segment with a live free list, indistinguishable
+        // from the eager leg's pooled segment. It is therefore reused the same
+        // way: via `find_segment_with_free`'s free-list path, never popped here.
         //
         // This is the cold small-path clock edge, so trim any stale pooled
         // segment here (cheap: fast early-exit when the pool is empty; one

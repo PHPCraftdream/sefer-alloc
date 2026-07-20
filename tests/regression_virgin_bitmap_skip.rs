@@ -68,29 +68,44 @@
 //!     under `cfg(not(miri))`, this task).
 //!   - `alloc_core.rs::reserve_small_segment` — the non-primordial
 //!     virgin-reserve (skipped under `cfg(not(miri))`, this task).
-//!   - `alloc_core.rs::decommit_empty_segment_impl` (the `release_follows =
-//!     false` full-reset branch) — UNCONDITIONAL, untouched by this task. This
-//!     is the ONLY other path that ever (re-)initialises the bitmap, and it
-//!     runs on a segment that is NOT virgin (it was carved/freed/decommitted),
-//!     so it correctly keeps doing real work.
+//!   - `alloc_core_small_pool.rs::decommit_empty_segment_impl` (the
+//!     `release_follows = false` full-reset branch) — untouched by this task.
+//!     Historically this was the "pool retain" path that re-armed a pooled
+//!     segment on admission (B3, R7 Workstream B) and re-initialised the
+//!     bitmap on a non-virgin, about-to-be-reused segment. Task #223 (R8-10)
+//!     removed decommit-on-pool-admission entirely — a pooled segment is no
+//!     longer decommitted/reset at all, it stays exactly as it was when it
+//!     emptied — so this branch's only caller was deleted and it is now
+//!     UNREACHABLE (still present in source, dead in every current
+//!     configuration; a documented, deliberately-deferred cleanup, not a
+//!     correctness bug — see task #223's summary).
 //!
-//! No other call site exists. `decommit_empty_segment_for_release` (the
-//! `release_follows = true` variant, the one every production caller actually
-//! uses today) does NOT call `init_in_place` at all — the whole reservation is
+//! No other call site exists, and none is reachable today: with the
+//! `release_follows = false` branch dead, `AllocBitmap::init_in_place` is
+//! currently invoked ONLY by the two (skipped-under-this-task) virgin-reserve
+//! sites above — i.e. it never actually runs on `cfg(not(miri))` today.
+//! `decommit_empty_segment_for_release` (the `release_follows = true`
+//! variant) does NOT call `init_in_place` at all — the whole reservation is
 //! about to be released to the OS, so a future re-reserve of that address
-//! range goes through one of the two (now-skipped) virgin-reserve sites again,
-//! not through a stale, still-dirty bitmap.
+//! range goes through one of the two (now-skipped) virgin-reserve sites
+//! again, not through a stale, still-dirty bitmap. Since #223 (R8-10), pool
+//! admission (the former third caller of the `false` branch) performs NO
+//! decommit call at all — a pooled segment is left exactly as it was when it
+//! emptied, so `decommit_empty_segment_for_release` (the `true` variant) is
+//! the ONLY decommit path exercised today, reached solely from the release
+//! (pool-disabled/full, or pool-eviction) branches.
 //!
 //! ## RAD-5 (E4) GO/NO-GO EXPERIMENT extension
 //!
 //! T1/T2 below were extended with an identical unconditional whole-footprint
 //! check for the second (magazine-residency) `MagazineBitmap`, which mirrors
 //! `AllocBitmap`'s exact virgin-skip discipline at the same two call sites
-//! (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) plus an
-//! unconditional re-init on the decommit-reset full-reset path
+//! (`bootstrap::primordial`, `AllocCore::reserve_small_segment`) — originally
+//! plus an unconditional re-init on the decommit-reset full-reset path
 //! (`alloc_core_small_pool.rs`'s `decommit_empty_segment_impl`,
-//! `release_follows = false` branch) — the same "skip on virgin, always
-//! re-init on reuse" shape as `AllocBitmap`. See
+//! `release_follows = false` branch), the same "skip on virgin, always
+//! re-init on reuse" shape as `AllocBitmap`; that third leg is now dead code
+//! per the "No third path" audit above (task #223 / R8-10). See
 //! `docs/perf/IAI_BASELINE.md`'s RAD-5 entry for the measured GO/NO-GO
 //! verdict on the bitmap this extension protects.
 

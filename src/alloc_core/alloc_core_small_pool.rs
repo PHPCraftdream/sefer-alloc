@@ -187,6 +187,21 @@ impl AllocCore {
     /// takes a genuinely fresh OS segment — the pool is a free-list reserve, not
     /// a carve reserve.)
     ///
+    /// This holds identically under `alloc-lazy-commit` (R8-10, task #223):
+    /// pool admission NEVER decommits or resets metadata, on either the eager
+    /// or the lazy-commit path. A prior design (B3, R7 Workstream B) had the
+    /// lazy-commit leg decommit the payload above the initial lazy chunk and
+    /// reset `bump`/free-lists/`is_decommitted` on admission, turning the
+    /// pooled segment into a "clean carve target" for `reserve_small_segment`
+    /// to pop directly. That defeated the hysteresis pool's entire purpose: a
+    /// segment admitted as "the warmest entry, expected back imminently" was
+    /// immediately decommitted, so first-reuse always paid a recommit — 50-75×
+    /// more `commit_range`/decommit syscalls per empty→pool→reuse→refill cycle
+    /// than the eager path, which pays zero. The segment now stays exactly as
+    /// committed as it was on emptying, and reuse goes through the SAME
+    /// `find_segment_with_free` free-list path as the eager leg — no OS
+    /// syscalls on the hot reuse edge, lazy-commit or not.
+    ///
     /// If the pool is disabled OR already full, the segment is released
     /// immediately here — the pool never holds MORE than `pool_cap` at any
     /// instant, mid-scan or otherwise (this is the synchronous budget cap that
@@ -240,39 +255,14 @@ impl AllocCore {
         // segment becomes the new HEAD — the warmest entry, mirroring the old
         // array's "push at pooled_count" LIFO insertion).
         if self.pooled_count < self.pool_cap {
-            // B3 (R7 Workstream B): under `alloc-lazy-commit`, decommit the
-            // payload above the initial chunk and reset metadata BEFORE pooling.
-            // This turns the pooled segment into a clean carve target with only
-            // the initial lazy chunk committed — reuse via `reserve_small_segment`
-            // (not `find_segment_with_free`, since free lists are now cleared)
-            // avoids the full-payload recommit that would erase B1/B2's savings.
-            //
-            // On the eager path (feature-OFF), the pool admission is unchanged:
-            // the segment stays fully committed with free lists intact, and reuse
-            // happens via `find_segment_with_free`'s free-list path.
-            #[cfg(feature = "alloc-lazy-commit")]
-            {
-                Self::decommit_empty_segment_impl(
-                    &mut SegmentMeta::new(base),
-                    base,
-                    false, // retain — full metadata reset + lazy decommit
-                );
-                // R7-A7: the decommit-reset above zeroed ALL BinTable heads to
-                // FREE_LIST_NULL, but the directory bitmap still carries SET bits
-                // from the earlier `publish_nonempty` calls during `dealloc_small`.
-                // Clear them now — the segment's free lists are empty after the
-                // reset, so every class bit for this slot must be CLEAR. Without
-                // this, medium-class (or any) bits survive the reset as stale
-                // positives, desynchronising the incremental directory from a
-                // fresh `rebuild_from_table` (the R7-A2 invariant). The release
-                // path (below, line ~273) already had its own
-                // `clear_segment_directory`; this mirrors it for the pool path.
-                #[cfg(feature = "alloc-segment-directory")]
-                {
-                    let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                    self.clear_segment_directory(slot_idx);
-                }
-            }
+            // R8-10 (task #223): pool admission never decommits or resets
+            // metadata, identically on the eager and `alloc-lazy-commit`
+            // paths. The segment stays fully committed (or, under lazy-commit,
+            // as committed as it was the instant it emptied) with free lists
+            // intact, and reuse happens via `find_segment_with_free`'s
+            // free-list path — see the doc comment above for why the former
+            // B3 decommit-on-admission design was a 50-75× regression, not a
+            // savings.
             Self::pool_push_front(
                 &mut self.pool_head,
                 &mut self.pool_tail,
