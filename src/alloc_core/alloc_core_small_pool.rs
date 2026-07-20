@@ -75,7 +75,7 @@ impl AllocCore {
     /// stale ring entries can still read the (still-committed) metadata.
     #[cfg(feature = "alloc-decommit")]
     #[inline(always)]
-    pub(super) fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
+    pub(crate) fn dec_live_and_maybe_decommit(base: *mut u8, small_cur: *mut u8) -> bool {
         let mut meta = SegmentMeta::new(base);
         let live = meta.dec_live();
         // Only an empty, non-current, not-already-decommitted segment is

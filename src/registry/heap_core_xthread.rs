@@ -437,19 +437,29 @@ impl HeapCore {
             // predicate unconditionally checks the magazine-residency bitmap,
             // mirroring `dbg_drain_all_rings_impl`'s general-purpose pattern.
             self.overflow_tail_cache = overflow.drain(|base, packed| {
-                let _ = AllocCore::reclaim_offset_checked(base, packed, small_cur, &|ptr, _k| {
+                if AllocCore::reclaim_offset_checked(base, packed, &|ptr, _k| {
                     let pbase = os::segment_base_of_ptr(ptr);
                     let poff = (ptr as usize - pbase as usize) as u32;
                     SegmentMeta::new(pbase)
                         .magazine_bitmap()
                         .is_in_magazine(poff)
-                });
+                }) {
+                    #[cfg(feature = "alloc-decommit")]
+                    {
+                        let _ = AllocCore::dec_live_and_maybe_decommit(base, small_cur);
+                    }
+                }
             });
         }
         #[cfg(not(feature = "fastbin"))]
         {
             self.overflow_tail_cache = overflow.drain(|base, packed| {
-                let _ = AllocCore::reclaim_offset(base, packed, small_cur);
+                if AllocCore::reclaim_offset(base, packed) {
+                    #[cfg(feature = "alloc-decommit")]
+                    {
+                        let _ = AllocCore::dec_live_and_maybe_decommit(base, small_cur);
+                    }
+                }
             });
         }
     }

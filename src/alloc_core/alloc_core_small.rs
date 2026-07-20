@@ -518,24 +518,18 @@ impl AllocCore {
                             let mut changed_classes: u64 = 0;
                             let new_head = ring.drain(|off| {
                                 #[cfg(feature = "fastbin")]
-                                let reclaimed = Self::reclaim_offset_checked(
-                                    base,
-                                    off,
-                                    small_cur,
-                                    &is_in_magazine,
-                                );
+                                let reclaimed =
+                                    Self::reclaim_offset_checked(base, off, &is_in_magazine);
                                 #[cfg(not(feature = "fastbin"))]
-                                let reclaimed = Self::reclaim_offset(base, off, small_cur);
-                                #[cfg(feature = "alloc-decommit")]
+                                let reclaimed = Self::reclaim_offset(base, off);
                                 if reclaimed {
-                                    decommit_happened = true;
+                                    #[cfg(feature = "alloc-decommit")]
+                                    if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                                        decommit_happened = true;
+                                    }
+                                    changed_classes |=
+                                        1u64 << super::remote_free_ring::entry_class_idx(off);
                                 }
-                                #[cfg(not(feature = "alloc-decommit"))]
-                                {
-                                    let _ = reclaimed;
-                                }
-                                changed_classes |=
-                                    1u64 << super::remote_free_ring::entry_class_idx(off);
                             });
                             // A2 post-drain directory sync.
                             {
@@ -762,19 +756,17 @@ impl AllocCore {
                         // before `write_next`, closing the in-magazine leg of the
                         // ring↔magazine cross-thread double-free residual.
                         #[cfg(feature = "fastbin")]
-                        let reclaimed =
-                            Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
+                        let reclaimed = Self::reclaim_offset_checked(base, off, &is_in_magazine);
                         #[cfg(not(feature = "fastbin"))]
-                        let reclaimed = Self::reclaim_offset(base, off, small_cur);
-                        #[cfg(feature = "alloc-decommit")]
+                        let reclaimed = Self::reclaim_offset(base, off);
                         if reclaimed {
-                            decommit_happened = true;
+                            #[cfg(feature = "alloc-decommit")]
+                            if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                                decommit_happened = true;
+                            }
+                            changed_classes |=
+                                1u64 << super::remote_free_ring::entry_class_idx(off);
                         }
-                        #[cfg(not(feature = "alloc-decommit"))]
-                        {
-                            let _ = reclaimed;
-                        }
-                        changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
                     });
                     // R7-A2: sync the directory for this segment after the drain
                     // completed. The drain may have reclaimed blocks into
@@ -2085,19 +2077,26 @@ impl AllocCore {
                     let mut changed_classes: u64 = 0;
                     let new_head = ring.drain(|off| {
                         #[cfg(feature = "fastbin")]
-                        let reclaimed =
-                            Self::reclaim_offset_checked(base, off, small_cur, &is_in_magazine);
+                        let reclaimed = Self::reclaim_offset_checked(base, off, &is_in_magazine);
                         #[cfg(not(feature = "fastbin"))]
-                        let reclaimed = Self::reclaim_offset(base, off, small_cur);
-                        #[cfg(feature = "alloc-decommit")]
+                        let reclaimed = Self::reclaim_offset(base, off);
                         if reclaimed {
-                            decommit_happened = true;
+                            #[cfg(feature = "alloc-decommit")]
+                            if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                                decommit_happened = true;
+                            }
+                            // R10-3: gate the class bit on `reclaimed` — a
+                            // rejected entry never mutated the BinTable for its
+                            // class (every early `return false` in
+                            // reclaim_offset[_checked] precedes `set_head`/
+                            // `mark_free`), so recording it would (a) cause a
+                            // spurious directory sync for an unchanged class
+                            // and (b) make the R9-6 WASTED_DIRTY_DRAINS metric
+                            // under-count: a drain that rejected every entry of
+                            // the sought class still looked "not wasted".
+                            changed_classes |=
+                                1u64 << super::remote_free_ring::entry_class_idx(off);
                         }
-                        #[cfg(not(feature = "alloc-decommit"))]
-                        {
-                            let _ = reclaimed;
-                        }
-                        changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
                     });
                     // A2 post-drain directory sync.
                     {

@@ -8,9 +8,10 @@ implemented. The single permitted `src/` change is one additive diagnostic
 counter (`WASTED_DIRTY_DRAINS`), purely Relaxed-ordering, no behaviour change
 to the drain algorithm. The deliverable is this report + the judge test +
 the counter.
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (original), 2026-07-21 (R10-3 post-fix re-measurement).
 **Base revision:** `main` @ `7bdbc0f` (R9-5 just landed; the drain substrate
 under analysis is R7-A4 @ `drain_dirty_segments`, `alloc_core_small.rs:1893`).
+**R10-3 update:** `changed_classes` bit-gating on `reclaimed` (see §2.1).
 **Platform:** Windows 10 Pro x86-64 (native, single test process). Results are
 counter-deltas (deterministic given workload shape), not wall-clock — the
 absolute counts carry OS-scheduler jitter, but the waste *ratio* is stable
@@ -160,6 +161,33 @@ oracle for this drain) passes unchanged — confirming no behaviour change.
   caller (it published a sought-class block into the directory, which the
   immediately-following directory scan may then find).
 
+### 2.2 R10-3: the `changed_classes` bit is now gated on `reclaimed`
+
+Before R10-3, `changed_classes |= 1u64 << class_idx` fired UNCONDITIONALLY
+for every drained ring entry — even when `reclaim_offset[_checked]` rejected
+the entry (double-free guard, in-magazine duplicate, stale generation, garbled
+offset). A rejected entry never mutated the BinTable (every early `return false`
+precedes `set_head`/`mark_free`), so recording it made the metric under-count:
+a drain that rejected every entry of the sought class still looked "not wasted".
+
+R10-3 gates the bit under `if reclaimed`. To make this work correctly,
+`reclaim_offset` / `reclaim_offset_checked` were changed to return `true`
+whenever the block was successfully linked to the BinTable (previously they
+returned `dec_live_and_maybe_decommit`'s result, which meant "decommit fired",
+not "block was reclaimed" — under `not(alloc-decommit)` it was always `false`).
+The `dec_live_and_maybe_decommit` call was moved to the drain closures, which
+now call it after `reclaim_offset` returns `true`.
+
+**Impact on this report's numbers:** negligible. The judge's workload frees
+live, unique blocks (no double-frees, no stale entries), so virtually every
+ring entry is successfully reclaimed — the pre-fix and post-fix numbers are
+identical within run-to-run jitter. The fix matters for workloads WITH
+rejected entries (double-free-heavy, stale-generation under `hardened`), where
+the pre-fix metric would have under-counted waste. The judge's measured ratios
+are therefore now EXACT for the "entries present but all rejected" case, but
+the report is still a lower bound overall due to the empty-ring-visit exclusion
+(§2.1).
+
 ---
 
 ## 3. Measurement approach — why the precise counter (not the coarser fallback)
@@ -266,12 +294,16 @@ Producer class indices (each its own segment): [40, 41, 42, 43, 44, 45, 46, 47]
 
 ## 6. Raw measured data (3 consecutive runs, same process shape)
 
+**Post-R10-3 re-measurement (2026-07-21):** the fix has negligible impact on
+this judge's numbers — the workload has no rejected entries (no double-frees,
+no stale generations), so `reclaimed` is `true` for virtually every entry. The
+numbers below are from the post-fix build.
+
 | Run | N=1 drained / wasted / % | N=2 | N=4 | N=8 |
 |-----|--------------------------|-----|-----|-----|
-| 1   | 45 / 1 / 2.2%            | 97 / 54 / 55.7% | 250 / 206 / 82.4% | 866 / 823 / 95.0% |
-| 2   | 43 / 0 / 0.0%            | 100 / 55 / 55.0% | 256 / 211 / 82.4% | 868 / 824 / 94.9% |
-| 3   | 44 / 0 / 0.0%            | 100 / 55 / 55.0% | 251 / 208 / 82.9% | 865 / 822 / 94.9% |
-| 4   | 44 / 1 / 2.3%            | 101 / 57 / 56.4% | 250 / 206 / 82.4% | 869 / 825 / 94.9% |
+| 1   | 43 / 0 / 0.0%            | 97 / 54 / 55.7% | 249 / 206 / 82.7% | 864 / 821 / 95.0% |
+| 2   | 43 / 0 / 0.0%            | 97 / 54 / 55.7% | 248 / 205 / 82.7% | 865 / 822 / 95.0% |
+| 3   | 43 / 0 / 0.0%            | 97 / 54 / 55.7% | 248 / 205 / 82.7% | 864 / 821 / 95.0% |
 
 **Stability:** the waste ratio at each N is stable to within ±1 percentage
 point across runs. The absolute drain counts vary by <2% (e.g. N=8: 865–869
@@ -432,7 +464,11 @@ with this report as the evidence.
    set, ring already drained) are NOT counted as wasted (§2.1) — those visits
    also do useless work (3 validation reads for nothing) but are a different
    cost class. A per-(segment,class) bitmap would eliminate them too, so the
-   real win is *at least* as large as this report measures.
+   real win is *at least* as large as this report measures. **R10-3 update:**
+   the separate "rejected entries counted as not-wasted" imprecision is now
+   FIXED — `changed_classes` is gated on `reclaimed` (§2.2). The lower-bound
+   caveat is now solely due to the empty-ring-visit exclusion, not rejected
+   entries.
 3. **The bench forces the worst case.** TARGET_CLASS is one of the producer
    classes (so the owner's drains are sometimes useful); if TARGET_CLASS were
    NOT among the producers (the absolute worst case), the waste ratio would

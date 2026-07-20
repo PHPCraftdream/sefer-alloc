@@ -65,11 +65,9 @@ impl AllocCore {
     /// `F` receives `(ptr: *mut u8, class_idx: usize)` and must return `true`
     /// if the block is currently resident in the owner's magazine for that class.
     #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
-    #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
     pub(crate) fn reclaim_offset_checked<F: Fn(*mut u8, usize) -> bool>(
         base: *mut u8,
         packed: u32,
-        small_cur: *mut u8,
         is_in_magazine: &F,
     ) -> bool {
         // X7 Ф3 (task #191): under `hardened` the ring entry was packed with
@@ -189,21 +187,19 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off as u32);
         bm.mark_free(off as u32);
-        #[cfg(feature = "alloc-decommit")]
-        {
-            Self::dec_live_and_maybe_decommit(base, small_cur)
-        }
-        #[cfg(not(feature = "alloc-decommit"))]
-        false
+        // R10-3: return `true` whenever the BinTable was actually mutated
+        // (block linked to freelist + mark_free). The caller is responsible
+        // for calling `dec_live_and_maybe_decommit` for the live-count /
+        // decommit side effect. Previously this returned
+        // `dec_live_and_maybe_decommit`'s result (true = decommit fired) —
+        // which under `not(alloc-decommit)` was always `false`, making the
+        // return value useless for tracking whether the BinTable changed.
+        true
     }
 
     #[cfg(feature = "alloc-xthread")]
-    // `small_cur` is consumed only by the `alloc-decommit` dec-then-decommit
-    // step; without that feature the reclaim path does no live-count bookkeeping.
-    // Under fastbin, `reclaim_offset_checked` is used instead (dead_code expected).
     #[cfg_attr(feature = "fastbin", allow(dead_code))]
-    #[cfg_attr(not(feature = "alloc-decommit"), allow(unused_variables))]
-    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32, small_cur: *mut u8) -> bool {
+    pub(crate) fn reclaim_offset(base: *mut u8, packed: u32) -> bool {
         // Unpack the offset and the class the cross-thread freer stamped.
         let (off, class_idx) = super::remote_free_ring::unpack_entry(packed);
         let off = off as usize;
@@ -309,18 +305,15 @@ impl AllocCore {
         Node::write_next(block_nn, old_head_ptr);
         bt.set_head(class_idx, off as u32);
         bm.mark_free(off as u32);
-        // Phase 35 (M6): a cross-thread-freed block is now back on the free list
-        // → one fewer live block. The owner-side drain runs this, so the
-        // owner-only counter is single-writer (the cross-thread freer NEVER
-        // touched it — it only pushed the offset into the ring). If the segment
-        // is now empty AND not the carve target, return its payload to the OS.
-        // Returns true if decommit fired (caller should call recycle after drain).
-        #[cfg(feature = "alloc-decommit")]
-        {
-            Self::dec_live_and_maybe_decommit(base, small_cur)
-        }
-        #[cfg(not(feature = "alloc-decommit"))]
-        false
+        // Phase 35 (M6): a cross-thread-freed block is now back on the free
+        // list → one fewer live block. R10-3: `dec_live_and_maybe_decommit`
+        // is now called by the CALLER (the drain closure) after this fn
+        // returns `true`, so the return value can mean "BinTable was
+        // mutated" rather than "decommit fired". Previously this returned
+        // `dec_live_and_maybe_decommit`'s result, which was `false` under
+        // `not(alloc-decommit)` and `false` whenever decommit didn’t fire —
+        // making the return value useless for tracking BinTable changes.
+        true
     }
 
     /// TEST-ONLY: push `ptr`'s segment-relative offset — packed with its
@@ -471,18 +464,16 @@ impl AllocCore {
             let mut changed_classes: u64 = 0;
             ring.drain(|off| {
                 #[cfg(feature = "fastbin")]
-                let reclaimed = Self::reclaim_offset_checked(base, off, small_cur, is_in_magazine);
+                let reclaimed = Self::reclaim_offset_checked(base, off, is_in_magazine);
                 #[cfg(not(feature = "fastbin"))]
-                let reclaimed = Self::reclaim_offset(base, off, small_cur);
-                #[cfg(feature = "alloc-decommit")]
+                let reclaimed = Self::reclaim_offset(base, off);
                 if reclaimed {
-                    decommit_happened = true;
+                    #[cfg(feature = "alloc-decommit")]
+                    if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                        decommit_happened = true;
+                    }
+                    changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
                 }
-                #[cfg(not(feature = "alloc-decommit"))]
-                {
-                    let _ = reclaimed;
-                }
-                changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
             });
             // R7-A2: sync the directory for this segment after the drain
             // completed (same logic as the production
