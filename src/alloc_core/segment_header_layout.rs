@@ -4,7 +4,7 @@
 use super::os::{MAX_REALISTIC_PAGE_SIZE, PAGE};
 #[cfg(feature = "hardened")]
 use super::segment_header::GEN_TABLE_FOOTPRINT;
-use super::segment_header::{align_up_const, BinTable, Layout, PageMap, SegmentHeader};
+use super::segment_header::{align_up, align_up_const, BinTable, Layout, PageMap, SegmentHeader};
 
 use core::mem::size_of;
 
@@ -89,16 +89,24 @@ impl Layout {
     /// regions that exist in that config — verified by the ungated
     /// `small_meta_end() + PAGE <= SEGMENT` const assert at the bottom of this
     /// file (X7-Ф1's neutrality argument).
+    ///
+    /// R8-6 (task #219): this is the **TIGHT** payload/metadata boundary —
+    /// aligned only to `PAGE` (4 KiB), matching every other offset in this
+    /// file. It is the value bump initialization, the H-1 defense-in-depth
+    /// "is this offset in metadata" guard, the primordial registry/hash/
+    /// free-list placement, and the page-map re-marking loop all operate on.
+    /// The decommit/recommit-safe boundary is a SEPARATE runtime function,
+    /// [`small_decommit_start`]: a decommit-safe boundary needs REAL OS page
+    /// alignment (which only a runtime call to `aligned_vmem::page_size()` can
+    /// determine — exactly what blocked task #205's literal fix and is why #205
+    /// instead over-aligned THIS function to `MAX_REALISTIC_PAGE_SIZE` at
+    /// compile time). R8-6 keeps this function tight (recovering up to ~56–64
+    /// KiB of payload per 4 MiB segment on ordinary 4 KiB-page systems that
+    /// #205's over-alignment cost) and moves the real-page-safety requirement
+    /// to [`small_decommit_start`], called only by the actual
+    /// decommit/recommit syscall sites.
     pub(crate) const fn small_meta_end() -> usize {
-        // PLAT-1 (task #205): align to MAX_REALISTIC_PAGE_SIZE (64 KiB), NOT
-        // PAGE (4 KiB). This offset is a decommit/recommit boundary (see
-        // `alloc_core_small.rs` / `alloc_core_small_pool.rs`); on a 16 KiB- or
-        // 64 KiB-page machine a 4 KiB-aligned boundary lands mid-real-page and
-        // `madvise`/`VirtualFree` silently round it, reclaiming the wrong byte
-        // range. 64 KiB alignment is a superset of every real page size up to
-        // 64 KiB. Cannot use the runtime `aligned_vmem::page_size()` here —
-        // this is a `const fn` evaluated in true `const` contexts.
-        align_up_const(Self::small_meta_end_pre_runstack(), MAX_REALISTIC_PAGE_SIZE)
+        align_up_const(Self::small_meta_end_pre_runstack(), PAGE)
     }
     /// The end of the small-segment metadata BEFORE final page-alignment — i.e.
     /// the unaligned byte offset just past the last metadata region (the
@@ -159,10 +167,72 @@ impl Layout {
     }
     /// End of the primordial metadata (page-aligned past the free-list top
     /// counter).
+    ///
+    /// R8-6 (task #219): like [`small_meta_end`], this is the **TIGHT**
+    /// metadata boundary — aligned only to `PAGE` (4 KiB). The primordial
+    /// registry/hash/free-list placement and bump initialization operate on
+    /// this value. The decommit/recommit-safe boundary is the SEPARATE runtime
+    /// function [`primordial_decommit_start`] (see [`small_meta_end`]'s doc for
+    /// the full R8-6 rationale: #205 over-aligned this function to
+    /// `MAX_REALISTIC_PAGE_SIZE`; R8-6 reverts to tight alignment and moves
+    /// real-page-safety to the runtime function). The primordial segment is
+    /// never decommitted in the current codebase
+    /// (`dec_live_and_maybe_decommit` guards on `SegmentKind::Small`), so
+    /// [`primordial_decommit_start`] has no live call site today — it exists
+    /// for symmetry, future-proofing, and the compile-time/runtime sanity
+    /// checks.
     pub(crate) const fn primordial_meta_end() -> usize {
-        // PLAT-1 (task #205): same decommit/recommit-boundary rationale as
-        // `small_meta_end` — align to MAX_REALISTIC_PAGE_SIZE, not PAGE.
-        align_up_const(Self::primordial_free_top_off() + 4, MAX_REALISTIC_PAGE_SIZE)
+        align_up_const(Self::primordial_free_top_off() + 4, PAGE)
+    }
+    /// R8-6 (task #219): the real, runtime-determined decommit/recommit safe
+    /// boundary for a small segment — [`small_meta_end`] rounded UP to the
+    /// ACTUAL OS page size (`aligned_vmem::page_size()`), not the compile-time
+    /// `PAGE` (4 KiB) constant [`small_meta_end`] itself uses.
+    /// `decommit_pages`/`recommit_pages` operate on real OS pages; on a 16 KiB-
+    /// or 64 KiB-page machine, decommitting starting at a 4 KiB-aligned-but-
+    /// not-real-page-aligned offset would land mid-real-page and the OS call
+    /// would silently round it, reclaiming (or leaving committed) the wrong
+    /// byte range — the exact bug `MAX_REALISTIC_PAGE_SIZE` (task #205) fixed
+    /// by OVER-aligning [`small_meta_end`] itself. R8-6 instead keeps
+    /// [`small_meta_end`] tight (recovering the payload #205's fix cost on
+    /// ordinary 4 KiB systems) and moves the real-page-safety requirement to
+    /// this SEPARATE function, called only by the actual decommit/recommit
+    /// syscall sites. Always `>= small_meta_end()`; on a 4 KiB-page system this
+    /// function returns EXACTLY [`small_meta_end`] (no waste at all); on a
+    /// 16/64 KiB-page system it returns the same value #205's over-alignment
+    /// used to force unconditionally.
+    ///
+    /// NOT a `const fn`: it calls `aligned_vmem::page_size()`, a runtime OS
+    /// query — this is exactly what blocked #205's literal fix and is why #205
+    /// used the `MAX_REALISTIC_PAGE_SIZE` compile-time superset bound instead;
+    /// this function is only ever called from genuinely-runtime
+    /// decommit/recommit code paths, so the const-fn constraint doesn't apply.
+    pub(crate) fn small_decommit_start() -> usize {
+        let real_page = aligned_vmem::page_size();
+        // Keep MAX_REALISTIC_PAGE_SIZE load-bearing: it documents and guards
+        // the invariant that 64 KiB is a superset of every real page size this
+        // crate runs on. If a future platform exposed a page size beyond 64
+        // KiB this would trip in debug builds — the `align_up` below is still
+        // correct (it uses the real queried size), but the constant's doc
+        // claim would have drifted.
+        debug_assert!(
+            real_page <= MAX_REALISTIC_PAGE_SIZE,
+            "real OS page size ({real_page}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the documented superset invariant no longer holds"
+        );
+        align_up(Self::small_meta_end(), real_page)
+    }
+    /// R8-6 (task #219): same rationale as [`small_decommit_start`], for the
+    /// primordial segment. Always `>= primordial_meta_end()`; on a 4 KiB-page
+    /// system returns EXACTLY [`primordial_meta_end`].
+    pub(crate) fn primordial_decommit_start() -> usize {
+        let real_page = aligned_vmem::page_size();
+        debug_assert!(
+            real_page <= MAX_REALISTIC_PAGE_SIZE,
+            "real OS page size ({real_page}) exceeds MAX_REALISTIC_PAGE_SIZE ({MAX_REALISTIC_PAGE_SIZE}); \
+             the documented superset invariant no longer holds"
+        );
+        align_up(Self::primordial_meta_end(), real_page)
     }
     /// Number of metadata pages in a small segment.
     pub(crate) const fn small_meta_pages() -> usize {

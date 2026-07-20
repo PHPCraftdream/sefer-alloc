@@ -670,20 +670,32 @@ impl AllocCore {
         // Metadata and the remote-free ring are NEVER decommitted: they live in
         // `[0, meta_end)`, which is entirely below the decommit range.
         #[cfg(feature = "alloc-lazy-commit")]
-        let decommit_start = {
-            let initial_frontier = payload_start + super::alloc_core_small::LAZY_FIRST_CHUNK;
+        {
+            // R8-6 (task #219): the decommit boundary must be REAL-OS-page-
+            // aligned. `LAZY_FIRST_CHUNK` (256 KiB) is a multiple of every
+            // realistic page size, but `payload_start + LAZY_FIRST_CHUNK`
+            // inherits `payload_start`'s residue modulo the real page size —
+            // so on a 16/64 KiB-page machine where `payload_start` (= the
+            // TIGHT `small_meta_end()`) is only 4 KiB aligned, the naive sum
+            // would land mid-real-page and the OS would silently round the
+            // decommit boundary, reclaiming part of the initial chunk that
+            // must stay committed for fault-free reuse. Compute the boundary
+            // from the real-page-safe `small_decommit_start()` instead.
+            let initial_frontier =
+                SegLayout::small_decommit_start() + super::alloc_core_small::LAZY_FIRST_CHUNK;
             // Decommit only above the initial chunk.
             os::decommit_pages(base, initial_frontier, SEGMENT);
             meta.set_committed_payload_end(initial_frontier);
-            payload_start // bump still resets to payload_start for stale-free guard
-        };
+        }
         #[cfg(not(feature = "alloc-lazy-commit"))]
-        let decommit_start = {
-            // 1. Return the payload pages to the OS (no-op under miri).
-            os::decommit_pages(base, payload_start, SEGMENT);
-            payload_start
-        };
-        let _ = decommit_start;
+        {
+            // R8-6 (task #219): decommit starting at the real-page-safe
+            // boundary, not the tight `payload_start` — on a 16/64 KiB-page
+            // machine the tight value lands mid-real-page and the OS silently
+            // rounds it, reclaiming (or leaving committed) the wrong byte
+            // range.
+            os::decommit_pages(base, SegLayout::small_decommit_start(), SEGMENT);
+        }
         // 2a. Reset the bump cursor to the payload start (segment is blank). This
         //     is the load-bearing reset for the post-decommit stale-free guard:
         //     after this, every prior block offset in the payload is `>= bump`, so

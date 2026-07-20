@@ -1094,7 +1094,7 @@ impl AllocCore {
             }
             #[cfg(not(feature = "alloc-lazy-commit"))]
             {
-                if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
                     // Honest OOM: the OS refused to re-commit the payload
                     // (commit-charge exhaustion). Do NOT clear `decommitted`
                     // and do NOT advance the bump — writing into the
@@ -1235,7 +1235,7 @@ impl AllocCore {
             }
             #[cfg(not(feature = "alloc-lazy-commit"))]
             {
-                if !os::recommit_pages(segment, SegLayout::small_meta_end(), SEGMENT) {
+                if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
                     // Honest OOM (see `carve_block`): leave the segment marked
                     // decommitted, do not advance the bump, and carve nothing
                     // so the caller falls back (fresh segment / null) instead

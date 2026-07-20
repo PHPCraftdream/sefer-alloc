@@ -86,18 +86,49 @@ impl SegmentLayout {
     /// last metadata structure). Payload carving begins at this offset.
     /// Exposed so tests can reason about the metadata/payload boundary without
     /// depending on the private `segment_header::Layout` module.
+    ///
+    /// R8-6 (task #219): this is the **TIGHT** metadata boundary — aligned
+    /// only to `PAGE` (4 KiB). The decommit/recommit-safe boundary is
+    /// [`small_decommit_start`](Self::small_decommit_start) (a runtime value,
+    /// real-OS-page-aligned). See that method's doc for the full rationale.
     pub const SMALL_META_END: usize = super::segment_header::Layout::small_meta_end();
 
     /// The end of the primordial segment's metadata region (page-aligned past
     /// the free-list top counter). The primordial segment additionally carries
     /// the registry array + hash table + free-list stack past the small-segment
-    /// metadata, so this is `>=` [`SMALL_META_END`](Self::SMALL_META_END). Like
-    /// [`SMALL_META_END`](Self::SMALL_META_END) it is a decommit/recommit
-    /// boundary (PLAT-1, task #205): it is aligned to a conservative upper
-    /// bound on every real OS page size (64 KiB), not just the 4 KiB `PAGE`,
-    /// so it lands on a real-page boundary on 16 KiB / 64 KiB-page machines too.
-    /// Exposed so tests can assert the boundary is real-page-aligned.
+    /// metadata, so this is `>=` [`SMALL_META_END`](Self::SMALL_META_END).
+    ///
+    /// R8-6 (task #219): like [`SMALL_META_END`](Self::SMALL_META_END), this is
+    /// the **TIGHT** metadata boundary (4 KiB aligned); the decommit/recommit-
+    /// safe boundary is
+    /// [`primordial_decommit_start`](Self::primordial_decommit_start).
     pub const PRIMORDIAL_META_END: usize = super::segment_header::Layout::primordial_meta_end();
+
+    /// R8-6 (task #219): the real, runtime-determined decommit/recommit safe
+    /// boundary for a small segment — [`SMALL_META_END`](Self::SMALL_META_END)
+    /// rounded UP to the actual OS page size (`aligned_vmem::page_size()`).
+    /// Called only by the actual `os::decommit_pages`/`os::recommit_pages`
+    /// syscall sites. Always `>= SMALL_META_END`; on a 4 KiB-page system this
+    /// returns EXACTLY `SMALL_META_END` (no waste); on a 16/64 KiB-page system
+    /// it returns the real-page-aligned value. Test-only public surface
+    /// (`#[doc(hidden)]` convention — see `lib.rs`); not stable public API.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn small_decommit_start() -> usize {
+        super::segment_header::Layout::small_decommit_start()
+    }
+
+    /// R8-6 (task #219): same as [`small_decommit_start`](Self::small_decommit_start)
+    /// for the primordial segment. Always `>= PRIMORDIAL_META_END`; on a 4
+    /// KiB-page system returns EXACTLY `PRIMORDIAL_META_END`. The primordial
+    /// segment is never decommitted in the current codebase, so this has no
+    /// live production call site — it exists for symmetry and the alignment
+    /// sanity tests. Test-only public surface; not stable public API.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn primordial_decommit_start() -> usize {
+        super::segment_header::Layout::primordial_decommit_start()
+    }
 
     /// Convert an address to the SEGMENT-aligned base of the segment that
     /// contains it (the O(1) owner-lookup primitive).
