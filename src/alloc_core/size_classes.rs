@@ -31,6 +31,14 @@
 //!   of `production`):** six more EXACT classes (256 KiB … 1 MiB) merged into
 //!   the SAME sorted table via the crate's `extras`, taking `SMALL_CLASS_COUNT`
 //!   from 49 to 55 and `SMALL_MAX` to 1 MiB. See [`EXTRAS`].
+//! - **Wide medium classes (`#[cfg(feature = "medium-classes-wide")]`, opt-in —
+//!   NOT part of `production`, requires `medium-classes`):** three MORE exact
+//!   classes (1.25 / 1.5 / 1.75 MiB) appended on top of the six-class medium
+//!   list, taking `SMALL_CLASS_COUNT` 55 → 58 and `SMALL_MAX` 1 MiB → 1.75 MiB.
+//!   The R9-4 prototype — partially closes the relocated cliff at the
+//!   `medium-classes` ceiling (R8-9 §5 K7). 2 MiB itself is OUT OF SCOPE (fits
+//!   only 1× per 4 MiB segment, so a class for it would carry no density win;
+//!   needs a larger medium-arena / page-run layer). See [`EXTRAS`].
 //! - **Large:** allocations larger than `SMALL_MAX` get a dedicated
 //!   whole-segment span. Alignment alone does not force Large: `align >
 //!   MIN_BLOCK` is still served by a small class whenever one exists whose
@@ -78,10 +86,13 @@ const GEO_COUNT: usize = 40;
 /// table. `#[cfg(feature = "medium-classes")]` additionally appends the six
 /// exact medium classes (256 KiB … 1 MiB, R6-OPT-P0-3a) — all `>` the top of
 /// the 49-entry table, so the combined slice stays strictly increasing and
-/// disjoint from the geometric run.
+/// disjoint from the geometric run. `#[cfg(feature = "medium-classes-wide")]`
+/// (R9-4) further appends three exact wide-medium classes
+/// (1.25 / 1.5 / 1.75 MiB) on top of the six-class medium list, in the same
+/// strictly-increasing append-not-merge shape.
 #[cfg(not(feature = "medium-classes"))]
 const EXTRAS: &[usize] = &[256, 512, 1024, 2048, 4096, 6144, 8192, 12288, 16384];
-#[cfg(feature = "medium-classes")]
+#[cfg(all(feature = "medium-classes", not(feature = "medium-classes-wide")))]
 const EXTRAS: &[usize] = &[
     256,
     512,
@@ -99,9 +110,31 @@ const EXTRAS: &[usize] = &[
     768 * 1024,
     1024 * 1024, // MEDIUM_EXTRA (R6-OPT-P0-3a)
 ];
+#[cfg(feature = "medium-classes-wide")]
+const EXTRAS: &[usize] = &[
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    6144,
+    8192,
+    12288,
+    16384, // task #145 + B1
+    256 * 1024,
+    320 * 1024,
+    384 * 1024,
+    512 * 1024,
+    768 * 1024,
+    1024 * 1024, // MEDIUM_EXTRA (R6-OPT-P0-3a)
+    1280 * 1024,
+    1536 * 1024,
+    1792 * 1024, // WIDE_MEDIUM_EXTRA (R9-4: 1.25 / 1.5 / 1.75 MiB)
+];
 
 /// The total number of small-class table entries in THIS build: 49 without
-/// `medium-classes`, 55 with it. Equal to `GEO_COUNT + EXTRAS.len()`.
+/// `medium-classes`, 55 with `medium-classes` (but not `medium-classes-wide`),
+/// 58 with `medium-classes-wide`. Equal to `GEO_COUNT + EXTRAS.len()`.
 pub(crate) const TABLE_LEN: usize = GEO_COUNT + EXTRAS.len();
 
 /// The huge threshold: allocations of this size or larger are flagged "huge"

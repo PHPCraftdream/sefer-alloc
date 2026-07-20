@@ -282,6 +282,38 @@ alloc-stats = ["alloc-core"]
 # `benches/medium_size_sweep.rs` for the before/after measurement this
 # feature is judged against. Requires `alloc-core`.
 medium-classes = ["alloc-core"]
+# R9-4 (task #226): EXPERIMENTAL "wide medium" extension layered ON TOP of
+# `medium-classes` — three more exact size classes at 1.25 / 1.5 / 1.75 MiB
+# (1,310,720 / 1,572,864 / 1,835,008 B) that partially close the "1–2 MiB
+# cliff" R8-9 §5 K7 identified at the new `SMALL_MAX` = 1 MiB ceiling the
+# six-class `medium-classes` feature introduces. Those three sizes still fit
+# 2–3 to a single 4 MiB segment (vs the Large path's 1 object = 1 dedicated
+# 4 MiB span), so they recover a real density win at the relocated cliff;
+# 2 MiB itself is OUT OF SCOPE here (it fits only 1× per 4 MiB segment, so a
+# fixed class for it would carry no density win — R8-9 §5 notes it needs a
+# larger medium-arena / page-run layer, a separate follow-up).
+#
+# This feature is purely additive over `medium-classes` (it implies
+# `medium-classes`, which transitively implies `alloc-core`) and is NOT part
+# of `production` or any default bundle, exactly like `medium-classes`
+# itself. It MUST NOT alter the six-class `EXTRAS` list `medium-classes`
+# publishes on its own: under `medium-classes` alone the table stays exactly
+# 55 classes / `SMALL_MAX` = 1 MiB (the configuration R9-3 measured for
+# promotion), and only under `medium-classes-wide` does the table grow to
+# 58 classes / `SMALL_MAX` = 1.75 MiB. Feature-OFF builds (neither
+# `medium-classes` nor `medium-classes-wide`) remain byte-for-byte identical
+# to a pre-R9-4 build — every constant this feature touches is behind an
+# `#[cfg]` whose predicate includes `medium-classes-wide`.
+#
+# Encoding-headroom note: the hardened `RemoteFreeRing` packed entry's
+# 6-bit `class` field has its collision-margin const-assert pinned at
+# `SMALL_CLASS_COUNT <= 62` (`src/alloc_core/remote_free_ring.rs`). Adding
+# 3 classes takes the count 55 → 58, still strictly below 62 — the
+# non-collision argument holds, with a narrower margin (4 headroom values
+# instead of `medium-classes`' 7). A future further bump past 62 needs a
+# wider field; see the `entry_never_collides_with_ring_slot_empty`
+# regression test.
+medium-classes-wide = ["medium-classes"]
 # R7-A1: per-class segment directory — a lazily-materialised
 # `class_nonempty` bitmap sidecar that replaces the O(S) linear scan in
 # `find_segment_with_free_impl` with an O(1) bitmap lookup (wired in A3;
