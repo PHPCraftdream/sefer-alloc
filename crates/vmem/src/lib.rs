@@ -1261,7 +1261,10 @@ extern "C" {
 
 #[cfg(all(unix, not(miri)))]
 unsafe fn libc_mmap(len: usize, huge: bool) -> *mut core::ffi::c_void {
-    #[cfg_attr(not(all(target_os = "linux", feature = "huge-pages")), allow(unused_mut))]
+    #[cfg_attr(
+        not(all(target_os = "linux", feature = "huge-pages")),
+        allow(unused_mut)
+    )]
     let mut flags = MAP_PRIVATE | MAP_ANON;
     #[cfg(all(target_os = "linux", feature = "huge-pages"))]
     if huge {
