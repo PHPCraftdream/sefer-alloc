@@ -78,14 +78,19 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 
 // ── tests ────────────────────────────────────────────────────────────────
 
-/// Decommit/reset/recommit cycle: after decommitting and recommitting
-/// segments, the directory must remain consistent with BinTable state.
+/// Pool/reuse cycle: after segments empty into the hysteresis pool and are
+/// reused, the directory must remain consistent with BinTable state. (Named
+/// for the original decommit/recommit lifecycle; since R8-10 (task #223) pool
+/// admission no longer decommits — pooled segments stay fully committed with
+/// free lists intact — but the directory-consistency invariant this test pins
+/// is the same across both lifecycles.)
 #[test]
 #[cfg(feature = "alloc-decommit")]
 fn decommit_recommit_directory_consistency() {
     use sefer_alloc::SmallSegmentPoolConfig;
 
-    // Pool cap = 2: segments are pooled (decommitted) on empty, then reused.
+    // Pool cap = 2: segments are pooled (kept committed, free lists intact
+    // since R8-10) on empty, then reused via the free-list path.
     let pool_cfg = SmallSegmentPoolConfig::new().pool_segments(2);
     let cfg = sefer_alloc::LargeCacheConfig::new().pool(pool_cfg);
     let mut core = AllocCore::new_with_config(cfg).unwrap();

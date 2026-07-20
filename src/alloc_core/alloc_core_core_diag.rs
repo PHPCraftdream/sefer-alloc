@@ -397,6 +397,19 @@ impl AllocCore {
         }
     }
 
+    /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of explicit
+    /// `Node::zero` passes on the Large-classified `alloc_zeroed` path (both
+    /// the `AllocCore` and `HeapCore` faces bump the same counter). Lets
+    /// `tests/alloc_zeroed_fresh_large_skip.rs` assert the fresh-reservation
+    /// SKIP actually fires (delta 0 on a fresh alloc under a real OS) and that
+    /// the explicit zero actually runs where it must (cache hit; any alloc
+    /// under miri). Relaxed load — diagnostic only.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_large_zero_pass_count() -> u64 {
+        super::alloc_core::LARGE_ZERO_PASS_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     // ── R7-A0: directory diagnostic counter accessors ───────────────────────
     //
     // Process-wide counters (Relaxed loads -- diagnostic only, no ordering).

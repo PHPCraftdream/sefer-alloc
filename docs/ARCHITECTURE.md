@@ -329,18 +329,28 @@ Full design: [PHASE35_DECOMMIT_DESIGN.md](PHASE35_DECOMMIT_DESIGN.md).
 ### What it does
 
 When a small segment's `live_count` drops to zero AND the segment is not the
-current carve target, the owner:
+current carve target, the owner routes it through
+`release_or_pool_empty_segment` (Mechanism 2, task #51; pool-admission
+semantics finalized by R8-10, task #223):
 
-1. Decommits payload pages (`madvise MADV_DONTNEED` / `VirtualFree MEM_DECOMMIT`).
-   Metadata pages (header, page_map, BinTable, AllocBitmap, RemoteFreeRing)
-   remain committed.
-2. Resets the segment to blank state: `bump = small_meta_end`, all BinTable
-   heads = `FREE_LIST_NULL`, page_map payload pages = `Free`, AllocBitmap = 0.
-3. Sets the `decommitted` flag in the header. The SegmentTable slot's base is
-   NULLed (from #60), making it recyclable.
+1. **Pool admission** (pool enabled and not full): the segment is pushed onto
+   the hysteresis pool's LIFO front and left EXACTLY as it was the instant it
+   emptied — still registered, pages still committed, free lists intact,
+   nothing reset or decommitted (identically on the eager and
+   `alloc-lazy-commit` legs; R8-10 removed the former B3
+   decommit-on-admission, which cost 50–75× more commit/decommit syscalls per
+   empty→pool→reuse cycle than the eager path's zero). Reuse goes through
+   `find_segment_with_free`'s free-list path with no OS work.
+2. **Release** (pool disabled/full, decay-tick eviction, or pool drain under
+   OS memory pressure): the release-follows fast reset runs (`bump =
+   small_meta_end` + the `decommitted` flag — the only load-bearing pieces,
+   since the whole reservation immediately goes back to the OS via
+   `table.recycle` → `os::release_segment`), and the SegmentTable slot is
+   NULLed, making it recyclable.
 
-On next reuse as `small_cur`, the segment is recommitted
-(`os::recommit_pages`), the flag is cleared, and normal carving resumes.
+Pooled retention is temporary, not merely bounded: the decay tick
+(`maybe_decay_small_pool`) evicts the coldest entry once the workload goes
+quiet, releasing its whole reservation.
 
 Feature `alloc-decommit` is default-off. Without it the behavior is unchanged;
 no layout changes occur (all new fields are present in every build for layout
@@ -348,8 +358,13 @@ stability).
 
 **Platform note (macOS/XNU):** on Darwin `madvise(MADV_DONTNEED)` is advisory
 and lazy — RSS reclamation is best-effort, not the prompt Linux behavior, and
-it carries no zero-fill-on-next-access guarantee. Correctness is unaffected
-(every `alloc_zeroed` zeroes explicitly), only the RSS-reclaim timing differs.
+it carries no zero-fill-on-next-access guarantee. Correctness is unaffected:
+`alloc_zeroed` zeroes explicitly on every REUSED span (the Large
+`large_cache`-hit path, and every Small allocation); the only zeroing skip
+(#221) applies to a genuinely fresh OS reservation, whose zero-fill comes
+from the initial `mmap`/`VirtualAlloc` itself, never from a decommit
+round-trip — so `MADV_DONTNEED` laziness cannot feed a non-zeroed byte into
+an `alloc_zeroed` result.
 
 ### Key insight: no epoch reclamation (M11) needed
 

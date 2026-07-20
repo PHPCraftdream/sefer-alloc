@@ -198,6 +198,22 @@ pub(super) struct CachedLarge {
 pub(super) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT
+/// `Node::zero` passes on the Large-classified `alloc_zeroed` path — bumped
+/// at both consumers of `alloc_large`'s freshness signal
+/// ([`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`) each time they
+/// actually zero (i.e. the fresh-reservation skip did NOT fire). Read via
+/// [`AllocCore::dbg_large_zero_pass_count`]. This is the seam that makes
+/// `tests/alloc_zeroed_fresh_large_skip.rs` sensitive to the OPTIMIZATION
+/// itself, not just the safety contract: with an unconditional memset
+/// reintroduced, the fresh-path tests observe a nonzero delta and go red
+/// (byte-content assertions alone cannot distinguish "skipped because
+/// OS-zeroed" from "zeroed redundantly"). Diagnostic only (Relaxed, like
+/// `DECOMMIT_CALLS`); the increment sits on a path already doing multi-KiB
+/// zeroing or a fresh OS reservation, so its cost is noise.
+pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
 /// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
 /// NOT one of this heap's registered segments, so `dealloc` silently drops it
@@ -809,6 +825,7 @@ impl AllocCore {
             AllocKind::Large => {
                 let (ptr, is_fresh) = self.alloc_large(size, align);
                 if !ptr.is_null() && !is_fresh {
+                    LARGE_ZERO_PASS_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     Node::zero(ptr, size);
                 }
                 ptr

@@ -35,15 +35,41 @@
 #![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 
 use core::alloc::Layout;
+use std::sync::Mutex;
 
 use sefer_alloc::AllocCore;
+
+/// Serialise every test in this file: the R9-1 zero-pass counter
+/// (`dbg_large_zero_pass_count`) is PROCESS-WIDE, so concurrent tests in this
+/// binary would pollute each other's deltas (e.g. the cache-hit test's +1
+/// landing inside the fresh test's expected-0 window). Poison-tolerant: a
+/// failed test must not cascade `PoisonError` into the others.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
 
 // 2 MiB: unambiguously Large under every feature combination. Under the default
 // size-class table SMALL_MAX ~253 KiB; under the opt-in `medium-classes` feature
 // SMALL_MAX grows to 1 MiB — 2 MiB is Large in BOTH, so this test stays valid
 // under `--all-features` (which enables `medium-classes`). See
 // `src/alloc_core/size_classes.rs`.
+//
+// Under miri, every byte of every full-buffer touch (`write_bytes` /
+// `assert_all_zero`) is interpreted one at a time with shadow-memory
+// tracking — a 2 MiB buffer is orders of magnitude more expensive than under
+// a real target. Shrink to the smallest value that is still unambiguously
+// Large under `medium-classes` (SMALL_MAX tops out at exactly 1 MiB there):
+// 1 MiB + 4 KiB clears that bound with margin while roughly halving the
+// per-touch byte cost. This does not weaken the test — the freshness/
+// zero-pass logic under test has no size-dependent branch, so the same bug
+// would still be caught at the smaller size; only the interpreter's
+// byte-by-byte cost scales with `LARGE`.
+#[cfg(not(miri))]
 const LARGE: usize = 2 * 1024 * 1024;
+#[cfg(miri)]
+const LARGE: usize = 1024 * 1024 + 4 * 1024;
 
 /// Read back EVERY byte of `[ptr, ptr+len)` and assert all zero (a full-buffer
 /// memcmp-style check, not a spot check — a spot check could miss a stale tail).
@@ -77,6 +103,7 @@ fn assert_all_dirty(ptr: *mut u8, len: usize, pat: u8, ctx: &str) {
 /// externally-observable proof is the byte content alone.
 #[test]
 fn fresh_large_alloc_zeroed_is_all_zero() {
+    let _guard = serial();
     let mut ac = AllocCore::new().expect("primordial");
     // Unbounded cache budget: isolate the freshness logic from byte-budget
     // eviction (mirrors `regression_large_cache_span_usable_stable.rs`).
@@ -94,9 +121,31 @@ fn fresh_large_alloc_zeroed_is_all_zero() {
         "precondition: cache must be empty for a guaranteed fresh reservation"
     );
 
+    let zero_passes_before = AllocCore::dbg_large_zero_pass_count();
     let ptr = ac.alloc_zeroed(la);
     assert!(!ptr.is_null(), "alloc_zeroed(2 MiB) returned null");
     assert_all_zero(ptr, LARGE, "fresh large alloc_zeroed");
+    let zero_delta = AllocCore::dbg_large_zero_pass_count() - zero_passes_before;
+
+    // R9-1: the byte-content check above cannot distinguish "skipped because
+    // OS-zeroed" from "zeroed redundantly" — the counter can. On a real OS
+    // backend the fresh-reservation skip MUST fire (delta 0: reintroducing an
+    // unconditional memset turns this red). Under miri the freshness signal
+    // is withheld (miri's std::alloc fallback does NOT zero), so the explicit
+    // zero MUST run (delta 1: the pre-R9-1 bug — trusting miri freshness —
+    // turns this red under miri).
+    #[cfg(not(miri))]
+    assert_eq!(
+        zero_delta, 0,
+        "fresh large alloc_zeroed must SKIP the explicit zero pass on a real \
+         OS backend (the optimization under test did not fire)"
+    );
+    #[cfg(miri)]
+    assert_eq!(
+        zero_delta, 1,
+        "fresh large alloc_zeroed under miri must run the explicit zero pass \
+         (miri's std::alloc fallback gives no zero guarantee — R9-1)"
+    );
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `ptr` was
     // returned by the matching `alloc_zeroed` immediately above, is live, and
@@ -112,6 +161,7 @@ fn fresh_large_alloc_zeroed_is_all_zero() {
 /// CONFIRMED via diagnostics so the test cannot pass vacuously.
 #[test]
 fn cache_hit_large_alloc_zeroed_still_zeroes() {
+    let _guard = serial();
     let mut ac = AllocCore::new().expect("primordial");
     ac.dbg_set_large_cache_budget(None);
 
@@ -144,9 +194,20 @@ fn cache_hit_large_alloc_zeroed_still_zeroes() {
     // (d) Re-alloc the SAME shape via `alloc_zeroed` → MUST hit the cache
     //     (reuse ptr1's segment, whose body still holds 0xAA).
     let hits_before = ac.dbg_large_cache_hits();
+    let zero_passes_before = AllocCore::dbg_large_zero_pass_count();
     let ptr2 = ac.alloc_zeroed(la);
     assert!(!ptr2.is_null(), "alloc_zeroed(2 MiB) reuse returned null");
     let hits_after = ac.dbg_large_cache_hits();
+
+    // R9-1: the cache-hit path must run EXACTLY one explicit zero pass — the
+    // counter proves the zeroing came from the explicit `Node::zero` (not from
+    // luckily-still-zero memory), complementing the byte-content assertion in
+    // (e) below.
+    assert_eq!(
+        AllocCore::dbg_large_zero_pass_count() - zero_passes_before,
+        1,
+        "the cache-hit alloc_zeroed must run exactly one explicit zero pass"
+    );
 
     // CONFIRM the hit fired. The per-hit increment is gated on `alloc-stats`
     // (default OFF, NOT in `production`) — when present, assert exactly one hit.
@@ -186,6 +247,7 @@ fn cache_hit_large_alloc_zeroed_still_zeroes() {
 /// empty) or a cache hit (iterations 1.., the previous free's segment cached).
 #[test]
 fn interleaved_alloc_zeroed_always_zero() {
+    let _guard = serial();
     let mut ac = AllocCore::new().expect("primordial");
     ac.dbg_set_large_cache_budget(None);
 
@@ -193,7 +255,19 @@ fn interleaved_alloc_zeroed_always_zero() {
 
     let hits_before = ac.dbg_large_cache_hits();
 
+    // Under miri, each iteration's full-buffer write+read is interpreted
+    // byte-by-byte (see the `LARGE` comment above) — 80 iterations would take
+    // hours. The per-iteration contract under test (fresh or cache-hit, the
+    // result must read back all-zero) is deterministic, not probabilistic:
+    // a handful of iterations exercises both the fresh path (iter 0) and the
+    // cache-hit path (iter 1..) exactly as thoroughly as 80 would, since
+    // there is no size- or iteration-count-dependent branch in the logic
+    // under test. Native runs keep the full 80 for genuine stress coverage
+    // (decay timing, cache churn) that miri cannot usefully add to anyway.
+    #[cfg(not(miri))]
     const ITERS: usize = 80;
+    #[cfg(miri)]
+    const ITERS: usize = 4;
     for i in 0..ITERS {
         let ptr = ac.alloc_zeroed(la);
         assert!(!ptr.is_null(), "iter {i}: alloc_zeroed returned null");
@@ -240,31 +314,18 @@ fn interleaved_alloc_zeroed_always_zero() {
 #[test]
 fn fresh_large_alloc_zeroed_via_heapcore() {
     use sefer_alloc::registry::{bootstrap, HeapRegistry};
-    use std::sync::atomic::{AtomicBool, Ordering};
 
-    // Serialise against other registry-level tests in the suite: the registry
-    // is a process-global static (matching the discipline in
-    // `regression_alloc_zeroed_fresh.rs`).
-    static SERIAL: AtomicBool = AtomicBool::new(false);
-    while SERIAL
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        std::hint::spin_loop();
-    }
-    struct SerialGuard;
-    impl Drop for SerialGuard {
-        fn drop(&mut self) {
-            SERIAL.store(false, Ordering::Release);
-        }
-    }
-    let _serial = SerialGuard;
+    // The shared file-wide lock also serialises this test against the other
+    // counter-asserting tests (the registry is a process-global static AND
+    // the zero-pass counter is process-wide).
+    let _guard = serial();
 
     let _ = bootstrap::ensure();
     let heap = HeapRegistry::claim();
     assert!(!heap.is_null(), "HeapRegistry::claim returned null");
 
     let la = Layout::from_size_align(LARGE, 8).unwrap();
+    let zero_passes_before = AllocCore::dbg_large_zero_pass_count();
     // SAFETY: `heap` is a live, claimed `HeapCore` for this thread; the
     // returned pointer is handed to `dealloc` immediately after the check.
     let ptr = unsafe { (*heap).alloc_zeroed(la) };
@@ -273,6 +334,25 @@ fn fresh_large_alloc_zeroed_via_heapcore() {
         "HeapCore::alloc_zeroed(2 MiB) returned null"
     );
     assert_all_zero(ptr, LARGE, "HeapCore fresh large alloc_zeroed");
+    let zero_delta = AllocCore::dbg_large_zero_pass_count() - zero_passes_before;
+
+    // R9-1: same skip-sensitivity as the AllocCore-level fresh test, but
+    // through the REAL production entry point. NOTE: this heap may have a
+    // non-empty large_cache from earlier traffic in this process (registry
+    // heaps are shared/recycled), so a cache HIT here is possible — in that
+    // case exactly one explicit zero pass is correct. Assert the exact
+    // invariant instead: delta 0 iff the alloc was fresh on a real OS
+    // backend, delta 1 otherwise (cache hit, or any alloc under miri).
+    assert!(
+        zero_delta <= 1,
+        "HeapCore::alloc_zeroed must run at most one explicit zero pass, got {zero_delta}"
+    );
+    #[cfg(miri)]
+    assert_eq!(
+        zero_delta, 1,
+        "HeapCore::alloc_zeroed under miri must always run the explicit zero \
+         pass (miri's std::alloc fallback gives no zero guarantee — R9-1)"
+    );
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `ptr` was
     // returned by the matching `alloc_zeroed` above, is live, freed once here.
     unsafe { (*heap).dealloc(ptr, la) };

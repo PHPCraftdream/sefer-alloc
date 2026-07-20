@@ -34,21 +34,26 @@ impl AllocCore {
     /// common path; actual eviction only when the interval has elapsed AND the
     /// cache is over the headroom target.
     ///
-    /// # Freshness signal (task #221 / R8-8)
+    /// # Freshness signal (task #221 / R8-8; miri fix R9-1)
     ///
     /// Returns `(*mut u8, bool)` where the bool — meaningful only when the
     /// pointer is non-null — is `true` iff the returned allocation lives in a
     /// GENUINELY FRESH OS reservation whose every byte the OS zero-fills by
     /// construction (Windows `VirtualAlloc` MEM_COMMIT, Unix zero-filled
-    /// `mmap`, miri's zeroing guarantee). `alloc_large_slow` (the only producer
-    /// of a fresh span) always yields `true`; a `large_cache` HIT (a reused,
-    /// previously-freed segment that may still hold the prior occupant's bytes)
-    /// yields `false`. Null returns carry `true` purely by convention — the
-    /// caller trusts the bool ONLY for a non-null pointer, so the value for
-    /// null is unobservable; `true` is chosen for uniformity. This is a
-    /// conservative, SEGMENT-RESERVATION-level signal with no per-block bitmap
-    /// and no interaction with any decommit/MADV_FREE reuse path (the cache-hit
-    /// path is the one explicit `false`).
+    /// anonymous `mmap`). Under **miri** the bool is ALWAYS `false`, even for
+    /// a fresh reservation: `crates/vmem`'s miri aperture falls back to bare
+    /// `std::alloc::alloc`, which does NOT zero (vmem's own
+    /// `leak_zeroed_pages` documents and works around exactly this), so a
+    /// fresh miri reservation carries NO zero guarantee and the caller must
+    /// zero explicitly. `alloc_large_slow` (the only producer of a fresh span)
+    /// yields `cfg!(not(miri))`; a `large_cache` HIT (a reused,
+    /// previously-freed segment that may still hold the prior occupant's
+    /// bytes) yields `false` everywhere. Null returns carry `true` purely by
+    /// convention — the caller trusts the bool ONLY for a non-null pointer, so
+    /// the value for null is unobservable; `true` is chosen for uniformity.
+    /// This is a conservative, SEGMENT-RESERVATION-level signal with no
+    /// per-block bitmap and no interaction with any decommit/MADV_FREE reuse
+    /// path.
     pub(crate) fn alloc_large(&mut self, size: usize, align: usize) -> (*mut u8, bool) {
         // align >= SEGMENT is not serviceable by the dedicated-segment large
         // path: the block would land at base + SEGMENT-multiple (mis-registered
@@ -254,9 +259,11 @@ impl AllocCore {
     ///
     /// Every successful path here does a genuinely fresh
     /// `Segment::reserve`/`numa::reserve_aligned_on_node` reservation, so the
-    /// freshness bool is unconditionally `true` (see `alloc_large`'s freshness
-    /// doc). Null/OOM returns also carry `true` by the null-convention noted
-    /// there (unobservable: the caller only consults the bool for non-null).
+    /// freshness bool is `cfg!(not(miri))` (see `alloc_large`'s freshness doc:
+    /// every real OS backend zero-fills a fresh reservation, but miri's
+    /// `std::alloc` fallback does NOT — R9-1). Null/OOM returns carry `true`
+    /// by the null-convention noted there (unobservable: the caller only
+    /// consults the bool for non-null).
     fn alloc_large_slow(
         &mut self,
         size: usize,
@@ -345,7 +352,11 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")]
         SegmentMeta::new(base).set_node_id(my_node);
 
-        (Node::deref(base, hdr_aligned), true)
+        // R9-1: fresh means OS-zeroed only on real OS backends; miri's
+        // std::alloc fallback does not zero, so the freshness signal must be
+        // withheld there (the caller then zeroes explicitly, restoring the
+        // alloc_zeroed contract under miri).
+        (Node::deref(base, hdr_aligned), cfg!(not(miri)))
     }
 
     /// Reclaim a Large/huge segment that was freed by a REMOTE thread (0.3.0,

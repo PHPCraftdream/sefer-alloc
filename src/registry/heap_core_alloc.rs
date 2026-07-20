@@ -350,9 +350,14 @@ impl HeapCore {
         if !ptr.is_null() {
             self.stamp_segment_owner(ptr);
             if !is_fresh {
-                // Reused (cache-hit) segment: NOT OS-zero-guaranteed — must
-                // explicitly zero the user span. Fresh reservations skip this
-                // (the OS zero-fills the whole reserved span at reserve time).
+                // Reused (cache-hit) segment — or ANY allocation under miri
+                // (R9-1: miri's std::alloc fallback does not zero, so
+                // `alloc_large` withholds the freshness signal there): NOT
+                // OS-zero-guaranteed — must explicitly zero the user span.
+                // Fresh real-OS reservations skip this (the OS zero-fills the
+                // whole reserved span at reserve time).
+                crate::alloc_core::LARGE_ZERO_PASS_CALLS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 Node::zero(ptr, size);
             }
         }

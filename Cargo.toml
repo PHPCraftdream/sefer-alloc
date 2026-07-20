@@ -282,14 +282,16 @@ alloc-stats = ["alloc-core"]
 # `benches/medium_size_sweep.rs` for the before/after measurement this
 # feature is judged against. Requires `alloc-core`.
 medium-classes = ["alloc-core"]
-# R7-A1: EXPERIMENTAL per-class segment directory — a lazily-materialised
+# R7-A1: per-class segment directory — a lazily-materialised
 # `class_nonempty` bitmap sidecar that replaces the O(S) linear scan in
 # `find_segment_with_free_impl` with an O(1) bitmap lookup (wired in A3;
 # A1 adds the storage + lazy materialisation + rebuild only). Additive
 # over `alloc-core` (the segment table and size-class table it indexes
-# are core substrate). Purely opt-in — NOT part of `production` or any
-# default-on bundle (mirrors `medium-classes`'s established pattern).
-# Feature-OFF builds are byte-for-byte semantically identical to today.
+# are core substrate). Since R8-3 (task #216, commit ec7ac34) this is part
+# of the `production` bundle — see the note at the `production` definition
+# above for the promotion rationale (#214/#215 fixed the two regressions
+# that had kept it opt-in). Feature-OFF builds remain byte-for-byte
+# semantically identical.
 alloc-segment-directory = ["alloc-core"]
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
