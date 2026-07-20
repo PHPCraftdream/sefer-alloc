@@ -66,7 +66,7 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use sefer_alloc::SeferAlloc;
+use sefer_alloc::{AllocCore, SeferAlloc};
 
 /// Representative small-to-medium sizes for the churn bench.
 const SIZES: &[usize] = &[16, 64, 256, 1024];
@@ -1173,6 +1173,124 @@ fn bench_pool_cap_sweep(c: &mut Criterion) {
     group.finish();
 }
 
+/// Sizes swept by [`bench_batch_ceiling`] — the three sizes task #220 (R8-7)
+/// asks for: 16 B (well below a page, many blocks/segment), 64 B, 256 B
+/// (upper edge of "small bulk" before medium/large paths matter).
+const BATCH_CEILING_SIZES: &[usize] = &[16, 64, 256];
+
+/// Number of blocks allocated-then-freed per iteration — matches [`OPS`]
+/// (`bench_direct_alloc`'s cold bulk pattern, module doc confound discussion
+/// / `global_alloc.rs:192`) so the scalar and batch arms measure literally
+/// the same amount of work (1024 blocks in, 1024 blocks out) and are
+/// directly comparable at 1:1 op count.
+const BATCH_CEILING_OPS: usize = OPS;
+
+/// R8-7 (task #220) — **measure, don't design.** An external perf review
+/// speculated that a public batch/scoped alloc API (`alloc_batch`/
+/// `dealloc_batch`) could give 1.5-3x on bulk small-object patterns by
+/// amortising TLS lookup / classification / routing over many blocks per
+/// call. But no consumer of such an API exists in this repo today, and a
+/// bench purpose-built around a not-yet-existing API would only prove the
+/// mechanism works, not that adoption is worth it -- circular. So this bench
+/// does NOT add any new public symbol. It measures the CEILING such an API
+/// could deliver by calling the EXISTING internal batch primitives
+/// (`AllocCore::refill_class_bump` / `AllocCore::flush_class`, already used
+/// in production by `src/registry/heap_core_alloc.rs`'s magazine-miss refill
+/// and `src/registry/heap_core_free.rs`'s magazine-overflow flush) directly,
+/// exactly the way [`pool_cap_sweep_spread_and_drain`] above already calls
+/// `AllocCore` directly, bypassing `SeferAlloc`/`GlobalAlloc`/TLS entirely.
+///
+/// ## Two arms, same 1024-block cold bulk workload
+///
+/// - **(a) Scalar**: `AllocCore::alloc`/`AllocCore::dealloc` in a loop --
+///   [`BATCH_CEILING_OPS`] separate calls to allocate, then
+///   [`BATCH_CEILING_OPS`] separate calls to free. This is the same cold
+///   bulk shape `bench_direct_alloc` measures for `SeferAlloc`/mimalloc/
+///   System (module doc confound discussion references `global_alloc.rs:192`
+///   for this exact pattern), just against `AllocCore` directly so it is
+///   apples-to-apples with arm (b) below (no TLS/registry overhead on either
+///   side).
+/// - **(b) Batch**: ONE `refill_class_bump` call fills a
+///   `[*mut u8; BATCH_CEILING_OPS]` buffer in a single call (vs.
+///   [`BATCH_CEILING_OPS`] separate `alloc` calls), then ONE `flush_class`
+///   call frees the whole buffer in a single call (vs.
+///   [`BATCH_CEILING_OPS`] separate `dealloc` calls). Both primitives
+///   produce a byte-identical end state to the scalar per-block path (see
+///   their doc comments in `src/alloc_core/alloc_core_small_magazine.rs`) --
+///   only the call-count amortisation differs, which is exactly the
+///   mechanism a public batch API would exploit.
+///
+/// The measured ratio (scalar ns/iter / batch ns/iter) at each size is the
+/// CEILING a hypothetical public API could deliver -- a public API could not
+/// beat this, since it would still have to route through these same
+/// primitives plus its own argument validation. The verdict (GO/NO-GO on
+/// designing a public `alloc_batch`/`dealloc_batch` signature) is recorded in
+/// `docs/perf/R8_7_BATCH_CEILING_MEASUREMENT.md`, not in this file -- this
+/// bench only produces the raw numbers.
+fn bench_batch_ceiling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("batch_ceiling");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(150));
+    group.measurement_time(Duration::from_millis(600));
+
+    for &size in BATCH_CEILING_SIZES {
+        let layout = Layout::from_size_align(size, 8).unwrap();
+
+        // ── (a) Scalar: AllocCore::alloc / AllocCore::dealloc, one call per
+        //    block, BATCH_CEILING_OPS blocks per iteration. ──────────────
+        group.bench_function(format!("scalar/{size}B"), |b| {
+            b.iter_batched(
+                || AllocCore::new().expect("primordial reservation"),
+                |mut ac| {
+                    let mut ptrs: Vec<*mut u8> = Vec::with_capacity(BATCH_CEILING_OPS);
+                    for _ in 0..BATCH_CEILING_OPS {
+                        let p = ac.alloc(layout);
+                        assert!(!p.is_null(), "scalar alloc returned null");
+                        ptrs.push(p);
+                    }
+                    black_box(&ptrs);
+                    for &p in &ptrs {
+                        // SAFETY: `p` was allocated by `ac.alloc` with `layout`
+                        // immediately above and is freed exactly once, here.
+                        unsafe { ac.dealloc(p, layout) };
+                    }
+                    ac
+                },
+                BatchSize::SmallInput,
+            );
+        });
+
+        // ── (b) Batch: ONE refill_class_bump call fills the whole buffer,
+        //    ONE flush_class call frees the whole buffer. ─────────────────
+        let class_idx = {
+            let ac = AllocCore::new().expect("primordial reservation");
+            ac.dbg_layout_class_for(layout)
+                .expect("bench sizes are all small classes")
+        };
+        group.bench_function(format!("batch/{size}B"), |b| {
+            b.iter_batched(
+                || AllocCore::new().expect("primordial reservation"),
+                |mut ac| {
+                    let mut ptrs: Vec<*mut u8> = vec![core::ptr::null_mut(); BATCH_CEILING_OPS];
+                    let filled = ac.refill_class_bump(class_idx, &mut ptrs);
+                    assert_eq!(filled, BATCH_CEILING_OPS, "batch refill under-filled");
+                    black_box(&ptrs);
+                    // SAFETY (R6-MS-3): every entry of `ptrs` was produced by
+                    // the `refill_class_bump` call immediately above -- a
+                    // live, bitmap-allocated block of class `class_idx` owned
+                    // by this same `ac`, each appearing exactly once in the
+                    // slice, freed exactly once here, in this single call.
+                    unsafe { ac.flush_class(class_idx, &ptrs) };
+                    ac
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+
+    group.finish();
+}
+
 #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
 criterion_group!(
     benches,
@@ -1182,7 +1300,8 @@ criterion_group!(
     bench_global_alloc_churn_write,
     bench_global_segment_decommit_cycle,
     bench_working_set_cycle,
-    bench_pool_cap_sweep
+    bench_pool_cap_sweep,
+    bench_batch_ceiling
 );
 #[cfg(not(all(feature = "alloc-decommit", feature = "alloc-xthread")))]
 criterion_group!(
@@ -1192,6 +1311,7 @@ criterion_group!(
     bench_global_alloc_churn_with_teardown,
     bench_global_alloc_churn_write,
     bench_global_segment_decommit_cycle,
-    bench_working_set_cycle
+    bench_working_set_cycle,
+    bench_batch_ceiling
 );
 criterion_main!(benches);
