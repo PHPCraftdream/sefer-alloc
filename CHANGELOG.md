@@ -1103,6 +1103,522 @@ process" baseline and reports the larger **~129.5 MiB → ~4.52 MiB (~28.6×)**
 reduction above; the cross-version doc's 33.3 → 4.5 MiB figure is the same
 axis measured in the `bench:table` harness context.)
 
+### Round 7 — segment directory, lazy commit, crate extraction (r7-a0..a6, r7-b0..b6, crate-extraction P1-P10)
+
+Round 7 — 54 commits (`c0c011f`..`c815927`), 2026-07-16..19 — three
+workstreams run under the same judge-driven methodology as the Round 6 tail
+above (a dedicated diagnostic harness precedes every source change; the
+deterministic `npm run iai` instruction-count gate is the authoritative
+judge; honest-reject is mandatory), plus a crate-extraction campaign that
+grew the workspace from 4 to 11 companion crates, plus a deep-audit-driven
+hardening batch. The headline shape mirrors Round 6's: one big **GO**
+(Workstream A, the segment directory), two **documented NO-GOs** preserved
+as institutional memory (the Workstream-B first-heap commit target as
+originally built, and the `ring-mpsc` in-tree swap), and one headline that
+was a NO-GO on first attempt but **salvaged later in the same round by a
+different mechanism** (R7-B6 lazy-commits the primordial segment). Every
+number below is from the cited perf report or commit message; nothing is
+inferred.
+
+**Workstream A — segment directory, r7-a0..a6 — verdict GO (`f7d3a1c`..`0eb4794`).**
+Replaces the O(segments) linear scan in `find_segment_with_free_impl` (the
+refill-miss path Round 6's R6-OPT-A4 judge had proved blows up to ~100 µs at
+S=1023) with an owner-only per-class bitmap sidecar, materialised lazily at
+≥32 segments. Built incrementally behind the new experimental **`alloc-segment-directory`**
+feature (additive over `alloc-core`, **NOT** in `production`, off by default;
+feature-OFF byte-identical at every phase):
+
+- **r7-a0 (`f7d3a1c`) — baseline + observability.** Six process-wide
+  `AtomicU64` counters (`directory_hits`, `directory_stale_hits`,
+  `directory_fallback_scans`, `directory_words_examined`,
+  `dirty_segments_drained`, `full_scan_slots_examined`) +
+  `benches/directory_threshold_probe.rs` (the S=32..63 transition-zone probe).
+  Baseline confirmed (class 48, holes=0%): S=16 ~219 ns, S=32 ~442 ns,
+  S=64 ~1.1 µs, S=256 ~17 µs, S=1023 ~102 µs — the O(S) cliff, with
+  per-slot cost ~14 ns at S≤63 (cache-hot) rising to ~100 ns at S=1023. The
+  S=32 transition-zone data is what fixed the **materialisation threshold at
+  32** (the scan is already ~442 ns / p99 ~1 µs there; a ~100 ns directory
+  lookup is a clear net win from there up).
+- **r7-a1 (`5b5532c`) — the sidecar.** `SegmentDirectory { class_nonempty:
+  [[u64; MAX_SEGMENTS/64]; SMALL_CLASS_COUNT] }` — plain u64 words (owner-only
+  single-writer), 6.1 KiB (49 classes) / 6.9 KiB (55 under `medium-classes`),
+  reserved lazily via a new M5-clean `os.rs` membrane
+  (`reserve_directory_sidecar` + deref helpers in the existing tier-1 seam),
+  `None` on OOM (mechanism stays off, linear scan runs). Nothing queries it
+  yet.
+- **r7-a2 (`b2eb7a3`) — incremental bitmap maintenance.** Wires
+  `publish_nonempty` / `publish_empty` / `clear_segment_directory` /
+  `sync_directory_for_segment` into every BinTable-head-mutating path (pop,
+  drain, dealloc, flush, recycle, pool/unpool) so the bitmap is exact by the
+  time A3 queries it. Correctness oracle: a randomised 300/500-op workload
+  asserts the incrementally-maintained bitmap EXACTLY equals a fresh
+  `rebuild_from_table` at periodic checkpoints.
+- **r7-a3 (`66d0ac3`) — directory-accelerated lookup (fallback retained).**
+  A directory-hit path in front of the unchanged guarded linear scan. Every
+  load-bearing side effect of the scan (the Variant-2 remote-ring drain, the
+  pool/decommit hysteresis, `unpool_if_present`, the ring-head cache refresh)
+  is preserved byte-for-byte; a directory miss falls through to the scan. The
+  directory is an **accelerator, not yet authoritative** — the scan stays as
+  the correctness oracle and OOM-degradation path. Deliberately disabled under
+  `numa-aware` (the two-pass local/foreign preference would be silently
+  dropped); the bitmap is still maintained there for a future node-aware query.
+- **r7-a4 (`7cc3ccf`) — remote dirty routing.** Replaces "drain every
+  candidate's ring" with a per-slot dirty bitmap (`[AtomicU64; 16]`, 128 B in
+  `HeapSlotRemote`): a cross-thread producer `fetch_or`s a bit Release AFTER
+  a successful publish; the owner `swap(0, Acquire)s` and drains only dirty
+  segments. Lost-wakeup-safe (bit set after the ring Release; a producer
+  arriving mid-drain re-sets it; slot reuse revalidated). The full linear scan
+  (the fallback) still drains every ring unconditionally, so an un-bit-set
+  publish is never a lost free, only a bounded deferral. No new `unsafe`.
+- **r7-a5 (`6eb425a`) — correctness matrix + heavy tools.** A 64-case proptest
+  (per CLAUDE.md) asserting incremental bitmap == fresh rebuild for every
+  (class, slot); gap-fill deterministic tests (recycle+reuse different class,
+  decommit/reset/recommit, 55-class medium rebuild); 3 loom models of the
+  dirty bitmap; a strict-provenance miri target. loom + miri RUN on this host
+  (loom 3/3 + 3/3, miri 8.3 s PASS); TSan/ASan are Linux-CI-only (deferred,
+  noted honestly). **No correctness bug found in A1–A4 production code.**
+- **r7-a6 (`0eb4794`) — GO/NO-GO verdict: GO.** Against the pre-registered
+  gates (full table in
+  [`docs/perf/R7_DIRECTORY_GONOGO.md`](docs/perf/R7_DIRECTORY_GONOGO.md)):
+  refill-miss at holes=0% collapsed from **S=256 ~15–19 µs → ~170–244 ns
+  (60–98×)** and **S=1023 ~92–95 µs → ~376–552 ns (166–254×)** on both mean and
+  p99 — far past the 10× gate; remote dirty=0% **S=1023 103 µs → 800 ns
+  (129×)**; ≤16 directory words examined per lookup by construction; S≤16
+  identical code (not materialised below the threshold); memory 6.1 KiB sidecar
+  + 128 B/slot dirty control. The one **CI-DEFERRED** gate is G8 (IAI
+  instruction-count churn ≤1%, Valgrind is Linux-only); the wall-clock churn
+  proxy showed no regression (largest adverse +11.6%, within the host's
+  ±15–20% noise). Documented trade-off (not a gate failure — the gate measures
+  dirty=0%): at high remote-dirty density (10–100%) the drain-first path costs
+  more than the linear scan's lazy drain, though absolute times stay low
+  (1–3 µs). The directory stays behind its opt-in feature — enabling by
+  default and making the fallback non-authoritative are separate downstream
+  decisions.
+
+**Workstream B — incremental / lazy Windows commit, r7-b0..b5 — verdict NO-GO
+on the primary criterion (`e5310a0`..`40fdcd3`).** A new experimental feature
+**`alloc-lazy-commit`** (additive over `alloc-core`, **NOT** in `production`,
+off by default; on Unix/miri it falls back to eager; `numa-aware` forces eager)
+to reserve a new small segment's 4 MiB span `MEM_RESERVE`-only and commit just
+`[0, meta_end + LAZY_FIRST_CHUNK)` up front, growing the commit frontier
+incrementally as carves advance. Built in the same incremental phase style:
+
+- **r7-b0 (`e5310a0`)** — vmem primitives only: `reserve_aligned_lazy(size,
+  align, initial_commit)` and `commit_range(base, start, end) -> bool`
+  (returns false on OOM, never panics), all in the designated `crates/vmem`
+  `#![allow(unsafe_code)]` seam.
+- **r7-b1 (`0c981d7`)** — the `committed_payload_end` frontier on
+  `SegmentHeader` + the lazy `reserve_small_segment` arm; a temporary
+  "commit-whole-remaining-payload" safety net keeps B1 non-faulting until B2.
+  Deliberately keeps the **primordial** segment eager (it hosts the
+  self-hosted registry accessed at arbitrary offsets during bootstrap).
+- **r7-b2 (`e5cb929`)** — fallible incremental grow-on-carve: on a carve past
+  the frontier, commit `[frontier, round_up(carve_end, GROW_CHUNK))` BEFORE
+  advancing bump/handing out the pointer; `carve_batch` does ONE commit for the
+  whole batch span (not per block); failure leaves everything unchanged. The
+  eager path is a pure no-op (`frontier == SEGMENT`).
+- **r7-b3 (`2c3dbea`)** — lazy-commit-aware decommit/recommit: pool-admission
+  decommits only above the initial chunk and resets to a clean carve target;
+  retain-decommit keeps the initial chunk committed so reuse is fault-free;
+  reuse drops the full-payload recommit. Savings preserved across a segment's
+  second life.
+- **r7-b4 (`f5f84ac`)** — correctness matrix + the `dbg_arm_commit_fail_at(k)`
+  fault-injection hook (fails exactly the k-th commit, 1-based, one-shot,
+  self-disarming): 21 tests proving commit failure is fully recoverable
+  (frontier/state unchanged after an injected failure, retry succeeds).
+- **r7-b5 (`40fdcd3`) — GO/NO-GO verdict: NO-GO on the primary criterion (K1),
+  honestly.** Full table in
+  [`docs/perf/R7_INCREMENTAL_COMMIT.md`](docs/perf/R7_INCREMENTAL_COMMIT.md).
+  The headline target — first-heap Windows commit **4.52 MiB → ≤0.9 MiB** — is
+  **unreachable by `alloc-lazy-commit` as built**: the first-heap commit charge
+  is entirely dominated by the primordial segment (4 MiB eager), and the very
+  first `alloc` triggers `registry::ensure()` which materialises it; no
+  `reserve_small_segment` runs on the first-heap path. So the lazy path — which
+  applies only to *subsequent* small segments — measured **4,628 KiB (4.52 MiB),
+  unchanged across all swept chunk sizes** (K1 FAIL). This is a design-plan
+  mismatch (the plan's 0.9 MiB budget assumed the primordial would participate),
+  reported as such, not a measurement failure. **All secondary criteria PASS:**
+  first-alloc latency +6.2% (≤10%), dense cold within noise (≤3%), steady churn
+  no measurable regression, commit-syscall count scales per-chunk not per-alloc
+  (B2), commit failure fully recoverable (B4's 21 tests), Linux/miri eager
+  fallback transparent. Documented trade-off: the cold-path `segment_decommit_cycle`
+  bench regresses ~50–75× with the feature ON (incremental `VirtualAlloc` syscalls)
+  — opt-in, off by default, does not touch steady state. Chunk size kept at 256
+  KiB (all four swept sizes give identical first-heap commit and near-identical
+  steady-state; no data-driven reason to change). `alloc-lazy-commit` stays
+  opt-in/experimental; the stated future work to actually hit 0.9 MiB was
+  "lazy-commit the primordial + the already-chunked registry." **R7-B6 did the
+  first of those — see below.**
+
+**R7-B6 — lazy-commit the primordial segment (the deferred salvage),
+`8977e88`.** A separate, later commit that revisited Workstream B's headline
+NO-GO and landed the win via a **different mechanism** — it does not retract
+the B5 verdict, it closes the gap B5 identified. The SAFE "Option A"
+(pre-computed footprint): `bootstrap::primordial()` now reserves the 4 MiB VA
+but commits only `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` up front,
+where `primordial_meta_end()` is the exact page-aligned end of EVERY region
+bootstrap writes (header, page map, bin table, gen table/bitmaps, remote ring,
+segment registry, hash table, free-list array + top) — so all bootstrap writes
+land inside the committed prefix by construction (no per-write commit dance).
+Later carves reuse the existing B2 grow-on-carve path. A compile-time assert
+that `primordial_meta_end() + LAZY_FIRST_CHUNK <= SEGMENT` makes a future
+metadata growth fail the build. **Measured first-heap commit Δ: ~4.52 MiB →
+~0.887 MiB (~5.2×), inside the ≤0.9 MiB target.** Gated `alloc-lazy-commit
+AND NOT numa-aware`; the eager path (feature off, or numa-aware) is
+byte-identical. `production alloc-lazy-commit` boots 395/0 (no panic / fault /
+access-violation — bootstrap does not fault under the feature); feature-off
+356/0 (eager path byte-identical). To avoid any future confusion:
+`docs/perf/R7_INCREMENTAL_COMMIT.md` carries a top banner documenting the B6
+reversal and inline "superseded by R7-B6" annotations at the B5-era stale
+claims, and `c815927` later swept the same annotations through the
+cross-version doc — so the historical B5 numbers stay accurate for what B5
+measured while never reading as present-tense fact.
+
+**r7-a7 / final-run fixes — `42f8343`, `a834fca`, `49046ef`.** Three
+"final-run" fixes (#170) landed as the workstreams closed. **`42f8343`
+(r7-a7)** clears the segment-directory bits on the B3 lazy-commit
+pool-admission path — B3 zeroed all BinTable heads on pool admission but did
+NOT clear the directory, so `publish_nonempty` bits survived as stale
+positives and desynced the incremental bitmap from a fresh rebuild (manifested
+under `--all-features` as a `directory mismatch at class=54`); the
+counterfactual reproduces the mismatch. **`a834fca` (test-only)** gates the
+B1–B4 lazy-commit tests off the `numa-aware` eager fallback so they don't hit
+the Windows-lazy branch under `--all-features` (where numa-aware is on and the
+lazy path is deliberately eager). **`49046ef`** comma-joins the feature list in
+`scripts/miri.mjs` so multi-feature entries survive Windows shell re-splitting
+— the old space-separated value made 3+-feature entries hard-error and
+2-feature entries degrade to a `0 passed` **vacuous green**
+(`decommit_miri_cycle`, `regression_ring_drain_guard_miri` were silently
+validating nothing under strict-provenance miri).
+
+**Re-sweep r7-c1 — `TCACHE_CAP` {32, 64}, third rejection — `cf22c96`.** The
+post-RAD-5 re-sweep the R7 plan mandated: RAD-5 (`MagazineBitmap`) removed the
+O(count) in-magazine M2 duplicate scan that was the old rationale for why
+larger caps were expensive — so the hypothesis was that the cost model had
+changed enough to make a larger `TCACHE_CAP` viable. **Verdict: NO-GO for both
+32 and 64; `TCACHE_CAP` stays at 16** — this is the **third** time this
+parameter has been tested and rejected (X4-A 2026-07-05 → PERF-2 `e6f5112`
+2026-07-07 → r7-c1, see PERF-2 above). RAD-5 did remove the scan cost, but the
+deterministic IAI judge (Ir/op via WSL callgrind, the authoritative judge)
+confirmed the dominant costs remain: churn Ir/op **+13.2 % (CAP=32) / +38.8 %
+(CAP=64)** — hard-fails the ≤2 % churn gate — and first-heap commit **+8.8 %
+(+408 KiB) / +26.4 % (+1.22 MiB)**, enlarging each of the 64 first-chunk slots
+and eating the R6 first-heap-commit win (the plan's explicit NO-GO-even-if-
+wall-clock-improves guard). `PerClass` grows 136 → 264 B at CAP=32, bootstrap
+zero-init Ir +89 %, cache footprint ~2×. Cold-direct DID improve (−6.5 % /
+−12.5 % Ir/op) but cannot outweigh churn + commit. The noisy wall-clock showed
+a spurious ~40 % churn improvement at CAP=32 that the deterministic IAI
+contradicts (+13 %) — documented as host noise, not trusted. Zero production
+code changed (CAP swept then restored; `git diff src/` empty). Full tables in
+[`docs/perf/R7_TCACHE_SWEEP.md`](docs/perf/R7_TCACHE_SWEEP.md).
+
+**Re-sweep r7-c2 — small-segment pool-cap sweep → documented presets, default
+unchanged — `ad443d9`.** Sweep of `pool_segments` {0, 1, 4, 8, 16}
+(`pool_byte_cap` scaled to match) on the production feature set. The judge is
+the deterministic decommit-call count (wall-clock is host-noisy; IAI N/A — the
+pool cap is a runtime knob, not a compile-time instruction change). The default
+**stays at `pool_segments=4` / `pool_byte_cap=16 MiB`** — it already eliminates
+working-set-oscillation decommit churn at the most common small sizes (16 B/64
+B: zero decommit calls); raising it costs 2–4× retained RSS for diminishing,
+within-noise latency returns. The deliverable is **three documented tuning
+presets** (recipes over the existing `SmallSegmentPoolConfig` API, not new
+constructors): **low-rss** (`pool_segments(0)`/`pool_byte_cap(0)` — 0 MiB
+retained, max decommit churn; containers/serverless/embedded), **balanced**
+(the current default; kills 16 B/64 B oscillation churn), and **throughput**
+(`pool_segments(16)`/`pool_byte_cap(64 MiB)` — kills churn up to 256 B, halves
+1024 B churn; RAM-rich hosts with oscillating working sets). OOM-drain
+correctness confirmed: the pool remains a reclaimable soft reserve at every
+cap (the unbounded-recycle + 10 pool tests stay green). Zero production change.
+Full tables in
+[`docs/perf/R7_POOL_CAP_PRESETS.md`](docs/perf/R7_POOL_CAP_PRESETS.md).
+
+**docs(r7) — benchmark results + cross-version report — `5511af0`, `b8d11f4`.**
+**`5511af0`** lands
+[`docs/perf/R7_BENCH_RESULTS.md`](docs/perf/R7_BENCH_RESULTS.md): the
+directory win as a clean OFF-vs-ON table (refill-miss collapses O(S)→~O(1),
+up to ~166–180× at S=1023, ~29–39× at S=256, parity at S≤3), plus the canonical
+`npm run bench:table` 3-arm comparison (SeferAlloc vs mimalloc vs System) —
+steady-state churn is SeferAlloc's strength (**1.08–10.15× faster than
+mimalloc**, the advantage growing with block size — 10× at 1024 B; 5–8× faster
+than System across the board); cold-direct at small sizes is the weak spot
+(2–2.7× slower than mimalloc at 16–64 B, crossing over to faster at 1024 B);
+`segment_decommit_cycle` 4.13× faster than mimalloc; `Vec_push` 1.36× faster;
+teardown diagnostic intentionally slower. **`b8d11f4`** lands
+[`docs/perf/R7_CROSS_VERSION_BENCH.md`](docs/perf/R7_CROSS_VERSION_BENCH.md)
++ a README "Cross-version comparison — 0.2.1 → 0.3.0 (post-round7)"
+subsection: same-harness run of published **0.2.1** vs current 0.3.0
+(`49046ef`). Headline (0.3.0 over 0.2.1): churn **+1.0–2.3×**, churn+write up
+to **2.26×**, `segment_decommit_cycle` **~318×**, `working_set_cycle` up to
+**4.03×**; no real regression (cold-direct/teardown deltas within ±15–20 %
+host noise). Documents the two root-cause overhauls between 0.2.1 and 0.3.0:
+the ~318× decommit-cycle win (Mechanism-2 small-segment hysteresis pool +
+OPT-E large cache) and the ~128 MiB → ~6 MiB (~21.7×) Windows first-alloc
+commit-charge cut (the R6-OPT-P0-2 chunked Registry). *(Note for future
+readers: this `b8d11f4` report is the Round-7-era cross-version doc — distinct
+from, and later superseded by, the more complete `docs/perf/R8_CROSS_VERSION_BENCH.md`
+from a subsequent round.)*
+
+**Crate-extraction campaign, P1–P10 (`99e3238`..`0ff8497`).** A focused
+campaign extracting independently-testable crates out of the monolith — 7 new
+workspace member crates + the `aligned-vmem 0.2` release + `malloc-bench-rs`
+publish-prep, taking the workspace from 4 to 11 companion crates. Each new
+crate is a single-file seam crate, `#![forbid(unsafe_code)]` or a single
+documented `#![allow(unsafe_code)]` reason, with a real-type loom suite where
+concurrency is involved (and `#[should_panic]` counterfactuals proving the
+harness is non-vacuous).
+
+- **P1 — `malloc-bench-rs` (`99e3238`).** `run_with`/`sweep_with` with an
+  `on_thread_start(thread_index)` hook (fires per worker before the start
+  barrier) so a caller can pin worker i to core i; `examples/malloc_macro.rs`
+  re-plumbed as a thin driver over the crate, retiring its second copy of the
+  larson/mstress workload (task-#28 drift liability). Publish-prep only
+  (`--dry-run` clean; no version bump, no publish).
+- **P2 — `aligned-vmem 0.2` (`4ec1516`).** One coherent 0.2 release (the
+  version bump 0.1→0.2 was explicitly approved): real `page_size()` via
+  `sysconf`/`GetSystemInfo` (correctness fix for macOS 16 KiB pages); fallible
+  `try_*` API returning `Result<_, VmemError>`; `decommit_lazy` (Linux/macOS
+  `MADV_FREE`); optional `huge-pages`; a `mock` feature (recording call log +
+  fail-N-th fault injection); and `leak_zeroed_pages` folding the
+  3×-repeated leaked-zeroed-sidecar pattern (registry_chunk, heap_overflow
+  sidecar, directory sidecar) into one helper. Absorbing sefer's
+  `COMMIT_FAIL_*` into the mock was deferred (sefer builds vmem without `mock`
+  — see #186 below).
+- **P3 — `racy-ptr-cell` (`63991cc`).** The
+  `UNINIT(null) → INITIALIZING(sentinel) → READY(*mut T)` lazy CAS-published
+  pointer cell, unifying 4 in-tree loom shadow models
+  (`loom_bootstrap_cas`, `loom_chunk_cas`, `loom_fallback_init`,
+  `loom_overflow_sidecar_cas` — deleted) onto ONE real-type suite. The crate
+  aliases its atomics to loom under `--cfg loom`; ships the two non-vacuousness
+  counterfactuals (Relaxed-publish causality violation; spin-on-READY
+  livelock). Registry chunk cells swapped onto it (M5-critical: OOM-rollback /
+  re-race / Release-publish preserved); a `cfg(loom)` shim keeps the const
+  `REGISTRY` static compiling under the global `--cfg loom`.
+- **P5 — `size-classes` (`121d657`).** The const size-class scheme extracted;
+  `src/alloc_core/size_classes.rs` becomes a thin compat shim (numa.rs-over-
+  numa-shim precedent) building sefer's one concrete instantiation. New
+  const-generic `SizeClasses::build(Params{...})` so arbitrary parameterizations
+  become property-testable; `HUGE_THRESHOLD` becomes a policy `Param`. Fixes
+  the "every align≥512 silently falls to whole-segment" bug class via a provably-
+  equivalent jump slow path.
+- **P6 — `globalalloc-model` (`b420d39`).** The differential op-stream + M1–M4
+  oracle harness, unified out of THREE drifted in-tree copies
+  (`tests/alloc_core_differential.rs`, `tests/heap_differential.rs`,
+  `fuzz/fuzz_targets/global_alloc_ops.rs` — now thin consumers each keeping
+  only an adapter + its historical size Config + entry point). All 14 oracle
+  assert sites now live only in the crate (net −399 lines). Two front-ends
+  (proptest `Strategy`, `Arbitrary`) over ONE model power cargo test, the miri
+  bounded run, and libFuzzer.
+- **P7 — `tagged-index-stack` (`0ecfaa4`).** The ABA-tagged Treiber free-index
+  stack that lived across `tagged_ptr.rs` + `heap_registry.rs` — extracted and
+  `heap_registry` swapped onto it (xthread-critical, landed cleanly, no escape
+  hatch). Preserves the two hard-won subtleties (H-2 drain-to-empty packs the
+  RUNNING tag, never tag 0; RAD-1 `store_next` is the only link write and only
+  during push). **`src/registry/tagged_ptr.rs` removed entirely**; the 680-line
+  `tests/loom_free_slots_aba.rs` shadow model **deleted**, replaced by the
+  crate's real-type loom suite which ships TWO `#[should_panic]` counterfactuals
+  (untagged-head slot corruption; H-2 tag-reset stale-CAS) — both confirmed to
+  panic, proving both the ABA tag and the H-2 fix load-bearing.
+- **P4 — `ring-mpsc` (`4c20f0c`).** The Vyukov bounded-MPSC index-ring protocol
+  (raw + owned tiers, drain-stop contract, `DirtyRouter`) captured additively
+  with an 11-test real-type loom suite (7 properties + 4 `#[should_panic]`
+  counterfactuals). **The in-tree swap of `RemoteFreeRing`/`HeapOverflow` onto
+  the crate was NOT done** (sanctioned escape hatch) — and the later
+  CRATE-P4-followup re-investigation confirmed that swap is a real NO-GO (see
+  below).
+- **P8 — `proc-memstat` (`4075490`).** `proc_memstat::snapshot() -> MemStat
+  {rss, commit, peak_rss}` — one same-instant query so rss/commit are coherent.
+  Refolds 6 copies of the `GetProcessMemoryInfo` FFI across 5 example files
+  into one reader. (A later follow-up, `583cd8f`, fixed a hardcoded 4 KiB Linux
+  page-size bug here — see hardening batch.)
+- **P9 — `proc-probe` (`c3c2440`).** The RESULT-protocol emit lib
+  (`emit`/`emit_u64`/`emit_i64`/`emit_f64`/`emit_ns` → `"RESULT key=value"`
+  stdout) + the config-driven A/B/B/A paired runner. The 3 probe examples now
+  emit via `proc_probe::emit_*` and read via `proc_probe::snapshot()`; the
+  statistical core (paired t-test, sign test, the A/B/B/A block loop,
+  same-vs-same control) is UNCHANGED.
+- **P10 — deferred/skipped verdict (`0ff8497`).** Read-only file-or-drop
+  research re-evaluating every candidate the first pass did NOT file, now that
+  P1–P9 shipped. **Net: 0 file as crates.** `carved-mem` DROP (the `'static`
+  atomic-view lifetime is load-bearing for `#![forbid(unsafe_code)]`; a general
+  crate would ripple every `// SAFETY` into a generic caller obligation);
+  `intrusive-once-stack` DROP (ring-mpsc P4 already banked the MPSC value; the
+  unique idempotent-double-push guard is welded to raw-address-in-`AtomicU64` +
+  lifecycle-link tricks that extraction loses); `iai-judge` + `criterion-arms`
+  DROP as crates (their one worthwhile in-place win folds into proposed hygiene
+  H2 — a bench-emitted MANIFEST). All 3 skip groups (gen-slot retired;
+  tcache-magazine trivial; the bitmap/table/directory/large-cache/xthread-SM
+  cluster as internal ABI or ~80 % convention) confirmed. Proposes 4 in-place
+  hygiene sub-tasks (H1 single-source sanitizer matrix > H2 bench-emitted
+  MANIFEST > H3 dead-`dbg_*`-hook detection > H4 fold `rss_probe.rs` onto
+  proc-memstat), not filed.
+
+**CRATE-P4-followup (#187) — `ring-mpsc` in-tree swap = verified NO-GO —
+`d062798`.** The sanctioned P4 escape hatch was re-investigated (not merely
+inherited) against source, and the swap of the two shipping cross-thread-free
+rings onto `crates/ring-mpsc` is **NO-GO on BOTH tiers** — zero code changed.
+Full rationale in
+[`docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md`](docs/crate_extraction/CRATE_P4_FOLLOWUP_NOGO.md).
+**Tier A (`remote_free_ring.rs`):** structural layout incompatibility — the
+shipping ring uses `AtomicU32` cursors + an `overflow` side word +
+`CURSOR_BLOCK = 128` (the PERF-PASS-4 / #52 cache-line-separation fix:
+`head`@0 consumer-only, `tail`@64 producer) + a hardened
+`[gen|class|off]` generation-stamped entry; `ring-mpsc`'s `RawStore` is a
+fixed `usize`-cursor, no-side-word, adjacent layout. Swapping would break the
+cache-line fix and every compile-time offset assert (wired through
+`small_meta_end()` into 20+ call sites), or require a large risky `RawStore`
+generalization. **Tier B (`heap_overflow.rs`):** the two-tier inline+sidecar
+store straddles an inline array AND a lazily-mmap'd sidecar in one cursor pair
+(`ring-mpsc` is single-region), AND the wedge-hazard sidecar-before-tail-CAS
+ordering lives INSIDE `push`'s loop (which `MpscRing::push` owns opaquely) —
+forcing it risks the permanent-wedge hazard the module doc warns is worse than
+the bounded loss. **The swap is pure dedup (zero runtime benefit) over the most
+safety-critical path in the codebase.** Consequence: **all 7 in-tree
+ring/dirty loom models are KEPT** (the shipping code is unchanged, so its
+coverage must stay — the #174 lesson); the crate's `loom_ring_mpsc` suite is
+additive real-type coverage of the extracted protocol only.
+
+**Crate-extraction review + follow-up fixes — `1d39e43`, `9d6c9f4`, `583cd8f`,
+`3d25263`, `6ce2df5`, `0ff8497`'s hygiene.** **`1d39e43`** applies the `@fh`
+phase-review findings (verdict SHIP-WITH-FIXES): F1 HIGH and **CI-breaking,
+reproduced E0015** — under `RUSTFLAGS=--cfg loom` with `alloc-global`,
+`Registry::new()` (const fn) called `TaggedIndexStack::new()` which is non-const
+under loom, so the `static REGISTRY` wouldn't const-evaluate; fixed exactly as
+P3 did for `RacyPtrCell` (a const-capable `loom_shim` stand-in used
+`#[cfg(loom)]` only); plus F2/F3 medium (missing LICENSE files for size-classes
++ proc-probe; README loom row corrected) and low/nit comment/doc accuracy. The
+F9 proc-memstat Linux hardcoded-4 KiB-page bug was filed (then fixed — see
+next). **`583cd8f`** fixes that bug: the Linux aperture read `/proc/self/statm`
+(page counts) and multiplied by a hardcoded `PAGE_SIZE=4096`, under-reporting
+RSS/commit 4×/16× on 16 KiB / 64 KiB-page kernels (aarch64, ppc64); replaced
+with a page-size-independent `/proc/self/status` read (kB-denominated). **`9d6c9f4`
+(#186, CRATE-P2-followup)** absorbs sefer's `COMMIT_FAIL_*` into a NEW distinct
+vmem opt-in feature `fault-injection` (the mock feature couldn't take it over
+— it replaces the whole backend with a stub, but the R7-B4 tests drive a REAL
+`AllocCore` through real reservation/carve/decommit); sefer's `os.rs` now
+delegates to `aligned_vmem::fault_injection` and the R7-B4/B2 tests stay green
+unmodified (non-vacuous — they arm the fault via the delegated hook). **`3d25263`
+(HYGIENE #188)** repoints two stale TSan-runner test targets removed in
+`dfc1a34` to existing successors, unbreaking `[tsan] production`. **`6ce2df5`**
+drops a redundant closure in `examples/malloc_macro.rs` flagged by
+`clippy --all-features` (a CRATE-P1 follow-on the crate-scoped clippy run
+missed).
+
+**Platform, CI, and hardening batch — the deep-audit follow-throughs.** A
+cluster of independent fixes from the 10-agent deep audit + the audit's
+safe-code-soundness follow-up, all individually verified with counterfactuals:
+
+- **PLAT-1 (`65ae170`).** `Layout::small_meta_end()`/`primordial_meta_end()`
+  rounded their decommit/recommit-boundary offsets to the fixed 4 KiB `PAGE`
+  constant — on a 16 KiB-page (Apple Silicon) or 64 KiB-page (some Linux/aarch64)
+  machine the boundary lands mid-real-page and `madvise`/`VirtualFree` silently
+  round it, breaking the M6 RSS-reclaim promise with no red CI signal. Fix: a
+  compile-time `MAX_REALISTIC_PAGE_SIZE = 64 KiB` superset bound (the literal
+  audit suggestion — calling `page_size()` at runtime — does not compile, both
+  are `const fn` used in true const contexts); plus a belt-and-suspenders test
+  asserting both boundaries are multiples of the REAL runtime page size.
+- **`regression_magic_at_atomic_load` SIGSEGV (`f165ced`).** Root-caused via
+  gdb + empirical repro (40/40 crashes without `alloc-decommit`, 0/40 with):
+  the test deliberately races a cross-thread stale/duplicate Large free; under
+  `alloc-decommit` the pages stay mapped (safe), without it `dealloc` calls
+  `os::release_segment` immediately and the remote thread's `magic_at()` read
+  races an actual unmap. Not a production soundness bug (reading a released
+  segment's header is fundamental caller UB for any allocator, already
+  documented) — the fix narrows the test's cfg gate to `alloc-decommit`, where
+  its setup degrades benignly; the R6-MS-5 atomic-load regression stays fully
+  covered there.
+- **safe-surface empirical M1/M3 test (`403e216`).** A new zero-`unsafe` test
+  installing `SeferAlloc` as `#[global_allocator]` and churning
+  `Box`/`Vec`/`Arc` across 6 threads × 1500 iters × 6 size classes, with every
+  allocation tracked in a `[start,end)`-keyed live table checked against its
+  address-order predecessor/successor (provably sufficient for overlap
+  detection) and sentinel-stamped at both ends, re-verified mid-life and at
+  Drop. **Empirically confirms the actual safe-code soundness boundary this
+  project depends on** (`alloc` must never hand out a pointer aliasing a
+  still-live allocation — M1/M3 in `INVARIANTS.md`): 9,000 allocations/run,
+  246 full-table sentinel verify passes/run, **zero M1/M3 violations** across
+  10/10 runs. The narrower-than-it-sounds framing matters: the #202 SIGSEGV was
+  a deliberate double-free through `unsafe fn dealloc` — caller UB by contract,
+  unreachable from safe code; this is the first empirical check of the real M1/M3
+  boundary.
+- **docs(soundness) (`7bca3cf`).** Formalises the UB-vs-soundness distinction
+  for M2/M3 in `INVARIANTS.md` (citing #202 as the worked example) and lands
+  the 10-agent deep-audit reports + `SUMMARY.md`. Closes the T0.5
+  soundness-boundary chain: #202 (fix) → #212 (empirical stress test) → #213
+  (this docs commit).
+- **DEBT-1 (`d8cc157`).** Wires 6 of 13 `tests/loom_*.rs` files that were
+  never CI `--test` steps (`loom_dirty_publish`, `loom_dirty_multi_segment`,
+  `loom_heap_overflow`, `loom_heap_overflow_drain_guard`,
+  `loom_overflow_first_retry`, `loom_remote_ring_drain_guard`) into the
+  existing jobs whose feature strings already match — no new jobs. CI was the
+  only automated net for the shipping `RemoteFreeRing`/`HeapOverflow`/dirty-
+  segment cross-thread protocols, and it had a silent gap.
+- **TEST-1/TEST-2 (`e9d179b`).** 26 sites across 3 lazy-commit test files
+  predicted the `committed_payload_end` frontier using a stale
+  `cfg(all(windows, …))` split — wrong for Unix + `alloc-lazy-commit` +
+  not(`numa-aware`) (the frontier bookkeeping is platform-independent). Masked
+  because the only CI job exercising `alloc-lazy-commit` also always enables
+  `numa-aware`, which independently forces the eager `SEGMENT` frontier — so
+  the wrong assertion passed by accident. Fix: replaced every platform-based
+  split with a pure `cfg(feature = "numa-aware")` split matching the actual
+  production gate; the 20 previously-silent sites now run on every platform.
+- **CONC-1 (`a64a539`).** A loom model of the GENUINE dirty-bitmap
+  producer/consumer race: all 3 existing tests in `loom_dirty_multi_segment.rs`
+  `.join()` every producer before the consumer runs, so loom never explored a
+  drain genuinely racing in-flight `dirty.fetch_or`. Adds a concurrent
+  producer/consumer model + a `#[should_panic]` counterfactual (Relaxed dirty
+  word severs the happens-before chain) proving the harness is non-vacuous.
+  Severity was already documented as low (a linear fallback scan independently
+  guarantees correctness; the dirty bitmap is a pure optimization layer).
+- **TEST-3 (`a08092f`).** `#[should_panic]` counterfactuals added to the 3
+  remaining loom files that lacked one (`loom_epoch`, `loom_sharded`,
+  `loom_dirty_publish`), each backing the file's own prose claim that removing
+  a specific guard makes loom fail — 9 of 13 in-tree loom files now ship a live
+  regression counterfactual.
+- **DOCS-SYNC (`33929b9`).** README + `src/lib.rs` synced after the workspace
+  grew 4 → 11 crates and R6 file-splits scattered tier-2 unsafe sites across
+  new files: the "four companion crates" → eleven; the crates.io/docs.rs badge
+  table 4 → 11 rows; the external-publishable-crates unsafe-story table 4 → 11
+  rows; the tier-2 item-scoped unsafe table 6 stale filenames / 21 sites → 14
+  files / 33 sites (matching the self-verifying grep exactly). New guard
+  `tests/no_stale_doc_references.rs::readme_unsafe_inventory_counts_match_reality`
+  re-derives the counts from the same grep and asserts the README tokens match
+  — counterfactual-verified non-vacuous (corrupting 17 → 18 fails it).
+- **HYGIENE-GRAB-BAG (`dbfeca3`).** Four independent low-risk fixes, zero
+  production allocator logic changes: (API-1) README + `src/lib.rs` now flag
+  `ring-mpsc` as a real, tested, but currently zero-production-consumer
+  workspace member (the in-tree swap was NO-GO — `d062798`) so it doesn't
+  silently bit-rot; (API-2) `#[non_exhaustive]` on two pre-1.0 mock enums;
+  (DEBT-5) deleted genuinely-orphaned `RemoteFreeRing::is_empty` (zero callers
+  since phase12.6, superseded by `tail_relaxed()`) and fixed the bare
+  `#[allow(dead_code)]` on `overflow()` to match its file's convention;
+  (LINTS-1) centralised the duplicated `unexpected_cfgs` lint table into a
+  `[workspace.lints.rust]`.
+- **`ffd3215`** applies an `@fxx` follow-up-batch review (verdict
+  SHIP-WITH-FIXES; #181 bootstrap-safety CONFIRMED by independent write-by-write
+  trace): F1 medium serialises the 4 real-backend `crates/vmem` fault-injection
+  tests behind a process-global `Mutex<()>` (they share `FAIL_NEXT`/`FAIL_AT_*`
+  atomics and libtest runs them in parallel); F4 nit strengthens
+  `reserve_lazy`'s debug_assert to check all three documented preconditions.
+- **`b37ef98`, `327449e`.** Two CI-only fixes a local Windows `npm run check`
+  cannot reach: Unix-only clippy errors in `crates/vmem`'s `libc_mmap`
+  (redundant nested `unsafe {}`, unused `mut`); and allowing the Unicode-3.0
+  license for the `unicode-ident` transitive dep (cargo-deny CI failure).
+
+**docs closeout — `75343532`, `f0dd9a9`, `64952a0`, `c815927`.**
+**`75343532`** lands the 5-lane crate-extraction reports + `SUMMARY` +
+`DEFERRED_AND_SKIPPED` rationale + session checkpoints. **`64952a0` (DEBT-2,
+task #208)** is an honest **"no bug here"** outcome worth noting as such: the
+audit's DEBT-2 finding claimed `crates/vmem/tests/fault_injection.rs` was
+missing a `Mutex<()>` serialization guard, but `ffd3215` (the SAME follow-up
+batch DEBT-2 cites as its own source) had already applied it before the
+10-agent audit even started — the finding was stale at the moment it was
+written; task #208 closes as a documentation correction only, no code change.
+**`f0dd9a9`** lands 5 session checkpoints. **`c815927`** (technically the
+round's final commit, though task-tagged R8-4) marks the B5-era stale claims in
+the R7 perf reports as superseded by R7-B6 — no numeric measurement changed,
+just inline annotations pointing back to `8977e88` so the historical B5 numbers
+stay accurate for what B5 measured while never reading as present-tense fact.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
