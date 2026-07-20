@@ -33,9 +33,24 @@
 //! — see the report accompanying this task for the concrete failing output.
 //!
 //! Feature-gated behind `alloc-segment-directory` (the directory under test)
-//! PLUS `alloc-stats` (the new counters).
+//! PLUS `alloc-stats` (the new counters) AND `not(numa-aware)`: under
+//! `numa-aware` the ENTIRE directory-driven lookup block in
+//! `find_segment_with_free_impl` (including the R8-2 authoritative-miss /
+//! periodic-self-heal logic this file tests) is compiled out — the directory
+//! bitmap is still maintained (A1/A2), but nothing queries it for lookups, so
+//! `directory_authoritative_miss`/`directory_fallback_scans`/
+//! `directory_miss_self_heal` never fire under that feature. Excluding
+//! `numa-aware` here matches the production gate exactly (caught via a
+//! `--all-features` `npm run check` failure: this file originally lacked the
+//! exclusion, so under `--all-features` every genuine miss silently fell
+//! through the (compiled-out) authoritative path with the counters staying
+//! at 0, failing the very first assertion).
 
-#![cfg(all(feature = "alloc-segment-directory", feature = "alloc-stats"))]
+#![cfg(all(
+    feature = "alloc-segment-directory",
+    feature = "alloc-stats",
+    not(feature = "numa-aware")
+))]
 
 use std::alloc::Layout;
 use std::sync::Mutex;
