@@ -33,7 +33,23 @@ impl AllocCore {
     /// the request. Cost: one `Instant::now()` + one duration compare on the
     /// common path; actual eviction only when the interval has elapsed AND the
     /// cache is over the headroom target.
-    pub(super) fn alloc_large(&mut self, size: usize, align: usize) -> *mut u8 {
+    ///
+    /// # Freshness signal (task #221 / R8-8)
+    ///
+    /// Returns `(*mut u8, bool)` where the bool — meaningful only when the
+    /// pointer is non-null — is `true` iff the returned allocation lives in a
+    /// GENUINELY FRESH OS reservation whose every byte the OS zero-fills by
+    /// construction (Windows `VirtualAlloc` MEM_COMMIT, Unix zero-filled
+    /// `mmap`, miri's zeroing guarantee). `alloc_large_slow` (the only producer
+    /// of a fresh span) always yields `true`; a `large_cache` HIT (a reused,
+    /// previously-freed segment that may still hold the prior occupant's bytes)
+    /// yields `false`. Null returns carry `true` purely by convention — the
+    /// caller trusts the bool ONLY for a non-null pointer, so the value for
+    /// null is unobservable; `true` is chosen for uniformity. This is a
+    /// conservative, SEGMENT-RESERVATION-level signal with no per-block bitmap
+    /// and no interaction with any decommit/MADV_FREE reuse path (the cache-hit
+    /// path is the one explicit `false`).
+    pub(crate) fn alloc_large(&mut self, size: usize, align: usize) -> (*mut u8, bool) {
         // align >= SEGMENT is not serviceable by the dedicated-segment large
         // path: the block would land at base + SEGMENT-multiple (mis-registered
         // → dealloc leak → eventual MAX_SEGMENTS abort) or, for align >
@@ -41,7 +57,7 @@ impl AllocCore {
         // violation → UB). Reject with null — a legal alloc-failure signal —
         // rather than leak/misalign. (Task #130.)
         if align >= SEGMENT {
-            return core::ptr::null_mut();
+            return (core::ptr::null_mut(), true);
         }
 
         // Phase 2: lazy decay tick on every large allocation.
@@ -61,7 +77,7 @@ impl AllocCore {
         // `checked_add`). A wrap → null (a legal alloc-failure signal).
         let needed = match hdr_aligned.checked_add(align_up(size, align)) {
             Some(n) => n,
-            None => return core::ptr::null_mut(),
+            None => return (core::ptr::null_mut(), true),
         };
         // Round up to a whole number of SEGMENT-sized spans — the same rounding
         // `Segment::reserve` does internally.  `reserve_aligned_on_node` (like
@@ -224,7 +240,7 @@ impl AllocCore {
                     let my_node = numa::current_node();
                     SegmentMeta::new(slot.base).set_node_id(my_node);
                 }
-                return Node::deref(slot.base, hdr_aligned);
+                return (Node::deref(slot.base, hdr_aligned), false);
             }
         }
 
@@ -235,13 +251,19 @@ impl AllocCore {
     /// `large_cache` has no matching entry. Factored out so the cache-hit path
     /// can call `return self.alloc_large_slow(...)` cleanly when the table is
     /// full (avoiding a goto / code-duplication).
+    ///
+    /// Every successful path here does a genuinely fresh
+    /// `Segment::reserve`/`numa::reserve_aligned_on_node` reservation, so the
+    /// freshness bool is unconditionally `true` (see `alloc_large`'s freshness
+    /// doc). Null/OOM returns also carry `true` by the null-convention noted
+    /// there (unobservable: the caller only consults the bool for non-null).
     fn alloc_large_slow(
         &mut self,
         size: usize,
         align: usize,
         usable: usize,
         hdr_aligned: usize,
-    ) -> *mut u8 {
+    ) -> (*mut u8, bool) {
         // Phase C (numa-aware): steer the large segment to the calling thread's
         // NUMA node, same as for small segments.
         #[cfg(feature = "numa-aware")]
@@ -267,7 +289,7 @@ impl AllocCore {
             };
             match reserved {
                 Some((b, r, rl)) => (b.as_ptr(), r, rl),
-                None => return core::ptr::null_mut(),
+                None => return (core::ptr::null_mut(), true),
             }
         };
         #[cfg(not(feature = "numa-aware"))]
@@ -283,7 +305,7 @@ impl AllocCore {
             }
             let segment = match seg {
                 Some(s) => s,
-                None => return core::ptr::null_mut(),
+                None => return (core::ptr::null_mut(), true),
             };
             let b = segment.as_ptr();
             let r = segment.reservation();
@@ -300,7 +322,7 @@ impl AllocCore {
             None => {
                 // Release the reservation we own.
                 os::release_segment(reservation.as_ptr(), reservation_len);
-                return core::ptr::null_mut();
+                return (core::ptr::null_mut(), true);
             }
         };
         // Lay down the large header. The allocation lives at `hdr_aligned`.
@@ -323,7 +345,7 @@ impl AllocCore {
         #[cfg(feature = "numa-aware")]
         SegmentMeta::new(base).set_node_id(my_node);
 
-        Node::deref(base, hdr_aligned)
+        (Node::deref(base, hdr_aligned), true)
     }
 
     /// Reclaim a Large/huge segment that was freed by a REMOTE thread (0.3.0,

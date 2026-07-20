@@ -293,17 +293,68 @@ impl HeapCore {
     }
 
     /// Allocate `layout.size()` bytes of **zeroed** memory.
+    ///
+    /// # Fresh-reservation skip (task #221 / R8-8)
+    ///
+    /// For a Large-classified request this mirrors the freshness-skip logic in
+    /// [`AllocCore::alloc_zeroed`]: a genuinely fresh OS reservation is already
+    /// zero-filled by the OS, so `Node::zero` is SKIPPED; a `large_cache` HIT
+    /// (a reused segment that may hold the prior occupant's bytes) is zeroed
+    /// explicitly. Small-classified requests delegate to `self.alloc` +
+    /// unconditional `Node::zero` (byte-identical to the pre-task path — the
+    /// skip is Large-only by the task's scope decision).
+    ///
+    /// The Large branch replays the SAME Large-relevant prelude [`alloc`](Self::alloc)
+    /// performs before reaching `AllocCore::alloc_large` —
+    /// [`drain_large_deferred_free`](Self::drain_large_deferred_free) (A1,
+    /// `alloc-xthread`) and [`drain_heap_overflow`](Self::drain_heap_overflow)
+    /// (RAD-4b, `alloc-xthread` without `fastbin`, where it is otherwise hosted
+    /// in the magazine-miss slow path) — then calls `alloc_large` DIRECTLY to
+    /// obtain the freshness tuple (which `self.core.alloc` discards). This is
+    /// an additive restructuring of THIS method's own dispatch only;
+    /// `HeapCore::alloc`'s body is untouched.
     #[must_use]
     #[inline]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
-        let ptr = self.alloc(layout);
+        let size = layout
+            .size()
+            .max(crate::alloc_core::size_classes::MIN_BLOCK);
+        let align = layout.align();
+        let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
+
+        if class.is_some() {
+            // Small-classified: delegate ENTIRELY to the existing `alloc` +
+            // unconditional `Node::zero` (byte-identical to the pre-task path).
+            let ptr = self.alloc(layout);
+            if !ptr.is_null() {
+                Node::zero(ptr, size);
+            }
+            return ptr;
+        }
+
+        // Large-classified: replicate `alloc`'s Large-relevant prelude (the two
+        // drains below — copied verbatim from `alloc`'s own prelude), THEN call
+        // `alloc_large` directly for the freshness tuple. `alloc` gates
+        // `drain_large_deferred_free` on `class.is_none()`; we are already in
+        // the Large branch, so the `if` collapses to an unconditional call.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            self.drain_large_deferred_free();
+        }
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        {
+            self.drain_heap_overflow();
+        }
+
+        let (ptr, is_fresh) = self.core.alloc_large(size, align);
         if !ptr.is_null() {
-            Node::zero(
-                ptr,
-                layout
-                    .size()
-                    .max(crate::alloc_core::size_classes::MIN_BLOCK),
-            );
+            self.stamp_segment_owner(ptr);
+            if !is_fresh {
+                // Reused (cache-hit) segment: NOT OS-zero-guaranteed — must
+                // explicitly zero the user span. Fresh reservations skip this
+                // (the OS zero-fills the whole reserved span at reserve time).
+                Node::zero(ptr, size);
+            }
         }
         ptr
     }

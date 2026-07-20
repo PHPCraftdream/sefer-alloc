@@ -774,18 +774,46 @@ impl AllocCore {
         let align = layout.align();
         match Self::classify(size, align) {
             AllocKind::Small { class_idx } => self.alloc_small(class_idx),
-            AllocKind::Large => self.alloc_large(size, align),
+            // `.0` discards the freshness bool — the plain `alloc` path is
+            // uninitialised-memory by contract and must NOT observe it; only
+            // `alloc_zeroed` below consults the bool. Behaviour is byte-
+            // identical to the pre-tuple `alloc_large` call.
+            AllocKind::Large => self.alloc_large(size, align).0,
         }
     }
 
     /// Allocate `layout.size()` bytes of **zeroed** memory.
+    ///
+    /// # Fresh-reservation skip (task #221 / R8-8)
+    ///
+    /// For a Large-classified request, consults `alloc_large`'s freshness
+    /// signal: a genuinely fresh OS reservation is already zero-filled by the
+    /// OS (Windows `VirtualAlloc` MEM_COMMIT / Unix zero-filled `mmap`), so the
+    /// explicit `Node::zero` pass is SKIPPED — this is the win for large
+    /// calloc-heavy requests. A `large_cache` HIT (a reused segment that may
+    /// hold the prior occupant's bytes) is NOT fresh and is zeroed explicitly.
+    /// Small-classified requests are always zeroed explicitly (the small path
+    /// is out of scope for the freshness skip — see the task header).
     #[must_use]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
-        let ptr = self.alloc(layout);
-        if !ptr.is_null() {
-            Node::zero(ptr, layout.size().max(super::size_classes::MIN_BLOCK));
+        let size = layout.size().max(super::size_classes::MIN_BLOCK);
+        let align = layout.align();
+        match Self::classify(size, align) {
+            AllocKind::Small { class_idx } => {
+                let ptr = self.alloc_small(class_idx);
+                if !ptr.is_null() {
+                    Node::zero(ptr, size);
+                }
+                ptr
+            }
+            AllocKind::Large => {
+                let (ptr, is_fresh) = self.alloc_large(size, align);
+                if !ptr.is_null() && !is_fresh {
+                    Node::zero(ptr, size);
+                }
+                ptr
+            }
         }
-        ptr
     }
 
     /// Deallocate memory previously returned by [`alloc`](Self::alloc) (or
