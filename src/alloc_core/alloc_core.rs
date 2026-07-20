@@ -211,6 +211,13 @@ pub(super) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
 /// OS-zeroed" from "zeroed redundantly"). Diagnostic only (Relaxed, like
 /// `DECOMMIT_CALLS`); the increment sits on a path already doing multi-KiB
 /// zeroing or a fresh OS reservation, so its cost is noise.
+///
+/// Reads 0 unless `alloc-stats` is on — the per-event increments (in
+/// [`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`) are gated behind
+/// `alloc-stats`, matching the established convention for diagnostic counters
+/// (`WASTED_DIRTY_DRAINS`, `FOREIGN_OR_UNROUTABLE_FREES`); the static itself is
+/// always compiled so [`AllocCore::dbg_large_zero_pass_count`] has a stable
+/// definition regardless of the feature set.
 pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -831,6 +838,7 @@ impl AllocCore {
             AllocKind::Large => {
                 let (ptr, is_fresh) = self.alloc_large(size, align);
                 if !ptr.is_null() && !is_fresh {
+                    #[cfg(feature = "alloc-stats")]
                     LARGE_ZERO_PASS_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     Node::zero(ptr, size);
                 }

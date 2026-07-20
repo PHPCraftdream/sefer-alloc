@@ -356,6 +356,7 @@ impl HeapCore {
                 // OS-zero-guaranteed — must explicitly zero the user span.
                 // Fresh real-OS reservations skip this (the OS zero-fills the
                 // whole reserved span at reserve time).
+                #[cfg(feature = "alloc-stats")]
                 crate::alloc_core::LARGE_ZERO_PASS_CALLS
                     .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 Node::zero(ptr, size);

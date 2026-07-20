@@ -133,19 +133,23 @@ fn fresh_large_alloc_zeroed_is_all_zero() {
     // unconditional memset turns this red). Under miri the freshness signal
     // is withheld (miri's std::alloc fallback does NOT zero), so the explicit
     // zero MUST run (delta 1: the pre-R9-1 bug — trusting miri freshness —
-    // turns this red under miri).
-    #[cfg(not(miri))]
+    // turns this red under miri). Gated on `alloc-stats`: the increment is
+    // only compiled under that feature, so without it `zero_delta` is always
+    // 0 and only the byte-content check above carries the proof.
+    #[cfg(all(feature = "alloc-stats", not(miri)))]
     assert_eq!(
         zero_delta, 0,
         "fresh large alloc_zeroed must SKIP the explicit zero pass on a real \
          OS backend (the optimization under test did not fire)"
     );
-    #[cfg(miri)]
+    #[cfg(all(feature = "alloc-stats", miri))]
     assert_eq!(
         zero_delta, 1,
         "fresh large alloc_zeroed under miri must run the explicit zero pass \
          (miri's std::alloc fallback gives no zero guarantee — R9-1)"
     );
+    #[cfg(not(feature = "alloc-stats"))]
+    let _ = (zero_passes_before, zero_delta);
 
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `ptr` was
     // returned by the matching `alloc_zeroed` immediately above, is live, and
@@ -202,7 +206,9 @@ fn cache_hit_large_alloc_zeroed_still_zeroes() {
     // R9-1: the cache-hit path must run EXACTLY one explicit zero pass — the
     // counter proves the zeroing came from the explicit `Node::zero` (not from
     // luckily-still-zero memory), complementing the byte-content assertion in
-    // (e) below.
+    // (e) below. Gated on `alloc-stats`: the increment is only compiled under
+    // that feature; without it the byte-content check in (e) is the sole proof.
+    #[cfg(feature = "alloc-stats")]
     assert_eq!(
         AllocCore::dbg_large_zero_pass_count() - zero_passes_before,
         1,
@@ -218,7 +224,7 @@ fn cache_hit_large_alloc_zeroed_still_zeroes() {
         "the reuse alloc MUST be a cache hit (otherwise the test is vacuous)"
     );
     #[cfg(not(feature = "alloc-stats"))]
-    let _ = (hits_before, hits_after);
+    let _ = (hits_before, hits_after, zero_passes_before);
 
     // Feature-INDEPENDENT hit confirmation: the deposited slot must have been
     // VACATED by the re-alloc. A fresh reservation (MISS) would have LEFT the
@@ -343,16 +349,21 @@ fn fresh_large_alloc_zeroed_via_heapcore() {
     // case exactly one explicit zero pass is correct. Assert the exact
     // invariant instead: delta 0 iff the alloc was fresh on a real OS
     // backend, delta 1 otherwise (cache hit, or any alloc under miri).
+    // Counter-gated on `alloc-stats` (the increment is only compiled under
+    // that feature); the byte-content check above is the always-on proof.
+    #[cfg(feature = "alloc-stats")]
     assert!(
         zero_delta <= 1,
         "HeapCore::alloc_zeroed must run at most one explicit zero pass, got {zero_delta}"
     );
-    #[cfg(miri)]
+    #[cfg(all(feature = "alloc-stats", miri))]
     assert_eq!(
         zero_delta, 1,
         "HeapCore::alloc_zeroed under miri must always run the explicit zero \
          pass (miri's std::alloc fallback gives no zero guarantee — R9-1)"
     );
+    #[cfg(not(feature = "alloc-stats"))]
+    let _ = (zero_passes_before, zero_delta);
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — `ptr` was
     // returned by the matching `alloc_zeroed` above, is live, freed once here.
     unsafe { (*heap).dealloc(ptr, la) };

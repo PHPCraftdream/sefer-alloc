@@ -111,7 +111,12 @@ pub use alloc_core::AllocCore;
 /// R9-1 test seam (task #221 follow-up): the process-wide Large-path explicit
 /// zero-pass counter, re-exported crate-wide so `HeapCore::alloc_zeroed`
 /// (registry) can bump the SAME counter `AllocCore::alloc_zeroed` bumps. Read
-/// via `AllocCore::dbg_large_zero_pass_count`. Not public API.
+/// via `AllocCore::dbg_large_zero_pass_count`. Not public API. Gated on
+/// `alloc-stats`: the only consumer is the registry-side increment site, which
+/// is itself `alloc-stats`-gated; the static itself stays always-compiled (the
+/// `AllocCore::dbg_large_zero_pass_count` accessor reads it via the direct
+/// module path and must remain available regardless of feature set).
+#[cfg(feature = "alloc-stats")]
 pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_config::LargeCacheConfig;

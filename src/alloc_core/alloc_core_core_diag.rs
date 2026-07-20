@@ -403,7 +403,9 @@ impl AllocCore {
     /// `tests/alloc_zeroed_fresh_large_skip.rs` assert the fresh-reservation
     /// SKIP actually fires (delta 0 on a fresh alloc under a real OS) and that
     /// the explicit zero actually runs where it must (cache hit; any alloc
-    /// under miri). Relaxed load — diagnostic only.
+    /// under miri). Relaxed load — diagnostic only. Reads 0 unless `alloc-stats`
+    /// is on (the increment sites are gated); the accessor is always compiled
+    /// so callers need no `#[cfg]`.
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_large_zero_pass_count() -> u64 {
