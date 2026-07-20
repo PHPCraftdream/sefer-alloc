@@ -255,7 +255,46 @@ impl AllocCore {
                     // metadata corruption; stop gracefully rather than loop.
                     break;
                 }
-                None => break,
+                None => {
+                    // R9-8 (task #230): rescue scan before surfacing OOM to the
+                    // magazine refill. Same rationale as `alloc_small`'s step-4
+                    // rescue: a directory-trust miss (R8-2) may have hidden a
+                    // real free block for `class_idx`, leading to a spurious
+                    // carve that just OOM'd. Run ONE forced O(S) scan ignoring
+                    // the directory-trust and, if it finds a segment, drain its
+                    // freelist into `out` instead of stopping short. Uses the
+                    // CHECKED forced variant under `fastbin` so a cross-thread-
+                    // freed magazine-resident block in a drained ring is NOT
+                    // reclaimed (avoiding a double-issue); the unchecked variant
+                    // otherwise (no magazine → no double-issue hazard).
+                    #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+                    if !self.directory_sidecar.is_null() {
+                        let seg = {
+                            #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
+                            {
+                                self.find_segment_with_free_checked_forced(
+                                    class_idx,
+                                    is_in_magazine,
+                                )
+                            }
+                            #[cfg(not(all(feature = "alloc-xthread", feature = "fastbin")))]
+                            {
+                                self.find_segment_with_free_forced(class_idx)
+                            }
+                        };
+                        if let Some(seg) = seg {
+                            #[cfg(feature = "alloc-stats")]
+                            super::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                            let n = self.drain_freelist_batch(seg, class_idx, &mut out[filled..]);
+                            if n != 0 {
+                                filled += n;
+                                continue;
+                            }
+                        }
+                    }
+                    break;
+                }
             }
         }
         filled

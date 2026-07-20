@@ -22,6 +22,7 @@
 //! | `full_scan_slots_examined`    | `find_segment_with_free_impl` per-slot | YES |
 //! | `directory_authoritative_miss`| R8-2 authoritative-miss fast path (O(S) scan SKIPPED) | storage only|
 //! | `directory_miss_self_heal`    | R8-2 periodic re-validation found a directory-missed segment | storage only|
+//! | `directory_rescue_oom_avoided`| R9-8 OOM-rescue scan found a directory-missed segment before surfacing OOM | storage only|
 
 use core::sync::atomic::AtomicU64;
 
@@ -81,3 +82,17 @@ pub(crate) static DIRECTORY_AUTHORITATIVE_MISS: AtomicU64 = AtomicU64::new(0);
 /// indicating a genuine directory-tracking bug and warrants investigation,
 /// NOT a normal/expected event to silence.
 pub(crate) static DIRECTORY_MISS_SELF_HEAL: AtomicU64 = AtomicU64::new(0);
+
+/// R9-8 (task #230): a forced O(S) "rescue scan", run as a last resort right
+/// before the small-allocation path would surface an OOM (segment-table full
+/// or OS reservation failure) to the user, found a real free block the
+/// directory had hidden — i.e. the rescue scan AVOIDED a spurious OOM that a
+/// directory-invariant violation would otherwise have caused. Distinguished
+/// from `DIRECTORY_MISS_SELF_HEAL` (the periodic re-validation's routine
+/// self-heals) so this genuinely-rare OOM-backstop path is independently
+/// observable in production diagnostics. Like `DIRECTORY_MISS_SELF_HEAL`, a
+/// nonzero value here indicates a directory-tracking bug and warrants
+/// investigation, NOT a normal/expected event. Reads 0 unless `alloc-stats` is
+/// on (the increment site is gated) and `alloc-segment-directory` is active
+/// with a materialised sidecar (the rescue is gated on the directory feature).
+pub(crate) static DIRECTORY_RESCUE_OOM_AVOIDED: AtomicU64 = AtomicU64::new(0);

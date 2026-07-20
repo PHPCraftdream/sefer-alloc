@@ -49,7 +49,7 @@ use super::os::SEGMENT;
 use super::segment_header::SegmentMeta;
 use super::segment_header::{SegmentHeader, SegmentKind};
 use super::segment_table::SegmentTable;
-use super::size_classes::{AllocKind, SizeClasses};
+use super::size_classes::{AllocKind, SizeClasses, SMALL_CLASS_COUNT};
 
 // ---------------------------------------------------------------------------
 // OPT-E — large-segment free-cache (feature = "alloc-decommit")
@@ -538,12 +538,18 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-segment-directory")]
     pub(super) directory_sidecar: *mut super::segment_directory::SegmentDirectory,
 
-    /// R8-2 (task #215): consecutive genuine directory misses (no candidate
-    /// validated) since the last full-scan re-validation pass. Reset to 0 every
-    /// time a periodic re-validation scan actually runs (whether or not it finds
-    /// anything). See `DIRECTORY_MISS_FULL_SCAN_PERIOD`.
+    /// R8-2 (task #215) / R9-8 (task #230): consecutive genuine directory
+    /// misses (no candidate validated) since the last full-scan re-validation
+    /// pass, tracked PER-CLASS so a drift-affected class trips its OWN rescan
+    /// independent of how often other (healthy) classes miss. Reset to 0 for
+    /// a class every time a periodic re-validation scan actually runs for THAT
+    /// class (whether or not it finds anything). See
+    /// `DIRECTORY_MISS_FULL_SCAN_PERIOD` (the per-class threshold, 64) for the
+    /// rationale on the value. `u8` storage: the period (64) fits comfortably
+    /// and keeps this at `SMALL_CLASS_COUNT` bytes (49 B default); the
+    /// const-assert below pins that the period never exceeds `u8::MAX`.
     #[cfg(feature = "alloc-segment-directory")]
-    pub(super) directory_miss_streak: u32,
+    pub(super) directory_miss_streak: [u8; SMALL_CLASS_COUNT],
 
     /// R7-A4: reference to the owning HeapSlot's `dirty_segments` bitmap
     /// (planted by `HeapCore` at bind time). `None` until bound (the
@@ -769,7 +775,7 @@ impl AllocCore {
             #[cfg(feature = "alloc-segment-directory")]
             directory_sidecar: core::ptr::null_mut(),
             #[cfg(feature = "alloc-segment-directory")]
-            directory_miss_streak: 0,
+            directory_miss_streak: [0; SMALL_CLASS_COUNT],
             #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
             dirty_segments: None,
         })

@@ -501,6 +501,17 @@ impl AllocCore {
         directory_stats::DIRECTORY_MISS_SELF_HEAL.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// R9-8 (task #230): count of forced OOM-rescue scans that found a real
+    /// free block the directory had hidden (and thus avoided a spurious OOM).
+    /// Distinguished from `dbg_directory_miss_self_heal` (the periodic
+    /// re-validation's routine self-heals). Reads 0 unless `alloc-stats` is on
+    /// and `alloc-segment-directory` is active.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_rescue_oom_avoided() -> u64 {
+        directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     // ── R7-A1: directory sidecar introspection ────────────────────────────
 
     /// R7-A1: whether the per-class segment directory sidecar has been
@@ -568,6 +579,43 @@ impl AllocCore {
         }
     }
 
+    /// R9-8 (task #230) TEST-ONLY: invoke the OOM-rescue scan directly for
+    /// `class_idx` — a faithful mirror of what `alloc_small`'s step-4 `None`
+    /// branch (and the magazine-refill equivalent) does right before surfacing
+    /// an OOM to the user. Runs ONE forced O(S) linear scan that bypasses the
+    /// R8-2 directory-trust fast path; if it finds a real free block the
+    /// directory had hidden, self-heals the bit (inside the scan) and bumps
+    /// `DIRECTORY_RESCUE_OOM_AVOIDED`, returning the segment base. Returns
+    /// `None` if nothing was found (genuine OOM) or the directory is off /
+    /// not materialised / `numa-aware`.
+    ///
+    /// This exists because reaching a real OOM (`MAX_SEGMENTS` table full or OS
+    /// reservation failure) is impractical in a unit test (would require
+    /// ~1024 live 4 MiB segments). The hook lets a test exercise the EXACT
+    /// rescue code path the production OOM branches call, against a
+    /// manufactured directory drift, without driving the table to capacity.
+    #[doc(hidden)]
+    pub fn dbg_directory_rescue_scan(&mut self, class_idx: usize) -> Option<*mut u8> {
+        #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+        {
+            if self.directory_sidecar.is_null() {
+                return None;
+            }
+            let seg = self.find_segment_with_free_forced(class_idx);
+            if seg.is_some() {
+                #[cfg(feature = "alloc-stats")]
+                super::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
+            seg
+        }
+        #[cfg(not(all(feature = "alloc-segment-directory", not(feature = "numa-aware"))))]
+        {
+            let _ = class_idx;
+            None
+        }
+    }
+
     /// R7-A1: the materialisation threshold constant (test introspection).
     #[doc(hidden)]
     #[must_use]
@@ -582,18 +630,62 @@ impl AllocCore {
         }
     }
 
-    /// R8-2 (task #215) TEST-ONLY: reset the per-instance `directory_miss_streak`
-    /// counter to 0. The streak is internal optimisation state that
+    /// R8-2 (task #215) / R9-8 (task #230) TEST-ONLY: reset the per-instance
+    /// `directory_miss_streak` counters to 0 for ALL classes. The streak is
+    /// internal optimisation state (now PER-CLASS since R9-8) that
     /// `push_past_threshold` (and any other alloc sequence) leaves in an
     /// unknown residual value; tests that need to assert on the periodic
-    /// re-validation boundary behaviour call this to put the streak in a known
+    /// re-validation boundary behaviour call this to put the streaks in a known
     /// state before driving misses. No production code path touches the streak
     /// outside `find_segment_with_free_impl`'s directory-miss branch.
     #[doc(hidden)]
     pub fn dbg_directory_reset_miss_streak(&mut self) {
         #[cfg(feature = "alloc-segment-directory")]
         {
-            self.directory_miss_streak = 0;
+            for c in self.directory_miss_streak.iter_mut() {
+                *c = 0;
+            }
+        }
+    }
+
+    /// R9-8 (task #230) TEST-ONLY: read the per-instance `directory_miss_streak`
+    /// counter for a SINGLE class — lets a test assert a specific class's streak
+    /// value directly (the per-class decoupling proof checks that one class's
+    /// misses do NOT advance another class's streak).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_directory_miss_streak_for_class(&self, class_idx: usize) -> u32 {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            self.directory_miss_streak
+                .get(class_idx)
+                .copied()
+                .map_or(0, |v| v as u32)
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            let _ = class_idx;
+            0
+        }
+    }
+
+    /// R9-8 (task #230) TEST-ONLY: SET the per-instance `directory_miss_streak`
+    /// counter for a SINGLE class to `value`. Lets a test place a class's streak
+    /// at an arbitrary point (e.g. `period - 1`) WITHOUT driving polluting
+    /// carves — used by the periodic-self-heal test to position class_x one miss
+    /// shy of the re-validation boundary. No production code path sets the
+    /// streak outside `find_segment_with_free_impl`'s directory-miss branch.
+    #[doc(hidden)]
+    pub fn dbg_directory_set_miss_streak_for_class(&mut self, class_idx: usize, value: u8) {
+        #[cfg(feature = "alloc-segment-directory")]
+        {
+            if let Some(c) = self.directory_miss_streak.get_mut(class_idx) {
+                *c = value;
+            }
+        }
+        #[cfg(not(feature = "alloc-segment-directory"))]
+        {
+            let _ = (class_idx, value);
         }
     }
 

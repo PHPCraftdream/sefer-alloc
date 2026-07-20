@@ -73,16 +73,56 @@ use super::size_classes::SMALL_CLASS_COUNT;
 /// satisfied by definition: S < 32 keeps the current linear scan unchanged.
 pub(crate) const DIRECTORY_MATERIALIZE_THRESHOLD: u32 = 32;
 
-/// R8-2 (task #215): once the directory is materialised, a genuine directory
-/// MISS (no candidate validated) is trusted authoritative for this many
-/// consecutive misses before a full linear-scan re-validation pass runs. This
-/// bounds the cost of any undiscovered incremental-sync drift (task #214's
+/// R8-2 (task #215) / R9-8 (task #230): once the directory is materialised, a
+/// genuine directory MISS (no candidate validated) for a GIVEN class is trusted
+/// authoritative for this many consecutive misses OF THAT CLASS before a full
+/// linear-scan re-validation pass runs. The streak is tracked PER-CLASS
+/// (`AllocCore::directory_miss_streak: [u8; SMALL_CLASS_COUNT]`), so a
+/// drift-affected class trips its OWN rescan promptly regardless of how often
+/// other (healthy) classes miss — directly bounding the worst case of a
+/// directory-invariant violation to `DIRECTORY_MISS_FULL_SCAN_PERIOD` wasted
+/// segments for the drifted class (not diluted by cross-class traffic, as the
+/// pre-R9-8 single shared counter was).
+///
+/// This bounds the cost of any undiscovered incremental-sync drift (task #214's
 /// test suite establishes the directory tracks true state correctly in every
 /// tested scenario, but a periodic safety net catches anything that isn't) —
-/// see `AllocCore::find_segment_with_free_impl`'s directory-miss handling.
-/// Chosen from the review's own suggested range (256-1024 misses); 256 is the
-/// more conservative (safer, slightly more full-scan overhead) end.
-pub(crate) const DIRECTORY_MISS_FULL_SCAN_PERIOD: u32 = 256;
+/// see `AllocCore::find_segment_with_free_impl`'s directory-miss handling, and
+/// the R9-8 rescue scan that runs before OOM as a second backstop.
+///
+/// ## Why 64 (was 256 pre-R9-8)
+///
+/// Pre-R9-8 the streak was a SINGLE `u32` shared across every size class, so
+/// 256 was the TOTAL across all classes — a drifted class that was only a
+/// fraction of miss traffic could wait far longer than 256 of ITS OWN misses
+/// before the shared counter tripped a rescan. R9-8 makes the counter
+/// per-class, so this constant is now the PER-CLASS threshold. A shorter value
+/// than 256 is defensible because a single class's own miss traffic is a much
+/// smaller fraction of total allocator activity than all classes combined: 64
+/// per-class achieves comparable wall-clock detection latency to the old global
+/// 256 under realistic multi-class load (a drifted class contributing ~1/4 of
+/// misses trips at its own 64th miss ≈ the same wall-clock point the global
+/// 256 would have), while STRICTLY improving detection for a low-activity
+/// drifted class (which the shared counter could starve indefinitely under busy
+/// healthy-class traffic). Worst case caps at 64 wasted 4 MiB segments = 256 MiB
+/// of address space (4× tighter than the pre-R9-8 1 GiB), before the R9-8
+/// rescue scan backstops the OOM path on top. For a SINGLE active class, 64
+/// trips 4× sooner than the old 256 — strictly better detection latency (the
+/// R9-8 requirement "equivalent-or-better when one class is active"), at the
+/// cost of ~1/64 ≈ 1.5% of that class's misses running a re-validation scan
+/// that (for a healthy directory) finds nothing — negligible.
+///
+/// Must fit in a `u8` (the per-class streak storage); the const-assert in
+/// `AllocCore` pins this.
+pub(crate) const DIRECTORY_MISS_FULL_SCAN_PERIOD: u32 = 64;
+
+// R9-8: the per-class streak is stored as `u8` (keeps it at
+// `SMALL_CLASS_COUNT` bytes total). Pin at compile time that the period never
+// exceeds `u8::MAX` so a future bump cannot silently wrap the per-class counter.
+const _: () = assert!(
+    DIRECTORY_MISS_FULL_SCAN_PERIOD <= u8::MAX as u32,
+    "DIRECTORY_MISS_FULL_SCAN_PERIOD must fit in the u8 per-class streak storage"
+);
 
 /// Number of `u64` words per class in the `class_nonempty` bitmap.
 /// `MAX_SEGMENTS = 1024`, so 1024 / 64 = 16 words cover the full slot space.

@@ -133,6 +133,42 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 
 // ── tests ────────────────────────────────────────────────────────────────
 
+/// R9-8 (task #230) helper: force `small_cur` onto a FRESHLY-carved segment by
+/// allocating `SMALL_MAX` blocks (the `push_past_threshold` class — its carves
+/// touch `BinTable[small_max]`, never `BinTable[class_x]`) until the current
+/// segment fills and a new one is registered (table count rises). After this
+/// call `small_cur` is a segment whose `BinTable[class_x]` is empty, so a
+/// subsequent `alloc(layout_x)` reaches `find_segment_with_free(class_x)` (the
+/// directory-miss path) instead of popping directly.
+///
+/// Needed because a single alloc of a different class would just carve INTO
+/// the current (class_x-drift) segment — it has ample bump room for small
+/// blocks — rather than spawning a new segment.
+fn force_fresh_segment(core: &mut AllocCore) {
+    let small_max = SegmentLayout::SMALL_MAX;
+    let layout = Layout::from_size_align(small_max, 1).unwrap();
+    let sm_class =
+        SegmentLayout::class_for(small_max, 1).expect("SMALL_MAX must resolve to a small class");
+    let start_count = core.dbg_table_count();
+    let mut drain_buf: Vec<*mut u8> = vec![std::ptr::null_mut(); 8];
+    let mut last = core.alloc(layout);
+    assert!(!last.is_null(), "force_fresh_segment: initial alloc failed");
+    // Allocate SMALL_MAX blocks, draining the freelist each iter to force
+    // carves, until the current segment fills and a new one is registered.
+    while core.dbg_table_count() == start_count {
+        // SAFETY: `last` was returned by `core.alloc(layout)` above and
+        // identifies a live segment owned by `core`.
+        unsafe {
+            core.dbg_drain_freelist_batch(last, sm_class, &mut drain_buf);
+        }
+        last = core.alloc(layout);
+        assert!(
+            !last.is_null(),
+            "force_fresh_segment: alloc failed mid-fill"
+        );
+    }
+}
+
 /// **Test 1**: a genuine directory miss for a class with NO live free blocks
 /// anywhere is AUTHORITATIVE — the O(S) linear scan is SKIPPED.
 ///
@@ -316,19 +352,17 @@ fn self_heal_repairs_and_finds_segment() {
     // residual state; reset so the heal-triggering alloc is at a known streak.
     core.dbg_directory_reset_miss_streak();
 
-    // Two distinct classes other than `small_max_class`: class_x will host the
-    // drifted bit; class_y is used to drive the streak up to the period. Both
-    // must be fresh (no carve during `push_past_threshold`).
+    // class_x will host the drifted bit. It must be fresh (no carve during
+    // `push_past_threshold`, which only ever allocates SMALL_MAX's class), so
+    // its BinTable is empty in every `push_past_threshold` segment — a genuine
+    // directory miss for it.
     let class_x = 0usize;
-    let class_y = 1usize;
     assert!(
-        class_x < small_max_class && class_y < small_max_class && class_x != class_y,
-        "need two distinct fresh classes below SMALL_MAX's class"
+        class_x < small_max_class,
+        "need a fresh class below SMALL_MAX's class"
     );
     let layout_x = Layout::from_size_align(AllocCore::dbg_block_size(class_x), 8)
         .expect("class_x block size is a valid layout");
-    let layout_y = Layout::from_size_align(AllocCore::dbg_block_size(class_y), 8)
-        .expect("class_y block size is a valid layout");
 
     let period = AllocCore::dbg_directory_miss_full_scan_period();
 
@@ -389,51 +423,36 @@ fn self_heal_repairs_and_finds_segment() {
     );
 
     // ── Move `small_cur` AWAY from target_segment so `pop_free(small_cur,
-    //    class_x)` returns None on the next alloc, forcing `alloc_small` to
+    //    class_x)` returns None on the heal alloc, forcing `alloc_small` to
     //    reach `find_segment_with_free(class_x)` (the directory-miss path).
-    //    One alloc of a different fresh class carves a new segment for that
-    //    class and points `small_cur` at it. This first alloc is ALSO a
-    //    directory miss (streak becomes 1).
-    let _y_ptr = core.alloc(layout_y);
-    // small_cur is now a class_y segment (its BinTable[class_x] is empty).
+    //    `target_segment` was carved for class_x (small blocks) and still has
+    //    ample bump room, so a single alloc of another class would just carve
+    //    INTO it rather than spawning a fresh segment. Instead, FILL
+    //    `target_segment` with SMALL_MAX blocks (the `push_past_threshold`
+    //    class — carves pollute `BinTable[small_max]`, NOT `BinTable[class_x]`,
+    //    so the drifted class_x blocks are preserved) until the segment is full
+    //    and a new one is registered, leaving `small_cur` on a fresh segment
+    //    whose `BinTable[class_x]` is empty.
+    force_fresh_segment(&mut core);
+    // small_cur is now a fresh segment whose BinTable[class_x] is empty.
 
-    // ── Drive the streak up so the NEXT directory miss (the heal alloc for
-    //    class_x below) is the one that crosses the period boundary and runs
-    //    the periodic re-validation scan. After the class_x carve at the
-    //    start (streak 0 → 1) and the class_y switch alloc above (streak 1 →
-    //    2), this loop must drive exactly `period - 3` more misses (iter 0
-    //    reuses seg34's class_y refill leftover so pop_free succeeds and
-    //    find_segment_with_free is NOT reached — only iters 1..N each drive
-    //    one miss; N - 1 misses total). With N = period - 2, that is
-    //    `period - 3` misses, landing streak at `2 + (period - 3) = period - 1`
-    //    so the heal alloc's miss bumps it to `period`, triggering the
-    //    periodic re-validation scan. (Driving `period - 1` or more would
-    //    trip the re-validation INSIDE the loop and leave the heal alloc as
-    //    an authoritative miss, breaking the test — verified during
-    //    development.)
-    let mut last_y_ptr: *mut u8 = std::ptr::null_mut();
-    let mut y_drain_buf: Vec<*mut u8> = vec![std::ptr::null_mut(); 256];
-    for _ in 0..(period - 2) {
-        if !last_y_ptr.is_null() {
-            // SAFETY: `last_y_ptr` was returned by `core.alloc(layout_y)` in
-            // the previous iteration and identifies a live segment owned by `core`.
-            unsafe {
-                core.dbg_drain_freelist_batch(last_y_ptr, class_y, &mut y_drain_buf);
-            }
-        }
-        let p = core.alloc(layout_y);
-        assert!(!p.is_null());
-        last_y_ptr = p;
-    }
-    // streak is now == period - 1: 2 from the class_x carve + class_y switch,
-    // then period - 3 from this loop (iter 0 reuses seg34's refill so it does
-    // not miss). The heal alloc below is the one that crosses the period.
+    // R9-8 (task #230): the streak is now PER-CLASS. Rather than driving
+    // class_x misses to build the streak (each miss-driven alloc CARVES class_x
+    // blocks into the current segment, polluting whichever segment small_cur
+    // points at), POSITION class_x's streak directly one shy of the
+    // re-validation boundary via the test-only setter. The NEXT class_x miss
+    // (the heal alloc below) bumps it to `period`, tripping the periodic
+    // re-validation scan, which walks the table and finds target_segment.
+    // (Pre-R9-8 this section drove class_y misses against the single shared
+    // counter; per-class streaks make that impossible — see R9-8 report §2.)
+    core.dbg_directory_set_miss_streak_for_class(class_x, (period - 1) as u8);
 
     // ── Trigger the heal. This alloc for class_x:
-    //    1. pop_free(small_cur=class_y_seg, class_x) → None.
+    //    1. pop_free(small_cur=last_carved_seg(drained), class_x) → None.
     //    2. find_segment_with_free(class_x) → directory lookup, bit for
     //       target_slot was force-cleared, no other class_x bits set → MISS.
-    //       streak was == period → periodic re-validation runs the full scan.
+    //       streak_x was == period - 1 → this miss bumps it to `period`,
+    //       tripping the periodic re-validation full scan.
     //    3. The scan walks the table, finds target_segment (BinTable[class_x]
     //       non-empty) → returns Some(target_base).
     //    4. Self-heal: publish_nonempty(class_x, target_slot) → bit SET,

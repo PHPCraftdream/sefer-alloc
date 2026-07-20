@@ -194,7 +194,30 @@ impl AllocCore {
                 self.carve_block_with_refill(class_idx, block_size)
                     .unwrap_or(core::ptr::null_mut())
             }
-            None => core::ptr::null_mut(),
+            None => {
+                // R9-8 (task #230): rescue scan before surfacing OOM. The
+                // directory-trust fast path (R8-2) may have wrongly cleared a
+                // bit for `class_idx`, hiding a real free block and leading us
+                // here to a spurious carve that just OOM'd (table full or OS
+                // reservation failure). Run ONE forced O(S) scan ignoring the
+                // directory-trust: if it finds a segment the directory missed,
+                // self-heal the bit (inside the scan) and serve that block
+                // instead of OOMing. Gated on the directory feature + a
+                // materialised sidecar (otherwise there was no directory-trust
+                // hazard to begin with — the normal path already scanned).
+                #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+                if !self.directory_sidecar.is_null() {
+                    if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                            return ptr;
+                        }
+                    }
+                }
+                core::ptr::null_mut()
+            }
         }
     }
 
@@ -277,6 +300,8 @@ impl AllocCore {
             class_idx,
             #[cfg(feature = "alloc-xthread")]
             &|_, _| false,
+            #[cfg(feature = "alloc-segment-directory")]
+            false,
         )
     }
 
@@ -288,7 +313,52 @@ impl AllocCore {
         class_idx: usize,
         is_in_magazine: &F,
     ) -> Option<*mut u8> {
-        self.find_segment_with_free_impl(class_idx, is_in_magazine)
+        self.find_segment_with_free_impl(
+            class_idx,
+            is_in_magazine,
+            #[cfg(feature = "alloc-segment-directory")]
+            false,
+        )
+    }
+
+    /// R9-8 (task #230): forced "rescue scan" — runs the full O(S) linear
+    /// scan BYPASSING the R8-2 directory-trust fast path, so a stale-negative
+    /// directory bit cannot hide a real free block. Self-heals any bit the
+    /// scan finds the directory had wrongly cleared (same mechanism as the
+    /// periodic re-validation path). Called as a last resort from the
+    /// small-allocation OOM path (where `reserve_small_segment` returned
+    /// `None`) to avoid a spurious OOM a directory bug could otherwise cause.
+    /// Exists only under the directory feature + not-`numa-aware` (under
+    /// `numa-aware` the directory is never trusted for lookups, so there is no
+    /// hazard to rescue from). This unchecked variant is used by `alloc_small`
+    /// (whose step-2 scan is proven magazine-unreachable under `fastbin`).
+    #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+    pub(crate) fn find_segment_with_free_forced(&mut self, class_idx: usize) -> Option<*mut u8> {
+        self.find_segment_with_free_impl(
+            class_idx,
+            #[cfg(feature = "alloc-xthread")]
+            &|_, _| false,
+            true,
+        )
+    }
+
+    /// R9-8 (task #230): checked variant of the rescue scan, used by the
+    /// magazine-refill OOM path (`refill_class_bump_impl`'s step-4 `None`
+    /// branch) so a cross-thread-freed magazine-resident block in a drained
+    /// ring is NOT reclaimed (avoiding a double-issue). See
+    /// `find_segment_with_free_forced` for the rescue semantics.
+    #[cfg(all(
+        feature = "alloc-segment-directory",
+        feature = "alloc-xthread",
+        feature = "fastbin",
+        not(feature = "numa-aware")
+    ))]
+    pub(crate) fn find_segment_with_free_checked_forced<F: Fn(*mut u8, usize) -> bool>(
+        &mut self,
+        class_idx: usize,
+        is_in_magazine: &F,
+    ) -> Option<*mut u8> {
+        self.find_segment_with_free_impl(class_idx, is_in_magazine, true)
     }
 
     #[cfg_attr(
@@ -302,6 +372,15 @@ impl AllocCore {
         &mut self,
         class_idx: usize,
         #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
+        // R9-8 (task #230): when `true`, this call is a forced "rescue scan"
+        // run as a last resort before the small path surfaces an OOM. It
+        // BYPASSES the R8-2 directory-trust fast path (so a stale-negative
+        // directory bit cannot hide a real free block) and self-heals any bit
+        // the scan finds the directory had wrongly cleared (via the same
+        // mechanism the periodic re-validation path uses). Cf-gated to the
+        // directory feature: only the rescue wrappers (below) ever pass `true`,
+        // and they exist solely under `alloc-segment-directory` + not-`numa-aware`.
+        #[cfg(feature = "alloc-segment-directory")] rescue: bool,
     ) -> Option<*mut u8> {
         // R8-2 (task #215): set to `true` ONLY when the periodic
         // re-validation branch below actually runs (directory feature ON,
@@ -509,34 +588,60 @@ impl AllocCore {
             // `assert_directory_equals_rebuild` oracle across the directory
             // test suite) mean a genuine miss is authoritative and the O(S)
             // scan below is unnecessary defense. Every
-            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses, run the full scan
-            // anyway as a periodic re-validation safety net: if it finds
-            // something the directory missed, the success-path self-heal
+            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses for THIS class, run the
+            // full scan anyway as a periodic re-validation safety net: if it
+            // finds something the directory missed, the success-path self-heal
             // (below in the linear scan) repairs the bit in-place and bumps
             // `DIRECTORY_MISS_SELF_HEAL` as a canary counter.
+            //
+            // R9-8 (task #230): the streak is PER-CLASS (indexed by
+            // `class_idx`), so a drift-affected class trips its OWN rescan
+            // independent of how often other (healthy) classes miss — directly
+            // bounding the worst case of a directory-invariant violation to
+            // `DIRECTORY_MISS_FULL_SCAN_PERIOD` misses of the drifted class.
+            //
+            // R9-8 rescue mode (`rescue == true`): this call is the forced
+            // last-resort scan before the small path surfaces an OOM. SKIP the
+            // trust-the-miss return entirely (a stale-negative bit is exactly
+            // what we are trying to see past) and fall straight through to the
+            // linear scan with the self-heal armed. The streak is NOT touched
+            // (rescue is a one-shot backstop, orthogonal to the periodic
+            // cadence). The caller bumps `DIRECTORY_RESCUE_OOM_AVOIDED` if the
+            // scan finds something.
             #[cfg(feature = "alloc-segment-directory")]
             {
-                self.directory_miss_streak = self.directory_miss_streak.saturating_add(1);
-                if self.directory_miss_streak
-                    < super::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
-                {
-                    // R8-2: trust the directory. Skip the O(S) scan entirely.
-                    #[cfg(feature = "alloc-stats")]
-                    super::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                    return None;
+                if rescue {
+                    // Rescue: force the linear scan + self-heal, bypass trust.
+                    // `rescue` is consulted directly at the heal sites below.
+                } else {
+                    self.directory_miss_streak[class_idx] =
+                        self.directory_miss_streak[class_idx].saturating_add(1);
+                    if u32::from(self.directory_miss_streak[class_idx])
+                        < super::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD
+                    {
+                        // R8-2: trust the directory. Skip the O(S) scan entirely.
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRECTORY_AUTHORITATIVE_MISS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        return None;
+                    }
+                    // Periodic re-validation: run the full scan below anyway,
+                    // and reset this class's streak regardless of whether it
+                    // finds anything.
+                    self.directory_miss_streak[class_idx] = 0;
+                    periodic_revalidation_active = true;
                 }
-                // Periodic re-validation: run the full scan below anyway, and
-                // reset the streak regardless of whether it finds anything.
-                self.directory_miss_streak = 0;
-                periodic_revalidation_active = true;
             }
-            // `DIRECTORY_FALLBACK_SCANS` still means "we are about to run the
-            // fallback scan" — after R8-2 that just fires less often (only on
-            // the periodic re-validation pass), the meaning is unchanged.
+            // `DIRECTORY_FALLBACK_SCANS` still means "the periodic
+            // re-validation pass is about to run the fallback scan" — gated
+            // off the rescue path (R9-8), whose entry is counted separately by
+            // `DIRECTORY_RESCUE_OOM_AVOIDED` at the caller, so the periodic
+            // and rescue entry counts stay distinguishable.
             #[cfg(feature = "alloc-stats")]
-            super::directory_stats::DIRECTORY_FALLBACK_SCANS
-                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            if !rescue {
+                super::directory_stats::DIRECTORY_FALLBACK_SCANS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            }
         }
 
         // ── Guarded linear-scan fallback (the existing scan) ───────────────
@@ -753,12 +858,19 @@ impl AllocCore {
                     // this segment actually has a free block. Self-heal the bit
                     // in-place and bump the canary counter.
                     #[cfg(feature = "alloc-segment-directory")]
-                    if periodic_revalidation_active {
+                    if periodic_revalidation_active || rescue {
                         let slot_idx = SegmentHeader::segment_id_at(base) as usize;
                         self.publish_nonempty(class_idx, slot_idx);
+                        // R9-8: only the PERIODIC re-validation path bumps the
+                        // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
+                        // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
+                        // at its caller, so the two drift signals stay
+                        // distinguishable in diagnostics.
                         #[cfg(feature = "alloc-stats")]
-                        super::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        if periodic_revalidation_active {
+                            super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     return Some(base);
                 }
@@ -772,12 +884,19 @@ impl AllocCore {
                     // R8-2 (task #215): periodic-re-validation self-heal —
                     // see the numa-aware arm above for the full rationale.
                     #[cfg(feature = "alloc-segment-directory")]
-                    if periodic_revalidation_active {
+                    if periodic_revalidation_active || rescue {
                         let slot_idx = SegmentHeader::segment_id_at(base) as usize;
                         self.publish_nonempty(class_idx, slot_idx);
+                        // R9-8: only the PERIODIC re-validation path bumps the
+                        // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
+                        // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
+                        // at its caller, so the two drift signals stay
+                        // distinguishable in diagnostics.
                         #[cfg(feature = "alloc-stats")]
-                        super::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        if periodic_revalidation_active {
+                            super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        }
                     }
                     return Some(base);
                 }
@@ -797,13 +916,15 @@ impl AllocCore {
             // local-hit arm above for the full rationale. Fires on the
             // foreign-fallback success path under the same condition.
             #[cfg(feature = "alloc-segment-directory")]
-            if periodic_revalidation_active {
+            if periodic_revalidation_active || rescue {
                 if let Some(fb) = fallback {
                     let slot_idx = SegmentHeader::segment_id_at(fb) as usize;
                     self.publish_nonempty(class_idx, slot_idx);
                     #[cfg(feature = "alloc-stats")]
-                    super::directory_stats::DIRECTORY_MISS_SELF_HEAL
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    if periodic_revalidation_active {
+                        super::directory_stats::DIRECTORY_MISS_SELF_HEAL
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
                 }
             }
             fallback
