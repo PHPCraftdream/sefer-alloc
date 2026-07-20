@@ -758,6 +758,351 @@ landed in the same session. All are style/lint/drift — zero behavior change
   `cargo update -p crossbeam-epoch` bump (≥0.9.20) is the proper fix,
   deferred as a dependency-version decision per project convention.
 
+### Round 6 tail — cleanup, module splits, OPT-P0 perf batch (R6-CQ-5..7, R6-OPT-A1..A6, R6-OPT-P0-1..4, R6-REGRESSION)
+
+The tail of round 6 — 21 commits (`e73dbec`..`461fe8f`), 2026-07-14..16 —
+applies the same judge-driven methodology as the PERF-2 / PERF-3 arcs above
+to three new *axes* the existing benches did not measure: **OS commit
+charge**, **cross-thread-free tail latency**, and **the SMALL_MAX
+fragmentation cliff**. Each candidate source change was preceded by a
+dedicated diagnostic judge (the A-series harnesses), and every change was
+measured against the deterministic `npm run iai` instruction-count gate so
+zero of these wins came at a throughput cost (confirmed by the
+cross-version wall-clock report at the end of the round). Two genuine
+regressions the P0 work introduced were found and fixed in-flight and are
+documented below as such, not spun — this project's honest-reject
+convention.
+
+**R6-CQ-5 — remove future-only dead scaffolding (`e73dbec`).** The
+abandon/adopt removal left three executable-but-unreachable scaffolds kept
+under `#[allow(dead_code)]` "in case the substrate returns": `HeapCore::
+reset_stamp_cache`, the full-reset `AllocCore::decommit_empty_segment`
+variant (every production caller uses the `_for_release`/`_impl` pair), and
+`HeapSlot::new_uninit` (plus the `HeapSlotRemote::new_uninit` it transitively
+dead-coded). All three confirmed zero real callers via whole-tree grep and
+deleted. The load-bearing finding: `HeapSlot::new_uninit` *deliberately
+diverged* from the real bootstrap — it set `next_free = NEXT_FREE_TAIL
+(u32::MAX)` while the real bootstrap relies on the OS-zeroed reservation
+and lets `push_free_slot` write `next_free` lazily (RAD-1); the scaffold's
+own doc called this an "intentional, observationally-equivalent divergence,"
+but a future caller trusting it as documentation would get the wrong initial
+state. The actual lazy-`next_free` invariant is already preserved in prose at
+`bootstrap.rs:39-49`, so nothing was lost. (Investigated and *not* removed:
+`HeapOverflow::new_uninit`, kept alive by `new_boxed_for_test`'s real callers.)
+
+**R6-CQ-6 — purge stale abandon/adopt architecture text (`139d4eb`).**
+Docs/comments still described the *removed* abandon/adopt lifecycle,
+referencing functions that no longer exist (`abandon_segments` et al.). The
+real teardown path is whole-slot reuse (`tls_heap.rs`), not abandon/adopt.
+Fixed across `Cargo.toml` (description + `alloc-xthread` feature doc), the
+field rename `SegmentHeader::next_abandoned` → `deferred_next` (the field is
+actually the live `deferred_large` cross-thread-free stack's link, rippled
+through 14 source files + the tests that name it), `HeapCore::id`'s doc, and
+README/`ARCHITECTURE.md`/`src/global/sefer_alloc.rs`/`src/registry/mod.rs`.
+New guard `tests/no_stale_doc_references.rs::
+no_stale_abandon_adopt_substrate_references` bans the removed API's exact
+identifiers (`try_adopt`, `abandon_segments`, `push_abandoned_segment`,
+`pop_abandoned_segment`, `abandoned_segs`, `OWNER_STATE_ABANDONED`) outside
+the two files that legitimately name them in past tense — scoped to exact
+identifiers, not the bare word-stems, so it doesn't false-positive on the
+live `AbandonGuard` name, the `ABANDONED_TAIL` sentinel, or unrelated prose.
+Counterfactual-verified by injecting a forbidden token and watching the guard
+fail with the exact injected line.
+
+**R6-CQ-7a/b/c — split the three remaining monoliths (`13a1f86`, `49f3a29`,
+`fd2c770`).** Continues round 4's already-precedented "split one type's
+`impl { .. }` block across thematic sibling files" pattern, applied to the
+last three monoliths (`alloc_core.rs`, `heap_core.rs`, `segment_header.rs` —
+round4 R4-10 / round5 code_quality_review #7, both only partially remediated
+until now). **Pure code movement, zero behaviour change:** `npm run iai`
+shows `Instructions: "(No change)"` on all 12 perf-gate benches against the
+persisted baseline after each of the three splits; the two-tier
+confined-`unsafe` grep count stayed at 46 (moved `unsafe fn`s keep their
+`#[allow(unsafe_code)]` + `# Safety` docs, just relocated). The two
+highest-risk moves per split (`dealloc`/`realloc` for 7b, `magic_at`/
+`BinTable::head` for 7c) were byte-diffed against the pre-move source. New
+sibling files: `alloc_core_core_diag.rs` (391 lines, the non-small-subsystem
+`dbg_*` cluster); `heap_core_{alloc,free,tcache,ownership}.rs` (heap_core.rs
+1987 → 606 lines); `segment_header_{layout,views,meta_fields,gen_table}.rs`
+(segment_header.rs 1759 → 1041 lines). A handful of `private fn` →
+`pub(super)`/`pub(crate)` widenings were the only mechanical adjustments
+needed to compile.
+
+**R6-OPT-A1..A6 — six new diagnostic judges (the "Stage A" harnesses).**
+The round's design rule was *measure before you change*: each P0 source
+change was preceded by the dedicated harness that would honestly prove
+whatever win it claimed, so a result that isn't visible on the right axis is
+not claimed. All six are `harness = false` custom timing-loop binaries or
+process-per-sample runners (Criterion's `b.iter()` model cannot express
+"alloc N, hold live, batch-time the free with percentiles" nor read this
+crate's `dbg_*` counters at precise checkpoints) — measurement-only,
+no allocator source touched, confined-unsafe count unchanged at 46.
+
+- **R6-OPT-A1 — Windows commit-charge probe (`6d1b7ce`).**
+  `examples/first_alloc_process.rs` measured only Working Set (RSS), never
+  Windows commit charge — so a real cost was invisible: on Windows `crates/
+  vmem` commits the full exact size of the Registry + inline `HeapOverflow`
+  in one `VirtualAlloc(MEM_COMMIT)` (~125 MiB predicted), demand-zero and
+  therefore absent from RSS until pages are touched. Added `commit_kib()`
+  (reads `PagefileUsage` from the *same* `GetProcessMemoryInfo` call already
+  made for RSS; the field was already declared, just never surfaced).
+  Measured finding: RSS Delta 1 heap = 120 KiB vs Commit Delta 1 heap =
+  132,620 KiB (**129.51 MiB**) — a ~129.4 MiB gap completely invisible to
+  the pre-existing RSS-only judge, closely matching the review's ~125 MiB
+  prediction. This gap is the quantity R6-OPT-P0-2 is meant to shrink.
+- **R6-OPT-A2 — persistent-thread fan-in throughput judge (`6fa6776`).**
+  `benches/heap_fanin_persistent.rs` spawns producer threads *once* per cell
+  and reuses them (the existing `heap_fanin_production.rs` re-spawned/joined
+  per iteration, so thread lifecycle dominated). Matrix T × burst ×
+  {active,slow,paused,exited} owner state; reports p50/p99/max per-op
+  wall-clock + `DBG_RING_*` overflow/retry/exhausted-per-op. A real
+  cross-cell state-leak bug (recycling a heap then re-claiming it inherited
+  the prior cell's `RemoteFreeRing`/`HeapOverflow` state via whole-slot
+  reuse) was found during the orchestrator's zero-trust re-run and fixed;
+  a `verify_repeated_cell_consistency()` regression guard is wired into
+  `main()` so the class can't silently return.
+- **R6-OPT-A3 — SMALL_MAX cliff independent-alloc sweep (`b6bcaa2`).**
+  `benches/medium_size_sweep.rs`: there is a sharp architectural cliff at
+  258,752 B (`SMALL_MAX`, last small class) vs 262,144 B (one byte over):
+  below it, many objects share one 4 MiB segment via the per-segment
+  freelist; above it, *every* object gets its own dedicated 4 MiB span +
+  one `SegmentTable` slot. No existing bench measured this. Confirmed the
+  cliff directly: at n=64, **258,752 B reserves +4 segments (fragmentation
+  0.9871) vs 262,144 B +64 segments (fragmentation 0.0625)** — a 16×
+  segment-count ratio matching the ~15-usable-blocks-per-4-MiB-segment
+  theory. The harness handles real allocator OOM at n=1024 for post-cliff
+  sizes (~4 GiB VA exhaustion on this host) cleanly — the OOM-at-scale is
+  itself evidence of the cliff's cost.
+- **R6-OPT-A4 — deterministic multi-segment directory judge (`3686412`).**
+  `benches/segment_directory_sweep.rs`: `find_segment_with_free_impl` is
+  O(segments) on a free-list miss, but the only existing judge
+  (`multiseg_cold_256k`) builds just 3 segments — deep in the flat region.
+  Three prior optimization attempts (X5, T10, R5-R1) measured ~zero
+  improvement against that judge not because the scan is secretly O(1), but
+  because nobody ever measured it far enough into S. Confirmed the
+  flat-then-rising curve: S=1/3/16 in the 36–140 ns range, S=64 climbs to
+  652–3,749 ns, S=256 to 18,590–25,668 ns, S=1023 to **92,716–169,875 ns**
+  (kill-gate ratio 3742× post/S=3 vs 1.13× S=3/S=1, so divergence is
+  concentrated at high S and the existing small-S IAI judge stays neutral).
+- **R6-OPT-A5 — dealloc-only unbound-thread judge (`8248cb0`).**
+  `examples/dealloc_only_unbound_thread.rs` + `scripts/dealloc-only-bench.mjs`:
+  a worker that only ever receives a pointer and frees it (never allocates
+  itself) is a common pattern no existing bench measured. Pre-fix the
+  commit-charge ratio (treatment free-only / control alloc-then-free) sat at
+  **1.00×** at every cell — both bind identically via `current_heap()`
+  regardless of which call triggered it, exactly the pre-fix convergence
+  this harness exists to make P0-1's win visible against.
+- **R6-OPT-A6 — real-installed-allocator paired A/B/B/A runner (`57bf118`).**
+  `examples/paired_ab_{sefer,mimalloc,system}.rs` (three binaries each
+  genuinely installing its *own* `#[global_allocator]` — `bench:table`'s
+  direct-call comparison is honest but not the codegen shape of a real
+  production binary where every allocation routes through one
+  `#[global_allocator]`) + `scripts/paired-ab-runner.mjs` (`npm run
+  paired-ab`). A/B/B/A ordering per block (not A/B/A/B) specifically cancels
+  linear host-drift/thermal trends; default N=20 paired blocks (the
+  threshold for resolving <20% claims, matching R5-R2's actual N). The
+  mandated same-vs-same control (`--arms sefer,sefer`) was independently
+  re-verified at N=12 (t=-0.018 vs crit=2.228, sign test 7/12) — cleanly
+  "NOT statistically distinguishable from noise," proving the runner doesn't
+  manufacture a false signal.
+
+**R6-OPT-P0-1 — dealloc without binding a heap (`09fe56f`).** `SeferAlloc::
+dealloc` unconditionally called `current_heap()`, which for a thread whose
+TLS is null (a worker that only ever frees foreign pointers) *claimed a full
+registry slot* (`HeapCore::new` → reserve/commit a 4 MiB primordial segment)
+just to free one foreign pointer. Extracted `HeapCore::dealloc_foreign_slow`'s
+heap-instance-independent routing body into `dealloc_foreign_routing(..,
+our_head: Option<…>)`; a new `tls_heap::current_for_dealloc()` maps both
+null and TORN states to a `ForeignNoBind` variant that never binds, never
+touches the fallback lock, and routes via `dealloc_foreign_routing(.., None)`
+(any pointer reaching `dealloc` on a bind-less thread is foreign by
+construction). Deliberate, documented trade-off: a TORN thread freeing a
+pointer that happens to be fallback-owned now pushes onto the fallback's own
+ring instead of taking its direct free path — still correct (ring-push is
+safe regardless of caller identity; the fallback drains its own ring
+lazily), just marginally less optimal in this already-rare corner. Verified
+via RED-counterfactual (reverting to old routing fails both new tests
+`dealloc_only_no_bind.rs` / `dealloc_only_no_bind_torn.rs` for the right
+reason).
+
+**R6-OPT-P0-2 — chunk the Registry + lazy HeapOverflow sidecar (two rounds,
+`e4b3e1d` + `8dc6fe8`).** The Registry held `slots: [HeapSlot; 4096]` inline
+as ONE giant `reserve_aligned` reservation, paid in full by every process's
+first heap claim — ~125 MiB under `production` (inline `HeapCore` magazine
++ decommit state + inline `HeapOverflow`), committed in one `VirtualAlloc`
+call with no OS-level commit-only-touched-pages for a reservation of this
+shape. **Round 1 (`e4b3e1d`):** split the slot array into 64 chunks of 64
+slots (`RegistryChunk`, new `src/registry/registry_chunk.rs`), materialised
+lazily per chunk via the same `CAS(null→SENTINEL)→reserve→publish(Release)
+/spin(Acquire)` protocol the old whole-registry ensure used. Commit Delta 1
+heap: **~129.5 MiB → ~5.98 MiB (~21.7×)**. **Round 2 (`8dc6fe8`):** the
+remaining dominant cost was `HeapOverflow` — a `[AtomicUsize; 2048] +
+[AtomicU32; 2048]` pair inline in *every* `HeapSlot` (24 KiB/slot), paid by
+every claimed slot whether or not it ever overflows. Split into a small
+always-inline "emergency" tier (`INLINE_CAP = 64` entries, 768 B/slot) plus
+a lazily-materialised sidecar (`HeapOverflowSidecar`, M5-clean reserve in
+the existing `os.rs` seam mirroring round 1's chunk pattern) covering the
+remaining 1984 entries, null until first genuine overflow past the inline
+tier. Commit Delta 1 heap: ~5.98 MiB → **~4.52 MiB**; combined round 1 + 2:
+**~129.5 MiB → ~4.52 MiB (~28.6×)**. The wedge hazard (a producer winning
+the tail-CAS for a sidecar index ≥ `INLINE_CAP` and *then* discovering OOM
+would strand that index forever) is fixed by calling
+`ensure_overflow_sidecar` *before* the tail CAS — on failure, push returns
+false without advancing tail, identical externally to "ring full," which
+every caller already treats as the documented-sound bounded leak.
+
+**R6-OPT-P0-3a — exact medium size classes, feature-gated (`b98f082`).** Six
+exact "medium" size classes (256 / 320 / 384 / 512 / 768 KiB, 1 MiB) added
+to `SIZE_CLASS_TABLE` behind a new purely-opt-in **`medium-classes`** feature
+(additive over `alloc-core`, **NOT** part of `production` or any default-on
+bundle). Eliminates the ~16× segment-count/fragmentation cliff at the old
+`SMALL_MAX` boundary for allocations in this range — they now share a 4 MiB
+segment with ~4–15 same-class siblings instead of each claiming a dedicated
+Large segment. Reuses the existing small-segment substrate verbatim (one
+segment, one size class, `BinTable`/`PageMap`/bump-carve) — no new segment
+kind, no page-run layer. This is the "cheap first experiment" (radical-optimization
+review SS4 sub-task 3a); the larger page-run redesign (3b) is deferred pending
+evidence this substrate reuse isn't sufficient. The R6-OPT-A3 judge confirms
+the fix at the exact predicted boundary: **16.00× segments/reserved-bytes at
+n=64 (258,752 B vs 262,144 B) collapses to 1.00×** with the feature on. Ten
+pre-existing regression tests that hardcoded byte sizes (usually 512 KiB)
+that silently flipped from "Large" to "Small" under `medium-classes` were
+bumped to sizes that stay genuinely Large in every feature combination;
+`SIZE2CLASS` went `const → static` (`large_const_arrays` lint once the table
+grew ~16 → ~64 KiB), a storage-class fix not a behaviour change.
+
+**R6-OPT-P0-4 — overflow-first remote-free retry inversion (`345fa9b`).**
+Inverted the cross-thread-free fallback order in `HeapCore::
+push_with_overflow_retry`: try the heap-level `HeapOverflow` second-chance
+ring *immediately* on a full segment ring, before any spinning, instead of
+exhausting the whole `RING_PUSH_RETRY_SPINS` (8,192) budget against the ring
+first. Each failed counted push ticked two locked-RMW diagnostic counters,
+so the old policy could burn up to 8,193 checks / 16,386 RMWs on a single
+logical free before ever trying the already-provisioned overflow ring (8×
+the capacity). New policy: (1) one counted `RemoteFreeRing::push`; (2) on
+failure, an immediate `push_to_heap_overflow`; (3) only if *both* fail (rare
+double-saturation), a bounded spin-retry against both tiers using new
+*uncounted* variants so failed polls inside the loop no longer tax either
+ring's diagnostic counters. Common case: **2 checks total instead of up to
+8,193**. On the R6-OPT-A2 judge (T=32/63, saturated ring), p99 tail latency
+dropped from **tens of ms to hundreds-to-low-thousands of ns (~10,000×)**,
+overflow/op near zero. This commit is also the *source* of the two
+regressions below — the retry-loop reshape it introduced had a pathological
+busy-spin budget that the A-series judges (which own a draining owner) did
+not exercise.
+
+**R6-REGRESSION — bound `push_with_overflow_retry`'s wall-clock cost
+(`ba34fd5`).** P0-4's bounded retry loop scaled its iteration budget from
+`RING_PUSH_RETRY_SPINS` (8,192) to `RETRY_LOOP_ITERATIONS` (2,097,152 =
+8,192 × 256) as a *flat, uninterrupted* `core::hint::spin_loop()` busy-spin.
+Under sustained double-saturation (both the segment ring and the heap-level
+overflow full) with a live-but-never-draining owner (the `owner=paused`
+shape A2 models), nearly every push burned most/all of its 2,097,152-
+iteration budget purely on CPU — `spin_loop()` is a CPU-level hint (e.g.
+`PAUSE`), never an OS-level yield, so it gave the scheduler no chance to run
+the stalled owner. Confirmed independently: A2's `--reduced`
+T=32/burst=100,000/`owner=paused` cell **burned 4,420 CPU-seconds over ~4
+minutes with zero output before being killed**. A first fix attempt (same
+total budget reshaped into 8,192-iteration rounds with `yield_now()`
+between rounds) did *not* resolve it — `yield_now()` is a scheduling hint
+with no other runnable work to hand the CPU to when every contending thread
+is itself spin-then-yield-looping (~9 CPU-seconds/wall-second at 32 threads/
+16 cores). **Fix adopted:** cap to `RETRY_ROUND_MAX_ROUNDS = 8` rounds of
+8,192 tight-spin polls each with a real `std::thread::sleep(200 µs)` OS-level
+block between rounds (native only; miri keeps a single pure-spin round).
+Round 1 stays a pure tight spin with no sleep before it, so the
+moderately-contended actively-draining-owner workload task #136's
+high-contention judge exercises resolves within round 1 and pays no new
+latency. Only a push that survives 8 full rounds (a push that can genuinely
+never succeed once the fixed 2,304 combined ring+overflow capacity is
+exhausted with a permanently-stalled owner) concedes to the documented
+bounded leak after ~1.4 ms of sleep instead of a multi-second CPU burn. New
+`tests/regression_paused_owner_wallclock.rs`; RED-counterfactual (pre-fix
+source) lands all 3 attempts at ~20–21 s, GREEN with the fix at 0.7–1.9 s.
+
+**R6-REGRESSION-2 — progress-detected stop condition (`1da4497`).**
+R6-REGRESSION fixed the CPU-burn near-livelock but, by cutting the retry
+budget to a fixed 8 rounds, *reintroduced* the task #136 throughput
+regression under host load — the #136 judge went flaky, `exhausted_delta` up
+to 821 during load spikes. Root tension: a *paused* owner (never drains)
+needs a FAST give-up, while a *live-but-CPU-starved* owner (IS draining,
+slowly) needs PATIENCE. No fixed round/iteration budget can distinguish
+them — tuning the number only moves the failure between the two judges.
+**Fix:** the retry loop's stop condition is now **drain-progress detection,
+not a round count.** Both tiers' drain cursors (advanced *only* by the
+owner's drain) are snapshotted before round 1 and re-read after every
+fully-failed probe round via two new read-only `pub(crate)` accessors
+(`RemoteFreeRing::head_relaxed()`, `HeapOverflow::head_relaxed()` — cheap
+Relaxed loads of monotonic owner-advanced cursors; no ring protocol, layout,
+or Ordering touched; no new `unsafe`). If either cursor moved, the owner
+drained something — the stall counter resets and the push keeps waiting.
+Only after `RETRY_STALLED_ROUNDS_GIVE_UP = 128` *consecutive* zero-progress
+rounds (~0.3–2 s of continuously observed zero drain progress) does it
+concede; `RETRY_ROUND_SAFETY_CAP = 4096` total rounds hard-bounds the wait.
+The load-bearing 200 µs between-round sleep is kept unchanged. Each
+concession memoizes its `(segment base, ring head, overflow head)` snapshot
+in a per-thread const-init TLS `Cell` so a sustained stall does not re-pay
+the full patience per push; the memo is written *only* on concession, so any
+judge run that satisfies `exhausted_delta == 0` never populates it. K
+calibration (measured): K=4 → 6/10 judge failures even on an idle host;
+K=32 → 10/10 calm but 3/5 under a 16-thread CPU hog; **K=128 → 10/10 calm +
+8/8 under the hog, all `exhausted_delta = 0`**. RED-counterfactual #2
+(emulated pre-R6-REGRESSION flat 2,097,152-iteration spin) → paused-owner
+wallclock test fails all 3 at 15.2–15.7 s; restored → 95–210 ms calm, 7.9 s
+under the hog. The `tests/remote_fanin.rs` harness-1/2.5 liveness fix (the
+owner loop now runs until every producer has finished via an `Arc<AtomicBool>`
+handshake, draining every 4096 allocs) closes the remaining flake — every
+prior failing run's concessions occurred strictly *after* the owner's fixed
+N×2-alloc loop had completed, i.e. the paused-owner shape where conceding is
+the documented-correct outcome.
+
+**R6-REVIEW residuals — N-way stall memo + doc accuracy (`f27d060`).**
+Address the non-blocking findings from an independent `@fl` review of the
+P0 wave; no behaviour change on any already-green path. **F2 (perf
+robustness):** the fast-concede memo was single-entry — a paused owner of
+2+ saturated segments with a producer whose frees interleave across them
+(A,B,A,B,…) overwrote the memo every push with the other segment's tuple,
+so the memo never matched and every push re-paid the full 128-round patience
+(a linear-in-push-count cost the memo exists to bound). Replaced with a
+per-thread 4-way cache (`STALL_CONCESSION_WAYS = 4`): const-init, `Copy`,
+no allocation; lookup fast-concedes iff *any* slot matches; soundness
+unchanged (written only on concession, so a zero-concession run never
+populates it; the post-round progress check still resets to full patience
+the moment either drain cursor advances). New
+`tests/regression_paused_owner_multisegment.rs`: passes in ~0.7 s with the
+4-way cache; RED-counterfactual (forced to 1 way) fails all 3 attempts at
+**77–105 s** — the exact single-entry thrash F2 fixes. F3/F5/F1/F4 are doc
+fixes: `DBG_RING_PUSH_RETRY_EXHAUSTED`'s doc rewritten to the actual control
+flow; dead `RETRY_LOOP_ITERATIONS` constant + its references scrubbed;
+`ARCHITECTURE.md`'s loom-model count corrected (13 → 16, the 3 missing
+entries added); a self-contradicting comment in `registry_chunk.rs` rewritten.
+
+**Cross-version wall-clock report (`461fe8f`).** New
+[`docs/perf/R6_CROSS_VERSION_BENCH.md`](docs/perf/R6_CROSS_VERSION_BENCH.md)
++ a README "Cross-version comparison" subsection: a same-harness three-way
+comparison of sefer-alloc across published **0.2.1** (tag `sefer-alloc-v0.2.1`),
+the tree **immediately before the round-6 wave** (`57bf118`), and current
+HEAD (`f27d060`) — full per-family tables with the vs-mimalloc-ratio
+methodology (host-drift-normalised) and the 0.2.1 not-apples-to-apples
+caveats. **Headline:** every *large* wall-clock win landed between 0.2.1 and
+the pre-round-6 tree (OPT-G in-place realloc → ms-scale copy-and-free to
+µs-scale; Э6 churn → 256 B/1024 B throughput), **NOT** in the round-6 wave
+itself. **The round-6 wave (before-wave → now) is flat-to-slightly-better on
+wall-clock throughput and regresses no family beyond host noise**, by design:
+it targeted **OS commit charge (≈7.4× lower for the first heap — 33.3 MiB →
+4.5 MiB on the `bench:table` harness)**, **cross-thread-free tail latency**,
+and **the SMALL_MAX fragmentation cliff** — axes `bench:table` does not
+measure (see the A-series judges above). Probable modest wins on the 4 MiB
+large-alloc/free path (~30–35% faster, 78/85 ns → 53/56 ns) and the 1024 B
+teardown/decommit diagnostic, both inside this host's noise band. The 0.2.1
+column was produced by porting the current bench harness onto the release
+tag, preserved as the local `bench/0.2.1` branch so 0.2.1 stays
+re-measurable. (Note on the commit-charge figure: the A1/P0-2
+`first_alloc_process.rs` probe measures a stricter "genuinely fresh single
+process" baseline and reports the larger **~129.5 MiB → ~4.52 MiB (~28.6×)**
+reduction above; the cross-version doc's 33.3 → 4.5 MiB figure is the same
+axis measured in the `bench:table` harness context.)
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
