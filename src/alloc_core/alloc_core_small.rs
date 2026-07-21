@@ -473,36 +473,43 @@ impl AllocCore {
             // segment, exactly as today), then FOREIGN real-node buckets in
             // ascending order. This preserves the two-pass local-first /
             // foreign-fallback preference the R7 plan (R10-6 §3.1) mandates.
-            let mut buckets: [usize; super::segment_directory::NODE_BITMAPS] =
-                [0; super::segment_directory::NODE_BITMAPS];
-            let mut n_buckets: usize = 0;
             #[cfg(feature = "numa-aware")]
-            {
+            let (buckets, n_buckets): (
+                [usize; super::segment_directory::NODE_BITMAPS],
+                usize,
+            ) = {
+                let mut buckets = [0usize; super::segment_directory::NODE_BITMAPS];
+                let mut n = 0usize;
                 let my_bucket = super::segment_directory::node_bucket(my_node);
-                buckets[n_buckets] = my_bucket;
-                n_buckets += 1;
+                buckets[n] = my_bucket;
+                n += 1;
                 // Unknown bucket — local-equivalent (R10-6 §3.2 "treated as
                 // acceptable/local-equivalent, matching today's scan"). Scanned
                 // BEFORE foreign so a NO_NODE segment is never deprioritised
                 // below a foreign one.
                 let unknown = super::segment_directory::MAX_NODES;
                 if unknown != my_bucket {
-                    buckets[n_buckets] = unknown;
-                    n_buckets += 1;
+                    buckets[n] = unknown;
+                    n += 1;
                 }
                 // Foreign real-node buckets, ascending.
                 for nb in 0..super::segment_directory::MAX_NODES {
                     if nb != my_bucket {
-                        buckets[n_buckets] = nb;
-                        n_buckets += 1;
+                        buckets[n] = nb;
+                        n += 1;
                     }
                 }
-            }
+                (buckets, n)
+            };
+            // Single bucket [0] (pre-R11-6 layout) — no mutation needed, so
+            // `buckets`/`n_buckets` are bound directly in their final state
+            // (avoids an unused `mut` / dead initial-write warning under
+            // `not(numa-aware))`, which is the production default).
             #[cfg(not(feature = "numa-aware"))]
-            {
-                // Single bucket [0] (pre-R11-6 layout).
-                n_buckets = 1;
-            }
+            let (buckets, n_buckets): (
+                [usize; super::segment_directory::NODE_BITMAPS],
+                usize,
+            ) = ([0; super::segment_directory::NODE_BITMAPS], 1);
 
             for &nb in buckets.iter().take(n_buckets) {
                 let words = &dir.class_nonempty_by_node[nb][class_idx];

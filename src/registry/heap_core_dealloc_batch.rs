@@ -7,21 +7,32 @@
 //! comment on [`dealloc_batch`](HeapCore::dealloc_batch) for the full design
 //! and the magazine-vs-`flush_class` trade-off it makes explicit.
 
+#[cfg(feature = "batch-api")]
 use core::alloc::Layout;
 
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::os;
-#[cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(
+    feature = "batch-api",
+    feature = "hardened",
+    feature = "alloc-global",
+    feature = "fastbin"
+))]
 use crate::alloc_core::segment_header::SegmentHeader;
-#[cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(
+    feature = "batch-api",
+    feature = "hardened",
+    feature = "alloc-global",
+    feature = "fastbin"
+))]
 use crate::alloc_core::segment_header::SegmentKind;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
 
 use super::heap_core::HeapCore;
-#[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
 use super::tcache::TCACHE_CAP;
 
 impl HeapCore {
@@ -174,7 +185,7 @@ impl HeapCore {
     /// `c` (`class_for(size, layout.align())` is alignment-sensitive: a
     /// class is only valid when `block_size % align == 0`), corrupting the
     /// remote owner's freelist class tag for that block.
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(feature = "batch-api", feature = "alloc-global", feature = "fastbin"))]
     #[inline]
     #[allow(unsafe_code)] // R6-MS-3: `unsafe fn` boundary (caller-pointer contract).
     unsafe fn dealloc_batch_small(&mut self, c: usize, layout: Layout, blocks: &[*mut u8]) {

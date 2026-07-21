@@ -254,7 +254,12 @@ impl SegmentDirectory {
     }
 
     /// Read the bit for slot `slot_idx` in class `class_idx` in the bitmap for
-    /// the node derived from `node_id`.
+    /// the node derived from `node_id`. Only used by
+    /// `AllocCore::dbg_directory_get_bit_for_node`, itself `numa-aware`-only
+    /// (per-node reads are meaningless in the single-bucket non-NUMA
+    /// layout — `dbg_directory_get_bit`/`dbg_directory_get_bit_bucket` cover
+    /// that case instead).
+    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
     #[inline]
     pub(crate) fn get_bit(&self, node_id: u32, class_idx: usize, slot_idx: usize) -> bool {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
