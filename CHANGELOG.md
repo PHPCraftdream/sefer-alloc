@@ -2579,6 +2579,393 @@ inference was wrong. Full method, the warm-arm grid, and the per-(size,
 N) numbers in
 [`docs/perf/R10_7_BATCH_WARM_ARM.md`](docs/perf/R10_7_BATCH_WARM_ARM.md).
 
+### Round 11 — batch/NUMA correctness fixes, two closed perf cliffs, three design-only stages (R11-1..R11-8)
+
+Round 11 — 8 commits (`33581bd`..`229e25f`, inclusive of both ends),
+2026-07-21 (a single day) — the follow-up queue against the **same**
+external review that produced Round 10 (that review, read line-by-line
+against source immediately after Round 10 landed, surfaced two real
+defects in Round 10's own deliverables plus one strong new optimization
+idea; the queue below is that review's own prioritized ordering, followed
+verbatim). As in Round 9 and Round 10, this is **mostly measurement /
+design work, not production hot-path changes** — of the eight commits,
+three ship real production-compiled fixes/features (R11-1, R11-2, R11-4),
+one is a pure measurement-driven cache (R11-5), one is a mechanical
+extension of already-designed machinery (R11-6), and three are
+design-only docs with zero `src/`, `Cargo.toml`, or `tests/` changes
+(R11-3, R11-7, R11-8). The round's defining trait, distinct from Round
+10's self-correction pattern, is an unusually high proportion of **real
+bugs caught during zero-trust review before landing**, not after: R11-1's
+second, deeper defect (the predicate shortcut) went beyond what the
+source review's own prose stated and was found only by the orchestrator's
+independent re-analysis; R11-4's missing `hardened` guards and R11-6's
+vacuous headline test were both caught by the same personal
+red-before/green-after discipline this project's methodology requires
+between phases, not by the sub-agents that wrote the code. In every one
+of these three cases the pattern is the same — delegate the
+implementation, independently re-verify against source and tests, catch
+a real gap the delegate's own summary did not surface, fix it, and
+personally reproduce red-before/green-after — and it is called out below
+per-commit rather than flattened into "and then it was fixed."
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** The production bundle's feature set is unchanged
+this round: no feature is added to or removed from `production`. Three
+commits reach production-compiled source:
+
+- **R11-1 (`33581bd`)** — real correctness fix inside the `batch-api`
+  experimental surface (see below), plus that surface moves from
+  `#[doc(hidden)]`-only to `#[doc(hidden)]` **and** gated behind a new,
+  not-default, not-`production` `batch-api` Cargo feature. Zero observable
+  change for any build that doesn't opt into `batch-api`.
+- **R11-2 (`7ff0772`)** — real correctness fix to `HeapCore::drain_heap_overflow`,
+  the cross-thread `HeapOverflow` second-chance ring drain, which is on the
+  unconditional cross-thread free path. **Beneficial** behavior change:
+  reclaimed blocks now correctly become visible to directory-driven lookups
+  and emptied segments now correctly re-enter pool/release accounting; no
+  new observable failure mode.
+- **R11-4 (`ff9ad7a`)** — adds `HeapCore::dealloc_batch`, a new fast path
+  inside the same `batch-api`-gated experimental surface R11-1 covers.
+  Not reachable without opting in; the scalar `dealloc` path used by every
+  other feature bundle is untouched.
+- **R11-5 (`9b48844`)** — adds a `cached_numa_node` field to `AllocCore`,
+  compiled and populated only under `--features numa-aware` (an already
+  opt-in, non-`production` bundle); zero footprint under non-`numa-aware`
+  builds.
+- **R11-6 (`89865ae`)** — the `SegmentDirectory`'s node dimension is
+  `NODE_BITMAPS == 1` under non-`numa-aware` — byte-for-byte the
+  pre-R11-6 flat bitmap, zero memory tax on non-NUMA builds (including
+  `production`). Only `numa-aware` builds pay the ~55 KiB and gain the
+  112× fix.
+- **Everything else is design-only docs:** R11-3, R11-7, R11-8 are
+  `docs/perf/*.md` (plus, for R11-3, a throwaway `examples/` probe) with
+  no `src/`, `Cargo.toml`, or `tests/` file touched.
+
+**R11-1 (`33581bd`) — close the M2 double-issue window in `alloc_batch`'s
+magazine-prefix drain (real correctness fix, plus a second defect found
+beyond the source review).** `HeapCore::alloc_batch`'s magazine-drain step
+(introduced by R10-7) cleared each block's magazine-residency bit
+immediately on pop; the refill-remainder step's predicate opened with an
+`if k == c { return false; }` short-circuit copy-pasted verbatim from
+`refill_magazine_slow`. That shortcut is sound **only** in
+`refill_magazine_slow`'s own context, where its key invariant
+(`count[c] == 0` at refill time — nothing of class `c` is claimed yet)
+actually holds; `alloc_batch` violates that precondition, since its own
+magazine-drain step has already pulled class-`c` blocks into
+`out[0..magazine_drained]` before the predicate ever runs. Together: a
+stale cross-thread double-free ring entry for a magazine-drained block
+sailed through both checks and was re-issued into `out[filled..]`,
+producing a **duplicate pointer within one `alloc_batch` call**. A
+caller-side double-free is already a contract violation, but the M2
+defense-in-depth exists to degrade it to a no-op, not amplify it into a
+double issue. The source review's own prose flagged only the first half
+(the immediate bit-clear); the second, deeper half — that
+`alloc_batch`'s copy-pasted predicate shortcut was itself unsound in its
+new context — was found by the orchestrator's own independent
+re-analysis before any fix was written, and fed into the implementation
+prompt explicitly so the fix would not ship incomplete. Fix, both halves
+required together: (1) defer the magazine-residency bit clear to one bulk
+pass **after** the refill step completes, so bits stay SET through the
+window the predicate needs them; (2) drop the `if k == c` shortcut from
+**`alloc_batch`'s own predicate only** — `refill_magazine_slow`'s
+closure is untouched, since its invariant is genuinely sound in its own
+call context. New counterfactual test
+(`alloc_batch_no_duplicate_on_stale_xthread_double_free_entry`) proves
+both halves are needed: with the fix reverted, it fails with a duplicate
+pointer at the exact magazine/refill boundary — personally reproduced
+red-before, confirmed green-after. Also resolves a documentation/
+API-boundary gap the same review flagged: `#[doc(hidden)]` hides an item
+from rustdoc but not from the semver/ABI surface, so `alloc_batch` /
+`dealloc_batch` (on both `HeapCore` and `SeferAlloc`) now additionally
+gate behind a new `batch-api` feature, not part of `production` or any
+default bundle.
+
+**R11-2 (`7ff0772`) — sync the directory and finalize pool/release
+accounting on `HeapOverflow` drain (real correctness fix, two
+pre-existing gaps made newly visible by R10-3, not regressions from
+R10-3 itself).** `drain_heap_overflow` reclaimed blocks from the
+cross-thread second-chance ring but discarded both signals every other
+reclaim call site in the codebase already acts on: (1) it never synced
+the segment directory, so a block genuinely freed on the `BinTable` via
+`HeapOverflow` still read as absent to any directory-driven lookup — up
+to **~256 MiB of wasted segment activity per class in the worst case**
+before the periodic 256-miss rescan or OOM-rescue recovered it; (2) it
+discarded `dec_live_and_maybe_decommit`'s `true` return, the signal to
+call `release_or_pool_empty_segment`, leaking emptied segments out of
+pool-cap/RSS accounting entirely. Fix is split by safety requirement, not
+uniform: directory sync is done **inline**, per successful reclaim — it
+only flips already-read directory bits, so it's safe immediately; pool/
+release finalization is **deferred** to one bulk pass after the whole
+drain completes, because a later ring entry in the same drain pass could
+target a base whose metadata an inline `release_or_pool_empty_segment`
+call would just have freed or decommitted. Emptied bases are collected
+deduplicated into a small fixed-size on-stack array — no heap allocation
+anywhere in this path, since it's allocator-internal code and a `Vec`
+here would recursively call back into whatever allocator backs it. Two
+new counterfactual tests
+(`overflow_drain_syncs_segment_directory`,
+`overflow_drain_finalizes_emptied_segment`), both proven red-before/
+green-after. `sync_directory_for_segment_classes` and
+`release_or_pool_empty_segment` are bumped `pub(super)` → `pub(crate)`,
+mirroring the exact precedent R10-3 set for
+`dec_live_and_maybe_decommit`. Also fixed along the way: a pre-existing
+double-free in the directory-sync test's own cleanup path that only
+surfaced under `hardened`, and an overstated doc comment mischaracterizing
+the dedup array as dead code when it is real defense-in-depth against
+`SegmentMeta::dec_live`'s saturating-sub clamping.
+
+**R11-3 (`a3a31da`) — realloc-aware Small→Large promotion design for
+`medium-classes`, verdict CONDITIONAL-GO, design-only.** Investigates
+recovering R10-2's ~2,111× realloc regression without losing
+`medium-classes`' ~31×/~211× alloc/free wins. `HeapCore::realloc`'s move
+leg has no in-place fast path for a Small/medium block growing into a
+*different*, larger size class, so growing a buffer through the medium
+ladder pays a full-buffer copy at every class boundary crossed; the
+proposed fix diverts a growing realloc directly into a Large-classified
+allocation once it crosses a threshold, so every subsequent growth step
+rides the existing OPT-G in-place grow for free instead of paying another
+copy. Follows the same two-stage discipline R10-4 established: design and
+measure first, prototype only on separate future authorization — no
+shipping file is touched. A throwaway measurement harness
+(`examples/r11_3_promotion_probe.rs`) gets honest numbers without
+modifying `HeapCore::realloc` or `AllocCore`, by reproducing the
+diversion's externally observable effect at the call site and verifying
+every subsequent realloc hits the real OPT-G in-place-grow path via
+pointer-identity assertion. Swept three candidate thresholds (3 runs ×
+30 rounds each):
+
+  - 128 KiB: 7→2 move legs, 2059→160 KiB copied, **28.6× faster**
+  - 256 KiB: 7→4 move legs, 2059→520 KiB copied, **7.8× faster**
+  - 384 KiB: 7→5 move legs, 2059→844 KiB copied, **4.1× faster**
+
+128 KiB gives the biggest win but promotes objects that may never grow
+again; 384 KiB leaves most of the win on the table. **256 KiB
+recommended** as the balance point. Commit/RSS cost is real and
+threshold-invariant (~+116%, 17.6→38.1 MiB for 8 concurrently-live
+promoted objects) because it's driven by the pad target crossing a
+segment-rounding boundary, not by the threshold itself — flagged as a
+separate open tunable for stage 2, not resolved here. Re-ran the existing
+R10-2 judge to confirm plain medium alloc/free is unaffected (same order
+of magnitude). **Verdict: CONDITIONAL-GO for a dedicated stage-2
+prototyping session.** The design shows zero new bookkeeping is needed —
+`dealloc`/`realloc` already route purely off `SegmentHeader::kind_at(base)`,
+not the caller's `Layout`, so a promoted block becomes an ordinary Large
+allocation the instant it's promoted, no new feature flag required. Full
+method and numbers in
+[`docs/perf/R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`](docs/perf/R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md).
+
+**R11-4 (`ff9ad7a`) — batch-optimize `dealloc_batch`, a real gap caught
+and fixed during zero-trust review before landing.** `dealloc_batch`
+previously just looped the scalar dealloc path one block at a time,
+paying N independent TLS-adjacent lookups and, on magazine overflow, N/8
+separate half-flushes each re-deriving the same per-run segment metadata.
+The new `HeapCore::dealloc_batch` (`src/registry/heap_core_dealloc_batch.rs`)
+classifies the layout once, then for the Small-classified/fastbin case
+partitions blocks into this-heap-owned (the same `contains_base`
+ownership test the scalar path uses) vs. everything else (foreign,
+cross-thread, null), which falls back unchanged to the existing, fully
+correct scalar path. Owned blocks fill the magazine directly up to
+`TCACHE_CAP`; any overflow routes through one `AllocCore::flush_class`
+call instead of the scalar path's dribble of 8-block half-flushes. No M2
+guard logic is reimplemented — the fast path calls the identical
+`pub(crate)` accessors the scalar path already uses, in the same order.
+**Zero-trust review caught a real gap before this landed**: the fast
+path's ownership gate (`contains_base`) does not distinguish Small from
+Large segments, so it initially omitted two `hardened`-only guards the
+scalar path applies before its M2 oracles — F7 (a pointer that actually
+lives in a Large segment, freed via a Small-classified layout) and H1 (an
+interior, non-block-start pointer). Without them, a caller-contract-
+violating free through `dealloc_batch` specifically would read/write a
+Large block's own payload bytes as if they were a Small segment's bitmap
+under a `hardened` build (part of `--all-features`) — exactly the
+corruption F7's own doc comment exists to prevent. Both guards are now
+ported in the scalar path's exact order (F7, then H1, then the three M2
+oracles), with two new counterfactual tests
+(`tests/r11_4_dealloc_batch_hardened_guards.rs`) proving each, personally
+reproduced red-before (both guards) and green-after before committing.
+Also fixed during the same review: the scalar fallback for non-owned
+blocks initially reconstructed a `Layout` from `block_size(c)` with
+`align=1` instead of threading the caller's original layout through —
+under `alloc-xthread` this could tag a cross-thread free's ring entry
+with the wrong class, since `class_for` is alignment-sensitive; fixed by
+passing the original layout unchanged. Two more counterfactual tests
+cover the base mechanism
+(`tests/r11_4_dealloc_batch_same_segment_double_free.rs`,
+`tests/r11_4_dealloc_batch_mixed_ownership.rs`), all proven red-before/
+green-after. **Measured 1.16×–1.38× faster at the realistic bulk-free
+target (n=1024)** across three sizes (release,
+`production+alloc-stats+batch-api`); small batches (n=8–32) are noisy/
+mixed, as expected, since the fast path's per-block checks only pay off
+once `flush_class` batching actually triggers past `TCACHE_CAP`.
+
+**R11-5 (`9b48844`) — cache `current_node()` on `AllocCore`, ~233×/~396×
+measured on this host.** `numa::current_node()` was called fresh on every
+`find_segment_with_free` miss plus at every new small/large segment
+reservation. Its platform implementations are not cheap: Linux loops over
+up to 64 candidate NUMA nodes, opening and reading a sysfs cpumap file
+for each one; Windows makes two Win32 API calls
+(`GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx`) — real kernel
+transitions either way, paid on every miss rather than once per process.
+Adds a `cached_numa_node: Option<u32>` field on `AllocCore`, populated
+lazily and consulted from all four hot call sites. Because registry slots
+are recycled across different OS threads
+(`HeapRegistry::claim`/`recycle`), an unconditional cache would be wrong
+— a stale node from a slot's previous owner would silently apply to a new
+owning thread for the entire lifetime of its claim. The cache is
+invalidated uniformly at `claim()`/`claim_with_config()` time, immediately
+before the slot is handed to its new owner; soundness rests on the same
+claim/recycle CAS handoff (Release on recycle, Acquire on the next claim)
+the registry already establishes, so a plain field write is sufficient —
+no extra atomic or fence needed. `docs/PHASE_NUMA_DESIGN.md` gets a new
+§4.1 documenting the invalidation policy and the resulting staleness
+bound: a migrated thread's reads may now lag the OS's real answer for the
+duration of the current slot claim — performance-only staleness, never
+UB. New regression test (`tests/numa_cache_invalidation.rs`, gated on a
+new test-only `numa-aware-mock` feature) scripts one NUMA node, populates
+the cache, recycles the slot, scripts a different node, re-claims, and
+asserts the cache is invalidated before any populate — proven
+red-before/green-after by temporarily disabling the invalidation call
+sites and confirming a stale value leaks across claims. **Measured on
+this host (Windows, single-NUMA): ~230ns → ~985ps per call (~233×),
+~227µs → ~573ns for a batch of 1024 calls (~396×).** Also fixed along the
+way: `numa-shim`'s mock call-log recorder used `borrow_mut()`, which
+panics on reentry (the mock's own `Vec::push` allocates via the global
+allocator, re-entering `current_node()` when sefer-alloc is the installed
+global allocator) — switched to `try_borrow_mut()`, silently dropping
+only the reentrant log entry.
+
+**R11-6 (`89865ae`) — node-indexed NUMA segment directory closes the 140×
+scan cliff R10-6 measured, verdict implemented (GO), one vacuous test
+caught and fixed before landing.** Implements R10-6's already-designed
+Approach A now that R10-6's own GO trigger ("cache shipped AND cliff
+still dominant") is satisfied by R11-5. `SegmentDirectory` gains an outer
+node dimension, `class_nonempty_by_node[bucket][class][word]`; under
+non-`numa-aware`, `NODE_BITMAPS == 1` — byte-for-byte the pre-R11-6 flat
+bitmap, zero memory tax. Under `numa-aware`, `NODE_BITMAPS == MAX_NODES +
+1` (8 + 1 for a dedicated "unknown node" bucket, ~55 KiB total). The
+directory-driven lookup, previously compiled out entirely under
+`numa-aware`, is now unconditional, scanning buckets in
+local → unknown → foreign-ascending order — preserving the two-pass
+local-first/foreign-fallback preference the R7 plan binds as a hard
+constraint. Candidate validation was extracted into one shared
+`validate_directory_candidate` choke point so NUMA and non-NUMA scans use
+byte-for-byte identical criteria; R8-2's authoritative-miss trust and
+R9-8's streak/rescue-scan machinery are untouched — only the directory
+block's own cfg gate changed. **Zero-trust review caught a real gap
+before this landed**: the headline correctness test (local-first/
+foreign-fallback preservation) passed even against a **deliberately
+broken** bucket-scan order. Root cause: `alloc_small` tries
+`pop_free(self.small_cur)` before ever calling the directory-scan
+function, and the test's construction left `small_cur`'s final state to
+chance — the decisive alloc call most likely resolved via that fast
+path, never touching the directory the test claimed to exercise, making
+the test vacuous with respect to what it claimed to prove. Fixed by
+adding a `#[doc(hidden)]` test hook that calls the directory-scan
+function directly, bypassing `alloc_small`'s fast path entirely, so the
+directory's bucket order is unconditionally the deciding factor.
+Personally reproduced red-before (revert the bucket order to naive
+descending — the fixed test now correctly fails, returning the foreign
+node instead of local) and green-after before committing. **Re-measured
+fresh** (`benches/segment_directory_sweep.rs`, same harness R10-6 used):
+
+  - S=64:    284ns → 72ns    (3.9×)
+  - S=256:   12,218ns → 176ns (69×)
+  - S=1023:  62,866ns → 560ns (112×)
+
+The curve is now flat in S (O(1)), matching the non-NUMA directory-
+accelerated numbers plus the R11-5 cached `current_node()` residual. The
+cliff is closed.
+
+**R11-7 (`c22807d`) — page-run layer design for the 1.25–2 MiB density
+gap, verdict CONDITIONAL-GO, design-only, the largest structural change
+in the queue.** R10-4's own design sketched a "page-run layer" — a
+larger, dedicated arena for the `medium-classes-wide` 1.25/1.5/1.75 MiB
+range — as the real long-term fix for the density gap R8-9, R9-4, and
+R10-4 all independently found (these classes pack near-1× in a standard
+4 MiB segment). Follows the same two-stage discipline as R10-4 and
+R11-3: design-doc first, prototype only on separate future
+authorization. Re-verifies the density win against real constants read
+fresh this session: an 8 MiB arena delivers density **5/4/3/3** for
+1.25/1.5/1.75/2.0 MiB (vs today's 2/1/1/1 — 2 MiB isn't a class today,
+R9-4 explicitly excluded it for exactly this reason); a 16 MiB arena
+delivers 11/9/8/7 but doubles per-arena commit cost for a workload that
+may only populate a few blocks. **Recommends the single fixed 8 MiB
+arena** over both the larger 16 MiB option and per-class-tier arena
+sizing. Does the exhaustive due diligence the task required: every
+`SegmentKind::` call site inventoried and classified (**44 matches across
+17 files**), and a systematic interaction check against every
+prior-session mechanism that assumes segment-uniformity (M2 bitmaps,
+`RemoteFreeRing`/`HeapOverflow`, the R7–R11-6 segment directory, the NUMA
+node-indexed directory, the decommit large-cache and empty-segment
+pool) — **6 of 11 need a genuinely new parallel mechanism, only 2 are
+reused as-is.** Corrects R10-4's own one-line framing that the page-run
+layer needs "zero guard-invariant changes": true for carve alignment, but
+address resolution needs a second masking constant and a two-step
+disambiguation, since `segment_base_of_ptr`'s O(1) masking is calibrated
+to the global `SEGMENT` constant — worked through concretely (a parallel
+`PageRunTable`, a dedicated `PageRunFreeRing` with a wider packed-offset
+field: 8 MiB needs 23 bits vs `SEGMENT`'s 22, confirmed to still fit the
+existing `u32` packing with headroom, though the `hardened` ring's exact
+bit budget is flagged as not fully derived — an explicit open item for
+stage 2, not silently assumed to work). **Verdict: CONDITIONAL-GO**, but
+explicitly states the true design surface is closer to "a second,
+smaller segment-table subsystem living alongside the existing one" than
+a bounded patch — roughly 2–3× the correctness-surface size of R10-4's or
+R11-3's own designs, comparable in total scope to the original
+`medium-classes` build-out, not a single-session task. Six explicit open
+questions left for a future stage-2 session, not silently assumed. Full
+inventory and interaction table in
+[`docs/perf/R11_7_PAGE_RUN_LAYER_DESIGN.md`](docs/perf/R11_7_PAGE_RUN_LAYER_DESIGN.md).
+
+**R11-8 (`229e25f`) — virgin-zero skip for Small `alloc_zeroed`,
+independent re-verification of a prior session's design, verdict
+unchanged (CONDITIONAL-GO), design-only.** Deliberately ordered last by
+the source review ("big potential, but harder to prove") — this is
+correctness-critical in a way none of the round's other perf work is: a
+wrong implementation would return **uninitialized memory** from
+`alloc_zeroed`, a direct `GlobalAlloc` contract violation with
+security-relevant implications, not merely a regression. Discovered
+before writing anything: this exact topic already has a complete,
+committed design doc from an earlier session
+(`docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md`, commit `7bdbc0f`,
+2026-07-20), itself a reconciliation of an earlier NO-GO and a
+deep-audit's "medium risk, unresolved" rating, reaching a design-only
+CONDITIONAL-GO. Rather than silently duplicate or blindly trust that
+prior work, this task's own doc
+(`docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md`) **independently
+re-verifies R9-5's conclusions from the current tree** — re-reading every
+cited call site fresh rather than trusting citations (the substrate has
+moved since R9-5: `alloc_core_small.rs` grew from ~2100 to 2267 lines) —
+and adds what R9-5 didn't produce: a formal four-conjunct testable
+predicate (`is_virgin(segment, offset, carve) :=` dispatch-is-fresh-carve
+AND offset-in-this-carve's-range AND
+segment-never-decommit-recommitted AND `not(miri)`), a full verification
+ledger tracing five preliminary hypotheses against source, and this
+round's kill-gate table format. **The verdict does not differ from
+R9-5's**: all ten correctness/soundness kill-gate criteria pass (pooling
+can never be marked virgin, lazy-commit grow-on-carve is
+zero-guaranteed, decommit-in-place has zero production callers today and
+the design sets its tracking bit defensively so a future reintroduction
+fails safe, batched carve and magazine-refill interleaving both get
+correct per-run granularity, cross-thread frees never write block bytes,
+the `hardened` generation-bump writes disjoint metadata not the payload,
+Miri safety mirrors the Large-path's proven `cfg!(not(miri))` fix
+exactly) — **CONDITIONAL-GO for staged future work, NO-GO for a
+same-session prototype.** The CONDITIONAL qualifier is entirely about
+production reach and win narrowness, not correctness:
+`HeapCore::alloc_zeroed`'s small arm still bypasses
+`AllocCore::alloc_zeroed` entirely (calls `self.alloc` + unconditional
+`Node::zero`), so a substrate-only prototype would be fully testable but
+production-inert under any `production`/`fastbin` build — the real
+implementation surface is plumbing the virgin signal through the
+magazine refill path, which has a genuinely open storage-design question
+(per-slot bool array vs. a whole-class short-circuit bit vs. a stolen
+pointer tag, especially its interaction with `hardened`'s tagged-pointer
+scheme) that neither this document nor R9-5 resolves. The win itself is
+real but narrow: benefits only genuinely-first-touch,
+never-reused `alloc_zeroed` calls, zero benefit on the steady-state churn
+patterns the rest of this round's work targets.
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
