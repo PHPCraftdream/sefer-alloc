@@ -671,12 +671,17 @@ impl AllocCore {
         // from foreign nodes in `fallback` and return the first one only if
         // the first pass found nothing.
         //
-        // Strategy (a) — "ignore migration": we call current_node() once per
-        // find_segment_with_free invocation (not per allocation). If the thread
-        // migrated between nodes mid-scan, we may prefer a now-wrong segment —
-        // that is the accepted MVP trade-off (§4 of PHASE_NUMA_DESIGN.md).
+        // Strategy (a) — "ignore migration": we consult the cached
+        // current_node() value (R11-5: see `current_node_cached` and
+        // `PHASE_NUMA_DESIGN.md` §4.1) on every find_segment_with_free
+        // invocation. Only the FIRST call after a slot claim queries the OS;
+        // subsequent calls on the same claim return the cached value. If the
+        // thread migrated between nodes mid-claim, we may prefer a now-wrong
+        // segment — that is the accepted MVP trade-off (§4 / §4.1 of
+        // PHASE_NUMA_DESIGN.md), a small extension of the per-segment lag
+        // §4 already documents to a per-claim lag on the query itself.
         #[cfg(feature = "numa-aware")]
-        let my_node = numa::current_node();
+        let my_node = self.current_node_cached();
         // A single fallback slot: the first segment from a foreign node that has
         // a free block.  On a single-NUMA machine (or when numa-aware is off)
         // this path is never taken — all segments have node_id == my_node (or
@@ -1569,9 +1574,11 @@ impl AllocCore {
         // Phase C (numa-aware): determine the calling thread's NUMA node
         // BEFORE the reservation so we can pass it to `reserve_aligned_on_node`
         // (Windows requires the node at reserve-time via VirtualAllocExNuma;
-        // Linux can bind post-mmap, but we unify the paths here).
+        // Linux can bind post-mmap, but we unify the paths here). R11-5: this
+        // is the cached accessor — typically the same value the most recent
+        // `find_segment_with_free` already populated.
         #[cfg(feature = "numa-aware")]
-        let my_node = numa::current_node();
+        let my_node = self.current_node_cached();
 
         // Reserve one SEGMENT's worth of virtual address space.
         // Under numa-aware we call the NUMA-steering path; otherwise the plain

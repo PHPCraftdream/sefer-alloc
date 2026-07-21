@@ -239,10 +239,11 @@ impl AllocCore {
                 Node::write_u32(Node::offset(slot.base, segment_id_off) as *mut u32, id);
                 // Phase C (numa-aware): re-stamp with the CURRENT thread's NUMA
                 // node. The thread may have migrated since the segment was cached;
-                // updating the tag reflects the current physical binding.
+                // updating the tag reflects the current physical binding. R11-5:
+                // reads the cached value (re-queried at most once per slot claim).
                 #[cfg(feature = "numa-aware")]
                 {
-                    let my_node = numa::current_node();
+                    let my_node = self.current_node_cached();
                     SegmentMeta::new(slot.base).set_node_id(my_node);
                 }
                 return (Node::deref(slot.base, hdr_aligned), false);
@@ -272,9 +273,9 @@ impl AllocCore {
         hdr_aligned: usize,
     ) -> (*mut u8, bool) {
         // Phase C (numa-aware): steer the large segment to the calling thread's
-        // NUMA node, same as for small segments.
+        // NUMA node, same as for small segments. R11-5: cached accessor.
         #[cfg(feature = "numa-aware")]
-        let my_node = numa::current_node();
+        let my_node = self.current_node_cached();
 
         #[cfg(feature = "numa-aware")]
         let (base, reservation, reservation_len) = {

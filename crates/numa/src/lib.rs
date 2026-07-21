@@ -116,8 +116,23 @@ pub mod mock {
     }
 
     /// Internal: record a call.
+    ///
+    /// R11-5: reentrancy-safe. The `Vec::push` inside the borrow guard
+    /// allocates via the global allocator; if the global allocator IS
+    /// sefer-alloc under `numa-aware-mock` (which `--all-features` enables),
+    /// that allocation re-enters `current_node()` → `record()`, which would
+    /// deadlock on a plain `borrow_mut()` (already borrowed). `try_with` +
+    /// `try_borrow_mut` silently drops the recording on re-entry — the
+    /// RETURNED value (from `current_node_slot`) is unaffected; only the
+    /// call-log entry for the re-entrant call is lost, which is acceptable
+    /// because tests that inspect the call log never run under a
+    /// sefer-alloc-as-global scenario.
     pub(crate) fn record(call: MockCall) {
-        CALLS.with(|c| c.borrow_mut().push(call));
+        let _ = CALLS.try_with(|c| {
+            if let Ok(mut b) = c.try_borrow_mut() {
+                b.push(call);
+            }
+        });
     }
 }
 

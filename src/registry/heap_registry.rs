@@ -162,6 +162,19 @@ impl HeapRegistry {
                 // `large_cache_hits_total`) pair it with an Acquire load.
                 slot.initialised.store(true, Ordering::Release);
             }
+            // R11-5: invalidate the per-AllocCore cached NUMA node before
+            // handing the slot out, so the new owner's first
+            // `current_node_cached()` re-queries rather than inheriting the
+            // previous owner's stale value. A no-op on first materialisation
+            // (the field starts at `None`); load-bearing on re-claim of a
+            // recycled slot. SAFETY: we are the sole writer (FREE→LIVE CAS
+            // winner) and the slot is LIVE + initialised at this point, so
+            // forming the `&mut HeapCore` for the invalidator is the same
+            // shape as the `return ... .cast::<HeapCore>()` below.
+            #[cfg(feature = "numa-aware")]
+            unsafe {
+                (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();
+            }
             // SAFETY: slot is LIVE and initialised; we are sole writer.
             return slot.heap.get().cast::<HeapCore>();
         }
@@ -284,6 +297,16 @@ impl HeapRegistry {
                     // performs the rollback.
                     core::mem::forget(guard);
                 }
+            }
+            // R11-5: same NUMA-cache invalidation as `claim` — runs in BOTH
+            // the first-materialisation branch above AND the re-claim branch
+            // just navigated, uniformly, so the invalidation is the single
+            // source of truth on (re-)claim. (On first materialisation the
+            // field is already `None`, making this a no-op there.) SAFETY:
+            // sole writer (FREE→LIVE CAS winner), slot LIVE + initialised.
+            #[cfg(feature = "numa-aware")]
+            unsafe {
+                (*slot.heap.get().cast::<HeapCore>()).invalidate_numa_node_cache();
             }
             // SAFETY: slot is LIVE and initialised; we are sole writer.
             return slot.heap.get().cast::<HeapCore>();

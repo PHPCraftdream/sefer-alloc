@@ -36,6 +36,18 @@
 // meaningful only on the real (non-miri) path.
 #![cfg(not(miri))]
 #![cfg(feature = "alloc-core")]
+// R11-5: skip under `numa-aware-mock`. The mock's `thread_local! Vec<MockCall>`
+// (in `numa-shim`, gated on its `mock` feature — pulled in by
+// `numa-aware-mock`) allocates via the global allocator on the first
+// `current_node()` dispatch (the `Vec::push` in `mock::record` grows the
+// heap-allocated call log). That is a TEST-INFRASTRUCTURE allocation, not a
+// production M5 violation: in a real (non-mock) build the platform
+// `current_node_impl` does not touch the global allocator at all. The M5
+// invariant is still checked in every non-mock feature configuration
+// (`production,alloc-stats`, `numa-aware`, etc.) — this skip only avoids
+// the false positive that arises when the mock backend replaces the real
+// platform code under `--all-features`.
+#![cfg(not(feature = "numa-aware-mock"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

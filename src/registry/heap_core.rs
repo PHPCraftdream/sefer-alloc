@@ -650,4 +650,52 @@ impl HeapCore {
     ) -> bool {
         self.core.live_config_matches(requested)
     }
+
+    /// R11-5: invalidate the cached `current_node()` value on this heap's
+    /// `AllocCore`. Called by `HeapRegistry::claim` /
+    /// `claim_with_config` immediately before handing the freshly-claimed
+    /// `*mut HeapCore` to the caller, so a recycled slot's next
+    /// `current_node_cached()` call re-queries the OS instead of returning
+    /// the previous owner's stale value. See `docs/PHASE_NUMA_DESIGN.md`
+    /// §4.1 for the design note and the slot-recycle soundness argument.
+    ///
+    /// Gate: only present under `numa-aware` (no cache exists without it).
+    #[cfg(feature = "numa-aware")]
+    pub(crate) fn invalidate_numa_node_cache(&mut self) {
+        self.core.invalidate_numa_node_cache();
+    }
+
+    /// R11-5 test-only: read this heap's cached NUMA-node value without
+    /// populating it. Delegates to
+    /// [`AllocCore::dbg_cached_numa_node`](crate::alloc_core::AllocCore::dbg_cached_numa_node).
+    /// The `tests/numa_cache_invalidation.rs` slot-recycle regression uses
+    /// this to assert the newly-claimed slot's cached value reflects the
+    /// NEW mock node, not the stale one from before recycling — the exact
+    /// bug `invalidate_numa_node_cache` exists to prevent.
+    ///
+    /// `#[doc(hidden)] pub` per the established test-only-export pattern
+    /// (CLAUDE.md "File and module structure" sanctioned exception 1).
+    #[cfg(feature = "numa-aware")]
+    #[doc(hidden)]
+    pub fn dbg_cached_numa_node(&self) -> Option<u32> {
+        self.core.dbg_cached_numa_node()
+    }
+
+    /// R11-5 test-only: deterministically populate the cache by directly
+    /// invoking [`AllocCore::current_node_cached`]. The
+    /// `tests/numa_cache_invalidation.rs` slot-recycle regression uses
+    /// this so its assertions do NOT depend on incidental free-list state
+    /// left on a recycled slot by an earlier test (a leftover free block
+    /// for the requested class makes `pop_free` succeed, skipping
+    /// `find_segment_with_free` — and thus skipping the cache populate —
+    /// making the test flaky across test-orderings). The hook lets the
+    /// test exercise the cached accessor's populate path directly while
+    /// ALSO doing real allocs (see the test) for end-to-end coverage.
+    ///
+    /// `#[doc(hidden)] pub` per the established test-only-export pattern.
+    #[cfg(feature = "numa-aware")]
+    #[doc(hidden)]
+    pub fn dbg_populate_numa_cache_for_test(&mut self) {
+        let _ = self.core.current_node_cached();
+    }
 }

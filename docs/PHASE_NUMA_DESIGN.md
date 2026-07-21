@@ -323,6 +323,135 @@ Document: `numa-aware + pinning` is the recommended combination.
 `numa-aware` alone without `pinning` gives best-effort (helps under low
 migration, does not help under high migration).
 
+### §4.1 `current_node()` cache (R11-5)
+
+**Problem being addressed.** Strategy (a) above calls `numa::current_node()`
+on every `find_segment_with_free` invocation (i.e. on every freelist miss),
+plus at every new-segment reservation. The shim's `current_node()` is NOT
+cheap — on Linux it loops over up to 64 NUMA nodes, opening and reading a
+sysfs `cpumap` file *for each one* (`/sys/devices/system/node/nodeN/cpumap`),
+and on Windows it issues two Win32 API calls
+(`GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx`). Per-call cost is
+therefore real kernel transitions (Windows) or potentially dozens of
+`open`/`read`/`close` syscalls (Linux worst case) — paid on every freelist
+miss, not once per process. This is the cheap NUMA optimisation to do
+*before* the bigger node-indexed directory work (R11-6, a separate task).
+
+**What is cached.** The `u32` returned by `numa::current_node()` for the
+calling thread. Stored as a per-`AllocCore`-instance field
+`cached_numa_node: Option<u32>` (`src/alloc_core/alloc_core.rs`), gated on
+`#[cfg(feature = "numa-aware")]`. `None` = "not yet queried on this claim";
+`Some(n)` = "the last query returned `n`".
+
+**Why per-`AllocCore`-instance, not thread-local.** `AllocCore` is already
+single-writer per thread-owned registry slot (the owning thread is its sole
+mutator), so a plain `Option<u32>` field — no `Cell`, no `AtomicU32`, no
+interior mutability machinery — is the natural fit: it inherits the same
+single-writer invariant `AllocCore` already relies on for `small_cur`,
+`large_cache`, etc. A thread-local cache would be a second source of truth
+that has to be kept in sync with slot recycling indirectly (a recycled
+slot's stale TLV would survive until that thread next touched it), whereas a
+field on `AllocCore` invalidates *with* the slot, automatically, at the
+single known recycle boundary. The field costs 8 bytes (`Option<u32>` with
+padding) per live heap.
+
+**Population policy.** Lazy on first use. The cached accessor
+`AllocCore::current_node_cached(&mut self) -> u32` returns the cached value
+if `Some`, otherwise queries `numa::current_node()`, stores the result, and
+returns it. Every former call site of `numa::current_node()` on a hot path
+now calls the cached accessor instead:
+
+- `find_segment_with_free_impl` (`src/alloc_core/alloc_core_small.rs`) — the
+  per-miss path, the call site this cache exists to defray.
+- `reserve_small_segment` (same file) — new-segment small reservation.
+- `alloc_large`'s cache-hit re-stamp and `alloc_large_slow`
+  (`src/alloc_core/alloc_core_large.rs`) — the large path's two sites.
+
+The one-time bootstrap call in `AllocCore::new_inner`
+(`src/alloc_core/alloc_core.rs`, ~line 726) is **left as a direct
+`numa::current_node()` call** — it runs exactly once per
+`AllocCore::new_inner()`, never in a hot loop, so routing it through the
+cache would add a field write for zero amortisation benefit. Forcing it
+through the cache mechanically would be cargo-cult uniformity, not a
+judgement call.
+
+**Invalidation policy — the slot-recycle correctness point.** Registry
+slots are recycled across different OS threads
+(`HeapRegistry::claim`/`HeapRegistry::recycle`,
+`src/registry/heap_registry.rs`). A "cache once, never invalidate" approach
+is **wrong**: thread A claims a slot, populates the cache with its NUMA
+node; the slot is later recycled; thread B (a different physical thread,
+likely on a different core/NUMA node) claims the SAME slot — a stale cache
+would silently apply thread A's NUMA node to thread B's allocations for the
+entire lifetime of B's claim, defeating the entire purpose of the cache.
+
+The cache is therefore invalidated at `claim()` / `claim_with_config()`
+time: immediately before returning the freshly-claimed `*mut HeapCore` to
+the caller, the registry calls `HeapCore::invalidate_numa_node_cache()`,
+which delegates to `AllocCore::invalidate_numa_node_cache()` and resets
+`cached_numa_node = None`. Soundness rests on the same single-writer
+discipline the registry already enforces:
+
+- The caller of `claim` is the CAS winner of the `FREE → LIVE` transition
+  (AcqRel on success, Acquire on failure). At the point of invalidation the
+  slot is `LIVE` and the previous owner has fully quiesced (its `recycle`
+  did a Release `LIVE → FREE` CAS; this claim's Acquire-side of the
+  subsequent `FREE → LIVE` CAS sees all of the previous owner's writes,
+  including the stale cache value).
+- The new owner is the sole writer from this point until its own
+  `recycle`. The invalidating write to `cached_numa_node` is therefore
+  race-free.
+- First materialisation (a slot that has never been claimed before) starts
+  with `cached_numa_node = None` from `AllocCore::new_inner`, so the
+  invalidation is a no-op there; the call is made uniformly so the recycle
+  boundary is the single source of truth, not the materialisation branch.
+
+Standalone `AllocCore`s built directly by tests via `AllocCore::new()`
+(no registry slot, no `claim`/`recycle`) populate the cache on first use
+and stay populated for the `AllocCore`'s lifetime — correct, because such
+an `AllocCore` is single-threaded by construction (`AllocCore: !Sync`) and
+never crosses a thread boundary, so there is no recycle boundary to
+invalidate at.
+
+**Resulting staleness bound.** Combining §4 Strategy (a) (existing) with
+this cache (new): a thread's `current_node()` *reads* may lag the OS's real
+answer for **the duration of the current slot claim** — from `claim()` to
+`recycle()`, whichever comes first. Within a single claim, every cached
+access returns the same node the first miss of that claim observed. This is
+a strict, small extension of the §4 Strategy (a) "ignore migration"
+trade-off: the *previous* trade-off was "existing segments keep their old
+`node_id` if the OS migrates the thread mid-life" (a per-segment lag); the
+*new* part is "the query itself now also lags real migration by up to one
+claim's worth of allocations". Both sources of staleness are bounded by the
+next `recycle()` (which re-queries on the next claim); both are
+*performance* staleness only (a wrong `node_id` never causes UB, just
+suboptimal locality); and the recommended mitigation for both is identical
+— use `numa-aware + pinning` so migration does not occur in the first
+place. A `numa-aware`-only workload that experiences mid-claim migration
+will see the cached node lag by up to one claim's allocations before
+self-correcting on the next claim; that is the accepted bound, written
+down here rather than left implicit.
+
+**Test coverage.** `tests/numa_cache_invalidation.rs` (gated on the
+`numa-aware-mock` feature, which enables `numa-shim/mock` for deterministic
+control of `current_node()`'s return value) proves the invalidation fires
+at `claim()`: it scripts node A for the first claim, exercises the cached
+path, recycles, scripts node B, re-claims, and asserts the newly-claimed
+slot's cached value is B (not the stale A) — the exact bug this subsection
+exists to prevent.
+
+**Measured (`benches/numa_current_node_cache.rs`, this host: Windows,
+single-NUMA — `current_node_impl` cost here is two Win32 API calls,
+`GetCurrentProcessorNumberEx` + `GetNumaProcessorNodeEx`; the Linux
+sysfs-loop cost, potentially dozens of `open`/`read`/`close` syscalls per
+call, is qualitatively larger but not directly measurable on this host —
+no number is claimed for it):
+
+| Benchmark | Uncached `numa::current_node()` | Cached accessor | Speedup |
+|---|---|---|---|
+| Per-call | ~230 ns | ~985 ps | ~233x |
+| Batch of 1024 (realistic claim lifetime) | ~227 µs | ~573 ns | ~396x |
+
 ---
 
 ## §5. Testing without real hardware

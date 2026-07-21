@@ -339,6 +339,21 @@ pub struct AllocCore {
     ///
     /// [`alloc_small`]: Self::alloc_small
     pub(super) small_cur: *mut u8,
+    /// R11-5: cached return value of `numa::current_node()` for the calling
+    /// thread, populated lazily by [`current_node_cached`](Self::current_node_cached)
+    /// and reset to `None` at registry-slot `claim()` time by
+    /// [`invalidate_numa_node_cache`](Self::invalidate_numa_node_cache).
+    ///
+    /// `None` = "not yet queried on this claim"; `Some(n)` = "the last query
+    /// returned `n`". Owner-private single-writer (this `AllocCore`'s owning
+    /// thread is its sole mutator), so a plain `Option<u32>` — no `Cell`, no
+    /// atomic — is sound and the cheapest possible cache. See
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note, including
+    /// the slot-recycle invalidation argument and the resulting staleness
+    /// bound (a migrated thread's reads may lag the OS's real answer for
+    /// the duration of the current slot claim — `claim()` to `recycle()`).
+    #[cfg(feature = "numa-aware")]
+    pub(super) cached_numa_node: Option<u32>,
     /// OPT-E — large-segment free-cache. A small fixed array of recently-freed
     /// large/huge segments whose OS reservations are still live. `alloc_large`
     /// checks this array first; a size-matched entry is reused without a new
@@ -729,6 +744,15 @@ impl AllocCore {
         Some(Self {
             table: prim.table,
             small_cur,
+            // R11-5: cache starts empty; first call to `current_node_cached`
+            // populates it. `HeapRegistry::claim` resets it to `None` on
+            // every (re-)claim of a registry slot so a recycled slot never
+            // hands a stale node to a new owning thread. Standalone
+            // `AllocCore`s (tests) never claim/recycle, so the first-query
+            // value persists for their lifetime — correct, since they are
+            // single-threaded by construction. See `PHASE_NUMA_DESIGN.md` §4.1.
+            #[cfg(feature = "numa-aware")]
+            cached_numa_node: None,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
             #[cfg(feature = "alloc-decommit")]
@@ -786,6 +810,81 @@ impl AllocCore {
             #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
             dirty_segments: None,
         })
+    }
+
+    /// R11-5: cached NUMA-node accessor — the hot-path replacement for
+    /// `numa::current_node()` from every per-miss / per-reservation call site.
+    ///
+    /// Returns the cached value if this claim has already queried; otherwise
+    /// queries `numa::current_node()` once, stores the result in
+    /// [`cached_numa_node`](Self::cached_numa_node), and returns it. The
+    /// cache is invalidated at registry-slot `claim()` time by
+    /// [`invalidate_numa_node_cache`](Self::invalidate_numa_node_cache) so a
+    /// recycled slot never hands a stale node to a new owning thread. See
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note.
+    ///
+    /// Gate: only present under `numa-aware`. Compiled out otherwise (the
+    /// call sites are also `#[cfg(feature = "numa-aware")]`, so there is no
+    /// caller outside that feature).
+    #[cfg(feature = "numa-aware")]
+    #[inline]
+    pub(crate) fn current_node_cached(&mut self) -> u32 {
+        if let Some(n) = self.cached_numa_node {
+            return n;
+        }
+        let n = numa::current_node();
+        self.cached_numa_node = Some(n);
+        n
+    }
+
+    /// R11-5: invalidate the cached NUMA node. Called by
+    /// `HeapRegistry::claim` / `claim_with_config` immediately before
+    /// handing a freshly-claimed `*mut HeapCore` to the caller, so the next
+    /// `current_node_cached()` call re-queries `numa::current_node()` instead
+    /// of returning the previous owner's stale value. Soundness argument
+    /// (why a plain write is sufficient — no atomic, no fence beyond what
+    /// `claim`'s state-CAS already establishes) lives in
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1.
+    ///
+    /// Gate: only present under `numa-aware`.
+    #[cfg(feature = "numa-aware")]
+    #[inline]
+    pub(crate) fn invalidate_numa_node_cache(&mut self) {
+        self.cached_numa_node = None;
+    }
+
+    /// R11-5 test-only: read the cached NUMA-node value without populating
+    /// it. Returns `None` if no call to `current_node_cached` has fired on
+    /// this `AllocCore` since its most recent invalidation, otherwise the
+    /// cached value. The `tests/numa_cache_invalidation.rs` slot-recycle
+    /// regression uses this to assert the newly-claimed slot's cached value
+    /// reflects the *new* mock node, not the stale one from before
+    /// recycling — the exact bug `invalidate_numa_node_cache` exists to
+    /// prevent.
+    ///
+    /// `#[doc(hidden)] pub` per the established test-only-export pattern
+    /// (CLAUDE.md "File and module structure" sanctioned exception 1): a
+    /// test hook reaching an otherwise-internal field, not stable public
+    /// API.
+    #[cfg(feature = "numa-aware")]
+    #[doc(hidden)]
+    pub fn dbg_cached_numa_node(&self) -> Option<u32> {
+        self.cached_numa_node
+    }
+
+    /// R11-5 bench/test-only: invoke the cached accessor from external
+    /// consumers (the criterion microbenchmark in
+    /// `benches/numa_current_node_cache.rs` and the HeapCore test hook
+    /// `dbg_populate_numa_cache_for_test`). Delegates to
+    /// [`current_node_cached`](Self::current_node_cached) verbatim.
+    ///
+    /// `#[doc(hidden)] pub` per the established test/bench-only-export
+    /// pattern (CLAUDE.md "File and module structure" sanctioned exception
+    /// 1). Not stable public API.
+    #[cfg(feature = "numa-aware")]
+    #[doc(hidden)]
+    pub fn dbg_current_node_cached(&mut self) -> u32 {
+        self.current_node_cached()
     }
 
     /// Allocate `layout.size()` bytes satisfying `layout.align()`.

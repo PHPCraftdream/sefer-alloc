@@ -377,6 +377,19 @@ hardened = ["fastbin"]
 # (Linux: mbind(2), Windows: VirtualAllocExNuma).
 # macOS: no-op (no public NUMA API). Default OFF. Requires `alloc-core`.
 numa-aware = ["alloc-core", "dep:numa-shim"]
+# R11-5 TEST-ONLY: enables `numa-shim`'s `mock` backend so integration tests
+# can script `current_node()`'s return value deterministically (the
+# `tests/numa_cache_invalidation.rs` slot-recycle regression uses this to
+# mock a DIFFERENT node for the second claim and assert the newly-claimed
+# slot's cached value is the NEW mock node, not the stale one from before
+# recycling). NOT part of `production` or any other default bundle; pulling
+# it in via `--all-features` is intentional (every feature combination must
+# compile), and is sound — the platform impls in `numa-shim` are still
+# compiled under `mock` (only `#[cfg_attr(feature = "mock", allow(dead_code))]`,
+# never `#[cfg(not(feature = "mock"))]`), so the real Linux sysfs loop /
+# Windows Win32 path stay type-checked under `--all-features`. Purely
+# additive over `numa-aware`.
+numa-aware-mock = ["numa-aware", "numa-shim/mock"]
 # R7-B0: EXPERIMENTAL incremental Windows commit foundation. Exposes
 # `aligned_vmem::reserve_aligned_lazy` (reserve VA + commit only an initial
 # sub-range) and `aligned_vmem::commit_range` (commit additional pages within
@@ -877,6 +890,20 @@ required-features = ["alloc-global"]
 name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global"]
+
+# R11-5: per-call cost of `numa::current_node()` (real OS syscall / Win32 API
+# call) vs the new cached accessor `AllocCore::current_node_cached()`. Reports
+# both a 1-call-per-iter view (per-call syscall cost vs per-call cache-hit
+# cost) and a batch-of-1024 view (the amortised cost shape a single
+# slot-claim lifetime sees, modelling a realistic `find_segment_with_free`
+# miss count). Windows/single-NUMA: measures the two Win32 API calls; the
+# Linux sysfs-loop cost (the more dramatic case) is NOT measured here (no
+# multi-node Linux hardware on this host) — see the bench file's module doc
+# for the honesty note. Requires `numa-aware`.
+[[bench]]
+name = "numa_current_node_cache"
+harness = false
+required-features = ["numa-aware"]
 
 # Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
