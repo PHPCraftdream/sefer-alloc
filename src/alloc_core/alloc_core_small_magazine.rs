@@ -587,7 +587,7 @@ impl AllocCore {
             #[cfg(feature = "alloc-segment-directory")]
             if old_head == FREE_LIST_NULL {
                 let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                self.publish_nonempty(class_idx, slot_idx);
+                self.publish_nonempty(base, class_idx, slot_idx);
             }
         }
 

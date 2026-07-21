@@ -21,14 +21,32 @@
 //! ## Layout
 //!
 //! ```text
-//! class_nonempty: [[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT]
+//! class_nonempty_by_node: [[[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT]; NODE_BITMAPS]
 //!
 //! WORDS_PER_CLASS = MAX_SEGMENTS / 64 = 16
 //! SMALL_CLASS_COUNT = 49 (default) or 55 (medium-classes)
+//! NODE_BITMAPS = 1 (non-NUMA) or MAX_NODES + 1 (numa-aware)
 //!
-//! Total: 49 * 16 * 8 = 6,272 B = 6.1 KiB  (default)
-//!        55 * 16 * 8 = 7,040 B = 6.9 KiB  (medium-classes)
+//! Total (non-NUMA): 1 * 49 * 16 * 8 = 6,272 B = 6.1 KiB  (default)
+//!                    1 * 55 * 16 * 8 = 7,040 B = 6.9 KiB  (medium-classes)
+//! Total (numa-aware, MAX_NODES=8):
+//!                    9 * 49 * 16 * 8 = 56,448 B = 55.1 KiB (default)
 //! ```
+//!
+//! ### R11-6 NUMA node-indexed variant
+//!
+//! Under `numa-aware`, the outer `[NODE_BITMAPS]` dimension indexes per-node
+//! bitmaps. Bucket `[0, MAX_NODES)` holds segments whose `node_id` matches
+//! that node. Bucket `[MAX_NODES]` (the "unknown" bucket) holds segments with
+//! `node_id == NO_NODE_RAW` or `node_id >= MAX_NODES` (defensive clamp for
+//! hosts with more nodes than `MAX_NODES`). Under non-`numa-aware`,
+//! `NODE_BITMAPS == 1` and the structure is byte-for-byte the pre-R11-6 flat
+//! 2-D bitmap (`[0]` is the only bucket) — no memory tax on non-NUMA builds.
+//! See `docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md` §3.2 (Approach A) for the
+//! design. The node-indexed variant was wired in task R11-6 to close the
+//! ~140× scan-cliff that existed because the directory lookup was compiled out
+//! entirely under `numa-aware` (every free-list miss fell back to an O(S)
+//! linear scan with two-pass NUMA preference).
 //!
 //! ## Lazy materialisation
 //!
@@ -135,6 +153,54 @@ const _: () = assert!(
     "MAX_SEGMENTS must be a multiple of 64 for the directory bitmap"
 );
 
+// ── R11-6: NUMA node-indexed directory dimensions ──────────────────────────
+//
+// Under `numa-aware`, the directory gains an outer `[NODE_BITMAPS]` dimension
+// indexing per-node bitmaps (R10-6 §3.2 Approach A). `MAX_NODES` is the number
+// of distinct real-node buckets; bucket index `MAX_NODES` is the "unknown"
+// bucket for `NO_NODE_RAW` / out-of-range node ids. Under non-`numa-aware`,
+// `NODE_BITMAPS == 1` (single bucket, byte-for-byte the pre-R11-6 layout).
+
+/// Maximum number of distinct NUMA node buckets in the directory. R10-6 §3.2
+/// recommends 8 (covers current x86 server topologies; `numa-shim` itself
+/// caps its sysfs scan at 64 nodes — we do not need to match that ceiling).
+/// Segments with `node_id >= MAX_NODES` are defensively clamped into the
+/// unknown bucket rather than rejected.
+#[cfg(feature = "numa-aware")]
+pub(crate) const MAX_NODES: usize = 8;
+
+/// Number of per-node bitmaps in the directory: `MAX_NODES` real-node buckets
+/// plus one "unknown node" bucket (for `NO_NODE_RAW` / out-of-range ids). Under
+/// non-`numa-aware`, degenerates to 1 (the single pre-R11-6 bucket) so non-NUMA
+/// memory is byte-for-byte unaffected.
+#[cfg(not(feature = "numa-aware"))]
+pub(crate) const NODE_BITMAPS: usize = 1;
+
+#[cfg(feature = "numa-aware")]
+pub(crate) const NODE_BITMAPS: usize = MAX_NODES + 1;
+
+/// Map a segment `node_id` (as returned by `SegmentMeta::node_id_of`) to its
+/// directory bucket index. Real node ids `[0, MAX_NODES)` map directly;
+/// `NO_NODE_RAW` (`u32::MAX`) and any id `>= MAX_NODES` map to the unknown
+/// bucket (`MAX_NODES`). Under non-`numa-aware`, always returns 0 (the single
+/// bucket) regardless of `node_id`.
+#[inline]
+pub(crate) fn node_bucket(node_id: u32) -> usize {
+    #[cfg(not(feature = "numa-aware"))]
+    {
+        let _ = node_id;
+        0
+    }
+    #[cfg(feature = "numa-aware")]
+    {
+        if (node_id as usize) >= MAX_NODES {
+            MAX_NODES
+        } else {
+            node_id as usize
+        }
+    }
+}
+
 /// Per-class segment directory — the owner-only `class_nonempty` bitmap.
 ///
 /// One file, one export (CLAUDE.md). See the module doc for the full design.
@@ -143,57 +209,91 @@ const _: () = assert!(
 /// `aligned_vmem::reserve_aligned` in-place-init pattern (OS-zeroed pages
 /// are a fully valid initial state: every bit zero = "no class in any
 /// segment is nonempty" = the pre-rebuild state).
+///
+/// R11-6: under `numa-aware`, `class_nonempty_by_node` gains an outer
+/// `[NODE_BITMAPS]` dimension indexing per-node bitmaps. Under
+/// non-`numa-aware`, `NODE_BITMAPS == 1` so the field is byte-for-byte the
+/// pre-R11-6 flat 2-D bitmap.
 #[repr(C)]
 pub(crate) struct SegmentDirectory {
-    /// `class_nonempty[c][w]`: bit `j` is set iff segment-table slot
-    /// `w * 64 + j` is a live Small/Primordial segment with
-    /// `BinTable::head(c) != FREE_LIST_NULL`.
+    /// `class_nonempty_by_node[node_bucket][class_idx][word]`: bit `j` is set
+    /// iff segment-table slot `word * 64 + j` is a live Small/Primordial
+    /// segment with `BinTable::head(class_idx) != FREE_LIST_NULL` and
+    /// `node_id` mapping to `node_bucket`.
     ///
     /// Plain `u64` (not `AtomicU64`): owner-only, single-writer — see the
     /// module doc.
-    pub(crate) class_nonempty: [[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT],
+    pub(crate) class_nonempty_by_node: [[[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT]; NODE_BITMAPS],
 }
 
 impl SegmentDirectory {
-    /// Set the bit for slot `slot_idx` in class `class_idx`.
+    /// Set the bit for slot `slot_idx` in class `class_idx` in the bitmap for
+    /// the node derived from `node_id`. R11-6: `node_id` selects the per-node
+    /// bucket under `numa-aware`; under non-`numa-aware` it is ignored (single
+    /// bucket).
     #[inline]
-    pub(crate) fn set_bit(&mut self, class_idx: usize, slot_idx: usize) {
+    pub(crate) fn set_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
+        debug_assert!(class_idx < SMALL_CLASS_COUNT);
+        debug_assert!(slot_idx < MAX_SEGMENTS);
+        let nb = node_bucket(node_id);
+        let word = slot_idx / 64;
+        let bit = slot_idx % 64;
+        self.class_nonempty_by_node[nb][class_idx][word] |= 1u64 << bit;
+    }
+
+    /// Clear the bit for slot `slot_idx` in class `class_idx` in the bitmap for
+    /// the node derived from `node_id`.
+    #[inline]
+    pub(crate) fn clear_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
+        debug_assert!(class_idx < SMALL_CLASS_COUNT);
+        debug_assert!(slot_idx < MAX_SEGMENTS);
+        let nb = node_bucket(node_id);
+        let word = slot_idx / 64;
+        let bit = slot_idx % 64;
+        self.class_nonempty_by_node[nb][class_idx][word] &= !(1u64 << bit);
+    }
+
+    /// Read the bit for slot `slot_idx` in class `class_idx` in the bitmap for
+    /// the node derived from `node_id`.
+    #[inline]
+    pub(crate) fn get_bit(&self, node_id: u32, class_idx: usize, slot_idx: usize) -> bool {
+        debug_assert!(class_idx < SMALL_CLASS_COUNT);
+        debug_assert!(slot_idx < MAX_SEGMENTS);
+        let nb = node_bucket(node_id);
+        let word = slot_idx / 64;
+        let bit = slot_idx % 64;
+        (self.class_nonempty_by_node[nb][class_idx][word] >> bit) & 1 != 0
+    }
+
+    /// R11-6: clear the bit for `(class_idx, slot_idx)` across ALL node
+    /// buckets. Used when the caller cannot determine the segment's node
+    /// (e.g. clearing a stale bit whose base is null — the segment was
+    /// recycled). Under non-`numa-aware` (`NODE_BITMAPS == 1`) this is
+    /// identical to `clear_bit`.
+    #[inline]
+    pub(crate) fn clear_bit_all_nodes(&mut self, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let word = slot_idx / 64;
-        let bit = slot_idx % 64;
-        self.class_nonempty[class_idx][word] |= 1u64 << bit;
+        let mask = !(1u64 << (slot_idx % 64));
+        for nb in 0..NODE_BITMAPS {
+            self.class_nonempty_by_node[nb][class_idx][word] &= mask;
+        }
     }
 
-    /// Clear the bit for slot `slot_idx` in class `class_idx`.
-    #[inline]
-    pub(crate) fn clear_bit(&mut self, class_idx: usize, slot_idx: usize) {
-        debug_assert!(class_idx < SMALL_CLASS_COUNT);
-        debug_assert!(slot_idx < MAX_SEGMENTS);
-        let word = slot_idx / 64;
-        let bit = slot_idx % 64;
-        self.class_nonempty[class_idx][word] &= !(1u64 << bit);
-    }
-
-    /// Read the bit for slot `slot_idx` in class `class_idx`.
-    #[inline]
-    pub(crate) fn get_bit(&self, class_idx: usize, slot_idx: usize) -> bool {
-        debug_assert!(class_idx < SMALL_CLASS_COUNT);
-        debug_assert!(slot_idx < MAX_SEGMENTS);
-        let word = slot_idx / 64;
-        let bit = slot_idx % 64;
-        (self.class_nonempty[class_idx][word] >> bit) & 1 != 0
-    }
-
-    /// Clear ALL classes for a given slot (used on segment recycle — A2
-    /// scope, but the primitive belongs here alongside the other bit ops).
+    /// Clear ALL classes for a given slot across ALL node buckets (used on
+    /// segment recycle — A2 scope, but the primitive belongs here alongside
+    /// the other bit ops). R11-6: iterates all node buckets so a reused slot
+    /// does not inherit stale bits from any node's bitmap.
     #[inline]
     pub(crate) fn clear_slot(&mut self, slot_idx: usize) {
         debug_assert!(slot_idx < MAX_SEGMENTS);
         let word = slot_idx / 64;
         let mask = !(1u64 << (slot_idx % 64));
-        for c in 0..SMALL_CLASS_COUNT {
-            self.class_nonempty[c][word] &= mask;
+        for nb in 0..NODE_BITMAPS {
+            for c in 0..SMALL_CLASS_COUNT {
+                self.class_nonempty_by_node[nb][c][word] &= mask;
+            }
         }
     }
 
@@ -202,6 +302,10 @@ impl SegmentDirectory {
     ///
     /// Called once on first materialisation. Skips null (recycled) slots and
     /// non-Small/Primordial (Large) segments.
+    ///
+    /// R11-6: under `numa-aware`, reads each segment's `node_id_of()` and
+    /// places bits in the correct per-node bucket. Under non-`numa-aware`,
+    /// all bits go in bucket 0.
     ///
     /// The `table` reference is the owning `AllocCore`'s `SegmentTable` — the
     /// rebuild reads from it, never writes it. The directory (`&mut self`) is
@@ -222,9 +326,16 @@ impl SegmentDirectory {
             }
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
+            // R11-6: derive the node bucket from the segment header under
+            // numa-aware; non-numa-aware uses bucket 0 (node_id_of is
+            // cfg-gated out).
+            #[cfg(feature = "numa-aware")]
+            let node_id = meta.node_id_of();
+            #[cfg(not(feature = "numa-aware"))]
+            let node_id = 0u32;
             for c in 0..SMALL_CLASS_COUNT {
                 if bt.head(c) != FREE_LIST_NULL {
-                    self.set_bit(c, i);
+                    self.set_bit(node_id, c, i);
                 }
             }
         }

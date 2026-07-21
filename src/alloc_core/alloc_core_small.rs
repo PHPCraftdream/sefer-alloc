@@ -396,8 +396,13 @@ impl AllocCore {
         // `not(feature = "numa-aware")`), so this binding is read-only in that
         // configuration — `mut` would be a warning under `--all-features`.
         #[cfg(feature = "alloc-segment-directory")]
-        #[cfg_attr(feature = "numa-aware", allow(unused_mut))]
         let mut periodic_revalidation_active = false;
+        // R11-6: compute my_node ONCE for both the directory-driven lookup
+        // (node-bucket preference order) and the linear-scan NUMA two-pass
+        // logic below. Moved here from the linear-scan prologue so the
+        // directory path can use it.
+        #[cfg(feature = "numa-aware")]
+        let my_node = self.current_node_cached();
         // ── R7-A3: directory-accelerated path ──────────────────────────────
         //
         // When `alloc-segment-directory` is compiled in AND the sidecar is
@@ -443,11 +448,7 @@ impl AllocCore {
         // accordingly (sync_directory_for_segment_classes inside drain_dirty_segments).
         // After this, the directory lookup below can skip the per-candidate
         // ring drain for segments that were already drained in this pass.
-        #[cfg(all(
-            feature = "alloc-segment-directory",
-            feature = "alloc-xthread",
-            not(feature = "numa-aware")
-        ))]
+        #[cfg(all(feature = "alloc-segment-directory", feature = "alloc-xthread"))]
         {
             #[cfg(feature = "fastbin")]
             self.drain_dirty_segments(class_idx, is_in_magazine);
@@ -455,126 +456,89 @@ impl AllocCore {
             self.drain_dirty_segments(class_idx);
         }
 
-        #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+        #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
             let dir = os::deref_directory_sidecar(self.directory_sidecar);
-            let words = &dir.class_nonempty[class_idx];
 
-            for (w, &word_val) in words.iter().enumerate() {
-                let mut bits = word_val;
-                if bits == 0 {
-                    continue;
+            // R11-6: scan the per-node bitmaps in NUMA preference order.
+            //
+            // Non-numa-aware: a single bucket [0] — byte-for-byte the
+            // pre-R11-6 flat-bitmap scan (the outer loop runs once).
+            //
+            // Numa-aware: LOCAL bucket first (matches `my_node`), then the
+            // UNKNOWN bucket (`NO_NODE_RAW` / out-of-range segments, treated
+            // as local-equivalent — mirroring the linear scan's binding
+            // `seg_node != my_node && seg_node != NO_NODE_RAW` semantics
+            // precisely: a NO_NODE segment is preferred over any foreign
+            // segment, exactly as today), then FOREIGN real-node buckets in
+            // ascending order. This preserves the two-pass local-first /
+            // foreign-fallback preference the R7 plan (R10-6 §3.1) mandates.
+            let mut buckets: [usize; super::segment_directory::NODE_BITMAPS] =
+                [0; super::segment_directory::NODE_BITMAPS];
+            let mut n_buckets: usize = 0;
+            #[cfg(feature = "numa-aware")]
+            {
+                let my_bucket = super::segment_directory::node_bucket(my_node);
+                buckets[n_buckets] = my_bucket;
+                n_buckets += 1;
+                // Unknown bucket — local-equivalent (R10-6 §3.2 "treated as
+                // acceptable/local-equivalent, matching today's scan"). Scanned
+                // BEFORE foreign so a NO_NODE segment is never deprioritised
+                // below a foreign one.
+                let unknown = super::segment_directory::MAX_NODES;
+                if unknown != my_bucket {
+                    buckets[n_buckets] = unknown;
+                    n_buckets += 1;
                 }
-                // R7-A0: count each word examined by the directory scan.
-                #[cfg(feature = "alloc-stats")]
-                super::directory_stats::DIRECTORY_WORDS_EXAMINED
-                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-
-                while bits != 0 {
-                    let j = bits.trailing_zeros() as usize;
-                    bits &= bits - 1; // clear lowest set bit
-                    let slot_idx = w * 64 + j;
-
-                    // Validation step 1: base must be non-null.
-                    let base = self.table.base_at(slot_idx);
-                    if base.is_null() {
-                        // Stale bit for a recycled slot — clear it.
-                        self.publish_empty(class_idx, slot_idx);
-                        #[cfg(feature = "alloc-stats")]
-                        super::directory_stats::DIRECTORY_STALE_HITS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        continue;
+                // Foreign real-node buckets, ascending.
+                for nb in 0..super::segment_directory::MAX_NODES {
+                    if nb != my_bucket {
+                        buckets[n_buckets] = nb;
+                        n_buckets += 1;
                     }
-
-                    // Validation step 2: must be Small/Primordial.
-                    if !matches!(
-                        SegmentHeader::kind_at(base),
-                        SegmentKind::Small | SegmentKind::Primordial
-                    ) {
-                        // A large segment somehow had a stale bit — clear.
-                        self.publish_empty(class_idx, slot_idx);
-                        #[cfg(feature = "alloc-stats")]
-                        super::directory_stats::DIRECTORY_STALE_HITS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        continue;
-                    }
-
-                    // P1-a: lazily drain this segment's remote-free ring
-                    // BEFORE inspecting BinTable — exactly as the linear
-                    // scan does. Cross-thread frees sitting in the ring are
-                    // invisible to the BinTable until drained.
-                    #[cfg(feature = "alloc-xthread")]
-                    {
-                        let mut meta_for_ring = SegmentMeta::new(base);
-                        let ring = meta_for_ring.remote_ring();
-                        let cached_head = meta_for_ring.ring_drain_head_of();
-                        if ring.tail_relaxed() != cached_head {
-                            let small_cur = self.small_cur;
-                            #[cfg(feature = "alloc-decommit")]
-                            let mut decommit_happened = false;
-                            // R8-1 (task #214): accumulate the set of classes
-                            // this drain pass touches, for an O(popcount)
-                            // post-drain directory sync.
-                            let mut changed_classes: u64 = 0;
-                            let new_head = ring.drain(|off| {
-                                #[cfg(feature = "fastbin")]
-                                let reclaimed =
-                                    Self::reclaim_offset_checked(base, off, &is_in_magazine);
-                                #[cfg(not(feature = "fastbin"))]
-                                let reclaimed = Self::reclaim_offset(base, off);
-                                if reclaimed {
-                                    #[cfg(feature = "alloc-decommit")]
-                                    if Self::dec_live_and_maybe_decommit(base, small_cur) {
-                                        decommit_happened = true;
-                                    }
-                                    changed_classes |=
-                                        1u64 << super::remote_free_ring::entry_class_idx(off);
-                                }
-                            });
-                            // A2 post-drain directory sync.
-                            {
-                                let sid = SegmentHeader::segment_id_at(base) as usize;
-                                self.sync_directory_for_segment_classes(base, sid, changed_classes);
-                            }
-                            // P1-b: decommit/pool hysteresis — same as the
-                            // linear scan. A decommitted segment must be
-                            // skipped (its base is unmapped or pooled).
-                            #[cfg(feature = "alloc-decommit")]
-                            if decommit_happened {
-                                self.release_or_pool_empty_segment(base);
-                                continue;
-                            }
-                            // P1-d: refresh the ring_drain_head cache.
-                            meta_for_ring.set_ring_drain_head(new_head);
-                        }
-                    }
-
-                    // Validation step 3: BinTable head STILL non-null?
-                    let meta = SegmentMeta::new(base);
-                    let bt = meta.bin_table();
-                    if bt.head(class_idx) == FREE_LIST_NULL {
-                        // Stale positive: drain may have emptied the class,
-                        // or a concurrent transition cleared it. Clear the
-                        // bit and try the next candidate.
-                        self.publish_empty(class_idx, slot_idx);
-                        #[cfg(feature = "alloc-stats")]
-                        super::directory_stats::DIRECTORY_STALE_HITS
-                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        continue;
-                    }
-
-                    // Valid hit — do the SAME work as the linear scan on hit.
-                    // P1-c: un-pool if this segment was retained in the pool.
-                    #[cfg(feature = "alloc-decommit")]
-                    self.unpool_if_present(base);
-
-                    #[cfg(feature = "alloc-stats")]
-                    super::directory_stats::DIRECTORY_HITS
-                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-
-                    return Some(base);
                 }
             }
+            #[cfg(not(feature = "numa-aware"))]
+            {
+                // Single bucket [0] (pre-R11-6 layout).
+                n_buckets = 1;
+            }
+
+            for &nb in buckets.iter().take(n_buckets) {
+                let words = &dir.class_nonempty_by_node[nb][class_idx];
+
+                for (w, &word_val) in words.iter().enumerate() {
+                    let mut bits = word_val;
+                    if bits == 0 {
+                        continue;
+                    }
+                    // R7-A0: count each word examined by the directory scan.
+                    #[cfg(feature = "alloc-stats")]
+                    super::directory_stats::DIRECTORY_WORDS_EXAMINED
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+                    while bits != 0 {
+                        let j = bits.trailing_zeros() as usize;
+                        bits &= bits - 1; // clear lowest set bit
+                        let slot_idx = w * 64 + j;
+
+                        // Validate this candidate (base, kind, ring drain,
+                        // BinTable head) — the SINGLE choke point shared with
+                        // the non-NUMA path so the criteria are byte-for-byte
+                        // identical.
+                        if let Some(base) = self.validate_directory_candidate(
+                            class_idx,
+                            slot_idx,
+                            #[cfg(feature = "alloc-xthread")]
+                            is_in_magazine,
+                        ) {
+                            return Some(base);
+                        }
+                    }
+                }
+            }
+            // (fall through to the directory-miss handling below — control
+            // only reaches here if no candidate in ANY node bucket validated)
             // Directory miss: no set bit yielded a valid hit.
             //
             // R8-2 (task #215): in the common case, TRUST the directory — the
@@ -680,8 +644,9 @@ impl AllocCore {
         // segment — that is the accepted MVP trade-off (§4 / §4.1 of
         // PHASE_NUMA_DESIGN.md), a small extension of the per-segment lag
         // §4 already documents to a per-claim lag on the query itself.
-        #[cfg(feature = "numa-aware")]
-        let my_node = self.current_node_cached();
+        //
+        // R11-6: `my_node` is now computed at the top of this function (before
+        // the directory-driven lookup) and reused here — see the binding above.
         // A single fallback slot: the first segment from a foreign node that has
         // a free block.  On a single-NUMA machine (or when numa-aware is off)
         // this path is never taken — all segments have node_id == my_node (or
@@ -857,7 +822,7 @@ impl AllocCore {
                     #[cfg(feature = "alloc-segment-directory")]
                     if periodic_revalidation_active || rescue {
                         let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                        self.publish_nonempty(class_idx, slot_idx);
+                        self.publish_nonempty(base, class_idx, slot_idx);
                         // R9-8: only the PERIODIC re-validation path bumps the
                         // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
                         // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
@@ -883,7 +848,7 @@ impl AllocCore {
                     #[cfg(feature = "alloc-segment-directory")]
                     if periodic_revalidation_active || rescue {
                         let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-                        self.publish_nonempty(class_idx, slot_idx);
+                        self.publish_nonempty(base, class_idx, slot_idx);
                         // R9-8: only the PERIODIC re-validation path bumps the
                         // `DIRECTORY_MISS_SELF_HEAL` canary; the rescue path is
                         // counted separately by `DIRECTORY_RESCUE_OOM_AVOIDED`
@@ -916,7 +881,7 @@ impl AllocCore {
             if periodic_revalidation_active || rescue {
                 if let Some(fb) = fallback {
                     let slot_idx = SegmentHeader::segment_id_at(fb) as usize;
-                    self.publish_nonempty(class_idx, slot_idx);
+                    self.publish_nonempty(fb, class_idx, slot_idx);
                     #[cfg(feature = "alloc-stats")]
                     if periodic_revalidation_active {
                         super::directory_stats::DIRECTORY_MISS_SELF_HEAL
@@ -928,6 +893,118 @@ impl AllocCore {
         }
         #[cfg(not(feature = "numa-aware"))]
         None
+    }
+
+    /// R7-A3 / R11-6: validate ONE directory candidate (segment-table slot
+    /// `slot_idx`) for `class_idx`. This is the SINGLE choke point for
+    /// candidate validation — called by both the flat (non-NUMA) and
+    /// node-indexed (NUMA) directory scans so the validation criteria are
+    /// byte-for-byte identical (base non-null, Small/Primordial kind, ring
+    /// drain, BinTable head non-null). Returns `Some(base)` on a valid hit;
+    /// returns `None` (after self-healing any stale bit) if the candidate is
+    /// stale/empty/decommitted, so the caller continues to the next candidate.
+    #[cfg(feature = "alloc-segment-directory")]
+    #[inline]
+    fn validate_directory_candidate<
+        #[cfg(feature = "alloc-xthread")] F: Fn(*mut u8, usize) -> bool,
+    >(
+        &mut self,
+        class_idx: usize,
+        slot_idx: usize,
+        #[cfg(feature = "alloc-xthread")] is_in_magazine: &F,
+    ) -> Option<*mut u8> {
+        // Validation step 1: base must be non-null.
+        let base = self.table.base_at(slot_idx);
+        if base.is_null() {
+            // Stale bit for a recycled slot — clear it (publish_empty with a
+            // null base clears across ALL node buckets).
+            self.publish_empty(base, class_idx, slot_idx);
+            #[cfg(feature = "alloc-stats")]
+            super::directory_stats::DIRECTORY_STALE_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return None;
+        }
+
+        // Validation step 2: must be Small/Primordial.
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            // A large segment somehow had a stale bit — clear.
+            self.publish_empty(base, class_idx, slot_idx);
+            #[cfg(feature = "alloc-stats")]
+            super::directory_stats::DIRECTORY_STALE_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return None;
+        }
+
+        // P1-a: lazily drain this segment's remote-free ring BEFORE inspecting
+        // BinTable — exactly as the linear scan does. Cross-thread frees
+        // sitting in the ring are invisible to the BinTable until drained.
+        #[cfg(feature = "alloc-xthread")]
+        {
+            let mut meta_for_ring = SegmentMeta::new(base);
+            let ring = meta_for_ring.remote_ring();
+            let cached_head = meta_for_ring.ring_drain_head_of();
+            if ring.tail_relaxed() != cached_head {
+                let small_cur = self.small_cur;
+                #[cfg(feature = "alloc-decommit")]
+                let mut decommit_happened = false;
+                // R8-1 (task #214): accumulate the set of classes this drain
+                // pass touches, for an O(popcount) post-drain directory sync.
+                let mut changed_classes: u64 = 0;
+                let new_head = ring.drain(|off| {
+                    #[cfg(feature = "fastbin")]
+                    let reclaimed = Self::reclaim_offset_checked(base, off, &is_in_magazine);
+                    #[cfg(not(feature = "fastbin"))]
+                    let reclaimed = Self::reclaim_offset(base, off);
+                    if reclaimed {
+                        #[cfg(feature = "alloc-decommit")]
+                        if Self::dec_live_and_maybe_decommit(base, small_cur) {
+                            decommit_happened = true;
+                        }
+                        changed_classes |= 1u64 << super::remote_free_ring::entry_class_idx(off);
+                    }
+                });
+                // A2 post-drain directory sync.
+                {
+                    let sid = SegmentHeader::segment_id_at(base) as usize;
+                    self.sync_directory_for_segment_classes(base, sid, changed_classes);
+                }
+                // P1-b: decommit/pool hysteresis — same as the linear scan. A
+                // decommitted segment must be skipped.
+                #[cfg(feature = "alloc-decommit")]
+                if decommit_happened {
+                    self.release_or_pool_empty_segment(base);
+                    return None;
+                }
+                // P1-d: refresh the ring_drain_head cache.
+                meta_for_ring.set_ring_drain_head(new_head);
+            }
+        }
+
+        // Validation step 3: BinTable head STILL non-null?
+        let meta = SegmentMeta::new(base);
+        let bt = meta.bin_table();
+        if bt.head(class_idx) == FREE_LIST_NULL {
+            // Stale positive: drain may have emptied the class, or a concurrent
+            // transition cleared it. Clear the bit and try the next candidate.
+            self.publish_empty(base, class_idx, slot_idx);
+            #[cfg(feature = "alloc-stats")]
+            super::directory_stats::DIRECTORY_STALE_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            return None;
+        }
+
+        // Valid hit — do the SAME work as the linear scan on hit.
+        // P1-c: un-pool if this segment was retained in the pool.
+        #[cfg(feature = "alloc-decommit")]
+        self.unpool_if_present(base);
+
+        #[cfg(feature = "alloc-stats")]
+        super::directory_stats::DIRECTORY_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+        Some(base)
     }
 
     /// Pop a free block of `class_idx` from `segment`'s bin table. Returns
@@ -994,7 +1071,7 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         if new_head == FREE_LIST_NULL {
             let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
-            self.publish_empty(class_idx, slot_idx);
+            self.publish_empty(segment, class_idx, slot_idx);
         }
         // Phase 13.4a: clear the block's bitmap bit — it leaves the free list
         // and is handed to the caller, so a subsequent free must NOT see it as
@@ -1148,7 +1225,7 @@ impl AllocCore {
             #[cfg(feature = "alloc-segment-directory")]
             if head_off == FREE_LIST_NULL {
                 let slot_idx = SegmentHeader::segment_id_at(segment) as usize;
-                self.publish_empty(class_idx, slot_idx);
+                self.publish_empty(segment, class_idx, slot_idx);
             }
             // `inc_live` ONCE by `k` (D1): exactly `k` blocks were handed out. A
             // popped block always comes from a COMMITTED payload (a decommitted
@@ -1520,7 +1597,7 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         if old_head == FREE_LIST_NULL {
             let slot_idx = SegmentHeader::segment_id_at(base) as usize;
-            self.publish_nonempty(class_idx, slot_idx);
+            self.publish_nonempty(base, class_idx, slot_idx);
         }
         // Phase 35 (M6): one fewer live block in this segment; if it just
         // emptied and is not the current carve target, route it through the
@@ -1842,6 +1919,31 @@ impl AllocCore {
 }
 
 // ── R7-A1: directory sidecar materialisation ────────────────────────────────
+
+/// R11-6: read the NUMA `node_id` from a segment header for directory bitmap
+/// routing. Under `numa-aware`, reads `SegmentMeta::node_id_of()`. Under
+/// non-`numa-aware`, returns 0 unconditionally (the single-bucket directory
+/// ignores the value; `node_id_of` is cfg-gated out). Returns 0 for a null
+/// base (callers that clear stale bits handle the null case separately via
+/// `clear_bit_all_nodes`).
+#[cfg(feature = "alloc-segment-directory")]
+#[inline]
+fn directory_node_id_of(base: *mut u8) -> u32 {
+    #[cfg(feature = "numa-aware")]
+    {
+        if base.is_null() {
+            0
+        } else {
+            SegmentMeta::new(base).node_id_of()
+        }
+    }
+    #[cfg(not(feature = "numa-aware"))]
+    {
+        let _ = base;
+        0
+    }
+}
+
 #[cfg(feature = "alloc-segment-directory")]
 impl AllocCore {
     /// Check whether the directory sidecar should be materialised and, if
@@ -1910,29 +2012,42 @@ impl AllocCore {
     // helpers to keep the directory in sync. The helpers are cheap no-ops when
     // the sidecar is not materialised (below threshold, OOM-disabled, or
     // feature OFF).
+    //
+    // R11-6: the helpers derive the segment's NUMA node from `base` and route
+    // the bit-set/clear to the correct per-node bucket under `numa-aware`.
+    // Under non-`numa-aware` the node dimension is inert (single bucket).
 
-    /// R7-A2: notify the directory that class `class_idx` in segment slot
-    /// `slot_idx` transitioned from empty to non-empty (old_head was
-    /// FREE_LIST_NULL, new_head is not). Sets the corresponding bit.
+    /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
+    /// slot `slot_idx` (segment base `base`) transitioned from empty to
+    /// non-empty (old_head was FREE_LIST_NULL, new_head is not). Sets the
+    /// corresponding bit in the segment's node bucket.
     ///
     /// No-op if the directory is not materialised.
     #[inline]
-    pub(super) fn publish_nonempty(&mut self, class_idx: usize, slot_idx: usize) {
+    pub(super) fn publish_nonempty(&mut self, base: *mut u8, class_idx: usize, slot_idx: usize) {
         if let Some(dir) = self.directory_mut() {
-            dir.set_bit(class_idx, slot_idx);
+            dir.set_bit(directory_node_id_of(base), class_idx, slot_idx);
         }
     }
 
-    /// R7-A2: notify the directory that class `class_idx` in segment slot
-    /// `slot_idx` transitioned from non-empty to empty (old_head was not
-    /// FREE_LIST_NULL, new_head is FREE_LIST_NULL). Clears the corresponding
-    /// bit.
+    /// R7-A2 / R11-6: notify the directory that class `class_idx` in segment
+    /// slot `slot_idx` (segment base `base`) transitioned from non-empty to
+    /// empty (old_head was not FREE_LIST_NULL, new_head is FREE_LIST_NULL).
+    /// Clears the corresponding bit in the segment's node bucket.
+    ///
+    /// If `base` is null (the stale-bit-clearing path in directory validation,
+    /// where the segment was already recycled), the node is unknowable so the
+    /// bit is cleared across ALL node buckets (`clear_bit_all_nodes`).
     ///
     /// No-op if the directory is not materialised.
     #[inline]
-    pub(super) fn publish_empty(&mut self, class_idx: usize, slot_idx: usize) {
+    pub(super) fn publish_empty(&mut self, base: *mut u8, class_idx: usize, slot_idx: usize) {
         if let Some(dir) = self.directory_mut() {
-            dir.clear_bit(class_idx, slot_idx);
+            if base.is_null() {
+                dir.clear_bit_all_nodes(class_idx, slot_idx);
+            } else {
+                dir.clear_bit(directory_node_id_of(base), class_idx, slot_idx);
+            }
         }
     }
 
@@ -1961,6 +2076,9 @@ impl AllocCore {
     /// entry, so it carries every distinct class the pass touched regardless of
     /// how many entries each class contributed.
     ///
+    /// R11-6: derives the node bucket from `base` and routes each set/clear to
+    /// the correct per-node bucket.
+    ///
     /// No-op if the directory is not materialised or `changed_classes == 0`.
     pub(crate) fn sync_directory_for_segment_classes(
         &mut self,
@@ -1972,6 +2090,7 @@ impl AllocCore {
             return;
         }
         if let Some(dir) = self.directory_mut() {
+            let node_id = directory_node_id_of(base);
             let meta = SegmentMeta::new(base);
             let bt = meta.bin_table();
             let mut bits = changed_classes;
@@ -1979,9 +2098,9 @@ impl AllocCore {
                 let c = bits.trailing_zeros() as usize;
                 bits &= bits - 1; // clear lowest set bit
                 if bt.head(c) != FREE_LIST_NULL {
-                    dir.set_bit(c, slot_idx);
+                    dir.set_bit(node_id, c, slot_idx);
                 } else {
-                    dir.clear_bit(c, slot_idx);
+                    dir.clear_bit(node_id, c, slot_idx);
                 }
             }
         }
@@ -2018,7 +2137,6 @@ impl AllocCore {
     /// No-op if `dirty_segments` is not bound (pre-bind window) or the
     /// directory sidecar is not materialised.
     #[cfg(feature = "alloc-xthread")]
-    #[cfg_attr(feature = "numa-aware", allow(dead_code))]
     pub(super) fn drain_dirty_segments<
         #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
     >(

@@ -537,6 +537,10 @@ impl AllocCore {
     /// Returns `None` if the directory is not materialised (below threshold,
     /// feature OFF, or sidecar OOM). Returns `Some(true/false)` otherwise.
     ///
+    /// R11-6: under `numa-aware`, this ORs across ALL node buckets (returns
+    /// `true` if ANY node has the bit set for this class/slot). For per-node
+    /// verification use `dbg_directory_get_bit_for_node`.
+    ///
     /// Test-only — lets integration tests verify the rebuilt bitmap matches
     /// the actual `BinTable` state.
     #[doc(hidden)]
@@ -544,13 +548,86 @@ impl AllocCore {
     pub fn dbg_directory_get_bit(&self, class_idx: usize, slot_idx: usize) -> Option<bool> {
         #[cfg(feature = "alloc-segment-directory")]
         {
-            self.directory().map(|dir| dir.get_bit(class_idx, slot_idx))
+            self.directory().map(|dir| {
+                let word = slot_idx / 64;
+                let bit_mask = 1u64 << (slot_idx % 64);
+                (0..super::segment_directory::NODE_BITMAPS)
+                    .any(|nb| dir.class_nonempty_by_node[nb][class_idx][word] & bit_mask != 0)
+            })
         }
         #[cfg(not(feature = "alloc-segment-directory"))]
         {
             let _ = (class_idx, slot_idx);
             None
         }
+    }
+
+    /// R11-6 TEST-ONLY: read a single bit from a SPECIFIC node bucket. Returns
+    /// `None` if the directory is not materialised. Used by the NUMA
+    /// local-first/foreign-fallback test and the per-node oracle to verify
+    /// that bits are placed in the correct node bucket.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[must_use]
+    pub fn dbg_directory_get_bit_for_node(
+        &self,
+        node_id: u32,
+        class_idx: usize,
+        slot_idx: usize,
+    ) -> Option<bool> {
+        self.directory()
+            .map(|dir| dir.get_bit(node_id, class_idx, slot_idx))
+    }
+
+    /// R11-6 TEST-ONLY: return the number of node buckets in the directory
+    /// (`NODE_BITMAPS`). Used by the NUMA oracle to iterate all buckets.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-segment-directory")]
+    #[must_use]
+    pub fn dbg_directory_node_bitmaps() -> usize {
+        super::segment_directory::NODE_BITMAPS
+    }
+
+    /// R11-6 TEST-ONLY: read the bit for `(node_bucket, class_idx, slot_idx)`
+    /// directly by bucket index (not node_id). Used by the NUMA oracle to
+    /// iterate all buckets and compare incremental vs rebuild per-bucket.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-segment-directory")]
+    #[must_use]
+    pub fn dbg_directory_get_bit_bucket(
+        &self,
+        bucket: usize,
+        class_idx: usize,
+        slot_idx: usize,
+    ) -> Option<bool> {
+        self.directory().map(|dir| {
+            let word = slot_idx / 64;
+            let bit_mask = 1u64 << (slot_idx % 64);
+            dir.class_nonempty_by_node[bucket][class_idx][word] & bit_mask != 0
+        })
+    }
+
+    /// R11-6 TEST-ONLY: directly invoke `find_segment_with_free(class_idx)`,
+    /// BYPASSING `alloc_small`'s step-1 `pop_free(small_cur)` fast path. This
+    /// forces the directory-driven lookup (or the linear scan fallback) to be
+    /// the deciding factor, without depending on incidental `small_cur` state.
+    ///
+    /// Returns `Some(base)` (a segment-base pointer whose `BinTable[class_idx]`
+    /// is non-empty) or `None` (no segment has a free block for this class).
+    ///
+    /// Used by `tests/segment_directory_numa.rs`'s local-first /
+    /// foreign-fallback test to exercise the directory's node-bucket scan order
+    /// in isolation, rather than depending on which segment `small_cur` points
+    /// at after a mixed-node workload (which could make the decisive alloc
+    /// resolve via `pop_free(small_cur)` before the directory is ever
+    /// consulted — making the test vacuous with respect to the bucket order).
+    ///
+    /// `#[doc(hidden)] pub` per the established test-only-export pattern
+    /// (CLAUDE.md "File and module structure" sanctioned exception 1). Not
+    /// stable public API.
+    #[doc(hidden)]
+    pub fn dbg_find_segment_with_free(&mut self, class_idx: usize) -> Option<*mut u8> {
+        self.find_segment_with_free(class_idx)
     }
 
     /// R8-2 (task #215) TEST-ONLY: directly clear a single bit in the
@@ -571,7 +648,10 @@ impl AllocCore {
             if self.directory_sidecar.is_null() {
                 return false;
             }
-            self.publish_empty(class_idx, slot_idx);
+            // R11-6: derive the base from the table so publish_empty routes
+            // to the correct node bucket (or clears all buckets if null).
+            let base = self.table.base_at(slot_idx);
+            self.publish_empty(base, class_idx, slot_idx);
             true
         }
         #[cfg(not(feature = "alloc-segment-directory"))]
@@ -729,9 +809,12 @@ impl AllocCore {
             // a field of `self`).
             let dir = os::deref_directory_sidecar_mut(ptr);
             // Zero out all bits first, then rebuild from scratch.
-            for c in 0..super::size_classes::SMALL_CLASS_COUNT {
-                for w in 0..super::segment_directory::WORDS_PER_CLASS {
-                    dir.class_nonempty[c][w] = 0;
+            // R11-6: iterate all node buckets.
+            for nb in 0..super::segment_directory::NODE_BITMAPS {
+                for c in 0..super::size_classes::SMALL_CLASS_COUNT {
+                    for w in 0..super::segment_directory::WORDS_PER_CLASS {
+                        dir.class_nonempty_by_node[nb][c][w] = 0;
+                    }
                 }
             }
             dir.rebuild_from_table(&self.table);

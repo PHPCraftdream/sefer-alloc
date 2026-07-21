@@ -887,6 +887,21 @@ impl AllocCore {
         self.current_node_cached()
     }
 
+    /// R11-6 test-only: invalidate the cached NUMA node so the next
+    /// `current_node_cached()` call re-queries `numa::current_node()`. Used by
+    /// the NUMA directory local-first/foreign-fallback test to create segments
+    /// stamped with DIFFERENT node ids within a single `AllocCore` (script the
+    /// mock to node A, allocate, invalidate, script to node B, allocate).
+    ///
+    /// `#[doc(hidden)] pub` per the established test-only-export pattern
+    /// (CLAUDE.md "File and module structure" sanctioned exception 1). Not
+    /// stable public API.
+    #[cfg(feature = "numa-aware")]
+    #[doc(hidden)]
+    pub fn dbg_invalidate_numa_node_cache(&mut self) {
+        self.invalidate_numa_node_cache();
+    }
+
     /// Allocate `layout.size()` bytes satisfying `layout.align()`.
     ///
     /// Returns a non-null `*mut u8` on success, or null on OOM. The memory is
