@@ -431,12 +431,31 @@ impl SeferAlloc {
     }
 
     /// R10-7 (Part 2) — **tcache-aware batch allocation** wrapper.
-    /// `#[doc(hidden)]` experimental surface (NOT committed public API). Resolves
-    /// the per-thread heap ONCE (one TLS lookup for the whole batch, vs N for N
-    /// scalar `alloc` calls), then delegates to [`HeapCore::alloc_batch`], which
-    /// drains the warm magazine and batch-refills only the remainder. Returns the
-    /// number of slots filled (0 only on true OOM); `out[filled..]` is left
-    /// uninitialised and MUST NOT be used by the caller.
+    ///
+    /// # API boundary — `batch-api` Cargo feature (R10-7 follow-up)
+    ///
+    /// `#[doc(hidden)]` alone is NOT a real API boundary: it hides the item
+    /// from rustdoc but leaves it on the public semver/ABI surface (external
+    /// code can still call it, and a signature change would still be a
+    /// breaking change). This method (and `dealloc_batch` below) is
+    /// additionally gated behind the **`batch-api` Cargo feature**, which is
+    /// NOT part of `production` or any default-on bundle. Downstream code
+    /// cannot reach this surface at all without explicitly opting in, so the
+    /// signature can evolve freely without semver consequences for the vast
+    /// majority of users (who build with `production` alone). Chosen over
+    /// `pub(crate)` + an adapter because the existing bench/test consumers
+    /// (`benches/global_alloc.rs`'s `batch_tcache` arm, `tests/batch_tcache.rs`,
+    /// and the new `tests/r10_7_alloc_batch_xthread_double_free.rs`) live
+    /// OUTSIDE the crate and need a `pub` path — a feature gate preserves
+    /// their access pattern while adding the hard semver boundary the review
+    /// asked for.
+    ///
+    /// Resolves the per-thread heap ONCE (one TLS lookup for the whole batch,
+    /// vs N for N scalar `alloc` calls), then delegates to
+    /// [`HeapCore::alloc_batch`], which drains the warm magazine and
+    /// batch-refills only the remainder. Returns the number of slots filled
+    /// (0 only on true OOM); `out[filled..]` is left uninitialised and MUST
+    /// NOT be used by the caller.
     ///
     /// # Safety
     /// Same contract as [`GlobalAlloc::alloc`]: `layout` must be a non-zero-size
@@ -446,6 +465,7 @@ impl SeferAlloc {
     /// be freed.
     ///
     /// [`dealloc_batch`]: Self::dealloc_batch
+    #[cfg(feature = "batch-api")]
     #[doc(hidden)]
     pub unsafe fn alloc_batch(&self, layout: Layout, out: &mut [*mut u8]) -> usize {
         match self.current_heap() {
@@ -459,8 +479,9 @@ impl SeferAlloc {
         }
     }
 
-    /// R10-7 (Part 2) — **batch deallocation** wrapper. `#[doc(hidden)]`
-    /// experimental surface. Resolves the per-thread heap ONCE, then frees every
+    /// R10-7 (Part 2) — **batch deallocation** wrapper. Same `batch-api`
+    /// feature boundary as [`alloc_batch`] (see that method's API-boundary
+    /// doc section). Resolves the per-thread heap ONCE, then frees every
     /// non-null block in `blocks` through that heap's full dealloc path (which
     /// does its own ownership routing + double-free oracles per block). Null
     /// entries are skipped (matching the per-block contract).
@@ -478,6 +499,7 @@ impl SeferAlloc {
     /// once. Null entries are always safe (skipped).
     ///
     /// [`alloc_batch`]: Self::alloc_batch
+    #[cfg(feature = "batch-api")]
     #[doc(hidden)]
     pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
         match self.current_heap() {

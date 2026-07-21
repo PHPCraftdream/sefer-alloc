@@ -15,8 +15,12 @@
 //!   remainder path fills the rest (the genuinely new code).
 //! - repeated cycles: the warm steady state (magazine drained then refilled by
 //!   the frees) the bench measures.
+//!
+//! `batch-api` feature gate (R10-7 follow-up): the `alloc_batch`/`dealloc_batch`
+//! surface is gated behind the `batch-api` Cargo feature (NOT part of
+//! `production`); this test file requires it alongside `alloc-global`.
 
-#![cfg(feature = "alloc-global")]
+#![cfg(all(feature = "alloc-global", feature = "batch-api"))]
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::collections::HashSet;

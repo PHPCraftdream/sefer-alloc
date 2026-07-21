@@ -169,6 +169,35 @@ alloc-xthread = ["alloc-core"]
 # alongside it for the multi-thread face (cross-thread `dealloc` via
 # per-segment `RemoteFreeRing`s).
 alloc-global = ["alloc-core", "dep:tagged-index-stack"]
+# R10-7 follow-up: the tcache-aware batch allocation API
+# (`SeferAlloc::alloc_batch` / `dealloc_batch` + the underlying
+# `HeapCore::alloc_batch`). EXPERIMENTAL — opt-in, NOT part of `production`
+# or any other default-on bundle, and NOT implied by any of them.
+# `--all-features` pulls it in (as it does every other opt-in feature here),
+# which is intended: that build tier compiles and tests every feature
+# combination.
+#
+# ## Why a dedicated feature (not just `#[doc(hidden)] pub`)
+#
+# The R10-7 external review flagged that `#[doc(hidden)] pub fn` is STILL
+# formally public Rust API: the attribute only hides the item from rustdoc,
+# not from the semver/ABI surface external code can call. A future
+# breaking change to the batch signature would still be a semver break.
+# Gating the whole surface behind this feature makes the boundary REAL:
+# downstream code cannot reach `alloc_batch`/`dealloc_batch` at all unless
+# it explicitly opts into `batch-api`, so the signature can evolve without
+# semver consequences for the vast majority of users (who build with
+# `production` alone). This mirrors how `experimental` / `pinning` /
+# `hardened` / `numa-aware` etc. already gate this crate's other opt-in
+# surfaces.
+#
+# Additive over `alloc-core` (matches the convention of every other opt-in
+# feature here): on its own it compiles the (non-magazine) fallback
+# `HeapCore::alloc_batch` that loops the substrate; alongside `fastbin` it
+# compiles the tcache-aware variant. Tests/benches opt in via
+# `required-features` or `#![cfg(feature = "batch-api")]`.
+batch-api = ["alloc-core"]
+
 # Phase 35: M6 decommit — return the payload pages of an empty small segment to
 # the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its
 # live-block count drops to zero, recommitting on first reuse. Additive over

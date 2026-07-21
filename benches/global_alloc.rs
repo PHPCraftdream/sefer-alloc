@@ -1583,8 +1583,12 @@ fn bench_batch_ceiling_followup(c: &mut Criterion) {
             //    magazine first, `AllocCore::refill_class_bump` the remainder
             //    only. Compares directly against arm (c) (the real production
             //    scalar path) — (f) vs (c) is the headline GO/NO-GO for the
-            //    tcache-aware batch API. `#[doc(hidden)]` experimental surface
-            //    (NOT committed public API). ───────────────────────────────
+            //    tcache-aware batch API. Gated behind the `batch-api` Cargo
+            //    feature (R10-7 follow-up API-boundary tightening — NOT part
+            //    of `production` or any default bundle; run this arm with
+            //    `--features "production batch-api"` or `--all-features`).
+            //    ──────────────────────────────────────────────────────────
+            #[cfg(feature = "batch-api")]
             group.bench_function(format!("batch_tcache/{size}B/n{n}"), |b| {
                 b.iter_batched(
                     || vec![core::ptr::null_mut(); n],
