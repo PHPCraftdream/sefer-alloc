@@ -817,6 +817,32 @@ impl AllocCore {
                     }
                 }
             }
+            // R12-2: deliberately do NOT reset `node_ids` here. The dense
+            // node-id -> bucket mapping is established ONCE, at first
+            // materialisation (`maybe_materialize_directory`'s call to
+            // `init_node_ids` + `rebuild_from_table`), and is APPEND-ONLY
+            // from then on (new nodes may still claim free slots via
+            // `node_bucket_mut`, but existing claims never move) — exactly
+            // matching the incremental `set_bit`/`clear_bit` path's
+            // discipline. Resetting `node_ids` here and re-deriving
+            // "first-seen in TABLE-SLOT order" would silently pick a
+            // DIFFERENT node->bucket assignment than "first-seen in
+            // REAL-TIME class-transition order" (segment N being created
+            // before segment M does not imply N's class transitions
+            // empty->non-empty before M's — a segment fully consumed by the
+            // time of materialisation contributes NO bits and registers NO
+            // bucket until it is later freed into). Resetting here broke the
+            // §7.3 item 1 per-bucket oracle
+            // (`segment_directory_numa::per_node_oracle_holds_after_mixed_node_workload`):
+            // it compared this test-only "rebuild from scratch" against
+            // live incremental state bucket-for-bucket, and a reassigned
+            // mapping made an otherwise-correct bit appear in the "wrong"
+            // bucket. Preserving `node_ids` across rebuilds keeps bucket
+            // identity stable, so only the BITS are re-derived (which is
+            // the whole point of a self-healing rebuild) — matching what
+            // the production self-heal call sites
+            // (`publish_empty`/`sync_directory_for_segment_classes`) already
+            // do (they never touch `node_ids` either).
             dir.rebuild_from_table(&self.table);
             true
         }

@@ -443,6 +443,55 @@ pub(crate) fn read_directory_class_words(
     }
 }
 
+/// R12-2: read the calling thread's own directory bucket index for `node_id`
+/// OUT OF the directory sidecar BY VALUE, without materialising any
+/// `&SegmentDirectory` reference — same discipline as
+/// [`read_directory_class_words`] (task #252 / R12-1), for the same reason:
+/// this is called once, right before the scan-order bucket list is built,
+/// and must not leave any reference live across the loop that follows (which
+/// calls `validate_directory_candidate`, itself able to materialise a
+/// `&mut SegmentDirectory` on the same allocation to self-heal a stale bit).
+///
+/// Read-only lookup (does NOT register a new node): mirrors
+/// `SegmentDirectory::node_bucket`, not `node_bucket_mut`. A node id with no
+/// claimed bucket yet (e.g. the calling thread's own node has no segments
+/// registered) resolves to the unknown bucket — correct, since there is
+/// nothing local to prefer yet.
+///
+/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
+///
+/// `p` must be non-null and was returned by [`reserve_directory_sidecar`].
+/// The calling thread is the sole owner (`AllocCore` is single-writer), so a
+/// racing writer is impossible; this function itself never overlaps its own
+/// raw read with any live reference because it materialises none.
+#[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+#[inline]
+pub(crate) fn read_directory_node_bucket(
+    p: *const super::segment_directory::SegmentDirectory,
+    node_id: u32,
+) -> usize {
+    debug_assert!(!p.is_null(), "read_directory_node_bucket: null pointer");
+    if node_id == super::segment_header::NO_NODE_RAW {
+        return super::segment_directory::MAX_NODES;
+    }
+    // SAFETY: `p` is non-null, PAGE-aligned, valid for
+    // `size_of::<SegmentDirectory>()` bytes, leaked for the process lifetime
+    // (same validity contract as `deref_directory_sidecar`). `addr_of!` forms
+    // a raw pointer to the `node_ids` field WITHOUT creating any intermediate
+    // `&SegmentDirectory`, and `.read()` performs a single valid, properly-
+    // aligned, non-overlapping copy of a plain-`u32` array (no interior
+    // padding/niche/Drop concerns) into an owned local — no reference to the
+    // sidecar escapes this function.
+    let node_ids: [u32; super::segment_directory::MAX_NODES] = unsafe {
+        let field = core::ptr::addr_of!((*p).node_ids);
+        field.read()
+    };
+    node_ids
+        .iter()
+        .position(|&n| n == node_id)
+        .unwrap_or(super::segment_directory::MAX_NODES)
+}
+
 /// Commit a sub-range within a segment whose payload was only partially
 /// committed (the lazy-commit path). Thin wrapper over
 /// [`aligned_vmem::commit_range`].

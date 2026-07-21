@@ -36,17 +36,42 @@
 //! ### R11-6 NUMA node-indexed variant
 //!
 //! Under `numa-aware`, the outer `[NODE_BITMAPS]` dimension indexes per-node
-//! bitmaps. Bucket `[0, MAX_NODES)` holds segments whose `node_id` matches
-//! that node. Bucket `[MAX_NODES]` (the "unknown" bucket) holds segments with
-//! `node_id == NO_NODE_RAW` or `node_id >= MAX_NODES` (defensive clamp for
-//! hosts with more nodes than `MAX_NODES`). Under non-`numa-aware`,
-//! `NODE_BITMAPS == 1` and the structure is byte-for-byte the pre-R11-6 flat
-//! 2-D bitmap (`[0]` is the only bucket) — no memory tax on non-NUMA builds.
-//! See `docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md` §3.2 (Approach A) for the
+//! bitmaps. Bucket `[0, MAX_NODES)` holds segments whose `node_id` maps to
+//! that bucket via the dense `node_ids` registration table (R12-2 — see
+//! below). Bucket `[MAX_NODES]` (the "unknown" bucket) holds segments with
+//! `node_id == NO_NODE_RAW`, or whose node id was observed only after all
+//! `MAX_NODES` bucket slots were already claimed by OTHER distinct nodes.
+//! Under non-`numa-aware`, `NODE_BITMAPS == 1` and the structure is
+//! byte-for-byte the pre-R11-6 flat 2-D bitmap (`[0]` is the only bucket) —
+//! no memory tax on non-NUMA builds. See
+//! `docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md` §3.2 (Approach A) for the
 //! design. The node-indexed variant was wired in task R11-6 to close the
 //! ~140× scan-cliff that existed because the directory lookup was compiled out
 //! entirely under `numa-aware` (every free-list miss fell back to an O(S)
 //! linear scan with two-pass NUMA preference).
+//!
+//! ### R12-2: dense node-id -> bucket mapping (was a direct clamp)
+//!
+//! R11-6 originally mapped `node_id` to a bucket by using it as a DIRECT
+//! array index clamped at `MAX_NODES`: any `node_id >= MAX_NODES` landed in
+//! the shared unknown bucket regardless of how many distinct nodes were
+//! actually in play. `numa-shim` scans up to 64 real OS node ids
+//! (`crates/numa/src/lib.rs`), so on any host exposing node ids 8..63 this
+//! silently defeated the R11-6 locality optimisation for every thread pinned
+//! to one of those nodes: a thread on node 9 would prefer a node-10 segment
+//! over its own node-9 segment, because both physically landed in the same
+//! unknown bucket and the scan visits unknown before ascending foreign
+//! buckets (design-defect R12-2, P0). R12-2 replaces the direct-index clamp
+//! with a dense `node_ids: [u32; MAX_NODES]` registration table: a node id
+//! claims the next free bucket slot the first time a segment on that node is
+//! registered (`SegmentDirectory::node_bucket_mut`), so `MAX_NODES` now
+//! bounds the number of DISTINCT nodes tracked simultaneously, not the raw
+//! OS node id value. Only once MORE than `MAX_NODES` distinct node ids have
+//! actually been observed does a node fall back to the unknown bucket. See
+//! `node_bucket_mut`'s doc comment for the full design rationale (including
+//! why `MAX_NODES` itself was NOT raised to 64: a 65-bucket sidecar costs
+//! ~400 KiB per heap vs. ~56 KiB today, a 7x fixed tax paid by every process
+//! even when only 2-3 buckets are ever populated).
 //!
 //! ## Lazy materialisation
 //!
@@ -153,53 +178,80 @@ const _: () = assert!(
     "MAX_SEGMENTS must be a multiple of 64 for the directory bitmap"
 );
 
-// ── R11-6: NUMA node-indexed directory dimensions ──────────────────────────
+// ── R11-6 / R12-2: NUMA node-indexed directory dimensions ──────────────────
 //
 // Under `numa-aware`, the directory gains an outer `[NODE_BITMAPS]` dimension
-// indexing per-node bitmaps (R10-6 §3.2 Approach A). `MAX_NODES` is the number
-// of distinct real-node buckets; bucket index `MAX_NODES` is the "unknown"
-// bucket for `NO_NODE_RAW` / out-of-range node ids. Under non-`numa-aware`,
-// `NODE_BITMAPS == 1` (single bucket, byte-for-byte the pre-R11-6 layout).
+// indexing per-node bitmaps (R10-6 §3.2 Approach A). `MAX_NODES` is the
+// number of distinct real-node buckets the directory can track SIMULTANEOUSLY;
+// bucket index `MAX_NODES` is the "unknown/overflow" bucket. Under
+// non-`numa-aware`, `NODE_BITMAPS == 1` (single bucket, byte-for-byte the
+// pre-R11-6 layout).
+//
+// ### R12-2: compact dense mapping (P0 design-defect fix)
+//
+// `numa-shim` scans up to 64 real OS node ids (`crates/numa/src/lib.rs`
+// `cpu_to_numa_node`), but pre-R12-2 `node_bucket` used the raw OS `node_id`
+// as a DIRECT array index clamped at `MAX_NODES = 8`: every node id `>= 8`
+// fell into the shared unknown bucket regardless of how many distinct nodes
+// were actually observed. On a >8-node host this silently defeated the R11-6
+// locality optimisation for every thread pinned to node 8+ (a thread on node
+// 9 would prefer a node-10 segment over its own node-9 segment, because both
+// physically land in the same unknown bucket and the scan visits unknown
+// before ascending foreign buckets).
+//
+// The fix keeps `MAX_NODES = 8` REAL-node buckets (the R10-6 §3.2 sizing:
+// typical hosts have <=8 active nodes, and the sidecar is a per-`AllocCore`
+// lazy-materialised structure — see the module doc's memory table) but
+// decouples the bucket INDEX from the raw OS node id. `node_ids[MAX_NODES]`
+// records, in first-seen order, which OS node id owns each bucket slot; a
+// node id is assigned the next free slot the first time a segment on that
+// node is registered. Only once MORE than `MAX_NODES` DISTINCT node ids have
+// actually been observed does a node fall back to the shared unknown bucket
+// — the degradation R10-6 always intended, now gated on real multi-node
+// fan-out rather than on the numeric value of the OS node id. This keeps the
+// non-NUMA and typical (<=8-active-node) NUMA memory footprint identical to
+// pre-R12-2 (`MAX_NODES = 8` is unchanged), while correctly preserving
+// locality for hosts that expose node ids 8..63 as long as no single process
+// touches more than 8 of them concurrently — the common case even on large
+// machines, since a process is usually confined to a handful of nodes by
+// `cpuset`/`taskset`/scheduler affinity.
+//
+// Raising `MAX_NODES` to 64 instead (`NODE_BITMAPS = 65`) was rejected: it
+// multiplies the per-`AllocCore` sidecar from ~56 KiB to ~400 KiB (default
+// class config; ~64 KiB to ~448 KiB under `medium-classes`) for EVERY heap
+// that crosses the 32-segment materialisation threshold under `numa-aware`,
+// even on hosts that only ever populate 2-3 buckets — a 7x fixed tax paid by
+// the common case to cover a rare one. The dense map pays for what is
+// actually used.
 
 /// Maximum number of distinct NUMA node buckets in the directory. R10-6 §3.2
-/// recommends 8 (covers current x86 server topologies; `numa-shim` itself
-/// caps its sysfs scan at 64 nodes — we do not need to match that ceiling).
-/// Segments with `node_id >= MAX_NODES` are defensively clamped into the
-/// unknown bucket rather than rejected.
+/// recommends 8 (covers current x86 server topologies with typical process
+/// node affinity). `numa-shim` itself scans up to 64 raw OS node ids, but
+/// R12-2's dense `node_ids` map means this is a cap on DISTINCT nodes
+/// concurrently tracked by one directory, not a cap on the raw OS node id
+/// space — see the module-level R12-2 note above.
 #[cfg(feature = "numa-aware")]
 pub(crate) const MAX_NODES: usize = 8;
 
 /// Number of per-node bitmaps in the directory: `MAX_NODES` real-node buckets
-/// plus one "unknown node" bucket (for `NO_NODE_RAW` / out-of-range ids). Under
-/// non-`numa-aware`, degenerates to 1 (the single pre-R11-6 bucket) so non-NUMA
-/// memory is byte-for-byte unaffected.
+/// plus one "unknown node" bucket (for `NO_NODE_RAW` / out-of-range ids, and
+/// for any node id observed after all `MAX_NODES` slots are already taken by
+/// other distinct nodes). Under non-`numa-aware`, degenerates to 1 (the
+/// single pre-R11-6 bucket) so non-NUMA memory is byte-for-byte unaffected.
 #[cfg(not(feature = "numa-aware"))]
 pub(crate) const NODE_BITMAPS: usize = 1;
 
 #[cfg(feature = "numa-aware")]
 pub(crate) const NODE_BITMAPS: usize = MAX_NODES + 1;
 
-/// Map a segment `node_id` (as returned by `SegmentMeta::node_id_of`) to its
-/// directory bucket index. Real node ids `[0, MAX_NODES)` map directly;
-/// `NO_NODE_RAW` (`u32::MAX`) and any id `>= MAX_NODES` map to the unknown
-/// bucket (`MAX_NODES`). Under non-`numa-aware`, always returns 0 (the single
-/// bucket) regardless of `node_id`.
-#[inline]
-pub(crate) fn node_bucket(node_id: u32) -> usize {
-    #[cfg(not(feature = "numa-aware"))]
-    {
-        let _ = node_id;
-        0
-    }
-    #[cfg(feature = "numa-aware")]
-    {
-        if (node_id as usize) >= MAX_NODES {
-            MAX_NODES
-        } else {
-            node_id as usize
-        }
-    }
-}
+/// Sentinel for an unused slot in [`SegmentDirectory::node_ids`] (no OS node
+/// id has claimed this bucket yet). Distinct from any real node id and from
+/// `NO_NODE_RAW`'s `u32::MAX` is unnecessary to avoid — `NO_NODE_RAW` never
+/// reaches the registration path (`node_bucket_mut` short-circuits it to the
+/// unknown bucket before touching `node_ids`), so reusing `u32::MAX` here is
+/// safe and keeps the sentinel space small.
+#[cfg(feature = "numa-aware")]
+const NODE_SLOT_EMPTY: u32 = u32::MAX;
 
 /// Per-class segment directory — the owner-only `class_nonempty` bitmap.
 ///
@@ -224,18 +276,125 @@ pub(crate) struct SegmentDirectory {
     /// Plain `u64` (not `AtomicU64`): owner-only, single-writer — see the
     /// module doc.
     pub(crate) class_nonempty_by_node: [[[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT]; NODE_BITMAPS],
+
+    /// R12-2: dense OS-node-id -> bucket-index registration table.
+    /// `node_ids[b] == NODE_SLOT_EMPTY` means bucket `b` has not been claimed
+    /// by any node yet; otherwise `node_ids[b]` is the OS node id that owns
+    /// bucket `b`. Populated in first-seen order by `node_bucket_mut`. OS-zero
+    /// pages are NOT a valid initial state for this field (zero is a real
+    /// node id), so [`SegmentDirectory`] cannot be used purely as a
+    /// zero-initialized OS page for `numa-aware` builds — see
+    /// `init_node_ids`, called once right after the sidecar is reserved.
+    #[cfg(feature = "numa-aware")]
+    pub(crate) node_ids: [u32; MAX_NODES],
 }
 
 impl SegmentDirectory {
+    /// R12-2: initialise the dense node-id registration table to "all slots
+    /// empty". MUST be called once, immediately after the sidecar is
+    /// reserved (OS-zeroed pages are not a valid initial state for
+    /// `node_ids`: `0` is a legitimate real node id, so leaving the field
+    /// OS-zeroed would make bucket 0 permanently pre-claimed by node id `0`
+    /// even before any segment on node 0 was ever seen — harmless in effect
+    /// since node 0 IS the first node most hosts report, but not the
+    /// documented "unclaimed" contract this table relies on). No-op under
+    /// non-`numa-aware` (no registration table exists).
+    #[inline]
+    pub(crate) fn init_node_ids(&mut self) {
+        #[cfg(feature = "numa-aware")]
+        {
+            self.node_ids = [NODE_SLOT_EMPTY; MAX_NODES];
+        }
+    }
+
+    /// R12-2: map a segment `node_id` to its directory bucket index,
+    /// REGISTERING a new bucket for a never-before-seen node id if a free
+    /// slot remains. Used by the write paths (`set_bit` / `clear_bit`), which
+    /// are the only places a previously-unseen node can be discovered (a
+    /// segment is stamped with its node id and then bits are set for it).
+    ///
+    /// `NO_NODE_RAW` (`u32::MAX`) and any node id once all `MAX_NODES` slots
+    /// are claimed by OTHER distinct nodes map to the shared unknown bucket
+    /// (`MAX_NODES`). Under non-`numa-aware`, always returns 0 (the single
+    /// bucket) regardless of `node_id`.
+    ///
+    /// ## Registration order is real-time, not table-slot order
+    ///
+    /// A node claims its bucket the first time one of ITS classes transitions
+    /// empty -> non-empty (the first `set_bit` call that actually reaches
+    /// this function for that node) — NOT the first time a segment on that
+    /// node is created. A segment created early but fully consumed by the
+    /// time the directory materialises contributes no bits (and claims no
+    /// bucket) until something is later freed into it. This means bucket
+    /// assignment is a function of ALLOCATION HISTORY, not segment-table
+    /// slot order — callers that need a REPRODUCIBLE mapping (e.g. a
+    /// from-scratch rebuild) MUST reuse the EXISTING `node_ids` table rather
+    /// than resetting it, or they can derive a different (still individually
+    /// correct, but not bucket-stable) assignment. See `rebuild_from_table`'s
+    /// doc comment and `AllocCore::dbg_rebuild_directory`'s R12-2 note for
+    /// why this matters (it broke, and then fixed, the per-bucket oracle
+    /// test).
+    #[inline]
+    fn node_bucket_mut(&mut self, node_id: u32) -> usize {
+        #[cfg(not(feature = "numa-aware"))]
+        {
+            let _ = node_id;
+            0
+        }
+        #[cfg(feature = "numa-aware")]
+        {
+            if node_id == super::segment_header::NO_NODE_RAW {
+                return MAX_NODES;
+            }
+            // Already registered?
+            if let Some(idx) = self.node_ids.iter().position(|&n| n == node_id) {
+                return idx;
+            }
+            // First-seen: claim the next free slot, if any.
+            if let Some(idx) = self.node_ids.iter().position(|&n| n == NODE_SLOT_EMPTY) {
+                self.node_ids[idx] = node_id;
+                return idx;
+            }
+            // All MAX_NODES slots already claimed by OTHER distinct nodes:
+            // overflow into the shared unknown bucket (the R10-6 degradation,
+            // now correctly gated on actually-observed node fan-out).
+            MAX_NODES
+        }
+    }
+
+    /// R12-2: read-only counterpart of `node_bucket_mut` — looks up a node
+    /// id's bucket WITHOUT registering a new one. Used by `get_bit` (the only
+    /// remaining caller: the scan-order bucket-list construction in
+    /// `alloc_core_small.rs` goes through `os::read_directory_node_bucket`
+    /// instead, to preserve the R12-1 no-live-reference discipline) where
+    /// allocating a fresh bucket for a never-before-seen node would be
+    /// meaningless (a node that owns no segment yet has no bits to read). A
+    /// node id not found in `node_ids` maps to the shared unknown bucket,
+    /// matching `node_bucket_mut`'s overflow behaviour. `numa-aware`-only:
+    /// under non-`numa-aware` there is only bucket 0 and `get_bit` itself is
+    /// compiled out, so this method would otherwise be dead code.
+    #[cfg(feature = "numa-aware")]
+    #[inline]
+    fn node_bucket(&self, node_id: u32) -> usize {
+        if node_id == super::segment_header::NO_NODE_RAW {
+            return MAX_NODES;
+        }
+        match self.node_ids.iter().position(|&n| n == node_id) {
+            Some(idx) => idx,
+            None => MAX_NODES,
+        }
+    }
+
     /// Set the bit for slot `slot_idx` in class `class_idx` in the bitmap for
-    /// the node derived from `node_id`. R11-6: `node_id` selects the per-node
-    /// bucket under `numa-aware`; under non-`numa-aware` it is ignored (single
-    /// bucket).
+    /// the node derived from `node_id`. R11-6/R12-2: `node_id` selects the
+    /// per-node bucket under `numa-aware` (registering a new bucket for a
+    /// never-before-seen node id, see `node_bucket_mut`); under
+    /// non-`numa-aware` it is ignored (single bucket).
     #[inline]
     pub(crate) fn set_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
-        let nb = node_bucket(node_id);
+        let nb = self.node_bucket_mut(node_id);
         let word = slot_idx / 64;
         let bit = slot_idx % 64;
         self.class_nonempty_by_node[nb][class_idx][word] |= 1u64 << bit;
@@ -247,7 +406,7 @@ impl SegmentDirectory {
     pub(crate) fn clear_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
-        let nb = node_bucket(node_id);
+        let nb = self.node_bucket_mut(node_id);
         let word = slot_idx / 64;
         let bit = slot_idx % 64;
         self.class_nonempty_by_node[nb][class_idx][word] &= !(1u64 << bit);
@@ -264,7 +423,7 @@ impl SegmentDirectory {
     pub(crate) fn get_bit(&self, node_id: u32, class_idx: usize, slot_idx: usize) -> bool {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
-        let nb = node_bucket(node_id);
+        let nb = self.node_bucket(node_id);
         let word = slot_idx / 64;
         let bit = slot_idx % 64;
         (self.class_nonempty_by_node[nb][class_idx][word] >> bit) & 1 != 0
@@ -302,20 +461,40 @@ impl SegmentDirectory {
         }
     }
 
-    /// One-time full rebuild: walk every registered segment, read each
-    /// class's `BinTable` head, set the exact `class_nonempty` bits.
+    /// Full rebuild: walk every registered segment, read each class's
+    /// `BinTable` head, set the exact `class_nonempty` bits.
     ///
-    /// Called once on first materialisation. Skips null (recycled) slots and
-    /// non-Small/Primordial (Large) segments.
+    /// Called on first materialisation, and again by the TEST-ONLY
+    /// `AllocCore::dbg_rebuild_directory` self-heal-verification hook. Skips
+    /// null (recycled) slots and non-Small/Primordial (Large) segments.
     ///
     /// R11-6: under `numa-aware`, reads each segment's `node_id_of()` and
-    /// places bits in the correct per-node bucket. Under non-`numa-aware`,
-    /// all bits go in bucket 0.
+    /// routes each set bit through `set_bit`, which places it in the correct
+    /// per-node bucket (registering a new bucket via `node_bucket_mut` if
+    /// this is the first time this node id is seen SINCE `node_ids` was last
+    /// initialised — see `init_node_ids`). Under non-`numa-aware`, all bits
+    /// go in bucket 0.
+    ///
+    /// R12-2: the CALLER decides whether `node_ids` should be reset before
+    /// this runs. First materialisation resets it (via `init_node_ids`,
+    /// called once in `maybe_materialize_directory`) because there is no
+    /// prior mapping to preserve. A LATER rebuild of an already-materialised
+    /// directory (`dbg_rebuild_directory`) must NOT reset `node_ids` — doing
+    /// so re-derives bucket assignments in TABLE-SLOT order, which can
+    /// disagree with the REAL-TIME order the incremental `set_bit` path
+    /// established (a node's bucket claim happens on its first non-empty
+    /// class transition, not its first segment's creation — see
+    /// `node_bucket_mut`'s doc comment) and silently reassigns bucket
+    /// identities out from under any caller correlating bucket index across
+    /// rebuilds (this is exactly what broke the §7.3 per-bucket oracle
+    /// during R12-2 development).
     ///
     /// The `table` reference is the owning `AllocCore`'s `SegmentTable` — the
-    /// rebuild reads from it, never writes it. The directory (`&mut self`) is
-    /// freshly OS-zeroed (all bits already 0), so only non-empty heads need
-    /// to be SET — no pre-clear needed.
+    /// rebuild reads from it, never writes it. The directory (`&mut self`)'s
+    /// BIT storage is expected to already be zeroed by the caller (either
+    /// freshly OS-zeroed on first materialisation, or explicitly zeroed by
+    /// `dbg_rebuild_directory` before this call) — only non-empty heads need
+    /// to be SET here, no pre-clear needed.
     pub(crate) fn rebuild_from_table(&mut self, table: &SegmentTable) {
         let n = table.count() as usize;
         for i in 0..n {

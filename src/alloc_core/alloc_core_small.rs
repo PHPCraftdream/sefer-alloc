@@ -495,7 +495,11 @@ impl AllocCore {
             ) = {
                 let mut buckets = [0usize; super::segment_directory::NODE_BITMAPS];
                 let mut n = 0usize;
-                let my_bucket = super::segment_directory::node_bucket(my_node);
+                // R12-2: read-by-value (no live `&SegmentDirectory` retained
+                // — see `os::read_directory_node_bucket`'s doc comment,
+                // mirroring the R12-1 discipline `read_directory_class_words`
+                // established for the word-array reads below).
+                let my_bucket = os::read_directory_node_bucket(self.directory_sidecar, my_node);
                 buckets[n] = my_bucket;
                 n += 1;
                 // Unknown bucket — local-equivalent (R10-6 §3.2 "treated as
@@ -2002,6 +2006,11 @@ impl AllocCore {
         // The sidecar was OS-zeroed (all bits clear), so only non-empty heads
         // need to be SET.
         let dir = os::deref_directory_sidecar_mut(ptr);
+        // R12-2: OS-zeroed pages are NOT a valid initial state for the dense
+        // node_ids registration table (node id 0 is real, not "unclaimed") —
+        // must be explicitly reset to "all slots empty" before the rebuild
+        // below starts registering nodes via `set_bit`.
+        dir.init_node_ids();
         dir.rebuild_from_table(&self.table);
 
         self.directory_sidecar = ptr;
