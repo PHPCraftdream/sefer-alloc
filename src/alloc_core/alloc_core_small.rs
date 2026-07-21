@@ -458,7 +458,22 @@ impl AllocCore {
 
         #[cfg(feature = "alloc-segment-directory")]
         if !self.directory_sidecar.is_null() {
-            let dir = os::deref_directory_sidecar(self.directory_sidecar);
+            // R12-1 (task #252): do NOT hold a live `&'static SegmentDirectory`
+            // across this loop. `validate_directory_candidate` below can call
+            // `publish_empty` / `sync_directory_for_segment_classes`, which
+            // materialise a `&'static mut SegmentDirectory` on the SAME
+            // allocation (via `deref_directory_sidecar_mut`) to self-heal a
+            // stale bit. Holding a live shared reference across that call is
+            // aliasing UB under Stacked/Tree Borrows (`&T` and `&mut T` both
+            // live over one allocation), independent of the single-threaded
+            // owner discipline that makes it data-race-free. Each word-array
+            // is instead read BY VALUE via `os::read_directory_class_words`
+            // (a raw-pointer `.read()`, no reference retained) immediately
+            // before it is scanned, so no directory reference is ever live
+            // across `validate_directory_candidate`. Every bit read this way
+            // is already just a CANDIDATE — re-validated (base non-null,
+            // kind, BinTable head) below — so reading a possibly-one-word-
+            // stale snapshot changes nothing observable.
 
             // R11-6: scan the per-node bitmaps in NUMA preference order.
             //
@@ -512,7 +527,11 @@ impl AllocCore {
             ) = ([0; super::segment_directory::NODE_BITMAPS], 1);
 
             for &nb in buckets.iter().take(n_buckets) {
-                let words = &dir.class_nonempty_by_node[nb][class_idx];
+                // R12-1: read this bucket/class's word-array BY VALUE — no
+                // `&SegmentDirectory` reference is retained across the
+                // `validate_directory_candidate` calls below (see the doc
+                // comment above and on `os::read_directory_class_words`).
+                let words = os::read_directory_class_words(self.directory_sidecar, nb, class_idx);
 
                 for (w, &word_val) in words.iter().enumerate() {
                     let mut bits = word_val;

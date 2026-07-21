@@ -389,6 +389,60 @@ pub(crate) fn deref_directory_sidecar_mut(
     unsafe { &mut *p }
 }
 
+/// Read ONE `class_nonempty_by_node[node_bucket][class_idx]` word-array out
+/// of the directory sidecar BY VALUE, without materialising any `&`/`&mut
+/// SegmentDirectory` reference (task #252 / R12-1).
+///
+/// # Why this exists
+///
+/// `find_segment_with_free_impl`'s directory-driven scan (in
+/// `alloc_core_small.rs`) used to hold a live `&'static SegmentDirectory`
+/// (from [`deref_directory_sidecar`]) across calls to
+/// `validate_directory_candidate`, which can itself call
+/// [`deref_directory_sidecar_mut`] (via `publish_empty` /
+/// `sync_directory_for_segment_classes`) on the SAME allocation while the
+/// shared reference was still lexically live. That is aliasing UB under
+/// Stacked/Tree Borrows — `&T` and `&mut T` simultaneously live over one
+/// allocation — regardless of the fact that the single-threaded owner
+/// discipline makes it data-race-free. This accessor breaks the shared
+/// reference's lifetime: it copies the one word-array the scan loop needs
+/// into a local `[u64; WORDS_PER_CLASS]` and returns, so no reference to the
+/// sidecar survives past this call. The scan loop iterates over the local
+/// copy; any candidate found is re-validated (base non-null, kind, BinTable
+/// head) by `validate_directory_candidate` before use, so a value read
+/// slightly stale (relative to a mutation `validate_directory_candidate`
+/// performs on a LATER candidate in the same word) is exactly the same
+/// "candidate, not fact" contract the directory already documents (see the
+/// R7-A3 module doc: every set bit is validated, never trusted blindly).
+///
+/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
+///
+/// `p` must be non-null and was returned by [`reserve_directory_sidecar`].
+/// The calling thread is the sole owner (`AllocCore` is single-writer), so a
+/// racing writer is impossible; this function itself never overlaps its own
+/// raw read with any live reference because it materialises none.
+#[cfg(feature = "alloc-segment-directory")]
+#[inline]
+pub(crate) fn read_directory_class_words(
+    p: *const super::segment_directory::SegmentDirectory,
+    node_bucket: usize,
+    class_idx: usize,
+) -> [u64; super::segment_directory::WORDS_PER_CLASS] {
+    debug_assert!(!p.is_null(), "read_directory_class_words: null pointer");
+    // SAFETY: `p` is non-null, PAGE-aligned, valid for
+    // `size_of::<SegmentDirectory>()` bytes, leaked for the process lifetime
+    // (same validity contract as `deref_directory_sidecar`). `addr_of!`
+    // forms a raw pointer to the target field WITHOUT creating any
+    // intermediate `&SegmentDirectory`, and `.read()` performs a single
+    // valid, properly-aligned, non-overlapping copy of a plain-`u64` array
+    // (no interior padding/niche/Drop concerns) into an owned local — no
+    // reference to the sidecar escapes this function.
+    unsafe {
+        let field = core::ptr::addr_of!((*p).class_nonempty_by_node[node_bucket][class_idx]);
+        field.read()
+    }
+}
+
 /// Commit a sub-range within a segment whose payload was only partially
 /// committed (the lazy-commit path). Thin wrapper over
 /// [`aligned_vmem::commit_range`].
