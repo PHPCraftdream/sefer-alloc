@@ -233,7 +233,7 @@ impl AllocCore {
     /// from released.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
-    pub(super) fn release_or_pool_empty_segment(&mut self, base: *mut u8) {
+    pub(crate) fn release_or_pool_empty_segment(&mut self, base: *mut u8) {
         // Defence-in-depth against a double-entry: a segment that is already
         // pooled must never be pushed again (a duplicate base → later
         // double-recycle / a corrupt list). By construction this cannot

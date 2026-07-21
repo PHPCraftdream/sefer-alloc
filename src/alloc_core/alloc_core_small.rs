@@ -1955,7 +1955,7 @@ impl AllocCore {
     /// how many entries each class contributed.
     ///
     /// No-op if the directory is not materialised or `changed_classes == 0`.
-    pub(super) fn sync_directory_for_segment_classes(
+    pub(crate) fn sync_directory_for_segment_classes(
         &mut self,
         base: *mut u8,
         slot_idx: usize,

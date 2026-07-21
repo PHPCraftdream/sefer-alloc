@@ -426,7 +426,73 @@ impl HeapCore {
         if overflow.is_likely_empty(self.overflow_tail_cache) {
             return;
         }
+        #[cfg(feature = "alloc-decommit")]
         let small_cur = self.core.small_cur();
+
+        // R11-2 (Bug 2 — deferred pool/release finalization): collect segment
+        // bases that go fully empty (`live_count` hits 0) during this drain
+        // pass, to finalize via `release_or_pool_empty_segment` AFTER the
+        // drain fully returns. This MUST be deferred, not done inline: a
+        // single `overflow.drain(...)` call can process entries targeting
+        // MANY different segment bases, and the SAME base can appear in
+        // multiple entries. If base X goes empty at entry #2 of 5 targeting
+        // base X, calling `release_or_pool_empty_segment(base X)` right there
+        // would free/decommit/repurpose base X's metadata — and entries
+        // #3–5 (still queued in this same drain pass) would then call
+        // `reclaim_offset` against freed/decommitted memory.
+        //
+        // **Capacity.** `EMPTIED_BASES_CAP = 64`: going fully empty via this
+        // SECOND-CHANCE overflow ring in one opportunistic drain call is a
+        // rare tail event (requires ALL of a segment's live blocks to be
+        // freed through the overflow ring, not through normal dealloc or the
+        // per-segment ring). Under miri, `HEAP_OVERFLOW_CAP == 64`, so at
+        // most 64 distinct bases can be drained in one pass — 64 covers
+        // miri exactly. For native (`HEAP_OVERFLOW_CAP = 2048`), 64 gives
+        // generous headroom for the realistic tail.
+        //
+        // **Capacity-exceeded case (sound).** If a 65th distinct base goes
+        // empty, it is simply NOT collected — the segment stays as an
+        // ordinary registered segment (its BinTable is populated with the
+        // freed blocks, so `find_segment_with_free` will find and reuse it;
+        // it is not leaked). It is not pooled/released THIS pass, but it
+        // WILL be pooled/released on its next emptying through a normal
+        // path (own-thread dealloc or per-segment ring drain). This never
+        // (a) calls `release_or_pool_empty_segment` on a base with
+        // unprocessed entries (it simply doesn't call it), and never (b)
+        // silently drops a legitimate pending release forever (the segment
+        // is reusable and recoverable).
+        //
+        // **Dedup.** Under correctly-functioning ring data, `dec_live_and_
+        // maybe_decommit` returns `true` at most once per base per drain
+        // pass: `live_count` is monotonically non-increasing across this
+        // pass (nothing here allocates, so nothing re-increments it), and
+        // once it hits 0 any FURTHER entry for the same base necessarily
+        // targets an already-freed block — rejected by `reclaim_offset`'s
+        // `is_free` bitmap guard BEFORE `dec_live_and_maybe_decommit` is
+        // ever called for it. So under normal operation the dedup scan is
+        // defensive (belt-and-suspenders), not load-bearing.
+        //
+        // It is NOT purely theoretical, though: `SegmentMeta::dec_live` uses
+        // `saturating_sub`, specifically so a live-count underflow "keeps
+        // the counter sane rather than wrapping to `u32::MAX`" (see that
+        // method's own doc comment) — which means if the `is_free` guard
+        // were ever bypassed (a garbled/corrupt ring entry, or a future bug
+        // elsewhere that lets an already-reclaimed offset re-enter the
+        // ring), `dec_live` would clamp at 0 and `dec_live_and_maybe_
+        // decommit` WOULD return `true` again for the same base in the same
+        // pass. The dedup array is what keeps THAT scenario from calling
+        // `release_or_pool_empty_segment` on the same base twice (a
+        // double-pool/double-release, guarded again by that function's own
+        // `debug_assert!` — see its doc comment). So this is real
+        // defence-in-depth against the saturating-arithmetic edge case, not
+        // dead code.
+        const EMPTIED_BASES_CAP: usize = 64;
+        #[cfg(feature = "alloc-decommit")]
+        let mut emptied_bases: [*mut u8; EMPTIED_BASES_CAP] =
+            [core::ptr::null_mut(); EMPTIED_BASES_CAP];
+        #[cfg(feature = "alloc-decommit")]
+        let mut emptied_count: usize = 0;
+
         #[cfg(feature = "fastbin")]
         {
             // No "class `c` currently being refilled" context exists at this
@@ -444,9 +510,29 @@ impl HeapCore {
                         .magazine_bitmap()
                         .is_in_magazine(poff)
                 }) {
+                    // R11-2 (Bug 1): sync the segment directory inline per
+                    // successful reclaim — mirrors the ESTABLISHED pattern
+                    // in `drain_dirty_segments` / `find_segment_with_free_impl`'s
+                    // per-segment ring drain, but with a per-entry immediate
+                    // sync (1u64 << class_idx) instead of a batched bitmask,
+                    // because `HeapOverflow` is a cross-segment MPSC ring
+                    // (one drain call can touch many different bases).
+                    let sid = SegmentHeader::segment_id_at(base) as usize;
+                    let class_idx = crate::alloc_core::remote_free_ring::entry_class_idx(packed);
+                    self.core
+                        .sync_directory_for_segment_classes(base, sid, 1u64 << class_idx);
+                    // R11-2 (Bug 2): collect the base for deferred
+                    // pool/release if the segment just went empty.
                     #[cfg(feature = "alloc-decommit")]
                     {
-                        let _ = AllocCore::dec_live_and_maybe_decommit(base, small_cur);
+                        if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
+                            let already =
+                                emptied_bases.iter().take(emptied_count).any(|&b| b == base);
+                            if !already && emptied_count < EMPTIED_BASES_CAP {
+                                emptied_bases[emptied_count] = base;
+                                emptied_count += 1;
+                            }
+                        }
                     }
                 }
             });
@@ -455,12 +541,32 @@ impl HeapCore {
         {
             self.overflow_tail_cache = overflow.drain(|base, packed| {
                 if AllocCore::reclaim_offset(base, packed) {
+                    let sid = SegmentHeader::segment_id_at(base) as usize;
+                    let class_idx = crate::alloc_core::remote_free_ring::entry_class_idx(packed);
+                    self.core
+                        .sync_directory_for_segment_classes(base, sid, 1u64 << class_idx);
                     #[cfg(feature = "alloc-decommit")]
                     {
-                        let _ = AllocCore::dec_live_and_maybe_decommit(base, small_cur);
+                        if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
+                            let already =
+                                emptied_bases.iter().take(emptied_count).any(|&b| b == base);
+                            if !already && emptied_count < EMPTIED_BASES_CAP {
+                                emptied_bases[emptied_count] = base;
+                                emptied_count += 1;
+                            }
+                        }
                     }
                 }
             });
+        }
+
+        // R11-2 (Bug 2): finalize each emptied base now that the drain has
+        // fully returned. Safe: no more entries will be processed against
+        // any base in this drain pass, so releasing/pooling cannot race
+        // with an in-flight reclaim.
+        #[cfg(feature = "alloc-decommit")]
+        for &base in emptied_bases.iter().take(emptied_count) {
+            self.core.release_or_pool_empty_segment(base);
         }
     }
 

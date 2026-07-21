@@ -156,4 +156,62 @@ impl HeapCore {
     pub fn dbg_drain_small_pool(&mut self) -> usize {
         self.core.drain_small_pool()
     }
+
+    /// TEST-ONLY (R11-2): read a single directory bit for the segment that
+    /// contains `ptr`, resolved via the segment header's `segment_id` (so the
+    /// caller does not need crate-internal access to compute `slot_idx`).
+    /// Returns `None` if the directory is not materialised or `ptr` is foreign.
+    /// Thin delegation to `AllocCore::dbg_directory_get_bit` — exposed at the
+    /// `HeapCore` level so integration tests driving cross-thread frees through
+    /// `HeapCore::dealloc` can observe whether `drain_heap_overflow` synced the
+    /// directory after reclaiming an overflow entry.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-segment-directory")]
+    #[must_use]
+    pub fn dbg_directory_bit_for_ptr(&self, ptr: *mut u8, class_idx: usize) -> Option<bool> {
+        use crate::alloc_core::segment_header::SegmentHeader;
+        let base = os::segment_base_of_ptr(ptr);
+        let sid = SegmentHeader::segment_id_at(base) as usize;
+        self.core.dbg_directory_get_bit(class_idx, sid)
+    }
+
+    /// TEST-ONLY (R11-2): the number of empty small segments currently
+    /// retained in this heap's hysteresis pool. Thin delegation to
+    /// `AllocCore::dbg_pooled_count` — exposed at the `HeapCore` level so
+    /// integration tests can assert that a segment emptied via an overflow-ring
+    /// reclaim was actually pooled (not left as an ordinary registered
+    /// segment by the pre-R11-2 bug that dropped the pool/release signal).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_pooled_count(&self) -> usize {
+        self.core.dbg_pooled_count()
+    }
+
+    /// TEST-ONLY (R11-2): resolve the base address of the segment that
+    /// contains `ptr`. Thin delegation to `alloc_core::os::segment_base_of_ptr`
+    /// — exposed at the `HeapCore` level because `alloc_core::os` is
+    /// `pub(crate)` and integration tests in `tests/` only see the crate's
+    /// true `pub` surface. Lets a test verify two pointers share a segment
+    /// (a same-segment sanity check on the test's own construction) without
+    /// reaching into crate-internal modules.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    #[must_use]
+    pub fn dbg_segment_base_of_ptr(&self, ptr: *mut u8) -> *mut u8 {
+        os::segment_base_of_ptr(ptr)
+    }
+
+    /// TEST-ONLY (R11-2): the owner-only `live_count` of `ptr`'s segment, or
+    /// `None` if `ptr` is foreign / not small/primordial. Thin delegation to
+    /// `AllocCore::dbg_live_count_for` — exposed at the `HeapCore` level so an
+    /// integration test can drive a segment down to EXACTLY zero live blocks
+    /// (reading the exact remaining count at each step) without guessing how
+    /// many blocks a given segment holds.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
+        self.core.dbg_live_count_for(ptr)
+    }
 }
