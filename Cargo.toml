@@ -602,6 +602,28 @@ name = "paired_ab_mimalloc"
 [[example]]
 name = "paired_ab_system"
 
+# R10-2 (task #228): process-level A/B/B/A judge for the medium-classes
+# production-gate wall-clock question R9-3 deferred. Two wrappers around ONE
+# shared phased workload (`examples/_shared/paired_ab_medium_workload.rs`,
+# `include!`d verbatim into both — byte-identical workload source). The ONLY
+# difference is the Cargo feature set at build time:
+#   - `paired_ab_medium_off`: --features production            (baseline, Large path)
+#   - `paired_ab_medium_on` : --features "production,medium-classes" (treatment, small path)
+# Driven by `scripts/r10_2_medium_gate.mjs`, which builds both arms, writes
+# three per-phase `--config` JSONs (alloc/free/realloc metric keys), and
+# invokes `scripts/paired-ab-runner.mjs` three times (one A/B/B/A session per
+# phase) so each phase's wall-clock is independently paired-stat'd. See
+# `docs/perf/R10_2_MEDIUM_CLASSES_NATIVE_GATE.md` for the verdict. The shared
+# workload file lives in `examples/_shared/` (NOT auto-discovered as its own
+# binary target — same pattern as `paired_ab_workload.rs` above).
+[[example]]
+name = "paired_ab_medium_off"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "paired_ab_medium_on"
+required-features = ["alloc-global"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
