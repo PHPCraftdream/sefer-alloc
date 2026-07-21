@@ -429,6 +429,83 @@ impl SeferAlloc {
             unsafe { (*heap).trim_for_recycle() };
         }
     }
+
+    /// R10-7 (Part 2) — **tcache-aware batch allocation** wrapper.
+    /// `#[doc(hidden)]` experimental surface (NOT committed public API). Resolves
+    /// the per-thread heap ONCE (one TLS lookup for the whole batch, vs N for N
+    /// scalar `alloc` calls), then delegates to [`HeapCore::alloc_batch`], which
+    /// drains the warm magazine and batch-refills only the remainder. Returns the
+    /// number of slots filled (0 only on true OOM); `out[filled..]` is left
+    /// uninitialised and MUST NOT be used by the caller.
+    ///
+    /// # Safety
+    /// Same contract as [`GlobalAlloc::alloc`]: `layout` must be a non-zero-size
+    /// valid `Layout`. Every returned non-null pointer is a live allocation owned
+    /// by this allocator and must be freed exactly once via [`dealloc_batch`] (or
+    /// N scalar `dealloc` calls). Null entries (on partial fill / OOM) must not
+    /// be freed.
+    ///
+    /// [`dealloc_batch`]: Self::dealloc_batch
+    #[doc(hidden)]
+    pub unsafe fn alloc_batch(&self, layout: Layout, out: &mut [*mut u8]) -> usize {
+        match self.current_heap() {
+            CurrentHeap::Fallback => {
+                fallback::with_heap(|h| h.alloc_batch(layout, out)).unwrap_or(0)
+            }
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (single-writer invariant) —
+            // `current_heap()` just resolved it for the calling thread.
+            CurrentHeap::Own(heap) => unsafe { (*heap).alloc_batch(layout, out) },
+        }
+    }
+
+    /// R10-7 (Part 2) — **batch deallocation** wrapper. `#[doc(hidden)]`
+    /// experimental surface. Resolves the per-thread heap ONCE, then frees every
+    /// non-null block in `blocks` through that heap's full dealloc path (which
+    /// does its own ownership routing + double-free oracles per block). Null
+    /// entries are skipped (matching the per-block contract).
+    ///
+    /// The dealloc side does NOT re-batch the magazine push/overflow-flush (that
+    /// re-implementation would duplicate the delicate M2 double-free oracles);
+    /// it amortises only the TLS lookup + classification that the scalar path
+    /// pays N times. The measured win is dominated by [`alloc_batch`]'s
+    /// magazine-drain + batch-refill (see `docs/perf/R10_7_BATCH_WARM_ARM.md`).
+    ///
+    /// # Safety
+    /// Same contract as [`GlobalAlloc::dealloc`]: every non-null `blocks[i]`
+    /// must be the exact start pointer of a currently-live allocation made by
+    /// this allocator, with `layout` matching its allocation, and freed at most
+    /// once. Null entries are always safe (skipped).
+    ///
+    /// [`alloc_batch`]: Self::alloc_batch
+    #[doc(hidden)]
+    pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
+        match self.current_heap() {
+            CurrentHeap::Fallback => {
+                let _ = fallback::with_heap(|h| {
+                    for &p in blocks {
+                        if !p.is_null() {
+                            // SAFETY: caller upholds the dealloc contract for `p`.
+                            unsafe { h.dealloc(p, layout) };
+                        }
+                    }
+                });
+            }
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` owned
+            // by THIS thread (single-writer invariant); each non-null `p` is a
+            // valid live block per the caller's contract, and `HeapCore::dealloc`
+            // performs its own ownership routing per block (so a foreign block
+            // in the batch is routed cross-thread, never written via this heap's
+            // private free lists).
+            CurrentHeap::Own(heap) => {
+                for &p in blocks {
+                    if !p.is_null() {
+                        unsafe { (*heap).dealloc(p, layout) };
+                    }
+                }
+            }
+        }
+    }
 }
 
 // SAFETY (the trait obligation): `GlobalAlloc` requires that `alloc`/

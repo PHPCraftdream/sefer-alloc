@@ -505,4 +505,196 @@ impl HeapCore {
         }
         issued
     }
+
+    /// R10-7 (Part 2) — **tcache-aware batch allocation**. `#[doc(hidden)]`
+    /// experimental surface (NOT committed public API — the established
+    /// test/bench-only export pattern; reachable via `SeferAlloc::alloc_batch`).
+    /// Fills `out` with up to `out.len()` live blocks of `layout` (same validity
+    /// contract as a single `alloc`), returning the count written (0 only on
+    /// true OOM).
+    ///
+    /// Design — "drain what's already warm, batch-refill only the miss":
+    /// 1. classify ONCE (vs N times for N scalar `alloc` calls).
+    /// 2. DRAIN the per-class magazine directly into `out` — the exact
+    ///    magazine-hit fast path, looped (pop + clear the magazine-residency
+    ///    bit + hardened gen bump). Reuses the blocks already warmed there
+    ///    instead of carving/refilling around them.
+    /// 3. for the REMAINDER once the magazine is exhausted: the `AllocCore`
+    ///    batch-refill primitive (`refill_class_bump_checked`) fills the rest
+    ///    DIRECTLY into `out` in one freelist-drain / bump-carve pass (NOT via
+    ///    the magazine), with the same magazine-residency predicate +
+    ///    segment-owner stamping `refill_magazine_slow` uses. No block is
+    ///    parked in the magazine — they all go to the caller.
+    ///
+    /// Genuinely different from R8-7/R9-9's measured arm, which called the
+    /// `AllocCore`-level batch primitive directly, BYPASSING the magazine
+    /// entirely. This path drains the magazine first (the warm layer the scalar
+    /// path uses) and only batch-refills the deficit — closer to what a real
+    /// public batch API would do.
+    ///
+    /// Correctness vs N scalar `alloc` calls: each returned block undergoes the
+    /// SAME state transition as a single `alloc` (live + bitmap-allocated,
+    /// segment-owner-stamped, hardened-gen-bumped at issue). The magazine is
+    /// left with `count[c]` reduced by however many were drained; the next
+    /// scalar `alloc` on a now-empty magazine takes the normal
+    /// `refill_magazine_slow` miss path. The pre-existing cross-thread
+    /// double-free residual (the "THIRD leg" documented at
+    /// `heap_core_free.rs`'s `dealloc_own_thread_with_base`) is UNCHANGED —
+    /// this path reuses the exact same refill + drain primitives, introducing
+    /// no new invariant.
+    #[cfg(feature = "fastbin")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn alloc_batch(&mut self, layout: Layout, out: &mut [*mut u8]) -> usize {
+        use crate::alloc_core::size_classes::{SizeClasses, MIN_BLOCK};
+
+        let want = out.len();
+        if want == 0 {
+            return 0;
+        }
+        let size = layout.size().max(MIN_BLOCK);
+        let align = layout.align();
+        let class = SizeClasses::class_for(size, align);
+
+        let Some(c) = class else {
+            // Large-classified (or align beyond the small range): no magazine —
+            // loop the substrate. Batching does not help the dedicated-segment
+            // Large path; correctness == N scalar `alloc` calls.
+            return self.alloc_batch_large(out, layout);
+        };
+
+        let mut filled = 0usize;
+
+        // ── (1) Drain the warm magazine into `out` (exact magazine-hit fast
+        //     path, looped): decrement count, clear the magazine-residency
+        //     bit (block leaves the magazine), [hardened] bump the issue
+        //     generation. Mirrors `alloc`'s hit arm line-for-line. ──────────
+        while filled < want {
+            let cnt = self.tcache.classes[c].count as usize;
+            if cnt == 0 {
+                break;
+            }
+            let new_cnt = cnt - 1;
+            self.tcache.classes[c].count = new_cnt as u8;
+            #[cfg(feature = "alloc-stats")]
+            if let Some(hits) = self.tcache_hits {
+                hits.store(
+                    hits.load(Ordering::Relaxed).wrapping_add(1),
+                    Ordering::Relaxed,
+                );
+            }
+            let issued = self.tcache.classes[c].slots[new_cnt];
+            // RAD-5: clear magazine-residency bit — block leaves the magazine.
+            {
+                let base = os::segment_base_of_ptr(issued);
+                let off = (issued as usize - base as usize) as u32;
+                SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+            }
+            // X7 Ф3 (task #191) touch (a): bump the generation at ISSUE.
+            #[cfg(feature = "hardened")]
+            {
+                let base = os::segment_base_of_ptr(issued);
+                let off = (issued as usize) - (base as usize);
+                // SAFETY: `base` is a live, exclusively-owned segment; `off`
+                // is a MIN_BLOCK-aligned offset.
+                #[allow(unsafe_code)]
+                unsafe {
+                    crate::alloc_core::segment_header::bump_gen(base, off)
+                };
+            }
+            out[filled] = issued;
+            filled += 1;
+        }
+
+        // ── (2) Refill the REMAINDER directly into `out[filled..]` via the
+        //     AllocCore batch-refill primitive — one freelist-drain /
+        //     bump-carve pass, NOT via the magazine. Same predicate +
+        //     stamping as `refill_magazine_slow`. ──────────────────────────
+        if filled < want {
+            // Opportunistic drains (same placement as `refill_magazine_slow`:
+            // magazine-miss-only). `fastbin` implies `alloc-xthread`, so both
+            // exist here.
+            self.drain_large_deferred_free();
+            self.drain_heap_overflow();
+            let n = self
+                .core
+                .refill_class_bump_checked(c, &mut out[filled..], &|ptr, k| {
+                    if k == c {
+                        return false;
+                    }
+                    let pbase = os::segment_base_of_ptr(ptr);
+                    let poff = (ptr as usize - pbase as usize) as u32;
+                    SegmentMeta::new(pbase)
+                        .magazine_bitmap()
+                        .is_in_magazine(poff)
+                });
+            // P4 stamp-dedupe + hardened gen bump. EVERY refilled block is
+            // issued to the caller here (none stay in the magazine), so all
+            // get the issue touch — unlike `refill_magazine_slow`, which only
+            // bumps the one popped block (the n-1 retained are bumped on
+            // their later pops).
+            let mut prev_base = usize::MAX;
+            for &p in &out[filled..(filled + n)] {
+                if !p.is_null() {
+                    let base = os::segment_base_of_ptr(p) as usize;
+                    if base != prev_base {
+                        self.stamp_segment_owner(p);
+                        prev_base = base;
+                    }
+                    #[cfg(feature = "hardened")]
+                    {
+                        let off = (p as usize) - base;
+                        // SAFETY: `base` is a live, exclusively-owned segment;
+                        // `off` is a MIN_BLOCK-aligned offset.
+                        #[allow(unsafe_code)]
+                        unsafe {
+                            crate::alloc_core::segment_header::bump_gen(base as *mut u8, off)
+                        };
+                    }
+                }
+            }
+            filled += n;
+        }
+
+        filled
+    }
+
+    /// R10-7 (Part 2) — non-`fastbin` fallback: no magazine to drain, so
+    /// batch-allocation loops the substrate `alloc`. Correctness is identical to
+    /// N scalar `alloc` calls; the only amortisation is the single
+    /// classification hoist (the TLS lookup is amortised at the `SeferAlloc`
+    /// wrapper, not here).
+    #[cfg(not(feature = "fastbin"))]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn alloc_batch(&mut self, layout: Layout, out: &mut [*mut u8]) -> usize {
+        let mut filled = 0usize;
+        for slot in out.iter_mut() {
+            let p = self.core.alloc(layout);
+            if p.is_null() {
+                break;
+            }
+            self.stamp_segment_owner(p);
+            *slot = p;
+            filled += 1;
+        }
+        filled
+    }
+
+    /// Shared Large-path loop for `alloc_batch` (no magazine for Large
+    /// classes). Stamps each block's owning segment (cross-thread routing
+    /// needs it), matching `HeapCore::alloc`'s Large fallthrough.
+    fn alloc_batch_large(&mut self, out: &mut [*mut u8], layout: Layout) -> usize {
+        let mut filled = 0usize;
+        for slot in out.iter_mut() {
+            let p = self.core.alloc(layout);
+            if p.is_null() {
+                break;
+            }
+            self.stamp_segment_owner(p);
+            *slot = p;
+            filled += 1;
+        }
+        filled
+    }
 }

@@ -1336,6 +1336,35 @@ fn bench_batch_ceiling(c: &mut Criterion) {
 ///   NET of warm-tcache savings, not the overhead in isolation — see the
 ///   report's mechanism read for why that cut is still the useful one.
 ///
+/// ## Axis 3 — warm `AllocCore` arms (d)/(e) (R10-7 follow-up)
+///
+/// R9-9's §5 caveat flagged that the cold-vs-warm warmth asymmetry (arms
+/// (a)/(b) cold, arm (c) warm) left a gap: a WARM-batch arm was never
+/// measured, so the §3.2 "even warmed, batch still loses" claim was an
+/// inference, not a measurement. This group closes that gap with TWO warm
+/// arms on a PERSISTENT warm `AllocCore` (constructed once, pre-filled so
+/// its pages are committed and its class freelist holds N blocks before the
+/// first timed sample):
+/// - **(d) `batch_core_warm`**: ONE `refill_class_bump` + ONE `flush_class`
+///   per iteration on the persistent warm `AllocCore`. Verified in
+///   `src/alloc_core/alloc_core_small_magazine.rs` — `refill_class_bump`
+///   DRAINS the warm freelist first (`drain_freelist_batch`), bump-carving
+///   only the remainder — so a warmed `AllocCore` IS genuinely warm for the
+///   batch primitive. This is the structural fact R9-9's caveat was uncertain
+///   about: the batch primitive does NOT always construct cold local state.
+/// - **(e) `scalar_core_warm`** (diagnostic): N `alloc` + N `dealloc` on the
+///   SAME persistent warm `AllocCore`. `alloc_small` pops the freelist first
+///   too, so (d) and (e) share ONE warm substrate; their ratio is the CLEAN
+///   batch-vs-scalar mechanism win that R9-9's cold arm (a) could NOT isolate.
+///
+/// Reaching the batch primitive THROUGH the warm `HeapCore`+ tcache (arm (c)'s
+/// path) would need a new `#[doc(hidden)]` forwarder (R9-9 §5) — a `src/`
+/// change Part 1 forbids. So the warm-batch here measures the warm
+/// `AllocCore` SUBSTRATE (the layer the tcache sits on top of), not the tcache
+/// itself. That is the honest benches-only comparison: **(d) vs (c)** asks
+/// "does warm-batch-on-`AllocCore` beat warm-scalar-on-tcache?" and **(d) vs
+/// (e)** attributes any win/loss to the batch mechanism vs the substrate.
+///
 /// All three arms pre-size a `Vec<*mut u8>` of length N in the untimed
 /// `iter_batched` setup and write/read it identically, so the only timed
 /// difference between arms is the alloc/dealloc mechanism itself (the
@@ -1443,6 +1472,133 @@ fn bench_batch_ceiling_followup(c: &mut Criterion) {
                     },
                     BatchSize::SmallInput,
                 );
+            });
+
+            // ── (d) Warm `AllocCore` batch (R10-7): a PERSISTENT warm
+            //    `AllocCore` — constructed ONCE, pre-filled so its
+            //    primordial segment's bitmap/data pages are committed AND
+            //    its class freelist holds N blocks (the explicit pre-fill
+            //    plus criterion's own warmup amplify this to a steady state
+            //    before the first timed sample). Each timed iteration runs
+            //    ONE `refill_class_bump` (which, per its impl, DRAINS the
+            //    warm freelist first via `drain_freelist_batch`, bump-carving
+            //    only the remainder) + ONE `flush_class` (which pushes the N
+            //    blocks back onto the freelist for the next iteration). This
+            //    is arm (b) with the cold-page-fault confound of §1.2
+            //    REMOVED: same batch primitive, same `AllocCore` substrate,
+            //    but warm. `alloc_small` (the scalar arm (e) path) pops the
+            //    freelist first too, so arms (d) and (e) share the SAME warm
+            //    substrate — their ratio isolates the pure batch mechanism
+            //    win, uncontaminated by the HeapCore tcache or cold carving.
+            //    ──────────────────────────────────────────────────────────
+            {
+                let mut ac = AllocCore::new().expect("primordial reservation");
+                // Pre-fill: one refill + one flush commits the primordial
+                // pages and leaves N blocks on the class freelist, so the
+                // first timed iteration is already in the warm steady state
+                // (mirroring how arm (c) relies on criterion's warmup to warm
+                // the tcache — but explicit here because the `AllocCore`
+                // freelist would otherwise start empty on sample 1).
+                let mut warm: Vec<*mut u8> = vec![core::ptr::null_mut(); n];
+                assert_eq!(
+                    ac.refill_class_bump(class_idx, &mut warm),
+                    n,
+                    "batch_core_warm pre-fill refill under-filled (n={n})",
+                );
+                // SAFETY (R6-MS-3): every entry of `warm` came from the
+                // `refill_class_bump` call immediately above — a live,
+                // bitmap-allocated block of `class_idx` owned by this same
+                // `ac`, each appearing exactly once, freed once here.
+                unsafe { ac.flush_class(class_idx, &warm) };
+                group.bench_function(format!("batch_core_warm/{size}B/n{n}"), |b| {
+                    b.iter_batched(
+                        || vec![core::ptr::null_mut(); n],
+                        |mut ptrs| {
+                            let filled = ac.refill_class_bump(class_idx, &mut ptrs);
+                            assert_eq!(filled, n, "batch_core_warm refill under-filled (n={n})",);
+                            black_box(&ptrs);
+                            // SAFETY: every entry of `ptrs` came from the
+                            // `refill_class_bump` call immediately above — a
+                            // live block of `class_idx` owned by this `ac`,
+                            // each appearing exactly once.
+                            unsafe { ac.flush_class(class_idx, &ptrs) };
+                            ptrs
+                        },
+                        BatchSize::SmallInput,
+                    )
+                });
+            }
+
+            // ── (e) Warm `AllocCore` scalar (R10-7 DIAGNOSTIC): the
+            //    same-substrate SCALAR control for arm (d). A persistent
+            //    warm `AllocCore`, N `alloc` + N `dealloc` per iteration.
+            //    Because `alloc_small` pops the warm freelist first (same
+            //    source `refill_class_bump` drains), (d) vs (e) is the CLEAN
+            //    batch-vs-scalar ratio on ONE warm substrate — the number
+            //    R9-9 could not isolate (its arm (a) is cold). NOT the
+            //    production path (that is arm (c)); this arm exists only to
+            //    attribute arm (d)'s win/loss to the batch mechanism rather
+            //    than to the AllocCore-vs-tcache substrate difference.
+            //    ──────────────────────────────────────────────────────────
+            {
+                let mut ac = AllocCore::new().expect("primordial reservation");
+                // Pre-fill: N alloc + N dealloc to commit pages and populate
+                // the freelist, mirroring arm (d)'s pre-fill exactly.
+                let mut warm: Vec<*mut u8> = vec![core::ptr::null_mut(); n];
+                for slot in warm.iter_mut() {
+                    *slot = ac.alloc(layout);
+                    assert!(!slot.is_null(), "scalar_core_warm pre-fill alloc null");
+                }
+                black_box(&warm);
+                for &p in &warm {
+                    // SAFETY: `p` from `ac.alloc` above, freed once here.
+                    unsafe { ac.dealloc(p, layout) };
+                }
+                group.bench_function(format!("scalar_core_warm/{size}B/n{n}"), |b| {
+                    b.iter_batched(
+                        || vec![core::ptr::null_mut(); n],
+                        |mut ptrs| {
+                            for slot in ptrs.iter_mut() {
+                                let p = ac.alloc(layout);
+                                assert!(!p.is_null(), "scalar_core_warm alloc null");
+                                *slot = p;
+                            }
+                            black_box(&ptrs);
+                            for &p in &ptrs {
+                                // SAFETY: `p` from `ac.alloc` above, freed once here.
+                                unsafe { ac.dealloc(p, layout) };
+                            }
+                            ptrs
+                        },
+                        BatchSize::SmallInput,
+                    )
+                });
+            }
+
+            // ── (f) Tcache-aware batch through `SeferAlloc` (R10-7 Part 2):
+            //    ONE `sefer.alloc_batch` + ONE `sefer.dealloc_batch` per
+            //    iteration, on the shared warm `SeferAlloc` heap (warm
+            //    per-thread magazine + the same TLS path arm (c) uses). This
+            //    is the design that would actually ship: drain the warm
+            //    magazine first, `AllocCore::refill_class_bump` the remainder
+            //    only. Compares directly against arm (c) (the real production
+            //    scalar path) — (f) vs (c) is the headline GO/NO-GO for the
+            //    tcache-aware batch API. `#[doc(hidden)]` experimental surface
+            //    (NOT committed public API). ───────────────────────────────
+            group.bench_function(format!("batch_tcache/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || vec![core::ptr::null_mut(); n],
+                    |mut ptrs| {
+                        let filled = unsafe { sefer.alloc_batch(layout, &mut ptrs) };
+                        assert_eq!(filled, n, "batch_tcache alloc_batch under-filled (n={n})");
+                        black_box(&ptrs);
+                        // SAFETY: every entry of `ptrs` came from
+                        // `sefer.alloc_batch` above with `layout`; each freed once.
+                        unsafe { sefer.dealloc_batch(layout, &ptrs) };
+                        ptrs
+                    },
+                    BatchSize::SmallInput,
+                )
             });
         }
     }
