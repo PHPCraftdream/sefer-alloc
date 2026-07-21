@@ -52,7 +52,7 @@ const SIZED_GROUPS = [
   // sized tables keep their byte-for-byte position/format. DELIBERATE
   // diagnostic: teardown stays INSIDE the timed region (the pre-F7/F9
   // behavior), unlike the three groups above.
-  { id: 'global_alloc_churn_with_teardown', title: 'Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:460-469`)', scale: OPS },
+  { id: 'global_alloc_churn_with_teardown', title: 'Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:628-637`)', scale: OPS },
 ];
 
 function unitToNs(value, unit) {

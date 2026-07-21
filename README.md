@@ -224,15 +224,16 @@ disclaimer):
   the cache misses and the numbers regress to OS-round-trip cost.
 - On **single-thread small-class churn** (the reuse pattern) it **beats
   `mimalloc` at 64 B and above** on the realistic writing pattern (64 B
-  1.14×, 256 B 1.61×, 1024 B 9.07× faster; 16 B is a within-noise tie) after
-  the P0–P6 and PERF-PASS-1..5 perf arcs and the round4 remediation batch
-  (measured 2026-07-14 via `npm run bench:table`, see
+  1.18×, 256 B 2.71×, 1024 B 8.65× faster; 16 B is a within-noise tie) after
+  the P0–P6 perf arcs, the round4 remediation batch, and Round7–9 (directory
+  + lazy-commit + Large fresh-zero-skip)
+  (measured 2026-07-20 via `npm run bench:table`, see
   [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The old
   256 B churn loss was **eliminated in P6 (Э6)** — its cause was a stale
   per-heap key in the block body (not the M2 bitmap), now removed; M2 was
   strengthened in the process. On cold first-touch of tiny blocks the P3
   bump-direct carve removed the tautological round-trip, but the current
-  measurement still shows a 1.5–2.7× cold gap (16 B 2.67×, 64 B 1.97×
+  measurement still shows a 1.5–2.3× cold gap (16 B 2.34×, 64 B 1.98×
   slower); the residual is honest per-block page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
 - On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
@@ -424,14 +425,14 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` (primordial carve, hardened path) |
 | [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
 | [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
-| [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 2 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` (hardened path) |
+| [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 4 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` / `alloc_batch` (hardened path) |
 | [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 1 | `dbg_push_to_ring` — `unsafe fn` boundary (delegation to the unsafe producer) |
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 5 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **17** tier-1 module-level seams (10 in
-`src/`, 7 in `crates/`) plus **33** tier-2 item-scoped allows across **14**
+`src/`, 7 in `crates/`) plus **35** tier-2 item-scoped allows across **14**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
@@ -504,9 +505,10 @@ correctness, not latency-asymmetry — that needs real 2-socket hardware
 
 ## Performance
 
-**sefer-alloc 0.3.x — small-class churn/cold tables re-measured 2026-07-14
-on the post-round4 tree; large-alloc and realloc tables 2026-07-06
-post-X-arc** (criterion benches on a single Windows dev host, `SeferAlloc`
+**sefer-alloc 0.3.x — small-class churn/cold tables re-measured 2026-07-20
+post-Round9 (directory + lazy-commit + Large fresh-zero-skip landed); large-alloc
+and realloc tables 2026-07-06 post-X-arc** (criterion benches on a single Windows
+dev host, `SeferAlloc`
 called directly through its `GlobalAlloc` impl — apples-to-apples — vs
 `mimalloc 0.1` vs `System`). Per [CLAUDE.md](CLAUDE.md) the project's bench profile is the quick
 one — `sample_size(10)`, short warm-up — and the host is noisy (±15–20 %), so
@@ -663,10 +665,10 @@ allocates) — the headline:
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 29.0 ns |  28.5 ns | 197.8 ns | 1.02× slower |
-|   64 B | **28.4 ns** |  31.3 ns | 175.5 ns | **1.10× faster** |
-|  256 B | **31.4 ns** |  40.3 ns | 161.4 ns | **1.28× faster** |
-| 1024 B | **32.1 ns** | 264.8 ns | 207.3 ns | **8.24× faster** |
+|   16 B | 14.7 ns |  13.9 ns |  83.6 ns | 1.06× slower |
+|   64 B | **15.0 ns** |  17.7 ns |  90.5 ns | **1.18× faster** |
+|  256 B | **15.2 ns** |  41.4 ns | 100.5 ns | **2.71× faster** |
+| 1024 B | **18.1 ns** | 156.7 ns | 116.6 ns | **8.65× faster** |
 
 **Churn, non-writing** (`bench_churn_alloc`, working-set reuse — 1 free + 1
 alloc per op; the artificial pattern where the old stale-key slow path bit
@@ -674,10 +676,10 @@ hardest, before Э6 removed it):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B | 29.3 ns |  29.1 ns | 170.2 ns | 1.01× slower |
-|   64 B | **29.5 ns** |  44.6 ns | 238.1 ns | **1.51× faster** |
-|  256 B | **29.0 ns** |  50.1 ns | 209.4 ns | **1.73× faster** |
-| 1024 B | **33.1 ns** | 331.8 ns | 261.5 ns | **10.04× faster** |
+|   16 B | 23.7 ns |  23.4 ns | 141.4 ns | 1.01× slower |
+|   64 B | **24.0 ns** |  29.7 ns | 150.2 ns | **1.24× faster** |
+|  256 B | **18.0 ns** |  26.1 ns |  97.8 ns | **1.45× faster** |
+| 1024 B | **15.3 ns** | 155.6 ns | 112.1 ns | **10.15× faster** |
 
 **Cold direct** (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op; the
 "first touch" path, historically the worst case where mimalloc's cheaper
@@ -685,24 +687,19 @@ carve led at tiny sizes):
 
 | Size | SeferAlloc | mimalloc | System | Sefer vs mimalloc |
 |---|---:|---:|---:|---:|
-|   16 B |  36.4 ns |  14.6 ns | 144.5 ns | 2.49× slower |
-|   64 B |  45.7 ns |  28.2 ns | 166.5 ns | 1.62× slower |
-|  256 B |  59.1 ns |  35.7 ns | 165.4 ns | 1.66× slower |
-| 1024 B | **56.9 ns** |  70.3 ns | 238.3 ns | **1.24× faster** |
+|   16 B |  43.2 ns |  18.5 ns | 154.9 ns | 2.34× slower |
+|   64 B |  44.8 ns |  22.6 ns | 138.9 ns | 1.98× slower |
+|  256 B |  45.1 ns |  29.7 ns | 175.7 ns | 1.52× slower |
+| 1024 B | **45.6 ns** |  57.3 ns | 169.0 ns | **1.26× faster** |
 
-(Measured 2026-07-14 via `npm run bench:table`, after round5's R5-R3 fix —
-Windows dev host, criterion `sample_size(10)`. **This is the first
-measurement taken with two measurement-methodology confounds removed**:
-`benches/global_alloc.rs` previously shared one TLS heap's leftover state
-across groups and always ran arms in the same SeferAlloc→mimalloc→System
-order; R5-R3 resets the heap between groups and rotates arm order per
-`(group, size)` — see `docs/agent_reviews_round5/performance_review.md`
-§4.1 items 2-3 and the R5-R3 commit for the full rationale. Every absolute
-column here moved up 20-40% from the prior (`5806d1c`) run — **including the
-mimalloc and System columns**, not just SeferAlloc's — which is the
-signature of host-level noise/session drift dominating this single run, not
-a real regression: an isolated single-run wall-clock delta on this host
-cannot distinguish "the code changed" from "the host was busier this time"
+(Measured 2026-07-20 via `npm run bench:table`, post-Round9 tree — Windows dev
+host, criterion `sample_size(10)`, same R5-R3 methodology as before
+(TLS-heap reset between groups + rotated arm order per `(group, size)`, see
+`docs/agent_reviews_round5/performance_review.md` §4.1 items 2-3). This
+single-host run carries the usual ±15-20% noise band; treat the relative
+shape and order of magnitude as the signal, not the exact percentages — an
+isolated single-run wall-clock delta on this host cannot distinguish "the
+code changed" from "the host was busier this time"
 (see `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`, which needed 20
 alternating paired repetitions to separate a real effect from this exact
 class of noise). The deterministic tie-breaker for this exact churn path is
@@ -732,9 +729,9 @@ depends on block-body contents; `tests/regression_magazine_oracles.rs` test (c)
 is RED pre-Э6, GREEN on Э6). Every P0–P6 speedup deleted a tautology, never a
 guard.
 
-**Where we still trail — cold tiny blocks (16–64 B), 1.5–2.7× behind
-mimalloc (2026-07-14 re-measurement: 16 B 2.67×, 64 B 1.97×, 256 B 1.52×
-slower; 1024 B 1.20× faster — see the Cold direct table above).** This is the
+**Where we still trail — cold tiny blocks (16–64 B), 1.5–2.3× behind
+mimalloc (2026-07-20 re-measurement: 16 B 2.34×, 64 B 1.98×, 256 B 1.52×
+slower; 1024 B 1.26× faster — see the Cold direct table above).** This is the
 cold carve path (`global_alloc`, no reuse), unchanged by Э6 (which targets
 only the churn free path). The residual is honest per-block work — page-map
 writes and page faults on genuinely fresh pages, not ceremony — documented in
@@ -810,22 +807,21 @@ measurement as the "Cold direct" column of the Performance table above
 absolute ns/op for every allocator are now in the main Cold direct table
 above, re-measured 2026-07-14 via `npm run bench:table`):
 
-| Size | vs mimalloc (2026-07-14, post-R5-R3) | (pre-P3 was) |
+| Size | vs mimalloc (2026-07-20, post-Round9) | (pre-P3 was) |
 |---|---|---|
-|   16 B | 2.49× slower | 2.6× slower |
-|   64 B | 1.62× slower | 2.0× slower |
-|  256 B | 1.66× slower | 1.5× slower |
-| 1024 B | **1.24× faster** | 1.2× faster |
+|   16 B | 2.34× slower | 2.6× slower |
+|   64 B | 1.98× slower | 2.0× slower |
+|  256 B | 1.52× slower | 1.5× slower |
+| 1024 B | **1.26× faster** | 1.2× faster |
 
-(Cold-direct `vs mimalloc` ratios measured 2026-07-14 with R5-R3's
-methodology fix (TLS-state isolation + arm-order rotation), see
+(Cold-direct `vs mimalloc` ratios measured 2026-07-20, post-Round9 tree, same
+R5-R3 methodology fix (TLS-state isolation + arm-order rotation), see
 [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md) and the main Performance table
-above — all absolute ns/op columns were re-recorded in this run, and per
-that table's note, the absolute deltas from the prior run are host-noise
-dominated (every column moved, not just SeferAlloc's), not a real shift; the
-qualitative shape — small sizes trail, 1024 B leads — is unchanged. The
-"pre-P3 was" column is the pre-X-arc historical run, kept for the
-before/after of the Э1 trajectory.)
+above — all absolute ns/op columns were re-recorded in this run; the
+qualitative shape — small sizes trail, 1024 B leads — is unchanged since the
+2026-07-14 run within this host's usual noise band. The "pre-P3 was" column
+is the pre-X-arc historical run, kept for the before/after of the Э1
+trajectory.)
 
 The P3 carve removed the tautological round-trip, but the cold tiny gap
 still sits at ~2–2.7× rather than the ~1.15–1.60× the earlier P3-era run
@@ -858,18 +854,18 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     than `System` (measured 2026-07-06 post-X-arc, see
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). The headline.
   - **Real-world churn (the common shape) — leads at 64 B and above.** On the
-    realistic writing pattern: **1.14× on 64 B**, **1.61× on
-    256 B**, **9.07× on 1024 B** (measured 2026-07-14 via `npm run bench:table`,
-    see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). 16 B is a within-noise
-    tie (1.02× slower this run, 1.12× faster in the 2026-07-10 run — see the
-    Churn + write table above). The 256 B churn loss was eliminated in P6
+    realistic writing pattern: **1.18× on 64 B**, **2.71× on
+    256 B**, **8.65× on 1024 B** (measured 2026-07-20 via `npm run bench:table`,
+    post-Round9, see [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md)). 16 B is a
+    within-noise tie (1.06× slower this run — see the Churn + write table
+    above). The 256 B churn loss was eliminated in P6
     (Э6) — the cause was a stale per-heap key in the block body, not the M2
     bitmap; removing it also **strengthened** M2 (see below).
   - **Cold first-touch after P3 (Э1 bump-direct carve):** the tautological
-    round-trip is gone; the 2026-07-14 post-R5-R3 re-measurement shows a
-    2.49× / 1.62× cold gap at 16/64 B (vs the 2.6× / 2.0× pre-P3 baseline on
+    round-trip is gone; the 2026-07-20 post-Round9 re-measurement shows a
+    2.34× / 1.98× cold gap at 16/64 B (vs the 2.6× / 2.0× pre-P3 baseline on
     this noisy host — both sit near the pre-P3 figures, within the host's
-    documented noise) and cold 1024 B **1.24× faster**.
+    documented noise) and cold 1024 B **1.26× faster**.
   - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
     ~290× faster than `System`; `realloc_grow_neighbour_pressure` (formerly
     `realloc_in_place_unfavorable`) **~1,500× faster** (post-X-arc OPT-G
@@ -879,8 +875,8 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
     on mstress" was the 0.2.0 historical run — mstress is the noisier workload
     and the mimalloc column swung run-to-run this re-run).
-- **Where it ties:** `Vec_push` honest geometric growth (1.12× slower than
-  mimalloc as of the 2026-07-14 post-R5-R3 re-measurement, vs 1.16× faster in
+- **Where it ties:** `Vec_push` honest geometric growth (1.11× faster than
+  mimalloc as of the 2026-07-20 post-Round9 re-measurement, vs 1.12× slower in
   the immediately prior run — this bench has swung across parity in both
   directions across successive re-measurements on this host and should be
   read as within-noise, not a stable lead or loss in either direction); 16 B
@@ -894,12 +890,12 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     metadata and stopped touching the block body; the free path is now cheaper
     than mimalloc's (mimalloc writes `next` into the block body on every free;
     we write nothing to it). On the realistic writing pattern we now lead 256 B
-    by 1.28× (2026-07-14 post-R5-R3; non-writing 1.73×), and M2 was **strengthened** (the
+    by 2.71× (2026-07-20 post-Round9; non-writing 1.45×), and M2 was **strengthened** (the
     flushed-double-free-after-user-write hole is closed;
     `tests/regression_magazine_oracles.rs` test (c) is RED pre-Э6, GREEN on Э6).
 - **Where it loses:**
-  - **Cold tiny blocks (16–64 B): 2.0–2.7× behind `mimalloc`** (2026-07-14
-    re-measurement: 16 B 2.67×, 64 B 1.97×, 256 B 1.52× slower). The P3
+  - **Cold tiny blocks (16–64 B): 1.5–2.3× behind `mimalloc`** (2026-07-20
+    re-measurement: 16 B 2.34×, 64 B 1.98×, 256 B 1.52× slower). The P3
     bump-direct carve removed the tautological round-trip but did not fully
     close the gap — what remains is honest per-block work (page-map writes,
     page faults on genuinely fresh pages), not ceremony.
@@ -908,8 +904,8 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     safety machinery; the per-thread architecture means it does not compound —
     at T ≥ 2 sefer-alloc leads. See
     [`docs/FASTBIN_DESIGN.md`](docs/FASTBIN_DESIGN.md) §0.
-  - **Synthetic bulk (16–256 B alloc-1024-then-free-1024):** 1.5–2.7× slower
-    (2026-07-14, same run as the Cold direct table — it is the same bench
+  - **Synthetic bulk (16–256 B alloc-1024-then-free-1024):** 1.5–2.3× slower
+    (2026-07-20, same run as the Cold direct table — it is the same bench
     family) — the magazine's design worst case (every free overflows, every
     alloc empties and refills). Documented trade-off; not a real-world pattern.
 
