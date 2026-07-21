@@ -21,18 +21,34 @@
 //! cache-hit reuse (never recomputed from `large_size`/`large_align`).
 //! Deposit sites read `span_usable` instead of recomputing.
 //!
-//! This test allocates a 2-segment span A (usable = 8 MiB), deposits it,
-//! then allocates a SMALLER 1-segment request B (usable = 4 MiB) that is
-//! admissible against A's cached slot (8 MiB is within `[4 MiB, 4 MiB * 2]`
-//! — a real cache HIT, verified via `dbg_large_cache_hits`), and deposits B.
-//! It asserts the slot's usable size AND `large_cache_used_bytes` are still
-//! 8 MiB (the segment's true physical span) — NOT 4 MiB (B's logical size).
+//! This test allocates a 2-segment span A (usable = 8 MiB under the default
+//! rounding), deposits it, then allocates a SMALLER 1-segment request B
+//! (usable = 4 MiB under the default rounding) that is admissible against
+//! A's cached slot (8 MiB is within `[4 MiB, 4 MiB * 2]` — a real cache HIT,
+//! verified via `dbg_large_cache_hits`), and deposits B. It asserts the
+//! slot's usable size AND `large_cache_used_bytes` are still A's ORIGINAL
+//! physical span — NOT B's smaller logical size.
 //!
 //! Counterfactual (verified manually — see task #134 report): reverting the
 //! `dealloc` Large-branch deposit site to recompute `usable_size` from
 //! `stale.large_size`/`stale.large_align` (the pre-fix arithmetic) makes
-//! this test's post-redeposit assertions fail (`used_bytes` == 4 MiB and the
-//! slot's usable size == 4 MiB instead of 8 MiB).
+//! this test's post-redeposit assertions fail (`used_bytes` and the slot's
+//! usable size drop to B's logical size instead of staying at A's span).
+//!
+//! ## R12-3 (`exact-span-large`) interaction
+//!
+//! The EXPERIMENTAL `exact-span-large` feature (opt-in, not part of
+//! `production`) replaces the physical `usable` computation with
+//! `round_up(header + size, PAGE)` instead of `round_up(header + size,
+//! SEGMENT)` — so A's actual physical span is no longer exactly `2 *
+//! SEGMENT` (8 MiB); it is instead just page-rounded above the 6 MiB
+//! payload. The bug #134 invariant under test — "the cached slot's
+//! `usable_size` is A's TRUE physical span, carried forward verbatim, not
+//! recomputed from B's smaller logical size" — is unaffected by WHICH
+//! rounding policy computed that physical span, so this test reads A's own
+//! `dbg_span_usable_of` value back (instead of hardcoding `2 * SEGMENT`) to
+//! stay correct under both configurations while still exercising the exact
+//! same bug #134 code path.
 
 #![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 
@@ -53,12 +69,24 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
     // byte-budget eviction effect.
     ac.dbg_set_large_cache_budget(None);
 
-    // A: sized to require exactly 2 segments (> 1*SEGMENT worth of payload
-    // after header overhead, <= 2*SEGMENT). usable_A should be 2*SEGMENT.
-    let a_size = SEGMENT + (SEGMENT / 2); // 6 MiB payload -> rounds up to 2 segments (8 MiB)
+    // A: sized to require more than one segment's worth of payload under
+    // the DEFAULT rounding (> 1*SEGMENT, <= 2*SEGMENT) — usable_A is
+    // 2*SEGMENT under the default policy, or just page-rounded above 6 MiB
+    // under `exact-span-large` (see the file-level doc comment).
+    let a_size = SEGMENT + (SEGMENT / 2); // 6 MiB payload
     let la = layout(a_size);
     let pa = ac.alloc(la);
     assert!(!pa.is_null(), "OOM allocating A — cannot run test");
+    // Read A's TRUE physical span BEFORE freeing it — this is the value the
+    // cache deposit/reuse cycle below must preserve verbatim, whatever its
+    // absolute magnitude is under the active rounding policy.
+    let usable_a_expected = ac.dbg_span_usable_of(pa);
+    #[cfg(not(feature = "exact-span-large"))]
+    assert_eq!(
+        usable_a_expected,
+        2 * SEGMENT,
+        "without exact-span-large, A's physical span must be exactly 2*SEGMENT (8 MiB)"
+    );
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer was returned by a prior matching alloc in this test, is live, and is freed exactly once here.
     unsafe { ac.dealloc(pa, la) };
 
@@ -68,21 +96,32 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
         .find_map(|s| *s)
         .expect("A must be deposited into the large cache");
     assert_eq!(
-        usable_a,
-        2 * SEGMENT,
-        "A's cached slot should report the physical 2-segment span (8 MiB)"
+        usable_a, usable_a_expected,
+        "A's cached slot should report A's true physical span"
     );
     assert_eq!(
         ac.dbg_large_cache_used(),
-        2 * SEGMENT,
+        usable_a_expected,
         "large_cache_used_bytes should equal A's physical span after deposit"
     );
 
-    // B: sized to require exactly 1 segment (usable_B = SEGMENT = 4 MiB).
-    // Admission check: slot.usable_size (8 MiB) >= usable_B (4 MiB) AND
-    // <= usable_B * LARGE_CACHE_SIZE_FACTOR (4 MiB * 2 = 8 MiB) -> 8 <= 8,
-    // so this is a guaranteed cache HIT against A's slot.
-    let b_size = SEGMENT / 2; // small payload -> rounds up to 1 segment (4 MiB)
+    // B: sized to HALF of A's logical payload (NOT a fixed `SEGMENT / 2`
+    // literal — see below for why). Under the default rounding this is
+    // exactly `SEGMENT` (4 MiB): admission check is slot.usable_size (8 MiB)
+    // >= usable_B (4 MiB) AND <= usable_B * LARGE_CACHE_SIZE_FACTOR (4 MiB *
+    // 2 = 8 MiB) -> 8 <= 8, a guaranteed cache HIT against A's slot.
+    //
+    // Under `exact-span-large`, `usable` is `header + payload` (page-rounded)
+    // rather than a whole-SEGMENT multiple, so the header's few-KiB overhead
+    // is no longer negligible against the ADMISSION RATIO once the payload
+    // is fixed at a constant like `SEGMENT / 2`: `usable_A = header + a_size`
+    // and `usable_B = header + a_size/2` no longer satisfy `usable_A <=
+    // usable_B * 2` for every `a_size` (the header adds MORE than half of
+    // itself extra to the ratio's numerator). Deriving `b_size` from `a_size`
+    // (not from `SEGMENT`) keeps `usable_A / usable_B` close to 2 regardless
+    // of which rounding policy computed the absolute byte counts, so the
+    // cache-HIT precondition this test needs holds under both.
+    let b_size = a_size / 2;
     let lb = layout(b_size);
 
     let hits_before = ac.dbg_large_cache_hits();
@@ -122,20 +161,19 @@ fn cache_hit_reuse_preserves_physical_span_usable() {
         .expect("B must be deposited into the large cache");
 
     // THE ASSERTION THAT CATCHES BUG #134: the redeposited slot must still
-    // report the segment's TRUE PHYSICAL span (8 MiB, from A's original
-    // reservation) — not B's smaller logical request size (4 MiB). Pre-fix,
+    // report the segment's TRUE PHYSICAL span (`usable_a_expected`, from A's
+    // original reservation) — not B's smaller logical request size. Pre-fix,
     // the deposit site recomputed usable_size from the header's CURRENT
     // (shrunk) large_size/large_align, which by this point describe B, not
     // the segment's physical footprint.
     assert_eq!(
-        usable_after_redeposit,
-        2 * SEGMENT,
+        usable_after_redeposit, usable_a_expected,
         "BUG #134: redeposited slot's usable_size shrank to B's logical size \
-         instead of preserving the segment's physical 8 MiB span"
+         instead of preserving the segment's true physical span"
     );
     assert_eq!(
         ac.dbg_large_cache_used(),
-        2 * SEGMENT,
+        usable_a_expected,
         "BUG #134: large_cache_used_bytes under-reports the true physical \
          RSS pinned by the cache after a cache-hit-and-shrink redeposit"
     );

@@ -154,6 +154,49 @@ impl Segment {
         Some(Segment(reservation))
     }
 
+    /// R12-3 (EXPERIMENTAL, feature `exact-span-large`): reserve a
+    /// SEGMENT-ALIGNED span of EXACTLY `len` bytes — unlike [`reserve`](Self::reserve),
+    /// `len` is NOT rounded up to a whole number of `SEGMENT`s. The caller
+    /// (`alloc_large_slow`) is responsible for `len` already being a non-zero
+    /// multiple of the OS page size (`aligned_vmem::PAGE`) — `reserve_aligned`'s
+    /// own contract requirement — typically `round_up(header + size, PAGE)`.
+    ///
+    /// This exists so a Large/huge dedicated segment can reserve+commit only
+    /// the physically-needed span instead of a minimum of one whole `SEGMENT`
+    /// (4 MiB) regardless of the requested size. The base stays `SEGMENT`
+    /// (4 MiB) aligned — only the span's byte length shrinks — so
+    /// [`segment_base_of_ptr`] continues to resolve the correct segment base
+    /// for an exact-span segment exactly as it does for a whole-segment one.
+    /// `crates/vmem::reserve_aligned(size, align)` already supports
+    /// `size != align` on every backend (see the `exact-span-large` feature
+    /// doc in `Cargo.toml` for the full backend-support argument); this
+    /// constructor is a thin non-rounding sibling of [`reserve`](Self::reserve),
+    /// not a new OS-level capability.
+    ///
+    /// Returns `None` only on OOM, if `len == 0`, or if `len` is not a
+    /// multiple of the OS page size (forwarded from `vmem::reserve_aligned`'s
+    /// contract).
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy)'s own
+    /// gating — the sole caller (`alloc_large_slow`'s `not(numa-aware)` OS
+    /// reservation arm) only takes this branch when `numa-aware` is off; the
+    /// numa-aware arm calls `numa::reserve_aligned_on_node` directly instead,
+    /// which already forwards `usable` unrounded regardless of this feature
+    /// (see the `exact-span-large` feature doc in `Cargo.toml`). Gating the
+    /// definition here too (rather than leaving it reachable-but-uncalled)
+    /// keeps `--all-features` (which enables `numa-aware` alongside
+    /// `exact-span-large`) free of a dead-code warning.
+    #[must_use]
+    #[cfg(all(feature = "exact-span-large", not(feature = "numa-aware")))]
+    pub(crate) fn reserve_exact(len: usize) -> Option<Self> {
+        if len == 0 {
+            return None;
+        }
+        let reservation = vmem::reserve_aligned(len, SEGMENT)?;
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
     /// Reserve a SEGMENT-aligned, exactly-`SEGMENT`-sized span from the OS,
     /// committing only the first `initial_commit` bytes — the rest stays
     /// reserved-but-uncommitted (Windows lazy-commit path; falls back to the
@@ -192,8 +235,11 @@ impl Segment {
         self.0.as_ptr()
     }
 
-    /// The number of usable bytes at [`as_ptr`](Self::as_ptr). Always a
-    /// multiple of `SEGMENT`.
+    /// The number of usable bytes at [`as_ptr`](Self::as_ptr). A multiple of
+    /// `SEGMENT` for a [`reserve`](Self::reserve)/[`reserve_lazy`](Self::reserve_lazy)
+    /// span; for a [`reserve_exact`](Self::reserve_exact) span (feature
+    /// `exact-span-large`) it is only guaranteed to be a multiple of the OS
+    /// page size.
     #[must_use]
     #[allow(dead_code)] // Substrate API; Phase 9+ heaps read it.
     pub(crate) const fn len(&self) -> usize {

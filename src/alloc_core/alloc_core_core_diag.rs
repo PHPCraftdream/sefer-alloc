@@ -316,6 +316,23 @@ impl AllocCore {
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
 
+    /// TEST-ONLY (R12-3): read the `span_usable` field from the header of
+    /// `ptr`'s segment — the segment's PHYSICAL committed byte span (see
+    /// `SegmentHeader::span_usable`'s doc). Same field-read pattern as
+    /// `dbg_large_size_of`. Lets integration tests verify the `exact-span-large`
+    /// feature actually shrinks the physical reservation below a whole
+    /// `SEGMENT` (4 MiB), instead of only inferring it indirectly from RSS.
+    #[doc(hidden)]
+    pub fn dbg_span_usable_of(&self, ptr: *mut u8) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_span_usable_of: ptr's segment is not owned by this AllocCore"
+        );
+        let off = core::mem::offset_of!(SegmentHeader, span_usable);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
     /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
     /// `ptr`'s segment, for a public integration test (which cannot call the
     /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed lookup

@@ -84,15 +84,44 @@ impl AllocCore {
             Some(n) => n,
             None => return (core::ptr::null_mut(), true),
         };
-        // Round up to a whole number of SEGMENT-sized spans — the same rounding
-        // `Segment::reserve` does internally.  `reserve_aligned_on_node` (like
-        // the OS `mmap`/`VirtualAlloc` path) requires the usable size to be an
-        // exact multiple of SEGMENT so the over-reserve + trim arithmetic holds:
-        //   base_addr + usable <= region_addr + over   (over = usable * 2)
-        // With an un-rounded `needed` this can fail if `needed < SEGMENT` and
-        // `align_up(region_addr, SEGMENT)` skips a large head region.
-        let n_segments = needed.div_ceil(SEGMENT);
-        let usable = n_segments * SEGMENT;
+        // R12-3 (EXPERIMENTAL, feature `exact-span-large`): size the physical
+        // reservation to the exact page-rounded request instead of rounding
+        // up to a whole number of SEGMENT-sized (4 MiB) spans. Every Large
+        // request today pays a MINIMUM of 4 MiB reserved+committed address
+        // space (a 260 KiB request costs the same as a 4 MiB one); with the
+        // page-exact span a 260 KiB request costs ~264 KiB instead.
+        //
+        // The OLD comment here claimed `reserve_aligned_on_node` (like the OS
+        // `mmap`/`VirtualAlloc` path) REQUIRES the usable size to be an exact
+        // multiple of SEGMENT for the over-reserve + trim arithmetic to hold
+        // (`base_addr + usable <= region_addr + over`, `over = usable * 2`).
+        // That is NOT a real backend constraint: both `crates/vmem` backends
+        // (`win_reserve_commit` / `unix_reserve`) over-reserve `size + align`
+        // (not `size * 2`) and trim to an `align`-aligned `size`-byte span
+        // for ARBITRARY `size` — `try_reserve_aligned`'s only size contract
+        // is "non-zero multiple of PAGE", never "multiple of align". The
+        // SEGMENT-multiple rounding is `os::Segment::reserve`'s OWN choice
+        // (`os.rs`), not something `vmem`/`reserve_aligned_on_node` demand;
+        // `reserve_aligned_on_node` in particular already forwards `usable`
+        // unrounded. See the `exact-span-large` feature doc in `Cargo.toml`.
+        //
+        // Alignment stays `SEGMENT` unconditionally (`align_up`/`div_ceil`
+        // above already only ever go through `align.max(PAGE)`, never
+        // `SEGMENT`, for the header offset) — the segment's BASE remains
+        // SEGMENT-aligned either way, so `segment_base_of_ptr` (which masks
+        // on SEGMENT) is unaffected; only the physical `usable` byte count
+        // computed here differs.
+        //
+        // With the feature OFF this computation is byte-for-byte identical
+        // to before: round `needed` up to a whole number of SEGMENT-sized
+        // spans.
+        #[cfg(not(feature = "exact-span-large"))]
+        let usable = {
+            let n_segments = needed.div_ceil(SEGMENT);
+            n_segments * SEGMENT
+        };
+        #[cfg(feature = "exact-span-large")]
+        let usable = align_up(needed, super::os::PAGE);
 
         // OPT-E: try the large-segment cache first.
         // Scan all slots for a compatible entry: usable_size >= usable (the
@@ -302,14 +331,32 @@ impl AllocCore {
         };
         #[cfg(not(feature = "numa-aware"))]
         let (base, reservation, reservation_len) = {
+            // R12-3: `Segment::reserve` ROUNDS `usable` up to a whole SEGMENT
+            // multiple internally (`os.rs`) — that rounding is exactly what
+            // `exact-span-large` exists to skip, so this path must call the
+            // non-rounding sibling `reserve_exact` instead when the feature
+            // is on (`usable` here is already page-exact, computed above).
+            // With the feature OFF, `usable` is already a SEGMENT multiple,
+            // so `Segment::reserve`'s internal rounding is a no-op — this
+            // `#[cfg]` split changes nothing observable for the default path.
+            #[cfg(not(feature = "exact-span-large"))]
             let mut seg = Segment::reserve(usable);
+            #[cfg(feature = "exact-span-large")]
+            let mut seg = Segment::reserve_exact(usable);
             // Mechanism 2 (task #51): pool-drain-and-retry on OS-reservation
             // failure — see the numa-aware arm above for the rationale (the pool
             // is a reclaimable soft reserve, not a hard pin).
             #[cfg(feature = "alloc-decommit")]
             if seg.is_none() && self.pooled_count > 0 {
                 self.drain_small_pool();
-                seg = Segment::reserve(usable);
+                #[cfg(not(feature = "exact-span-large"))]
+                {
+                    seg = Segment::reserve(usable);
+                }
+                #[cfg(feature = "exact-span-large")]
+                {
+                    seg = Segment::reserve_exact(usable);
+                }
             }
             let segment = match seg {
                 Some(s) => s,

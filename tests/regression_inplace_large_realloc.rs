@@ -28,6 +28,24 @@
 //! - `shrink_large_does_not_pin`: without OPT-G this test passes identically
 //!   (shrink always takes the slow path). It guards against the optimisation
 //!   accidentally capturing shrinks.
+//!
+//! ## R12-3 (`exact-span-large`) interaction
+//!
+//! `grow_within_span_returns_same_ptr` and `dealloc_after_inplace_grow_then_reuse`
+//! grow 2 MiB -> 3 MiB and rely on OPT-G firing — under the DEFAULT
+//! (`n_segments * SEGMENT`-rounded) large path a 2 MiB alloc's `span_usable`
+//! is always >= one whole 4 MiB SEGMENT, so 3 MiB "fits easily" as the
+//! original comments say. Under the EXPERIMENTAL `exact-span-large` feature
+//! (opt-in, not part of `production`) the physical `span_usable` is instead
+//! `round_up(header + size, PAGE)` — for a 2 MiB request that leaves at most
+//! one page of slack above 2 MiB, nowhere near the 1 MiB of extra room a 3
+//! MiB grow needs, so OPT-G correctly declines and the slow (alloc+copy+free)
+//! path relocates the pointer instead. This is the documented, intentional
+//! trade-off of `exact-span-large` (see its `Cargo.toml` feature doc and the
+//! proposed R12-4 follow-up), NOT a regression — so the pointer-IDENTITY
+//! assertion in those two tests is gated to the default configuration, while
+//! data-preservation (the property that actually matters) is still checked
+//! unconditionally in both.
 
 #![cfg(feature = "alloc-core")]
 
@@ -56,11 +74,15 @@ fn grow_within_span_returns_same_ptr() {
         }
     }
 
-    // Grow to 3 MiB — still well within a single 4 MiB segment.
+    // Grow to 3 MiB — well within a single 4 MiB segment under the DEFAULT
+    // (SEGMENT-rounded) large path. Under `exact-span-large` a 2 MiB alloc's
+    // physical span_usable is only page-rounded above 2 MiB, so 3 MiB does
+    // NOT fit and OPT-G correctly declines — see the file-level doc comment.
     let new_size = 3 * 1024 * 1024;
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
     let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
+    #[cfg(not(feature = "exact-span-large"))]
     assert_eq!(
         ptr, new_ptr,
         "in-place Large grow must return the SAME pointer"
@@ -177,11 +199,13 @@ fn dealloc_after_inplace_grow_then_reuse() {
     let ptr = ac.alloc(old_layout);
     assert!(!ptr.is_null());
 
-    // In-place grow (still well within one 4 MiB segment).
+    // Grow (in-place under the default SEGMENT-rounded path; relocates under
+    // `exact-span-large` — see the file-level doc comment).
     let new_size = 3 * 1024 * 1024;
     // SAFETY (R6-MS-1/2): honoring the `unsafe fn` contract — the pointer is a live allocation made with the matching old_layout, freed exactly once; the old pointer is consumed on a non-null return.
     let new_ptr = unsafe { ac.realloc(ptr, old_layout, new_size) };
     assert!(!new_ptr.is_null());
+    #[cfg(not(feature = "exact-span-large"))]
     assert_eq!(ptr, new_ptr, "must be in-place");
 
     // Free the grown block with the NEW layout.

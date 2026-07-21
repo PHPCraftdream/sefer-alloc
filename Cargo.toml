@@ -221,6 +221,43 @@ alloc-decommit = ["alloc-core"]
 # processes with many small-segment carve/decay cycles will pin slots and
 # eventually hit the 1024 cap. `alloc-decommit` closes this by decommitting
 # empty small segments and freeing their slot (#60). Add this feature for any long-running deployment.
+# R12-3 (P0-perf, EXPERIMENTAL A/B): size the Large/huge dedicated segment to
+# the exact page-rounded request (`round_up(header + size, OS page)`) instead
+# of rounding up to a whole number of `SEGMENT` (4 MiB) spans. Every Large
+# request today reserves+commits a MINIMUM of 4 MiB regardless of how much it
+# actually needs (a 260 KiB request pays for 4 MiB — ~15x amplification).
+#
+# The segment's ALIGNMENT stays `SEGMENT` (4 MiB) unconditionally — only the
+# physical `usable` byte count shrinks. `crates/vmem`'s `reserve_aligned(size,
+# align)` already supports `size != align` on both backends (Windows
+# `win_reserve_commit` / Unix `unix_reserve`: both over-reserve
+# `size + align`, then trim to an `align`-aligned `size`-byte span for
+# ARBITRARY `size`, not just multiples of `align`); the `try_reserve_aligned`
+# contract only requires `size` to be a non-zero multiple of `PAGE`, never a
+# multiple of `align`. `os::Segment::reserve` and the stale comment beside the
+# old `n_segments * SEGMENT` computation in `alloc_core_large.rs` describing
+# this as a hard backend requirement predate that finding — the real backend
+# constraint is page-granularity only. Because the span stays SEGMENT-aligned,
+# `segment_base_of_ptr` (which masks on `SEGMENT`) is unaffected.
+#
+# Scope: this changes ONLY the physical `usable` byte count computed in
+# `AllocCore::alloc_large`/`alloc_large_slow`. The large-cache policy
+# (best-fit size-factor matching, `span_usable` bookkeeping, owner stamping,
+# cross-thread routing, the OPT-G in-place-grow fast path) is untouched — it
+# already treats `usable`/`span_usable` as an opaque byte count, not a
+# SEGMENT-multiple, so it works unchanged with a smaller `usable`. The
+# trade-off: OPT-G in-place `realloc` growth has less committed headroom to
+# grow into before falling back to the slow (alloc+copy+free) path — see
+# R12-4 for a proposed follow-up (Windows lazy-commit reserved-capacity
+# growth).
+#
+# EXPERIMENTAL: opt-in, NOT part of `production` or any other default-on
+# bundle. `--all-features` pulls it in (as it does every other opt-in feature
+# here). With this feature OFF, `alloc_large`'s `usable` computation is
+# byte-for-byte identical to before (rounds up to a whole `SEGMENT`
+# multiple) — this feature adds a new path, it does not alter the default
+# one. Additive over `alloc-core`.
+exact-span-large = ["alloc-core"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
 # `alloc-xthread`, a cross-thread free of a small block still has to land
@@ -708,6 +745,20 @@ required-features = ["alloc-global"]
 [[example]]
 name = "r11_3_promotion_probe"
 required-features = ["alloc-global"]
+
+# R12-3 (P0-perf, EXPERIMENTAL A/B): THROWAWAY measurement harness for the
+# `exact-span-large` feature. Allocates one fresh AllocCore per control size
+# (260 KiB, 512 KiB, 1 MiB, 1.75 MiB, 4 MiB) and reports the RSS/commit-charge
+# delta via `proc-memstat::snapshot()` before/after a single Large alloc +
+# full-committed-span touch, so RSS reflects every page the allocator
+# actually reserved+committed for that request (not just the requested
+# bytes). NOT a shipping artifact — pure measurement, no src/ behavior
+# implemented here (it calls the real `AllocCore::alloc`/`dealloc`).
+# Build/run baseline:    cargo run --release --example r12_3_exact_span_measure --features production
+# Build/run experimental: cargo run --release --example r12_3_exact_span_measure --features "production,exact-span-large"
+[[example]]
+name = "r12_3_exact_span_measure"
+required-features = ["alloc-core"]
 
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
