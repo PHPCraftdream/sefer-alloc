@@ -683,6 +683,19 @@ required-features = ["alloc-global"]
 name = "paired_ab_large_cache_on"
 required-features = ["alloc-global"]
 
+# R11-3 (task #246): THROWAWAY design-stage measurement harness for the
+# realloc-aware Small->Large promotion idea (docs/perf/
+# R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md). NOT a shipping artifact —
+# does not touch src/, only calls the public GlobalAlloc surface with
+# `medium-classes` enabled to compare "today's ladder-walk realloc move-leg"
+# against "divert to Large once size crosses a candidate threshold", entirely
+# from the example call site (see the file's module doc for why this gets
+# honest numbers without modifying `HeapCore::realloc`/`AllocCore` at all).
+# Build: cargo build --release --example r11_3_promotion_probe --features "production,medium-classes,alloc-stats"
+[[example]]
+name = "r11_3_promotion_probe"
+required-features = ["alloc-global"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
