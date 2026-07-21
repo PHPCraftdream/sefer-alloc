@@ -2309,6 +2309,276 @@ the Round 9 completion checkpoint
 (`docs/checkpoints/2026-07-20-r9-complete.md`); no `src/`, test, or
 `Cargo.toml` change.
 
+### Round 10 — external-review follow-up: correctness fixes, honest gate corrections, batch API reversal (R10-1..R10-7)
+
+Round 10 — 8 commits (`b2ef79e`..`9611a56`, inclusive of both ends),
+2026-07-21 (a single day) — the external-review follow-up queue against
+the Round 9 HEAD. The round's defining trait is that it is **unusually
+self-correcting**: four of its eight entries revisit and revise a claim
+an earlier round made, in every direction — downward (R10-2 builds the
+wall-clock gate R9-3 deferred and flips R9-3's ambiguous "overruled by
+IAI" wall-clock to a decisive NO-GO), upward (R10-7 builds the warm-batch
+arm R9-9 only inferred and reverses R9-9's CONDITIONAL-NO-GO to a GO),
+and as a magnitude correction that keeps the direction but fixes the
+number (R10-5 corrects R9-4's ~1,500× "consolation prize" to the real
+~2.3×); R10-4 adds a fourth, stranger shape — a CONDITIONAL-GO whose own
+design identifies a strictly superior alternative and so declines to
+ship. As in Round 9, this is **mostly measurement / design / docs work,
+not production hot-path changes**: of the eight commits, only three
+touch production-compiled source for real (R10-1's diagnostic gating,
+R10-3's correctness fix, R10-7's new experimental surface), and only
+R10-3 carries an observable behavior shift; the rest are perf reports
+(R10-2, R10-5, R10-6), a design-only doc (R10-4), or a README + unsafe-
+inventory sync (`6a11c61`). That the round spends four of its eight
+entries correcting itself — building the gate a prior round deferred,
+measuring the arm a prior round only inferred, correcting the baseline a
+prior round mis-framed — is treated below as the round's central result
+and a feature of this project's methodology, not a list of embarrassments
+to downplay.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** As in Round 9, the production bundle's feature set
+is unchanged this round: no feature is added to or removed from
+`production`. Three commits reach production-compiled source, with
+sharply different blast radii:
+
+- **R10-1 (`b2ef79e`)** — diagnostic-counter gating. The
+  `LARGE_ZERO_PASS_CALLS` static and `dbg_large_zero_pass_count()`
+  accessor stay always-compiled (matching `WASTED_DIRTY_DRAINS` /
+  `FOREIGN_OR_UNROUTABLE_FREES`), but both increment sites move behind
+  `alloc-stats`. **Zero observable behavior change** on any build:
+  production (alloc-stats off) loses the two counter bumps from the
+  zeroed-allocation path and reads `0` from the accessor, exactly as the
+  sibling counters do; the byte-content zero-fill guard (the
+  load-bearing information-disclosure assertion) stays unconditional.
+- **R10-3 (`abaad9c`)** — directory correctness fix (see below). The one
+  real behavior shift in the round, and it is **beneficial**: the
+  `changed_classes` bit is now set only when a block was genuinely
+  reclaimed into the `BinTable`, eliminating spurious directory-syncs for
+  classes whose ring entries were all rejected. The
+  `reclaim_offset`/`reclaim_offset_checked` return value is also
+  corrected (was "did decommit fire?", now "was the block reclaimed?").
+- **R10-7 (`9611a56`)** — adds `HeapCore::alloc_batch` /
+  `SeferAlloc::alloc_batch` / `dealloc_batch`, all `#[doc(hidden)]`
+  experimental surface, **not wired into `GlobalAlloc`**; the production
+  alloc/dealloc path is unchanged and the new code is only reachable via
+  the opt-in experimental API.
+- **Everything else is measurement/design/docs:** R10-2 / R10-5 / R10-6
+  are `docs/perf/*.md` + probe binaries/benches only (no production
+  `src/`); R10-4 is a `docs/perf/*.md` design doc only; `6a11c61` is
+  README + a stale line-ref sync.
+
+**R10-1 (`b2ef79e`) — gate `LARGE_ZERO_PASS_CALLS` increments under
+`alloc-stats` (hygiene).** Pure hygiene fix against the diagnostic
+counter R9-1 introduced. R9-1 bumped `LARGE_ZERO_PASS_CALLS`
+unconditionally at both zero-pass call sites (`AllocCore::alloc_zeroed`,
+`HeapCore::alloc_zeroed`); this matches the convention the rest of the
+directory/drain diagnostic family already follows: the static and the
+`dbg_large_zero_pass_count()` accessor stay always-compiled so the read
+surface is stable across feature sets (reading `0` when no increment was
+compiled in), while the increments themselves move behind `alloc-stats`
+so the zeroed-allocation path carries no bookkeeping unless the caller
+opts in. `tests/alloc_zeroed_fresh_large_skip.rs`'s counter-delta
+assertions are gated the same way; the byte-content zero-fill checks (the
+load-bearing information-disclosure guard) stay unconditional. **Zero
+behavior change** on any build without `alloc-stats`.
+
+**R10-3 (`abaad9c`) — gate `changed_classes` on actual reclaim success
+(correctness fix).** Found while fixing the R9-6 `WASTED_DIRTY_DRAINS`
+metric, and the root cause ran deeper than the metric itself. A rejected
+cross-thread ring entry (double-free guard, in-magazine duplicate, stale
+generation, garbled offset) never mutated the segment's `BinTable`, but
+`drain_dirty_segments`'s `changed_classes` bitmap set the class bit
+unconditionally anyway — under-counting `WASTED_DIRTY_DRAINS` (a drain
+that rejected every entry of the sought class still looked "not wasted")
+and triggering a spurious directory-sync for an unchanged class. The
+deeper bug: `reclaim_offset` and `reclaim_offset_checked` returned
+`dec_live_and_maybe_decommit`'s result (true = decommit fired), **not**
+whether the block was actually reclaimed — under `not(alloc-decommit)`
+this was always `false`, making the return value useless as a
+reclaim-success signal. Restructured both functions to return true iff
+the block was linked into the `BinTable`; `dec_live_and_maybe_decommit`
+is now called separately at each of the 6 call sites (3 in
+`alloc_core_small.rs`, the `dbg_drain_all_rings_impl` test hook, and the
+2 `HeapOverflow` drain sites in `heap_core_xthread.rs`) after a
+successful reclaim. `changed_classes` is now gated on this corrected
+reclaimed signal everywhere it is accumulated. New counterfactual test
+(`tests/r10_3_rejected_entry_changed_classes.rs`) drives a genuine
+cross-thread double-free through the production alloc path and proves
+the fix red-before/green-after; R9-6's judge was re-measured post-fix and
+is unchanged for that workload (it has no rejected entries), narrowing
+but not eliminating its "lower bound" caveat (down to only the
+empty-ring-visit exclusion).
+
+**R10-2 (`c8d53af`) — native A/B/B/A wall-clock gate for
+`medium-classes`, verdict NO-GO on realloc (corrects R9-3's ambiguity).**
+Builds the methodologically clean process-level judge the external review
+asked for after R9-3's single noisy criterion run (`+37…+56%` uniform
+across ALL sizes including 16 B, overruled by IAI) proved neither
+acceptable as a regression nor dismissable as noise. Two probe binaries
+(`paired_ab_medium_{off,on}`), byte-identical source differing only in
+the `production` vs `production,medium-classes` Cargo feature set, driven
+through `scripts/r10_2_medium_gate.mjs` — 20 A/B/B/A blocks × 3
+independently-timed phases (alloc/free/realloc) × 4 launches = **240
+fresh process launches**, reusing `scripts/paired-ab-runner.mjs`'s A/B/B/A
++ paired-t-test + sign-test machinery. Results (all statistically
+unambiguous, t / sign): **alloc ~31× faster** (t=55.8, 20/20), **free
+~211× faster** (t=88.3, 20/20), but **realloc ~2,111× slower** (t=-53.6,
+20/20) — the baseline's Large path grows in-place within its dedicated
+4 MiB span at near-zero cost, while `medium-classes`' dense packing
+forces a move-leg (alloc + memcpy + dealloc) on every cross-class
+realloc-grow. This is the wall-clock confirmation of R9-3's `+173.9%` Ir
+finding on `realloc_grow`, now decisive instead of ambiguous. The realloc
+kill-gate (>20% regression) fires and, per the task's explicit design, is
+**not** overruled by the alloc/free wins the way R9-3's noisy run was
+overruled by IAI. **Verdict: NO-GO on promoting `medium-classes` into
+`production` as-is** (stays opt-in); ships a break-even analysis (~205
+reallocs per alloc/free cycle) and three mitigation directions (in-place
+medium-class grow, growth headroom, or a documented realloc-light
+deployment profile). This is a measured resolution of the ambiguity R9-3
+left open, not a contradiction of R9-3's measurements. Independently
+re-verified at `--quick` (4 pairs, t=-36.8, 4/4). Full method, raw
+numbers, and the break-even table in
+[`docs/perf/R10_2_MEDIUM_CLASSES_NATIVE_GATE.md`](docs/perf/R10_2_MEDIUM_CLASSES_NATIVE_GATE.md).
+
+**R10-4 (`fed3d45`) — run-origin oracle design for wide-class alignment,
+verdict CONDITIONAL-GO but a strictly superior alternative exists
+(DESIGN-ONLY).** Design-only deliverable (the mandatory design-review
+gate for correctness-sensitive changes to the cross-thread reclaim path).
+Answers whether `carve_block`'s `align_up(bump, block_size)` can be
+relaxed to `align_up(bump, class_align)` for the `medium-classes-wide`
+1.25/1.5/1.75 MiB classes, recovering R9-4's measured 2/1/1 density to
+the theoretical 3/2/2 — and what breaks: the reclaim guard's "offset is a
+multiple of `block_size`" defence-in-depth invariant. Full inventory of
+**19 `block_size`-multiple assumption sites** (11 unaffected, 4 need a
+new guard, 4 are comment/logic updates). Two concrete oracle designs,
+both proven at-least-as-safe as the current check: **Oracle A**
+(per-segment carved-starts bitmap, strictly stronger, +32 KiB/segment)
+and **Oracle B** (per-class run-origin array reusing the already-reserved
+second `BinTable` slot, zero new metadata, equivalent containment).
+Reclaim-path overhead estimated at +1–3 cycles for wide classes only,
+negligible against the ~100-cycle reclaim path. **Verdict:
+CONDITIONAL-GO** — technically sound, but the design itself identifies
+the page-run layer (R8-9/R9-4's alternative direction) as **strictly
+superior**: 3–6× more density (11/9/8 vs 3/2/2) with zero guard breakage
+and zero new metadata. Stage 2 (prototype) is **deliberately not
+started**; it needs explicit human/roadmap sign-off given the correctness
+surface and the identified better alternative — a genuine product
+decision, not one this session makes unilaterally. Full inventory and
+both designs in
+[`docs/perf/R10_4_RUN_ORIGIN_ORACLE_DESIGN.md`](docs/perf/R10_4_RUN_ORIGIN_ORACLE_DESIGN.md).
+
+**R10-5 (`fdd360d`) — warm-vs-warm Large-cache-hit gate for 1.5/1.75 MiB
+(magnitude correction of R9-4).** Corrects a ~600×-inflated claim from
+R9-4. R9-4 framed the 1.5/1.75 MiB classes' density-1× recycle speed as a
+"consolation prize" (~90 µs Large recycle → ~60 ns freelist push/pop),
+but that ~90 µs was measured against a Large-cache **miss** (full
+`VirtualFree`+`VirtualAlloc`), not a **hit** — and `production` keeps the
+Large cache active (`OPT-E`, `LARGE_CACHE_SLOTS=8`), which recycles a
+warm span via cheap in-process bookkeeping with no syscall. This gate
+builds the fair warm-vs-warm comparison: two probe binaries differing
+only in Cargo features, working set (`WS_LEN=6`) kept below
+`LARGE_CACHE_SLOTS` so the baseline's steady-state allocs provably hit
+the warm cache — **proven**, not assumed, via a `large_cache_hits`
+diagnostic counter emitted and checked (18012 = `WS_LEN × (ROUNDS +
+WARMUP_ROUNDS − 1)`, zero variance across all 40 baseline launches) —
+then a 20-pair A/B/B/A wall-clock comparison per size. **Result: the
+small path is still faster, but by ~2.3× (76–80 ns → 31–34 ns per
+recycle, t=14.7–17.3, sign 20/20), not R9-4's ~1,500×.** R9-4's direction
+was right; its magnitude was inflated ~600× by comparing against the
+wrong baseline. Recommendation: keep 1.5/1.75 MiB in `medium-classes-wide`
+(they still earn a real, statistically unambiguous win on the recycle
+axis) and correct R9-4 §2.4's baseline framing to cite the warm-hit
+number, not the cache-miss number. Full method, the cache-hit proof gate,
+and the corrected numbers in
+[`docs/perf/R10_5_LARGE_CACHE_HIT_GATE.md`](docs/perf/R10_5_LARGE_CACHE_HIT_GATE.md).
+
+**R10-6 (`cab6573`) — NUMA-aware segment-directory scan cliff, measured
+140×, verdict CONDITIONAL-GO (measurement + design, no prototype).**
+Measures the O(S) segment-scan cliff that R7/R8's directory work
+eliminated for non-NUMA, but which is **still fully present** under
+`--features numa-aware` — the directory-driven lookup is compiled out
+there, falling back to the two-pass local-first/foreign-fallback linear
+scan. Re-ran the existing R7-A0 `segment_directory_sweep` bench under
+three matched feature configs on this host (NUMA scan-only vs non-NUMA
+directory-ON vs non-NUMA directory-OFF) so ratios cancel host-load drift.
+**Measured cliff: 524 ns / 12.8 µs / 69.6 µs at S=64/256/1023 under
+`numa-aware`, vs 59 / 160 / 497 ns directory-accelerated — 140× at
+S=1023, the same order of magnitude R7 eliminated for non-NUMA.**
+Single-node test-host caveat documented explicitly: the measurement is a
+**lower bound** (the foreign-fallback pass would only make it worse on
+real multi-node hardware). Secondary finding: a fixed ~293 ns
+`current_node()` syscall overhead per scan, separate from the directory
+cliff, flagged as a cheaper orthogonal fix to evaluate first. Stage 2
+(design) ran since the cliff proved significant: two node-aware directory
+approaches, recommending Approach A (node-indexed bitmap
+`class_nonempty_by_node`, ~49 KiB for `MAX_NODES=8`) over Approach B
+(global directory + per-node membership filter, ~7 KiB but more complex
+query logic); verified as a **strict extension** of R8-1/R8-2/R9-8's
+incremental-sync, authoritative-miss, and drift-recovery machinery — does
+not reopen any of it. **Verdict: CONDITIONAL-GO, no prototype this
+session.** `numa-aware` is opt-in and lower priority than the
+just-completed `medium-classes` workstream; recommends waiting for a real
+multi-node user request or a `numa-aware` production-promotion decision.
+Measurement-only: no `src/`, `Cargo.toml`, or `tests/` files touched.
+Full method, raw bench logs, and the design in
+[`docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md`](docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md).
+
+**`6a11c61` — doc-only: bench-table sync + tier-2 unsafe count 33→35.**
+Bundles two independent pending doc fixes, both benign: (1) the README
+bench tables (churn+write, churn non-writing, cold-direct) and "Honest
+verdict" bullets synced to a fresh `npm run bench:table` pass from
+earlier this session, alongside a stale line-reference fix in
+`scripts/bench-table.mjs` (`benches/global_alloc.rs:460-469` →
+`:628-637`, the Churn+teardown diagnostic's real doc-comment location);
+(2) the self-verifying unsafe-inventory line updated 17 tier-1 + 33
+tier-2 → **35 tier-2** for R10-7's two new item-scoped unsafe sites
+(`bump_gen` call sites in the new `HeapCore::alloc_batch`), matching the
+DOCS-SYNC precedent. Verified: the canonical
+`grep -rnE '^\s*#!?\[allow(unsafe_code)\]' src/ crates/` returns exactly
+52 (17 + 35).
+
+**R10-7 (`9611a56`) — tcache-aware batch primitive, verdict GO (reverses
+R9-9's CONDITIONAL-NO-GO).** Refutes R9-9's CONDITIONAL-NO-GO, which was
+based on an **untested inference** ("even warmed, batch would still be
+slower than or comparable to" the real SeferAlloc scalar path) — R9-9
+never built a warm-batch arm to check. This task builds it.
+
+- **Part 1 (benches-only):** added two arms to
+  `bench_batch_ceiling_followup` on a persistent warm `AllocCore` —
+  `batch_core_warm` and a same-substrate `scalar_core_warm` diagnostic.
+  Verified `refill_class_bump` drains the warm freelist first (same
+  substrate `alloc_small` pops), so a warmed `AllocCore` is genuinely
+  warm for the batch primitive — no forwarder needed. **Result:
+  warm-batch beats the warm SeferAlloc scalar path by 1.3–3.3× at every
+  (size, N) from n=8 to n=1024**, and the pure batch-mechanism win on one
+  substrate is 1.5–2.2×. R9-9's inferred sign was wrong at every data
+  point.
+- **Part 2 (real code, justified by Part 1's numbers):** implemented the
+  design a real batch API would ship — `HeapCore::alloc_batch` drains the
+  warm per-thread magazine first, batch-refills only the remainder via
+  `AllocCore::refill_class_bump_checked` (no block ever parked in the
+  magazine); `SeferAlloc::alloc_batch` / `dealloc_batch` wrappers, all
+  `#[doc(hidden)]` experimental surface (not committed public API,
+  matching R8-7's `refill_class_bump` / `flush_class` precedent). 7
+  correctness tests in `tests/batch_tcache.rs` (aliasing, cross-compat
+  with scalar dealloc, warm steady-state cycles, null-skip, mixed size
+  classes, N > `TCACHE_CAP`). **Measured: beats the real production
+  scalar path by 1.1–1.6×, though 1.1–2.2× slower than the
+  AllocCore-direct ceiling** (the magazine's per-block bitmap
+  bookkeeping and `dealloc_batch`'s un-batched free loop are the
+  honestly-documented cost of the realistic path).
+
+**Verdict: GO for the mechanism and the experimental primitive.** The
+project's no-committed-public-surface stance is unchanged — promotion
+still needs a real consumer and a batch-optimized `dealloc`. This is a
+measured reversal of R9-9, not a contradiction of R9-9's data: R9-9
+measured a cold-batch / cold-scalar ceiling correctly, but inferred
+(without measuring) the warm case; R10-7 measures the warm case and the
+inference was wrong. Full method, the warm-arm grid, and the per-(size,
+N) numbers in
+[`docs/perf/R10_7_BATCH_WARM_ARM.md`](docs/perf/R10_7_BATCH_WARM_ARM.md).
+
 ## [0.3.0] - 2026-07-04
 
 0.3.0 is the first `0.3.x` release (the current crates.io live version is
