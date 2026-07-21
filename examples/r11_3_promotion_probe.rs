@@ -187,7 +187,10 @@ fn diverted_growth(threshold_kib: usize) -> (*mut u8, usize, u64, u64) {
             if new_size > real_size {
                 let before = p;
                 p = realloc_one(p, real_size, new_size);
-                debug_assert_eq!(p, before, "post-promotion grow must hit OPT-G in-place (no move)");
+                debug_assert_eq!(
+                    p, before,
+                    "post-promotion grow must hit OPT-G in-place (no move)"
+                );
                 real_size = new_size;
             }
         } else {
@@ -289,9 +292,15 @@ fn run_arm(threshold_kib: usize, diverted: bool, label: &str) {
     let ops = (ROUNDS * WS_LEN) as u64;
     println!("RESULT arm={label} threshold_kib={threshold_kib}");
     println!("RESULT {label}_total_ns={total_ns}");
-    println!("RESULT {label}_ns_per_growth_seq={}", total_ns / ops as u128);
+    println!(
+        "RESULT {label}_ns_per_growth_seq={}",
+        total_ns / ops as u128
+    );
     println!("RESULT {label}_move_legs_total={total_move_legs}");
-    println!("RESULT {label}_move_legs_per_seq={:.3}", total_move_legs as f64 / ops as f64);
+    println!(
+        "RESULT {label}_move_legs_per_seq={:.3}",
+        total_move_legs as f64 / ops as f64
+    );
     println!("RESULT {label}_bytes_copied_total={total_bytes_copied}");
     println!(
         "RESULT {label}_bytes_copied_per_seq_kib={:.1}",

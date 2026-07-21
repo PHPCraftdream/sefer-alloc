@@ -47,6 +47,7 @@ pub mod bootstrap;
 #[doc(hidden)]
 pub mod heap_core;
 mod heap_core_alloc;
+mod heap_core_dealloc_batch;
 mod heap_core_diag;
 mod heap_core_free;
 mod heap_core_ownership;

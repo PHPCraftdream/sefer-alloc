@@ -426,13 +426,14 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
 | [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
 | [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 4 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` / `alloc_batch` (hardened path) |
+| [`src/registry/heap_core_dealloc_batch.rs`](src/registry/heap_core_dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
 | [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 1 | `dbg_push_to_ring` — `unsafe fn` boundary (delegation to the unsafe producer) |
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 5 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **17** tier-1 module-level seams (10 in
-`src/`, 7 in `crates/`) plus **35** tier-2 item-scoped allows across **14**
+`src/`, 7 in `crates/`) plus **42** tier-2 item-scoped allows across **15**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

@@ -479,18 +479,16 @@ impl SeferAlloc {
         }
     }
 
-    /// R10-7 (Part 2) — **batch deallocation** wrapper. Same `batch-api`
-    /// feature boundary as [`alloc_batch`] (see that method's API-boundary
-    /// doc section). Resolves the per-thread heap ONCE, then frees every
-    /// non-null block in `blocks` through that heap's full dealloc path (which
-    /// does its own ownership routing + double-free oracles per block). Null
-    /// entries are skipped (matching the per-block contract).
-    ///
-    /// The dealloc side does NOT re-batch the magazine push/overflow-flush (that
-    /// re-implementation would duplicate the delicate M2 double-free oracles);
-    /// it amortises only the TLS lookup + classification that the scalar path
-    /// pays N times. The measured win is dominated by [`alloc_batch`]'s
-    /// magazine-drain + batch-refill (see `docs/perf/R10_7_BATCH_WARM_ARM.md`).
+    /// R10-7 (Part 2); batched by R11-4 — **batch deallocation** wrapper.
+    /// Same `batch-api` feature boundary as [`alloc_batch`] (see that
+    /// method's API-boundary doc section). Resolves the per-thread heap
+    /// ONCE, then delegates to [`HeapCore::dealloc_batch`], which partitions
+    /// `blocks` into a this-heap-owned Small-classified fast subset (batched
+    /// magazine-fill + `flush_class` overflow — see that method's doc
+    /// comment for the full mechanism and the stated magazine-warmth
+    /// trade-off) and a scalar fallback for everything else (foreign,
+    /// cross-thread-owned, Large-classified, null). Null entries are always
+    /// skipped (matching the per-block contract).
     ///
     /// # Safety
     /// Same contract as [`GlobalAlloc::dealloc`]: every non-null `blocks[i]`
@@ -504,28 +502,15 @@ impl SeferAlloc {
     pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
         match self.current_heap() {
             CurrentHeap::Fallback => {
-                let _ = fallback::with_heap(|h| {
-                    for &p in blocks {
-                        if !p.is_null() {
-                            // SAFETY: caller upholds the dealloc contract for `p`.
-                            unsafe { h.dealloc(p, layout) };
-                        }
-                    }
-                });
+                // SAFETY: caller upholds the dealloc-batch contract for
+                // every non-null entry of `blocks`.
+                let _ = fallback::with_heap(|h| unsafe { h.dealloc_batch(layout, blocks) });
             }
             // SAFETY: `heap` is non-null and points to a live `HeapCore` owned
-            // by THIS thread (single-writer invariant); each non-null `p` is a
-            // valid live block per the caller's contract, and `HeapCore::dealloc`
-            // performs its own ownership routing per block (so a foreign block
-            // in the batch is routed cross-thread, never written via this heap's
-            // private free lists).
-            CurrentHeap::Own(heap) => {
-                for &p in blocks {
-                    if !p.is_null() {
-                        unsafe { (*heap).dealloc(p, layout) };
-                    }
-                }
-            }
+            // by THIS thread (single-writer invariant); `HeapCore::dealloc_batch`
+            // upholds the same per-block contract as scalar `dealloc` for every
+            // entry it does not route through its batched fast path.
+            CurrentHeap::Own(heap) => unsafe { (*heap).dealloc_batch(layout, blocks) },
         }
     }
 }

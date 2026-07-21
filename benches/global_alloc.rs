@@ -1604,6 +1604,63 @@ fn bench_batch_ceiling_followup(c: &mut Criterion) {
                     BatchSize::SmallInput,
                 )
             });
+
+            // ── (g) R11-4 dealloc-only isolation: scalar-loop dealloc vs the
+            //    NEW batched `dealloc_batch` fast path (magazine-first-fill +
+            //    `flush_class`-overflow, `src/registry/
+            //    heap_core_dealloc_batch.rs`), on the SAME warm `SeferAlloc`
+            //    heap arm (f) uses. Arm (f) above conflates alloc_batch AND
+            //    dealloc_batch in one timed region, so it cannot isolate
+            //    dealloc_batch's own before/after — these two arms measure
+            //    ONLY the dealloc side: the timed region is exactly N
+            //    `sefer.dealloc(...)` calls (g1, the "before" shape —
+            //    `dealloc_batch`'s implementation prior to this task WAS this
+            //    scalar loop, so g1 reproduces its cost exactly) vs. ONE
+            //    `sefer.dealloc_batch(...)` call (g2, "after" — the new
+            //    batched path). The untimed `iter_batched` setup pre-fills N
+            //    live blocks via `alloc_batch` each iteration, so both arms
+            //    free the identical N-block working set.
+            //    ──────────────────────────────────────────────────────────
+            #[cfg(feature = "batch-api")]
+            group.bench_function(format!("dealloc_scalar_loop/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || {
+                        let mut ptrs = vec![core::ptr::null_mut(); n];
+                        let filled = unsafe { sefer.alloc_batch(layout, &mut ptrs) };
+                        assert_eq!(filled, n, "dealloc_scalar_loop setup under-filled (n={n})");
+                        ptrs
+                    },
+                    |ptrs| {
+                        black_box(&ptrs);
+                        for &p in &ptrs {
+                            // SAFETY: `p` came from the `alloc_batch` setup
+                            // above with `layout`; freed exactly once here.
+                            unsafe { sefer.dealloc(p, layout) };
+                        }
+                    },
+                    BatchSize::SmallInput,
+                )
+            });
+
+            #[cfg(feature = "batch-api")]
+            group.bench_function(format!("dealloc_batch_new/{size}B/n{n}"), |b| {
+                b.iter_batched(
+                    || {
+                        let mut ptrs = vec![core::ptr::null_mut(); n];
+                        let filled = unsafe { sefer.alloc_batch(layout, &mut ptrs) };
+                        assert_eq!(filled, n, "dealloc_batch_new setup under-filled (n={n})");
+                        ptrs
+                    },
+                    |ptrs| {
+                        black_box(&ptrs);
+                        // SAFETY: every entry of `ptrs` came from the
+                        // `alloc_batch` setup above with `layout`; each freed
+                        // exactly once, in this single call.
+                        unsafe { sefer.dealloc_batch(layout, &ptrs) };
+                    },
+                    BatchSize::SmallInput,
+                )
+            });
         }
     }
 
