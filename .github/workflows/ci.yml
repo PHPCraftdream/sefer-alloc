@@ -196,6 +196,98 @@ jobs:
         if: ${{ !cancelled() }}
         run: cargo test --all-features --no-fail-fast
 
+  test-feature-isolation:
+    # R13-5 (task #275, P1): CI only ever tested `production` and
+    # `--all-features` (plus the handful of single-feature entries in the
+    # jobs above) — narrow opt-in feature COMBINATIONS were never exercised
+    # together, so a bug reachable only under one specific combination could
+    # mask itself indefinitely. Round 13 confirmed the cost twice:
+    #   - task #284: a real lost-wakeup bug in
+    #     `class_aware_dirty_routing.rs` that NEVER ran in CI — the file
+    #     compiled to 0 tests under `--all-features` because `--all-features`
+    #     also turns on `numa-aware`, and the file's `#![cfg]` gate is
+    #     `not(feature = "numa-aware")` (the class-aware-dirty drain path is
+    #     compiled out under NUMA routing). `production + class-aware-dirty +
+    #     alloc-stats` (WITHOUT `numa-aware`) is the ONLY way to reach it.
+    #   - task #285: a compile error (E0599) in `drain_heap_overflow`
+    #     reachable only by combining `alloc-xthread`/`fastbin`/
+    #     `alloc-decommit` WITHOUT `alloc-segment-directory` — a combination
+    #     `production` never exercises (it always turns both on together) and
+    #     `--all-features` never exercises either (it always turns
+    #     `alloc-segment-directory` on).
+    # Consolidated into ONE job (matching this file's established
+    # 2026-07-12 job-count-reduction convention — see the `test-core`/
+    # `test-xthread`/etc. job header comments above): each row below is its
+    # own `cargo test`/`cargo build` step so a failure in one row's step does
+    # NOT skip later rows (`if: ${{ !cancelled() }}`), but all rows share one
+    # checkout + toolchain install.
+    name: test (feature isolation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # R12-3 EXPERIMENTAL: exact-page-rounded Large spans instead of
+      # whole-SEGMENT rounding. Additive over `alloc-core`; verified locally
+      # green together with `production`.
+      - name: test (--features "production exact-span-large")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production exact-span-large" --no-fail-fast
+      # R13-5: the critical combo that would have caught task #284's
+      # lost-wakeup bug. `class-aware-dirty` + `alloc-stats`, explicitly
+      # WITHOUT `numa-aware` (`production` does not enable `numa-aware`, so
+      # plain `production + class-aware-dirty + alloc-stats` already
+      # satisfies the `not(feature = "numa-aware")` gate on
+      # `class_aware_dirty_routing.rs` / `r9_6_class_aware_dirty_judge.rs`).
+      #
+      # `r9_6_class_aware_dirty_waste_ratio_scales_with_class_count` is
+      # skipped by name here: its own module doc (`r9_6_class_aware_dirty_judge.rs`,
+      # "R12-7 stage 2 note") documents that this exact assertion is EXPECTED
+      # to fail once `class-aware-dirty` is additionally enabled — that file
+      # measures the PRE-fix per-segment-only baseline waste ratio, and
+      # `class-aware-dirty`'s whole point is to collapse that waste back to
+      # ~0 at every N, which trivially fails the "waste grows with N"
+      # sanity assertion. The equivalent measurement WITH the feature on is
+      # `class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`,
+      # which DOES run in this step. Verified locally: green with the skip,
+      # RED (the documented expected failure, not an infra fluke) without it.
+      - name: test (--features "production class-aware-dirty alloc-stats")
+        if: ${{ !cancelled() }}
+        run: >-
+          cargo test --features "production class-aware-dirty alloc-stats" --no-fail-fast
+          -- --skip r9_6_class_aware_dirty_waste_ratio_scales_with_class_count
+      # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
+      # (task #273/#285's sibling defect). `alloc-stats` for the
+      # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
+      # `r13_3_magazine_virgin_hit_skips_zero.rs`.
+      - name: test (--features "production virgin-zero-skip alloc-stats")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production virgin-zero-skip alloc-stats" --no-fail-fast
+      # R12-11: PageMap diagnostic write sites. Additive over `alloc-core`;
+      # exercises the 4 test files whose class-mismatch oracles need the
+      # PageMap actually maintained to compare against.
+      - name: test (--features "alloc-core page-map-diag")
+        if: ${{ !cancelled() }}
+        run: >-
+          cargo test --features "alloc-core page-map-diag" --no-fail-fast
+          --test phase13_3_dealloc_layout_class
+          --test phase13_drain_reclaim_layout_class
+          --test regression_carve_batch
+          --test medium_classes_correctness
+      # R13-3/#285 follow-up finding (task #285): `alloc-xthread`, `fastbin`,
+      # `alloc-decommit` WITHOUT `alloc-segment-directory` — `production`
+      # always turns both `alloc-segment-directory` and these three on
+      # together, so this specific "xthread stack without the directory"
+      # combination was NEVER built in CI before, and is exactly the
+      # combination that hid the `drain_heap_overflow` E0599 compile error
+      # fixed by commit e7617d1 (R13-12, task #285). Build-only (per the
+      # task brief): this combination has near-zero dedicated test coverage
+      # of its own beyond what `test-xthread`'s narrower rows already run,
+      # so a compile check is the target regression gate, not a full test
+      # run.
+      - name: build (--features "alloc-global alloc-xthread fastbin alloc-decommit")
+        if: ${{ !cancelled() }}
+        run: cargo build --features "alloc-global alloc-xthread fastbin alloc-decommit"
+
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
     # ran on a Windows kernel in CI — the ALLOCATOR itself (the aligned-vmem
@@ -213,6 +305,16 @@ jobs:
       # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
       # production run above.
       - run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
+      # R13-5 (task #275): `large-reserved-capacity`'s whole benefit
+      # (deferred-commit reserved-capacity in-place `realloc` growth via
+      # `aligned_vmem::commit_range`) is documented as a "Windows-gated
+      # EFFECT" (see the feature's Cargo.toml doc comment) — the incremental
+      # `VirtualAlloc(MEM_COMMIT)` commit-range path only has real teeth on
+      # Windows (Unix/miri backends already commit the whole reservation
+      # eagerly). This feature was never run on a real Windows kernel in CI
+      # before. Requires `exact-span-large` transitively (Cargo feature
+      # dependency).
+      - run: cargo test --features "production exact-span-large large-reserved-capacity" --no-fail-fast
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -523,6 +625,19 @@ jobs:
       # #141: loom_deferred_large — A1 deferred_large push/drain Treiber-stack
       # model (the double-push guard + DEFERRED_LARGE_TAIL/ABANDONED_TAIL
       # sentinel split from `src/alloc_core/deferred_large/push.rs`/`drain.rs`).
+      #
+      # R13-5 (task #275): loom_class_aware_dirty (added R12-7 stage 2, task
+      # #258) was never wired into ANY loom job — a second forgotten loom
+      # file after task #204's original miss. The file's own `#![cfg(loom)]`
+      # gate carries no Cargo-feature predicate (it re-models the
+      # `class-aware-dirty` protocol on its own hand-rolled `loom::sync`
+      # atomics, not the real `PerClassDirty`/`RacyPtrCell` types — see its
+      # module doc), so it compiles and runs under this job's EXISTING
+      # `alloc-core alloc-xthread` feature string with no change needed to
+      # that string. Verified locally (both debug and this job's real
+      # `--release` invocation): 7 passed (3 positive R12-7 tests + the R13-1
+      # latch-pair positive tests + 2 `#[should_panic]` counterfactuals),
+      # 0 failed.
       - run: >-
           cargo test --release --features "alloc-core alloc-xthread"
           --test loom_xthread_protocol
@@ -531,6 +646,7 @@ jobs:
           --test loom_remote_ring_drain_guard
           --test loom_dirty_publish
           --test loom_dirty_multi_segment
+          --test loom_class_aware_dirty
 
   loom-experimental:
     name: loom (experimental)
