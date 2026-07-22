@@ -133,48 +133,95 @@ fn assert_directory_equals_rebuild(core: &mut AllocCore) {
 /// came from. Before the fix this ran with a live `&SegmentDirectory` from
 /// the SAME call still lexically in scope (aliasing UB); after the fix no
 /// reference survives past the per-word `read_directory_class_words` copy.
+///
+/// ## R12-14 (task #265): `p`/`p2` use the SMALLEST class, not `SMALL_MAX`
+///
+/// The original version of this test carved BOTH `p` and `p2` at
+/// `SegmentLayout::SMALL_MAX` — the same class `push_past_threshold` uses to
+/// materialise the directory. That is fine under `production`/
+/// `production,numa-aware-mock`, where `SMALL_MAX` (~253 KiB) still packs
+/// ~16 blocks into one 4 MiB segment, so the segment `push_past_threshold`
+/// left `small_cur` pointing at still has several residual free blocks from
+/// its own refill batch by the time `p` is carved and freed.
+///
+/// Under `--all-features` (`medium-classes-wide` raises `SMALL_MAX` to
+/// 1.75 MiB), a segment's PAYLOAD minus metadata overhead fits only ONE
+/// `SMALL_MAX` block — every such segment is a class-`SMALL_MAX` singleton.
+/// Freeing `p` (the sole occupant) sets the bit, but the immediately-following
+/// `core.alloc(layout)` for `p2` pops that exact freed block right back
+/// (`alloc_small`'s step-1 `pop_free(small_cur)` fast path) — `p2 == p`, the
+/// free list is empty again, and the directory bit is cleared BEFORE the
+/// scan under test ever runs, so `dbg_find_segment_with_free` correctly
+/// returns `None` and the test's own premise ("the freed block is still
+/// there to be found") never held for this feature combination — not a
+/// scanner bug, a test-density assumption that only `production`'s smaller
+/// `SMALL_MAX` satisfied.
+///
+/// Fix: use the smallest small class (a 1-byte request, resolved via
+/// `dbg_layout_class_for` rather than a hardcoded class index) for `p`/`p2`
+/// instead. A `MIN_BLOCK`-sized block packs thousands-per-segment
+/// under EVERY feature combination (including `medium-classes-wide`), so `p`
+/// and `p2` reliably land in the same segment as two genuinely DISTINCT live
+/// pointers, exactly matching the scenario's intent: `p` is freed (sets the
+/// bit), `p2` stays live and is pushed to the ring (simulating a pending
+/// cross-thread free) — independent of `SMALL_MAX`'s per-feature block
+/// density. `push_past_threshold` still uses `SMALL_MAX` (unchanged) purely
+/// to cross `DIRECTORY_MATERIALIZE_THRESHOLD` in the fewest allocations.
 #[test]
 fn directory_hit_triggers_mutation_during_scan_stays_consistent() {
     let mut core = AllocCore::new().unwrap();
 
-    // Materialise the directory.
-    let (_threshold_ptrs, class_idx) = push_past_threshold(&mut core);
+    // Materialise the directory (still via SMALL_MAX — fewest allocations to
+    // cross the threshold; unrelated to the p/p2 density concern below).
+    let (_threshold_ptrs, _threshold_class_idx) = push_past_threshold(&mut core);
     assert!(core.dbg_directory_is_materialised());
 
     let small_max = SegmentLayout::SMALL_MAX;
-    let layout = Layout::from_size_align(small_max, 1).unwrap();
+    let large_layout = Layout::from_size_align(small_max, 1).unwrap();
 
-    // Carve one more block of `class_idx` and immediately free it locally —
-    // this creates a segment with a real free block (bit SET) that the
-    // directory scan will pick up as a candidate.
-    let p = core.alloc(layout);
+    // R12-14: the smallest small class — packs many blocks per segment
+    // regardless of `medium-classes-wide` (see the doc comment above).
+    let tiny_layout = Layout::from_size_align(1, 1).unwrap();
+    let class_idx = core
+        .dbg_layout_class_for(tiny_layout)
+        .expect("a 1-byte allocation must resolve to the smallest small class");
+
+    // Carve two tiny-class blocks in a row. The bump cursor is still on the
+    // segment `push_past_threshold` left it on, which has ample room left
+    // for many MIN_BLOCK-sized blocks even after being (near-)exhausted for
+    // SMALL_MAX — so `p` and `p2` reliably land in the SAME segment as two
+    // distinct live pointers.
+    let p = core.alloc(tiny_layout);
     assert!(!p.is_null());
-    unsafe { core.dealloc(p, layout) };
+    let p2 = core.alloc(tiny_layout);
+    assert!(!p2.is_null());
+    assert_ne!(p, p2, "p and p2 must be distinct live pointers");
+    assert_eq!(
+        core.dbg_segment_id_of(p),
+        core.dbg_segment_id_of(p2),
+        "expected p and p2 (tiny class, carved back-to-back) to land in the \
+         same segment"
+    );
+
+    // Free `p` locally — this creates a segment with a real free block (bit
+    // SET) that the directory scan will pick up as a candidate. `p2` is
+    // still live, so unlike the SMALL_MAX-density case this bit stays set
+    // (the free list is not emptied by this single free).
+    unsafe { core.dealloc(p, tiny_layout) };
     assert_eq!(
         core.dbg_directory_get_bit(class_idx, core.dbg_segment_id_of(p) as usize),
         Some(true),
         "freeing the block must set the directory bit for its segment"
     );
 
-    // Now push ANOTHER cross-thread-free note for the SAME class into the
+    // Now push a cross-thread-free note for `p2` — still live — into the
     // SAME segment's ring (simulated, single-threaded). This does not touch
     // the BinTable/directory yet — only `find_segment_with_free`'s ring-drain
     // step (inside `validate_directory_candidate`) will consume it, which is
     // exactly the call that runs `sync_directory_for_segment_classes` (the
     // mutable-sidecar self-heal path) DURING candidate validation.
     //
-    // Allocate a second same-class block in the SAME segment to push to the
-    // ring (must be a live, currently-allocated pointer per
-    // `dbg_push_to_ring`'s contract).
-    let p2 = core.alloc(layout);
-    assert!(!p2.is_null());
-    assert_eq!(
-        core.dbg_segment_id_of(p),
-        core.dbg_segment_id_of(p2),
-        "expected the bump cursor to still be on the same segment for a \
-         same-class immediate re-carve"
-    );
-    // SAFETY: `p2` is a live pointer just returned by `core.alloc(layout)` of
+    // SAFETY: `p2` is a live pointer from `core.alloc(tiny_layout)` above, of
     // the same layout/class, not touched again until the drain below
     // consumes this note (per `dbg_push_to_ring`'s contract).
     let pushed = unsafe { core.dbg_push_to_ring(p2, class_idx) };
@@ -217,6 +264,6 @@ fn directory_hit_triggers_mutation_during_scan_stays_consistent() {
     // load-bearing for the assertion above, but keeps the test tidy under
     // the allocator's own bookkeeping).
     for ptr in _threshold_ptrs {
-        unsafe { core.dealloc(ptr, layout) };
+        unsafe { core.dealloc(ptr, large_layout) };
     }
 }

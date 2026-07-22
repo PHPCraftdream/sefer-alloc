@@ -175,6 +175,38 @@ fn directory_returns_local_not_foreign_for_high_node_ids() {
 /// corrupting another node's bucket. This confirms the R10-6 degradation
 /// path R12-2 preserves is still reachable — just now gated on genuine
 /// fan-out (distinct-node count) instead of the raw node id value.
+///
+/// ## R12-14 (task #265): per-node allocation count derived from capacity
+///
+/// This test originally used a hardcoded `300` allocations per node (9 × 300
+/// = 2700 total), matching `segment_directory_numa.rs`'s established count.
+/// That is safe under `production`/`production,numa-aware-mock`, where
+/// `SMALL_MAX` (~253 KiB) still packs several blocks per 4 MiB segment, so
+/// 2700 allocations consume well under `MAX_SEGMENTS` (1024) live segments.
+///
+/// Under `--all-features` (`medium-classes-wide` raises `SMALL_MAX` to
+/// 1.75 MiB), the class this test deliberately picks FOR its low block
+/// density (`small_max_layout`'s doc comment: "largest small block, fewest
+/// blocks per segment") degrades all the way to exactly ONE block per
+/// segment (4 MiB segment payload minus metadata fits only one ~1.75 MiB
+/// block). At that density 2700 allocations need ~2700 live segments —
+/// 2.6× `MAX_SEGMENTS` — so the table fills and `core.alloc` legitimately
+/// returns null well before the 9th node finishes (the observed
+/// `assertion failed: !p.is_null()` panic). Not a directory bug: the test's
+/// own fixed-300 budget was tuned for one feature combination's block
+/// density and silently overflowed under a sparser one.
+///
+/// Fix: MEASURE the actual `SMALL_MAX` blocks-per-segment density up front
+/// (a handful of probe allocations on the bootstrap node, cleaned up before
+/// the real per-node loop below) and derive the per-node count from it, so
+/// `nodes.len() * per_node_count` segments (worst realistic case: exactly
+/// `per_node_count / measured_density` per node) never exceeds
+/// [`AllocCore::dbg_max_segments`]. Capped at the original 300 so denser
+/// feature combinations (`production`, where the measured density is high)
+/// keep the EXACT allocation count this test was originally tuned with —
+/// only the sparse-density case (`medium-classes-wide`) actually shrinks the
+/// count, preserving "several segments per node" + "comfortably crosses the
+/// 32-segment materialisation threshold" in every configuration.
 #[test]
 fn ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption() {
     let layout = small_max_layout();
@@ -187,6 +219,39 @@ fn ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption() {
     script_node(nodes[0]);
     let mut core = AllocCore::new().expect("bootstrap");
 
+    // R12-14: measure SMALL_MAX blocks-per-segment density with a small
+    // probe batch (distinct segment count / allocation count), then derive
+    // a per-node allocation count that keeps the WORST-CASE total segment
+    // demand (`nodes.len() * per_node_count / density`) safely under
+    // `MAX_SEGMENTS`, while never exceeding the original 300 per node.
+    const PROBE_COUNT: usize = 8;
+    let mut probe_ptrs = Vec::with_capacity(PROBE_COUNT);
+    let mut probe_segments = std::collections::HashSet::new();
+    for _ in 0..PROBE_COUNT {
+        let p = core.alloc(layout);
+        assert!(!p.is_null(), "probe allocation must succeed");
+        probe_segments.insert(core.dbg_segment_id_of(p));
+        probe_ptrs.push(p);
+    }
+    // Density in blocks/segment, rounded down (>= 1 by construction: at
+    // least one segment was used for PROBE_COUNT blocks).
+    let density = PROBE_COUNT / probe_segments.len();
+    for p in probe_ptrs {
+        unsafe { core.dealloc(p, layout) };
+    }
+
+    let max_segments = AllocCore::dbg_max_segments();
+    let safety_margin = 16; // headroom for the bootstrap/primordial segment.
+    let safe_total_segments = max_segments.saturating_sub(safety_margin);
+    let per_node_count = (safe_total_segments * density / nodes.len()).min(300);
+    assert!(
+        per_node_count >= 8,
+        "per-node allocation count collapsed to {per_node_count} \
+         (max_segments={max_segments}, measured density={density} blocks/segment) \
+         — too few to reliably create several segments per node or cross the \
+         materialisation threshold; MAX_SEGMENTS shrank below what this test can work with"
+    );
+
     let mut ptrs_by_node: Vec<(u32, Vec<*mut u8>)> = Vec::new();
     for &node in &nodes {
         script_node(node);
@@ -195,10 +260,10 @@ fn ninth_distinct_high_node_overflows_to_unknown_bucket_without_corruption() {
         // Enough allocations per node (SMALL_MAX => very few blocks per
         // segment, so this reliably creates several segments per node) to
         // push the table comfortably past the materialisation threshold
-        // across all 9 nodes combined. Matches the per-node allocation
-        // count `segment_directory_numa.rs`'s existing tests use (300) to
-        // reliably cross the 32-segment threshold.
-        for _ in 0..300 {
+        // across all 9 nodes combined, WITHOUT exceeding `MAX_SEGMENTS`
+        // collectively even at the sparsest (one-block-per-segment) density
+        // (see the `per_node_count` derivation above, R12-14).
+        for _ in 0..per_node_count {
             let p = core.alloc(layout);
             assert!(!p.is_null());
             ptrs.push(p);

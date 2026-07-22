@@ -799,6 +799,23 @@ impl AllocCore {
         }
     }
 
+    /// R12-14 (task #265) TEST-ONLY: the process-wide cap on simultaneously
+    /// live segments (`segment_table::MAX_SEGMENTS`). Lets a multi-workload
+    /// test (e.g. a fixed allocation count fanned out across several NUMA
+    /// nodes) size itself so the TOTAL segment demand it generates stays
+    /// within capacity, instead of hardcoding a per-node allocation count
+    /// that was only ever measured safe under one feature combination — a
+    /// class whose per-segment block density varies sharply across the
+    /// feature matrix (e.g. `SegmentLayout::SMALL_MAX`, which is one block
+    /// per segment under `medium-classes-wide` vs. ~16 under `production`)
+    /// can silently overflow this cap when the same literal count is reused
+    /// under a denser feature combination it was never tuned for.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_max_segments() -> usize {
+        super::segment_table::MAX_SEGMENTS
+    }
+
     /// R8-2 (task #215) / R9-8 (task #230) TEST-ONLY: reset the per-instance
     /// `directory_miss_streak` counters to 0 for ALL classes. The streak is
     /// internal optimisation state (now PER-CLASS since R9-8) that
