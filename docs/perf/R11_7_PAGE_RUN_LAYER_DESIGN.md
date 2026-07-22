@@ -1,3 +1,19 @@
+> **SUPERSEDED (2026-07-22, R12-13):** re-evaluated after `exact-span-large`
+> (R12-3, `2593d30`) and `large-reserved-capacity` (R12-4, `fc155c9`) shipped.
+> Verdict: **NO-GO on implementing this design now** — R12-3 closed the
+> measured RSS/committed-bytes pain (up to 15.8x amplification down to
+> ~1.00–1.05x) this design was ultimately justified by, and the remaining
+> `SegmentTable`-slot/OS-reservation-syscall pressure this design's
+> `PageRunTable` existed to avoid has no demonstrated victim anywhere in
+> this codebase's tests/benches/examples (three of the four target classes
+> already route through the Small-class path under shipped
+> `medium-classes-wide`, not Large, since `SMALL_MAX` = 1.75 MiB). See
+> `docs/perf/R12_13_PAGE_RUN_LAYER_SUPERSEDED.md` for the full analysis.
+> This design remains valid and reusable as a starting point if a real
+> `MAX_SEGMENTS`-bound or reservation-syscall-bound many-live-medium-object
+> workload is ever measured — nothing below this notice is changed or
+> retracted.
+
 # R11-7 — Page-run layer for the 1.25–2 MiB medium-classes-wide density gap: DESIGN-ONLY (no code change)
 
 **Task:** #250 (R11-7) — design a genuinely new `SegmentKind` variant (the
