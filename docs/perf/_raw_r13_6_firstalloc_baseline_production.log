@@ -1,0 +1,102 @@
+[first-alloc] host: win32 | samples: 5
+[first-alloc] building example 'first_alloc_process' (features: production)...
+(node:10108) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 8.62s
+
+[first-alloc] sampling fresh processes...
+
+RESULT rss_before_kib=3192
+RESULT rss_after_1_heap_kib=3308
+RESULT rss_after_8_heaps_kib=4008
+RESULT rss_after_64_heaps_kib=8748
+RESULT peak_rss_kib=8752
+RESULT commit_before_kib=632
+RESULT commit_after_1_heap_kib=1532
+RESULT commit_after_8_heaps_kib=4912
+RESULT commit_after_64_heaps_kib=28980
+RESULT first_alloc_latency_ns=163300
+RESULT heaps_claimed_high_water=65
+.RESULT rss_before_kib=2876
+RESULT rss_after_1_heap_kib=2996
+RESULT rss_after_8_heaps_kib=3716
+RESULT rss_after_64_heaps_kib=8428
+RESULT peak_rss_kib=8432
+RESULT commit_before_kib=588
+RESULT commit_after_1_heap_kib=1488
+RESULT commit_after_8_heaps_kib=4888
+RESULT commit_after_64_heaps_kib=28920
+RESULT first_alloc_latency_ns=109100
+RESULT heaps_claimed_high_water=65
+.RESULT rss_before_kib=2908
+RESULT rss_after_1_heap_kib=3028
+RESULT rss_after_8_heaps_kib=3732
+RESULT rss_after_64_heaps_kib=8476
+RESULT peak_rss_kib=8480
+RESULT commit_before_kib=640
+RESULT commit_after_1_heap_kib=1540
+RESULT commit_after_8_heaps_kib=4912
+RESULT commit_after_64_heaps_kib=28976
+RESULT first_alloc_latency_ns=97700
+RESULT heaps_claimed_high_water=65
+.RESULT rss_before_kib=2896
+RESULT rss_after_1_heap_kib=3016
+RESULT rss_after_8_heaps_kib=3708
+RESULT rss_after_64_heaps_kib=8468
+RESULT peak_rss_kib=8472
+RESULT commit_before_kib=620
+RESULT commit_after_1_heap_kib=1520
+RESULT commit_after_8_heaps_kib=4880
+RESULT commit_after_64_heaps_kib=28960
+RESULT first_alloc_latency_ns=91900
+RESULT heaps_claimed_high_water=65
+.RESULT rss_before_kib=2892
+RESULT rss_after_1_heap_kib=3012
+RESULT rss_after_8_heaps_kib=3716
+RESULT rss_after_64_heaps_kib=8432
+RESULT peak_rss_kib=8436
+RESULT commit_before_kib=616
+RESULT commit_after_1_heap_kib=1516
+RESULT commit_after_8_heaps_kib=4888
+RESULT commit_after_64_heaps_kib=28916
+RESULT first_alloc_latency_ns=98200
+RESULT heaps_claimed_high_water=65
+.
+
+  metric                                   min / median / max
+  ---------------------------------------  ------------------------------------------------
+  RSS Δ  1 heap  (bootstrap first-touch)   116 KiB (0.11 MiB)  /  120 KiB (0.12 MiB)  /  120 KiB (0.12 MiB)
+  RSS Δ  8 heaps                           812 KiB (0.79 MiB)  /  824 KiB (0.80 MiB)  /  840 KiB (0.82 MiB)
+  RSS Δ 64 heaps                           5,540 KiB (5.41 MiB)  /  5,556 KiB (5.43 MiB)  /  5,572 KiB (5.44 MiB)
+  first-alloc latency                      91.900 µs  /  98.200 µs  /  163.300 µs
+
+  heaps_claimed_high_water (last run): 65
+
+  * "RSS Δ 1 heap" is the headline judge. BEFORE the RAD-1 lazy-`next_free`
+    fix it INCLUDES the ~16 MiB registry `next_free` first-touch (4096 slots ×
+    ~7488 B stride under `production` = 4096 distinct pages). AFTER the fix it
+    collapses to the primordial-segment cost only (~0.1 MiB). Measured on this
+    host: 16.11 MiB → 0.11 MiB; first-alloc latency 8.6 ms → 0.17 ms.
+
+  metric (commit charge)                   min / median / max
+  ---------------------------------------  ------------------------------------------------
+  Commit Δ  1 heap  (bootstrap)             900 KiB (0.88 MiB)  /  900 KiB (0.88 MiB)  /  900 KiB (0.88 MiB)
+  Commit Δ  8 heaps                         4,260 KiB (4.16 MiB)  /  4,272 KiB (4.17 MiB)  /  4,300 KiB (4.20 MiB)
+  Commit Δ 64 heaps                         28,300 KiB (27.64 MiB)  /  28,336 KiB (27.67 MiB)  /  28,348 KiB (27.68 MiB)
+
+  * Commit charge (Windows `PagefileUsage` / Linux `/proc/self/statm` field 0,
+    total VM size) is a SEPARATE axis from RSS, added here — it does NOT
+    replace the RSS numbers above. WHY IT EXISTS (R6-OPT-A1, radical_
+    optimization_review §4 P0-2 / §5.5 item 9 / §6 Stage A.3): on Windows,
+    `crates/vmem` commits the FULL exact size of the Registry + inline
+    `HeapOverflow` array in one `VirtualAlloc(MEM_COMMIT)` call, which is
+    largely demand-zero and therefore invisible to RSS/`WorkingSetSize` until
+    pages are actually touched — RSS alone hides this cost entirely. Expect
+    "Commit Δ 1 heap" to be ~125 MiB LARGER than "RSS Δ 1 heap" (≈29 MiB
+    registry + ≈96 MiB inline `HeapOverflow` across 4096 slots): that gap IS
+    the metric this axis exists to surface, and is the quantity the follow-up
+    task R6-OPT-P0-2 (chunked Registry + lazy HeapOverflow sidecar) is meant
+    to shrink.
+
+[first-alloc] PASS — 5 samples collected

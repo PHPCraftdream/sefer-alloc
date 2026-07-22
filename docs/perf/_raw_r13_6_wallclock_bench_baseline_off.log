@@ -1,0 +1,25 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 41.17s
+     Running benches\r13_6_exact_span_reserved_capacity_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r13_6_exact_span_reserved_capacity_wallclock-8af7f28faa842de0.exe)
+Gnuplot not found, using plotters backend
+Benchmarking r13_6_realloc_chain/grow_256kib_to_4mib
+Benchmarking r13_6_realloc_chain/grow_256kib_to_4mib: Warming up for 300.00 ms
+Benchmarking r13_6_realloc_chain/grow_256kib_to_4mib: Collecting 10 samples in estimated 1.0717 s (330 iterations)
+Benchmarking r13_6_realloc_chain/grow_256kib_to_4mib: Analyzing
+r13_6_realloc_chain/grow_256kib_to_4mib
+                        time:   [3.2137 ms 3.2527 ms 3.3016 ms]
+                        change: [-0.7707% +1.6980% +4.0814%] (p = 0.21 > 0.05)
+                        No change in performance detected.
+
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Warming up for 300.00 ms
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Collecting 10 samples in estimated 1.0000 s (240k iterations)
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Analyzing
+r13_6_large_cache_cycle/cycle_4_sizes
+                        time:   [3.9072 µs 3.9981 µs 4.1337 µs]
+                        change: [+5.3681% +10.573% +16.135%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+r13_6_large_cache_cycle: large_cache_hits=23735743 (over >= 64 allocs/sample x ~10 samples, informational only -- see docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md for the honest per-run hit-rate methodology)

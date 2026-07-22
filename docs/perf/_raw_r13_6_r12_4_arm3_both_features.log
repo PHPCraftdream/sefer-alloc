@@ -1,0 +1,11 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 4.33s
+     Running `D:\dev\rust\.cargo-target\release\examples\r12_4_reserved_capacity_measure.exe`
+=== R12-4 reserved-capacity realloc-growth-chain measurement ===
+feature exact-span-large:        ON
+feature large-reserved-capacity: ON
+chain: [256, 512, 1024, 2048, 4096] KiB
+
+move legs (relocated): 2  |  in-place legs: 2  |  copied bytes total: 2621440
+realloc chain wall-clock (best of 20): 2269000 ns
+peak RSS delta: 6708 KiB  |  peak commit-charge delta: 7056 KiB

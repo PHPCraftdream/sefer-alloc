@@ -1007,6 +1007,20 @@ required-features = ["alloc-core"]
 name = "r12_4_reserved_capacity_measure"
 required-features = ["alloc-core"]
 
+# R13-6 (task #276): THROWAWAY measurement harness — exact-count companion to
+# `benches/r13_6_exact_span_reserved_capacity_wallclock.rs`'s
+# `r13_6_large_cache_cycle` criterion group. Criterion's black-box iteration
+# count only gives an approximate lower bound on the Large-cache hit rate;
+# this harness runs a FIXED, KNOWN number of round-robin alloc+dealloc cycles
+# across 4 sub-4-MiB control sizes and reports an EXACT `hits / total_deallocs`
+# percentage. Requires `alloc-stats` for a non-zero readout (see the file's
+# module doc). NOT a shipping artifact — pure measurement.
+# Build/run: cargo run --release --example r13_6_large_cache_hit_rate_measure --features "production alloc-stats"
+#            cargo run --release --example r13_6_large_cache_hit_rate_measure --features "production alloc-stats exact-span-large large-reserved-capacity"
+[[example]]
+name = "r13_6_large_cache_hit_rate_measure"
+required-features = ["alloc-core", "alloc-decommit"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
@@ -1236,6 +1250,23 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory",
 name = "r13_3_virgin_zero_skip_wallclock"
 harness = false
 required-features = ["alloc-global", "fastbin"]
+
+# R13-6 (task #276): production A/B wall-clock gate for the
+# `exact-span-large` (R12-3) + `large-reserved-capacity` (R12-4) opt-in pair
+# (`benches/r13_6_exact_span_reserved_capacity_wallclock.rs`). Two groups:
+# `r13_6_realloc_chain` (the same 256 KiB -> 4 MiB growth chain as
+# `examples/r12_4_reserved_capacity_measure.rs`, now with a criterion
+# distribution instead of a single scalar) and `r13_6_large_cache_cycle`
+# (round-robin alloc/dealloc across 4 sub-4-MiB control sizes, reporting the
+# Large-cache hit rate — the harness for the task brief's "8-slot cache may
+# show MORE misses under exact-span-large" caveat). Requires only
+# `alloc-core` + `alloc-decommit` (the large-cache diagnostics) so the SAME
+# binary runs both WITHOUT the pair (baseline) and WITH it (treatment) for an
+# honest was/now comparison — see the bench file's module doc.
+[[bench]]
+name = "r13_6_exact_span_reserved_capacity_wallclock"
+harness = false
+required-features = ["alloc-core", "alloc-decommit"]
 
 # Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.

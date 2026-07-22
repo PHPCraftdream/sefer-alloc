@@ -1,0 +1,121 @@
+[iai] wsl: /mnt/d/dev/rust/sefer-alloc
+[iai] features: production exact-span-large large-reserved-capacity | target: /tmp/sefer-iai
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 18.39s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/perf_gate_iai.rs (/tmp/sefer-iai/release/deps/perf_gate_iai-b00f19b94fff7c69)
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                       28571|28571                (No change)
+  L1 Hits:                            51181|51174                (+0.01368%) [+1.00014x]
+  L2 Hits:                              140|143                  (-2.09790%) [-1.02143x]
+  RAM Hits:                             763|767                  (-0.52151%) [-1.00524x]
+  Total read+write:                   52084|52084                (No change)
+  Estimated Cycles:                   78586|78734                (-0.18797%) [-1.00188x]
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                       28507|28507                (No change)
+  L1 Hits:                            51119|51113                (+0.01174%) [+1.00012x]
+  L2 Hits:                              139|142                  (-2.11268%) [-1.02158x]
+  RAM Hits:                             762|765                  (-0.39216%) [-1.00394x]
+  Total read+write:                   52020|52020                (No change)
+  Estimated Cycles:                   78484|78598                (-0.14504%) [-1.00145x]
+perf_gate_iai::perf_gate::large_alloc_free_cycle
+  Instructions:                       23839|23831                (+0.03357%) [+1.00034x]
+  L1 Hits:                            45410|45401                (+0.01982%) [+1.00020x]
+  L2 Hits:                              141|144                  (-2.08333%) [-1.02128x]
+  RAM Hits:                             765|763                  (+0.26212%) [+1.00262x]
+  Total read+write:                   46316|46308                (+0.01728%) [+1.00017x]
+  Estimated Cycles:                   72890|72826                (+0.08788%) [+1.00088x]
+perf_gate_iai::perf_gate::realloc_grow
+  Instructions:                     1038281|513187               (+102.320%) [+2.02320x]
+  L1 Hits:                          2644713|1087343              (+143.227%) [+2.43227x]
+  L2 Hits:                            12176|3946                 (+208.566%) [+3.08566x]
+  RAM Hits:                           78854|70650                (+11.6122%) [+1.11612x]
+  Total read+write:                 2735743|1161939              (+135.446%) [+2.35446x]
+  Estimated Cycles:                 5465483|3579823              (+52.6747%) [+1.52675x]
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       70669|70669                (No change)
+  L1 Hits:                           102776|102773               (+0.00292%) [+1.00003x]
+  L2 Hits:                              153|152                  (+0.65789%) [+1.00658x]
+  RAM Hits:                             879|883                  (-0.45300%) [-1.00455x]
+  Total read+write:                  103808|103808               (No change)
+  Estimated Cycles:                  134306|134438               (-0.09819%) [-1.00098x]
+perf_gate_iai::perf_gate::cold_alloc_free_256x64b
+  Instructions:                       70669|70669                (No change)
+  L1 Hits:                           102591|102589               (+0.00195%) [+1.00002x]
+  L2 Hits:                              153|152                  (+0.65789%) [+1.00658x]
+  RAM Hits:                            1064|1067                 (-0.28116%) [-1.00282x]
+  Total read+write:                  103808|103808               (No change)
+  Estimated Cycles:                  140596|140694               (-0.06965%) [-1.00070x]
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      118796|118796               (No change)
+  L1 Hits:                           161577|161573               (+0.00248%) [+1.00002x]
+  L2 Hits:                               74|76                   (-2.63158%) [-1.02703x]
+  RAM Hits:                             989|991                  (-0.20182%) [-1.00202x]
+  Total read+write:                  162640|162640               (No change)
+  Estimated Cycles:                  196562|196638               (-0.03865%) [-1.00039x]
+perf_gate_iai::perf_gate::recycle_alloc_free_256x64b
+  Instructions:                      118796|118796               (No change)
+  L1 Hits:                           161381|161374               (+0.00434%) [+1.00004x]
+  L2 Hits:                               75|77                   (-2.59740%) [-1.02667x]
+  RAM Hits:                            1184|1189                 (-0.42052%) [-1.00422x]
+  Total read+write:                  162640|162640               (No change)
+  Estimated Cycles:                  203196|203374               (-0.08752%) [-1.00088x]
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                       28571|28571                (No change)
+  L1 Hits:                            51180|51174                (+0.01172%) [+1.00012x]
+  L2 Hits:                              141|143                  (-1.39860%) [-1.01418x]
+  RAM Hits:                             763|767                  (-0.52151%) [-1.00524x]
+  Total read+write:                   52084|52084                (No change)
+  Estimated Cycles:                   78590|78734                (-0.18289%) [-1.00183x]
+perf_gate_iai::perf_gate::churn_write_256b
+  Instructions:                       28827|28827                (No change)
+  L1 Hits:                            51564|51558                (+0.01164%) [+1.00012x]
+  L2 Hits:                              141|143                  (-1.39860%) [-1.01418x]
+  RAM Hits:                             763|767                  (-0.52151%) [-1.00524x]
+  Total read+write:                   52468|52468                (No change)
+  Estimated Cycles:                   78974|79118                (-0.18201%) [-1.00182x]
+perf_gate_iai::perf_gate::multiseg_cold_256k
+  Instructions:                       46242|46242                (No change)
+  L1 Hits:                            75464|75460                (+0.00530%) [+1.00005x]
+  L2 Hits:                               63|65                   (-3.07692%) [-1.03175x]
+  RAM Hits:                            1065|1067                 (-0.18744%) [-1.00188x]
+  Total read+write:                   76592|76592                (No change)
+  Estimated Cycles:                  113054|113130               (-0.06718%) [-1.00067x]
+perf_gate_iai::perf_gate::seg_cycle_decommit_256k
+  Instructions:                       82292|82292                (No change)
+  L1 Hits:                           123766|123762               (+0.00323%) [+1.00003x]
+  L2 Hits:                              117|119                  (-1.68067%) [-1.01709x]
+  RAM Hits:                            1065|1067                 (-0.18744%) [-1.00188x]
+  Total read+write:                  124948|124948               (No change)
+  Estimated Cycles:                  161626|161702               (-0.04700%) [-1.00047x]
+
+Iai-Callgrind result: Ok. 12 without regressions; 0 regressed; 12 benchmarks finished in 6.38308s
+
+  bench                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  --------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                   28,571        51,181           140           763        78,586          73.9
+  aligned_churn_640b_a128           28,507        51,119           139           762        78,484          72.9
+  large_alloc_free_cycle            23,839        45,410           141           765        72,890             -
+  realloc_grow                   1,038,281     2,644,713        12,176        78,854     5,465,483      63,402.6
+  cold_alloc_free_256x16b           70,669       102,776           153           879       134,306         182.9
+  cold_alloc_free_256x64b           70,669       102,591           153         1,064       140,596         182.9
+  recycle_alloc_free_256x16b       118,796       161,577            74           989       196,562         185.5
+  recycle_alloc_free_256x64b       118,796       161,381            75         1,184       203,196         185.5
+  churn_256b                        28,571        51,180           141           763        78,590          73.9
+  churn_write_256b                  28,827        51,564           141           763        78,974          77.9
+  multiseg_cold_256k                46,242        75,464            63         1,065       113,054         329.5
+  seg_cycle_decommit_256k           82,292       123,766           117         1,065       161,626         286.5
+
+  * Ir/op = (Ir − 23,839) / ops — marginal instruction count per
+    operation, with the one-time process bootstrap subtracted (constant taken
+    from large_alloc_free_cycle). Comparable across benches; the honest unit for
+    per-op thresholds (review finding F2). "-" = bootstrap proxy / no op-count.
+
+[iai] PASS — 12 bench(es) produced Ir

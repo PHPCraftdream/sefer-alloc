@@ -1,0 +1,14 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 9.25s
+     Running `D:\dev\rust\.cargo-target\release\examples\r12_3_exact_span_measure.exe`
+=== R12-3 exact-span-large measurement ===
+feature exact-span-large: ON
+
+      size |  rss_before_KB |   rss_after_KB |   rss_delta_KB | commit_delta_KB |   amplif_x
+    260KiB |           3008 |           3284 |            276 |            268 |       1.06
+    512KiB |           3048 |           3564 |            516 |            520 |       1.01
+      1MiB |           3048 |           4076 |           1028 |           1032 |       1.00
+   1.75MiB |           3048 |           4844 |           1796 |           1800 |       1.00
+      4MiB |           3048 |           7148 |           4100 |           4112 |       1.00
+
+amplif_x = rss_delta_bytes / requested_size_bytes (1.0x = no waste)
