@@ -41,6 +41,25 @@ impl HeapCore {
         self.last_stamped_segment
     }
 
+    /// TEST-ONLY (R12-6): the decoded `SegmentKind` of `ptr`'s segment, as a
+    /// small tag (`0` = Primordial, `1` = Small, `2` = Large, `3` = Unknown)
+    /// — thin delegation to [`AllocCore::dbg_kind_at_tag`]. Exposed at the
+    /// `HeapCore` level (mirroring `dbg_owner_id_for`/`dbg_live_count_for`'s
+    /// existing delegation pattern in this file) so a `tests/` integration
+    /// test can distinguish the PRIMORDIAL segment from an ordinary `Small`
+    /// segment without reaching into crate-internal modules — needed because
+    /// the primordial segment is never pool/release-eligible (see
+    /// `AllocCore::dec_live_and_maybe_decommit`'s own Primordial exclusion),
+    /// so a test constructing many distinct `Small` target segments must be
+    /// able to positively exclude it, not merely infer it from allocation
+    /// order.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    #[must_use]
+    pub fn dbg_kind_at_tag(&self, ptr: *mut u8) -> u8 {
+        self.core.dbg_kind_at_tag(ptr)
+    }
+
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
     /// `u16` at this test-only boundary (task #53 shrank the internal
     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's

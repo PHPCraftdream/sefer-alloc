@@ -450,17 +450,26 @@ impl HeapCore {
         // miri exactly. For native (`HEAP_OVERFLOW_CAP = 2048`), 64 gives
         // generous headroom for the realistic tail.
         //
-        // **Capacity-exceeded case (sound).** If a 65th distinct base goes
-        // empty, it is simply NOT collected — the segment stays as an
-        // ordinary registered segment (its BinTable is populated with the
-        // freed blocks, so `find_segment_with_free` will find and reuse it;
-        // it is not leaked). It is not pooled/released THIS pass, but it
-        // WILL be pooled/released on its next emptying through a normal
-        // path (own-thread dealloc or per-segment ring drain). This never
-        // (a) calls `release_or_pool_empty_segment` on a base with
-        // unprocessed entries (it simply doesn't call it), and never (b)
-        // silently drops a legitimate pending release forever (the segment
-        // is reusable and recoverable).
+        // **Capacity-exceeded case (R12-6: closed, was previously a silent
+        // gap).** If a 65th distinct base goes empty, it is simply NOT
+        // collected into `emptied_bases` — the segment stays as an ordinary
+        // registered segment (its BinTable is populated with the freed
+        // blocks, so `find_segment_with_free` will find and reuse it; it is
+        // never leaked or unreachable). Before R12-6 it was ALSO never
+        // finalized this pass except by chance on a future emptying through a
+        // normal path — leaving native's realistic tail (`HEAP_OVERFLOW_CAP =
+        // 2048` allows up to 2048 distinct bases in one drain, far past the
+        // 64-slot dedup buffer) at inflated RSS/commit and outside the
+        // pool-cap budget indefinitely, not merely "until next touched".
+        // R12-6 closes this: `emptied_overflowed` below records whether the
+        // buffer was actually exhausted, and if so a single post-drain sweep
+        // (`AllocCore::finalize_orphaned_empty_segments`) scans every
+        // registered segment for the ones the buffer had no room for and
+        // finalizes them too. This is O(registered segments) instead of O(1),
+        // but it runs ONLY on this genuinely rare tail (>64 DISTINCT bases
+        // emptied by second-chance overflow reclaims alone, in one
+        // opportunistic drain) — the common case (buffer never overflows)
+        // still pays nothing beyond the existing dedup scan.
         //
         // **Dedup.** Under correctly-functioning ring data, `dec_live_and_
         // maybe_decommit` returns `true` at most once per base per drain
@@ -492,6 +501,12 @@ impl HeapCore {
             [core::ptr::null_mut(); EMPTIED_BASES_CAP];
         #[cfg(feature = "alloc-decommit")]
         let mut emptied_count: usize = 0;
+        // R12-6: set when a distinct empty-transition is observed but the
+        // dedup buffer above is already full (the 65th+ distinct base case
+        // documented above) — signals that the rare post-drain fallback
+        // sweep is needed after this drain returns.
+        #[cfg(feature = "alloc-decommit")]
+        let mut emptied_overflowed = false;
 
         #[cfg(feature = "fastbin")]
         {
@@ -528,9 +543,19 @@ impl HeapCore {
                         if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
                             let already =
                                 emptied_bases.iter().take(emptied_count).any(|&b| b == base);
-                            if !already && emptied_count < EMPTIED_BASES_CAP {
-                                emptied_bases[emptied_count] = base;
-                                emptied_count += 1;
+                            if !already {
+                                if emptied_count < EMPTIED_BASES_CAP {
+                                    emptied_bases[emptied_count] = base;
+                                    emptied_count += 1;
+                                } else {
+                                    // R12-6: a distinct 65th+ base emptied via
+                                    // this drain's overflow-ring reclaims —
+                                    // the dedup buffer has no room left.
+                                    // Recorded here so the post-drain
+                                    // fallback sweep below picks it (and any
+                                    // sibling overflow bases) up.
+                                    emptied_overflowed = true;
+                                }
                             }
                         }
                     }
@@ -550,9 +575,19 @@ impl HeapCore {
                         if AllocCore::dec_live_and_maybe_decommit(base, small_cur) {
                             let already =
                                 emptied_bases.iter().take(emptied_count).any(|&b| b == base);
-                            if !already && emptied_count < EMPTIED_BASES_CAP {
-                                emptied_bases[emptied_count] = base;
-                                emptied_count += 1;
+                            if !already {
+                                if emptied_count < EMPTIED_BASES_CAP {
+                                    emptied_bases[emptied_count] = base;
+                                    emptied_count += 1;
+                                } else {
+                                    // R12-6: a distinct 65th+ base emptied via
+                                    // this drain's overflow-ring reclaims —
+                                    // the dedup buffer has no room left.
+                                    // Recorded here so the post-drain
+                                    // fallback sweep below picks it (and any
+                                    // sibling overflow bases) up.
+                                    emptied_overflowed = true;
+                                }
                             }
                         }
                     }
@@ -567,6 +602,18 @@ impl HeapCore {
         #[cfg(feature = "alloc-decommit")]
         for &base in emptied_bases.iter().take(emptied_count) {
             self.core.release_or_pool_empty_segment(base);
+        }
+
+        // R12-6: the dedup buffer overflowed (more than `EMPTIED_BASES_CAP`
+        // distinct bases emptied via this drain's overflow-ring reclaims
+        // alone) — run the rare post-drain fallback sweep to finalize the
+        // ones the buffer had no room for. Same "drain has fully returned"
+        // safety argument as the loop above: every overflow entry has
+        // already been reclaimed by this point, so no further reclaim can
+        // race a release/pool of any base.
+        #[cfg(feature = "alloc-decommit")]
+        if emptied_overflowed {
+            self.core.finalize_orphaned_empty_segments(small_cur);
         }
     }
 

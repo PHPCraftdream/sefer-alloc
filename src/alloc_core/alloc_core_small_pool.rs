@@ -284,6 +284,77 @@ impl AllocCore {
         self.table.recycle(base);
     }
 
+    /// R12-6 (P1) — rare post-drain fallback for
+    /// [`HeapCore::drain_heap_overflow`](crate::registry::heap_core_xthread)'s
+    /// `EMPTIED_BASES_CAP`-bounded (64-entry) dedup buffer: catch any
+    /// distinct segment that went fully empty via that drain's overflow-ring
+    /// reclaims but did NOT fit in the buffer (the 65th+ distinct base in a
+    /// single drain pass — possible only on native, where `HEAP_OVERFLOW_CAP
+    /// = 2048` genuinely allows more than 64 distinct bases to empty in one
+    /// call; under miri `HEAP_OVERFLOW_CAP == 64 == EMPTIED_BASES_CAP`, so
+    /// this fallback is structurally never needed there).
+    ///
+    /// A base that overflowed the buffer is left exactly as
+    /// `dec_live_and_maybe_decommit` left it: `live_count == 0`, still an
+    /// ordinary registered `Small` segment, free-lists populated (so it is
+    /// already reusable via `find_segment_with_free` — nothing is leaked or
+    /// unreachable). What it is missing is the finalization call
+    /// ([`release_or_pool_empty_segment`](Self::release_or_pool_empty_segment))
+    /// that would have pooled or released it — so it sits at an inflated RSS
+    /// footprint and outside the pool-cap accounting until it next happens to
+    /// empty through an ordinary (non-overflow) path.
+    ///
+    /// This performs ONE linear sweep of every registered segment (the same
+    /// index-driven `table.base_at(i)` idiom `find_segment_with_free_impl`'s
+    /// linear-scan fallback and `drain_dirty_segments` already use — chosen
+    /// specifically because `base_at` performs a single self-contained
+    /// pointer read with no borrow of `self.table` outliving the call, so it
+    /// can be freely interleaved with the `&mut self` `release_or_pool_
+    /// empty_segment` call below, which can itself call `table.recycle`),
+    /// finalizing every `Small` segment that is empty, not the current carve
+    /// target, not already decommitted, and not already a pool member (the
+    /// same eligibility test `dec_live_and_maybe_decommit` applies, plus the
+    /// pool-membership check `release_or_pool_empty_segment`'s own
+    /// `debug_assert!` requires — checked here explicitly, since this is an
+    /// after-the-fact sweep rather than a fresh 0-transition observation).
+    ///
+    /// **Cost.** O(registered segments) — NOT run on every drain, only when
+    /// the caller observed the dedup buffer actually overflowed (a rare tail
+    /// event: it requires more than 64 DISTINCT segments to go fully empty
+    /// via the second-chance overflow ring alone, in a single opportunistic
+    /// drain call). The common case (buffer never overflows) pays nothing.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(crate) fn finalize_orphaned_empty_segments(&mut self, small_cur: *mut u8) {
+        let n = self.table.count() as usize;
+        for i in 0..n {
+            let base = self.table.base_at(i);
+            if base.is_null() {
+                continue; // Recycled slot.
+            }
+            if base == small_cur {
+                continue; // Current carve target — never finalized.
+            }
+            let meta = SegmentMeta::new(base);
+            if meta.live_count_of() != 0 || meta.is_decommitted() {
+                continue; // Not empty, or already released.
+            }
+            // Only `Small` segments are release/pool-eligible (mirrors
+            // `dec_live_and_maybe_decommit`'s own PRIMORDIAL exclusion).
+            if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+                continue;
+            }
+            // Already a pool member — nothing to finalize (same disjunction
+            // `unpool_if_present`/`release_or_pool_empty_segment`'s
+            // `debug_assert!` use: pooled iff it IS the head, or its
+            // `pool_prev` is non-null).
+            if self.pool_head == base || !meta.pool_prev_of().is_null() {
+                continue;
+            }
+            self.release_or_pool_empty_segment(base);
+        }
+    }
+
     /// RAD-3 (E2, task #56) — push `base` onto the FRONT (head) of the
     /// intrusive pool list: `base` becomes the new warmest entry.
     /// Self-less (`&mut *mut u8` / `&mut usize` params rather than `&mut
