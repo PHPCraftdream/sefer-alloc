@@ -1,4 +1,4 @@
-# R12-13 — Page-run layer (R11-7 design): re-evaluation verdict — SUPERSEDED, NO-GO
+# R12-13 — Page-run layer (R11-7 design): re-evaluation verdict — DEFERRED, NO-GO (no demonstrated production victim yet)
 
 **Task:** #264 (R12-13, P2) — before implementing anything from
 `docs/perf/R11_7_PAGE_RUN_LAYER_DESIGN.md` (CONDITIONAL GO, stage-2-ready
@@ -6,11 +6,32 @@ since R11-7), re-evaluate whether R12-3 (`exact-span-large`, commit
 `2593d30`) and R12-4 (`large-reserved-capacity`, commit `fc155c9`) already
 closed the niche the page-run layer was designed for. Implementation is
 authorized only if the re-evaluation shows a real gap remains.
-**Outcome: SUPERSEDED — NO-GO on implementing the page-run layer.** No
+**Outcome: DEFERRED — NO-GO on implementing the page-run layer now.** No
 `src/`, `Cargo.toml`, or `tests/` file is touched by this task. This
 document is the deliverable; `R11_7_PAGE_RUN_LAYER_DESIGN.md` is annotated
 with a pointer to this verdict (design content otherwise left intact, for a
 future revisit if the facts below change).
+
+**R13-4 correction (2026-07-22, task #274):** an independent review
+correctly flagged this document's original title/verdict wording
+("SUPERSEDED") as premature. Both `exact-span-large` (R12-3) and
+`medium-classes-wide` are **opt-in features, not part of `production`**
+(`Cargo.toml`'s `production` feature list is `["alloc-global",
+"alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory",
+"primordial-lazy-commit"]` — neither appears there), and `medium-classes-wide`
+separately received a NO-GO for `production` due to a large realloc
+regression it introduces. In the **actual shipping `production`
+composition**, 1.25–1.75 MiB objects still route through Large with
+whole-`SEGMENT` (4 MiB) rounding — `exact-span-large` is not applied there —
+and Large still consumes one `SegmentTable` slot per object. Nothing in
+`production` today closes problem (a) or (b) below for that size range. The
+correct status is **"deferred / no demonstrated production victim,"** not
+"superseded" (which would imply `production` already solved the problem via
+another mechanism). The analysis below is left as originally written — it
+accurately describes what R12-3/R12-4 measured **under the opt-in features
+that carry them**, which is real and unretracted — with this note as the
+load-bearing correction to the top-level verdict; §4's decision and its
+2026-07-22 date are otherwise unchanged from the original R12-13 evaluation.
 **Date:** 2026-07-22.
 **Base revision:** `main` @ `f0dd9a9` plus R12-1..R12-12 (`89b6ce2..a7db75a`).
 
@@ -120,19 +141,26 @@ handled edge case, not a silent failure mode).
 Two facts narrow whether this cap is the real bottleneck R11-7 imagined for
 the 1.25–2.0 MiB range specifically:
 
-1. **Under `medium-classes-wide` (already shipped, R9-4), `SMALL_MAX` is
+1. **Under the opt-in `medium-classes-wide` feature (landed in the codebase
+   since R9-4, but NOT part of `production` and NOT independently GO'd for
+   `production` — it carries a large realloc regression), `SMALL_MAX` is
    1.75 MiB** (`src/alloc_core/size_classes.rs:37,169`: wide classes take
    `SMALL_MAX` from 1 MiB to 1.75 MiB). That means **1.25/1.5/1.75 MiB
-   objects already route through the Small-class carve path, not Large**,
-   and Small-class carve does **not** consume one `SegmentTable` slot per
-   *object* — it consumes one slot per *segment*, shared by however many
-   same-class blocks fit (density 2/1/1 in a plain 4 MiB segment per R9-4's
-   own numbers). Only the **2.0 MiB class** — which was never shipped
-   (R9-4 explicitly excluded it: `floor(4Mi/2Mi)-1 = 1`, no density win in
-   a 4 MiB segment) and does not exist in `SIZE_CLASS_TABLE` today — would
-   fall to the Large path and hit the one-slot-per-object tax page-run was
-   meant to fix. R11-7's own target range is thus **already mostly not a
-   Large-path/`MAX_SEGMENTS` problem** for three of its four listed classes.
+   objects route through the Small-class carve path, not Large, only when a
+   caller explicitly enables `medium-classes-wide`** — in `production`'s
+   actual shipping feature set they still go through Large. When
+   `medium-classes-wide` IS enabled, Small-class carve does **not** consume
+   one `SegmentTable` slot per *object* — it consumes one slot per
+   *segment*, shared by however many same-class blocks fit (density 2/1/1 in
+   a plain 4 MiB segment per R9-4's own numbers). The **2.0 MiB class** —
+   which was never shipped in any feature set (R9-4 explicitly excluded it:
+   `floor(4Mi/2Mi)-1 = 1`, no density win in a 4 MiB segment) and does not
+   exist in `SIZE_CLASS_TABLE` today — would fall to the Large path
+   regardless and hit the one-slot-per-object tax page-run was meant to fix.
+   R11-7's own target range is thus **not a Large-path/`MAX_SEGMENTS`
+   problem for three of its four listed classes only under the opt-in
+   `medium-classes-wide` feature** — under `production`'s actual composition,
+   all four classes (1.25/1.5/1.75/2.0 MiB) still route through Large.
 2. **No workload, test, benchmark, or example in this repository
    demonstrates or exercises "many-thousands-of-simultaneously-live
    1.25–2.0 MiB objects."** A repo-wide search (`grep` across
@@ -161,24 +189,32 @@ Large path in volume.
 
 **Exact-span-large (R12-3) closed the RSS/committed-bytes side of the
 density gap (problem (a)) essentially completely (~1.00–1.05x residual
-amplification, down from 2–15.8x) for the 1.25/1.5/1.75/2.0 MiB range, and
-R12-4 closed the realloc-latency side effect that fix introduced. Neither
-touches, nor was ever advertised to touch, the `SegmentTable`-slot /
+amplification, down from 2–15.8x) for the 1.25/1.5/1.75/2.0 MiB range **when
+the opt-in `exact-span-large` feature is enabled** — it is not part of
+`production`, so `production` users do not get this win today — and R12-4
+closed the realloc-latency side effect that fix introduced (also opt-in).
+Neither touches, nor was ever advertised to touch, the `SegmentTable`-slot /
 OS-reservation-syscall pressure (problem (b)) that page-run's `PageRunTable`
-design specifically existed to avoid. But problem (b) does not have a
+design specifically existed to avoid. Problem (b) does not have a
 demonstrated victim in this codebase**: three of the four target classes
-(1.25/1.5/1.75 MiB) already route through the Small-class path under
-shipped `medium-classes-wide` (one `SegmentTable` slot per *segment*, not
-per *object*, since R9-4), the fourth (2.0 MiB) was never shipped and its
-own design doc gates its shipping on page-run existing, and no test,
-benchmark, or workload anywhere in this repository exercises or motivates
-"many-thousands-of-live medium objects" as a real scenario for this size
-range specifically.
+(1.25/1.5/1.75 MiB) route through the Small-class path **only when the
+opt-in `medium-classes-wide` feature is enabled** (one `SegmentTable` slot
+per *segment*, not per *object*, since R9-4) — and `medium-classes-wide` is
+not in `production` and was separately NO-GO'd for `production` due to a
+large realloc regression, so in `production`'s actual shipping composition
+all four classes still route through Large today. The fourth class
+(2.0 MiB) was never shipped in any feature set and its own design doc gates
+its shipping on page-run existing. No test, benchmark, or workload anywhere
+in this repository exercises or motivates "many-thousands-of-live medium
+objects" as a real scenario for this size range specifically — that absence
+of a demonstrated victim, not a claim that production already solved the
+problem, is the basis for deferring rather than implementing page-run now.
 
-**Decision: NO-GO on implementing the page-run layer now.** R12-3 addressed
-the actual, measured pain (RSS amplification up to 15.8x on the objects
-that route through Large) at a small fraction of the design/correctness
-cost R11-7 itself quantified (§0/§4: "six of eleven cross-cutting mechanisms
+**Decision: NO-GO on implementing the page-run layer now.** R12-3, when its
+opt-in `exact-span-large` feature is enabled, addresses the actual, measured
+pain (RSS amplification up to 15.8x on the objects that route through
+Large) at a small fraction of the design/correctness cost R11-7 itself
+quantified (§0/§4: "six of eleven cross-cutting mechanisms
 need genuinely new, parallel code," "closer to a second subsystem," a
 multi-phase mini-project comparable to the original `medium-classes`/
 `medium-classes-wide` build-out). Spending that budget now, against a
@@ -193,10 +229,12 @@ this specific re-evaluation.
 e.g. a real workload that allocates thousands of simultaneously-live
 1.25–2.0 MiB (or larger, uniform-size) objects and is measured to be
 `MAX_SEGMENTS`-bound or OS-reservation-syscall-bound specifically (not
-RSS-bound, since that part is now solved) — `R11_7_PAGE_RUN_LAYER_DESIGN.md`
-remains a complete, reusable CONDITIONAL-GO design for that scenario and
-should be the starting point, re-validated against whatever
-`MAX_SEGMENTS`/class-table state exists at that time.
+RSS-bound, since that part is solved wherever `exact-span-large` is
+enabled, though `production` does not enable it today) —
+`R11_7_PAGE_RUN_LAYER_DESIGN.md` remains a complete, reusable CONDITIONAL-GO
+design for that scenario and should be the starting point, re-validated
+against whatever `MAX_SEGMENTS`/class-table state, and `production` feature
+composition, exists at that time.
 
 ---
 
@@ -205,8 +243,9 @@ should be the starting point, re-validated against whatever
 - No code, test, or benchmark was written or run this session — this is a
   re-evaluation against already-measured R12-3/R12-4 numbers (reproduced
   personally by the committing agent per `2593d30`'s and `fc155c9`'s commit
-  messages) and already-shipped `medium-classes-wide` constants
-  (`src/alloc_core/size_classes.rs`), not new measurement.
+  messages) and already-landed (but opt-in, not `production`)
+  `medium-classes-wide` constants (`src/alloc_core/size_classes.rs`), not
+  new measurement.
 - "No demonstrated victim" (§3 point 2) is an absence-of-evidence finding
   from this repository's own tests/benches/examples/docs, not a proof that
   no such workload could ever exist for a downstream user of this crate.
@@ -215,3 +254,14 @@ should be the starting point, re-validated against whatever
   project has consistently applied (R9-4 dropped 1.5/1.75 MiB "not yet
   needed" tuning; R10-4 and R11-7 themselves both reached only CONDITIONAL,
   not unconditional, GO absent real measurement).
+- **R13-4 (2026-07-22, task #274) added correction:** the original version
+  of this document stated the verdict as "SUPERSEDED" and, in places, wrote
+  about `exact-span-large`/`medium-classes-wide` as though they were
+  unconditionally shipped. Both remain opt-in (`Cargo.toml`'s `production`
+  feature list does not include either), and `medium-classes-wide` was
+  separately NO-GO'd for `production` due to a large realloc regression.
+  The title, top-of-document outcome line, §3 point 1, and §4's verdict text
+  were corrected to "DEFERRED — no demonstrated production victim" and to
+  explicitly scope the RSS/density wins to the opt-in features that carry
+  them; no numeric result, density table, or technical argument elsewhere in
+  this document was changed.

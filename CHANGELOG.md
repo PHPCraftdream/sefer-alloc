@@ -17,11 +17,15 @@ zero-trust discipline as prior rounds: delegate implementation, personally
 read every diff, personally re-run the tests (not trust the agent's own
 "tests passed" claim), personally reproduce red-before/green-after
 counterfactuals for every safety-relevant change, then commit. Two tasks
-(R12-8, R12-13) reached honest NO-GO/superseded verdicts with zero code
+(R12-8, R12-13) reached honest NO-GO/deferred verdicts with zero code
 changed — both cited prior institutional decisions (the 2026-07-10 G1
 honest-reject for R12-8; R12-3's own measured numbers for R12-13) rather
 than re-deriving from scratch, and both are recorded as complete, correct
-outcomes of this round's methodology, not shortfalls.
+outcomes of this round's methodology, not shortfalls. (R12-13's original
+"superseded" wording was itself corrected to "deferred — no demonstrated
+production victim" in Round 13, R13-4/task #274, after an independent
+review noted that the features R12-13 cited are opt-in and not part of
+`production`; see that entry below.)
 
 **Production vs. opt-in — what actually changed for default `--features
 production` users.** One feature joined `production` this round
@@ -195,16 +199,28 @@ genuine bugs, not opt-in behavior.
   guarantees umbrella); `#[doc(hidden)]` dropped from the `SeferAlloc`
   face in favor of a visible `# ⚠ EXPERIMENTAL / UNSTABLE` rustdoc section.
   No signature, behavior, or safety-contract change to any function.
-- **R12-13 (`6d6e279`) — page-run layer design (R11-7): SUPERSEDED, NO-GO,
+- **R12-13 (`6d6e279`) — page-run layer design (R11-7): DEFERRED, NO-GO,
   no code changed.** R11-7 bundled two sub-problems: (a) per-object RSS
   waste and (b) `SegmentTable`-slot/syscall pressure at high live-object
-  counts. R12-3 closed (a) almost completely (15.8×→~1.00–1.05×
-  amplification); (b) has no demonstrated victim anywhere in this
-  codebase's tests/benches — and three of R11-7's four target size classes
-  already route through the cheaper Small-class path under shipped
-  `medium-classes-wide`, since `SMALL_MAX` there is 1.75 MiB. The design
-  doc is annotated with a pointer to the verdict, not deleted, in case a
-  real `MAX_SEGMENTS`-bound workload is measured in the future.
+  counts. R12-3's `exact-span-large` closes (a) almost completely
+  (15.8×→~1.00–1.05× amplification) **when that opt-in feature is
+  enabled**; (b) has no demonstrated victim anywhere in this codebase's
+  tests/benches — and three of R11-7's four target size classes route
+  through the cheaper Small-class path instead of Large only when the
+  opt-in `medium-classes-wide` feature is enabled (`SMALL_MAX` = 1.75 MiB
+  there). Neither feature is part of `production`, and `medium-classes-wide`
+  was separately NO-GO'd for `production` over a large realloc regression,
+  so `production`'s actual composition still routes 1.25–1.75 MiB objects
+  through Large with whole-`SEGMENT` rounding today — this document's
+  original "SUPERSEDED" wording read as though `production` itself had
+  already closed the gap, which an independent review correctly flagged as
+  premature; the wording was corrected to "DEFERRED — no demonstrated
+  production victim" in Round 13 (R13-4, task #274,
+  `docs/perf/R12_13_PAGE_RUN_LAYER_DEFERRED.md`, renamed from
+  `..._SUPERSEDED.md`), with no change to the underlying technical
+  analysis or numbers. The design doc is annotated with a pointer to the
+  verdict, not deleted, in case a real `MAX_SEGMENTS`-bound workload is
+  measured in the future.
 - **R12-14 (`3dc7bd9`) — made the R12-1/R12-2 directory regression tests
   density-agnostic under `--all-features`.** Both tests were tuned against
   `production`'s `SMALL_MAX` (~253 KiB, ~16 blocks/segment) and silently

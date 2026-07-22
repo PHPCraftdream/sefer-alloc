@@ -1,15 +1,25 @@
-> **SUPERSEDED (2026-07-22, R12-13):** re-evaluated after `exact-span-large`
-> (R12-3, `2593d30`) and `large-reserved-capacity` (R12-4, `fc155c9`) shipped.
-> Verdict: **NO-GO on implementing this design now** — R12-3 closed the
-> measured RSS/committed-bytes pain (up to 15.8x amplification down to
-> ~1.00–1.05x) this design was ultimately justified by, and the remaining
-> `SegmentTable`-slot/OS-reservation-syscall pressure this design's
-> `PageRunTable` existed to avoid has no demonstrated victim anywhere in
-> this codebase's tests/benches/examples (three of the four target classes
-> already route through the Small-class path under shipped
-> `medium-classes-wide`, not Large, since `SMALL_MAX` = 1.75 MiB). See
-> `docs/perf/R12_13_PAGE_RUN_LAYER_SUPERSEDED.md` for the full analysis.
-> This design remains valid and reusable as a starting point if a real
+> **DEFERRED — reassessed, no demonstrated production victim (2026-07-22,
+> R12-13; wording corrected 2026-07-22, R13-4/task #274):** re-evaluated
+> after `exact-span-large` (R12-3, `2593d30`) and `large-reserved-capacity`
+> (R12-4, `fc155c9`) landed as opt-in features. Verdict: **NO-GO on
+> implementing this design now** — R12-3, where its opt-in feature is
+> enabled, closes the measured RSS/committed-bytes pain (up to 15.8x
+> amplification down to ~1.00–1.05x) this design was ultimately justified
+> by, and the remaining `SegmentTable`-slot/OS-reservation-syscall pressure
+> this design's `PageRunTable` existed to avoid has no demonstrated victim
+> anywhere in this codebase's tests/benches/examples (three of the four
+> target classes route through the Small-class path instead of Large only
+> when the opt-in `medium-classes-wide` feature is enabled, since
+> `SMALL_MAX` = 1.75 MiB there). **Neither `exact-span-large` nor
+> `medium-classes-wide` is part of `production`** — `medium-classes-wide`
+> was separately NO-GO'd for `production` over a large realloc regression —
+> so in `production`'s actual shipping composition, 1.25–1.75 MiB objects
+> still route through Large with whole-`SEGMENT` rounding today. The
+> correct status is therefore "deferred, no demonstrated production
+> victim," not the earlier "superseded" wording, which read as though
+> `production` itself had already solved the problem. See
+> `docs/perf/R12_13_PAGE_RUN_LAYER_DEFERRED.md` for the full analysis. This
+> design remains valid and reusable as a starting point if a real
 > `MAX_SEGMENTS`-bound or reservation-syscall-bound many-live-medium-object
 > workload is ever measured — nothing below this notice is changed or
 > retracted.
