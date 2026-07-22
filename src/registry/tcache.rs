@@ -141,6 +141,32 @@ pub(crate) struct PerClass {
     pub(crate) count: u8,
     /// This class's pointer stack. `slots[0..count as usize]` are valid.
     pub(crate) slots: [*mut u8; TCACHE_CAP],
+    /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
+    /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
+    /// never-before-served, `Node::zero`-skippable — block, per the
+    /// `is_virgin(segment, O, C)` predicate `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md`
+    /// / `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` both derive).
+    /// `u16` because `TCACHE_CAP` (16) fits exactly one bit per physical
+    /// slot — one word, no per-slot array, no extra cache line beyond what
+    /// `count`/`slots` already occupy in this struct.
+    ///
+    /// INVARIANT (maintained at every mutation of `slots`/`count` in this
+    /// class's magazine — `HeapCore::alloc`'s magazine-hit pop,
+    /// `refill_magazine_slow`'s refill, `dealloc_own_thread_with_base`'s
+    /// push/overflow-flush/compact, `alloc_batch`'s drain, `dealloc_batch`'s
+    /// push, `flush_all_tcache`'s teardown): bits `>= count` are always 0,
+    /// and bit `i` for `i < count` reflects `slots[i]`'s TRUE virgin status
+    /// at that instant — a pushed-back block (freed after being issued) is
+    /// NEVER virgin (dispatch conjunct, §2 of both design docs), so every
+    /// push clears the bit(s) it (over)writes before storing the pointer.
+    ///
+    /// Gated on `virgin-zero-skip` (opt-in, requires `alloc-decommit`) so a
+    /// build without the feature pays NOT ONE EXTRA BYTE in `PerClass` and
+    /// not one extra instruction on the magazine hot path (`alloc`'s own
+    /// pop/push bodies are `cfg`-gated to skip every mask read/write below
+    /// when the feature is off — see `HeapCore::alloc`'s magazine-hit arm).
+    #[cfg(feature = "virgin-zero-skip")]
+    pub(crate) virgin_mask: u16,
 }
 
 impl PerClass {
@@ -149,6 +175,8 @@ impl PerClass {
         Self {
             count: 0,
             slots: [core::ptr::null_mut(); TCACHE_CAP],
+            #[cfg(feature = "virgin-zero-skip")]
+            virgin_mask: 0,
         }
     }
 }

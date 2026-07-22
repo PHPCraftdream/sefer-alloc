@@ -338,6 +338,23 @@ impl HeapCore {
                         meta.magazine_bitmap().mark_magazine(off);
                         self.tcache.classes[c].slots[cnt] = ptr;
                         self.tcache.classes[c].count = (cnt + 1) as u8;
+                        // R13-3 (task #273): a pushed-back block was
+                        // previously issued (it is being FREED right now) —
+                        // by the dispatch conjunct (§2 of both virgin-skip
+                        // design docs) it is NEVER virgin, regardless of the
+                        // bit any earlier occupant of physical slot `cnt`
+                        // left behind. `PerClass::virgin_mask`'s own
+                        // invariant ("bits >= count are 0") already
+                        // guarantees bit `cnt` reads 0 here (it was `>=
+                        // count` the instant before this push bumped
+                        // `count`) — this is a defensive no-op AND, not a
+                        // load-bearing clear, kept explicit so the invariant
+                        // is visibly re-asserted at every mutation site
+                        // rather than relying on readers to re-derive it.
+                        #[cfg(feature = "virgin-zero-skip")]
+                        {
+                            self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+                        }
                         return;
                     }
                     // ── Magazine overflow (cnt == TCACHE_CAP) ──────────
@@ -380,6 +397,18 @@ impl HeapCore {
                     for i in 0..remaining {
                         self.tcache.classes[c].slots[i] = self.tcache.classes[c].slots[i + FLUSH_N];
                     }
+                    // R13-3 (task #273): the virgin mask must undergo the
+                    // IDENTICAL shift as `slots` — bit `i` of the compacted
+                    // mask is bit `i + FLUSH_N` of the pre-compaction mask
+                    // (byte-identical to the `slots[i] = slots[i + FLUSH_N]`
+                    // loop just above, just on the bitmask instead of the
+                    // pointer array). The flushed low half (`slots[0..FLUSH_N]`,
+                    // now returned to the substrate via `flush_class`) is
+                    // dropped entirely, not merely cleared-and-kept.
+                    #[cfg(feature = "virgin-zero-skip")]
+                    {
+                        self.tcache.classes[c].virgin_mask >>= FLUSH_N;
+                    }
                     // Push (Э6: NO key stamp, NO block-body write). The oracles
                     // above already ran before this overflow branch, so a
                     // double-free is caught even when the magazine is full.
@@ -387,6 +416,19 @@ impl HeapCore {
                     meta.magazine_bitmap().mark_magazine(off);
                     self.tcache.classes[c].slots[remaining] = ptr;
                     self.tcache.classes[c].count = (remaining + 1) as u8;
+                    // R13-3: the newly-pushed block is a freed (previously
+                    // issued) block — never virgin (dispatch conjunct), same
+                    // reasoning as the non-overflow push arm above. Clear bit
+                    // `remaining` explicitly: after the `>>= FLUSH_N` shift
+                    // above, that bit holds whatever was at pre-shift index
+                    // `remaining + FLUSH_N` (`== TCACHE_CAP`, i.e. always 0 by
+                    // the mask invariant since no valid slot index reaches
+                    // `TCACHE_CAP`) — so this is defensive, not load-bearing,
+                    // matching the non-overflow arm's identical comment.
+                    #[cfg(feature = "virgin-zero-skip")]
+                    {
+                        self.tcache.classes[c].virgin_mask &= !(1u16 << remaining);
+                    }
                     return;
                 }
             }

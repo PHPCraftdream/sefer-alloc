@@ -101,6 +101,13 @@ impl HeapCore {
                     .flush_class(c, &self.tcache.classes[c].slots[0..n])
             };
             self.tcache.classes[c].count = 0;
+            // R13-3 (task #273): every slot in this class's magazine was just
+            // returned to the substrate — reset the virgin mask to empty,
+            // maintaining "bits >= count are 0" for `count == 0`.
+            #[cfg(feature = "virgin-zero-skip")]
+            {
+                self.tcache.classes[c].virgin_mask = 0;
+            }
         }
     }
 

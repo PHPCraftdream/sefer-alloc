@@ -297,6 +297,15 @@ impl HeapCore {
                 meta.magazine_bitmap().mark_magazine(off);
                 self.tcache.classes[c].slots[cnt] = p;
                 self.tcache.classes[c].count = (cnt + 1) as u8;
+                // R13-3 (task #273): a batched-freed block is, like the
+                // scalar push in `dealloc_own_thread_with_base`, never
+                // virgin (dispatch conjunct) — defensive clear of slot
+                // `cnt`'s bit, matching that function's identical comment
+                // (the mask invariant already guarantees it reads 0 here).
+                #[cfg(feature = "virgin-zero-skip")]
+                {
+                    self.tcache.classes[c].virgin_mask &= !(1u16 << cnt);
+                }
                 continue;
             }
 

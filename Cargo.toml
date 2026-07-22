@@ -1226,6 +1226,17 @@ name = "r12_7_class_aware_dirty_wallclock"
 harness = false
 required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats"]
 
+# R13-3 (task #273): cold-virgin / warm-reuse / mixed wall-clock gate for the
+# `virgin-zero-skip` magazine fix (`benches/r13_3_virgin_zero_skip_wallclock.rs`).
+# Requires only `alloc-global` + `fastbin` (the magazine) so the SAME bench
+# binary can be run both WITHOUT `virgin-zero-skip` (baseline) and WITH it
+# (this fix) for an honest "was / now" comparison — see the bench file's
+# module doc for the full rationale and the three scenarios' motivation.
+[[bench]]
+name = "r13_3_virgin_zero_skip_wallclock"
+harness = false
+required-features = ["alloc-global", "fastbin"]
+
 # Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
 # All tokio-internal allocations also go through SeferAlloc.

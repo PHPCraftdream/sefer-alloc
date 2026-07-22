@@ -204,6 +204,21 @@ impl HeapCore {
                             );
                         }
                         let issued = self.tcache.classes[c].slots[new_cnt];
+                        // R13-3 (task #273): clear this slot's virgin bit on
+                        // EVERY pop through the plain `alloc` fast path, not
+                        // just the `alloc_zeroed`-aware pop below. Maintains
+                        // the `PerClass::virgin_mask` invariant ("bits >=
+                        // count are always 0") unconditionally — a slot that
+                        // WAS virgin and is popped here (a caller using plain
+                        // `alloc`, not `alloc_zeroed`) must not leave a stale
+                        // set bit that a LATER push into this same physical
+                        // index could be misread through. Single `u16` AND,
+                        // compiled out entirely (the field does not exist)
+                        // when `virgin-zero-skip` is off.
+                        #[cfg(feature = "virgin-zero-skip")]
+                        {
+                            self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
+                        }
                         // RAD-5 (E4) GO/NO-GO EXPERIMENT: clear the
                         // magazine-residency bit — this block leaves the
                         // magazine for the caller. THE HOT PATH: unlike the
@@ -292,6 +307,175 @@ impl HeapCore {
         ptr
     }
 
+    /// R13-3 (task #273): magazine-aware pop for [`alloc_zeroed`](Self::alloc_zeroed)'s
+    /// small arm. Structurally the SAME hit/miss shape as [`alloc`](Self::alloc)'s
+    /// own magazine fast path (array pop on a hit, [`refill_magazine_slow`](
+    /// Self::refill_magazine_slow) on a miss) — recovering the fast path
+    /// `alloc_zeroed` lost under the R12-10 magazine-bypass design — PLUS
+    /// reading (and, on a hit, clearing) the popped slot's
+    /// `PerClass::virgin_mask` bit so the caller can still skip `Node::zero`
+    /// for a genuinely virgin block sitting in the magazine (the R13-3 fix's
+    /// whole point: a magazine HIT is not always non-virgin — a `carve_batch`
+    /// refill can park still-virgin blocks in the magazine ahead of the
+    /// caller's own `alloc_zeroed` pop, see `refill_class_bump_virgin_checked`'s
+    /// doc). Returns `(ptr, is_virgin)`; `is_virgin` is always `false` when
+    /// `ptr` is null.
+    ///
+    /// A deliberate, SEPARATE call site from `alloc`'s own magazine-hit arm
+    /// (not a shared helper) so the plain `alloc`/`GlobalAlloc::alloc` fast
+    /// path — the hottest path in the allocator per CLAUDE.md — pays NOT ONE
+    /// EXTRA INSTRUCTION for this feature: the mask is still kept correct on
+    /// that path (see the `virgin_mask` clear this file's `alloc` magazine-hit
+    /// arm already added), but `alloc`'s own pop never READS it, only clears
+    /// it (a plain AND-with-inverted-bit, no branch on the bit's value).
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    #[inline]
+    fn alloc_small_zeroed_via_magazine(&mut self, c: usize) -> (*mut u8, bool) {
+        let cnt = self.tcache.classes[c].count as usize;
+        if cnt > 0 {
+            let new_cnt = cnt - 1;
+            self.tcache.classes[c].count = new_cnt as u8;
+            #[cfg(feature = "alloc-stats")]
+            if let Some(hits) = self.tcache_hits {
+                hits.store(
+                    hits.load(Ordering::Relaxed).wrapping_add(1),
+                    Ordering::Relaxed,
+                );
+            }
+            let issued = self.tcache.classes[c].slots[new_cnt];
+            // Read the slot's virgin bit BEFORE clearing it (this pop is the
+            // block's last moment inside allocator bookkeeping — the mask
+            // invariant "bits >= count are 0" must hold the instant `count`
+            // drops, exactly like the plain `alloc` arm).
+            let bit = 1u16 << new_cnt;
+            let is_virgin = (self.tcache.classes[c].virgin_mask & bit) != 0;
+            self.tcache.classes[c].virgin_mask &= !bit;
+            {
+                let base = os::segment_base_of_ptr(issued);
+                let off = (issued as usize - base as usize) as u32;
+                SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+            }
+            #[cfg(feature = "hardened")]
+            {
+                let base = os::segment_base_of_ptr(issued);
+                let off = (issued as usize) - (base as usize);
+                // SAFETY: `base` is a live, exclusively-owned segment; `off`
+                // is a MIN_BLOCK-aligned offset.
+                #[allow(unsafe_code)]
+                unsafe {
+                    crate::alloc_core::segment_header::bump_gen(base, off)
+                };
+            }
+            self.stamp_segment_owner(issued);
+            return (issued, is_virgin);
+        }
+        // Magazine miss: the virgin-tracking sibling of `refill_magazine_slow`
+        // (same UBFIX-10/RAD-4b drains, same refill/stamp/issue shape) that
+        // additionally threads the per-slot virgin mask through the refill
+        // and reports the ISSUED block's own bit back to the caller.
+        self.refill_magazine_slow_virgin(c)
+    }
+
+    /// R13-3 (task #273): virgin-tracking sibling of
+    /// [`refill_magazine_slow`](Self::refill_magazine_slow), consumed ONLY by
+    /// [`alloc_small_zeroed_via_magazine`](Self::alloc_small_zeroed_via_magazine).
+    /// Identical drain/refill/stamp/issue shape (see that function's doc for
+    /// the UBFIX-10/RAD-4b drain rationale, unchanged here) plus: calls
+    /// [`AllocCore::refill_class_bump_virgin_checked`] instead of the plain
+    /// `_checked` variant, stores the resulting per-slot virgin mask into
+    /// `PerClass::virgin_mask` for the `n-1` blocks retained in the magazine,
+    /// and reports the ONE block popped to the caller's own virgin bit
+    /// (cleared from the mask before return, maintaining the "bits >= count
+    /// are 0" invariant exactly like the plain miss path does for the
+    /// magazine-residency bitmap).
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    #[cold]
+    #[inline(never)]
+    fn refill_magazine_slow_virgin(&mut self, c: usize) -> (*mut u8, bool) {
+        use crate::alloc_core::size_classes::SizeClasses;
+
+        // UBFIX-10 / RAD-4b (see `refill_magazine_slow`'s doc for the full
+        // rationale — identical placement, identical cheap-when-empty shape).
+        self.drain_large_deferred_free();
+        self.drain_heap_overflow();
+
+        let want = super::tcache::refill_n_for_class(SizeClasses::block_size(c));
+        let (_before, rest) = self.tcache.classes.split_at_mut(c);
+        let (cur, _after) = rest.split_first_mut().expect("c < SMALL_CLASS_COUNT");
+        let mut virgin_mask: u16 = 0;
+        let n = self.core.refill_class_bump_virgin_checked(
+            c,
+            &mut cur.slots[0..want],
+            &|ptr, k| {
+                if k == c {
+                    return false;
+                }
+                let pbase = os::segment_base_of_ptr(ptr);
+                let poff = (ptr as usize - pbase as usize) as u32;
+                SegmentMeta::new(pbase)
+                    .magazine_bitmap()
+                    .is_in_magazine(poff)
+            },
+            &mut virgin_mask,
+        );
+        if n == 0 {
+            return (core::ptr::null_mut(), false); // true OOM
+        }
+        let mut prev_base = usize::MAX;
+        for i in 0..n {
+            let p = self.tcache.classes[c].slots[i];
+            if !p.is_null() {
+                let base = os::segment_base_of_ptr(p) as usize;
+                if base != prev_base {
+                    self.stamp_segment_owner(p);
+                    prev_base = base;
+                }
+            }
+        }
+        let new_cnt = n - 1;
+        self.tcache.classes[c].count = new_cnt as u8;
+        for &p in &self.tcache.classes[c].slots[0..new_cnt] {
+            let pbase = os::segment_base_of_ptr(p);
+            let poff = (p as usize - pbase as usize) as u32;
+            SegmentMeta::new(pbase)
+                .magazine_bitmap()
+                .mark_magazine(poff);
+        }
+        // Store the retained blocks' virgin bits (indices `0..new_cnt`); the
+        // popped block (index `new_cnt`) is reported via the return value and
+        // must NOT leave a stale set bit in the retained mask (same "bits >=
+        // count are 0" invariant every other mutation site maintains).
+        let retained_bits_mask: u16 = if new_cnt >= 16 {
+            u16::MAX
+        } else {
+            (1u16 << new_cnt) - 1
+        };
+        self.tcache.classes[c].virgin_mask = virgin_mask & retained_bits_mask;
+        let issued_bit = 1u16 << new_cnt;
+        let is_virgin = (virgin_mask & issued_bit) != 0;
+        let issued = self.tcache.classes[c].slots[new_cnt];
+        #[cfg(feature = "hardened")]
+        {
+            let base = os::segment_base_of_ptr(issued);
+            let off = (issued as usize) - (base as usize);
+            // SAFETY: `base` is a live, exclusively-owned segment; `off` is a
+            // MIN_BLOCK-aligned offset.
+            #[allow(unsafe_code)]
+            unsafe {
+                crate::alloc_core::segment_header::bump_gen(base, off)
+            };
+        }
+        (issued, is_virgin)
+    }
+
     /// Allocate `layout.size()` bytes of **zeroed** memory.
     ///
     /// # Fresh-reservation skip (task #221 / R8-8)
@@ -333,14 +517,48 @@ impl HeapCore {
         let align = layout.align();
         let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
-        #[cfg(feature = "virgin-zero-skip")]
+        // R13-3 (task #273, P1 — resource-defect promotion): the R12-10
+        // magazine-BYPASS design regressed warm-reuse steady-state (every
+        // `alloc_zeroed` call — including a magazine HIT that would
+        // otherwise be a pure array-pop — paid the substrate's free-list /
+        // ring-drain / carve machinery) and, independently, dropped the
+        // `alloc-xthread` drain prelude the plain `alloc`/`refill_magazine_slow`
+        // path gets for free (see the `not(fastbin)` branch below and
+        // `refill_magazine_slow`'s own UBFIX-10/RAD-4b drains) — a heap that
+        // calls ONLY `alloc_zeroed` never drained its `HeapOverflow`/deferred
+        // large-free stacks. Fixed by threading the virgin signal THROUGH the
+        // magazine (`PerClass::virgin_mask`) instead of bypassing it: this
+        // call now goes back through `self.alloc`'s own hit/miss machinery in
+        // both `cfg` arms below, so both the fast-path win AND the drain
+        // prelude are recovered structurally (same code path as `alloc`),
+        // not re-implemented ad hoc.
+        #[cfg(all(feature = "virgin-zero-skip", feature = "fastbin"))]
         if let Some(class_idx) = class {
-            // R12-10 (task #261, `virgin-zero-skip`): the PRODUCTION win.
-            // Bypass the per-thread magazine entirely for this call (mirroring
-            // exactly how the Large branch below bypasses `self.alloc()` to
-            // reach `alloc_large`'s freshness tuple directly) and call
-            // `AllocCore::alloc_small_with_virgin` so the virgin-carve signal
-            // survives to this point.
+            let (ptr, is_virgin) = self.alloc_small_zeroed_via_magazine(class_idx);
+            if !ptr.is_null() && !is_virgin {
+                #[cfg(feature = "alloc-stats")]
+                crate::alloc_core::SMALL_ZERO_PASS_CALLS
+                    .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                Node::zero(ptr, size);
+            }
+            return ptr;
+        }
+        // `virgin-zero-skip` without `fastbin`: there is no magazine to
+        // plumb the signal through (the feature requires only
+        // `alloc-decommit`, not `fastbin` — see `Cargo.toml`), so this
+        // build keeps the R12-10 direct-substrate shape. Unlike R12-10,
+        // it now ALSO replicates the Large branch's drain prelude below
+        // (Defect 2 fix): without `fastbin` there is no
+        // `refill_magazine_slow` to host the M-9/RAD-4b opportunistic
+        // drains, so a heap calling ONLY `alloc_zeroed` would otherwise
+        // never drain its cross-thread deferred-free stacks either.
+        #[cfg(all(feature = "virgin-zero-skip", not(feature = "fastbin")))]
+        if let Some(class_idx) = class {
+            #[cfg(feature = "alloc-xthread")]
+            {
+                self.drain_large_deferred_free();
+                self.drain_heap_overflow();
+            }
             let (ptr, is_virgin) = self.core.alloc_small_with_virgin(class_idx);
             if !ptr.is_null() {
                 self.stamp_segment_owner(ptr);
@@ -665,6 +883,18 @@ impl HeapCore {
             }
             let new_cnt = cnt - 1;
             self.tcache.classes[c].count = new_cnt as u8;
+            // R13-3 (task #273): clear the popped slot's virgin bit — same
+            // "bits >= count are 0" invariant the scalar `alloc` magazine-hit
+            // arm maintains, and load-bearing here: this drained block is
+            // handed straight to `alloc_batch`'s caller (a plain, uninitialised
+            // `*mut u8` — `alloc_batch` has no `_zeroed` variant, so the bit's
+            // VALUE is irrelevant to this call's own correctness), but a LATER
+            // push back into this now-vacated physical slot index must not
+            // observe a stale set bit from whatever virgin block last lived here.
+            #[cfg(feature = "virgin-zero-skip")]
+            {
+                self.tcache.classes[c].virgin_mask &= !(1u16 << new_cnt);
+            }
             #[cfg(feature = "alloc-stats")]
             if let Some(hits) = self.tcache_hits {
                 hits.store(

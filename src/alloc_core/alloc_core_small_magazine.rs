@@ -120,6 +120,8 @@ impl AllocCore {
             out,
             #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))]
             &|_, _| false,
+            #[cfg(feature = "virgin-zero-skip")]
+            None,
         )
     }
 
@@ -132,7 +134,43 @@ impl AllocCore {
         out: &mut [*mut u8],
         is_in_magazine: &F,
     ) -> usize {
-        self.refill_class_bump_impl(class_idx, out, is_in_magazine)
+        self.refill_class_bump_impl(
+            class_idx,
+            out,
+            is_in_magazine,
+            #[cfg(feature = "virgin-zero-skip")]
+            None,
+        )
+    }
+
+    /// R13-3 (task #273): virgin-tracking sibling of
+    /// [`refill_class_bump_checked`](Self::refill_class_bump_checked),
+    /// consumed ONLY by [`HeapCore::refill_magazine_slow`](
+    /// crate::registry::heap_core::HeapCore) so the magazine-plumbed
+    /// `virgin-zero-skip` win (R13-3) can skip `Node::zero` for a
+    /// magazine-HIT block, not just a magazine-bypass block (the R12-10
+    /// regression this task fixes). `virgin_out` receives a bit per output
+    /// slot (`out[i]` virgin ⟺ bit `i` set) — the SAME per-run signal
+    /// `carve_batch`'s doc already establishes (every block within one
+    /// `carve_batch` call shares its source segment's single `payload_virgin`
+    /// bit; `drain_freelist_batch`-sourced blocks are NEVER virgin, dispatch
+    /// conjunct false). Gated on `virgin-zero-skip` end-to-end so a build
+    /// without the feature never materialises this variant or its extra
+    /// per-iteration bit-set logic.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    pub fn refill_class_bump_virgin_checked<F: Fn(*mut u8, usize) -> bool>(
+        &mut self,
+        class_idx: usize,
+        out: &mut [*mut u8],
+        is_in_magazine: &F,
+        virgin_out: &mut u16,
+    ) -> usize {
+        self.refill_class_bump_impl(class_idx, out, is_in_magazine, Some(virgin_out))
     }
 
     #[inline]
@@ -143,6 +181,17 @@ impl AllocCore {
         class_idx: usize,
         out: &mut [*mut u8],
         #[cfg(all(feature = "alloc-xthread", feature = "fastbin"))] is_in_magazine: &F,
+        // R13-3 (task #273): `Some(mask)` accumulates a per-`out`-slot virgin
+        // bitmask (bit `i` set ⟺ `out[i]` was served by a `carve_batch` run
+        // on a segment whose `payload_virgin` bit read true, AND
+        // `cfg!(not(miri))` — the identical predicate
+        // `AllocCore::alloc_small_with_virgin` already uses). `None` (the
+        // `refill_class`/`refill_class_bump`/`refill_class_bump_checked`
+        // callers) skips every bit-set below — one extra `is_none()` branch
+        // per producer span (drain call or carve call), not per block, and
+        // compiled out entirely when `virgin-zero-skip` is off (the parameter
+        // does not exist in that build — see the two thin wrappers above).
+        #[cfg(feature = "virgin-zero-skip")] mut virgin_out: Option<&mut u16>,
     ) -> usize {
         let block_size = SizeClasses::block_size(class_idx);
         debug_assert!(block_size >= NODE_SIZE);
@@ -237,8 +286,29 @@ impl AllocCore {
             //    round-trip, block live + bitmap-allocated, exactly the
             //    handed-out state (byte-identical to the per-block `carve_block`
             //    loop it replaces; see `carve_batch`).
+            //
+            // R13-3 (task #273): read the CURRENT segment's `payload_virgin`
+            // bit BEFORE the carve (carve never mutates it — see
+            // `AllocCore::alloc_small_with_virgin`'s doc for why reading
+            // immediately before or after a successful carve on the SAME
+            // segment observes the same value) and, if a `virgin_out` mask
+            // was supplied, set one bit per block this `carve_batch` call
+            // fills — the whole run shares ONE virgin signal (bump-monotonic
+            // within a lifetime, §4.4 of both design docs: no intra-run
+            // transition is possible).
+            #[cfg(feature = "virgin-zero-skip")]
+            let cur_virgin = virgin_out
+                .is_some()
+                .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
             let n = self.carve_batch(class_idx, block_size, &mut out[filled..]);
             if n != 0 {
+                #[cfg(feature = "virgin-zero-skip")]
+                if let (Some(mask), Some(true)) = (virgin_out.as_deref_mut(), cur_virgin) {
+                    if cfg!(not(miri)) {
+                        let run_bits: u16 = ((1u32 << n) - 1) as u16;
+                        *mask |= run_bits << filled;
+                    }
+                }
                 filled += n;
                 continue;
             }
@@ -246,8 +316,20 @@ impl AllocCore {
             //    carve. If reserve fails, stop and return what we have.
             match self.reserve_small_segment() {
                 Some(_) => {
+                    #[cfg(feature = "virgin-zero-skip")]
+                    let fresh_virgin = virgin_out
+                        .is_some()
+                        .then(|| SegmentMeta::new(self.small_cur).payload_virgin_of());
                     let n = self.carve_batch(class_idx, block_size, &mut out[filled..]);
                     if n != 0 {
+                        #[cfg(feature = "virgin-zero-skip")]
+                        if let (Some(mask), Some(true)) = (virgin_out.as_deref_mut(), fresh_virgin)
+                        {
+                            if cfg!(not(miri)) {
+                                let run_bits: u16 = ((1u32 << n) - 1) as u16;
+                                *mask |= run_bits << filled;
+                            }
+                        }
                         filled += n;
                         continue;
                     }

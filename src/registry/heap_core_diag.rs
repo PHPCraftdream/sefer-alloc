@@ -70,6 +70,29 @@ impl HeapCore {
         self.tcache.classes[c].count as u16
     }
 
+    /// TEST-ONLY (R13-3, task #273): read the raw
+    /// [`PerClass::virgin_mask`](super::tcache::PerClass) bitmask for class
+    /// `c` — bit `i` set ⟺ `slots[i]` (for `i < dbg_tcache_count(c)`) is
+    /// currently tracked as a genuinely virgin (never-before-served, zero-skippable)
+    /// magazine-resident block. Lets a test directly observe WHICH resident
+    /// slots the R13-3 magazine-plumbing marked virgin, instead of assuming
+    /// "every retained block from a miss-triggering refill is virgin" — that
+    /// assumption is FALSE whenever the free-drain-first policy
+    /// (`refill_class_bump_impl`'s non-negotiable source order) reclaims
+    /// existing free blocks ahead of a bump-carve within the same refill
+    /// (see `tests/r13_3_magazine_virgin_hit_skips_zero.rs`'s doc for the
+    /// scenario that discovered this).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "virgin-zero-skip"
+    ))]
+    #[must_use]
+    pub fn dbg_tcache_virgin_mask(&self, c: usize) -> u16 {
+        self.tcache.classes[c].virgin_mask
+    }
+
     /// TEST-ONLY (task D3): resolve the size class index for `layout`, the
     /// same classification `alloc` uses to index `tcache.classes[c].slots`/
     /// `.count`.
