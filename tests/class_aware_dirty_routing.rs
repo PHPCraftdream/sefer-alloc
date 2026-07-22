@@ -320,6 +320,101 @@ fn class_a_refill_reclaims_class_b_entries_in_the_same_pass() {
         unsafe { (*owner_heap).dealloc(p, layout_a) };
     }
 
+    // R13-11 (task #284, P0 fix): drain away any UNRELATED class-B blocks
+    // already sitting on `small_cur`'s own free list before the critical
+    // assertion loop below.
+    //
+    // Root cause this closes: `AllocCore::alloc_small`'s step 3 cold-carve
+    // path (`carve_block_with_refill`, see that function's doc comment) does
+    // not just carve the ONE block the caller asked for -- on a miss it also
+    // carves up to `REFILL_BATCH` (= 31) EXTRA blocks of the SAME class and
+    // immediately `dealloc_small`s them back onto the CARVING segment's own
+    // `BinTable` free list, as a same-thread amortisation batch. This is
+    // orthogonal to (and runs BEFORE) any cross-thread/dirty-bitmap routing:
+    // `alloc_small`'s very first check on every call is
+    // `pop_free(self.small_cur, class_idx, ..)`, so as long as ANY leftover
+    // block from a past `carve_block_with_refill(CLASS_B, ..)` batch sits on
+    // whatever segment is CURRENTLY `small_cur`, every subsequent class-B
+    // `alloc` is satisfied from THAT unrelated leftover -- never reaching
+    // `find_segment_with_free_impl(CLASS_B)` at all, let alone the directory
+    // or dirty-ring machinery this test targets.
+    //
+    // `materialise_directory`'s own one-block-per-class carve loop allocates
+    // exactly one CLASS_B block, which -- on that carve's cold-miss path --
+    // triggers exactly this `carve_block_with_refill(CLASS_B, ..)` amortisation
+    // batch on WHATEVER segment was `small_cur` at that (early, unrelated)
+    // point in the test. That segment is never touched again by this test
+    // until the assertion loop below, so its leftover class-B free list
+    // (measured: up to `REFILL_BATCH` = 31 blocks, and empirically NOT fully
+    // consumed by the time this point is reached) sits there completely
+    // unrelated to `b_ptr_set`. The original version of this test used
+    // `pair_count` (<= 32, driven by `N_PER_CLASS`/`MIN_PAIRS`) as BOTH the
+    // burn-down budget AND the measured assertion count in a single loop --
+    // giving `REFILL_BATCH` (31) essentially the same order of magnitude as
+    // `pair_count`, so the assertion loop below was, on this codebase's
+    // constants, near-guaranteed to spend a large chunk of its budget
+    // silently draining that unrelated leftover instead of exercising the
+    // cross-thread reclaim path at all -- a false "lost-wakeup" failure with
+    // NO regression in `drain_dirty_segments` itself (confirmed by instrument-
+    // ing the production path: the class-A-triggered drain publishes class
+    // B's directory bit for the co-located segment correctly on its very
+    // first run every time; `find_segment_with_free_impl(CLASS_B)` finds it
+    // immediately once `small_cur`'s unrelated leftover is exhausted).
+    //
+    // The fix: BEFORE the measured loop, allocate class-B blocks (keeping
+    // them alive, i.e. NOT interleaving frees, so a same-thread free can't
+    // replenish `small_cur`'s list and mask the miss -- same discipline as
+    // the class-A trigger batch above) until a genuine
+    // `drain_dirty_segments` visit is observed, exactly mirroring the class-A
+    // trigger batch's own `drained_after > drained_before` proof technique.
+    // Once that first drain fires, `small_cur`'s leftover class-B list is
+    // provably exhausted (a `pop_free` hit would have short-circuited BEFORE
+    // ever reaching the drain call), so every following class-B alloc is
+    // guaranteed to consult the directory/dirty-bitmap path fresh -- closing
+    // the gap the measured loop below relies on for a non-vacuous oracle.
+    // These allocations are deliberately kept LIVE for the rest of the test
+    // (never freed): freeing a class-B block here would `dealloc_small` it
+    // straight back onto the SAME free list this loop exists to drain (LIFO
+    // push), immediately undoing the burn-down for the very next class-B
+    // alloc. Leaking them is harmless -- this is a short-lived test process
+    // and `HeapRegistry::recycle(heap)` at the end tears the whole heap down
+    // regardless of what is "live" on it.
+    //
+    // The LAST alloc of this loop (the one whose drain-counter check finally
+    // trips) is NOT noise -- observing the counter tick means THIS call is
+    // the one that reached `find_segment_with_free_impl(CLASS_B)` and, on a
+    // hit, may itself have been satisfied from segment B's now-drained free
+    // list (i.e. it may BE one of the `b_ptr_set` addresses, consuming one of
+    // the 32 co-located blocks for itself). It is folded into the SAME
+    // pointer-identity tally as the measured loop below (not discarded and
+    // not double-counted), so the total number of class-B allocations
+    // checked against `b_ptr_set` is exactly `pair_count` regardless of
+    // whether the triggering alloc happened to land on a real target address
+    // or an unrelated one.
+    const BURN_DOWN_CAP: usize = 256;
+    let burn_drained_before = AllocCore::dbg_dirty_segments_drained();
+    let mut reissued: Vec<*mut u8> = Vec::with_capacity(pair_count);
+    let mut matched_original = 0usize;
+    let mut burn_down_count = 0usize;
+    let trigger_ptr = loop {
+        let p = unsafe { (*owner_heap).alloc(layout_b) };
+        assert!(!p.is_null(), "class-B burn-down alloc returned null");
+        burn_down_count += 1;
+        if AllocCore::dbg_dirty_segments_drained() > burn_drained_before {
+            break p;
+        }
+        assert!(
+            burn_down_count < BURN_DOWN_CAP,
+            "class-B burn-down never reached drain_dirty_segments after {BURN_DOWN_CAP} \
+             allocs -- small_cur's leftover free list is implausibly large, or \
+             drain_dirty_segments stopped firing entirely"
+        );
+    };
+    if b_ptr_set.contains(&(trigger_ptr as usize)) {
+        matched_original += 1;
+    }
+    reissued.push(trigger_ptr);
+
     // The critical assertion: every one of the co-located class-B
     // cross-thread-freed addresses must be re-issuable by allocating
     // `pair_count` class-B blocks NOW (immediately after the class-A-
@@ -329,9 +424,15 @@ fn class_a_refill_reclaims_class_b_entries_in_the_same_pass() {
     // (not a segment-reservation-counter proxy, which a pool/decommit cache
     // could satisfy from EITHER a genuinely-reclaimed block OR an unrelated
     // previously-pooled segment, making that proxy ambiguous).
-    let mut reissued: Vec<*mut u8> = Vec::with_capacity(pair_count);
-    let mut matched_original = 0usize;
-    for _ in 0..pair_count {
+    //
+    // NOTE: the burn-down loop just above already forced a fresh
+    // `find_segment_with_free_impl(CLASS_B)` visit of its own, so `pair_count
+    // - 1` more allocs (the trigger alloc already counted above) are drawn
+    // here -- `find_segment_with_free_impl(CLASS_B)` runs unconditionally on
+    // EVERY non-fastbin `alloc_small` miss (there is no magazine layer under
+    // this test's feature set to cache a hit across calls), so each one of
+    // these allocs independently reaches the directory scan.
+    for _ in 0..pair_count - 1 {
         let p = unsafe { (*owner_heap).alloc(layout_b) };
         assert!(
             !p.is_null(),
