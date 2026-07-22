@@ -235,10 +235,19 @@ impl Layout {
         align_up(Self::primordial_meta_end(), real_page)
     }
     /// Number of metadata pages in a small segment.
+    ///
+    /// R12-11 (task #262): the ONLY consumer is `PageMap::init_in_place`'s
+    /// `meta_pages` argument (diagnostic-only bookkeeping — see `PageMap`'s
+    /// struct doc); gated behind `page-map-diag`.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) const fn small_meta_pages() -> usize {
         Self::small_meta_end() / PAGE
     }
     /// Number of metadata pages in the primordial segment.
+    ///
+    /// R12-11 (task #262): same rationale as [`small_meta_pages`], for the
+    /// primordial segment.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) const fn primordial_meta_pages() -> usize {
         Self::primordial_meta_end() / PAGE
     }

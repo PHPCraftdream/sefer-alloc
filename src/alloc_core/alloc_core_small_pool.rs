@@ -818,10 +818,18 @@ impl AllocCore {
         // 2c. Re-mark every payload page `Free` in the page map (metadata pages
         //     keep their `Meta` marking). Payload pages are `[meta_pages,
         //     PAGES_PER_SEGMENT)`.
-        let mut pm = meta.page_map();
-        let meta_pages = SegLayout::small_meta_pages();
-        for p in meta_pages..super::segment_header::PAGES_PER_SEGMENT {
-            pm.set_free(p);
+        //
+        // R12-11 (task #262): `PageMap` maintenance is diagnostic-only (see
+        // its struct doc) — gated behind `page-map-diag` (additionally to
+        // this whole module's `alloc-decommit` gate) and elided from the
+        // default/production decommit-reset path.
+        #[cfg(feature = "page-map-diag")]
+        {
+            let mut pm = meta.page_map();
+            let meta_pages = SegLayout::small_meta_pages();
+            for p in meta_pages..super::segment_header::PAGES_PER_SEGMENT {
+                pm.set_free(p);
+            }
         }
         // 2d. Zero the alloc bitmap (every slot "allocated / not-a-block" — the
         //     init state; with no live blocks and an empty free list this is the

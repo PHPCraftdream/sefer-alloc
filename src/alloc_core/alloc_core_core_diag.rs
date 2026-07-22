@@ -13,7 +13,13 @@ use core::alloc::Layout;
 
 use super::node::Node;
 use super::os;
-use super::segment_header::{SegmentHeader, SegmentKind, SegmentMeta};
+#[cfg(any(
+    feature = "numa-aware",
+    feature = "virgin-zero-skip",
+    feature = "page-map-diag"
+))]
+use super::segment_header::SegmentMeta;
+use super::segment_header::{SegmentHeader, SegmentKind};
 use super::size_classes::{AllocKind, SizeClasses};
 
 use super::alloc_core::{AllocCore, FOREIGN_OR_UNROUTABLE_FREES};
@@ -81,7 +87,13 @@ impl AllocCore {
     /// as a pure read so the test can prove the Layout-class and page_map-class
     /// genuinely differ on a mixed-class page (the §13 counterfactual).
     /// `#[doc(hidden)] pub` per the established test-only surface.
+    ///
+    /// R12-11 (task #262): gated behind `page-map-diag` — this is the ONLY
+    /// reader of `PageMap::class_of` in the whole codebase, and `PageMap` is
+    /// only maintained (written) under that same feature. See
+    /// `PageMap`'s struct doc / the feature's `Cargo.toml` doc.
     #[doc(hidden)]
+    #[cfg(feature = "page-map-diag")]
     pub fn dbg_page_map_class_for(&self, ptr: *mut u8) -> Option<usize> {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {

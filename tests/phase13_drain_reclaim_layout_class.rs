@@ -39,7 +39,11 @@
 //! reclaim genuinely honours the carried class — i.e. the §13 fix is
 //! load-bearing.
 
-#![cfg(feature = "alloc-xthread")]
+// R12-11 (task #262): every test in this file relies on `dbg_page_map_class_for`
+// (the doc-hidden diagnostic reader of the now-gated `PageMap`) to construct
+// its counterfactual, so the whole file additionally requires `page-map-diag`.
+// Run with: cargo test --features "production alloc-xthread page-map-diag" --test phase13_drain_reclaim_layout_class
+#![cfg(all(feature = "alloc-xthread", feature = "page-map-diag"))]
 
 use std::alloc::Layout;
 use std::ptr;

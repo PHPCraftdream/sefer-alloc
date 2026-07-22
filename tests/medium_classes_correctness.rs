@@ -341,7 +341,11 @@ fn item3_dealloc_reuses_the_same_class_freelist() {
 // wins" bookkeeping does not misreport/overflow for a medium class page.
 // ---------------------------------------------------------------------------
 
+// R12-11 (task #262): `dbg_page_map_class_for` is gated behind `page-map-diag`
+// (the only reader of the now-diagnostic-only `PageMap`); this one test needs
+// the feature explicitly (the rest of this file does not).
 #[test]
+#[cfg(feature = "page-map-diag")]
 fn item4_page_map_records_medium_class_without_overflow() {
     let mut core = AllocCore::new().expect("AllocCore::new failed");
     let layout = Layout::from_size_align(384 * 1024, 8).unwrap();

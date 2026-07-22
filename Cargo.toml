@@ -198,6 +198,43 @@ alloc-global = ["alloc-core", "dep:tagged-index-stack"]
 # `required-features` or `#![cfg(feature = "batch-api")]`.
 batch-api = ["alloc-core"]
 
+# R12-11 (task #262, P2): DIAGNOSTIC-ONLY per-page class bookkeeping
+# (`alloc_core::segment_header::PageMap`). An inventory of every PageMap call
+# site confirmed the module doc's own claim: no production `alloc`/`dealloc`/
+# `realloc`/cross-thread-reclaim path derives a block's size class from
+# `PageMap` — the class is always carried authoritatively by the caller's
+# `Layout` (own-thread free, `AllocCore::dealloc_small`) or the
+# `RemoteFreeRing` entry (cross-thread free, `reclaim_offset`). The ONLY
+# thing that ever calls `PageMap::class_of` is the doc-hidden test seam
+# `AllocCore::dbg_page_map_class_for`.
+#
+# That seam is, however, a genuine load-bearing test ORACLE: the §13
+# counterfactual regression gates (`tests/phase13_3_dealloc_layout_class.rs`,
+# `tests/phase13_drain_reclaim_layout_class.rs`) and two more correctness
+# tests (`tests/regression_carve_batch.rs`,
+# `tests/medium_classes_correctness.rs`) construct a mixed-class page on
+# purpose and PROVE the real dealloc/reclaim path does NOT reroute by
+# `page_map`'s class by comparing it against the `Layout`-derived class. Those
+# tests need `PageMap` to actually be maintained (written) to have anything to
+# compare against — so PageMap could not simply be deleted without breaking
+# the very gate that protects the invariant it documents.
+#
+# This feature therefore gates the WRITE sites only — `PageMap::init_in_place`
+# (bootstrap, ×2), `carve_block`'s / `carve_batch`'s per-distinct-page
+# `set_class` "first class wins" stamp, and the decommit-reset `set_free`
+# re-marking loop (`alloc_core_small_pool.rs`) — out of the default/production
+# build. The `PageMap` struct, its FOOTPRINT, and its offset in `Layout` stay
+# UNCONDITIONAL (present in every feature config) so the segment metadata
+# byte layout never shifts with this feature on/off — only the per-segment/
+# per-carve WORK of maintaining it is elided. With this feature OFF (the
+# default, and NOT part of `production`), the carve/reset hot paths save the
+# `class_of` read + conditional `set_class` write (per distinct payload page)
+# and the once-per-segment `init_in_place` sweep; `PageMap`'s bytes are simply
+# never written, so `dbg_page_map_class_for` is not meaningful and the 4 test
+# files above require this feature explicitly. `--all-features` pulls it in,
+# as it does every other opt-in feature here. Additive over `alloc-core`.
+page-map-diag = ["alloc-core"]
+
 # Phase 35: M6 decommit — return the payload pages of an empty small segment to
 # the OS (Win `VirtualFree MEM_DECOMMIT` / unix `madvise MADV_DONTNEED`) when its
 # live-block count drops to zero, recommitting on first reuse. Additive over

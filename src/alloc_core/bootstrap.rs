@@ -128,10 +128,16 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // 3. Initialise the page map and bin table at their fixed offsets. The
     //    `Node::write_*` primitives (called from `init_in_place`) do the raw
     //    writes; this code only computes offsets.
+    //
+    // R12-11 (task #262): `PageMap` maintenance is diagnostic-only (see its
+    // struct doc) — gated behind `page-map-diag` and elided from the
+    // default/production bootstrap path.
+    #[cfg(feature = "page-map-diag")]
     let pm_off = Layout::page_map_off();
     let bt_off = Layout::bin_table_off();
     let reg_off = Layout::primordial_registry_off();
     let meta_end = Layout::primordial_meta_end();
+    #[cfg(feature = "page-map-diag")]
     let meta_pages = Layout::primordial_meta_pages();
 
     // SAFETY (caller-side reasoning, encoded as the `init_in_place` contract):
@@ -139,6 +145,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // checked: `Layout::primordial_meta_end() + PAGE <= SEGMENT`), and the
     // segment is exclusively owned (single-threaded bootstrap). Each
     // `init_in_place` call writes only its `FOOTPRINT` bytes via `Node`.
+    #[cfg(feature = "page-map-diag")]
     super::segment_header::PageMap::init_in_place(base_plus(base, pm_off), meta_pages);
     super::segment_header::BinTable::init_in_place(base_plus(base, bt_off) as *mut u32);
     // Initialise the per-segment alloc-bitmap (Phase 13.4a O(1) double-free

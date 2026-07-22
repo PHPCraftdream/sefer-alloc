@@ -72,6 +72,11 @@ fn carve_batch_wellformed_inner(size: usize, align: usize, n: usize) {
 
     // 3. Every carved block's page is dedicated to class `c` (page-map "first
     //    class wins", applied per distinct page by carve_batch).
+    //
+    // R12-11 (task #262): `dbg_page_map_class_for` is gated behind
+    // `page-map-diag` (the only reader of the now-diagnostic-only `PageMap`);
+    // this check needs the feature explicitly (the rest of this test does not).
+    #[cfg(feature = "page-map-diag")]
     for &p in &buf {
         assert_eq!(
             core.dbg_page_map_class_for(p),

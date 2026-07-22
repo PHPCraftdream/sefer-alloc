@@ -29,7 +29,11 @@
 //! the block would resurface on a page_map-class alloc — caught here as a
 //! canary reappearing on the wrong-class alloc.
 
-#![cfg(feature = "alloc-core")]
+// R12-11 (task #262): every test in this file relies on `dbg_page_map_class_for`
+// (the doc-hidden diagnostic reader of the now-gated `PageMap`) to construct
+// its counterfactual, so the whole file additionally requires `page-map-diag`.
+// Run with: cargo test --features "production page-map-diag" --test phase13_3_dealloc_layout_class
+#![cfg(all(feature = "alloc-core", feature = "page-map-diag"))]
 
 use std::alloc::Layout;
 use std::ptr;

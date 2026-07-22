@@ -189,6 +189,11 @@ pub(crate) enum SegmentKind {
 /// of `RACE_DRAIN_RECLAIM.md`). This deliberately differs from mimalloc's "page
 /// is owned by one size class" model, which would require a per-class bump
 /// cursor.
+///
+/// R12-11 (task #262): diagnostic-only — see `PageMap`'s struct doc. Gated
+/// behind `page-map-diag`; unused (and its `encode_class`/`decode` companions
+/// with it) without that feature.
+#[cfg(feature = "page-map-diag")]
 pub(crate) enum PageClass {
     /// The page is uncarved (still part of the bump region).
     Free = 0xFF,
@@ -207,6 +212,7 @@ pub(crate) enum PageClass {
 // EVERY feature configuration, not just `medium-classes`) rather than leaving
 // it as an unstated assumption a much later class-count grower could violate
 // silently.
+#[cfg(feature = "page-map-diag")]
 const _: () = assert!(
     SMALL_CLASS_COUNT < 0xFE,
     "PageClass encodes class indices as a u8 sharing its value space with the \
@@ -214,6 +220,7 @@ const _: () = assert!(
      below 0xFE (254) so no real class index can collide with either sentinel"
 );
 
+#[cfg(feature = "page-map-diag")]
 impl PageClass {
     /// Encode a small-class index as a `PageClass::Class(c)` byte.
     pub(crate) const fn encode_class(c: usize) -> u8 {
@@ -879,9 +886,26 @@ pub(crate) fn align_up(n: usize, a: usize) -> usize {
 /// the caller's `Layout` (own-thread) or stamped into the `RemoteFreeRing` entry
 /// (cross-thread). Deriving a class here would reintroduce the mixed-class /
 /// stale-cursor drain-reclaim bug fixed in §13 of `RACE_DRAIN_RECLAIM.md`.
+///
+/// R12-11 (task #262): an inventory of every call site confirmed the note
+/// above — the ONLY reader is the doc-hidden test seam
+/// `AllocCore::dbg_page_map_class_for`, which several §13 counterfactual
+/// regression tests use as an ORACLE to prove the real dealloc/reclaim paths
+/// do NOT consult it (see `tests/phase13_3_dealloc_layout_class.rs`,
+/// `tests/phase13_drain_reclaim_layout_class.rs`). Maintaining the table is
+/// therefore diagnostic-only work: [`new`](Self::new), [`init_in_place`],
+/// [`set_class`], [`set_free`], and [`class_of`] are ALL gated behind the
+/// `page-map-diag` feature (see its `Cargo.toml` doc for the full rationale)
+/// and elided from the default/`production` build. Only `FOOTPRINT` stays
+/// UNCONDITIONAL: it only describes the fixed offset this table occupies in
+/// `Layout`, so the segment metadata byte layout is identical in every
+/// feature configuration — only the per-segment/per-carve WORK of
+/// maintaining/viewing the table's contents is elided, not its place in the
+/// layout.
 pub(crate) struct PageMap {
     /// Absolute address of the first entry (we store the absolute `*mut u8`
     /// so reads need no segment-base arithmetic).
+    #[cfg(feature = "page-map-diag")]
     entries: *mut u8,
 }
 
@@ -892,6 +916,7 @@ impl PageMap {
 
     /// Construct the view over an already-laid-down page map at `entries`.
     /// The bootstrap calls this AFTER writing the entries via [`init_in_place`].
+    #[cfg(feature = "page-map-diag")]
     pub(crate) fn new(entries: *mut u8) -> Self {
         Self { entries }
     }
@@ -902,6 +927,10 @@ impl PageMap {
     ///
     /// `entries` MUST point to `Self::FOOTPRINT` writable bytes inside the
     /// segment being initialised (caller's contract — the bootstrap).
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only maintenance —
+    /// see the struct doc. Gated out of the default build.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) fn init_in_place(entries: *mut u8, meta_pages: usize) {
         for p in 0..PAGES_PER_SEGMENT {
             let byte = if p < meta_pages {
@@ -915,6 +944,11 @@ impl PageMap {
 
     /// Read the class of page `p` (decoded). Panics (debug) if
     /// `p >= PAGES_PER_SEGMENT`.
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. The only caller is `AllocCore::dbg_page_map_class_for`, itself
+    /// gated behind the same feature.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) fn class_of(&self, p: usize) -> Option<usize> {
         debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
         let byte = Node::read_u8(self.entries_at_const(p));
@@ -922,6 +956,10 @@ impl PageMap {
     }
 
     /// Mark page `p` as owned by size-class `class_idx`.
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. Gated out of the default build.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) fn set_class(&mut self, p: usize, class_idx: usize) {
         debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
         Node::write_u8(self.entries_at_const(p), PageClass::encode_class(class_idx));
@@ -929,13 +967,18 @@ impl PageMap {
 
     /// Mark page `p` as `Free` (uncarved). Phase 35: used by the M6 decommit
     /// reset to return an emptied segment's payload pages to the bump region.
-    #[cfg(feature = "alloc-decommit")]
+    ///
+    /// R12-11 (task #262, `page-map-diag`): diagnostic-only — see the struct
+    /// doc. Gated out of the default build (additionally to the pre-existing
+    /// `alloc-decommit` gate).
+    #[cfg(all(feature = "alloc-decommit", feature = "page-map-diag"))]
     pub(crate) fn set_free(&mut self, p: usize) {
         debug_assert!(p < PAGES_PER_SEGMENT, "page index out of range");
         Node::write_u8(self.entries_at_const(p), PageClass::Free as u8);
     }
 
     /// Pointer to entry `p`. Caller guarantees `p < PAGES_PER_SEGMENT`.
+    #[cfg(feature = "page-map-diag")]
     fn entries_at_const(&self, p: usize) -> *mut u8 {
         // Routed through the `node` seam (`add` is unsafe; the seam documents
         // the in-bounds contract).
@@ -1106,6 +1149,10 @@ impl SegmentMeta {
     }
 
     /// The page-map view.
+    ///
+    /// R12-11 (task #262): diagnostic-only — see `PageMap`'s struct doc.
+    /// Gated behind `page-map-diag`.
+    #[cfg(feature = "page-map-diag")]
     pub(crate) fn page_map(&self) -> PageMap {
         PageMap::new(Node::offset(self.base, Layout::page_map_off()))
     }

@@ -16,9 +16,13 @@ use super::numa;
 use super::os::Segment;
 use super::os::{self, SEGMENT};
 use super::segment_header::{
-    align_up, BinTable, Layout as SegLayout, PageMap, SegmentHeader, SegmentKind, SegmentMeta,
+    align_up, BinTable, Layout as SegLayout, SegmentHeader, SegmentKind, SegmentMeta,
     FREE_LIST_NULL,
 };
+// R12-11 (task #262): `PageMap::init_in_place` is diagnostic-only (see its
+// doc) and its sole call site in this file is gated behind `page-map-diag`.
+#[cfg(feature = "page-map-diag")]
+use super::segment_header::PageMap;
 use super::size_classes::SizeClasses;
 
 use super::alloc_core::{base_add, AllocCore};
@@ -1381,6 +1385,11 @@ impl AllocCore {
     ///
     /// On a page boundary crossing, marks the freshly entered page as owned by
     /// `class_idx` in the page map (the page-dedication rule).
+    ///
+    /// R12-11 (task #262): `class_idx` is used ONLY for that diagnostic-only
+    /// page-map marking (see `PageMap`'s struct doc) — it is genuinely unused
+    /// without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
     fn carve_block(&mut self, class_idx: usize, block_size: usize) -> Option<*mut u8> {
         let segment = self.small_cur;
         let mut meta = SegmentMeta::new(segment);
@@ -1495,11 +1504,17 @@ impl AllocCore {
         #[cfg(feature = "alloc-decommit")]
         meta.inc_live();
         // Mark the page containing `aligned_bump` as owned by `class_idx`.
-        let mut pm = meta.page_map();
-        let page = aligned_bump / super::os::PAGE;
-        if pm.class_of(page).is_none() {
-            // Page was Free or Meta; dedicate it to this class.
-            pm.set_class(page, class_idx);
+        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
+        // load-bearing for class routing — see its struct doc); gated behind
+        // `page-map-diag` and elided from the default/production carve path.
+        #[cfg(feature = "page-map-diag")]
+        {
+            let mut pm = meta.page_map();
+            let page = aligned_bump / super::os::PAGE;
+            if pm.class_of(page).is_none() {
+                // Page was Free or Meta; dedicate it to this class.
+                pm.set_class(page, class_idx);
+            }
         }
         let ptr = Node::deref(segment, aligned_bump);
         Some(ptr)
@@ -1550,6 +1565,10 @@ impl AllocCore {
     ///     `room = (SEGMENT - aligned_start) / block_size`, so
     ///     `aligned_start + n*block_size <= SEGMENT` — the same
     ///     `aligned + block_size > SEGMENT` per-block check, batched.
+    // R12-11 (task #262): `class_idx` is used ONLY for the diagnostic-only
+    // page-map marking below (see `PageMap`'s struct doc) — it is genuinely
+    // unused without `page-map-diag`.
+    #[cfg_attr(not(feature = "page-map-diag"), allow(unused_variables))]
     pub(super) fn carve_batch(
         &mut self,
         class_idx: usize,
@@ -1638,16 +1657,25 @@ impl AllocCore {
         // this run. `carve_block` marks a page iff it was not already owned; the
         // first block to land on a page is the one that dedicates it, so calling
         // `set_class` on each page-index CHANGE reproduces that exactly.
+        //
+        // R12-11 (task #262): diagnostic-only bookkeeping (`PageMap` is NOT
+        // load-bearing for class routing — see its struct doc); gated behind
+        // `page-map-diag` and elided from the default/production carve path.
+        #[cfg(feature = "page-map-diag")]
         let mut pm = meta.page_map();
+        #[cfg(feature = "page-map-diag")]
         let mut prev_page = usize::MAX;
         for (i, slot) in out[..n].iter_mut().enumerate() {
             let off = aligned_start + i * block_size;
-            let page = off / super::os::PAGE;
-            if page != prev_page {
-                if pm.class_of(page).is_none() {
-                    pm.set_class(page, class_idx);
+            #[cfg(feature = "page-map-diag")]
+            {
+                let page = off / super::os::PAGE;
+                if page != prev_page {
+                    if pm.class_of(page).is_none() {
+                        pm.set_class(page, class_idx);
+                    }
+                    prev_page = page;
                 }
-                prev_page = page;
             }
             *slot = Node::deref(segment, off);
         }
@@ -1931,6 +1959,9 @@ impl AllocCore {
         // Lay down the small header + page map + bin table at the fixed
         // offsets. `bump` starts at the small-meta end (past the metadata).
         let meta_end = SegLayout::small_meta_end();
+        // R12-11 (task #262): only feeds the diagnostic-only `PageMap::init_in_place`
+        // below; unused without `page-map-diag`.
+        #[cfg(feature = "page-map-diag")]
         let meta_pages = SegLayout::small_meta_pages();
         let mut meta = SegmentMeta::new(base);
         meta.write_header(SegmentHeader::small(
@@ -2049,6 +2080,10 @@ impl AllocCore {
             meta.set_committed_payload_end(SEGMENT);
         }
 
+        // R12-11 (task #262): diagnostic-only bookkeeping — see `PageMap`'s
+        // struct doc. Gated behind `page-map-diag` and elided from the
+        // default/production segment-reservation path.
+        #[cfg(feature = "page-map-diag")]
         PageMap::init_in_place(base_add(base, SegLayout::page_map_off()), meta_pages);
         BinTable::init_in_place(base_add(base, SegLayout::bin_table_off()) as *mut u32);
         // Initialise the per-segment alloc-bitmap (Phase 13.4a double-free
