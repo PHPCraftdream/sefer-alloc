@@ -7,35 +7,212 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### `batch-api` marked honestly experimental (R12-12)
+### Round 12 — directory-aliasing/NUMA correctness fixes, exact-span Large, class-aware dirty routing, virgin-zero skip (R12-1..R12-14)
 
-Two consecutive external reviews (starting at R10) flagged that
-`#[doc(hidden)] pub unsafe fn alloc_batch`/`dealloc_batch`
-(`SeferAlloc`/`HeapCore`, `batch-api` feature) is still formally public Rust
-API for anyone who enables the feature: `#[doc(hidden)]` only hides the item
-from rustdoc, it does not waive semver expectations for a user who finds the
-function via IDE autocomplete or the source. Two changes, both non-behavioral:
+Round 12 — 14 commits (`79f4136`..`3dc7bd9`, inclusive of both ends),
+2026-07-22 — the follow-up queue against two independent external reviews of
+the Round 11 wave (one correctness-focused, one speed-focused), synthesized
+into a single prioritized queue and executed task by task with the same
+zero-trust discipline as prior rounds: delegate implementation, personally
+read every diff, personally re-run the tests (not trust the agent's own
+"tests passed" claim), personally reproduce red-before/green-after
+counterfactuals for every safety-relevant change, then commit. Two tasks
+(R12-8, R12-13) reached honest NO-GO/superseded verdicts with zero code
+changed — both cited prior institutional decisions (the 2026-07-10 G1
+honest-reject for R12-8; R12-3's own measured numbers for R12-13) rather
+than re-deriving from scratch, and both are recorded as complete, correct
+outcomes of this round's methodology, not shortfalls.
 
-- **`batch-api` now requires `experimental`**
-  (`batch-api = ["experimental", "alloc-core"]`, `Cargo.toml`) — nesting it
-  under the crate's existing "no semver guarantees, research-tier" umbrella
-  (already used by `pinning` and the RCU+epoch concurrent tier) makes the
-  instability an explicit, unmissable opt-in rather than a same-tier peer of
-  `alloc-decommit`/`exact-span-large`/etc. `--features batch-api` still
-  compiles and tests exactly as before (Cargo feature unification pulls in
-  `experimental` transitively); no cycle (`experimental` does not list
-  `batch-api`, or anything that lists it, among its own requirements).
-- **`#[doc(hidden)]` dropped from `SeferAlloc::alloc_batch`/`dealloc_batch`**,
-  replaced with a visible `# ⚠ EXPERIMENTAL / UNSTABLE` rustdoc section
-  stating explicitly that the API has no semver guarantees and may change or
-  be removed in any release while `batch-api` remains unstable. The
-  underlying `HeapCore::alloc_batch`/`dealloc_batch` (reached only through
-  the crate's already doc-hidden `registry` module) keep `#[doc(hidden)]`
-  but gained the same experimental-status doc section for anyone reading the
-  source directly.
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** One feature joined `production` this round
+(`primordial-lazy-commit`, R12-9, user-confirmed separately from the
+measured GO per this project's "production feature-composition changes need
+explicit sign-off" convention); one feature (`page-map-diag`, R12-11)
+flipped `production`'s *default* by making previously-always-on bookkeeping
+opt-in instead — a smaller, faster default carve path, with the diagnostic
+capability preserved behind the new feature for anyone who needs it. Five
+new opt-in, non-`production` experimental features were added
+(`exact-span-large`, `large-reserved-capacity`, `class-aware-dirty`,
+`virgin-zero-skip`, `page-map-diag`); `batch-api` gained a hard dependency
+on `experimental`. Two P0 correctness fixes (R12-1, R12-2) landed directly
+in the always-on directory-scan path with no feature gate — they fix
+genuine bugs, not opt-in behavior.
 
-No signature, behavior, or safety-contract change to any function; no
-version bump.
+**P0 — correctness fixes (unconditional, no feature gate):**
+
+- **R12-1 (`79f4136`) — close a formal aliasing-UB window in the
+  directory-driven segment scan.** `find_segment_with_free_impl`'s scan
+  loop held a live `&'static SegmentDirectory` across a call
+  (`validate_directory_candidate`) that can itself materialize a
+  `&'static mut SegmentDirectory` on the same allocation via its self-heal
+  path — `&T`/`&mut T` simultaneously live over one allocation, aliasing UB
+  under Stacked/Tree Borrows regardless of the single-threaded owner
+  discipline (which only rules out a data race, not the aliasing-model
+  violation). Fixed by reading each directory word BY VALUE
+  (`os::read_directory_class_words`, a raw-pointer `.read()` with no
+  reference retained) instead of holding a long-lived reference across the
+  mutating call. New regression test manufactures the exact
+  mutation-during-scan interleaving; miri cannot reach the directory's
+  above-threshold materialization path in practical time (documented
+  pre-existing limitation), so the test is a behavioral-equivalence pin
+  plus a guard against future regressions, not a red/green UB detector —
+  documented honestly rather than overclaimed.
+- **R12-2 (`89b6ce2`) — dense NUMA node-id → bucket mapping fixes locality
+  on >8-node hosts.** The directory's `node_bucket` used the raw OS NUMA
+  node id as a direct array index clamped at `MAX_NODES = 8`; `numa-shim`
+  scans up to 64 real node ids, so every node id ≥ 8 silently fell into the
+  shared "unknown" bucket regardless of how many distinct high-numbered
+  nodes were actually in play — a thread on node 9 could be handed a
+  node-10 segment ahead of its own node-9 segment, defeating R11-6's
+  locality optimization on exactly the large machines it targets. Fixed
+  with a dense `node_ids: [u32; MAX_NODES]` registration table (a node
+  claims the next free bucket slot on first use) instead of raising
+  `MAX_NODES` to 64 outright (rejected: ~7× sidecar memory tax paid by
+  every heap for a rare case). A genuine regression in the fix's own
+  test-only rebuild path (reset-vs-preserve the registration table) was
+  caught during development and fixed, documented at length in
+  `segment_directory.rs`.
+
+**P0-perf — new opt-in experimental features (not in `production`):**
+
+- **R12-3 (`2593d30`) — exact-span Large allocation.** Every Large request
+  previously reserved a minimum of one whole 4 MiB `SEGMENT` regardless of
+  actual size (a 260 KiB request paid for 4 MiB, ~15.8× amplification).
+  `exact-span-large` sizes the physical reservation to
+  `round_up(header + size, OS page)` instead — the stale comment claiming
+  vmem required SEGMENT-multiple sizing did not hold up under inspection
+  (both backends already support arbitrary `size != align`). Measured (own
+  new `examples/r12_3_exact_span_measure.rs` harness, independently
+  reproduced by the orchestrator): 260 KiB 15.78×→1.05×, 512 KiB
+  8.00×→1.01×, 1 MiB 4.00×→1.00×, 1.75 MiB 2.29×→1.00×, 4 MiB
+  2.00×→1.00×. Trade-off: OPT-G's in-place realloc-grow fast path loses
+  most of its committed headroom (addressed by R12-4).
+- **R12-4 (`fc155c9`) — reserved-capacity Large realloc, a Windows-effect
+  follow-up to R12-3.** `large-reserved-capacity` reserves (but does not
+  commit) a geometric 2× VA span up front, committing only the exact-span
+  request; a growing realloc that fits within the reserved span commits
+  just the missing tail (one `VirtualAlloc(MEM_COMMIT)`-class call) instead
+  of falling back to alloc+copy+free. No new `unsafe`: reuses
+  `aligned_vmem::reserve_aligned_lazy`/`commit_range` end to end (already
+  used by the small-segment lazy-commit path). Measured: 2/4 growth-chain
+  legs stay in-place (vs. 0/4 with exact-span-large alone), 33% fewer
+  copied bytes, while commit-charge stays well below the pre-R12-3 4-MiB-
+  rounded baseline.
+
+**P1 — production-reachable fixes and new opt-in features:**
+
+- **R12-5 (`7186f80`) — bound the cached `current_node()` staleness to a
+  periodic refresh.** R11-5's NUMA-node cache was invalidated only at
+  registry-slot claim/recycle boundaries; a long-lived, non-pinned thread
+  the OS migrates mid-claim stayed pinned to the stale node for the rest of
+  that claim — unbounded in wall-clock time. Fixed with a forced re-query
+  every 128 cache hits (`NUMA_NODE_REFRESH_PERIOD`, chosen to match the
+  order of magnitude of the directory's own sibling re-validation cadence),
+  charged only to refill-miss/reservation call sites, never the bump-
+  pointer hot path — measured ~2.5 ns added per cache hit, ~70–90× cheaper
+  than the real syscall it occasionally replaces.
+- **R12-6 (`4ea904f`) — finalize overflow-emptied segments beyond the
+  64-base dedup cap.** `drain_heap_overflow`'s fixed 64-entry on-stack
+  dedup buffer silently dropped pool/release finalization for the 65th+
+  distinct segment emptied by cross-thread overflow-ring reclaims in a
+  single drain pass (native `HEAP_OVERFLOW_CAP` is 2048, so this was
+  reachable, if rare) — segments stayed correctly usable but sat outside
+  pool-cap accounting at inflated RSS indefinitely. Fixed with a rare
+  post-drain fallback sweep, gated on an `emptied_overflowed` flag so the
+  common case pays nothing extra. New 66-distinct-segment regression test
+  confirmed capped-at-64 behavior pre-fix, uncapped post-fix.
+- **R12-7 (`f615703`) — class-aware dirty routing, wall-clock-gated then
+  implemented.** `drain_dirty_segments` routed purely by segment, visiting
+  every segment dirty for ANY class on a refill miss (R9-6 measured ~82%
+  wasted visits at 4 concurrent producer classes, ~95% at 8, but deferred
+  the wall-clock question). This round's own criterion bench confirmed the
+  waste ratio is real (+134–171% ns/owner_alloc at N=1→N=4), then
+  implemented `class-aware-dirty`: a lazily-materialized per-(segment,
+  class) dirty-bit sidecar that lets a refill scan only the sought class's
+  own word slice. Lost-wakeup safety by construction: a per-class bit is a
+  visit HINT only, the drain body always fully drains the whole ring once a
+  segment is visited, so a stale/redundant bit costs at most one wasted
+  visit, never a silently-skipped entry — proved with a dedicated loom
+  suite including a `#[should_panic]` counterfactual showing a genuinely
+  partial drain design (the rejected alternative) *does* lose an entry
+  under loom's interleaving search. Post-implementation re-measurement: ~19–
+  23× reduction in ns/owner_alloc at N=8.
+- **R12-8 — unify `AllocBitmap`+`MagazineBitmap` into a 2-bit
+  `BlockStateMap`: NO-GO, no code changed.** Independent re-derivation
+  reached the identical conclusion the codebase's own 2026-07-10 "G1
+  honest-reject" record already established: the merge requires inverting
+  load-bearing semantics at 15+ `AllocCore`-layer call sites that are
+  deliberately magazine-blind (`carve_batch`'s leave-unset optimization,
+  the freelist-drain legs, etc.), reopening a safety-critical double-free-
+  detection boundary that was deliberately kept orthogonal by the
+  already-shipped `MagazineBitmap` design (RAD-5, which got the ~50 Ir/op
+  win *without* the invasive semantics change). No unexploited win remains
+  of the size this task hoped for.
+- **R12-9 (`a9ec36d`, `3b98ae4`) — split `alloc-lazy-commit` into
+  `primordial-lazy-commit` (now in `production`) and
+  `small-segment-lazy-commit` (stays opt-in).** The combined feature gave a
+  ~5.1× smaller first-heap commit but was kept out of `production` because
+  the full policy (lazy-committing every small segment) caused a 50–75×
+  commit/decommit-syscall regression on decommit-heavy lifecycles (R8-10).
+  Splitting isolates the two OS-reservation call sites: the primordial
+  segment is reserved exactly once per process and is structurally excluded
+  from the decommit lifecycle (`dec_live_and_maybe_decommit` hard-gates on
+  `SegmentKind::Small`, which `Primordial` never satisfies), so it is safe
+  from the R8-10 regression class by construction. User confirmed promoting
+  `primordial-lazy-commit` to `production` after the measured ~5.14× win
+  was independently reproduced.
+- **R12-10 (`698cfca`) — virgin-carve zero-skip for Small `alloc_zeroed`
+  (`virgin-zero-skip`, opt-in).** Implements a design verified twice
+  (R9-5, R11-8, both CONDITIONAL GO): a genuinely first-touch bump-carved
+  block on an OS-zero-guaranteed segment can skip `alloc_zeroed`'s explicit
+  memset. A new owner-only `payload_virgin` bit tracks this per segment,
+  withheld unconditionally under miri (matching the R9-1/#221 lesson that
+  miri's `std::alloc` fallback does not zero-fill), defensively cleared on
+  the one decommit-retain code path that could re-expose a
+  decommitted-then-recommitted payload (currently dead in production, kept
+  as a fail-safe). Personally verified non-vacuous: neutered the
+  free-list-pop dispatch leg to wrongly claim virginity and confirmed 4 of 7
+  tests failed with a genuine dirty-byte leak, then restored and reconfirmed
+  green.
+
+**P2 — smaller fixes, documentation, and re-evaluations:**
+
+- **R12-11 (`5199148`) — gate `PageMap` maintenance behind a diagnostic-
+  only feature.** The per-page class-tracking table was never load-bearing
+  for production class routing (the class is always carried by the
+  caller's `Layout` or the `RemoteFreeRing` entry) but was still maintained
+  unconditionally on every carve/bootstrap/decommit-reset — until an
+  inventory found it *is* a genuine test oracle for the §13 counterfactual
+  regression gates, so it was feature-gated (`page-map-diag`) rather than
+  deleted. Measured iai win on the carve/decommit-reset hot paths this
+  closes (largest deltas: `multiseg_cold_256k` 490.1→329.2 Ir/op,
+  `seg_cycle_decommit_256k` 339.7→286.1 Ir/op).
+- **R12-12 (`a7db75a`) — `batch-api` marked honestly experimental**, per
+  two consecutive external reviews (starting at R10): `#[doc(hidden)] pub
+  unsafe fn alloc_batch`/`dealloc_batch` is still formally public Rust API
+  for anyone who enables the feature. `batch-api` now requires
+  `experimental` (nesting it under the crate's existing no-semver-
+  guarantees umbrella); `#[doc(hidden)]` dropped from the `SeferAlloc`
+  face in favor of a visible `# ⚠ EXPERIMENTAL / UNSTABLE` rustdoc section.
+  No signature, behavior, or safety-contract change to any function.
+- **R12-13 (`6d6e279`) — page-run layer design (R11-7): SUPERSEDED, NO-GO,
+  no code changed.** R11-7 bundled two sub-problems: (a) per-object RSS
+  waste and (b) `SegmentTable`-slot/syscall pressure at high live-object
+  counts. R12-3 closed (a) almost completely (15.8×→~1.00–1.05×
+  amplification); (b) has no demonstrated victim anywhere in this
+  codebase's tests/benches — and three of R11-7's four target size classes
+  already route through the cheaper Small-class path under shipped
+  `medium-classes-wide`, since `SMALL_MAX` there is 1.75 MiB. The design
+  doc is annotated with a pointer to the verdict, not deleted, in case a
+  real `MAX_SEGMENTS`-bound workload is measured in the future.
+- **R12-14 (`3dc7bd9`) — made the R12-1/R12-2 directory regression tests
+  density-agnostic under `--all-features`.** Both tests were tuned against
+  `production`'s `SMALL_MAX` (~253 KiB, ~16 blocks/segment) and silently
+  broke under `medium-classes-wide`'s 1.75 MiB `SMALL_MAX` (exactly one
+  block per segment) — not a directory bug, a hardcoded test-density
+  assumption. Fixed by deriving allocation counts/classes from measured
+  density and project constants instead of literals tuned for one feature
+  combination.
 
 ### BREAKING CHANGE — `alloc-runfreelist` feature removed
 
