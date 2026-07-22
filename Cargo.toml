@@ -314,7 +314,7 @@ large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
 # without it. See also the `compile_error!` defence-in-depth guard in
 # `src/lib.rs`.
 fastbin = ["alloc-global", "alloc-xthread"]
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory"]
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
 # R8-3 (task #216): `alloc-segment-directory` joined `production` once the two
 # regressions that had kept it opt-in were both landed — #214 (commit af7b039,
 # R8-1: the O(D×49) remote-dirty directory-sync regression) and #215 (commit
@@ -558,9 +558,10 @@ alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
 # empty→pool→reuse→refill cycles of *ordinary* small segments, a lifecycle
 # the primordial segment structurally never enters. Also pulls in
 # `aligned-vmem/fault-injection` for the same B2/B4 fault-injection reason as
-# the original `alloc-lazy-commit`. NOT part of `production` on its own —
-# promotion is a separate decision pending the measured GO/NO-GO in the
-# R12-9 report. Feature-OFF: the primordial reservation is the plain eager
+# the original `alloc-lazy-commit`. Part of `production` since R12-9 (the
+# measured GO in `docs/perf/R12_9_PRIMORDIAL_LAZY_COMMIT.md`, confirmed by
+# the user): the sibling `small-segment-lazy-commit` stays opt-in only.
+# Feature-OFF: the primordial reservation is the plain eager
 # `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
 primordial-lazy-commit = [
     "alloc-core",
