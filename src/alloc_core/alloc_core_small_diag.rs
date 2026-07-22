@@ -206,7 +206,10 @@ impl AllocCore {
     /// `small_meta_end() + LAZY_FIRST_CHUNK` for a fresh segment.
     #[doc(hidden)]
     #[must_use]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_committed_payload_end_for(&self, ptr: *mut u8) -> Option<usize> {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
@@ -226,7 +229,10 @@ impl AllocCore {
     /// calls on the grow-on-carve path since process start.
     #[doc(hidden)]
     #[must_use]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_grow_commit_count(&self) -> u64 {
         super::alloc_core_small::GROW_COMMIT_COUNT.load(core::sync::atomic::Ordering::Relaxed)
     }
@@ -239,7 +245,10 @@ impl AllocCore {
     /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
     /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_ARMED`).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_arm_commit_fail(&self, n: u32) {
         aligned_vmem::fault_injection::arm_fail_next(n);
     }
@@ -257,7 +266,10 @@ impl AllocCore {
     /// CRATE-P2 follow-up: delegates to `aligned_vmem::fault_injection`'s
     /// real-path hook (absorbed from sefer's former `os::COMMIT_FAIL_AT_*`).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_arm_commit_fail_at(&self, k: u32) {
         aligned_vmem::fault_injection::arm_fail_at(k);
     }
@@ -267,7 +279,10 @@ impl AllocCore {
     /// hardcoding the crate's private constant.
     #[doc(hidden)]
     #[must_use]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_grow_chunk(&self) -> usize {
         super::alloc_core_small::GROW_CHUNK
     }
@@ -277,7 +292,10 @@ impl AllocCore {
     /// without hardcoding the crate's private constant.
     #[doc(hidden)]
     #[must_use]
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     pub fn dbg_lazy_first_chunk(&self) -> usize {
         super::alloc_core_small::LAZY_FIRST_CHUNK
     }

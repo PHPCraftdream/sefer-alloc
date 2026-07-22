@@ -16,7 +16,7 @@
 //! there is NO `unsafe` block in this file. So the crate's structural promise
 //! ("`unsafe` lives ONLY in `os` + `node`") is upheld by the compiler.
 
-#[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+#[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
 use super::alloc_core_small::LAZY_FIRST_CHUNK;
 use super::os::Segment;
 use super::segment_header::{Layout, SegmentHeader, SegmentKind, SegmentMeta};
@@ -45,7 +45,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //    is the ONLY OS allocation primitive on the bootstrap path; everything
     //    else is safe composition over the segment's bytes.
     //
-    // R7-B6 (primordial lazy commit): under `alloc-lazy-commit` AND NOT
+    // R7-B6 (primordial lazy commit): under `primordial-lazy-commit` AND NOT
     // `numa-aware` (Windows; Unix/miri fall back to the eager, fully-committed
     // path inside `aligned_vmem::reserve_aligned_lazy` itself), commit ONLY
     // `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` up front instead of the
@@ -86,9 +86,15 @@ pub(crate) fn primordial() -> Option<Primordial> {
     // configuration once the small-segment AND primordial paths both moved to
     // their NUMA-gated lazy/eager arms, tripping `-D warnings`' dead-code lint.
     //
-    // On the eager path (feature-OFF, or `numa-aware`), `Segment::reserve` is
-    // unchanged — byte-identical to pre-R7-B6 behaviour.
-    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+    // On the eager path (feature-OFF, `small-segment-lazy-commit`-only, or
+    // `numa-aware`), `Segment::reserve` is unchanged — byte-identical to
+    // pre-R7-B6 behaviour. R12-9 (task #260): the gate below is
+    // `primordial-lazy-commit` specifically (NOT the `alloc-lazy-commit`
+    // umbrella) — this is the ONE call site that decides whether the
+    // primordial segment itself is reserved lazily; enabling ONLY
+    // `small-segment-lazy-commit` (without `primordial-lazy-commit`) leaves
+    // this arm on the eager `Segment::reserve` path.
+    #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
     let segment = {
         let initial_commit = Layout::primordial_meta_end() + LAZY_FIRST_CHUNK;
         // Uphold `reserve_lazy`'s full documented contract (non-zero, PAGE
@@ -103,7 +109,7 @@ pub(crate) fn primordial() -> Option<Primordial> {
         );
         Segment::reserve_lazy(initial_commit)?
     };
-    #[cfg(not(all(feature = "alloc-lazy-commit", not(feature = "numa-aware"))))]
+    #[cfg(not(all(feature = "primordial-lazy-commit", not(feature = "numa-aware"))))]
     let segment = Segment::reserve(super::os::SEGMENT)?;
     let base = segment.as_ptr();
     let reservation = segment.reservation();
@@ -258,42 +264,70 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //      uses the plain eager `Segment::reserve`, and NUMA reservations
     //      stay fully eager (P2 gate).
     //
-    //   2. `alloc-lazy-commit` AND NOT `numa-aware` AND real Windows (not
-    //      miri): `meta_end + LAZY_FIRST_CHUNK`. `Segment::reserve_lazy` did
-    //      a REAL partial commit via the Windows 2-phase
+    //   2. `primordial-lazy-commit` AND NOT `numa-aware` AND real Windows
+    //      (not miri): `meta_end + LAZY_FIRST_CHUNK`. `Segment::reserve_lazy`
+    //      did a REAL partial commit via the Windows 2-phase
     //      `VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)` prefix,
     //      and the frontier accurately reflects it.
     //
-    //   3. `alloc-lazy-commit` AND NOT `numa-aware` AND Unix/miri: `SEGMENT`.
-    //      `reserve_aligned_lazy` internally ignores `initial_commit` and
-    //      `mmap`s / `alloc`s the WHOLE segment up front (Unix has no separate
-    //      reserve/commit distinction; miri models no RSS). Pre-R8-5 the
-    //      frontier was understated at `meta_end + LAZY_FIRST_CHUNK` here too
-    //      — sound but pointless, since B2's grow-on-carve then ran a
-    //      `commit_pages` (a correctness no-op on these platforms) on every
-    //      carve past the artificial frontier. R8-5 stamps `SEGMENT`
-    //      immediately, matching the OS-level reality and restoring the
-    //      feature's zero-cost-when-unneeded property on Unix/miri.
+    //   3. `primordial-lazy-commit` AND NOT `numa-aware` AND Unix/miri:
+    //      `SEGMENT`. `reserve_aligned_lazy` internally ignores
+    //      `initial_commit` and `mmap`s / `alloc`s the WHOLE segment up front
+    //      (Unix has no separate reserve/commit distinction; miri models no
+    //      RSS). Pre-R8-5 the frontier was understated at `meta_end +
+    //      LAZY_FIRST_CHUNK` here too — sound but pointless, since B2's
+    //      grow-on-carve then ran a `commit_pages` (a correctness no-op on
+    //      these platforms) on every carve past the artificial frontier. R8-5
+    //      stamps `SEGMENT` immediately, matching the OS-level reality and
+    //      restoring the feature's zero-cost-when-unneeded property on
+    //      Unix/miri.
     //
     // The genuine Windows-lazy case (2) still goes through B2's grow-on-carve
     // path on later carves past the frontier; this primordial stamp only
     // changes the frontier's STARTING value on Unix/miri, not the grow-on-
     // carve mechanism.
-    #[cfg(all(feature = "alloc-lazy-commit", feature = "numa-aware"))]
-    meta.set_committed_payload_end(super::os::SEGMENT);
-    #[cfg(all(
-        feature = "alloc-lazy-commit",
-        not(feature = "numa-aware"),
-        windows,
-        not(miri)
+    //
+    // R12-9 (task #260): the OUTER gate here is the SHARED `any(...)`
+    // condition, not `primordial-lazy-commit` alone — mirroring the
+    // identical fix in `reserve_small_segment` (`alloc_core_small.rs`).
+    // `committed_payload_end` defaults to `0` at construction; whenever
+    // EITHER split sub-feature is on, the shared B2 grow-on-carve check in
+    // `carve_block`/`carve_batch` compiles in and reads this field on every
+    // carve INTO THE PRIMORDIAL SEGMENT TOO (the primordial is carved via
+    // the exact same `carve_block`/`carve_batch` path once bootstrap hands
+    // it to `AllocCore::new_inner` as the first `small_cur` — see this
+    // function's module doc). If `small-segment-lazy-commit` is on but
+    // `primordial-lazy-commit` is off, this stamp must still fire (with the
+    // EAGER `SEGMENT` value, since step 1's reservation gate above took the
+    // eager `Segment::reserve` arm) — otherwise the unstamped `0` looks like
+    // "nothing committed yet" and triggers a spurious grow-on-carve commit
+    // on the primordial's very first carve.
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
     ))]
-    meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
-    #[cfg(all(
-        feature = "alloc-lazy-commit",
-        not(feature = "numa-aware"),
-        any(not(windows), miri)
-    ))]
-    meta.set_committed_payload_end(super::os::SEGMENT);
+    {
+        #[cfg(all(feature = "primordial-lazy-commit", feature = "numa-aware"))]
+        meta.set_committed_payload_end(super::os::SEGMENT);
+        #[cfg(all(
+            feature = "primordial-lazy-commit",
+            not(feature = "numa-aware"),
+            windows,
+            not(miri)
+        ))]
+        meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
+        #[cfg(all(
+            feature = "primordial-lazy-commit",
+            not(feature = "numa-aware"),
+            any(not(windows), miri)
+        ))]
+        meta.set_committed_payload_end(super::os::SEGMENT);
+        // `primordial-lazy-commit` OFF (only `small-segment-lazy-commit` is
+        // on): the primordial was reserved EAGERLY (step 1's `else` arm), so
+        // the frontier must be stamped `SEGMENT` unconditionally.
+        #[cfg(not(feature = "primordial-lazy-commit"))]
+        meta.set_committed_payload_end(super::os::SEGMENT);
+    }
 
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the

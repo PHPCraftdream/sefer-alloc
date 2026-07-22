@@ -12,7 +12,7 @@ use core::ptr::NonNull;
 use super::node::{Node, NODE_SIZE};
 #[cfg(feature = "numa-aware")]
 use super::numa;
-#[cfg(not(any(feature = "numa-aware", feature = "alloc-lazy-commit")))]
+#[cfg(not(any(feature = "numa-aware", feature = "small-segment-lazy-commit")))]
 use super::os::Segment;
 use super::os::{self, SEGMENT};
 use super::segment_header::{
@@ -25,15 +25,23 @@ use super::alloc_core::{base_add, AllocCore};
 
 /// B2 (R7 Workstream B): process-wide count of successful `commit_pages` calls
 /// on the grow-on-carve path. Diagnostic-only (relaxed), gated on
-/// `alloc-lazy-commit`. Tests observe this to verify that `carve_batch` does
-/// ONE commit per batch (not per block) and that chunk boundary crossings
-/// trigger the expected number of commits.
-#[cfg(feature = "alloc-lazy-commit")]
+/// `any(primordial-lazy-commit, small-segment-lazy-commit)` (R12-9, task
+/// #260: the split siblings of the former single `alloc-lazy-commit`, which
+/// is now a pure alias for "both together"). Tests observe this to verify
+/// that `carve_batch` does ONE commit per batch (not per block) and that
+/// chunk boundary crossings trigger the expected number of commits.
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
 pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// B1 (R7 Workstream B): the size of the FIRST committed payload chunk when a
-/// small segment is lazily reserved under `alloc-lazy-commit`. Only the
+/// small segment is lazily reserved under `small-segment-lazy-commit`, or
+/// the primordial segment under `primordial-lazy-commit` (R12-9, task #260 —
+/// this constant is SHARED verbatim by both split policies; see
+/// `bootstrap::primordial`'s identical `LAZY_FIRST_CHUNK` use). Only the
 /// metadata region `[0, small_meta_end)` plus this chunk are committed at
 /// reservation time; the rest of the 4 MiB segment stays reserved-but-
 /// uncommitted. B2's grow-on-carve logic commits additional chunks
@@ -46,7 +54,10 @@ pub(crate) static GROW_COMMIT_COUNT: core::sync::atomic::AtomicU64 =
 /// conservative default.
 ///
 /// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
 pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
 
 /// B2 (R7 Workstream B): the chunk size used when GROWING the commit frontier
@@ -61,13 +72,19 @@ pub(crate) const LAZY_FIRST_CHUNK: usize = 256 * 1024;
 /// a trivial constant rename if B5 data motivates it.
 ///
 /// The value MUST be a non-zero multiple of `aligned_vmem::PAGE` (4 KiB).
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
 pub(crate) const GROW_CHUNK: usize = LAZY_FIRST_CHUNK;
 
 // B1/B2: compile-time sanity — the initial commit (metadata + first chunk) must
 // fit within one segment, and both chunk constants must be page-aligned and
 // non-zero.
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit"
+))]
 const _: () = {
     assert!(
         LAZY_FIRST_CHUNK > 0 && LAZY_FIRST_CHUNK.is_multiple_of(super::os::PAGE),
@@ -1296,28 +1313,32 @@ impl AllocCore {
         if meta.is_decommitted() {
             // B3 (R7 Workstream B): lazy-commit-aware recommit on reuse.
             //
-            // Under `alloc-lazy-commit`, the retain-decommit (B3) only
-            // decommitted `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)` and kept
-            // the initial chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)`
-            // committed. The frontier was already reset to
-            // `meta_end + LAZY_FIRST_CHUNK` by the decommit path. So we do
-            // NOT need a recommit syscall here — the first chunk is already
-            // committed and ready for carving. Just clear the `decommitted`
-            // flag and let B2's grow-on-carve logic recommit additional
-            // chunks incrementally as the bump cursor advances past the
-            // frontier. This is the lazy savings: reuse never touches the
-            // upper payload until it is actually needed.
+            // Under `small-segment-lazy-commit` (R12-9, task #260: only THIS
+            // sub-feature — the decommit/pool lifecycle a decommitted
+            // segment came from is structurally `Small`-only, never
+            // `Primordial`, see `dec_live_and_maybe_decommit`), the
+            // retain-decommit (B3) only decommitted
+            // `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)` and kept the initial
+            // chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)` committed. The
+            // frontier was already reset to `meta_end + LAZY_FIRST_CHUNK` by
+            // the decommit path. So we do NOT need a recommit syscall here —
+            // the first chunk is already committed and ready for carving.
+            // Just clear the `decommitted` flag and let B2's grow-on-carve
+            // logic recommit additional chunks incrementally as the bump
+            // cursor advances past the frontier. This is the lazy savings:
+            // reuse never touches the upper payload until it is actually
+            // needed.
             //
             // On the eager path (feature-OFF), the full-payload recommit is
             // kept: the decommit decommitted the WHOLE payload
             // `[meta_end, SEGMENT)`, so recommit must bring it all back.
-            #[cfg(feature = "alloc-lazy-commit")]
+            #[cfg(feature = "small-segment-lazy-commit")]
             {
                 // The initial chunk is already committed. The frontier was
                 // reset by the decommit path. Just clear the flag.
                 meta.set_decommitted(false);
             }
-            #[cfg(not(feature = "alloc-lazy-commit"))]
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
             {
                 if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
                     // Honest OOM: the OS refused to re-commit the payload
@@ -1343,8 +1364,16 @@ impl AllocCore {
         // No-op on the eager path (committed_payload_end == SEGMENT, so the
         // condition is never true) and on Unix/miri (the eager fallback
         // already committed everything). Fires only on the Windows lazy
-        // path when carving past the current frontier.
-        #[cfg(feature = "alloc-lazy-commit")]
+        // path when carving past the current frontier. R12-9 (task #260):
+        // shared between the split sub-features — `segment` here can be
+        // EITHER the primordial segment (reused as the first small-carve
+        // target, `AllocCore::new_inner`'s `small_cur = primordial_base`) or
+        // an ordinary small segment, and both read/write the same
+        // `committed_payload_end` field generically.
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
         {
             let frontier = meta.committed_payload_end_of();
             let carve_end = aligned_bump + block_size;
@@ -1453,12 +1482,14 @@ impl AllocCore {
         #[cfg(feature = "alloc-decommit")]
         if meta.is_decommitted() {
             // B3: lazy-commit-aware recommit on reuse (see `carve_block`'s
-            // identical block for the full rationale).
-            #[cfg(feature = "alloc-lazy-commit")]
+            // identical block for the full rationale). R12-9 (task #260):
+            // `small-segment-lazy-commit` specifically — decommit only ever
+            // happens to `Small` segments, never `Primordial`.
+            #[cfg(feature = "small-segment-lazy-commit")]
             {
                 meta.set_decommitted(false);
             }
-            #[cfg(not(feature = "alloc-lazy-commit"))]
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
             {
                 if !os::recommit_pages(segment, SegLayout::small_decommit_start(), SEGMENT) {
                     // Honest OOM (see `carve_block`): leave the segment marked
@@ -1478,7 +1509,12 @@ impl AllocCore {
         //
         // No-op on the eager path (committed_payload_end == SEGMENT — the
         // condition is always false). Fires only on the Windows lazy path.
-        #[cfg(feature = "alloc-lazy-commit")]
+        // R12-9 (task #260): shared between the split sub-features, same as
+        // `carve_block`'s identical block.
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
         {
             let frontier = meta.committed_payload_end_of();
             let batch_room = (SEGMENT - aligned_start) / block_size;
@@ -1712,19 +1748,26 @@ impl AllocCore {
         };
         #[cfg(not(feature = "numa-aware"))]
         let (base, reservation, reservation_len) = {
-            // B1 (R7 Workstream B): under `alloc-lazy-commit` (Windows-only
-            // lazy path; Unix/miri eager fallback), reserve the 4 MiB segment
-            // WITHOUT committing the whole payload. Only the metadata region
-            // and the first payload chunk are committed; the rest stays
-            // reserved-but-uncommitted. On the eager path (feature-OFF) or
-            // under miri/Unix, `reserve_aligned_lazy` falls back to the eager
-            // `reserve_aligned` internally, so the observable behavior is
-            // identical.
+            // B1 (R7 Workstream B): under `small-segment-lazy-commit`
+            // (Windows-only lazy path; Unix/miri eager fallback), reserve the
+            // 4 MiB segment WITHOUT committing the whole payload. Only the
+            // metadata region and the first payload chunk are committed; the
+            // rest stays reserved-but-uncommitted. On the eager path
+            // (feature-OFF) or under miri/Unix, `reserve_aligned_lazy` falls
+            // back to the eager `reserve_aligned` internally, so the
+            // observable behavior is identical.
             //
             // The NUMA path (above) always uses the eager
             // `reserve_aligned_on_node` — NUMA reservations go through
             // VirtualAllocExNuma and must not be disturbed (P2 gate).
-            #[cfg(feature = "alloc-lazy-commit")]
+            //
+            // R12-9 (task #260): gated on `small-segment-lazy-commit`
+            // specifically — this is the ONE call site that decides whether
+            // an ORDINARY (non-primordial) small segment is reserved lazily;
+            // enabling ONLY `primordial-lazy-commit` (without
+            // `small-segment-lazy-commit`) leaves this arm on the eager
+            // `Segment::reserve` path.
+            #[cfg(feature = "small-segment-lazy-commit")]
             let mut seg = {
                 let meta_end = SegLayout::small_meta_end();
                 // initial_commit = metadata pages + first payload chunk.
@@ -1740,14 +1783,14 @@ impl AllocCore {
                     os::SEGMENTS_RESERVED_TOTAL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 })
             };
-            #[cfg(not(feature = "alloc-lazy-commit"))]
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
             let mut seg = Segment::reserve(SEGMENT);
             // Mechanism 2 (task #51 / follow-up): same pool-drain-and-retry
             // guard as the numa-aware arm above.
             #[cfg(feature = "alloc-decommit")]
             if seg.is_none() && self.pooled_count > 0 {
                 self.drain_small_pool();
-                #[cfg(feature = "alloc-lazy-commit")]
+                #[cfg(feature = "small-segment-lazy-commit")]
                 {
                     let meta_end = SegLayout::small_meta_end();
                     let initial_commit = meta_end + LAZY_FIRST_CHUNK;
@@ -1757,12 +1800,12 @@ impl AllocCore {
                                 .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         });
                 }
-                #[cfg(not(feature = "alloc-lazy-commit"))]
+                #[cfg(not(feature = "small-segment-lazy-commit"))]
                 {
                     seg = Segment::reserve(SEGMENT);
                 }
             }
-            #[cfg(feature = "alloc-lazy-commit")]
+            #[cfg(feature = "small-segment-lazy-commit")]
             {
                 let reservation = seg?;
                 let b = reservation.as_ptr();
@@ -1774,7 +1817,7 @@ impl AllocCore {
                 core::mem::forget(reservation);
                 (b, r, rl)
             }
-            #[cfg(not(feature = "alloc-lazy-commit"))]
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
             {
                 let segment = seg?;
                 let b = segment.as_ptr();
@@ -1826,15 +1869,15 @@ impl AllocCore {
         //      (P2 gate — `VirtualAllocExNuma` reservations must not be
         //      disturbed by a later partial commit).
         //
-        //   2. `alloc-lazy-commit` AND NOT `numa-aware` AND real Windows (not
-        //      miri): `meta_end + LAZY_FIRST_CHUNK`. This is the ONLY platform
-        //      where `reserve_aligned_lazy_raw` is GENUINELY lazy — a real
-        //      2-phase `VirtualAlloc(MEM_RESERVE)` then
+        //   2. `small-segment-lazy-commit` AND NOT `numa-aware` AND real
+        //      Windows (not miri): `meta_end + LAZY_FIRST_CHUNK`. This is the
+        //      ONLY platform where `reserve_aligned_lazy_raw` is GENUINELY
+        //      lazy — a real 2-phase `VirtualAlloc(MEM_RESERVE)` then
         //      `VirtualAlloc(MEM_COMMIT)` on the metadata + first chunk
         //      prefix. The frontier accurately reflects that partial commit.
         //
-        //   3. `alloc-lazy-commit` AND NOT `numa-aware` AND Unix/miri:
-        //      `SEGMENT`. Here `reserve_aligned_lazy_raw` ignores
+        //   3. `small-segment-lazy-commit` AND NOT `numa-aware` AND
+        //      Unix/miri: `SEGMENT`. Here `reserve_aligned_lazy_raw` ignores
         //      `_initial_commit` and `mmap`s / `alloc`s the WHOLE segment up
         //      front (Unix has no separate reserve/commit distinction the way
         //      Windows does; miri models no RSS). Understating the frontier
@@ -1845,8 +1888,8 @@ impl AllocCore {
         //      these platforms per `crates/vmem`'s own `commit_range_impl`
         //      for unix/miri + an atomic `GROW_COMMIT_COUNT` bump) for zero
         //      behavioral benefit. Stamping `SEGMENT` immediately restores
-        //      the `alloc-lazy-commit` feature's promised zero-cost-when-
-        //      unneeded property on Unix/miri.
+        //      the feature's promised zero-cost-when-unneeded property on
+        //      Unix/miri.
         //
         // B2 wired: grow-on-carve is still live on the genuine Windows-lazy
         // path (case 2) — when a carve would exceed `committed_payload_end`,
@@ -1855,13 +1898,47 @@ impl AllocCore {
         // initial carving; subsequent chunks are grown incrementally
         // (GROW_CHUNK) by carve_block/carve_batch. B3 will reset the frontier
         // after a decommit; B5 sweeps the chunk sizes.
-        #[cfg(feature = "alloc-lazy-commit")]
+        //
+        // R12-9 (task #260): the OUTER gate here is the SHARED `any(...)`
+        // condition, not `small-segment-lazy-commit` alone. Reasoning: the
+        // `committed_payload_end` field defaults to `0` at construction
+        // (`SegmentHeader::small`'s doc: "the caller (reserve_small_segment)
+        // stamps the real value immediately... on the eager path: SEGMENT").
+        // Whenever EITHER split sub-feature is on, `carve_block`/
+        // `carve_batch`'s shared B2 grow-on-carve check compiles in and reads
+        // this field on EVERY carve — including carves into THIS (ordinary
+        // small) segment even when `small-segment-lazy-commit` itself is OFF
+        // (e.g. `primordial-lazy-commit`-only builds). An unstamped `0`
+        // frontier would then look like "nothing committed yet" and trigger
+        // a spurious grow-on-carve commit on the very first carve. So this
+        // segment MUST always be stamped when grow-on-carve can run at all;
+        // the VALUE (lazy vs eager) still depends on `small-segment-lazy-commit`
+        // specifically, matching step 1's reservation gate above.
+        #[cfg(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        ))]
         {
-            #[cfg(feature = "numa-aware")]
+            #[cfg(all(feature = "small-segment-lazy-commit", feature = "numa-aware"))]
             meta.set_committed_payload_end(SEGMENT);
-            #[cfg(all(not(feature = "numa-aware"), windows, not(miri)))]
+            #[cfg(all(
+                feature = "small-segment-lazy-commit",
+                not(feature = "numa-aware"),
+                windows,
+                not(miri)
+            ))]
             meta.set_committed_payload_end(meta_end + LAZY_FIRST_CHUNK);
-            #[cfg(all(not(feature = "numa-aware"), any(not(windows), miri)))]
+            #[cfg(all(
+                feature = "small-segment-lazy-commit",
+                not(feature = "numa-aware"),
+                any(not(windows), miri)
+            ))]
+            meta.set_committed_payload_end(SEGMENT);
+            // `small-segment-lazy-commit` OFF (only `primordial-lazy-commit`
+            // is on): this segment was reserved EAGERLY (step 1's `else` arm
+            // — the plain `Segment::reserve`), so the frontier must be
+            // stamped `SEGMENT` unconditionally, on every platform.
+            #[cfg(not(feature = "small-segment-lazy-commit"))]
             meta.set_committed_payload_end(SEGMENT);
         }
 

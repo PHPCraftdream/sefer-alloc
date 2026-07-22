@@ -279,8 +279,14 @@ impl Segment {
     /// (rather than leaving it reachable-but-uncalled) keeps `--all-features`
     /// (which enables `numa-aware` alongside `alloc-lazy-commit`) free of a
     /// dead-code warning.
+    ///
+    /// R12-9 (task #260): gated on `primordial-lazy-commit` specifically —
+    /// this is the constructor `bootstrap::primordial` alone calls, so it is
+    /// the one call site that must NOT compile when only
+    /// `small-segment-lazy-commit` is enabled (else it would be unreachable
+    /// dead code in that configuration).
     #[must_use]
-    #[cfg(all(feature = "alloc-lazy-commit", not(feature = "numa-aware")))]
+    #[cfg(all(feature = "primordial-lazy-commit", not(feature = "numa-aware")))]
     pub(crate) fn reserve_lazy(initial_commit: usize) -> Option<Self> {
         let reservation = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?;
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
@@ -633,8 +639,19 @@ pub(crate) fn read_directory_node_bucket(
 /// `reserved_capacity` on a growing in-place `realloc` — same underlying
 /// `aligned_vmem::commit_range` primitive as the small-segment lazy-commit
 /// path, just a different caller.
+///
+/// R12-9 (task #260): the B2 grow-on-carve caller in `carve_block`/
+/// `carve_batch` (`alloc_core_small.rs`) is SHARED between the primordial
+/// segment and ordinary small segments, so this wrapper is gated on `any(..)`
+/// of the two split lazy-commit sub-features (either one's initial partial
+/// reservation can leave a frontier below `SEGMENT` that a later carve grows
+/// past), not on either sub-feature alone.
 #[must_use]
-#[cfg(any(feature = "alloc-lazy-commit", feature = "large-reserved-capacity"))]
+#[cfg(any(
+    feature = "primordial-lazy-commit",
+    feature = "small-segment-lazy-commit",
+    feature = "large-reserved-capacity"
+))]
 pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees `[base + start_offset, base + end_offset)` is
@@ -656,11 +673,16 @@ pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
 /// carve, never a fault or panic (`sefer_alloc` OOM contract).
 #[must_use]
 #[cfg(feature = "alloc-decommit")]
-// B3: under `alloc-lazy-commit` the recommit path in carve_block/carve_batch
-// is replaced by a lazy clear-decommitted-flag (the initial chunk is already
-// committed), so this function has no callers. It IS called when
-// `alloc-decommit` is ON but `alloc-lazy-commit` is OFF.
-#[cfg_attr(feature = "alloc-lazy-commit", allow(dead_code))]
+// B3: under `small-segment-lazy-commit` the recommit path in
+// carve_block/carve_batch is replaced by a lazy clear-decommitted-flag (the
+// initial chunk is already committed), so this function has no callers. It
+// IS called when `alloc-decommit` is ON but `small-segment-lazy-commit` is
+// OFF. (`primordial-lazy-commit` alone does not affect this: only `Small`
+// segments are ever decommitted — the primordial segment is structurally
+// excluded from the decommit/pool lifecycle, see `dec_live_and_maybe_decommit`
+// — so this function's reachability tracks `small-segment-lazy-commit`
+// specifically, not the `primordial-lazy-commit` sibling. R12-9, task #260.)
+#[cfg_attr(feature = "small-segment-lazy-commit", allow(dead_code))]
 pub(crate) fn recommit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator,
     // and `[base + start_offset, base + end_offset)` was previously decommitted.

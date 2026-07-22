@@ -517,7 +517,72 @@ numa-aware-mock = ["numa-aware", "numa-shim/mock"]
 # accounting under test). `os::commit_pages` delegates to
 # `aligned_vmem::fault_injection`'s hook instead of carrying its own
 # COMMIT_FAIL_* atomics (absorbed into vmem, CRATE-P2 follow-up).
-alloc-lazy-commit = [
+#
+# R12-9 (task #260): `alloc-lazy-commit` is a PURE COMBINATOR — a convenience
+# alias that turns on BOTH `primordial-lazy-commit` AND
+# `small-segment-lazy-commit` together (the pre-R12-9 behaviour, byte-for-
+# byte). No `#[cfg]` in `src/` tests this feature's own name directly; the
+# shared frontier mechanism (the `committed_payload_end` field, B2
+# grow-on-carve in `carve_block`/`carve_batch`, B3 decommit-aware reuse in
+# `decommit_empty_segment_impl`, and every `dbg_*` diagnostic in
+# `alloc_core_small_diag.rs`) is genuinely ONE mechanism shared verbatim by
+# both the primordial segment and ordinary small segments, so it is gated on
+# `any(feature = "primordial-lazy-commit", feature =
+# "small-segment-lazy-commit")` instead — either sub-feature alone pulls in
+# the whole shared substrate; keeping `alloc-lazy-commit` a pure alias (not a
+# `#[cfg]` target of its own) avoids a feature-implication cycle (each
+# sub-feature enabling the umbrella, which enables both sub-features, would
+# collapse the split back into one feature). What decides "lazy vs eager" for
+# each RESERVATION is the sub-feature specifically: `bootstrap::primordial`'s
+# `Segment::reserve_lazy` call is gated on `primordial-lazy-commit`;
+# `reserve_small_segment`'s `reserve_aligned_lazy` call is gated on
+# `small-segment-lazy-commit`. Every pre-existing `--features
+# alloc-lazy-commit` build (including all four `tests/lazy_commit_*.rs`
+# files) is byte-for-byte unchanged, since this alias still enables both.
+alloc-lazy-commit = ["primordial-lazy-commit", "small-segment-lazy-commit"]
+# R12-9 (task #260, P1): lazily commit ONLY the primordial (bootstrap)
+# segment — `bootstrap::primordial`'s `Segment::reserve_lazy` call commits
+# just `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` up front instead of the
+# whole 4 MiB segment (measured ~5.1x smaller first-heap commit, see
+# `docs/perf/R12_9_PRIMORDIAL_LAZY_COMMIT.md`). The primordial segment is
+# reserved exactly ONCE per process and is PROVABLY excluded from the
+# empty→pool→decommit→release lifecycle for its whole lifetime —
+# `AllocCore::dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`
+# (`alloc_core_small_pool.rs`) both hard-gate on
+# `matches!(SegmentHeader::kind_at(base), SegmentKind::Small)`, which a
+# `SegmentKind::Primordial` base never satisfies ("NEVER decommit the
+# PRIMORDIAL segment" — see that function's own comment). So this policy
+# never touches the 50-75x decommit/recommit-cycle regression (R8-10, task
+# #223) that keeps the sibling `small-segment-lazy-commit` policy out of
+# `production` — that regression fired on repeated
+# empty→pool→reuse→refill cycles of *ordinary* small segments, a lifecycle
+# the primordial segment structurally never enters. Also pulls in
+# `aligned-vmem/fault-injection` for the same B2/B4 fault-injection reason as
+# the original `alloc-lazy-commit`. NOT part of `production` on its own —
+# promotion is a separate decision pending the measured GO/NO-GO in the
+# R12-9 report. Feature-OFF: the primordial reservation is the plain eager
+# `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
+primordial-lazy-commit = [
+    "alloc-core",
+    "aligned-vmem/alloc-lazy-commit",
+    "aligned-vmem/fault-injection",
+]
+# R12-9 (task #260, P1): lazily commit ordinary (non-primordial) small
+# segments — `reserve_small_segment`'s `reserve_aligned_lazy` call, plus B3's
+# decommit-aware reuse of a pooled/decommitted small segment
+# (`decommit_empty_segment_impl`'s lazy-commit branch). This is the ORIGINAL
+# full `alloc-lazy-commit` behaviour prior to R12-9, kept under its own name
+# for callers who want it in isolation from the primordial policy. Stays
+# opt-in, NOT part of `production`: R8-10 (task #223, commit 852828e) found
+# empty→pool→reuse→refill cycles under this policy cost 50-75x more
+# commit/decommit syscalls than the eager path before that task's admission-
+# side fix landed; the fix (pool admission never resets a pooled segment) is
+# permanent, but the underlying decommit/recommit correctness surface this
+# policy exercises on every pool eviction is still a materially larger
+# surface than `primordial-lazy-commit`'s one-time bootstrap reservation, so
+# it is not promoted here. Feature-OFF: `reserve_small_segment` uses the
+# plain eager `Segment::reserve`, byte-for-byte unchanged from pre-R12-9.
+small-segment-lazy-commit = [
     "alloc-core",
     "aligned-vmem/alloc-lazy-commit",
     "aligned-vmem/fault-injection",

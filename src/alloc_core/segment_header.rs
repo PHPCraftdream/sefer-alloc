@@ -531,11 +531,14 @@ pub(crate) struct SegmentHeader {
     /// **Present in EVERY build's layout** — the byte layout of
     /// `SegmentHeader` is identical regardless of feature config (same
     /// discipline as `live_count`/`node_id`/`ring_drain_head`). The field is
-    /// READ and WRITTEN only under `#[cfg(feature = "alloc-lazy-commit")]`;
-    /// without that feature it is inert dead data (lint silenced below).
-    /// Adding this 8-byte field grows `size_of::<SegmentHeader>()` from 120
-    /// to 128, but `Layout::page_map_off()` (`align_up(128, 4096)`) remains
-    /// 4096, so every downstream metadata offset is UNCHANGED.
+    /// READ and WRITTEN only under `#[cfg(any(feature = "primordial-lazy-commit",
+    /// feature = "small-segment-lazy-commit"))]` (R12-9, task #260: the split
+    /// sibling features of the former single `alloc-lazy-commit`, which is now
+    /// a pure alias for "both together" — see the `Cargo.toml` doc); without
+    /// either sub-feature it is inert dead data (lint silenced below). Adding
+    /// this 8-byte field grows `size_of::<SegmentHeader>()` from 120 to 128,
+    /// but `Layout::page_map_off()` (`align_up(128, 4096)`) remains 4096, so
+    /// every downstream metadata offset is UNCHANGED.
     ///
     /// **Not atomic — owner-only.** Written at segment-init time and (B2,
     /// future) when the owner grows the frontier. The cross-thread freer
@@ -543,7 +546,13 @@ pub(crate) struct SegmentHeader {
     /// owner grows when it drains). Accessed via the field-specific
     /// `committed_payload_end_of` / `set_committed_payload_end` accessor pair
     /// (same `offset_of!` discipline as `bump` and `live_count`).
-    #[cfg_attr(not(feature = "alloc-lazy-commit"), allow(dead_code))]
+    #[cfg_attr(
+        not(any(
+            feature = "primordial-lazy-commit",
+            feature = "small-segment-lazy-commit"
+        )),
+        allow(dead_code)
+    )]
     pub committed_payload_end: usize,
     /// R12-4 (feature `large-reserved-capacity`): for LARGE/huge segments
     /// only, the total VA byte span RESERVED for this segment — which may
@@ -1140,10 +1149,17 @@ const _: () = assert!(Layout::small_meta_end() + PAGE <= super::os::SEGMENT);
 // `small_meta_end() + LAZY_FIRST_CHUNK <= SEGMENT` assert, for the primordial
 // segment's (larger) metadata footprint. `bootstrap::primordial` commits
 // exactly `[0, primordial_meta_end() + LAZY_FIRST_CHUNK)` under
-// `alloc-lazy-commit`; this pins that sum within one segment at compile time
-// so a future metadata-region growth (e.g. a wider registry/hash table) fails
-// the build here rather than overflowing the payload at runtime.
-#[cfg(feature = "alloc-lazy-commit")]
+// `primordial-lazy-commit`; this pins that sum within one segment at compile
+// time so a future metadata-region growth (e.g. a wider registry/hash table)
+// fails the build here rather than overflowing the payload at runtime.
+// R12-9 (task #260): gated on `primordial-lazy-commit` specifically (not the
+// shared-mechanism `any(...)` condition) — this assert is about the
+// PRIMORDIAL reservation's own initial-commit size, which only
+// `primordial-lazy-commit` controls. `LAZY_FIRST_CHUNK` itself (imported
+// below) is defined under `alloc_core_small.rs`'s shared-mechanism gate, so
+// it is still visible whenever either sub-feature is on; this assert simply
+// only NEEDS to hold when the primordial policy is active.
+#[cfg(feature = "primordial-lazy-commit")]
 const _: () = assert!(
     Layout::primordial_meta_end() + super::alloc_core_small::LAZY_FIRST_CHUNK <= super::os::SEGMENT
 );

@@ -193,7 +193,14 @@ impl SegmentMeta {
 
     /// Read the owner-only `committed_payload_end` frontier (the byte offset
     /// from the segment base up to which payload pages are committed).
-    #[cfg(feature = "alloc-lazy-commit")]
+    ///
+    /// R12-9 (task #260): gated on `any(...)` of the two split lazy-commit
+    /// sub-features — this accessor is shared verbatim by both the
+    /// primordial and ordinary-small-segment reservation/carve paths.
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     #[inline(always)]
     pub(crate) fn committed_payload_end_of(&self) -> usize {
         let off = core::mem::offset_of!(SegmentHeader, committed_payload_end);
@@ -201,7 +208,10 @@ impl SegmentMeta {
     }
 
     /// Write the owner-only `committed_payload_end` frontier.
-    #[cfg(feature = "alloc-lazy-commit")]
+    #[cfg(any(
+        feature = "primordial-lazy-commit",
+        feature = "small-segment-lazy-commit"
+    ))]
     #[inline(always)]
     pub(crate) fn set_committed_payload_end(&mut self, value: usize) {
         let off = core::mem::offset_of!(SegmentHeader, committed_payload_end);

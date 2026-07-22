@@ -715,13 +715,19 @@ impl AllocCore {
         }
         // B3 (R7 Workstream B): lazy-commit-aware retain decommit.
         //
-        // Under `alloc-lazy-commit`, decommit ONLY the payload pages ABOVE the
-        // initial lazy chunk: `[meta_end + LAZY_FIRST_CHUNK, SEGMENT)`. The
-        // initial chunk `[meta_end, meta_end + LAZY_FIRST_CHUNK)` stays committed
-        // so the reused segment is immediately carveable without a recommit
-        // syscall (fault-free, matching a freshly reserved lazy segment). The
-        // frontier is reset to `meta_end + LAZY_FIRST_CHUNK` — the same value a
-        // fresh `reserve_small_segment` sets under the lazy path.
+        // Under `small-segment-lazy-commit` (R12-9, task #260: gated on this
+        // sub-feature specifically — this function is reachable ONLY for
+        // `SegmentKind::Small` segments, never `Primordial`; see
+        // `dec_live_and_maybe_decommit`'s "NEVER decommit the PRIMORDIAL
+        // segment" guard, the sole route by which a segment reaches this
+        // `release_follows == false` arm), decommit ONLY the payload pages
+        // ABOVE the initial lazy chunk: `[meta_end + LAZY_FIRST_CHUNK,
+        // SEGMENT)`. The initial chunk `[meta_end, meta_end +
+        // LAZY_FIRST_CHUNK)` stays committed so the reused segment is
+        // immediately carveable without a recommit syscall (fault-free,
+        // matching a freshly reserved lazy segment). The frontier is reset
+        // to `meta_end + LAZY_FIRST_CHUNK` — the same value a fresh
+        // `reserve_small_segment` sets under the lazy path.
         //
         // On the eager path (feature-OFF, Unix, miri, numa-aware), the whole
         // payload `[meta_end, SEGMENT)` is decommitted as before, and the
@@ -730,7 +736,7 @@ impl AllocCore {
         //
         // Metadata and the remote-free ring are NEVER decommitted: they live in
         // `[0, meta_end)`, which is entirely below the decommit range.
-        #[cfg(feature = "alloc-lazy-commit")]
+        #[cfg(feature = "small-segment-lazy-commit")]
         {
             // R8-6 (task #219): the decommit boundary must be REAL-OS-page-
             // aligned. `LAZY_FIRST_CHUNK` (256 KiB) is a multiple of every
@@ -748,7 +754,7 @@ impl AllocCore {
             os::decommit_pages(base, initial_frontier, SEGMENT);
             meta.set_committed_payload_end(initial_frontier);
         }
-        #[cfg(not(feature = "alloc-lazy-commit"))]
+        #[cfg(not(feature = "small-segment-lazy-commit"))]
         {
             // R8-6 (task #219): decommit starting at the real-page-safe
             // boundary, not the tight `payload_start` — on a 16/64 KiB-page
