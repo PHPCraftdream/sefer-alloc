@@ -661,6 +661,16 @@ pub struct AllocCore {
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) dirty_by_class:
         Option<&'static racy_ptr_cell::RacyPtrCell<super::dirty_by_class::PerClassDirty>>,
+
+    /// R13-1 (task #271, P0 fix): reference to the owning HeapSlot's
+    /// coarse-only latch (planted by `HeapCore` at bind time, same
+    /// discipline as [`dirty_by_class`](Self::dirty_by_class)). `None` until
+    /// bound. See `registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`'s
+    /// doc comment for the full design; read by `drain_dirty_segments` to
+    /// decide whether the per-class scan path may be trusted at all for this
+    /// heap.
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) sidecar_oom_latch: Option<&'static core::sync::atomic::AtomicBool>,
 }
 
 impl AllocCore {
@@ -891,6 +901,8 @@ impl AllocCore {
             dirty_segments: None,
             #[cfg(feature = "class-aware-dirty")]
             dirty_by_class: None,
+            #[cfg(feature = "class-aware-dirty")]
+            sidecar_oom_latch: None,
         })
     }
 

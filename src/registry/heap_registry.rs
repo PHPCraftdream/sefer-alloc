@@ -445,6 +445,11 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // `bind_dirty_segments` above.
     #[cfg(feature = "class-aware-dirty")]
     heap_ref.bind_dirty_by_class(&slot.remote.dirty_by_class);
+    // R13-1 (task #271, P0 fix): plant the stable `&'static` handle to this
+    // slot's coarse-only latch. Same claim-time-binding discipline as
+    // `bind_dirty_by_class` above.
+    #[cfg(feature = "class-aware-dirty")]
+    heap_ref.bind_sidecar_oom_latch(&slot.remote.sidecar_oom_latch);
 }
 
 /// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`

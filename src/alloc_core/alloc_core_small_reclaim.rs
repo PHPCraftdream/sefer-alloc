@@ -415,6 +415,54 @@ impl AllocCore {
         }
     }
 
+    /// TEST-ONLY (R13-1, task #271): set ONLY `ptr`'s segment's COARSE
+    /// per-segment dirty bit (`dirty_segments`), deliberately WITHOUT setting
+    /// any per-class bit — reconstructing, byte-for-byte, the exact
+    /// bitmap-level state a real sidecar-OOM push leaves behind (see
+    /// `set_dirty_bit_for_segment`'s `None` branch,
+    /// `registry::heap_core_xthread`), WITHOUT needing to actually exhaust
+    /// virtual memory to trigger a genuine `ensure_per_class_dirty` failure
+    /// (impractical/non-deterministic in a unit test — same rationale as
+    /// [`dbg_arm_commit_fail`](Self::dbg_arm_commit_fail) for its own
+    /// fault-adjacent scenario, except no fault-injection hook exists for
+    /// `aligned_vmem::leak_zeroed_pages`'s reservation path, only for
+    /// `commit_pages`).
+    ///
+    /// Pairs with [`dbg_push_to_ring`](Self::dbg_push_to_ring) (push the
+    /// ring entry first) to construct a complete "coarse-only" cross-thread
+    /// free note for a test — reproducing the pre-latch visibility gap this
+    /// task fixes: a `drain_dirty_segments(class_idx)` call whose per-class
+    /// scan-source slice is dirty-clear for this segment (no per-class bit
+    /// was ever set) must still recover an entry set up this way, PROVIDED
+    /// the coarse-only latch is doing its job (either because the sidecar
+    /// was never materialised at all, or because the latch is tripped).
+    ///
+    /// Returns `true` if the coarse bit was set (the heap is bound and
+    /// `ptr`'s segment resolves), `false` otherwise (pre-bind / foreign
+    /// pointer / segment id out of range).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
+    pub fn dbg_force_coarse_dirty_bit_for(&self, ptr: *mut u8) -> bool {
+        let ds = match self.dirty_segments {
+            Some(ds) => ds,
+            None => return false,
+        };
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return false;
+        }
+        let segment_id = SegmentHeader::segment_id_at(base) as usize;
+        let word = segment_id / 64;
+        let bit = 1u64 << (segment_id % 64);
+        if word >= ds.len() {
+            return false;
+        }
+        // Release: matches `set_dirty_bit_for_segment`'s real production
+        // ordering for this exact bit.
+        ds[word].fetch_or(bit, core::sync::atomic::Ordering::Release);
+        true
+    }
+
     /// TEST-ONLY (task #37): drain every owned segment's ring into its
     /// `BinTable`, exactly as `find_segment_with_free` does, but unconditionally.
     #[doc(hidden)]

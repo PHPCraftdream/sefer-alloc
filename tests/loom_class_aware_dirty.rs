@@ -465,3 +465,334 @@ fn counterfactual_partial_drain_loses_other_class_entry() {
         );
     });
 }
+
+// =========================================================================
+// R13-1 (task #271, P0 fix): the coarse-only latch closes the "sidecar OOM
+// window -> later successful materialisation" visibility gap.
+//
+// Scenario this section models (the bug report's exact shape): producer A's
+// push hits sidecar OOM (`ensure_per_class_dirty` returns `None` for THAT
+// push) -- it sets ONLY the coarse per-segment bit for its entry, no
+// per-class bit, and trips the coarse-only latch. Producer B pushes LATER
+// and successfully materialises/uses the sidecar (models "the transient OOM
+// condition cleared") -- it sets BOTH the coarse bit and its own per-class
+// bit. A consumer searching for A's class must see BOTH entries in one pass
+// once the latch is observed, rather than only ever finding B's entry via
+// the per-class scan while A's stays invisible until a periodic full scan
+// (which this isolated model does not implement at all -- proving the
+// latch, not a fallback timer, is what recovers A's entry).
+// =========================================================================
+
+/// Model: a SINGLE segment's ring (mirrors `ClassAwareDirtyModel`), the
+/// existing coarse per-segment dirty bit, the per-class dirty bitmap, AND the
+/// NEW coarse-only latch. `push_and_mark_with_latch(class, sidecar_ok)` lets
+/// a caller choose, per push, whether "the sidecar was available" (mirrors
+/// `ensure_per_class_dirty` returning `Some`/`None` for that specific call) —
+/// modelling the real production fact that sidecar availability is a
+/// property of the ATTEMPT, not a fixed per-heap constant across the whole
+/// test (the whole point of the bug being fixed is that it CAN flip from
+/// unavailable to available between two pushes on the same heap).
+struct LatchedDirtyModel {
+    ring_head: AtomicU32,
+    ring_tail: AtomicU32,
+    ring_slots: [AtomicU32; RING_CAP as usize],
+    ring_slot_class: [AtomicU32; RING_CAP as usize],
+    dirty_segment: AtomicU64,
+    dirty_by_class: AtomicU64,
+    // NEW (R13-1): coarse-only latch. `0` = per-class path trusted (subject
+    // to the existing materialisation check), `1` = PERMANENTLY coarse-only
+    // for the rest of this model's lifetime. Modelled as `AtomicU32` (loom
+    // has no `AtomicBool` in every version used across this crate's other
+    // loom files; `AtomicU32` with 0/1 mirrors `loom_dirty_publish.rs`'s own
+    // convention for boolean-shaped atomics) rather than reusing
+    // `core::sync::atomic::AtomicBool`, since this file already builds every
+    // atomic from `loom::sync::atomic` -- see the module doc's "What is
+    // deliberately NOT re-modelled" section for why this file uses its own
+    // small hand-rolled model rather than the real `HeapSlotRemote` type.
+    coarse_only_latch: AtomicU32,
+}
+
+impl LatchedDirtyModel {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            ring_head: AtomicU32::new(0),
+            ring_tail: AtomicU32::new(0),
+            ring_slots: core::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+            ring_slot_class: core::array::from_fn(|_| AtomicU32::new(0)),
+            dirty_segment: AtomicU64::new(0),
+            dirty_by_class: AtomicU64::new(0),
+            coarse_only_latch: AtomicU32::new(0),
+        })
+    }
+
+    /// Producer: push `(offset, class)`, THEN set the coarse bit
+    /// unconditionally. If `sidecar_ok` is `true` (models a successful
+    /// `ensure_per_class_dirty` for THIS push), additionally set the
+    /// per-class bit. If `false` (models sidecar OOM for THIS push),
+    /// trip the coarse-only latch instead — mirrors
+    /// `set_dirty_bit_for_segment`'s `None` branch
+    /// (`registry::heap_core_xthread`) storing `true` into
+    /// `sidecar_oom_latch` with `Release`.
+    fn push_and_mark_with_latch(&self, offset: u32, class: u32, sidecar_ok: bool) -> bool {
+        loop {
+            let t = self.ring_tail.load(Ordering::Relaxed);
+            let h = self.ring_head.load(Ordering::Acquire);
+            if t.wrapping_sub(h) >= RING_CAP {
+                return false;
+            }
+            match self.ring_tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    let idx = (t as usize) % RING_CAP as usize;
+                    self.ring_slot_class[idx].store(class, Ordering::Relaxed);
+                    self.ring_slots[idx].store(offset, Ordering::Release);
+                    // Existing per-segment bit: Release, unconditional --
+                    // matches `set_dirty_bit_for_segment`'s `dirty_segments`
+                    // fetch_or, which runs regardless of sidecar outcome.
+                    self.dirty_segment.fetch_or(1, Ordering::Release);
+                    if sidecar_ok {
+                        self.dirty_by_class
+                            .fetch_or(1u64 << class, Ordering::Release);
+                    } else {
+                        // R13-1: sidecar OOM for this push -- trip the latch.
+                        // Release: pairs with the consumer's Acquire read in
+                        // `latched_visit_and_drain` below (matches the real
+                        // producer's `Ordering::Release` store, one tier
+                        // stricter than the production consumer's
+                        // documented-sufficient `Relaxed` read -- Acquire
+                        // here only strengthens the model, never weakens the
+                        // property under test).
+                        self.coarse_only_latch.store(1, Ordering::Release);
+                    }
+                    return true;
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Consumer: mirrors `drain_dirty_segments`'s R13-1 scan-source
+    /// selection. Reads the latch FIRST; if tripped, ALWAYS scans+clears the
+    /// coarse bit (ignoring the per-class bitmap entirely, even if it
+    /// happens to be set) and full-ring-drains on a coarse hit. If the latch
+    /// is NOT tripped, falls back to the ORIGINAL class-scoped behaviour
+    /// (`class_scoped_visit_and_drain`'s logic, inlined here for a
+    /// self-contained model): scan the per-class bit for `sought_class` only.
+    fn latched_visit_and_drain(&self, sought_class: u32) -> Vec<(u32, u32)> {
+        let latched = self.coarse_only_latch.load(Ordering::Acquire) != 0;
+        let was_dirty = if latched {
+            // R13-1: coarse-only path -- ignore per-class bitmap entirely.
+            self.dirty_segment.swap(0, Ordering::Acquire) & 1 != 0
+        } else {
+            let bit = 1u64 << sought_class;
+            self.dirty_by_class.fetch_and(!bit, Ordering::Acquire) & bit != 0
+        };
+        if !was_dirty {
+            return Vec::new();
+        }
+        // Full-ring drain, unchanged regardless of scan source (same
+        // property `ClassAwareDirtyModel::class_scoped_visit_and_drain`
+        // upholds).
+        let t = self.ring_tail.load(Ordering::Acquire);
+        let mut h = self.ring_head.load(Ordering::Relaxed);
+        let mut reclaimed = Vec::new();
+        while h != t {
+            let idx = (h as usize) % RING_CAP as usize;
+            let slot = &self.ring_slots[idx];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            let class = self.ring_slot_class[idx].load(Ordering::Relaxed);
+            reclaimed.push((class, off));
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.ring_head.store(h, Ordering::Release);
+        reclaimed
+    }
+
+    /// COUNTERFACTUAL twin of `latched_visit_and_drain`: the REJECTED
+    /// pre-R13-1 behaviour with NO latch at all -- the scan source is chosen
+    /// PURELY on "is the per-class bit set for `sought_class` right now",
+    /// with no memory of any past sidecar-OOM push. Used only by
+    /// `counterfactual_no_latch_loses_visibility_of_oom_window_entry` below,
+    /// to prove the harness is non-vacuous (the latch is doing real work,
+    /// not a redundant safety margin).
+    fn no_latch_visit_and_drain(&self, sought_class: u32) -> Vec<(u32, u32)> {
+        let bit = 1u64 << sought_class;
+        let was_dirty = self.dirty_by_class.fetch_and(!bit, Ordering::Acquire) & bit != 0;
+        if !was_dirty {
+            return Vec::new();
+        }
+        let t = self.ring_tail.load(Ordering::Acquire);
+        let mut h = self.ring_head.load(Ordering::Relaxed);
+        let mut reclaimed = Vec::new();
+        while h != t {
+            let idx = (h as usize) % RING_CAP as usize;
+            let slot = &self.ring_slots[idx];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            let class = self.ring_slot_class[idx].load(Ordering::Relaxed);
+            reclaimed.push((class, off));
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.ring_head.store(h, Ordering::Release);
+        reclaimed
+    }
+}
+
+/// The central R13-1 property: producer A publishes class A's entry DURING a
+/// sidecar-OOM window (coarse bit only, latch tripped), joins; producer B
+/// THEN publishes class B's entry with a successful sidecar (both bits set),
+/// joins. A SINGLE class-A-triggered visit (`latched_visit_and_drain`) must
+/// recover BOTH entries in that ONE pass -- proving the latch redirects the
+/// consumer to the coarse path (which sees everything) rather than the
+/// per-class path (which would only ever see B's entry, since A's per-class
+/// bit was never set).
+#[test]
+fn latch_makes_oom_window_entry_visible_in_one_pass() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = LatchedDirtyModel::new();
+
+        // Producer A: sidecar OOM for this push (sidecar_ok = false) --
+        // sets ONLY the coarse bit, trips the latch.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark_with_latch(10, 0 /* class A */, false);
+        });
+        ta.join().unwrap();
+
+        // Producer B: sidecar available for this push (sidecar_ok = true) --
+        // sets BOTH the coarse bit and its own per-class bit. Happens AFTER
+        // A joins, modelling "a later producer on the same heap successfully
+        // materialises the sidecar".
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark_with_latch(20, 1 /* class B */, true);
+        });
+        tb.join().unwrap();
+
+        // ONE class-A-triggered visit. Per R13-1, the latch (tripped by A's
+        // push) makes this visit use the coarse path regardless of B's
+        // successful per-class bit -- so it must see BOTH entries now, not
+        // just B's (which is all the OLD per-class-only scan would ever
+        // find, since A's per-class bit was never set).
+        let reclaimed = model.latched_visit_and_drain(0);
+
+        let found_a = reclaimed.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = reclaimed.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "latched visit did not recover both entries in one pass: {reclaimed:?} \
+             (want class A offset 10 -- published during the sidecar-OOM window -- \
+             AND class B offset 20 -- published after successful materialisation) \
+             -- the coarse-only latch must make the OOM-window entry visible \
+             immediately, not just eventually via a periodic fallback"
+        );
+    });
+}
+
+/// Concurrent variant (CONC-1-style, mirroring
+/// `concurrent_producer_consumer_eventual_visibility` above): producer A's
+/// OOM-window push and producer B's later successful push race a concurrent
+/// consumer visit, none joined first. Per the "at-least-once, bounded
+/// deferral" contract, the racy concurrent visit alone may miss an entry
+/// whose push (or whose latch trip) lands after the visit's read. Assert the
+/// total across (concurrent visit + one guaranteed final visit) recovers
+/// both entries -- proving the latch's `Acquire`/`Release` pairing is sound
+/// under genuine interleaving, not just under the sequential join order the
+/// test above uses.
+#[test]
+fn latch_concurrent_producer_consumer_eventual_visibility() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = LatchedDirtyModel::new();
+
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || while !m_a.push_and_mark_with_latch(10, 0, false) {});
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || while !m_b.push_and_mark_with_latch(20, 1, true) {});
+
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || m_c.latched_visit_and_drain(0));
+
+        let concurrent = tc.join().unwrap();
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // Guaranteed final visit, now that both producers have joined and
+        // the latch (if tripped) is stably visible.
+        let final_visit = model.latched_visit_and_drain(1);
+
+        let mut all = concurrent;
+        all.extend(final_visit);
+
+        let found_a = all.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = all.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "concurrent producer-vs-consumer under the latch: entries not fully \
+             recovered across concurrent + final visits: {all:?} (want class A \
+             offset 10 AND class B offset 20)"
+        );
+    });
+}
+
+/// COUNTERFACTUAL (`#[should_panic]`): proves this harness is non-vacuous by
+/// showing the REJECTED pre-R13-1 behaviour (no latch, scan source picked
+/// purely by "is the per-class bit set right now") genuinely loses
+/// visibility of the OOM-window entry within one pass. Same producer
+/// sequence as `latch_makes_oom_window_entry_visible_in_one_pass` (A's push
+/// during the OOM window, then B's successful push), but the consumer uses
+/// `no_latch_visit_and_drain` instead of `latched_visit_and_drain`: since
+/// class A's per-class bit was never set (A's push never got a sidecar), a
+/// class-A-triggered per-class-only scan finds `was_dirty == false` and
+/// returns immediately without draining the ring at all -- so NEITHER entry
+/// is recovered by this one visit (not even B's, which is a coarse
+/// per-segment-bit fact this per-class-only scan does not consult).
+#[test]
+#[should_panic(expected = "pre-latch")]
+fn counterfactual_no_latch_loses_visibility_of_oom_window_entry() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = LatchedDirtyModel::new();
+
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark_with_latch(10, 0 /* class A */, false);
+        });
+        ta.join().unwrap();
+
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark_with_latch(20, 1 /* class B */, true);
+        });
+        tb.join().unwrap();
+
+        // Pre-R13-1 behaviour: no latch consulted at all.
+        let reclaimed = model.no_latch_visit_and_drain(0);
+
+        let found_a = reclaimed.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = reclaimed.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "pre-latch behaviour lost visibility: reclaimed only {reclaimed:?} from \
+             a class-A-triggered visit (want class A offset 10 AND class B offset \
+             20) -- without the coarse-only latch, class A's OOM-window entry is \
+             invisible to a per-class-only scan (its per-class bit was never set), \
+             which is EXACTLY the bug R13-1 fixes"
+        );
+    });
+}

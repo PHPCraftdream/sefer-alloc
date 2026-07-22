@@ -71,6 +71,18 @@ impl HeapCore {
         self.core.dirty_by_class = Some(cell);
     }
 
+    /// R13-1 (task #271, P0 fix): plant the stable `&'static` handle to THIS
+    /// heap's slot-resident coarse-only latch. Same discipline as
+    /// `bind_dirty_by_class`. Called once, right after the slot binds, from
+    /// `bind_slot_counters`.
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) fn bind_sidecar_oom_latch(
+        &mut self,
+        latch: &'static core::sync::atomic::AtomicBool,
+    ) {
+        self.core.sidecar_oom_latch = Some(latch);
+    }
+
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
     /// null in the transient pre-bind window (no cross-thread stamping has
     /// happened yet → cross-thread frees to this heap's segments are a safe

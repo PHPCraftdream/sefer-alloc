@@ -2410,6 +2410,45 @@ impl AllocCore {
     /// class-routed cross-thread free), the scan falls back to the shared
     /// per-segment bitmap unchanged — identical behaviour to the feature
     /// being off.
+    ///
+    /// R13-1 (task #271, P0 fix): BEFORE consulting `per_class_words` at all,
+    /// this heap's coarse-only latch
+    /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`) is checked.
+    /// If it is set, the per-class path is ignored UNCONDITIONALLY for this
+    /// heap — even if the sidecar happens to be materialised right now — and
+    /// the scan always uses the coarse `dirty_segments` bitmap. This closes a
+    /// visibility gap the plain "sidecar not yet materialised -> fall back"
+    /// rule above does NOT cover: if producer A's push hit sidecar OOM (set
+    /// only the coarse bit for its entry, no per-class bit — the sidecar
+    /// genuinely did not exist for that push) and a LATER producer B on the
+    /// SAME heap successfully materialises the sidecar afterwards, the
+    /// sidecar is materialised NOW (so the plain fallback rule above would no
+    /// longer trigger), yet producer A's entry never got a per-class bit —
+    /// it would be invisible to a per-class-only scan until the periodic
+    /// full-scan fallback or an OOM-rescue scan finds it. The latch makes the
+    /// two publication paths mutually exclusive for the lifetime of the
+    /// heap slot: once ANY push has ever failed to materialise the sidecar,
+    /// this heap is permanently pinned to the coarse scan — always correct,
+    /// same fallback behaviour the feature has when OFF, just without the
+    /// class-scoped speedup from then on for this one heap. See
+    /// `HeapSlotRemote::sidecar_oom_latch`'s doc comment for the full design
+    /// and `set_dirty_bit_for_segment`'s doc comment
+    /// (`registry::heap_core_xthread`) for the producer-side write. `Relaxed`
+    /// read is sufficient here: the latch is a single monotonic
+    /// `false -> true` flag consulted purely to pick a scan source, not to
+    /// synchronise access to the sidecar's OWN payload — the payload itself
+    /// is reached (when the per-class path IS taken) through
+    /// `dirty_by_class::get_per_class_dirty`'s own `Acquire` load on the
+    /// `RacyPtrCell`, which is the read that actually needs to observe the
+    /// sidecar's fully-initialised words. Reading the latch itself stale by
+    /// one push (a `Relaxed` load observing `false` for one extra drain pass
+    /// immediately after a racing producer's `Release` store) only means
+    /// this ONE drain call takes the per-class path one pass later than it
+    /// could have — never a correctness gap, since a drain that still takes
+    /// the per-class path while the latch write is in flight is scanning
+    /// EXACTLY the same "not yet universally safe" state the latch is about
+    /// to close, and the very next call (having observed the store by then)
+    /// permanently falls back to coarse.
     #[cfg(feature = "alloc-xthread")]
     pub(super) fn drain_dirty_segments<
         #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
@@ -2428,20 +2467,36 @@ impl AllocCore {
         }
         let small_cur = self.small_cur;
 
-        // R12-7 stage 2: resolve the class-scoped word slice, if available.
+        // R13-1 (task #271, P0 fix): the coarse-only latch, checked BEFORE
+        // resolving the per-class slice at all — see this function's doc
+        // comment for the full rationale. `Relaxed`: see the doc comment's
+        // ordering discussion (the latch only selects a scan source; the
+        // sidecar payload itself is independently synchronised by
+        // `get_per_class_dirty`'s `Acquire` load).
+        #[cfg(feature = "class-aware-dirty")]
+        let coarse_only_latched: bool = self
+            .sidecar_oom_latch
+            .is_some_and(|latch| latch.load(core::sync::atomic::Ordering::Relaxed));
+
+        // R12-7 stage 2: resolve the class-scoped word slice, if available
+        // AND the coarse-only latch has not tripped for this heap.
         // `per_class_words` borrows out of the `'static` sidecar (through the
         // `'static` cell handle `self.dirty_by_class`), so it outlives `self`
         // and there is no borrow conflict with the `&mut self` calls inside
         // the loop below.
         #[cfg(feature = "class-aware-dirty")]
-        let per_class_words: Option<&'static [core::sync::atomic::AtomicU64]> = self
-            .dirty_by_class
-            .and_then(super::dirty_by_class::get_per_class_dirty)
-            .map(|pc| {
-                let start = class_idx * super::segment_directory::WORDS_PER_CLASS;
-                let end = start + super::segment_directory::WORDS_PER_CLASS;
-                &pc.words[start..end]
-            });
+        let per_class_words: Option<&'static [core::sync::atomic::AtomicU64]> =
+            if coarse_only_latched {
+                None
+            } else {
+                self.dirty_by_class
+                    .and_then(super::dirty_by_class::get_per_class_dirty)
+                    .map(|pc| {
+                        let start = class_idx * super::segment_directory::WORDS_PER_CLASS;
+                        let end = start + super::segment_directory::WORDS_PER_CLASS;
+                        &pc.words[start..end]
+                    })
+            };
 
         // The per-word iteration: `(base_word_index, dirty_bits_for_that_word)`
         // pairs, drawn from either the class-scoped slice (base index offset

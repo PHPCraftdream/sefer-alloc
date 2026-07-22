@@ -233,4 +233,65 @@ impl HeapCore {
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
         self.core.dbg_live_count_for(ptr)
     }
+
+    /// TEST-ONLY (R13-1, task #271): force-trip this heap's coarse-only
+    /// latch, simulating "a producer already observed sidecar OOM at least
+    /// once for this heap" WITHOUT actually driving the process to OOM. Thin
+    /// delegation to `AllocCore::dbg_force_sidecar_oom_latch` — exposed at
+    /// the `HeapCore` level because `core` is `pub(crate)` and integration
+    /// tests in `tests/` only see `HeapCore`/`HeapRegistry`. Returns `true`
+    /// if the latch handle was bound (this heap has been claimed through the
+    /// registry and `class-aware-dirty` is on), `false` otherwise.
+    #[doc(hidden)]
+    #[cfg(feature = "class-aware-dirty")]
+    pub fn dbg_force_sidecar_oom_latch(&mut self) -> bool {
+        self.core.dbg_force_sidecar_oom_latch()
+    }
+
+    /// TEST-ONLY (R13-1, task #271): read this heap's coarse-only latch.
+    /// Thin delegation to `AllocCore::dbg_sidecar_oom_latch` — see that
+    /// function's doc comment. Returns `None` if the latch handle is not
+    /// bound.
+    #[doc(hidden)]
+    #[cfg(feature = "class-aware-dirty")]
+    #[must_use]
+    pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {
+        self.core.dbg_sidecar_oom_latch()
+    }
+
+    /// TEST-ONLY (R13-1, task #271): push `ptr`'s segment-relative offset
+    /// into its segment's `RemoteFreeRing` (exactly like
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring)) AND set ONLY the coarse
+    /// per-segment dirty bit for that segment, deliberately WITHOUT setting
+    /// any per-class bit — reconstructing the exact on-heap state a real
+    /// sidecar-OOM cross-thread free leaves behind, without needing a real
+    /// OOM. Thin delegation to `AllocCore::dbg_push_to_ring` +
+    /// `AllocCore::dbg_force_coarse_dirty_bit_for` — exposed at the
+    /// `HeapCore` level so a `tests/` integration test can construct a
+    /// "coarse-only entry" scenario through the real production ring/bitmap
+    /// machinery. Returns `true` iff BOTH the ring push and the coarse-bit
+    /// set succeeded.
+    ///
+    /// # Safety
+    ///
+    /// Carries the identical contract as
+    /// [`dbg_push_to_ring`](Self::dbg_push_to_ring) (this is that same
+    /// producer operation, plus an additional bitmap-only side effect that
+    /// carries no extra memory-safety obligation of its own — the coarse bit
+    /// is read-only metadata to `drain_dirty_segments`, never dereferenced as
+    /// a pointer).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-xthread",
+        feature = "alloc-segment-directory",
+        feature = "class-aware-dirty"
+    ))]
+    #[allow(unsafe_code)] // R13-1: `unsafe fn` boundary, mirrors `dbg_push_to_ring`.
+    pub unsafe fn dbg_push_coarse_only_entry(&self, ptr: *mut u8, class_idx: usize) -> bool {
+        // SAFETY: identical contract to `dbg_push_to_ring`, forwarded to
+        // THIS caller verbatim.
+        let pushed = unsafe { self.core.dbg_push_to_ring(ptr, class_idx) };
+        let coarse = self.core.dbg_force_coarse_dirty_bit_for(ptr);
+        pushed && coarse
+    }
 }

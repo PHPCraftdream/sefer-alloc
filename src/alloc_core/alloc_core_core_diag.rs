@@ -955,4 +955,59 @@ impl AllocCore {
             false
         }
     }
+
+    /// R13-1 (task #271) TEST-ONLY: force-trip this heap's coarse-only latch
+    /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`) WITHOUT
+    /// actually driving the process to OOM. Reaching a genuine
+    /// `ensure_per_class_dirty` OOM in a test would require exhausting
+    /// virtual memory (impractical and non-deterministic — the same
+    /// rationale [`dbg_directory_rescue_scan`](Self::dbg_directory_rescue_scan)
+    /// documents for its own OOM-adjacent scenario). This hook stores `true`
+    /// directly into the SAME `&'static AtomicBool` handle the real
+    /// `set_dirty_bit_for_segment` OOM branch writes (`Release`, matching the
+    /// production write's ordering), letting a test deterministically
+    /// reconstruct "a producer already observed sidecar OOM at least once for
+    /// this heap" and then assert `drain_dirty_segments`'s consumer-side
+    /// behaviour after that point. Returns `true` if the latch handle was
+    /// bound (i.e. `class-aware-dirty` is on and this `AllocCore` has been
+    /// claimed through the registry), `false` otherwise (no-op).
+    #[doc(hidden)]
+    pub fn dbg_force_sidecar_oom_latch(&mut self) -> bool {
+        #[cfg(feature = "class-aware-dirty")]
+        {
+            match self.sidecar_oom_latch {
+                Some(latch) => {
+                    latch.store(true, core::sync::atomic::Ordering::Release);
+                    true
+                }
+                None => false,
+            }
+        }
+        #[cfg(not(feature = "class-aware-dirty"))]
+        {
+            false
+        }
+    }
+
+    /// R13-1 (task #271) TEST-ONLY: read this heap's coarse-only latch
+    /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`). Returns
+    /// `None` if the latch handle is not bound (`class-aware-dirty` off, or
+    /// this `AllocCore` was never claimed through the registry), `Some(bool)`
+    /// otherwise. `Acquire` load (stricter than the production `Relaxed`
+    /// read in `drain_dirty_segments` — a test assertion wants the strongest
+    /// ordering available, not the minimum the production path can get away
+    /// with).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {
+        #[cfg(feature = "class-aware-dirty")]
+        {
+            self.sidecar_oom_latch
+                .map(|latch| latch.load(core::sync::atomic::Ordering::Acquire))
+        }
+        #[cfg(not(feature = "class-aware-dirty"))]
+        {
+            None
+        }
+    }
 }

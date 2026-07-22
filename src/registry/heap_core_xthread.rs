@@ -310,10 +310,25 @@ const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micro
 /// corresponding bit in the per-(segment, class) sidecar
 /// (`registry::dirty_by_class`), additively — the per-segment bit above is
 /// still set unconditionally, so this cannot regress the non-class-aware
-/// path. Sidecar materialisation failure (OOM) is handled the same way as the
-/// "owner id out of range" case: the per-class bit is simply not set, and the
-/// per-segment bitmap (never affected by this) remains the sole routing
-/// signal for that heap — no correctness impact, only a missed optimisation.
+/// path.
+///
+/// R13-1 (task #271, P0 fix): sidecar materialisation failure (OOM) sets the
+/// heap-wide, one-way [`HeapSlotRemote::sidecar_oom_latch`](super::heap_slot::HeapSlotRemote::sidecar_oom_latch)
+/// PERMANENTLY, in addition to leaving the per-class bit unset for this push.
+/// The per-segment bitmap (never affected by this) remains a correct routing
+/// signal regardless — but the latch is what makes it the SOLE signal
+/// `drain_dirty_segments` will ever consult for this heap again, closing a
+/// visibility gap the old (pre-R13-1) "OOM = local no-op" behaviour left
+/// open: without the latch, a LATER producer that successfully materialises
+/// the sidecar (e.g. after the transient OOM condition clears) would flip the
+/// consumer's `drain_dirty_segments` scan source over to the per-class path,
+/// and THIS push's coarse-only entry — published while the sidecar was still
+/// missing — would fall into the gap between the two signals: invisible to
+/// the class-scoped scan (no per-class bit was ever set for it) until the
+/// periodic full-scan fallback or an OOM-rescue scan eventually finds it.
+/// See [`HeapSlotRemote::sidecar_oom_latch`](super::heap_slot::HeapSlotRemote::sidecar_oom_latch)'s
+/// doc comment for the full design and [`AllocCore::drain_dirty_segments`](crate::alloc_core::AllocCore::drain_dirty_segments)'s
+/// doc comment for the consumer-side read.
 #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
 #[inline]
 fn set_dirty_bit_for_segment(
@@ -366,17 +381,29 @@ fn set_dirty_bit_for_segment(
             "class {class_idx} / segment word {word} out of per-class dirty bitmap range"
         );
         if pc_word < PER_CLASS_DIRTY_WORDS {
-            if let Some(pc) = ensure_per_class_dirty(&slot.remote.dirty_by_class) {
-                // Release: pairs with the drain side's `swap(0, Acquire)` on
-                // this same word — identical ordering argument to the
-                // per-segment bit above, just projected onto the finer-grained
-                // sidecar.
-                pc.words[pc_word].fetch_or(bit, Ordering::Release);
+            match ensure_per_class_dirty(&slot.remote.dirty_by_class) {
+                Some(pc) => {
+                    // Release: pairs with the drain side's `swap(0, Acquire)`
+                    // on this same word — identical ordering argument to the
+                    // per-segment bit above, just projected onto the
+                    // finer-grained sidecar.
+                    pc.words[pc_word].fetch_or(bit, Ordering::Release);
+                }
+                None => {
+                    // R13-1 (task #271): `ensure_per_class_dirty` returning
+                    // `None` (sidecar OOM) trips the coarse-only latch
+                    // PERMANENTLY for this heap — see this function's doc
+                    // comment and `HeapSlotRemote::sidecar_oom_latch`'s doc
+                    // comment for the full rationale. `Release`: pairs with
+                    // `drain_dirty_segments`'s `Acquire` read of the latch,
+                    // establishing happens-before from "this push's coarse-
+                    // only publication" to "the consumer's decision to trust
+                    // only the coarse bitmap". Idempotent plain store: every
+                    // racing producer that ever observes sidecar OOM stores
+                    // the same `true`, so no CAS is needed.
+                    slot.remote.sidecar_oom_latch.store(true, Ordering::Release);
+                }
             }
-            // `ensure_per_class_dirty` returning `None` (sidecar OOM) is a
-            // no-op: see this function's doc comment — the per-segment bit
-            // already set above remains the sole (correct, just coarser)
-            // routing signal.
         }
     }
 }

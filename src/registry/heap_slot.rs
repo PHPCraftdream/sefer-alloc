@@ -255,6 +255,52 @@ pub(crate) struct HeapSlotRemote {
     /// when this sidecar is in use.
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) dirty_by_class: RacyPtrCell<PerClassDirty>,
+
+    /// R13-1 (task #271, P0 fix): the coarse-only latch — set PERMANENTLY,
+    /// once, the first time [`ensure_per_class_dirty`](crate::alloc_core::dirty_by_class::ensure_per_class_dirty)
+    /// fails to materialise this heap's [`dirty_by_class`](Self::dirty_by_class)
+    /// sidecar (OOM). See `set_dirty_bit_for_segment`'s doc comment
+    /// (`registry::heap_core_xthread`) for the producer-side write and
+    /// `AllocCore::drain_dirty_segments`'s doc comment for the consumer-side
+    /// read and the visibility-gap bug this closes.
+    ///
+    /// **Why this is needed:** without the latch, a producer that hit the
+    /// OOM window sets ONLY the coarse `dirty_segments` bit for its entry (no
+    /// per-class bit — the sidecar never materialised for THAT push). If a
+    /// LATER producer on the SAME heap successfully materialises the sidecar
+    /// (a fresh `ensure_per_class_dirty` call, e.g. after the OS freed
+    /// memory), the consumer's `drain_dirty_segments` switches to scanning
+    /// ONLY the per-class slice — and the earlier coarse-only entry becomes
+    /// invisible to it until the periodic full-scan fallback (64 misses) or
+    /// an OOM-rescue scan eventually finds it. Under memory pressure this can
+    /// materialise up to 64 avoidable extra 4 MiB segments (~256 MiB VA) at
+    /// the worst possible time. The latch makes the two publication paths
+    /// mutually exclusive FOR THE LIFETIME OF THE HEAP SLOT: once ANY
+    /// producer has ever failed to materialise the sidecar for this heap,
+    /// EVERY future `drain_dirty_segments` call for this heap ignores the
+    /// per-class path entirely (even if the sidecar later does materialise
+    /// via a different producer) and scans only the coarse bitmap — the
+    /// same, always-correct fallback behaviour the feature has when OFF.
+    ///
+    /// **Never reset.** `false` -> `true` is a one-way transition for the
+    /// process lifetime of the slot (mirrors [`HeapSlot::initialised`]'s own
+    /// "publish once, never revert" discipline): a slot recycle does not
+    /// clear it, because a later occupant reusing this slot's already-
+    /// permanently-degraded coarse-only routing is a strictly conservative
+    /// (never incorrect) choice, and clearing it would re-open the exact
+    /// interleaving window this latch exists to close if the new occupant's
+    /// OOM history differs from the old one's.
+    ///
+    /// **Ordering:** producer writes `true` with `Release` (pairs with the
+    /// consumer's `Acquire` read below — establishes happens-before from "the
+    /// sidecar materialisation attempt that failed" to "the consumer decides
+    /// to ignore the per-class path"). Idempotent: multiple producers racing
+    /// to set the latch is benign (`store(true, Release)` from any number of
+    /// racing writers converges to the same final state; a plain store is
+    /// sufficient — no CAS needed — because every writer stores the exact
+    /// same value).
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) sidecar_oom_latch: AtomicBool,
 }
 
 /// R7-A4: number of `AtomicU64` words in the per-slot dirty-segment bitmap.
