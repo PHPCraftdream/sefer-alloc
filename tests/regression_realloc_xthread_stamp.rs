@@ -84,13 +84,29 @@ fn realloc_growth_segment_is_stamped_and_reclaims_xthread() {
 
     const N: usize = 60;
     // Both sizes are comfortably above `SMALL_MAX`, so each is unambiguously
-    // routed to `AllocCore::alloc_large`. The grow from OLD to NEW MUST cross
-    // segment boundaries (exceed `span_usable`) so OPT-G does NOT fire and
-    // `AllocCore::realloc` carves a FRESH, larger dedicated Large segment for
-    // the result (the segment that pre-fix went un-stamped). OLD occupies one
-    // 4 MiB segment; NEW at 5 MiB exceeds that span, forcing relocation.
+    // routed to `AllocCore::alloc_large`. The grow from OLD to NEW MUST
+    // exceed OPT-G's in-place-grow headroom so `AllocCore::realloc` carves a
+    // FRESH, larger dedicated Large segment for the result (the segment that
+    // pre-fix went un-stamped) — a relocation, not an in-place grow.
+    //
+    // Without `large-reserved-capacity` (production's default), OPT-G's
+    // in-place headroom is bounded by `span_usable`, which is always AT
+    // LEAST one whole 4 MiB `SEGMENT` — so NEW just needs to exceed one
+    // segment (the OLD 5 MiB literal below already does).
+    //
+    // R12-4 (`large-reserved-capacity`, additive over `production` in
+    // `--all-features`): OPT-G ALSO grows in-place if the target fits within
+    // the segment's `reserved_capacity` — a GEOMETRIC 2x of the page-rounded
+    // OLD request (see `LARGE_RESERVED_CAP_GROWTH_FACTOR` in
+    // `alloc_core_large.rs`), capped at `LARGE_RESERVED_CAP_BYTES` (16x
+    // SEGMENT = 64 MiB). So under that feature a 3 MiB->5 MiB grow (< 2x)
+    // stays IN PLACE — this test's ownership-stamping premise is about
+    // relocation specifically, not about that feature's own boundary
+    // behaviour (covered by `tests/large_reserved_capacity.rs`), so NEW is
+    // sized here to exceed 2x OLD, guaranteeing relocation under EVERY
+    // feature combination (including `--all-features`).
     const OLD: usize = 3 * 1024 * 1024; // 3 MiB — fits one 4 MiB segment
-    const NEW: usize = 5 * 1024 * 1024; // 5 MiB — exceeds one segment
+    const NEW: usize = 7 * 1024 * 1024; // 7 MiB — exceeds one segment AND 2x OLD
     let old_layout = Layout::from_size_align(OLD, 8).unwrap();
     let new_layout = Layout::from_size_align(NEW, 8).unwrap();
 

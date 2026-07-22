@@ -258,6 +258,48 @@ alloc-decommit = ["alloc-core"]
 # multiple) — this feature adds a new path, it does not alter the default
 # one. Additive over `alloc-core`.
 exact-span-large = ["alloc-core"]
+# R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): give a
+# GROWING Large `realloc` a cheap in-place path when `exact-span-large` has
+# shrunk the committed span so far that OPT-G (the existing Large->Large
+# in-place-grow fast path — see `AllocCore::realloc_inplace_fast_path_known_base`'s
+# doc) rarely has committed headroom to grow into.
+#
+# Mechanism: `alloc_large_slow` reserves (but does NOT commit) a larger VA
+# span up front — `reserved_capacity`, a geometric 2x of the page-rounded
+# request capped at `LARGE_RESERVED_CAP_MULTIPLIER * SEGMENT` — via
+# `aligned_vmem::reserve_aligned_lazy`, and commits only the page-rounded
+# request (`span_usable`, UNCHANGED meaning — see bug #134 / `span_usable`'s
+# doc, still the true COMMITTED span, never the reservation). A growing
+# realloc that still fits in `reserved_capacity` (but not in the already-
+# committed `span_usable`) commits the missing tail via
+# `aligned_vmem::commit_range` (ONE extra `VirtualAlloc(MEM_COMMIT)` call on
+# Windows) and returns the SAME pointer, with NO copy. A growing realloc that
+# exceeds `reserved_capacity` falls through to the existing slow path
+# (alloc + copy + free), unchanged.
+#
+# Portability (mirrors `alloc-lazy-commit`'s own convention — see that
+# feature's doc below): the mechanism is written as ONE portable code path
+# in `alloc_core` that calls `aligned_vmem`'s lazy-reserve/commit-range
+# primitives; there is NO `#[cfg(windows)]` in `alloc_core` itself. On Unix
+# and under miri, `aligned_vmem::reserve_aligned_lazy`/`commit_range` are
+# no-ops that already commit (or model) the WHOLE span eagerly at reserve
+# time (see `aligned-vmem`'s Unix/miri backends), so `reserved_capacity`'s
+# extra VA is already fully committed there too — the in-place grow still
+# works, it just never needed a real incremental commit syscall to begin
+# with. This is why the feature is documented as "Windows-gated EFFECT" (the
+# RSS-deferral benefit is Windows-specific) rather than "Windows-gated CODE".
+#
+# Requires `exact-span-large` (the mechanism exists to counteract exactly
+# that feature's OPT-G headroom loss) and pulls in `aligned-vmem/lazy-commit`
+# for the reserve/commit primitives (the same dependency `alloc-lazy-commit`
+# pulls in for its own, unrelated, small-segment lazy-commit path).
+#
+# EXPERIMENTAL: opt-in, NOT part of `production` or any other default-on
+# bundle. `--all-features` pulls it in (as it does every other opt-in
+# feature here). With this feature OFF, `alloc_large_slow` and the OPT-G
+# realloc fast path are BYTE-FOR-BYTE IDENTICAL to before — this feature
+# adds a new path, it does not alter the default one.
+large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
 # `alloc-xthread`, a cross-thread free of a small block still has to land
@@ -758,6 +800,22 @@ required-features = ["alloc-global"]
 # Build/run experimental: cargo run --release --example r12_3_exact_span_measure --features "production,exact-span-large"
 [[example]]
 name = "r12_3_exact_span_measure"
+required-features = ["alloc-core"]
+
+# R12-4 (P0-perf, EXPERIMENTAL Windows-gated-effect prototype): THROWAWAY
+# measurement harness for the `large-reserved-capacity` feature. Runs a
+# realloc-growth chain (256 KiB -> 4 MiB in 4 steps) via `AllocCore::realloc`
+# and reports move legs (relocated vs in-place), total copied bytes, best-of
+# wall-clock, and RSS/commit-charge delta via `proc-memstat::snapshot()`.
+# Intended to be run once per feature combination (production alone,
+# +exact-span-large, +exact-span-large+large-reserved-capacity) so the three
+# numbers are directly comparable. NOT a shipping artifact — pure
+# measurement, no src/ behavior implemented here.
+# Build/run: cargo run --release --example r12_4_reserved_capacity_measure --features production
+#            cargo run --release --example r12_4_reserved_capacity_measure --features "production,exact-span-large"
+#            cargo run --release --example r12_4_reserved_capacity_measure --features "production,exact-span-large,large-reserved-capacity"
+[[example]]
+name = "r12_4_reserved_capacity_measure"
 required-features = ["alloc-core"]
 
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).

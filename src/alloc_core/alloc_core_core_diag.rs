@@ -333,6 +333,24 @@ impl AllocCore {
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
 
+    /// TEST-ONLY (R12-4): read the `reserved_capacity` field from the header
+    /// of `ptr`'s segment — the segment's total RESERVED VA span (see
+    /// `SegmentHeader::reserved_capacity`'s doc). Same field-read pattern as
+    /// `dbg_span_usable_of`. Lets integration tests verify the
+    /// `large-reserved-capacity` feature actually reserves extra VA beyond
+    /// the committed `span_usable`, and that a growing `realloc` commits
+    /// into it without moving the allocation.
+    #[doc(hidden)]
+    pub fn dbg_reserved_capacity_of(&self, ptr: *mut u8) -> usize {
+        let base = os::segment_base_of_ptr(ptr);
+        assert!(
+            self.table.contains_base_ro(base),
+            "dbg_reserved_capacity_of: ptr's segment is not owned by this AllocCore"
+        );
+        let off = core::mem::offset_of!(SegmentHeader, reserved_capacity);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
     /// TEST-ONLY (task #135): directly invoke `SegmentTable::unregister` for
     /// `ptr`'s segment, for a public integration test (which cannot call the
     /// `pub(crate)` version). Exercises the O(1) `segment_id`-indexed lookup

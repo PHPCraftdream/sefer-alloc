@@ -545,6 +545,54 @@ pub(crate) struct SegmentHeader {
     /// (same `offset_of!` discipline as `bump` and `live_count`).
     #[cfg_attr(not(feature = "alloc-lazy-commit"), allow(dead_code))]
     pub committed_payload_end: usize,
+    /// R12-4 (feature `large-reserved-capacity`): for LARGE/huge segments
+    /// only, the total VA byte span RESERVED for this segment — which may
+    /// exceed `span_usable` (the COMMITTED span; `span_usable`'s own meaning
+    /// and the bug #134 carry-forward discipline are UNCHANGED by this
+    /// field's addition — see [`span_usable`](Self::span_usable)'s doc).
+    /// `reserved_capacity >= span_usable` always.
+    ///
+    /// Lets a growing `realloc` (OPT-G,
+    /// `AllocCore::realloc_inplace_fast_path_known_base`) commit just the
+    /// missing tail `[span_usable, new_span_usable)` via
+    /// [`super::os::commit_pages`] and grow the pointer IN PLACE — without a
+    /// copy — whenever the grown size still fits within `reserved_capacity`,
+    /// instead of needing the WHOLE `reserved_capacity` pre-committed (which
+    /// would defeat the RSS savings `exact-span-large` exists to provide).
+    ///
+    /// Set once at the segment's initial OS reservation
+    /// (`alloc_large_slow`'s `large-reserved-capacity` arm, geometric 2x of
+    /// the initial `span_usable` capped at
+    /// `LARGE_RESERVED_CAP_MULTIPLIER * SEGMENT`) and carried forward
+    /// verbatim on a large-cache-hit reuse — same discipline as
+    /// `span_usable` (bug #134): never recomputed from `large_size`/
+    /// `large_align`, because a cache-hit reuse can be smaller than the
+    /// segment's actual physical capacity.
+    ///
+    /// **Without the feature** (or for a Small/Primordial segment, or a
+    /// Large segment built before this feature existed / reused across a
+    /// feature-off rebuild): equals `span_usable` — "reserved == committed",
+    /// which makes every `reserved_capacity`-gated check in the OPT-G path a
+    /// trivial no-op identical to pre-R12-4 behaviour (the committed-span
+    /// check `payload_off + new_eff <= span_usable` already covers
+    /// everything reachable).
+    ///
+    /// **Present in EVERY build's layout** — the byte layout of
+    /// `SegmentHeader` is identical regardless of feature config (same
+    /// discipline as `committed_payload_end`/`node_id`). The field is READ
+    /// and WRITTEN only under `#[cfg(feature = "large-reserved-capacity")]`;
+    /// without that feature it is inert dead data (lint silenced below).
+    /// Adding this 8-byte field grows `size_of::<SegmentHeader>()` from 128
+    /// to 136, but `Layout::page_map_off()` (`align_up(136, 4096)`) remains
+    /// 4096, so every downstream metadata offset is UNCHANGED.
+    ///
+    /// **Not atomic — owner-only.** Written at segment-init time and grown
+    /// by the owner's `realloc` path (never shrunk). The cross-thread freer
+    /// never touches this field — it only reads `span_usable` (via
+    /// `safe_payload_read_span`) to bound its own defensive copy length,
+    /// which stays correct regardless of `reserved_capacity`'s value.
+    #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
+    pub reserved_capacity: usize,
     /// The segment's index in the global registry. `u32::MAX` until registered
     /// (the primordial segment is index 0). Unregister/recycle-only read.
     pub segment_id: u32,
@@ -642,6 +690,9 @@ impl SegmentHeader {
             // path: SEGMENT (full span). On the lazy path: metadata_end +
             // first chunk.
             committed_payload_end: 0,
+            // R12-4: inert for Small/Primordial segments — Large-only field
+            // (see the field's doc comment).
+            reserved_capacity: 0,
             // Phase B: NUMA node is unknown at construction time; the caller
             // (reserve_small_segment under numa-aware) stamps the real value
             // immediately after writing the header via set_node_id.
@@ -665,11 +716,34 @@ impl SegmentHeader {
     /// span) this MUST be the cached slot's own `usable_size` (the ORIGINAL
     /// physical span), never recomputed from `size`/`align` (see the field's
     /// doc comment on `SegmentHeader` — bug #134).
+    ///
+    /// `reserved_capacity` (R12-4) is the segment's total RESERVED VA span
+    /// (`>= span_usable`) — see [`reserved_capacity`](Self::reserved_capacity)'s
+    /// doc. The caller MUST pass `span_usable` itself (not a larger value)
+    /// when the `large-reserved-capacity` feature is off, or when reusing a
+    /// cached segment that predates the feature/was reserved without extra
+    /// capacity — "reserved == committed" is always a safe, inert value.
+    /// Like `span_usable`, this MUST be carried forward verbatim (never
+    /// recomputed) on a cache-hit reuse — see the field's doc for the same
+    /// bug-#134-shaped rationale.
+    ///
+    /// `#[allow(clippy::too_many_arguments)]`: this is a plain field-by-field
+    /// struct constructor (like [`small`](Self::small) beside it) — every
+    /// parameter maps 1:1 onto a `SegmentHeader` field with no combinable
+    /// substructure, so splitting it into a builder or a parameter struct
+    /// would add indirection without reducing the actual information the
+    /// caller must supply. R12-4 added the 5th argument
+    /// (`reserved_capacity`), crossing clippy's default 7-argument
+    /// threshold at 8; the same reasoning applied at every prior addition to
+    /// this constructor (R12-3's `span_usable`, before that `segment_id`
+    /// etc.).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) const fn large(
         segment_id: u32,
         size: usize,
         align: usize,
         span_usable: usize,
+        reserved_capacity: usize,
         bump: usize,
         reservation: *mut u8,
         reservation_len: usize,
@@ -699,6 +773,9 @@ impl SegmentHeader {
             // B1 (R7 Workstream B): inert for Large segments (they hold one
             // allocation and are freed wholesale — no incremental commit).
             committed_payload_end: 0,
+            // R12-4: the segment's total reserved VA span (see the field doc
+            // and this constructor's doc above).
+            reserved_capacity,
             // Phase B: same sentinel as small(); the caller (alloc_large under
             // numa-aware) stamps the real value after writing the header.
             node_id: NO_NODE_RAW,

@@ -18,6 +18,40 @@ use super::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
 use super::alloc_core::{CachedLarge, LARGE_CACHE_SIZE_FACTOR, LARGE_CACHE_SLOTS};
 
+/// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): the upper bound
+/// on how large a Large segment's `reserved_capacity` may grow relative to
+/// `SEGMENT` (4 MiB), regardless of the request size. Without a cap, a
+/// pathologically large single request (e.g. 512 MiB) would reserve a 1 GiB
+/// VA span "for future growth" that may never materialise — cheap in
+/// address space on a 64-bit target, but not free (page-table / TLB
+/// footprint for the reservation bookkeeping itself, and a bound the OS can
+/// refuse on a constrained VA budget). 64 MiB (16 x SEGMENT) comfortably
+/// covers the realloc-growth-chain scenario this feature targets (e.g. 256
+/// KiB -> 4 MiB in successive doublings) while keeping the worst-case
+/// reservation for any single request bounded and predictable.
+///
+/// `not(numa-aware)`: this constant is consumed only by `alloc_large_slow`'s
+/// `not(numa-aware)` reservation arm — the `numa-aware` arm always uses the
+/// eager `numa::reserve_aligned_on_node` path with `reserved_capacity ==
+/// usable` (NUMA reservations are not disturbed by the lazy-capacity path,
+/// same exclusion `Segment::reserve_capacity_exact` itself documents).
+/// Gating the constant too (rather than leaving it defined-but-unused) keeps
+/// `--all-features` (which enables `numa-aware` alongside
+/// `large-reserved-capacity`) free of a dead-code warning.
+#[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
+const LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT;
+
+/// R12-4: geometric growth factor applied to the page-rounded request size
+/// to compute the INITIAL `reserved_capacity` at first reservation. 2x
+/// mirrors the classic amortised-doubling growth strategy (`Vec`, mimalloc's
+/// own segment growth, etc.) — cheap to reason about, and empirically covers
+/// one "grow to roughly double" realloc step without hitting the slow path.
+///
+/// `not(numa-aware)`: same gating rationale as
+/// [`LARGE_RESERVED_CAP_BYTES`] above.
+#[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
+const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 2;
+
 impl AllocCore {
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,
     /// place the allocation at the first page-aligned offset past the header,
@@ -235,12 +269,16 @@ impl AllocCore {
                 // `span_usable` is carried forward from the CACHED slot's own
                 // `usable_size` — the true physical span of the segment being
                 // reused — NOT recomputed from the new (possibly smaller)
-                // `size`/`align`. Bug #134.
+                // `size`/`align`. Bug #134. R12-4: `reserved_capacity` is
+                // carried forward the same way, from `slot.reserved_capacity`
+                // (the segment's true reserved VA span) — same rationale,
+                // never recomputed.
                 let hdr = SegmentHeader::large(
                     u32::MAX, // placeholder; patched below once `register()` assigns the real id
                     size,
                     align,
                     slot.usable_size,
+                    slot.reserved_capacity,
                     bump,
                     slot.reservation,
                     slot.reservation_len,
@@ -330,7 +368,24 @@ impl AllocCore {
             }
         };
         #[cfg(not(feature = "numa-aware"))]
-        let (base, reservation, reservation_len) = {
+        let (base, reservation, reservation_len, reserved_capacity) = {
+            // R12-4: the RESERVED VA span for this segment. With the feature
+            // ON (`usable` already page-exact from `exact-span-large`
+            // above), reserve a geometric multiple of `usable` — capped at
+            // `LARGE_RESERVED_CAP_BYTES` — but COMMIT only `usable` bytes;
+            // the rest stays reserved-but-uncommitted until a growing
+            // `realloc` needs it (`commit_pages`, see the OPT-G grow path in
+            // `alloc_core.rs`). With the feature OFF this is simply
+            // `usable` — "reserved == committed", byte-for-byte the
+            // pre-R12-4 reservation.
+            #[cfg(feature = "large-reserved-capacity")]
+            let reserved_capacity_target = usable
+                .saturating_mul(LARGE_RESERVED_CAP_GROWTH_FACTOR)
+                .min(LARGE_RESERVED_CAP_BYTES)
+                .max(usable);
+            #[cfg(not(feature = "large-reserved-capacity"))]
+            let reserved_capacity_target = usable;
+
             // R12-3: `Segment::reserve` ROUNDS `usable` up to a whole SEGMENT
             // multiple internally (`os.rs`) — that rounding is exactly what
             // `exact-span-large` exists to skip, so this path must call the
@@ -339,9 +394,21 @@ impl AllocCore {
             // With the feature OFF, `usable` is already a SEGMENT multiple,
             // so `Segment::reserve`'s internal rounding is a no-op — this
             // `#[cfg]` split changes nothing observable for the default path.
-            #[cfg(not(feature = "exact-span-large"))]
+            //
+            // R12-4: when `large-reserved-capacity` is also on, reserve
+            // `reserved_capacity_target` bytes of VA (committing only
+            // `usable`) via `reserve_capacity_exact` instead — a strict
+            // superset of what `reserve_exact` does (it degrades to an
+            // identical reservation when `reserved_capacity_target ==
+            // usable`, e.g. right at the `LARGE_RESERVED_CAP_BYTES` cap).
+            #[cfg(feature = "large-reserved-capacity")]
+            let mut seg = Segment::reserve_capacity_exact(reserved_capacity_target, usable);
+            #[cfg(all(
+                not(feature = "large-reserved-capacity"),
+                not(feature = "exact-span-large")
+            ))]
             let mut seg = Segment::reserve(usable);
-            #[cfg(feature = "exact-span-large")]
+            #[cfg(all(not(feature = "large-reserved-capacity"), feature = "exact-span-large"))]
             let mut seg = Segment::reserve_exact(usable);
             // Mechanism 2 (task #51): pool-drain-and-retry on OS-reservation
             // failure — see the numa-aware arm above for the rationale (the pool
@@ -349,11 +416,18 @@ impl AllocCore {
             #[cfg(feature = "alloc-decommit")]
             if seg.is_none() && self.pooled_count > 0 {
                 self.drain_small_pool();
-                #[cfg(not(feature = "exact-span-large"))]
+                #[cfg(feature = "large-reserved-capacity")]
+                {
+                    seg = Segment::reserve_capacity_exact(reserved_capacity_target, usable);
+                }
+                #[cfg(all(
+                    not(feature = "large-reserved-capacity"),
+                    not(feature = "exact-span-large")
+                ))]
                 {
                     seg = Segment::reserve(usable);
                 }
-                #[cfg(feature = "exact-span-large")]
+                #[cfg(all(not(feature = "large-reserved-capacity"), feature = "exact-span-large"))]
                 {
                     seg = Segment::reserve_exact(usable);
                 }
@@ -366,8 +440,10 @@ impl AllocCore {
             let r = segment.reservation();
             let rl = segment.reservation_len();
             core::mem::forget(segment);
-            (b, r, rl)
+            (b, r, rl, reserved_capacity_target)
         };
+        #[cfg(feature = "numa-aware")]
+        let reserved_capacity = usable;
 
         // no-panic: register returns None if the segment table is full (too many
         // live large allocations). We release the reservation and return null
@@ -385,11 +461,14 @@ impl AllocCore {
         // Fresh reservation: `span_usable` = the just-computed physical
         // usable span (`usable`) — this is the ORIGINAL stamping that every
         // later cache-hit reuse of this segment will carry forward verbatim.
+        // R12-4: `reserved_capacity` is likewise the ORIGINAL reserved VA
+        // span, carried forward the same way.
         let hdr = SegmentHeader::large(
             id,
             size,
             align,
             usable,
+            reserved_capacity,
             bump,
             reservation.as_ptr(),
             reservation_len,
@@ -447,8 +526,13 @@ impl AllocCore {
             // physical usable span is read from the header's stable
             // `span_usable` field, not recomputed from `large_size`/
             // `large_align` (which can be stale-small after a cache-hit
-            // reuse).
+            // reuse). R12-4: `reserved_capacity` is carried forward the same
+            // way (never recomputed) — see `CachedLarge::reserved_capacity`'s
+            // doc. The field is present in every build's layout (inert,
+            // equal to `span_usable`, when the feature is off), so this read
+            // needs no `#[cfg]` split.
             let usable_size = hdr.span_usable;
+            let reserved_capacity = hdr.reserved_capacity;
 
             let mut admitted: Option<usize> = None;
             loop {
@@ -492,6 +576,7 @@ impl AllocCore {
                     reservation_len: hdr.reservation_len,
                     base,
                     usable_size,
+                    reserved_capacity,
                     seq,
                 });
                 self.large_cache_used_bytes += usable_size;

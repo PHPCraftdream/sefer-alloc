@@ -189,6 +189,57 @@ impl SegmentHeader {
         Node::write_usize(Node::offset(base, off) as *mut usize, size);
     }
 
+    /// R12-4 (feature `large-reserved-capacity`): read the header's
+    /// `reserved_capacity` field only (field-specific `usize` load, mirrors
+    /// `span_usable_at`'s read pattern). Used by the OPT-G grow path to
+    /// decide whether a growing `realloc` that no longer fits within the
+    /// COMMITTED `span_usable` can still grow in place by committing more of
+    /// the already-RESERVED `reserved_capacity`, instead of falling back to
+    /// the slow alloc+copy+free path.
+    ///
+    /// `reserved_capacity` is written once at segment construction
+    /// (`SegmentHeader::large`) or carried forward verbatim on a cache-hit
+    /// reuse (same bug-#134-shaped discipline as `span_usable` — see that
+    /// field's doc) — never mutated in place field-by-field except by
+    /// [`set_span_usable_at`](Self::set_span_usable_at) growing the
+    /// COMMITTED frontier below it, so a field-specific read here does not
+    /// race with the owner's disjoint `bump` writes (same discipline as
+    /// `span_usable_at`).
+    #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn reserved_capacity_at(base: *mut u8) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, reserved_capacity);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
+    /// R12-4 (feature `large-reserved-capacity`): overwrite the header's
+    /// `span_usable` field only (field-specific `usize` store, mirroring
+    /// `span_usable_at`'s read). Used by the OPT-G grow path to advance the
+    /// COMMITTED frontier after successfully committing
+    /// `[old span_usable, new span_usable)` via
+    /// [`super::os::commit_pages`] — `span_usable`'s own meaning (the
+    /// segment's TRUE COMMITTED span) is UNCHANGED by this addition; this is
+    /// simply the first production write site for a field that was
+    /// previously write-once (see [`SegmentHeader::span_usable`]'s doc,
+    /// which this call site's own doc extends rather than contradicts).
+    ///
+    /// Safety discipline: called ONLY by the owning thread's `realloc` path,
+    /// immediately after a successful `commit_pages` call for the exact same
+    /// range — the field sits at a fixed offset disjoint from `bump` /
+    /// `owner_state`, so no cross-field race, and no cross-thread reader ever
+    /// races the OWNER growing its own segment's committed frontier (the
+    /// cross-thread reads of `span_usable_at`/`safe_payload_read_span` only
+    /// ever need a LOWER BOUND on the committed span to stay sound — see
+    /// `AllocCore::safe_payload_read_span`'s doc — and this call only ever
+    /// GROWS the value, never shrinks it, so a stale (pre-grow) read is
+    /// merely conservative, never unsound).
+    #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn set_span_usable_at(base: *mut u8, span_usable: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, span_usable);
+        Node::write_usize(Node::offset(base, off) as *mut usize, span_usable);
+    }
+
     /// TEST-ONLY (task #135): overwrite the header's `segment_id` field only
     /// (field-specific write, mirroring `segment_id_at`'s read). Used by
     /// `AllocCore::dbg_stamp_segment_id` to exercise `SegmentTable::unregister`'s

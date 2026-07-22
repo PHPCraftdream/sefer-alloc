@@ -186,13 +186,72 @@ impl Segment {
     /// definition here too (rather than leaving it reachable-but-uncalled)
     /// keeps `--all-features` (which enables `numa-aware` alongside
     /// `exact-span-large`) free of a dead-code warning.
+    ///
+    /// R12-4: also excluded when `large-reserved-capacity` is on — that
+    /// feature's `alloc_large_slow` arm always calls
+    /// [`reserve_capacity_exact`](Self::reserve_capacity_exact) instead (a
+    /// strict superset of what this constructor does), so `reserve_exact`
+    /// would otherwise be genuinely unreachable-but-compiled under that
+    /// feature combination, same dead-code rationale as the `numa-aware`
+    /// exclusion above.
     #[must_use]
-    #[cfg(all(feature = "exact-span-large", not(feature = "numa-aware")))]
+    #[cfg(all(
+        feature = "exact-span-large",
+        not(feature = "numa-aware"),
+        not(feature = "large-reserved-capacity")
+    ))]
     pub(crate) fn reserve_exact(len: usize) -> Option<Self> {
         if len == 0 {
             return None;
         }
         let reservation = vmem::reserve_aligned(len, SEGMENT)?;
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
+    /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): reserve a
+    /// SEGMENT-ALIGNED span of EXACTLY `reserved_len` bytes — like
+    /// [`reserve_exact`](Self::reserve_exact) — but commit only the first
+    /// `initial_commit` bytes; the remainder of `reserved_len` stays
+    /// reserved-but-uncommitted (Windows lazy-commit path; falls back to the
+    /// eager, fully-committed path on Unix/miri, matching
+    /// `aligned_vmem::reserve_aligned_lazy`'s own fallback — same portability
+    /// contract as [`reserve_lazy`](Self::reserve_lazy)).
+    ///
+    /// This is [`reserve_lazy`](Self::reserve_lazy)'s ARBITRARY-length sibling
+    /// (that constructor is hardcoded to a whole `SEGMENT`), combined with
+    /// [`reserve_exact`](Self::reserve_exact)'s non-rounding contract: the
+    /// caller (`alloc_large_slow`) picks `reserved_len` as a geometric multiple
+    /// of the page-rounded request (capped, see the `large-reserved-capacity`
+    /// feature doc in `Cargo.toml`) and `initial_commit` as the page-rounded
+    /// request itself, so a later growing `realloc` that still fits within
+    /// `reserved_len` can commit just the missing tail
+    /// ([`super::commit_pages`]) instead of moving the allocation.
+    ///
+    /// `initial_commit` must be a non-zero multiple of `PAGE` and
+    /// `<= reserved_len`; `reserved_len` must itself be a non-zero multiple of
+    /// `PAGE` (forwarded from `vmem::reserve_aligned_lazy`'s contract).
+    /// Returns `None` on OOM or a contract violation.
+    ///
+    /// `not(numa-aware)`: mirrors [`reserve_lazy`](Self::reserve_lazy) /
+    /// [`reserve_exact`](Self::reserve_exact)'s own gating — the sole caller
+    /// (`alloc_large_slow`'s `not(numa-aware)` OS reservation arm) only takes
+    /// this branch when `numa-aware` is off; the numa-aware arm always uses
+    /// the eager `numa::reserve_aligned_on_node` path (NUMA reservations are
+    /// not disturbed by the lazy path, same exclusion as the small-segment
+    /// lazy-commit path). Gating the definition here too (rather than leaving
+    /// it reachable-but-uncalled) keeps `--all-features` free of a dead-code
+    /// warning.
+    #[must_use]
+    #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
+    pub(crate) fn reserve_capacity_exact(
+        reserved_len: usize,
+        initial_commit: usize,
+    ) -> Option<Self> {
+        if reserved_len == 0 {
+            return None;
+        }
+        let reservation = vmem::reserve_aligned_lazy(reserved_len, SEGMENT, initial_commit)?;
         SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
         Some(Segment(reservation))
     }
@@ -568,8 +627,14 @@ pub(crate) fn read_directory_node_bucket(
 /// NEVER committed in the first place (reserved via the lazy path). The
 /// underlying Windows syscall is the same (`VirtualAlloc(MEM_COMMIT)`), but
 /// the semantic intent differs.
+///
+/// R12-4: also compiled under `large-reserved-capacity`, which reuses this
+/// exact wrapper to commit the missing tail of a Large segment's
+/// `reserved_capacity` on a growing in-place `realloc` — same underlying
+/// `aligned_vmem::commit_range` primitive as the small-segment lazy-commit
+/// path, just a different caller.
 #[must_use]
-#[cfg(feature = "alloc-lazy-commit")]
+#[cfg(any(feature = "alloc-lazy-commit", feature = "large-reserved-capacity"))]
 pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize) -> bool {
     // SAFETY: `base` is the base of a live segment owned by this allocator.
     // The caller guarantees `[base + start_offset, base + end_offset)` is

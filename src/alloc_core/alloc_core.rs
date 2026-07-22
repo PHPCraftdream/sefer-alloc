@@ -45,6 +45,8 @@ use super::numa;
 use super::os;
 #[cfg(feature = "alloc-decommit")]
 use super::os::SEGMENT;
+#[cfg(feature = "large-reserved-capacity")]
+use super::segment_header::align_up;
 #[cfg(feature = "numa-aware")]
 use super::segment_header::SegmentMeta;
 use super::segment_header::{SegmentHeader, SegmentKind};
@@ -180,6 +182,15 @@ pub(super) struct CachedLarge {
     /// The `usable` bytes this reservation covers — `n_segments * SEGMENT` for
     /// the original allocation. Used to match incoming requests.
     pub(super) usable_size: usize,
+    /// R12-4 (feature `large-reserved-capacity`): the segment's total
+    /// RESERVED VA span at the time it was deposited (`>= usable_size`) —
+    /// mirrors `SegmentHeader::reserved_capacity`'s bug-#134-shaped carry-
+    /// forward discipline: read from the header's `reserved_capacity` field
+    /// at deposit time and restamped verbatim into the reused header on the
+    /// next cache hit, never recomputed. Without the feature this always
+    /// equals `usable_size` ("reserved == committed", the inert value).
+    #[cfg_attr(not(feature = "large-reserved-capacity"), allow(dead_code))]
+    pub(super) reserved_capacity: usize,
     /// Insertion sequence number (task D1). Monotonically increasing per
     /// deposit, taken from `AllocCore::large_cache_seq`. The true FIFO-oldest
     /// occupied slot is the one with the SMALLEST `seq` — NOT necessarily the
@@ -1104,8 +1115,14 @@ impl AllocCore {
                     // large-cache byte-budget accounting. `span_usable` is
                     // set once at the segment's original OS reservation and
                     // carried forward verbatim through every cache-hit reuse
-                    // (see `SegmentHeader::span_usable` doc).
+                    // (see `SegmentHeader::span_usable` doc). R12-4:
+                    // `reserved_capacity` is carried forward the same way
+                    // (never recomputed) — see `CachedLarge::reserved_capacity`'s
+                    // doc. The field is present in every build's layout
+                    // (inert, equal to `span_usable`, when the feature is
+                    // off), so this read needs no `#[cfg]` split.
                     let usable_size = stale.span_usable;
+                    let reserved_capacity = stale.reserved_capacity;
 
                     // Phase 1 large-cache admission: byte-budget enforcement.
                     //
@@ -1207,6 +1224,7 @@ impl AllocCore {
                             reservation_len: stale.reservation_len,
                             base,
                             usable_size,
+                            reserved_capacity,
                             seq,
                         });
                         self.large_cache_used_bytes += usable_size;
@@ -1570,6 +1588,20 @@ impl AllocCore {
                         SegmentHeader::set_large_size_at(base, new_eff);
                         return Some(ptr);
                     }
+                    // R12-4 (feature `large-reserved-capacity`): the grow no
+                    // longer fits the COMMITTED span (`span_usable`), but the
+                    // segment may have extra RESERVED-but-uncommitted VA
+                    // (`reserved_capacity`, always `>= span_usable`) it can
+                    // grow into — committing just the missing tail instead
+                    // of falling through to the slow alloc+copy+free path.
+                    // See `SegmentHeader::reserved_capacity`'s doc and the
+                    // `large-reserved-capacity` feature doc in `Cargo.toml`
+                    // for the full R12-3/R12-4 motivation.
+                    #[cfg(feature = "large-reserved-capacity")]
+                    if self.try_grow_large_reserved_capacity(base, end) {
+                        SegmentHeader::set_large_size_at(base, new_eff);
+                        return Some(ptr);
+                    }
                 }
             }
             return None;
@@ -1589,6 +1621,65 @@ impl AllocCore {
             }
         }
         None
+    }
+
+    /// R12-4 (feature `large-reserved-capacity`): try to grow a Large
+    /// segment's COMMITTED span (`span_usable`) up to at least `required_end`
+    /// bytes (segment-relative), by committing the missing tail
+    /// `[span_usable, page_round(required_end))` — WITHOUT moving the
+    /// allocation. Called only from the OPT-G grow path, only after the
+    /// existing committed-span check (`required_end <= span_usable`) has
+    /// already failed.
+    ///
+    /// Returns `true` (and leaves `span_usable` advanced to cover
+    /// `required_end`) iff:
+    ///   1. `required_end <= reserved_capacity` — the grow fits within the
+    ///      segment's RESERVED VA span (checked with `checked_add`-free
+    ///      arithmetic since `required_end` was already computed via a
+    ///      `checked_add` at the call site); and
+    ///   2. the OS commit of the missing tail succeeds (`os::commit_pages`
+    ///      — can fail on genuine commit-charge exhaustion, in which case
+    ///      this returns `false` and the caller falls through to the slow
+    ///      alloc+copy+free path, exactly as if `reserved_capacity` had not
+    ///      existed).
+    ///
+    /// Returns `false` (no OS call, header unchanged) if `required_end`
+    /// exceeds `reserved_capacity` — the segment has no more VA to grow into
+    /// and the caller must fall through to the slow path.
+    ///
+    /// # Why committing `page_round(required_end)`, not `required_end` itself
+    ///
+    /// `commit_pages` (like every commit/decommit primitive in this crate)
+    /// requires page-aligned offsets — `required_end` is an arbitrary byte
+    /// count (a payload size), not necessarily page-aligned. Rounding UP to
+    /// the next page boundary (capped at `reserved_capacity`, which is
+    /// itself always page-aligned — see [`os::Segment::reserve_capacity_exact`]'s
+    /// contract) commits a whole number of pages while still covering
+    /// `required_end`; the extra few bytes up to the page boundary are
+    /// committed but not yet claimed by any allocation — exactly the same
+    /// "commit whole pages, track the logical frontier separately" pattern
+    /// `alloc-lazy-commit`'s `committed_payload_end` uses for small segments.
+    #[cfg(feature = "large-reserved-capacity")]
+    #[inline]
+    fn try_grow_large_reserved_capacity(&mut self, base: *mut u8, required_end: usize) -> bool {
+        let reserved_capacity = SegmentHeader::reserved_capacity_at(base);
+        if required_end > reserved_capacity {
+            return false;
+        }
+        let span_usable = SegmentHeader::span_usable_at(base);
+        // `required_end > span_usable` is guaranteed by the call site (this
+        // is only reached after the committed-span check already failed),
+        // so the commit range below is always non-empty.
+        let new_span_usable = align_up(required_end, super::os::PAGE).min(reserved_capacity);
+        if !os::commit_pages(base, span_usable, new_span_usable) {
+            // Commit-charge exhaustion / genuine OOM on the incremental
+            // commit: leave the header untouched (span_usable unchanged —
+            // still describes exactly what is actually committed) and let
+            // the caller fall through to the slow path.
+            return false;
+        }
+        SegmentHeader::set_span_usable_at(base, new_span_usable);
+        true
     }
 
     /// Try the two in-place realloc fast paths (Large grow-in-span, Small same-class), but the
