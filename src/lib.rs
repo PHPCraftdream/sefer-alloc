@@ -211,6 +211,11 @@
 //                             additional unsafe blocks carry `// SAFETY:` proof.
 //                             (under `numa-aware`)
 //
+//    Optional `class-aware-dirty` path (R12-7 stage 2, EXPERIMENTAL):
+//      * `alloc_core::dirty_by_class` — dereferences the `RacyPtrCell`-
+//                             published per-(segment, class) dirty-bit
+//                             sidecar pointer. (under `class-aware-dirty`)
+//
 //    Research / older tiers (not in production build):
 //      * `concurrent::hand`         — epoch-tier AtomicSlot<T>. (under `experimental`, legacy/research-tier)
 //

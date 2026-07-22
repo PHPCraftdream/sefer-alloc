@@ -58,6 +58,19 @@ impl HeapCore {
         self.core.dirty_segments = Some(ds);
     }
 
+    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): plant the stable
+    /// `&'static` handle to THIS heap's slot-resident per-(segment, class)
+    /// dirty-bit sidecar CELL (the `RacyPtrCell` itself — the sidecar it
+    /// guards may still be UNINIT). Same discipline as `bind_dirty_segments`.
+    /// Called once, right after the slot binds, from `bind_slot_counters`.
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) fn bind_dirty_by_class(
+        &mut self,
+        cell: &'static racy_ptr_cell::RacyPtrCell<crate::alloc_core::dirty_by_class::PerClassDirty>,
+    ) {
+        self.core.dirty_by_class = Some(cell);
+    }
+
     /// The stable `*const AtomicPtr<u8>` head pointer of this heap's TFS, or
     /// null in the transient pre-bind window (no cross-thread stamping has
     /// happened yet → cross-thread frees to this heap's segments are a safe

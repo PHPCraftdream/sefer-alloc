@@ -302,9 +302,24 @@ const RETRY_ROUND_SLEEP: core::time::Duration = core::time::Duration::from_micro
 /// `resolve_heap_overflow`'s `None` branch), the dirty bit is simply not set;
 /// the linear-scan fallback eventually finds the ring entry anyway (P4
 /// contract — see `remote_free_ring.rs` module doc).
+///
+/// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): `packed` is the SAME
+/// already-packed `(offset, class)` ring-entry word the caller just published
+/// (see both call sites below) — `entry_class_idx(packed)` extracts the class
+/// with no extra computation. When the feature is on, this ALSO sets the
+/// corresponding bit in the per-(segment, class) sidecar
+/// (`registry::dirty_by_class`), additively — the per-segment bit above is
+/// still set unconditionally, so this cannot regress the non-class-aware
+/// path. Sidecar materialisation failure (OOM) is handled the same way as the
+/// "owner id out of range" case: the per-class bit is simply not set, and the
+/// per-segment bitmap (never affected by this) remains the sole routing
+/// signal for that heap — no correctness impact, only a missed optimisation.
 #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
 #[inline]
-fn set_dirty_bit_for_segment(base: *mut u8) {
+fn set_dirty_bit_for_segment(
+    base: *mut u8,
+    #[cfg_attr(not(feature = "class-aware-dirty"), allow(unused_variables))] packed: u32,
+) {
     use crate::alloc_core::segment_header::{unpack_owner_id, SegmentHeader, SegmentMeta};
 
     let segment_id = SegmentHeader::segment_id_at(base) as usize;
@@ -326,6 +341,43 @@ fn set_dirty_bit_for_segment(base: *mut u8) {
     );
     if word < super::heap_slot::DIRTY_BITMAP_WORDS {
         slot.remote.dirty_segments[word].fetch_or(bit, Ordering::Release);
+    }
+
+    // R12-7 stage 2: additive per-class bit. See this function's doc comment.
+    #[cfg(feature = "class-aware-dirty")]
+    {
+        use crate::alloc_core::dirty_by_class::{ensure_per_class_dirty, PER_CLASS_DIRTY_WORDS};
+        use crate::alloc_core::remote_free_ring::entry_class_idx;
+        use crate::alloc_core::segment_directory::WORDS_PER_CLASS;
+
+        let class_idx = entry_class_idx(packed);
+        let pc_word = class_idx * WORDS_PER_CLASS + word;
+        // Defensive bounds guard (mirrors the `word < DIRTY_BITMAP_WORDS`
+        // check above): `class_idx` is derived from `packed`, which THIS
+        // caller just constructed from a real, in-range `SizeClasses::class_for`
+        // result (never attacker-controlled or read back from a stale/garbled
+        // source at this call site), so `pc_word` is in range by construction
+        // — the `debug_assert!` documents that invariant loudly in debug
+        // builds, while the runtime `if` keeps a release build's out-of-bounds
+        // write impossible even if that invariant is ever violated by a
+        // future change, rather than relying solely on the assert.
+        debug_assert!(
+            pc_word < PER_CLASS_DIRTY_WORDS,
+            "class {class_idx} / segment word {word} out of per-class dirty bitmap range"
+        );
+        if pc_word < PER_CLASS_DIRTY_WORDS {
+            if let Some(pc) = ensure_per_class_dirty(&slot.remote.dirty_by_class) {
+                // Release: pairs with the drain side's `swap(0, Acquire)` on
+                // this same word — identical ordering argument to the
+                // per-segment bit above, just projected onto the finer-grained
+                // sidecar.
+                pc.words[pc_word].fetch_or(bit, Ordering::Release);
+            }
+            // `ensure_per_class_dirty` returning `None` (sidecar OOM) is a
+            // no-op: see this function's doc comment — the per-segment bit
+            // already set above remains the sole (correct, just coarser)
+            // routing signal.
+        }
     }
 }
 
@@ -1101,7 +1153,7 @@ impl HeapCore {
             // R7-A4 (P3): set the dirty bit for this segment after a
             // successful ring publish — the fast-path producer site.
             #[cfg(feature = "alloc-segment-directory")]
-            set_dirty_bit_for_segment(base);
+            set_dirty_bit_for_segment(base, packed);
             return; // Fast path: the common case never proceeds further.
         }
         // R6-OPT-P0-4: the segment ring is full. Try the heap-level
@@ -1210,7 +1262,7 @@ impl HeapCore {
                         // producer site (try_push_uncounted in the bounded
                         // spin-retry loop, the R6-REGRESSION-2 path).
                         #[cfg(feature = "alloc-segment-directory")]
-                        set_dirty_bit_for_segment(base);
+                        set_dirty_bit_for_segment(base, packed);
                         DBG_RING_PUSH_RETRIED.fetch_add(1, Ordering::Relaxed);
                         return;
                     }

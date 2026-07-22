@@ -1,0 +1,467 @@
+//! R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL) — loom model-check of
+//! the per-(segment, class) dirty-bit protocol
+//! (`alloc_core::dirty_by_class::PerClassDirty`).
+//!
+//! # Scope
+//!
+//! This harness models the NEW protocol surface `class-aware-dirty` adds, in
+//! isolation, using `loom::sync::atomic` (NOT the real
+//! `HeapSlotRemote::dirty_by_class` / `AllocCore::drain_dirty_segments`).
+//! Mirrors `tests/loom_dirty_publish.rs` / `tests/loom_dirty_multi_segment.rs`'s
+//! established modelling discipline for this project's dirty-bitmap
+//! producer/consumer race.
+//!
+//! **What is deliberately NOT re-modelled here:** the pointer-materialisation
+//! race for the lazily-published `PerClassDirty` sidecar itself
+//! (`RacyPtrCell<PerClassDirty>`'s `UNINIT -> INITIALIZING -> READY` CAS
+//! protocol) — that primitive is `racy-ptr-cell`'s own crate, with its own
+//! independent loom suite (`crates/racy-ptr-cell/tests/loom_racy_ptr_cell.rs`).
+//! Re-verifying it here would be redundant re-verification of an
+//! already-proven primitive (see `alloc_core::dirty_by_class`'s module doc,
+//! "Sizing and lazy materialisation"). This harness assumes the sidecar is
+//! already materialised (a plain `AtomicU64` array, no `RacyPtrCell`) and
+//! focuses purely on the NEW bit-set/scan semantics layered on top: TWO
+//! bitmaps set by ONE producer push (the existing per-segment bit, now
+//! ADDITIONALLY a per-class bit), and a consumer whose VISIT decision reads
+//! only the per-class bitmap while its DRAIN body still processes the whole
+//! ring (both classes' entries).
+//!
+//! # The property under test
+//!
+//! > A producer publishes a ring entry of class C into a segment's ring, then
+//! > sets BOTH the per-segment dirty bit AND the per-(segment, class=C) dirty
+//! > bit (Release). A consumer searching for class C scans ONLY the
+//! > per-class-C bitmap to decide whether to visit the segment; if it visits,
+//! > it drains the WHOLE ring (recovering entries of every class present, not
+//! > just C). INVARIANT: every entry published to the ring — regardless of
+//! > which class it belongs to, and regardless of which class's search
+//! > triggered the visit that drained it — is eventually recovered. No entry
+//! > is permanently invisible.
+//!
+//! This is the model-level counterpart to
+//! `tests/class_aware_dirty_routing.rs::class_a_refill_reclaims_class_b_entries_in_the_same_pass`
+//! (the real-code integration test) — this file explores loom's full
+//! interleaving space (bounded by `preemption_bound`) instead of ONE
+//! concrete thread schedule.
+//!
+//! # How to run
+//!
+//! ```sh
+//! RUSTFLAGS="--cfg loom" cargo test --release \
+//!     --features alloc-core,alloc-xthread,class-aware-dirty \
+//!     --test loom_class_aware_dirty
+//! ```
+
+#![cfg(loom)]
+
+use loom::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use loom::sync::Arc;
+use loom::thread;
+
+/// Sentinel — matches `RING_SLOT_EMPTY`.
+const RING_SLOT_EMPTY: u32 = u32::MAX;
+
+/// Ring capacity for [`ClassAwareDirtyModel`]. `RemoteFreeRing::push`'s own
+/// production full-check (`t.wrapping_sub(h) >= RING_CAP`, `remote_free_ring.rs`)
+/// reads `tail` `Relaxed` and `head` `Acquire` — the SAME pairing this model
+/// uses — which can (regardless of `RING_CAP`'s value: `t.wrapping_sub(h)`
+/// wraps to a huge value whenever a reader observes `h` "ahead of" its own
+/// stale `t` snapshot, a legal outcome under the memory model when nothing
+/// separately synchronises that reader with the tail's own writer) report a
+/// TRANSIENT false "full" under a genuinely concurrent drain. This is an
+/// ACCEPTED, already-relied-upon property of the real ring's bounded-leak
+/// contract (see `push`'s "Ring full: bounded leak" branch) — mirrored by
+/// `tests/loom_remote_ring.rs`'s own push call sites, which retry in a loop
+/// on `Err` rather than asserting single-attempt success (see this file's
+/// `push_and_mark` call sites, which do the same). `CAP=4` (rather than a
+/// razor-thin 2) is still used here — comfortably above the 2 real entries
+/// this file ever pushes — purely so a genuinely exhausted ring (as opposed
+/// to the transient false-positive above) never enters this model's search
+/// space at all, keeping capacity questions fully out of scope: this file
+/// is about the per-class dirty-bit protocol, not the ring's own push
+/// contention shape (separately, already loom-verified — see
+/// `crates/ring-mpsc`/`loom_remote_ring.rs`).
+const RING_CAP: u32 = 4;
+
+/// Model: ONE segment's ring (`RING_CAP` slots, comfortably holding the 2
+/// entries this file's tests push), the EXISTING per-segment dirty bit, and
+/// the NEW per-class dirty bitmap (one bit per class covering this one
+/// modelled segment — bit 0 = "this segment dirty for class A", bit 1 =
+/// "... for class B").
+///
+/// This mirrors the real production layout's RELATIONSHIP (per-segment bit
+/// unconditionally set + per-class bit additionally set by the SAME push),
+/// simplified to one segment / two classes — the same simplification
+/// `MultiSegDirtyModel` in `loom_dirty_multi_segment.rs` uses for its own
+/// 2-segment model.
+struct ClassAwareDirtyModel {
+    // Ring state (FIFO via wrapping head/tail cursors — from
+    // `loom_remote_ring.rs` / `loom_dirty_publish.rs`'s established shape).
+    ring_head: AtomicU32,
+    ring_tail: AtomicU32,
+    ring_slots: [AtomicU32; RING_CAP as usize],
+    // Which class each occupied ring slot holds (index-parallel to
+    // `ring_slots`; only meaningful while that slot's offset is published).
+    ring_slot_class: [AtomicU32; RING_CAP as usize],
+    // EXISTING per-segment dirty bit (bit 0 = this segment). Set
+    // unconditionally by every push, regardless of class — unchanged by
+    // this task.
+    dirty_segment: AtomicU64,
+    // NEW per-class dirty bitmap: bit 0 = class A dirty on this segment,
+    // bit 1 = class B dirty on this segment. Set ADDITIONALLY (alongside
+    // `dirty_segment`) by a push, keyed by that push's class.
+    dirty_by_class: AtomicU64,
+}
+
+impl ClassAwareDirtyModel {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            ring_head: AtomicU32::new(0),
+            ring_tail: AtomicU32::new(0),
+            // `loom::sync::atomic::AtomicU32::new` is not `const` (unlike
+            // `core::sync::atomic::AtomicU32::new`), so the `[const { .. };
+            // N]` repeat-expression form used elsewhere in this crate for
+            // real (non-loom) atomics is unavailable here — build the arrays
+            // via `core::array::from_fn` instead.
+            ring_slots: core::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+            ring_slot_class: core::array::from_fn(|_| AtomicU32::new(0)),
+            dirty_segment: AtomicU64::new(0),
+            dirty_by_class: AtomicU64::new(0),
+        })
+    }
+
+    /// Producer: push `(offset, class)` into the ring, THEN set BOTH dirty
+    /// signals — mirrors `set_dirty_bit_for_segment`'s real production
+    /// ordering (ring publish happens-before the dirty-bit `fetch_or`s).
+    /// `class` is 0 or 1 (class A / class B in this 2-class model).
+    fn push_and_mark(&self, offset: u32, class: u32) -> bool {
+        loop {
+            let t = self.ring_tail.load(Ordering::Relaxed);
+            let h = self.ring_head.load(Ordering::Acquire);
+            if t.wrapping_sub(h) >= RING_CAP {
+                return false; // Ring full.
+            }
+            match self.ring_tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    let idx = (t as usize) % RING_CAP as usize;
+                    // Publish the offset (Release) AND its class (Relaxed —
+                    // the offset's own Release store is what the consumer's
+                    // Acquire load synchronises with; the class word is
+                    // published as part of the same "before the dirty bits"
+                    // program order, matching the real ring entry's packed
+                    // (offset, class) word being a SINGLE atomic write in
+                    // production — this model splits it into two words only
+                    // for clarity, not because production has two racy
+                    // writes).
+                    self.ring_slot_class[idx].store(class, Ordering::Relaxed);
+                    self.ring_slots[idx].store(offset, Ordering::Release);
+                    // Existing per-segment bit: Release, unconditional.
+                    self.dirty_segment.fetch_or(1, Ordering::Release);
+                    // NEW per-class bit: Release, keyed by `class`.
+                    self.dirty_by_class
+                        .fetch_or(1u64 << class, Ordering::Release);
+                    return true;
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Consumer: search for `sought_class`. VISIT DECISION reads ONLY the
+    /// per-class bit for `sought_class` (`swap` that ONE bit to 0, Acquire)
+    /// — mirrors `drain_dirty_segments`'s class-scoped scan-source under
+    /// `class-aware-dirty`. If the bit was set, DRAIN THE WHOLE RING
+    /// (both classes' entries) — mirrors the real drain body being
+    /// byte-for-byte unchanged regardless of which bitmap triggered the
+    /// visit. Returns the offsets reclaimed (both classes, if present).
+    ///
+    /// Per this task's design (see `alloc_core::dirty_by_class`'s module
+    /// doc): the per-segment `dirty_segment` bit is intentionally NOT
+    /// consulted or cleared here — it remains the FALLBACK signal for
+    /// non-class-aware callers/paths and is orthogonal to this scan. Real
+    /// production code has separate call sites for the two scan sources
+    /// (see `drain_dirty_segments`'s `scan_source` selection); this model
+    /// isolates the class-aware path specifically.
+    fn class_scoped_visit_and_drain(&self, sought_class: u32) -> Vec<(u32, u32)> {
+        let bit = 1u64 << sought_class;
+        let was_dirty = self.dirty_by_class.fetch_and(!bit, Ordering::Acquire) & bit != 0;
+        if !was_dirty {
+            return Vec::new();
+        }
+        // Full-ring drain — UNCHANGED regardless of which class triggered
+        // the visit. This is the load-bearing design property: the per-class
+        // bit is a VISIT HINT only, never a partial-drain filter.
+        let t = self.ring_tail.load(Ordering::Acquire);
+        let mut h = self.ring_head.load(Ordering::Relaxed);
+        let mut reclaimed = Vec::new();
+        while h != t {
+            let idx = (h as usize) % RING_CAP as usize;
+            let slot = &self.ring_slots[idx];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break; // Not yet published — stop (mirrors the real ring's contract).
+            }
+            let class = self.ring_slot_class[idx].load(Ordering::Relaxed);
+            reclaimed.push((class, off));
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.ring_head.store(h, Ordering::Release);
+        reclaimed
+    }
+
+    /// COUNTERFACTUAL: the REJECTED "genuinely partial" drain — stops after
+    /// reclaiming the FIRST entry matching `sought_class`, leaving any other
+    /// classes' entries (even ones already published and visible) undrained.
+    /// Used only by `counterfactual_partial_drain_loses_other_class_entry`
+    /// below, to prove the harness is non-vacuous (a design that DID filter
+    /// the drain body itself, not just the visit decision, WOULD lose
+    /// entries).
+    fn class_scoped_visit_and_partial_drain(&self, sought_class: u32) -> Vec<(u32, u32)> {
+        let bit = 1u64 << sought_class;
+        let was_dirty = self.dirty_by_class.fetch_and(!bit, Ordering::Acquire) & bit != 0;
+        if !was_dirty {
+            return Vec::new();
+        }
+        let t = self.ring_tail.load(Ordering::Acquire);
+        let mut h = self.ring_head.load(Ordering::Relaxed);
+        let mut reclaimed = Vec::new();
+        while h != t {
+            let idx = (h as usize) % RING_CAP as usize;
+            let slot = &self.ring_slots[idx];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            let class = self.ring_slot_class[idx].load(Ordering::Relaxed);
+            // BUG: only reclaim entries matching `sought_class`; STOP at the
+            // first non-matching entry instead of continuing past it (a
+            // "genuinely partial" per-class drain that never re-visits the
+            // skipped entry, since the cursor still advances past it below
+            // in a real ring implementation -- here we model the even MORE
+            // naive variant that just stops, matching this file's sibling
+            // `class_aware_dirty_routing.rs::NaivePartialDrainModel`).
+            if class != sought_class {
+                break;
+            }
+            reclaimed.push((class, off));
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.ring_head.store(h, Ordering::Release);
+        reclaimed
+    }
+}
+
+// =========================================================================
+// Positive tests: the real (full-ring-drain) protocol never loses an entry,
+// regardless of which class's search triggers the visit.
+// =========================================================================
+
+/// Two producers push DIFFERENT classes (A pushes class 0, B pushes class 1)
+/// into the SAME segment's ring, then join. A single class-A-triggered visit
+/// must recover BOTH entries (the full-ring drain reclaims class B's entry
+/// too, even though only class A's bit drove the visit decision).
+#[test]
+fn class_a_triggered_visit_recovers_class_b_entry() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = ClassAwareDirtyModel::new();
+
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark(10, 0 /* class A */);
+        });
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark(20, 1 /* class B */);
+        });
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // A search for class A triggers the ONLY visit in this test.
+        let reclaimed = model.class_scoped_visit_and_drain(0);
+
+        let found_a = reclaimed.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = reclaimed.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "class-A-triggered visit did not recover both entries: {reclaimed:?} \
+             (want class A offset 10 AND class B offset 20 -- the drain body must \
+             be full-ring regardless of which class's bit triggered the visit)"
+        );
+    });
+}
+
+/// Concurrent producer-vs-consumer variant (CONC-1-style, mirroring
+/// `loom_dirty_multi_segment.rs`'s `concurrent_producer_consumer_eventual_
+/// visibility`): the class-A-triggered visit races BOTH producers (not
+/// joined first). Per the "at-least-once, bounded deferral" contract, the
+/// racy concurrent visit alone may miss an entry whose push lands after the
+/// visit's bit-clear; the correctness argument is that ANY missed bit
+/// remains set (or gets re-set) for a LATER visit. Assert the total across
+/// (concurrent visit + one guaranteed final visit of EACH class) recovers
+/// both entries.
+#[test]
+fn concurrent_producer_consumer_eventual_visibility() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = ClassAwareDirtyModel::new();
+
+        // `push_and_mark`'s "full" outcome mirrors `RemoteFreeRing::push`'s
+        // real `Err(PushOverflow)` contract (see `RING_CAP`'s doc comment):
+        // a transient false-"full" observation (stale-Relaxed-tail vs.
+        // fresh-Acquire-head) is an ACCEPTED, already-modelled outcome
+        // (`tests/loom_remote_ring.rs` retries in a loop on `Err`, never
+        // asserts single-attempt success) -- retry here for the same reason,
+        // so this test's failures are attributable to the dirty-bit protocol
+        // under study, not to a single-attempt push racing a concurrent
+        // drain.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || while !m_a.push_and_mark(10, 0) {});
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || while !m_b.push_and_mark(20, 1) {});
+
+        // Consumer races both producers, searching for class A.
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || m_c.class_scoped_visit_and_drain(0));
+
+        let concurrent = tc.join().unwrap();
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // Guaranteed final visits (one per class) -- models the next drain
+        // cycle relying on the "bit remains set until consumed" contract.
+        let final_a = model.class_scoped_visit_and_drain(0);
+        let final_b = model.class_scoped_visit_and_drain(1);
+
+        let mut all = concurrent;
+        all.extend(final_a);
+        all.extend(final_b);
+
+        let found_a = all.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = all.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "concurrent producer-vs-consumer: entries not fully recovered across \
+             concurrent + final visits: {all:?} (want class A offset 10 AND \
+             class B offset 20)"
+        );
+    });
+}
+
+/// A producer pushing class B AFTER a class-A-triggered visit has already
+/// cleared class A's bit (but the ring still had room) must have its entry
+/// survive to a LATER class-B-triggered visit — the lost-wakeup property,
+/// applied specifically to the per-class bitmap's own bit (not just the
+/// shared per-segment bit `loom_dirty_publish.rs` already covers).
+#[test]
+fn per_class_bit_survives_across_visits() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = ClassAwareDirtyModel::new();
+
+        // Producer A pushes and joins first.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark(10, 0);
+        });
+        ta.join().unwrap();
+
+        // First visit: class A search recovers class A's entry.
+        let first = model.class_scoped_visit_and_drain(0);
+
+        // Producer B pushes class B AFTER the first visit.
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark(20, 1);
+        });
+        tb.join().unwrap();
+
+        // Second visit: class B search recovers class B's entry (its bit
+        // survived independently of class A's bit having already been
+        // cleared by the first visit).
+        let second = model.class_scoped_visit_and_drain(1);
+
+        let mut all = first;
+        all.extend(second);
+        let found_a = all.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = all.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "per-class bit did not survive across visits: {all:?} (want class A \
+             offset 10 from the first visit AND class B offset 20 from the second)"
+        );
+    });
+}
+
+// =========================================================================
+// Counterfactual — a GENUINELY partial per-class drain (the rejected
+// alternative design) loses an entry of a DIFFERENT class than the one that
+// triggered the visit.
+// =========================================================================
+
+/// Proves the harness is non-vacuous: if the drain body ITSELF were filtered
+/// by class (the rejected design this task's `dirty_by_class` module doc
+/// explicitly argues against), a class-A-triggered visit would lose class
+/// B's entry — because the naive partial drain stops at the first
+/// non-matching class instead of continuing past it (mirroring
+/// `class_aware_dirty_routing.rs::NaivePartialDrainModel`'s real-code
+/// counterfactual, but here exercised across loom's full interleaving space
+/// instead of one fixed thread schedule).
+///
+/// `#[should_panic]` because loom finds the interleaving where class B is
+/// pushed into slot 0 (published FIRST, ahead of class A in FIFO order) and
+/// the naive partial drain, triggered by a class-A search, stops at that
+/// first non-matching entry — leaving class A's OWN entry (in slot 1)
+/// unreached in the SAME pass, and permanently losing visibility into class
+/// B's entry from class A's search (class B's bit was already cleared by
+/// this visit, so a LATER class-B search would find the bit already
+/// clear -- unless something re-sets it, which nothing does here).
+#[test]
+#[should_panic(expected = "partial drain")]
+fn counterfactual_partial_drain_loses_other_class_entry() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = ClassAwareDirtyModel::new();
+
+        // Producer B pushes FIRST (lands in slot 0, FIFO head).
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || {
+            m_b.push_and_mark(20, 1 /* class B */);
+        });
+        tb.join().unwrap();
+
+        // Producer A pushes SECOND (lands in slot 1).
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            m_a.push_and_mark(10, 0 /* class A */);
+        });
+        ta.join().unwrap();
+
+        // A class-A-triggered visit using the NAIVE partial drain: it clears
+        // class A's bit (the visit decision), then walks the ring from the
+        // head (slot 0 = class B) and stops immediately because slot 0's
+        // class does not match the sought class (0).
+        let reclaimed = model.class_scoped_visit_and_partial_drain(0);
+
+        let found_a = reclaimed.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = reclaimed.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "partial drain lost an entry: reclaimed only {reclaimed:?} from a \
+             class-A-triggered visit (want class A offset 10 AND class B offset \
+             20) -- this is exactly the lost-wakeup hazard this implementation's \
+             full-ring-drain design avoids by construction"
+        );
+    });
+}

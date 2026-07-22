@@ -2171,6 +2171,26 @@ impl AllocCore {
     ///
     /// No-op if `dirty_segments` is not bound (pre-bind window) or the
     /// directory sidecar is not materialised.
+    ///
+    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): when the feature is
+    /// on AND this heap's per-(segment, class) sidecar is already
+    /// materialised (`dirty_by_class::get_per_class_dirty` — read-only, never
+    /// materialises from this side, see that function's doc comment), the
+    /// candidate-segment scan source switches from the shared per-segment
+    /// `dirty_segments` bitmap (16 words, ANY class) to `class_idx`'s OWN
+    /// `WORDS_PER_CLASS`-word slice of the per-class sidecar — an O(D_class)
+    /// scan instead of O(D). The scan-body loop below (validation, ring
+    /// drain, directory sync, decommit hysteresis) is BYTE-FOR-BYTE
+    /// UNCHANGED regardless of which bitmap fed it: once a candidate segment
+    /// is picked, its ENTIRE ring is still drained in one pass exactly as
+    /// before, so entries of OTHER classes in that same ring are still
+    /// reclaimed and published this same pass — a per-class bit is a VISIT
+    /// HINT only, never load-bearing for correctness (see
+    /// `dirty_by_class`'s module doc for the full lost-wakeup argument). If
+    /// the sidecar is not yet materialised (this heap has never received a
+    /// class-routed cross-thread free), the scan falls back to the shared
+    /// per-segment bitmap unchanged — identical behaviour to the feature
+    /// being off.
     #[cfg(feature = "alloc-xthread")]
     pub(super) fn drain_dirty_segments<
         #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
@@ -2189,8 +2209,36 @@ impl AllocCore {
         }
         let small_cur = self.small_cur;
 
-        for (w, ds_word) in ds.iter().enumerate() {
-            // Acquire: pairs with the producer's Release fetch_or.
+        // R12-7 stage 2: resolve the class-scoped word slice, if available.
+        // `per_class_words` borrows out of the `'static` sidecar (through the
+        // `'static` cell handle `self.dirty_by_class`), so it outlives `self`
+        // and there is no borrow conflict with the `&mut self` calls inside
+        // the loop below.
+        #[cfg(feature = "class-aware-dirty")]
+        let per_class_words: Option<&'static [core::sync::atomic::AtomicU64]> = self
+            .dirty_by_class
+            .and_then(super::dirty_by_class::get_per_class_dirty)
+            .map(|pc| {
+                let start = class_idx * super::segment_directory::WORDS_PER_CLASS;
+                let end = start + super::segment_directory::WORDS_PER_CLASS;
+                &pc.words[start..end]
+            });
+
+        // The per-word iteration: `(base_word_index, dirty_bits_for_that_word)`
+        // pairs, drawn from either the class-scoped slice (base index offset
+        // by nothing — the slice already starts at the segment-word origin,
+        // since `WORDS_PER_CLASS` covers the full `MAX_SEGMENTS` slot space
+        // exactly like `ds` does) or the shared per-segment bitmap.
+        #[cfg(feature = "class-aware-dirty")]
+        let scan_source: &[core::sync::atomic::AtomicU64] =
+            per_class_words.unwrap_or(ds.as_slice());
+        #[cfg(not(feature = "class-aware-dirty"))]
+        let scan_source: &[core::sync::atomic::AtomicU64] = ds.as_slice();
+
+        for (w, ds_word) in scan_source.iter().enumerate() {
+            // Acquire: pairs with the producer's Release fetch_or (either the
+            // per-segment bit or, under `class-aware-dirty`, the per-class
+            // bit — both use the identical Release/Acquire pairing).
             let dirty = ds_word.swap(0, core::sync::atomic::Ordering::Acquire);
             if dirty == 0 {
                 continue;

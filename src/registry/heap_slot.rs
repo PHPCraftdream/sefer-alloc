@@ -83,6 +83,10 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8};
 use super::heap_core::HeapCore;
 #[cfg(feature = "alloc-xthread")]
 use super::heap_overflow::HeapOverflow;
+#[cfg(feature = "class-aware-dirty")]
+use crate::alloc_core::dirty_by_class::PerClassDirty;
+#[cfg(feature = "class-aware-dirty")]
+use racy_ptr_cell::RacyPtrCell;
 
 /// Slot state: `FREE` (available for claim) or `LIVE` (owned by a thread).
 /// Stored as a `u8` so the `FREE → LIVE` / `LIVE → FREE` transitions are
@@ -238,6 +242,19 @@ pub(crate) struct HeapSlotRemote {
     /// (the dirty routing only matters when the directory drives the drain).
     #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
     pub(crate) dirty_segments: [AtomicU64; DIRTY_BITMAP_WORDS],
+
+    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): the lazily-
+    /// materialised per-(segment, class) dirty-bit sidecar — see
+    /// `dirty_by_class`'s module doc for the full design. `null` (UNINIT)
+    /// until this heap's first class-routed cross-thread free; a heap that
+    /// never receives one never pays the ~6.1 KiB reservation.
+    ///
+    /// Additive over [`dirty_segments`](Self::dirty_segments): the existing
+    /// per-segment bitmap is set unconditionally on every push regardless of
+    /// this feature, so it remains the fallback/ground-truth signal even
+    /// when this sidecar is in use.
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) dirty_by_class: RacyPtrCell<PerClassDirty>,
 }
 
 /// R7-A4: number of `AtomicU64` words in the per-slot dirty-segment bitmap.

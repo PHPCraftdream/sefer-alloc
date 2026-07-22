@@ -375,6 +375,22 @@ fn r9_6_class_aware_dirty_waste_ratio_scales_with_class_count() {
     // classes ⇒ larger fraction of drains are wasted from any one caller's
     // perspective). The absolute ratios are timing-dependent (real OS scheduler
     // jitter), so they are reported, not asserted to a fixed value.
+    //
+    // R12-7 stage 2 note: this assertion is scoped to the STAGE-1 baseline
+    // (per-segment dirty routing, this file's whole reason for existing —
+    // see its module doc). It is EXPECTED to fail if run with the
+    // `class-aware-dirty` feature (R12-7 stage 2, `alloc_core::dirty_by_class`)
+    // additionally enabled: the sought class's own drain visits become
+    // (near-)exclusively useful once routing is class-scoped, so waste stays
+    // near-zero at every N instead of scaling — see
+    // `tests/class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`
+    // for the equivalent measurement WITH the feature on. This file is
+    // deliberately left unmodified otherwise (measurement-only judge,
+    // unchanged base algorithm) — no CI configuration combines `production`
+    // with `class-aware-dirty` (the fast-check `npm run check` path uses
+    // `production` alone; `--all-features` also pulls in `numa-aware`, which
+    // compiles this whole file out — see its `#![cfg]` gate), so this
+    // interaction is not reachable from the documented CI matrix.
     let waste_for = |n: usize| -> u64 {
         results
             .iter()

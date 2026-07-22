@@ -384,6 +384,7 @@ hard compile error in every configuration:
 | [`src/alloc_core/os.rs`](src/alloc_core/os.rs) | Thin interop wrapper around `aligned-vmem`; delegates SEGMENT-aligned reservation and decommit/recommit | `alloc-core` |
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
+| [`src/alloc_core/dirty_by_class.rs`](src/alloc_core/dirty_by_class.rs) | The lazily-materialised per-(segment, class) dirty-bit sidecar (`PerClassDirty`); dereferences the `RacyPtrCell`-published sidecar pointer | `class-aware-dirty` |
 | [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse). | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -432,7 +433,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
-That's the full list (both tiers): **17** tier-1 module-level seams (10 in
+That's the full list (both tiers): **18** tier-1 module-level seams (11 in
 `src/`, 7 in `crates/`) plus **42** tier-2 item-scoped allows across **15**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is

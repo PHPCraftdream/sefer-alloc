@@ -617,6 +617,21 @@ pub struct AllocCore {
     #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
     pub(crate) dirty_segments:
         Option<&'static [core::sync::atomic::AtomicU64; super::segment_directory::WORDS_PER_CLASS]>,
+
+    /// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): reference to the
+    /// owning HeapSlot's lazily-materialised per-(segment, class) dirty-bit
+    /// sidecar cell (planted by `HeapCore` at bind time, same discipline as
+    /// [`dirty_segments`](Self::dirty_segments)). `None` until bound.
+    ///
+    /// Note this is a handle to the CELL, not the sidecar itself — the
+    /// sidecar behind the cell may still be UNINIT (no class-routed
+    /// cross-thread free has landed on this heap yet); `drain_dirty_segments`
+    /// resolves it read-only via `dirty_by_class::get_per_class_dirty` (never
+    /// materialising it from the drain side — see that function's doc
+    /// comment).
+    #[cfg(feature = "class-aware-dirty")]
+    pub(crate) dirty_by_class:
+        Option<&'static racy_ptr_cell::RacyPtrCell<super::dirty_by_class::PerClassDirty>>,
 }
 
 impl AllocCore {
@@ -845,6 +860,8 @@ impl AllocCore {
             directory_miss_streak: [0; SMALL_CLASS_COUNT],
             #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
             dirty_segments: None,
+            #[cfg(feature = "class-aware-dirty")]
+            dirty_by_class: None,
         })
     }
 

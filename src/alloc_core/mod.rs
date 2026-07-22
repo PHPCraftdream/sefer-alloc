@@ -37,6 +37,12 @@ pub mod deferred_large;
 /// are gated behind `alloc-stats`. See the module doc for the counter
 /// inventory.
 pub(crate) mod directory_stats;
+/// R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): the lazily-materialised
+/// per-(segment, class) dirty-bit sidecar (`PerClassDirty`) — see the module
+/// doc for the full design. A named `unsafe` seam (single documented reason:
+/// dereferencing the `RacyPtrCell`-published sidecar pointer).
+#[cfg(feature = "class-aware-dirty")]
+pub(crate) mod dirty_by_class;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
 #[cfg(feature = "alloc-decommit")]

@@ -439,6 +439,12 @@ unsafe fn bind_slot_counters(slot: &'static HeapSlot, heap: *mut HeapCore) {
     // (cross-thread-reachable, process-`'static`).
     #[cfg(all(feature = "alloc-xthread", feature = "alloc-segment-directory"))]
     heap_ref.bind_dirty_segments(&slot.remote.dirty_segments);
+    // R12-7 stage 2 (`class-aware-dirty`, EXPERIMENTAL): plant the stable
+    // `&'static` handle to this slot's per-(segment, class) dirty-bit
+    // sidecar cell. Same claim-time-binding discipline as
+    // `bind_dirty_segments` above.
+    #[cfg(feature = "class-aware-dirty")]
+    heap_ref.bind_dirty_by_class(&slot.remote.dirty_by_class);
 }
 
 /// M-5 (UBFIX-5): push a slot back onto `free_slots` after its `HeapCore`

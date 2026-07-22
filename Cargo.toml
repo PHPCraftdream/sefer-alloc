@@ -433,6 +433,37 @@ medium-classes-wide = ["medium-classes"]
 # that had kept it opt-in). Feature-OFF builds remain byte-for-byte
 # semantically identical.
 alloc-segment-directory = ["alloc-core"]
+# R12-7 stage 2 (EXPERIMENTAL, P1): class-aware dirty routing. Stage 1
+# (`docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md`) confirmed via a
+# wall-clock criterion bench (`benches/r12_7_class_aware_dirty_wallclock.rs`)
+# that the O(D) vs O(D_class) waste ratio R9-6 measured at the counter level
+# (`docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md`) translates into a
+# material wall-clock cost (well past the R9-6-prescribed 5% N=1-vs-N=4 gate),
+# clearing this feature for implementation.
+#
+# Mechanism: a lazily-materialised per-(segment, class) dirty-bit sidecar
+# (`alloc_core::dirty_by_class::PerClassDirty`) — see that module's doc comment
+# for the full design, sizing (~6.1 KiB per materialised heap, default
+# 49-class table), and the lost-wakeup safety argument (a per-class bit is a
+# VISIT HINT only; the drain body itself is unchanged and always fully drains
+# a visited segment's ring regardless of which class's bit triggered the
+# visit, so a stale/redundant bit can waste at most one visit — it can never
+# cause an entry to be silently skipped). `drain_dirty_segments` gains a
+# class-scoped scan path that iterates ONLY the sought class's
+# `WORDS_PER_CLASS`-word slice instead of the shared per-segment bitmap.
+#
+# The existing per-segment `dirty_segments` bitmap is UNCHANGED and still set
+# on every push (this mechanism is additive, not a replacement) — with this
+# feature OFF, `drain_dirty_segments` and `set_dirty_bit_for_segment` are
+# byte-for-byte identical to before.
+#
+# EXPERIMENTAL: opt-in, NOT part of `production`. `--all-features` pulls it
+# in (as it does every other opt-in feature here). Additive over
+# `alloc-xthread` (the producer/consumer sides this mechanism extends) +
+# `alloc-segment-directory` (the directory-driven drain call site) +
+# `alloc-core` (for `dep:racy-ptr-cell`, already pulled in by `alloc-core`,
+# and `dep:aligned-vmem` for the sidecar reservation).
+class-aware-dirty = ["alloc-xthread", "alloc-segment-directory", "dep:aligned-vmem"]
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore
 # NOT free enough to enable unconditionally. Default OFF; NOT part of
@@ -1013,6 +1044,29 @@ required-features = ["alloc-global"]
 name = "numa_current_node_cache"
 harness = false
 required-features = ["numa-aware"]
+
+# R12-7 stage 1 (follow-up to R9-6's docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md
+# §9 "next step before implementing"): wall-clock gate for class-aware dirty
+# routing. R9-6 measured the O(D) vs O(D_class) waste ratio at the COUNTER
+# level only (82% wasted drain visits at N=4 producer classes, 95% at N=8) and
+# explicitly deferred whether that ratio translates into a MATERIAL wall-clock
+# cost to a follow-up criterion bench on the identical workload shape. This is
+# that bench: reports ns/owner-alloc at N=1/2/4/8 concurrent producer classes
+# so the R9-6-prescribed >5% N=1-vs-N=4 threshold can be checked against a
+# real number instead of the report's own "~50-200ns/visit, estimated, NOT
+# measured" placeholder. `required-features` matches the judge test
+# (tests/r9_6_class_aware_dirty_judge.rs): alloc-global + alloc-xthread +
+# alloc-segment-directory + alloc-stats. Unlike the judge test (a `tests/`
+# integration test, which tolerates compiling to "0 tests" under an
+# additional `not(numa-aware)` `#![cfg]`), this `harness = false` bench needs
+# a `main` unconditionally, so it compiles under `numa-aware` too and
+# skips its measurement AT RUNTIME instead (see the bench file's module doc
+# "Feature gating" section) — `AllocCore::drain_dirty_segments`, the
+# mechanism under measurement, is itself compiled out under `numa-aware`.
+[[bench]]
+name = "r12_7_class_aware_dirty_wallclock"
+harness = false
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats"]
 
 # Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
