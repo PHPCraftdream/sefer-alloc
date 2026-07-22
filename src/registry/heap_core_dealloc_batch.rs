@@ -36,10 +36,20 @@ use super::heap_core::HeapCore;
 use super::tcache::TCACHE_CAP;
 
 impl HeapCore {
-    /// R11-4 — **batched deallocation**. `#[doc(hidden)]` experimental
-    /// surface gated behind the `batch-api` Cargo feature (see
-    /// [`HeapCore::alloc_batch`]'s doc for the API-boundary rationale this
-    /// mirrors). Frees every non-null block in `blocks`, all classified by
+    /// R11-4 — **batched deallocation**.
+    ///
+    /// # ⚠ EXPERIMENTAL / UNSTABLE
+    ///
+    /// This API has NO semver guarantees. It may change signature, behavior,
+    /// or be removed entirely in any release without a major version bump,
+    /// for as long as the `batch-api` feature (which requires
+    /// `experimental`) remains unstable. Use at your own risk in production
+    /// code.
+    ///
+    /// `#[doc(hidden)]` experimental surface gated behind the `batch-api`
+    /// Cargo feature (see [`HeapCore::alloc_batch`]'s doc for the
+    /// API-boundary rationale this mirrors). Frees every non-null block in
+    /// `blocks`, all classified by
     /// the SAME `layout` (the same one-`layout`-per-call contract
     /// `alloc_batch` establishes — see `SeferAlloc::dealloc_batch`'s doc).
     ///

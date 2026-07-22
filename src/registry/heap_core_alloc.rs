@@ -539,11 +539,22 @@ impl HeapCore {
         issued
     }
 
-    /// R10-7 (Part 2) — **tcache-aware batch allocation**. `#[doc(hidden)]`
-    /// experimental surface (NOT committed public API — gated behind the
+    /// R10-7 (Part 2) — **tcache-aware batch allocation**.
+    ///
+    /// # ⚠ EXPERIMENTAL / UNSTABLE
+    ///
+    /// This API has NO semver guarantees. It may change signature, behavior,
+    /// or be removed entirely in any release without a major version bump,
+    /// for as long as the `batch-api` feature (which requires
+    /// `experimental`) remains unstable. Use at your own risk in production
+    /// code.
+    ///
+    /// `#[doc(hidden)]` — NOT committed public API — gated behind the
     /// `batch-api` Cargo feature so it is invisible to a default `production`
     /// build and cannot land in the semver/ABI surface by accident; reachable
-    /// via `SeferAlloc::alloc_batch`). Fills `out` with up to `out.len()` live
+    /// via [`SeferAlloc::alloc_batch`](crate::global::SeferAlloc::alloc_batch),
+    /// which carries the same experimental marker on its own (visible)
+    /// rustdoc entry (R12-12). Fills `out` with up to `out.len()` live
     /// blocks of `layout` (same validity contract as a single `alloc`),
     /// returning the count written (0 only on true OOM).
     ///
@@ -788,6 +799,11 @@ impl HeapCore {
     /// N scalar `alloc` calls; the only amortisation is the single
     /// classification hoist (the TLS lookup is amortised at the `SeferAlloc`
     /// wrapper, not here).
+    ///
+    /// # ⚠ EXPERIMENTAL / UNSTABLE
+    ///
+    /// Same `batch-api` (requires `experimental`) no-semver-guarantees status
+    /// as the `fastbin` variant above — see that doc comment (R12-12).
     #[cfg(not(feature = "fastbin"))]
     #[cfg(feature = "batch-api")]
     #[doc(hidden)]

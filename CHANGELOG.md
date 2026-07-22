@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `batch-api` marked honestly experimental (R12-12)
+
+Two consecutive external reviews (starting at R10) flagged that
+`#[doc(hidden)] pub unsafe fn alloc_batch`/`dealloc_batch`
+(`SeferAlloc`/`HeapCore`, `batch-api` feature) is still formally public Rust
+API for anyone who enables the feature: `#[doc(hidden)]` only hides the item
+from rustdoc, it does not waive semver expectations for a user who finds the
+function via IDE autocomplete or the source. Two changes, both non-behavioral:
+
+- **`batch-api` now requires `experimental`**
+  (`batch-api = ["experimental", "alloc-core"]`, `Cargo.toml`) — nesting it
+  under the crate's existing "no semver guarantees, research-tier" umbrella
+  (already used by `pinning` and the RCU+epoch concurrent tier) makes the
+  instability an explicit, unmissable opt-in rather than a same-tier peer of
+  `alloc-decommit`/`exact-span-large`/etc. `--features batch-api` still
+  compiles and tests exactly as before (Cargo feature unification pulls in
+  `experimental` transitively); no cycle (`experimental` does not list
+  `batch-api`, or anything that lists it, among its own requirements).
+- **`#[doc(hidden)]` dropped from `SeferAlloc::alloc_batch`/`dealloc_batch`**,
+  replaced with a visible `# ⚠ EXPERIMENTAL / UNSTABLE` rustdoc section
+  stating explicitly that the API has no semver guarantees and may change or
+  be removed in any release while `batch-api` remains unstable. The
+  underlying `HeapCore::alloc_batch`/`dealloc_batch` (reached only through
+  the crate's already doc-hidden `registry` module) keep `#[doc(hidden)]`
+  but gained the same experimental-status doc section for anyone reading the
+  source directly.
+
+No signature, behavior, or safety-contract change to any function; no
+version bump.
+
 ### BREAKING CHANGE — `alloc-runfreelist` feature removed
 
 The `alloc-runfreelist` experimental performance feature (PERF-3, the

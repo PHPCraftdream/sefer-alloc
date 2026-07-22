@@ -432,23 +432,36 @@ impl SeferAlloc {
 
     /// R10-7 (Part 2) — **tcache-aware batch allocation** wrapper.
     ///
+    /// # ⚠ EXPERIMENTAL / UNSTABLE
+    ///
+    /// This API has NO semver guarantees. It may change signature, behavior,
+    /// or be removed entirely in any release without a major version bump,
+    /// for as long as the `batch-api` feature (which requires
+    /// `experimental`) remains unstable. Use at your own risk in production
+    /// code.
+    ///
     /// # API boundary — `batch-api` Cargo feature (R10-7 follow-up)
     ///
     /// `#[doc(hidden)]` alone is NOT a real API boundary: it hides the item
     /// from rustdoc but leaves it on the public semver/ABI surface (external
     /// code can still call it, and a signature change would still be a
     /// breaking change). This method (and `dealloc_batch` below) is
-    /// additionally gated behind the **`batch-api` Cargo feature**, which is
-    /// NOT part of `production` or any default-on bundle. Downstream code
-    /// cannot reach this surface at all without explicitly opting in, so the
-    /// signature can evolve freely without semver consequences for the vast
-    /// majority of users (who build with `production` alone). Chosen over
-    /// `pub(crate)` + an adapter because the existing bench/test consumers
+    /// additionally gated behind the **`batch-api` Cargo feature** (which
+    /// itself requires `experimental` — R12-12), which is NOT part of
+    /// `production` or any default-on bundle. Downstream code cannot reach
+    /// this surface at all without explicitly opting in, so the signature can
+    /// evolve freely without semver consequences for the vast majority of
+    /// users (who build with `production` alone). Chosen over `pub(crate)` +
+    /// an adapter because the existing bench/test consumers
     /// (`benches/global_alloc.rs`'s `batch_tcache` arm, `tests/batch_tcache.rs`,
     /// and the new `tests/r10_7_alloc_batch_xthread_double_free.rs`) live
     /// OUTSIDE the crate and need a `pub` path — a feature gate preserves
     /// their access pattern while adding the hard semver boundary the review
-    /// asked for.
+    /// asked for. `#[doc(hidden)]` was dropped (R12-12): hiding a stable-
+    /// looking signature from rustdoc is not the same as marking it
+    /// unstable — a user who enables `batch-api` and finds these functions
+    /// via IDE autocomplete or the source deserves a visible warning, not a
+    /// silently-absent one.
     ///
     /// Resolves the per-thread heap ONCE (one TLS lookup for the whole batch,
     /// vs N for N scalar `alloc` calls), then delegates to
@@ -466,7 +479,6 @@ impl SeferAlloc {
     ///
     /// [`dealloc_batch`]: Self::dealloc_batch
     #[cfg(feature = "batch-api")]
-    #[doc(hidden)]
     pub unsafe fn alloc_batch(&self, layout: Layout, out: &mut [*mut u8]) -> usize {
         match self.current_heap() {
             CurrentHeap::Fallback => {
@@ -480,6 +492,15 @@ impl SeferAlloc {
     }
 
     /// R10-7 (Part 2); batched by R11-4 — **batch deallocation** wrapper.
+    ///
+    /// # ⚠ EXPERIMENTAL / UNSTABLE
+    ///
+    /// This API has NO semver guarantees. It may change signature, behavior,
+    /// or be removed entirely in any release without a major version bump,
+    /// for as long as the `batch-api` feature (which requires
+    /// `experimental`) remains unstable. Use at your own risk in production
+    /// code.
+    ///
     /// Same `batch-api` feature boundary as [`alloc_batch`] (see that
     /// method's API-boundary doc section). Resolves the per-thread heap
     /// ONCE, then delegates to [`HeapCore::dealloc_batch`], which partitions
@@ -498,7 +519,6 @@ impl SeferAlloc {
     ///
     /// [`alloc_batch`]: Self::alloc_batch
     #[cfg(feature = "batch-api")]
-    #[doc(hidden)]
     pub unsafe fn dealloc_batch(&self, layout: Layout, blocks: &[*mut u8]) {
         match self.current_heap() {
             CurrentHeap::Fallback => {

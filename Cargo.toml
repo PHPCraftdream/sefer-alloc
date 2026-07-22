@@ -196,7 +196,22 @@ alloc-global = ["alloc-core", "dep:tagged-index-stack"]
 # `HeapCore::alloc_batch` that loops the substrate; alongside `fastbin` it
 # compiles the tcache-aware variant. Tests/benches opt in via
 # `required-features` or `#![cfg(feature = "batch-api")]`.
-batch-api = ["alloc-core"]
+#
+# R12-12 (P2, two consecutive external reviews starting at R10): also
+# requires `experimental`. A Cargo feature gate alone is not a strong enough
+# signal that this surface carries no semver guarantees — a user who enables
+# `--features batch-api` in isolation (e.g. copy-pasting a Cargo.toml line
+# from a benchmark) would reasonably assume it is as stable as any other
+# opt-in feature. Nesting it under `experimental` (which this crate already
+# uses as its "no semver guarantees, research-tier" umbrella for `pinning` /
+# the RCU+epoch concurrent tier) makes the instability an explicit,
+# unmissable opt-in: `--features batch-api` now pulls in `experimental`
+# transitively (Cargo feature unification), so nothing that worked before
+# stops compiling — it just also enables `experimental`'s own surface. No
+# cycle: `experimental` itself stays `["std", "dep:arc-swap",
+# "dep:crossbeam-epoch"]` and does not list `batch-api` (or anything that
+# lists `batch-api`) among its own requirements.
+batch-api = ["experimental", "alloc-core"]
 
 # R12-11 (task #262, P2): DIAGNOSTIC-ONLY per-page class bookkeeping
 # (`alloc_core::segment_header::PageMap`). An inventory of every PageMap call
