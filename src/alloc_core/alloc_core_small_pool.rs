@@ -667,6 +667,45 @@ impl AllocCore {
         Some(SegmentMeta::new(base).is_decommitted())
     }
 
+    /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): force the
+    /// `release_follows == false` (decommit-and-RETAIN) leg of
+    /// `decommit_empty_segment_impl` to run on `ptr`'s segment, bypassing the
+    /// fact that this leg has ZERO production callers today (see that
+    /// function's doc). Exists so `tests/alloc_zeroed_virgin_small_skip.rs`
+    /// can prove the defensive `payload_virgin = false` clear at that site
+    /// (§3 reset table in both design docs) actually fires — the regression
+    /// guard the design docs flagged as needed "if that path is ever
+    /// re-enabled". Returns `false` (no-op) if `ptr` is foreign / not a
+    /// `Small` segment specifically; the caller is responsible for having
+    /// emptied the segment first (this hook does NOT check `live_count` —
+    /// it drives the shared decommit body directly, matching what a real
+    /// caller would have already established).
+    ///
+    /// **Excludes `Primordial` deliberately** — same exclusion
+    /// `dec_live_and_maybe_decommit` enforces ("NEVER decommit the
+    /// PRIMORDIAL segment": its metadata extends to
+    /// `primordial_meta_end()`, but `decommit_empty_segment_impl` computes
+    /// `payload_start` from the (smaller) `small_meta_end()`; decommitting
+    /// from there would unmap part of the self-hosted registry the
+    /// primordial segment hosts, corrupting the substrate). This test hook
+    /// bypasses the LIVE-COUNT check, not the segment-KIND safety
+    /// invariant — calling it on the primordial segment would be a genuine
+    /// use-after-free of the registry, not merely a test artefact.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return false;
+        }
+        if !matches!(SegmentHeader::kind_at(base), SegmentKind::Small) {
+            return false;
+        }
+        let mut meta = SegmentMeta::new(base);
+        Self::decommit_empty_segment_impl(&mut meta, base, false);
+        true
+    }
+
     /// PERF-4 (task #14): the production decommit-on-empty primitive. Every
     /// production caller that observes a
     /// segment empty (`dealloc_small`, the ring-drain in `find_segment_with_free`,
@@ -804,5 +843,25 @@ impl AllocCore {
         ));
         // 3. Flag the segment decommitted so the next `carve_block` recommits.
         meta.set_decommitted(true);
+        // R12-10 (task #261, `virgin-zero-skip`): defensively clear the
+        // payload-virgin bit. This is the ONLY path that can decommit a
+        // small segment's payload while leaving it registered for a future
+        // recommit-on-reuse carve — the exact macOS `MADV_DONTNEED`-is-
+        // advisory-and-lazy hazard the design docs
+        // (`docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §4.3,
+        // `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §4.4(b)) flag as
+        // the load-bearing risk area. Today this branch has ZERO production
+        // callers (`decommit_empty_segment_impl`'s only call site,
+        // `decommit_empty_segment_for_release`, hard-codes
+        // `release_follows = true`) — verified by grep this session, exactly
+        // as both design docs verified independently. The clear is kept
+        // here regardless, unconditionally (not gated further), so that IF a
+        // future decommit policy ever re-enables this leg, the virgin skip
+        // fails SAFE (degrades to "always zero the next carve on this
+        // segment") rather than silently becoming unsound: a subsequent
+        // recommit is not OS-zero-guaranteed on every backend (macOS/XNU/*BSD
+        // `MADV_DONTNEED` is advisory + lazy, no zero-fill guarantee).
+        #[cfg(feature = "virgin-zero-skip")]
+        meta.set_payload_virgin(false);
     }
 }

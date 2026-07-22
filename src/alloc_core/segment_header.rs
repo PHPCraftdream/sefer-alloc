@@ -629,6 +629,45 @@ pub(crate) struct SegmentHeader {
     /// `live_count`).
     #[cfg_attr(not(feature = "numa-aware"), allow(dead_code))]
     pub node_id: u32,
+    /// R12-10 (task #261, `virgin-zero-skip`): owner-only flag recording
+    /// whether every byte in this segment's payload `[small_meta_end, bump)`
+    /// was made readable EITHER by the segment's own fresh OS reservation OR
+    /// by an incremental first-time `commit_pages` grow-on-carve call, with
+    /// NO in-place decommit-then-recommit cycle ever having occurred on this
+    /// segment's CURRENT registration. `1` (true) means a bump-cursor CARVE
+    /// on this segment is OS-zero-guaranteed and `alloc_zeroed` may skip its
+    /// explicit `Node::zero` pass for the carved block; `0` (false) means the
+    /// carve must be zeroed explicitly, exactly as before this feature
+    /// existed.
+    ///
+    /// **This bit alone does not decide virginity of a SPECIFIC served
+    /// block** — see `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §2's
+    /// combined predicate: a block is virgin only if BOTH (a) it was served
+    /// by a bump-cursor carve (`carve_block`/`carve_batch`), never a
+    /// free-list pop (`pop_free`) — a pop is by construction never virgin,
+    /// regardless of this bit's value — AND (b) this bit reads `true` at the
+    /// moment of that carve AND (c) `cfg!(not(miri))`. `carve_block` /
+    /// `carve_batch` are the only READERS; `reserve_small_segment` (sets
+    /// `cfg!(not(miri))` on a genuinely fresh reservation) and
+    /// `decommit_empty_segment_impl`'s `release_follows == false` retain-leg
+    /// (sets `false`, defensively — see that function's doc: the leg has
+    /// zero production callers today, but the bit must fail safe if a future
+    /// decommit policy ever re-enables it) are the only WRITERS. Every write
+    /// site and every read site runs on the segment's owning thread only —
+    /// same owner-only, single-writer discipline as `bump`/`live_count`/
+    /// `decommitted` (no cross-thread reader or writer ever touches this
+    /// field, so a plain field read/write is race-free).
+    ///
+    /// **Present in EVERY build's layout** (same discipline as
+    /// `committed_payload_end`/`node_id`) — the byte layout of
+    /// `SegmentHeader` is identical regardless of feature config. The field
+    /// is READ and WRITTEN only under `#[cfg(feature = "virgin-zero-skip")]`;
+    /// without that feature it is inert dead data (lint silenced below).
+    /// Stored as a `u32` (not a single bit) to match the existing
+    /// `live_count`/`decommitted`/`node_id` plain-field-at-`offset_of!`
+    /// accessor discipline — the 1-bit payload is not worth a bitfield here.
+    #[cfg_attr(not(feature = "virgin-zero-skip"), allow(dead_code))]
+    pub payload_virgin: u32,
 }
 
 /// Sentinel for the [`deferred_next`](SegmentHeader::deferred_next) link
@@ -711,6 +750,15 @@ impl SegmentHeader {
             // starts at the same value so the first drain guard check
             // correctly observes "nothing to drain yet".
             ring_drain_head: 0,
+            // R12-10 (`virgin-zero-skip`): the constructor sets a PLACEHOLDER
+            // (0/false) — the caller (`reserve_small_segment`) stamps the
+            // real value (`cfg!(not(miri))`) immediately after writing the
+            // header, exactly like `committed_payload_end`'s own placeholder
+            // pattern above. Placeholder is `false`, not `true`: if a future
+            // caller ever forgets the stamp, the fail-safe default is
+            // "never skip the zero pass", not "silently return
+            // uninitialised/dirty memory".
+            payload_virgin: 0,
         }
     }
 
@@ -791,6 +839,12 @@ impl SegmentHeader {
             // Large segments have no RemoteFreeRing (no BinTable either) —
             // inert, like live_count/decommitted above.
             ring_drain_head: 0,
+            // R12-10 (`virgin-zero-skip`): inert for Large segments — the
+            // virgin-carve skip is Small-only by design (Large already has
+            // its own, structurally simpler, per-segment freshness skip via
+            // `alloc_large`'s `(ptr, is_fresh)` return — see the design
+            // docs' §1 "why Large and Small differ structurally").
+            payload_virgin: 0,
         }
     }
 

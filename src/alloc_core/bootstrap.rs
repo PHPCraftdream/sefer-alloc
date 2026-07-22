@@ -329,6 +329,20 @@ pub(crate) fn primordial() -> Option<Primordial> {
         meta.set_committed_payload_end(super::os::SEGMENT);
     }
 
+    // R12-10 (task #261, `virgin-zero-skip`): stamp the payload-virgin bit.
+    // The primordial segment is reserved via `Segment::reserve`/
+    // `reserve_lazy` at step 1 above — a genuinely fresh OS reservation,
+    // zero-guaranteed on every real backend, exactly like an ordinary small
+    // segment's `reserve_small_segment` stamp (see that function's identical
+    // comment). `AllocCore::new_inner` immediately reuses this segment as the
+    // first `small_cur` carve target, so `carve_block`/`carve_batch` must see
+    // the correct bit before the very first post-bootstrap allocation.
+    // Withheld under `cfg!(miri)` for the same reason as every other
+    // freshness signal on this path (miri's `std::alloc` fallback does not
+    // zero).
+    #[cfg(feature = "virgin-zero-skip")]
+    meta.set_payload_virgin(cfg!(not(miri)));
+
     // 6. Construct the SegmentTable view. `from_primordial` is safe (it
     //    performs no memory operation — just wraps the pointer + count); the
     //    contract that slot 0 was written is the bootstrap's invariant.

@@ -588,6 +588,46 @@ small-segment-lazy-commit = [
     "aligned-vmem/alloc-lazy-commit",
     "aligned-vmem/fault-injection",
 ]
+# R12-10 (task #261, P1, Stage 1+2 of the design docs below): Small-path
+# `alloc_zeroed` virgin-carve zero-skip. Design-verified twice, both
+# CONDITIONAL GO — `docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` (primary) and
+# `docs/perf/R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` (independent
+# re-verification, same verdict). This feature realizes that design: a
+# genuinely first-touch ("virgin") small-class carve is served by a fresh OS
+# reservation (or a first-time incremental commit), which the OS already
+# zero-fills (Windows `VirtualAlloc` MEM_COMMIT demand-zero / Unix zero-filled
+# `mmap`) — so `alloc_zeroed`'s explicit `Node::zero` pass is REDUNDANT and is
+# skipped for such a block. A reused (freed-then-realloc'd, or pooled) block
+# is NEVER treated as virgin (the dispatch test: only a bump-cursor CARVE, not
+# a free-list POP, can be virgin) and is always zeroed explicitly, exactly as
+# before.
+#
+# Adds one owner-only `payload_virgin: bool` field to `SegmentHeader`
+# (present in every build's layout, read/written only under this feature —
+# same discipline as `committed_payload_end`/`decommitted`), a
+# `SMALL_ZERO_PASS_CALLS` diagnostic counter mirroring the shipped
+# `LARGE_ZERO_PASS_CALLS` (task #221/R9-1), and a virgin-aware
+# `alloc_small_with_virgin` substrate entry point consumed by BOTH
+# `AllocCore::alloc_zeroed`'s small arm and — the production win —
+# `HeapCore::alloc_zeroed`'s small arm (which bypasses the per-thread
+# magazine for this call only, mirroring how the Large arm already bypasses
+# `self.alloc()` to reach `alloc_large`'s freshness tuple directly; the plain
+# `alloc`/`GlobalAlloc::alloc` magazine fast path is UNTOUCHED by this
+# feature).
+#
+# Withheld unconditionally under `cfg!(miri)` (miri's `std::alloc` fallback
+# does not zero-fill fresh memory — the same gate `alloc_large_slow` already
+# uses for the Large-path skip, task #221/R9-1's fix for the exact bug class
+# this feature must not reintroduce).
+#
+# NOT part of `production` or any default-on bundle. `--all-features` pulls
+# it in (as it does every other opt-in feature here). Promotion to
+# `production` is a separate, explicit decision — see this task's own report
+# for the GO/CONDITIONAL-GO/NO-GO recommendation. Requires `alloc-decommit`
+# (the lifetime-reset rule that clears `payload_virgin` on an in-place
+# decommit-retain lives in the shared `decommit_empty_segment_impl` body,
+# which is itself `alloc-decommit`-gated).
+virgin-zero-skip = ["alloc-decommit"]
 
 [dependencies]
 # Phase 1: typed handle store (Region<T> + Handle<T> + SyncRegion<T>), extracted

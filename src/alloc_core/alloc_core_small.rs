@@ -238,6 +238,96 @@ impl AllocCore {
         }
     }
 
+    /// R12-10 (task #261, `virgin-zero-skip`): virgin-aware sibling of
+    /// [`alloc_small`](Self::alloc_small), consumed ONLY by
+    /// [`AllocCore::alloc_zeroed`]'s small arm and (the production win)
+    /// `HeapCore::alloc_zeroed`'s small arm. A separate function (not a
+    /// changed `alloc_small` signature) per the design docs' Stage-1
+    /// recommendation (`docs/perf/R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11) --
+    /// `alloc_small` has call sites that must stay `*mut u8`-only (the plain
+    /// uninitialised-memory `alloc` contract must never observe the virgin
+    /// bit).
+    ///
+    /// Returns `(ptr, is_virgin)`. `is_virgin` is `true` **only** when `ptr`
+    /// was served by a bump-cursor CARVE (`carve_block`/`carve_batch`, via
+    /// `carve_block_with_refill`) on a segment whose `payload_virgin` bit
+    /// reads `true`, AND `cfg!(not(miri))`. Every free-list-pop dispatch
+    /// (`pop_free`, own-segment or `find_segment_with_free`) yields `false`
+    /// unconditionally — a popped block was, by construction, carved and
+    /// issued at some strictly earlier point, so it can never be virgin
+    /// regardless of the segment's current bit value (the "dispatch
+    /// conjunct" from the design docs' formal predicate, §2 in both).
+    ///
+    /// The bit is read from `self.small_cur` (or, on the reserve-then-retry
+    /// branch, the freshly reserved segment) BEFORE the carve call — this is
+    /// safe because `carve_block`/`carve_batch` never WRITE the bit (see the
+    /// `SegmentHeader::payload_virgin` field doc's reset table: a carve
+    /// leaves the segment's lifetime-virginity bit unchanged), so reading it
+    /// immediately before or after a successful carve on the SAME segment
+    /// observes the same value.
+    #[cfg(feature = "virgin-zero-skip")]
+    #[inline]
+    pub(crate) fn alloc_small_with_virgin(&mut self, class_idx: usize) -> (*mut u8, bool) {
+        let block_size = SizeClasses::block_size(class_idx);
+        debug_assert!(block_size >= NODE_SIZE);
+        // 1. Current segment's free list — never virgin (dispatch conjunct).
+        if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+            return (ptr, false);
+        }
+        // 2. Other owned segments' free lists — never virgin (dispatch
+        //    conjunct). Same unchecked scan `alloc_small` uses; see that
+        //    function's doc for the reachability argument (this substrate
+        //    entry point is reached only outside the fastbin magazine, same
+        //    as `alloc_small` itself).
+        if let Some(seg) = self.find_segment_with_free(class_idx) {
+            if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                return (ptr, false);
+            }
+        }
+        // 3. No free block anywhere: carve a FRESH block from the CURRENT
+        //    segment. Read the lifetime-virginity bit before carving — the
+        //    carve itself never mutates the bit (see this fn's doc).
+        let cur_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+        if let Some(ptr) = self.carve_block_with_refill(class_idx, block_size) {
+            return (ptr, cur_virgin && cfg!(not(miri)));
+        }
+        // 4. Current segment is full: reserve a new small segment and retry.
+        match self.reserve_small_segment() {
+            Some(_) => {
+                // A freshly reserved segment's free lists are always empty
+                // (nothing has ever been freed on it) — this pop exists only
+                // to mirror `alloc_small`'s identical retry shape; it never
+                // actually hits in practice, but if it somehow did, a
+                // free-list-served block is never virgin regardless.
+                if let Some(ptr) = self.pop_free(self.small_cur, class_idx, block_size) {
+                    return (ptr, false);
+                }
+                let fresh_virgin = SegmentMeta::new(self.small_cur).payload_virgin_of();
+                match self.carve_block_with_refill(class_idx, block_size) {
+                    Some(ptr) => (ptr, fresh_virgin && cfg!(not(miri))),
+                    None => (core::ptr::null_mut(), false),
+                }
+            }
+            None => {
+                // R9-8 rescue scan (mirrors `alloc_small`'s identical arm):
+                // any block served here comes from a free-list pop — never
+                // virgin.
+                #[cfg(all(feature = "alloc-segment-directory", not(feature = "numa-aware")))]
+                if !self.directory_sidecar.is_null() {
+                    if let Some(seg) = self.find_segment_with_free_forced(class_idx) {
+                        #[cfg(feature = "alloc-stats")]
+                        super::directory_stats::DIRECTORY_RESCUE_OOM_AVOIDED
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        if let Some(ptr) = self.pop_free(seg, class_idx, block_size) {
+                            return (ptr, false);
+                        }
+                    }
+                }
+                (core::ptr::null_mut(), false)
+            }
+        }
+    }
+
     /// Carve one fresh block of `class_idx` for the caller, plus a refill
     /// batch of extra blocks that are pushed onto their OWN segments'
     /// `BinTable[class_idx]` (Phase 9 amortisation, Phase 12.1 segment-centric
@@ -1856,6 +1946,23 @@ impl AllocCore {
         // node on the very first scan that includes this segment.
         #[cfg(feature = "numa-aware")]
         meta.set_node_id(my_node);
+
+        // R12-10 (task #261, `virgin-zero-skip`): stamp the payload-virgin
+        // bit. This is a genuinely fresh OS reservation (the segment was just
+        // registered above; it is not a decommit-reused segment — that path
+        // is `decommit_empty_segment_impl`'s `release_follows=false` leg,
+        // which stamps its OWN `false` on that different code path). Every
+        // real OS backend zero-fills a fresh reservation (Windows
+        // `VirtualAlloc` MEM_COMMIT demand-zero; Unix anonymous `mmap`
+        // zero-fill), so `true` is correct there. Under `cfg!(miri)`,
+        // `crates/vmem`'s aperture falls back to bare `std::alloc::alloc`,
+        // which does NOT zero — so the bit is withheld (`false`) under miri,
+        // mirroring `alloc_large_slow`'s identical `cfg!(not(miri))` freshness
+        // gate (task #221/R9-1). This must run BEFORE any carve on this
+        // segment; the very first thing that reads this bit is
+        // `carve_block`/`carve_batch`.
+        #[cfg(feature = "virgin-zero-skip")]
+        meta.set_payload_virgin(cfg!(not(miri)));
 
         // B1 (R7 Workstream B): stamp the committed-payload frontier.
         //

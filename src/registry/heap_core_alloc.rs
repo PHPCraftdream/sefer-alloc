@@ -301,8 +301,14 @@ impl HeapCore {
     /// zero-filled by the OS, so `Node::zero` is SKIPPED; a `large_cache` HIT
     /// (a reused segment that may hold the prior occupant's bytes) is zeroed
     /// explicitly. Small-classified requests delegate to `self.alloc` +
-    /// unconditional `Node::zero` (byte-identical to the pre-task path — the
-    /// skip is Large-only by the task's scope decision).
+    /// unconditional `Node::zero` (byte-identical to the pre-task path)
+    /// UNLESS the opt-in `virgin-zero-skip` feature (R12-10, task #261) is
+    /// enabled, in which case a genuinely virgin (never-before-served)
+    /// bump-carved small block ALSO gets the skip — see
+    /// `AllocCore::alloc_small_with_virgin`'s doc for the exact virginity
+    /// predicate. A free-list-served (reused) small block is NEVER treated
+    /// as virgin and is always zeroed explicitly, exactly as before this
+    /// feature existed.
     ///
     /// The Large branch replays the SAME Large-relevant prelude [`alloc`](Self::alloc)
     /// performs before reaching `AllocCore::alloc_large` —
@@ -310,9 +316,14 @@ impl HeapCore {
     /// `alloc-xthread`) and [`drain_heap_overflow`](Self::drain_heap_overflow)
     /// (RAD-4b, `alloc-xthread` without `fastbin`, where it is otherwise hosted
     /// in the magazine-miss slow path) — then calls `alloc_large` DIRECTLY to
-    /// obtain the freshness tuple (which `self.core.alloc` discards). This is
-    /// an additive restructuring of THIS method's own dispatch only;
-    /// `HeapCore::alloc`'s body is untouched.
+    /// obtain the freshness tuple (which `self.core.alloc` discards). The
+    /// `virgin-zero-skip` Small branch mirrors this shape exactly: it
+    /// bypasses `self.alloc()` (the magazine fast path) to reach
+    /// `AllocCore::alloc_small_with_virgin` directly, so the virgin signal
+    /// (which the magazine's `PerClass.slots: [*mut u8; TCACHE_CAP]` has no
+    /// room to carry) is never lost. This is an additive restructuring of
+    /// THIS method's own dispatch only; `HeapCore::alloc`'s body (the plain
+    /// `alloc`/`GlobalAlloc::alloc` magazine fast path) is untouched.
     #[must_use]
     #[inline]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
@@ -322,9 +333,31 @@ impl HeapCore {
         let align = layout.align();
         let class = crate::alloc_core::size_classes::SizeClasses::class_for(size, align);
 
+        #[cfg(feature = "virgin-zero-skip")]
+        if let Some(class_idx) = class {
+            // R12-10 (task #261, `virgin-zero-skip`): the PRODUCTION win.
+            // Bypass the per-thread magazine entirely for this call (mirroring
+            // exactly how the Large branch below bypasses `self.alloc()` to
+            // reach `alloc_large`'s freshness tuple directly) and call
+            // `AllocCore::alloc_small_with_virgin` so the virgin-carve signal
+            // survives to this point.
+            let (ptr, is_virgin) = self.core.alloc_small_with_virgin(class_idx);
+            if !ptr.is_null() {
+                self.stamp_segment_owner(ptr);
+                if !is_virgin {
+                    #[cfg(feature = "alloc-stats")]
+                    crate::alloc_core::SMALL_ZERO_PASS_CALLS
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    Node::zero(ptr, size);
+                }
+            }
+            return ptr;
+        }
+        #[cfg(not(feature = "virgin-zero-skip"))]
         if class.is_some() {
             // Small-classified: delegate ENTIRELY to the existing `alloc` +
-            // unconditional `Node::zero` (byte-identical to the pre-task path).
+            // unconditional `Node::zero` (byte-identical to the pre-task
+            // path — this is the `virgin-zero-skip`-OFF behaviour).
             let ptr = self.alloc(layout);
             if !ptr.is_null() {
                 Node::zero(ptr, size);

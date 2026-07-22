@@ -447,6 +447,46 @@ impl AllocCore {
         super::alloc_core::LARGE_ZERO_PASS_CALLS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): process-wide count
+    /// of explicit `Node::zero` passes on the Small-classified `alloc_zeroed`
+    /// path (both the `AllocCore` and `HeapCore` faces bump the same
+    /// counter). Mirrors [`dbg_large_zero_pass_count`](Self::dbg_large_zero_pass_count)
+    /// exactly. Lets `tests/alloc_zeroed_virgin_small_skip.rs` assert the
+    /// virgin-carve SKIP actually fires (delta 0 on a genuinely fresh carve
+    /// under a real OS) and that the explicit zero actually runs where it
+    /// must (free-list reuse; any alloc under miri). Relaxed load —
+    /// diagnostic only. Reads 0 unless BOTH `virgin-zero-skip` AND
+    /// `alloc-stats` are on; the accessor is always compiled so callers need
+    /// no `#[cfg]`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_small_zero_pass_count() -> u64 {
+        super::alloc_core::SMALL_ZERO_PASS_CALLS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): read the owner-only
+    /// `payload_virgin` bit of `ptr`'s segment, or `None` if `ptr` is foreign
+    /// / not a small or primordial segment. Lets tests assert the bit's state
+    /// directly (e.g. after a fresh reservation, or after forcing the
+    /// decommit-retain regression path via
+    /// [`dbg_force_decommit_retain`](Self::dbg_force_decommit_retain)).
+    #[doc(hidden)]
+    #[cfg(feature = "virgin-zero-skip")]
+    #[must_use]
+    pub fn dbg_payload_virgin_for(&self, ptr: *mut u8) -> Option<bool> {
+        let base = os::segment_base_of_ptr(ptr);
+        if !self.table.contains_base_ro(base) {
+            return None;
+        }
+        if !matches!(
+            SegmentHeader::kind_at(base),
+            SegmentKind::Small | SegmentKind::Primordial
+        ) {
+            return None;
+        }
+        Some(SegmentMeta::new(base).payload_virgin_of())
+    }
+
     // ── R7-A0: directory diagnostic counter accessors ───────────────────────
     //
     // Process-wide counters (Relaxed loads -- diagnostic only, no ordering).

@@ -247,6 +247,35 @@ impl SegmentMeta {
         Node::write_u32(Node::offset(self.base, off) as *mut u32, value);
     }
 
+    // -------------------------------------------------------------------
+    // R12-10 (task #261, `virgin-zero-skip`) — field-specific owner-only
+    // accessors for the `payload_virgin` flag. Identical discipline to
+    // `live_count`/`decommitted`: a single-word load/store at the field's
+    // `offset_of!` offset through the `node` seam. Owner-only: written only
+    // by `reserve_small_segment` (fresh reservation) and
+    // `decommit_empty_segment_impl`'s retain leg (defensive clear on
+    // in-place decommit); read only by `carve_block`/`carve_batch`. No
+    // cross-thread reader or writer ever touches this field — see the
+    // field's own doc comment on `SegmentHeader` for the full argument.
+    // -------------------------------------------------------------------
+
+    /// Read the owner-only `payload_virgin` flag (true ⟺ a bump-cursor carve
+    /// on this segment right now is OS-zero-guaranteed).
+    #[cfg(feature = "virgin-zero-skip")]
+    #[inline(always)]
+    pub(crate) fn payload_virgin_of(&self) -> bool {
+        let off = core::mem::offset_of!(SegmentHeader, payload_virgin);
+        Node::read_u32(Node::offset(self.base, off) as *const u32) != 0
+    }
+
+    /// Set/clear the owner-only `payload_virgin` flag.
+    #[cfg(feature = "virgin-zero-skip")]
+    #[inline(always)]
+    pub(crate) fn set_payload_virgin(&mut self, value: bool) {
+        let off = core::mem::offset_of!(SegmentHeader, payload_virgin);
+        Node::write_u32(Node::offset(self.base, off) as *mut u32, u32::from(value));
+    }
+
     /// Stamp the `owner_thread_free` field ONLY (not a full-struct
     /// `write_header`). The stamping path runs on the owning thread and writes
     /// the field at most once per segment (when it transitions null → the

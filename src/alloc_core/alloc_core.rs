@@ -232,6 +232,35 @@ pub(super) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
 pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// TEST-ONLY (R12-10, task #261, `virgin-zero-skip`): process-wide count of
+/// EXPLICIT `Node::zero` passes on the Small-classified `alloc_zeroed` path —
+/// bumped at both consumers of [`AllocCore::alloc_small_with_virgin`]'s
+/// freshness signal ([`AllocCore::alloc_zeroed`] and `HeapCore::alloc_zeroed`)
+/// each time they actually zero (i.e. the virgin-carve skip did NOT fire).
+/// Read via [`AllocCore::dbg_small_zero_pass_count`]. Mirrors
+/// [`LARGE_ZERO_PASS_CALLS`] exactly — this is the seam that makes
+/// `tests/alloc_zeroed_virgin_small_skip.rs` sensitive to the OPTIMIZATION
+/// itself, not just the safety contract: with an unconditional memset
+/// reintroduced (the virgin-skip silently disabled), the fresh-carve tests
+/// would observe a nonzero delta and go red — byte-content assertions alone
+/// cannot distinguish "skipped because OS-zeroed" from "zeroed redundantly"
+/// (the same reasoning `LARGE_ZERO_PASS_CALLS`'s doc states).
+///
+/// Reads 0 unless BOTH `virgin-zero-skip` AND `alloc-stats` are on — the
+/// per-event increments are gated behind `alloc-stats` (matching
+/// `LARGE_ZERO_PASS_CALLS`'s convention); the static itself is always
+/// compiled (regardless of `virgin-zero-skip`) so
+/// [`AllocCore::dbg_small_zero_pass_count`] has a stable definition across
+/// every feature set — a build without `virgin-zero-skip` simply never
+/// increments it (the Small `alloc_zeroed` arm always zeroes explicitly
+/// there, so the counter would read as "every alloc_zeroed counted", which
+/// is not the diagnostic's intent) — the increment call sites are
+/// additionally gated on `virgin-zero-skip` so the counter reads exactly 0 in
+/// a build without the feature, keeping its behaviour indistinguishable from
+/// "the feature doesn't exist" absent explicit opt-in.
+pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
 /// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
 /// NOT one of this heap's registered segments, so `dealloc` silently drops it
@@ -1047,18 +1076,38 @@ impl AllocCore {
     /// calloc-heavy requests. A `large_cache` HIT (a reused segment that may
     /// hold the prior occupant's bytes) is NOT fresh and is zeroed explicitly.
     /// Small-classified requests are always zeroed explicitly (the small path
-    /// is out of scope for the freshness skip — see the task header).
+    /// is out of scope for the freshness skip — see the task header) UNLESS
+    /// the opt-in `virgin-zero-skip` feature (R12-10, task #261) is enabled,
+    /// in which case the identical freshness-skip discipline applies to a
+    /// genuinely virgin (never-before-served) bump-carved block — see
+    /// [`alloc_small_with_virgin`](Self::alloc_small_with_virgin)'s doc for
+    /// the exact virginity predicate. A free-list-served (reused) block is
+    /// NEVER treated as virgin and is always zeroed explicitly, exactly as
+    /// before this feature existed.
     #[must_use]
     pub fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
         let size = layout.size().max(super::size_classes::MIN_BLOCK);
         let align = layout.align();
         match Self::classify(size, align) {
             AllocKind::Small { class_idx } => {
-                let ptr = self.alloc_small(class_idx);
-                if !ptr.is_null() {
-                    Node::zero(ptr, size);
+                #[cfg(feature = "virgin-zero-skip")]
+                {
+                    let (ptr, is_virgin) = self.alloc_small_with_virgin(class_idx);
+                    if !ptr.is_null() && !is_virgin {
+                        #[cfg(feature = "alloc-stats")]
+                        SMALL_ZERO_PASS_CALLS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        Node::zero(ptr, size);
+                    }
+                    ptr
                 }
-                ptr
+                #[cfg(not(feature = "virgin-zero-skip"))]
+                {
+                    let ptr = self.alloc_small(class_idx);
+                    if !ptr.is_null() {
+                        Node::zero(ptr, size);
+                    }
+                    ptr
+                }
             }
             AllocKind::Large => {
                 let (ptr, is_fresh) = self.alloc_large(size, align);

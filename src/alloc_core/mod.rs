@@ -124,6 +124,21 @@ pub use alloc_core::AllocCore;
 /// module path and must remain available regardless of feature set).
 #[cfg(feature = "alloc-stats")]
 pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
+/// R12-10 (task #261, `virgin-zero-skip`) test seam: the process-wide
+/// Small-path explicit zero-pass counter, re-exported crate-wide so
+/// `HeapCore::alloc_zeroed` (registry) can bump the SAME counter
+/// `AllocCore::alloc_zeroed` bumps. Read via
+/// `AllocCore::dbg_small_zero_pass_count`. Not public API. Mirrors
+/// [`LARGE_ZERO_PASS_CALLS`]'s identical re-export discipline, gated on
+/// BOTH `alloc-stats` AND `virgin-zero-skip` — unlike the Large counter, the
+/// only consumer (the registry-side increment site in
+/// `HeapCore::alloc_zeroed`) is nested inside a `virgin-zero-skip`-gated
+/// block first and `alloc-stats`-gated second, so `alloc-stats` alone
+/// (without `virgin-zero-skip`) has no consumer of this re-export — gating
+/// on both avoids an "unused import" warning in that combination. The
+/// static itself stays always-compiled.
+#[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
+pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
