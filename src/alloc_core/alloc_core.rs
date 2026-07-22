@@ -363,8 +363,28 @@ pub struct AllocCore {
     /// the slot-recycle invalidation argument and the resulting staleness
     /// bound (a migrated thread's reads may lag the OS's real answer for
     /// the duration of the current slot claim — `claim()` to `recycle()`).
+    ///
+    /// R12-5: this claim-lifetime bound is unlimited in wall-clock time for a
+    /// long-lived claim (a `HeapCore` held by a non-pinned thread for
+    /// millions of allocations never re-queries once populated, pre-R12-5).
+    /// [`current_node_cached`](Self::current_node_cached) now additionally
+    /// forces a re-query every [`NUMA_NODE_REFRESH_PERIOD`] calls, bounding
+    /// the staleness to that many refill-misses even within a single claim.
+    /// See `docs/PHASE_NUMA_DESIGN.md` §4.1 "Bounded mid-claim refresh
+    /// (R12-5)" for the full rationale.
     #[cfg(feature = "numa-aware")]
     pub(super) cached_numa_node: Option<u32>,
+    /// R12-5: number of [`current_node_cached`](Self::current_node_cached)
+    /// calls served from cache since the value was last populated by an
+    /// actual `numa::current_node()` query (by either a cache miss or a
+    /// periodic forced refresh). Reset to `0` every time the cache is
+    /// (re-)populated; reset implicitly whenever `cached_numa_node` is set to
+    /// `None` (the next call is a miss regardless of this counter's value).
+    /// Compared against [`NUMA_NODE_REFRESH_PERIOD`] to trigger the periodic
+    /// refresh. Owner-private single-writer, same discipline as
+    /// `cached_numa_node`.
+    #[cfg(feature = "numa-aware")]
+    pub(super) numa_node_hits_since_refresh: u32,
     /// OPT-E — large-segment free-cache. A small fixed array of recently-freed
     /// large/huge segments whose OS reservations are still live. `alloc_large`
     /// checks this array first; a size-matched entry is reused without a new
@@ -764,6 +784,11 @@ impl AllocCore {
             // single-threaded by construction. See `PHASE_NUMA_DESIGN.md` §4.1.
             #[cfg(feature = "numa-aware")]
             cached_numa_node: None,
+            // R12-5: no hits served yet; the first `current_node_cached` call
+            // is a miss regardless (cache is `None`), which itself resets
+            // this counter to 0 on populate.
+            #[cfg(feature = "numa-aware")]
+            numa_node_hits_since_refresh: 0,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
             #[cfg(feature = "alloc-decommit")]
@@ -823,16 +848,58 @@ impl AllocCore {
         })
     }
 
-    /// R11-5: cached NUMA-node accessor — the hot-path replacement for
-    /// `numa::current_node()` from every per-miss / per-reservation call site.
+    /// R12-5: number of [`current_node_cached`](Self::current_node_cached)
+    /// cache hits between forced re-queries of `numa::current_node()` within
+    /// a single registry-slot claim.
     ///
-    /// Returns the cached value if this claim has already queried; otherwise
-    /// queries `numa::current_node()` once, stores the result in
-    /// [`cached_numa_node`](Self::cached_numa_node), and returns it. The
-    /// cache is invalidated at registry-slot `claim()` time by
+    /// Bounds the staleness introduced by an OS-level thread migration that
+    /// happens *mid-claim* (a long-lived, non-pinned thread the scheduler
+    /// moves to another NUMA node): without this periodic refresh, R11-5's
+    /// cache is invalidated only at the next `claim()`/`recycle()` boundary,
+    /// which for a long-lived heap may be unbounded in wall-clock time —
+    /// every subsequent allocation would keep steering new segments toward
+    /// the stale, now-wrong node indefinitely.
+    ///
+    /// **Why 128.** The refresh is charged only to
+    /// [`current_node_cached`](Self::current_node_cached) call sites, which
+    /// are exclusively refill-miss / new-segment-reservation paths
+    /// (`find_segment_with_free_impl`, `reserve_small_segment`,
+    /// `alloc_large`/`alloc_large_slow`) — never the bump-pointer
+    /// alloc/dealloc fast path. Each such call is already paying for a
+    /// free-list scan or a fresh OS segment reservation (page-table work,
+    /// often a real mmap/VirtualAlloc round-trip), so one extra
+    /// `numa::current_node()` call every 128 of them is noise by comparison,
+    /// while still bounding staleness to "at most 128 refill-misses behind a
+    /// migration" — orders of magnitude tighter than the previous
+    /// claim-lifetime bound. 128 sits in the middle of the
+    /// 64–256 range this task's review called out, and matches the order of
+    /// magnitude of [`super::segment_directory::DIRECTORY_MISS_FULL_SCAN_PERIOD`]
+    /// (64, the sibling "periodic re-validation" cadence already established
+    /// for the directory-miss trust window) — reusing a cadence the codebase
+    /// already treats as "rare enough to be free, frequent enough to bound
+    /// drift" rather than inventing an unrelated third constant. See
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 "Bounded mid-claim refresh (R12-5)"
+    /// for the full rationale and the microbenchmark this choice is checked
+    /// against.
+    #[cfg(feature = "numa-aware")]
+    pub(crate) const NUMA_NODE_REFRESH_PERIOD: u32 = 128;
+
+    /// R11-5 / R12-5: cached NUMA-node accessor — the hot-path replacement
+    /// for `numa::current_node()` from every per-miss / per-reservation call
+    /// site.
+    ///
+    /// Returns the cached value if this claim has already queried AND fewer
+    /// than [`NUMA_NODE_REFRESH_PERIOD`](Self::NUMA_NODE_REFRESH_PERIOD)
+    /// cache hits have been served since the last real query; otherwise
+    /// queries `numa::current_node()`, stores the result in
+    /// [`cached_numa_node`](Self::cached_numa_node), resets the hit counter,
+    /// and returns it. The cache is ALSO invalidated at registry-slot
+    /// `claim()` time by
     /// [`invalidate_numa_node_cache`](Self::invalidate_numa_node_cache) so a
     /// recycled slot never hands a stale node to a new owning thread. See
-    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note.
+    /// `docs/PHASE_NUMA_DESIGN.md` §4.1 for the full design note, including
+    /// the R12-5 bounded mid-claim refresh this periodic re-query adds on
+    /// top of R11-5's slot-recycle invalidation.
     ///
     /// Gate: only present under `numa-aware`. Compiled out otherwise (the
     /// call sites are also `#[cfg(feature = "numa-aware")]`, so there is no
@@ -841,10 +908,18 @@ impl AllocCore {
     #[inline]
     pub(crate) fn current_node_cached(&mut self) -> u32 {
         if let Some(n) = self.cached_numa_node {
-            return n;
+            if self.numa_node_hits_since_refresh < Self::NUMA_NODE_REFRESH_PERIOD {
+                self.numa_node_hits_since_refresh += 1;
+                return n;
+            }
+            // R12-5: hit budget exhausted — force a re-query even though the
+            // cache is still `Some`, so a thread that migrated mid-claim is
+            // caught within `NUMA_NODE_REFRESH_PERIOD` refill-misses instead
+            // of waiting for the next `claim()`.
         }
         let n = numa::current_node();
         self.cached_numa_node = Some(n);
+        self.numa_node_hits_since_refresh = 0;
         n
     }
 
@@ -857,11 +932,19 @@ impl AllocCore {
     /// `claim`'s state-CAS already establishes) lives in
     /// `docs/PHASE_NUMA_DESIGN.md` §4.1.
     ///
+    /// R12-5: also resets the refresh-hit counter. Not strictly required for
+    /// correctness (the very next call is a miss regardless of the counter's
+    /// value, since `cached_numa_node` is `None`), but keeps the two fields
+    /// consistent with each other so a future reader of `dbg_cached_numa_node`
+    /// alongside a hypothetical debug accessor for the counter never observes
+    /// a stale non-zero count paired with a `None` cache.
+    ///
     /// Gate: only present under `numa-aware`.
     #[cfg(feature = "numa-aware")]
     #[inline]
     pub(crate) fn invalidate_numa_node_cache(&mut self) {
         self.cached_numa_node = None;
+        self.numa_node_hits_since_refresh = 0;
     }
 
     /// R11-5 test-only: read the cached NUMA-node value without populating

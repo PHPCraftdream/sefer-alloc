@@ -452,6 +452,118 @@ no number is claimed for it):
 | Per-call | ~230 ns | ~985 ps | ~233x |
 | Batch of 1024 (realistic claim lifetime) | ~227 µs | ~573 ns | ~396x |
 
+### Bounded mid-claim refresh (R12-5)
+
+**Problem being addressed.** §4.1's staleness bound above ("a thread's
+`current_node()` reads may lag the OS's real answer for the duration of the
+current slot claim — `claim()` to `recycle()`") is *unbounded in wall-clock
+time* for a long-lived claim. A `HeapCore` held by a single thread for
+minutes or hours (a long-running worker thread that is never re-pinned and
+that the OS scheduler eventually migrates to a different NUMA node —
+`sched_setaffinity`/scheduler load-balancing on Linux, or the analogous
+Windows scheduler behaviour, acting on a thread that never called
+`SetThreadAffinityMask`) would, pre-R12-5, keep steering every new segment
+reservation toward the STALE pre-migration node for the rest of that claim's
+lifetime — silently undoing R11-6's directory-locality win, since the
+directory's node-bucket preference is driven by this same cached value. This
+is not a memory-safety defect (a wrong `node_id` never causes UB, only
+suboptimal locality — same characterisation as the base staleness bound
+above), but an unbounded-duration one is a real regression risk for anything
+that is not both `numa-aware` AND `pinning`.
+
+**Fix — a bounded per-claim refresh counter.** `AllocCore` gains a second
+field, `numa_node_hits_since_refresh: u32`, counting cache hits served by
+`current_node_cached()` since the value was last populated by a real
+`numa::current_node()` query. `current_node_cached()` now returns the cached
+value only while this counter is below
+`AllocCore::NUMA_NODE_REFRESH_PERIOD` (`128`); once the budget is exhausted,
+the very next call forces a real re-query — exactly as if the cache had been
+`None` — and resets the counter to `0`. `invalidate_numa_node_cache()`
+(the existing R11-5 claim-boundary invalidation) also resets the counter, so
+the two fields never observably disagree (a fresh claim always starts a
+fresh 128-call budget).
+
+**Why the trigger is "N calls to the cached accessor", not "N allocations"
+or a wall-clock timer.** Every call site of `current_node_cached()` is
+already a refill-miss or new-segment-reservation path —
+`find_segment_with_free_impl`, `reserve_small_segment`
+(`src/alloc_core/alloc_core_small.rs`), and `alloc_large`/`alloc_large_slow`
+(`src/alloc_core/alloc_core_large.rs`) — never the bump-pointer
+alloc/dealloc fast path (that path never touches NUMA state at all). Each of
+these call sites is already paying for a free-list linear scan or an actual
+OS segment reservation (a real mmap/VirtualAlloc round-trip, page-table
+work), so charging one extra `numa::current_node()` call there every 128
+times is negligible relative to the work already being done at that call
+site — unlike gating on a wall-clock timer (which would need an
+`Instant::now()` read, itself non-trivial, on a path some builds want to
+stay branch-cheap) or a raw allocation counter (which WOULD run in the hot
+bump-pointer path and reintroduce per-op overhead R11-5 specifically
+eliminated).
+
+**Why 128.** Sits in the middle of the 64–256 per-class range this task's
+review suggested, and deliberately matches the order of magnitude of
+`DIRECTORY_MISS_FULL_SCAN_PERIOD` (`src/alloc_core/segment_directory.rs`,
+`= 64`) — the sibling "periodic re-validation" cadence the directory-miss
+trust window already established as "rare enough to be free, frequent
+enough to bound drift" for a structurally similar problem (bounding how
+long a trusted-but-possibly-stale signal can go unchecked). Reusing that
+order of magnitude is a judgement call, not a re-derivation from first
+principles: this task's `benches/numa_current_node_cache.rs` per-call
+cache-hit cost on this host went from ~1.1 ns (pure `Option` load) to ~3.6
+ns (load + compare + increment) after adding the counter check — a ~2.5 ns
+increase that is still ~70x cheaper than the ~250 ns real syscall/API-call
+cost the cache exists to defray, and (per the paragraph above) is paid only
+at refill-miss/reservation call sites, never in the bump-pointer fast path.
+A future tuning pass could sweep the exact constant against a live
+migration-heavy multi-socket workload; 128 is the honest "reasonable
+default in the suggested range, justified by the existing sibling
+constant's precedent" choice made without such a workload available on this
+development host.
+
+**What is NOT changed.** The directory full-rescan / periodic-revalidation
+path (`find_segment_with_free_impl`'s `periodic_revalidation_active` branch,
+gated on `alloc-segment-directory`) was considered as an ADDITIONAL, free
+invalidation point (it already runs an O(S) linear scan every
+`DIRECTORY_MISS_FULL_SCAN_PERIOD` misses, so one more `current_node()` call
+there would be unmeasurable) but was NOT wired up: that path is
+`#[cfg(not(feature = "numa-aware"))]`-adjacent in its directory-driven form
+(the R11-6 comment at `alloc_core_small.rs` notes the directory-driven
+lookup itself is disabled under `numa-aware`, with the linear-scan two-pass
+fallback handling NUMA preference instead), so the periodic-revalidation
+counter that would need to trigger the extra refresh is not on the
+`numa-aware` hot path in the first place. The per-call counter in
+`current_node_cached()` already covers every `numa-aware` call site
+directly and uniformly; adding a second trigger through the directory path
+would be redundant complexity without a call site that needs it.
+
+**Resulting staleness bound (supersedes the plain §4.1 statement above).**
+A thread's `current_node()` reads now lag the OS's real answer for **at
+most `min(claim lifetime, NUMA_NODE_REFRESH_PERIOD refill-misses)`** — the
+existing claim-boundary invalidation still applies (a `recycle()`/`claim()`
+cycle always re-queries immediately), and now additionally, within a single
+long-lived claim, staleness cannot exceed 128 refill-misses regardless of
+how long the claim itself lives. The per-segment lag from §4 Strategy (a)
+("existing segments keep their old `node_id` if the OS migrates the thread
+mid-life") is unchanged by this fix — only the *query* staleness is now
+bounded, not the existing segments' stamped `node_id`s, which is the same
+distinction the plain §4.1 bound already drew.
+
+**Test coverage.** `tests/numa_periodic_refresh.rs` (gated on
+`numa-aware-mock`) scripts the mock to node A, populates the cache, then
+scripts the mock to node B WITHOUT going through `claim`/`recycle`
+(simulating an OS-level migration the registry never observes), drives
+`NUMA_NODE_REFRESH_PERIOD + 1` more calls through the cached accessor, and
+asserts the cache has caught up to node B. A companion assertion
+immediately after the simulated migration (before the refresh budget is
+exhausted) checks the cache STILL reports the stale node A — proving the
+mechanism is genuinely caching, not vacuously always re-querying, which is
+the premise the refresh-bound assertion depends on. Verified as a genuine
+red-before/green-after regression: temporarily reverting
+`current_node_cached()` to its pre-R12-5 form (dropping the refresh-budget
+branch) makes this test fail with `left: Some(1), right: Some(9)` — the
+cache stuck at the pre-migration node exactly as the unbounded-staleness
+problem predicts.
+
 ---
 
 ## §5. Testing without real hardware
