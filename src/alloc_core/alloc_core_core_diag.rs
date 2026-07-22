@@ -675,6 +675,44 @@ impl AllocCore {
         super::segment_directory::NODE_BITMAPS
     }
 
+    /// R13-2 (task #272) TEST-ONLY: read the CURRENT read-only bucket index
+    /// `node_id` maps to (mirrors `SegmentDirectory::node_bucket` — does NOT
+    /// register a new bucket). Returns `super::segment_directory::MAX_NODES`
+    /// (the shared unknown-bucket index) for a node that has never claimed a
+    /// bucket, OR whose bucket was freed by the R13-2 reuse mechanism because
+    /// every bit it ever set went back to 0. Returns `None` if the directory
+    /// is not materialised. Lets the bucket-slot-reuse migration test observe
+    /// directly whether a node id lands in a REAL per-node bucket or has
+    /// fallen back to the shared unknown bucket, without depending on which
+    /// class/slot bits happen to be set at the moment of the check.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[must_use]
+    pub fn dbg_directory_node_bucket_for(&self, node_id: u32) -> Option<usize> {
+        self.directory().map(|dir| dir.node_bucket_ro(node_id))
+    }
+
+    /// R13-2 (task #272) TEST-ONLY: read the current value of the R13-2
+    /// active-bit counter for real-node bucket index `bucket` (`[0,
+    /// MAX_NODES)`). Returns `None` if the directory is not materialised or
+    /// `bucket >= MAX_NODES` (the shared unknown bucket has no counter — see
+    /// `SegmentDirectory::active_bits_by_node`'s doc comment). Lets a test
+    /// verify the counter reaches exactly 0 (and no lower/higher) when a
+    /// bucket's node is driven fully idle, independent of the derived
+    /// `dbg_directory_node_bucket_for` bucket-index observation.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[must_use]
+    pub fn dbg_directory_active_bits_for_bucket(&self, bucket: usize) -> Option<u32> {
+        self.directory().and_then(|dir| {
+            if bucket < super::segment_directory::MAX_NODES {
+                Some(dir.active_bits_by_node[bucket])
+            } else {
+                None
+            }
+        })
+    }
+
     /// R11-6 TEST-ONLY: read the bit for `(node_bucket, class_idx, slot_idx)`
     /// directly by bucket index (not node_id). Used by the NUMA oracle to
     /// iterate all buckets and compare incremental vs rebuild per-bucket.
@@ -920,6 +958,22 @@ impl AllocCore {
                         dir.class_nonempty_by_node[nb][c][w] = 0;
                     }
                 }
+            }
+            // R13-2 (task #272): the bit storage above was zeroed by a RAW
+            // field write (not `clear_bit`), so the per-bucket active-bit
+            // counters `set_bit` maintains below (via `rebuild_from_table`)
+            // must be zeroed in lock-step here — otherwise `set_bit`'s
+            // "was this bit previously 0" check stays correct (the bits
+            // really are 0), but the stale non-zero counts left over from
+            // before this reset would make an otherwise-correct re-derivation
+            // under-report emptiness, or in the worst case never reach 0 and
+            // so never free a bucket that IS now fully idle. `node_ids`
+            // itself is deliberately NOT reset (see the comment below) — only
+            // the derived counters that track occupancy of the bits, not the
+            // node->bucket identity mapping.
+            #[cfg(feature = "numa-aware")]
+            {
+                dir.active_bits_by_node = [0; super::segment_directory::MAX_NODES];
             }
             // R12-2: deliberately do NOT reset `node_ids` here. The dense
             // node-id -> bucket mapping is established ONCE, at first

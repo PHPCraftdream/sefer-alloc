@@ -253,6 +253,58 @@ pub(crate) const NODE_BITMAPS: usize = MAX_NODES + 1;
 #[cfg(feature = "numa-aware")]
 const NODE_SLOT_EMPTY: u32 = u32::MAX;
 
+// ── R13-2 (task #272): bucket-slot reuse ────────────────────────────────────
+//
+// R12-2's `node_ids` registration table is append-only: a node claims a free
+// slot on first use and NEVER releases it, even after every segment on that
+// node is gone. On a host (or a long-lived heap) that observes more than
+// `MAX_NODES` DISTINCT node ids over its lifetime — migration across cgroups,
+// a scheduler that rebalances threads across NUMA nodes over time, or simply
+// a long-running process that eventually touches a 9th node — every node
+// past the 8th permanently lands in the shared unknown bucket, even once
+// several of the first 8 buckets have gone completely idle (every class of
+// that bucket empty, i.e. the node currently owns zero live segments for this
+// heap). This defeats the R11-6 locality optimisation forever for any such
+// heap, which is exactly the kind of long-lived-heap regression the R10-6/
+// R11-6/R12-2 line of work was meant to fix, not reintroduce.
+//
+// Fix: track, per REAL-node bucket (`[0, MAX_NODES)`; the shared unknown
+// bucket `MAX_NODES` is never reused — see below), a live count of SET bits
+// across every `(class, word)` cell in that bucket's `WORDS_PER_CLASS *
+// SMALL_CLASS_COUNT` bitmap. `set_bit`/`clear_bit` inspect the PREVIOUS value
+// of the bit they are about to touch (not the caller's claimed empty/non-empty
+// transition) before updating the counter, so the counter is correct
+// regardless of caller discipline — in particular it stays correct across
+// `rebuild_from_table` (which calls `set_bit` unconditionally for every
+// non-empty class head found, with no prior "was this a transition" check)
+// and the test-only `dbg_directory_force_clear_bit` hook (which manufactures
+// a clear outside the normal empty/non-empty invariant). When a real-node
+// bucket's counter reaches 0 — every bit in that bucket's ENTIRE bitmap is
+// now clear, i.e. every class on every segment ever attributed to that node
+// is empty — the bucket's `node_ids` slot is freed (`NODE_SLOT_EMPTY`) and
+// immediately eligible for `node_bucket_mut` to hand to the next
+// never-before-seen node, exactly as if that slot had never been claimed.
+//
+// This is authoritative, not a false-negative hazard: the counter tracks the
+// SAME bits `dbg_directory_get_bit`/the directory scan reads, so "counter is
+// 0" and "no candidate bit is set anywhere in this bucket" are the same fact
+// by construction — freeing the slot cannot hide a live segment the directory
+// scan itself would still have found (there is nothing left for the scan to
+// find in that bucket). The existing periodic full-scan self-heal
+// (`DIRECTORY_MISS_FULL_SCAN_PERIOD`) and OOM rescue scan remain the
+// independent backstop for any UNRELATED directory-invariant drift; this
+// mechanism does not touch or weaken either.
+//
+// The unknown bucket (`MAX_NODES`) is deliberately excluded from reuse: it is
+// not owned by a single node id (`node_ids` has no slot for it — it is the
+// overflow/`NO_NODE_RAW` catch-all), so there is no `node_ids` entry to free
+// and no reuse to perform for it.
+#[cfg(feature = "numa-aware")]
+const _: () = assert!(
+    MAX_NODES <= u32::MAX as usize,
+    "MAX_NODES must fit the active-bit counter width used below"
+);
+
 /// Per-class segment directory — the owner-only `class_nonempty` bitmap.
 ///
 /// One file, one export (CLAUDE.md). See the module doc for the full design.
@@ -287,6 +339,23 @@ pub(crate) struct SegmentDirectory {
     /// `init_node_ids`, called once right after the sidecar is reserved.
     #[cfg(feature = "numa-aware")]
     pub(crate) node_ids: [u32; MAX_NODES],
+
+    /// R13-2 (task #272): live count of SET bits across bucket `b`'s entire
+    /// `class_nonempty_by_node[b]` bitmap (every class, every word). Indexed
+    /// `[0, MAX_NODES)` — the shared unknown bucket (`MAX_NODES`) has no
+    /// counter slot (it is never reused; see the module-level R13-2 note).
+    /// `set_bit`/`clear_bit` increment/decrement this on an ACTUAL bit-value
+    /// change (checked against the previous value, not the caller's claimed
+    /// transition); when a real bucket's count reaches 0 its `node_ids` slot
+    /// is freed for reuse by a future never-before-seen node. OS-zero pages
+    /// ARE a valid initial state (all bits clear => all counts 0), so this
+    /// field, unlike `node_ids`, needs no explicit re-init on first
+    /// materialisation. The already-materialised `dbg_rebuild_directory`
+    /// re-run path zeroes this field itself, in lock-step with its raw
+    /// zeroing of the bit storage, before re-deriving both via
+    /// `rebuild_from_table` (see that call site's R13-2 comment).
+    #[cfg(feature = "numa-aware")]
+    pub(crate) active_bits_by_node: [u32; MAX_NODES],
 }
 
 impl SegmentDirectory {
@@ -309,14 +378,27 @@ impl SegmentDirectory {
 
     /// R12-2: map a segment `node_id` to its directory bucket index,
     /// REGISTERING a new bucket for a never-before-seen node id if a free
-    /// slot remains. Used by the write paths (`set_bit` / `clear_bit`), which
-    /// are the only places a previously-unseen node can be discovered (a
-    /// segment is stamped with its node id and then bits are set for it).
+    /// slot remains. Used ONLY by [`set_bit`](Self::set_bit) — the sole write
+    /// path that can discover a previously-unseen node (a segment is stamped
+    /// with its node id and then bits are set for it; `clear_bit` uses the
+    /// read-only `node_bucket` instead, see its own doc comment for why —
+    /// R13-2/task #272 fix).
     ///
     /// `NO_NODE_RAW` (`u32::MAX`) and any node id once all `MAX_NODES` slots
     /// are claimed by OTHER distinct nodes map to the shared unknown bucket
     /// (`MAX_NODES`). Under non-`numa-aware`, always returns 0 (the single
     /// bucket) regardless of `node_id`.
+    ///
+    /// ## R13-2: slots can be reused
+    ///
+    /// A "free slot" is not only one that has NEVER been claimed — it also
+    /// includes a slot a PREVIOUSLY-registered node released because every
+    /// bit it ever set went back to 0 (see
+    /// [`active_bits_by_node`](Self::active_bits_by_node) and `set_bit`'s /
+    /// `clear_bit`'s bookkeeping). Reuse is transparent to this function: a
+    /// freed slot reads back as `NODE_SLOT_EMPTY`, identical to a slot that
+    /// was never claimed, so the "claim the next free slot" search below
+    /// picks it up the same way either way.
     ///
     /// ## Registration order is real-time, not table-slot order
     ///
@@ -363,16 +445,20 @@ impl SegmentDirectory {
     }
 
     /// R12-2: read-only counterpart of `node_bucket_mut` — looks up a node
-    /// id's bucket WITHOUT registering a new one. Used by `get_bit` (the only
-    /// remaining caller: the scan-order bucket-list construction in
+    /// id's bucket WITHOUT registering a new one. Used by `get_bit` and (R13-2,
+    /// task #272) `clear_bit`: a node that owns no bit yet (either because it
+    /// has never been seen, or because its bucket was just freed by the R13-2
+    /// reuse mechanism — see `active_bits_by_node`) has nothing to clear, so
+    /// registering a fresh bucket for it here would be pure waste of a scarce
+    /// slot for a no-op. The scan-order bucket-list construction in
     /// `alloc_core_small.rs` goes through `os::read_directory_node_bucket`
-    /// instead, to preserve the R12-1 no-live-reference discipline) where
-    /// allocating a fresh bucket for a never-before-seen node would be
-    /// meaningless (a node that owns no segment yet has no bits to read). A
-    /// node id not found in `node_ids` maps to the shared unknown bucket,
-    /// matching `node_bucket_mut`'s overflow behaviour. `numa-aware`-only:
-    /// under non-`numa-aware` there is only bucket 0 and `get_bit` itself is
-    /// compiled out, so this method would otherwise be dead code.
+    /// instead, to preserve the R12-1 no-live-reference discipline. A node id
+    /// not found in `node_ids` maps to the shared unknown bucket, matching
+    /// `node_bucket_mut`'s overflow behaviour — clearing a bit that was never
+    /// set in the unknown bucket is itself a harmless no-op (the bit is
+    /// already 0). `numa-aware`-only: under non-`numa-aware` there is only
+    /// bucket 0 and both callers use `node_bucket_mut`'s trivial `0` return
+    /// directly, so this method would otherwise be dead code.
     #[cfg(feature = "numa-aware")]
     #[inline]
     fn node_bucket(&self, node_id: u32) -> usize {
@@ -385,11 +471,30 @@ impl SegmentDirectory {
         }
     }
 
+    /// R13-2 (task #272) TEST-ONLY: `pub(crate)` forwarder for `node_bucket`,
+    /// backing `AllocCore::dbg_directory_node_bucket_for`. Kept as a thin
+    /// wrapper (rather than widening `node_bucket`'s own visibility) so the
+    /// production call sites of `node_bucket` stay `fn`-private and this
+    /// test-only entry point is the one, clearly-named, place a test reaches
+    /// through.
+    #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
+    #[inline]
+    pub(crate) fn node_bucket_ro(&self, node_id: u32) -> usize {
+        self.node_bucket(node_id)
+    }
+
     /// Set the bit for slot `slot_idx` in class `class_idx` in the bitmap for
     /// the node derived from `node_id`. R11-6/R12-2: `node_id` selects the
     /// per-node bucket under `numa-aware` (registering a new bucket for a
     /// never-before-seen node id, see `node_bucket_mut`); under
     /// non-`numa-aware` it is ignored (single bucket).
+    ///
+    /// R13-2 (task #272): under `numa-aware`, if this call ACTUALLY flips the
+    /// bit from 0 to 1 (idempotent re-sets of an already-set bit — e.g. a
+    /// `rebuild_from_table` pass re-deriving a bit the incremental path had
+    /// already set — do not double-count), bumps `active_bits_by_node[nb]`
+    /// for a real-node bucket (`nb < MAX_NODES`; the shared unknown bucket has
+    /// no counter slot and is never reused, see the module-level R13-2 note).
     #[inline]
     pub(crate) fn set_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
@@ -397,19 +502,77 @@ impl SegmentDirectory {
         let nb = self.node_bucket_mut(node_id);
         let word = slot_idx / 64;
         let bit = slot_idx % 64;
-        self.class_nonempty_by_node[nb][class_idx][word] |= 1u64 << bit;
+        let mask = 1u64 << bit;
+        let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
+        // R13-2: only `numa-aware` maintains the active-bit counter (there is
+        // no bucket-reuse concept under a single flat bucket), so the
+        // previous-value check that feeds it is itself gated — a plain OR
+        // under non-`numa-aware` avoids the extra read+compare.
+        #[cfg(feature = "numa-aware")]
+        {
+            let was_set = *cell & mask != 0;
+            *cell |= mask;
+            if !was_set && nb < MAX_NODES {
+                self.active_bits_by_node[nb] += 1;
+            }
+        }
+        #[cfg(not(feature = "numa-aware"))]
+        {
+            *cell |= mask;
+        }
     }
 
     /// Clear the bit for slot `slot_idx` in class `class_idx` in the bitmap for
     /// the node derived from `node_id`.
+    ///
+    /// R13-2 (task #272): uses the READ-ONLY `node_bucket` lookup (never
+    /// `node_bucket_mut`) — a node that has never published a non-empty class
+    /// has no bit to clear here regardless, so registering a fresh bucket for
+    /// it would only waste one of the limited `MAX_NODES` registration slots
+    /// on a guaranteed no-op (this was the pre-R13-2 defect: a drain that
+    /// reclaims into a class's bin table and then synchronously re-empties it
+    /// in the same pass calls `clear_bit` for a node that never got as far as
+    /// `set_bit`, needlessly burning a slot). Under `numa-aware`, if this call
+    /// ACTUALLY flips the bit from 1 to 0, decrements
+    /// `active_bits_by_node[nb]` for a real-node bucket; when that counter
+    /// reaches 0 (every bit this bucket ever set is now clear — the node owns
+    /// no live non-empty class anywhere), the bucket's `node_ids` slot is
+    /// freed (`NODE_SLOT_EMPTY`) for a future never-before-seen node to claim
+    /// via `node_bucket_mut`.
     #[inline]
     pub(crate) fn clear_bit(&mut self, node_id: u32, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
         debug_assert!(slot_idx < MAX_SEGMENTS);
+        #[cfg(not(feature = "numa-aware"))]
         let nb = self.node_bucket_mut(node_id);
+        #[cfg(feature = "numa-aware")]
+        let nb = self.node_bucket(node_id);
         let word = slot_idx / 64;
         let bit = slot_idx % 64;
-        self.class_nonempty_by_node[nb][class_idx][word] &= !(1u64 << bit);
+        let mask = 1u64 << bit;
+        let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
+        #[cfg(feature = "numa-aware")]
+        {
+            let was_set = *cell & mask != 0;
+            *cell &= !mask;
+            if was_set && nb < MAX_NODES {
+                debug_assert!(
+                    self.active_bits_by_node[nb] > 0,
+                    "clear_bit: active_bits_by_node[{nb}] underflow — a bit was \
+                     observed set but the bucket's active-bit counter was already 0"
+                );
+                self.active_bits_by_node[nb] -= 1;
+                if self.active_bits_by_node[nb] == 0 {
+                    // Every bit this bucket ever set is now clear: free the
+                    // slot for reuse by a future never-before-seen node.
+                    self.node_ids[nb] = NODE_SLOT_EMPTY;
+                }
+            }
+        }
+        #[cfg(not(feature = "numa-aware"))]
+        {
+            *cell &= !mask;
+        }
     }
 
     /// Read the bit for slot `slot_idx` in class `class_idx` in the bitmap for
@@ -434,6 +597,15 @@ impl SegmentDirectory {
     /// (e.g. clearing a stale bit whose base is null — the segment was
     /// recycled). Under non-`numa-aware` (`NODE_BITMAPS == 1`) this is
     /// identical to `clear_bit`.
+    ///
+    /// R13-2 (task #272): maintains `active_bits_by_node` in lock-step with
+    /// `clear_bit`, iterating every real-node bucket (the unknown bucket has
+    /// no counter). Without this, a bit cleared through THIS path (rather
+    /// than `clear_bit`) would never decrement the owning bucket's counter,
+    /// so a bucket that becomes genuinely idle via a null-base clear could
+    /// never reach 0 and would stay permanently unreusable — silently
+    /// reintroducing the append-only defect this task fixes, just for one
+    /// specific clear path instead of all of them.
     #[inline]
     pub(crate) fn clear_bit_all_nodes(&mut self, class_idx: usize, slot_idx: usize) {
         debug_assert!(class_idx < SMALL_CLASS_COUNT);
@@ -441,7 +613,26 @@ impl SegmentDirectory {
         let word = slot_idx / 64;
         let mask = !(1u64 << (slot_idx % 64));
         for nb in 0..NODE_BITMAPS {
-            self.class_nonempty_by_node[nb][class_idx][word] &= mask;
+            let cell = &mut self.class_nonempty_by_node[nb][class_idx][word];
+            #[cfg(feature = "numa-aware")]
+            {
+                let was_set = *cell & !mask != 0;
+                *cell &= mask;
+                if was_set && nb < MAX_NODES {
+                    debug_assert!(
+                        self.active_bits_by_node[nb] > 0,
+                        "clear_bit_all_nodes: active_bits_by_node[{nb}] underflow"
+                    );
+                    self.active_bits_by_node[nb] -= 1;
+                    if self.active_bits_by_node[nb] == 0 {
+                        self.node_ids[nb] = NODE_SLOT_EMPTY;
+                    }
+                }
+            }
+            #[cfg(not(feature = "numa-aware"))]
+            {
+                *cell &= mask;
+            }
         }
     }
 
@@ -449,6 +640,12 @@ impl SegmentDirectory {
     /// segment recycle — A2 scope, but the primitive belongs here alongside
     /// the other bit ops). R11-6: iterates all node buckets so a reused slot
     /// does not inherit stale bits from any node's bitmap.
+    ///
+    /// R13-2 (task #272): maintains `active_bits_by_node` in lock-step — see
+    /// `clear_bit_all_nodes`'s doc comment for why this matters (segment
+    /// recycle, the caller of this function, is exactly the common case that
+    /// drives a node's bucket to genuine idleness, so this path bypassing the
+    /// counter would defeat the reuse mechanism for the case it matters most).
     #[inline]
     pub(crate) fn clear_slot(&mut self, slot_idx: usize) {
         debug_assert!(slot_idx < MAX_SEGMENTS);
@@ -456,7 +653,26 @@ impl SegmentDirectory {
         let mask = !(1u64 << (slot_idx % 64));
         for nb in 0..NODE_BITMAPS {
             for c in 0..SMALL_CLASS_COUNT {
-                self.class_nonempty_by_node[nb][c][word] &= mask;
+                let cell = &mut self.class_nonempty_by_node[nb][c][word];
+                #[cfg(feature = "numa-aware")]
+                {
+                    let was_set = *cell & !mask != 0;
+                    *cell &= mask;
+                    if was_set && nb < MAX_NODES {
+                        debug_assert!(
+                            self.active_bits_by_node[nb] > 0,
+                            "clear_slot: active_bits_by_node[{nb}] underflow"
+                        );
+                        self.active_bits_by_node[nb] -= 1;
+                        if self.active_bits_by_node[nb] == 0 {
+                            self.node_ids[nb] = NODE_SLOT_EMPTY;
+                        }
+                    }
+                }
+                #[cfg(not(feature = "numa-aware"))]
+                {
+                    *cell &= mask;
+                }
             }
         }
     }

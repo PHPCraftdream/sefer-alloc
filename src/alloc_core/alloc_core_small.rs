@@ -540,16 +540,24 @@ impl AllocCore {
         // full scan still runs as a safety net (and self-heals any drift it
         // finds — see the success path of the linear scan below).
         //
-        // P2 (NUMA two-pass preference): when `numa-aware` is active,
-        // the directory-driven lookup is DISABLED — the linear-scan
-        // fallback below handles the two-pass local-first /
-        // foreign-fallback NUMA preference. The directory bitmap is
-        // still maintained (A1/A2 helpers fire normally), so the
-        // sidecar stays consistent for a future round that adds
-        // node-aware bit selection. This preserves `--all-features`
-        // compatibility: both features compile together, but the
-        // directory is a write-only index under `numa-aware` until
-        // node-aware queries are implemented.
+        // P2 (NUMA two-pass preference) — R11-6 UPDATE: the paragraph that
+        // used to be here (pre-R11-6) said the directory-driven lookup is
+        // DISABLED under `numa-aware` and that the directory was a
+        // write-only index until a future round added node-aware queries.
+        // That round happened: R11-6 (task #234) added the node-indexed
+        // `class_nonempty_by_node` bitmap and wired the per-bucket scan below
+        // (`buckets`/`n_buckets`, built from `os::read_directory_node_bucket`)
+        // so the directory-driven lookup IS active under `numa-aware` too —
+        // it visits the caller's own node bucket first, then the shared
+        // unknown bucket, then every foreign real-node bucket in ascending
+        // order, implementing the same local-first / foreign-fallback
+        // two-pass preference the linear-scan fallback below independently
+        // provides for when the directory is not materialised (below the
+        // threshold) or misses. Both paths honour the preference; they are
+        // not "directory disabled, linear scan does NUMA" as this comment
+        // used to claim — they are two independently NUMA-aware
+        // implementations of the same preference, used depending on whether
+        // the directory sidecar is materialised.
         // ── R7-A4: dirty-segment drain ──────────────────────────────────────
         //
         // Before querying the directory, drain ALL dirty segments' rings.
