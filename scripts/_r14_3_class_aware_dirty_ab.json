@@ -1,0 +1,16 @@
+{
+  "metric": "elapsed_ns",
+  "build": null,
+  "arms": {
+    "off": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/paired_ab_class_aware_dirty_off.exe",
+      "args": []
+    },
+    "on": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/paired_ab_class_aware_dirty_on.exe",
+      "args": []
+    }
+  },
+  "default_comparisons": [["off", "on"]],
+  "features_note": "off: production,alloc-stats | on: production,alloc-stats,class-aware-dirty"
+}

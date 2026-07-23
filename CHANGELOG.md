@@ -122,14 +122,20 @@ the full production A/B/B/A wave report.
   and there is no non-linear wall-clock cost approaching the wall.
 - **R13-9 (`bebd902`, `da77b38`, task #279) — `class-aware-dirty` promoted
   into `production`.** Production A/B gate (`docs/perf/
-  R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`): 21.71× ns/owner_alloc at
-  N=8 concurrent producer classes (re-measured on top of R13-1's latch fix,
-  inside R12-7's own pre-latch 19.7–32.4× range), iai confirms +0.00% to
-  +0.02% Ir on 12 non-remote single-thread benches (zero cost outside
-  cross-thread paths), ~8 KiB RSS sidecar per materialised heap (corrects
-  R12-7's own doc, which cited the raw un-page-rounded 6.1 KiB `size_of`
-  figure). GO recommendation accepted by explicit user confirmation
-  (`AskUserQuestion`) before the `Cargo.toml` edit.
+  R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`): 21.71× SUB-WINDOW
+  `ns/owner_alloc` at N=8 concurrent producer classes (re-measured on top of
+  R13-1's latch fix, inside R12-7's own pre-latch 19.7–32.4× range) — R14-3
+  (task #288, `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`) later
+  corrected the headline framing: criterion's own FULL-ROUND mean on the same
+  harness/raw logs moved only ~11% at N=8 (~1.6% at N=4), since most of the
+  sub-window's apparent reduction is deferred drain work moving into the
+  round's unmeasured pre-alloc/recycle phases rather than disappearing — the
+  mechanism and the promotion decision are unaffected, only the headline's
+  wording. iai confirms +0.00% to +0.02% Ir on 12 non-remote single-thread
+  benches (zero cost outside cross-thread paths), ~8 KiB RSS sidecar per
+  materialised heap (corrects R12-7's own doc, which cited the raw
+  un-page-rounded 6.1 KiB `size_of` figure). GO recommendation accepted by
+  explicit user confirmation (`AskUserQuestion`) before the `Cargo.toml` edit.
 - **R13-10 (`1a2dd7d`, task #280) — wave process discipline.** Re-ran
   `npm run bench:table` on the post-R13-9 tree and refreshed README.md's
   wall-clock table, which had gone stale across two consecutive

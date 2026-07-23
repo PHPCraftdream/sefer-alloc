@@ -45,6 +45,33 @@
 //! diagnostic alongside the timing) isolates the drain-loop's per-alloc
 //! overhead more directly than raw round time.
 //!
+//! ## Two axes, printed side by side (R14-3, task #288)
+//!
+//! Three independent Round-13 reviews flagged that this bench's headline
+//! `ns/owner_alloc` figure (e.g. R13-9's "21.71x at N=8") is built from a
+//! **sub-window** timer: `run_round`'s own `start = Instant::now()` begins
+//! AFTER the pre-alloc of `BLOCKS_PER_CLASS * n` producer blocks and stops
+//! BEFORE `HeapRegistry::recycle`. Criterion's `iter()` closure, by contrast,
+//! wraps the ENTIRE `run_round` call — pre-alloc, the timed window, AND
+//! recycle — so criterion's own reported "time:" is the full-round cost, and
+//! it does NOT shrink by anywhere near the same factor the window metric
+//! does (e.g. one N=8 pairing showed ~20.6ms -> ~18.4ms full-round, an ~11%
+//! improvement, alongside an 18.8ms -> 1.35ms *window* improvement) — most of
+//! the ~17ms of drain work the window metric "removes" at N=8 did not
+//! disappear, it moved into the unmeasured pre-alloc/recycle part of the same
+//! round (see `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`'s
+//! correction note and `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`).
+//!
+//! To make this divergence visible in this bench's own output (not just in a
+//! separate report), each producer-count `n` now ALSO accumulates a
+//! `full_round_ns` figure from a second, OUTER `Instant` pair that spans the
+//! identical region criterion's `iter()` closure times (i.e. all of
+//! `run_round`, including the parts the window timer excludes). Both axes are
+//! printed on the same line — `ns/owner_alloc` (the sub-window metric) and
+//! `ns/full_round` (the whole-round metric) — so a reader sees the gap
+//! directly instead of having to cross-reference criterion's separate "time:"
+//! output by hand.
+//!
 //! ## Harness shape
 //!
 //! Deliberately IDENTICAL in structure to `tests/r9_6_class_aware_dirty_judge.rs`'s
@@ -276,7 +303,8 @@ fn bench_class_aware_dirty_wallclock(c: &mut Criterion) {
     eprintln!("═══════════════════════════════════════════════════════════════════");
 
     let sweep: &[usize] = &[1, 2, 4, 8];
-    let mut totals: Vec<(usize, f64, f64)> = Vec::with_capacity(sweep.len());
+    // (n, ns_per_round_window, ns_per_owner_alloc_window, ns_per_full_round)
+    let mut totals: Vec<(usize, f64, f64, f64)> = Vec::with_capacity(sweep.len());
 
     for &n in sweep {
         // Manual timing accumulation alongside criterion's own measurement,
@@ -285,13 +313,25 @@ fn bench_class_aware_dirty_wallclock(c: &mut Criterion) {
         // frees) grows with N. `total_ns` / `total_allocs` isolates the
         // owner-side cost per alloc, which is what the dirty-drain's O(D)
         // vs O(D_class) character governs.
+        //
+        // `total_full_round_ns` is a SEPARATE outer timer around the exact
+        // same region criterion's own `iter()` closure times (all of
+        // `run_round` — pre-alloc, the timed window, AND recycle), not just
+        // `run_round`'s internal sub-window. See this file's module doc "Two
+        // axes, printed side by side" for why both are printed rather than
+        // treating the sub-window figure as if it were the whole round's cost
+        // (R14-3, task #288 — three independent Round-13 reviews flagged the
+        // prior single-axis output as misleading on this exact point).
         let mut total_ns = 0.0f64;
         let mut total_allocs = 0.0f64;
+        let mut total_full_round_ns = 0.0f64;
         let mut iters = 0u64;
 
         group.bench_function(format!("producers={n}"), |b| {
             b.iter(|| {
+                let full_round_start = Instant::now();
                 let (elapsed, owner_allocs) = run_round(n);
+                total_full_round_ns += full_round_start.elapsed().as_nanos() as f64;
                 total_ns += elapsed.as_nanos() as f64;
                 total_allocs += owner_allocs as f64;
                 iters += 1;
@@ -309,25 +349,40 @@ fn bench_class_aware_dirty_wallclock(c: &mut Criterion) {
         } else {
             0.0
         };
+        let ns_per_full_round = if iters > 0 {
+            total_full_round_ns / iters as f64
+        } else {
+            0.0
+        };
         eprintln!(
-            "producers={n:<2}  ns/round={ns_per_round:>12.0}  ns/owner_alloc={ns_per_owner_alloc:>8.1}"
+            "producers={n:<2}  ns/round(window)={ns_per_round:>12.0}  ns/owner_alloc(window)={ns_per_owner_alloc:>8.1}  ns/full_round={ns_per_full_round:>12.0}"
         );
-        totals.push((n, ns_per_round, ns_per_owner_alloc));
+        totals.push((n, ns_per_round, ns_per_owner_alloc, ns_per_full_round));
     }
 
     eprintln!("───────────────────────────────────────────────────────────────────");
-    if let (Some(&(_, _, n1)), Some(&(_, _, n4))) = (
-        totals.iter().find(|(n, _, _)| *n == 1),
-        totals.iter().find(|(n, _, _)| *n == 4),
+    if let (Some(&(_, _, n1, full1)), Some(&(_, _, n4, full4))) = (
+        totals.iter().find(|(n, _, _, _)| *n == 1),
+        totals.iter().find(|(n, _, _, _)| *n == 4),
     ) {
         let delta_pct = if n1 > 0.0 {
             (n4 - n1) / n1 * 100.0
         } else {
             0.0
         };
+        let full_delta_pct = if full1 > 0.0 {
+            (full4 - full1) / full1 * 100.0
+        } else {
+            0.0
+        };
         eprintln!(
-            "N=1 -> N=4 ns/owner_alloc delta: {n1:.1} -> {n4:.1} ({delta_pct:+.1}%) \
+            "N=1 -> N=4 ns/owner_alloc(window) delta: {n1:.1} -> {n4:.1} ({delta_pct:+.1}%) \
              [R9-6 gate threshold: >5% => GO on stage 2, else NO-GO]"
+        );
+        eprintln!(
+            "N=1 -> N=4 ns/full_round delta: {full1:.0} -> {full4:.0} ({full_delta_pct:+.1}%) \
+             [companion axis — see module doc \"Two axes, printed side by side\"; \
+             this is the SAME region criterion's own \"time:\" output measures]"
         );
     }
     eprintln!("═══════════════════════════════════════════════════════════════════\n");

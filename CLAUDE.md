@@ -76,6 +76,16 @@ Core instructions, mandatory for all code in this repository. They
   README wall-clock table had gone stale across two consecutive rounds of
   `production` changes before this rule existed). Cite the raw logs the
   refresh was measured from (see the raw-log policy below).
+- **A wall-clock gate must report both the sub-window metric and the
+  full-round criterion time for the same harness** — not the sub-window
+  figure alone. If a harness times an internal region narrower than the
+  whole benchmarked round (e.g. skipping setup/teardown inside the timed
+  iteration), the report must also cite criterion's own full-round mean for
+  that same run, and any material gap between the two axes is itself a
+  result requiring explanation, not a detail to omit (R14-3/task #288: the
+  `class-aware-dirty` gate's "21.71×" headline was a sub-window figure whose
+  full-round improvement was actually ~11%, discovered only because three
+  independent reviews asked for the missing axis).
 - **Raw perf logs (`docs/perf/_raw_*.log`) are scratch by default** —
   `.gitignore`d (R13-10/task #280), never committed just because a `cargo
   bench`/`npm run iai` invocation happened to write one. The one exception:

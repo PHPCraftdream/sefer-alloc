@@ -49,7 +49,8 @@ summary**, per this document's own scope (a wave summary, not a new gate).
 
 | Axis | A: `production` (class-aware-dirty OFF) | B: `production` + `class-aware-dirty` (ON) | B (double-check, same gate doc §3/§9) | A (unaffected, confirmed unchanged) |
 |---|---|---|---|---|
-| Remote fan-in wall-clock, N=8 producer classes (`ns/owner_alloc`) | 23,527.4 ns | **1,083.9 ns (21.71× faster)** | Re-measured on top of R13-1's latch fix, inside R12-7's own pre-latch 19.7-32.4× range — the latch does not erode the win | N/A — this axis does not exist with the feature off |
+| Remote fan-in wall-clock, N=8 producer classes, SUB-WINDOW `ns/owner_alloc` | 23,527.4 ns | **1,083.9 ns (21.71× faster on this sub-window metric)** | Re-measured on top of R13-1's latch fix, inside R12-7's own pre-latch 19.7-32.4× range — the latch does not erode the win | N/A — this axis does not exist with the feature off |
+| Remote fan-in wall-clock, N=8, FULL ROUND (criterion mean, same harness) | ~20.6 ms | **~18.4 ms (~11% faster)** | **R14-3 correction (task #288):** the sub-window row above is NOT the round-level speedup — criterion's own full-round mean (same raw logs) moved only ~11% at N=8, ~1.6% at N=4; the sub-window's larger reduction reflects drain work moving into the unmeasured pre-alloc/recycle portion of the round, not disappearing. See `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`. | N/A |
 | Remote fan-in, N=1→N=4 delta | +89.2% (722.7→1367.3 ns) | **+35.6% (722.1→979.2 ns) — flattened** | Consistent with R12-7's own re-measurement | — |
 | iai, 12 non-remote single-thread benches (Ir) | baseline (see `IAI_BASELINE.md`) | **+0.00% to +0.02%** | Confirmed a fixed +5 Ir per bench regardless of workload shape — "feature compiled in, code path never reached," not a per-call cost | Confirmed unchanged — feature is remote-drain-only |
 | iai, same 12 benches, Estimated Cycles | baseline | **+0.00% to +0.35%** | Within noise | — |
@@ -105,10 +106,23 @@ complete answer, not just the one feature-list line in §1.
 
 ## 6. Net effect on a default `--features production` build
 
-- **One feature promoted** (`class-aware-dirty`): ~20-32× wall-clock win on
-  cross-thread remote-free-heavy workloads (N≥4 concurrent producer classes
-  sharing a heap), effectively zero cost (+0.00-0.02% Ir) everywhere else,
-  ~8 KiB RSS sidecar per materialised heap.
+- **One feature promoted** (`class-aware-dirty`): up to ~20× owner-allocation
+  SUB-WINDOW throughput win on cross-thread remote-free-heavy workloads (N≥4
+  concurrent producer classes sharing a heap) — the sub-window metric this
+  wave's own gate doc headlined. The end-to-end, full-round wall-clock
+  improvement for the same fixed amount of work is a low double-digit
+  percentage (~11% at N=8, ~1.6% at N=4, criterion's own full-round mean —
+  see the R14-3 correction, task #288,
+  `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`), because most of the
+  sub-window's apparent savings is deferred drain work moving into the
+  unmeasured pre-alloc/recycle portion of the round rather than disappearing.
+  Effectively zero cost (+0.00-0.02% Ir) everywhere else, ~8 KiB RSS sidecar
+  per materialised heap. **Future-optimization note (R14-3, not implemented):**
+  the deferred drain work behind the sub-window/full-round gap is a candidate
+  for a future round to shrink in TOTAL (e.g. batching/amortizing reclaim —
+  coalescing `sync_directory_for_segment_classes` per-segment instead of
+  per-block, or batching the recycle-time drain), not merely move within the
+  round as it does today.
 - **Five correctness fixes** landed inside code `production` already shipped
   (R13-1, R13-2, R13-3, R13-11, R13-12) — all P0/P1, none of them changed
   what `production` users need to opt into; they simply make the existing

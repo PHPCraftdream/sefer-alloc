@@ -1,0 +1,474 @@
+{
+  "timestamp": "2026-07-23T10:14:33.394Z",
+  "git_commit": "ef4db50935ad80248d9626174b7857f492bd57ec",
+  "git_dirty": true,
+  "rustc_version_verbose": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6",
+  "cpu_info": "Name=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz\r | NumberOfCores=8\r | NumberOfLogicalProcessors=16\r",
+  "power_plan": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+  "platform": "win32",
+  "cargo_features_built_with": "off: production,alloc-stats | on: production,alloc-stats,class-aware-dirty",
+  "metric": "elapsed_ns",
+  "protocol": "A/B/B/A, pairs = one block of 4 launches (A B B A), block value = mean of the 2 same-arm samples",
+  "pairs_per_comparison": 10,
+  "comparisons": [
+    {
+      "arm_a": "off",
+      "arm_b": "off",
+      "pairs": 10,
+      "samples_a_ns": [
+        50560350,
+        49830850,
+        51582250,
+        51321550,
+        49595050,
+        48536000,
+        54303300,
+        49570700,
+        51339100,
+        46755750
+      ],
+      "samples_b_ns": [
+        50933350,
+        49228650,
+        49978100,
+        51103800,
+        47864150,
+        49204700,
+        50218000,
+        48803650,
+        49254250,
+        49325100
+      ],
+      "deltas_a_minus_b_ns": [
+        -373000,
+        602200,
+        1604150,
+        217750,
+        1730900,
+        -668700,
+        4085300,
+        767050,
+        2084850,
+        -2569350
+      ],
+      "paired_t_test": {
+        "n": 10,
+        "mean": 748115,
+        "sd": 1801083.0331358963,
+        "se": 569552.463979395,
+        "t": 1.3135137626707993,
+        "df": 9,
+        "crit": 2.306,
+        "significant": false
+      },
+      "sign_test": {
+        "aFaster": 3,
+        "bFaster": 7,
+        "ties": 0,
+        "n": 10
+      },
+      "raw_process_launches": [
+        {
+          "block": 0,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50404400,
+          "window_ns": 43751100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 181,
+          "wall_clock_iso": "2026-07-23T10:14:30.811Z"
+        },
+        {
+          "block": 0,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52184500,
+          "window_ns": 46328900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:30.881Z"
+        },
+        {
+          "block": 0,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49682200,
+          "window_ns": 44022200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:30.948Z"
+        },
+        {
+          "block": 0,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50716300,
+          "window_ns": 45815200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 183,
+          "wall_clock_iso": "2026-07-23T10:14:31.015Z"
+        },
+        {
+          "block": 1,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48002300,
+          "window_ns": 42738200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:31.079Z"
+        },
+        {
+          "block": 1,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50811200,
+          "window_ns": 44521500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:31.146Z"
+        },
+        {
+          "block": 1,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 47646100,
+          "window_ns": 41999600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:31.210Z"
+        },
+        {
+          "block": 1,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 51659400,
+          "window_ns": 45270900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.278Z"
+        },
+        {
+          "block": 2,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50285400,
+          "window_ns": 44620800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:31.345Z"
+        },
+        {
+          "block": 2,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 51500100,
+          "window_ns": 45141100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 181,
+          "wall_clock_iso": "2026-07-23T10:14:31.414Z"
+        },
+        {
+          "block": 2,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48456100,
+          "window_ns": 42327800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.477Z"
+        },
+        {
+          "block": 2,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52879100,
+          "window_ns": 47596900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.546Z"
+        },
+        {
+          "block": 3,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49478300,
+          "window_ns": 43548800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.611Z"
+        },
+        {
+          "block": 3,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52649100,
+          "window_ns": 47158100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 181,
+          "wall_clock_iso": "2026-07-23T10:14:31.680Z"
+        },
+        {
+          "block": 3,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49558500,
+          "window_ns": 44122100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:31.746Z"
+        },
+        {
+          "block": 3,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53164800,
+          "window_ns": 47962700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.814Z"
+        },
+        {
+          "block": 4,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48247400,
+          "window_ns": 43144800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:31.878Z"
+        },
+        {
+          "block": 4,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49426100,
+          "window_ns": 43516800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:31.944Z"
+        },
+        {
+          "block": 4,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 46302200,
+          "window_ns": 40503400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:32.006Z"
+        },
+        {
+          "block": 4,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50942700,
+          "window_ns": 44628900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:32.073Z"
+        },
+        {
+          "block": 5,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48068100,
+          "window_ns": 42273300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:32.137Z"
+        },
+        {
+          "block": 5,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48764600,
+          "window_ns": 43249700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:32.202Z"
+        },
+        {
+          "block": 5,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49644800,
+          "window_ns": 44022000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:32.267Z"
+        },
+        {
+          "block": 5,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49003900,
+          "window_ns": 43513400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:32.333Z"
+        },
+        {
+          "block": 6,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49304300,
+          "window_ns": 43697000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:32.399Z"
+        },
+        {
+          "block": 6,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49738800,
+          "window_ns": 43796600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 182,
+          "wall_clock_iso": "2026-07-23T10:14:32.465Z"
+        },
+        {
+          "block": 6,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50697200,
+          "window_ns": 44474900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:32.531Z"
+        },
+        {
+          "block": 6,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 59302300,
+          "window_ns": 53299500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:32.609Z"
+        },
+        {
+          "block": 7,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49991900,
+          "window_ns": 45095400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:32.675Z"
+        },
+        {
+          "block": 7,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49150000,
+          "window_ns": 43423300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:32.739Z"
+        },
+        {
+          "block": 7,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48457300,
+          "window_ns": 43256200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:32.805Z"
+        },
+        {
+          "block": 7,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49149500,
+          "window_ns": 43573400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 181,
+          "wall_clock_iso": "2026-07-23T10:14:32.869Z"
+        },
+        {
+          "block": 8,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53086600,
+          "window_ns": 46711700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:32.939Z"
+        },
+        {
+          "block": 8,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50096400,
+          "window_ns": 44325100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:33.006Z"
+        },
+        {
+          "block": 8,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48412100,
+          "window_ns": 43692300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 180,
+          "wall_clock_iso": "2026-07-23T10:14:33.071Z"
+        },
+        {
+          "block": 8,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 49591600,
+          "window_ns": 42806000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:33.137Z"
+        },
+        {
+          "block": 9,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 46317700,
+          "window_ns": 41207600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:33.199Z"
+        },
+        {
+          "block": 9,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50529300,
+          "window_ns": 44711600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:33.265Z"
+        },
+        {
+          "block": 9,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 48120900,
+          "window_ns": 42980300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 179,
+          "wall_clock_iso": "2026-07-23T10:14:33.329Z"
+        },
+        {
+          "block": 9,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 47193800,
+          "window_ns": 41251500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 178,
+          "wall_clock_iso": "2026-07-23T10:14:33.392Z"
+        }
+      ]
+    }
+  ]
+}

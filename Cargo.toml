@@ -382,12 +382,17 @@ large-cache-extended = ["alloc-decommit"]
 fastbin = ["alloc-global", "alloc-xthread"]
 # R13-9 (task #279): `class-aware-dirty` promoted into `production` after a
 # full A/B gate (docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md, GO
-# recommendation, user-confirmed): 21.71x ns/owner_alloc win at 8 concurrent
-# cross-thread producer classes (re-measured on top of R13-1's coarse-only
-# OOM latch fix, inside R12-7's own pre-latch 19.7-32.4x range — the latch
-# does not erode the win), zero measured cost on non-remote/single-thread
-# paths (iai: +0.00% to +0.02% Ir across 12 non-remote benches), ~8 KiB RSS
-# sidecar per materialised heap.
+# recommendation, user-confirmed): 21.71x SUB-WINDOW ns/owner_alloc win at 8
+# concurrent cross-thread producer classes (re-measured on top of R13-1's
+# coarse-only OOM latch fix, inside R12-7's own pre-latch 19.7-32.4x range —
+# the latch does not erode the win); the FULL-ROUND wall-clock win for the
+# same fixed amount of work is far smaller (~11% at N=8, criterion's own
+# full-round mean — R14-3/task #288 correction,
+# docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md, since most of the
+# sub-window's apparent savings is deferred drain work moving into the
+# unmeasured pre-alloc/recycle portion of the round, not disappearing). Zero
+# measured cost on non-remote/single-thread paths (iai: +0.00% to +0.02% Ir
+# across 12 non-remote benches), ~8 KiB RSS sidecar per materialised heap.
 production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "class-aware-dirty"]
 # R8-3 (task #216): `alloc-segment-directory` joined `production` once the two
 # regressions that had kept it opt-in were both landed — #214 (commit af7b039,
@@ -967,6 +972,38 @@ required-features = ["alloc-global"]
 [[example]]
 name = "paired_ab_large_cache_on"
 required-features = ["alloc-global"]
+
+# R14-3 (task #288): fixed-work process-level A/B/B/A judge for
+# `class-aware-dirty`, built to answer a methodology gap three independent
+# Round-13 reviews raised against `benches/r12_7_class_aware_dirty_wallclock.rs`'s
+# headline "21.71x at N=8" figure: that number is a SUB-WINDOW timer
+# (`run_round`'s own manual `Instant` pair, started after producer pre-alloc
+# and stopped before `HeapRegistry::recycle`), not the FULL round criterion's
+# own `iter()` measures. Two wrappers around ONE shared fixed-work round
+# (`examples/_shared/paired_ab_class_aware_dirty_workload.rs`, `include!`d
+# verbatim into both — byte-identical workload source, same N=8/BLOCKS_PER_CLASS/
+# MIN_OWNER_ITERS shape as the bench). The ONLY difference is the Cargo
+# feature set at build time:
+#   - `paired_ab_class_aware_dirty_off`: --features "production alloc-stats"
+#     (baseline, class-aware-dirty OFF)
+#   - `paired_ab_class_aware_dirty_on` : --features "production alloc-stats class-aware-dirty"
+#     (treatment, class-aware-dirty ON)
+# Both emit `elapsed_ns` (the full round — pre-alloc + timed window + recycle,
+# the metric `scripts/paired-ab-runner.mjs` pairs by default via
+# `scripts/_r14_3_class_aware_dirty_ab.json`) AND `window_ns` (the same
+# sub-window the bench's headline was drawn from), so a reader sees both axes
+# from ONE process launch. See
+# `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md` for the verdict. The
+# shared workload file lives in `examples/_shared/` (NOT auto-discovered as
+# its own binary target — same pattern as `paired_ab_medium_workload.rs`
+# above).
+[[example]]
+name = "paired_ab_class_aware_dirty_off"
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats"]
+
+[[example]]
+name = "paired_ab_class_aware_dirty_on"
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "alloc-stats"]
 
 # R11-3 (task #246): THROWAWAY design-stage measurement harness for the
 # realloc-aware Small->Large promotion idea (docs/perf/

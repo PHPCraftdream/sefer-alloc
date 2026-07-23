@@ -1,0 +1,25 @@
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=4
+                        time:   [1.7876 ms 1.8103 ms 1.8378 ms]
+                        change: [-82.914% -79.605% -74.614%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+producers=4   ns/round(window)=      820635  ns/owner_alloc(window)=   976.9  ns/full_round=     1925719
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Warming up for 300.00 ms
+
+Warning: Unable to complete 10 samples in 1.5s. You may wish to increase target time to 1.7s or enable flat sampling.
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Collecting 10 samples in estimated 1.6764 s (55 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=8
+                        time:   [19.012 ms 21.428 ms 25.646 ms]
+                        change: [-43.075% -34.484% -24.367%] (p = 0.00 < 0.05)
+                        Performance has improved.
+producers=8   ns/round(window)=     1659399  ns/owner_alloc(window)=  1470.1  ns/full_round=    24654869
+───────────────────────────────────────────────────────────────────
+N=1 -> N=4 ns/owner_alloc(window) delta: 700.1 -> 976.9 (+39.5%) [R9-6 gate threshold: >5% => GO on stage 2, else NO-GO]
+N=1 -> N=4 ns/full_round delta: 819537 -> 1925719 (+135.0%) [companion axis — see module doc "Two axes, printed side by side"; this is the SAME region criterion's own "time:" output measures]
+═══════════════════════════════════════════════════════════════════
+
+

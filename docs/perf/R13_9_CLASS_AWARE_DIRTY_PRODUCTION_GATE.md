@@ -33,19 +33,36 @@ and `scripts/iai.mjs`/`benches/perf_gate_iai.rs` unmodified.
 |---|---|---|---|---|
 | 1a | iai, 12 single-thread non-remote benches, Instructions (Ir) | see §3 table | +0.00% to +0.02% across all 12 | **No measurable regression — deterministic, near-zero** |
 | 1b | iai, same 12 benches, Estimated Cycles | see §3 table | +0.00% to +0.35% across all 12 | **No measurable regression — within noise** |
-| 2 | Remote fan-in wall-clock, `ns/owner_alloc`, N=8 producer classes | 23,527.4 ns | 1,083.9 ns | **21.7× reduction — the R12-7 win survives the R13-1 latch intact** |
-| 2 | Remote fan-in wall-clock, N=1→N=4 delta | +89.2% (722.7→1367.3) | +35.6% (722.1→979.2) | **Flattened, consistent with R12-7's own re-measurement** |
+| 2a | Remote fan-in wall-clock, SUB-WINDOW `ns/owner_alloc`, N=8 producer classes | 23,527.4 ns | 1,083.9 ns | **21.7× reduction on this sub-window metric — the R12-7 win survives the R13-1 latch intact** |
+| 2b | Remote fan-in wall-clock, FULL ROUND (criterion's own mean, same harness/run), N=8 | ~20.6 ms | ~18.4 ms | **~11% full-round reduction — see R14-3 correction below; the sub-window's ~17ms "savings" mostly moved into the unmeasured pre-alloc/recycle portion of the same round, it did not disappear** |
+| 2 | Remote fan-in wall-clock, N=1→N=4 delta (sub-window axis) | +89.2% (722.7→1367.3) | +35.6% (722.1→979.2) | **Flattened, consistent with R12-7's own re-measurement** |
 | 3 | Non-remote single-thread churn/cold-direct (16B–1024B) | iai items above ARE this axis | +0.00–0.02% Ir | **Confirmed unchanged — feature is remote-drain-only** |
 | 4 | Sidecar RSS, per materialised heap | 0 (feature absent) | 8.0 KiB (2 pages), not R12-7's stated 6.1 KiB | **Small, well-bounded — see §5 correction** |
 | 5 | CI feature-isolation row (`production class-aware-dirty alloc-stats`, no `numa-aware`) | — | green, re-run personally on current HEAD | **Confirmed green, exactly matches `.github/workflows/ci.yml` job** |
 
-**The single most important finding is #2**: the ~20-32× wall-clock win R12-7
-measured BEFORE the R13-1 coarse-only-latch fix still holds AFTER it — the
-latch adds one `AtomicBool::load` per drain call (a single cache-line read),
-which is invisible at both the iai instruction-count level (§3, essentially
-0% delta) and the wall-clock level (§4, still 21.7× at N=8). The concern the
-task brief raised ("coarse-only latch adds an extra check per drain — confirm
-it doesn't eat the win") is answered: it doesn't.
+**The single most important finding is #2**: the ~20-32× SUB-WINDOW
+`ns/owner_alloc` win R12-7 measured BEFORE the R13-1 coarse-only-latch fix
+still holds AFTER it — the latch adds one `AtomicBool::load` per drain call
+(a single cache-line read), which is invisible at both the iai
+instruction-count level (§3, essentially 0% delta) and the sub-window
+wall-clock level (§4, still 21.7× at N=8). The concern the task brief raised
+("coarse-only latch adds an extra check per drain — confirm it doesn't eat
+the win") is answered: it doesn't.
+
+**R14-3 correction (task #288, 2026-07-23):** the "21.7×"/"21.71×" figure
+above is a SUB-WINDOW metric — `benches/r12_7_class_aware_dirty_wallclock.rs`'s
+`run_round` times only the region AFTER producer pre-allocation and BEFORE
+`HeapRegistry::recycle`, not the full round. Criterion's own full-round mean
+(same harness, same raw logs cited in row 2b above) moved only ~20.6 ms → ~18.4
+ms at N=8 (~11%), and at N=4 the full round barely moved (1.840 ms → 1.811 ms,
+~1.6%). The mechanism's win is real (row 2a, and the counter-level evidence in
+`docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md` is unchanged) — what moved
+is where in the round the drain work happens (deferred into the unmeasured
+pre-alloc/recycle portions), not that ~17 ms of work vanished. See
+`docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md` for the full
+re-measurement (including a new fixed-work process-level judge) and the
+CLAUDE.md rule this finding motivated (report both axes on every wall-clock
+gate going forward).
 
 ---
 
@@ -197,12 +214,12 @@ cleanly: no measurable regression on any non-remote path.**
 Raw logs: `docs/perf/_raw_r13_9_wallclock_baseline_off.log`,
 `docs/perf/_raw_r13_9_wallclock_treatment_on.log`.
 
-| N (producers) | `production` baseline (ns/owner_alloc) | `production`+`class-aware-dirty` (ns/owner_alloc) | Speedup |
-|---:|---:|---:|---:|
-| 1 | 722.7 | 722.1 | 1.00× (expected — no waste to eliminate at N=1) |
-| 2 | 909.2 | 835.4 | 1.09× |
-| 4 | 1,367.3 | 979.2 | 1.40× |
-| 8 | 23,527.4 | 1,083.9 | **21.71×** |
+| N (producers) | `production` baseline (SUB-WINDOW ns/owner_alloc) | `production`+`class-aware-dirty` (SUB-WINDOW ns/owner_alloc) | Sub-window speedup | FULL ROUND (criterion mean) baseline | FULL ROUND (criterion mean) treatment | Full-round speedup |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 722.7 | 722.1 | 1.00× (expected — no waste to eliminate at N=1) | — | — | — |
+| 2 | 909.2 | 835.4 | 1.09× | — | — | — |
+| 4 | 1,367.3 | 979.2 | 1.40× | 1.840 ms | 1.811 ms | ~1.6% |
+| 8 | 23,527.4 | 1,083.9 | **21.71×** | ~20.6 ms | ~18.4 ms | **~11%** |
 
 N=1→N=4 `ns/owner_alloc` delta: baseline **+89.2%** (722.7→1367.3) vs.
 treatment **+35.6%** (722.1→979.2) — both criterion runs additionally
@@ -211,16 +228,34 @@ reported the treatment's own paired before/after comparison
 binary's prior `target/criterion` history, not vs. baseline — the baseline
 comparison in this table is the CROSS-process one that matters for this gate).
 
+**R14-3 correction (task #288):** the "Sub-window speedup" column is the
+figure this document originally headlined as "21.7× reduction" / "21.71×".
+The "FULL ROUND" columns (added by R14-3, read off the SAME raw logs cited
+above — criterion's own reported mean "time:" for the identical
+`bench_function` invocation, which wraps the FULL `run_round` call including
+pre-alloc and `HeapRegistry::recycle`, not just the sub-window) show the
+actual end-to-end improvement for a fixed amount of work is far smaller: ~11%
+at N=8, ~1.6% at N=4. The sub-window's dramatic reduction reflects deferred
+drain work moving OUT of the timed window into the unmeasured pre-alloc/
+recycle phases of the same round, not that work disappearing. Both axes are
+real measurements of the same underlying mechanism; neither alone is the
+complete picture — see `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`
+for the full re-measurement, including an independent fixed-work
+process-level A/B/B/A judge.
+
 **This confirms the task brief's central open question**: the R13-1
 coarse-only-latch fix (`e2d84f7`, one `AtomicBool` `Relaxed` load added to
 `drain_dirty_segments` before selecting the per-class vs. coarse scan source)
-does NOT measurably erode the R12-7 win. R12-7's own pre-R13-1 numbers were
-~19.7-32.4× at N=8 (two runs, `docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md`
-§3.4); this task's post-R13-1 re-measurement is **21.71×** — squarely inside
-that same range, not a degraded tail of it. §2's iai table independently
-confirms the SAME conclusion at the deterministic instruction-count level (the
-latch's one `AtomicBool::load` is a single cache-resident read, invisible
-against benches with tens-of-thousands of instructions).
+does NOT measurably erode the R12-7 win **on the sub-window axis**. R12-7's
+own pre-R13-1 numbers were ~19.7-32.4× at N=8 on the same sub-window metric
+(two runs, `docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md` §3.4); this
+task's post-R13-1 re-measurement is **21.71×** — squarely inside that same
+range, not a degraded tail of it. §2's iai table independently confirms the
+SAME conclusion at the deterministic instruction-count level (the latch's one
+`AtomicBool::load` is a single cache-resident read, invisible against
+benches with tens-of-thousands of instructions). The full-round axis (added
+by R14-3) was not measured or discussed at all in this document's original
+form — see the correction above.
 
 ---
 
@@ -332,12 +367,14 @@ unaffected by R13-6/R13-7/R13-8's intervening work.
 **GO.**
 
 **What is solid:**
-- The wall-clock win (§3) — R12-7's headline ~20-32× N=8 reduction — survives
-  the R13-1 coarse-only-latch fix intact (this task's re-measurement: 21.71×),
-  confirmed at BOTH the wall-clock level (§3) and the deterministic
-  instruction-count level (§2's near-zero Ir delta on every non-remote bench,
-  meaning the latch check itself costs nothing measurable when the remote path
-  isn't exercised).
+- The wall-clock win (§3) — R12-7's headline ~20-32× N=8 sub-window
+  `ns/owner_alloc` reduction, and the smaller but still real ~11% full-round
+  wall-clock reduction for the same fixed amount of work (R14-3 correction,
+  see §3) — survives the R13-1 coarse-only-latch fix intact (this task's
+  re-measurement: 21.71× sub-window), confirmed at BOTH the wall-clock level
+  (§3) and the deterministic instruction-count level (§2's near-zero Ir delta
+  on every non-remote bench, meaning the latch check itself costs nothing
+  measurable when the remote path isn't exercised).
 - Non-remote paths (single-thread churn, cold-direct, 16B-1024B — item 3) are
   confirmed UNCHANGED via the deterministic iai judge (§2/§4): +0.00-0.02% Ir
   across all 12 benches, the SAME tiny absolute delta regardless of bench
