@@ -4,9 +4,13 @@
 //! This file holds the `impl HeapCore { .. }` block for `dealloc` and
 //! `realloc` (the two largest, most safety-critical methods in the former
 //! monolith, each carrying a full `# Safety` doc from R6-MS-1/2) plus their
-//! own-thread free bodies (`dealloc_own_thread`, `dealloc_own_thread_with_base`).
-//! Pure code-movement sibling of `heap_core.rs`; no behavior changed — the
-//! `# Safety` docs and `#[allow(unsafe_code)]` attributes moved byte-for-byte.
+//! own-thread free bodies (`dealloc_own_thread`, `dealloc_own_thread_with_base`)
+//! and — under `medium-classes` — the R14-4 (task #289) Small/medium->Large
+//! realloc-promotion helper (`try_promote_to_large`), Stage 2 of the design in
+//! `docs/perf/R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`. Otherwise a
+//! pure code-movement sibling of `heap_core.rs`; no other behavior changed —
+//! the `# Safety` docs and `#[allow(unsafe_code)]` attributes moved
+//! byte-for-byte.
 
 use core::alloc::Layout;
 
@@ -21,6 +25,21 @@ use crate::alloc_core::segment_header::{SegmentHeader, SEGMENT_MAGIC};
 use crate::alloc_core::{node::Node, AllocCore};
 
 use super::heap_core::HeapCore;
+
+/// R14-4 (task #289): the requested-size threshold above which a GROWING
+/// realloc of a Small/medium-classified block (`medium-classes` only) is
+/// diverted directly to a Large allocation instead of walking the medium
+/// size-class ladder one class at a time. 256 KiB — the smallest
+/// `medium-classes` class — per the design doc's recommendation
+/// (`R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` §0): by this size the
+/// object has already paid for at least one medium-class carve, so promoting
+/// it is not premature for a buffer that turns out to be a one-shot small
+/// object, while still capturing roughly half the growth ladder's copy cost
+/// (the doc's own threshold sweep: 128 KiB promotes too eagerly, paying RSS
+/// for objects that may never grow again; 384 KiB defers too long, leaving
+/// most of the ladder-walk cost on the table).
+#[cfg(feature = "medium-classes")]
+const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
 
 impl HeapCore {
     /// Deallocate `ptr` (previously returned by [`alloc`](Self::alloc)).
@@ -598,6 +617,38 @@ impl HeapCore {
                     debug_assert_eq!(p, ptr, "known-base realloc must return the same pointer");
                     return p;
                 }
+                //   (2.5) Small/medium->Large promotion (R14-4, task #289,
+                //       Stage 2 of `docs/perf/
+                //       R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`):
+                //       ONLY compiled under `medium-classes` (the promotion
+                //       only makes sense for medium-classified blocks — under
+                //       plain `production` without `medium-classes`, every
+                //       size in the medium range already routes Large, so
+                //       there is nothing to promote FROM). Diverts a GROWING
+                //       realloc of a currently-Small/medium-classified block,
+                //       once `new_size` crosses `MEDIUM_REALLOC_PROMOTION_THRESHOLD`,
+                //       directly to a Large allocation instead of walking the
+                //       medium ladder one class at a time — turning N
+                //       ladder-crossing move-legs into 1 promotion copy, with
+                //       every SUBSEQUENT grow riding the existing OPT-G
+                //       Large-grow-in-span fast path for free. See
+                //       `try_promote_to_large`'s doc for the mechanism and why
+                //       no new bookkeeping is needed.
+                #[cfg(feature = "medium-classes")]
+                if new_size > old_layout.size()
+                    && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
+                    && crate::alloc_core::size_classes::SizeClasses::class_for(
+                        old_layout
+                            .size()
+                            .max(crate::alloc_core::size_classes::MIN_BLOCK),
+                        old_layout.align(),
+                    )
+                    .is_some()
+                {
+                    if let Some(p) = self.try_promote_to_large(base, ptr, old_layout, new_size) {
+                        return p;
+                    }
+                }
                 //   (3) Move leg — in-place did not apply: alloc a fresh block
                 //       through `HeapCore::alloc` (magazine-aware: drains via
                 //       the checked predicate + stamps per #169), copy the
@@ -701,5 +752,140 @@ impl HeapCore {
             let _ = new_size;
             core::ptr::null_mut()
         }
+    }
+
+    /// R14-4 (task #289), Stage 2 of `docs/perf/
+    /// R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`: attempt to promote a
+    /// currently-Small/medium-classified, own-segment block directly to a
+    /// Large allocation, instead of letting the caller's growing `realloc`
+    /// fall through to the ladder-walk move leg. Called from `realloc`'s
+    /// own-segment branch, between the in-place attempt (OPT-F/OPT-G) and the
+    /// unconditional move leg, only when `medium-classes` is compiled in, the
+    /// resize is a GROW, `old_layout` currently classifies Small, and
+    /// `new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD` (see the call site
+    /// and the constant's own doc).
+    ///
+    /// Returns `Some(new_ptr)` on success (the old block has already been
+    /// freed); `None` on OOM, in which case the OLD block is left completely
+    /// intact and the caller falls through to the existing move leg (which
+    /// will itself likely also OOM on the same request, but this function
+    /// makes no such assumption — it simply declines to promote and lets the
+    /// existing, already-correct move leg have the final say).
+    ///
+    /// ## Why no new bookkeeping is needed (the design doc's §4.2 answer,
+    /// exercised for real here)
+    ///
+    /// A promoted block is not a hybrid — it becomes a GENUINE, ordinary
+    /// Large-segment allocation the moment `AllocCore::alloc_large` returns
+    /// it. `SegmentHeader::kind_at(base)` (the SAME mechanism every other Large
+    /// block's `dealloc`/shrink-realloc already uses to decide routing) reads
+    /// `Large` for this segment exactly as it would for any other Large
+    /// allocation — `dealloc` and `realloc` route purely off
+    /// `SegmentHeader::kind_at(base)`, never off the caller-supplied
+    /// `Layout`'s size (see the OPT-G doc comment on
+    /// `AllocCore::try_realloc_inplace_known_base` in `alloc_core.rs`). So a
+    /// LATER shrink back below the medium range takes the ordinary
+    /// Large-to-Small move-leg path (this function adds no in-place
+    /// Large->Small shrink fast path — matching the design doc's explicit
+    /// non-goal), and a later dealloc frees it as an ordinary Large segment.
+    /// No new tag, no new field, no new invariant.
+    ///
+    /// ## Pad-target decision (resolves the design doc's §4.4 open question)
+    ///
+    /// The padded target is simply `new_size` — **no artificial padding**
+    /// beyond what the caller asked for. Measured via
+    /// `examples/r14_4_pad_target_probe.rs` (a fixed-2-MiB pad vs a
+    /// `max(new_size, threshold * 2)` floor vs plain `new_size`, all at the
+    /// 256 KiB threshold): under the `production` feature bundle (which does
+    /// NOT include `exact-span-large`), `AllocCore::alloc_large` already
+    /// rounds every request up to a whole `SEGMENT` (4 MiB) multiple
+    /// regardless of the logical size requested
+    /// (`src/alloc_core/alloc_core_large.rs`) — so any pad target at or below
+    /// one `SEGMENT` is moot (rounded up anyway) and buys no extra headroom a
+    /// bare `new_size` doesn't already get for free. The probe confirmed this
+    /// empirically: `nopad` (plain `new_size`) and a `512 KiB` floor produced
+    /// statistically indistinguishable commit (~30 MiB steady-state for an
+    /// 8-object working set) and wall-clock, while a fixed 2 MiB pad cost
+    /// MORE committed memory for the SAME working set (large-cache admission
+    /// stopped reusing a single segment size across rounds once the promoted
+    /// request size no longer matched the eventual grown size) for a
+    /// wall-clock win that came from a workload-shape artifact (this
+    /// particular probe sequence never grows past 2 MiB, so the padded arm
+    /// happens to need zero further reallocs) rather than from the padding
+    /// itself. Padding is therefore not worth its own RSS cost as a blanket
+    /// default; a caller whose growth pattern would benefit from headroom
+    /// beyond one `SEGMENT` is exactly what the opt-in `large-reserved-capacity`
+    /// feature already exists to provide (via `AllocCore::alloc_large`'s own
+    /// `reserved_capacity` mechanism), and that feature's benefit is
+    /// orthogonal to this promotion — it does not need a second, independent
+    /// padding layer stacked on top here.
+    #[cfg(feature = "medium-classes")]
+    fn try_promote_to_large(
+        &mut self,
+        base: *mut u8,
+        ptr: *mut u8,
+        old_layout: Layout,
+        new_size: usize,
+    ) -> Option<*mut u8> {
+        // R2-1 parity with the move leg just below: bound the read by the
+        // block's actual committed span, not the caller-supplied
+        // `old_layout.size()` — a bogus layout must not drive an OOB read.
+        // `base` was already proven live by the caller's `contains_base`
+        // check.
+        if old_layout.size() > AllocCore::safe_payload_read_span(base, ptr) {
+            return None;
+        }
+        // Pad target = `new_size` (no artificial padding beyond the caller's
+        // request) — see this function's doc comment for the measured
+        // reasoning. `old_layout.align()` is preserved so the promoted
+        // block's alignment obligation is unchanged.
+        //
+        // CANNOT route through the plain `self.alloc(promoted_layout)` entry
+        // point here: `medium-classes`' `SMALL_MAX` is 1 MiB, strictly ABOVE
+        // `MEDIUM_REALLOC_PROMOTION_THRESHOLD` (256 KiB) — so a
+        // `promoted_layout` sized to a THRESHOLD-crossing-but-still-under-1-MiB
+        // `new_size` would classify right back into a (larger) medium class
+        // under ordinary `class_for` rules, defeating the entire point of
+        // promoting to Large. The promotion must FORCE Large classification
+        // regardless of where `new_size` falls in the medium range — so this
+        // calls `AllocCore::alloc_large` directly (bypassing `class_for`
+        // entirely, exactly as the design doc's §4.1 sketch specifies), then
+        // replicates the SAME ownership-hook bookkeeping `HeapCore::alloc`'s
+        // Large branch performs, mirroring `HeapCore::alloc_zeroed`'s
+        // (`heap_core_alloc.rs`) own Large branch line for line: the A1
+        // deferred-large drain (`alloc-xthread`) and the `HeapOverflow` drain
+        // (`alloc-xthread` without `fastbin`) BEFORE the call, then
+        // `stamp_segment_owner` on the result — WITHOUT this, a Vec grown via
+        // promotion on thread A would live in an UNSTAMPED Large segment and
+        // leak forever when thread B frees it (the A1/#114 leak-to-abort
+        // hazard this file's `realloc` doc comment warns about at length).
+        #[cfg(feature = "alloc-xthread")]
+        {
+            self.drain_large_deferred_free();
+        }
+        #[cfg(all(feature = "alloc-xthread", not(feature = "fastbin")))]
+        {
+            self.drain_heap_overflow();
+        }
+        let (new_ptr, _is_fresh) = self.core.alloc_large(new_size, old_layout.align());
+        if new_ptr.is_null() {
+            return None;
+        }
+        self.stamp_segment_owner(new_ptr);
+        // Copy the FULL old buffer — same `old_layout.size()` span the
+        // existing move leg copies on a grow (`copy = min(old, new)`, which
+        // for a grow is always `old`).
+        Node::copy_nonoverlapping(ptr, new_ptr, old_layout.size());
+        // SAFETY: `base` was proven ours & live by the caller's
+        // `contains_base(base)` check before `try_promote_to_large` was
+        // called; the read above was bounded by `safe_payload_read_span`;
+        // `new_ptr` now holds the copied prefix. Freeing the old block once
+        // completes the contract-honouring promotion, mirroring the existing
+        // move leg's identical closing step.
+        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `HeapCore::dealloc`.
+        unsafe {
+            self.dealloc(ptr, old_layout)
+        };
+        Some(new_ptr)
     }
 }

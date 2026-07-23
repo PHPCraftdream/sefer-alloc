@@ -1018,6 +1018,16 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory",
 name = "r11_3_promotion_probe"
 required-features = ["alloc-global"]
 
+# R14-4 (task #289): THROWAWAY pad-target sweep for stage-2 Small->Large
+# realloc promotion (resolves R11-3 design doc §4.4's deliberately-open
+# question). NOT a shipping artifact -- calls only the public GlobalAlloc
+# surface to compare a fixed 2 MiB pad, a `max(new_size, 512 KiB)` floor, and
+# no artificial padding (`new_size` itself) at the 256 KiB threshold.
+# Build: cargo build --release --example r14_4_pad_target_probe --features "production,medium-classes,alloc-stats"
+[[example]]
+name = "r14_4_pad_target_probe"
+required-features = ["alloc-global"]
+
 # R12-3 (P0-perf, EXPERIMENTAL A/B): THROWAWAY measurement harness for the
 # `exact-span-large` feature. Allocates one fresh AllocCore per control size
 # (260 KiB, 512 KiB, 1 MiB, 1.75 MiB, 4 MiB) and reports the RSS/commit-charge
