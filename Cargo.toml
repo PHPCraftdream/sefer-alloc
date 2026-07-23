@@ -403,7 +403,15 @@ large-cache-extended = ["alloc-decommit"]
 # without it. See also the `compile_error!` defence-in-depth guard in
 # `src/lib.rs`.
 fastbin = ["alloc-global", "alloc-xthread"]
-production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit"]
+# R13-9 (task #279): `class-aware-dirty` promoted into `production` after a
+# full A/B gate (docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md, GO
+# recommendation, user-confirmed): 21.71x ns/owner_alloc win at 8 concurrent
+# cross-thread producer classes (re-measured on top of R13-1's coarse-only
+# OOM latch fix, inside R12-7's own pre-latch 19.7-32.4x range — the latch
+# does not erode the win), zero measured cost on non-remote/single-thread
+# paths (iai: +0.00% to +0.02% Ir across 12 non-remote benches), ~8 KiB RSS
+# sidecar per materialised heap.
+production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-segment-directory", "primordial-lazy-commit", "class-aware-dirty"]
 # R8-3 (task #216): `alloc-segment-directory` joined `production` once the two
 # regressions that had kept it opt-in were both landed — #214 (commit af7b039,
 # R8-1: the O(D×49) remote-dirty directory-sync regression) and #215 (commit
