@@ -937,6 +937,12 @@ impl AllocCore {
     /// heads), (b) free some blocks (creating non-empty BinTable entries),
     /// (c) call this to rebuild, (d) verify the bits match.
     #[doc(hidden)]
+    #[allow(unsafe_code)] // R14-9 (task #294): calls the `unsafe fn sidecar::deref_mut`
+                          // boundary right after `ptr` is proven non-null (produced
+                          // only by `reserve_directory_sidecar`, fully initialised).
+                          // `AllocCore`'s owner-only discipline (neither `Send` nor
+                          // `Sync`) rules out a concurrent writer, and no other
+                          // reference to the sidecar is live across this call.
     pub fn dbg_rebuild_directory(&mut self) -> bool {
         #[cfg(feature = "alloc-segment-directory")]
         {
@@ -949,7 +955,13 @@ impl AllocCore {
             // borrowing `self.table` so the borrow checker sees two
             // disjoint borrows (the sidecar memory is heap-allocated, not
             // a field of `self`).
-            let dir = os::deref_directory_sidecar_mut(ptr);
+            //
+            // SAFETY: `ptr` is non-null (checked above) and was produced by
+            // `reserve_directory_sidecar`, so it points at a value fully
+            // initialised by that constructor. `AllocCore`'s owner-only
+            // discipline rules out a concurrent writer, and no other
+            // reference to this sidecar is live across this call.
+            let dir = unsafe { super::sidecar::deref_mut(ptr) };
             // Zero out all bits first, then rebuild from scratch.
             // R11-6: iterate all node buckets.
             for nb in 0..super::segment_directory::NODE_BITMAPS {
@@ -978,8 +990,10 @@ impl AllocCore {
             // R12-2: deliberately do NOT reset `node_ids` here. The dense
             // node-id -> bucket mapping is established ONCE, at first
             // materialisation (`maybe_materialize_directory`'s call to
-            // `init_node_ids` + `rebuild_from_table`), and is APPEND-ONLY
-            // from then on (new nodes may still claim free slots via
+            // `reserve_directory_sidecar`, whose `sidecar::reserve_zeroed_with`
+            // fixup runs `init_node_ids`, followed by `rebuild_from_table`),
+            // and is APPEND-ONLY from then on (new nodes may still claim free
+            // slots via
             // `node_bucket_mut`, but existing claims never move) — exactly
             // matching the incremental `set_bit`/`clear_bit` path's
             // discipline. Resetting `node_ids` here and re-deriving

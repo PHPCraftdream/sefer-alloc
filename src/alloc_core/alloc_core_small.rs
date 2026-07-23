@@ -2214,6 +2214,12 @@ impl AllocCore {
     /// Sidecar OOM is NOT allocator OOM: on reserve failure, the pointer
     /// stays null and the mechanism is simply off (the linear scan fallback
     /// is used, unchanged from today). Never abort.
+    #[allow(unsafe_code)] // R14-9 (task #294): calls the `unsafe fn sidecar::deref_mut`
+                          // boundary right after `reserve_directory_sidecar` proves
+                          // `ptr` non-null and fully initialised. `AllocCore`'s
+                          // owner-only discipline (neither `Send` nor `Sync`) rules
+                          // out a concurrent writer, and no other reference to the
+                          // sidecar is live across this call.
     pub(super) fn maybe_materialize_directory(&mut self) {
         // Fast path: already materialised.
         if !self.directory_sidecar.is_null() {
@@ -2230,14 +2236,18 @@ impl AllocCore {
         };
         // One-time rebuild: walk every registered small/primordial segment,
         // read each class's BinTable head, set the exact class_nonempty bits.
-        // The sidecar was OS-zeroed (all bits clear), so only non-empty heads
-        // need to be SET.
-        let dir = os::deref_directory_sidecar_mut(ptr);
-        // R12-2: OS-zeroed pages are NOT a valid initial state for the dense
-        // node_ids registration table (node id 0 is real, not "unclaimed") —
-        // must be explicitly reset to "all slots empty" before the rebuild
-        // below starts registering nodes via `set_bit`.
-        dir.init_node_ids();
+        // The sidecar's bitmap fields were OS-zeroed (all bits clear) and its
+        // `node_ids` (numa-aware) already repaired by `reserve_directory_sidecar`
+        // (via `sidecar::reserve_zeroed_with`), so only non-empty heads need
+        // to be SET here.
+        //
+        // SAFETY (R14-9, task #294): `ptr` was just returned by
+        // `reserve_directory_sidecar` (this function's own call above), so it
+        // is non-null and points at a value that constructor brought to a
+        // fully valid state. `AllocCore`'s owner-only discipline (neither
+        // `Send` nor `Sync`) rules out a concurrent writer, and no other
+        // reference to this sidecar is live across this call.
+        let dir = unsafe { super::sidecar::deref_mut(ptr) };
         dir.rebuild_from_table(&self.table);
 
         self.directory_sidecar = ptr;
@@ -2246,24 +2256,40 @@ impl AllocCore {
     /// Return a shared reference to the materialised directory sidecar, or
     /// `None` if not yet materialised.
     #[inline]
+    #[allow(unsafe_code)] // R14-9 (task #294): calls the `unsafe fn sidecar::deref`
+                          // boundary. Sound: `self.directory_sidecar` is just proven
+                          // non-null (produced only by `reserve_directory_sidecar`,
+                          // which fully initialises it), and `AllocCore`'s owner-only
+                          // discipline (neither `Send` nor `Sync`) rules out a
+                          // concurrent writer. The returned `&SegmentDirectory` does
+                          // not outlive this call.
     pub(super) fn directory(&self) -> Option<&super::segment_directory::SegmentDirectory> {
         if self.directory_sidecar.is_null() {
             None
         } else {
-            Some(os::deref_directory_sidecar(self.directory_sidecar))
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above.
+            Some(unsafe { super::sidecar::deref(self.directory_sidecar) })
         }
     }
 
     /// Return a mutable reference to the materialised directory sidecar, or
     /// `None` if not yet materialised.
     #[inline]
+    #[allow(unsafe_code)] // R14-9 (task #294): calls the `unsafe fn sidecar::deref_mut`
+                          // boundary. Sound: `self.directory_sidecar` is just proven
+                          // non-null (produced only by `reserve_directory_sidecar`,
+                          // fully initialised), `AllocCore`'s owner-only discipline
+                          // (neither `Send` nor `Sync`) rules out a concurrent
+                          // reader/writer, and no other reference to the sidecar is
+                          // live across this call.
     pub(super) fn directory_mut(
         &mut self,
     ) -> Option<&mut super::segment_directory::SegmentDirectory> {
         if self.directory_sidecar.is_null() {
             None
         } else {
-            Some(os::deref_directory_sidecar_mut(self.directory_sidecar))
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above.
+            Some(unsafe { super::sidecar::deref_mut(self.directory_sidecar) })
         }
     }
 

@@ -400,104 +400,38 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 
 // ── R7-A1: directory sidecar VM reservation ────────────────────────────────
 //
-// The `SegmentDirectory` sidecar is materialized via `aligned_vmem::reserve_aligned`
-// (M5-clean: direct OS syscall, no `std::alloc`/`Box`/`Vec`). The reservation
-// is leaked via `core::mem::forget` for the process lifetime — same discipline
-// as `RegistryChunk` / `HeapOverflowSidecar`. Owner-only: the pointer lives in
-// `AllocCore` and only the owning thread ever dereferences it (no cross-thread
-// race, no CAS protocol needed — simpler than the `HeapOverflow` sidecar, which
-// IS cross-thread).
+// The `SegmentDirectory` sidecar is materialized via the shared owner-only
+// sidecar primitive (`alloc_core::sidecar`, R14-9/task #294), which itself
+// wraps `aligned_vmem::leak_zeroed_pages` (M5-clean: direct OS syscall, no
+// `std::alloc`/`Box`/`Vec`; the reservation is leaked for the process
+// lifetime — same discipline as `RegistryChunk` / `HeapOverflowSidecar`).
+// Owner-only: the pointer lives in `AllocCore` and only the owning thread
+// ever dereferences it (no cross-thread race, no CAS protocol needed —
+// simpler than the `HeapOverflow` sidecar, which IS cross-thread).
 
-/// Byte size of one [`SegmentDirectory`], rounded up to a multiple of
-/// `aligned_vmem::PAGE` — mirrors `registry_chunk::CHUNK_SIZE`'s identical
-/// rounding for the same `reserve_aligned` size-contract reason (`size`
-/// must be a non-zero multiple of `PAGE`).
-#[cfg(feature = "alloc-segment-directory")]
-const DIRECTORY_SIDECAR_SIZE: usize = {
-    let raw = core::mem::size_of::<super::segment_directory::SegmentDirectory>();
-    if raw == 0 {
-        vmem::PAGE
-    } else {
-        let page = vmem::PAGE;
-        (raw + page - 1) & !(page - 1)
-    }
-};
-
-/// Reserve and construct a [`SegmentDirectory`] sidecar via direct OS VM
-/// reservation (M5-clean). Returns `Some(ptr)` on success (the pointer is
-/// valid for the process lifetime, OS-zeroed, a fully valid initial state),
-/// or `None` on OOM (sidecar OOM is NOT allocator OOM — the mechanism simply
-/// stays off and the linear scan fallback is used).
+/// Reserve and construct a [`SegmentDirectory`] sidecar. Returns `Some(ptr)`
+/// on success (the pointer is valid for the process lifetime, a fully valid
+/// initial state), or `None` on OOM (sidecar OOM is NOT allocator OOM — the
+/// mechanism simply stays off and the linear scan fallback is used).
 ///
-/// The reservation is leaked via `core::mem::forget` — the sidecar lives for
-/// the process lifetime, never released.
+/// Uses [`sidecar::reserve_zeroed_with`] rather than [`sidecar::reserve`]:
+/// `SegmentDirectory`'s bitmap fields (`class_nonempty_by_node`,
+/// `active_bits_by_node`) are valid at all-zero (every bit/count clear is a
+/// real, intentional initial state), but under `numa-aware` the `node_ids`
+/// table is NOT (`0` is a real OS node id, so leaving it OS-zeroed would
+/// misread as "node 0 already claimed bucket 0" — see that field's own doc
+/// comment); the fixup closure runs the same `init_node_ids()` repair the
+/// pre-R14-9 code ran as a separate step right after reservation. Moving the
+/// whole (up to ~56 KiB under `numa-aware`) `SegmentDirectory` through a
+/// by-value [`sidecar::reserve`] call would risk an avoidable stack copy;
+/// the in-place fixup avoids it.
 ///
-/// # Safety of the returned pointer
-///
-/// The returned `*mut SegmentDirectory` is:
-/// - non-null, PAGE-aligned (>= `align_of::<SegmentDirectory>()`)
-/// - valid for `size_of::<SegmentDirectory>()` bytes
-/// - OS-zeroed (all bits zero = every `class_nonempty` bit clear)
-/// - uniquely owned (only the calling `AllocCore` holds the pointer)
-/// - never freed (leaked for the process lifetime)
-///
-/// The caller stores it in `AllocCore::directory_sidecar` and dereferences
-/// it via [`deref_directory_sidecar`] / [`deref_directory_sidecar_mut`].
+/// The caller stores the pointer in `AllocCore::directory_sidecar` and
+/// dereferences it via [`sidecar::deref`] / [`sidecar::deref_mut`].
 #[cfg(feature = "alloc-segment-directory")]
 pub(crate) fn reserve_directory_sidecar() -> Option<*mut super::segment_directory::SegmentDirectory>
 {
-    // CRATE-P2 (item g): the leaked-zeroed-sidecar pattern (reserve, zero under
-    // miri, `mem::forget`) is folded into `aligned_vmem::leak_zeroed_pages`,
-    // which guarantees the span is zeroed on every backend (INCLUDING the miri
-    // `std::alloc` fallback) and leaks it for the process lifetime. `align` is
-    // `PAGE` (leak_zeroed_pages always reserves PAGE-aligned); `SegmentDirectory`
-    // needs only `align_of == 8`, well under a page, so PAGE alignment is more
-    // than sufficient. Size is rounded up to a PAGE multiple internally.
-    let base = vmem::leak_zeroed_pages(DIRECTORY_SIDECAR_SIZE)?;
-    Some(base.as_ptr() as *mut super::segment_directory::SegmentDirectory)
-}
-
-/// Dereference a materialised directory sidecar pointer as
-/// `&SegmentDirectory`. The ONE safe membrane function for shared-ref
-/// access to the sidecar (mirrors `bootstrap::deref_overflow_sidecar`'s
-/// role for `HeapOverflowSidecar`).
-///
-/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
-///
-/// `p` must be non-null and was returned by [`reserve_directory_sidecar`].
-/// The calling thread is the sole owner (`AllocCore` is single-writer).
-#[cfg(feature = "alloc-segment-directory")]
-pub(crate) fn deref_directory_sidecar(
-    p: *const super::segment_directory::SegmentDirectory,
-) -> &'static super::segment_directory::SegmentDirectory {
-    debug_assert!(!p.is_null(), "deref_directory_sidecar: null pointer");
-    // SAFETY: `p` is non-null, PAGE-aligned, valid for
-    // `size_of::<SegmentDirectory>()` bytes, OS-zeroed or rebuild-written,
-    // leaked for the process lifetime. The owner-only discipline means no
-    // concurrent writer. `&'static` is sound because the allocation outlives
-    // any reference.
-    unsafe { &*p }
-}
-
-/// Dereference a materialised directory sidecar pointer as
-/// `&mut SegmentDirectory`. The ONE safe membrane function for mutable
-/// access to the sidecar. Owner-only: only the owning thread calls this.
-///
-/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
-///
-/// `p` must be non-null and was returned by [`reserve_directory_sidecar`].
-/// The calling thread is the sole owner (`AllocCore` is single-writer).
-/// No other mutable or shared reference to this sidecar may be live.
-#[cfg(feature = "alloc-segment-directory")]
-pub(crate) fn deref_directory_sidecar_mut(
-    p: *mut super::segment_directory::SegmentDirectory,
-) -> &'static mut super::segment_directory::SegmentDirectory {
-    debug_assert!(!p.is_null(), "deref_directory_sidecar_mut: null pointer");
-    // SAFETY: same as `deref_directory_sidecar`, plus: the owner-only
-    // discipline guarantees no concurrent reader or writer, so `&mut` is
-    // sound. The `'static` lifetime is sound because the allocation outlives
-    // any reference (leaked, never freed).
-    unsafe { &mut *p }
+    super::sidecar::reserve_zeroed_with(super::segment_directory::SegmentDirectory::init_node_ids)
 }
 
 /// Read ONE `class_nonempty_by_node[node_bucket][class_idx]` word-array out
