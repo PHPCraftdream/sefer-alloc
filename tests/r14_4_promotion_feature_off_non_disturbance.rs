@@ -14,6 +14,22 @@
 //! between the two, every feature configuration this crate ships gets
 //! coverage from exactly one side. Run with:
 //!   cargo test --release --features production --test r14_4_promotion_feature_off_non_disturbance
+//!
+//! ## `HAS_LARGE_GROW_HEADROOM` (hotfix, follow-up to task #302)
+//!
+//! Same headroom trade-off `tests/r14_4_promotion_move_leg_reduction.rs`
+//! documents at length (see that file's module doc for the full mechanism):
+//! `exact-span-large` sizes a fresh Large segment's committed `span_usable`
+//! to the EXACT page-rounded request with zero spare headroom, so an
+//! ALREADY-Large block's grow (no promotion involved here at all — this
+//! file's whole premise is that `medium-classes` is off, so the size was
+//! Large from the start) can still structurally miss OPT-G's
+//! `payload_off + new_eff <= span_usable` check under that feature. This is
+//! not specific to promotion — task #302 fixed the promotion-specific file
+//! but missed that this file's plain "grow an existing Large block" test has
+//! the exact same unconditional pointer-identity assumption, caught by CI's
+//! `production exact-span-large` feature-isolation row (a combination
+//! `npm run check`'s test matrix does not cover).
 
 #![cfg(all(feature = "alloc-global", not(feature = "medium-classes")))]
 
@@ -22,6 +38,14 @@ use std::alloc::{GlobalAlloc, Layout};
 use sefer_alloc::SeferAlloc;
 
 const ALIGN: usize = 8;
+
+/// See the module doc: `false` only when `exact-span-large` is on without a
+/// working headroom mechanism to counteract it (`large-reserved-capacity`
+/// off, or `numa-aware` on regardless of `large-reserved-capacity` — see
+/// `tests/r14_4_promotion_move_leg_reduction.rs`'s identical constant for
+/// the full derivation).
+const HAS_LARGE_GROW_HEADROOM: bool = !cfg!(feature = "exact-span-large")
+    || (cfg!(feature = "large-reserved-capacity") && !cfg!(feature = "numa-aware"));
 
 fn layout(size: usize) -> Layout {
     Layout::from_size_align(size, ALIGN).unwrap()
@@ -48,18 +72,27 @@ fn growth_across_the_would_be_medium_threshold_is_ordinary_large_realloc() {
         }
     }
 
-    // Grow further, still comfortably within one 4 MiB Large segment's span
-    // — this should hit the EXISTING OPT-G in-place grow fast path, exactly
-    // as it always has (medium-classes or not, this code path is untouched).
+    // Grow further. Under `HAS_LARGE_GROW_HEADROOM` this should hit the
+    // EXISTING OPT-G in-place grow fast path, exactly as it always has
+    // (medium-classes or not, this code path is untouched) — the committed
+    // span is a whole 4 MiB SEGMENT (or has `large-reserved-capacity`
+    // headroom on top of an exact span). Under the one documented
+    // no-headroom configuration (see the module doc), the original
+    // allocation's committed span is the exact page-rounded request with no
+    // slack, so this grow structurally cannot fit in place and correctly
+    // takes the move leg instead — only the weaker correctness oracle is
+    // asserted there.
     let new_size = old_size + 512 * 1024;
     // SAFETY: p live, old_layout matches, freed at most once on success.
     let grown = unsafe { a.realloc(p, old_layout, new_size) };
     assert!(!grown.is_null());
-    assert_eq!(
-        grown, p,
-        "growing an already-Large block within its committed span must hit \
-         OPT-G in-place, unaffected by medium-classes being off"
-    );
+    if HAS_LARGE_GROW_HEADROOM {
+        assert_eq!(
+            grown, p,
+            "growing an already-Large block within its committed span must hit \
+             OPT-G in-place, unaffected by medium-classes being off"
+        );
+    }
 
     // SAFETY: grown valid for old_size bytes (the preserved prefix).
     unsafe {
