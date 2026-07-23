@@ -11,10 +11,194 @@ use super::os;
 use super::large_cache_mode::LargeCacheMode;
 
 use super::alloc_core::{
-    AllocCore, LargeCacheDecayConfig, LargeCacheHitCounter, LARGE_CACHE_SLOTS,
+    AllocCore, CachedLarge, LargeCacheDecayConfig, LargeCacheHitCounter, LARGE_CACHE_SLOTS,
 };
+#[cfg(feature = "large-cache-extended")]
+use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
+
+/// R13-7 (task #277): a slot index into the COMBINED base+extension
+/// large-cache index space. `0..LARGE_CACHE_SLOTS` addresses `self
+/// .large_cache`; `LARGE_CACHE_SLOTS..LARGE_CACHE_SLOTS +
+/// LARGE_CACHE_EXTENDED_SLOTS` addresses `self.large_cache_extension`'s
+/// `slots` array (materialising it on first write if needed). With
+/// `large-cache-extended` OFF, only the base range exists — every method
+/// below degrades to exactly the pre-R13-7 base-8-slots-only behaviour.
+type CombinedSlot = usize;
 
 impl AllocCore {
+    /// Total addressable slots in the combined base+extension index space:
+    /// `LARGE_CACHE_SLOTS` (8) when the extension is not materialised (or
+    /// the feature is off), `LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS`
+    /// (40) once it is. Read-only — does NOT materialise the extension (a
+    /// scan that finds nothing to do should not pay a reservation cost; see
+    /// `large_cache_extended`'s module doc, same "OOM is not allocator OOM,
+    /// stay off until genuinely needed" posture `directory_sidecar` uses).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_scan_bound(&self) -> CombinedSlot {
+        #[cfg(feature = "large-cache-extended")]
+        {
+            if self.large_cache_extension.is_null() {
+                LARGE_CACHE_SLOTS
+            } else {
+                LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS
+            }
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            LARGE_CACHE_SLOTS
+        }
+    }
+
+    /// Read-only slot access at a COMBINED index (see [`CombinedSlot`]).
+    /// `None` if `idx` is out of the currently-materialised range (base
+    /// slots are always in range; an extension index is out of range only
+    /// if the sidecar has never been materialised, in which case it holds
+    /// no entries by construction).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_slot_get(&self, idx: CombinedSlot) -> Option<&CachedLarge> {
+        if idx < LARGE_CACHE_SLOTS {
+            return self.large_cache[idx].as_ref();
+        }
+        #[cfg(feature = "large-cache-extended")]
+        {
+            if self.large_cache_extension.is_null() {
+                return None;
+            }
+            let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+            ext.slots[idx - LARGE_CACHE_SLOTS].as_ref()
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            None
+        }
+    }
+
+    /// Take (remove) the entry at a COMBINED index, leaving that slot empty.
+    /// Panics if `idx` addresses an empty slot or an unmaterialised
+    /// extension range — callers only ever call this on an index just
+    /// proven occupied by [`large_cache_scan_bound`]/[`large_cache_slot_get`],
+    /// mirroring the pre-existing `self.large_cache[i].take().unwrap()`
+    /// call sites this replaces.
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_slot_take(&mut self, idx: CombinedSlot) -> CachedLarge {
+        if idx < LARGE_CACHE_SLOTS {
+            return self.large_cache[idx]
+                .take()
+                .expect("large_cache_slot_take: empty base slot");
+        }
+        #[cfg(feature = "large-cache-extended")]
+        {
+            let ext =
+                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension);
+            ext.slots[idx - LARGE_CACHE_SLOTS]
+                .take()
+                .expect("large_cache_slot_take: empty extension slot")
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            unreachable!("large_cache_slot_take: idx out of base range with extension disabled")
+        }
+    }
+
+    /// Find a free slot to admit a new deposit into, in the COMBINED index
+    /// space: scans the base 8 slots first (no materialisation cost), then —
+    /// only if `large-cache-extended` is on and the base is full — lazily
+    /// materialises the extension sidecar (first call only; a no-op OS
+    /// reservation check thereafter) and scans it. Returns `None` if every
+    /// slot in the currently-available space (base, or base+extension once
+    /// materialised) is occupied, OR if extension materialisation itself hit
+    /// OOM (sidecar OOM is not allocator OOM — the caller's existing
+    /// eviction-and-retry loop simply keeps operating within the base 8
+    /// slots, exactly as if this feature did not exist).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_find_free_slot(&mut self) -> Option<CombinedSlot> {
+        if let Some(i) = self.large_cache.iter().position(|s| s.is_none()) {
+            return Some(i);
+        }
+        #[cfg(feature = "large-cache-extended")]
+        {
+            if self.large_cache_extension.is_null() {
+                let ptr = large_cache_extended::reserve_large_cache_extension()?;
+                self.large_cache_extension = ptr;
+            }
+            let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+            ext.slots
+                .iter()
+                .position(|s| s.is_none())
+                .map(|i| LARGE_CACHE_SLOTS + i)
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            None
+        }
+    }
+
+    /// Write `entry` into the COMBINED slot `idx` (must currently be empty —
+    /// mirrors the pre-existing `self.large_cache[slot_idx] = Some(..)`
+    /// assignment this replaces).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_slot_set(&mut self, idx: CombinedSlot, entry: CachedLarge) {
+        if idx < LARGE_CACHE_SLOTS {
+            self.large_cache[idx] = Some(entry);
+            return;
+        }
+        #[cfg(feature = "large-cache-extended")]
+        {
+            let ext =
+                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension);
+            ext.slots[idx - LARGE_CACHE_SLOTS] = Some(entry);
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            unreachable!("large_cache_slot_set: idx out of base range with extension disabled")
+        }
+    }
+
+    /// TEST-ONLY (R13-7, task #277): the `usable_size` of each slot in the
+    /// EXTENSION sidecar only (base slots stay covered by the pre-existing
+    /// [`dbg_large_cache_slot_sizes`](Self::dbg_large_cache_slot_sizes)).
+    /// Returns all-`None` if the extension has never been materialised
+    /// (never overflowed the base 8 slots, or the feature is off).
+    #[doc(hidden)]
+    #[cfg(feature = "large-cache-extended")]
+    pub fn dbg_large_cache_extended_slot_sizes(
+        &self,
+    ) -> [Option<usize>; LARGE_CACHE_EXTENDED_SLOTS] {
+        let mut out = [None; LARGE_CACHE_EXTENDED_SLOTS];
+        if self.large_cache_extension.is_null() {
+            return out;
+        }
+        let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+        for (i, slot) in ext.slots.iter().enumerate() {
+            out[i] = slot.as_ref().map(|c| c.usable_size);
+        }
+        out
+    }
+
+    /// TEST-ONLY (R13-7, task #277): whether the large-cache extension
+    /// sidecar has been materialised for this `AllocCore`. Always `false`
+    /// when `large-cache-extended` is off.
+    #[doc(hidden)]
+    #[cfg(feature = "large-cache-extended")]
+    pub fn dbg_large_cache_extension_materialised(&self) -> bool {
+        !self.large_cache_extension.is_null()
+    }
+
+    /// TEST-ONLY (R13-7, task #277): total addressable slot count in the
+    /// combined base+extension space right now (8 if the extension has not
+    /// materialised, 40 once it has). Always 8 when `large-cache-extended`
+    /// is off.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_large_cache_total_slots(&self) -> usize {
+        self.large_cache_scan_bound()
+    }
+
     // ── Phase 2 — lazy decay helpers ─────────────────────────────────────────
 
     /// Check whether enough wall-clock time has elapsed since the last decay
@@ -100,7 +284,7 @@ impl AllocCore {
             let Some(victim_idx) = self.oldest_occupied_slot() else {
                 break; // Cache is empty.
             };
-            let victim = self.large_cache[victim_idx].take().unwrap();
+            let victim = self.large_cache_slot_take(victim_idx);
             self.large_cache_used_bytes = self
                 .large_cache_used_bytes
                 .saturating_sub(victim.usable_size);
@@ -187,17 +371,17 @@ impl AllocCore {
 
     // ── end Phase 2 ──────────────────────────────────────────────────────────
 
-    /// Find the occupied slot with the smallest `seq` — the true FIFO-oldest
-    /// entry (task D1). Returns `None` if the cache is empty. `O(LARGE_CACHE_SLOTS)`;
-    /// only called on the large-alloc/dealloc slow paths (never the small hot
-    /// path), so the linear scan is not performance-sensitive even with 8
-    /// slots.
+    /// Find the occupied COMBINED slot (see [`CombinedSlot`]) with the
+    /// smallest `seq` — the true FIFO-oldest entry (task D1). Returns `None`
+    /// if the cache is empty. `O(large_cache_scan_bound())` — 8 with
+    /// `large-cache-extended` off or not-yet-materialised, up to 40 once
+    /// materialised; only called on the large-alloc/dealloc slow paths
+    /// (never the small hot path), so the linear scan is not
+    /// performance-sensitive at either size.
     #[cfg(feature = "alloc-decommit")]
-    fn oldest_occupied_slot(&self) -> Option<usize> {
-        self.large_cache
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| s.as_ref().map(|c| (i, c.seq)))
+    fn oldest_occupied_slot(&self) -> Option<CombinedSlot> {
+        (0..self.large_cache_scan_bound())
+            .filter_map(|i| self.large_cache_slot_get(i).map(|c| (i, c.seq)))
             .min_by_key(|&(_, seq)| seq)
             .map(|(i, _)| i)
     }
@@ -218,7 +402,7 @@ impl AllocCore {
         let Some(victim_idx) = self.oldest_occupied_slot() else {
             return false;
         };
-        let victim = self.large_cache[victim_idx].take().unwrap();
+        let victim = self.large_cache_slot_take(victim_idx);
         self.large_cache_used_bytes = self
             .large_cache_used_bytes
             .saturating_sub(victim.usable_size);

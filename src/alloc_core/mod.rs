@@ -45,6 +45,14 @@ pub(crate) mod directory_stats;
 pub(crate) mod dirty_by_class;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_config;
+/// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): the lazily-
+/// materialised sidecar that widens the large-segment free-cache beyond the
+/// fixed 8 base slots. See the module doc for the full design. A named
+/// `unsafe` seam (single documented reason: dereferencing the
+/// `leak_zeroed_pages`-published sidecar pointer, owner-only, no
+/// `RacyPtrCell` needed).
+#[cfg(feature = "large-cache-extended")]
+pub(crate) mod large_cache_extended;
 #[cfg(feature = "alloc-decommit")]
 pub mod large_cache_mode;
 /// RAD-5 (plan Phase 5-E4), verdict GO — the second orthogonal per-segment

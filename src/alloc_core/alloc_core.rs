@@ -79,6 +79,16 @@ use super::size_classes::{AllocKind, SizeClasses, SMALL_CLASS_COUNT};
 /// (`large_cache_budget_bytes`) remains the primary control on total cached
 /// RSS; slot count only bounds how many *distinct* spans can be resident at
 /// once.
+///
+/// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): this base count
+/// stays 8 unconditionally (always-resident, zero-materialisation-cost
+/// array) — a wider working set (16+ distinct sizes, e.g. under
+/// `exact-span-large`'s per-size `usable` — see
+/// `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §4) is
+/// served by the OPT-IN lazily-materialised `large_cache_extension` sidecar
+/// (`large_cache_extended.rs`) layered on top, not by raising this constant.
+/// See that module's doc for why "extend via an additive lazy sidecar"
+/// was chosen over "raise this base array's size".
 #[cfg(feature = "alloc-decommit")]
 pub(super) const LARGE_CACHE_SLOTS: usize = 8;
 
@@ -425,6 +435,20 @@ pub struct AllocCore {
     /// (both operate in the regime where empty slots are recyclable).
     #[cfg(feature = "alloc-decommit")]
     pub(super) large_cache: [Option<CachedLarge>; LARGE_CACHE_SLOTS],
+
+    /// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): lazily-
+    /// materialised sidecar pointer widening the large-cache from
+    /// `LARGE_CACHE_SLOTS` (8) to `8 + LARGE_CACHE_EXTENDED_SLOTS` (40) total
+    /// slots. `null` = not yet materialised (either the base 8 slots have
+    /// never overflowed, or the feature is off, or sidecar OOM — all three
+    /// are indistinguishable and all three mean "cache is capped at the base
+    /// 8 slots", exactly the pre-existing behaviour). Owner-only (plain
+    /// `*mut`, not `AtomicPtr` — mirrors `directory_sidecar`, not
+    /// `dirty_by_class`; see `large_cache_extended`'s module doc for why no
+    /// `RacyPtrCell` is needed here). Dereferenced via
+    /// `large_cache_extended::deref_large_cache_extension[_mut]`.
+    #[cfg(feature = "large-cache-extended")]
+    pub(super) large_cache_extension: *mut super::large_cache_extended::LargeCacheExtension,
 
     /// Per-shard byte budget for the large-cache. `None` = unbounded (any span
     /// may be admitted as long as a free slot exists). When set, the sum of
@@ -845,6 +869,8 @@ impl AllocCore {
             numa_node_hits_since_refresh: 0,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
+            #[cfg(feature = "large-cache-extended")]
+            large_cache_extension: core::ptr::null_mut(),
             #[cfg(feature = "alloc-decommit")]
             large_cache_budget_bytes: None,
             #[cfg(feature = "alloc-decommit")]
@@ -1311,9 +1337,16 @@ impl AllocCore {
                     // the "slots full" case entirely, silently releasing every
                     // span beyond the first two to the OS. The loop below treats
                     // both constraints uniformly.
+                    //
+                    // R13-7 (task #277): "free slot" now searches the COMBINED
+                    // base+extension index space via `large_cache_find_free_slot`
+                    // (base 8 first, then the lazily-materialised
+                    // `large-cache-extended` sidecar once the base is full) —
+                    // the byte-budget check is UNCHANGED and remains the
+                    // primary control regardless of how many slots exist.
                     let mut admitted: Option<usize> = None;
                     loop {
-                        let free_slot = self.large_cache.iter().position(|s| s.is_none());
+                        let free_slot = self.large_cache_find_free_slot();
                         let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
                             self.large_cache_used_bytes + usable_size <= budget
                         });
@@ -1380,14 +1413,17 @@ impl AllocCore {
                         // Deposit into cache and update the byte-budget counter.
                         let seq = self.large_cache_seq;
                         self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
-                        self.large_cache[slot_idx] = Some(CachedLarge {
-                            reservation: stale.reservation,
-                            reservation_len: stale.reservation_len,
-                            base,
-                            usable_size,
-                            reserved_capacity,
-                            seq,
-                        });
+                        self.large_cache_slot_set(
+                            slot_idx,
+                            CachedLarge {
+                                reservation: stale.reservation,
+                                reservation_len: stale.reservation_len,
+                                base,
+                                usable_size,
+                                reserved_capacity,
+                                seq,
+                            },
+                        );
                         self.large_cache_used_bytes += usable_size;
                         return;
                     }
@@ -2000,6 +2036,27 @@ impl Drop for AllocCore {
         for slot in &mut self.large_cache {
             if let Some(cached) = slot.take() {
                 os::release_segment(cached.reservation, cached.reservation_len);
+            }
+        }
+        // R13-7 (task #277): the lazily-materialised extension sidecar holds
+        // large-cache entries the SAME way the base array does (unregistered
+        // from `self.table`, so the `table.bases()` walk below never sees
+        // them) — its reservations must be released here too, or they leak
+        // on drop. The sidecar's OWN VM reservation (the `leak_zeroed_pages`
+        // page(s) backing the `LargeCacheExtension` struct itself) is NOT
+        // released — it is leaked for the process lifetime by design, the
+        // same discipline `directory_sidecar`/`dirty_by_class` already use
+        // for their own sidecars (a bounded, one-time-per-heap cost, not a
+        // growing leak).
+        #[cfg(feature = "large-cache-extended")]
+        if !self.large_cache_extension.is_null() {
+            let ext = super::large_cache_extended::deref_large_cache_extension_mut(
+                self.large_cache_extension,
+            );
+            for slot in &mut ext.slots {
+                if let Some(cached) = slot.take() {
+                    os::release_segment(cached.reservation, cached.reservation_len);
+                }
             }
         }
 

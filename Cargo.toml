@@ -352,6 +352,43 @@ exact-span-large = ["alloc-core"]
 # realloc fast path are BYTE-FOR-BYTE IDENTICAL to before — this feature
 # adds a new path, it does not alter the default one.
 large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
+# R13-7 (P1-perf, EXPERIMENTAL, task #277): widen the large-segment free-cache
+# (`AllocCore::large_cache`, `alloc_core.rs`) beyond its fixed 8 base slots
+# (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension sidecar of 32
+# additional slots (40 total) — see `src/alloc_core/large_cache_extended.rs`'s
+# module doc for the full design and design-alternatives writeup.
+#
+# Motivation: `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md`
+# §4 measured that `exact-span-large` (R12-3) makes distinct Large request
+# sizes stop aliasing onto one rounded-to-SEGMENT `usable` value — each
+# distinct size occupies its OWN slot instead of sharing one. A working set
+# of 16+ distinct Large sizes can exhaust the base 8 slots, forcing every
+# eviction-then-refill cycle back onto a full OS round-trip (µs-level) that
+# the cache exists to avoid.
+#
+# The sidecar is reserved via `aligned_vmem::leak_zeroed_pages` (same
+# M5-clean direct-VM-reservation pattern `alloc-segment-directory`'s
+# `SegmentDirectory` and `class-aware-dirty`'s `PerClassDirty` both use) only
+# on first overflow of the base 8 slots — zero cost for any workload whose
+# distinct-Large-size working set never exceeds 8. Owner-only plain `*mut`
+# (NOT `RacyPtrCell`): unlike `PerClassDirty` (written by cross-thread remote
+# frees), the large-cache is touched only by this `AllocCore`'s single owning
+# thread, so no CAS-publish protocol is needed.
+#
+# The byte-budget (`large_cache_budget_bytes` / `LargeCacheConfig::budget_bytes`)
+# REMAINS the primary control on total cached RSS — widening the slot count
+# only relaxes how many DISTINCT spans may be resident within that same byte
+# budget; a small budget still caps the cache tightly regardless of slot
+# count.
+#
+# Requires `alloc-decommit` (the large-cache mechanism itself only exists
+# under that feature). EXPERIMENTAL: opt-in, NOT part of `production` or any
+# other default-on bundle. `--all-features` pulls it in (as it does every
+# other opt-in feature here). With this feature OFF, `AllocCore`'s field
+# list, `Drop`, and every large-cache algorithm are BYTE-FOR-BYTE IDENTICAL
+# to before this task — this feature adds an additive lazy sidecar on top of
+# the existing base-8-slot array, it does not alter the default path.
+large-cache-extended = ["alloc-decommit"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
 # `alloc-xthread`, a cross-thread free of a small block still has to land
@@ -1019,6 +1056,20 @@ required-features = ["alloc-core"]
 #            cargo run --release --example r13_6_large_cache_hit_rate_measure --features "production alloc-stats exact-span-large large-reserved-capacity"
 [[example]]
 name = "r13_6_large_cache_hit_rate_measure"
+required-features = ["alloc-core", "alloc-decommit"]
+
+# R13-7 (task #277): THROWAWAY exact-count judge for the `large-cache-extended`
+# sidecar — mirrors `r13_6_large_cache_hit_rate_measure.rs`'s methodology (a
+# FIXED, KNOWN number of round-robin alloc+dealloc cycles, exact hit-rate via
+# `AllocCore::dbg_large_cache_hits()`) but over 24 distinct Large sizes
+# (inside the task's "16-32 different Large sizes" judge scope), run once
+# WITHOUT `large-cache-extended` (8-slot baseline) and once WITH it (8+32=40
+# slots) for a direct hit-rate + wall-clock before/after comparison. Requires
+# `alloc-stats` for a non-zero hit-rate readout. NOT a shipping artifact.
+# Build/run (BEFORE, 8 slots): cargo run --release --example r13_7_large_cache_extended_hit_rate_measure --features "alloc-core alloc-decommit alloc-stats"
+#            (AFTER, 40 slots): cargo run --release --example r13_7_large_cache_extended_hit_rate_measure --features "alloc-core alloc-decommit alloc-stats large-cache-extended"
+[[example]]
+name = "r13_7_large_cache_extended_hit_rate_measure"
 required-features = ["alloc-core", "alloc-decommit"]
 
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).

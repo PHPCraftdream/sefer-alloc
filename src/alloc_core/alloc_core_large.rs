@@ -16,7 +16,7 @@ use super::segment_header::{align_up, SegmentHeader};
 
 use super::alloc_core::AllocCore;
 #[cfg(feature = "alloc-decommit")]
-use super::alloc_core::{CachedLarge, LARGE_CACHE_SIZE_FACTOR, LARGE_CACHE_SLOTS};
+use super::alloc_core::{CachedLarge, LARGE_CACHE_SIZE_FACTOR};
 
 /// R12-4 (EXPERIMENTAL, feature `large-reserved-capacity`): the upper bound
 /// on how large a Large segment's `reserved_capacity` may grow relative to
@@ -172,12 +172,14 @@ impl AllocCore {
             // (`usable_size <= usable * LARGE_CACHE_SIZE_FACTOR`). Best-fit keeps
             // the tightest span for this request and leaves the larger cached
             // spans available for larger future requests — reducing internal
-            // fragmentation / RSS waste versus first-fit, at O(LARGE_CACHE_SLOTS)
-            // (8) cost on the cold large-alloc path (negligible).
+            // fragmentation / RSS waste versus first-fit, at
+            // O(large_cache_scan_bound()) cost on the cold large-alloc path
+            // (negligible: 8 with `large-cache-extended` off/not-yet-
+            // materialised, up to 40 once materialised — R13-7, task #277).
             let mut hit_idx: Option<usize> = None;
             let mut best_usable: usize = usize::MAX;
-            for i in 0..LARGE_CACHE_SLOTS {
-                if let Some(ref slot) = self.large_cache[i] {
+            for i in 0..self.large_cache_scan_bound() {
+                if let Some(slot) = self.large_cache_slot_get(i) {
                     if slot.usable_size >= usable
                         && slot.usable_size <= usable.saturating_mul(LARGE_CACHE_SIZE_FACTOR)
                         && slot.usable_size < best_usable
@@ -188,7 +190,7 @@ impl AllocCore {
                 }
             }
             if let Some(idx) = hit_idx {
-                let slot = self.large_cache[idx].take().unwrap();
+                let slot = self.large_cache_slot_take(idx);
                 // Diagnostic (task D1): count this as a cache hit.
                 // Э5 (task #145): load+store instead of `fetch_add` — no
                 // `lock xadd`. SOUND for the same single-writer reason as
@@ -534,9 +536,12 @@ impl AllocCore {
             let usable_size = hdr.span_usable;
             let reserved_capacity = hdr.reserved_capacity;
 
+            // R13-7 (task #277): free-slot search now spans the combined
+            // base+extension index space — see the mirror-site comment in
+            // `AllocCore::dealloc`'s Large branch (`alloc_core.rs`).
             let mut admitted: Option<usize> = None;
             loop {
-                let free_slot = self.large_cache.iter().position(|s| s.is_none());
+                let free_slot = self.large_cache_find_free_slot();
                 let budget_ok = self
                     .large_cache_budget_bytes
                     .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
@@ -571,14 +576,17 @@ impl AllocCore {
                     .store(0, core::sync::atomic::Ordering::Release);
                 let seq = self.large_cache_seq;
                 self.large_cache_seq = self.large_cache_seq.wrapping_add(1);
-                self.large_cache[slot_idx] = Some(CachedLarge {
-                    reservation: hdr.reservation,
-                    reservation_len: hdr.reservation_len,
-                    base,
-                    usable_size,
-                    reserved_capacity,
-                    seq,
-                });
+                self.large_cache_slot_set(
+                    slot_idx,
+                    CachedLarge {
+                        reservation: hdr.reservation,
+                        reservation_len: hdr.reservation_len,
+                        base,
+                        usable_size,
+                        reserved_capacity,
+                        seq,
+                    },
+                );
                 self.large_cache_used_bytes += usable_size;
                 return;
             }
