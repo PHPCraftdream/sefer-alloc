@@ -51,13 +51,20 @@
 //! producer via a remote free, hence `RacyPtrCell`'s CAS-publish protocol),
 //! the large-cache is exactly like `directory_sidecar`/`SegmentDirectory`:
 //! touched ONLY by this `AllocCore`'s owning thread (`alloc_large`/`dealloc`/
-//! `reclaim_large_segment` all run on the single owning thread — `AllocCore`
-//! is `Send`, not `Sync`). A plain `*mut LargeCacheExtension`, materialised
-//! lazily and dereferenced through the same "one safe membrane function per
-//! access mode" discipline `os::deref_directory_sidecar[_mut]` established,
-//! is the correct-weight primitive here — no atomics, no CAS, no loom
-//! coverage needed for the publish step (there is no concurrent publisher to
-//! race).
+//! `reclaim_large_segment` all run on the single owning thread). `AllocCore`
+//! is deliberately NEITHER `Send` NOR `Sync` (see the "NOTE: `AllocCore` is
+//! intentionally NOT `Send` (nor `Sync`)" comment above its `Drop` impl in
+//! `alloc_core.rs`) — the safety of a plain, non-atomic `*mut
+//! LargeCacheExtension` here does not come from a `Send`/`Sync` marker at
+//! all, it comes from the stronger owner-only single-thread discipline: an
+//! `AllocCore` value never crosses a thread boundary in the first place
+//! (Phase 8 is single-threaded by construction), so there is no concurrent
+//! producer to race even in principle. A plain `*mut LargeCacheExtension`,
+//! materialised lazily and dereferenced through the same "one safe membrane
+//! function per access mode" discipline `os::deref_directory_sidecar[_mut]`
+//! established, is the correct-weight primitive here — no atomics, no CAS,
+//! no loom coverage needed for the publish step (there is no concurrent
+//! publisher to race).
 //!
 //! ## Sizing
 //!
@@ -83,17 +90,25 @@
 //! `tests/large_cache_extended_off_no_overflow_capacity.rs`).
 
 // Named `unsafe` seam (mirrors `os.rs`'s directory-sidecar reservation
-// functions and `dirty_by_class.rs`'s per-class-dirty sidecar): the SINGLE
-// documented reason to hold `unsafe` here is dereferencing the
-// lazily-reserved `*mut LargeCacheExtension` as `&'static [_] `/`&'static mut
-// [_]` — sound because the pointer is only ever produced by
-// `reserve_large_cache_extension` in this same module via
-// `aligned_vmem::leak_zeroed_pages` (non-null, page-aligned, valid for
-// `size_of::<LargeCacheExtension>()` bytes, OS-zeroed, leaked for the
-// process lifetime — see that function's own safety contract) and the
-// owner-only single-writer discipline (`AllocCore` is `Send`, not `Sync`)
-// rules out any concurrent aliasing writer/reader.
+// functions and `dirty_by_class.rs`'s per-class-dirty sidecar): the two
+// documented reasons to hold `unsafe` here are (1) `ptr::write`-constructing
+// a fully-typed `LargeCacheExtension` into the freshly-reserved, not-yet-
+// observed page(s) `reserve_large_cache_extension` gets from
+// `aligned_vmem::leak_zeroed_pages` — non-null, page-aligned, valid for
+// `size_of::<LargeCacheExtension>()` bytes, and not yet aliased by any other
+// reference, so a plain overwrite is sound; and (2) dereferencing the
+// resulting `*mut LargeCacheExtension` as `&'static [_]`/`&'static mut [_]`
+// in `deref_large_cache_extension[_mut]` — sound because the pointer is only
+// ever produced by `reserve_large_cache_extension` in this same module (thus
+// always pointing at a value this module itself typed-initialised) and the
+// owner-only single-writer discipline (`AllocCore` is neither `Send` nor
+// `Sync`; see its own doc comment) rules out any concurrent aliasing
+// writer/reader — the safety this crate's `#![forbid(unsafe_code)]` upper
+// world otherwise gets from the type system is upheld here by that
+// single-thread-owner discipline instead.
 #![allow(unsafe_code)]
+
+use core::ptr;
 
 use super::alloc_core::CachedLarge;
 
@@ -126,58 +141,112 @@ const LARGE_CACHE_EXTENSION_SIZE: usize = {
 /// Reserve and construct a [`LargeCacheExtension`] sidecar via direct OS VM
 /// reservation (M5-clean — `AllocCore`'s alloc path must not recurse into
 /// `std::alloc`/`Vec`/`Box`; see `alloc_core.rs`'s module doc). Returns
-/// `Some(ptr)` on success (valid for the process lifetime, OS-zeroed — an
-/// all-`None` `[Option<CachedLarge>; _]` is the correct zeroed initial
-/// state, since `Option::None`'s all-zero-bytes representation is a valid
-/// niche encoding for `Option<CachedLarge>`... note this is NOT relied upon:
-/// the sidecar is read only through the typed `slots` field, whose OS-zeroed
-/// bytes are never reinterpreted as anything other than the `Option` niche
-/// layout the compiler itself produced when zero-initialising an array of
-/// `None`s would be byte-identical — see `dbg_...` test coverage), or `None`
-/// on OOM (sidecar OOM is NOT allocator OOM — the extension mechanism simply
-/// stays off for this heap and the cache is capped at the 8 base slots,
-/// exactly as if this feature did not exist).
+/// `Some(ptr)` on success (valid for the process lifetime, EXPLICITLY
+/// typed-initialised in place below — the OS-zeroed bytes `leak_zeroed_pages`
+/// hands back are never trusted as-is to already encode an all-`None`
+/// `[Option<CachedLarge>; _]`; whether `Option`'s all-zero bytes form a valid
+/// niche encoding for a given payload type is an UNSPECIFIED, rustc-version-
+/// and layout-dependent detail of `repr(Rust)`, not a language guarantee —
+/// see `CachedLarge`'s own layout in `alloc_core.rs`, a bag of bare `*mut
+/// u8`/`usize`/`u64` fields with no reserved niche the compiler is obligated
+/// to place there. The `ptr::write` below makes this function's soundness
+/// independent of that assumption: it writes a real, compiler-constructed
+/// `[None; LARGE_CACHE_EXTENDED_SLOTS]` value into the reserved page(s)
+/// before the pointer is returned/published, so every `deref_large_cache_extension[_mut]`
+/// call thereafter reads a value the compiler itself produced as `None`, not
+/// a reinterpreted zero pattern), or `None` on OOM (sidecar OOM is NOT
+/// allocator OOM — the extension mechanism simply stays off for this heap
+/// and the cache is capped at the 8 base slots, exactly as if this feature
+/// did not exist).
 pub(crate) fn reserve_large_cache_extension() -> Option<*mut LargeCacheExtension> {
     let base = aligned_vmem::leak_zeroed_pages(LARGE_CACHE_EXTENSION_SIZE)?;
-    Some(base.as_ptr() as *mut LargeCacheExtension)
+    let ptr = base.as_ptr() as *mut LargeCacheExtension;
+    // SAFETY: `ptr` is non-null, PAGE-aligned, and valid for
+    // `size_of::<LargeCacheExtension>()` bytes (rounded up to
+    // `LARGE_CACHE_EXTENSION_SIZE`, itself `>= size_of::<LargeCacheExtension>()`
+    // by construction above) — freshly reserved by `leak_zeroed_pages` and not
+    // yet observed by any other reference, so `ptr::write` may construct a
+    // fully-typed value there without reading or dropping whatever bytes were
+    // already present (a plain overwrite, exactly `ptr::write`'s contract).
+    // This is the ONE place that determines the sidecar's initial value; every
+    // subsequent access goes through `deref_large_cache_extension[_mut]`,
+    // which only ever reads/writes a value this function (or a later,
+    // properly-typed store through the same `&mut`) produced.
+    unsafe {
+        ptr::write(
+            ptr,
+            LargeCacheExtension {
+                slots: [const { None }; LARGE_CACHE_EXTENDED_SLOTS],
+            },
+        );
+    }
+    Some(ptr)
 }
 
 /// Dereference a materialised extension sidecar pointer as
 /// `&LargeCacheExtension`. Mirrors `os::deref_directory_sidecar`.
 ///
-/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
+/// `unsafe fn`, not a safe function with a prose-only caller contract: two
+/// safe-looking calls to this (or [`deref_large_cache_extension_mut`]) back
+/// to back would otherwise materialise aliasing `&'static`/`&'static mut`
+/// references with no `unsafe` token at either call site — real UB under
+/// Stacked/Tree Borrows that the type system could not catch. Requiring
+/// `unsafe` at the call site forces every caller to locally justify why the
+/// aliasing rule below is upheld (own reference does not outlive the next
+/// call).
 ///
-/// `p` must be non-null and was returned by [`reserve_large_cache_extension`].
-/// The calling thread is the sole owner (`AllocCore` is single-writer).
-pub(crate) fn deref_large_cache_extension(
+/// # Safety
+///
+/// - `p` must be non-null and was returned by [`reserve_large_cache_extension`]
+///   (so it points at a value this module itself `ptr::write`-initialised —
+///   see that function's own safety comment).
+/// - The calling thread is the sole owner (`AllocCore` is neither `Send` nor
+///   `Sync`; see its doc comment in `alloc_core.rs`), so no concurrent
+///   writer can race this read.
+/// - The `&'static` returned must not be held live across any call that may
+///   produce a `&mut LargeCacheExtension` to the SAME sidecar (i.e.
+///   [`deref_large_cache_extension_mut`]) — callers must not let the two
+///   borrows overlap.
+pub(crate) unsafe fn deref_large_cache_extension(
     p: *const LargeCacheExtension,
 ) -> &'static LargeCacheExtension {
     debug_assert!(!p.is_null(), "deref_large_cache_extension: null pointer");
-    // SAFETY: `p` is non-null, PAGE-aligned, valid for
-    // `size_of::<LargeCacheExtension>()` bytes, OS-zeroed, leaked for the
-    // process lifetime. The owner-only discipline means no concurrent
-    // writer. `&'static` is sound because the allocation outlives any
-    // reference.
+    // SAFETY: caller contract above establishes non-null, PAGE-aligned,
+    // valid-for-`size_of::<LargeCacheExtension>()`-bytes, typed-initialised
+    // (via `reserve_large_cache_extension`'s `ptr::write`), leaked for the
+    // process lifetime, and free of any live aliasing `&mut`. `&'static` is
+    // sound because the allocation outlives any reference (leaked, never
+    // freed).
     unsafe { &*p }
 }
 
 /// Dereference a materialised extension sidecar pointer as
 /// `&mut LargeCacheExtension`. Mirrors `os::deref_directory_sidecar_mut`.
 ///
-/// # Safety (caller contract — upheld by `AllocCore` owner-only discipline)
+/// `unsafe fn` for the same reason as [`deref_large_cache_extension`]: a
+/// safe wrapper here would let ordinary safe code produce aliasing
+/// `&'static mut` references with no `unsafe` token anywhere, which is UB
+/// regardless of the owner-only discipline that makes it data-race-free.
 ///
-/// `p` must be non-null and was returned by [`reserve_large_cache_extension`].
-/// The calling thread is the sole owner (`AllocCore` is single-writer). No
-/// other mutable or shared reference to this sidecar may be live.
-pub(crate) fn deref_large_cache_extension_mut(
+/// # Safety
+///
+/// - `p` must be non-null and was returned by [`reserve_large_cache_extension`]
+///   (so it points at a value this module itself `ptr::write`-initialised).
+/// - The calling thread is the sole owner (`AllocCore` is neither `Send` nor
+///   `Sync`), so no concurrent reader or writer can race this access.
+/// - No other reference (shared or mutable) to this sidecar may be live for
+///   the duration of the returned `&'static mut`'s use.
+pub(crate) unsafe fn deref_large_cache_extension_mut(
     p: *mut LargeCacheExtension,
 ) -> &'static mut LargeCacheExtension {
     debug_assert!(
         !p.is_null(),
         "deref_large_cache_extension_mut: null pointer"
     );
-    // SAFETY: same as `deref_large_cache_extension`, plus: the owner-only
-    // discipline guarantees no concurrent reader or writer, so `&mut` is
-    // sound. `'static` is sound for the same reason (leaked, never freed).
+    // SAFETY: caller contract above establishes non-null, PAGE-aligned,
+    // valid-for-`size_of::<LargeCacheExtension>()`-bytes, typed-initialised,
+    // leaked for the process lifetime, and free of any other live reference.
+    // `&'static mut` is sound because the allocation outlives any reference
+    // (leaked, never freed) and the owner-only discipline rules out aliasing.
     unsafe { &mut *p }
 }

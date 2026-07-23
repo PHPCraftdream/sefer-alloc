@@ -421,8 +421,9 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 
 | File | Sites | What they cover |
 |---|---|---|
-| [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 2 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract) |
+| [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 3 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract); `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
 | [`src/alloc_core/alloc_core_core_diag.rs`](src/alloc_core/alloc_core_core_diag.rs) | 4 | `dbg_stamp_segment_id` / `dbg_stamp_kind_byte` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
+| [`src/alloc_core/alloc_core_large_cache.rs`](src/alloc_core/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
 | [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 2 | Internal call-site blocks: `bump_gen` (in `pop_free`) / `init_gen_table_in_place` (in `reserve_small_segment`), hardened path |
 | [`src/alloc_core/alloc_core_small_diag.rs`](src/alloc_core/alloc_core_small_diag.rs) | 5 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations |
 | [`src/alloc_core/alloc_core_small_magazine.rs`](src/alloc_core/alloc_core_small_magazine.rs) | 1 | `flush_class` — `unsafe fn` boundary (caller-pointer contract) |
@@ -438,7 +439,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **19** tier-1 module-level seams (12 in
-`src/`, 7 in `crates/`) plus **45** tier-2 item-scoped allows across **15**
+`src/`, 7 in `crates/`) plus **51** tier-2 item-scoped allows across **16**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

@@ -2026,6 +2026,14 @@ impl AllocCore {
 /// does now. This note is the load-bearing reminder to add that handshake at
 /// that time; do not remove or weaken it while working on (a) or (b) above.
 impl Drop for AllocCore {
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
+                          // boundary when `large-cache-extended` is on, right after
+                          // `self.large_cache_extension` is proven non-null. Sound: the pointer
+                          // was produced only by `reserve_large_cache_extension`
+                          // (typed-initialised), `AllocCore`'s owner-only discipline (neither
+                          // `Send` nor `Sync`) rules out a concurrent reader/writer, and no other
+                          // reference to the sidecar is live across this call (this IS the
+                          // teardown path — no other method runs concurrently with `drop`).
     fn drop(&mut self) {
         // OPT-E (alloc-decommit): release any large segments held in the
         // free-cache BEFORE walking the segment table. The cached entries are
@@ -2050,9 +2058,13 @@ impl Drop for AllocCore {
         // growing leak).
         #[cfg(feature = "large-cache-extended")]
         if !self.large_cache_extension.is_null() {
-            let ext = super::large_cache_extended::deref_large_cache_extension_mut(
-                self.large_cache_extension,
-            );
+            // SAFETY: see the `#[allow(unsafe_code)]` justification on
+            // `Drop::drop` above.
+            let ext = unsafe {
+                super::large_cache_extended::deref_large_cache_extension_mut(
+                    self.large_cache_extension,
+                )
+            };
             for slot in &mut ext.slots {
                 if let Some(cached) = slot.take() {
                     os::release_segment(cached.reservation, cached.reservation_len);

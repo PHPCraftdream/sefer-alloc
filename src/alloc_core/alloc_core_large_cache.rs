@@ -57,6 +57,13 @@ impl AllocCore {
     /// no entries by construction).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
+                          // boundary (see its doc) when `large-cache-extended` is on. Sound here:
+                          // `self.large_cache_extension` is just proven non-null (produced only
+                          // by `reserve_large_cache_extension`, which typed-initialises it), and
+                          // `AllocCore`'s owner-only discipline (neither `Send` nor `Sync`) rules
+                          // out a concurrent writer. The returned `&LargeCacheExtension` does not
+                          // outlive this call.
     pub(super) fn large_cache_slot_get(&self, idx: CombinedSlot) -> Option<&CachedLarge> {
         if idx < LARGE_CACHE_SLOTS {
             return self.large_cache[idx].as_ref();
@@ -66,7 +73,11 @@ impl AllocCore {
             if self.large_cache_extension.is_null() {
                 return None;
             }
-            let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+            // function.
+            let ext = unsafe {
+                large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+            };
             ext.slots[idx - LARGE_CACHE_SLOTS].as_ref()
         }
         #[cfg(not(feature = "large-cache-extended"))]
@@ -83,6 +94,13 @@ impl AllocCore {
     /// call sites this replaces.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
+                          // boundary when `large-cache-extended` is on. Sound: `self
+                          // .large_cache_extension` was produced only by
+                          // `reserve_large_cache_extension` (typed-initialised), `AllocCore`'s
+                          // owner-only discipline (neither `Send` nor `Sync`) rules out a
+                          // concurrent reader/writer, and no other reference to the sidecar is
+                          // live across this call.
     pub(super) fn large_cache_slot_take(&mut self, idx: CombinedSlot) -> CachedLarge {
         if idx < LARGE_CACHE_SLOTS {
             return self.large_cache[idx]
@@ -91,8 +109,11 @@ impl AllocCore {
         }
         #[cfg(feature = "large-cache-extended")]
         {
-            let ext =
-                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension);
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+            // function.
+            let ext = unsafe {
+                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
+            };
             ext.slots[idx - LARGE_CACHE_SLOTS]
                 .take()
                 .expect("large_cache_slot_take: empty extension slot")
@@ -115,6 +136,13 @@ impl AllocCore {
     /// slots, exactly as if this feature did not exist).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
+                          // boundary when `large-cache-extended` is on, right after the sidecar is
+                          // proven materialised (either already non-null, or just reserved and
+                          // typed-initialised by `reserve_large_cache_extension` on this same
+                          // line). `AllocCore`'s owner-only discipline (neither `Send` nor `Sync`)
+                          // rules out a concurrent writer; the returned `&LargeCacheExtension`
+                          // does not outlive this call.
     pub(super) fn large_cache_find_free_slot(&mut self) -> Option<CombinedSlot> {
         if let Some(i) = self.large_cache.iter().position(|s| s.is_none()) {
             return Some(i);
@@ -125,7 +153,11 @@ impl AllocCore {
                 let ptr = large_cache_extended::reserve_large_cache_extension()?;
                 self.large_cache_extension = ptr;
             }
-            let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+            // function.
+            let ext = unsafe {
+                large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+            };
             ext.slots
                 .iter()
                 .position(|s| s.is_none())
@@ -142,6 +174,13 @@ impl AllocCore {
     /// assignment this replaces).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
+                          // boundary when `large-cache-extended` is on. Sound: `self
+                          // .large_cache_extension` was produced only by
+                          // `reserve_large_cache_extension` (typed-initialised), `AllocCore`'s
+                          // owner-only discipline (neither `Send` nor `Sync`) rules out a
+                          // concurrent reader/writer, and no other reference to the sidecar is
+                          // live across this call.
     pub(super) fn large_cache_slot_set(&mut self, idx: CombinedSlot, entry: CachedLarge) {
         if idx < LARGE_CACHE_SLOTS {
             self.large_cache[idx] = Some(entry);
@@ -149,8 +188,11 @@ impl AllocCore {
         }
         #[cfg(feature = "large-cache-extended")]
         {
-            let ext =
-                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension);
+            // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+            // function.
+            let ext = unsafe {
+                large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
+            };
             ext.slots[idx - LARGE_CACHE_SLOTS] = Some(entry);
         }
         #[cfg(not(feature = "large-cache-extended"))]
@@ -166,6 +208,13 @@ impl AllocCore {
     /// (never overflowed the base 8 slots, or the feature is off).
     #[doc(hidden)]
     #[cfg(feature = "large-cache-extended")]
+    #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
+                          // boundary, right after `self.large_cache_extension` is proven non-null.
+                          // Sound: the pointer was produced only by
+                          // `reserve_large_cache_extension` (typed-initialised), `AllocCore`'s
+                          // owner-only discipline (neither `Send` nor `Sync`) rules out a
+                          // concurrent writer, and the returned `&LargeCacheExtension` does not
+                          // outlive this call.
     pub fn dbg_large_cache_extended_slot_sizes(
         &self,
     ) -> [Option<usize>; LARGE_CACHE_EXTENDED_SLOTS] {
@@ -173,7 +222,11 @@ impl AllocCore {
         if self.large_cache_extension.is_null() {
             return out;
         }
-        let ext = large_cache_extended::deref_large_cache_extension(self.large_cache_extension);
+        // SAFETY: see the `#[allow(unsafe_code)]` justification above this
+        // function.
+        let ext = unsafe {
+            large_cache_extended::deref_large_cache_extension(self.large_cache_extension)
+        };
         for (i, slot) in ext.slots.iter().enumerate() {
             out[i] = slot.as_ref().map(|c| c.usable_size);
         }
