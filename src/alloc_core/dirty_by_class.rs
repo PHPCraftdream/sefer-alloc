@@ -90,6 +90,27 @@
 // `aligned_vmem::leak_zeroed_pages` (non-null, valid for
 // `size_of::<PerClassDirty>()` bytes, OS-zeroed, leaked for the process
 // lifetime — see that function's own safety contract).
+//
+// R14-9 (task #294) audit note: `ensure_per_class_dirty`/`get_per_class_dirty`
+// below are safe `fn`s that internally use `unsafe { ptr.as_ref() }`, NOT
+// `unsafe fn` boundaries like `alloc_core::sidecar::deref[_mut]` or
+// `os::deref_directory_sidecar[_mut]`-turned-`sidecar::deref[_mut]`. This is
+// a DELIBERATE, narrower exemption from that pattern, not an inconsistency:
+// those other two sidecars (`SegmentDirectory`, `LargeCacheExtension`) hand
+// out `&'static mut T` at some call site, so two safe-looking calls back to
+// back can materialise ALIASING `&'static`/`&'static mut` references — real
+// UB the type system cannot catch, which is exactly why their deref boundary
+// must be `unsafe fn` (the aliasing discipline has to be re-justified at
+// every call site). `PerClassDirty` is NEVER dereferenced as `&mut` anywhere
+// in this crate (`grep -rn "PerClassDirty" src/` shows only `&'static
+// PerClassDirty`/`&RacyPtrCell<PerClassDirty>` — its sole field is `[AtomicU64;
+// _]`, and every mutation goes through `fetch_or`/`swap` on the atomics, never
+// through a `&mut PerClassDirty`). Arbitrarily many `&PerClassDirty` may
+// therefore safely coexist and be read/written concurrently through their
+// interior mutability — the aliasing hazard the other two sidecars' `unsafe
+// fn` signature guards against does not exist here, so forcing the same
+// signature would be a stylistic-only widening of the `unsafe` surface with
+// no corresponding safety gap closed.
 #![allow(unsafe_code)]
 
 use core::sync::atomic::AtomicU64;
