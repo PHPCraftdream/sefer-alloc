@@ -95,6 +95,98 @@ Core instructions, mandatory for all code in this repository. They
   re-run — see `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md`
   and `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md` for the
   established pattern.
+  - **A cited raw log may be truncated to its relevant section, with an
+    explicit truncation marker** (R14-10/task #295) — the log does not have
+    to be committed in full just because one section of it is the cited
+    evidence. Round 13+14 committed ~35 raw-log files, including full
+    bench-table sweeps of ~1900+ lines each, growing `docs/perf/` by
+    megabytes per wave with no bound; a gate report needs its citation to be
+    reproducible, not the entire uncurated stdout. When truncating: keep the
+    cited section(s) verbatim, add a `# TRUNCATED — see <describe what was
+    cut> — full output reproducible via <exact command>` marker at each cut
+    point, and keep enough surrounding context (headers, summary lines) that
+    the section is self-explanatory without the removed parts. Do not
+    truncate retroactively — this applies to newly-committed logs going
+    forward; logs already committed stay as-is (re-truncating them later
+    would itself need the same zero-trust diff review a normal doc edit
+    gets, for no evidentiary gain).
+- **A perf-gate report citing raw logs should also emit a machine-readable
+  summary alongside them** (R14-10/task #295) — a compact CSV or JSON file
+  next to the `_raw_*.log` files it summarizes, holding the fields a script
+  would need to track a metric over time without re-parsing prose or
+  criterion/iai stdout: commit SHA, active feature set, CPU/OS
+  identification, sample count, and the gate's own key numbers (the exact
+  fields depend on the gate — a wall-clock gate cites ns/op figures, an iai
+  gate cites `Ir`/`Estimated Cycles` deltas). This does NOT replace the raw
+  logs or the prose report — it is a small companion
+  (`docs/perf/<REPORT_NAME>_summary.csv`, same base name as the report it
+  summarizes) that makes the report's own numbers grep/diff-able across
+  rounds. Not retroactive — existing gate docs are not required to grow a
+  summary file after the fact; new perf-gate reports going forward should
+  include one. See `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB_summary.csv`
+  for a concrete example (companion to
+  `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`'s §2 tables).
+- **Bench-profile pinning: a pinned-commit/worktree protocol, not named
+  `production-rN` Cargo feature bundles** (R14-10/task #295). `production`'s
+  own composition is expected to keep changing across rounds (that is the
+  whole point of the promotion gate) — a gate report or README table
+  refreshed under one round's `production` is NOT reproducible against a
+  later round's `production` by re-running `--features production` on
+  current `HEAD`, because the feature list underneath that flag moved. Two
+  options were weighed: (a) freeze each round's composition into a
+  permanent Cargo.toml feature alias (`production-r12`, `production-r13`,
+  ...) so `--features production-r13` always reproduces Round 13's exact
+  set, or (b) pin the commit instead of the feature flag — check out (or
+  `git worktree add`) the specific SHA a report was measured at, and re-run
+  plain `--features production` there. **(b) was chosen**: (a) permanently
+  grows the Cargo.toml feature matrix and the CI feature-powerset by one
+  entry per round forever (every future promotion doubles the aliases that
+  need maintaining, and an alias silently drifts out of sync with its
+  intended historical meaning the moment anyone edits it), while (b) needs
+  zero new Cargo.toml surface — git already durably pins every historical
+  composition by commit SHA, and `git log -- Cargo.toml` or
+  `git show <sha>:Cargo.toml` recovers the exact `production` list that was
+  active at measurement time with no additional bookkeeping. Protocol for a
+  gate doc that needs to reproduce a PRIOR round's numbers: cite the
+  measurement commit SHA in the doc (already required practice — see
+  existing gate docs' "measured on commit ..." lines), and to re-run it,
+  `git worktree add ../sefer-alloc-<label> <sha>` (or `git checkout <sha>`
+  in a scratch clone — never the main worktree, per the shared-workspace
+  git-safety rule elsewhere in this file) then run the same `npm run
+  bench:table` / `npm run iai` invocation there. No new Cargo feature is
+  needed for this — `--features production` in that worktree IS that
+  round's `production` by construction.
+- **`cargo-hack` feature-powerset CI — ADOPTED, as a weekly + on-demand job,
+  not a per-PR job** (R14-10/task #295 evaluation). Motivation: R13-12/task
+  #285 was a real pre-existing E0599 compile error reachable only by
+  `alloc-xthread`+`fastbin`+`alloc-decommit` WITHOUT `alloc-segment-directory`
+  — a combination neither `production`, `--all-features`, nor any hand-written
+  `test-feature-isolation` row in `ci.yml` ever exercised (both
+  `production` and `--all-features` always turn `alloc-segment-directory` on
+  alongside the other three), and it lived unnoticed for an entire round.
+  Hand-maintained feature-isolation rows do not scale to catching this CLASS
+  of bug — each new row only covers the ONE combination someone thought to
+  write down; `class-aware-dirty` joining `production` in the same round
+  (R13-9) also made one existing row (`production class-aware-dirty
+  alloc-stats`) a silent duplicate of another (`production alloc-stats`),
+  the same underlying problem in miniature (hand-written rows drift out of
+  sync with feature-list changes with no automatic signal). **Evaluation:**
+  `cargo hack check --feature-powerset --depth 2 --no-dev-deps` against this
+  crate's ~26 top-level features resolves to **308** `cargo check`
+  invocations (measured locally via `cargo hack ... --dry-run` before
+  installing cargo-hack via `cargo install cargo-hack --locked`; the CI job
+  itself uses `taiki-e/install-action@v2`, the prebuilt-binary installer
+  already used for `cargo-deny` in this same workflow, not a from-source
+  build). `check`-only (not `build`/`test`) keeps each invocation cheap
+  (typecheck only), but 308 of them is real added CI-minutes cost — too much
+  to add to the per-PR path without materially slowing every PR. **Decision:**
+  scheduled weekly (`schedule: cron '0 6 * * 1'`, the same trigger already
+  wired into `ci.yml` for the `numa-real-kernel` job) plus `workflow_dispatch`
+  for on-demand runs — see the `feature-powerset` job in `.github/workflows/ci.yml`.
+  This closes the actual gap (a bug that survived a full round undetected)
+  on a bounded weekly cadence without taxing every push/PR with ~300 extra
+  check invocations; `workflow_dispatch` lets a human force a run before a
+  promotion decision if desired.
 
 ## Speed: short scenario by default
 

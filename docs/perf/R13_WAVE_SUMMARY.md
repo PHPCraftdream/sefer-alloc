@@ -1,13 +1,18 @@
-# Round 13 — production A/B/B/A wave summary
+# Round 13 — production A/B, double-checked wave summary
 
 **Task:** #280 (R13-10). This is a **SUMMARY** report — it re-states and
 cross-references numbers already measured and gated by R13-6/R13-8/R13-9's
 own documents; it does not re-measure anything new. Its purpose is the thing
 R13-10's own brief asks for: one place that answers "what actually changed
 in `production` this round, and what is the before/after evidence for it,"
-in an A/B/B/A shape (production BEFORE the whole Round 13 wave, vs AFTER,
-with each side's own already-gated numbers restated once for a stable
-double-check, not a fresh remeasurement).
+in an A/B, double-checked shape (production BEFORE the whole Round 13 wave,
+vs AFTER, with each side's own already-gated numbers restated once for a
+stable double-check, not a fresh remeasurement). **Naming note
+(R14-10/task #295):** an earlier version of this title/intro called this
+shape "A/B/B/A," which is the name of a DIFFERENT, stricter protocol (genuine
+alternating interleaved runs within one session — see
+`docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md` §2.2 for an actual
+A/B/B/A judge); §2 below explains the distinction where it matters most.
 
 **Date:** 2026-07-23. **Round 13 span:** `e2d84f7`..`da77b38` (R13-1 through
 R13-12, tasks #271-#280 minus this document itself). **Baseline commit for
@@ -36,16 +41,24 @@ production = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin",
               "class-aware-dirty"]
 ```
 
-## 2. Production A/B/B/A — class-aware-dirty (the one promoted feature)
+## 2. Production A/B, double-checked — class-aware-dirty (the one promoted feature)
 
-"A/B/B/A" here means: **A** = `production` before the wave (class-aware-dirty
-OFF), **B** = `production` + `class-aware-dirty` (the treatment), restated a
-**second time (B, A)** from the same gate document's own double-checked
-numbers, to make the "before/after, and does it hold up on a second look"
-shape explicit rather than a single point-in-time claim. All numbers below
-are restated from `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`
-(measured 2026-07-23, base revision `874650b`) — **not re-measured for this
-summary**, per this document's own scope (a wave summary, not a new gate).
+**Naming correction (R14-10/task #295):** this section was originally
+titled "Production A/B/B/A," which overpromises — the genuine A/B/B/A
+protocol (alternating interleaved runs within one measurement session,
+guarding against monotonic host-state drift) is what R14-3's dedicated
+process-level judge actually performs
+(`docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md` §2.2, 20 pairs of 4
+alternating launches each). What THIS section does is narrower: **A** =
+`production` before the wave (class-aware-dirty OFF), **B** = `production` +
+`class-aware-dirty` (the treatment), with B's own numbers **restated a
+second time from the same gate document's own two internal sections (§3 and
+§9)** as a citation double-check, not a second independent measurement pass
+— an "A/B, double-checked" shape, not an interleaved A/B/B/A run. All
+numbers below are restated from
+`docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md` (measured 2026-07-23,
+base revision `874650b`) — **not re-measured for this summary**, per this
+document's own scope (a wave summary, not a new gate).
 
 | Axis | A: `production` (class-aware-dirty OFF) | B: `production` + `class-aware-dirty` (ON) | B (double-check, same gate doc §3/§9) | A (unaffected, confirmed unchanged) |
 |---|---|---|---|---|
@@ -55,7 +68,7 @@ summary**, per this document's own scope (a wave summary, not a new gate).
 | iai, 12 non-remote single-thread benches (Ir) | baseline (see `IAI_BASELINE.md`) | **+0.00% to +0.02%** | Confirmed a fixed +5 Ir per bench regardless of workload shape — "feature compiled in, code path never reached," not a per-call cost | Confirmed unchanged — feature is remote-drain-only |
 | iai, same 12 benches, Estimated Cycles | baseline | **+0.00% to +0.35%** | Within noise | — |
 | Sidecar RSS, per materialised heap | 0 (feature absent) | **8.0 KiB (2 pages)** | Corrects R12-7's own doc, which cited the raw un-page-rounded 6.1 KiB `size_of` figure | — |
-| CI feature-isolation row (`production class-aware-dirty alloc-stats`, no `numa-aware`) | — | **green** | Re-run personally on current HEAD, byte-for-byte the `.github/workflows/ci.yml` job | — |
+| CI feature-isolation row (`production alloc-stats`, no `numa-aware` — R14-10/#295: the `class-aware-dirty` token this row's name originally spelled out was dropped from `ci.yml` as a no-op once R13-9 promoted the feature into `production` itself) | — | **green** | Re-run personally on current HEAD, byte-for-byte the `.github/workflows/ci.yml` job | — |
 
 **Verdict this round acted on:** GO (R13-9's own §7 recommendation),
 user-confirmed via `AskUserQuestion` before the `Cargo.toml` edit. The
@@ -69,22 +82,39 @@ same numbers at the point of use.
 | `exact-span-large` + `large-reserved-capacity` | R13-6 (#276) | `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` | **CONDITIONAL-GO** | iai `realloc_grow` (64B→4MiB, 16 doublings): **+102.3% instructions, +52.7% Estimated Cycles** — a real, deterministic regression on a doubling-cadence realloc workload (the pair's own fixed 2× `reserved_capacity` ceiling re-trips almost every doubling step). The RSS win (15.80×→1.06× at 260 KiB) is real and unregressed, and `large-reserved-capacity` does recover 2 of the 4 in-place-realloc legs `exact-span-large` alone loses — but the iai regression is large enough, and deterministic enough, that shipping unconditionally was not recommended. §7 of the gate doc lists the concrete follow-up (widen or make adaptive the `LARGE_RESERVED_CAP_GROWTH_FACTOR` 2× ceiling) that would need to land before revisiting GO. |
 | `large-cache-extended` | R13-7 (#277) | no dedicated gate doc — numbers in the module doc (`src/alloc_core/large_cache_extended.rs`) + R13-8's judge (`docs/perf/R13_8...`, confirms it is irrelevant to a static live-set workload) | **not a promotion candidate this round** | The task brief for R13-7 scoped it as "extend the cache," not "gate it for production" — no A/B production gate was run against it, so there is no promotion evidence to act on either way. Its own turnover-workload judge (88.89%→100.00% hit rate, ~99× ns/op win on a genuine 9-distinct-size overflow workload) is real but narrow (R13-8 separately confirmed 0 hits on a static 256-2048 live-object workload — the cache only helps turnover-shaped access patterns). A future round could scope a real production gate for it the way R13-6 did for `exact-span-large`/`large-reserved-capacity`. |
 
-## 4. Correctness bugs closed this round (P0/P1, all inside already-`production` code)
+## 4. Correctness bugs closed this round (P0/P1) — default-`production` runtime effect vs opt-in-only
 
-These are fixes to mechanisms already shipping in `production` (`class-aware-dirty`'s
-predecessor state, the NUMA directory, virgin-zero-skip, `drain_heap_overflow`)
-— none of them changed `Cargo.toml`'s feature list; they are correctness
-fixes, not perf/promotion decisions, and are listed here because the wave's
-"what changed for a `production` build" question needs all of them to be a
-complete answer, not just the one feature-list line in §1.
+**R14-10 (task #295) correction:** the original version of this section
+described all five fixes below as "inside already-`production` code" without
+qualification. That is true for exactly TWO of the five (R13-1, R13-12) —
+R13-2's fix lives entirely behind `#[cfg(feature = "numa-aware")]` and
+R13-3's behind `#[cfg(feature = "virgin-zero-skip")]`, and **neither
+`numa-aware` nor `virgin-zero-skip` is in `production`'s feature list**
+(`Cargo.toml`: `production = ["alloc-global", "alloc-xthread",
+"alloc-decommit", "fastbin", "alloc-segment-directory",
+"primordial-lazy-commit", "class-aware-dirty"]`). A default `--features
+production` build compiles OUT both fixed code paths entirely — the fixes are
+real and land correctly in code that ships (once a user separately opts into
+those features), but they carry ZERO default-`production` runtime effect.
+None of the five changed `Cargo.toml`'s feature list themselves; they are
+listed here because the wave's "what changed for a `production` build"
+question needs a complete, honestly-scoped answer, not just the one
+feature-list line in §1.
 
-| Task | Severity | Commit | Summary |
-|---|---|---|---|
-| R13-1 (#271) | P0 | `e2d84f7` | Closed a lost-signal gap in `class-aware-dirty`'s OOM-transition: a coarse-only latch ensures a sidecar-OOM push and a later successful materialisation can never silently diverge. Loom-verified (7 tests). Landed BEFORE R13-9's promotion — the promoted feature already includes this fix. |
-| R13-2 (#272) | P1 | `a3434df` | NUMA directory bucket-slot reuse: an `active_bits_by_node` counter frees a slot once every bit a node ever set returns to 0, preventing slot exhaustion under long-running bucket churn across 9+ nodes. Also fixed a second, independently-found defect (`clear_bit` was using the registering `node_bucket_mut` instead of read-only `node_bucket`). |
-| R13-3 (#273) | P1 (upgraded from perf to a resource-retention defect) | `9886780` | Threaded virgin-zero-skip through the magazine (`PerClass::virgin_mask`) instead of bypassing it — this recovered not just the tcache fast path but also the drain prelude (`drain_heap_overflow`), which a calloc-only workload had been silently never running. A real resource-retention bug, not merely a missed optimisation. |
-| R13-11 (#284, found mid-verification of R13-1) | P0 | `da037f2` | A deterministic (not flaky) lost-wakeup test failure in `class_aware_dirty_routing.rs`, reproducible even on the original R12-7 commit — root-caused to a TEST bug (a small_cur refill-batch leftover masking the intended cross-thread-reclaim path), not a production defect. Fixed via a burn-down loop before R13-1's own measured assertion could be trusted. |
-| R13-12 (#285, found mid-verification of R13-3) | P1 | `e7617d1` | A genuine pre-existing compile error (`alloc-xthread`+`fastbin`+`alloc-decommit` without `alloc-segment-directory` → E0599 in `drain_heap_overflow`), confirmed via `git stash` to predate R13-3 entirely. Fixed by gating the two call sites, mirroring the existing pattern at every sibling call site. |
+| Task | Severity | Commit | Production runtime effect | Summary |
+|---|---|---|---|---|
+| R13-1 (#271) | P0 | `e2d84f7` | **Default `production`: YES** — gated on `class-aware-dirty`, which R13-9 promoted into `production` this same round, so every default `production` build ships this fix. | Closed a lost-signal gap in `class-aware-dirty`'s OOM-transition: a coarse-only latch ensures a sidecar-OOM push and a later successful materialisation can never silently diverge. Loom-verified (7 tests). Landed BEFORE R13-9's promotion — the promoted feature already includes this fix. |
+| R13-2 (#272) | P1 | `a3434df` | **Default `production`: NO** — the entire fix (`active_bits_by_node`, the `clear_bit` correction) is `#[cfg(feature = "numa-aware")]`; `numa-aware` is opt-in, not in `production`. Only reachable if a user separately builds with `--features numa-aware`. | NUMA directory bucket-slot reuse: an `active_bits_by_node` counter frees a slot once every bit a node ever set returns to 0, preventing slot exhaustion under long-running bucket churn across 9+ nodes. Also fixed a second, independently-found defect (`clear_bit` was using the registering `node_bucket_mut` instead of read-only `node_bucket`). |
+| R13-3 (#273) | P1 (upgraded from perf to a resource-retention defect) | `9886780` | **Default `production`: NO** — the fix (`PerClass::virgin_mask`, the rethreaded magazine path) is `#[cfg(feature = "virgin-zero-skip")]`; `virgin-zero-skip` is opt-in, not in `production`. Only reachable if a user separately builds with `--features virgin-zero-skip`. | Threaded virgin-zero-skip through the magazine (`PerClass::virgin_mask`) instead of bypassing it — this recovered not just the tcache fast path but also the drain prelude (`drain_heap_overflow`), which a calloc-only workload had been silently never running. A real resource-retention bug, not merely a missed optimisation. |
+| R13-11 (#284, found mid-verification of R13-1) | P0 | `da037f2` | **N/A — test-only.** Root-caused to a bug in `class_aware_dirty_routing.rs`'s own test assertion, not in any `src/` production code path; fixes test-suite trustworthiness, not runtime behaviour. | A deterministic (not flaky) lost-wakeup test failure in `class_aware_dirty_routing.rs`, reproducible even on the original R12-7 commit — root-caused to a TEST bug (a small_cur refill-batch leftover masking the intended cross-thread-reclaim path), not a production defect. Fixed via a burn-down loop before R13-1's own measured assertion could be trusted. |
+| R13-12 (#285, found mid-verification of R13-3) | P1 | `e7617d1` | **Default `production`: YES** — the two gated call sites are inside `drain_heap_overflow` (`alloc-xthread`) and the fix itself is `#[cfg(feature = "alloc-segment-directory")]`; both `alloc-xthread` and `alloc-segment-directory` are in `production`, so the compile-error class this closes was reachable from a `production`-adjacent feature combination (`alloc-xthread`+`fastbin`+`alloc-decommit` without `alloc-segment-directory`). | A genuine pre-existing compile error (`alloc-xthread`+`fastbin`+`alloc-decommit` without `alloc-segment-directory` → E0599 in `drain_heap_overflow`), confirmed via `git stash` to predate R13-3 entirely. Fixed by gating the two call sites, mirroring the existing pattern at every sibling call site. |
+
+**Net: exactly TWO of these five fixes (R13-1, R13-12) have any effect on a
+default `--features production` build; R13-2 and R13-3 are real, correct
+fixes to opt-in feature code (worth having — they close genuine defects that
+would bite any user of `numa-aware`/`virgin-zero-skip`), and R13-11 is a
+test-only correction. §6 restates this distinction in the wave's net-effect
+summary.**
 
 ## 5. Process/documentation corrections (not code, but part of the wave)
 
@@ -123,12 +153,19 @@ complete answer, not just the one feature-list line in §1.
   coalescing `sync_directory_for_segment_classes` per-segment instead of
   per-block, or batching the recycle-time drain), not merely move within the
   round as it does today.
-- **Five correctness fixes** landed inside code `production` already shipped
-  (R13-1, R13-2, R13-3, R13-11, R13-12) — all P0/P1, none of them changed
-  what `production` users need to opt into; they simply make the existing
-  `production` composition correct where it previously was not (OOM-transition
-  visibility, NUMA bucket-slot exhaustion, calloc resource retention, a
-  cross-feature compile gap).
+- **Five correctness fixes shipped this round; the default-`production`
+  runtime effect is TWO of them, not five (R14-10/#295 correction — see §4
+  for the full per-fix table).** R13-1 (OOM-transition visibility latch,
+  gated on `class-aware-dirty` which is now in `production`) and R13-12 (the
+  `alloc-xthread`+`alloc-segment-directory` compile gap) genuinely affect
+  every default `--features production` build. R13-2 (NUMA bucket-slot
+  reuse) and R13-3 (calloc resource retention via virgin-zero-skip) are real,
+  correctly-fixed defects, but their entire fix is gated behind
+  `numa-aware`/`virgin-zero-skip` respectively — NEITHER feature is in
+  `production`, so a default build compiles both fixed code paths out
+  entirely and gets zero effect from them until a user separately opts in.
+  R13-11 is a test-suite-only correction with no `src/` runtime code touched
+  at all. None of the five changed what `production` users need to opt into.
 - **No RSS/large-alloc win landed in `production` this round** —
   `exact-span-large`/`large-reserved-capacity` remain opt-in
   (CONDITIONAL-GO, blocked on the realloc regression), and `large-cache-extended`

@@ -535,6 +535,23 @@ per-bench commentary live in
 `cargo bench --features production` for your own numbers. **Lower is better**
 (latency).
 
+> **Normativity note (R14-10/task #295):** every table below reports
+> absolute `ns/op` for THREE allocators (`SeferAlloc`/`mimalloc`/`System`)
+> measured back-to-back on one shared, uncontrolled Windows dev host.
+> Independent reruns of the same tree have shown the absolute numbers for
+> all three allocators drift together by up to **±60%** between runs (host
+> load, thermal/power-plan state, background processes — not a code change
+> in any of the three allocators). The **`vs mimalloc`/`vs System` ratio
+> columns are the normative signal** — they cancel most of that shared
+> host-noise drift because all three allocators are measured in the same
+> run under the same conditions. Do not read an absolute `ns/op` cell
+> across two different table refreshes (or against a number from a
+> different day) as a regression/improvement signal by itself. **The one
+> source of normative ABSOLUTE numbers in this document is the iai gate**
+> (deterministic instruction counts, Valgrind-based, immune to host wall-clock
+> noise) — see [`docs/perf/IAI_BASELINE.md`](docs/perf/IAI_BASELINE.md) and
+> the "Honest verdict" section below.
+
 ### Cross-version comparison (0.2.1 → pre-round6 → current)
 
 A same-harness three-way run (published **0.2.1** vs the tree immediately

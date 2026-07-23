@@ -47,6 +47,18 @@ use crate::alloc_core::size_classes::SMALL_CLASS_COUNT;
 /// magazine before an overflow flush.
 pub(crate) const TCACHE_CAP: usize = 16;
 
+// R14-10 (task #295, P3): `PerClass::virgin_mask` below is a single `u16`
+// carrying ONE bit per physical `slots` index — that only covers every slot
+// if `TCACHE_CAP <= 16` (a `u16` has exactly 16 bits). This relationship was
+// previously held only by convention/doc comment; pin it at compile time so
+// a future bump of `TCACHE_CAP` past 16 fails to compile instead of silently
+// leaving the top slots permanently un-representable in the mask (bit `i`
+// for `i >= 16` would have nowhere to live).
+const _: () = assert!(
+    TCACHE_CAP <= 16,
+    "TCACHE_CAP must fit in PerClass::virgin_mask's u16 (one bit per slot)"
+);
+
 /// Per-class byte budget for a magazine refill (task D3). mimalloc-style:
 /// cap the bytes a single refill parks in one thread's magazine, not just the
 /// block COUNT. With `SMALL_MAX` around 253 KiB, a large small-class refilled
@@ -155,10 +167,24 @@ pub(crate) struct PerClass {
     /// `refill_magazine_slow`'s refill, `dealloc_own_thread_with_base`'s
     /// push/overflow-flush/compact, `alloc_batch`'s drain, `dealloc_batch`'s
     /// push, `flush_all_tcache`'s teardown): bits `>= count` are always 0,
-    /// and bit `i` for `i < count` reflects `slots[i]`'s TRUE virgin status
-    /// at that instant — a pushed-back block (freed after being issued) is
-    /// NEVER virgin (dispatch conjunct, §2 of both design docs), so every
-    /// push clears the bit(s) it (over)writes before storing the pointer.
+    /// and bit `i` for `i < count`, when SET, reflects `slots[i]`'s TRUE
+    /// virgin status at that instant (a pushed-back block, freed after being
+    /// issued, is NEVER virgin — dispatch conjunct, §2 of both design docs —
+    /// so every push clears the bit(s) it (over)writes before storing the
+    /// pointer). The converse does NOT hold: a CLEAR bit does not guarantee
+    /// `slots[i]` is non-virgin. `refill_magazine_slow` (the plain,
+    /// non-virgin-tracking miss path used by ordinary `alloc`/magazine
+    /// refills) never writes this mask at all, so blocks it parks keep
+    /// whatever bit was already there — 0, by the invariant holding at
+    /// `count == 0` refill time — even when the underlying block is
+    /// genuinely virgin. Only `refill_magazine_slow_virgin` (the
+    /// `alloc_zeroed`-only sibling, gated `virgin-zero-skip`) actually SETS
+    /// bits for virgin blocks. These are safe false negatives, never false
+    /// positives: a clear bit on an actually-virgin block costs one
+    /// unnecessary `Node::zero()` call (conservative), while a set bit is
+    /// always trustworthy (the sole place bits are ever set is
+    /// `refill_magazine_slow_virgin`'s own freshly-observed virginity
+    /// result).
     ///
     /// Gated on `virgin-zero-skip` (opt-in, requires `alloc-decommit`) so a
     /// build without the feature pays NOT ONE EXTRA BYTE in `PerClass` and

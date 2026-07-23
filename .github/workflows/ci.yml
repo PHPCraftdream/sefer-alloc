@@ -261,12 +261,29 @@ jobs:
       - name: test (--features "production exact-span-large")
         if: ${{ !cancelled() }}
         run: cargo test --features "production exact-span-large" --no-fail-fast
-      # R13-5: the critical combo that would have caught task #284's
-      # lost-wakeup bug. `class-aware-dirty` + `alloc-stats`, explicitly
-      # WITHOUT `numa-aware` (`production` does not enable `numa-aware`, so
-      # plain `production + class-aware-dirty + alloc-stats` already
-      # satisfies the `not(feature = "numa-aware")` gate on
+      # R13-5: originally the critical combo that would have caught task
+      # #284's lost-wakeup bug. `class-aware-dirty` + `alloc-stats`,
+      # explicitly WITHOUT `numa-aware` (`production` does not enable
+      # `numa-aware`, so plain `production + class-aware-dirty + alloc-stats`
+      # already satisfies the `not(feature = "numa-aware")` gate on
       # `class_aware_dirty_routing.rs` / `r9_6_class_aware_dirty_judge.rs`).
+      #
+      # R14-10 (task #295) STALENESS NOTE: since R13-9 promoted
+      # `class-aware-dirty` INTO `production`, spelling it out here alongside
+      # `production` is now a no-op — `production` already contains it, so
+      # this step's resolved feature set is BYTE-IDENTICAL to the plain
+      # `production alloc-stats` row in the `test (gated bodies +
+      # all-features)` job above (verified: set union is idempotent, neither
+      # row adds anything the other lacks). This IS the exact class of stale
+      # CI row `cargo hack check --feature-powerset` would have flagged
+      # structurally (see CLAUDE.md's "cargo-hack feature-powerset CI"
+      # evaluation note, and the `feature-powerset` job at the bottom of this
+      # file) rather than needing a human to notice a promotion made a
+      # feature string redundant. Kept as a single-token
+      # `production alloc-stats` step for continuity with its own commit
+      # history/comment trail rather than deleted outright; the explicit
+      # `class-aware-dirty` token was dropped so this step no longer reads as
+      # testing something `production alloc-stats` does not already cover.
       #
       # R14 hotfix (task #299): the `--skip
       # r9_6_class_aware_dirty_waste_ratio_scales_with_class_count` flag this
@@ -279,9 +296,9 @@ jobs:
       # the skip. The equivalent measurement WITH the feature on is
       # `class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`,
       # which DOES run in this step.
-      - name: test (--features "production class-aware-dirty alloc-stats")
+      - name: test (--features "production alloc-stats" — feature-isolation copy)
         if: ${{ !cancelled() }}
-        run: cargo test --features "production class-aware-dirty alloc-stats" --no-fail-fast
+        run: cargo test --features "production alloc-stats" --no-fail-fast
       # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
@@ -1032,3 +1049,52 @@ jobs:
         with:
           tool: cargo-deny
       - run: cargo deny check
+
+  feature-powerset:
+    # R14-10 (task #295, P2 process): a cargo-hack `--feature-powerset
+    # --depth 2` structural sweep of feature COMBINATIONS, motivated by a
+    # concrete miss this project already paid for: R13-12 (task #285) was a
+    # real pre-existing E0599 compile error reachable only by the specific
+    # combination `alloc-xthread`+`fastbin`+`alloc-decommit` WITHOUT
+    # `alloc-segment-directory` — a combination none of `production`,
+    # `--all-features`, nor any single hand-written `test-feature-isolation`
+    # row (above) ever exercised, because `production` always turns
+    # `alloc-segment-directory` on alongside the other three, and
+    # `--all-features` turns every feature on together. That class of bug —
+    # "compiles under every combination a human happened to write down, fails
+    # under one nobody did" — is exactly what a structural powerset sweep
+    # catches without anyone having to anticipate the specific pairing.
+    #
+    # Evaluation (documented per the task brief, since this is new CI
+    # surface): `cargo hack check --feature-powerset --depth 2 --no-dev-deps`
+    # against this crate's ~26 top-level Cargo.toml features resolves to
+    # **308** distinct `cargo check` invocations (confirmed via `cargo hack
+    # ... --dry-run` locally — depth-2 keeps it polynomial, C(26,2)+26+1,
+    # not the full 2^26 exponential powerset `--depth` unbounded would be).
+    # `cargo check` (not `build`/`test`) per combination keeps each individual
+    # invocation cheap (typechecking only, no codegen/link/test-binary build),
+    # but 308 of them is still substantial per-PR cost on top of the existing
+    # ~13-job matrix. Decision: run this WEEKLY (mirroring the
+    # `numa-real-kernel` job's established schedule-gated pattern above, same
+    # `schedule`/`workflow_dispatch` trigger already wired into this
+    # workflow's top-level `on:`) plus on-demand via `workflow_dispatch`, NOT
+    # on every push/PR — the E0599-class bug this catches is a structural
+    # feature-matrix gap, not a per-commit regression risk, so a bounded
+    # weekly cadence closes the actual gap (this bug lived unnoticed for an
+    # entire round, not a single day) without taxing every PR with ~300 extra
+    # check invocations. `--no-dev-deps` keeps the powerset scoped to the
+    # library's own feature graph (dev-dependencies would otherwise force
+    # every combination to also resolve the test/bench dependency set, which
+    # is unrelated to what this job is checking).
+    name: cargo-hack feature-powerset (depth 2, check-only, weekly)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: cargo hack check --feature-powerset --depth 2
+        run: cargo hack check --feature-powerset --depth 2 --no-dev-deps

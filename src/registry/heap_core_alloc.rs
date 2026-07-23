@@ -392,6 +392,17 @@ impl HeapCore {
     /// (cleared from the mask before return, maintaining the "bits >= count
     /// are 0" invariant exactly like the plain miss path does for the
     /// magazine-residency bitmap).
+    ///
+    /// **`alloc-stats` parity check (R14-10/task #295):** this function does
+    /// NOT bump any counter on the refill itself, exactly like
+    /// [`refill_magazine_slow`](Self::refill_magazine_slow) — verified not a
+    /// drift. `tcache_hits` (the only per-event `alloc-stats` counter either
+    /// miss path could plausibly touch) is bumped ONLY by the respective
+    /// caller's own magazine-HIT arm (`alloc`'s hit arm and
+    /// `alloc_small_zeroed_via_magazine`'s hit arm, both above this
+    /// function), never by the miss/refill path in either sibling — there is
+    /// no separate "tcache miss" counter anywhere in this crate to bump. Both
+    /// refill siblings are symmetric on this axis.
     #[cfg(all(
         feature = "alloc-global",
         feature = "fastbin",

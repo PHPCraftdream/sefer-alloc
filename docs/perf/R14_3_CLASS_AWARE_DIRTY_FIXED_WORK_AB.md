@@ -265,6 +265,12 @@ attempted in this task.
   `docs/perf/paired_ab_runs/2026-07-23T10-11-59-886Z.json`,
   `docs/perf/paired_ab_runs/2026-07-23T10-14-53-180Z.json`,
   `docs/perf/paired_ab_runs/2026-07-23T10-14-33-394Z.json`.
+- `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB_summary.csv` (R14-10/task
+  #295) — machine-readable companion to this report's own §2 tables: commit,
+  feature set, CPU/OS, sample count, and the same mean/paired-t/significance
+  figures already in prose above, in one grep/diff-able row per comparison.
+  Does not replace the raw logs or provenance JSON above — it summarizes
+  numbers this document already states, for scripted tracking across rounds.
 - This document.
 - Reworded headlines in `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`,
   `docs/perf/R13_WAVE_SUMMARY.md`, `README.md`, `Cargo.toml`, `CHANGELOG.md`

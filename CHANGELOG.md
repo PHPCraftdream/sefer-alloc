@@ -24,15 +24,26 @@ numbered fixes, not folded silently into the task that surfaced them.
 **Production vs. opt-in — what actually changed for default `--features
 production` users.** Exactly one feature was promoted into `production`
 this round: `class-aware-dirty` (R13-9, user-confirmed via `AskUserQuestion`
-after a full A/B gate). Everything else that shipped is either a
-correctness fix to code already inside `production` (no feature-list
-change) or a new/measured opt-in feature that was explicitly evaluated and
-NOT promoted (`exact-span-large`+`large-reserved-capacity`: CONDITIONAL-GO,
-blocked on a real iai `realloc_grow` regression; `large-cache-extended`: not
-gated for production this round). See `docs/perf/R13_WAVE_SUMMARY.md` for
-the full production A/B/B/A wave report.
+after a full A/B gate). Everything else that shipped is one of: a
+correctness fix to code that IS reachable from default `production` (R13-1,
+R13-12 — see below), a correctness fix to code gated behind an opt-in
+feature NOT in `production` (R13-2 under `numa-aware`, R13-3 under
+`virgin-zero-skip` — real fixes, zero default-`production` runtime effect),
+a test-only fix (R13-11), or a new/measured opt-in feature that was
+explicitly evaluated and NOT promoted (`exact-span-large`+
+`large-reserved-capacity`: CONDITIONAL-GO, blocked on a real iai
+`realloc_grow` regression; `large-cache-extended`: not gated for production
+this round). See `docs/perf/R13_WAVE_SUMMARY.md` for the full production
+A/B, double-checked wave report.
 
-**P0 — correctness fixes (inside code already shipping in `production`):**
+**P0/P1 — correctness fixes.** Two of the five (R13-1, R13-12) affect every
+default `--features production` build; R13-2 and R13-3 are real fixes to
+opt-in-only code (`numa-aware`, `virgin-zero-skip` respectively — neither is
+in `production`, so a default build carries zero runtime effect from them
+until a user separately opts in); R13-11 is test-only. See
+`docs/perf/R13_WAVE_SUMMARY.md` §4 for the per-fix production-effect table
+(R14-10/#295 correction — the original wording here said "inside code
+already shipping in `production`" for all five, which overstated R13-2/R13-3):
 
 - **R13-1 (`e2d84f7`) — close a lost-signal gap in `class-aware-dirty`'s
   OOM-transition.** A sidecar-OOM push that raced a later successful
@@ -142,8 +153,10 @@ the full production A/B/B/A wave report.
   `production` composition changes (Round 12's R12-9/R12-11, then R13-9);
   added a `CLAUDE.md` rule that a `production` composition change must
   carry its `bench:table`/`iai` refresh in the same PR going forward; wrote
-  `docs/perf/R13_WAVE_SUMMARY.md`, a retrospective production A/B/B/A
-  report for the whole wave; formalized the raw perf-log policy
+  `docs/perf/R13_WAVE_SUMMARY.md`, a retrospective production A/B,
+  double-checked report for the whole wave (R14-10/#295: originally titled
+  "A/B/B/A," corrected — that name belongs to the stricter interleaved
+  protocol); formalized the raw perf-log policy
   (`docs/perf/_raw_*.log` is `.gitignore`d scratch by default, with a
   documented `git add -f` exception when a gate report cites specific
   filenames as evidence); trimmed two Cargo.toml feature comments that had

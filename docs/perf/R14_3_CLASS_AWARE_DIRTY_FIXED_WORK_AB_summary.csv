@@ -1,0 +1,6 @@
+commit,features,cpu,os,rustc,protocol,comparison,n_samples,metric,mean_off,mean_on,paired_t,crit_p05,significant,sign_test_off_faster
+ef4db50,"production,alloc-stats (on: +class-aware-dirty)",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,A/B/B/A (20 pairs = 80 launches),same_vs_same_control,10,elapsed_ns,50340000,49590000,1.314,2.306,no,3/10
+ef4db50,"production,alloc-stats (on: +class-aware-dirty)",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,A/B/B/A (20 pairs = 80 launches),run1_off_vs_on,20,elapsed_ns,57380000,62450000,-2.148,2.101,yes(on_slower),13/20
+ef4db50,"production,alloc-stats (on: +class-aware-dirty)",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,A/B/B/A (20 pairs = 80 launches),run2_off_vs_on_repeat,20,elapsed_ns,99490000,122010000,-1.404,2.101,no,13/20
+a3434df,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,criterion(sample_size=10) full_sweep N=8,1,ns_full_round,38060685,24654869,,,,
+a3434df,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,criterion(sample_size=10) full_sweep N=8,1,ns_window_owner_alloc,617.6,1470.1,,,,

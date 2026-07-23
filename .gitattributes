@@ -1,0 +1,10 @@
+# R14-10 (task #295): raw perf logs under docs/perf/_raw_*.log are captured
+# command output (scratch by CLAUDE.md's raw-log policy, `git add -f`'d only
+# when a gate report cites them as evidence) -- their bytes are the evidence
+# and must NEVER be edited to satisfy `git diff --check`/whitespace hygiene.
+# `-whitespace` opts them out of `git diff --check`'s trailing-whitespace and
+# "new blank line at EOF" warnings without touching their content. Found by
+# the R14-10 hygiene pass: `git diff --check` on the Round 13/14 commit range
+# flagged "new blank line at EOF" on several `_raw_*.log` files that are
+# genuine tool output, not something to reformat.
+docs/perf/_raw_*.log -whitespace
