@@ -577,9 +577,12 @@ pub(crate) struct SegmentHeader {
     /// would defeat the RSS savings `exact-span-large` exists to provide).
     ///
     /// Set once at the segment's initial OS reservation
-    /// (`alloc_large_slow`'s `large-reserved-capacity` arm, geometric 2x of
-    /// the initial `span_usable` capped at
-    /// `LARGE_RESERVED_CAP_MULTIPLIER * SEGMENT`) and carried forward
+    /// (`alloc_large_slow`'s `large-reserved-capacity` arm, geometric
+    /// `LARGE_RESERVED_CAP_GROWTH_FACTOR`x of the initial `span_usable`
+    /// capped at `LARGE_RESERVED_CAP_BYTES`; **R14-6/task #291 raised the
+    /// factor from 2x to 4x** — see that constant's doc in
+    /// `alloc_core_large.rs` for the doubling-cadence-workload data behind
+    /// the change) and carried forward
     /// verbatim on a large-cache-hit reuse — same discipline as
     /// `span_usable` (bug #134): never recomputed from `large_size`/
     /// `large_align`, because a cache-hit reuse can be smaller than the

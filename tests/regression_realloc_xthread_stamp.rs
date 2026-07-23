@@ -96,17 +96,19 @@ fn realloc_growth_segment_is_stamped_and_reclaims_xthread() {
     //
     // R12-4 (`large-reserved-capacity`, additive over `production` in
     // `--all-features`): OPT-G ALSO grows in-place if the target fits within
-    // the segment's `reserved_capacity` — a GEOMETRIC 2x of the page-rounded
-    // OLD request (see `LARGE_RESERVED_CAP_GROWTH_FACTOR` in
-    // `alloc_core_large.rs`), capped at `LARGE_RESERVED_CAP_BYTES` (16x
-    // SEGMENT = 64 MiB). So under that feature a 3 MiB->5 MiB grow (< 2x)
-    // stays IN PLACE — this test's ownership-stamping premise is about
-    // relocation specifically, not about that feature's own boundary
-    // behaviour (covered by `tests/large_reserved_capacity.rs`), so NEW is
-    // sized here to exceed 2x OLD, guaranteeing relocation under EVERY
-    // feature combination (including `--all-features`).
+    // the segment's `reserved_capacity` — a GEOMETRIC factor of the
+    // page-rounded OLD request (see `LARGE_RESERVED_CAP_GROWTH_FACTOR` in
+    // `alloc_core_large.rs` — **R14-6/task #291 raised this from 2x to 4x**,
+    // see that constant's doc for the doubling-cadence-workload data behind
+    // the change), capped at `LARGE_RESERVED_CAP_BYTES` (16x SEGMENT = 64
+    // MiB). So under that feature a grow under the factor's ceiling stays IN
+    // PLACE — this test's ownership-stamping premise is about relocation
+    // specifically, not about that feature's own boundary behaviour (covered
+    // by `tests/large_reserved_capacity.rs`), so NEW is sized here to exceed
+    // 4x OLD, guaranteeing relocation under EVERY feature combination
+    // (including `--all-features`).
     const OLD: usize = 3 * 1024 * 1024; // 3 MiB — fits one 4 MiB segment
-    const NEW: usize = 7 * 1024 * 1024; // 7 MiB — exceeds one segment AND 2x OLD
+    const NEW: usize = 13 * 1024 * 1024; // 13 MiB — exceeds one segment AND 4x OLD (12 MiB)
     let old_layout = Layout::from_size_align(OLD, 8).unwrap();
     let new_layout = Layout::from_size_align(NEW, 8).unwrap();
 

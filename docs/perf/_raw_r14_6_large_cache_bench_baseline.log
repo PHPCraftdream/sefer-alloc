@@ -1,0 +1,12 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 43.21s
+     Running benches\r13_6_exact_span_reserved_capacity_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r13_6_exact_span_reserved_capacity_wallclock-715f82fc1481fb48.exe)
+Gnuplot not found, using plotters backend
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Warming up for 300.00 ms
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Collecting 10 samples in estimated 1.0000 s (261k iterations)
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Analyzing
+r13_6_large_cache_cycle/cycle_4_sizes
+                        time:   [3.6425 µs 3.7347 µs 3.8129 µs]
+
+r13_6_large_cache_cycle: large_cache_hits=25083903 (over >= 64 allocs/sample x ~10 samples, informational only -- see docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md for the honest per-run hit-rate methodology)

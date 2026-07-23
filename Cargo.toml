@@ -317,8 +317,11 @@ exact-span-large = ["alloc-core"]
 # doc) rarely has committed headroom to grow into.
 #
 # Mechanism: `alloc_large_slow` reserves (but does NOT commit) a larger VA
-# span up front — `reserved_capacity`, a geometric 2x of the page-rounded
-# request capped at `LARGE_RESERVED_CAP_MULTIPLIER * SEGMENT` — via
+# span up front — `reserved_capacity`, a geometric 4x (R14-6/task #291;
+# originally 2x under R12-4 — see `LARGE_RESERVED_CAP_GROWTH_FACTOR`'s doc in
+# `alloc_core_large.rs` for the doubling-cadence data behind the 2x->4x
+# change) of the page-rounded request capped at
+# `LARGE_RESERVED_CAP_MULTIPLIER * SEGMENT` — via
 # `aligned_vmem::reserve_aligned_lazy`, and commits only the page-rounded
 # request (`span_usable`, UNCHANGED meaning — see bug #134 / `span_usable`'s
 # doc, still the true COMMITTED span, never the reservation). A growing

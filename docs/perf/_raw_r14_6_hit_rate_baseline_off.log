@@ -1,0 +1,13 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 9.92s
+     Running `D:\dev\rust\.cargo-target\release\examples\r13_6_large_cache_hit_rate_measure.exe`
+=== R13-6 large-cache exact hit-rate measurement ===
+feature exact-span-large:        OFF
+feature large-reserved-capacity: OFF
+feature alloc-stats:             ON
+sizes: [266240, 524288, 1048576, 1835008] bytes, 2000 round-robin passes
+
+total alloc+dealloc cycles: 8000
+large_cache_hits (exact):   7999
+hit rate:                   99.99%
+final large_cache_used bytes: 4194304 (slot occupancy: [Some(4194304), None, None, None, None, None, None, None])

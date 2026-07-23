@@ -41,16 +41,52 @@ use super::alloc_core::{CachedLarge, LARGE_CACHE_SIZE_FACTOR};
 #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
 const LARGE_RESERVED_CAP_BYTES: usize = 16 * SEGMENT;
 
-/// R12-4: geometric growth factor applied to the page-rounded request size
-/// to compute the INITIAL `reserved_capacity` at first reservation. 2x
-/// mirrors the classic amortised-doubling growth strategy (`Vec`, mimalloc's
-/// own segment growth, etc.) — cheap to reason about, and empirically covers
-/// one "grow to roughly double" realloc step without hitting the slow path.
+/// R12-4/**R14-6** (task #291): geometric growth factor applied to the
+/// page-rounded request size to compute the INITIAL `reserved_capacity` at
+/// first reservation.
+///
+/// R12-4 originally shipped this at 2x (mirroring the classic
+/// amortised-doubling growth strategy — `Vec`, mimalloc's own segment
+/// growth, etc.). R13-6's production A/B gate
+/// (`docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §3.3)
+/// measured that a 2x ceiling is re-tripped on almost EVERY OTHER step of a
+/// doubling-cadence realloc chain (the single most common realloc-growth
+/// pattern in real code, and exactly what `Vec`/`String` themselves do): a
+/// segment reserved at `usable * 2` fits exactly one doubling step in place,
+/// then the NEXT doubling (`* 4` of the original) exceeds the 2x ceiling and
+/// forces a relocation — a deterministic, iai-measured +102.3% instruction /
+/// +52.7% Estimated-Cycles regression on `benches/perf_gate_iai.rs`'s
+/// `realloc_grow` (64 B -> 4 MiB, 16 doublings).
+///
+/// R14-6 raises the factor to 4x, chosen by comparing total bytes
+/// relocation-copied across the SAME 16-step doubling chain (the dominant
+/// cost — Callgrind's `Ir` count scales with `memcpy` bytes, not merely
+/// relocation COUNT, since later doublings move megabytes-scale prefixes):
+///
+/// | Factor | Relocations / 16 steps | Total bytes copied |
+/// |---|---:|---:|
+/// | 2x (R12-4 original) | 8 | ~2.67 MiB |
+/// | **4x (R14-6)** | **5** | **~1.14 MiB (-57%)** |
+/// | 8x | 4 | ~2.13 MiB (worse than 4x: halves the relocation COUNT again but the dominant LAST copy barely shrinks, so total bytes regresses vs 4x) |
+///
+/// 4x is the sweet spot: fewer relocations AND fewer total bytes copied than
+/// either 2x or 8x for a doubling-cadence workload — see
+/// `docs/perf/R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` for the full
+/// before/after iai numbers this table's `Ir`/cycle prediction is checked
+/// against. A per-chain COMPOUNDING multiplier (e.g. 2x on first reservation,
+/// 4x+ on each subsequent same-chain relocation) models out even better in
+/// isolation, but requires new per-segment chain-identity state (there is no
+/// existing way to recognise "this fresh segment was born from relocating
+/// THIS SAME logical realloc chain" versus an unrelated fresh `alloc`) —
+/// deferred as a follow-up if 4x's numbers ever stop being enough; a flat
+/// constant needs no new `SegmentHeader` field and no threading of a
+/// relocation-vs-fresh-alloc hint through the shared `self.alloc(..)` call
+/// path OPT-G's slow leg reuses.
 ///
 /// `not(numa-aware)`: same gating rationale as
 /// [`LARGE_RESERVED_CAP_BYTES`] above.
 #[cfg(all(feature = "large-reserved-capacity", not(feature = "numa-aware")))]
-const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 2;
+const LARGE_RESERVED_CAP_GROWTH_FACTOR: usize = 4;
 
 impl AllocCore {
     /// Allocate a large/huge block: reserve a dedicated segment sized to fit,

@@ -195,15 +195,22 @@ fn single_growth_within_reserved_capacity_is_in_place_and_preserves_data() {
 /// calls on the SAME segment, not just a single one.
 ///
 /// `reserved_capacity` is a FIXED ceiling set ONCE at the segment's
-/// ORIGINAL reservation (`2x` of the page-rounded original request) — it
-/// does NOT grow as `span_usable` advances within it. So every step's
-/// TOTAL growth (relative to the ORIGINAL size, not the previous step) must
-/// stay under that fixed `2x` ceiling for the whole chain to remain
-/// in-place; these steps grow the total by roughly 1.15x/1.3x/1.45x of the
-/// ORIGINAL size — comfortably under 2x with margin for the header offset
-/// — unlike a naive "step *= 1.5 each time" progression (which compounds
-/// past the fixed ceiling by the 2nd or 3rd step and would legitimately —
-/// not incorrectly — relocate).
+/// ORIGINAL reservation (`4x` of the page-rounded original request as of
+/// R14-6/task #291 — raised from R12-4's original `2x`, see
+/// `LARGE_RESERVED_CAP_GROWTH_FACTOR`'s doc in `alloc_core_large.rs` for the
+/// doubling-cadence-workload data behind the change) — it does NOT grow as
+/// `span_usable` advances within it. So every step's TOTAL growth (relative
+/// to the ORIGINAL size, not the previous step) must stay under that fixed
+/// `4x` ceiling for the whole chain to remain in-place; these steps grow the
+/// total by roughly 1.15x/2.3x/3.4x of the ORIGINAL size — the LAST step
+/// deliberately pushed close to (but still safely under) the `4x` ceiling so
+/// this test exercises the mechanism's now-wider headroom meaningfully
+/// rather than sitting deep inside old-ceiling territory (a step size that
+/// only ever probed well under the OLD `2x` bound would not distinguish
+/// "4x ceiling implemented" from "ceiling silently reverted to 2x", since
+/// small margins pass under either) — unlike a naive "step *= 1.5 each time"
+/// progression (which compounds past the fixed ceiling well before the last
+/// step and would legitimately — not incorrectly — relocate).
 ///
 /// Starting size is derived from `just_above_small_max()` (NOT a fixed
 /// literal like `256 * KIB`) — under `medium-classes-wide` (R9-4/task #226)
@@ -233,11 +240,17 @@ fn growth_chain_preserves_data_across_multiple_steps() {
 
     // Each step is a fraction of the ORIGINAL size added cumulatively — see
     // the function doc for why this must be relative to the ORIGINAL size,
-    // not compounded step-over-step.
+    // not compounded step-over-step. R14-6: pushed toward the new 4x ceiling
+    // (was 15%/30%/45% under the old 2x ceiling) so the LAST step lands at
+    // ~2.8x of the original size — comfortably under the 4x cap (leaving
+    // margin for the header + page-rounding overhead baked into `usable`)
+    // but far enough past the OLD 2x ceiling that this test would fail
+    // outright (relocate instead of grow in-place) if the factor were ever
+    // silently reverted to 2x.
     let steps = [
         original_size + original_size * 15 / 100,
-        original_size + original_size * 30 / 100,
-        original_size + original_size * 45 / 100,
+        original_size + original_size * 120 / 100,
+        original_size + original_size * 280 / 100,
     ];
     for &next_size in &steps {
         let old_size = size;

@@ -1,0 +1,13 @@
+    Finished `bench` profile [optimized] target(s) in 0.56s
+     Running benches\r13_6_exact_span_reserved_capacity_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r13_6_exact_span_reserved_capacity_wallclock-9457a801e3efbea9.exe)
+Gnuplot not found, using plotters backend
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Warming up for 300.00 ms
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Collecting 10 samples in estimated 1.0000 s (242k iterations)
+Benchmarking r13_6_large_cache_cycle/cycle_4_sizes: Analyzing
+r13_6_large_cache_cycle/cycle_4_sizes
+                        time:   [4.0183 µs 4.2635 µs 4.4559 µs]
+                        change: [+8.9829% +15.538% +21.886%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+r13_6_large_cache_cycle: large_cache_hits=23901180 (over >= 64 allocs/sample x ~10 samples, informational only -- see docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md for the honest per-run hit-rate methodology)
