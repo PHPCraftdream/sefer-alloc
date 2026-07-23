@@ -117,6 +117,14 @@ mod segment_header_meta_fields;
 mod segment_header_views;
 mod segment_layout;
 pub(crate) mod segment_table;
+/// R14-9 (task #294): the owner-only lazily-materialised sidecar primitive
+/// (`reserve`/`deref`/`deref_mut`) shared by `os.rs`'s `SegmentDirectory`
+/// reservation and `large_cache_extended.rs`'s `LargeCacheExtension`
+/// reservation. A named `unsafe` seam (two documented reasons: typed
+/// `ptr::write` init, and the `&'static [mut] T` deref boundary). See the
+/// module doc for why `PerClassDirty` (cross-thread-published via
+/// `RacyPtrCell`) is NOT migrated onto this type.
+pub(crate) mod sidecar;
 pub(crate) mod size_classes;
 #[cfg(feature = "alloc-decommit")]
 pub mod small_segment_pool_config;
