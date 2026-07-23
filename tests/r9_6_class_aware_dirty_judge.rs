@@ -52,8 +52,23 @@
 //!
 //! Same gate as `tests/dirty_segments_a4.rs` (`alloc-global`,
 //! `alloc-xthread`, `alloc-segment-directory`) plus `alloc-stats` (the new
-//! counter's increment site) and `not(numa-aware)` (the drain itself is
-//! compiled out under `numa-aware`).
+//! counter's increment site) and `not(class-aware-dirty)` (the sole `#[test]`
+//! this file defines is itself gated `not(feature = "class-aware-dirty")` —
+//! see its own doc comment, R14 hotfix task #299 — so hoisting that gate to
+//! the file level avoids the whole file compiling with all its helpers
+//! present but its only consumer absent, which is dead-code-under-`-D
+//! warnings` under `--all-features`, task #293's own build catching this).
+//!
+//! R14-8 (task #293): this gate does NOT additionally exclude `numa-aware`
+//! (a prior version of this doc did, on the claim "the drain itself is
+//! compiled out under `numa-aware`", which was FALSE —
+//! `AllocCore::drain_dirty_segments` has no `not(numa-aware)` gate, only
+//! `alloc-xthread`; this file uses no rescue-scan APIs, the ones that
+//! genuinely ARE `not(numa-aware)`-gated). In practice `not(class-aware-dirty)`
+//! already excludes both `production` and `--all-features` (both of which
+//! turn `class-aware-dirty` on), so this file's ONLY reachable configuration
+//! is a manual feature list without `class-aware-dirty` — `numa-aware` may
+//! or may not be present in that list; either way the test now runs.
 //!
 //! Under other feature configurations this file compiles as an empty test
 //! binary (0 tests, pass by absence).
@@ -63,7 +78,7 @@
     feature = "alloc-xthread",
     feature = "alloc-segment-directory",
     feature = "alloc-stats",
-    not(feature = "numa-aware")
+    not(feature = "class-aware-dirty")
 ))]
 
 extern crate sefer_alloc;

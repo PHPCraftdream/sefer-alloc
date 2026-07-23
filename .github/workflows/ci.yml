@@ -216,12 +216,28 @@ jobs:
     # together, so a bug reachable only under one specific combination could
     # mask itself indefinitely. Round 13 confirmed the cost twice:
     #   - task #284: a real lost-wakeup bug in
-    #     `class_aware_dirty_routing.rs` that NEVER ran in CI — the file
-    #     compiled to 0 tests under `--all-features` because `--all-features`
-    #     also turns on `numa-aware`, and the file's `#![cfg]` gate is
-    #     `not(feature = "numa-aware")` (the class-aware-dirty drain path is
-    #     compiled out under NUMA routing). `production + class-aware-dirty +
-    #     alloc-stats` (WITHOUT `numa-aware`) is the ONLY way to reach it.
+    #     `class_aware_dirty_routing.rs` that NEVER ran in CI at the time —
+    #     the file compiled to 0 tests under `--all-features` because
+    #     `--all-features` also turns on `numa-aware`, and the file's
+    #     `#![cfg]` gate was `not(feature = "numa-aware")`. R14-8 (task #293)
+    #     found that gate's STATED REASON was false ("the class-aware-dirty
+    #     drain path is compiled out under NUMA routing" — it is not:
+    #     `AllocCore::drain_dirty_segments` is gated only on `alloc-xthread`,
+    #     verified empirically by `tests/r14_8_numa_dirty_probe.rs`, which
+    #     runs and passes under `production + numa-aware + class-aware-dirty +
+    #     alloc-stats` and confirms both the directory sidecar materialises
+    #     and the drain executes there; what IS `not(numa-aware)`-gated is a
+    #     DIFFERENT, downstream mechanism, the directory-driven LOOKUP fast
+    #     path inside `find_segment_with_free_impl`, `alloc_core_small.rs`).
+    #     R14-8 therefore DROPPED the `not(numa-aware)` restriction from
+    #     `class_aware_dirty_routing.rs` (verified green under
+    #     `production + numa-aware + class-aware-dirty + alloc-stats`), so
+    #     that file now DOES run under `--all-features` too — this
+    #     `test-feature-isolation` job's `production + class-aware-dirty +
+    #     alloc-stats` (WITHOUT `numa-aware`) row is no longer this file's
+    #     ONLY CI coverage, though it remains a useful narrower-combination
+    #     check on its own merits (kept per this job's general rationale
+    #     above).
     #   - task #285: a compile error (E0599) in `drain_heap_overflow`
     #     reachable only by combining `alloc-xthread`/`fastbin`/
     #     `alloc-decommit` WITHOUT `alloc-segment-directory` — a combination

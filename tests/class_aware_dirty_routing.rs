@@ -38,18 +38,27 @@
 //! ## Feature gating
 //!
 //! `alloc-global`, `alloc-xthread`, `alloc-segment-directory`,
-//! `class-aware-dirty`, `alloc-stats` (diagnostic counters), `not(numa-aware)`
-//! (the directory-driven drain is compiled out under `numa-aware`). Under
-//! other feature configurations this file compiles as an empty test binary
-//! (0 tests, pass by absence).
+//! `class-aware-dirty`, `alloc-stats` (diagnostic counters). Runs under
+//! `numa-aware` too (R14-8, task #293): a prior version of this doc claimed
+//! "the directory-driven drain is compiled out under `numa-aware`" and gated
+//! this whole file `not(numa-aware)` on that premise. The premise was FALSE —
+//! `AllocCore::drain_dirty_segments` (what this file actually exercises, via
+//! `HeapCore::alloc`/`dealloc`) has no `not(numa-aware)` gate at all; only
+//! `alloc-xthread`. This file's own tests use no rescue-scan APIs (the ones
+//! that genuinely ARE `not(numa-aware)`-gated), so widening the gate to
+//! include `numa-aware` is safe and gives this lost-wakeup regression test
+//! real CI coverage under `numa-aware` too — see
+//! `tests/r14_8_numa_dirty_probe.rs` for the empirical confirmation that
+//! prompted this correction. Under other feature configurations (missing any
+//! of the four features above) this file compiles as an empty test binary (0
+//! tests, pass by absence).
 
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-segment-directory",
     feature = "class-aware-dirty",
-    feature = "alloc-stats",
-    not(feature = "numa-aware")
+    feature = "alloc-stats"
 ))]
 
 extern crate sefer_alloc;

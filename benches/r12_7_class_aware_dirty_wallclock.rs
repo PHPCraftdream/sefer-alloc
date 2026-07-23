@@ -92,12 +92,35 @@
 //! (unlike a `tests/` integration test, which tolerates "0 tests, compiled
 //! empty" gracefully under `#![cfg]`, `cargo bench`/`clippy --all-targets
 //! --all-features` cannot build a target whose ENTIRE file compiled away).
-//! `AllocCore::drain_dirty_segments` (the mechanism under measurement) is
-//! itself compiled out under `numa-aware` (directory-driven lookup is
-//! `numa-aware`-incompatible — see that method's own doc comment), so the
-//! measurement is meaningless there; `bench_class_aware_dirty_wallclock`
-//! detects this at runtime (`cfg!(feature = "numa-aware")`) and reports a
-//! skip message instead of running the (numerically vacuous) sweep.
+//!
+//! R14-8 (task #293): a prior version of this doc claimed
+//! `AllocCore::drain_dirty_segments` (the mechanism under measurement) "is
+//! itself compiled out under `numa-aware`" and skipped the sweep at runtime
+//! on that premise. That premise was FALSE — verified both by reading
+//! `drain_dirty_segments`'s `#[cfg]` (`alloc_core_small.rs`: gated ONLY on
+//! `alloc-xthread`, no `not(numa-aware)` anywhere in the function) and
+//! empirically by `tests/r14_8_numa_dirty_probe.rs`, which runs and passes
+//! under `production + numa-aware + class-aware-dirty + alloc-stats` and
+//! confirms the directory sidecar materialises, the drain executes
+//! (`dbg_dirty_segments_drained()` advances), and per-class routing reduces
+//! wasted drains there exactly as it does without `numa-aware`. What IS
+//! `not(numa-aware)`-gated is a DIFFERENT, downstream mechanism: the
+//! directory-driven O(1) LOOKUP fast path inside
+//! `find_segment_with_free_impl` (`alloc_core_small.rs`, gated
+//! `all(feature = "alloc-segment-directory", not(feature = "numa-aware"))`
+//! — that specific gate covers the OOM-rescue-scan wrapper, not the drain).
+//! Under `numa-aware`, `find_segment_with_free_impl` still calls
+//! `drain_dirty_segments` first (unconditionally), then falls through to a
+//! NUMA-node-bucket-ordered directory scan (R11-6) or a two-pass local-first
+//! linear scan instead of the non-NUMA single-bucket directory scan — a
+//! different LOOKUP strategy downstream of the SAME drain this bench times.
+//! The sweep below now runs under `numa-aware` too (no more runtime skip);
+//! its printed header states whether `numa-aware` was active in the build so
+//! a reader can tell the two configurations apart, following this project's
+//! established single-NUMA-host measurement convention (see
+//! `docs/perf/R10_6_NUMA_DIRECTORY_JUDGE.md` §2.3 for why a single-NUMA host
+//! still produces a valid same-mechanism, different-feature-config
+//! comparison, just not a genuine multi-node locality measurement).
 
 #![cfg(all(
     feature = "alloc-global",
@@ -271,22 +294,15 @@ fn run_round(n_producer_classes: usize) -> (Duration, usize) {
 }
 
 fn bench_class_aware_dirty_wallclock(c: &mut Criterion) {
-    // `AllocCore::drain_dirty_segments` (the mechanism this bench measures)
-    // is compiled out entirely under `numa-aware` (directory-driven lookup
-    // is `numa-aware`-incompatible), so a sweep here would measure nothing
-    // meaningful. Skip at runtime rather than compiling the whole file away
-    // (see this file's module doc "Feature gating" section for why the
-    // file-level `#![cfg]` cannot express "not numa-aware" and still produce
-    // a valid `harness = false` bench `main` under `--all-features`).
-    if cfg!(feature = "numa-aware") {
-        eprintln!(
-            "\nr12_7_class_aware_dirty_wallclock: SKIPPED under `numa-aware` \
-             (drain_dirty_segments is compiled out; this bench's measurement \
-             would be vacuous)."
-        );
-        return;
-    }
-
+    // R14-8 (task #293): `AllocCore::drain_dirty_segments` (the mechanism
+    // this bench measures) is NOT compiled out under `numa-aware` — see this
+    // file's module doc "Feature gating" section for the corrected analysis
+    // and the empirical proof (`tests/r14_8_numa_dirty_probe.rs`). The sweep
+    // below runs unconditionally now; the printed header states whether
+    // `numa-aware` was active so the two configurations are distinguishable
+    // in the output (they exercise different downstream LOOKUP strategies
+    // after the same drain, so their absolute numbers are not expected to be
+    // identical, only both meaningful).
     let _ = bootstrap::ensure();
 
     let mut group = c.benchmark_group("r12_7_class_aware_dirty_wallclock");
@@ -297,7 +313,8 @@ fn bench_class_aware_dirty_wallclock(c: &mut Criterion) {
     eprintln!("\n═══════════════════════════════════════════════════════════════════");
     eprintln!("R12-7 stage 1 — class-aware dirty routing wall-clock gate");
     eprintln!(
-        "TARGET_CLASS = {TARGET_CLASS} (block_size = {} B); BLOCKS_PER_CLASS = {BLOCKS_PER_CLASS}",
+        "numa-aware = {}; TARGET_CLASS = {TARGET_CLASS} (block_size = {} B); BLOCKS_PER_CLASS = {BLOCKS_PER_CLASS}",
+        cfg!(feature = "numa-aware"),
         AllocCore::dbg_block_size(TARGET_CLASS)
     );
     eprintln!("═══════════════════════════════════════════════════════════════════");

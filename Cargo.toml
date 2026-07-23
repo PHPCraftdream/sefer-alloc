@@ -1365,12 +1365,20 @@ required-features = ["numa-aware"]
 # measured" placeholder. `required-features` matches the judge test
 # (tests/r9_6_class_aware_dirty_judge.rs): alloc-global + alloc-xthread +
 # alloc-segment-directory + alloc-stats. Unlike the judge test (a `tests/`
-# integration test, which tolerates compiling to "0 tests" under an
-# additional `not(numa-aware)` `#![cfg]`), this `harness = false` bench needs
-# a `main` unconditionally, so it compiles under `numa-aware` too and
-# skips its measurement AT RUNTIME instead (see the bench file's module doc
-# "Feature gating" section) — `AllocCore::drain_dirty_segments`, the
-# mechanism under measurement, is itself compiled out under `numa-aware`.
+# integration test, which tolerates compiling to "0 tests" — it is ALSO gated
+# `not(class-aware-dirty)`, so it never runs under `production`/
+# `--all-features` regardless of `numa-aware`), this `harness = false` bench
+# needs a `main` unconditionally, so it compiles under `numa-aware` too. R14-8
+# (task #293): a prior version of this comment said it "skips its
+# measurement AT RUNTIME" because `drain_dirty_segments` was "itself compiled
+# out under numa-aware" — that was FALSE (verified by reading the function's
+# `#[cfg]`, which has no `not(numa-aware)` gate, and empirically by
+# tests/r14_8_numa_dirty_probe.rs, which passes under `production numa-aware
+# class-aware-dirty alloc-stats`). The bench now runs its full sweep under
+# `numa-aware` too instead of skipping — see the bench file's module doc
+# "Feature gating" section for the corrected mechanism (it is the
+# DIRECTORY-DRIVEN LOOKUP fast path downstream of the drain, not the drain
+# itself, that is `not(numa-aware)`-gated).
 [[bench]]
 name = "r12_7_class_aware_dirty_wallclock"
 harness = false
