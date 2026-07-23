@@ -389,7 +389,8 @@ hard compile error in every configuration:
 | [`src/alloc_core/node.rs`](src/alloc_core/node.rs) | Intrusive free-list node r/w through raw pointers (the generalised "hand" discipline); also `release_segment` thin wrapper | `alloc-core` |
 | [`src/alloc_core/numa.rs`](src/alloc_core/numa.rs) | Thin interop wrapper around `numa-shim`; delegates NUMA-node query and segment binding | `numa-aware` |
 | [`src/alloc_core/dirty_by_class.rs`](src/alloc_core/dirty_by_class.rs) | The lazily-materialised per-(segment, class) dirty-bit sidecar (`PerClassDirty`); dereferences the `RacyPtrCell`-published sidecar pointer | `class-aware-dirty` |
-| [`src/alloc_core/large_cache_extended.rs`](src/alloc_core/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `RacyPtrCell` — no cross-thread publisher); dereferences the `leak_zeroed_pages`-reserved sidecar pointer | `large-cache-extended` |
+| [`src/alloc_core/large_cache_extended.rs`](src/alloc_core/large_cache_extended.rs) | The lazily-materialised large-cache extension sidecar (owner-only, no `RacyPtrCell` — no cross-thread publisher); reserves via `alloc_core::sidecar::reserve`, dereferences via `sidecar::deref[_mut]` | `large-cache-extended` |
+| [`src/alloc_core/sidecar.rs`](src/alloc_core/sidecar.rs) | R14-9 (task #294): the shared owner-only lazily-materialised sidecar primitive (`reserve` / `reserve_zeroed_with` / `deref` / `deref_mut`) used by `os.rs`'s `SegmentDirectory` reservation and `large_cache_extended.rs`'s `LargeCacheExtension` reservation | `alloc-core` |
 | [`src/global/sefer_alloc.rs`](src/global/sefer_alloc.rs) | The `unsafe impl GlobalAlloc` alloc-face seam — the trait obligation + pointer handoff to the `HeapCore` (the registry-resident per-thread heap) | `alloc-global` |
 | [`src/global/tls_heap.rs`](src/global/tls_heap.rs) | Raw-pointer TLS binding + `AbandonGuard` seam — the `*mut HeapCore` handoff under the single-writer invariant; `unsafe fn recycle` from the guard's drop (whole-slot reuse). | `alloc-global` |
 | [`src/global/fallback.rs`](src/global/fallback.rs) | The primordial fallback heap — `static mut MaybeUninit<HeapCore>` + atomic-init state-machine + spinlock-guarded `&mut` handout (so the global allocator survives reentrant / early-init / teardown access) | `alloc-global` |
@@ -399,12 +400,16 @@ hard compile error in every configuration:
 | [`src/concurrent/hand.rs`](src/concurrent/hand.rs) | The legacy epoch-tier `AtomicSlot<T>` (older experimental concurrent tier; superseded by `alloc-xthread` for the global allocator path; **deprecated**) | `experimental` |
 
 Under the recommended `production` feature
-(`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory`) the active
-internal seams are **eight** — `alloc_core::{os, node}` plus
+(`alloc-global + alloc-xthread + alloc-decommit + fastbin + alloc-segment-directory
++ primordial-lazy-commit + class-aware-dirty`) the active internal seams are
+**ten** — `alloc_core::{os, node, sidecar, dirty_by_class}` plus
 `global::{sefer_alloc, tls_heap, fallback}` plus
-`registry::{bootstrap, heap_slot, heap_registry}`. `alloc-xthread`,
-`alloc-decommit`, and `fastbin` themselves do **not** open new `unsafe`
-seams — they extend existing safe code paths.
+`registry::{bootstrap, heap_slot, heap_registry}`. `alloc_core::sidecar`
+(R14-9, task #294) is active because `alloc-global` pulls in `alloc-core`;
+`alloc_core::dirty_by_class` is active because `production` itself enables
+`class-aware-dirty` (R13-9, task #279). `alloc-xthread`, `alloc-decommit`,
+`fastbin`, and `primordial-lazy-commit` themselves do **not** open new
+`unsafe` seams — they extend existing safe code paths.
 
 `numa-aware` adds one more internal seam (`alloc_core::numa`), which in turn
 delegates to the independently-auditable `numa-shim` crate. `experimental`
@@ -423,9 +428,9 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | File | Sites | What they cover |
 |---|---|---|
 | [`src/alloc_core/alloc_core.rs`](src/alloc_core/alloc_core.rs) | 3 | `dealloc` / `realloc` — `unsafe fn` boundaries (caller-pointer contract); `Drop::drop` — internal call-site block into `deref_large_cache_extension_mut` (R14-1, task #286) |
-| [`src/alloc_core/alloc_core_core_diag.rs`](src/alloc_core/alloc_core_core_diag.rs) | 4 | `dbg_stamp_segment_id` / `dbg_stamp_kind_byte` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries |
+| [`src/alloc_core/alloc_core_core_diag.rs`](src/alloc_core/alloc_core_core_diag.rs) | 5 | `dbg_stamp_segment_id` / `dbg_stamp_kind_byte` (raw metadata write) + `dbg_unregister` / `dbg_recycle` — `unsafe fn` boundaries; `dbg_rebuild_directory` — internal call-site block into `sidecar::deref_mut` (R14-9, task #294) |
 | [`src/alloc_core/alloc_core_large_cache.rs`](src/alloc_core/alloc_core_large_cache.rs) | 5 | Internal call-site blocks into `deref_large_cache_extension[_mut]` in `large_cache_slot_get` / `large_cache_slot_take` / `large_cache_find_free_slot` / `large_cache_slot_set` / `dbg_large_cache_extended_slot_sizes` (R14-1, task #286 — the sidecar deref functions became `unsafe fn` item boundaries) |
-| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 2 | Internal call-site blocks: `bump_gen` (in `pop_free`) / `init_gen_table_in_place` (in `reserve_small_segment`), hardened path |
+| [`src/alloc_core/alloc_core_small.rs`](src/alloc_core/alloc_core_small.rs) | 5 | Internal call-site blocks: `bump_gen` (in `pop_free`) / `init_gen_table_in_place` (in `reserve_small_segment`), hardened path; `maybe_materialize_directory` / `directory` / `directory_mut` — internal call-site blocks into `sidecar::deref[_mut]` (R14-9, task #294) |
 | [`src/alloc_core/alloc_core_small_diag.rs`](src/alloc_core/alloc_core_small_diag.rs) | 5 | `dbg_corrupt_freelist_head_next` / `dbg_drain_freelist_batch` / `dbg_alloc_bitmap_bytes_for` / `dbg_magazine_bitmap_bytes_for` / `dbg_payload_start_for` — `unsafe fn` declarations |
 | [`src/alloc_core/alloc_core_small_magazine.rs`](src/alloc_core/alloc_core_small_magazine.rs) | 1 | `flush_class` — `unsafe fn` boundary (caller-pointer contract) |
 | [`src/alloc_core/alloc_core_small_reclaim.rs`](src/alloc_core/alloc_core_small_reclaim.rs) | 3 | Internal `gen_at` call-site blocks (dealloc_routing + hardened `pack_entry_hardened`) + `dbg_push_to_ring` declaration |
@@ -439,8 +444,8 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
-That's the full list (both tiers): **19** tier-1 module-level seams (12 in
-`src/`, 7 in `crates/`) plus **52** tier-2 item-scoped allows across **16**
+That's the full list (both tiers): **20** tier-1 module-level seams (13 in
+`src/`, 7 in `crates/`) plus **56** tier-2 item-scoped allows across **16**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
