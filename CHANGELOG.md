@@ -7,6 +7,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 13 — class-aware-dirty promoted to production, NUMA bucket-slot reuse, virgin-zero-skip resource fix, Large-cache extension, wave process discipline (R13-1..R13-12)
+
+Round 13 — 13 commits (`e2d84f7`..`1a2dd7d`, inclusive of both ends),
+2026-07-23 — the follow-up queue against two independent external reviews of
+the Round 12 wave, executed task by task with the same zero-trust discipline
+as prior rounds: delegate implementation via `@sh` sub-agents, personally
+read every diff, personally re-run the tests (not trust the sub-agent's own
+"tests passed" claim), personally reproduce red-before/green-after
+counterfactuals for every safety-relevant change, then commit between
+tasks. Two genuine defects were found and fixed mid-verification of other
+tasks rather than at planning time (R13-11 inside R13-1's verification,
+R13-12 inside R13-3's verification) — both are recorded as their own
+numbered fixes, not folded silently into the task that surfaced them.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** Exactly one feature was promoted into `production`
+this round: `class-aware-dirty` (R13-9, user-confirmed via `AskUserQuestion`
+after a full A/B gate). Everything else that shipped is either a
+correctness fix to code already inside `production` (no feature-list
+change) or a new/measured opt-in feature that was explicitly evaluated and
+NOT promoted (`exact-span-large`+`large-reserved-capacity`: CONDITIONAL-GO,
+blocked on a real iai `realloc_grow` regression; `large-cache-extended`: not
+gated for production this round). See `docs/perf/R13_WAVE_SUMMARY.md` for
+the full production A/B/B/A wave report.
+
+**P0 — correctness fixes (inside code already shipping in `production`):**
+
+- **R13-1 (`e2d84f7`) — close a lost-signal gap in `class-aware-dirty`'s
+  OOM-transition.** A sidecar-OOM push that raced a later successful
+  sidecar materialization could silently diverge between the coarse
+  per-segment bitmap and the per-class sidecar. Fixed with a one-way,
+  never-reset `sidecar_oom_latch: AtomicBool` on `HeapSlotRemote`: once set,
+  `drain_dirty_segments` forces a coarse-only scan for the remainder of that
+  heap's lifetime rather than trusting a sidecar that may have missed a
+  push. Loom-verified (7 tests); red/green counterfactual personally
+  reproduced.
+- **R13-11 (`da037f2`, task #284, found mid-verification of R13-1) — a
+  deterministic (not flaky) lost-wakeup test failure in
+  `class_aware_dirty_routing.rs`**, reproducible even on the original R12-7
+  commit — root-caused to a TEST bug (a `small_cur` refill-batch leftover
+  masking the intended cross-thread-reclaim path being measured), not a
+  production defect. Fixed via a burn-down loop (using
+  `AllocCore::dbg_dirty_segments_drained()`'s counter delta as proof of
+  reaching the real drain path) before the assertion R13-1's verification
+  depends on could be trusted.
+- **R13-2 (`a3434df`, task #272) — reuse freed NUMA directory bucket
+  slots.** A new `active_bits_by_node: [u32; MAX_NODES]` counter frees a
+  node's bucket slot once every bit that node ever set returns to 0,
+  preventing slot exhaustion under long-running bucket churn across 9+
+  distinct NUMA nodes. Also fixed a second, independently-found defect:
+  `clear_bit` was using the registering `node_bucket_mut` (which can
+  allocate a bucket) instead of the read-only `node_bucket` accessor.
+- **R13-3 (`9886780`) — thread virgin-zero-skip through the magazine
+  instead of bypassing it; upgraded from a perf task to a P1
+  resource-retention fix.** The prior `alloc_zeroed` fast path for
+  virgin-zero-skip bypassed the tcache magazine entirely, which meant a
+  calloc-only workload silently never ran `drain_heap_overflow`'s drain
+  prelude — a real resource-retention defect, not merely a missed
+  optimisation. New `PerClass::virgin_mask: u16` (gated
+  `virgin-zero-skip`) and `AllocCore::refill_class_bump_virgin_checked`
+  thread the virgin bit through the existing magazine carve path so both
+  the tcache fast path and the drain prelude are recovered. Wall-clock gate
+  honestly reports no statistically significant difference at n=10 on this
+  single-threaded synthetic bench — the fix's justification is the
+  resource-retention correctness, not a headline number.
+- **R13-12 (`e7617d1`, task #285, found mid-verification of R13-3) — a
+  genuine pre-existing compile error**: `alloc-xthread`+`fastbin`+
+  `alloc-decommit` without `alloc-segment-directory` failed with E0599 in
+  `drain_heap_overflow`, confirmed via `git stash` to predate R13-3
+  entirely. Fixed by gating the two `sync_directory_for_segment_classes`
+  call sites behind `#[cfg(feature = "alloc-segment-directory")]`,
+  mirroring the existing pattern at every sibling call site.
+
+**P1-perf/process — measured, opt-in features and process corrections:**
+
+- **R13-4 (`6018cf8`, task #274) — page-run verdict corrected from
+  "SUPERSEDED" to "DEFERRED — no demonstrated production victim yet".**
+  Both `exact-span-large` and `medium-classes-wide` are still opt-in, so
+  `production` gets no RSS benefit from either yet — an external review had
+  flagged the prior wording as overclaiming.
+- **R13-5 (`0f3b608`, task #275) — feature-isolated CI rows** covering the
+  exact combinations that would have caught R13-11/R13-12 earlier
+  (`production exact-span-large`, `production class-aware-dirty
+  alloc-stats`, `production virgin-zero-skip alloc-stats`,
+  `page-map-diag`, plus build-only rows for `alloc-xthread`/`fastbin`/
+  `alloc-decommit`), `loom_class_aware_dirty.rs` wired into the
+  `loom-xthread` CI job (was silently never running — a second instance of
+  the class of bug task #204 originally caught), and a new structural guard
+  (`tests/no_stale_loom_files.rs`) that fails CI if any `tests/loom_*.rs`
+  file is ever unreferenced by the workflow again.
+- **R13-6 (`3829d82`, task #276) — production A/B gate for
+  `exact-span-large`+`large-reserved-capacity`: CONDITIONAL-GO, not
+  promoted.** iai's `realloc_grow` bench (64 B→4 MiB, 16 doublings) shows
+  +102.3% instructions / +52.7% Estimated Cycles under the pair vs plain
+  `production` — the pair's fixed 2× `reserved_capacity` ceiling re-trips
+  almost every doubling step. The RSS win (15.80×→1.06× at 260 KiB) is real
+  and unregressed, but the deterministic iai regression was large enough
+  that unconditional promotion was not recommended; no user prompt was made
+  since the gate did not clear to an unconditional GO.
+- **R13-7 (`df636ff`) — new opt-in `large-cache-extended` feature**: widens
+  the Large free-cache from 8 to 40 slots via a lazily-materialised
+  sidecar (`src/alloc_core/large_cache_extended.rs`, a new tier-1
+  `#![allow(unsafe_code)]` seam). Judge: 88.89%→100.00% hit rate,
+  ~23,437 ns→237 ns per op (~99×) on a genuine 9-distinct-size Large
+  overflow workload. Not gated for production promotion this round (R13-8
+  separately confirmed 0 cache hits on a static live-object workload — the
+  extension only helps turnover-shaped access patterns).
+- **R13-8 (`874650b`, task #278) — judge on 256–2048 simultaneously-live
+  260 KiB–2 MiB objects** found a real, 100%-reproducible `MAX_SEGMENTS`
+  wall at exactly 1023 live Large objects in every feature arm — this
+  updates R13-4's "no demonstrated victim" verdict for this specific size
+  band, though `exact-span-large` already closes the RSS/commit side of it
+  and there is no non-linear wall-clock cost approaching the wall.
+- **R13-9 (`bebd902`, `da77b38`, task #279) — `class-aware-dirty` promoted
+  into `production`.** Production A/B gate (`docs/perf/
+  R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`): 21.71× ns/owner_alloc at
+  N=8 concurrent producer classes (re-measured on top of R13-1's latch fix,
+  inside R12-7's own pre-latch 19.7–32.4× range), iai confirms +0.00% to
+  +0.02% Ir on 12 non-remote single-thread benches (zero cost outside
+  cross-thread paths), ~8 KiB RSS sidecar per materialised heap (corrects
+  R12-7's own doc, which cited the raw un-page-rounded 6.1 KiB `size_of`
+  figure). GO recommendation accepted by explicit user confirmation
+  (`AskUserQuestion`) before the `Cargo.toml` edit.
+- **R13-10 (`1a2dd7d`, task #280) — wave process discipline.** Re-ran
+  `npm run bench:table` on the post-R13-9 tree and refreshed README.md's
+  wall-clock table, which had gone stale across two consecutive
+  `production` composition changes (Round 12's R12-9/R12-11, then R13-9);
+  added a `CLAUDE.md` rule that a `production` composition change must
+  carry its `bench:table`/`iai` refresh in the same PR going forward; wrote
+  `docs/perf/R13_WAVE_SUMMARY.md`, a retrospective production A/B/B/A
+  report for the whole wave; formalized the raw perf-log policy
+  (`docs/perf/_raw_*.log` is `.gitignore`d scratch by default, with a
+  documented `git add -f` exception when a gate report cites specific
+  filenames as evidence); trimmed two Cargo.toml feature comments that had
+  grown into full design writeups duplicating their own module docs.
+
 ### Round 12 — directory-aliasing/NUMA correctness fixes, exact-span Large, class-aware dirty routing, virgin-zero skip (R12-1..R12-14)
 
 Round 12 — 14 commits (`79f4136`..`3dc7bd9`, inclusive of both ends),
