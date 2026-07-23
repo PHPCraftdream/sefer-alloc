@@ -43,10 +43,12 @@
 //!
 //! Run manually during development by reverting the own-thread Large-dealloc
 //! branches in `src/alloc_core/alloc_core.rs` back to "only zero `magic`,
-//! defer release to `Drop`": both tests below fail around iteration 1024
-//! (`SegmentTable` exhausted → `AllocCore::alloc` returns null). Restoring
-//! the eager `unregister` + `release_segment` fix makes both pass for
-//! `N = 1500` (`> MAX_SEGMENTS`).
+//! defer release to `Drop`": both tests below fail around iteration
+//! `MAX_SEGMENTS` (`SegmentTable` exhausted → `AllocCore::alloc` returns
+//! null). Restoring the eager `unregister` + `release_segment` fix makes
+//! both pass for `n_iterations()` (`> MAX_SEGMENTS`, read at runtime via
+//! `dbg_max_segments()` — R14-7/task #292, density-agnostic per the
+//! R12-14/task #265 convention).
 //!
 //! ## Feature gating
 //!
@@ -80,22 +82,31 @@ use sefer_alloc::AllocCore;
 // unambiguously routed through `AllocCore::alloc_large` / the Large dealloc
 // branch.
 const SIZE: usize = 2 * 1024 * 1024;
-// > MAX_SEGMENTS (1024): if a single own-thread large free ever failed to
-// release its slot, exhaustion would occur strictly before this many
-// sequential alloc+dealloc cycles complete.
-const N: usize = 1500;
+
+/// R14-7 (task #292): `N` must stay `> MAX_SEGMENTS` for the counterfactual
+/// to hold (if a single own-thread large free ever failed to release its
+/// slot, exhaustion would occur strictly before this many sequential
+/// alloc+dealloc cycles complete) — density-agnostic per the R12-14/task
+/// #265 convention, read at runtime via `dbg_max_segments()` instead of a
+/// hardcoded literal, so this stays a real leak detector after `MAX_SEGMENTS`
+/// is retuned (raised from 1024 to 4096 in this same task) instead of
+/// silently becoming vacuous (`N` no longer exceeding the cap).
+fn n_iterations() -> usize {
+    AllocCore::dbg_max_segments() + 476
+}
 
 #[cfg(not(feature = "alloc-decommit"))]
 #[test]
 fn own_thread_large_dealloc_no_leak_without_decommit() {
     let layout = Layout::from_size_align(SIZE, 8).expect("valid layout");
     let mut core = AllocCore::new().expect("AllocCore::new must succeed");
+    let n = n_iterations();
 
-    for i in 0..N {
+    for i in 0..n {
         let p = core.alloc(layout);
         assert!(
             !p.is_null(),
-            "AllocCore::alloc returned null at iteration {i}/{N} — \
+            "AllocCore::alloc returned null at iteration {i}/{n} — \
              SegmentTable exhausted (task #125 own-thread large-free leak \
              regression: own-thread dealloc failed to release the slot \
              eagerly and Drop never ran to reclaim it)"
@@ -127,12 +138,13 @@ fn own_thread_large_dealloc_no_leak_with_decommit_admission_reject() {
     let cfg = LargeCacheConfig::new().budget_bytes(4096);
     let layout = Layout::from_size_align(SIZE, 8).expect("valid layout");
     let mut core = AllocCore::new_with_config(cfg).expect("AllocCore::new_with_config");
+    let n = n_iterations();
 
-    for i in 0..N {
+    for i in 0..n {
         let p = core.alloc(layout);
         assert!(
             !p.is_null(),
-            "AllocCore::alloc returned null at iteration {i}/{N} — \
+            "AllocCore::alloc returned null at iteration {i}/{n} — \
              SegmentTable exhausted (task #125 admission-reject leak \
              regression: own-thread dealloc failed to release the slot \
              eagerly when large-cache admission was declined)"

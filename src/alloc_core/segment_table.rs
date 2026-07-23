@@ -61,7 +61,7 @@ use core::mem::size_of;
 /// `unregister`/`recycle`, unconditionally). Long-running processes with many
 /// small-segment carve/decay cycles will pin small-segment slots and eventually
 /// hit this cap.
-pub(crate) const MAX_SEGMENTS: usize = 1024;
+pub(crate) const MAX_SEGMENTS: usize = 4096;
 
 /// The footprint of the registry (slots) array in the primordial segment. Fixed
 /// and known at compile time so the bootstrap can carve it deterministically.

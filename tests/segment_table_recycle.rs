@@ -144,19 +144,23 @@ fn without_decommit_cap_is_hard() {
     let mut ac = AllocCore::new().expect("primordial");
 
     // Reserve large allocations (each gets its own segment). Keep them live.
-    // One slot is already used by the primordial, so MAX_SEGMENTS - 1 more
+    // One slot is already used by the primordial, so `MAX_SEGMENTS - 1` more
     // large allocs should fit, and the next one should fail gracefully.
     let large_size = SegmentLayout::SMALL_MAX + SegmentLayout::PAGE;
     let layout = Layout::from_size_align(large_size, SegmentLayout::PAGE).unwrap();
 
-    // MAX_SEGMENTS is 1024; primordial occupies slot 0. So we can register at
-    // most 1023 additional segments. Try 1025 large allocs; at least one must
-    // return null (the 1025th or earlier).
-    const ATTEMPT: usize = 1025;
+    // R14-7 (task #292): read the cap at runtime via `dbg_max_segments()`
+    // instead of hardcoding the historical `1024` literal (R12-14/task #265
+    // density-agnostic convention) — `MAX_SEGMENTS` was raised to 4096 in
+    // this same task, and a hardcoded `1025` attempt count would have made
+    // this test silently pass without ever reaching the cap. Primordial
+    // occupies slot 0, so we can register at most `MAX_SEGMENTS - 1` more
+    // segments; attempt one past that so at least one alloc must return null.
+    let attempt = AllocCore::dbg_max_segments() + 1;
 
-    let mut ptrs = Vec::with_capacity(ATTEMPT);
+    let mut ptrs = Vec::with_capacity(attempt);
     let mut null_count = 0usize;
-    for _ in 0..ATTEMPT {
+    for _ in 0..attempt {
         let p = ac.alloc(layout);
         if p.is_null() {
             null_count += 1;
