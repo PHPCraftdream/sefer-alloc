@@ -7,6 +7,201 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 14 — sidecar soundness/ordering hardening, medium realloc promotion, exact-span/large-cache production gates, SegmentTable ceiling raised, unified sidecar primitive (R14-1..R14-10)
+
+Round 14 — 19 commits (`06a5be6`..`6cc46f1`, inclusive of both ends),
+2026-07-23 — the follow-up queue against THREE independent reviews of the
+Round 13 wave (two inline, one written to
+`docs/agent_reviews_us/2026-07-23-r13-wave-review-fx.md`), synthesized in
+`docs/reviews/2026-07-23-r14-plan.md` and
+`docs/reviews/2026-07-23-r14-reviews-synthesis.md`. Executed with the same
+zero-trust discipline as prior rounds: delegate implementation via `@sh`
+sub-agents, personally read every diff, personally re-run the tests, personally
+reproduce red/green counterfactuals for safety-relevant changes, commit
+between tasks. Two genuine defects were found and fixed mid-verification
+rather than at planning time — a pre-existing CI redness surfaced by
+Round 13's own `class-aware-dirty` promotion (task #299) and a pre-existing
+`--all-features` test failure in R14-4's own test suite (task #302) — both
+recorded as their own fixes, not folded silently into the tasks that
+surfaced them.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** No feature-list change landed this round —
+`Cargo.toml`'s `production = [...]` is byte-identical to the end of Round 13.
+Every fix in this round either (a) hardens code already inside `production`
+(R14-1's `LargeCacheExtension` init, R14-2's latch ordering — both apply
+whenever `class-aware-dirty`/`large-cache-extended` are compiled in, and
+`class-aware-dirty` has been in `production` since R13-9) or (b) hardens/
+extends opt-in features that stay opt-in (R14-4's realloc promotion gated on
+`medium-classes`, R14-5's `large-cache-extended` hardening, R14-6's
+`large-reserved-capacity` growth factor). R14-7's `MAX_SEGMENTS` raise
+(1024→4096) is the one change that touches every build regardless of feature
+flags, since the constant has no feature gate.
+
+**P0 — correctness/soundness fixes:**
+
+- **R14-1 (`06a5be6`, task #286) — `LargeCacheExtension` typed
+  initialization + unsafe-boundary hardening.** Three independent Round 13
+  reviews found the same soundness gap: the opt-in `large-cache-extended`
+  sidecar cast OS-zeroed pages directly to `*mut LargeCacheExtension`
+  without an explicit `ptr::write`, relying on an unspecified Rust layout
+  guarantee (all-zero bytes decoding as `Option::None`) that happened to
+  hold today but was never guaranteed. Fixed with an explicit `ptr::write`
+  before the pointer is published; `deref_large_cache_extension[_mut]`
+  converted from safe functions with a prose-only caller contract to
+  `unsafe fn` (closing an aliasing-`&'static mut`-from-safe-code gap); a
+  false "`AllocCore` is `Send`" doc claim corrected. Tier-2 unsafe seam
+  count: 45→51 (the boundary moved out to every call site, each carrying
+  its own `# Safety`).
+- **R14-2 (`ef4db50`, task #287) — `sidecar_oom_latch` Acquire/Relaxed
+  divergence closed.** Three reviews found a three-way mismatch: the
+  producer's `Release` store and the field's own doc comment both claimed
+  the consumer paired with `Acquire`, but production actually read the
+  latch `Relaxed`, and the loom model had always used `Acquire` — so a
+  green loom suite never proved anything about the weaker ordering
+  production shipped. Production promoted to `Acquire` (free on x86);
+  loom model verified to match byte-for-byte; a new loom test isolates the
+  exact OOM-trip/successful-publish/single-consumer-visit interleaving
+  R13-1's latch exists to close. Investigated resetting the latch at the
+  slot's `trim_for_recycle` quiescent point (a P2 finding from the reviews)
+  and explicitly declined this round: `set_dirty_bit_for_segment` resolves
+  the owning slot with no `STATE_LIVE` gate, so a plain reset would race a
+  legitimate in-flight write — left as a documented future-round candidate.
+
+**P1 — feature hardening and production gates:**
+
+- **R14-3 (`6d85db4`, task #288) — honest sub-window vs. full-round framing
+  for `class-aware-dirty`.** The R13-9 promotion headline ("21.71× at
+  N=8") was a sub-window `ns/owner_alloc` timer inside the wallclock
+  bench's `run_round`, not criterion's own full-round mean for the same
+  harness; the full round moved only ~11% at N=8 (most of the apparent
+  savings is deferred drain work moving into the unmeasured pre-alloc/
+  recycle portion of the round, not disappearing). Not a reversal — the
+  mechanism's win is real and reproducible in direction — but the headline
+  is reworded everywhere it appeared (gate doc, wave summary, `Cargo.toml`
+  comment, CHANGELOG), the bench now prints both axes, and a new
+  fixed-work process-level A/B/B/A judge was built reusing
+  `scripts/paired-ab-runner.mjs`. New CLAUDE.md rule: a wall-clock gate
+  must report both axes going forward.
+- **R14-4 (`3fde9f9`, `9fcde2e`, `6a644a4`, task #289) — Stage 2 Small/
+  medium→Large realloc promotion**, implementing the design from
+  `docs/perf/R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`: a growing
+  realloc crossing a 256 KiB threshold (`medium-classes` only) is diverted
+  directly to a Large allocation instead of walking the medium size-class
+  ladder, so every subsequent grow rides the existing OPT-G in-place fast
+  path. All five design-doc test scenarios (a-e) implemented. Production
+  gate result: **CONDITIONAL-GO on the mechanism, RED on R10-2's specific
+  realloc kill-gate** (iai shows no regression, +0.035% Ir; but R10-2's
+  exact 16-live-object/8-slot-cache workload oversubscribes the base Large
+  cache, so ~half of promotions pay a fresh OS reservation) — not promoted,
+  interacts with R14-5's cache hardening for a future re-gate.
+- **R14-5 (`c0ccbc4`, task #290) — `large-cache-extended` hardening**: a
+  budget-vs-materialization ordering fix (a deposit the budget will
+  unconditionally reject no longer pays a sidecar page reservation first),
+  a finite default budget for the extended cache (1280 MiB, neutralizing a
+  measured ~2.86× RSS-retention risk down to parity with the base 8-slot
+  cache), N=1/2/4 post-materialization hit-path correctness gates, and
+  mixed-size/adversarial best-fit/FIFO tests. Production A/B/B/A gate on a
+  turnover-shaped workload: **CONDITIONAL-GO** (large, statistically real
+  win; condition — promotion should ship together with the finite default
+  budget). Not promoted; `large-cache-extended` stays opt-in.
+- **R14-6 (`8265b1c`, task #291) — `large-reserved-capacity` growth factor
+  raised 2×→4×**, closing R13-6's CONDITIONAL-GO blocker. Compared 2×/4×/8×/
+  adaptive-compounding by total bytes copied across the iai `realloc_grow`
+  doubling chain; 4× was the sweet spot. Result: the regression is not just
+  reduced but **reversed** — `realloc_grow` moved from R13-6's measured
+  +102.3% Ir / +52.7% Estimated Cycles to **−22.44% Ir / −36.17% Estimated
+  Cycles** versus plain `production`, with the RSS win (15.80×→1.06× at
+  260 KiB) unchanged. **Gate: GO** (recommendation only — `exact-span-large`
+  + `large-reserved-capacity` remain opt-in, promotion left to the user).
+- **R14-7 (`b117257`, `ffb82bc`, task #292) — `MAX_SEGMENTS` raised 1024→
+  4096.** R13-8 found a 100%-reproducible wall at 1023 simultaneously-live
+  Large objects (a capacity cliff, not a latency degradation) in every
+  feature arm. Documented in README first regardless of outcome; measured
+  the raise as cheap on every axis (static footprint 32→112 KiB inside the
+  fixed 4 MiB primordial segment, idle RSS statistically unchanged, no
+  scan-path degradation) and applied it — the only change this round that
+  is unconditional (no feature gate). Two tests had their old
+  1024/1025/1500 literal cap assumptions replaced with runtime
+  `dbg_max_segments()` reads (per the R12-14 density-agnostic convention) —
+  both would have silently stopped exercising their exhaustion path without
+  this fix. `docs/perf/R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` records a
+  DESIGN-ONLY chained-table follow-on for if a future workload exceeds the
+  new ceiling.
+
+**P2 — documentation accuracy and process:**
+
+- **R14-8 (`8a432d7`, task #293) — corrected false NUMA-incompatibility
+  claims for `class-aware-dirty`.** `.github/workflows/ci.yml` and the
+  wallclock bench both claimed the drain path "is compiled out under NUMA
+  routing" — false; `drain_dirty_segments`'s only feature gate is
+  `alloc-xthread`. What IS `not(numa-aware)`-gated is a different,
+  downstream mechanism (the directory-driven lookup fast path). Confirmed
+  empirically with a new throwaway probe test before correcting the
+  comments; the wallclock bench's sweep now runs under `numa-aware` too.
+- **R14-9 (`4204b38`, `782f5b1`, `8837283`, `c568fcc`, `f344f62`, task
+  #294) — unified owner-only sidecar primitive** (`src/alloc_core/
+  sidecar.rs`): `SegmentDirectory` and `LargeCacheExtension` (already
+  fixed individually in R14-1) migrated onto one shared `reserve`/
+  `reserve_zeroed_with`/`deref`/`deref_mut` API, closing the same
+  safe-fn-returns-`&'static mut` gap in `os::deref_directory_sidecar[_mut]`
+  that R14-1 had only closed for `large_cache_extended.rs`.
+  `dirty_by_class::PerClassDirty` deliberately NOT migrated (cross-thread
+  CAS-publish via `RacyPtrCell` is a different concern, and it is never
+  dereferenced as `&mut` anywhere in the crate) — documented explicitly
+  rather than left as a silent inconsistency. Tier-2 unsafe seam count:
+  52→56 (net +4, the boundary correctly moved out to call sites); the
+  duplicated reserve/init/deref boilerplate the three sidecars had each
+  hand-rolled independently is gone.
+- **R14-10 (`f49cddc`, task #295) — wave process hygiene**: `git diff
+  --check` verified clean (`.gitattributes` added to exempt
+  `docs/perf/_raw_*.log` from whitespace false-positives without touching
+  their bytes); `R13_WAVE_SUMMARY.md`/CHANGELOG's Round 13 entry corrected
+  to honestly separate default-production runtime effect from opt-in-only
+  fixes; pinned-commit/worktree protocol adopted for bench-profile
+  reproducibility (documented in CLAUDE.md) over a heavier named-bundle
+  Cargo-feature scheme; machine-readable CSV summary policy added for perf
+  gates going forward; `cargo hack check --feature-powerset --depth 2`
+  evaluated and **adopted** as a weekly (not per-PR) CI job — 308 check
+  invocations at depth 2, too much for per-commit but exactly the
+  structural gap class that let R13-12/R14-hotfix-#299's E0599 bugs go
+  unnoticed for a full round; README wall-clock table's ±60% absolute-ns
+  host-noise drift called out explicitly (ratios remain normative, iai is
+  the one normative absolute source); four P3 micro-fixes (a
+  `TCACHE_CAP<=16` const-assert, a `virgin_mask` invariant wording
+  correction, an `alloc-stats` parity verification, and renaming
+  "A/B/B/A" to "A/B, double-checked" to match what the protocol actually
+  does).
+
+**Hotfixes found mid-verification (not part of the planned R14-1..R14-10
+queue, each its own numbered fix):**
+
+- **Task #299 (`ee1c14e`) — two real CI failures on `main`, both surfaced
+  by Round 13's own `class-aware-dirty` promotion, not by this round's
+  work.** `r9_6_class_aware_dirty_waste_ratio_scales_with_class_count`
+  measures the pre-class-aware-dirty baseline and is expected to fail once
+  the feature is enabled; its own module doc claimed "no CI configuration
+  combines `production` with `class-aware-dirty`" — true when written,
+  false after R13-9. Fixed by gating the test function itself on
+  `not(feature = "class-aware-dirty")` instead of chasing per-step
+  `--skip` flags. Separately, `tests/r11_4_dealloc_batch_hardened_guards.rs`
+  was missing `batch-api` in its own feature gate despite calling
+  `dealloc_batch` (which requires it) — a pre-existing gap confirmed red
+  even on the Round 12 tip commit, predating this session entirely.
+- **Task #302 (`6cc46f1`) — `tests/r14_4_promotion_move_leg_reduction.rs`
+  failing under `--all-features`**, found by `npm run check` during R14-10.
+  Root cause: not a production bug — `exact-span-large`'s own documented
+  trade-off (zero committed headroom beyond the exact page-rounded request)
+  combined with R14-4's promoted-block padding (also zero artificial
+  slack) structurally forces every post-promotion grow through the move
+  leg whenever `exact-span-large` is on without `large-reserved-capacity`'s
+  headroom (itself disabled under `numa-aware`) — exactly the
+  `--all-features` combination. Fixed by scoping the tests' pointer-identity
+  oracle to configurations with grow headroom, falling back to a
+  weaker-but-still-load-bearing correctness oracle in the two documented
+  no-headroom configurations, with a red/green counterfactual confirming
+  the relaxed assertion is not vacuous.
+
 ### Round 13 — class-aware-dirty promoted to production, NUMA bucket-slot reuse, virgin-zero-skip resource fix, Large-cache extension, wave process discipline (R13-1..R13-12)
 
 Round 13 — 13 commits (`e2d84f7`..`1a2dd7d`, inclusive of both ends),
