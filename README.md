@@ -43,7 +43,8 @@ the per-thread fast-bin magazine. Without `alloc-decommit` the
 (large-alloc/free churn keeps working), but empty small segments cannot
 be recycled until they are decommitted; long-running processes with
 many small-segment carve/decay cycles will pin slots and eventually
-hit the 1024 cap.
+hit the `MAX_SEGMENTS` cap (see `## Honest limitations` below for the
+exact number and the reasoning behind it).
 
 For the bare `no_std` + `alloc` handle-store core, see
 [Two faces](#two-faces) below; for the full feature matrix, see
@@ -1021,7 +1022,8 @@ async use of `SeferAlloc`. Without `alloc-decommit`, unregister /
 free-list still runs unconditionally (freed large-segment slots recycle
 normally), but empty small segments are pinned — their slots cannot be
 recycled until they are decommitted; a long-running tokio server with
-many small-segment carve/decay cycles will eventually hit the 1024 cap.
+many small-segment carve/decay cycles will eventually hit the
+`MAX_SEGMENTS` cap (see `## Honest limitations`).
 For embedded / `no_std` use, stay with the default `std` feature.
 
 ### Tuning the large-segment cache (`alloc-decommit`)
@@ -1125,7 +1127,34 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
   unconditionally, but empty small segments cannot be recycled (they
   are recycled only when decommitted). Long-running processes with
   many small-segment carve/decay cycles will pin slots and eventually
-  hit the 1024 cap. Use the `production` feature alias to avoid this.
+  hit the `MAX_SEGMENTS` cap. Use the `production` feature alias to avoid
+  this.
+- **A hard cap on simultaneously-LIVE Large objects: `MAX_SEGMENTS - 1`
+  (4095), reproducible, not a soft degradation.** Every Large allocation —
+  regardless of feature combination, and independent of `alloc-decommit`
+  (which only recycles a slot once its object is *freed*, not while it
+  stays alive) — consumes exactly one `SegmentTable` slot
+  (`src/alloc_core/segment_table.rs`). Slot 0 is permanently reserved for
+  the primordial segment, so the usable ceiling is `MAX_SEGMENTS - 1`. Past
+  it, `alloc()` returns null on every further request (graceful OOM, not a
+  panic/abort inside this crate) until an existing Large object is freed;
+  for a `GlobalAlloc` consumer that surfaces as `handle_alloc_error`
+  (process abort by default). Alloc/dealloc latency stays flat approaching
+  the ceiling (no non-linear slowdown) — it is a binary wall, not
+  degradation. R13-8 first measured and located this precisely at 1023
+  live objects when `MAX_SEGMENTS` was 1024
+  ([`docs/perf/R13_8_MEDIUM_WORKING_SET_JUDGE.md`](docs/perf/R13_8_MEDIUM_WORKING_SET_JUDGE.md));
+  R14-7 raised `MAX_SEGMENTS` 4× (to 4096) after confirming the raise is
+  cheap on every axis measured — idle-process RSS unchanged, primordial
+  segment metadata footprint +84 KiB inside a large fixed 4 MiB budget,
+  and no scan-path degradation (the `production`-default
+  `alloc-segment-directory` bounds the hot lookup path independent of
+  table size; the only true `O(table size)` walk is the one-time `Drop`
+  teardown) — see
+  [`docs/perf/R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md`](docs/perf/R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md)
+  for the follow-on design (an expandable/chained table, evaluated jointly
+  against the cold-carve gap) if a workload still needs more than 4095
+  simultaneously-live Large objects.
 
 ---
 
