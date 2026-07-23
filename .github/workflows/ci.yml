@@ -162,6 +162,19 @@ jobs:
       - name: test (--features "production hardened")
         if: ${{ !cancelled() }}
         run: cargo test --features "production hardened" --no-fail-fast
+      # R14 hotfix (task #299): `tests/r11_4_dealloc_batch_hardened_guards.rs`
+      # exercises `HeapCore::dealloc_batch`'s hardened guards (F7/H1), which
+      # requires `batch-api` directly -- `hardened` alone does not pull it in
+      # (confirmed pre-existing: this combination was never covered by any
+      # step above, so the file's own `dealloc_batch` calls failed to compile
+      # under the plain `--features hardened` step until this file's
+      # `#![cfg]` gate was tightened to require `batch-api` too). Without
+      # this step the file compiles to 0 tests (pass by absence) under every
+      # other row here -- the same "written but never executed" class of gap
+      # R13-5 (task #275) closed for other combinations.
+      - name: test (--features "hardened batch-api")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "hardened batch-api" --no-fail-fast
 
   test-gated-bodies:
     # C2 (bug-hunt review 2026-07-09): the steps below ship tests whose
@@ -239,22 +252,20 @@ jobs:
       # satisfies the `not(feature = "numa-aware")` gate on
       # `class_aware_dirty_routing.rs` / `r9_6_class_aware_dirty_judge.rs`).
       #
-      # `r9_6_class_aware_dirty_waste_ratio_scales_with_class_count` is
-      # skipped by name here: its own module doc (`r9_6_class_aware_dirty_judge.rs`,
-      # "R12-7 stage 2 note") documents that this exact assertion is EXPECTED
-      # to fail once `class-aware-dirty` is additionally enabled — that file
-      # measures the PRE-fix per-segment-only baseline waste ratio, and
-      # `class-aware-dirty`'s whole point is to collapse that waste back to
-      # ~0 at every N, which trivially fails the "waste grows with N"
-      # sanity assertion. The equivalent measurement WITH the feature on is
+      # R14 hotfix (task #299): the `--skip
+      # r9_6_class_aware_dirty_waste_ratio_scales_with_class_count` flag this
+      # step used to carry is gone -- that test function is now compiled out
+      # under `#[cfg(not(feature = "class-aware-dirty"))]` directly (see the
+      # test file's own comment), because a per-step `--skip` only covers
+      # THIS step: once R13-9 promoted `class-aware-dirty` into `production`,
+      # every OTHER step that tests plain `production`/`--all-features` also
+      # started tripping the same expected failure, and none of them carried
+      # the skip. The equivalent measurement WITH the feature on is
       # `class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`,
-      # which DOES run in this step. Verified locally: green with the skip,
-      # RED (the documented expected failure, not an infra fluke) without it.
+      # which DOES run in this step.
       - name: test (--features "production class-aware-dirty alloc-stats")
         if: ${{ !cancelled() }}
-        run: >-
-          cargo test --features "production class-aware-dirty alloc-stats" --no-fail-fast
-          -- --skip r9_6_class_aware_dirty_waste_ratio_scales_with_class_count
+        run: cargo test --features "production class-aware-dirty alloc-stats" --no-fail-fast
       # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in

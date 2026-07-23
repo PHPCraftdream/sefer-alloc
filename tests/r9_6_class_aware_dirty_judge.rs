@@ -328,6 +328,17 @@ fn run_round(n_producer_classes: usize) -> (u64, u64, usize) {
 /// that more producer classes yield strictly more waste (the qualitative
 /// scaling the review predicted) — the absolute ratios are timing-dependent
 /// and reported, not asserted.
+// R14 hotfix (task #299): `class-aware-dirty` was promoted into `production`
+// in R13-9 (`da77b38`), which invalidated this test's own "not reachable
+// from the documented CI matrix" assumption below (see the comment on the
+// assertion) — any CI step that tests plain `production` (or
+// `--all-features`) now ALSO enables `class-aware-dirty`, tripping this
+// EXPECTED-to-fail-under-that-feature assertion. Compiling the test out
+// under the feature is the correct fix (the alternative — chasing every CI
+// step with `--skip` — does not scale and already missed two steps: `test
+// (gated bodies + all-features)`'s `production alloc-stats` step and its
+// `--all-features` step, both red on `c7e7a79`/`cb24266`).
+#[cfg(not(feature = "class-aware-dirty"))]
 #[test]
 fn r9_6_class_aware_dirty_waste_ratio_scales_with_class_count() {
     let _g = SerialGuard::acquire();
@@ -386,11 +397,12 @@ fn r9_6_class_aware_dirty_waste_ratio_scales_with_class_count() {
     // `tests/class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`
     // for the equivalent measurement WITH the feature on. This file is
     // deliberately left unmodified otherwise (measurement-only judge,
-    // unchanged base algorithm) — no CI configuration combines `production`
-    // with `class-aware-dirty` (the fast-check `npm run check` path uses
-    // `production` alone; `--all-features` also pulls in `numa-aware`, which
-    // compiles this whole file out — see its `#![cfg]` gate), so this
-    // interaction is not reachable from the documented CI matrix.
+    // unchanged base algorithm). R14 hotfix (task #299): `class-aware-dirty`
+    // is now part of `production` (R13-9), so the interaction IS reachable
+    // from plain `production`/`--all-features` — the whole test function is
+    // compiled out under `#[cfg(not(feature = "class-aware-dirty"))]` above
+    // instead of relying on CI-step `--skip` flags (which do not cover every
+    // step that happens to enable `production`).
     let waste_for = |n: usize| -> u64 {
         results
             .iter()

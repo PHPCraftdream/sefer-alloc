@@ -24,9 +24,20 @@
 //! batch.
 //!
 //! Gated to `hardened` (which pulls `fastbin`): only that build compiles
-//! either guard.
+//! either guard. Also requires `batch-api` directly (R14 hotfix, task #299):
+//! `hardened` does NOT pull in `batch-api`, and this file's whole point is
+//! exercising `HeapCore::dealloc_batch` — without the extra gate,
+//! `cargo test --features hardened` alone (CI's "test (hardened tier)" job)
+//! fails to compile (E0599: `dealloc_batch` does not exist without
+//! `batch-api`). See `.github/workflows/ci.yml`'s "test (hardened tier)" job
+//! for the companion `--features "hardened batch-api"` step this gate needs.
 
-#![cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
+#![cfg(all(
+    feature = "hardened",
+    feature = "alloc-global",
+    feature = "fastbin",
+    feature = "batch-api"
+))]
 
 use std::alloc::Layout;
 use std::collections::HashSet;
