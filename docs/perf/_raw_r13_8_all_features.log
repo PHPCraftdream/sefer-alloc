@@ -1,0 +1,51 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 5.28s
+     Running `D:\dev\rust\.cargo-target\release\examples\r13_8_medium_working_set_judge.exe`
+=== R13-8 medium (260 KiB - 2 MiB) working-set judge ===
+feature exact-span-large:    true
+feature large-cache-extended: true
+feature alloc-stats:         true
+current build: small_max = 1835008 B (1792.00 KiB), SEGMENT = 4194304 B (4 MiB), MAX_SEGMENTS = 1024
+
+--- Part A: live-object scale sweep ---
+idle rss_kib=3008 commit_kib=652
+
+target=  256 achieved=  256 stopped_by_null_alloc=false alloc_wall_clock=3.459ms (13.5 us/op)
+  rss_kib=6440 (delta_from_idle=3432) commit_kib=513220 (delta_from_idle=512568)
+  segments_reserved_delta=256 segments_released_delta=0 (expect reserved≈achieved, released≈0 -- nothing freed yet)
+  large_cache_hits at peak-live (expect 0 -- static live set never deposits/reuses): 0
+  table_count=257 of MAX_SEGMENTS=1024
+  dealloc_wall_clock=10.6479ms (41.6 us/op)
+
+target=  512 achieved=  512 stopped_by_null_alloc=false alloc_wall_clock=7.167ms (14.0 us/op)
+  rss_kib=9596 (delta_from_idle=6588) commit_kib=1021712 (delta_from_idle=1021060)
+  segments_reserved_delta=512 segments_released_delta=0 (expect reserved≈achieved, released≈0 -- nothing freed yet)
+  large_cache_hits at peak-live (expect 0 -- static live set never deposits/reuses): 0
+  table_count=513 of MAX_SEGMENTS=1024
+  dealloc_wall_clock=21.8628ms (42.7 us/op)
+
+target= 1024 achieved= 1023 stopped_by_null_alloc=true alloc_wall_clock=17.794ms (17.4 us/op)
+  rss_kib=15832 (delta_from_idle=12824) commit_kib=2036608 (delta_from_idle=2035956)
+  segments_reserved_delta=1024 segments_released_delta=1 (expect reserved≈achieved, released≈0 -- nothing freed yet)
+  large_cache_hits at peak-live (expect 0 -- static live set never deposits/reuses): 0
+  table_count=1024 of MAX_SEGMENTS=1024
+  dealloc_wall_clock=44.8562ms (43.8 us/op)
+
+target= 2048 achieved= 1023 stopped_by_null_alloc=true alloc_wall_clock=16.2401ms (15.9 us/op)
+  rss_kib=15916 (delta_from_idle=12908) commit_kib=2036808 (delta_from_idle=2036156)
+  segments_reserved_delta=1024 segments_released_delta=1 (expect reserved≈achieved, released≈0 -- nothing freed yet)
+  large_cache_hits at peak-live (expect 0 -- static live set never deposits/reuses): 0
+  table_count=1024 of MAX_SEGMENTS=1024
+  dealloc_wall_clock=43.2013ms (42.2 us/op)
+
+--- Part B: exact SegmentTable-capacity ceiling probe ---
+probe_target=1088 (MAX_SEGMENTS+64) achieved=1023 stopped_by_null_alloc=true
+  table_count at stop = 1024 (MAX_SEGMENTS = 1024)
+
+--- Part C: turnover judge (24 distinct sizes, batch cycles) ---
+sizes=24 cycles=200 total_alloc_dealloc_pairs=4800
+hits=4800 hit_rate=100.00% wall_clock=1.0689ms (222.7 ns/op)
+base slot occupancy (8): 8
+extension materialised: true extension slots used: 16 total slots: 40
+
+=== done ===

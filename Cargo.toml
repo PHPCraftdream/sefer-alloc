@@ -1072,6 +1072,17 @@ required-features = ["alloc-core", "alloc-decommit"]
 name = "r13_7_large_cache_extended_hit_rate_measure"
 required-features = ["alloc-core", "alloc-decommit"]
 
+# R13-8 (task #278): THROWAWAY judge for 256-2048 SIMULTANEOUSLY LIVE
+# 260 KiB - 2 MiB objects -- does the large-cache-extended sidecar matter for
+# a static live set (expected: no, cache is for freed/reused segments), and
+# is MAX_SEGMENTS a real ceiling for this workload shape (expected: yes).
+# Build/run: cargo run --release --example r13_8_medium_working_set_judge --features "production alloc-stats"
+#            cargo run --release --example r13_8_medium_working_set_judge --features "production alloc-stats exact-span-large"
+#            cargo run --release --example r13_8_medium_working_set_judge --features "production alloc-stats exact-span-large large-cache-extended"
+[[example]]
+name = "r13_8_medium_working_set_judge"
+required-features = ["alloc-core", "alloc-decommit"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
