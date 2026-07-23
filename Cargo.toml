@@ -352,42 +352,19 @@ exact-span-large = ["alloc-core"]
 # realloc fast path are BYTE-FOR-BYTE IDENTICAL to before — this feature
 # adds a new path, it does not alter the default one.
 large-reserved-capacity = ["exact-span-large", "aligned-vmem/lazy-commit"]
-# R13-7 (P1-perf, EXPERIMENTAL, task #277): widen the large-segment free-cache
-# (`AllocCore::large_cache`, `alloc_core.rs`) beyond its fixed 8 base slots
-# (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension sidecar of 32
-# additional slots (40 total) — see `src/alloc_core/large_cache_extended.rs`'s
-# module doc for the full design and design-alternatives writeup.
-#
-# Motivation: `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md`
-# §4 measured that `exact-span-large` (R12-3) makes distinct Large request
-# sizes stop aliasing onto one rounded-to-SEGMENT `usable` value — each
-# distinct size occupies its OWN slot instead of sharing one. A working set
-# of 16+ distinct Large sizes can exhaust the base 8 slots, forcing every
-# eviction-then-refill cycle back onto a full OS round-trip (µs-level) that
-# the cache exists to avoid.
-#
-# The sidecar is reserved via `aligned_vmem::leak_zeroed_pages` (same
-# M5-clean direct-VM-reservation pattern `alloc-segment-directory`'s
-# `SegmentDirectory` and `class-aware-dirty`'s `PerClassDirty` both use) only
-# on first overflow of the base 8 slots — zero cost for any workload whose
-# distinct-Large-size working set never exceeds 8. Owner-only plain `*mut`
-# (NOT `RacyPtrCell`): unlike `PerClassDirty` (written by cross-thread remote
-# frees), the large-cache is touched only by this `AllocCore`'s single owning
-# thread, so no CAS-publish protocol is needed.
-#
-# The byte-budget (`large_cache_budget_bytes` / `LargeCacheConfig::budget_bytes`)
-# REMAINS the primary control on total cached RSS — widening the slot count
-# only relaxes how many DISTINCT spans may be resident within that same byte
-# budget; a small budget still caps the cache tightly regardless of slot
-# count.
-#
-# Requires `alloc-decommit` (the large-cache mechanism itself only exists
-# under that feature). EXPERIMENTAL: opt-in, NOT part of `production` or any
-# other default-on bundle. `--all-features` pulls it in (as it does every
-# other opt-in feature here). With this feature OFF, `AllocCore`'s field
-# list, `Drop`, and every large-cache algorithm are BYTE-FOR-BYTE IDENTICAL
-# to before this task — this feature adds an additive lazy sidecar on top of
-# the existing base-8-slot array, it does not alter the default path.
+# R13-7 (P1-perf, EXPERIMENTAL, task #277): widens `AllocCore::large_cache`'s
+# fixed 8 base slots (`LARGE_CACHE_SLOTS`) via a lazily-materialised extension
+# sidecar of 32 additional slots (40 total) — see
+# `src/alloc_core/large_cache_extended.rs`'s module doc for the full design,
+# design-alternatives writeup, and motivation
+# (`docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §4).
+# Invariants: materialises only on first overflow of the base 8 slots (zero
+# cost below that); `large_cache_budget_bytes` remains the primary RSS
+# control (slot count only relaxes how many DISTINCT spans may be resident
+# within that same byte budget). Requires `alloc-decommit`. EXPERIMENTAL:
+# opt-in, NOT part of `production`. With this feature OFF, `AllocCore`'s
+# field list, `Drop`, and every large-cache algorithm are byte-for-byte
+# identical to before this task.
 large-cache-extended = ["alloc-decommit"]
 # Phase P2/P4/P7 per-thread magazine cache (tcache) layered over
 # `alloc-global`. 0.3.0 (task A2): now ALSO pulls in `alloc-xthread`. Without
@@ -530,36 +507,18 @@ medium-classes-wide = ["medium-classes"]
 # that had kept it opt-in). Feature-OFF builds remain byte-for-byte
 # semantically identical.
 alloc-segment-directory = ["alloc-core"]
-# R12-7 stage 2 (EXPERIMENTAL, P1): class-aware dirty routing. Stage 1
-# (`docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md`) confirmed via a
-# wall-clock criterion bench (`benches/r12_7_class_aware_dirty_wallclock.rs`)
-# that the O(D) vs O(D_class) waste ratio R9-6 measured at the counter level
-# (`docs/perf/R9_6_CLASS_AWARE_DIRTY_ROUTING_JUDGE.md`) translates into a
-# material wall-clock cost (well past the R9-6-prescribed 5% N=1-vs-N=4 gate),
-# clearing this feature for implementation.
-#
-# Mechanism: a lazily-materialised per-(segment, class) dirty-bit sidecar
-# (`alloc_core::dirty_by_class::PerClassDirty`) — see that module's doc comment
-# for the full design, sizing (~6.1 KiB per materialised heap, default
-# 49-class table), and the lost-wakeup safety argument (a per-class bit is a
-# VISIT HINT only; the drain body itself is unchanged and always fully drains
-# a visited segment's ring regardless of which class's bit triggered the
-# visit, so a stale/redundant bit can waste at most one visit — it can never
-# cause an entry to be silently skipped). `drain_dirty_segments` gains a
-# class-scoped scan path that iterates ONLY the sought class's
-# `WORDS_PER_CLASS`-word slice instead of the shared per-segment bitmap.
-#
-# The existing per-segment `dirty_segments` bitmap is UNCHANGED and still set
-# on every push (this mechanism is additive, not a replacement) — with this
-# feature OFF, `drain_dirty_segments` and `set_dirty_bit_for_segment` are
-# byte-for-byte identical to before.
-#
-# EXPERIMENTAL: opt-in, NOT part of `production`. `--all-features` pulls it
-# in (as it does every other opt-in feature here). Additive over
-# `alloc-xthread` (the producer/consumer sides this mechanism extends) +
-# `alloc-segment-directory` (the directory-driven drain call site) +
-# `alloc-core` (for `dep:racy-ptr-cell`, already pulled in by `alloc-core`,
-# and `dep:aligned-vmem` for the sidecar reservation).
+# R12-7 stage 2 (task #279 promoted it into `production` in R13-9): a
+# lazily-materialised per-(segment, class) dirty-bit sidecar
+# (`alloc_core::dirty_by_class::PerClassDirty`) that lets
+# `drain_dirty_segments` scan only the segments dirty for the SOUGHT class
+# instead of every segment dirty for ANY class. Strictly additive: the
+# existing per-segment `dirty_segments` bitmap is unchanged and still set on
+# every push; a stale/redundant per-class bit costs at most one wasted visit,
+# never a silently-skipped entry (see the module doc's lost-wakeup argument).
+# With this feature OFF, `drain_dirty_segments`/`set_dirty_bit_for_segment`
+# are byte-for-byte identical to before. Full design in the module doc;
+# promotion numbers in `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md`
+# (see the note at the `production` definition below).
 class-aware-dirty = ["alloc-xthread", "alloc-segment-directory", "dep:aligned-vmem"]
 # H1 (task #167): PARANOID deploy hardening — opt-in defence-in-depth against
 # UNSAFE-CALLER misuse that costs cycles on the free hot path and is therefore

@@ -1,0 +1,1938 @@
+
+> sefer-alloc-dev-scripts@0.0.0 bench:table
+> node scripts/bench-table.mjs
+
+[bench-table] repo: D:\dev\rust\sefer-alloc
+[bench-table] bench: global_alloc | features: production
+[bench-table] wall-clock is inherently noisy on a shared host (criterion sample_size(10)); treat this as a directional signal and cross-check surprising deltas against `npm run iai` (deterministic instruction count).
+
+[bench-table] running... (this takes a couple of minutes)
+
+(node:6800) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 2m 28s
+     Running benches\global_alloc.rs (D:\dev\rust\.cargo-target\release\deps\global_alloc-6d52b39d31eef9c2.exe)
+Gnuplot not found, using plotters backend
+Benchmarking global_alloc/System/16B
+Benchmarking global_alloc/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/16B: Collecting 10 samples in estimated 605.34 ms (3190 iterations)
+Benchmarking global_alloc/System/16B: Analyzing
+global_alloc/System/16B time:   [168.24 µs 177.27 µs 183.72 µs]
+                        change: [-15.777% -11.570% -7.1448%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking global_alloc/SeferAlloc/16B
+Benchmarking global_alloc/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/16B: Collecting 10 samples in estimated 602.06 ms (9020 iterations)
+Benchmarking global_alloc/SeferAlloc/16B: Analyzing
+global_alloc/SeferAlloc/16B
+                        time:   [58.197 µs 72.635 µs 100.40 µs]
+                        change: [+39.790% +95.754% +152.88%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/mimalloc/16B
+Benchmarking global_alloc/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/16B: Collecting 10 samples in estimated 601.23 ms (26k iterations)
+Benchmarking global_alloc/mimalloc/16B: Analyzing
+global_alloc/mimalloc/16B
+                        time:   [19.831 µs 30.696 µs 43.741 µs]
+                        change: [-10.097% +13.770% +52.558%] (p = 0.55 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc/System/64B
+Benchmarking global_alloc/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/64B: Collecting 10 samples in estimated 604.62 ms (4730 iterations)
+Benchmarking global_alloc/System/64B: Analyzing
+global_alloc/System/64B time:   [141.06 µs 153.66 µs 182.34 µs]
+                        change: [-37.278% -27.275% -15.129%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc/mimalloc/64B
+Benchmarking global_alloc/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/64B: Collecting 10 samples in estimated 601.13 ms (8580 iterations)
+Benchmarking global_alloc/mimalloc/64B: Analyzing
+global_alloc/mimalloc/64B
+                        time:   [43.142 µs 49.551 µs 54.760 µs]
+                        change: [+77.094% +95.504% +114.20%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/SeferAlloc/64B
+Benchmarking global_alloc/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/64B: Collecting 10 samples in estimated 600.46 ms (11k iterations)
+Benchmarking global_alloc/SeferAlloc/64B: Analyzing
+global_alloc/SeferAlloc/64B
+                        time:   [48.202 µs 49.334 µs 50.425 µs]
+                        change: [-11.741% -7.3040% -2.3626%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking global_alloc/SeferAlloc/256B
+Benchmarking global_alloc/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/256B: Collecting 10 samples in estimated 602.56 ms (7755 iterations)
+Benchmarking global_alloc/SeferAlloc/256B: Analyzing
+global_alloc/SeferAlloc/256B
+                        time:   [74.274 µs 86.484 µs 94.531 µs]
+                        change: [+18.673% +35.605% +54.122%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/mimalloc/256B
+Benchmarking global_alloc/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/256B: Collecting 10 samples in estimated 601.14 ms (20k iterations)
+Benchmarking global_alloc/mimalloc/256B: Analyzing
+global_alloc/mimalloc/256B
+                        time:   [29.761 µs 31.969 µs 34.534 µs]
+                        change: [-15.694% -9.9797% -4.2888%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc/System/256B
+Benchmarking global_alloc/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/256B: Collecting 10 samples in estimated 610.86 ms (2585 iterations)
+Benchmarking global_alloc/System/256B: Analyzing
+global_alloc/System/256B
+                        time:   [241.18 µs 290.18 µs 331.40 µs]
+                        change: [+1.8135% +18.264% +36.234%] (p = 0.05 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/SeferAlloc/1024B
+Benchmarking global_alloc/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/SeferAlloc/1024B: Collecting 10 samples in estimated 601.74 ms (7315 iterations)
+Benchmarking global_alloc/SeferAlloc/1024B: Analyzing
+global_alloc/SeferAlloc/1024B
+                        time:   [53.974 µs 67.615 µs 81.357 µs]
+                        change: [-2.2854% +9.4417% +25.826%] (p = 0.23 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc/System/1024B
+Benchmarking global_alloc/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/System/1024B: Collecting 10 samples in estimated 615.06 ms (1430 iterations)
+Benchmarking global_alloc/System/1024B: Analyzing
+global_alloc/System/1024B
+                        time:   [336.89 µs 370.28 µs 398.10 µs]
+                        change: [+64.546% +80.532% +97.018%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/mimalloc/1024B
+Benchmarking global_alloc/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc/mimalloc/1024B: Collecting 10 samples in estimated 604.36 ms (5995 iterations)
+Benchmarking global_alloc/mimalloc/1024B: Analyzing
+global_alloc/mimalloc/1024B
+                        time:   [74.375 µs 85.499 µs 103.60 µs]
+                        change: [+17.630% +38.807% +61.153%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc/Vec_push/mimalloc
+Benchmarking global_alloc/Vec_push/mimalloc: Warming up for 150.00 ms
+Benchmarking global_alloc/Vec_push/mimalloc: Collecting 10 samples in estimated 600.03 ms (373k iterations)
+Benchmarking global_alloc/Vec_push/mimalloc: Analyzing
+global_alloc/Vec_push/mimalloc
+                        time:   [1.3498 µs 1.4019 µs 1.4881 µs]
+                        change: [-12.763% -7.1012% -0.9560%] (p = 0.04 < 0.05)
+                        Change within noise threshold.
+Benchmarking global_alloc/Vec_push/SeferAlloc
+Benchmarking global_alloc/Vec_push/SeferAlloc: Warming up for 150.00 ms
+Benchmarking global_alloc/Vec_push/SeferAlloc: Collecting 10 samples in estimated 600.06 ms (496k iterations)
+Benchmarking global_alloc/Vec_push/SeferAlloc: Analyzing
+global_alloc/Vec_push/SeferAlloc
+                        time:   [1.2667 µs 1.3106 µs 1.3986 µs]
+                        change: [-14.218% -7.0496% +1.2612%] (p = 0.11 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+Benchmarking global_alloc/Vec_push/System
+Benchmarking global_alloc/Vec_push/System: Warming up for 150.00 ms
+Benchmarking global_alloc/Vec_push/System: Collecting 10 samples in estimated 600.24 ms (137k iterations)
+Benchmarking global_alloc/Vec_push/System: Analyzing
+global_alloc/Vec_push/System
+                        time:   [4.4291 µs 5.0040 µs 5.9187 µs]
+                        change: [+70.640% +94.050% +121.89%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking global_alloc_churn/mimalloc/16B
+Benchmarking global_alloc_churn/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/16B: Collecting 10 samples in estimated 600.31 ms (16k iterations)
+Benchmarking global_alloc_churn/mimalloc/16B: Analyzing
+global_alloc_churn/mimalloc/16B
+                        time:   [24.372 µs 25.610 µs 27.060 µs]
+                        change: [+22.429% +34.164% +47.411%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn/System/16B
+Benchmarking global_alloc_churn/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/16B: Collecting 10 samples in estimated 609.80 ms (3190 iterations)
+Benchmarking global_alloc_churn/System/16B: Analyzing
+global_alloc_churn/System/16B
+                        time:   [142.13 µs 147.01 µs 151.63 µs]
+                        change: [+7.6841% +14.906% +22.368%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking global_alloc_churn/SeferAlloc/16B
+Benchmarking global_alloc_churn/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/16B: Collecting 10 samples in estimated 601.23 ms (15k iterations)
+Benchmarking global_alloc_churn/SeferAlloc/16B: Analyzing
+global_alloc_churn/SeferAlloc/16B
+                        time:   [23.107 µs 23.550 µs 24.095 µs]
+                        change: [+8.6077% +14.455% +20.430%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking global_alloc_churn/System/64B
+Benchmarking global_alloc_churn/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/64B: Collecting 10 samples in estimated 609.84 ms (3080 iterations)
+Benchmarking global_alloc_churn/System/64B: Analyzing
+global_alloc_churn/System/64B
+                        time:   [144.37 µs 146.73 µs 150.80 µs]
+                        change: [+1.2455% +7.1187% +12.707%] (p = 0.03 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn/SeferAlloc/64B
+Benchmarking global_alloc_churn/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/64B: Collecting 10 samples in estimated 601.46 ms (17k iterations)
+Benchmarking global_alloc_churn/SeferAlloc/64B: Analyzing
+global_alloc_churn/SeferAlloc/64B
+                        time:   [22.328 µs 22.942 µs 23.434 µs]
+                        change: [+8.2434% +15.143% +22.861%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn/mimalloc/64B
+Benchmarking global_alloc_churn/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/64B: Collecting 10 samples in estimated 600.77 ms (17k iterations)
+Benchmarking global_alloc_churn/mimalloc/64B: Analyzing
+global_alloc_churn/mimalloc/64B
+                        time:   [25.758 µs 27.595 µs 28.726 µs]
+                        change: [-4.4069% +4.4897% +13.755%] (p = 0.34 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn/System/256B
+Benchmarking global_alloc_churn/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/256B: Collecting 10 samples in estimated 611.51 ms (2750 iterations)
+Benchmarking global_alloc_churn/System/256B: Analyzing
+global_alloc_churn/System/256B
+                        time:   [168.28 µs 178.43 µs 183.47 µs]
+                        change: [+16.219% +23.993% +31.599%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn/mimalloc/256B
+Benchmarking global_alloc_churn/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/256B: Collecting 10 samples in estimated 601.95 ms (10k iterations)
+Benchmarking global_alloc_churn/mimalloc/256B: Analyzing
+global_alloc_churn/mimalloc/256B
+                        time:   [31.638 µs 38.380 µs 42.230 µs]
+                        change: [-20.175% -6.4116% +8.8609%] (p = 0.44 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn/SeferAlloc/256B
+Benchmarking global_alloc_churn/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/256B: Collecting 10 samples in estimated 600.60 ms (13k iterations)
+Benchmarking global_alloc_churn/SeferAlloc/256B: Analyzing
+global_alloc_churn/SeferAlloc/256B
+                        time:   [22.098 µs 22.494 µs 22.783 µs]
+                        change: [+6.0964% +11.550% +17.703%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn/SeferAlloc/1024B
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Collecting 10 samples in estimated 602.88 ms (3960 iterations)
+Benchmarking global_alloc_churn/SeferAlloc/1024B: Analyzing
+global_alloc_churn/SeferAlloc/1024B
+                        time:   [21.368 µs 23.143 µs 24.189 µs]
+                        change: [-11.229% -2.6053% +5.9447%] (p = 0.60 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn/mimalloc/1024B
+Benchmarking global_alloc_churn/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/mimalloc/1024B: Collecting 10 samples in estimated 613.18 ms (2200 iterations)
+Benchmarking global_alloc_churn/mimalloc/1024B: Analyzing
+global_alloc_churn/mimalloc/1024B
+                        time:   [227.58 µs 233.26 µs 238.20 µs]
+                        change: [+0.1946% +6.6915% +13.315%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn/System/1024B
+Benchmarking global_alloc_churn/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn/System/1024B: Collecting 10 samples in estimated 617.91 ms (1760 iterations)
+Benchmarking global_alloc_churn/System/1024B: Analyzing
+global_alloc_churn/System/1024B
+                        time:   [167.45 µs 175.38 µs 179.27 µs]
+                        change: [-5.4529% +4.2495% +13.686%] (p = 0.41 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Collecting 10 samples in estimated 600.91 ms (16k iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/16B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/16B
+                        time:   [27.601 µs 28.978 µs 30.642 µs]
+                        change: [-12.578% -6.2119% +1.4660%] (p = 0.12 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_with_teardown/System/16B
+Benchmarking global_alloc_churn_with_teardown/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/16B: Collecting 10 samples in estimated 609.91 ms (3300 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/16B: Analyzing
+global_alloc_churn_with_teardown/System/16B
+                        time:   [158.10 µs 162.52 µs 167.01 µs]
+                        change: [+4.5166% +10.175% +16.491%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Collecting 10 samples in estimated 600.31 ms (21k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/16B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/16B
+                        time:   [26.402 µs 29.286 µs 36.444 µs]
+                        change: [+12.829% +31.086% +58.402%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Collecting 10 samples in estimated 600.32 ms (20k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/64B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/64B
+                        time:   [24.842 µs 25.584 µs 26.340 µs]
+                        change: [+3.8096% +9.4167% +16.067%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Collecting 10 samples in estimated 601.50 ms (13k iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/64B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/64B
+                        time:   [31.644 µs 33.625 µs 36.027 µs]
+                        change: [+1.9622% +9.0084% +16.576%] (p = 0.03 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_with_teardown/System/64B
+Benchmarking global_alloc_churn_with_teardown/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/64B: Collecting 10 samples in estimated 602.12 ms (2310 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/64B: Analyzing
+global_alloc_churn_with_teardown/System/64B
+                        time:   [177.78 µs 186.41 µs 200.87 µs]
+                        change: [+14.650% +21.948% +30.148%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Collecting 10 samples in estimated 602.54 ms (11k iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/256B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/256B
+                        time:   [35.161 µs 36.679 µs 37.721 µs]
+                        change: [+7.9857% +16.343% +25.741%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_with_teardown/System/256B
+Benchmarking global_alloc_churn_with_teardown/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/256B: Collecting 10 samples in estimated 609.02 ms (2915 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/256B: Analyzing
+global_alloc_churn_with_teardown/System/256B
+                        time:   [180.33 µs 204.91 µs 223.27 µs]
+                        change: [+1.2122% +13.195% +26.374%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Collecting 10 samples in estimated 601.21 ms (11k iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/256B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/256B
+                        time:   [33.518 µs 39.714 µs 44.291 µs]
+                        change: [+6.9954% +19.361% +33.966%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_with_teardown/System/1024B
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Collecting 10 samples in estimated 610.93 ms (2255 iterations)
+Benchmarking global_alloc_churn_with_teardown/System/1024B: Analyzing
+global_alloc_churn_with_teardown/System/1024B
+                        time:   [182.14 µs 194.25 µs 201.81 µs]
+                        change: [-0.7518% +6.1784% +12.594%] (p = 0.09 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Collecting 10 samples in estimated 600.63 ms (5335 iterations)
+Benchmarking global_alloc_churn_with_teardown/SeferAlloc/1024B: Analyzing
+global_alloc_churn_with_teardown/SeferAlloc/1024B
+                        time:   [87.278 µs 129.09 µs 152.33 µs]
+                        change: [-36.305% +16.574% +100.73%] (p = 0.60 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Collecting 10 samples in estimated 600.48 ms (6765 iterations)
+Benchmarking global_alloc_churn_with_teardown/mimalloc/1024B: Analyzing
+global_alloc_churn_with_teardown/mimalloc/1024B
+                        time:   [57.338 µs 60.316 µs 63.300 µs]
+                        change: [-6.5905% -0.3686% +7.3266%] (p = 0.92 > 0.05)
+                        No change in performance detected.
+
+Benchmarking global_alloc_churn_write/System/16B
+Benchmarking global_alloc_churn_write/System/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/16B: Collecting 10 samples in estimated 605.40 ms (3300 iterations)
+Benchmarking global_alloc_churn_write/System/16B: Analyzing
+global_alloc_churn_write/System/16B
+                        time:   [143.14 µs 147.83 µs 150.51 µs]
+                        change: [+2.6576% +7.6742% +12.640%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_write/mimalloc/16B
+Benchmarking global_alloc_churn_write/mimalloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/16B: Collecting 10 samples in estimated 600.42 ms (19k iterations)
+Benchmarking global_alloc_churn_write/mimalloc/16B: Analyzing
+global_alloc_churn_write/mimalloc/16B
+                        time:   [22.207 µs 23.196 µs 23.757 µs]
+                        change: [+2.6127% +12.887% +20.313%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low severe
+Benchmarking global_alloc_churn_write/SeferAlloc/16B
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Collecting 10 samples in estimated 601.66 ms (16k iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/16B: Analyzing
+global_alloc_churn_write/SeferAlloc/16B
+                        time:   [23.938 µs 24.772 µs 25.862 µs]
+                        change: [+8.9389% +18.258% +28.463%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_write/SeferAlloc/64B
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Collecting 10 samples in estimated 601.51 ms (16k iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/64B: Analyzing
+global_alloc_churn_write/SeferAlloc/64B
+                        time:   [25.070 µs 28.860 µs 33.438 µs]
+                        change: [+5.4644% +16.459% +32.197%] (p = 0.02 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking global_alloc_churn_write/mimalloc/64B
+Benchmarking global_alloc_churn_write/mimalloc/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/64B: Collecting 10 samples in estimated 600.47 ms (17k iterations)
+Benchmarking global_alloc_churn_write/mimalloc/64B: Analyzing
+global_alloc_churn_write/mimalloc/64B
+                        time:   [27.266 µs 28.833 µs 29.976 µs]
+                        change: [+0.5721% +7.3316% +13.947%] (p = 0.05 < 0.05)
+                        Change within noise threshold.
+Benchmarking global_alloc_churn_write/System/64B
+Benchmarking global_alloc_churn_write/System/64B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/64B: Collecting 10 samples in estimated 604.68 ms (3135 iterations)
+Benchmarking global_alloc_churn_write/System/64B: Analyzing
+global_alloc_churn_write/System/64B
+                        time:   [146.51 µs 151.46 µs 158.12 µs]
+                        change: [-2.8253% +2.3105% +7.2832%] (p = 0.42 > 0.05)
+                        No change in performance detected.
+Benchmarking global_alloc_churn_write/SeferAlloc/256B
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Collecting 10 samples in estimated 600.34 ms (11k iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/256B: Analyzing
+global_alloc_churn_write/SeferAlloc/256B
+                        time:   [23.182 µs 24.722 µs 25.597 µs]
+                        change: [+4.7253% +11.846% +17.985%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_write/System/256B
+Benchmarking global_alloc_churn_write/System/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/256B: Collecting 10 samples in estimated 609.52 ms (2750 iterations)
+Benchmarking global_alloc_churn_write/System/256B: Analyzing
+global_alloc_churn_write/System/256B
+                        time:   [157.97 µs 170.08 µs 190.11 µs]
+                        change: [+14.481% +28.734% +48.740%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_write/mimalloc/256B
+Benchmarking global_alloc_churn_write/mimalloc/256B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/256B: Collecting 10 samples in estimated 601.94 ms (9845 iterations)
+Benchmarking global_alloc_churn_write/mimalloc/256B: Analyzing
+global_alloc_churn_write/mimalloc/256B
+                        time:   [33.378 µs 38.718 µs 43.005 µs]
+                        change: [-12.648% -0.1063% +14.629%] (p = 0.99 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_write/mimalloc/1024B
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Collecting 10 samples in estimated 601.20 ms (2200 iterations)
+Benchmarking global_alloc_churn_write/mimalloc/1024B: Analyzing
+global_alloc_churn_write/mimalloc/1024B
+                        time:   [229.60 µs 238.00 µs 252.39 µs]
+                        change: [+1.5521% +8.8738% +16.732%] (p = 0.03 < 0.05)
+                        Performance has regressed.
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Collecting 10 samples in estimated 602.97 ms (5500 iterations)
+Benchmarking global_alloc_churn_write/SeferAlloc/1024B: Analyzing
+global_alloc_churn_write/SeferAlloc/1024B
+                        time:   [26.956 µs 27.703 µs 28.537 µs]
+                        change: [-9.4158% -0.5911% +7.3317%] (p = 0.90 > 0.05)
+                        No change in performance detected.
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low severe
+  1 (10.00%) high mild
+Benchmarking global_alloc_churn_write/System/1024B
+Benchmarking global_alloc_churn_write/System/1024B: Warming up for 150.00 ms
+Benchmarking global_alloc_churn_write/System/1024B: Collecting 10 samples in estimated 614.24 ms (1980 iterations)
+Benchmarking global_alloc_churn_write/System/1024B: Analyzing
+global_alloc_churn_write/System/1024B
+                        time:   [181.14 µs 189.29 µs 194.34 µs]
+                        change: [+3.0484% +8.4628% +14.265%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+
+Benchmarking segment_decommit_cycle/mimalloc/253KiB
+Benchmarking segment_decommit_cycle/mimalloc/253KiB: Warming up for 150.00 ms
+Benchmarking segment_decommit_cycle/mimalloc/253KiB: Collecting 10 samples in estimated 600.19 ms (79k iterations)
+Benchmarking segment_decommit_cycle/mimalloc/253KiB: Analyzing
+segment_decommit_cycle/mimalloc/253KiB
+                        time:   [7.2699 µs 7.5269 µs 7.7519 µs]
+                        change: [-0.4060% +4.4704% +9.5210%] (p = 0.11 > 0.05)
+                        No change in performance detected.
+Benchmarking segment_decommit_cycle/System/253KiB
+Benchmarking segment_decommit_cycle/System/253KiB: Warming up for 150.00 ms
+Benchmarking segment_decommit_cycle/System/253KiB: Collecting 10 samples in estimated 604.03 ms (5610 iterations)
+Benchmarking segment_decommit_cycle/System/253KiB: Analyzing
+segment_decommit_cycle/System/253KiB
+                        time:   [109.01 µs 125.42 µs 150.01 µs]
+                        change: [+68.042% +88.950% +120.21%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking segment_decommit_cycle/SeferAlloc/253KiB
+Benchmarking segment_decommit_cycle/SeferAlloc/253KiB: Warming up for 150.00 ms
+Benchmarking segment_decommit_cycle/SeferAlloc/253KiB: Collecting 10 samples in estimated 600.04 ms (309k iterations)
+Benchmarking segment_decommit_cycle/SeferAlloc/253KiB: Analyzing
+segment_decommit_cycle/SeferAlloc/253KiB
+                        time:   [2.0149 µs 2.1249 µs 2.1918 µs]
+                        change: [-8.7608% -5.1504% -1.0903%] (p = 0.03 < 0.05)
+                        Performance has improved.
+
+Benchmarking working_set_cycle/SeferAlloc/16B
+Benchmarking working_set_cycle/SeferAlloc/16B: Warming up for 150.00 ms
+Benchmarking working_set_cycle/SeferAlloc/16B: Collecting 10 samples in estimated 627.47 ms (605 iterations)
+Benchmarking working_set_cycle/SeferAlloc/16B: Analyzing
+working_set_cycle/SeferAlloc/16B
+                        time:   [271.43 µs 289.05 µs 300.30 µs]
+                        change: [-3.8556% +2.4384% +10.071%] (p = 0.52 > 0.05)
+                        No change in performance detected.
+working_set_cycle/SeferAlloc/16B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking working_set_cycle/SeferAlloc/64B
+Benchmarking working_set_cycle/SeferAlloc/64B: Warming up for 150.00 ms
+Benchmarking working_set_cycle/SeferAlloc/64B: Collecting 10 samples in estimated 613.42 ms (440 iterations)
+Benchmarking working_set_cycle/SeferAlloc/64B: Analyzing
+working_set_cycle/SeferAlloc/64B
+                        time:   [281.81 µs 287.66 µs 294.79 µs]
+                        change: [-4.8570% +0.4248% +6.8912%] (p = 0.91 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+working_set_cycle/SeferAlloc/64B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking working_set_cycle/SeferAlloc/256B
+Benchmarking working_set_cycle/SeferAlloc/256B: Warming up for 150.00 ms
+Benchmarking working_set_cycle/SeferAlloc/256B: Collecting 10 samples in estimated 602.48 ms (220 iterations)
+Benchmarking working_set_cycle/SeferAlloc/256B: Analyzing
+working_set_cycle/SeferAlloc/256B
+                        time:   [271.72 µs 281.19 µs 298.30 µs]
+                        change: [-2.9431% +2.9112% +9.2338%] (p = 0.38 > 0.05)
+                        No change in performance detected.
+working_set_cycle/SeferAlloc/256B: decommit_calls delta = 0, segments_released_total delta = 0
+Benchmarking working_set_cycle/SeferAlloc/1024B
+Benchmarking working_set_cycle/SeferAlloc/1024B: Warming up for 150.00 ms
+Benchmarking working_set_cycle/SeferAlloc/1024B: Collecting 10 samples in estimated 1.0550 s (110 iterations)
+Benchmarking working_set_cycle/SeferAlloc/1024B: Analyzing
+working_set_cycle/SeferAlloc/1024B
+                        time:   [342.05 µs 361.78 µs 388.00 µs]
+                        change: [-0.6601% +8.4024% +20.718%] (p = 0.13 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+working_set_cycle/SeferAlloc/1024B: decommit_calls delta = 362, segments_released_total delta = 362
+
+Benchmarking pool_cap_sweep/cap=0/16B
+Benchmarking pool_cap_sweep/cap=0/16B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 11.8s.
+Benchmarking pool_cap_sweep/cap=0/16B: Collecting 10 samples in estimated 11.789 s (10 iterations)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/16B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=0/16B: Analyzing
+pool_cap_sweep/cap=0/16B
+                        time:   [1.1731 s 1.2130 s 1.2562 s]
+                        change: [+1.9992% +6.6349% +11.523%] (p = 0.02 < 0.05)
+                        Performance has regressed.
+Benchmarking pool_cap_sweep/cap=1/16B
+Benchmarking pool_cap_sweep/cap=1/16B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 11.7s.
+Benchmarking pool_cap_sweep/cap=1/16B: Collecting 10 samples in estimated 11.681 s (10 iterations)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/16B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=1/16B: Analyzing
+pool_cap_sweep/cap=1/16B
+                        time:   [1.2657 s 1.4548 s 1.7429 s]
+                        change: [+13.494% +30.099% +54.412%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking pool_cap_sweep/cap=4/16B
+Benchmarking pool_cap_sweep/cap=4/16B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 12.8s.
+Benchmarking pool_cap_sweep/cap=4/16B: Collecting 10 samples in estimated 12.841 s (10 iterations)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/16B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=4/16B: Analyzing
+pool_cap_sweep/cap=4/16B
+                        time:   [1.1325 s 1.1511 s 1.1711 s]
+                        change: [-16.852% -10.439% -2.5720%] (p = 0.02 < 0.05)
+                        Performance has improved.
+Benchmarking pool_cap_sweep/cap=8/16B
+Benchmarking pool_cap_sweep/cap=8/16B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 12.2s.
+Benchmarking pool_cap_sweep/cap=8/16B: Collecting 10 samples in estimated 12.241 s (10 iterations)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/16B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=8/16B: Analyzing
+pool_cap_sweep/cap=8/16B
+                        time:   [1.2033 s 1.3028 s 1.4096 s]
+                        change: [-16.337% -8.7409% -1.2404%] (p = 0.04 < 0.05)
+                        Performance has improved.
+Benchmarking pool_cap_sweep/cap=16/16B
+Benchmarking pool_cap_sweep/cap=16/16B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 12.2s.
+Benchmarking pool_cap_sweep/cap=16/16B: Collecting 10 samples in estimated 12.249 s (10 iterations)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/16B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=16/16B: Analyzing
+pool_cap_sweep/cap=16/16B
+                        time:   [1.1375 s 1.1992 s 1.3084 s]
+                        change: [-19.942% -15.257% -7.5063%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 10 measurements (40.00%)
+  2 (20.00%) low mild
+  2 (20.00%) high severe
+Benchmarking pool_cap_sweep/cap=0/64B
+Benchmarking pool_cap_sweep/cap=0/64B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 4.6s.
+Benchmarking pool_cap_sweep/cap=0/64B: Collecting 10 samples in estimated 4.5835 s (10 iterations)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/64B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=0/64B: Analyzing
+pool_cap_sweep/cap=0/64B
+                        time:   [380.45 ms 387.73 ms 396.66 ms]
+                        change: [-22.466% -19.286% -16.054%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=1/64B
+Benchmarking pool_cap_sweep/cap=1/64B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 3.9s.
+Benchmarking pool_cap_sweep/cap=1/64B: Collecting 10 samples in estimated 3.9344 s (10 iterations)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/64B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=1/64B: Analyzing
+pool_cap_sweep/cap=1/64B
+                        time:   [417.54 ms 424.66 ms 431.05 ms]
+                        change: [-18.435% -16.123% -13.908%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking pool_cap_sweep/cap=4/64B
+Benchmarking pool_cap_sweep/cap=4/64B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 4.0s.
+Benchmarking pool_cap_sweep/cap=4/64B: Collecting 10 samples in estimated 3.9812 s (10 iterations)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/64B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=4/64B: Analyzing
+pool_cap_sweep/cap=4/64B
+                        time:   [406.21 ms 422.24 ms 441.15 ms]
+                        change: [-23.476% -19.638% -15.102%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=8/64B
+Benchmarking pool_cap_sweep/cap=8/64B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 4.2s.
+Benchmarking pool_cap_sweep/cap=8/64B: Collecting 10 samples in estimated 4.2019 s (10 iterations)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/64B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=8/64B: Analyzing
+pool_cap_sweep/cap=8/64B
+                        time:   [384.94 ms 394.97 ms 406.40 ms]
+                        change: [-23.540% -21.155% -18.580%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=16/64B
+Benchmarking pool_cap_sweep/cap=16/64B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 3.8s.
+Benchmarking pool_cap_sweep/cap=16/64B: Collecting 10 samples in estimated 3.8478 s (10 iterations)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/64B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=16/64B: Analyzing
+pool_cap_sweep/cap=16/64B
+                        time:   [375.69 ms 383.19 ms 390.50 ms]
+                        change: [-26.863% -23.597% -20.323%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking pool_cap_sweep/cap=0/256B
+Benchmarking pool_cap_sweep/cap=0/256B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 1.9s.
+Benchmarking pool_cap_sweep/cap=0/256B: Collecting 10 samples in estimated 1.8841 s (10 iterations)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/256B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=0/256B: Analyzing
+pool_cap_sweep/cap=0/256B
+                        time:   [192.74 ms 200.18 ms 209.28 ms]
+                        change: [-28.717% -23.994% -18.756%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+Benchmarking pool_cap_sweep/cap=1/256B
+Benchmarking pool_cap_sweep/cap=1/256B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 2.6s.
+Benchmarking pool_cap_sweep/cap=1/256B: Collecting 10 samples in estimated 2.6050 s (10 iterations)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/256B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=1/256B: Analyzing
+pool_cap_sweep/cap=1/256B
+                        time:   [219.25 ms 235.35 ms 253.27 ms]
+                        change: [-19.479% -12.945% -5.3418%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Benchmarking pool_cap_sweep/cap=4/256B
+Benchmarking pool_cap_sweep/cap=4/256B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 3.1s.
+Benchmarking pool_cap_sweep/cap=4/256B: Collecting 10 samples in estimated 3.0550 s (10 iterations)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/256B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=4/256B: Analyzing
+pool_cap_sweep/cap=4/256B
+                        time:   [211.55 ms 235.26 ms 261.96 ms]
+                        change: [-18.711% -9.0769% +2.2962%] (p = 0.12 > 0.05)
+                        No change in performance detected.
+Benchmarking pool_cap_sweep/cap=8/256B
+Benchmarking pool_cap_sweep/cap=8/256B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 2.2s.
+Benchmarking pool_cap_sweep/cap=8/256B: Collecting 10 samples in estimated 2.2314 s (10 iterations)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/256B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=8/256B: Analyzing
+pool_cap_sweep/cap=8/256B
+                        time:   [214.74 ms 226.74 ms 241.34 ms]
+                        change: [-17.284% -11.124% -3.8505%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=16/256B
+Benchmarking pool_cap_sweep/cap=16/256B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 3.8s.
+Benchmarking pool_cap_sweep/cap=16/256B: Collecting 10 samples in estimated 3.7974 s (10 iterations)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/256B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=16/256B: Analyzing
+pool_cap_sweep/cap=16/256B
+                        time:   [287.89 ms 314.18 ms 345.25 ms]
+                        change: [-3.2656% +11.956% +28.271%] (p = 0.16 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=0/1024B
+Benchmarking pool_cap_sweep/cap=0/1024B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 2.3s.
+Benchmarking pool_cap_sweep/cap=0/1024B: Collecting 10 samples in estimated 2.2678 s (10 iterations)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=0/1024B: decommit_calls delta = 39 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=0/1024B: Analyzing
+pool_cap_sweep/cap=0/1024B
+                        time:   [210.49 ms 251.53 ms 297.95 ms]
+                        change: [+15.673% +38.250% +64.048%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking pool_cap_sweep/cap=1/1024B
+Benchmarking pool_cap_sweep/cap=1/1024B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 3.2s.
+Benchmarking pool_cap_sweep/cap=1/1024B: Collecting 10 samples in estimated 3.1633 s (10 iterations)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=1/1024B: decommit_calls delta = 38 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=1/1024B: Analyzing
+pool_cap_sweep/cap=1/1024B
+                        time:   [369.36 ms 417.79 ms 467.03 ms]
+                        change: [+110.48% +139.21% +168.83%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking pool_cap_sweep/cap=4/1024B
+Benchmarking pool_cap_sweep/cap=4/1024B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 1.8s.
+Benchmarking pool_cap_sweep/cap=4/1024B: Collecting 10 samples in estimated 1.8014 s (10 iterations)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=4/1024B: decommit_calls delta = 35 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=4/1024B: Analyzing
+pool_cap_sweep/cap=4/1024B
+                        time:   [249.77 ms 335.08 ms 438.91 ms]
+                        change: [+38.954% +85.929% +144.08%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking pool_cap_sweep/cap=8/1024B
+Benchmarking pool_cap_sweep/cap=8/1024B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 2.4s.
+Benchmarking pool_cap_sweep/cap=8/1024B: Collecting 10 samples in estimated 2.4335 s (10 iterations)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=8/1024B: decommit_calls delta = 31 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=8/1024B: Analyzing
+pool_cap_sweep/cap=8/1024B
+                        time:   [194.36 ms 208.72 ms 223.95 ms]
+                        change: [+8.7311% +17.787% +27.790%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Benchmarking pool_cap_sweep/cap=16/1024B
+Benchmarking pool_cap_sweep/cap=16/1024B: Warming up for 1.0000 ms
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+
+Warning: Unable to complete 10 samples in 1.0ms. You may wish to increase target time to 2.1s.
+Benchmarking pool_cap_sweep/cap=16/1024B: Collecting 10 samples in estimated 2.1150 s (10 iterations)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+pool_cap_sweep/cap=16/1024B: decommit_calls delta = 23 (spread across 40 segments, single drain)
+Benchmarking pool_cap_sweep/cap=16/1024B: Analyzing
+pool_cap_sweep/cap=16/1024B
+                        time:   [223.55 ms 245.28 ms 268.55 ms]
+                        change: [+26.127% +38.946% +53.902%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking batch_ceiling/scalar/16B
+Benchmarking batch_ceiling/scalar/16B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/scalar/16B: Collecting 10 samples in estimated 609.03 ms (935 iterations)
+Benchmarking batch_ceiling/scalar/16B: Analyzing
+batch_ceiling/scalar/16B
+                        time:   [83.090 µs 120.01 µs 167.94 µs]
+                        change: [+15.455% +44.621% +80.832%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling/batch/16B
+Benchmarking batch_ceiling/batch/16B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/batch/16B: Collecting 10 samples in estimated 600.62 ms (5720 iterations)
+Benchmarking batch_ceiling/batch/16B: Analyzing
+batch_ceiling/batch/16B time:   [31.221 µs 33.721 µs 38.044 µs]
+                        change: [-2.8827% +23.041% +53.924%] (p = 0.14 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking batch_ceiling/scalar/64B
+Benchmarking batch_ceiling/scalar/64B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/scalar/64B: Collecting 10 samples in estimated 601.77 ms (2860 iterations)
+Benchmarking batch_ceiling/scalar/64B: Analyzing
+batch_ceiling/scalar/64B
+                        time:   [113.47 µs 127.31 µs 135.34 µs]
+                        change: [-1.0241% +11.034% +24.653%] (p = 0.11 > 0.05)
+                        No change in performance detected.
+Benchmarking batch_ceiling/batch/64B
+Benchmarking batch_ceiling/batch/64B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/batch/64B: Collecting 10 samples in estimated 603.15 ms (2970 iterations)
+Benchmarking batch_ceiling/batch/64B: Analyzing
+batch_ceiling/batch/64B time:   [85.495 µs 91.594 µs 102.39 µs]
+                        change: [+26.001% +40.498% +60.258%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking batch_ceiling/scalar/256B
+Benchmarking batch_ceiling/scalar/256B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/scalar/256B: Collecting 10 samples in estimated 614.07 ms (1705 iterations)
+Benchmarking batch_ceiling/scalar/256B: Analyzing
+batch_ceiling/scalar/256B
+                        time:   [238.55 µs 254.08 µs 264.98 µs]
+                        change: [-6.7606% -0.5010% +6.2249%] (p = 0.89 > 0.05)
+                        No change in performance detected.
+Benchmarking batch_ceiling/batch/256B
+Benchmarking batch_ceiling/batch/256B: Warming up for 150.00 ms
+Benchmarking batch_ceiling/batch/256B: Collecting 10 samples in estimated 600.78 ms (2035 iterations)
+Benchmarking batch_ceiling/batch/256B: Analyzing
+batch_ceiling/batch/256B
+                        time:   [166.07 µs 174.73 µs 184.47 µs]
+                        change: [-22.897% -17.722% -12.097%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low severe
+  2 (20.00%) high mild
+
+Benchmarking batch_ceiling_followup/scalar_core/16B/n8
+Benchmarking batch_ceiling_followup/scalar_core/16B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/16B/n8: Collecting 10 samples in estimated 602.07 ms (6655 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/16B/n8: Analyzing
+batch_ceiling_followup/scalar_core/16B/n8
+                        time:   [6.8057 µs 8.8430 µs 10.971 µs]
+                        change: [+5.1620% +44.477% +85.372%] (p = 0.05 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/batch_core/16B/n8
+Benchmarking batch_ceiling_followup/batch_core/16B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/16B/n8: Collecting 10 samples in estimated 602.70 ms (9020 iterations)
+Benchmarking batch_ceiling_followup/batch_core/16B/n8: Analyzing
+batch_ceiling_followup/batch_core/16B/n8
+                        time:   [3.0397 µs 3.2188 µs 3.4529 µs]
+                        change: [-15.683% -8.2073% +0.4119%] (p = 0.08 > 0.05)
+                        No change in performance detected.
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n8
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n8: Collecting 10 samples in estimated 600.01 ms (1.6M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n8: Analyzing
+batch_ceiling_followup/scalar_sefer/16B/n8
+                        time:   [165.77 ns 172.71 ns 179.83 ns]
+                        change: [-32.615% -28.488% -23.762%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n8
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n8: Collecting 10 samples in estimated 600.01 ms (1.9M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n8: Analyzing
+batch_ceiling_followup/batch_core_warm/16B/n8
+                        time:   [128.02 ns 131.37 ns 133.54 ns]
+                        change: [-23.545% -19.316% -15.303%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n8
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n8: Collecting 10 samples in estimated 600.02 ms (1.5M iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n8: Analyzing
+batch_ceiling_followup/scalar_core_warm/16B/n8
+                        time:   [197.25 ns 212.46 ns 230.60 ns]
+                        change: [-27.775% -19.816% -11.846%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/16B/n16
+Benchmarking batch_ceiling_followup/scalar_core/16B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/16B/n16: Collecting 10 samples in estimated 601.79 ms (10k iterations)
+Benchmarking batch_ceiling_followup/scalar_core/16B/n16: Analyzing
+batch_ceiling_followup/scalar_core/16B/n16
+                        time:   [3.8468 µs 4.0366 µs 4.1684 µs]
+                        change: [-31.365% -24.837% -18.235%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/16B/n16
+Benchmarking batch_ceiling_followup/batch_core/16B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/16B/n16: Collecting 10 samples in estimated 601.39 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/16B/n16: Analyzing
+batch_ceiling_followup/batch_core/16B/n16
+                        time:   [3.2523 µs 3.4167 µs 3.5894 µs]
+                        change: [-29.328% -18.902% -8.6281%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low severe
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n16
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n16: Collecting 10 samples in estimated 600.02 ms (1.2M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n16: Analyzing
+batch_ceiling_followup/scalar_sefer/16B/n16
+                        time:   [334.59 ns 344.08 ns 351.68 ns]
+                        change: [-26.587% -23.437% -20.102%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n16
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n16: Collecting 10 samples in estimated 600.00 ms (1.6M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n16: Analyzing
+batch_ceiling_followup/batch_core_warm/16B/n16
+                        time:   [206.78 ns 220.57 ns 234.69 ns]
+                        change: [-22.748% -18.557% -13.582%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n16
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n16: Collecting 10 samples in estimated 600.02 ms (965k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n16: Analyzing
+batch_ceiling_followup/scalar_core_warm/16B/n16
+                        time:   [416.00 ns 425.53 ns 435.97 ns]
+                        change: [-24.023% -19.671% -15.474%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/16B/n32
+Benchmarking batch_ceiling_followup/scalar_core/16B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/16B/n32: Collecting 10 samples in estimated 600.85 ms (10k iterations)
+Benchmarking batch_ceiling_followup/scalar_core/16B/n32: Analyzing
+batch_ceiling_followup/scalar_core/16B/n32
+                        time:   [4.4229 µs 4.7135 µs 4.9941 µs]
+                        change: [-29.069% -21.636% -13.968%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/16B/n32
+Benchmarking batch_ceiling_followup/batch_core/16B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/16B/n32: Collecting 10 samples in estimated 601.76 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/16B/n32: Analyzing
+batch_ceiling_followup/batch_core/16B/n32
+                        time:   [3.4015 µs 3.5505 µs 3.6564 µs]
+                        change: [-22.318% -14.254% -5.0883%] (p = 0.01 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n32
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n32: Collecting 10 samples in estimated 600.07 ms (456k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n32: Analyzing
+batch_ceiling_followup/scalar_sefer/16B/n32
+                        time:   [1.0873 µs 1.1174 µs 1.1444 µs]
+                        change: [-29.401% -24.643% -19.782%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n32
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n32: Collecting 10 samples in estimated 600.00 ms (1.0M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n32: Analyzing
+batch_ceiling_followup/batch_core_warm/16B/n32
+                        time:   [378.57 ns 390.01 ns 402.83 ns]
+                        change: [-27.459% -23.134% -19.294%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n32
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n32: Collecting 10 samples in estimated 600.03 ms (558k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n32: Analyzing
+batch_ceiling_followup/scalar_core_warm/16B/n32
+                        time:   [811.48 ns 844.39 ns 877.45 ns]
+                        change: [-23.317% -19.194% -15.064%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/16B/n64
+Benchmarking batch_ceiling_followup/scalar_core/16B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/16B/n64: Collecting 10 samples in estimated 603.23 ms (9790 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/16B/n64: Analyzing
+batch_ceiling_followup/scalar_core/16B/n64
+                        time:   [5.4923 µs 5.7203 µs 5.9114 µs]
+                        change: [-45.363% -37.043% -28.235%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/16B/n64
+Benchmarking batch_ceiling_followup/batch_core/16B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/16B/n64: Collecting 10 samples in estimated 600.32 ms (10k iterations)
+Benchmarking batch_ceiling_followup/batch_core/16B/n64: Analyzing
+batch_ceiling_followup/batch_core/16B/n64
+                        time:   [3.6756 µs 3.7912 µs 3.9000 µs]
+                        change: [-45.650% -34.533% -22.781%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n64
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n64: Collecting 10 samples in estimated 600.12 ms (203k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n64: Analyzing
+batch_ceiling_followup/scalar_sefer/16B/n64
+                        time:   [2.4463 µs 2.4999 µs 2.5265 µs]
+                        change: [-29.707% -24.893% -18.761%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  2 (20.00%) low mild
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n64
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n64: Collecting 10 samples in estimated 600.00 ms (595k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n64: Analyzing
+batch_ceiling_followup/batch_core_warm/16B/n64
+                        time:   [743.80 ns 762.32 ns 788.31 ns]
+                        change: [-28.825% -25.419% -21.644%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n64
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n64: Collecting 10 samples in estimated 600.01 ms (316k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n64: Analyzing
+batch_ceiling_followup/scalar_core_warm/16B/n64
+                        time:   [1.4774 µs 1.5230 µs 1.5821 µs]
+                        change: [-28.859% -25.172% -21.122%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/scalar_core/16B/n1024
+Benchmarking batch_ceiling_followup/scalar_core/16B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/16B/n1024: Collecting 10 samples in estimated 606.16 ms (5335 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/16B/n1024: Analyzing
+batch_ceiling_followup/scalar_core/16B/n1024
+                        time:   [52.608 µs 54.182 µs 56.131 µs]
+                        change: [-29.359% -23.933% -17.929%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/16B/n1024
+Benchmarking batch_ceiling_followup/batch_core/16B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/16B/n1024: Collecting 10 samples in estimated 602.65 ms (8580 iterations)
+Benchmarking batch_ceiling_followup/batch_core/16B/n1024: Analyzing
+batch_ceiling_followup/batch_core/16B/n1024
+                        time:   [16.077 µs 16.933 µs 17.795 µs]
+                        change: [-43.823% -36.384% -28.985%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n1024
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n1024: Collecting 10 samples in estimated 600.92 ms (13k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/16B/n1024: Analyzing
+batch_ceiling_followup/scalar_sefer/16B/n1024
+                        time:   [45.097 µs 46.588 µs 47.428 µs]
+                        change: [-20.990% -16.355% -11.373%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n1024
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n1024: Collecting 10 samples in estimated 600.22 ms (50k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/16B/n1024: Analyzing
+batch_ceiling_followup/batch_core_warm/16B/n1024
+                        time:   [10.569 µs 11.155 µs 11.627 µs]
+                        change: [-30.668% -28.051% -25.665%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n1024
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n1024: Collecting 10 samples in estimated 600.49 ms (22k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/16B/n1024: Analyzing
+batch_ceiling_followup/scalar_core_warm/16B/n1024
+                        time:   [25.128 µs 25.990 µs 26.750 µs]
+                        change: [-20.279% -15.804% -10.380%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/64B/n8
+Benchmarking batch_ceiling_followup/scalar_core/64B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/64B/n8: Collecting 10 samples in estimated 600.26 ms (9680 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/64B/n8: Analyzing
+batch_ceiling_followup/scalar_core/64B/n8
+                        time:   [3.6592 µs 3.9500 µs 4.1578 µs]
+                        change: [-35.279% -29.820% -23.171%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/64B/n8
+Benchmarking batch_ceiling_followup/batch_core/64B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/64B/n8: Collecting 10 samples in estimated 603.24 ms (10k iterations)
+Benchmarking batch_ceiling_followup/batch_core/64B/n8: Analyzing
+batch_ceiling_followup/batch_core/64B/n8
+                        time:   [3.2174 µs 3.2888 µs 3.3787 µs]
+                        change: [-38.709% -29.456% -18.632%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n8
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n8: Collecting 10 samples in estimated 600.01 ms (1.9M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n8: Analyzing
+batch_ceiling_followup/scalar_sefer/64B/n8
+                        time:   [172.52 ns 178.23 ns 183.61 ns]
+                        change: [-29.450% -22.738% -16.996%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n8
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n8: Collecting 10 samples in estimated 600.00 ms (2.0M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n8: Analyzing
+batch_ceiling_followup/batch_core_warm/64B/n8
+                        time:   [125.72 ns 131.30 ns 134.42 ns]
+                        change: [-25.144% -19.962% -14.192%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n8
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n8: Collecting 10 samples in estimated 600.01 ms (1.6M iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n8: Analyzing
+batch_ceiling_followup/scalar_core_warm/64B/n8
+                        time:   [204.65 ns 214.80 ns 230.09 ns]
+                        change: [-25.028% -20.997% -16.075%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/scalar_core/64B/n16
+Benchmarking batch_ceiling_followup/scalar_core/64B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/64B/n16: Collecting 10 samples in estimated 602.02 ms (10k iterations)
+Benchmarking batch_ceiling_followup/scalar_core/64B/n16: Analyzing
+batch_ceiling_followup/scalar_core/64B/n16
+                        time:   [4.0606 µs 4.2363 µs 4.3771 µs]
+                        change: [-38.253% -29.334% -20.522%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/batch_core/64B/n16
+Benchmarking batch_ceiling_followup/batch_core/64B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/64B/n16: Collecting 10 samples in estimated 600.92 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/64B/n16: Analyzing
+batch_ceiling_followup/batch_core/64B/n16
+                        time:   [3.2937 µs 3.4372 µs 3.5303 µs]
+                        change: [-30.228% -22.533% -14.884%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n16
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n16: Collecting 10 samples in estimated 600.01 ms (1.1M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n16: Analyzing
+batch_ceiling_followup/scalar_sefer/64B/n16
+                        time:   [349.05 ns 403.03 ns 452.21 ns]
+                        change: [-21.585% -15.654% -8.0791%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n16
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n16: Collecting 10 samples in estimated 600.01 ms (1.6M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n16: Analyzing
+batch_ceiling_followup/batch_core_warm/64B/n16
+                        time:   [191.33 ns 201.79 ns 209.23 ns]
+                        change: [-28.244% -24.482% -20.443%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n16
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n16: Collecting 10 samples in estimated 600.02 ms (1.0M iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n16: Analyzing
+batch_ceiling_followup/scalar_core_warm/64B/n16
+                        time:   [390.27 ns 401.01 ns 409.16 ns]
+                        change: [-33.411% -26.524% -20.255%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/scalar_core/64B/n32
+Benchmarking batch_ceiling_followup/scalar_core/64B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/64B/n32: Collecting 10 samples in estimated 601.21 ms (9845 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/64B/n32: Analyzing
+batch_ceiling_followup/scalar_core/64B/n32
+                        time:   [4.6002 µs 4.7610 µs 4.8681 µs]
+                        change: [-29.068% -22.745% -15.554%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/64B/n32
+Benchmarking batch_ceiling_followup/batch_core/64B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/64B/n32: Collecting 10 samples in estimated 602.51 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/64B/n32: Analyzing
+batch_ceiling_followup/batch_core/64B/n32
+                        time:   [3.3511 µs 3.5252 µs 3.7462 µs]
+                        change: [-36.261% -29.413% -21.428%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n32
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n32: Collecting 10 samples in estimated 600.07 ms (471k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n32: Analyzing
+batch_ceiling_followup/scalar_sefer/64B/n32
+                        time:   [1.0287 µs 1.0506 µs 1.0847 µs]
+                        change: [-26.641% -22.878% -19.145%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n32
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n32: Collecting 10 samples in estimated 600.02 ms (1.0M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n32: Analyzing
+batch_ceiling_followup/batch_core_warm/64B/n32
+                        time:   [376.49 ns 392.41 ns 416.39 ns]
+                        change: [-20.668% -15.892% -11.135%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n32
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n32: Collecting 10 samples in estimated 600.03 ms (548k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n32: Analyzing
+batch_ceiling_followup/scalar_core_warm/64B/n32
+                        time:   [796.47 ns 817.73 ns 830.20 ns]
+                        change: [-25.220% -22.186% -19.049%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/64B/n64
+Benchmarking batch_ceiling_followup/scalar_core/64B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/64B/n64: Collecting 10 samples in estimated 601.25 ms (10k iterations)
+Benchmarking batch_ceiling_followup/scalar_core/64B/n64: Analyzing
+batch_ceiling_followup/scalar_core/64B/n64
+                        time:   [6.0516 µs 6.2421 µs 6.4595 µs]
+                        change: [-31.835% -26.548% -20.874%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/batch_core/64B/n64
+Benchmarking batch_ceiling_followup/batch_core/64B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/64B/n64: Collecting 10 samples in estimated 602.91 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/64B/n64: Analyzing
+batch_ceiling_followup/batch_core/64B/n64
+                        time:   [3.6180 µs 3.6948 µs 3.7876 µs]
+                        change: [-33.293% -26.820% -19.826%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n64
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n64: Collecting 10 samples in estimated 600.09 ms (221k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n64: Analyzing
+batch_ceiling_followup/scalar_sefer/64B/n64
+                        time:   [2.3327 µs 2.4022 µs 2.5125 µs]
+                        change: [-27.712% -23.567% -18.958%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n64
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n64: Collecting 10 samples in estimated 600.03 ms (537k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n64: Analyzing
+batch_ceiling_followup/batch_core_warm/64B/n64
+                        time:   [737.31 ns 754.91 ns 769.99 ns]
+                        change: [-26.933% -24.322% -21.689%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n64
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n64: Collecting 10 samples in estimated 600.00 ms (324k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n64: Analyzing
+batch_ceiling_followup/scalar_core_warm/64B/n64
+                        time:   [1.5213 µs 1.5867 µs 1.6808 µs]
+                        change: [-32.358% -26.389% -20.513%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/64B/n1024
+Benchmarking batch_ceiling_followup/scalar_core/64B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/64B/n1024: Collecting 10 samples in estimated 607.34 ms (3960 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/64B/n1024: Analyzing
+batch_ceiling_followup/scalar_core/64B/n1024
+                        time:   [73.813 µs 78.387 µs 82.057 µs]
+                        change: [-36.432% -29.776% -23.098%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/64B/n1024
+Benchmarking batch_ceiling_followup/batch_core/64B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/64B/n1024: Collecting 10 samples in estimated 603.02 ms (5170 iterations)
+Benchmarking batch_ceiling_followup/batch_core/64B/n1024: Analyzing
+batch_ceiling_followup/batch_core/64B/n1024
+                        time:   [43.719 µs 44.633 µs 45.785 µs]
+                        change: [-32.332% -27.662% -22.243%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n1024
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n1024: Collecting 10 samples in estimated 600.36 ms (12k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/64B/n1024: Analyzing
+batch_ceiling_followup/scalar_sefer/64B/n1024
+                        time:   [42.133 µs 45.006 µs 47.422 µs]
+                        change: [-33.943% -29.696% -25.068%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low severe
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n1024
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n1024: Collecting 10 samples in estimated 600.55 ms (40k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/64B/n1024: Analyzing
+batch_ceiling_followup/batch_core_warm/64B/n1024
+                        time:   [13.709 µs 14.196 µs 14.722 µs]
+                        change: [-18.169% -14.482% -11.011%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n1024
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n1024: Collecting 10 samples in estimated 600.41 ms (23k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/64B/n1024: Analyzing
+batch_ceiling_followup/scalar_core_warm/64B/n1024
+                        time:   [24.293 µs 25.634 µs 26.370 µs]
+                        change: [-31.989% -28.456% -24.739%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/256B/n8
+Benchmarking batch_ceiling_followup/scalar_core/256B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/256B/n8: Collecting 10 samples in estimated 601.78 ms (10k iterations)
+Benchmarking batch_ceiling_followup/scalar_core/256B/n8: Analyzing
+batch_ceiling_followup/scalar_core/256B/n8
+                        time:   [5.9715 µs 6.2662 µs 6.5188 µs]
+                        change: [-41.511% -34.179% -26.401%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/256B/n8
+Benchmarking batch_ceiling_followup/batch_core/256B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/256B/n8: Collecting 10 samples in estimated 601.73 ms (10k iterations)
+Benchmarking batch_ceiling_followup/batch_core/256B/n8: Analyzing
+batch_ceiling_followup/batch_core/256B/n8
+                        time:   [3.2954 µs 3.3862 µs 3.5167 µs]
+                        change: [-35.245% -24.173% -12.351%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n8
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n8: Collecting 10 samples in estimated 600.00 ms (1.7M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n8: Analyzing
+batch_ceiling_followup/scalar_sefer/256B/n8
+                        time:   [162.10 ns 167.93 ns 176.20 ns]
+                        change: [-32.651% -28.347% -24.097%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n8
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n8: Collecting 10 samples in estimated 600.01 ms (2.0M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n8: Analyzing
+batch_ceiling_followup/batch_core_warm/256B/n8
+                        time:   [115.57 ns 119.78 ns 124.80 ns]
+                        change: [-26.024% -20.427% -14.559%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n8
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n8: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n8: Collecting 10 samples in estimated 600.02 ms (1.4M iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n8: Analyzing
+batch_ceiling_followup/scalar_core_warm/256B/n8
+                        time:   [199.50 ns 209.00 ns 217.63 ns]
+                        change: [-25.023% -20.630% -15.884%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/256B/n16
+Benchmarking batch_ceiling_followup/scalar_core/256B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/256B/n16: Collecting 10 samples in estimated 602.05 ms (9955 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/256B/n16: Analyzing
+batch_ceiling_followup/scalar_core/256B/n16
+                        time:   [6.3842 µs 6.6027 µs 6.7969 µs]
+                        change: [-31.417% -27.213% -22.017%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/256B/n16
+Benchmarking batch_ceiling_followup/batch_core/256B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/256B/n16: Collecting 10 samples in estimated 602.05 ms (11k iterations)
+Benchmarking batch_ceiling_followup/batch_core/256B/n16: Analyzing
+batch_ceiling_followup/batch_core/256B/n16
+                        time:   [3.3849 µs 3.4986 µs 3.5955 µs]
+                        change: [-33.547% -28.040% -21.960%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) low mild
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n16
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n16: Collecting 10 samples in estimated 600.00 ms (1.1M iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n16: Analyzing
+batch_ceiling_followup/scalar_sefer/256B/n16
+                        time:   [324.30 ns 342.13 ns 356.69 ns]
+                        change: [-30.669% -26.004% -21.092%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n16
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n16: Collecting 10 samples in estimated 600.00 ms (1.5M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n16: Analyzing
+batch_ceiling_followup/batch_core_warm/256B/n16
+                        time:   [203.50 ns 210.90 ns 222.37 ns]
+                        change: [-31.803% -25.443% -18.913%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n16
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n16: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n16: Collecting 10 samples in estimated 600.03 ms (966k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n16: Analyzing
+batch_ceiling_followup/scalar_core_warm/256B/n16
+                        time:   [368.89 ns 390.70 ns 413.81 ns]
+                        change: [-36.566% -31.263% -26.414%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+Benchmarking batch_ceiling_followup/scalar_core/256B/n32
+Benchmarking batch_ceiling_followup/scalar_core/256B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/256B/n32: Collecting 10 samples in estimated 601.51 ms (9625 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/256B/n32: Analyzing
+batch_ceiling_followup/scalar_core/256B/n32
+                        time:   [6.6696 µs 6.8746 µs 7.0224 µs]
+                        change: [-40.496% -33.531% -26.258%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core/256B/n32
+Benchmarking batch_ceiling_followup/batch_core/256B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/256B/n32: Collecting 10 samples in estimated 603.14 ms (9790 iterations)
+Benchmarking batch_ceiling_followup/batch_core/256B/n32: Analyzing
+batch_ceiling_followup/batch_core/256B/n32
+                        time:   [5.6590 µs 5.8141 µs 5.9647 µs]
+                        change: [-44.101% -36.229% -26.450%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n32
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n32: Collecting 10 samples in estimated 600.05 ms (507k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n32: Analyzing
+batch_ceiling_followup/scalar_sefer/256B/n32
+                        time:   [1.0019 µs 1.0278 µs 1.0589 µs]
+                        change: [-31.896% -28.682% -25.142%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n32
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n32: Collecting 10 samples in estimated 600.01 ms (1.0M iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n32: Analyzing
+batch_ceiling_followup/batch_core_warm/256B/n32
+                        time:   [375.22 ns 402.25 ns 432.19 ns]
+                        change: [-23.417% -18.396% -13.135%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n32
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n32: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n32: Collecting 10 samples in estimated 600.05 ms (617k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n32: Analyzing
+batch_ceiling_followup/scalar_core_warm/256B/n32
+                        time:   [801.73 ns 839.22 ns 868.61 ns]
+                        change: [-26.148% -21.394% -16.064%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/256B/n64
+Benchmarking batch_ceiling_followup/scalar_core/256B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/256B/n64: Collecting 10 samples in estimated 602.43 ms (8800 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/256B/n64: Analyzing
+batch_ceiling_followup/scalar_core/256B/n64
+                        time:   [12.329 µs 12.524 µs 12.704 µs]
+                        change: [-30.899% -26.571% -21.686%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking batch_ceiling_followup/batch_core/256B/n64
+Benchmarking batch_ceiling_followup/batch_core/256B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/256B/n64: Collecting 10 samples in estimated 601.06 ms (8745 iterations)
+Benchmarking batch_ceiling_followup/batch_core/256B/n64: Analyzing
+batch_ceiling_followup/batch_core/256B/n64
+                        time:   [10.128 µs 10.288 µs 10.499 µs]
+                        change: [-36.969% -33.010% -28.419%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n64
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n64: Collecting 10 samples in estimated 600.01 ms (227k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n64: Analyzing
+batch_ceiling_followup/scalar_sefer/256B/n64
+                        time:   [2.4811 µs 2.6717 µs 2.8552 µs]
+                        change: [-27.084% -22.005% -16.901%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n64
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n64: Collecting 10 samples in estimated 600.00 ms (558k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n64: Analyzing
+batch_ceiling_followup/batch_core_warm/256B/n64
+                        time:   [765.82 ns 790.30 ns 809.00 ns]
+                        change: [-22.075% -18.515% -14.529%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n64
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n64: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n64: Collecting 10 samples in estimated 600.05 ms (319k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n64: Analyzing
+batch_ceiling_followup/scalar_core_warm/256B/n64
+                        time:   [1.5197 µs 1.5760 µs 1.6210 µs]
+                        change: [-28.608% -24.949% -21.343%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core/256B/n1024
+Benchmarking batch_ceiling_followup/scalar_core/256B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core/256B/n1024: Collecting 10 samples in estimated 604.26 ms (2035 iterations)
+Benchmarking batch_ceiling_followup/scalar_core/256B/n1024: Analyzing
+batch_ceiling_followup/scalar_core/256B/n1024
+                        time:   [185.79 µs 189.25 µs 194.67 µs]
+                        change: [-32.631% -27.120% -21.105%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/batch_core/256B/n1024
+Benchmarking batch_ceiling_followup/batch_core/256B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core/256B/n1024: Collecting 10 samples in estimated 608.83 ms (2310 iterations)
+Benchmarking batch_ceiling_followup/batch_core/256B/n1024: Analyzing
+batch_ceiling_followup/batch_core/256B/n1024
+                        time:   [158.06 µs 160.78 µs 163.69 µs]
+                        change: [-24.896% -20.529% -15.727%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n1024
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n1024: Collecting 10 samples in estimated 600.41 ms (12k iterations)
+Benchmarking batch_ceiling_followup/scalar_sefer/256B/n1024: Analyzing
+batch_ceiling_followup/scalar_sefer/256B/n1024
+                        time:   [46.086 µs 48.493 µs 50.816 µs]
+                        change: [-29.081% -23.763% -17.412%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n1024
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n1024: Collecting 10 samples in estimated 600.42 ms (37k iterations)
+Benchmarking batch_ceiling_followup/batch_core_warm/256B/n1024: Analyzing
+batch_ceiling_followup/batch_core_warm/256B/n1024
+                        time:   [14.553 µs 15.117 µs 15.611 µs]
+                        change: [-28.758% -24.099% -18.988%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n1024
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n1024: Warming up for 150.00 ms
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n1024: Collecting 10 samples in estimated 601.33 ms (22k iterations)
+Benchmarking batch_ceiling_followup/scalar_core_warm/256B/n1024: Analyzing
+batch_ceiling_followup/scalar_core_warm/256B/n1024
+                        time:   [22.951 µs 25.041 µs 26.136 µs]
+                        change: [-38.891% -34.310% -29.135%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+
+
+============================================================
+  global_alloc — comparative wall-clock tables (ns per operation)
+============================================================
+
+### Cold-direct (`bench_direct_alloc`, no reuse — 1 alloc + 1 free per op)
+
+| Size | SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 70.9 | 30.0 | 173.1 | 2.37× slower |
+| 64B | 48.2 | 48.4 | 150.1 | **1.00× faster** |
+| 256B | 84.5 | 31.2 | 283.4 | 2.71× slower |
+| 1024B | 66.0 | 83.5 | 361.6 | **1.26× faster** |
+
+### Churn, non-writing (`bench_churn_alloc`, working-set reuse — 1 free + 1 alloc per op)
+
+| Size | SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 23.0 | 25.0 | 143.6 | **1.09× faster** |
+| 64B | 22.4 | 26.9 | 143.3 | **1.20× faster** |
+| 256B | 22.0 | 37.5 | 174.2 | **1.71× faster** |
+| 1024B | 22.6 | 227.8 | 171.3 | **10.08× faster** |
+
+### Churn + write (`bench_churn_alloc_write` — same as above, writes 16B after each alloc)
+
+| Size | SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 24.2 | 22.7 | 144.4 | 1.07× slower |
+| 64B | 28.2 | 28.2 | 147.9 | 1.00× slower |
+| 256B | 24.1 | 37.8 | 166.1 | **1.57× faster** |
+| 1024B | 27.1 | 232.4 | 184.9 | **8.59× faster** |
+
+### Churn + teardown (`bench_global_alloc_churn_with_teardown`, DELIBERATE diagnostic — teardown stays inside timed region; the gap vs `global_alloc_churn` at the same size IS the segment decommit/release/re-reserve cost, see `benches/global_alloc.rs:628-637`)
+
+| Size | SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |
+|---|---:|---:|---:|---:|
+| 16B | 28.3 | 28.6 | 158.7 | **1.01× faster** |
+| 64B | 32.8 | 25.0 | 182.0 | 1.31× slower |
+| 256B | 38.8 | 35.8 | 200.1 | 1.08× slower |
+| 1024B | 126.1 | 58.9 | 189.7 | 2.14× slower |
+
+### Vec_push (honest geometric `Vec<i64>` growth — 8 grow steps + stores per op, NOT scaled)
+
+| SeferAlloc (ns/op) | mimalloc (ns/op) | System (ns/op) | Sefer vs mimalloc |
+|---:|---:|---:|---:|
+| 1310.6 | 1401.9 | 5004.0 | **1.07× faster** |
+
+[bench-table] PASS — 159 bench id(s) parsed, all 51 expected ids present
+
+---
+## Additional groups (not part of the canonical 4-table headline)
+
+
+### `segment_decommit_cycle` (253 KiB small-segment decommit→release→re-reserve; UNSCALED — ns per batch of 34 alloc + 34 free, `bench_segment_decommit_cycle`)
+
+| SeferAlloc (ns/batch) | mimalloc (ns/batch) | System (ns/batch) | Sefer vs mimalloc |
+|---:|---:|---:|---:|
+| 2124.9 | 7526.9 | 125420.0 | **3.54× faster** |
+
+### `working_set_cycle` (Mechanism-2 decommit/reuse judge — SeferAlloc-ONLY, no mimalloc/System arm; UNSCALED — ns per batch of 64 working sets × one free+alloc oscillation per block, `bench_working_set_cycle`)
+
+| Size | SeferAlloc (ns/batch) |
+|---|---:|
+| 16B | 289050.0 |
+| 64B | 287660.0 |
+| 256B | 281190.0 |
+| 1024B | 361780.0 |
+
+### `pool_cap_sweep` — diagnostic-only, intentionally excluded from wall-clock comparison
+
+Its own doc comment (`benches/global_alloc.rs:932-942`) states the sweep's signal is the `eprintln!` counter deltas (decommit_calls per swept cap), not the criterion timing table — the spread/drain construction cost swamps the drain itself, so the criterion timing column is not meaningful here. Those deltas are emitted to stderr during the bench run and are not parsed by this script; read them in the raw `cargo bench` output if needed.
+
+---
+## Run-over-run change (vs `target/criterion`'s saved baseline, when one exists)
+
+| id | ns (point estimate) | change % (point estimate) | verdict |
+|---|---:|---:|---|
+| batch_ceiling_followup/batch_core_warm/16B/n1024 | 11155.0 | -28.05% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/16B/n16 | 220.6 | -18.56% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/16B/n32 | 390.0 | -23.13% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/16B/n64 | 762.3 | -25.42% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/16B/n8 | 131.4 | -19.32% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/256B/n1024 | 15117.0 | -24.10% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/256B/n16 | 210.9 | -25.44% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/256B/n32 | 402.3 | -18.40% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/256B/n64 | 790.3 | -18.52% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/256B/n8 | 119.8 | -20.43% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/64B/n1024 | 14196.0 | -14.48% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/64B/n16 | 201.8 | -24.48% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/64B/n32 | 392.4 | -15.89% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/64B/n64 | 754.9 | -24.32% | Performance has improved. |
+| batch_ceiling_followup/batch_core_warm/64B/n8 | 131.3 | -19.96% | Performance has improved. |
+| batch_ceiling_followup/batch_core/16B/n1024 | 16933.0 | -36.38% | Performance has improved. |
+| batch_ceiling_followup/batch_core/16B/n16 | 3416.7 | -18.90% | Performance has improved. |
+| batch_ceiling_followup/batch_core/16B/n32 | 3550.5 | -14.25% | Performance has improved. |
+| batch_ceiling_followup/batch_core/16B/n64 | 3791.2 | -34.53% | Performance has improved. |
+| batch_ceiling_followup/batch_core/16B/n8 | 3218.8 | -8.21% | No change in performance detected. |
+| batch_ceiling_followup/batch_core/256B/n1024 | 160780.0 | -20.53% | Performance has improved. |
+| batch_ceiling_followup/batch_core/256B/n16 | 3498.6 | -28.04% | Performance has improved. |
+| batch_ceiling_followup/batch_core/256B/n32 | 5814.1 | -36.23% | Performance has improved. |
+| batch_ceiling_followup/batch_core/256B/n64 | 10288.0 | -33.01% | Performance has improved. |
+| batch_ceiling_followup/batch_core/256B/n8 | 3386.2 | -24.17% | Performance has improved. |
+| batch_ceiling_followup/batch_core/64B/n1024 | 44633.0 | -27.66% | Performance has improved. |
+| batch_ceiling_followup/batch_core/64B/n16 | 3437.2 | -22.53% | Performance has improved. |
+| batch_ceiling_followup/batch_core/64B/n32 | 3525.2 | -29.41% | Performance has improved. |
+| batch_ceiling_followup/batch_core/64B/n64 | 3694.8 | -26.82% | Performance has improved. |
+| batch_ceiling_followup/batch_core/64B/n8 | 3288.8 | -29.46% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/16B/n1024 | 25990.0 | -15.80% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/16B/n16 | 425.5 | -19.67% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/16B/n32 | 844.4 | -19.19% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/16B/n64 | 1523.0 | -25.17% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/16B/n8 | 212.5 | -19.82% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/256B/n1024 | 25041.0 | -34.31% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/256B/n16 | 390.7 | -31.26% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/256B/n32 | 839.2 | -21.39% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/256B/n64 | 1576.0 | -24.95% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/256B/n8 | 209.0 | -20.63% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/64B/n1024 | 25634.0 | -28.46% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/64B/n16 | 401.0 | -26.52% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/64B/n32 | 817.7 | -22.19% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/64B/n64 | 1586.7 | -26.39% | Performance has improved. |
+| batch_ceiling_followup/scalar_core_warm/64B/n8 | 214.8 | -21.00% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/16B/n1024 | 54182.0 | -23.93% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/16B/n16 | 4036.6 | -24.84% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/16B/n32 | 4713.5 | -21.64% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/16B/n64 | 5720.3 | -37.04% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/16B/n8 | 8843.0 | +44.48% | Performance has regressed. |
+| batch_ceiling_followup/scalar_core/256B/n1024 | 189250.0 | -27.12% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/256B/n16 | 6602.7 | -27.21% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/256B/n32 | 6874.6 | -33.53% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/256B/n64 | 12524.0 | -26.57% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/256B/n8 | 6266.2 | -34.18% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/64B/n1024 | 78387.0 | -29.78% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/64B/n16 | 4236.3 | -29.33% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/64B/n32 | 4761.0 | -22.75% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/64B/n64 | 6242.1 | -26.55% | Performance has improved. |
+| batch_ceiling_followup/scalar_core/64B/n8 | 3950.0 | -29.82% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/16B/n1024 | 46588.0 | -16.36% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/16B/n16 | 344.1 | -23.44% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/16B/n32 | 1117.4 | -24.64% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/16B/n64 | 2499.9 | -24.89% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/16B/n8 | 172.7 | -28.49% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/256B/n1024 | 48493.0 | -23.76% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/256B/n16 | 342.1 | -26.00% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/256B/n32 | 1027.8 | -28.68% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/256B/n64 | 2671.7 | -22.00% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/256B/n8 | 167.9 | -28.35% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/64B/n1024 | 45006.0 | -29.70% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/64B/n16 | 403.0 | -15.65% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/64B/n32 | 1050.6 | -22.88% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/64B/n64 | 2402.2 | -23.57% | Performance has improved. |
+| batch_ceiling_followup/scalar_sefer/64B/n8 | 178.2 | -22.74% | Performance has improved. |
+| batch_ceiling/batch/16B | 33721.0 | +23.04% | No change in performance detected. |
+| batch_ceiling/batch/256B | 174730.0 | -17.72% | Performance has improved. |
+| batch_ceiling/batch/64B | 91594.0 | +40.50% | Performance has regressed. |
+| batch_ceiling/scalar/16B | 120010.0 | +44.62% | Performance has regressed. |
+| batch_ceiling/scalar/256B | 254080.0 | -0.50% | No change in performance detected. |
+| batch_ceiling/scalar/64B | 127310.0 | +11.03% | No change in performance detected. |
+| global_alloc_churn_with_teardown/mimalloc/1024B | 60316.0 | -0.37% | No change in performance detected. |
+| global_alloc_churn_with_teardown/mimalloc/16B | 29286.0 | +31.09% | Performance has regressed. |
+| global_alloc_churn_with_teardown/mimalloc/256B | 36679.0 | +16.34% | Performance has regressed. |
+| global_alloc_churn_with_teardown/mimalloc/64B | 25584.0 | +9.42% | Performance has regressed. |
+| global_alloc_churn_with_teardown/SeferAlloc/1024B | 129090.0 | +16.57% | No change in performance detected. |
+| global_alloc_churn_with_teardown/SeferAlloc/16B | 28978.0 | -6.21% | No change in performance detected. |
+| global_alloc_churn_with_teardown/SeferAlloc/256B | 39714.0 | +19.36% | Performance has regressed. |
+| global_alloc_churn_with_teardown/SeferAlloc/64B | 33625.0 | +9.01% | Performance has regressed. |
+| global_alloc_churn_with_teardown/System/1024B | 194250.0 | +6.18% | No change in performance detected. |
+| global_alloc_churn_with_teardown/System/16B | 162520.0 | +10.18% | Performance has regressed. |
+| global_alloc_churn_with_teardown/System/256B | 204910.0 | +13.20% | No change in performance detected. |
+| global_alloc_churn_with_teardown/System/64B | 186410.0 | +21.95% | Performance has regressed. |
+| global_alloc_churn_write/mimalloc/1024B | 238000.0 | +8.87% | Performance has regressed. |
+| global_alloc_churn_write/mimalloc/16B | 23196.0 | +12.89% | Performance has regressed. |
+| global_alloc_churn_write/mimalloc/256B | 38718.0 | -0.11% | No change in performance detected. |
+| global_alloc_churn_write/mimalloc/64B | 28833.0 | +7.33% | - |
+| global_alloc_churn_write/SeferAlloc/1024B | 27703.0 | -0.59% | No change in performance detected. |
+| global_alloc_churn_write/SeferAlloc/16B | 24772.0 | +18.26% | Performance has regressed. |
+| global_alloc_churn_write/SeferAlloc/256B | 24722.0 | +11.85% | Performance has regressed. |
+| global_alloc_churn_write/SeferAlloc/64B | 28860.0 | +16.46% | Performance has regressed. |
+| global_alloc_churn_write/System/1024B | 189290.0 | +8.46% | Performance has regressed. |
+| global_alloc_churn_write/System/16B | 147830.0 | +7.67% | Performance has regressed. |
+| global_alloc_churn_write/System/256B | 170080.0 | +28.73% | Performance has regressed. |
+| global_alloc_churn_write/System/64B | 151460.0 | +2.31% | No change in performance detected. |
+| global_alloc_churn/mimalloc/1024B | 233260.0 | +6.69% | No change in performance detected. |
+| global_alloc_churn/mimalloc/16B | 25610.0 | +34.16% | Performance has regressed. |
+| global_alloc_churn/mimalloc/256B | 38380.0 | -6.41% | No change in performance detected. |
+| global_alloc_churn/mimalloc/64B | 27595.0 | +4.49% | No change in performance detected. |
+| global_alloc_churn/SeferAlloc/1024B | 23143.0 | -2.61% | No change in performance detected. |
+| global_alloc_churn/SeferAlloc/16B | 23550.0 | +14.46% | Performance has regressed. |
+| global_alloc_churn/SeferAlloc/256B | 22494.0 | +11.55% | Performance has regressed. |
+| global_alloc_churn/SeferAlloc/64B | 22942.0 | +15.14% | Performance has regressed. |
+| global_alloc_churn/System/1024B | 175380.0 | +4.25% | No change in performance detected. |
+| global_alloc_churn/System/16B | 147010.0 | +14.91% | Performance has regressed. |
+| global_alloc_churn/System/256B | 178430.0 | +23.99% | Performance has regressed. |
+| global_alloc_churn/System/64B | 146730.0 | +7.12% | Performance has regressed. |
+| global_alloc/mimalloc/1024B | 85499.0 | +38.81% | Performance has regressed. |
+| global_alloc/mimalloc/16B | 30696.0 | +13.77% | No change in performance detected. |
+| global_alloc/mimalloc/256B | 31969.0 | -9.98% | Performance has improved. |
+| global_alloc/mimalloc/64B | 49551.0 | +95.50% | Performance has regressed. |
+| global_alloc/SeferAlloc/1024B | 67615.0 | +9.44% | No change in performance detected. |
+| global_alloc/SeferAlloc/16B | 72635.0 | +95.75% | Performance has regressed. |
+| global_alloc/SeferAlloc/256B | 86484.0 | +35.60% | Performance has regressed. |
+| global_alloc/SeferAlloc/64B | 49334.0 | -7.30% | Performance has improved. |
+| global_alloc/System/1024B | 370280.0 | +80.53% | Performance has regressed. |
+| global_alloc/System/16B | 177270.0 | -11.57% | Performance has improved. |
+| global_alloc/System/256B | 290180.0 | +18.26% | Performance has regressed. |
+| global_alloc/System/64B | 153660.0 | -27.27% | Performance has improved. |
+| global_alloc/Vec_push/mimalloc | 1401.9 | -7.10% | - |
+| global_alloc/Vec_push/SeferAlloc | 1310.6 | -7.05% | No change in performance detected. |
+| global_alloc/Vec_push/System | 5004.0 | +94.05% | Performance has regressed. |
+| pool_cap_sweep/cap=0/1024B | 251530000.0 | +38.25% | Performance has regressed. |
+| pool_cap_sweep/cap=0/16B | 1213000000.0 | +6.63% | Performance has regressed. |
+| pool_cap_sweep/cap=0/256B | 200180000.0 | -23.99% | Performance has improved. |
+| pool_cap_sweep/cap=0/64B | 387730000.0 | -19.29% | Performance has improved. |
+| pool_cap_sweep/cap=1/1024B | 417790000.0 | +139.21% | Performance has regressed. |
+| pool_cap_sweep/cap=1/16B | 1454800000.0 | +30.10% | Performance has regressed. |
+| pool_cap_sweep/cap=1/256B | 235350000.0 | -12.95% | Performance has improved. |
+| pool_cap_sweep/cap=1/64B | 424660000.0 | -16.12% | Performance has improved. |
+| pool_cap_sweep/cap=16/1024B | 245280000.0 | +38.95% | Performance has regressed. |
+| pool_cap_sweep/cap=16/16B | 1199200000.0 | -15.26% | Performance has improved. |
+| pool_cap_sweep/cap=16/256B | 314180000.0 | +11.96% | No change in performance detected. |
+| pool_cap_sweep/cap=16/64B | 383190000.0 | -23.60% | Performance has improved. |
+| pool_cap_sweep/cap=4/1024B | 335080000.0 | +85.93% | Performance has regressed. |
+| pool_cap_sweep/cap=4/16B | 1151100000.0 | -10.44% | Performance has improved. |
+| pool_cap_sweep/cap=4/256B | 235260000.0 | -9.08% | No change in performance detected. |
+| pool_cap_sweep/cap=4/64B | 422240000.0 | -19.64% | Performance has improved. |
+| pool_cap_sweep/cap=8/1024B | 208720000.0 | +17.79% | Performance has regressed. |
+| pool_cap_sweep/cap=8/16B | 1302800000.0 | -8.74% | Performance has improved. |
+| pool_cap_sweep/cap=8/256B | 226740000.0 | -11.12% | Performance has improved. |
+| pool_cap_sweep/cap=8/64B | 394970000.0 | -21.16% | Performance has improved. |
+| segment_decommit_cycle/mimalloc/253KiB | 7526.9 | +4.47% | No change in performance detected. |
+| segment_decommit_cycle/SeferAlloc/253KiB | 2124.9 | -5.15% | Performance has improved. |
+| segment_decommit_cycle/System/253KiB | 125420.0 | +88.95% | Performance has regressed. |
+| working_set_cycle/SeferAlloc/1024B | 361780.0 | +8.40% | No change in performance detected. |
+| working_set_cycle/SeferAlloc/16B | 289050.0 | +2.44% | No change in performance detected. |
+| working_set_cycle/SeferAlloc/256B | 281190.0 | +2.91% | No change in performance detected. |
+| working_set_cycle/SeferAlloc/64B | 287660.0 | +0.42% | No change in performance detected. |

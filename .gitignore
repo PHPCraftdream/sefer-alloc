@@ -5,3 +5,12 @@
 # R6-OPT-A6: per-run raw provenance dumps from scripts/paired-ab-runner.mjs --
 # generated output, accumulates one timestamped JSON per invocation, not source.
 /docs/perf/paired_ab_runs/
+# R13-10 (task #280): scratch raw command-output logs from bench/test/iai
+# sweeps (`docs/perf/_raw_*.log`) are throwaway by default -- ignored so ad-hoc
+# local runs never accumulate as untracked noise (22 such files had piled up
+# across R9-R11 before this rule). EXCEPTION: when a perf-gate report in
+# docs/perf/*.md cites specific `_raw_*.log` filenames as its evidence (the
+# R13-6/R13-8/R13-9 gate docs already do this), `git add -f` those specific
+# files so the cited evidence is reproducible from the commit, not just from
+# a re-run. Do not `git add -f` logs a doc does not name.
+/docs/perf/_raw_*.log

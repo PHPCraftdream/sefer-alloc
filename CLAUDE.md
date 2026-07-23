@@ -69,6 +69,22 @@ Core instructions, mandatory for all code in this repository. They
   categories (rust-cc-audit / code-review); look for out-of-scope edits,
   TODO/placeholder, half-wired features. Commit — only after personal
   verification. An agent's statement is a claim, not a receipt.
+- **After each wave, if the `production` feature composition changed:**
+  re-run `npm run bench:table` + `npm run iai` and commit the updated
+  README.md / `docs/perf/IAI_BASELINE.md` numbers in the same PR — do not
+  defer the canonical-table refresh to a later round (R13-10/task #280: the
+  README wall-clock table had gone stale across two consecutive rounds of
+  `production` changes before this rule existed). Cite the raw logs the
+  refresh was measured from (see the raw-log policy below).
+- **Raw perf logs (`docs/perf/_raw_*.log`) are scratch by default** —
+  `.gitignore`d (R13-10/task #280), never committed just because a `cargo
+  bench`/`npm run iai` invocation happened to write one. The one exception:
+  when a perf-gate report (`docs/perf/*.md`) cites specific `_raw_*.log`
+  filenames as its evidence, `git add -f` those named files alongside the
+  report so the citation is reproducible from the commit, not just from a
+  re-run — see `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md`
+  and `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md` for the
+  established pattern.
 
 ## Speed: short scenario by default
 
