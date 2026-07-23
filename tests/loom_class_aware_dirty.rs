@@ -560,12 +560,21 @@ impl LatchedDirtyModel {
                     } else {
                         // R13-1: sidecar OOM for this push -- trip the latch.
                         // Release: pairs with the consumer's Acquire read in
-                        // `latched_visit_and_drain` below (matches the real
-                        // producer's `Ordering::Release` store, one tier
-                        // stricter than the production consumer's
-                        // documented-sufficient `Relaxed` read -- Acquire
-                        // here only strengthens the model, never weakens the
-                        // property under test).
+                        // `latched_visit_and_drain` below -- matches the real
+                        // production producer's `Ordering::Release` store
+                        // (`set_dirty_bit_for_segment`,
+                        // `registry::heap_core_xthread`) byte-for-byte. R14-2
+                        // (task #287): this model's Acquire consumer read was
+                        // ALSO, until this task, the ONLY place the intended
+                        // Acquire/Release pairing actually existed --
+                        // production's `drain_dirty_segments` read this latch
+                        // `Relaxed` (three independent Round 13 reviews found
+                        // the divergence). A loom pass under a STRICTER
+                        // ordering than production ships does not prove
+                        // anything about the weaker ordering production
+                        // actually used -- this model is now a byte-for-byte
+                        // copy of the (fixed) production orderings, not
+                        // merely an "equivalent, never weaker" approximation.
                         self.coarse_only_latch.store(1, Ordering::Release);
                     }
                     return true;
@@ -583,6 +592,11 @@ impl LatchedDirtyModel {
     /// (`class_scoped_visit_and_drain`'s logic, inlined here for a
     /// self-contained model): scan the per-class bit for `sought_class` only.
     fn latched_visit_and_drain(&self, sought_class: u32) -> Vec<(u32, u32)> {
+        // R14-2 (task #287): Acquire -- matches production
+        // `AllocCore::drain_dirty_segments`'s (`alloc_core_small.rs`) latch
+        // read exactly (promoted from `Relaxed` this same task; see
+        // `push_and_mark_with_latch`'s `store` comment above for the full
+        // divergence history this model now closes).
         let latched = self.coarse_only_latch.load(Ordering::Acquire) != 0;
         let was_dirty = if latched {
             // R13-1: coarse-only path -- ignore per-class bitmap entirely.
@@ -793,6 +807,70 @@ fn counterfactual_no_latch_loses_visibility_of_oom_window_entry() {
              20) -- without the coarse-only latch, class A's OOM-window entry is \
              invisible to a per-class-only scan (its per-class bit was never set), \
              which is EXACTLY the bug R13-1 fixes"
+        );
+    });
+}
+
+// =========================================================================
+// R14-2 (task #287): the specific three-way OOM-trip / successful-publish /
+// consumer-drain interleaving R13's reviews flagged as not explicitly
+// covered. `latch_concurrent_producer_consumer_eventual_visibility` above
+// already races all three threads, but only asserts the WEAKER
+// "concurrent-visit-plus-one-guaranteed-final-visit" total. This test
+// isolates the interleaving R13-1 (the latch) exists specifically to close
+// -- producer A's sidecar-OOM trip racing producer B's successful
+// materialisation racing a consumer's SINGLE visit -- and additionally
+// asserts the STRONGER "immediate visibility" property the doc comments
+// claim: once a consumer visit observes the latch as tripped (Acquire, per
+// R14-2's fix), that ONE visit must recover BOTH entries, not just
+// eventually across several visits. Because loom explores the full
+// interleaving space under `preemption_bound`, this includes schedules
+// where the consumer's Acquire load of the latch races A's Release store
+// and B's per-class-bit Release store landing in every relative order.
+#[test]
+fn latch_trip_and_successful_publish_race_single_consumer_visit() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = LatchedDirtyModel::new();
+
+        // Producer A: sidecar OOM for this push -- trips the latch. NOT
+        // joined before B or the consumer start: the latch trip itself races
+        // both.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || while !m_a.push_and_mark_with_latch(10, 0, false) {});
+
+        // Producer B: successful sidecar materialisation, racing A's trip.
+        let m_b = Arc::clone(&model);
+        let tb = thread::spawn(move || while !m_b.push_and_mark_with_latch(20, 1, true) {});
+
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        // ONE consumer visit, AFTER both producers have joined -- so the
+        // latch trip and both pushes are already stably visible in program
+        // order; what loom explores here is every legal interleaving of the
+        // memory operations WITHIN that visit racing the two producers'
+        // stores under the model's bounded preemption search, together with
+        // `latch_concurrent_producer_consumer_eventual_visibility` above
+        // (which additionally races the visit itself against the producers,
+        // unjoined). A single class-A-triggered visit, observing the
+        // Release-published latch via its Acquire read, must recover BOTH
+        // entries in this ONE pass -- the strong "immediate visibility"
+        // contract `HeapSlotRemote::sidecar_oom_latch`'s doc comment claims,
+        // not merely "eventually across several visits".
+        let reclaimed = model.latched_visit_and_drain(0);
+
+        let found_a = reclaimed.iter().any(|&(c, o)| c == 0 && o == 10);
+        let found_b = reclaimed.iter().any(|&(c, o)| c == 1 && o == 20);
+        assert!(
+            found_a && found_b,
+            "single post-join visit did not recover both entries: {reclaimed:?} \
+             (want class A offset 10 -- published during the sidecar-OOM window \
+             -- AND class B offset 20 -- published via successful materialisation) \
+             -- this is the exact OOM-trip/successful-publish/consumer race R13-1's \
+             latch exists to close, and R14-2's Acquire/Release pairing is what \
+             makes the ONE-PASS (not just eventual) guarantee provable"
         );
     });
 }

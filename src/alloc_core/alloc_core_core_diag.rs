@@ -1047,10 +1047,12 @@ impl AllocCore {
     /// (`registry::heap_slot::HeapSlotRemote::sidecar_oom_latch`). Returns
     /// `None` if the latch handle is not bound (`class-aware-dirty` off, or
     /// this `AllocCore` was never claimed through the registry), `Some(bool)`
-    /// otherwise. `Acquire` load (stricter than the production `Relaxed`
-    /// read in `drain_dirty_segments` — a test assertion wants the strongest
-    /// ordering available, not the minimum the production path can get away
-    /// with).
+    /// otherwise. `Acquire` load — matches production
+    /// `drain_dirty_segments`'s own read exactly (R14-2, task #287: that
+    /// read was promoted from `Relaxed` to `Acquire` this task, closing a
+    /// divergence three independent Round 13 reviews found against this
+    /// field's doc comment and the loom model, both of which had always
+    /// documented/used `Acquire`).
     #[doc(hidden)]
     #[must_use]
     pub fn dbg_sidecar_oom_latch(&self) -> Option<bool> {

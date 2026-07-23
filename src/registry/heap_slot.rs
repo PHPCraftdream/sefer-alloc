@@ -291,14 +291,51 @@ pub(crate) struct HeapSlotRemote {
     /// interleaving window this latch exists to close if the new occupant's
     /// OOM history differs from the old one's.
     ///
-    /// **Ordering:** producer writes `true` with `Release` (pairs with the
-    /// consumer's `Acquire` read below — establishes happens-before from "the
+    /// R14-2 (task #287) considered clearing the latch at the slot's
+    /// existing teardown-trim quiescent point
+    /// (`HeapCore::trim_for_recycle`, `registry::heap_core_ownership`, run by
+    /// the owning thread on thread exit, single-writer, immediately before
+    /// `HeapRegistry::recycle`'s `LIVE -> FREE` CAS) so a future occupant of
+    /// the slot would start un-degraded instead of inheriting a possibly
+    /// long-past transient OOM. **Decided NOT to implement this round** —
+    /// this field is written by REMOTE (cross-thread) producers, and
+    /// `set_dirty_bit_for_segment`'s (`registry::heap_core_xthread`) owner
+    /// resolution is an unconditional segment-header-stamp read with NO
+    /// `STATE_LIVE` check at all (unlike the advisory `owner_slot_is_live`
+    /// probe `push_with_overflow_retry` uses for a different purpose) — a
+    /// remote free can and does land on a segment whose owning slot has
+    /// JUST been recycled (`heap_core_xthread.rs`'s own `owner_slot_is_live`
+    /// doc comment calls the analogous race "benign" for the overflow-ring
+    /// destination, precisely because nothing else in this registry assumes
+    /// slot-exit quiescence for cross-thread writers). A plain reset at
+    /// `trim_for_recycle` would therefore race a still-in-flight legitimate
+    /// `store(true, Release)` from that same window with no synchronisation
+    /// between the two writes — a genuine lost-trip hazard, not a provable
+    /// quiescent-point clear, and not something this round's loom coverage
+    /// (which models the OOM -> publish -> consumer race, not a concurrent
+    /// reset) would catch. Recovery (either variant) remains an open,
+    /// explicit candidate for a future round once it is designed to survive
+    /// that race (e.g. gated on a slot generation counter the remote
+    /// producer can validate).
+    ///
+    /// **Ordering:** producer writes `true` with `Release`
+    /// (`set_dirty_bit_for_segment`, `registry::heap_core_xthread`); the
+    /// consumer (`AllocCore::drain_dirty_segments`) reads `Acquire`
+    /// (R14-2, task #287 — promoted from a `Relaxed` read three independent
+    /// Round 13 reviews found diverged from this doc comment and from the
+    /// loom model, `tests/loom_class_aware_dirty.rs`, which had always used
+    /// `Acquire`). This pairing establishes real happens-before from "the
     /// sidecar materialisation attempt that failed" to "the consumer decides
-    /// to ignore the per-class path"). Idempotent: multiple producers racing
-    /// to set the latch is benign (`store(true, Release)` from any number of
-    /// racing writers converges to the same final state; a plain store is
-    /// sufficient — no CAS needed — because every writer stores the exact
-    /// same value).
+    /// to ignore the per-class path": once a drain observes the latch `true`,
+    /// it is guaranteed to also observe every write that producer's push
+    /// performed program-order-before the `store` (in particular, the
+    /// coarse `dirty_segments` bit for that same entry) — so an OOM-window
+    /// entry is visible to the VERY NEXT drain that observes the latch, not
+    /// merely "eventually" via the periodic full-scan fallback. Idempotent:
+    /// multiple producers racing to set the latch is benign (`store(true,
+    /// Release)` from any number of racing writers converges to the same
+    /// final state; a plain store is sufficient — no CAS needed — because
+    /// every writer stores the exact same value).
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) sidecar_oom_latch: AtomicBool,
 }

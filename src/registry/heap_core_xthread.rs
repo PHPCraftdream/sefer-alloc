@@ -401,6 +401,15 @@ fn set_dirty_bit_for_segment(
                     // only the coarse bitmap". Idempotent plain store: every
                     // racing producer that ever observes sidecar OOM stores
                     // the same `true`, so no CAS is needed.
+                    //
+                    // R14-2 (task #287): this comment's "pairs with the
+                    // Acquire read" claim used to be false — the production
+                    // consumer read this latch `Relaxed` (three independent
+                    // Round 13 reviews found the divergence against this
+                    // comment, `HeapSlotRemote::sidecar_oom_latch`'s doc, and
+                    // the loom model, which had always used `Acquire`).
+                    // `drain_dirty_segments` was promoted to `Acquire` so the
+                    // comment is now literally true, not aspirational.
                     slot.remote.sidecar_oom_latch.store(true, Ordering::Release);
                 }
             }

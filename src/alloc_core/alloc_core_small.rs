@@ -2441,22 +2441,28 @@ impl AllocCore {
     /// class-scoped speedup from then on for this one heap. See
     /// `HeapSlotRemote::sidecar_oom_latch`'s doc comment for the full design
     /// and `set_dirty_bit_for_segment`'s doc comment
-    /// (`registry::heap_core_xthread`) for the producer-side write. `Relaxed`
-    /// read is sufficient here: the latch is a single monotonic
-    /// `false -> true` flag consulted purely to pick a scan source, not to
-    /// synchronise access to the sidecar's OWN payload — the payload itself
-    /// is reached (when the per-class path IS taken) through
-    /// `dirty_by_class::get_per_class_dirty`'s own `Acquire` load on the
-    /// `RacyPtrCell`, which is the read that actually needs to observe the
-    /// sidecar's fully-initialised words. Reading the latch itself stale by
-    /// one push (a `Relaxed` load observing `false` for one extra drain pass
-    /// immediately after a racing producer's `Release` store) only means
-    /// this ONE drain call takes the per-class path one pass later than it
-    /// could have — never a correctness gap, since a drain that still takes
-    /// the per-class path while the latch write is in flight is scanning
-    /// EXACTLY the same "not yet universally safe" state the latch is about
-    /// to close, and the very next call (having observed the store by then)
-    /// permanently falls back to coarse.
+    /// (`registry::heap_core_xthread`) for the producer-side write.
+    ///
+    /// R14-2 (task #287, P0 fix): this read is `Acquire`, pairing with the
+    /// producer's `Release` store in `set_dirty_bit_for_segment` — this is
+    /// the SAME pairing `HeapSlotRemote::sidecar_oom_latch`'s doc comment has
+    /// always claimed and the loom model
+    /// (`tests/loom_class_aware_dirty.rs::latched_visit_and_drain`) has
+    /// always checked. Three independent Round 13 reviews found this
+    /// production read was actually `Relaxed` — a real Acquire/Relaxed
+    /// three-way divergence against both the field doc and the loom model,
+    /// which does NOT prove anything about a `Relaxed` production read (a
+    /// loom pass under a strictly stronger ordering than production ships is
+    /// not evidence the weaker production ordering is sound). `Acquire` here
+    /// is free on x86 (already an implicit acquire load) and removes the
+    /// compiler-reordering risk a `Relaxed` load carries in principle (a
+    /// hypothetical hoist of this load above an earlier per-class-sidecar
+    /// read in the SAME function, on a future refactor or a weak-memory
+    /// target). With `Acquire`, the latch establishes real happens-before
+    /// from "the push that tripped it" to "this drain's decision to trust
+    /// only the coarse bitmap" — matching the doc comment's and the loom
+    /// model's claim exactly, closing the divergence rather than
+    /// documenting it away.
     #[cfg(feature = "alloc-xthread")]
     pub(super) fn drain_dirty_segments<
         #[cfg(feature = "fastbin")] F: Fn(*mut u8, usize) -> bool,
@@ -2475,16 +2481,16 @@ impl AllocCore {
         }
         let small_cur = self.small_cur;
 
-        // R13-1 (task #271, P0 fix): the coarse-only latch, checked BEFORE
-        // resolving the per-class slice at all — see this function's doc
-        // comment for the full rationale. `Relaxed`: see the doc comment's
-        // ordering discussion (the latch only selects a scan source; the
-        // sidecar payload itself is independently synchronised by
-        // `get_per_class_dirty`'s `Acquire` load).
+        // R13-1 (task #271, P0 fix), R14-2 (task #287): the coarse-only
+        // latch, checked BEFORE resolving the per-class slice at all — see
+        // this function's doc comment for the full rationale. `Acquire`:
+        // pairs with `set_dirty_bit_for_segment`'s `Release` store
+        // (`registry::heap_core_xthread`) — see the doc comment's ordering
+        // discussion.
         #[cfg(feature = "class-aware-dirty")]
         let coarse_only_latched: bool = self
             .sidecar_oom_latch
-            .is_some_and(|latch| latch.load(core::sync::atomic::Ordering::Relaxed));
+            .is_some_and(|latch| latch.load(core::sync::atomic::Ordering::Acquire));
 
         // R12-7 stage 2: resolve the class-scoped word slice, if available
         // AND the coarse-only latch has not tripped for this heap.
