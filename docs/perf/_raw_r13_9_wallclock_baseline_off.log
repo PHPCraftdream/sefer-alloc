@@ -1,0 +1,54 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 39.25s
+     Running benches\r12_7_class_aware_dirty_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r12_7_class_aware_dirty_wallclock-f178bc4860acf04e.exe)
+Gnuplot not found, using plotters backend
+
+═══════════════════════════════════════════════════════════════════
+R12-7 stage 1 — class-aware dirty routing wall-clock gate
+TARGET_CLASS = 40 (block_size = 43392 B); BLOCKS_PER_CLASS = 800
+═══════════════════════════════════════════════════════════════════
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Collecting 10 samples in estimated 1.5098 s (1980 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=1
+                        time:   [842.10 µs 852.34 µs 861.10 µs]
+                        change: [-6.0766% -2.4418% +0.7865%] (p = 0.24 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+producers=1   ns/round=      580897  ns/owner_alloc=   722.7
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Collecting 10 samples in estimated 1.5496 s (1265 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=2
+                        time:   [1.1955 ms 1.2099 ms 1.2210 ms]
+                        change: [-0.6036% +1.5525% +3.5937%] (p = 0.18 > 0.05)
+                        No change in performance detected.
+producers=2   ns/round=      728738  ns/owner_alloc=   909.2
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Collecting 10 samples in estimated 1.5527 s (550 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=4
+                        time:   [1.8291 ms 1.8401 ms 1.8555 ms]
+                        change: [-14.337% -9.9452% -5.4878%] (p = 0.00 < 0.05)
+                        Performance has improved.
+producers=4   ns/round=     1099323  ns/owner_alloc=  1367.3
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Warming up for 300.00 ms
+
+Warning: Unable to complete 10 samples in 1.5s. You may wish to increase target time to 1.7s or enable flat sampling.
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Collecting 10 samples in estimated 1.6950 s (55 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=8
+                        time:   [18.283 ms 20.629 ms 24.813 ms]
+                        change: [-20.578% -6.8413% +9.6237%] (p = 0.43 > 0.05)
+                        No change in performance detected.
+producers=8   ns/round=    18821921  ns/owner_alloc= 23527.4
+───────────────────────────────────────────────────────────────────
+N=1 -> N=4 ns/owner_alloc delta: 722.7 -> 1367.3 (+89.2%) [R9-6 gate threshold: >5% => GO on stage 2, else NO-GO]
+═══════════════════════════════════════════════════════════════════
+
+

@@ -1,0 +1,216 @@
+[iai] wsl: /mnt/d/dev/rust/sefer-alloc
+[iai] features: production | target: /tmp/sefer-iai
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.228
+   Compiling zmij v1.0.21
+   Compiling zerocopy v0.8.52
+   Compiling serde_json v1.0.150
+   Compiling serde v1.0.228
+   Compiling getrandom v0.3.4
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling version_check v0.9.5
+   Compiling find-msvc-tools v0.1.9
+   Compiling regex-syntax v0.8.11
+   Compiling shlex v2.0.1
+   Compiling num-traits v0.2.19
+   Compiling bitflags v2.13.0
+   Compiling once_cell v1.21.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling cc v1.2.65
+   Compiling slotmap v1.1.1
+   Compiling fastrand v2.4.1
+   Compiling rayon-core v1.13.0
+   Compiling either v1.16.0
+   Compiling bit-vec v0.8.0
+   Compiling iai-callgrind-runner v0.14.2
+   Compiling plotters-backend v0.3.7
+   Compiling itoa v1.0.18
+   Compiling crossbeam-epoch v0.9.18
+   Compiling fnv v1.0.7
+   Compiling ciborium-io v0.2.2
+   Compiling memchr v2.8.2
+   Compiling clap_lex v1.1.0
+   Compiling quick-error v1.2.3
+   Compiling anstyle v1.0.14
+   Compiling syn v2.0.118
+   Compiling plotters-svg v0.3.7
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling crossbeam-deque v0.8.6
+   Compiling clap_builder v4.6.0
+   Compiling bit-set v0.8.0
+   Compiling itertools v0.10.5
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling unarray v0.1.4
+   Compiling wait-timeout v0.2.1
+   Compiling iai-callgrind v0.14.2
+   Compiling plotters v0.3.7
+   Compiling rand_core v0.9.5
+   Compiling walkdir v2.5.0
+   Compiling sefer-region v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/region)
+   Compiling libmimalloc-sys v0.1.49
+   Compiling rand v0.9.4
+   Compiling rand_xorshift v0.4.0
+   Compiling rayon v1.12.0
+   Compiling is-terminal v0.4.17
+   Compiling proc-memstat v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/proc-memstat)
+   Compiling aligned-vmem v0.2.0 (/mnt/d/dev/rust/sefer-alloc/crates/vmem)
+   Compiling pin-project-lite v0.2.17
+   Compiling oorandom v11.1.5
+   Compiling tagged-index-stack v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/tagged-index-stack)
+   Compiling racy-ptr-cell v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/racy-ptr-cell)
+   Compiling anes v0.1.6
+   Compiling size-classes v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/size-classes)
+   Compiling proc-probe v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/proc-probe)
+   Compiling malloc-bench-rs v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/malloc-bench)
+   Compiling sefer-alloc v0.3.0 (/mnt/d/dev/rust/sefer-alloc)
+   Compiling regex-automata v0.4.14
+   Compiling tempfile v3.27.0
+   Compiling criterion-plot v0.5.0
+   Compiling rusty-fork v0.3.1
+   Compiling clap v4.6.1
+   Compiling regex v1.12.4
+   Compiling proc-macro-error2 v2.0.1
+   Compiling zerocopy-derive v0.8.52
+   Compiling serde_derive v1.0.228
+   Compiling derive_more-impl v2.1.1
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling derive_more v2.1.1
+   Compiling mimalloc v0.1.52
+   Compiling iai-callgrind-macros v0.5.1
+   Compiling bincode v1.3.3
+   Compiling tinytemplate v1.2.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling rand_chacha v0.9.0
+   Compiling ciborium v0.2.2
+   Compiling proptest v1.11.0
+   Compiling criterion v0.5.1
+   Compiling globalalloc-model v0.1.0 (/mnt/d/dev/rust/sefer-alloc/crates/globalalloc-model)
+    Finished `bench` profile [optimized] target(s) in 1m 01s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/perf_gate_iai.rs (/tmp/sefer-iai/release/deps/perf_gate_iai-03646e20bcf4157f)
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                       28571|N/A                  (*********)
+  L1 Hits:                            51180|N/A                  (*********)
+  L2 Hits:                              143|N/A                  (*********)
+  RAM Hits:                             761|N/A                  (*********)
+  Total read+write:                   52084|N/A                  (*********)
+  Estimated Cycles:                   78530|N/A                  (*********)
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                       28507|N/A                  (*********)
+  L1 Hits:                            51118|N/A                  (*********)
+  L2 Hits:                              142|N/A                  (*********)
+  RAM Hits:                             760|N/A                  (*********)
+  Total read+write:                   52020|N/A                  (*********)
+  Estimated Cycles:                   78428|N/A                  (*********)
+perf_gate_iai::perf_gate::large_alloc_free_cycle
+  Instructions:                       23831|N/A                  (*********)
+  L1 Hits:                            45407|N/A                  (*********)
+  L2 Hits:                              143|N/A                  (*********)
+  RAM Hits:                             758|N/A                  (*********)
+  Total read+write:                   46308|N/A                  (*********)
+  Estimated Cycles:                   72652|N/A                  (*********)
+perf_gate_iai::perf_gate::realloc_grow
+  Instructions:                      513187|N/A                  (*********)
+  L1 Hits:                          1087331|N/A                  (*********)
+  L2 Hits:                             3959|N/A                  (*********)
+  RAM Hits:                           70649|N/A                  (*********)
+  Total read+write:                 1161939|N/A                  (*********)
+  Estimated Cycles:                 3579841|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       70669|N/A                  (*********)
+  L1 Hits:                           102776|N/A                  (*********)
+  L2 Hits:                              155|N/A                  (*********)
+  RAM Hits:                             877|N/A                  (*********)
+  Total read+write:                  103808|N/A                  (*********)
+  Estimated Cycles:                  134246|N/A                  (*********)
+perf_gate_iai::perf_gate::cold_alloc_free_256x64b
+  Instructions:                       70669|N/A                  (*********)
+  L1 Hits:                           102592|N/A                  (*********)
+  L2 Hits:                              155|N/A                  (*********)
+  RAM Hits:                            1061|N/A                  (*********)
+  Total read+write:                  103808|N/A                  (*********)
+  Estimated Cycles:                  140502|N/A                  (*********)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      118796|N/A                  (*********)
+  L1 Hits:                           161577|N/A                  (*********)
+  L2 Hits:                               77|N/A                  (*********)
+  RAM Hits:                             986|N/A                  (*********)
+  Total read+write:                  162640|N/A                  (*********)
+  Estimated Cycles:                  196472|N/A                  (*********)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x64b
+  Instructions:                      118796|N/A                  (*********)
+  L1 Hits:                           161381|N/A                  (*********)
+  L2 Hits:                               78|N/A                  (*********)
+  RAM Hits:                            1181|N/A                  (*********)
+  Total read+write:                  162640|N/A                  (*********)
+  Estimated Cycles:                  203106|N/A                  (*********)
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                       28571|N/A                  (*********)
+  L1 Hits:                            51181|N/A                  (*********)
+  L2 Hits:                              143|N/A                  (*********)
+  RAM Hits:                             760|N/A                  (*********)
+  Total read+write:                   52084|N/A                  (*********)
+  Estimated Cycles:                   78496|N/A                  (*********)
+perf_gate_iai::perf_gate::churn_write_256b
+  Instructions:                       28827|N/A                  (*********)
+  L1 Hits:                            51564|N/A                  (*********)
+  L2 Hits:                              143|N/A                  (*********)
+  RAM Hits:                             761|N/A                  (*********)
+  Total read+write:                   52468|N/A                  (*********)
+  Estimated Cycles:                   78914|N/A                  (*********)
+perf_gate_iai::perf_gate::multiseg_cold_256k
+  Instructions:                       46242|N/A                  (*********)
+  L1 Hits:                            75467|N/A                  (*********)
+  L2 Hits:                               66|N/A                  (*********)
+  RAM Hits:                            1059|N/A                  (*********)
+  Total read+write:                   76592|N/A                  (*********)
+  Estimated Cycles:                  112862|N/A                  (*********)
+perf_gate_iai::perf_gate::seg_cycle_decommit_256k
+  Instructions:                       82292|N/A                  (*********)
+  L1 Hits:                           123769|N/A                  (*********)
+  L2 Hits:                              120|N/A                  (*********)
+  RAM Hits:                            1059|N/A                  (*********)
+  Total read+write:                  124948|N/A                  (*********)
+  Estimated Cycles:                  161434|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 12 without regressions; 0 regressed; 12 benchmarks finished in 5.73589s
+
+  bench                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  --------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                   28,571        51,180           143           761        78,530          74.1
+  aligned_churn_640b_a128           28,507        51,118           142           760        78,428          73.1
+  large_alloc_free_cycle            23,831        45,407           143           758        72,652             -
+  realloc_grow                     513,187     1,087,331         3,959        70,649     3,579,841      30,584.8
+  cold_alloc_free_256x16b           70,669       102,776           155           877       134,246         183.0
+  cold_alloc_free_256x64b           70,669       102,592           155         1,061       140,502         183.0
+  recycle_alloc_free_256x16b       118,796       161,577            77           986       196,472         185.5
+  recycle_alloc_free_256x64b       118,796       161,381            78         1,181       203,106         185.5
+  churn_256b                        28,571        51,181           143           760        78,496          74.1
+  churn_write_256b                  28,827        51,564           143           761        78,914          78.1
+  multiseg_cold_256k                46,242        75,467            66         1,059       112,862         329.6
+  seg_cycle_decommit_256k           82,292       123,769           120         1,059       161,434         286.6
+
+  * Ir/op = (Ir − 23,831) / ops — marginal instruction count per
+    operation, with the one-time process bootstrap subtracted (constant taken
+    from large_alloc_free_cycle). Comparable across benches; the honest unit for
+    per-op thresholds (review finding F2). "-" = bootstrap proxy / no op-count.
+
+[iai] PASS — 12 bench(es) produced Ir

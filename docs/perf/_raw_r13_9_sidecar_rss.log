@@ -1,0 +1,12 @@
+    Finished `release` profile [optimized] target(s) in 0.54s
+     Running `D:\dev\rust\.cargo-target\release\examples\r13_9_class_aware_dirty_sidecar_rss.exe`
+=== R13-9 class-aware-dirty sidecar RSS measurement ===
+PER_CLASS_DIRTY_WORDS (computed): SMALL_CLASS_COUNT=49 * WORDS_PER_CLASS=16
+raw size_of::<PerClassDirty>(): 6272 bytes (6.12 KiB)
+page-rounded (leak_zeroed_pages) footprint per materialised heap: 8192 bytes (8.00 KiB, 2 page(s))
+
+N=4   heaps  RSS before=   3332.00 KiB  after=   3592.00 KiB  delta=  260.00 KiB  (65.00 KiB/heap)  [sidecar-only floor: 32.00 KiB]
+N=8   heaps  RSS before=   3592.00 KiB  after=   3800.00 KiB  delta=  208.00 KiB  (26.00 KiB/heap)  [sidecar-only floor: 64.00 KiB]
+N=16  heaps  RSS before=   3800.00 KiB  after=   4220.00 KiB  delta=  420.00 KiB  (26.25 KiB/heap)  [sidecar-only floor: 128.00 KiB]
+
+NOTE: the sidecar itself (`RacyPtrCell<PerClassDirty>` -> `leak_zeroed_pages`) is never freed once materialised (process-lifetime leak by design, same discipline as `segment_directory`'s and `HeapOverflow`'s sidecars) -- so RSS deltas across successive N arms in THIS process are NOT simply additive/comparable to a fresh-process run of each N in isolation. Each arm's per-heap KiB figure is the reliable number; cross-arm process-level accumulation is a secondary, expected artifact of slot reuse, not a leak bug.

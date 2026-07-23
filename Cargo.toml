@@ -1083,6 +1083,18 @@ required-features = ["alloc-core", "alloc-decommit"]
 name = "r13_8_medium_working_set_judge"
 required-features = ["alloc-core", "alloc-decommit"]
 
+# R13-9 (task #279): THROWAWAY measurement harness for the `class-aware-dirty`
+# production promotion gate -- confirms the ACTUAL page-rounded RSS footprint
+# of the per-(segment,class) `PerClassDirty` sidecar (`alloc_core::dirty_by_class`)
+# against real process RSS deltas for N = 4/8/16 materialised heaps, and
+# corrects `docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md`'s "6.1 KiB"
+# figure (the raw `size_of`, not the `leak_zeroed_pages`-rounded 8.0 KiB
+# actually committed per heap). NOT a shipping artifact -- pure measurement.
+# Build/run: cargo run --release --example r13_9_class_aware_dirty_sidecar_rss --features "production class-aware-dirty alloc-stats"
+[[example]]
+name = "r13_9_class_aware_dirty_sidecar_rss"
+required-features = ["alloc-global", "alloc-xthread", "alloc-segment-directory", "class-aware-dirty"]
+
 # Phase 13.7: multi-thread macro-benchmark (larson + mstress sweep, T=1/2/4).
 # The file is `#![cfg]`-gated on alloc-global + alloc-xthread; without this
 # registration `cargo build` / `cargo test` (without `--tests`) tries to compile
