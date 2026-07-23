@@ -973,6 +973,35 @@ required-features = ["alloc-global"]
 name = "paired_ab_large_cache_on"
 required-features = ["alloc-global"]
 
+# R14-5 (task #290, item 6): process-level A/B/B/A judge for
+# `large-cache-extended`'s production-promotion question, backing
+# `docs/perf/R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md`. Two wrappers
+# around ONE shared TURNOVER workload
+# (`examples/_shared/paired_ab_large_cache_extended_turnover_workload.rs`,
+# `include!`d verbatim into both — byte-identical workload source, same
+# 24-distinct-size / batch-alloc-all-dealloc-all shape R13-8 Part C's
+# in-process turnover judge used). The ONLY difference is the Cargo feature
+# set at build time:
+#   - `paired_ab_large_cache_extended_off`: --features "production alloc-stats"
+#     (baseline, base 8-slot cache)
+#   - `paired_ab_large_cache_extended_on` : --features "production alloc-stats large-cache-extended"
+#     (treatment, 8+32=40-slot cache)
+# R13-8 §0's own caveat carries over: a STATIC live-set workload deposits
+# nothing into the cache until teardown (0 hits regardless of the
+# extension), so this MUST be a turnover-shaped workload to be a meaningful
+# A/B comparison — see the shared workload file's module doc. Both arms emit
+# `elapsed_ns` (the metric `scripts/paired-ab-runner.mjs` pairs by default)
+# and `large_cache_hits` (the direct causal-mechanism proof: expected LOW in
+# the baseline arm, HIGH in the treatment arm). See
+# `docs/perf/R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` for the verdict.
+[[example]]
+name = "paired_ab_large_cache_extended_off"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "paired_ab_large_cache_extended_on"
+required-features = ["alloc-global"]
+
 # R14-3 (task #288): fixed-work process-level A/B/B/A judge for
 # `class-aware-dirty`, built to answer a methodology gap three independent
 # Round-13 reviews raised against `benches/r12_7_class_aware_dirty_wallclock.rs`'s
@@ -1084,6 +1113,22 @@ required-features = ["alloc-core", "alloc-decommit"]
 #            (AFTER, 40 slots): cargo run --release --example r13_7_large_cache_extended_hit_rate_measure --features "alloc-core alloc-decommit alloc-stats large-cache-extended"
 [[example]]
 name = "r13_7_large_cache_extended_hit_rate_measure"
+required-features = ["alloc-core", "alloc-decommit"]
+
+# R14-5 (task #290, item 3): THROWAWAY RSS/commit RETENTION judge for the
+# `large-cache-extended` sidecar — companion to
+# `r13_7_large_cache_extended_hit_rate_measure.rs` (which measures hit-rate/
+# wall-clock); this one measures retained COMMIT/RSS on an adversarial,
+# long-holding, 40-distinct-size workload, the scenario Round 13 review
+# flagged as the extension's real RSS-retention risk ("~5x relative to the
+# base 8 slots"). argv[1] selects `unbounded` (isolates slot-count-driven
+# retention) or `default-config` (exercises R14-5 item 2's new finite
+# `large-cache-extended` default budget in the same harness). NOT a shipping
+# artifact. See `docs/perf/R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md`.
+# Build/run (BASE, 8 slots):     cargo run --release --example r14_5_large_cache_extended_rss_measure --features "alloc-core alloc-decommit alloc-stats" -- unbounded
+#            (EXTENDED, 40 slots): cargo run --release --example r14_5_large_cache_extended_rss_measure --features "alloc-core alloc-decommit alloc-stats large-cache-extended" -- unbounded
+[[example]]
+name = "r14_5_large_cache_extended_rss_measure"
 required-features = ["alloc-core", "alloc-decommit"]
 
 # R13-8 (task #278): THROWAWAY judge for 256-2048 SIMULTANEOUSLY LIVE

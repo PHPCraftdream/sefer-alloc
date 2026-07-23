@@ -539,20 +539,28 @@ impl AllocCore {
             // R13-7 (task #277): free-slot search now spans the combined
             // base+extension index space — see the mirror-site comment in
             // `AllocCore::dealloc`'s Large branch (`alloc_core.rs`).
+            //
+            // R14-5 (task #290, review finding @fm P3): same budget-before-
+            // materialisation pre-check as the mirror site in
+            // `AllocCore::dealloc` — see that site's comment and
+            // `large_cache_deposit_budget_infeasible`'s doc for the full
+            // rationale.
             let mut admitted: Option<usize> = None;
-            loop {
-                let free_slot = self.large_cache_find_free_slot();
-                let budget_ok = self
-                    .large_cache_budget_bytes
-                    .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
-                if let Some(idx) = free_slot {
-                    if budget_ok {
-                        admitted = Some(idx);
+            if !self.large_cache_deposit_budget_infeasible(usable_size) {
+                loop {
+                    let free_slot = self.large_cache_find_free_slot();
+                    let budget_ok = self
+                        .large_cache_budget_bytes
+                        .is_none_or(|budget| self.large_cache_used_bytes + usable_size <= budget);
+                    if let Some(idx) = free_slot {
+                        if budget_ok {
+                            admitted = Some(idx);
+                            break;
+                        }
+                    }
+                    if !self.evict_one_oldest() {
                         break;
                     }
-                }
-                if !self.evict_one_oldest() {
-                    break;
                 }
             }
 

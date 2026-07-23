@@ -53,6 +53,59 @@ pub(crate) const DEFAULT_DECAY_INTERVAL_MS: u64 = 1000;
 /// Default decay rate: 10 % per tick, expressed as a percentage.
 pub(crate) const DEFAULT_DECAY_RATE_PERCENT: u32 = 10;
 
+/// R14-5 (task #290): default byte-budget ceiling applied ONLY when the
+/// `large-cache-extended` feature is compiled in AND the caller has not
+/// explicitly set [`budget_bytes`](LargeCacheConfig::budget_bytes).
+///
+/// ## Why this exists
+///
+/// The base 8-slot cache's own default budget is `None` (unbounded) — with
+/// only 8 slots, an unbounded budget is self-limiting in practice (at most 8
+/// distinct spans can ever be resident, however large). `large-cache-extended`
+/// (R13-7, task #277) raises the slot ceiling to 40 (8 base + 32 sidecar), so
+/// the SAME `None` default stops being self-limiting: a working set of 40
+/// distinct, individually-large spans can now retain roughly `40 / 8 = 5x`
+/// the committed RSS the base cache could ever hold, with no ceiling at all
+/// (Round 13 review finding, `docs/perf/R13_WAVE_SUMMARY.md`: "RSS-удержание
+/// ... hard budget отключён ... может временно увеличить retained committed
+/// memory примерно в 5× относительно базовых 8 слотов").
+///
+/// ## The chosen policy
+///
+/// `large-cache-extended` gets its OWN finite default —
+/// `5 * DEFAULT_HEADROOM_BYTES` (5 × 256 MiB = 1280 MiB) — applied only when
+/// `budget_bytes` was never called on this config. The `5x` multiplier
+/// mirrors the `40 / 8 = 5x` slot-count ratio the extension itself
+/// introduces: the base cache's informal "self-limiting via slot count"
+/// bound scales by the same factor the slot count did, so a caller who never
+/// touches `budget_bytes` gets a ceiling proportionally consistent with the
+/// base cache's own (slot-count-derived) informal bound, not a brand new
+/// unbounded regime. `DEFAULT_HEADROOM_BYTES` (not some unrelated constant)
+/// is the scaling base because it is already this module's one canonical
+/// "how much cached Large RSS is normal" constant (the decay anti-thrashing
+/// floor) — reusing it keeps the two "how much is normal" answers
+/// (headroom's floor, this budget's ceiling) in a fixed, documented ratio
+/// instead of two independently-chosen magic numbers.
+///
+/// An explicit `.budget_bytes(n)` call — including `.budget_bytes(0)` (cache
+/// disabled) or a value larger than this default — always wins; this
+/// constant is a FALLBACK for the unset case only, exactly like every other
+/// `resolved_*` default in this module. Explicitly calling
+/// `.budget_bytes(usize::MAX)` (or any value `>= DEFAULT_EXTENDED_BUDGET_BYTES`
+/// that the caller wants larger) recovers the pre-R14-5 unbounded-by-default
+/// behaviour for callers who have measured their own workload and want it.
+///
+/// Base-cache behaviour (feature `large-cache-extended` OFF) is completely
+/// unaffected — `resolved_budget_bytes` only branches on this constant when
+/// the feature is compiled in, so the base 8-slot cache's `None`-means-
+/// unbounded default is byte-for-byte unchanged (the feature-OFF build in
+/// `tests/large_cache_extended_off_no_overflow_capacity.rs` continues to
+/// pass with the old unbounded-by-default behaviour; the ON-build coverage
+/// for THIS constant lives in
+/// `tests/large_cache_extended_budget_before_materialization.rs`).
+#[cfg(feature = "large-cache-extended")]
+pub(crate) const DEFAULT_EXTENDED_BUDGET_BYTES: usize = 5 * DEFAULT_HEADROOM_BYTES;
+
 // ── The config type ───────────────────────────────────────────────────────────
 
 /// Compile-time-buildable configuration for the per-shard large-segment
@@ -265,9 +318,30 @@ impl LargeCacheConfig {
     // ── Resolution helpers (pub(crate)) ──────────────────────────────────────
 
     /// Resolve the byte budget. `None` = unbounded (no admission limit).
+    ///
+    /// R14-5 (task #290): when `large-cache-extended` is compiled in AND the
+    /// caller never called [`budget_bytes`](Self::budget_bytes) (the stored
+    /// field is `None`), this resolves to
+    /// [`DEFAULT_EXTENDED_BUDGET_BYTES`] rather than `None` — see that
+    /// constant's doc for the full rationale (RSS-retention hazard the
+    /// extension introduces once slot count alone stops being a meaningful
+    /// bound). An explicit `.budget_bytes(n)` call (any `n`, including `0`)
+    /// always wins over this fallback, exactly like every other resolver in
+    /// this module. Base-cache builds (feature OFF) are unaffected: the
+    /// stored `None` resolves to `None` exactly as before this task.
     #[must_use]
     pub(crate) const fn resolved_budget_bytes(&self) -> Option<usize> {
-        self.budget_bytes
+        #[cfg(feature = "large-cache-extended")]
+        {
+            match self.budget_bytes {
+                Some(v) => Some(v),
+                None => Some(DEFAULT_EXTENDED_BUDGET_BYTES),
+            }
+        }
+        #[cfg(not(feature = "large-cache-extended"))]
+        {
+            self.budget_bytes
+        }
     }
 
     /// Resolve the headroom floor in bytes. Falls back to the default (256 MiB)

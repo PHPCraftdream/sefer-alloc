@@ -1,0 +1,15 @@
+=== R14-5 large-cache-extended RSS/commit retention judge ===
+feature large-cache-extended: OFF (8 slots only)
+N_DISTINCT: 40 distinct Large sizes (adversarial, long-holding)
+
+mode: default-config
+baseline (before any Large alloc):  RSS=2984 KiB  commit=636 KiB
+resolved large-cache budget: None
+requesting 40 distinct sizes, 3280.0 MiB raw total request size
+post-fill (40 deposits, all freed to cache): RSS=3096 KiB  commit=1235952 KiB
+  delta vs baseline: RSS +112 KiB  commit +1235316 KiB
+  large_cache_used bytes (accounting): 1258291200 (1200.0 MiB)
+  base slot occupancy (8):     8
+post-hold (no further Large-path activity): RSS=3096 KiB  commit=1235952 KiB
+
+SUMMARY: retained commit growth over baseline = 1235316 KiB (1206.4 MiB) for 8 resident distinct sizes

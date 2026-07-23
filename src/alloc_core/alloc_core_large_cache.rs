@@ -124,16 +124,73 @@ impl AllocCore {
         }
     }
 
+    /// R14-5 (task #290, review finding @fm P3): can a deposit of
+    /// `usable_size` bytes EVER be admitted under the current byte-budget,
+    /// no matter how much the cache is evicted first? Returns `true` only
+    /// when the budget is `Some(b)` and `usable_size > b` — i.e. even an
+    /// entirely empty cache (`large_cache_used_bytes == 0`, the best case
+    /// eviction could ever reach) could not fit this one deposit alone.
+    /// `false` whenever the budget is `None` (unbounded) or `usable_size` is
+    /// small enough to fit after enough eviction.
+    ///
+    /// This is a CHEAP, PURELY ARITHMETIC pre-check (no eviction, no sidecar
+    /// touch) that both large-dealloc admission call sites
+    /// (`alloc_core.rs`'s Large `dealloc` branch,
+    /// `alloc_core_large.rs::reclaim_large_segment`) now run BEFORE calling
+    /// [`large_cache_find_free_slot`](Self::large_cache_find_free_slot) at
+    /// all. Rationale: without this pre-check, a deposit the budget will
+    /// unconditionally reject (e.g. `budget_bytes(0)`, or a single span
+    /// larger than the whole configured budget) still walked into
+    /// `large_cache_find_free_slot`'s base-8 scan and — once the base was
+    /// full — MATERIALISED the extension sidecar (a real
+    /// `leak_zeroed_pages` OS reservation, paying for a whole page) purely
+    /// to discover a free slot for a deposit that was never going to be
+    /// admitted regardless of slot availability. Under a workload that
+    /// hammers this admission-reject path repeatedly (e.g. a persistently
+    /// tight/zero budget with churn well above `LARGE_CACHE_SLOTS`), the old
+    /// order paid that reservation cost on every such rejected deposit —
+    /// see [`large_cache_find_free_slot`](Self::large_cache_find_free_slot)'s
+    /// own doc for why materialisation is not free even beyond the first
+    /// paid call, if the reservation had actually failed (a persistent OOM
+    /// on the sidecar page).
+    ///
+    /// Not a FULL feasibility check — it only proves the single-deposit
+    /// unconditional-rejection case (budget smaller than one span). It does
+    /// NOT attempt to predict the eviction loop's eventual outcome when the
+    /// budget is merely tight but not impossible (that still runs the
+    /// existing evict-and-retry loop, unchanged).
+    #[cfg(feature = "alloc-decommit")]
+    #[inline]
+    pub(super) fn large_cache_deposit_budget_infeasible(&self, usable_size: usize) -> bool {
+        matches!(self.large_cache_budget_bytes, Some(budget) if usable_size > budget)
+    }
+
     /// Find a free slot to admit a new deposit into, in the COMBINED index
     /// space: scans the base 8 slots first (no materialisation cost), then —
     /// only if `large-cache-extended` is on and the base is full — lazily
-    /// materialises the extension sidecar (first call only; a no-op OS
-    /// reservation check thereafter) and scans it. Returns `None` if every
-    /// slot in the currently-available space (base, or base+extension once
-    /// materialised) is occupied, OR if extension materialisation itself hit
-    /// OOM (sidecar OOM is not allocator OOM — the caller's existing
-    /// eviction-and-retry loop simply keeps operating within the base 8
-    /// slots, exactly as if this feature did not exist).
+    /// materialises the extension sidecar and scans it. Returns `None` if
+    /// every slot in the currently-available space (base, or base+extension
+    /// once materialised) is occupied, OR if extension materialisation
+    /// itself hit OOM (sidecar OOM is not allocator OOM — the caller's
+    /// existing eviction-and-retry loop simply keeps operating within the
+    /// base 8 slots, exactly as if this feature did not exist).
+    ///
+    /// CORRECTNESS NOTE (R14-5, task #290, fixing a stale claim from an
+    /// earlier revision of this doc comment): materialisation here is **NOT**
+    /// idempotently free after the first call. `self.large_cache_extension`
+    /// is only set non-null on a *successful* reservation
+    /// (`reserve_large_cache_extension()?`); under a PERSISTENT OOM (the
+    /// sidecar's one-page `leak_zeroed_pages` reservation keeps failing —
+    /// e.g. the process is genuinely address-space-starved) the pointer
+    /// stays null forever, so **every** call that reaches this branch with
+    /// the base 8 full pays a full OS reservation ATTEMPT again, not a cheap
+    /// no-op null check. Callers on a hot retry loop (the admission loop in
+    /// `alloc_core.rs`'s Large-dealloc branch / `alloc_core_large.rs`'s
+    /// `reclaim_large_segment`) must not call this when the deposit is
+    /// already known to be budget-rejected regardless of slot availability —
+    /// see [`AllocCore::large_cache_deposit_budget_infeasible`], which those
+    /// callers consult FIRST specifically to avoid paying this reservation
+    /// attempt for a deposit that can never be admitted.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
@@ -532,6 +589,19 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_set_large_cache_budget(&mut self, budget: Option<usize>) {
         self.large_cache_budget_bytes = budget;
+    }
+
+    /// TEST-ONLY (R14-5, task #290): read back the CURRENTLY RESOLVED
+    /// byte-budget (`None` = unbounded). Lets a test verify what
+    /// `AllocCore::new()`/`new_with_config` actually resolved a config to —
+    /// in particular, the `large-cache-extended` feature's own finite
+    /// default (`DEFAULT_EXTENDED_BUDGET_BYTES`,
+    /// `large_cache_config.rs`) — without needing to reconstruct the
+    /// resolution logic in the test itself.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    pub fn dbg_large_cache_budget(&self) -> Option<usize> {
+        self.large_cache_budget_bytes
     }
 
     // ── Phase 3 test seams ────────────────────────────────────────────────────

@@ -1344,23 +1344,37 @@ impl AllocCore {
                     // `large-cache-extended` sidecar once the base is full) —
                     // the byte-budget check is UNCHANGED and remains the
                     // primary control regardless of how many slots exist.
+                    //
+                    // R14-5 (task #290, review finding @fm P3): budget
+                    // feasibility is checked BEFORE ever calling
+                    // `large_cache_find_free_slot` — a deposit this large can
+                    // NEVER fit under the configured budget (even against a
+                    // fully-evicted cache), so there is no point paying for a
+                    // sidecar materialisation (a real OS page reservation) to
+                    // go looking for a free slot the budget will reject
+                    // regardless. See `large_cache_deposit_budget_infeasible`'s
+                    // doc for the exact rationale and its scope (this is a
+                    // single-deposit-vs-budget check, not a full feasibility
+                    // predictor for the eviction loop below).
                     let mut admitted: Option<usize> = None;
-                    loop {
-                        let free_slot = self.large_cache_find_free_slot();
-                        let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
-                            self.large_cache_used_bytes + usable_size <= budget
-                        });
-                        if let Some(idx) = free_slot {
-                            if budget_ok {
-                                admitted = Some(idx);
+                    if !self.large_cache_deposit_budget_infeasible(usable_size) {
+                        loop {
+                            let free_slot = self.large_cache_find_free_slot();
+                            let budget_ok = self.large_cache_budget_bytes.is_none_or(|budget| {
+                                self.large_cache_used_bytes + usable_size <= budget
+                            });
+                            if let Some(idx) = free_slot {
+                                if budget_ok {
+                                    admitted = Some(idx);
+                                    break;
+                                }
+                            }
+                            // Either no free slot, or budget would overflow → evict
+                            // the oldest entry and retry. If the cache is already
+                            // empty there is nothing more we can do.
+                            if !self.evict_one_oldest() {
                                 break;
                             }
-                        }
-                        // Either no free slot, or budget would overflow → evict
-                        // the oldest entry and retry. If the cache is already
-                        // empty there is nothing more we can do.
-                        if !self.evict_one_oldest() {
-                            break;
                         }
                     }
 
