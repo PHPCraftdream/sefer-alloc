@@ -34,9 +34,13 @@ grep-visible seam.
   to bootstrap cost, not the scan itself (no material wall-clock delta); the
   real, confirmed finding is sidecar footprint scaling exactly ×4 as expected
   (`PerClassDirty` 6,272→25,088 B raw; `SegmentDirectory` ~55.1→~220.5 KiB
-  under `numa-aware`) — both `class-aware-dirty` and `alloc-segment-directory`
-  are opt-in, not in `production`, so this is a bounded cost for users who
-  already chose those features. New `AllocCore::dbg_words_per_class()`
+  under `numa-aware`) — **correction (found by Round 15's own review, not
+  caught before this CHANGELOG was first written): both `class-aware-dirty`
+  and `alloc-segment-directory` ARE in `production`** (`Cargo.toml`, since
+  R13-9 and R8-3 respectively), so `PerClassDirty`'s ×4 footprint growth is a
+  real cost every `production` build now pays, not a bounded opt-in cost.
+  Only the larger `SegmentDirectory` NUMA figure above is gated behind the
+  still-opt-in `numa-aware`. New `AllocCore::dbg_words_per_class()`
   doc-hidden test-only accessor added (mirrors the existing
   `dbg_max_segments()` pattern) so `examples/r13_9_class_aware_dirty_sidecar_rss.rs`
   reads the real constant instead of a hardcoded `16` that had gone silently
