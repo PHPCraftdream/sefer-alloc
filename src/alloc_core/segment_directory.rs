@@ -23,14 +23,14 @@
 //! ```text
 //! class_nonempty_by_node: [[[u64; WORDS_PER_CLASS]; SMALL_CLASS_COUNT]; NODE_BITMAPS]
 //!
-//! WORDS_PER_CLASS = MAX_SEGMENTS / 64 = 16
+//! WORDS_PER_CLASS = MAX_SEGMENTS / 64 = 64
 //! SMALL_CLASS_COUNT = 49 (default) or 55 (medium-classes)
 //! NODE_BITMAPS = 1 (non-NUMA) or MAX_NODES + 1 (numa-aware)
 //!
-//! Total (non-NUMA): 1 * 49 * 16 * 8 = 6,272 B = 6.1 KiB  (default)
-//!                    1 * 55 * 16 * 8 = 7,040 B = 6.9 KiB  (medium-classes)
+//! Total (non-NUMA): 1 * 49 * 64 * 8 = 25,088 B = 24.5 KiB (default)
+//!                    1 * 55 * 64 * 8 = 28,160 B = 27.5 KiB (medium-classes)
 //! Total (numa-aware, MAX_NODES=8):
-//!                    9 * 49 * 16 * 8 = 56,448 B = 55.1 KiB (default)
+//!                    9 * 49 * 64 * 8 = 225,792 B = 220.5 KiB (default)
 //! ```
 //!
 //! ### R11-6 NUMA node-indexed variant
@@ -168,7 +168,7 @@ const _: () = assert!(
 );
 
 /// Number of `u64` words per class in the `class_nonempty` bitmap.
-/// `MAX_SEGMENTS = 1024`, so 1024 / 64 = 16 words cover the full slot space.
+/// `MAX_SEGMENTS = 4096`, so 4096 / 64 = 64 words cover the full slot space.
 pub(crate) const WORDS_PER_CLASS: usize = MAX_SEGMENTS / 64;
 
 // Compile-time check: MAX_SEGMENTS must be a multiple of 64 for the bitmap

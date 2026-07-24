@@ -206,8 +206,8 @@ pub(crate) struct HeapSlotRemote {
     #[cfg(feature = "alloc-xthread")]
     pub(crate) thread_free: AtomicPtr<u8>,
 
-    /// R7-A4: per-slot dirty-segment bitmap — 16 `AtomicU64` words covering
-    /// all 1024 segment-table slot indices (`MAX_SEGMENTS / 64 = 16`).
+    /// R7-A4: per-slot dirty-segment bitmap — 64 `AtomicU64` words covering
+    /// all 4096 segment-table slot indices (`MAX_SEGMENTS / 64 = 64`).
     ///
     /// A cross-thread freer (producer) sets bit `segment_id % 64` of word
     /// `segment_id / 64` via `fetch_or(bit, Release)` AFTER a successful
@@ -247,7 +247,7 @@ pub(crate) struct HeapSlotRemote {
     /// materialised per-(segment, class) dirty-bit sidecar — see
     /// `dirty_by_class`'s module doc for the full design. `null` (UNINIT)
     /// until this heap's first class-routed cross-thread free; a heap that
-    /// never receives one never pays the ~6.1 KiB reservation.
+    /// never receives one never pays the ~24.5 KiB reservation.
     ///
     /// Additive over [`dirty_segments`](Self::dirty_segments): the existing
     /// per-segment bitmap is set unconditionally on every push regardless of
@@ -341,7 +341,7 @@ pub(crate) struct HeapSlotRemote {
 }
 
 /// R7-A4: number of `AtomicU64` words in the per-slot dirty-segment bitmap.
-/// `MAX_SEGMENTS / 64 = 16`. Mirrors `segment_directory::WORDS_PER_CLASS` but
+/// `MAX_SEGMENTS / 64 = 64`. Mirrors `segment_directory::WORDS_PER_CLASS` but
 /// defined here so this module does not depend on the `alloc-segment-directory`-
 /// gated `segment_directory` module at the type level (the array size must be
 /// available whenever both `alloc-xthread` and `alloc-segment-directory` are

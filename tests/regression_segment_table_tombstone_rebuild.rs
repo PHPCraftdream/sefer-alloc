@@ -85,7 +85,7 @@ fn backshift_no_latency_spike_at_threshold_boundary() {
     // `HASH_CAPACITY = 2048`; the W2 rebuild threshold was `HASH_CAPACITY / 4`
     // = 512, firing when tombstones EXCEEDED 512 (i.e. on the 513th). `W` must
     // exceed 512 so a single wave's drain sweeps well past the old trigger.
-    const W: usize = 600; // > 512 (old threshold), < MAX_SEGMENTS (1024)
+    const W: usize = 600; // > 512 (old threshold), < MAX_SEGMENTS (4096)
     const WAVES: usize = 3;
 
     // Generous bound: the slowest dealloc must not be more than this many × the

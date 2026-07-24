@@ -2098,7 +2098,7 @@ impl Drop for AllocCore {
         // must NOT be freed again. Only non-NULL (live) segments are collected
         // and freed here.
         //
-        // The array is bounded by MAX_SEGMENTS (1024 × 16 B = 16 KiB stack —
+        // The array is bounded by MAX_SEGMENTS (4096 × 16 B = 64 KiB stack —
         // fine; a deeply-nested drop chain would be the only concern, and
         // AllocCore is a top-level owner).
         let mut to_free: [(*mut u8, usize); super::segment_table::MAX_SEGMENTS] =

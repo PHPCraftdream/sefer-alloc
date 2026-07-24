@@ -34,9 +34,9 @@
 //! ## Sizing and lazy materialisation
 //!
 //! `SMALL_CLASS_COUNT * WORDS_PER_CLASS` `AtomicU64` words — with the default
-//! 49-class table and `WORDS_PER_CLASS = 16` (`MAX_SEGMENTS / 64`), that is
-//! 784 words = 6,272 bytes = 6.1 KiB per materialised heap (58 classes under
-//! `medium-classes`: 7,040 bytes). Reserved via the SAME
+//! 49-class table and `WORDS_PER_CLASS = 64` (`MAX_SEGMENTS / 64`), that is
+//! 3,136 words = 25,088 bytes = 24.5 KiB per materialised heap (58 classes under
+//! `medium-classes`: 29,696 bytes). Reserved via the SAME
 //! `aligned_vmem::leak_zeroed_pages` M5-clean direct-VM-reservation pattern
 //! `segment_directory`'s owner-only sidecar and `registry::heap_overflow`'s
 //! `HeapOverflowSidecar` both use, but published through
@@ -69,7 +69,7 @@
 //!
 //! One `RacyPtrCell` per slot (`MAX_HEAPS = 4096` slots) rather than an eager
 //! inline array: an eager `[AtomicU64; SMALL_CLASS_COUNT * WORDS_PER_CLASS]`
-//! in EVERY slot would add ~6.1 KiB * 4096 = ~25 MiB to the registry's fixed
+//! in EVERY slot would add ~24.5 KiB * 4096 = ~98 MiB to the registry's fixed
 //! address-space layout (committed RSS only for touched pages, per this
 //! crate's lazy-commit discipline, but still a real one-time layout tax on
 //! every build with the feature on). The lazy sidecar costs nothing until a
