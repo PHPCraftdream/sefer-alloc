@@ -436,6 +436,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/alloc_core/alloc_core_small_reclaim.rs`](src/alloc_core/alloc_core_small_reclaim.rs) | 3 | Internal `gen_at` call-site blocks (dealloc_routing + hardened `pack_entry_hardened`) + `dbg_push_to_ring` declaration |
 | [`src/alloc_core/bootstrap.rs`](src/alloc_core/bootstrap.rs) | 1 | Internal call-site block for `init_gen_table_in_place` (primordial carve, hardened path) |
 | [`src/alloc_core/remote_free_ring.rs`](src/alloc_core/remote_free_ring.rs) | 2 | `over_test_buffer` / `init_test_buffer` — raw R/W over a caller buffer |
+| [`src/alloc_core/segment_directory.rs`](src/alloc_core/segment_directory.rs) | 2 | `init_node_ids_raw` (`numa-aware` and non-`numa-aware` variants) — `unsafe fn` boundary; writes the `node_ids` repair through `core::ptr::addr_of_mut!` without ever materialising a `&mut SegmentDirectory` over the not-yet-fully-valid sidecar (R17-1, task #318 — the `reserve_zeroed_with` fixup closure) |
 | [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
 | [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 6 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` / `alloc_batch` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path) |
 | [`src/registry/heap_core_dealloc_batch.rs`](src/registry/heap_core_dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
@@ -445,7 +446,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **20** tier-1 module-level seams (13 in
-`src/`, 7 in `crates/`) plus **56** tier-2 item-scoped allows across **16**
+`src/`, 7 in `crates/`) plus **58** tier-2 item-scoped allows across **17**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

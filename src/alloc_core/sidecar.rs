@@ -75,17 +75,24 @@
 // freshly-reserved, not-yet-observed page(s) [`reserve`] gets from
 // `aligned_vmem::leak_zeroed_pages` — non-null, page-aligned, valid for
 // `size_of::<T>()` bytes, and not yet aliased by any other reference, so a
-// plain overwrite is sound; (2) materialising a `&mut T` over the freshly
-// OS-zeroed (not yet fully-valid) span in [`reserve_zeroed_with`] and handing
-// it to the caller-supplied `fixup` BEFORE `fixup` has run — sound only
-// because the caller's `# Safety` contract attests every field `fixup`
-// leaves untouched is already valid at all-zero, an attestation this
-// function cannot check itself; and (3) dereferencing the resulting
+// plain overwrite is sound; (2) handing the caller-supplied `fixup` closure
+// in [`reserve_zeroed_with`] a raw `*mut T` over the freshly OS-zeroed (not
+// yet fully-valid) span — NEVER a `&mut T` (R17-1, task #318: a `&mut T`
+// requires `T` be fully valid at the moment the reference is created, which
+// does not hold here for a generic `T` before `fixup` has run; the raw
+// pointer sidesteps that requirement, and `fixup` itself is contractually
+// required to repair the not-yet-valid fields through raw-pointer writes
+// only, never by materialising a reference over the not-yet-valid value) —
+// sound only because the caller's `# Safety` contract attests every field
+// `fixup` leaves untouched is already valid at all-zero and that `fixup`
+// upholds the same no-reference-over-invalid-`T` discipline, an attestation
+// this function cannot check itself; and (3) dereferencing the resulting
 // `*mut T` / `*const T` as `&'static T` / `&'static mut T` in [`deref`]/
 // [`deref_mut`] — sound because the pointer is only ever produced by
 // [`reserve`] or [`reserve_zeroed_with`] (thus always pointing at a value
-// brought to a fully valid `T` state by this same module) and the caller's
-// owner-only single-writer discipline (documented per call site; mirrors
+// brought to a fully valid `T` state by this same module, or by `fixup`
+// under that same module's contract) and the caller's owner-only
+// single-writer discipline (documented per call site; mirrors
 // `AllocCore`'s "neither `Send` nor `Sync`" invariant) rules out any
 // concurrent aliasing writer/reader.
 #![allow(unsafe_code)]
@@ -155,8 +162,8 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 }
 
 /// Reserve a fresh OS-backed span, leave it OS-zeroed, then run `fixup` on it
-/// **in place** (`&mut T`, no stack copy of `T`) to repair any field(s) for
-/// which all-zero bytes are NOT already a valid `T` state, returning the
+/// **in place** (a raw `*mut T`, no stack copy of `T`) to repair any field(s)
+/// for which all-zero bytes are NOT already a valid `T` state, returning the
 /// resulting `*mut T`.
 ///
 /// This is [`reserve`]'s sibling for a sidecar `T` where:
@@ -174,24 +181,34 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 ///   0" — see that field's own doc comment) and need an explicit, narrow
 ///   in-place repair.
 ///
-/// `fixup` receives `&mut T` over the freshly OS-zeroed (and, under `miri`,
-/// explicitly-zeroed — see `aligned_vmem::leak_zeroed_pages`) span and must
-/// bring every field that is NOT valid at all-zero to a valid state. Fields
-/// `fixup` does not touch are left at all-zero, which the caller of this
-/// function attests (by choosing this constructor over [`reserve`]) is
-/// already a valid `T` state for those fields.
+/// `fixup` receives a raw `*mut T` over the freshly OS-zeroed (and, under
+/// `miri`, explicitly-zeroed — see `aligned_vmem::leak_zeroed_pages`) span
+/// and must bring every field that is NOT valid at all-zero to a valid
+/// state, writing through raw-pointer operations (e.g.
+/// `core::ptr::addr_of_mut!((*p).field).write(...)`) WITHOUT EVER
+/// materialising a `&`/`&mut T` (or a `&`/`&mut` to any field of the
+/// not-yet-fully-valid `T`) — see the `# Safety` section below for why (R17-1,
+/// task #318). Fields `fixup` does not touch are left at all-zero, which the
+/// caller of this function attests (by choosing this constructor over
+/// [`reserve`]) is already a valid `T` state for those fields.
 ///
 /// Returns `None` only on OOM, exactly like [`reserve`].
 ///
-/// `unsafe fn`, not a safe function with a prose-only caller contract: the
-/// `&mut T` handed to `fixup` below is materialised over raw OS-zeroed bytes
-/// BEFORE `fixup` has run, i.e. before every field of `T` is known to hold a
-/// valid value — exactly the class of gap this module exists to close (see
-/// the module doc's R14-1 rationale). A safe `fn` here would let ordinary
-/// safe code construct a `&mut T` over not-yet-fully-valid memory with no
-/// `unsafe` token anywhere; requiring `unsafe` at the call site forces the
-/// caller to locally justify that every field `fixup` leaves untouched is
-/// valid at all-zero.
+/// `unsafe fn`, not a safe function with a prose-only caller contract: `T` is
+/// generic and not every `T` is valid at all-zero (e.g. an enum without a
+/// zero discriminant, `&U`, `NonNull<U>`, a function pointer, a `bool` byte
+/// other than 0/1) — before `fixup` has run, the freshly OS-zeroed span may
+/// not hold a valid `T` at all. Rust requires a `&mut T` be fully valid at
+/// the instant the reference is created, so materialising one over those
+/// bytes would itself be immediate UB regardless of what `fixup` does
+/// afterward — this is why `fixup` is handed a raw `*mut T` rather than a
+/// `&mut T` (R17-1, task #318: the pre-fix implementation DID materialise a
+/// `&mut T` here, which was unsound for a general `T` even though the one
+/// concrete `T` used in this crate today, `SegmentDirectory`, happens to be
+/// valid at all-zero in every field `fixup` does not touch). Requiring
+/// `unsafe` at the call site forces the caller to locally justify both that
+/// every field `fixup` leaves untouched is valid at all-zero AND that
+/// `fixup` itself never materialises a reference over the not-yet-valid `T`.
 ///
 /// # Safety
 ///
@@ -200,11 +217,17 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 ///   all-zero means "every bit clear" — a real, intentional state, not a
 ///   coincidence). `fixup` itself is trusted to repair the remaining
 ///   field(s) to a valid state before returning.
+/// - `fixup` must repair those field(s) using ONLY raw-pointer writes (e.g.
+///   `core::ptr::addr_of_mut!((*p).field).write(...)`, or an equivalent
+///   `write`/`write_unaligned` through a raw pointer derived without going
+///   through a reference) — it must NOT construct a `&T`/`&mut T` over `*p`
+///   or over any field of `*p`, whether directly or via an intermediate
+///   reference, before every field of `*p` is known to hold a valid value.
 /// - The returned pointer must be treated exactly like one returned by
 ///   [`reserve`]: stored once, then accessed only through [`deref`]/
 ///   [`deref_mut`] under the same owner-only single-writer discipline.
 #[must_use]
-pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(&mut T)) -> Option<*mut T> {
+pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(*mut T)) -> Option<*mut T> {
     // Formalises the doc comment above: `leak_zeroed_pages` only guarantees
     // `PAGE`-alignment, so any `T` whose `align_of` exceeds one page would
     // silently receive an under-aligned pointer. Fails at monomorphization
@@ -212,15 +235,15 @@ pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(&mut T)) -> Optio
     const { assert!(core::mem::align_of::<T>() <= aligned_vmem::PAGE) };
     let base = aligned_vmem::leak_zeroed_pages(sidecar_size::<T>())?;
     let ptr = base.as_ptr().cast::<T>();
-    // SAFETY: `ptr` is non-null, `PAGE`-aligned, and valid for
-    // `size_of::<T>()` bytes (same construction as `reserve` above). The
-    // OS-zeroed bytes are the caller-attested valid initial state for every
-    // field `fixup` does not touch (that attestation is this function's
-    // documented `# Safety` contract, upheld by every call site in this
-    // crate — see the module doc). `&mut *ptr` is sound: freshly reserved,
-    // not yet observed by any other reference, so no aliasing.
-    let value: &mut T = unsafe { &mut *ptr };
-    fixup(value);
+    // No `unsafe` block needed here: `ptr` is handed to `fixup` as a raw
+    // pointer, never dereferenced by this function itself. `ptr` is
+    // non-null, `PAGE`-aligned, and valid for `size_of::<T>()` bytes (same
+    // construction as `reserve` above) — freshly reserved, not yet observed
+    // by any other reference. The caller's `# Safety` contract (this
+    // function's own docs) requires `fixup` to bring every not-valid-at-zero
+    // field to a valid state using raw-pointer writes only, never by
+    // materialising a reference over the not-yet-valid value.
+    fixup(ptr);
     Some(ptr)
 }
 

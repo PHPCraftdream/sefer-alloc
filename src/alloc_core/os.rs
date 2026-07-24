@@ -420,11 +420,14 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 /// real, intentional initial state), but under `numa-aware` the `node_ids`
 /// table is NOT (`0` is a real OS node id, so leaving it OS-zeroed would
 /// misread as "node 0 already claimed bucket 0" — see that field's own doc
-/// comment); the fixup closure runs the same `init_node_ids()` repair the
-/// pre-R14-9 code ran as a separate step right after reservation. Moving the
-/// whole (up to ~56 KiB under `numa-aware`) `SegmentDirectory` through a
-/// by-value [`sidecar::reserve`] call would risk an avoidable stack copy;
-/// the in-place fixup avoids it.
+/// comment); the fixup closure runs the same `init_node_ids_raw` repair the
+/// pre-R14-9 code ran as a separate step right after reservation — R17-1
+/// (task #318): raw-pointer variant, never materialising a `&mut
+/// SegmentDirectory` over the not-yet-fully-valid span (see
+/// `reserve_zeroed_with`'s `# Safety` contract). Moving the whole (up to
+/// ~56 KiB under `numa-aware`) `SegmentDirectory` through a by-value
+/// [`sidecar::reserve`] call would risk an avoidable stack copy; the
+/// in-place fixup avoids it.
 ///
 /// The caller stores the pointer in `AllocCore::directory_sidecar` and
 /// dereferences it via [`sidecar::deref`] / [`sidecar::deref_mut`].
@@ -432,20 +435,22 @@ pub(crate) fn decommit_pages(base: *mut u8, start_offset: usize, end_offset: usi
 pub(crate) fn reserve_directory_sidecar() -> Option<*mut super::segment_directory::SegmentDirectory>
 {
     // SAFETY: `SegmentDirectory`'s bitmap fields (`class_nonempty_by_node`,
-    // `active_bits_by_node`) are the only fields `init_node_ids` leaves
+    // `active_bits_by_node`) are the only fields `init_node_ids_raw` leaves
     // untouched, and both are valid at all-zero (every bit/count clear is a
     // real, intentional initial state — "no class non-empty yet" / "zero
     // active bits yet"). The one field that is NOT valid at all-zero
     // (`node_ids` under `numa-aware`: `0` is a real OS node id) is exactly
-    // the field `init_node_ids` repairs before this function's caller can
+    // the field `init_node_ids_raw` repairs, through raw-pointer writes only
+    // (never materialising a reference over the not-yet-valid value — see
+    // that function's own `# Safety` doc), before this function's caller can
     // observe the pointer. Same owner-only single-writer discipline as every
     // other sidecar in this module (the pointer is stored in
     // `AllocCore::directory_sidecar` and dereferenced only via
     // `sidecar::deref`/`deref_mut`).
     unsafe {
-        super::sidecar::reserve_zeroed_with(
-            super::segment_directory::SegmentDirectory::init_node_ids,
-        )
+        super::sidecar::reserve_zeroed_with(|p| {
+            super::segment_directory::SegmentDirectory::init_node_ids_raw(p);
+        })
     }
 }
 

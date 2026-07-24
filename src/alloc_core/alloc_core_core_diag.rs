@@ -1010,7 +1010,7 @@ impl AllocCore {
             // node-id -> bucket mapping is established ONCE, at first
             // materialisation (`maybe_materialize_directory`'s call to
             // `reserve_directory_sidecar`, whose `sidecar::reserve_zeroed_with`
-            // fixup runs `init_node_ids`, followed by `rebuild_from_table`),
+            // fixup runs `init_node_ids_raw`, followed by `rebuild_from_table`),
             // and is APPEND-ONLY from then on (new nodes may still claim free
             // slots via
             // `node_bucket_mut`, but existing claims never move) — exactly

@@ -336,7 +336,7 @@ pub(crate) struct SegmentDirectory {
     /// pages are NOT a valid initial state for this field (zero is a real
     /// node id), so [`SegmentDirectory`] cannot be used purely as a
     /// zero-initialized OS page for `numa-aware` builds — see
-    /// `init_node_ids`, called once right after the sidecar is reserved.
+    /// `init_node_ids_raw`, called once right after the sidecar is reserved.
     #[cfg(feature = "numa-aware")]
     pub(crate) node_ids: [u32; MAX_NODES],
 
@@ -368,13 +368,53 @@ impl SegmentDirectory {
     /// since node 0 IS the first node most hosts report, but not the
     /// documented "unclaimed" contract this table relies on). No-op under
     /// non-`numa-aware` (no registration table exists).
+    ///
+    /// R17-1 (task #318): raw-pointer variant of this repair, callable as the
+    /// `fixup` closure passed to `sidecar::reserve_zeroed_with` — that
+    /// function hands `fixup` a `*mut SegmentDirectory` over freshly
+    /// OS-zeroed, not-yet-fully-valid bytes, so the fixup MUST NOT
+    /// materialise a `&mut SegmentDirectory` before this repair has run (see
+    /// `reserve_zeroed_with`'s `# Safety` contract). Writes `node_ids`
+    /// through `core::ptr::addr_of_mut!` + a raw `write`, never through a
+    /// reference to `*p` or to any field of `*p`.
+    ///
+    /// `unsafe fn`: `p` must be non-null, properly aligned for
+    /// `SegmentDirectory`, and valid for writes to its `node_ids` field (the
+    /// same freshly-reserved-span contract `reserve_zeroed_with` establishes
+    /// for its `fixup` parameter); no reference to `*p` may be live for the
+    /// duration of this call.
+    #[cfg(feature = "numa-aware")]
+    #[allow(unsafe_code)]
     #[inline]
-    pub(crate) fn init_node_ids(&mut self) {
-        #[cfg(feature = "numa-aware")]
-        {
-            self.node_ids = [NODE_SLOT_EMPTY; MAX_NODES];
+    pub(crate) unsafe fn init_node_ids_raw(p: *mut Self) {
+        // SAFETY: caller contract (this function's own `# Safety` doc)
+        // establishes `p` non-null, properly aligned, and valid for writes to
+        // `node_ids`, with no live reference to `*p`. `addr_of_mut!` derives
+        // a raw pointer to the `node_ids` field WITHOUT creating an
+        // intermediate `&mut SegmentDirectory` or `&mut [u32; MAX_NODES]`
+        // over the not-yet-fully-valid value, and `write` overwrites those
+        // bytes outright (never reads or drops them), matching `node_ids`'s
+        // own not-valid-at-all-zero contract documented on the field.
+        unsafe {
+            core::ptr::addr_of_mut!((*p).node_ids).write([NODE_SLOT_EMPTY; MAX_NODES]);
         }
     }
+
+    /// Non-`numa-aware` counterpart of [`init_node_ids_raw`](Self::init_node_ids_raw):
+    /// no registration table exists, so the repair is a no-op — but the
+    /// function still exists (and is still `unsafe fn`, matching its sibling)
+    /// so `os::reserve_directory_sidecar` has exactly one call shape to make
+    /// regardless of `numa-aware`.
+    ///
+    /// # Safety
+    ///
+    /// No preconditions beyond `p` being non-null (never dereferenced) — kept
+    /// `unsafe fn` for signature parity with the `numa-aware` variant above,
+    /// which does have real preconditions.
+    #[cfg(not(feature = "numa-aware"))]
+    #[allow(unsafe_code)]
+    #[inline]
+    pub(crate) unsafe fn init_node_ids_raw(_p: *mut Self) {}
 
     /// R12-2: map a segment `node_id` to its directory bucket index,
     /// REGISTERING a new bucket for a never-before-seen node id if a free
@@ -688,11 +728,11 @@ impl SegmentDirectory {
     /// routes each set bit through `set_bit`, which places it in the correct
     /// per-node bucket (registering a new bucket via `node_bucket_mut` if
     /// this is the first time this node id is seen SINCE `node_ids` was last
-    /// initialised — see `init_node_ids`). Under non-`numa-aware`, all bits
-    /// go in bucket 0.
+    /// initialised — see `init_node_ids_raw`). Under non-`numa-aware`, all
+    /// bits go in bucket 0.
     ///
     /// R12-2: the CALLER decides whether `node_ids` should be reset before
-    /// this runs. First materialisation resets it (via `init_node_ids`,
+    /// this runs. First materialisation resets it (via `init_node_ids_raw`,
     /// called once in `maybe_materialize_directory`) because there is no
     /// prior mapping to preserve. A LATER rebuild of an already-materialised
     /// directory (`dbg_rebuild_directory`) must NOT reset `node_ids` — doing
