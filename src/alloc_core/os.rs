@@ -488,7 +488,7 @@ pub(crate) fn reserve_directory_sidecar() -> Option<*mut super::segment_director
 /// raw read with any live reference because it materialises none.
 #[cfg(feature = "alloc-segment-directory")]
 #[inline]
-pub(crate) fn read_directory_class_words(
+pub(crate) unsafe fn read_directory_class_words(
     p: *const super::segment_directory::SegmentDirectory,
     node_bucket: usize,
     class_idx: usize,
@@ -531,7 +531,7 @@ pub(crate) fn read_directory_class_words(
 /// raw read with any live reference because it materialises none.
 #[cfg(all(feature = "alloc-segment-directory", feature = "numa-aware"))]
 #[inline]
-pub(crate) fn read_directory_node_bucket(
+pub(crate) unsafe fn read_directory_node_bucket(
     p: *const super::segment_directory::SegmentDirectory,
     node_id: u32,
 ) -> usize {

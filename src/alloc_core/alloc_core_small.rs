@@ -477,6 +477,17 @@ impl AllocCore {
         allow(unused_variables)
     )]
     #[inline]
+    #[allow(unsafe_code)] // R17-2 (task #319): calls the `unsafe fn`s
+                          // `os::read_directory_node_bucket` and
+                          // `os::read_directory_class_words`. Sound: both call
+                          // sites are guarded by the
+                          // `!self.directory_sidecar.is_null()` check above (the
+                          // pointer is produced only by
+                          // `reserve_directory_sidecar`, which fully initialises
+                          // it), and `AllocCore`'s owner-only discipline (neither
+                          // `Send` nor `Sync`) rules out a concurrent writer. The
+                          // reads are by-value; no reference to the sidecar
+                          // escapes either call.
     fn find_segment_with_free_impl<
         #[cfg(feature = "alloc-xthread")] F: Fn(*mut u8, usize) -> bool,
     >(
@@ -618,7 +629,15 @@ impl AllocCore {
                 // — see `os::read_directory_node_bucket`'s doc comment,
                 // mirroring the R12-1 discipline `read_directory_class_words`
                 // established for the word-array reads below).
-                let my_bucket = os::read_directory_node_bucket(self.directory_sidecar, my_node);
+                // SAFETY (R17-2, task #319): `self.directory_sidecar` is
+                // non-null (guarded by the `!self.directory_sidecar.is_null()`
+                // check above) and was produced by
+                // `reserve_directory_sidecar`, which fully initialises it.
+                // `AllocCore`'s owner-only discipline (neither `Send` nor
+                // `Sync`) rules out a concurrent writer; the read is by-value,
+                // so no reference to the sidecar escapes.
+                let my_bucket =
+                    unsafe { os::read_directory_node_bucket(self.directory_sidecar, my_node) };
                 buckets[n] = my_bucket;
                 n += 1;
                 // Unknown bucket — local-equivalent (R10-6 §3.2 "treated as
@@ -654,7 +673,16 @@ impl AllocCore {
                 // `&SegmentDirectory` reference is retained across the
                 // `validate_directory_candidate` calls below (see the doc
                 // comment above and on `os::read_directory_class_words`).
-                let words = os::read_directory_class_words(self.directory_sidecar, nb, class_idx);
+                // SAFETY (R17-2, task #319): `self.directory_sidecar` is
+                // non-null (guarded by the
+                // `!self.directory_sidecar.is_null()` check above) and was
+                // produced by `reserve_directory_sidecar`, which fully
+                // initialises it. `AllocCore`'s owner-only discipline (neither
+                // `Send` nor `Sync`) rules out a concurrent writer; the read is
+                // by-value, so no reference to the sidecar escapes.
+                let words = unsafe {
+                    os::read_directory_class_words(self.directory_sidecar, nb, class_idx)
+                };
 
                 for (w, &word_val) in words.iter().enumerate() {
                     let mut bits = word_val;
