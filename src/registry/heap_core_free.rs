@@ -636,11 +636,15 @@ impl HeapCore {
                 //   (2.5) Small/medium->Large promotion (R14-4, task #289,
                 //       Stage 2 of `docs/perf/
                 //       R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`):
-                //       ONLY compiled under `medium-classes` (the promotion
-                //       only makes sense for medium-classified blocks — under
-                //       plain `production` without `medium-classes`, every
-                //       size in the medium range already routes Large, so
-                //       there is nothing to promote FROM). Diverts a GROWING
+                //       compiled under `medium-classes` PLUS the R15-3
+                //       headroom exclusion below (the promotion only makes
+                //       sense for medium-classified blocks in the first
+                //       place — under plain `production` without
+                //       `medium-classes`, every size in the medium range
+                //       already routes Large, so there is nothing to promote
+                //       FROM — see the R15-3 paragraph below for the second,
+                //       narrower condition that actually gates the `#[cfg]`
+                //       on this call site). Diverts a GROWING
                 //       realloc of a currently-Small/medium-classified block,
                 //       once `new_size` crosses `MEDIUM_REALLOC_PROMOTION_THRESHOLD`,
                 //       directly to a Large allocation instead of walking the

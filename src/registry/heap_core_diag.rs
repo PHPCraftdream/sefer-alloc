@@ -317,4 +317,33 @@ impl HeapCore {
         let coarse = self.core.dbg_force_coarse_dirty_bit_for(ptr);
         pushed && coarse
     }
+
+    /// R16-5 (task #315) TEST-ONLY: `true` iff `HeapCore::realloc`'s
+    /// Small/medium->Large promotion mechanism (`try_promote_to_large`,
+    /// `heap_core_free.rs`) is compiled into THIS build — i.e. the exact
+    /// `#[cfg]` predicate gating both `try_promote_to_large` and its call
+    /// site (R15-3, task #305) evaluates `true`.
+    ///
+    /// Exists so `tests/r14_4_promotion_move_leg_reduction.rs`'s own
+    /// hand-mirrored `HAS_PROMOTION` constant (which duplicates this exact
+    /// predicate as a manually-kept-in-sync `cfg!`-derived `const bool`,
+    /// since the real predicate is private to `src/`) can assert equality
+    /// against the REAL compiled-in state at test run time, rather than
+    /// silently drifting out of sync if a future change to the `src/`-side
+    /// predicate is not mirrored into the test file — the review finding
+    /// (P3-2, Round 15) this closes.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn dbg_promotion_compiled() -> bool {
+        cfg!(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(
+                    feature = "large-reserved-capacity",
+                    not(feature = "numa-aware")
+                )
+            )
+        ))
+    }
 }

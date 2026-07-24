@@ -81,6 +81,7 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 
+use sefer_alloc::registry::HeapCore;
 use sefer_alloc::SeferAlloc;
 
 const ALIGN: usize = 8;
@@ -97,6 +98,27 @@ const ALIGN: usize = 8;
 /// `medium-classes`.
 const HAS_PROMOTION: bool = !cfg!(feature = "exact-span-large")
     || (cfg!(feature = "large-reserved-capacity") && !cfg!(feature = "numa-aware"));
+
+/// R16-5 (task #315, review finding P3-2): `HAS_PROMOTION` above hand-mirrors
+/// the real `#[cfg]` predicate gating `try_promote_to_large` in
+/// `src/registry/heap_core_free.rs` — a future edit to that predicate
+/// without a matching edit here would silently desync the two, making this
+/// file's `HAS_PROMOTION`-gated tests wrong (skipping/asserting the wrong
+/// branch) without any compile error to catch it. This canary cross-checks
+/// the hand-mirrored copy against `HeapCore::dbg_promotion_compiled()` — a
+/// `#[doc(hidden)]` test-only accessor that evaluates the REAL predicate —
+/// so any future desync fails loudly here instead of silently.
+#[test]
+fn has_promotion_matches_real_compiled_predicate() {
+    assert_eq!(
+        HAS_PROMOTION,
+        HeapCore::dbg_promotion_compiled(),
+        "this file's hand-mirrored HAS_PROMOTION constant has drifted out of \
+         sync with the real #[cfg] predicate gating try_promote_to_large in \
+         src/registry/heap_core_free.rs — update HAS_PROMOTION's derivation \
+         to match"
+    );
+}
 
 /// The exact threshold `try_promote_to_large`'s call site checks
 /// (`MEDIUM_REALLOC_PROMOTION_THRESHOLD` in `src/registry/heap_core_free.rs`)
