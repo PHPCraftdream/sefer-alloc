@@ -331,6 +331,48 @@ jobs:
       - name: build (--features "alloc-global alloc-xthread fastbin alloc-decommit")
         if: ${{ !cancelled() }}
         run: cargo build --features "alloc-global alloc-xthread fastbin alloc-decommit"
+      # R16-1 (task #311, P1): R15-3 (task #305, commit 4de4ef2) added a
+      # compile-time `#[cfg]` gate around `try_promote_to_large`
+      # (`src/registry/heap_core_free.rs`) that splits the Small/medium ->
+      # Large realloc promotion (R14-4/task #289, the largest Round 14 perf
+      # item) into two MUTUALLY EXCLUSIVE compiled behaviours depending on
+      # whether the build has grow headroom past a promoted block's committed
+      # span. Neither behaviour was ever exercised per-PR: no row in this job
+      # (or anywhere else in the `test`/`test-*` jobs) turns on
+      # `medium-classes` at all, so `try_promote_to_large` and its call site
+      # never compiled, let alone ran, outside the weekly, test-free
+      # `cargo-hack --feature-powerset check` job. This is the same class of
+      # gap R13-12/#285 already caught once: a real behaviour gated behind a
+      # feature COMBINATION no CI row happens to build. Two rows below cover
+      # both sides of the R15-3 split:
+      #   - `production medium-classes` (no `exact-span-large`): SEGMENT
+      #     rounding gives headroom by construction, so `HAS_PROMOTION` is
+      #     `true` here — promotion compiles in and fires. Exercises
+      #     `second_grow_past_threshold_hits_opt_g_no_move` /
+      #     `repeated_post_promotion_grows_all_hit_opt_g` in
+      #     `tests/r14_4_promotion_move_leg_reduction.rs`, which previously
+      #     skipped their own bodies in EVERY CI configuration (their
+      #     `if !HAS_PROMOTION { return; }` guard always tripped).
+      #   - `production medium-classes exact-span-large` (no
+      #     `large-reserved-capacity`, no `numa-aware`): zero-headroom
+      #     combination, `HAS_PROMOTION` is `false` — R15-3's gate compiles
+      #     `try_promote_to_large` OUT entirely, and growth instead takes the
+      #     ordinary medium-ladder move-leg/OPT-F path. Exercises the R15-3
+      #     `promotion_off_*` tests in the same file plus
+      #     `tests/r14_4_promotion_feature_off_non_disturbance.rs`'s
+      #     `HAS_LARGE_GROW_HEADROOM`-gated assertions.
+      # `--test`-filtered (narrow), matching this job's established style for
+      # rows whose target is a specific mechanism rather than a broad
+      # feature-union smoke check (see the `page-map-diag` row above).
+      - name: test (--features "production medium-classes")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "production medium-classes" --test r14_4_promotion_move_leg_reduction --no-fail-fast
+      - name: test (--features "production medium-classes exact-span-large")
+        if: ${{ !cancelled() }}
+        run: >-
+          cargo test --features "production medium-classes exact-span-large" --no-fail-fast
+          --test r14_4_promotion_move_leg_reduction
+          --test r14_4_promotion_feature_off_non_disturbance
 
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
