@@ -5,12 +5,13 @@
 //! `realloc` (the two largest, most safety-critical methods in the former
 //! monolith, each carrying a full `# Safety` doc from R6-MS-1/2) plus their
 //! own-thread free bodies (`dealloc_own_thread`, `dealloc_own_thread_with_base`)
-//! and — under `medium-classes` — the R14-4 (task #289) Small/medium->Large
-//! realloc-promotion helper (`try_promote_to_large`), Stage 2 of the design in
-//! `docs/perf/R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`. Otherwise a
-//! pure code-movement sibling of `heap_core.rs`; no other behavior changed —
-//! the `# Safety` docs and `#[allow(unsafe_code)]` attributes moved
-//! byte-for-byte.
+//! and — under `medium-classes` MINUS the zero-headroom `exact-span-large`
+//! exclusion (R15-3, task #305; see `try_promote_to_large`'s own doc) — the
+//! R14-4 (task #289) Small/medium->Large realloc-promotion helper
+//! (`try_promote_to_large`), Stage 2 of the design in `docs/perf/
+//! R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`. Otherwise a pure
+//! code-movement sibling of `heap_core.rs`; no other behavior changed — the
+//! `# Safety` docs and `#[allow(unsafe_code)]` attributes moved byte-for-byte.
 
 use core::alloc::Layout;
 
@@ -38,7 +39,22 @@ use super::heap_core::HeapCore;
 /// (the doc's own threshold sweep: 128 KiB promotes too eagerly, paying RSS
 /// for objects that may never grow again; 384 KiB defers too long, leaving
 /// most of the ladder-walk cost on the table).
-#[cfg(feature = "medium-classes")]
+///
+/// R15-3 (task #305, review finding P2-3): gated by the SAME extended
+/// predicate as the promotion call site and `try_promote_to_large` below, not
+/// bare `medium-classes` — see the call site's doc comment for the full root
+/// cause. This constant is used ONLY inside that narrower-gated call site, so
+/// its own `#[cfg]` must match exactly or it becomes an "unused constant"
+/// warning (promoted to a hard error under `-D warnings`, per this crate's
+/// `npm run check`) in any build where `medium-classes` is on but the
+/// zero-headroom exclusion has switched promotion off.
+#[cfg(all(
+    feature = "medium-classes",
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
+))]
 const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
 
 impl HeapCore {
@@ -634,7 +650,56 @@ impl HeapCore {
                 //       Large-grow-in-span fast path for free. See
                 //       `try_promote_to_large`'s doc for the mechanism and why
                 //       no new bookkeeping is needed.
-                #[cfg(feature = "medium-classes")]
+                //
+                //       R15-3 (task #305, review finding P2-3): the `#[cfg]`
+                //       here is narrower than bare `medium-classes` — this is
+                //       a fix, not a widened feature gate for its own sake.
+                //       `exact-span-large` (opt-in, orthogonal) sizes a fresh
+                //       Large segment's committed span to EXACTLY the padded
+                //       request (see that feature's own doc comment), so a
+                //       promoted block under `exact-span-large` gets ZERO
+                //       spare headroom to grow into — the very next grow can
+                //       never fit OPT-G's in-place check and must always take
+                //       a move leg, even for small subsequent steps that
+                //       would have stayed in-place on the medium ladder via
+                //       OPT-F (small same-class carve) had promotion never
+                //       happened. That is a net pessimization of exactly this
+                //       combination, not a win — it already forced two
+                //       correctness-hiding test weakenings (task #302 and its
+                //       follow-up, `9b59990`) instead of a real fix. Plain
+                //       `production` (without `exact-span-large`) is
+                //       unaffected: Large there always rounds up to a whole
+                //       `SEGMENT` (4 MiB), so headroom exists automatically —
+                //       see `try_promote_to_large`'s own doc, "Pad-target
+                //       decision". `large-reserved-capacity` restores
+                //       headroom on top of `exact-span-large` UNLESS
+                //       `numa-aware` is also on, in which case
+                //       `alloc_core_large.rs`'s eager NUMA reservation arm
+                //       takes over with `reserved_capacity == usable` (no
+                //       slack) regardless of `large-reserved-capacity` — see
+                //       that feature's own doc comment in
+                //       `src/alloc_core/alloc_core_large.rs`. So promotion is
+                //       compiled in only when it can't structurally regress:
+                //       either there's no `exact-span-large` tightness to
+                //       begin with, or `large-reserved-capacity` is present
+                //       AND `numa-aware` is not overriding it. When this
+                //       `#[cfg]` compiles OUT (zero-headroom
+                //       `exact-span-large`), growth simply falls through to
+                //       the existing move leg below, which for
+                //       `new_size < SMALL_MAX` (1 MiB under `medium-classes`)
+                //       already does a single carve+copy up the medium
+                //       ladder — identical in shape to what plain
+                //       `production` without `medium-classes` has always
+                //       done; no functionality is lost, only a
+                //       counterproductive promotion in this one triple
+                //       combination.
+                #[cfg(all(
+                    feature = "medium-classes",
+                    any(
+                        not(feature = "exact-span-large"),
+                        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+                    )
+                ))]
                 if new_size > old_layout.size()
                     && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
                     && crate::alloc_core::size_classes::SizeClasses::class_for(
@@ -819,7 +884,29 @@ impl HeapCore {
     /// `reserved_capacity` mechanism), and that feature's benefit is
     /// orthogonal to this promotion — it does not need a second, independent
     /// padding layer stacked on top here.
-    #[cfg(feature = "medium-classes")]
+    ///
+    /// ## R15-3 (task #305, review finding P2-3): the narrower `#[cfg]`
+    ///
+    /// This function is gated the SAME extended predicate as its one call
+    /// site in `realloc` above, not bare `medium-classes` — see that call
+    /// site's doc comment for the full root-cause explanation (the
+    /// `exact-span-large` zero-headroom interaction that made every
+    /// post-promotion grow take a move leg instead of OPT-G, a
+    /// pessimization of exactly the `medium-classes` + `exact-span-large`
+    /// combination that had twice forced a test-assertion weakening instead
+    /// of a real fix, tasks #302 and its follow-up `9b59990`). Excluding
+    /// this function entirely from the zero-headroom build (rather than
+    /// keeping it compiled but simply never calling it) is deliberate:
+    /// dead-but-compiled code inviting a future call site to reintroduce the
+    /// same hazard is exactly the kind of drift a `#[cfg]` at the
+    /// definition, matching the call site 1:1, forecloses at compile time.
+    #[cfg(all(
+        feature = "medium-classes",
+        any(
+            not(feature = "exact-span-large"),
+            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+        )
+    ))]
     fn try_promote_to_large(
         &mut self,
         base: *mut u8,
