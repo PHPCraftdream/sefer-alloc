@@ -1,0 +1,17 @@
+commit,isolation_pair,features,cpu,os,rustc,metric,bench,before,after,delta,delta_pct
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,small_churn_16b,28576,90017,61441,215.0
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,aligned_churn_640b_a128,28512,89953,61441,215.5
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,large_alloc_free_cycle,23834,85274,61440,257.8
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,realloc_grow,513188,574656,61468,12.0
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,cold_alloc_free_256x16b,70674,132130,61456,87.0
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,cold_alloc_free_256x64b,70674,132130,61456,87.0
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,recycle_alloc_free_256x16b,118801,180302,61501,51.8
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,recycle_alloc_free_256x64b,118801,180302,61501,51.8
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,churn_256b,28576,90017,61441,215.0
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,churn_write_256b,28832,90273,61441,213.1
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,multiseg_cold_256k,46247,107785,61538,133.1
+7224670,b117257 vs ffb82bc,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,seg_cycle_decommit_256k,82297,144093,61796,75.1
+7224670,b117257 vs ffb82bc,class-aware-dirty,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,footprint_bytes_raw,PerClassDirty,6272,25088,18816,300.0
+7224670,b117257 vs ffb82bc,class-aware-dirty,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,footprint_bytes_page_rounded,PerClassDirty,8192,28672,20480,250.0
+7224670,b117257 vs ffb82bc,alloc-segment-directory,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,footprint_bytes_raw,SegmentDirectory_non_numa,6272,25088,18816,300.0
+7224670,b117257 vs ffb82bc,"alloc-segment-directory,numa-aware",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,footprint_bytes_raw,SegmentDirectory_numa_aware,56448,225792,169344,300.0

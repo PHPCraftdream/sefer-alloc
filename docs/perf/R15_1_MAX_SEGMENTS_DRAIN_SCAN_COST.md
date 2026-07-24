@@ -501,3 +501,11 @@ would take, and its honestly-estimated ceiling:
   (`src/alloc_core/alloc_core_core_diag.rs`) and the corresponding fix to
   `examples/r13_9_class_aware_dirty_sidecar_rss.rs` (§4.3). No production
   behavior changed — both are test/measurement-only surface.
+- `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST_summary.csv` (R16-3/task
+  #313, added retroactively per the R14-10/#295 machine-readable-summary
+  rule which was already in force at this report's own commit time) —
+  machine-readable companion to §2's per-bench Ir table and §4's footprint
+  tables: commit, isolation pair, feature set, CPU/OS/rustc, and the same
+  before/after/delta figures already in prose above, one grep/diff-able row
+  per bench/footprint comparison. Does not replace the raw logs above — it
+  summarizes this report's own numbers for cross-round tracking.
