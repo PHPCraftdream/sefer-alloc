@@ -33,7 +33,7 @@ every prior perf-gate doc in this series (R13-6, R13-9, R14-4/5/6).
 
 | # | Measurement | Before (`MAX_SEGMENTS`=1024) | After (`MAX_SEGMENTS`=4096) | Verdict |
 |---|---|---|---|---|
-| 1 | iai, 12 single-thread non-remote benches, Instructions (Ir) | see §2 | **+61,4xx Ir, uniformly, on EVERY bench** (+12% to +258% relative, because absolute Ir per bench varies) | **Real, deterministic, one-time bootstrap-scale cost — NOT drain-scan** (see §2.2 for why) |
+| 1 | iai, 12 single-thread non-remote benches, Instructions (Ir) | see §2 | **+61,4xx Ir, uniformly, on EVERY bench** (+12% to +258% relative, because absolute Ir per bench varies) | **Real, deterministic, one-time bootstrap-scale cost — NOT drain-scan** (see §2.2 for why). **Root cause pinned down by R16-4/task #314 (§2.3a): two `MAX_SEGMENTS`-scaled zero-fill loops in `bootstrap::primordial()`, compiled to `memset` calls.** |
 | 2 | Wall-clock drain-under-load, `r12_7_class_aware_dirty_wallclock`, N=1/2/4/8 producer classes (exercises `drain_dirty_segments` on every owner alloc) | see §3 | **No material delta** (N=1: +0.6%, N=4: −0.4%, N=8: within its own ±25% CI) | **The drain-scan itself is NOT the cost — confirms the task's literal hypothesis is FALSE at this N** |
 | 3 | Sidecar footprint, `PerClassDirty` (`class-aware-dirty`, per materialised heap) | 6,272 B raw / 8.0 KiB page-rounded | **25,088 B raw / 28.0 KiB page-rounded** | **Real ×4 growth, confirmed by both `size_of` arithmetic and process RSS deltas** |
 | 4 | Sidecar footprint, `SegmentDirectory` (`numa-aware`, computed, not directly RSS-measured this task) | ~55.1 KiB | **~220.5 KiB** | **Real ×4 growth (arithmetic only — see §4.2 for why this one was not RSS-measured directly)** |
@@ -139,13 +139,32 @@ Investigated and ruled out as the mechanism, in order:
    direct source read of both cfg arms; this WOULD be the mechanism on a
    native Windows iai run (not currently available in this environment;
    flagged as an open question in §7).
-2. **Explicit zero-init loop over the registry/hash/free-list arrays.**
+2. ~~**Explicit zero-init loop over the registry/hash/free-list arrays.**
    Ruled out: `SegmentTable::from_primordial` "performs no memory
    operation — it only stores the pointers" (its own doc comment,
    `segment_table.rs`); the arrays rely on OS-zeroed fresh pages
    (`mmap`/`VirtualAlloc`), same discipline the primordial's page-map/
    bin-table/bitmap init already documents and skips explicit zeroing for
-   under `cfg(not(miri))` (PERF-PASS-2, G5/C1, task #50).
+   under `cfg(not(miri))` (PERF-PASS-2, G5/C1, task #50).~~
+   **CORRECTED by R16-4 (task #314) — this bullet was WRONG.** The R15-1
+   reasoning above is true of `SegmentTable::from_primordial` itself (it
+   really does "perform no memory operation"), but that check stopped one
+   frame too early: it did not look at `from_primordial`'s CALLER,
+   `bootstrap::primordial()` (`src/alloc_core/bootstrap.rs`), which DOES run
+   two explicit, unconditional (not `cfg(miri)`-gated) per-word zero-fill
+   loops immediately before constructing that `SegmentTable` view — "4b.
+   OPT-B" (`for i in 0..segment_table::HASH_CAPACITY { ...
+   Node::write_struct(.... null_mut()) }`, `bootstrap.rs:217-222`) and "4c"
+   (`for i in 0..segment_table::FREE_LIST_CAPACITY { ...
+   Node::write_u32(..., 0) }`, `bootstrap.rs:247-252`). Both loop bounds are
+   `MAX_SEGMENTS`-derived consts (`HASH_CAPACITY = 2 * MAX_SEGMENTS`,
+   `FREE_LIST_CAPACITY = MAX_SEGMENTS`, `segment_table.rs`), so both loops
+   quadruple in trip count across the raise. **This IS the mechanism** — see
+   §2.3a below, which supersedes this bullet with a direct
+   `callgrind_annotate` confirmation. (The primordial's page-map/bin-table/
+   bitmap OS-zeroed-page skip this bullet originally cited is real and
+   unaffected — it is a SEPARATE code path from the hash/free-list loops
+   that turned out to be the actual mechanism.)
 3. **A bigger `mmap` reservation size.** Ruled out: `SEGMENT` is a fixed `1
    << 22` (4 MiB) constant, independent of `MAX_SEGMENTS`; `unix_reserve`'s
    `over = size.checked_add(align)` uses this same fixed `size` on both
@@ -155,19 +174,77 @@ Investigated and ruled out as the mechanism, in order:
    production source line (the `MAX_SEGMENTS` constant itself); the rest of
    the diff is two test files and a docs file.
 
-**Open, unresolved:** the exact micro-op this +61.4K Ir attaches to was not
-pinned down beyond "some fixed per-process bootstrap-adjacent cost whose
-size correlates with the raise" — a `callgrind_annotate` per-function diff
-would be the next step to fully close this (not done in this task; the
-mechanism-hunt was time-boxed once wall-clock (§3, the task's actual
-literal ask) and RSS (§4) came back clean, since the GO/NO-GO call for this
-task does not depend on resolving it further — see §6). One plausible
-remaining candidate not fully excluded: Valgrind/Callgrind's own simulated
-cost model for the larger anonymous mapping's first-touch/page-table
-bookkeeping inside glibc's `mmap` wrapper path, which would still be a
-one-time bootstrap artifact of the same 4 MiB-fixed-`mmap`-but-larger-
-metadata-region shape, not a hot-path cost — consistent with every bench
-moving by the same flat amount regardless of its own op count.
+### 2.3a RESOLVED by R16-4 (task #314) — direct `callgrind_annotate` confirmation
+
+§2.3's "open, unresolved" note below (kept verbatim for history) asked for
+exactly this follow-up. R16-4 ran it: the same before/after worktree pair
+(`b117257`/`ffb82bc`), same `small_churn_16b` bench, `valgrind --tool=callgrind`
+via `cargo bench --bench perf_gate_iai --features production` in WSL2, then
+`callgrind_annotate --tree=caller` against the resulting `callgrind.out`.
+
+**Result: `HeapRegistry::claim_with_config` calls `__memset_avx2_unaligned_erms`
+(glibc's AVX2 memset) exactly 4 times per heap materialisation.** The caller-tree
+Ir cost for that symbol jumps from 20,639 (72.22% of the bench's total 28,576 Ir)
+before to 82,079 (91.18% of 90,017 Ir) after — a delta of **+61,440 Ir**, matching
+the reported flat +61,441 Ir delta for this bench to within 1 Ir. `objdump -d
+--demangle` on both binaries' `claim_with_config` disassembly (inlined from
+`AllocCore::new_inner` → `bootstrap::primordial()`) identifies the four call
+sites by their `edx` (size) argument:
+
+| call | before `edx` | after `edx` | source |
+|---|---:|---:|---|
+| 1 | `0x400` (1,024 B, fill=`0xff`) | `0x400` (1,024 B, fill=`0xff`) | unrelated to `MAX_SEGMENTS` — byte-identical both builds |
+| 2 | `0x4000` (16,384 B) | `0x10000` (65,536 B) | `bootstrap.rs`'s "4b. OPT-B" loop — `HASH_CAPACITY * 8 = 2*MAX_SEGMENTS*8` |
+| 3 | `0x1004` (4,100 B) | `0x4004` (16,388 B) | `bootstrap.rs`'s "4c" loop — `FREE_LIST_CAPACITY * 4 + 4 = MAX_SEGMENTS*4 + 4` |
+| 4 | (unrelated, byte-identical) | (unrelated, byte-identical) | outside the primordial-bootstrap inline region |
+
+Byte-delta reconciliation: `(65,536 − 16,384) + (16,388 − 4,100) = 49,152 +
+12,288 = 61,440` bytes — an **exact match** to the observed +61,440 Ir delta
+(1 Ir per extra byte zeroed, for this glibc AVX2 memset implementation at this
+size range). This closes the open question cleanly: **the +61.4K Ir delta IS
+a one-time bootstrap cost** (confirming the R15-1 headline's qualitative
+conclusion — it is NOT `drain_dirty_segments`'s per-word sweep, and it IS paid
+once per heap materialisation, not per operation), but its ROOT CAUSE is
+different from anything §2.3 originally guessed: it is LLVM recognising two
+compile-time-bounded, statically-zero-valued write loops in
+`bootstrap::primordial()` (`src/alloc_core/bootstrap.rs:217-222` and
+`:247-252`) as a `memset` idiom and lowering them to two `call memset`
+instructions whose `MAX_SEGMENTS`-derived size arguments quadrupled across the
+raise — not a `mmap`/Valgrind cost-model artifact, not `SegmentTable`, and not
+any of §2.3's other originally-considered candidates. See
+`docs/perf/_raw_r16_4_callgrind_annotate_before.log` /
+`_raw_r16_4_callgrind_annotate_after.log` for the full `callgrind_annotate`
+and `objdump` evidence this section summarizes.
+
+**No follow-up code change is recommended from R16-4's own findings either.**
+Both loops zero-fill a "start empty" invariant (an all-`null_mut()` open-
+addressing hash table, an all-zero free-list stack) that — per PERF-PASS-2's
+existing discipline for the OTHER primordial regions (page-map/bin-table/
+bitmap) — is ALREADY guaranteed by fresh OS-zeroed pages on every real
+backend (`mmap`/`VirtualAlloc`) under `cfg(not(miri))`; these two loops are
+the one place in `bootstrap::primordial()` that never got that same
+virgin-page skip. Whether to extend that skip to these two loops (removing
+the now-identified `memset` calls entirely under `cfg(not(miri))`, mirroring
+`AllocBitmap::init_in_place`/`MagazineBitmap::init_in_place`'s existing
+`#[cfg(miri)]` gating two lines above them in the same file) is a natural
+follow-up, but it is a CODE CHANGE decision outside R16-4's diagnostic scope
+— flagged for the orchestrator as a distinct task, not applied here.
+
+**Open, unresolved (superseded by §2.3a above — kept for history):** ~~the
+exact micro-op this +61.4K Ir attaches to was not pinned down beyond "some
+fixed per-process bootstrap-adjacent cost whose size correlates with the
+raise" — a `callgrind_annotate` per-function diff would be the next step to
+fully close this (not done in this task; the mechanism-hunt was time-boxed
+once wall-clock (§3, the task's actual literal ask) and RSS (§4) came back
+clean, since the GO/NO-GO call for this task does not depend on resolving it
+further — see §6). One plausible remaining candidate not fully excluded:
+Valgrind/Callgrind's own simulated cost model for the larger anonymous
+mapping's first-touch/page-table bookkeeping inside glibc's `mmap` wrapper
+path, which would still be a one-time bootstrap artifact of the same 4
+MiB-fixed-`mmap`-but-larger-metadata-region shape, not a hot-path cost —
+consistent with every bench moving by the same flat amount regardless of its
+own op count.~~ (R16-4 confirmed it is neither `mmap` nor Valgrind's cost
+model — it is the two zero-fill loops identified in §2.3a.)
 
 ### 2.4 iai on current HEAD (not isolated — for `IAI_BASELINE.md` context only)
 
@@ -497,6 +574,10 @@ would take, and its honestly-estimated ceiling:
   - `docs/perf/_raw_r15_1_sidecar_rss_before_max_segments_1024.log`
   - `docs/perf/_raw_r15_1_sidecar_rss_after_max_segments_4096.log`
   - `docs/perf/_raw_r15_1_sidecar_rss_head_max_segments_4096_fixed.log`
+  - `docs/perf/_raw_r16_4_callgrind_annotate_before.log` /
+    `_raw_r16_4_callgrind_annotate_after.log` (R16-4/task #314, added later —
+    the `callgrind_annotate`/`objdump` evidence for §2.3a's root-cause
+    confirmation of the +61,440 Ir delta)
 - Source changes (this task): `AllocCore::dbg_words_per_class()` accessor
   (`src/alloc_core/alloc_core_core_diag.rs`) and the corresponding fix to
   `examples/r13_9_class_aware_dirty_sidecar_rss.rs` (§4.3). No production

@@ -1,0 +1,62 @@
+# R16-4 (task #314) — callgrind_annotate, AFTER (MAX_SEGMENTS=4096, commit ffb82bc)
+# Bench: small_churn_16b (benches/perf_gate_iai.rs), production feature set.
+# Isolation: git worktree add ../sefer-alloc-r16-4-after ffb82bc (same pair R15-1 used).
+# Method: identical to the "before" log — same host, same session, back-to-back runs.
+#
+# Full iai table (12-bench group), matches R15-1's after figures exactly
+# (small_churn_16b Ir=90,017, churn_256b Ir=90,017, ...):
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                       90017|N/A                  (*********)
+  L1 Hits:                           173096|N/A                  (*********)
+  L2 Hits:                              152|N/A                  (*********)
+  RAM Hits:                            1727|N/A                  (*********)
+  Estimated Cycles:                  234301|N/A                  (*********)
+
+# --------------------------------------------------------------------------
+# callgrind_annotate --auto=no (flat, top functions by Ir)
+# --------------------------------------------------------------------------
+Profile data file '.../small_churn_16b/callgrind.small_churn_16b.out' (creator: callgrind-3.22.0)
+Ir              Dr             Dw              I1mr         D1mr        D1mw           ILmr         DLmr        DLmw
+90,017 (100.0%) 1,381 (100.0%) 83,577 (100.0%) 176 (100.0%) 54 (100.0%) 1,648 (100.0%) 176 (100.0%) 14 (100.0%) 1,536 (100.0%)  PROGRAM TOTALS
+
+Ir              Dr           Dw              I1mr        D1mr        D1mw           ILmr        DLmr       DLmw            file:function
+82,079 (91.18%)   8 ( 0.58%) 81,976 (98.08%)  0           2 ( 3.70%) 1,306 (79.25%)  0          0          1,305 (84.96%)  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+ 4,451 ( 4.94%) 650 (47.07%)    462 ( 0.55%) 13 ( 7.39%)  5 ( 9.26%)     1 ( 0.06%) 13 ( 7.39%) 1 ( 7.14%)     .           ???:small_churn_16b::__iai_callgrind_wrapper_mod::small_churn_16b
+ 1,306 ( 1.45%) 424 (30.70%)    418 ( 0.50%)  3 ( 1.70%)  1 ( 1.85%)   208 (12.62%)  3 ( 1.70%) 0            109 ( 7.10%)  ./string/../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:__memcpy_avx_unaligned_erms [libc.so.6]
+   695 ( 0.77%)  53 ( 3.84%)    546 ( 0.65%) 87 (49.43%) 11 (20.37%)   127 ( 7.71%) 87 (49.43%) 7 (50.00%)   118 ( 7.68%)  ???:<sefer_alloc::registry::heap_registry::HeapRegistry>::claim_with_config
+   571 ( 0.63%)  76 ( 5.50%)     42 ( 0.05%) 22 (12.50%)  6 (11.11%)     1 ( 0.06%) 22 (12.50%) 2 (14.29%)     1 ( 0.07%)  ???:<sefer_alloc::registry::heap_core::HeapCore>::refill_magazine_slow
+   208 ( 0.23%)  15 ( 1.09%)     17 ( 0.02%) 11 ( 6.25%)  3 ( 5.56%)     0          11 ( 6.25%) 3 (21.43%)     .           ???:<sefer_alloc::alloc_core::alloc_core::AllocCore>::carve_batch
+
+# --------------------------------------------------------------------------
+# callgrind_annotate --tree=caller (who calls __memset_avx2_unaligned_erms)
+# --------------------------------------------------------------------------
+82,079 (91.18%)   8 ( 0.58%) 81,976 (98.08%)  0           2 ( 3.70%) 1,306 (79.25%)  0          0          1,305 (84.96%)  < ???:<sefer_alloc::registry::heap_registry::HeapRegistry>::claim_with_config (4x)
+82,079 (91.18%)   8 ( 0.58%) 81,976 (98.08%)  0           2 ( 3.70%) 1,306 (79.25%)  0          0          1,305 (84.96%)  *  ./string/../sysdeps/x86_64/multiarch/memset-vec-unaligned-erms.S:__memset_avx2_unaligned_erms [libc.so.6]
+
+# claim_with_config calls memset 4 TIMES (per heap materialisation) — same 4 call
+# sites as "before", byte-identical Rust source, only two of the four grew:
+#   1. edx=0x400  (1024 B), esi=0xff — UNCHANGED (0x400 in both builds; unrelated to
+#      MAX_SEGMENTS)
+#   2. edx=0x10000 (65,536 B), esi=0 — HASH_CAPACITY*8 = 2*4096*8 = 65,536 B exactly
+#      (registry hash-table zero-fill, bootstrap.rs "4b. OPT-B" loop; was 16,384 B)
+#   3. edx=0x4004 (16,388 B), esi=0  — FREE_LIST_CAPACITY*4 + 4 = 4096*4+4 = 16,388 B
+#      exactly (free-list index-stack zero-fill, bootstrap.rs "4c" loop; was 4,100 B)
+#   4. (byte-identical to "before")
+# Disassembly (objdump -d --demangle) of the two MAX_SEGMENTS-scaled calls, AFTER:
+#   4380b: mov 0x4453e(%rip),%r14   # 87d50 <memset@GLIBC_2.2.5>
+#   43812: mov $0x400,%edx  ; 43817: mov $0xff,%esi ; 4381c: call *%r14   [[UNRELATED, 1024B]]
+#   43853: lea 0x1a000(%r13),%rdi
+#   4385a: mov $0x10000,%edx ; 4385f: xor %esi,%esi  ; 43861: call *%r14  [[HASH_CAPACITY*8 = 65536B]]
+#   43878: lea 0x2a000(%r13),%rdi
+#   4387f: mov $0x4004,%edx  ; 43884: xor %esi,%esi  ; 43886: call *%r14  [[FREE_LIST_CAPACITY*4+4 = 16388B]]
+#
+# --------------------------------------------------------------------------
+# Byte-delta reconciliation against the reported +61,440 Ir flat delta
+# --------------------------------------------------------------------------
+#   hash-table zero-fill:      65,536 - 16,384 =  49,152 bytes
+#   free-list zero-fill:       16,388 -  4,100 =  12,288 bytes
+#   sum of the two deltas:                        61,440 bytes
+#   observed Ir delta (before -> after, small_churn_16b):  90,017 - 28,576 = 61,441 Ir
+#   -> matches to within 1 Ir (61,440 bytes vs 61,441 Ir; the 1-Ir residual is call-site
+#      register-immediate encoding noise, not a second mechanism). __memset_avx2_unaligned_erms's
+#      Ir cost for THIS byte range is empirically ~1 retired instruction per extra byte zeroed.
