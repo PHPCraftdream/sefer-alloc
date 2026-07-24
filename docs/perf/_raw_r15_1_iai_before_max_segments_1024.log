@@ -1,0 +1,40 @@
+  Total read+write:                   52476|N/A                  (*********)
+  Estimated Cycles:                   79058|N/A                  (*********)
+perf_gate_iai::perf_gate::multiseg_cold_256k
+  Instructions:                       46247|N/A                  (*********)
+  L1 Hits:                            75470|N/A                  (*********)
+  L2 Hits:                               66|N/A                  (*********)
+  RAM Hits:                            1064|N/A                  (*********)
+  Total read+write:                   76600|N/A                  (*********)
+  Estimated Cycles:                  113040|N/A                  (*********)
+perf_gate_iai::perf_gate::seg_cycle_decommit_256k
+  Instructions:                       82297|N/A                  (*********)
+  L1 Hits:                           123771|N/A                  (*********)
+  L2 Hits:                              120|N/A                  (*********)
+  RAM Hits:                            1065|N/A                  (*********)
+  Total read+write:                  124956|N/A                  (*********)
+  Estimated Cycles:                  161646|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 12 without regressions; 0 regressed; 12 benchmarks finished in 14.8079s
+
+  bench                                 Ir            L1            L2           RAM     EstCycles        Ir/op*
+  --------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                   28,576        51,186           142           764        78,636          74.1
+  aligned_churn_640b_a128           28,512        51,124           143           761        78,474          73.1
+  large_alloc_free_cycle            23,834        45,405           146           761        72,770             -
+  realloc_grow                     513,188     1,087,343         3,948        70,648     3,579,763      30,584.6
+  cold_alloc_free_256x16b           70,674       102,780           157           879       134,330         183.0
+  cold_alloc_free_256x64b           70,674       102,597           157         1,062       140,552         183.0
+  recycle_alloc_free_256x16b       118,801       161,575            81           992       196,700         185.5
+  recycle_alloc_free_256x64b       118,801       161,379            81         1,188       203,364         185.5
+  churn_256b                        28,576        51,185           143           764        78,640          74.1
+  churn_write_256b                  28,832        51,568           143           765        79,058          78.1
+  multiseg_cold_256k                46,247        75,470            66         1,064       113,040         329.6
+  seg_cycle_decommit_256k           82,297       123,771           120         1,065       161,646         286.6
+
+  * Ir/op = (Ir − 23,834) / ops — marginal instruction count per
+    operation, with the one-time process bootstrap subtracted (constant taken
+    from large_alloc_free_cycle). Comparable across benches; the honest unit for
+    per-op thresholds (review finding F2). "-" = bootstrap proxy / no op-count.
+
+[iai] PASS — 12 bench(es) produced Ir

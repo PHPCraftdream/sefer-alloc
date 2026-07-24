@@ -1,0 +1,54 @@
+    Finished `bench` profile [optimized] target(s) in 0.58s
+     Running benches\r12_7_class_aware_dirty_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r12_7_class_aware_dirty_wallclock-7d6b733d286d2fb8.exe)
+Gnuplot not found, using plotters backend
+
+═══════════════════════════════════════════════════════════════════
+R12-7 stage 1 — class-aware dirty routing wall-clock gate
+TARGET_CLASS = 40 (block_size = 43392 B); BLOCKS_PER_CLASS = 800
+═══════════════════════════════════════════════════════════════════
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Collecting 10 samples in estimated 1.5051 s (2035 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=1: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=1
+                        time:   [859.00 µs 863.93 µs 868.45 µs]
+                        change: [-52.372% -51.895% -51.453%] (p = 0.00 < 0.05)
+                        Performance has improved.
+producers=1   ns/round(window)=      575174  ns/owner_alloc(window)=   716.2  ns/full_round=      838531
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Collecting 10 samples in estimated 1.5190 s (1265 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=2: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=2
+                        time:   [1.1743 ms 1.1905 ms 1.2012 ms]
+                        change: [-54.843% -54.040% -53.176%] (p = 0.00 < 0.05)
+                        Performance has improved.
+producers=2   ns/round(window)=      671383  ns/owner_alloc(window)=   828.0  ns/full_round=     1190336
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Warming up for 300.00 ms
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Collecting 10 samples in estimated 1.5283 s (550 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=4: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=4
+                        time:   [1.8354 ms 1.8514 ms 1.8663 ms]
+                        change: [-58.200% -57.277% -56.363%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+producers=4   ns/round(window)=      839695  ns/owner_alloc(window)=   978.7  ns/full_round=     2025196
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Warming up for 300.00 ms
+
+Warning: Unable to complete 10 samples in 1.5s. You may wish to increase target time to 1.6s or enable flat sampling.
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Collecting 10 samples in estimated 1.6212 s (55 iterations)
+Benchmarking r12_7_class_aware_dirty_wallclock/producers=8: Analyzing
+r12_7_class_aware_dirty_wallclock/producers=8
+                        time:   [18.053 ms 20.661 ms 25.391 ms]
+                        change: [-10.367% +5.4520% +21.420%] (p = 0.50 > 0.05)
+                        No change in performance detected.
+producers=8   ns/round(window)=     1561470  ns/owner_alloc(window)=  1358.9  ns/full_round=    23742020
+───────────────────────────────────────────────────────────────────
+N=1 -> N=4 ns/owner_alloc(window) delta: 716.2 -> 978.7 (+36.6%) [R9-6 gate threshold: >5% => GO on stage 2, else NO-GO]
+N=1 -> N=4 ns/full_round delta: 838531 -> 2025196 (+141.5%) [companion axis — see module doc "Two axes, printed side by side"; this is the SAME region criterion's own "time:" output measures]
+═══════════════════════════════════════════════════════════════════
+
+

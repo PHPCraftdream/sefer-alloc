@@ -8,16 +8,28 @@
 //! `docs/perf/R12_7_CLASS_AWARE_DIRTY_ROUTING_GATE.md` (§3.1) states the
 //! sidecar is "6.1 KiB per materialised heap" — that number is the RAW
 //! `size_of::<PerClassDirty>()` (`SMALL_CLASS_COUNT * WORDS_PER_CLASS * 8`
-//! bytes = 49 * 16 * 8 = 6,272 bytes with the default 49-class table). The
-//! sidecar is reserved via `aligned_vmem::leak_zeroed_pages`, which rounds
-//! its request UP to a whole number of 4 KiB pages
-//! (`dirty_by_class.rs::PER_CLASS_DIRTY_SIZE`) — so the actual COMMITTED
-//! footprint per materialised heap is 2 pages = 8,192 bytes = 8.0 KiB, not
-//! 6.1 KiB. This harness confirms that arithmetic against REAL process RSS
-//! deltas (not just the `size_of` computation) for N = 4, 8, 16 heaps, each
-//! forced to materialise its own sidecar via one genuine cross-thread free
-//! (the ONLY way `ensure_per_class_dirty` is reached in production code —
-//! see `registry::heap_core_xthread::set_dirty_bit_for_segment`).
+//! bytes = 49 * 16 * 8 = 6,272 bytes with the default 49-class table, back
+//! when `MAX_SEGMENTS` = 1024 => `WORDS_PER_CLASS` = 16 — see the R15-1 note
+//! below for the current-build value). The sidecar is reserved via
+//! `aligned_vmem::leak_zeroed_pages`, which rounds its request UP to a whole
+//! number of 4 KiB pages (`dirty_by_class.rs::PER_CLASS_DIRTY_SIZE`) — so the
+//! actual COMMITTED footprint per materialised heap was 2 pages = 8,192
+//! bytes = 8.0 KiB at that MAX_SEGMENTS, not 6.1 KiB. This harness confirms
+//! that arithmetic against REAL process RSS deltas (not just the `size_of`
+//! computation) for N = 4, 8, 16 heaps, each forced to materialise its own
+//! sidecar via one genuine cross-thread free (the ONLY way
+//! `ensure_per_class_dirty` is reached in production code — see
+//! `registry::heap_core_xthread::set_dirty_bit_for_segment`).
+//!
+//! R15-1 (task #303): `MAX_SEGMENTS` raised 1024 -> 4096 (R14-7, task #292)
+//! after this harness was written, which raises `WORDS_PER_CLASS` 16 -> 64
+//! (`= MAX_SEGMENTS / 64`) and therefore the RAW sidecar size 6,272 -> 25,088
+//! bytes (6.1 -> 24.5 KiB), page-rounded 8.0 -> 28.0 KiB (7 pages, not 2).
+//! The `main` below now reads the live `WORDS_PER_CLASS` value via
+//! `AllocCore::dbg_words_per_class()` instead of the hardcoded `16` this
+//! module doc's paragraph above still (deliberately, as history) quotes, so
+//! its printed numbers are always correct for whatever `MAX_SEGMENTS` the
+//! current build was compiled with.
 //!
 //! ## Run
 //!
@@ -182,11 +194,20 @@ fn main() {
     let _ = bootstrap::ensure();
 
     println!("=== R13-9 class-aware-dirty sidecar RSS measurement ===");
+    // R15-1 (task #303): read the REAL `WORDS_PER_CLASS` constant via
+    // `AllocCore::dbg_words_per_class()` instead of a hardcoded `16` literal.
+    // The literal was correct when this harness was written (`MAX_SEGMENTS`
+    // = 1024 => `WORDS_PER_CLASS` = 16) but went silently stale across the
+    // R14-7 raise (`MAX_SEGMENTS` = 4096 => `WORDS_PER_CLASS` = 64) — this
+    // harness's own printed numbers were wrong on any post-R14-7 build until
+    // this fix, exactly the class of drift `dbg_words_per_class()` exists to
+    // prevent going forward.
+    let words_per_class = AllocCore::dbg_words_per_class();
     println!(
-        "PER_CLASS_DIRTY_WORDS (computed): SMALL_CLASS_COUNT={} * WORDS_PER_CLASS=16",
+        "PER_CLASS_DIRTY_WORDS (computed): SMALL_CLASS_COUNT={} * WORDS_PER_CLASS={words_per_class}",
         AllocCore::dbg_small_class_count()
     );
-    let raw_bytes = AllocCore::dbg_small_class_count() * 16 * 8;
+    let raw_bytes = AllocCore::dbg_small_class_count() * words_per_class * 8;
     println!(
         "raw size_of::<PerClassDirty>(): {raw_bytes} bytes ({:.2} KiB)",
         raw_bytes as f64 / 1024.0
