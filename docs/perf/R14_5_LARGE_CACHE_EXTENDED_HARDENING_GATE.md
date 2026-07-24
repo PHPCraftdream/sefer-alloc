@@ -11,6 +11,24 @@ feature to `production` is left to the user per the task brief.
 **Date:** 2026-07-23. **Base revision:** `main` @ `6a644a4` (R14-1..R14-4
 landed).
 
+**R17-9 update (task #326, 2026-07-24):** `DEFAULT_EXTENDED_BUDGET_BYTES`'s
+multiplier was revised from `5x` (1280 MiB/heap, the value measured
+throughout §2 and §3.2 below) down to `1x` (256 MiB/heap) — an external
+review flagged that the 5x default was a PER-HEAP ceiling, and a
+thread-per-core server running many `AllocCore` instances concurrently
+(`AllocCore` is owner-only, neither `Send` nor `Sync` — there is no
+process-wide coordination between heaps) could retain tens of GiB in
+aggregate even though each individual heap stayed under its own ceiling. See
+`src/alloc_core/large_cache_config.rs`'s `DEFAULT_EXTENDED_BUDGET_BYTES` doc
+for the full multi-heap rationale and the rejected process-global-budget
+alternative. This section and §2/§3.2 below are left as a historical record
+of what was measured at the ORIGINAL 5x/1280 MiB value on 2026-07-23 — the
+qualitative conclusion (a finite default neutralises the unbounded-budget RSS
+hazard for a single heap) still holds at the new 1x/256 MiB value; only the
+absolute retained-commit figures below (1280 MiB-scale) are stale against the
+current default and should not be re-cited as current behaviour without
+re-running the harness.
+
 ---
 
 ## 0. Findings this task closes (from Round 13 review)

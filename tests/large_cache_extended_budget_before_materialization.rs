@@ -16,10 +16,12 @@
 //!    into it would also be budget-rejected).
 //! 2. **Finite default budget for `large-cache-extended`**: with the feature
 //!    compiled in and no explicit `.budget_bytes(..)` call, the config now
-//!    resolves to `DEFAULT_EXTENDED_BUDGET_BYTES` (5x the 256 MiB headroom
-//!    default = 1280 MiB) instead of `None` (unbounded) — see
-//!    `large_cache_config.rs`'s doc for the full rationale. An explicit
-//!    `.budget_bytes(..)` call always overrides this fallback.
+//!    resolves to `DEFAULT_EXTENDED_BUDGET_BYTES` (1x the 256 MiB headroom
+//!    default = 256 MiB per heap, revised from the original 5x/1280 MiB by
+//!    R17-9/task #326 — see that constant's doc for the multi-heap
+//!    rationale) instead of `None` (unbounded) — see `large_cache_config.rs`'s
+//!    doc for the full rationale. An explicit `.budget_bytes(..)` call always
+//!    overrides this fallback.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -287,14 +289,16 @@ fn default_config_resolves_finite_budget_when_extension_compiled_in() {
         "the finite default must be a genuine positive ceiling, not budget=0 \
          (which would silently disable caching entirely)"
     );
-    // 5x the 256 MiB headroom default, per `DEFAULT_EXTENDED_BUDGET_BYTES`'s
-    // doc — pin the exact value so a future change to the ratio is a visible,
+    // 1x the 256 MiB headroom default (revised from 5x/1280 MiB by R17-9,
+    // task #326 — see `DEFAULT_EXTENDED_BUDGET_BYTES`'s doc for the
+    // multi-heap rationale), per `DEFAULT_EXTENDED_BUDGET_BYTES`'s doc — pin
+    // the exact value so a future change to the ratio is a visible,
     // deliberate diff here, not a silent drift.
-    const EXPECTED: usize = 5 * 256 * 1024 * 1024;
+    const EXPECTED: usize = 256 * 1024 * 1024;
     assert_eq!(
         budget, EXPECTED,
-        "default extended-cache budget must be exactly 5x the 256 MiB headroom \
-         default (1280 MiB) per large_cache_config.rs's documented policy"
+        "default extended-cache budget must be exactly 1x the 256 MiB headroom \
+         default (256 MiB) per large_cache_config.rs's documented policy"
     );
 }
 
