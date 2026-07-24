@@ -206,9 +206,9 @@ impl SegmentTable {
     /// one is available; the new base is written there and that index is
     /// returned (NO increment of `count` — the slot is already within the live
     /// window). Only when the free-list is empty does `register` append past
-    /// the current high-water mark. This lifts the 1024-segment cap under
-    /// `alloc-decommit`: as long as some slots are recycled, `register` never
-    /// returns `None`.
+    /// the current high-water mark. This lifts the fixed `MAX_SEGMENTS` cap
+    /// under `alloc-decommit`: as long as some slots are recycled, `register`
+    /// never returns `None`.
     ///
     /// no-panic (Phase 11 GlobalAlloc face): returns `None` so the caller
     /// returns null (graceful OOM) rather than aborting.
