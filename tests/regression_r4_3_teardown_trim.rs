@@ -31,6 +31,61 @@
 //! the flush). We also do a small-block burst to exercise tcache/pool but do
 //! not assert on that signal (it is dependent on segment-fill geometry and
 //! is less deterministic).
+//!
+//! ## Known flakiness under heavy system load (R16-6, task #316 — open question)
+//!
+//! On 2026-07-22, a personal-verification run of the FULL suite
+//! (`cargo test --release --features production`) with two unrelated
+//! `cargo clippy` builds racing in the background (high CPU contention) hit
+//! this assertion once: `segments_released_total before=0 after=0`. Follow-up
+//! investigation (R16-6, task #316) could not turn this into a reliable
+//! reproducer:
+//!
+//! - `git stash` + the same run on the clean pre-Round-16 commit (`afa6b1d`)
+//!   reproduced the same failure — so it predates Round 16's changes (#311–315),
+//!   none of which touch the teardown-trim / large-cache production code.
+//! - An isolated bisect run on `52bbb8a` (the commit before Round 16, where
+//!   `npm run check` was last all-green) passed.
+//! - 450+ direct invocations of this test's own binary in a tight loop, under
+//!   sustained background `cargo clippy --all-features` load (two continuously
+//!   re-running loaders, 16 logical CPUs, verified actually consuming CPU via
+//!   their own build logs), all passed. Two additional full
+//!   `cargo test --release --features production` runs under the same
+//!   sustained load also passed.
+//! - The production code was read end-to-end (`AbandonGuard::drop` →
+//!   `HeapCore::trim_for_recycle` → `AllocCore::evict_all` →
+//!   `evict_one_oldest` → `os::release_segment`): every step that could
+//!   plausibly swallow a release was checked and ruled out. `release_segment`
+//!   increments `SEGMENTS_RELEASED_TOTAL` unconditionally whenever
+//!   `reservation` is non-null — there is no budget/policy branch that
+//!   decommits-instead-of-releases on this path, and no early return that
+//!   skips the counter. `MAX_HEAPS = 4096` rules out registry exhaustion from
+//!   only 8 threads. `thread::scope`'s `join` is a full OS-level join (not
+//!   just a return from the closure), so it cannot itself explain a trim that
+//!   ran "too late" to be observed — the observation happens strictly after
+//!   `scope` returns.
+//! - One theoretical (unconfirmed, not reproduced) mechanism was identified
+//!   in `src/global/tls_heap.rs`'s `finish_bind`: if `GUARD`'s
+//!   `thread_local!` initialisation itself fails (`GUARD.try_with` returns
+//!   `Err`, e.g. because this thread is already deep into its own teardown
+//!   when a `HeapRegistry::claim` is triggered from another thread-local's
+//!   `Drop`), the just-claimed slot is rolled back via `HeapRegistry::recycle`
+//!   WITHOUT ever running `trim_for_recycle` (no guard was armed to call it).
+//!   That is a narrow, pre-existing, and separately-reasoned-about edge case
+//!   (see `finish_bind`'s own "UBFIX-10 (L-6)" doc comment) that does not
+//!   match this test's straightforward `thread::scope` spawn pattern (no
+//!   other thread-locals with `Drop` impls are in play here), so it was not
+//!   pursued further within this task's time-box.
+//!
+//! **Honesty about what this means:** this looks like a genuine, rare,
+//! load-sensitive flake rather than a reproducible defect — but the ~30–45
+//! minute investigation window for this P3 task closed without a confirmed
+//! root cause. If this assertion fails again, the useful next step is to
+//! capture the failing run's exact conditions (concurrent load, thread
+//! count, OS) rather than assume the mechanism above; do not silently loosen
+//! the assertion (e.g. adding a retry) without first understanding why a
+//! single well-defined trim-on-exit could ever legitimately fail to release
+//! at least one of 8 independently cached spans.
 
 #![cfg(feature = "alloc-decommit")]
 
