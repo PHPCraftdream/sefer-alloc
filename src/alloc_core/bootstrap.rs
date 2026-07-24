@@ -208,12 +208,32 @@ pub(crate) fn primordial() -> Option<Primordial> {
     super::node::Node::write_struct::<*mut u8>(reg_slots, base);
 
     // 4b. OPT-B: Initialise the open-addressing hash table at `hash_off`.
-    //     Zero-fill all HASH_CAPACITY slots (null_mut() = empty). Then insert
-    //     the primordial base (slot 0's value) so `contains_base` works from
-    //     the very first allocation.
+    //     The "empty" sentinel is `null_mut()`, so a freshly-materialised
+    //     table must start all-null. Then insert the primordial base
+    //     (slot 0's value) so `contains_base` works from the very first
+    //     allocation.
     let hash_off = Layout::primordial_hash_off();
     let hash_slots = base_plus(base, hash_off) as *mut *mut u8;
-    // Zero-fill: each slot must start as null_mut() (= "empty").
+    // Zero-fill each slot to null_mut() (= "empty"). R17-3 (task #320):
+    // under `cfg(not(miri))` this explicit zero-fill is SKIPPED. `base` is
+    // the PRIMORDIAL segment, reserved a few lines above via
+    // `Segment::reserve`/`reserve_lazy` (the ONLY OS allocation primitive on
+    // this bootstrap path — see the module doc), never carved or decommitted
+    // before this point, so the OS guarantees these pages read zero
+    // (`mmap`/`VirtualAlloc`) — exactly the all-`null_mut()` "empty" state
+    // the loop would write; re-zeroing is a tautology. This is the SAME
+    // virgin-page skip the neighbouring `AllocBitmap`/`MagazineBitmap` init
+    // (PERF-PASS-2, G5/C1, task #50) and the page-map/bin-table init already
+    // apply to the OTHER primordial regions. R14-7's `MAX_SEGMENTS`
+    // 1024→4096 raise quadrupled this loop's trip count (LLVM lowers it to a
+    // `memset` of `HASH_CAPACITY * 8 = 2 * MAX_SEGMENTS * 8` bytes); R16-4
+    // (task #314) pinned the resulting flat +61.4K Ir startup regression to
+    // this `memset` in `claim_with_config` via `callgrind_annotate` (see
+    // `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §2.3a). Under `miri`
+    // the fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed,
+    // so miri keeps the explicit zero-fill unconditionally — the identical
+    // discipline as the bitmap inits above.
+    #[cfg(miri)]
     for i in 0..segment_table::HASH_CAPACITY {
         let slot =
             super::node::Node::offset(hash_slots as *mut u8, i * core::mem::size_of::<*mut u8>())
@@ -238,18 +258,35 @@ pub(crate) fn primordial() -> Option<Primordial> {
     //     slot indices) and its top-of-stack counter. The stack starts EMPTY
     //     (top = 0) — slot 0 (primordial) is live and never recyclable, and
     //     no other slot has been registered yet, so there is nothing to
-    //     recycle. Zero-fill the index array defensively (only entries
-    //     `[0, top)` are ever read, but a clean zero state keeps the layout
-    //     inspectable/debuggable).
+    //     recycle. Only entries `[0, top)` are ever read, so with `top = 0`
+    //     (written unconditionally below) NONE are read at bootstrap; each
+    //     entry is first WRITTEN by a real recycle push before it is ever
+    //     read, so the index array's initial contents are observationally
+    //     irrelevant — the zero-fill below is purely defensive.
     let free_list_off = Layout::primordial_free_list_off();
     let free_top_off = Layout::primordial_free_top_off();
     let free_list_slots = base_plus(base, free_list_off) as *mut u32;
+    // R17-3 (task #320): the defensive zero-fill is SKIPPED under
+    // `cfg(not(miri))` by the same reasoning as the hash-table loop
+    // immediately above and the neighbouring bitmap inits: `base` is the
+    // PRIMORDIAL segment's fresh OS-zeroed pages, and (specific to this
+    // loop) `top = 0` means no entry is read before its first real write
+    // anyway. The skip recovers this loop's half of the +61.4K Ir startup
+    // regression R16-4 (task #314) attributed to it (`FREE_LIST_CAPACITY * 4
+    // = MAX_SEGMENTS * 4` bytes, LLVM-lowered to a `memset` — see
+    // `docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §2.3a). Under `miri`
+    // the fallback aperture (`std::alloc::alloc`) is NOT guaranteed zeroed,
+    // so miri keeps the explicit zero-fill unconditionally.
+    #[cfg(miri)]
     for i in 0..segment_table::FREE_LIST_CAPACITY {
         let slot =
             super::node::Node::offset(free_list_slots as *mut u8, i * core::mem::size_of::<u32>())
                 as *mut u32;
         super::node::Node::write_u32(slot, 0);
     }
+    // `top = 0` is the stack's REAL structural initial state (empty), NOT a
+    // zero-fill — it is written unconditionally, independent of the
+    // cfg(miri)-gated array fill above.
     let free_top_ptr = base_plus(base, free_top_off) as *mut u32;
     super::node::Node::write_u32(free_top_ptr, 0);
 

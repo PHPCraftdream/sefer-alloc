@@ -1,0 +1,13 @@
+commit,isolation_pair,features,cpu,os,rustc,metric,bench,before,after,delta,delta_pct
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,small_churn_16b,90017,8051,-81966,-91.1
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,aligned_churn_640b_a128,89953,7987,-81966,-91.1
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,large_alloc_free_cycle,85274,3308,-81966,-96.1
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,realloc_grow,574656,492690,-81966,-14.3
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,cold_alloc_free_256x16b,132130,50164,-81966,-62.0
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,cold_alloc_free_256x64b,132130,50164,-81966,-62.0
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,recycle_alloc_free_256x16b,180309,98343,-81966,-45.5
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,recycle_alloc_free_256x64b,180309,98343,-81966,-45.5
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,churn_256b,90017,8051,-81966,-91.1
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,churn_write_256b,90273,8307,-81966,-90.8
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,multiseg_cold_256k,107785,25819,-81966,-76.0
+f65015a,pre-R17-3-edit vs post-R17-3-edit @ f65015a,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32(measurement host)+wsl2-ubuntu24.04(iai),1.97.0,Ir,seg_cycle_decommit_256k,144093,62127,-81966,-56.9
