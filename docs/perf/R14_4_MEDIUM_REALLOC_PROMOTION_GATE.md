@@ -147,20 +147,47 @@ steady-state commit, while `nopad`/`floor512kib` reserve up to 249 distinct
 segments with **zero** large-cache hits and settle at ~1.0 GiB steady-state
 commit — a 15× higher commit cost, not a 2.3× LOWER one.
 
-**Root cause not fully isolated within this task's time budget.** All three
-candidates request an amount that `alloc_large` rounds to the identical 4
-MiB `usable` span, and the large-cache admission predicate
-(`slot.usable_size >= usable && slot.usable_size <= usable * 2`,
-`src/alloc_core/alloc_core_large.rs`) compares `usable` values that should
-be identical (4 MiB) across all three modes — so a same-band cache hit was
-expected to behave symmetrically. It evidently does not for this specific
-throwaway probe's harness shape (`fixed2mib`'s request size is
-LITERALLYidentical, byte-for-byte, every round — 2,097,152 — while
-`nopad`/`floor512kib` vary round to round with the growth sequence's actual
-values, which may interact with something in the cache/admission path this
-task did not fully trace, e.g. FIFO eviction ordering or a `usable_size`
-comparison edge this task's `grep`-level investigation did not conclusively
-identify).
+**Root cause: RESOLVED by R17-4 (task #321).** The anomaly is NOT in the
+`alloc_large` cache admission at all (the admission predicate compares
+`usable` values that ARE identical 4 MiB across all three modes, exactly as
+this task expected). It is on the DEALLOC side, in the fastbin magazine
+dispatch (`HeapCore::dealloc_own_thread_with_base`,
+`src/registry/heap_core_free.rs`): that dispatch keys on
+`SizeClasses::class_for(layout.size())`, NOT on the segment's `kind`. Under
+`medium-classes` (`SMALL_MAX` == 1 MiB), a Large segment can LEGITIMATELY be
+freed with a layout whose size classifies small — R14-4's promotion diverts
+a medium block to a 4 MiB Large segment at the 256 KiB threshold, and OPT-G
+then grows it IN PLACE to any size ≤ `SMALL_MAX` while it stays a Large
+segment, so its (contract-correct) dealloc layout classifies small. Before
+the R17-4 fix such a free was misrouted into the small magazine path: the
+Large segment never reached `AllocCore::dealloc`'s Large branch, was never
+deposited into `large_cache` nor released, and LEAKED — so every subsequent
+promotion reserved a fresh 4 MiB segment.
+
+This maps 1:1 onto the three arms: `nopad`/`floor512kib` end the growth
+sequence at a dealloc layout of 1024 KiB (== `SMALL_MAX`, classifies
+`Some(54)` → magazine path → leak → 0 hits / 249 segments / ~1 GiB), while
+`fixed2mib` ends at 2048 KiB (> `SMALL_MAX`, classifies `None` → fastbin
+fall-through → substrate → Large branch → deposit → 232 hits / 17 segments /
+~68 MiB). The "request size literally identical" hypothesis (this task's
+best guess within its time budget) was a red herring — `alloc_large` rounds
+to the same 4 MiB `usable` regardless, so the ALLOC side is symmetric; only
+the DEALLOC routing fork on the layout size differs. Confirmed empirically
+by instrumenting `alloc_large`'s OPT-E lookup and the magazine dispatch:
+`nopad`'s 24 deallocs took `class_for(1048576) → Some(54) → magazine`, never
+entering the Large branch (0 deposits); `fixed2mib`'s 24 deallocs took
+`class_for(2097152) → None → core.dealloc → Large branch` (24 deposits
+across 8 slots).
+
+The fix routes Large segments to the kind-keyed Large dealloc
+UNCONDITIONALLY (not gated on `hardened`, and not a no-op — the pre-existing
+F7 guard framed this case as a caller contract violation and (hardened-only)
+silently leaked it; that framing is false for the promotion+OPT-G case).
+After the fix all three pad targets produce statistically indistinguishable
+~68 MiB commit and ~35–40 µs/growth-seq — exactly what §2.1's SEGMENT-
+rounding argument predicted. Pinned by
+`tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs` (red/green
+counterfactual: `large_cache_hits` delta 0 before the fix, > 0 after).
 
 **This discrepancy does not change the pad-target decision.** The reasoning
 in §2.1 (SEGMENT-rounding makes padding moot under `production`, and
@@ -334,15 +361,21 @@ actual kill-gate question, and it is negative.
 
 ## 6. Open items for a follow-up task (not resolved here)
 
-1. **The pad-target probe's commit-cost discrepancy (§2.2)** — the exact
-   mechanism causing `nopad`/`floor512kib` to reserve far more distinct
-   segments (0 cache hits) than `fixed2mib` (232 cache hits) despite all
-   three requesting the same 4 MiB rounded `usable` span was not fully
-   root-caused within this task's time budget. Does not change the pad-target
-   decision (§2.1's SEGMENT-rounding argument is independent of this), but
-   is worth a dedicated look — possibly a real large-cache admission
-   asymmetry worth its own bug report, or a harness artifact specific to
-   this throwaway probe.
+1. **The pad-target probe's commit-cost discrepancy (§2.2) — RESOLVED by
+   R17-4 (task #321).** The mechanism causing `nopad`/`floor512kib` to
+   reserve far more distinct segments (0 cache hits) than `fixed2mib` (232
+   cache hits) despite all three requesting the same 4 MiB rounded `usable`
+   span is now fully root-caused: a fastbin magazine dealloc-dispatch bug
+   that keyed on `class_for(layout.size())` instead of segment `kind`, mis-
+   routing the dealloc of a promoted-then-in-place-grown Large block whose
+   dealloc layout classified small (≤ `SMALL_MAX`) into the small magazine
+   path, leaking its 4 MiB segment every round. Fixed in
+   `src/registry/heap_core_free.rs` (`dealloc_own_thread_with_base`),
+   pinned by `tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs`.
+   See §2.2 (now closed) for the full trace. As predicted there, this does
+   NOT change the pad-target decision (§2.1's SEGMENT-rounding argument is
+   independent of the anomaly, and post-fix all three arms are
+   indistinguishable).
 2. **R14-5's large-cache hardening may flip this gate's verdict** — worth
    re-running `scripts/r10_2_medium_gate.mjs` against this task's promotion
    mechanism once R14-5 lands, since the root cause (§5) is cache-slot

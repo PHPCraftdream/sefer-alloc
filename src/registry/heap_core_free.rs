@@ -17,7 +17,11 @@ use core::alloc::Layout;
 
 #[cfg(feature = "alloc-global")]
 use crate::alloc_core::os;
-#[cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
+#[cfg(all(
+    feature = "alloc-global",
+    feature = "fastbin",
+    any(feature = "medium-classes", feature = "hardened")
+))]
 use crate::alloc_core::segment_header::SegmentKind;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
 use crate::alloc_core::segment_header::SegmentMeta;
@@ -170,25 +174,95 @@ impl HeapCore {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.classes[c].count as usize;
 
-                    // ── F7 (task #25): Large-segment kind guard (HARDENED) ──
-                    // `class_for` returning `Some(c)` above keys the free on
-                    // the *layout*, not on where `ptr` actually lives. If the
-                    // caller frees a pointer that sits in a LARGE segment with
-                    // a small layout (a GlobalAlloc-contract violation — the
-                    // real UB is on the caller side), the M2 oracles below
-                    // would read the "bitmap"/magazine state out of the bytes
-                    // of the Large allocation's PAYLOAD — potentially routing
-                    // that block into the magazine and later re-issuing it as a
-                    // small block, aliasing the still-live Large block.
+                    // ── F7 (task #25; corrected R17-4/task #321): Large-segment
+                    //    kind routing vs. defensive no-op ──
                     //
-                    // The substrate path (`AllocCore::dealloc`) routes by
-                    // segment `kind` FIRST and so degrades to a no-op on the
-                    // same violation. This restores that symmetry: reject the
-                    // Large-in-small-layout free as a no-op BEFORE the oracles.
-                    // A single `kind_at(base)` header read (a table-free field
-                    // load), gated behind `hardened` (default OFF) like the
-                    // interior-pointer guard just below it.
-                    #[cfg(feature = "hardened")]
+                    // `class_for` returning `Some(c)` above keys the free on
+                    // the *layout*, not on where `ptr` actually lives. Two
+                    // structurally different situations can land here with the
+                    // block physically in a Large segment:
+                    //
+                    // (A) **Under `medium-classes` — a LEGITIMATE state.**
+                    //     `SMALL_MAX` is 1 MiB, and R14-4's medium→Large
+                    //     promotion (task #289) diverts a medium block to a
+                    //     dedicated 4 MiB Large segment at the 256 KiB
+                    //     threshold; OPT-G then grows that block IN PLACE up to
+                    //     any size ≤ `SMALL_MAX` while it stays a Large segment.
+                    //     Its dealloc layout (the post-grow size, exactly what
+                    //     the `GlobalAlloc` contract requires) classifies small
+                    //     even though the block lives in a Large segment. So
+                    //     this routing is a CORRECTNESS REQUIREMENT, not a
+                    //     defensive guard: without it the free falls into the
+                    //     magazine path below, reads M2 oracle (bitmap/
+                    //     magazine) state out of the Large allocation's PAYLOAD,
+                    //     and NEVER reaches `AllocCore::dealloc`'s Large branch
+                    //     — the 4 MiB segment is neither deposited into
+                    //     `large_cache` nor released: it leaks, and every
+                    //     subsequent promotion reserves a fresh segment (the
+                    //     R14-4 gate §2.2 `nopad`/`floor512kib` 0-cache-hit /
+                    //     249-segment anomaly). `AllocCore::dealloc` frees the
+                    //     whole segment via the header's `span_usable`,
+                    //     ignoring the layout — correct for both the in-place-
+                    //     grown case AND any genuine contract violation (the
+                    //     segment is freed by kind, not by the layout).
+                    //
+                    // (B) **Under any non-`medium-classes` build (incl. plain
+                    //     `production`) — structurally UNREACHABLE legitimately.**
+                    //     `SMALL_MAX` is ~253 KiB, so every Large allocation is
+                    //     > 253 KiB, and its (contract-correct) dealloc layout
+                    //     is > 253 KiB too → `class_for` returns `None` → the
+                    //     free never enters this `Some(c)` arm at all. The ONLY
+                    //     way to reach here with a Large segment is a genuine
+                    //     `GlobalAlloc`-contract violation (caller frees a Large
+                    //     pointer with a fabricated small layout). For THAT case
+                    //     F7's original task #25 design stands: a `hardened`-
+                    //     only defensive no-op (the magazine oracles would read
+                    //     bitmap state out of the Large payload — so reject
+                    //     before them). Keeping this branch `hardened`-gated
+                    //     (and a no-op, not a routing) leaves the production
+                    //     small-free hot path byte-for-byte unchanged — no
+                    //     `kind_at` field load, no `unsafe` call — since under
+                    //     plain `production` neither `medium-classes` nor
+                    //     `hardened` is on and BOTH branches compile out.
+                    //
+                    //     R17-4 deliberately did NOT make (B) route-to-substrate
+                    //     like (A): under `medium-classes` the routing is a
+                    //     load-bearing correctness fix, but under plain
+                    //     `production` the scenario is unreachable legitimately
+                    //     and the unconditional `kind_at` load it would require
+                    //     is pure overhead on every small free. `npm run iai`
+                    //     confirms zero instruction-count delta on `production`
+                    //     vs. `b8612bc` (the pre-R17-4 commit): both branches
+                    //     compile out, the generated code is identical.
+                    //
+                    // The two `#[cfg]` blocks are mutually exclusive: under
+                    // `--all-features` (`medium-classes` AND `hardened` both on)
+                    // branch (A) wins and branch (B) compiles out — so the
+                    // correctness routing always takes priority over the
+                    // defensive no-op when the legit scenario is reachable.
+
+                    // (A) `medium-classes`: correctness-critical routing.
+                    #[cfg(feature = "medium-classes")]
+                    {
+                        if SegmentHeader::kind_at(base) == SegmentKind::Large {
+                            // SAFETY: this own-thread body is reached only from
+                            // `HeapCore::dealloc`, an `unsafe fn` whose caller
+                            // bound `ptr`/`layout` to the `GlobalAlloc::dealloc`
+                            // contract; `base` was proven ours by
+                            // `dealloc_routing`'s `contains_base` check. The
+                            // substrate routes by `kind` (Large) and frees the
+                            // segment via `span_usable`, ignoring the layout.
+                            #[allow(unsafe_code)]
+                            unsafe {
+                                self.core.dealloc(ptr, layout)
+                            };
+                            return;
+                        }
+                    }
+
+                    // (B) non-`medium-classes`: original F7 hardened-only
+                    // defensive no-op (task #25). Unchanged from pre-R17-4.
+                    #[cfg(all(feature = "hardened", not(feature = "medium-classes")))]
                     {
                         if SegmentHeader::kind_at(base) == SegmentKind::Large {
                             return; // Large-segment free via small layout — no-op
@@ -871,17 +945,31 @@ impl HeapCore {
     /// regardless of the logical size requested
     /// (`src/alloc_core/alloc_core_large.rs`) — so any pad target at or below
     /// one `SEGMENT` is moot (rounded up anyway) and buys no extra headroom a
-    /// bare `new_size` doesn't already get for free. The probe confirmed this
-    /// empirically: `nopad` (plain `new_size`) and a `512 KiB` floor produced
-    /// statistically indistinguishable commit (~30 MiB steady-state for an
-    /// 8-object working set) and wall-clock, while a fixed 2 MiB pad cost
-    /// MORE committed memory for the SAME working set (large-cache admission
-    /// stopped reusing a single segment size across rounds once the promoted
-    /// request size no longer matched the eventual grown size) for a
-    /// wall-clock win that came from a workload-shape artifact (this
-    /// particular probe sequence never grows past 2 MiB, so the padded arm
-    /// happens to need zero further reallocs) rather than from the padding
-    /// itself. Padding is therefore not worth its own RSS cost as a blanket
+    /// bare `new_size` doesn't already get for free.
+    ///
+    /// **R17-4 (task #321) correction:** the probe's ORIGINAL measurement
+    /// showed a paradox — `fixed2mib` reserved only 17 distinct segments
+    /// (232 large-cache hits, ~68 MiB steady-state commit) while
+    /// `nopad`/`floor512kib` reserved up to 249 distinct segments (0 hits,
+    /// ~1 GiB commit) — the OPPOSITE of what identical 4 MiB `usable`
+    /// rounding predicts. R14-4 could not explain this and left it as the
+    /// gate report's §2.2 open question. R17-4 root-caused it: the fastbin
+    /// magazine dealloc dispatch keyed on `class_for(layout.size())`, not on
+    /// segment `kind`, so a promoted-then-OPT-G-in-place-grown Large block
+    /// whose dealloc layout classified small (≤ `SMALL_MAX`, 1 MiB under
+    /// `medium-classes`) — i.e. the `nopad`/`floor512kib` arms, whose final
+    /// grown size ≤ 1 MiB — was misrouted into the small magazine path and
+    /// NEVER reached the Large dealloc branch, leaking its 4 MiB segment
+    /// every round; `fixed2mib`'s 2 MiB dealloc layout classified `None` and
+    /// so accidentally took the correct substrate path. The R17-4 fix (route
+    /// Large segments to the kind-keyed Large dealloc unconditionally in
+    /// `dealloc_own_thread_with_base`) makes all three pad targets produce
+    /// statistically indistinguishable ~68 MiB commit — exactly what §2.1's
+    /// SEGMENT-rounding argument predicted. The pad-target decision (`nopad`,
+    /// no padding) therefore stands on §2.1's rounding rationale, which is
+    /// INDEPENDENT of the (now-fixed) anomaly; see
+    /// `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md` §2.2 (closed) and
+    /// `tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs`. Padding is
     /// default; a caller whose growth pattern would benefit from headroom
     /// beyond one `SEGMENT` is exactly what the opt-in `large-reserved-capacity`
     /// feature already exists to provide (via `AllocCore::alloc_large`'s own
