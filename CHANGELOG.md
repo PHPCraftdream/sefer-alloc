@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 15 — MAX_SEGMENTS=4096 footprint measurement, sidecar unsafe-boundary closure, medium-promotion headroom pessimization fixed at the source, ordering litmus test, doc-drift cleanup (R15-1..R15-6)
+
+Round 15 — 6 commits (`7224670`..`4643e9a`, inclusive of both ends),
+2026-07-24 — the follow-up queue against an `@fh` review of the Round 14 wave,
+synthesized in `docs/reviews/2026-07-24-r15-plan.md`. Same zero-trust
+discipline as prior rounds: delegate implementation via `@sh` sub-agents,
+personally read every diff, personally re-run the tests under the exact
+feature combination each change targets, personally reproduce red/green
+counterfactuals for every fix that changes production behavior (R15-3's
+promotion gate, R15-4's loom litmus test), commit between tasks. No feature-
+list change landed this round — `Cargo.toml`'s `production = [...]` is
+byte-identical to the end of Round 14. Unsafe-seam inventory unchanged:
+76 total (20 tier-1, 56 tier-2) — R15-2's new `unsafe fn` lives inside a
+file already covered by a tier-1 `#![allow(unsafe_code)]`, so it adds no new
+grep-visible seam.
+
+- **R15-1 (`7224670`, task #303) — post-raise perf baseline for
+  `MAX_SEGMENTS=4096`.** R14-7 raised `MAX_SEGMENTS` 1024→4096 unconditionally
+  (the one non-feature-gated change of that round) but had not measured the
+  ×4 growth this drives in `WORDS_PER_CLASS`/`DIRTY_BITMAP_WORDS`
+  (`= MAX_SEGMENTS / 64`) or `drain_dirty_segments`'s unconditional full-width
+  bitmap scan. Measured via `npm run iai` + a dedicated sidecar-RSS probe
+  before/after the raise (`docs/perf/R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md`,
+  8 raw logs): drain-scan cost is a flat, unattributed +61,4xx Ir bump traced
+  to bootstrap cost, not the scan itself (no material wall-clock delta); the
+  real, confirmed finding is sidecar footprint scaling exactly ×4 as expected
+  (`PerClassDirty` 6,272→25,088 B raw; `SegmentDirectory` ~55.1→~220.5 KiB
+  under `numa-aware`) — both `class-aware-dirty` and `alloc-segment-directory`
+  are opt-in, not in `production`, so this is a bounded cost for users who
+  already chose those features. New `AllocCore::dbg_words_per_class()`
+  doc-hidden test-only accessor added (mirrors the existing
+  `dbg_max_segments()` pattern) so `examples/r13_9_class_aware_dirty_sidecar_rss.rs`
+  reads the real constant instead of a hardcoded `16` that had gone silently
+  stale. README/`IAI_BASELINE.md` deliberately NOT refreshed this round
+  (reasoned: no `production` composition change to pin against).
+- **R15-2 (`6745350`, task #304) — `sidecar::reserve_zeroed_with` closed to
+  `unsafe fn`.** R14-9's unified sidecar primitive (`src/alloc_core/sidecar.rs`)
+  was built specifically to close "safe fn materializes `&'static`/`&mut`
+  over a raw pointer with no `unsafe` token at the call site" gaps — but
+  `reserve_zeroed_with<T>` itself stayed a safe `fn` despite materializing
+  `&mut T` over OS-zeroed (not yet fully-valid) bytes before its `fixup`
+  closure runs, exactly the class of hole the primitive exists to close.
+  Converted to `unsafe fn` with an explicit `# Safety` contract (every field
+  of `T` not written by `fixup` must be valid at all-zero); the sole call
+  site (`os::reserve_directory_sidecar`) updated with an `unsafe {}` block
+  and a `// SAFETY:` comment. `reserve<T>`/`deref<T>`/`deref_mut<T>`
+  untouched. README unsafe-inventory counts unaffected (see above).
+- **R15-3 (`4de4ef2`, task #305) — `medium-classes` × `exact-span-large`
+  realloc-promotion headroom pessimization fixed at the source, not the
+  test.** R14-4's Small/medium→Large realloc promotion
+  (`try_promote_to_large`) assumed every post-promotion grow rides OPT-G
+  in-place for free — true under plain `production` (Large always rounds up
+  to a whole 4 MiB `SEGMENT`), but false under the opt-in `exact-span-large`
+  without an effective `large-reserved-capacity` (itself disabled whenever
+  `numa-aware` is also on): a promoted block there gets ZERO growth headroom,
+  so every subsequent grow — even small same-class steps that would have
+  stayed in-place via OPT-F on the ordinary medium ladder — takes a move leg.
+  This triple-feature interaction had already forced two test-assertion
+  weakenings instead of a real fix (task #302 and its follow-up hotfix
+  `9b59990`). Root-caused and closed with a compile-time `#[cfg]` gate:
+  `try_promote_to_large`, its call site, and `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
+  now compile in only when `medium-classes && (!exact-span-large ||
+  (large-reserved-capacity && !numa-aware))` — zero runtime cost, no
+  functionality lost (growth falls through to the pre-existing, already-
+  correct medium-ladder move leg, identical in shape to plain `production`
+  without `medium-classes`). `tests/r14_4_promotion_move_leg_reduction.rs`
+  gained two new non-vacuous tests for the promotion-off configuration
+  (OPT-F same-class in-place growth), verified via a red/green counterfactual
+  (the new tests fail against the pre-fix production code, confirming they
+  are not vacuous). None of `medium-classes`/`exact-span-large`/
+  `large-reserved-capacity` are in `production`.
+- **R15-4 (`2662f38`, task #306) — unjoined loom litmus test for
+  `sidecar_oom_latch`'s Acquire/Release pairing.** R14-2's loom test
+  `latch_trip_and_successful_publish_race_single_consumer_visit` joined both
+  producer threads before its single consumer visit — `join()` itself
+  supplies happens-before independent of the latch's actual memory ordering,
+  so that test's assertion would pass under any ordering, even fully
+  `Relaxed`, without ever exercising the Acquire/Release pairing its own doc
+  comment credits. Closed with a classic message-passing litmus test: a
+  consumer spins (no `join()`) on the latch's own Acquire load until it
+  observes the trip, then asserts the producer's prior program-order writes
+  are visible; a permanent `#[should_panic]` counterfactual with the latch
+  weakened to `Relaxed` proves the new test is non-vacuous (loom finds a
+  genuine ordering-violation interleaving and the assertion fires).
+- **R15-5 (`e262559`, task #307) — doc-drift cleanup after the `MAX_SEGMENTS`
+  raise.** Five files' doc comments still cited `WORDS_PER_CLASS=16`/
+  `MAX_SEGMENTS=1024`/stale KiB footprint figures left over from before
+  R14-7's raise to 4096 — `segment_directory.rs`, `dirty_by_class.rs`,
+  `heap_slot.rs`, the `Drop for AllocCore` stack-buffer comment
+  (`alloc_core.rs`, actually 64 KiB now, not 16 KiB), and
+  `tests/regression_segment_table_tombstone_rebuild.rs`. Pure doc fix — zero
+  executable-code changes, confirmed by inspecting the diff.
+- **R15-6 (`4643e9a`, task #308, P3) — compile-time alignment assert for the
+  sidecar primitive.** `sidecar::reserve<T>`/`reserve_zeroed_with<T>`'s doc
+  comments claimed `align_of::<T>() <= PAGE` in prose only; formalized with
+  an inline `const { assert!(core::mem::align_of::<T>() <= aligned_vmem::PAGE) }`
+  at the top of both function bodies (stable since Rust 1.79; this crate's
+  MSRV is 1.88) — any future sidecar `T` violating the invariant now fails to
+  compile at monomorphization time instead of silently returning an
+  under-aligned pointer.
+
+**Still hanging from Round 14, not resolved this round:** R14-6's clean-GO
+`large-reserved-capacity` growth-factor-4x promotion recommendation has not
+yet been put to the user via `AskUserQuestion` — the one genuinely open
+promotion decision across both rounds.
+
 ### Round 14 — sidecar soundness/ordering hardening, medium realloc promotion, exact-span/large-cache production gates, SegmentTable ceiling raised, unified sidecar primitive (R14-1..R14-10)
 
 Round 14 — 19 commits (`06a5be6`..`6cc46f1`, inclusive of both ends),
