@@ -135,6 +135,11 @@ const fn sidecar_size<T>() -> usize {
 // per-feature builds.
 #[cfg_attr(not(feature = "large-cache-extended"), allow(dead_code))]
 pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
+    // Formalises the doc comment above: `leak_zeroed_pages` only guarantees
+    // `PAGE`-alignment, so any `T` whose `align_of` exceeds one page would
+    // silently receive an under-aligned pointer. Fails at monomorphization
+    // time (compile error), not at runtime, for any such `T`.
+    const { assert!(core::mem::align_of::<T>() <= aligned_vmem::PAGE) };
     let base = aligned_vmem::leak_zeroed_pages(sidecar_size::<T>())?;
     let ptr = base.as_ptr().cast::<T>();
     // SAFETY: `ptr` is non-null, `PAGE`-aligned, and valid for
@@ -200,6 +205,11 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 ///   [`deref_mut`] under the same owner-only single-writer discipline.
 #[must_use]
 pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(&mut T)) -> Option<*mut T> {
+    // Formalises the doc comment above: `leak_zeroed_pages` only guarantees
+    // `PAGE`-alignment, so any `T` whose `align_of` exceeds one page would
+    // silently receive an under-aligned pointer. Fails at monomorphization
+    // time (compile error), not at runtime, for any such `T`.
+    const { assert!(core::mem::align_of::<T>() <= aligned_vmem::PAGE) };
     let base = aligned_vmem::leak_zeroed_pages(sidecar_size::<T>())?;
     let ptr = base.as_ptr().cast::<T>();
     // SAFETY: `ptr` is non-null, `PAGE`-aligned, and valid for
