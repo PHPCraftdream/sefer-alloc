@@ -35,8 +35,9 @@
 //!
 //! `SMALL_CLASS_COUNT * WORDS_PER_CLASS` `AtomicU64` words — with the default
 //! 49-class table and `WORDS_PER_CLASS = 64` (`MAX_SEGMENTS / 64`), that is
-//! 3,136 words = 25,088 bytes = 24.5 KiB per materialised heap (58 classes under
-//! `medium-classes`: 29,696 bytes). Reserved via the SAME
+//! 3,136 words = 25,088 bytes = 24.5 KiB per materialised heap (55 classes
+//! under `medium-classes`: 28,160 bytes; 58 classes under
+//! `medium-classes-wide`: 29,696 bytes). Reserved via the SAME
 //! `aligned_vmem::leak_zeroed_pages` M5-clean direct-VM-reservation pattern
 //! `segment_directory`'s owner-only sidecar and `registry::heap_overflow`'s
 //! `HeapOverflowSidecar` both use, but published through
