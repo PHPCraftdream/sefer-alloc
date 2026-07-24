@@ -245,6 +245,121 @@ attempted in this task.
 
 ---
 
+## 2.4 R17-7 (task #3) re-verification with in-process warm-up, on a confirmed-noisy host
+
+**Date:** 2026-07-24. **Base revision:** `main` @ `fbc48a5` (R17-6 follow-up
+landed). **Trigger:** an external review's P1-3 finding (downgraded to P2 —
+`class-aware-dirty` stays in `production`, this is a measurement-honesty
+follow-up only, not a re-litigation of the promotion) asked for the §2.2
+fixed-work process-level A/B to be repeated with in-process warm-up rounds on
+a quieter runner, since §2.2's own single-round-per-launch design was flagged
+as unusually noise-sensitive (full cold allocator/process bootstrap paid on
+every one of only 20 samples per arm).
+
+**Environment-quality disclosure (checked BEFORE measuring, per this task's
+own instruction):** `wmic cpu get loadpercentage` read **80-100%** at every
+sample taken across this measurement session (five checks: 91, 97, 80, 100,
+100). This host was **not** quiet — it was persistently, heavily loaded for
+the entire duration of this re-measurement (consistent with this being a
+shared multi-agent workspace, per this repository's own git-safety
+convention documenting concurrent agents). No attempt was made to chase a
+"clean" number across repeated retries; the numbers below are reported with
+that noise level as a standing caveat, not papered over.
+
+**What changed in this task:** `examples/paired_ab_class_aware_dirty_off.rs`
+and `examples/paired_ab_class_aware_dirty_on.rs` each gained an **in-process
+warm-up phase** — `PAIRED_AB_WARMUP_ROUNDS` (default 3, env-overridable)
+discarded calls to `run_fixed_work_round()` execute before the single
+measured round whose `elapsed_ns`/`window_ns` are emitted. This does not
+change `examples/_shared/paired_ab_class_aware_dirty_workload.rs` (the
+fixed-work round body itself, and hence the workload shape, is byte-for-byte
+unchanged) — it only amortizes the one-time process/allocator bootstrap cost
+(segment reservation, directory materialisation, first-touch page faults)
+across a few extra rounds before the timed one, so the measured round starts
+from steady allocator state the way criterion's repeated `iter()` calls do,
+while still keeping ONE fresh process per final measured sample (the
+property this process-level judge exists to preserve, unlike criterion's
+in-process repeated sampling). Verified via `--verify-only` before the timed
+runs (both arms' sanity counters and warm-up-adjusted output shape checked
+first).
+
+**Protocol:** identical A/B/B/A, 20 pairs (80 process launches) per run, two
+independent repeats, `elapsed_ns` (full round) as the paired metric — same
+protocol as §2.2, now with the warm-up phase added to each process launch.
+
+Raw logs: `docs/perf/_raw_r17_7_warmup_ab_run1.log`,
+`docs/perf/_raw_r17_7_warmup_ab_run2.log`. Full provenance JSON (every raw
+process launch, git commit, rustc version, CPU info):
+`docs/perf/paired_ab_runs/2026-07-24T15-33-23-787Z.json` (same-vs-same
+control), `docs/perf/paired_ab_runs/2026-07-24T15-33-50-236Z.json` (run 1),
+`docs/perf/paired_ab_runs/2026-07-24T15-35-13-424Z.json` (run 2).
+
+| Comparison | mean(off) | mean(on) | paired t | crit (p<0.05) | significant? | sign test |
+|---|---:|---:|---:|---:|---|---|
+| Same-vs-same control (off vs off), with warm-up | 53.85 ms | 51.17 ms | 1.172 | 2.306 | **NOT significant** (harness sanity: PASS) | 2/10 vs 8/10 |
+| Run 1 (off vs on), with warm-up | 53.39 ms | 54.62 ms | -0.714 | 2.101 | **NOT significant** | 13/20 off-faster |
+| Run 2 (off vs on), independent repeat, with warm-up | 53.46 ms | 54.71 ms | -0.683 | 2.101 | **NOT significant** | 11/20 off-faster |
+
+**Reading this honestly, noise level included:** both warm-up runs show a
+much SMALLER raw mean delta than §2.2's original single-shot runs (~1.2-1.3
+ms here vs. ~5.1 ms in §2.2's run 1), and neither reaches significance —
+consistent with §2.2's run 2 (also not significant) rather than §2.2's run 1
+(which crossed the "on slower" significance threshold). The per-sample raw
+logs show clear noise contamination even with warm-up: both runs contain
+outlier samples 2-3x the modal ~52-56 ms cluster (e.g. run 1 has samples at
+93.5 ms and 95.6 ms against a ~53 ms median; run 2 has a 14.3 ms low outlier
+and an 88-92 ms high-outlier pair) — a direct, visible symptom of the 80-100%
+background CPU load measured going in. The same-vs-same control again
+confirms the harness itself is sound (not significant, roughly even sign
+split) even under this load, so the non-significant off-vs-on result is not
+a harness artifact — it is consistent with either (a) no real full-round
+production effect at this workload/host, or (b) a real but small effect
+below this measurement's noise floor at 20 pairs on an 80-100%-loaded host;
+this task's own data cannot distinguish (a) from (b).
+
+**No iai-callgrind counterpart available for this specific workload:**
+`benches/perf_gate_iai.rs`'s 12 instruction-count gate benchmarks
+(`small_churn_16b`, `aligned_churn_640b_a128`, `large_alloc_free_cycle`,
+`realloc_grow`, `cold_alloc_free_{256x16b,256x64b}`,
+`recycle_alloc_free_{256x16b,256x64b}`, `churn_256b`, `churn_write_256b`,
+`multiseg_cold_256k`, `seg_cycle_decommit_256k`) are all single-threaded
+alloc/free/realloc hot-path microbenchmarks with no multi-thread
+producer/owner cross-class dirty-drain shape — none of them exercise the
+code path `class-aware-dirty` changes (`drain_dirty_segments` under
+concurrent remote-free pressure from other size classes), so none is a valid
+class-aware-dirty-specific signal. Additionally, `iai-callgrind` itself is
+`#[cfg(target_os = "linux")]`-gated (Valgrind/Callgrind is Linux-only; see
+that file's own platform note) and this measurement session ran on Windows,
+so `npm run iai` here would only execute the non-Linux `fn main() {}` stub —
+running it would not have produced a real signal, so it was not run as a
+substitute for this section (documented here rather than silently skipped).
+
+**Verdict after this task's own measurement:** `class-aware-dirty` **remains
+in `production`** — this task does not revisit that decision; the mechanism
+itself (per-(segment,class) dirty routing avoiding wasted cross-class drain
+visits, R9-6's original counter-level finding) is unchanged and still real.
+On the specific question this task was asked to close — does the full-round,
+fixed-work, process-level production wall-clock effect replicate cleanly
+once in-process warm-up is added — the honest answer is: **it still does
+not, on this host, at this sample size, under this session's confirmed
+80-100% background load.** Combined with §2.2's original two runs (one
+significant "on slower", one not significant) and this task's two new
+warm-up runs (both not significant, with much smaller raw deltas), the
+full-round production wall-clock effect of `class-aware-dirty` is **not
+statistically confirmed in either direction** across all four process-level
+measurements taken to date. `class-aware-dirty` stays in `production` on
+**recoverability grounds** (it closes the lost-wakeup class from R13-1,
+which remains true regardless of the wall-clock question) — its full-round
+production wall-clock effect has not been established with confidence by any
+process-level measurement so far, and this task's own attempt, run under a
+disclosed-noisy environment, adds two more inconclusive data points rather
+than resolving the question. A future re-attempt on a machine independently
+confirmed idle (not just "less busy than last time") is the only way to
+close this gap with actual confidence; this task does not claim to be that
+attempt.
+
+---
+
 ## 7. Artifacts this task adds
 
 - `benches/r12_7_class_aware_dirty_wallclock.rs` — dual-axis output (window +
@@ -278,3 +393,23 @@ attempted in this task.
 - No change to `Cargo.toml`'s `production = [...]` feature LIST (only its
   comment's wording) — `class-aware-dirty` remains promoted, unchanged by
   this task.
+
+### R17-7 (task #3) additions (§2.4)
+
+- `examples/paired_ab_class_aware_dirty_off.rs`,
+  `examples/paired_ab_class_aware_dirty_on.rs` — added an in-process warm-up
+  phase (`PAIRED_AB_WARMUP_ROUNDS`, default 3, env-overridable) that runs and
+  discards N fixed-work rounds before the single measured round. No change to
+  `examples/_shared/paired_ab_class_aware_dirty_workload.rs` (the workload
+  body/shape is unchanged).
+- Raw logs: `docs/perf/_raw_r17_7_warmup_ab_run1.log`,
+  `docs/perf/_raw_r17_7_warmup_ab_run2.log`.
+- Full paired-ab provenance JSON:
+  `docs/perf/paired_ab_runs/2026-07-24T15-33-23-787Z.json` (same-vs-same
+  control), `docs/perf/paired_ab_runs/2026-07-24T15-33-50-236Z.json` (run 1),
+  `docs/perf/paired_ab_runs/2026-07-24T15-35-13-424Z.json` (run 2).
+- `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB_summary.csv` — extended
+  with three new rows for this task's warm-up measurements (commit `fbc48a5`,
+  environment noted as noisy in the `features` column), alongside the
+  existing R14-3 rows (not replacing them).
+- This document's §2.4.

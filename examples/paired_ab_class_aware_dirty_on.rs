@@ -9,6 +9,13 @@
 //! (`examples/_shared/paired_ab_class_aware_dirty_workload.rs`).
 //!
 //! **Build:** `cargo build --release --example paired_ab_class_aware_dirty_on --features "production alloc-stats class-aware-dirty"`
+//!
+//! **R17-7 (task #3) in-process warm-up:** identical warm-up phase to
+//! `paired_ab_class_aware_dirty_off.rs` — see that file's module doc for the
+//! full rationale. `WARMUP_ROUNDS` discarded fixed-work rounds run in this
+//! same process before the single measured round whose `elapsed_ns`/
+//! `window_ns` are emitted, controlled by `PAIRED_AB_WARMUP_ROUNDS` (default
+//! 3).
 
 #![cfg(all(
     feature = "alloc-global",
@@ -22,8 +29,24 @@
 // own module doc.
 include!("_shared/paired_ab_class_aware_dirty_workload.rs");
 
+/// Default number of discarded in-process warm-up rounds run before the
+/// single measured round — see the module doc above. Override via
+/// `PAIRED_AB_WARMUP_ROUNDS`.
+const DEFAULT_WARMUP_ROUNDS: usize = 3;
+
+fn warmup_rounds() -> usize {
+    std::env::var("PAIRED_AB_WARMUP_ROUNDS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_WARMUP_ROUNDS)
+}
+
 fn main() {
     let _ = bootstrap::ensure();
+
+    for _ in 0..warmup_rounds() {
+        let _ = run_fixed_work_round();
+    }
 
     let (full_round_ns, window_ns, owner_allocs) = run_fixed_work_round();
 

@@ -33,6 +33,22 @@
 //!   the feature flag differs).
 //!
 //! **Build:** `cargo build --release --example paired_ab_class_aware_dirty_off --features "production alloc-stats"`
+//!
+//! **R17-7 (task #3) in-process warm-up:** before the single MEASURED round
+//! whose `elapsed_ns`/`window_ns` are emitted, this binary now runs
+//! `WARMUP_ROUNDS` additional fixed-work rounds in the SAME process and
+//! discards their timings. Motivation: §3 of
+//! `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md` already diagnosed
+//! that a fresh-process, single-round-per-launch sample pays full process/
+//! allocator-bootstrap cold-start cost with no cross-call warm state, so one
+//! scheduler hiccup or page-fault burst dominates that one sample instead of
+//! being averaged out — this warm-up phase reaches steady allocator/heap
+//! state (segments already reserved, directory already materialised, OS
+//! page-fault cost already paid) before the timed round runs, the same way
+//! criterion's repeated `iter()` calls do, while still keeping ONE fresh
+//! process per final measured sample (the property the process-level judge
+//! is for). `WARMUP_ROUNDS` is controlled by the `PAIRED_AB_WARMUP_ROUNDS`
+//! env var (default 3) so the runner/caller can tune it without a rebuild.
 
 #![cfg(all(
     feature = "alloc-global",
@@ -47,8 +63,24 @@
 // `run_fixed_work_round() -> (full_round_ns, window_ns, owner_allocs)`.
 include!("_shared/paired_ab_class_aware_dirty_workload.rs");
 
+/// Default number of discarded in-process warm-up rounds run before the
+/// single measured round — see the module doc above. Override via
+/// `PAIRED_AB_WARMUP_ROUNDS`.
+const DEFAULT_WARMUP_ROUNDS: usize = 3;
+
+fn warmup_rounds() -> usize {
+    std::env::var("PAIRED_AB_WARMUP_ROUNDS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_WARMUP_ROUNDS)
+}
+
 fn main() {
     let _ = bootstrap::ensure();
+
+    for _ in 0..warmup_rounds() {
+        let _ = run_fixed_work_round();
+    }
 
     let (full_round_ns, window_ns, owner_allocs) = run_fixed_work_round();
 

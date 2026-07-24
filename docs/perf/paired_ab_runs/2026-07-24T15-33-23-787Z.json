@@ -1,0 +1,474 @@
+{
+  "timestamp": "2026-07-24T15:33:23.787Z",
+  "git_commit": "fbc48a5e8f05facccdd7f009c2307a8aae79cb18",
+  "git_dirty": true,
+  "rustc_version_verbose": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6",
+  "cpu_info": "Name=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz\r | NumberOfCores=8\r | NumberOfLogicalProcessors=16\r",
+  "power_plan": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
+  "platform": "win32",
+  "cargo_features_built_with": "off: production,alloc-stats | on: production,alloc-stats,class-aware-dirty",
+  "metric": "elapsed_ns",
+  "protocol": "A/B/B/A, pairs = one block of 4 launches (A B B A), block value = mean of the 2 same-arm samples",
+  "pairs_per_comparison": 10,
+  "comparisons": [
+    {
+      "arm_a": "off",
+      "arm_b": "off",
+      "pairs": 10,
+      "samples_a_ns": [
+        53413200,
+        53532350,
+        53196500,
+        52185500,
+        53804800,
+        53725350,
+        54193850,
+        54454500,
+        56414200,
+        53605000
+      ],
+      "samples_b_ns": [
+        53274700,
+        54040550,
+        51294150,
+        51540450,
+        52994100,
+        53498100,
+        53427850,
+        53210150,
+        33277050,
+        55117250
+      ],
+      "deltas_a_minus_b_ns": [
+        138500,
+        -508200,
+        1902350,
+        645050,
+        810700,
+        227250,
+        766000,
+        1244350,
+        23137150,
+        -1512250
+      ],
+      "paired_t_test": {
+        "n": 10,
+        "mean": 2685090,
+        "sd": 7247022.695899944,
+        "se": 2291709.797397761,
+        "t": 1.1716535850433254,
+        "df": 9,
+        "crit": 2.306,
+        "significant": false
+      },
+      "sign_test": {
+        "aFaster": 2,
+        "bFaster": 8,
+        "ties": 0,
+        "n": 10
+      },
+      "raw_process_launches": [
+        {
+          "block": 0,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54417200,
+          "window_ns": 3104900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:15.466Z"
+        },
+        {
+          "block": 0,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53398200,
+          "window_ns": 3025000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:15.678Z"
+        },
+        {
+          "block": 0,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53151200,
+          "window_ns": 3185500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:15.891Z"
+        },
+        {
+          "block": 0,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52409200,
+          "window_ns": 3217900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:16.106Z"
+        },
+        {
+          "block": 1,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 55438100,
+          "window_ns": 3287200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:16.328Z"
+        },
+        {
+          "block": 1,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 55280600,
+          "window_ns": 3375300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:16.542Z"
+        },
+        {
+          "block": 1,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52800500,
+          "window_ns": 3169700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:16.755Z"
+        },
+        {
+          "block": 1,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 51626600,
+          "window_ns": 3132500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:16.964Z"
+        },
+        {
+          "block": 2,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54246400,
+          "window_ns": 3229000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:17.181Z"
+        },
+        {
+          "block": 2,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50690300,
+          "window_ns": 3028400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 674,
+          "wall_clock_iso": "2026-07-24T15:33:17.387Z"
+        },
+        {
+          "block": 2,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 51898000,
+          "window_ns": 3183600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:17.594Z"
+        },
+        {
+          "block": 2,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52146600,
+          "window_ns": 3170700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 674,
+          "wall_clock_iso": "2026-07-24T15:33:17.803Z"
+        },
+        {
+          "block": 3,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 51931300,
+          "window_ns": 3272000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:18.011Z"
+        },
+        {
+          "block": 3,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 50326700,
+          "window_ns": 3087700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:18.220Z"
+        },
+        {
+          "block": 3,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52754200,
+          "window_ns": 3190500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:18.428Z"
+        },
+        {
+          "block": 3,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52439700,
+          "window_ns": 3198700,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:18.640Z"
+        },
+        {
+          "block": 4,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53654700,
+          "window_ns": 3025500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:18.851Z"
+        },
+        {
+          "block": 4,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53209200,
+          "window_ns": 3183200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:19.063Z"
+        },
+        {
+          "block": 4,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52779000,
+          "window_ns": 3212100,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:19.276Z"
+        },
+        {
+          "block": 4,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53954900,
+          "window_ns": 3685400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:19.488Z"
+        },
+        {
+          "block": 5,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52643400,
+          "window_ns": 3524300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:19.697Z"
+        },
+        {
+          "block": 5,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52082600,
+          "window_ns": 3031900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:19.907Z"
+        },
+        {
+          "block": 5,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54913600,
+          "window_ns": 3350000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:20.120Z"
+        },
+        {
+          "block": 5,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54807300,
+          "window_ns": 3774800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:20.334Z"
+        },
+        {
+          "block": 6,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53828900,
+          "window_ns": 3293200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:20.547Z"
+        },
+        {
+          "block": 6,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53257600,
+          "window_ns": 3022200,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:20.760Z"
+        },
+        {
+          "block": 6,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53598100,
+          "window_ns": 3736000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:20.971Z"
+        },
+        {
+          "block": 6,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54558800,
+          "window_ns": 3565800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:21.185Z"
+        },
+        {
+          "block": 7,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53697600,
+          "window_ns": 2599000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:21.401Z"
+        },
+        {
+          "block": 7,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 53486200,
+          "window_ns": 2860400,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:21.613Z"
+        },
+        {
+          "block": 7,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52934100,
+          "window_ns": 3201300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:21.833Z"
+        },
+        {
+          "block": 7,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 55211400,
+          "window_ns": 3127800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:22.047Z"
+        },
+        {
+          "block": 8,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 57637000,
+          "window_ns": 3228900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 674,
+          "wall_clock_iso": "2026-07-24T15:33:22.264Z"
+        },
+        {
+          "block": 8,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 13700600,
+          "window_ns": 3272500,
+          "owner_allocs": 800,
+          "segments_reserved_total": 682,
+          "wall_clock_iso": "2026-07-24T15:33:22.474Z"
+        },
+        {
+          "block": 8,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52853500,
+          "window_ns": 3083300,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:22.683Z"
+        },
+        {
+          "block": 8,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 55191400,
+          "window_ns": 4063000,
+          "owner_allocs": 800,
+          "segments_reserved_total": 675,
+          "wall_clock_iso": "2026-07-24T15:33:22.912Z"
+        },
+        {
+          "block": 9,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 52753300,
+          "window_ns": 3874800,
+          "owner_allocs": 800,
+          "segments_reserved_total": 682,
+          "wall_clock_iso": "2026-07-24T15:33:23.136Z"
+        },
+        {
+          "block": 9,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 56154600,
+          "window_ns": 2802100,
+          "owner_allocs": 899,
+          "segments_reserved_total": 678,
+          "wall_clock_iso": "2026-07-24T15:33:23.358Z"
+        },
+        {
+          "block": 9,
+          "slot": "B",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54079900,
+          "window_ns": 3024600,
+          "owner_allocs": 800,
+          "segments_reserved_total": 674,
+          "wall_clock_iso": "2026-07-24T15:33:23.573Z"
+        },
+        {
+          "block": 9,
+          "slot": "A",
+          "arm": "class_aware_dirty_off",
+          "elapsed_ns": 54456700,
+          "window_ns": 3233900,
+          "owner_allocs": 800,
+          "segments_reserved_total": 676,
+          "wall_clock_iso": "2026-07-24T15:33:23.786Z"
+        }
+      ]
+    }
+  ]
+}
