@@ -70,10 +70,10 @@ pub(crate) const REGISTRY_FOOTPRINT: usize = MAX_SEGMENTS * size_of::<*mut u8>()
 /// Capacity of the open-addressing hash table (OPT-B). Load factor ≤ 50%
 /// so `HASH_CAPACITY = 2 * MAX_SEGMENTS`. Power of two for cheap modulo via
 /// bitmasking.
-pub(crate) const HASH_CAPACITY: usize = 2 * MAX_SEGMENTS; // 2048
+pub(crate) const HASH_CAPACITY: usize = 2 * MAX_SEGMENTS; // 8192
 
 /// Footprint of the hash table in the primordial segment.
-/// `HASH_CAPACITY` entries × `sizeof(*mut u8)` = 16 KiB.
+/// `HASH_CAPACITY` entries × `sizeof(*mut u8)` = 64 KiB.
 pub(crate) const HASH_FOOTPRINT: usize = HASH_CAPACITY * size_of::<*mut u8>();
 
 /// Capacity of the free-list stack of recyclable slot indices (task #135,
