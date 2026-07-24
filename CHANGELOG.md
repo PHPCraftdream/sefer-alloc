@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 16 — CI coverage restored for medium-classes promotion, R15-1's Ir delta root-caused, review-driven doc/process cleanup (R16-1..R16-6)
+
+Round 16 — 6 commits (`ed8f955`..`56ed79f`, inclusive of both ends; `ed8f955`
+is a standalone hotfix, `5f45b37`..`56ed79f` the six R16-1..R16-6 tasks),
+2026-07-24 — the follow-up queue against an `@fh` review of the Round 15
+wave. Same zero-trust discipline as prior rounds throughout, plus one
+additional personal-verification technique newly applied this round: for
+R16-1, a live before/after check that the new CI rows genuinely exercise the
+non-early-return branch of `HAS_PROMOTION`-gated tests, not merely compile
+them. No feature-list change landed this round.
+
+- **Hotfix (`ed8f955`)** — Round 15's own review caught a factual error I
+  had written into the CHANGELOG's R15-1 paragraph: it claimed
+  `class-aware-dirty`/`alloc-segment-directory` are opt-in, not in
+  `production`. Both are actually in `production` (`Cargo.toml`, since
+  R13-9/R8-3) — verified directly against `Cargo.toml` before correcting.
+  `PerClassDirty`'s ×4 footprint growth from R15-1 is therefore a real cost
+  every `production` build now pays, not a bounded opt-in-only cost.
+- **R16-1 (`5f45b37`+`4a3ab19`, task #311, P1) — CI coverage restored for
+  the medium-classes realloc promotion.** R15-3's `#[cfg]` gate had left
+  `try_promote_to_large` (R14-4, the largest Round 14 perf item) with ZERO
+  per-PR CI coverage in either of its two mutually-exclusive compiled
+  states — no row in `test-feature-isolation` ever turned on
+  `medium-classes` at all, so both the promotion-ON and promotion-OFF
+  branches of `tests/r14_4_promotion_move_leg_reduction.rs` had been silently
+  early-returning in every CI configuration since R15-3 landed (the same
+  class of gap R13-12/#285 already caught once). Added two targeted CI
+  rows (`production medium-classes`, `production medium-classes
+  exact-span-large`) and corrected two sibling test files
+  (`r14_4_promotion_free_correctness.rs`, `r14_4_promotion_shrink_uses_move_leg.rs`)
+  whose doc comments/messages had gone stale under the promotion-off
+  configuration.
+- **R16-2 (`87d0412`, task #312, P2)** — R15-5's own doc-fix had mislabeled
+  a 55-class (`medium-classes`) footprint figure as "58 classes"
+  (`medium-classes-wide`'s count) in `dirty_by_class.rs`; split into two
+  correctly-labeled figures (55 classes = 28,160 B; 58 classes = 29,696 B).
+- **R16-3 (`7d082ad`, task #313, P2)** — retroactively added the
+  machine-readable `_summary.csv` companion R15-1's own report was missing
+  (the R14-10 rule requiring one was already in force at R15-1's commit
+  time).
+- **R16-4 (`afa6b1d`, task #314, P2) — R15-1's flat +61,4xx Ir delta
+  root-caused.** A direct `callgrind_annotate`/`objdump` diff (same
+  before/after commit-pair isolation method as R15-1) traced the entire
+  delta to two `MAX_SEGMENTS`-scaled zero-fill loops in
+  `bootstrap::primordial()` (the OPT-B hash-table init and the free-list
+  init), both compiled to `memset` calls — byte-delta arithmetic
+  (`(65,536−16,384) + (16,388−4,100) = 61,440`) matches the observed Ir
+  delta to within 1 Ir. Confirms R15-1's qualitative "one-time bootstrap
+  cost" headline while correcting its root-cause attribution (R15-1's own
+  §2.3 had ruled out an explicit zero-init loop by checking the wrong call
+  frame). No code change recommended — whether to extend the existing
+  `cfg(not(miri))` virgin-page-skip discipline to these two loops is
+  flagged as a follow-up decision, not applied.
+- **R16-5 (`eedc111`, task #315, P3)** — fixed a stale comment in
+  `heap_core_free.rs` that contradicted R15-3's own follow-up paragraph
+  two lines below it, and added `HeapCore::dbg_promotion_compiled()` (a
+  `#[doc(hidden)]` test-only accessor mirroring the `dbg_max_segments()`
+  pattern) plus a canary test asserting the test-side hand-mirrored
+  `HAS_PROMOTION` constant against the real compiled predicate — closes the
+  silent-desync risk a future edit to the `src/`-side `#[cfg]` without a
+  matching test-side edit would otherwise create.
+- **R16-6 (`56ed79f`, task #316, P3, flake investigation)** — a one-off
+  `regression_r4_3_teardown_trim.rs` failure surfaced during this round's
+  own verification (under heavy concurrent CPU load from background
+  `cargo clippy` builds) was investigated end-to-end (traced
+  `AbandonGuard::drop` → `trim_for_recycle` → `evict_all` →
+  `release_segment`, confirmed the release-counter increment is
+  unconditional, ruled out registry exhaustion) but could not be
+  reliably reproduced (450+ direct test-binary invocations plus two full
+  suite runs under sustained background load, all green). Documented as an
+  open question in the test's own module doc, per the project's
+  established known-flakiness-under-load precedent — no code or assertion
+  change made.
+
+**Still hanging from Round 14, resolved this session (not a Round 16 code
+change):** the user was asked via `AskUserQuestion` whether to keep R14-6's
+`large-reserved-capacity` growth-factor-4x fix as-is — confirmed keep as-is,
+closing the one standing promotion decision carried across Rounds 14–15.
+
 ### Round 15 — MAX_SEGMENTS=4096 footprint measurement, sidecar unsafe-boundary closure, medium-promotion headroom pessimization fixed at the source, ordering litmus test, doc-drift cleanup (R15-1..R15-6)
 
 Round 15 — 6 commits (`7224670`..`4643e9a`, inclusive of both ends),
