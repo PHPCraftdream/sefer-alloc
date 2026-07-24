@@ -70,17 +70,23 @@
 //! [`deref`]/[`deref_mut`] (the `unsafe fn` boundary) — rather than a
 //! handle type callers must additionally manage.
 
-// Named `unsafe` seam (tier 1): the two documented reasons to hold `unsafe`
-// here are (1) `ptr::write`-constructing a fully-typed `T` into the
+// Named `unsafe` seam (tier 1): the three documented reasons to hold
+// `unsafe` here are (1) `ptr::write`-constructing a fully-typed `T` into the
 // freshly-reserved, not-yet-observed page(s) [`reserve`] gets from
 // `aligned_vmem::leak_zeroed_pages` — non-null, page-aligned, valid for
 // `size_of::<T>()` bytes, and not yet aliased by any other reference, so a
-// plain overwrite is sound; and (2) dereferencing the resulting `*mut T` /
-// `*const T` as `&'static T` / `&'static mut T` in [`deref`]/[`deref_mut`] —
-// sound because the pointer is only ever produced by [`reserve`] (thus
-// always pointing at a value typed-initialised by this same module) and the
-// caller's owner-only single-writer discipline (documented per call site;
-// mirrors `AllocCore`'s "neither `Send` nor `Sync`" invariant) rules out any
+// plain overwrite is sound; (2) materialising a `&mut T` over the freshly
+// OS-zeroed (not yet fully-valid) span in [`reserve_zeroed_with`] and handing
+// it to the caller-supplied `fixup` BEFORE `fixup` has run — sound only
+// because the caller's `# Safety` contract attests every field `fixup`
+// leaves untouched is already valid at all-zero, an attestation this
+// function cannot check itself; and (3) dereferencing the resulting
+// `*mut T` / `*const T` as `&'static T` / `&'static mut T` in [`deref`]/
+// [`deref_mut`] — sound because the pointer is only ever produced by
+// [`reserve`] or [`reserve_zeroed_with`] (thus always pointing at a value
+// brought to a fully valid `T` state by this same module) and the caller's
+// owner-only single-writer discipline (documented per call site; mirrors
+// `AllocCore`'s "neither `Send` nor `Sync`" invariant) rules out any
 // concurrent aliasing writer/reader.
 #![allow(unsafe_code)]
 
@@ -171,17 +177,38 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 /// already a valid `T` state for those fields.
 ///
 /// Returns `None` only on OOM, exactly like [`reserve`].
+///
+/// `unsafe fn`, not a safe function with a prose-only caller contract: the
+/// `&mut T` handed to `fixup` below is materialised over raw OS-zeroed bytes
+/// BEFORE `fixup` has run, i.e. before every field of `T` is known to hold a
+/// valid value — exactly the class of gap this module exists to close (see
+/// the module doc's R14-1 rationale). A safe `fn` here would let ordinary
+/// safe code construct a `&mut T` over not-yet-fully-valid memory with no
+/// `unsafe` token anywhere; requiring `unsafe` at the call site forces the
+/// caller to locally justify that every field `fixup` leaves untouched is
+/// valid at all-zero.
+///
+/// # Safety
+///
+/// - Every field of `T` NOT written by `fixup` must be valid when its bytes
+///   are all-zero (e.g. a bitmap of plain `u64`/`AtomicU64` words, where
+///   all-zero means "every bit clear" — a real, intentional state, not a
+///   coincidence). `fixup` itself is trusted to repair the remaining
+///   field(s) to a valid state before returning.
+/// - The returned pointer must be treated exactly like one returned by
+///   [`reserve`]: stored once, then accessed only through [`deref`]/
+///   [`deref_mut`] under the same owner-only single-writer discipline.
 #[must_use]
-pub(crate) fn reserve_zeroed_with<T>(fixup: impl FnOnce(&mut T)) -> Option<*mut T> {
+pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(&mut T)) -> Option<*mut T> {
     let base = aligned_vmem::leak_zeroed_pages(sidecar_size::<T>())?;
     let ptr = base.as_ptr().cast::<T>();
     // SAFETY: `ptr` is non-null, `PAGE`-aligned, and valid for
     // `size_of::<T>()` bytes (same construction as `reserve` above). The
     // OS-zeroed bytes are the caller-attested valid initial state for every
     // field `fixup` does not touch (that attestation is this function's
-    // documented contract, upheld by every call site in this crate — see the
-    // module doc). `&mut *ptr` is sound: freshly reserved, not yet observed
-    // by any other reference, so no aliasing.
+    // documented `# Safety` contract, upheld by every call site in this
+    // crate — see the module doc). `&mut *ptr` is sound: freshly reserved,
+    // not yet observed by any other reference, so no aliasing.
     let value: &mut T = unsafe { &mut *ptr };
     fixup(value);
     Some(ptr)
