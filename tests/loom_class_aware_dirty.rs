@@ -874,3 +874,234 @@ fn latch_trip_and_successful_publish_race_single_consumer_visit() {
         );
     });
 }
+
+// =========================================================================
+// R15-4 (task #306, review finding P2-4): `latch_trip_and_successful_publish_
+// race_single_consumer_visit` above joins BOTH producers before the single
+// consumer visit -- `join()` itself gives a full happens-before between
+// everything the joined thread did and code that runs AFTER the join, so
+// that test's assertion passes under ANY memory ordering on
+// `coarse_only_latch` (even fully `Relaxed`), regardless of whether the
+// Acquire/Release pairing this section's doc comment credits is doing any
+// work at all. It genuinely covers the LATCH's *logic* (coarse-only routing
+// recovers both entries in one pass), but not the *ordering* property R14-2
+// claims to make provable.
+//
+// The two tests below close that gap using the classic message-passing
+// litmus-test shape: a consumer thread SPINS (no `join()`) on
+// `coarse_only_latch`'s own Acquire load until it observes the trip, then
+// asserts that producer A's PRIOR (program-order) writes -- the ring-slot
+// publish and the per-segment dirty bit, both stored Release before the
+// latch's own Release store -- are unconditionally visible at that point.
+// If the latch's ordering were weakened to `Relaxed`, loom's bounded
+// interleaving search must find a schedule where the spin observes the trip
+// but a prior write is not yet visible -- which is exactly what
+// `counterfactual_relaxed_latch_spin_may_observe_trip_before_prior_writes`
+// below proves, using a second model built with `Relaxed` throughout,
+// mirroring this file's established permanent-counterfactual-method pattern
+// (`no_latch_visit_and_drain` / `class_scoped_visit_and_partial_drain`)
+// rather than a temporary hand-edit-and-revert.
+// =========================================================================
+
+/// Bound on both this test's producer push-retry loop and the consumer's
+/// latch-spin loop. Per `loom_remote_ring.rs`'s `MODEL_RETRY_BOUND` doc
+/// comment (same rationale, copied here rather than shared since these are
+/// independent single-file loom models by this file's own established
+/// convention): an UNBOUNDED retry-until-success or spin-until-observed loop
+/// makes loom's checker abort with "Model exceeded maximum number of
+/// branches" -- loom explores every iteration as a new branch regardless of
+/// `yield_now()` calls, so a small bound keeps the model tractable while
+/// still covering the property under test (does the FIRST successful push
+/// get its prior writes made visible to a spinning consumer under every
+/// interleaving loom explores). `RING_CAP=4` means the producer's own push
+/// never actually needs to retry in this model (only one push happens), so
+/// this bound is pure headroom against loom's own scheduling exploration,
+/// not a realistic contention bound.
+const SPIN_BOUND: u32 = 8;
+
+/// Consumer SPINS (no `join()`) on `coarse_only_latch`'s Acquire load until
+/// it observes producer A's trip, then asserts A's prior program-order
+/// writes (ring-slot publish, per-segment dirty bit) are visible without
+/// ever calling `latched_visit_and_drain`'s full drain (which would mutate
+/// state this test does not need to touch) -- isolating exactly the
+/// Acquire/Release pairing under test, nothing else.
+#[test]
+fn latch_acquire_pairing_makes_prior_writes_visible_without_join() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = LatchedDirtyModel::new();
+
+        // Producer A: sidecar OOM -- publishes its ring entry and the coarse
+        // per-segment bit (both Release), THEN trips the latch (Release).
+        // NOT joined before the consumer spins below. Bounded retry (see
+        // `SPIN_BOUND`'s doc comment) -- a single push into an empty
+        // `RING_CAP=4` ring never actually needs more than one attempt.
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            for _ in 0..SPIN_BOUND {
+                if m_a.push_and_mark_with_latch(10, 0, false) {
+                    return;
+                }
+            }
+            panic!("producer A did not land its push within SPIN_BOUND attempts");
+        });
+
+        // Consumer: spin on the latch's OWN Acquire load -- no join(). The
+        // instant this observes a nonzero latch, Acquire/Release must make
+        // every write A performed in program order BEFORE its Release store
+        // to `coarse_only_latch` visible here. Bounded (see `SPIN_BOUND`):
+        // if the latch is never observed tripped within the bound under some
+        // interleaving loom explores, that is a distinct liveness question
+        // out of scope for this ordering-focused test -- treated as a skip,
+        // not a failure, so this test stays focused purely on "IF the trip
+        // is observed, are the prior writes visible".
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || {
+            for _ in 0..SPIN_BOUND {
+                if m_c.coarse_only_latch.load(Ordering::Acquire) != 0 {
+                    // Per-segment dirty bit: A's `fetch_or(1, Release)` ran
+                    // strictly before A's `coarse_only_latch.store(1,
+                    // Release)` in program order -- must be visible now.
+                    let dirty = m_c.dirty_segment.load(Ordering::Acquire) & 1 != 0;
+                    assert!(
+                        dirty,
+                        "latch observed tripped but the per-segment dirty bit A set \
+                         BEFORE tripping the latch is not yet visible -- this is the \
+                         Acquire/Release pairing R14-2 claims to establish"
+                    );
+                    // Ring publish: A's `ring_slots[idx].store(10, Release)`
+                    // also ran strictly before the latch trip -- the tail
+                    // must have advanced past the head, and the published
+                    // slot must not read back as empty.
+                    let t = m_c.ring_tail.load(Ordering::Acquire);
+                    let h = m_c.ring_head.load(Ordering::Relaxed);
+                    assert!(
+                        t != h,
+                        "latch observed tripped but A's ring-tail advance is not yet \
+                         visible -- ring publish should happen-before the latch trip"
+                    );
+                    let idx = (h as usize) % RING_CAP as usize;
+                    let off = m_c.ring_slots[idx].load(Ordering::Acquire);
+                    assert_ne!(
+                        off, RING_SLOT_EMPTY,
+                        "latch observed tripped but A's published ring offset is not \
+                         yet visible at the head slot"
+                    );
+                    return;
+                }
+            }
+        });
+
+        ta.join().unwrap();
+        tc.join().unwrap();
+    });
+}
+
+/// COUNTERFACTUAL (`#[should_panic]`): proves
+/// `latch_acquire_pairing_makes_prior_writes_visible_without_join` above is
+/// non-vacuous. `RelaxedLatchModel` is a byte-for-byte copy of
+/// `LatchedDirtyModel::push_and_mark_with_latch`'s publish path EXCEPT the
+/// latch's store/load pair is `Relaxed` instead of `Release`/`Acquire` --
+/// the exact weakening this task's review finding warned the joined-producer
+/// test could not detect. Under `Relaxed`, nothing forbids the consumer's
+/// spin from observing the latch trip before observing A's prior per-segment
+/// dirty-bit write (both are independent `Relaxed` operations with no
+/// ordering relationship), so loom's bounded interleaving search must find a
+/// schedule where the assertion fires.
+#[test]
+#[should_panic(expected = "not yet visible")]
+fn counterfactual_relaxed_latch_spin_may_observe_trip_before_prior_writes() {
+    struct RelaxedLatchModel {
+        ring_head: AtomicU32,
+        ring_tail: AtomicU32,
+        ring_slots: [AtomicU32; RING_CAP as usize],
+        dirty_segment: AtomicU64,
+        coarse_only_latch: AtomicU32,
+    }
+
+    impl RelaxedLatchModel {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                ring_head: AtomicU32::new(0),
+                ring_tail: AtomicU32::new(0),
+                ring_slots: core::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+                dirty_segment: AtomicU64::new(0),
+                coarse_only_latch: AtomicU32::new(0),
+            })
+        }
+
+        /// Same shape as `push_and_mark_with_latch(.., sidecar_ok: false)`,
+        /// but with the latch's store weakened to `Relaxed` -- the
+        /// counterfactual ordering this test proves is unsound.
+        fn push_and_trip_relaxed(&self, offset: u32) -> bool {
+            loop {
+                let t = self.ring_tail.load(Ordering::Relaxed);
+                let h = self.ring_head.load(Ordering::Acquire);
+                if t.wrapping_sub(h) >= RING_CAP {
+                    return false;
+                }
+                match self.ring_tail.compare_exchange_weak(
+                    t,
+                    t.wrapping_add(1),
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        let idx = (t as usize) % RING_CAP as usize;
+                        self.ring_slots[idx].store(offset, Ordering::Release);
+                        self.dirty_segment.fetch_or(1, Ordering::Release);
+                        // BUG (counterfactual only): `Relaxed` instead of
+                        // `Release` -- no longer forbids this store from
+                        // being observed ahead of the two writes above.
+                        self.coarse_only_latch.store(1, Ordering::Relaxed);
+                        return true;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
+    }
+
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let model = RelaxedLatchModel::new();
+
+        // Bounded (see `SPIN_BOUND`'s doc comment above, same rationale).
+        let m_a = Arc::clone(&model);
+        let ta = thread::spawn(move || {
+            for _ in 0..SPIN_BOUND {
+                if m_a.push_and_trip_relaxed(10) {
+                    return;
+                }
+            }
+            panic!("producer A did not land its push within SPIN_BOUND attempts");
+        });
+
+        let m_c = Arc::clone(&model);
+        let tc = thread::spawn(move || {
+            for _ in 0..SPIN_BOUND {
+                // BUG (counterfactual only): `Relaxed` instead of `Acquire`
+                // -- matches the weakened store above.
+                if m_c.coarse_only_latch.load(Ordering::Relaxed) != 0 {
+                    let dirty = m_c.dirty_segment.load(Ordering::Acquire) & 1 != 0;
+                    assert!(dirty, "counterfactual: dirty bit not yet visible");
+                    let t = m_c.ring_tail.load(Ordering::Acquire);
+                    let h = m_c.ring_head.load(Ordering::Relaxed);
+                    assert!(t != h, "counterfactual: ring tail not yet visible");
+                    let idx = (h as usize) % RING_CAP as usize;
+                    let off = m_c.ring_slots[idx].load(Ordering::Acquire);
+                    assert_ne!(
+                        off, RING_SLOT_EMPTY,
+                        "counterfactual: offset not yet visible"
+                    );
+                    return;
+                }
+            }
+        });
+
+        ta.join().unwrap();
+        tc.join().unwrap();
+    });
+}
