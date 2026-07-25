@@ -7,6 +7,225 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 17 — unsound `&mut T`/raw-deref `os.rs` sidecar closure, bootstrap zero-loop recovery, a real Large-segment leak root-caused at last, deterministic recycle oracle, design doc for batched deferred reclaim (R17-1..R17-10)
+
+Round 17 — 11 commits (`70a8f2f`..`cbebd45`, inclusive of both ends; 10 R17-1..R17-10
+tasks plus R17-6's separate follow-up commit `fbc48a5`; R17-5 has NO separate
+commit — it was resolved as a side effect of R17-4's `1b761f4`, which already
+rewrote the pad-target comment in `heap_core_free.rs`), 2026-07-24..2026-07-25 —
+the follow-up queue against the external review of the Round 14–16 waves,
+synthesized in `docs/reviews/2026-07-24-r17-plan.md`. Same zero-trust discipline
+as prior rounds throughout: every diff personally read, every production-affecting
+fix personally re-verified with a red/green counterfactual, commit between tasks.
+Unsafe-seam inventory moved (tier-2: 56 → 58 → 59 → 60, file-count: 16 → 17;
+tier-1 unchanged at 20): R17-1 added two `#[allow(unsafe_code)]` sites in
+`segment_directory.rs`, R17-2 added one function-scoped site in
+`alloc_core_small.rs`, R17-4 added one site in `heap_core_free.rs`.
+
+- **R17-1 (`70a8f2f`, task #318, P1) — `sidecar::reserve_zeroed_with` no longer
+  materializes `&mut T` over unvalidated bytes.** R15-2 had moved the boundary
+  to `unsafe fn` but had NOT fixed the unsound materialization inside the
+  function body itself: `let value: &mut T = unsafe { &mut *ptr }; fixup(value);`
+  constructs a `&mut T` over freshly OS-zeroed, not-yet-fully-valid bytes BEFORE
+  `fixup` runs — for any generic `T` not valid at all-zero (an enum without a
+  zero discriminant, `&U`, `NonNull<U>`, a function pointer, a `bool` byte
+  other than 0/1) this is immediate UB at the instant the reference is created,
+  independent of what `fixup` does afterward. Fix: `fixup`'s signature changes
+  from `impl FnOnce(&mut T)` to `impl FnOnce(*mut T)`; `reserve_zeroed_with`
+  never dereferences the pointer or constructs a reference over it, handing the
+  raw `*mut T` straight to `fixup`, which must repair not-valid-at-zero fields
+  through raw-pointer writes only (`addr_of_mut!(...).write(...)`). The sole
+  fixup caller (`SegmentDirectory::init_node_ids`) is replaced by
+  `init_node_ids_raw(p: *mut Self)`, an `unsafe fn` writing `node_ids` through
+  `addr_of_mut!` + `write`. Soundness hardening only — the current concrete `T`
+  was already valid at all-zero, so this was not an observable bug today, but
+  the `pub(crate)` generic primitive was a live hazard for any future caller.
+- **R17-2 (`f65015a`, task #319, P1)** — same closure pattern as R17-1, applied
+  to `os.rs`: `read_directory_class_words` / `read_directory_node_bucket` were
+  safe `pub(crate) fn`s holding a prose "# Safety (caller contract)" section
+  and dereferencing a raw `*const SegmentDirectory` inside an `unsafe {}` block
+  gated only by a `debug_assert!(!p.is_null())` (a no-op in release). Any safe
+  code anywhere in the crate could hand these a dangling/junk pointer with no
+  `unsafe` token at the call site. Both helpers are now `pub(crate) unsafe fn`;
+  the two call sites in `alloc_core_small.rs::find_segment_with_free_impl` are
+  wrapped in `unsafe {}` with `// SAFETY:` comments. No runtime effect — the
+  call sites already satisfied the contract.
+- **R17-3 (`b8612bc`, task #320, P1) — bootstrap hash-table/free-list zero-loops
+  gated behind `cfg(miri)`, recovering R14-7's startup regression.** R16-4
+  root-caused R14-7's flat +61,440 Ir startup delta to two `MAX_SEGMENTS`-scaled
+  zero-fill loops in `bootstrap::primordial()` that LLVM lowers to `memset`
+  calls; both loops zero state over the PRIMORDIAL segment's freshly-reserved
+  OS-zeroed pages (a tautology under `cfg(not(miri))`), exactly the virgin-page-
+  skip discipline the neighbouring `AllocBitmap`/`MagazineBitmap` inits already
+  apply (PERF-PASS-2, G5/C1). Gated both behind `#[cfg(miri)]` (loops present
+  under miri where `std::alloc` is not guaranteed zeroed; absent otherwise);
+  the primordial-base hash insert and the free-list `top=0` write stay
+  unconditional (they write real values, not zeros). `npm run iai` on the 12-bench
+  production suite: every bench recovers exactly **−81,966 Ir** — NOT just the
+  ~61,440 Ir delta R16-4 had measured. The reason is that these loops were
+  never gated at ANY `MAX_SEGMENTS` value and predate R14-7: the R16-4
+  measurement only attributed the 1024→4096 raise increment
+  `(65,536−16,384) + (16,388−4,100) = 61,440`, but the loops' FULL cost at
+  `MAX_SEGMENTS=4096` is `20,480` pre-raise baseline + `61,440` raise increment
+  ≈ `81,920` bytes ≈ `81,966` Ir — so R17-3 recovered more than R16-4's measured
+  delta because the gate removes the loops entirely, not just their raise-driven
+  growth. Marginal `Ir/op*` unchanged on every bench (hot-path-neutral; only the
+  bootstrap constant moved, `large_alloc_free_cycle 85,274 → 3,308 Ir`). Miri:
+  `regression_large_align_no_segment_exhaustion` (2 passed) and
+  `regression_virgin_bitmap_skip` (3 passed) confirm the gate is correctly
+  inverted and bootstrap completes UB-free under miri.
+- **R17-4 (`1b761f4`, task #321, P1) — the most significant finding of the
+  round: a real 4 MiB Large-segment leak root-caused and fixed under
+  `medium-classes`.** R14-4's gate report (`docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md`
+  §2.2) had left a year-open question: `fixed2mib` got 232 `large_cache_hits` /
+  17 distinct segments while `nopad`/`floor512kib` got 0 hits / 249 segments,
+  despite all three requesting an amount `alloc_large` rounds to the identical
+  4 MiB usable span. Root cause: `HeapCore::dealloc_own_thread_with_base`'s
+  fastbin magazine dispatch keys on `SizeClasses::class_for(layout.size())`, not
+  on the segment's kind. Under `medium-classes` (`SMALL_MAX == 1 MiB`) a Large
+  segment can be legitimately freed with a layout that classifies small: R14-4's
+  promotion diverts a medium block to a dedicated 4 MiB Large segment at the
+  256 KiB threshold, and OPT-G then grows that block in place up to any size
+  `<= SMALL_MAX` while it stays Large — so its dealloc layout (the caller-correct
+  post-grow size) classifies small. Before this fix such a free was misrouted
+  into the small magazine path: the Large segment never reached
+  `AllocCore::dealloc`'s Large branch, was never deposited into `large_cache`
+  nor released, and leaked every round. `fixed2mib`'s 2 MiB dealloc layout
+  happened to classify `None` and so accidentally took the correct substrate
+  path — masking the bug. **Fix iteration:** the first proposed fix was
+  REJECTED by the orchestrator for adding hot-path cost in clean `production`
+  (it unconditionally keyed the magazine dispatch on segment kind, paying a
+  cost on every Large free even when no promotion was compiled in). The
+  landed fix is `#[cfg]`-split: under `medium-classes` the kind-keyed Large
+  dealloc is unconditional (a correctness requirement, not a defensive check,
+  since the promotion+OPT-G scenario is legitimate); under non-`medium-classes`
+  (incl. plain `production`) the arm is provably unreachable (`SMALL_MAX ~253
+  KiB` means every Large dealloc layout is `> 253 KiB`, so `class_for` always
+  returns `None`) and the original hardened-only defensive no-op from task #25
+  stays exactly as-is. Both branches compile out under plain `production` (no
+  `medium-classes`, no `hardened`), so the hot path is byte-for-byte unchanged
+  there — confirmed by `npm run iai` matching R17-3's post-fix numbers to the
+  Ir (e.g. `small_churn_16b 8,051`, `large_alloc_free_cycle 3,308`).
+- **R17-5 — no separate commit.** The stale pad-target comment in
+  `heap_core_free.rs` (plan task #322) was resolved as a side effect of R17-4's
+  `1b761f4`, which already rewrote the pad-target comment when closing the
+  §2.2 open question. This is expected and already confirmed — do not look for
+  a missing commit.
+- **R17-6 (`d8f9c9b` + `fbc48a5`, task #323, P2)** — two stale-literal doc fixes
+  in `segment_table.rs` and `register()`'s cap-lifting comment. (a)
+  `HASH_CAPACITY`'s inline comment read `// 2048` (actually `8192`) and a
+  sibling `= 16 KiB` figure (actually `64 KiB`) — both left stale by R14-7's
+  `MAX_SEGMENTS` 1024→4096 raise. (b) follow-up commit: `register()`'s comment
+  "this lifts the 1024-segment cap" read as a stale `MAX_SEGMENTS` literal even
+  though historically accurate (task #135 landed while `MAX_SEGMENTS` was still
+  1024); reworded to "the fixed `MAX_SEGMENTS` cap" — describes the mechanism
+  without pinning a number that reads as wrong post-raise.
+- **R17-7 (`5709c24`, task #324, P2) — `class-aware-dirty` full-work verdict
+  re-verified, statistically not significant once again.** Added an in-process
+  warm-up phase (`PAIRED_AB_WARMUP_ROUNDS`, default 3, env-overridable) to the
+  paired_ab_class_aware_dirty_{off,on} process-level A/B judges, then repeated
+  the fixed-work off-vs-on comparison twice independently (20 pairs each) plus a
+  same-vs-same harness sanity control. Environment quality disclosed up front:
+  host CPU load read 80–100% across five samples for the entire measurement
+  session (shared multi-agent workspace). Result: both warm-up runs are NOT
+  statistically significant (paired t −0.714 and −0.683 vs crit 2.101), with
+  much smaller raw deltas than R14-3's original single-shot run 1 (which had
+  crossed significance in the "on slower" direction). Combined with R14-3's
+  two original runs, all four process-level measurements taken to date fail to
+  confirm a full-round `production` wall-clock effect in either direction.
+  `class-aware-dirty` therefore remains in `production` UNCHANGED on
+  recoverability grounds (it closes the R13-1 lost-wakeup class) — NOT on any
+  confirmed speedup. Its full-round wall-clock effect stays unconfirmed by any
+  process-level measurement so far.
+- **R17-8 (`ea8ff86`, task #325, P2) — deterministic `trim_for_recycle` release
+  oracle.** `regression_r4_3_teardown_trim.rs` (R16-6, task #316) had
+  documented an unreproduced load-sensitive flake (`segments_released_total`
+  before=0 after=0 once in 450+ reruns) in its `thread::scope` +
+  real-TLS-teardown scenario; external review judged that documentation
+  insufficient for allocator teardown. Added a synchronous, single-thread
+  deterministic oracle for the same production primitive
+  (`HeapCore::trim_for_recycle`, task #95/N1) via the existing
+  `#[doc(hidden)] pub SeferAlloc::dbg_trim_current_thread()` hook — no thread
+  spawn/join, no TLS `Drop`, eliminating the timing window the flake lives in,
+  while covering the exact same release mechanism (flush tcache → drain small
+  pool → evict large cache → `os::release_segment`). Verified red/green by
+  hand: temporarily no-op'd `trim_for_recycle`'s body → new test fails
+  deterministically every run (`segments_released_total` delta 0); restored →
+  passes deterministically every run. `regression_r4_3_teardown_trim.rs` is
+  unchanged — this test complements it, does not replace it.
+  `docs/ARCHITECTURE.md`'s `tests/*.rs` count bumped (218 → 219), per the
+  crate's self-verifying doc-count test (`no_stale_doc_references.rs`).
+- **R17-9 (`1117198` + follow-up `6b55198`, task #326, P2) —
+  `large-cache-extended` default budget reduced 1280 → 256 MiB/heap, plus
+  a second `race_repro.rs` flake investigation.** External review flagged that
+  `DEFAULT_EXTENDED_BUDGET_BYTES`'s 5× multiplier (= 1280 MiB) is a PER-HEAP
+  ceiling: `AllocCore` is owner-only (neither `Send` nor `Sync`), so a
+  thread-per-core server running one `AllocCore` per thread multiplies this
+  default by however many heaps concurrently exercise `large-cache-extended`
+  with a large working set — no process-wide coordination exists between heaps,
+  so that topology could retain tens of GiB in aggregate. Two options were
+  weighed: (a) lower the per-heap default, or (b) add process-global budget
+  coordination via a shared `AtomicUsize` reserve/release protocol. Chose (a):
+  no process-wide accounting infrastructure exists anywhere in this crate to
+  build on for (b) (the existing `large_cache_hits`/`AllocStats` counters are
+  per-heap, collected by the registry, not a shared atomic) — (b) would need a
+  brand-new global CAS protocol plus its own loom verification, real added
+  surface for a P2 finding on a feature that is opt-in and not in `production`.
+  `DEFAULT_EXTENDED_BUDGET_BYTES`'s multiplier drops 5× → 1× (= 256 MiB/heap),
+  still a genuinely useful non-zero default, with `.budget_bytes(n)` always
+  available to recover a larger cache for a caller who has measured their own
+  workload. **Follow-up (`6b55198`):** Round 17's verification of #326 hit a
+  `STATUS_STACK_BUFFER_OVERRUN` in `drain_reclaim_uaf_repro_tight_handoff`
+  during a full `production` test run under heavy concurrent CPU load.
+  Independent investigation: `race_repro.rs` is unchanged since its Phase-12.6
+  fix commit (`ea3a4ba`, June 2026) across both this and the prior Round-14
+  occurrence (task #289), ruling out a code regression; 80 process invocations
+  of the compiled test binary across three deliberately harsher load profiles
+  (CPU busy-loop stressors, a real concurrent `cargo check --all-features`, and
+  4-way parallel full-binary runs) produced zero reproductions. This is now
+  the second confirmed one-off occurrence of this exact signature in this
+  exact file, joining R16-6's teardown_trim flake as a load-sensitive class
+  specific to this shared workspace. Documented in the test file's header,
+  mirroring the established `regression_r4_3_teardown_trim.rs` precedent. No
+  `src/` changes — nothing pointed at a genuine allocator defect.
+- **R17-10 (`cbebd45`, task #327, P3, design only) — batched deferred reclaim
+  design doc.** Design-only, no `src/` change. Corrects the plan's own premise:
+  contrary to R17-10's plan wording ("per each reclaimed block, directory-sync
+  is called separately"), `sync_directory_for_segment_classes` has been batched
+  to one call per segment per drain visit since R8-1 (task #214) — that batching
+  gap does not exist. The genuine, un-batched gap is narrower:
+  `dec_live_and_maybe_decommit` is still called once per reclaimed block inside
+  `drain_dirty_segments`'s ring-drain closure, even though a proven-identical
+  batched sibling (`dec_live_batch_and_maybe_decommit`, E3/task W4) already
+  exists for a different call site (`flush_run`). Lays out two independently-
+  gateable sub-designs: (A) reuse the existing batched decommit primitive in
+  `drain_dirty_segments` (small, mechanical, no new correctness argument), and
+  (B) defer cross-segment finalisation within one drain sweep, conditional on
+  an empirical pre-check (a near-identical precedent exists for
+  `drain_heap_overflow`, but for a different, correctness-driven reason that
+  does not apply here). Grounds both against `RACE_DRAIN_RECLAIM.md`'s
+  lost-wakeup protocol and `PHASE35_DECOMMIT_DESIGN.md`'s
+  decommit-without-epoch proof. Orchestrator review caught and corrected one
+  factual error before commit (an earlier draft cited R17-4 as "task #329,
+  still open"; R17-4 is task #321, already resolved in `1b761f4`, and touches
+  only `heap_core_free.rs`, disjoint from this design's `alloc_core_small_pool.rs`
+  surface).
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** No feature-list change landed this round — `Cargo.toml`'s
+`production = [...]` is byte-identical to the end of Round 16. Of the four
+production-affecting fixes (R17-1, R17-2, R17-3, R17-4), three are pure
+soundness hardening with no runtime effect on the current code paths
+(R17-1/R17-2) or with an iai-confirmed zero hot-path cost under plain
+`production` (R17-3 recovers startup Ir only; R17-4's `#[cfg]` split compiles
+out entirely under plain `production`). The iai suite's bootstrap proxy
+(`large_alloc_free_cycle`) dropped `85,274 → 3,308 Ir` across R17-3+R17-4, but
+that is a one-time startup constant, not a per-op marginal — every bench's
+`Ir/op*` is unchanged. Unsafe-seam inventory moved but stayed inside the
+existing tier model (no new tier-1 module; the four new tier-2 sites are each
+in a file already accounted for or newly accounted for in the README table,
+verified by `readme_unsafe_inventory_counts_match_reality`).
+
 ### Round 16 — CI coverage restored for medium-classes promotion, R15-1's Ir delta root-caused, review-driven doc/process cleanup (R16-1..R16-6)
 
 Round 16 — 6 commits (`ed8f955`..`56ed79f`, inclusive of both ends; `ed8f955`
