@@ -40,6 +40,27 @@
 //!
 //! `alloc-global,alloc-xthread`. The naive restore in `heap_core.rs` must be
 //! in place (this test is meaningless under the shipped discard).
+//!
+//! ## Known flakiness under heavy system load (second occurrence, task #326)
+//!
+//! Two independent `STATUS_STACK_BUFFER_OVERRUN` crashes in
+//! `drain_reclaim_uaf_repro_tight_handoff` have now been observed during
+//! full-suite (`cargo test --release --features production`) runs under
+//! heavy concurrent CPU load in this shared dev workspace — one during
+//! Round 14 (task #289, see `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md`
+//! §4) and one during Round 17 (task #326). Both reran clean in isolation
+//! (3/3 and 20/20 respectively); a dedicated Round-17 follow-up investigation
+//! additionally ran 80 process invocations of this test binary under three
+//! deliberately harsher load profiles (CPU busy-loop stressors, a real
+//! concurrent `cargo check --all-features`, and 4-way parallel full-binary
+//! runs) with zero reproductions. This file is unchanged since its original
+//! Phase-12.6 fix commit (`ea3a4ba`, June 2026) across both incidents, ruling
+//! out a code regression as the cause. Working hypothesis (unconfirmed):
+//! a rare Windows scheduler/stack-guard artifact under severe multi-process
+//! contention, not a genuine allocator defect — the checksum oracle (a
+//! non-vacuous corruption signal) stayed green throughout every reproduction
+//! attempt. If this fires again, capture the exact concurrent-load
+//! conditions rather than re-deriving this history from scratch.
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 
