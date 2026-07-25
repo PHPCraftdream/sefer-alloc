@@ -41,26 +41,63 @@
 //! `alloc-global,alloc-xthread`. The naive restore in `heap_core.rs` must be
 //! in place (this test is meaningless under the shipped discard).
 //!
-//! ## Known flakiness under heavy system load (second occurrence, task #326)
+//! ## Crashes under heavy system load — most likely the test's own watchdog (R18-1, task #329)
 //!
-//! Two independent `STATUS_STACK_BUFFER_OVERRUN` crashes in
-//! `drain_reclaim_uaf_repro_tight_handoff` have now been observed during
-//! full-suite (`cargo test --release --features production`) runs under
-//! heavy concurrent CPU load in this shared dev workspace — one during
-//! Round 14 (task #289, see `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md`
-//! §4) and one during Round 17 (task #326). Both reran clean in isolation
-//! (3/3 and 20/20 respectively); a dedicated Round-17 follow-up investigation
-//! additionally ran 80 process invocations of this test binary under three
-//! deliberately harsher load profiles (CPU busy-loop stressors, a real
-//! concurrent `cargo check --all-features`, and 4-way parallel full-binary
-//! runs) with zero reproductions. This file is unchanged since its original
-//! Phase-12.6 fix commit (`ea3a4ba`, June 2026) across both incidents, ruling
-//! out a code regression as the cause. Working hypothesis (unconfirmed):
-//! a rare Windows scheduler/stack-guard artifact under severe multi-process
-//! contention, not a genuine allocator defect — the checksum oracle (a
-//! non-vacuous corruption signal) stayed green throughout every reproduction
-//! attempt. If this fires again, capture the exact concurrent-load
-//! conditions rather than re-deriving this history from scratch.
+//! Two independent `STATUS_STACK_BUFFER_OVERRUN` (0xC0000409) crashes in
+//! `drain_reclaim_uaf_repro_tight_handoff` were observed during full-suite
+//! (`cargo test --release --features production`) runs under heavy concurrent
+//! CPU load in this shared dev workspace — one during Round 14 (task #289,
+//! see `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md` §4) and one during
+//! Round 17 (task #326). Both reran clean in isolation (3/3 and 20/20
+//! respectively); a dedicated Round-17 follow-up additionally ran 80 process
+//! invocations under three deliberately harsher load profiles (CPU busy-loop
+//! stressors, a real concurrent `cargo check --all-features`, and 4-way
+//! parallel full-binary runs) with zero reproductions. This file is unchanged
+//! since its original Phase-12.6 fix commit (`ea3a4ba`, June 2026) across both
+//! incidents, ruling out a code regression.
+//!
+//! **Most likely explanation:** the test's OWN watchdog firing after its
+//! `DEADLINE_SECS` budget under heavy load, not allocator corruption. This
+//! file historically contained a watchdog (see `Watchdog` below) that, after
+//! a fixed 20 s deadline, called `std::process::abort()`. On Windows/MSVC,
+//! `std::process::abort()` is implemented via `__fastfail`, and the resulting
+//! exception carries the code **literally `STATUS_STACK_BUFFER_OVERRUN`
+//! (0xC0000409)** — byte-for-byte indistinguishable on the crash surface from
+//! a genuine stack-corruption crash. Both observed crashes happened precisely
+//! under the conditions (severe multi-process CPU contention) in which a
+//! normally-fast stress test can legitimately overrun a 20 s budget — exactly
+//! when this watchdog would fire. This is a far stronger fit than the prior
+//! "rare Windows scheduler/stack-guard artifact" framing, and it is why three
+//! independent reviews (oh / r17-readonly / crush, 2026-07-25) all flagged it.
+//!
+//! **Status of the hypothesis — OBSERVED vs INFERRED:**
+//! - OBSERVED (fact in this file): the watchdog, the 20 s `DEADLINE_SECS`,
+//!   and the historical `std::process::abort()` call.
+//! - INFERRED (from documented Rust/Windows platform behaviour, NOT
+//!   confirmed by a run in this repo): the mapping `abort()` → `__fastfail`
+//!   → exception code `0xC0000409` on this MSVC toolchain.
+//! - Supporting but not conclusive: the checksum oracle below (a non-vacuous
+//!   corruption signal — a lost/corrupted/double-freed box changes the
+//!   checksum) stayed green throughout every one of the ~100 cumulative
+//!   reproduction attempts. That is hard to reconcile with a corruption bug
+//!   severe enough to crash the process, but does not formally prove the
+//!   watchdog theory.
+//! - Refutation test NOT performed: the watchdog historically `eprintln!`ed
+//!   a "TEST EXCEEDED ... Aborting process" line BEFORE `abort()`; grepping
+//!   the original crash stderr for that line would have strengthened
+//!   (present) or weakened (absent) the hypothesis. No preserved stderr
+//!   dump of either original crash exists in the repo, and under heavy load
+//!   a line-buffered stderr may not flush before `__fastfail` anyway — so
+//!   even a preserved dump's silence would not fully refute it.
+//!
+//! **The fix landed in R18-1 (task #329):** the watchdog no longer calls
+//! `abort()`. It now prints elapsed time + in-flight progress and exits with
+//! code `124` (the conventional `timeout(1)` exit code), which is distinct
+//! from any abort/SIGABRT/`__fastfail` signal a genuine memory-corruption
+//! crash would produce. If this test ever overruns its budget again, the
+//! resulting process exit will be unambiguously identifiable as a watchdog
+//! timeout rather than masquerading as corruption. `DEADLINE_SECS` is also
+//! now overridable via `RACE_REPRO_DEADLINE_SECS` for overloaded runners.
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 
@@ -79,37 +116,72 @@ static GLOBAL: SeferAlloc = SeferAlloc::new();
 // process-global static; reset_for_test in sibling tests would interfere).
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
-// A bounded fail-fast watchdog (task #36 step 3): a watcher thread aborts the
-// process after `DEADLINE_SECS` so a deadlock or runaway loop fails fast
-// instead of hanging the suite. Started per-test and joined (cancelled) on
-// success — the process is allowed to continue. The watcher prints a
-// diagnostic before aborting so the failure reason is obvious.
-const DEADLINE_SECS: u64 = 20;
+// A bounded fail-fast watchdog (task #36 step 3, R18-1/task #329): a watcher
+// thread terminates the process after `DEADLINE_SECS` so a deadlock or runaway
+// loop fails fast instead of hanging the suite. Started per-test and joined
+// (cancelled) on success — the process is allowed to continue. The watcher
+// prints a diagnostic (elapsed time + in-flight progress captured by the
+// caller-supplied `progress` closure) before terminating.
+//
+// R18-1/task #329: the terminator is `std::process::exit(124)`, NOT
+// `std::process::abort()`. On Windows/MSVC `abort()` is implemented via
+// `__fastfail`, whose exception code is literally `STATUS_STACK_BUFFER_OVERRUN`
+// (0xC0000409) — byte-for-byte indistinguishable on the crash surface from a
+// genuine stack-corruption crash, which is almost certainly why two prior
+// "unexplained" `STATUS_STACK_BUFFER_OVERRUN` crashes under heavy load (Round
+// 14 / task #289, Round 17 / task #326) were widely misread as possible
+// allocator corruption rather than as this very watchdog firing after its
+// 20 s budget. `exit(124)` is the conventional timeout exit code (matching
+// GNU `timeout(1)`), distinct from any abort/SIGABRT/`__fastfail` signal, so a
+// future watchdog firing can never be confused with memory corruption again.
+//
+// `DEADLINE_SECS` is overridable via the `RACE_REPRO_DEADLINE_SECS` env var so
+// an overloaded runner can raise the budget without editing code.
+const DEFAULT_DEADLINE_SECS: u64 = 20;
+
+fn deadline_secs() -> u64 {
+    std::env::var("RACE_REPRO_DEADLINE_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_DEADLINE_SECS)
+}
 
 struct Watchdog {
     done: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 impl Watchdog {
-    fn start(label: &'static str) -> Self {
+    fn start(label: &'static str, progress: impl Fn() -> String + Send + 'static) -> Self {
+        let deadline = deadline_secs();
         let done = Arc::new(AtomicBool::new(false));
         let done_w = Arc::clone(&done);
         let handle = std::thread::Builder::new()
             .name(format!("watchdog-{label}"))
             .spawn(move || {
                 let start = std::time::Instant::now();
-                while start.elapsed().as_secs() < DEADLINE_SECS {
+                while start.elapsed().as_secs() < deadline {
                     if done_w.load(Ordering::Relaxed) {
                         return;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
+                let elapsed = start.elapsed().as_secs_f32();
+                let prog = progress();
                 eprintln!(
-                    "\n[watchdog-{label}] TEST EXCEEDED {DEADLINE_SECS}s — likely deadlock \
-                     or runaway loop in drain-reclaim. Aborting process to fail fast \
-                     (task #36 watchdog)."
+                    "\n[watchdog-{label}] TEST EXCEEDED DEADLINE: {deadline}s \
+                     (elapsed {elapsed:.1}s) — likely deadlock or runaway loop in \
+                     drain-reclaim. Progress at deadline: {prog}. \
+                     Exiting with code 124 (conventional timeout code, deliberately \
+                     distinct from abort/__fastfail/STATUS_STACK_BUFFER_OVERRUN so a \
+                     watchdog firing cannot be confused with allocator corruption)."
                 );
-                std::process::abort();
+                // exit(124), NOT abort(): see the block comment above. On
+                // Windows/MSVC abort() → __fastfail → exception code
+                // STATUS_STACK_BUFFER_OVERRUN (0xC0000409), identical to a
+                // real stack-corruption crash. 124 is the conventional
+                // timeout(1) code, distinct from any corruption signal.
+                std::process::exit(124);
             })
             .expect("spawn watchdog");
         Watchdog {
@@ -122,7 +194,22 @@ impl Drop for Watchdog {
     fn drop(&mut self) {
         self.done.store(true, Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
-            let _ = h.join();
+            // R18-1/task #329: never silently swallow a panicked watcher —
+            // it is diagnostically meaningful in its own right. The test
+            // itself completed (else `done` wouldn't be set and we wouldn't
+            // be dropping normally), but the watchdog thread panicked on
+            // the way out; recover the payload if it's a string.
+            if let Err(err) = h.join() {
+                let msg: String = err
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| err.downcast_ref::<&'static str>().map(|s| (*s).to_string()))
+                    .unwrap_or_else(|| format!("{err:?}"));
+                eprintln!(
+                    "[watchdog] watcher thread did not exit cleanly: the test itself \
+                     completed, but the watchdog panicked on the way out. Payload: {msg}"
+                );
+            }
         }
     }
 }
@@ -154,7 +241,6 @@ impl Drop for SerialGuard {
 #[test]
 fn drain_reclaim_uaf_repro_tight_handoff() {
     let _serial = SerialGuard::acquire();
-    let _wd = Watchdog::start("tight-handoff");
 
     const WAVES: usize = 64;
     const PRODUCERS_PER_WAVE: usize = 3;
@@ -162,8 +248,25 @@ fn drain_reclaim_uaf_repro_tight_handoff() {
 
     let total_sent = Arc::new(AtomicU64::new(0));
     let total_recv = Arc::new(AtomicU64::new(0));
+    let cur_wave = Arc::new(AtomicU64::new(0));
+    // Snapshot of in-flight progress, printed only if the deadline fires.
+    let _wd = Watchdog::start("tight-handoff", {
+        let sent = Arc::clone(&total_sent);
+        let recv = Arc::clone(&total_recv);
+        let wave = Arc::clone(&cur_wave);
+        move || {
+            format!(
+                "wave {}/{} sent={} recv={}",
+                wave.load(Ordering::Relaxed),
+                WAVES,
+                sent.load(Ordering::Relaxed),
+                recv.load(Ordering::Relaxed),
+            )
+        }
+    });
 
     for wave in 0..WAVES {
+        cur_wave.store(wave as u64, Ordering::Relaxed);
         // Unbounded channel: producers never block on send (no lock-order
         // hazard with the allocator — the channel's internal Mutex is NOT
         // held across the producer's alloc, only across the send itself).
@@ -234,7 +337,6 @@ fn drain_reclaim_uaf_repro_tight_handoff() {
 #[test]
 fn drain_reclaim_uaf_repro_long_lived_consumer() {
     let _serial = SerialGuard::acquire();
-    let _wd = Watchdog::start("long-lived-consumer");
 
     const WAVES: usize = 128;
     const PRODUCERS_PER_WAVE: usize = 2;
@@ -257,7 +359,26 @@ fn drain_reclaim_uaf_repro_long_lived_consumer() {
         total_recv_consumer.store(acc, Ordering::Release);
     });
 
+    let cur_wave = Arc::new(AtomicU64::new(0));
+    // recv stays 0 until the consumer finalizes at end-of-test, so wave +
+    // sent are the live progress signal here.
+    let _wd = Watchdog::start("long-lived-consumer", {
+        let sent = Arc::clone(&total_sent);
+        let recv = Arc::clone(&total_recv);
+        let wave = Arc::clone(&cur_wave);
+        move || {
+            format!(
+                "wave {}/{} sent={} recv={}",
+                wave.load(Ordering::Relaxed),
+                WAVES,
+                sent.load(Ordering::Relaxed),
+                recv.load(Ordering::Relaxed),
+            )
+        }
+    });
+
     for wave in 0..WAVES {
+        cur_wave.store(wave as u64, Ordering::Relaxed);
         let producers: Vec<_> = (0..PRODUCERS_PER_WAVE)
             .map(|p| {
                 let tx = tx.clone();
@@ -304,7 +425,6 @@ fn drain_reclaim_uaf_repro_long_lived_consumer() {
 #[test]
 fn drain_reclaim_uaf_repro_direct_api() {
     let _serial = SerialGuard::acquire();
-    let _wd = Watchdog::start("direct-api");
 
     const WAVES: usize = 200;
     const ALLOCS_PER_PRODUCER: usize = 16;
@@ -318,8 +438,25 @@ fn drain_reclaim_uaf_repro_direct_api() {
     let layout = std::alloc::Layout::from_size_align(SIZE, 8).unwrap();
     let total_sent = Arc::new(AtomicU64::new(0));
     let total_recv = Arc::new(AtomicU64::new(0));
+    let cur_wave = Arc::new(AtomicU64::new(0));
+    // Snapshot of in-flight progress, printed only if the deadline fires.
+    let _wd = Watchdog::start("direct-api", {
+        let sent = Arc::clone(&total_sent);
+        let recv = Arc::clone(&total_recv);
+        let wave = Arc::clone(&cur_wave);
+        move || {
+            format!(
+                "wave {}/{} sent={} recv={}",
+                wave.load(Ordering::Relaxed),
+                WAVES,
+                sent.load(Ordering::Relaxed),
+                recv.load(Ordering::Relaxed),
+            )
+        }
+    });
 
     for wave in 0..WAVES {
+        cur_wave.store(wave as u64, Ordering::Relaxed);
         // Wrap the raw pointer so it can cross the thread boundary via the
         // channel. SAFETY of the Send impl: the pointer is a freshly-allocated
         // block from SeferAlloc; ownership is transferred to exactly one
