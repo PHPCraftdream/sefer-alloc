@@ -298,7 +298,13 @@ that duplicates one already running.
   + `refill_class_bump_impl`, hot-path verified live + source-order preserved).
 - `.github/workflows/ci.yml:555–590` (miri jobs), `:978–1133` (the two existing
   weekly/dispatch jobs that an iai job would mirror); `rg iai|perf-gate|valgrind`
-  → empty (no perf-gate job exists).
+  against `ci.yml` alone → empty (`ci.yml` itself has no iai/perf-gate/valgrind
+  job — that result is accurate for this one file, but the search scope was
+  incomplete).
+- `.github/workflows/perf-gate.yml:1–136` (the SEPARATE workflow file that
+  implements the deterministic `Ir` gate — task #127/#128; `schedule: nightly`
+  + `workflow_dispatch` + labeled-PR trigger; confirmed working this same
+  session; see §4's correction).
 - `benches/perf_gate_iai.rs:224–353` (the cold/recycle/churn benches exist; no
   `mimalloc` arm).
 - `scripts/iai.mjs:1–40` (local-only WSL+valgrind runner).
