@@ -33,11 +33,25 @@
 //!
 //! ## Sizing and lazy materialisation
 //!
-//! `SMALL_CLASS_COUNT * WORDS_PER_CLASS` `AtomicU64` words — with the default
-//! 49-class table and `WORDS_PER_CLASS = 64` (`MAX_SEGMENTS / 64`), that is
-//! 3,136 words = 25,088 bytes = 24.5 KiB per materialised heap (55 classes
-//! under `medium-classes`: 28,160 bytes; 58 classes under
-//! `medium-classes-wide`: 29,696 bytes). Reserved via the SAME
+//! `SMALL_CLASS_COUNT * WORDS_PER_CLASS` `AtomicU64` words per materialised
+//! heap — i.e. `SMALL_CLASS_COUNT * WORDS_PER_CLASS * 8` bytes, where
+//! `WORDS_PER_CLASS = MAX_SEGMENTS / 64` and `SMALL_CLASS_COUNT` is the active
+//! `SIZE_CLASS_TABLE` length (feature-dependent: `size_classes.rs`'s
+//! `EXTRAS`/`medium-classes`/`medium-classes-wide` all grow it). Re-derive
+//! this from the two constants rather than trusting a resolved number here —
+//! that is the whole reason the formula is spelled out by name: a comment
+//! that instead hardcoded the resolved literal is exactly the defect class
+//! Rounds 15–17 found repeatedly (R15-5, R16-2, R17-5, R17-6), where a later
+//! change to `MAX_SEGMENTS` or the size-class table silently left the prose
+//! stale. As of this writing (`MAX_SEGMENTS = 4096`, so `WORDS_PER_CLASS =
+//! 64`; verified live via `AllocCore::dbg_max_segments`/`dbg_words_per_class`/
+//! `dbg_small_class_count`, and pinned by the
+//! `tests/dirty_by_class_sidecar_sizing_tripwire.rs` v4 tripwire): the default
+//! 49-class table gives 3,136 words = 25,088 bytes = 24.5 KiB per
+//! materialised heap; 55 classes under `medium-classes` give 28,160 bytes;
+//! 58 classes under `medium-classes-wide` give 29,696 bytes. If these numbers
+//! look off, recompute them from the constants above rather than trusting
+//! this snapshot. Reserved via the SAME
 //! `aligned_vmem::leak_zeroed_pages` M5-clean direct-VM-reservation pattern
 //! `segment_directory`'s owner-only sidecar and `registry::heap_overflow`'s
 //! `HeapOverflowSidecar` both use, but published through
