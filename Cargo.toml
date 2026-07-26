@@ -946,6 +946,32 @@ required-features = ["alloc-global"]
 name = "paired_ab_medium_on"
 required-features = ["alloc-global"]
 
+# R21-1 (task #350): process-level A/B/B/A judge for the "single-hot-buffer"
+# workload `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §6.1 point 2 / §8
+# step 2 specifies as the NEXT-round measurement instrument for the proposed
+# OPT-H in-place-medium-grow mechanism — deliberately the opposite shape from
+# `paired_ab_medium_{off,on}` above (ONE buffer repeatedly grown, not 16
+# simultaneously-live objects). Two wrappers around ONE shared workload
+# (`examples/_shared/paired_ab_hot_buffer_workload.rs`, `include!`d verbatim
+# into both — byte-identical workload source). The ONLY difference is the
+# Cargo feature set at build time:
+#   - `paired_ab_hot_buffer_off`: --features production            (baseline, Large path)
+#   - `paired_ab_hot_buffer_on` : --features "production,medium-classes" (treatment, small path)
+# Drivable directly via `scripts/paired-ab-runner.mjs --config <json>` (a
+# generated, gitignored `docs/perf/paired_ab_runs/*.json` config naming these
+# two pre-built exes as arms, exactly R20-2's `_r20_2_c1_vs_c4_realloc.json`
+# ad-hoc pattern — see `docs/perf/R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md`
+# §4.1) — no new wrapper script needed for this harness. The shared workload
+# file lives in `examples/_shared/` (NOT auto-discovered as its own binary
+# target — same pattern as `paired_ab_medium_workload.rs` above).
+[[example]]
+name = "paired_ab_hot_buffer_off"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "paired_ab_hot_buffer_on"
+required-features = ["alloc-global"]
+
 # R10-5 (task #230): process-level A/B/B/A judge for the warm-Large-cache-hit
 # question R9-4 §2.4 left open. Two wrappers around ONE shared warm-recycle
 # workload (`examples/_shared/paired_ab_large_cache_workload.rs`, `include!`d
