@@ -201,6 +201,37 @@ nothing there needs to change — same "block stays live" argument OPT-F's doc
 gives). When any precondition fails, decline (return `None`/fall through) —
 **exactly** the existing fallback chain (§2.3), unchanged.
 
+**Addendum (R22-6, task #357): precondition 4 is not optional even setting
+aside `BinTable`/`hardened` — the cross-thread reclaim path has its own,
+UNCONDITIONAL (not `hardened`-gated) offset-alignment guard that would
+silently discard an OPT-H-misaligned block forever.**
+`src/alloc_core/alloc_core_small_reclaim.rs` has two call sites of the exact
+shape `if !(off as u32).is_multiple_of(bs) { return false; }`, where `bs =
+SizeClasses::block_size(class_idx)` and `class_idx` is whatever class the
+*freeing* thread's `Layout` currently maps to: `reclaim_offset_checked`
+(around line 104) and `reclaim_offset` (around line 241). Both run
+unconditionally — no `#[cfg(feature = "hardened")]` gate — as defence-in-depth
+against a garbled cross-thread free-ring entry ("a mis-aligned offset would
+write the free-list `next` into the middle of a block"). If OPT-H ever grew a
+block to `off` that is a multiple of `block_size(old_class)` but NOT a
+multiple of `block_size(new_class)` (i.e. if precondition 4 were relaxed or
+skipped), a **cross-thread** free of that block — computing `class_idx =
+class_for(new_size)` the same way any dealloc does (§1.2/§2.2) — would hit
+this guard, see `off` fails `is_multiple_of(block_size(new_class))`, and
+**silently return `false`**: no link onto the free list, no `mark_free`, no
+`dec_live`. The block is not corrupted, but it is never reclaimed — a
+permanent leak indistinguishable from the leak-to-abort class this codebase
+already tracks (the #114/#130 pattern). This is actually the **strongest**
+available argument for precondition 4, stronger than the `BinTable`
+free-list-reuse argument this section already gives: even if a future reader
+convinced themselves the `BinTable`/`hardened` surfaces could somehow
+tolerate a misaligned offset, these two unconditional reclaim-path checks
+mean precondition 4 cannot be relaxed without ALSO changing
+`alloc_core_small_reclaim.rs`'s alignment guard — which is deliberately
+strict and not a walkable knob (it is the last line of defence against ring
+corruption, not a bookkeeping nicety). Any future revisit of OPT-H should
+re-read this addendum before considering any relaxation of precondition 4.
+
 ### 2.2 Why no new `SegmentHeader` field or `BinTable` variant is needed
 
 This is the answer to the task brief's §4 question, and it is more minimal
@@ -707,4 +738,11 @@ NO-GO) is for.
   design's §6 follows.
 - `docs/perf/OPEN_ITEMS.md` — Active item 1 (updated by this task to cite
   this design and its CONDITIONAL-GO verdict, without moving to "Recently
-  resolved" — design is not implementation).
+  resolved" — design is not implementation). (Resolved: R22-6, task #357,
+  2026-07-26 — Stage 1's 0% measurement (R21-2) plus a closed-form LCM
+  factorization over this design's own §2.1 preconditions 3+4 show the
+  medium ladder allows at most one cross-class hop per segment lifetime, so
+  the item is now closed as NO-GO-on-geometric-grounds rather than left open
+  pending a third harness; moved to `OPEN_ITEMS.md`'s "Recently resolved"
+  trail. This design's own soundness argument (§1–§2) is untouched — only
+  the medium-ladder applicability claim is closed.)

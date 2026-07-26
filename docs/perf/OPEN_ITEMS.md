@@ -50,36 +50,7 @@ for completeness.
 
 ### [A] Active / high-value
 
-1. **R10-2 §5 #1 — in-place medium-class grow within a segment.** The genuine
-   blocker for clearing the `medium-classes` realloc kill-gate (still RED after
-   R18-2's re-run: ~1,180× / ~380× slower than baseline's in-place Large
-   realloc, and unmoved by R20-2's NULL result on destination-side reserved
-   capacity). Reaffirmed as the one lever no existing-feature coordination
-   addresses by `R18_9...md` §9, `R14_4...md` §7, and `R20_2...md` §6.4. A
-   design existed (R20-3, task #348): `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`
-   proposed "OPT-H" — a tail-of-segment bump-cursor in-place grow, sound and
-   zero-new-metadata, CONDITIONAL-GO pending a Stage-1 hit-rate measurement
-   on a new single-hot-buffer harness. **Stage 1 measured, R21-2 (task #351,
-   2026-07-26): trigger NOT met.** Both harnesses show a **0% hit rate**:
-   R10-2's existing N=16 harness (0/320 attempts, matching §5.2's
-   prediction) AND — more decisively — R21-1's new single-hot-buffer harness
-   built specifically to realize OPT-H's predicted victim pattern (0/20
-   attempts). Root cause (traced in `R21_2_OPT_H_STAGE1_HIT_RATE.md` §4):
-   the single-hot-buffer harness promotes to Large on its very first grow
-   crossing every round (by construction — `REALLOC_BASE` already sits at
-   `MEDIUM_REALLOC_PROMOTION_THRESHOLD`), so OPT-H's code path is reached
-   only once per round, always at the same alignment-unfriendly carve
-   position (`256 KiB % 320 KiB ≠ 0`). **Verdict: NO-GO for implementing
-   OPT-H's real grow action on current evidence** — not a rejection of the
-   mechanism's soundness, but neither available harness demonstrates the
-   predicted victim workload materializing. A genuinely un-promoted,
-   walks-the-Small-ladder-without-crossing-into-Large harness is the one
-   remaining unexplored variant if this lever is revisited; not yet built,
-   not scoped. Evidence: `R10_2_MEDIUM_CLASSES_NATIVE_GATE.md` §5 item 1
-   (lines 343–347); `R18_9_ADAPTIVE_LARGE_POLICY_DESIGN.md` §8.1/§9 (lines
-   613–623, 680–683); `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5/§6/§9;
-   `R21_2_OPT_H_STAGE1_HIT_RATE.md` (full Stage-1 measurement + verdict).
-2. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
+1. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
    `perf_gate_iai.rs`.** "The single biggest open question the plan left on the
    table": the cold-16 B gap has been a 10-round wall-clock argument because
    nobody has the deterministic cross-allocator `Ir` number that would settle
@@ -103,27 +74,27 @@ for completeness.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
-3. **R17-10 — batched deferred reclaim (sub-design A + B).** Design-only;
+2. **R17-10 — batched deferred reclaim (sub-design A + B).** Design-only;
    proposes a future-round implementation + dual-axis wall-clock gate. Sub-design
    A (batch the per-block decommit check) is independent and small; sub-design B
    (deferred cross-segment finalization within one `drain_dirty_segments` sweep)
    is CONDITIONAL on a §5.1 stage-1 finding that a non-negligible fraction of
    sweeps empty >1 segment — check BEFORE writing B's code. Evidence:
    `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
-4. **R11-7 page-run layer (R12-13 deferred).** NO-GO now; the complete design
+3. **R11-7 page-run layer (R12-13 deferred).** NO-GO now; the complete design
    remains a reusable CONDITIONAL-GO starting point IF a real workload
    materializes that allocates thousands of simultaneously-live 1.25–2.0 MiB (or
    larger uniform-size) objects and is measured `MAX_SEGMENTS`-bound or
    OS-reservation-syscall-bound (not RSS-bound — that is solved wherever
    `exact-span-large` is enabled). No demonstrated victim exists today.
    Evidence: `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
-5. **R14-7 expandable / chained `SegmentTable`.** Design-only; implement ONLY
+4. **R14-7 expandable / chained `SegmentTable`.** Design-only; implement ONLY
    when (1) a real workload needs >`MAX_SEGMENTS`−1 (4095) simultaneously-live
    Large objects, OR (2) a future `MAX_SEGMENTS` raise stops being "cheap" by
    §1's criteria, OR (3) page-run is pursued (then re-evaluate this doc's
    tagged-`SegmentId` widening alongside it — both touch the same header field).
    Evidence: `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
-6. **R10-4 run-origin oracle (class-align carve).** DESIGN-ONLY, CONDITIONAL GO.
+5. **R10-4 run-origin oracle (class-align carve).** DESIGN-ONLY, CONDITIONAL GO.
    Sound and real density gain (wide classes 2/1/1 → 3/2/2), but only worth it
    if `medium-classes-wide` is pursued — which is itself NO-GO'd for
    `production` (large realloc regression). Re-evaluate only if wide classes are
@@ -131,35 +102,125 @@ for completeness.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
-7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
+6. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.** Deferred "if a future review wants a
    number attached to the 'cheap' claim" specifically for N=1/2/4 (R13-8 already
    measured the 24-distinct-size turnover shape). Evidence:
    `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
-8. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
+7. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
     Deferred "if 4×'s real numbers ever stop being enough"; would need new
     per-segment chain-identity state or a threaded hint through the shared
     `alloc_large_slow` path. Evidence:
     `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
-9. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
+8. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
     Explicitly NOT recommended now (ceiling below this task's own noise floor).
     Revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward the
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
-10. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
+9. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
     the warm heap (no page faults) would give the fairest batch-vs-tcache
     comparison; "explicitly left for a future task if the 16 B / n=1024 signal
     warrants it." Evidence: `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343).
-11. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
+10. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
     `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
+11. **R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).**
+    Not a variant of the now-closed medium-ladder item (see "Recently resolved"
+    below) — a DIFFERENT ladder with much friendlier LCM ratios. The
+    geometric run below the medium classes steps by ~1.25× per class (e.g.
+    16 KiB → 32 KiB doubles, giving `lcm(16 KiB, 32 KiB)/32 KiB` = ratio 2, i.e.
+    roughly 50% of tail-adjacent carve positions clear OPT-H's alignment
+    precondition, vs. the medium ladder's 1-in-3-to-1-in-30 ratios). A
+    Vec-push-shaped 16 B→16 KiB hot-buffer harness would plausibly show a
+    20–50% Stage-1 hit rate — a real, currently-unmeasured data point. BUT:
+    this is also the size range where the move-leg OPT-H would avoid is
+    already cheapest — `realloc_grow_geometric` (64 B→4 MiB) is already
+    reported as **~40× faster than `mimalloc`** (9.7 µs vs 383 µs;
+    `README.md:244-245`/`:639`) via the existing OPT-G in-place Large-grow
+    mechanism — so the marginal payoff of also fast-pathing the sub-16 KiB
+    tail is small even at a favorable hit rate. Recorded as optional,
+    low-priority, roughly-one-hour-if-ever-revisited — explicitly NOT the
+    "one remaining unexplored variant of an active high-value lever" (that
+    framing is retired along with item 1's closure below; this is a
+    low-value, low-cost curiosity probe, not a next step a round should plan
+    around). Evidence: this file's own item-1 closure entry below (the LCM
+    argument that motivates distinguishing the two ladders) +
+    `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 (the single-hot-buffer
+    victim pattern, which applies equally to the geometric ladder).
 
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **R10-2 §5 #1 — in-place medium-class grow within a segment (OPT-H).**
+  Closed by **R22-6 (task #357)**, 2026-07-26, with a closed-form arithmetic
+  proof, not a further measurement. R21-2 (task #351) had already found a 0%
+  Stage-1 hit rate on both available harnesses and left the entry open with
+  the framing that "a genuinely un-promoted, walks-the-Small-ladder harness
+  is the one remaining unexplored variant" — that framing is retracted here:
+  OPT-H's own two preconditions make even a friendlier, purpose-built harness
+  structurally incapable of a useful hit rate on the medium ladder, so no
+  third harness would change the conclusion.
+
+  **The arithmetic.** OPT-H's preconditions
+  (`docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §2.1) require, for a grow
+  from `old_class` to `new_class` at offset `off`: precondition 3
+  (tail-adjacency — `off` is a carve position, hence a multiple of
+  `block_size(old_class)`) AND precondition 4 (new-class alignment — `off`
+  must ALSO be a multiple of `block_size(new_class)`). Together these force
+  `off` to be a multiple of `lcm(block_size(old_class), block_size(new_class))`.
+  The six medium classes are 256 / 320 / 384 / 512 / 768 / 1024 KiB
+  (`src/alloc_core/size_classes.rs:106-111`, the `EXTRAS` array under
+  `medium-classes`). Working in units of 64 KiB (256K=4u, 320K=5u, 384K=6u,
+  512K=8u, 768K=12u, 1024K=16u; segment = 4 MiB = 64u) so all ratios stay
+  integers, the per-transition `lcm` and the count of legal carve offsets
+  within one 4 MiB segment satisfying precondition 5
+  (`off + block_size(new_class) <= SEGMENT`) are:
+
+  | transition | lcm (64 KiB units → MiB) | legal offsets in one 4 MiB segment |
+  |---|---|---|
+  | 256K→320K | lcm(4,5)=20u = 1.25 MiB | 2 (at 1.25, 2.5 MiB) |
+  | 320K→384K | lcm(5,6)=30u = 1.875 MiB | 1 (at 1.875 MiB) |
+  | 384K→512K | lcm(6,8)=24u = 1.5 MiB | 2 (at 1.5, 3.0 MiB) |
+  | 512K→768K | lcm(8,12)=24u = 1.5 MiB | 2 (at 1.5, 3.0 MiB) |
+  | 768K→1M | lcm(12,16)=48u = 3.0 MiB | 1 (at 3.0 MiB) |
+
+  (`off = 0` is excluded from every row: that offset lies inside the
+  segment's own metadata region — header/page map/bin table — never a legal
+  carve position for a payload block, so it is not a candidate tail-adjacent
+  offset regardless of the lcm arithmetic; the 4 MiB upper bound in
+  precondition 5 is exact, but the lower bound of "legal offsets" starts at
+  one `lcm` step in, not at the segment's raw start.)
+
+  i.e. only a small, fixed handful of carve-order positions per segment ever
+  clear precondition 4 for a single hop, no matter how the harness is built —
+  this bounds the BEST CASE (a single hot buffer, tail-adjacent on every
+  grow, per §5.3 of the design doc), not just the adversarial N=16 case R21-2
+  measured. Chaining is worse: `lcm` across all six classes =
+  `lcm(4,5,6,8,12,16)` = 240 units = 15 MiB, far exceeding the 4 MiB segment,
+  so no offset supports a full six-stage walk. Even three consecutive stages
+  (256→320→384) fail: `lcm(4,5,6)` = 60 units = 3.75 MiB is the only
+  candidate offset within a 4 MiB segment, but the resulting 384 KiB grow
+  then needs `off + 384 KiB = 3.75 MiB + 0.375 MiB = 4.125 MiB > SEGMENT
+  (4 MiB)` — precondition 5 fails for that chained case. **The medium ladder
+  allows at most one cross-class hop per segment lifetime under OPT-H's real
+  preconditions, and only from a small fixed set of carve positions** — this
+  is what the size-class table's own factorization mathematically predicts,
+  independent of which harness is used to observe it. R21-2's 0% measurement
+  is consistent with (not merely "not yet contradicted by") this bound.
+
+  This closes item 1 as NO-GO on geometric grounds for the medium ladder
+  specifically. It does NOT foreclose OPT-H as a mechanism (§2's soundness
+  argument is untouched) nor the sub-16 KiB geometric ladder, which has much
+  friendlier ratios — see the new [L]-tier item 11 above for that narrower,
+  optional, low-priority probe. Evidence: `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`
+  §2.1 (preconditions); `src/alloc_core/size_classes.rs:106-111` (`EXTRAS`);
+  the LCM table above (re-derived independently for this closure, not copied
+  from R20-3, which only worked one transition as an example); R21-2's
+  `R21_2_OPT_H_STAGE1_HIT_RATE.md` (the empirical 0% that this arithmetic now
+  explains rather than merely reports).
 - **R18-9 §9 — execute the §3 coordinated Large-policy matrix, cell C4.**
   Resolved by **R20-2 (task #347)**, 2026-07-26: **NULL verdict.** Measured
   `production,medium-classes,exact-span-large,large-reserved-capacity` (C4)
@@ -175,8 +236,20 @@ for completeness.
   finding: `exact-span-large` still roughly halves resident commit for this
   workload (~50.5 MiB → ~23.9 MiB) with an identical cache-hit-rate proxy —
   a memory win, not a realloc-speed win, and it does not move R10-2's kill
-  gate. The one remaining lever for R10-2's gate is unchanged: item 1 above
-  (in-place medium-class grow), still not designed. Recorded in
+  gate. (Resolved: this entry originally said "the one remaining lever for
+  R10-2's gate is unchanged: item 1 above (in-place medium-class grow), still
+  not designed" — stale on two counts by the time R22-6 touched this file:
+  (a) content-stale, since R20-3 designed that lever as OPT-H two commits
+  after this entry was written, and R21-2 subsequently measured it; (b)
+  reference-stale, since R22-6's own renumbering of the `[A]` tier (task
+  #357, 2026-07-26) shifted what "item 1" refers to, so leaving the original
+  wording untouched would have made it silently point at the WRONG item
+  (the mimalloc arm) instead of OPT-H. Fixed in place — per this project's
+  established convention of appending a resolution note to historical
+  point-in-time prose rather than rewriting it, R20-1/task #346's precedent
+  — rather than left for a separate pass. See the "R10-2 §5 #1" closure
+  entry earlier in this same "Recently resolved" trail for OPT-H's own
+  closure detail.) Recorded in
   `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` (full report) + companion
   `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE_summary.csv`.
 - **R18-7 §6 (docs fix) — correct the stale "pending the Linux Ir gate"
