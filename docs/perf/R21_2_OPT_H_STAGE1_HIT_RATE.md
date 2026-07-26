@@ -121,6 +121,29 @@ precondition 4, since both were forced simultaneously.)
 
 ## 3. Stage-1 measurement — both harnesses
 
+**Overcounting-configuration caveat (read before trusting these numbers as
+exact counts):** both runs below were taken under
+`--features "production,medium-classes,alloc-stats"`, and `production`
+includes `primordial-lazy-commit` (see `Cargo.toml`'s `production = [...]`
+list). Under that feature combination, precondition 6 (the lazy-commit
+frontier check, `alloc_core.rs`, the
+`let lazy_commit_frontier_ok = true;` statement) is hardcoded `true` rather than
+independently verified — as documented at that call site, this is a known,
+accepted upper-bound assumption for lazy-commit builds specifically, not a
+verified fact. Because the results obtained here are exactly **0/320** and
+**0/20**, the overcount is harmless for THIS measurement: 0 is already the
+floor a count can take, so an independently-verified precondition 6 could
+only leave the true hit count equal to or LOWER, never higher — the true
+rate is also 0, and the NO-GO conclusion below is unaffected (if anything,
+strengthened, not undermined) by this gap. **This will not automatically
+hold for a future reading:** any FUTURE Stage-1 measurement taken under a
+lazy-commit configuration (`primordial-lazy-commit` and/or
+`small-segment-lazy-commit` enabled) that comes back non-zero must be read
+as an UPPER BOUND on the true hit rate, not an exact count — treating such a
+future numerator at face value could inflate an apparent hit rate enough to
+wrongly justify a GO decision that an independently-verified precondition 6
+would not support.
+
 Per the design's own §6.1 plan, both harnesses were run with
 `--features "production,medium-classes,alloc-stats"`, via a small one-off
 instrumented wrapper (`include!`ing the existing unmodified shared workload

@@ -1970,7 +1970,13 @@ impl AllocCore {
                     // (inventing frontier-verification logic here would add
                     // an untested new code path for a precondition that, in
                     // this observation-only task, has zero behavioral
-                    // consequence either way).
+                    // consequence either way). See
+                    // `docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md` §3's
+                    // "overcounting-configuration caveat" for why the
+                    // Stage-1 measurement's 0-hit result is trustworthy
+                    // despite this overcount, and why a future non-zero
+                    // reading under a lazy-commit build must be read as an
+                    // upper bound, not an exact count.
                     let lazy_commit_frontier_ok = true;
 
                     if tail_adjacent && new_class_aligned && fits_segment && lazy_commit_frontier_ok
