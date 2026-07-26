@@ -1041,6 +1041,12 @@ impl HeapCore {
     /// ## Why no new bookkeeping is needed (the design doc's §4.2 answer,
     /// exercised for real here)
     ///
+    /// (Historical citation note: commit `912740f`'s message cited
+    /// this same soundness argument as `heap_core_free.rs:929-933` at that
+    /// commit — those lines held an unrelated `dealloc_foreign_slow`
+    /// null-base guard, not this paragraph. This IS the paragraph the
+    /// commit message meant to cite. R19-4, task #340.)
+    ///
     /// A promoted block is not a hybrid — it becomes a GENUINE, ordinary
     /// Large-segment allocation the moment `AllocCore::alloc_large` returns
     /// it. `SegmentHeader::kind_at(base)` (the SAME mechanism every other Large
