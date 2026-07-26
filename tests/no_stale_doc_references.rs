@@ -385,3 +385,101 @@ fn readme_unsafe_inventory_counts_match_reality() {
         tier2_files.len(),
     );
 }
+
+/// Regression-guard for the THIRD link in a chain
+/// `tests/dirty_by_class_sidecar_sizing_tripwire.rs`'s v4 tripwire (R19-9,
+/// task #345) only pins two of: (1) the REAL compiled constants
+/// (`AllocCore::dbg_small_class_count`/`dbg_words_per_class`) agree with (2)
+/// that test file's own `EXPECTED_BYTES` constants, per feature combo. This
+/// test checks the missing link 2 <-> 3: that `EXPECTED_BYTES` also agrees
+/// with (3) the PROSE snapshot numbers in
+/// `src/alloc_core/dirty_by_class.rs`'s "## Sizing and lazy materialisation"
+/// module-doc section. Editing that prose to a wrong number left the
+/// existing tripwire green (it never reads the doc comment); this test reads
+/// the doc comment's source text and pins the exact byte-count tokens for
+/// all three feature combos, so such a doc-only drift now fails here instead.
+///
+/// Deliberately does NOT depend on `AllocCore::dbg_*` (unlike the sidecar
+/// tripwire, which needs `alloc-segment-directory` compiled in to call those
+/// debug accessors) — it only reads source text, following this file's
+/// existing "doc-only guard... runs in every feature configuration" pattern,
+/// so the three literals below are cross-checked against
+/// `dirty_by_class_sidecar_sizing_tripwire.rs`'s own `EXPECTED_BYTES`
+/// constants by inspection/duplication, not by linking the crate. If a
+/// future change to `MAX_SEGMENTS`/`SMALL_CLASS_COUNT`/`WORDS_PER_CLASS`
+/// updates the sidecar tripwire's `EXPECTED_BYTES` constants, the SAME change
+/// must update the three literals here (and the doc comment prose itself) —
+/// exactly the discipline the sidecar tripwire's own doc comment already
+/// demands of `dirty_by_class.rs`'s prose.
+#[test]
+fn dirty_by_class_doc_snapshot_matches_sidecar_tripwire_expected_bytes() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let text = fs::read_to_string(
+        manifest
+            .join("src")
+            .join("alloc_core")
+            .join("dirty_by_class.rs"),
+    )
+    .expect("read dirty_by_class.rs");
+
+    // Must match `dirty_by_class_sidecar_sizing_tripwire.rs`'s
+    // `EXPECTED_BYTES` for `#[cfg(not(feature = "medium-classes"))]`.
+    const EXPECTED_BYTES_DEFAULT: usize = 25_088;
+    // Must match `EXPECTED_BYTES` for
+    // `#[cfg(all(feature = "medium-classes", not(feature = "medium-classes-wide")))]`.
+    const EXPECTED_BYTES_MEDIUM: usize = 28_160;
+    // Must match `EXPECTED_BYTES` for `#[cfg(feature = "medium-classes-wide")]`.
+    const EXPECTED_BYTES_WIDE: usize = 29_696;
+
+    let cases: &[(&str, usize)] = &[
+        ("the default 49-class table", EXPECTED_BYTES_DEFAULT),
+        ("55 classes under `medium-classes`", EXPECTED_BYTES_MEDIUM),
+        (
+            "58 classes under `medium-classes-wide`",
+            EXPECTED_BYTES_WIDE,
+        ),
+    ];
+
+    let mut offenders = Vec::new();
+    for (label, expected) in cases {
+        // The doc prose spells byte counts with a thousands separator, e.g.
+        // "25,088 bytes" — match the exact comma-grouped token so a stray
+        // digit edit is caught.
+        let grouped = group_thousands(*expected);
+        let needle = format!("{grouped} bytes");
+        if !text.contains(&needle) {
+            offenders.push(format!(
+                "expected token `{needle}` ({label}) not found in \
+                 src/alloc_core/dirty_by_class.rs's \"## Sizing and lazy \
+                 materialisation\" doc comment"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "dirty_by_class.rs's doc-comment snapshot prose has drifted from \
+         tests/dirty_by_class_sidecar_sizing_tripwire.rs's own EXPECTED_BYTES \
+         constants (which are themselves re-derived from the real compiled \
+         constants, see that test's own tripwire). Update BOTH the doc \
+         comment's \"## Sizing and lazy materialisation\" prose and, if the \
+         underlying constants changed, EXPECTED_BYTES in both that test and \
+         this one, in the same change:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+/// Format `n` with comma thousands separators, e.g. `25088` -> `"25,088"`.
+/// Small, local, and only used by the doc-snapshot check above — not worth a
+/// dependency for a single call site.
+fn group_thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out.chars().rev().collect()
+}
