@@ -42,12 +42,20 @@ headroom is established — so reserved capacity can only help a *subsequent*
 grow past that point, never the copy that created the promoted block in the
 first place.
 
-**A genuine, orthogonal win was found and is worth recording separately**:
-`exact-span-large`'s exact-rounding cuts resident commit roughly in half for
-this workload (**50.5 MiB → 23.9 MiB**, same 172-segment/46% cache-hit-rate
-signature in both arms) — a real memory-footprint improvement, but it is a
-**memory** win, not a **realloc-speed** win, and does not move the R10-2 kill
-gate at all.
+**A genuine, orthogonal win was found and is worth recording separately** —
+precisely on the **process commit charge** (reservation/commit) axis, and
+**only** in the same-session **C1-vs-C4** pairing (§4/§4.1), not the
+`production`-vs-C4 (A-vs-C4) pairing of §3: `exact-span-large`'s
+exact-rounding cuts C1's commit charge roughly in half against C4's
+(**C1 ≈50.5 MiB → C4 ≈23.9 MiB**, same 172-segment/46% cache-hit-rate
+signature in both arms) — a real memory-footprint improvement **in commit
+charge**, but it is a **memory** win, not a **realloc-speed** win, and does
+not move the R10-2 kill gate at all. This is a *different* comparison from
+the plain-`production`-vs-C4 (A-vs-C4) pair in §3's own table, where commit
+also fell (A ≈34.5 MiB → C4 ≈23.9 MiB) but **RSS moved the other way**
+(A ≈3.17 MiB → C4 ≈9.58 MiB, roughly tripling) — see §3 and §6.3 for the
+full caveat; the report has no RSS figure for C1 at all, so no claim is made
+here about how C1's RSS compares to C4's.
 
 **Methodological finding this task made along the way, stated up front
 because it nearly produced a false "helps" conclusion:** a *naive*
@@ -205,12 +213,17 @@ C1 same-session realloc per-op: 51,730,048 / 960 ≈ **53.9 µs/op**. This is
 **already ~20% below R18-2's originally-published 67.6 µs/op** for the exact
 same feature set (`production,medium-classes`) — confirming the gap is
 predominantly a **session/host-load artifact**, not a change in the
-mechanism. `exact-span-large`'s RSS effect is visible immediately in this
-same-session C1 run too: commit here is **≈50.5 MiB** (matching R18-2's
-~49.3 MiB closely, as expected — C1 has no `exact-span-large`), vs. C4's
-~23.9 MiB in §3 — confirming the commit reduction really is attributable to
-`exact-span-large`'s exact rounding, not a session artifact (this axis is
-NOT load-sensitive the way wall-clock is).
+mechanism. `exact-span-large`'s **process commit charge** effect (not RSS —
+this report has no RSS figure for C1; see §6.3 for the distinction) is
+visible immediately in this same-session C1 run too: commit here is
+**≈50.5 MiB** (matching R18-2's ~49.3 MiB closely, as expected — C1 has no
+`exact-span-large`), vs. C4's ~23.9 MiB in §3 — confirming the commit
+reduction really is attributable to `exact-span-large`'s exact rounding, not
+a session artifact (this axis is NOT load-sensitive the way wall-clock is).
+This C1-vs-C4 commit comparison is distinct from §3's A-vs-C4 table, where
+RSS (not commit) moved in the opposite direction (roughly tripled, A ≈3.17
+MiB → C4 ≈9.58 MiB) — no RSS number for C1 exists in this report to compare
+against C4's RSS.
 
 Raw log: `docs/perf/_raw_r20_2_c1_samesession_control.log`.
 
@@ -244,9 +257,12 @@ build, production,medium-classes,exact-span-large,large-reserved-capacity...}}}`
 Per-op: C1 mean = 47,599,453 / 960 ≈ **49.58 µs/op**; C4 mean = 46,632,350 /
 960 ≈ **48.58 µs/op**. `segments_reserved_total` = 172 in **both** arms across
 all 80 launches (identical cache-hit-rate proxy — confirms, again, that C4
-changes nothing about which promotions hit/miss the cache). Commit: C1 ≈
-50.5 MiB, C4 ≈ 23.9 MiB (the `exact-span-large` RSS effect, reproduced a
-third time, now inside the very comparison that shows no time effect).
+changes nothing about which promotions hit/miss the cache). Commit (process
+commit charge, not RSS): C1 ≈ 50.5 MiB, C4 ≈ 23.9 MiB (the
+`exact-span-large` commit-charge effect, reproduced a third time, now inside
+the very comparison that shows no time effect) — this is the C1-vs-C4 pair,
+not the A-vs-C4 pair from §3's segments/commit/rss table, and no RSS number
+is available for C1 to compare against C4's ≈9.58 MiB RSS from §3.
 
 **SD/Δ resolvability check, applied honestly to this cell too:** SD (3.577 ms)
 is **370% of** the mean delta (967 µs) — this effect, whatever its true sign,
@@ -322,16 +338,31 @@ task measured it.
 
 ### 6.3 What C4 DID confirm as a genuine, separate finding
 
-`exact-span-large`'s exact-rounding cuts steady-state commit for this
-workload from ~50.5 MiB (C1) to ~23.9 MiB (C4) — roughly halved — while the
-cache-hit-rate proxy (172/320, ~46%) is **identical** in both arms. This is a
-real, reproducible memory-footprint benefit of `exact-span-large` (reproduced
-three times across §3, §4, and §4.1's three independent runs), entirely
-orthogonal to the realloc-time question this task's primary axis was built to
-answer. It does not change the R10-2 kill-gate verdict — the gate is on
-wall-clock, not RSS — but it is worth recording as a distinct, positive
-signal for any future memory-footprint-focused evaluation of
-`exact-span-large`.
+`exact-span-large`'s exact-rounding cuts steady-state **process commit
+charge** for this workload from ~50.5 MiB (C1) to ~23.9 MiB (C4) — roughly
+halved — while the cache-hit-rate proxy (172/320, ~46%) is **identical** in
+both arms. This is a real, reproducible **commit-charge** benefit of
+`exact-span-large` (reproduced three times across §3, §4, and §4.1's three
+independent runs), entirely orthogonal to the realloc-time question this
+task's primary axis was built to answer. It does not change the R10-2
+kill-gate verdict — the gate is on wall-clock, not commit or RSS — but it is
+worth recording as a distinct, positive signal for any future
+commit-charge-focused evaluation of `exact-span-large`.
+
+**Caveat — this is specifically a commit-charge improvement, not a
+whole-memory-footprint one, and the two axes disagree in this report's own
+data.** The ~50.5→23.9 MiB "roughly halved" figure above is the **C1-vs-C4**
+pairing (§4/§4.1). It should not be read as "C4 also halves RSS relative to
+plain `production`": §3's own segments/commit/rss table gives a *different*
+pairing, **A (`production`) vs C4**, where commit likewise fell (≈34.5 MiB →
+≈23.9 MiB) but **RSS moved the opposite way**, from ≈3.17 MiB (A) to
+≈9.58 MiB (C4) — roughly tripling, not shrinking. So relative to plain
+`production`, C4's process commit charge drops while its RSS rises; "a real
+memory-footprint improvement" is accurate only for the commit-charge axis
+and only for the C1-vs-C4 pairing, not for RSS or for the A-vs-C4 pairing.
+This report gives no RSS figure for C1 anywhere, so no claim is made here
+about how C1's RSS compares to C4's ≈9.58 MiB — only the A-vs-C4 RSS pair is
+supported by this report's data.
 
 ### 6.4 What this means for R10-2's kill-gate and the R18-9 unified-policy question
 
