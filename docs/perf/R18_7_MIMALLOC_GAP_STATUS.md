@@ -22,10 +22,15 @@ and parity at 64 B"*), and propose — not implement — the cheapest next step.
    CHANGELOG's own post-P3 claim (16 B 2.6×→1.60×, 256 B→parity) and with every
    earlier dated cold-direct table in `docs/ALLOC_BENCH.md`. The 256 B "2.71×
    slower" is a clear outlier (256 B cold was 1.06×–1.66× in every prior run).
-3. **The cheapest next step is NOT another eureka** — it is (A) an honest
-   paired A/B/B/A re-measurement to correct the drifted headline, and (B) wiring
-   the existing iai `Ir` gate into CI (it currently runs only locally via
-   `npm run iai`; CI has no perf-gate/iai/callgrind job at all).
+3. **The cheapest next step is NOT another eureka** — it is an honest paired
+   A/B/B/A re-measurement to correct the drifted headline (§5 Step A).
+   **Correction (caught during zero-trust review before this doc was
+   finalized):** this document's first draft also proposed "wire the iai `Ir`
+   gate into CI" as a Step B, based on a grep that checked only `ci.yml` and
+   missed `.github/workflows/perf-gate.yml` — a SEPARATE existing workflow
+   file that already runs exactly this gate (task #127/#128, confirmed
+   personally working earlier this same session). That step is retracted;
+   see §4 and §5.
 
 ---
 
@@ -166,23 +171,38 @@ the README cites) is re-arguing the same noisy axis.
 
 ---
 
-## 4. Why the gap is still "open" in the docs: the iai `Ir` gate is not in CI
+## 4. Correction (orchestrator, post-commit review): the iai `Ir` gate IS already in CI
+
+**The investigation's original §4 (below, struck through in spirit, kept for
+the record) contained a real factual error, caught during zero-trust review:
+it greped only `.github/workflows/ci.yml` and missed that a SEPARATE workflow
+file, `.github/workflows/perf-gate.yml`, already implements exactly this
+gate** — task #127/#128, trigger surface `schedule: nightly` +
+`workflow_dispatch` + `pull_request` (labeled `perf`), running
+`cargo bench --bench perf_gate_iai --features production` on `ubuntu-latest`
+and enforcing `IAI_CALLGRIND_REGRESSION` (10% `Ir`) via `iai-callgrind`'s own
+regression check. This is not a stale/theoretical claim — this exact job was
+personally exercised earlier in this same session (Round 17's wrap-up):
+it had gone red for two consecutive scheduled runs due to a stale cached
+baseline predating R14-7's `MAX_SEGMENTS` raise, was manually re-dispatched
+via `workflow_dispatch` against post-R17-3-fix `main`, and confirmed green
+with a refreshed baseline. **The proposed Step B below (and the follow-up
+task text in §6) is therefore REDUNDANT — the CI wiring already exists and
+is confirmed working.** §3b's underlying point stands independently, though:
+`perf-gate.yml`'s job runs SeferAlloc's own `Ir` benches only; it has no
+`mimalloc` comparison arm, so the plan's original cross-allocator claim
+remains unproven regardless of this correction.
+
+### Original §4 text (retained for the record; its premise is wrong per above)
 
 `rg "iai|perf-gate|perf_gate|callgrind|valgrind" .github/workflows/ci.yml`
-returns **nothing**. The deterministic gate exists as a *local* tool only —
-`npm run iai` → `scripts/iai.mjs` (WSL + valgrind + callgrind, see its header
-comment: *"the crate's iai-callgrind perf gate is Linux-only … on this Windows
-dev host we can PROVE a perf change via WSL instead of waiting for Linux CI"*).
-`npm run check` runs it locally, but **CI never regresses on cold-path `Ir`** —
-a future change could silently re-add carved-out instructions to the cold path
-and only a manual local run would notice.
-
-This is exactly what every "pending the Linux Ir gate" sentence in the CHANGELOG
-(`§4278`, `§4295`) and README (`:785–789`) has been deferring to — a gate that
-was never wired up. The two existing weekly/dispatch CI jobs
-(`numa-shim` at `ci.yml:998`, `feature-powerset` at `ci.yml:1133`) are the
-established precedent for "scheduled + `workflow_dispatch`, not per-PR" perf-ish
-jobs; an iai job would slot into the same shape.
+returns **nothing** — true, but incomplete: it does not check the other files
+under `.github/workflows/`. `perf-gate.yml` (a sibling file, not a section of
+`ci.yml`) already runs exactly this gate; see the correction above. The two
+existing weekly/dispatch jobs *inside* `ci.yml` (`numa-shim` at `ci.yml:998`,
+`feature-powerset` at `ci.yml:1133`) are indeed the established precedent for
+"scheduled + `workflow_dispatch`, not per-PR" perf-ish jobs, and `perf-gate.yml`
+already follows that same shape as its own separate workflow file.
 
 ---
 
@@ -191,9 +211,10 @@ jobs; an iai job would slot into the same shape.
 The task asked which *remaining* eureka is the cheapest next step. The honest
 answer is **none** — the plan is exhausted (§1) and the one later attempt at the
 same gap (PERF-3 run-freelist) was honest-rejected. The remaining leverage is
-**measurement honesty + deterministic regression detection**, in two cheap,
-zero-`src/`-risk steps. Recommend doing **A first** (it is the immediate honesty
-fix the README needs), then **B** (the structural fix).
+**measurement honesty**, in one cheap, zero-`src/`-risk step — Step B below,
+originally proposed as "wire the iai gate into CI," is **already done**
+(§4's correction) and is NOT a remaining step; it is struck here and kept only
+to show what was proposed before the correction.
 
 ### Step A (cheapest, immediate) — paired A/B/B/A re-measurement + README headline correction
 
@@ -210,48 +231,54 @@ the measurement stops being a single worst-case snapshot. **This is the
 "trivial README-number fix" the task permits as a separate small commit — do NOT
 mix it into this status document's commit.** Risk: ~0 (docs-only, measurement).
 
-### Step B (structural, the real fix) — wire the iai `Ir` gate into CI
+### Step B — RETRACTED (orchestrator correction): "wire the iai gate into CI" is already done
 
-Add a `perf-gate-iai` job to `.github/workflows/ci.yml` in the same
-`schedule: weekly + workflow_dispatch` shape as the existing `numa-shim` and
-`feature-powerset` jobs (NOT per-PR — iai-callgrind under valgrind is
-slow). It runs `cargo bench --bench perf_gate_iai --features production` (or the
-`npm run iai` equivalent) on `ubuntu-latest` with valgrind installed, and
-regresses on the `Ir` of the four cold/recycle benches + `churn_256b` /
-`churn_write_256b` against the `IAI_BASELINE.md` numbers. This closes §3b's open
-question over time (the *first* run finally produces the deferred Linux `Ir`
-baseline) and makes any future cold-path instruction regression a CI signal
-instead of a 10-round wall-clock debate. Risk: CI-only, zero `src/` change.
+The original Step B proposed adding a `perf-gate-iai` job to `.github/workflows/ci.yml`.
+**This is unnecessary — `.github/workflows/perf-gate.yml` already implements
+exactly this job** (task #127/#128; `schedule: nightly` + `workflow_dispatch` +
+labeled-PR trigger; runs `cargo bench --bench perf_gate_iai --features production`
+on `ubuntu-latest`; enforces a 10% `Ir` regression limit) — see §4's correction
+for the full citation, including this session's own direct interaction with
+the job (it was found red for two days due to a stale baseline, manually
+re-dispatched, and confirmed green with a refreshed baseline). The "pending
+the Linux Ir gate" caveat in CHANGELOG §4278/§4295 and README :785–789
+predates `perf-gate.yml`'s existence and is itself now stale wording,
+independent of this task's scope.
 
-**Why these two and not a new eureka:** every named tautology in the plan is
-already removed (§1, §3a). What remains at cold-16 B is either honest per-block
-page-map/fault work **or** a residual ceremony we cannot see without the
-cross-allocator `Ir` number (§3b). Spending engineering on a *new* eureka before
-resolving that measurement gap would be guessing; Step A removes the dishonest
-headline now, Step B makes the next eureka (if one is ever warranted) a
-data-informed decision instead of a wall-clock argument.
+**Why not a new eureka (Step A stands on its own):** every named tautology in
+the plan is already removed (§1, §3a). What remains at cold-16 B is either
+honest per-block page-map/fault work **or** a residual ceremony we cannot see
+without the cross-allocator `Ir` number (§3b, still genuinely open — the
+existing `perf-gate.yml` has no `mimalloc` arm). Spending engineering on a
+*new* eureka before resolving that measurement gap would be guessing; Step A
+removes the dishonest README headline now. A real Step B, if one is wanted,
+would be adding a `mimalloc` comparison arm to the ALREADY-EXISTING
+`perf-gate.yml` job (§3b's actual open question) — not creating a new job
+that duplicates one already running.
 
 ---
 
 ## 6. Proposed follow-up task (text, not registered)
 
-> **Task (P2, ~half-day): wire the `perf_gate_iai` Ir gate into CI as a
-> weekly + `workflow_dispatch` job, and capture the first Linux `Ir` baseline.**
-> Add a `perf-gate-iai` job to `.github/workflows/ci.yml` mirroring the existing
-> `numa-shim` / `feature-powerset` job shape (`schedule: cron '0 6 * * 1'` +
-> `workflow_dispatch`, `runs-on: ubuntu-latest`, **not** per-PR — valgrind is
-> slow). Install valgrind + the pinned `iai-callgrind-runner`, run
-> `cargo bench --bench perf_gate_iai --features production`, and fail on an `Ir`
-> regression beyond threshold against `docs/perf/IAI_BASELINE.md`'s recorded
-> numbers (`cold_alloc_free_256x16b` 123,516; `recycle_alloc_free_256x16b`
-> 175,896; `churn_256b` 80,672; etc.). **Deliverable:** the job is green on
-> `main`, AND the first run's `Ir` output is committed as the canonical Linux
-> baseline (resolving the "pending the Linux Ir gate" caveat repeated across
-> CHANGELOG §4278/§4295 and README :785–789). **Explicitly out of scope:** adding
-> a `mimalloc` arm to the iai gate (that is the §3b cross-allocator question —
-> a separate, larger task; this one only stops the regression-detection gap).
-> **Counterfactual:** before the job exists, a +5 % cold-path `Ir` regression
-> ships silently; after, CI catches it.
+> **Task (P3, small): correct the stale "pending the Linux Ir gate" wording in
+> CHANGELOG §4278/§4295 and README :785–789.** `perf-gate.yml` (task #127/#128)
+> already runs the deterministic `Ir` gate on `ubuntu-latest` (nightly +
+> `workflow_dispatch` + labeled-PR) and was confirmed working this same
+> session — the "pending" framing in these two docs predates or was never
+> reconciled with that job landing. Docs-only, ~5-line fix, zero `src/`/CI risk.
+>
+> **Separately, a genuinely open, larger question (§3b): add a `mimalloc`
+> comparison arm to the existing `perf-gate.yml`/`perf_gate_iai.rs` gate**, so
+> the plan's original "instruction-bound vs mimalloc, who pays for bytes"
+> claim can finally be checked at the `Ir` level instead of remaining a
+> 10-round wall-clock argument. This is a real, unimplemented piece of work
+> (not just a doc fix) — scope it as its own task if pursued: requires adding
+> `mimalloc` as a dev-dependency arm to `perf_gate_iai.rs` (the crate's
+> existing optional `mimalloc` dev-dependency, per `README.md:184`, may
+> already be usable for this) and deciding whether a cross-allocator `Ir`
+> comparison is even meaningful under `iai-callgrind`'s methodology (mimalloc
+> is a C library called via FFI — worth a feasibility check before committing
+> to it as the next round's work).
 
 ---
 
@@ -283,6 +310,7 @@ data-informed decision instead of a wall-clock argument.
 
 The mimalloc cold-gap plan is **fully landed** (Э1–Э5 + Э6–Э11, all cited to
 commits); the README's 2.4–2.7× headline is a **single host-drifted run** whose
-256 B row contradicts every prior measurement; the cheapest next step is a paired
-re-measure + README correction (A) and wiring the existing local iai `Ir` gate
-into CI (B) — not a new eureka.
+256 B row contradicts every prior measurement; the cheapest next step is a
+paired re-measure + README correction (§5 Step A) — not a new eureka, and not
+"wire the iai gate into CI" (that gate, `.github/workflows/perf-gate.yml`,
+already exists and was confirmed working this same session; §4's correction).
