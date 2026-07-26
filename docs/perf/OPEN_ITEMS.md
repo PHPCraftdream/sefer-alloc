@@ -50,27 +50,23 @@ for completeness.
 
 ### [A] Active / high-value
 
-1. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
-   `perf_gate_iai.rs`.** "The single biggest open question the plan left on the
-   table": the cold-16 B gap has been a 10-round wall-clock argument because
-   nobody has the deterministic cross-allocator `Ir` number that would settle
-   whether the residual is honest page-map work or ceremony. **Feasibility
-   check done — R20-4 (task #349), 2026-07-26: FEASIBLE**, and cheaper than
-   the original framing assumed: mimalloc's C core is statically linked into
-   the same binary Callgrind already instruments (no dynamic-link/JIT
-   attribution gap), this repo's own established pattern
-   (`benches/global_alloc.rs`) already calls `mimalloc::MiMalloc` directly via
-   `GlobalAlloc` without installing it as `#[global_allocator]` — so a mimalloc
-   arm can live in the SAME `perf_gate_iai.rs` file, no new bench binary
-   required — and the CI C-toolchain question is already retired by
-   `ci.yml`'s currently-green `clippy --all-features` job, which already
-   compiles mimalloc's `cc`-built static lib on the identical `ubuntu-latest`
-   image `perf-gate.yml` uses. Still NOT implemented — this item stays open
-   for the actual arm (new `#[library_benchmark]` fns + an arm-aware
-   bootstrap-constant fix in `scripts/iai.mjs`, see the report §8). Evidence:
-   `R18_7_MIMALLOC_GAP_STATUS.md` §3b (lines 154–170) + §6 (lines 270–281);
-   `R20_4_MIMALLOC_IR_ARM_FEASIBILITY.md` (full report, §0/§8 for the verdict
-   and implementation sketch).
+1. **`contains_base`'s share of a real free's `Ir` — measured MATERIAL
+   (18.6%).** R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
+   own-thread ownership probe (`SegmentTable::contains_base`, a two-tier
+   4-entry-cache-then-hash-probe check) accounts for 18.6% of a real free's
+   instruction count on a single-hot-segment churn workload (Tier-1 cache-hit
+   case — a conservative/lower-bound estimate; a workload spanning more than
+   `OWN_CACHE_SIZE` (4) concurrently-hot segments would show a LARGER share).
+   Clears the "double-digit percentage" bar for a future design task. A
+   header-first alternative (mirroring mimalloc's pointer-mask + one
+   header-field read) is sketched but explicitly NOT implemented: it inverts
+   `contains_base`'s current liveness-before-dereference ordering guarantee,
+   and no way was found in this task's scope to make a bare header read safe
+   against a foreign/use-after-decommit pointer without some other
+   liveness proof that itself costs something — an open question for
+   whoever designs this next, not an assumed-solved prerequisite. Evidence:
+   `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` (full report, §4 for the
+   design sketch + the soundness caveat).
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
@@ -154,6 +150,22 @@ for completeness.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
+  `perf_gate_iai.rs`.** Implemented by **R22-15 (task #366)**, 2026-07-26
+  (commit `ff48029`): 7 new mimalloc `#[library_benchmark]` fns added to
+  `benches/perf_gate_iai.rs`, each mirroring an existing SeferAlloc bench
+  byte-for-byte; `scripts/iai.mjs` taught an arm-aware bootstrap constant so
+  the two allocators' different one-time init costs are never conflated.
+  Measured, deterministic result (byte-identical `Ir` across 3 independent
+  runs): SeferAlloc retires **1.3x-2.4x more instructions per op than
+  mimalloc** on every matched workload (1.326x on hot churn, up to 2.430x on
+  cold-carve/recycle) — a real, honestly-reported, unfavorable gap, settling
+  the 10-round wall-clock argument this item names. (This entry itself was
+  left un-closed when R22-15 landed — its own commit did not touch
+  `OPEN_ITEMS.md` — and was only moved here by R22-17/task #368 while adding
+  a sibling item; a stale-open item sitting one round past its actual
+  resolution, caught in passing rather than by a dedicated check.) Evidence:
+  `R22_15_MIMALLOC_IR_ARM_GATE.md` (full report).
 - **Product fate of `medium-classes` — should it ship, in any form?**
   Resolved by **R22-18 (task #369)**, 2026-07-26: **decision recorded, not
   merely deferred again.** After 4 independent NULL/NO-GO attempts across 3

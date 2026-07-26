@@ -64,6 +64,14 @@ use mimalloc::MiMalloc;
 #[cfg(target_os = "linux")]
 use sefer_alloc::SeferAlloc;
 
+// R22-17 (task #368): dealloc-only isolation arms need `HeapCore`/
+// `HeapRegistry` directly (the `#[doc(hidden)]` test-only export surface --
+// same one `tests/heap_core_tcache.rs` and friends already use), rather than
+// going through `SeferAlloc`'s `GlobalAlloc` facade, so the pre-allocation
+// pass can be excluded from the timed region (only the free loop is timed).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+use sefer_alloc::registry::{bootstrap, HeapRegistry};
+
 /// Number of alloc/dealloc pairs per churn iteration. Kept small relative to
 /// the criterion benches (which use 1024) — callgrind emulation is far
 /// slower than native execution; the instruction *count* is what we compare,
@@ -98,6 +106,138 @@ fn small_churn_16b() {
             // SAFETY: ptr was returned by the immediately preceding `alloc`
             // call with the same layout.
             unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// R22-17 (task #368) — dealloc-only isolation arms, to measure what fraction
+// of a free's total Ir the `contains_base` own-thread ownership probe
+// (`HeapCore::dealloc_routing` -> `AllocCore::contains_base` ->
+// `SegmentTable::contains_base`, see `src/registry/heap_core_xthread.rs` and
+// `src/alloc_core/segment_table.rs`) accounts for.
+//
+// `small_churn_16b` above measures alloc+dealloc TOGETHER; these arms isolate
+// JUST the free half. IMPORTANT CORRECTION vs an earlier draft of this note:
+// iai-callgrind's `#[library_benchmark]` times the ENTIRE annotated function
+// body under Callgrind (there is no "setup phase excluded from
+// measurement" — unlike criterion's `iter()` closures). So the pre-allocation
+// pass below IS included in each arm's raw Ir. All three arms
+// (`dealloc_prealloc_only_16b`, `dealloc_free_only_16b`,
+// `dealloc_contains_base_probe_only_16b`) share the BYTE-IDENTICAL
+// pre-allocation pass (same `CHURN_OPS`, same layout, same
+// `bootstrap::ensure` + `HeapRegistry::claim` + alloc loop), so that shared
+// prefix's Ir is a constant common term across all three raw numbers.
+// `dealloc_prealloc_only_16b` measures that shared prefix ALONE (no loop body
+// after it), so subtracting its Ir from the other two isolates each one's
+// OWN loop-only cost:
+//   real_free_loop_ir   = dealloc_free_only_16b_ir            - prealloc_only_ir
+//   probe_loop_ir        = dealloc_contains_base_probe_only_16b_ir - prealloc_only_ir
+//   contains_base share  = probe_loop_ir / real_free_loop_ir
+//
+// `dealloc_free_only_16b` frees the pre-allocated pointers in a tight loop
+// through the SAME production `HeapCore::dealloc` -> `dealloc_routing` ->
+// `contains_base` path `small_churn_16b` exercises -- nothing here is a
+// bypass or an alternate implementation.
+//
+// `dealloc_contains_base_probe_only_16b` isolates `contains_base` ITSELF
+// (via the `#[doc(hidden)]` `dbg_contains_base` measurement hook added in
+// `src/registry/heap_core_diag.rs`), called directly against the same table
+// state (one primordial segment, already registered by the pre-allocation
+// pass) -- giving the probe's own per-call Ir with NO surrounding free
+// bookkeeping (bitmap/magazine/stamp work) mixed in.
+//
+// All three arms require `alloc-xthread` (the feature that compiles in
+// `dealloc_routing` and gates the `dbg_contains_base` hook) -- under plain
+// `production` (which includes `alloc-xthread`) they compile and run
+// normally; under a hypothetical feature set with `alloc-global` but without
+// `alloc-xthread`, `HeapCore::dealloc` takes the `dealloc_own_thread` branch
+// directly (no `contains_base` call at all), so there would be nothing to
+// isolate.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_prealloc_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): this arm exists ONLY to measure the
+    // shared pre-allocation prefix's own Ir, common to both sibling arms
+    // below. Each `#[library_benchmark]` runs in its own fresh process under
+    // callgrind, so leaking here has no effect on any other bench.
+}
+
+// Same shared pre-allocation prefix as `dealloc_prealloc_only_16b` (see the
+// module note above), PLUS a real free loop -- so
+// `dealloc_free_only_16b`'s Ir minus `dealloc_prealloc_only_16b`'s Ir isolates
+// the free loop's own cost.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free-only, through the real `HeapCore::dealloc` ->
+    // `dealloc_routing` -> `contains_base` path.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the pre-allocation pass above with
+            // the same layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Isolates JUST the `contains_base` probe (see the module note above): same
+// pre-allocation shape as `dealloc_free_only_16b`, but the "timed" loop calls
+// `dbg_contains_base` directly instead of a real `dealloc` -- so the blocks
+// are never actually freed (they leak for the duration of the process, which
+// is fine: each `#[library_benchmark]` runs in its own fresh process under
+// callgrind). This measures the SAME production probe
+// (`AllocCore::contains_base` -> `SegmentTable::contains_base`), just without
+// the rest of `dealloc_routing`/`dealloc_own_thread_with_base`'s bookkeeping
+// around it -- not an alternate/bypass implementation, see `dbg_contains_base`'s
+// own doc comment in `src/registry/heap_core_diag.rs`.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_contains_base_probe_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: probe-only. `dbg_segment_base_of_ptr` + `dbg_contains_base`
+    // together mirror exactly what `dealloc_routing` computes and checks
+    // before its own-thread/foreign branch (see that function's doc comment):
+    // `let base = os::segment_base_of_ptr(ptr); self.core.contains_base(base)`.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            let hit = unsafe { (*heap).dbg_contains_base(base) };
+            black_box(hit);
         }
     }
 }
@@ -683,6 +823,9 @@ library_benchmark_group!(
     name = perf_gate;
     benchmarks =
         small_churn_16b,
+        dealloc_prealloc_only_16b,
+        dealloc_free_only_16b,
+        dealloc_contains_base_probe_only_16b,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,

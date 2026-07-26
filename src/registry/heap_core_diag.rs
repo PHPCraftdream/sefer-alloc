@@ -362,4 +362,27 @@ impl HeapCore {
     pub fn dbg_hardened_large_noop_count() -> u64 {
         super::heap_core_free::HARDENED_LARGE_NOOP_COUNT.load(core::sync::atomic::Ordering::Relaxed)
     }
+
+    /// MEASUREMENT-ONLY (R22-17, task #368): thin delegation to
+    /// `AllocCore::contains_base` (`self.core.table.contains_base`'s
+    /// `pub(crate)` wrapper), exposed at the `HeapCore` level so
+    /// `benches/perf_gate_iai.rs` can measure the OWN-THREAD segment-ownership
+    /// probe's instruction cost IN ISOLATION — i.e. without the surrounding
+    /// alloc/dealloc bookkeeping that a full `HeapCore::dealloc` call would mix
+    /// in. `base` must already be a segment-aligned base (the same value
+    /// `os::segment_base_of_ptr` would produce); this hook does not compute
+    /// it, so a caller measuring the FULL cost of the check (base computation
+    /// + probe) should time `dbg_segment_base_of_ptr` and this call together.
+    ///
+    /// Exactly mirrors what `HeapCore::dealloc_routing`
+    /// (`heap_core_xthread.rs`) itself calls (`self.core.contains_base(base)`)
+    /// — same function, same cache-then-hash-probe behavior, same cost. This
+    /// is NOT an alternate/bypass implementation of the check; it is the
+    /// production check itself, exposed read-only for isolated timing. No
+    /// production call site is changed by adding this hook.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    pub fn dbg_contains_base(&mut self, base: *mut u8) -> bool {
+        self.core.contains_base(base)
+    }
 }

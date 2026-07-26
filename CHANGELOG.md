@@ -7,6 +7,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 22 — three independent Rounds 19–21 reviews synthesized, `hardened+medium-classes` CI gap closed, `large_layout_consistent` extended to align, OPT-H closed on geometric grounds, mimalloc `Ir` arm landed (1.3x-2.4x gap measured), `contains_base` found MATERIAL (18.6% of free), `medium-classes`' product fate decided (R22-1..R22-18, tasks #352–#369)
+
+**What actually moved this round, stated plainly up front.** Round 22 opened
+by dispatching two independent read-only reviews (`/crush` and `@ox`) plus a
+third pre-existing readonly review of Rounds 19–21, synthesizing all three
+into `docs/reviews/2026-07-26-r22-plan.md`, and executing every
+zero-trust-verified finding that survived personal re-derivation against the
+real source. Plain `--features production`'s composition is **unchanged**
+across the whole round (`git diff --stat` on `Cargo.toml` shows only
+additive `[[example]]`/`[[bench]]`-adjacent entries, no `[features]` change)
+— every behavior-affecting addition (`HARDENED_LARGE_NOOP_COUNT`,
+`dbg_contains_base`) is `#[doc(hidden)]`/`alloc-stats`-gated and compiles to
+nothing under plain `production`. This round is a mix of real correctness
+fixes (2), CI/test-robustness fixes (4), honest measurement (3, one of which
+found a MATERIAL, not NULL, result), design work (1), a product decision (1),
+and process/doc hygiene (7) — the same explicit-categorization discipline
+Round 19–21's own CHANGELOG entry established, continued here.
+
+- **[correctness fix] R22-1 (task #352, P0) — added the CI row that was
+  missing for R19-1's own regression tests.** Walked `.github/workflows/
+  ci.yml` and confirmed the hardened Large no-op fix (R19-1) and BOTH its
+  regression tests compiled to ZERO tests in every existing CI row (the
+  `hardened`-tier job never turns on `medium-classes`; `--all-features`
+  turns on `numa-aware`+`exact-span-large` together, which makes the
+  promotion-reachable predicate false). Added `cargo test --features
+  "hardened medium-classes"` to the `test-hardened` job.
+- **[correctness fix] R22-2 (task #353, P0) — closed a real gap in R21-2's
+  own non-vacuity test.** The existing negative OPT-H scenario
+  (`objs[0]`, offset 786432) failed precondition 4 (alignment)
+  independently of precondition 3 (tail-adjacency) it claimed to isolate —
+  deleting `tail_adjacent &&` from the real conjunction would have left the
+  suite green. Added a third scenario (384 KiB→1 MiB, offset 3 MiB) whose
+  offset is aligned but non-tail, genuinely isolating precondition 3;
+  proved via a personal mutation counterfactual that only the new scenario
+  flips red when `tail_adjacent` is neutralized.
+- **[process fix] R22-3 (task #354, P1) — created
+  `docs/CORRECTNESS_OPEN_ITEMS.md`**, a sibling index to the perf-only
+  `docs/perf/OPEN_ITEMS.md`, after two independent reviews found R19-1's
+  self-flagged flaky test and clippy dead-code combo tracked nowhere
+  durable — the exact failure mode `OPEN_ITEMS.md` was created to prevent,
+  recurring one domain over. Recorded both items with reproduction
+  evidence and a concrete root-cause hypothesis each.
+- **[doc fix] R22-4 (task #355, P2) — fixed a stale commit-status
+  self-description** in `R21_2_OPT_H_STAGE1_HIT_RATE.md` ("Not committed,
+  not pushed", despite being committed as `b6af12d`) — the same
+  derived-statement staleness class Round 19 spent 4 commits fixing,
+  recurring one file later in the very same wave.
+- **[correctness fix] R22-5 (task #356, P1) — extended
+  `large_layout_consistent` to check alignment, not just size.** A
+  fabricated free with the right size but wrong align previously passed
+  both the R19-1 hardened branch and the pre-existing cross-thread
+  mitigation. Added `SegmentHeader::large_align_at` and three new tests
+  (own-thread, cross-thread, and a cache-hit-reuse scenario); proved via a
+  personal mutation counterfactual that exactly the 3 new tests, and only
+  those, depend on the new align check.
+- **[docs/perf fix] R22-6 (task #357, P1) — closed OPT-H's medium-ladder
+  item with a closed-form LCM proof**, not a further measurement: the
+  ladder's own size-class factorization allows at most one cross-class hop
+  per segment, independent of harness design. Moved `OPEN_ITEMS.md` item 1
+  to "Recently resolved"; caught and fixed a numbering bug the tier
+  reshuffle itself introduced in a separate, already-stale entry.
+- **[doc fix] R22-7 (task #358, P2) — added the Rounds 19–21 CHANGELOG
+  section** (the one immediately below this one), with the explicit
+  work-type categorization this same convention continues here.
+- **[doc fix] R22-8 (task #359, P2) — added a lazy-commit overcount
+  caveat** to `R21_2_OPT_H_STAGE1_HIT_RATE.md`: the Stage-1 measurement ran
+  under `primordial-lazy-commit` (part of `production`), where precondition
+  6 is an unverified upper bound — harmless here since the result was
+  exactly 0, but any future non-zero reading in the same configuration must
+  be read as an upper bound, not an exact count.
+- **[test infrastructure] R22-9 (task #360, P2) — gated R19-1/R22-5's
+  branch-(A) tests at runtime, not via `#[cfg]`.** The hand-written
+  promotion-reachable `#[cfg]` on 3 test functions meant they didn't even
+  compile under `--all-features` or plain `hardened`. Replaced with
+  `if !HeapCore::dbg_promotion_compiled() { return; }`, the same idiom
+  `tests/r14_4_promotion_move_leg_reduction.rs` already established —
+  confirmed all 4 tests now compile AND runtime-skip correctly in both
+  configurations.
+- **[doc fix] R22-10 (task #361, P2) — distinguished commit charge from
+  RSS in the R20-2 report.** The report's own table showed commit falling
+  while RSS roughly tripled in the same comparison; "resident commit"
+  conflated two axes moving in opposite directions.
+- **[test verification] R22-11 (task #362, P0) — confirmed the OPT-H probe
+  holds under `--all-features`**, the only CI row that actually compiles
+  and runs it — previously never verified in that exact configuration.
+  Both tests pass unchanged; recorded the confirmation in the module doc.
+- **[diagnostic/observability] R22-12 (task #363, P3) — added a counter
+  for hardened Large defensive no-ops** (`HARDENED_LARGE_NOOP_COUNT`,
+  `alloc-stats`-gated), shared by both no-op branches. Strengthened all 3
+  R19-1/R22-5 regression tests to assert it advances by exactly 1, in
+  addition to the existing liveness check — proving the no-op branch
+  itself ran, not just that nothing crashed.
+- **[test infrastructure] R22-13 (task #364, P3) — closed the tripwire's
+  third link.** R19-9's v4 tripwire pinned real-constants↔`EXPECTED_BYTES`
+  but nothing verified `EXPECTED_BYTES`↔the doc-comment prose snapshot.
+  Added a test parsing `dirty_by_class.rs`'s source text and asserting the
+  exact byte-count tokens are present.
+- **[process fix] R22-14 (task #365, P2) — defined a boundary rule for
+  what perf-gate report owes raw logs + a summary CSV**, closing an
+  ambiguity R21-2 exposed (it published 0/320 and 0/20 as its decision
+  basis but committed neither). Applied retroactively: promoted R21-2's
+  throwaway measurement wrapper to a small permanent committed example,
+  reproducing the exact already-published result.
+- **[measurement] R22-15 (task #366, P1) — landed the mimalloc `Ir`
+  comparison arm** in the deterministic Callgrind gate, executing R20-4's
+  already-approved feasibility sketch. **Measured result: SeferAlloc
+  retires 1.3x-2.4x more instructions per op than mimalloc on every
+  matched workload** (1.326x hot churn, up to 2.430x cold-carve/recycle) —
+  a real, honestly-reported, unfavorable gap, settling a 10-round
+  wall-clock argument deterministically. Confirmed byte-identical `Ir`
+  across three independent runs.
+- **[design-only] R22-16 (task #367, P1) — designed remap-instead-of-copy
+  for the promotion memcpy**, the last untried lever after destination
+  headroom (NULL) and in-place grow (closed). **Verdict: NO-GO** for
+  remap-in-place under the current shared-segment model (two independent
+  architectural blockers: no promotion-time neighbor-liveness check;
+  segment base-address stability is load-bearing throughout the addressing
+  model). **CONDITIONAL-GO** for a separate future "MediumExtent" redesign,
+  gated on a cheap Stage-1 workload-shape measurement.
+- **[decision] R22-18 (task #369, P2) — decided `medium-classes`' product
+  fate: neither ship in `production` nor remove, document as a named
+  opt-in workload profile.** After 4 independent NULL/NO-GO attempts across
+  3 rounds to clear the realloc axis, this was the first time the question
+  "should this feature ship at all" was asked directly. Recorded an
+  explicit falsifiability clause naming the only 3 categories of evidence
+  that could reopen the decision.
+- **[measurement] R22-17 (task #368, P1) — measured `contains_base`'s
+  share of a real free's `Ir`: MATERIAL, 18.6%**, not the negligible slice
+  a NULL result would have shown. Isolated the probe via 3 new bench arms
+  reusing R22-15's just-established pattern; confirmed byte-identical
+  across two independent runs. Sketched (design only) a header-first
+  alternative mirroring mimalloc's approach, with an explicit soundness
+  caveat: it would dereference memory before proving liveness, which this
+  crate's own hardened-misuse-guard philosophy treats as unacceptable, not
+  a trade-off — no free-lunch solution was found in this task's scope.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** Nothing behavioral. `Cargo.toml`'s `production = [...]`
+list is unchanged across the entire round. The two new always-compiled
+statics (`HARDENED_LARGE_NOOP_COUNT`, plus the pre-existing pattern
+`dbg_contains_base` reuses) are both `#[doc(hidden)]` and/or
+`alloc-stats`-gated for their per-event cost — zero-cost under plain
+`production`, verified per their own commits above. Unsafe-seam inventory
+unchanged (80 total: 20 tier-1 + 60 tier-2, matching every prior round's
+count, via the crate's own self-verifying `grep -rnE
+'^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`).
+
 ### Rounds 19–21 — hardened Large no-op UAF closed, Round 18 CHANGELOG backfilled, promotion-reachable `#[cfg]` canonicalized into one macro, R10-2 kill-gate's reserved-capacity lever measured NULL, OPT-H in-place medium-grow designed (CONDITIONAL-GO) then found NO-GO on Stage-1 evidence, mimalloc Ir-arm feasibility confirmed (R19-1..R19-9, R20-1..R20-4, R21-1..R21-2)
 
 **What actually moved across all three rounds, stated plainly up front.**
