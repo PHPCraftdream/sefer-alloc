@@ -1,0 +1,812 @@
+# R22-16 — Remap-instead-of-copy for the medium→Large promotion memcpy: design (NOT implementation)
+
+**Task:** R22-16 (task #367, P1). **DESIGN-ONLY.** No `src/` change, no
+`Cargo.toml` change, no `crates/vmem/src/lib.rs` change, no `tests/` change, no
+benchmark run. This document investigates whether an OS-level VA-remap
+primitive (Windows placeholder VA / `MEM_REPLACE_PLACEHOLDER`, Linux `mremap`)
+could replace the promotion `memcpy` itself — the one part of the R10-2 kill
+gate that every prior lever (`large-reserved-capacity`, OPT-H) attacked
+around, never at.
+
+**Date:** 2026-07-26. **Base revision:** `main` @ `ff48029` (R22-15, task #366;
+none of the immediately preceding R22-1..R22-15 commits touch the files this
+design reads).
+
+**Where this task comes from:** the task brief names it directly — the last
+untried asymptotic lever after `docs/perf/R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md`
+(NULL: destination headroom cannot retroactively cheapen an already-happened
+copy) and `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`'s R22-6 addendum
+(OPT-H closed via closed-form LCM arithmetic: at most one cross-class hop per
+segment, not enough to dodge the copy for a realistically-growing buffer).
+Both prior levers moved the DESTINATION or the CARVE POSITION; this design
+asks whether the COPY can be eliminated at the OS level instead.
+
+---
+
+## 0. Headline summary
+
+**VERDICT: NO-GO**, on the current segment model, for the general case; **the
+narrower MediumExtent redesign (§4a) is CONDITIONAL-GO as a SEPARATE future
+design**, gated on a cheap Stage-1 measurement this document specifies but
+does not run.
+
+The crux (task brief point 2) is real and is a hard blocker, not a soft one:
+`crates/vmem/src/lib.rs` — read in full (§1) — provides **zero** existing
+wrapping of any region-relocation primitive (`mremap`, Windows placeholder VA
+/ `MEM_REPLACE_PLACEHOLDER`, `MapViewOfFile3`). Every primitive it exposes is
+**reserve / commit / decommit / release a region at its OWN fixed base** — none
+of them move an existing mapping's *contents* to a *new address* while
+preserving the *old* address's page-table entries as untouched. This would be
+entirely new FFI surface on both platforms (§2).
+
+Worse, and independent of the FFI gap: `src/alloc_core/segment_header.rs` and
+`src/alloc_core/alloc_core_small.rs`'s carve model (read in full, §3) confirms
+a medium/small **segment is a single 4 MiB OS mapping shared by many blocks of
+possibly different classes**, carved by **one segment-wide bump cursor**
+(`SegmentHeader::bump`) — not "one block, one mapping." A remap primitive
+(`mremap`/placeholder-VA) operates on a REGION at OS page granularity: it
+relocates *every byte* in the region it is given, and (per the OS contracts
+cited in §2) that region must correspond to a mapping *the kernel itself
+tracks as one unit* — it cannot selectively pull one live block's pages out of
+a shared VMA/mapping while leaving sibling blocks' pages resident at their
+original addresses, when the caller does not currently have a mapping
+boundary that already separates them. **A promoted medium object almost
+never has such a boundary**: it typically shares its segment's one 4 MiB
+mapping with dozens of unrelated live/free small-class blocks, freely
+interleaved by the bump cursor with no page-aligned start/end and no
+carve-time reservation of "this object gets its own pages." §3.3 works the
+actual numbers: a 256 KiB object is 64 pages at the default 4 KiB page size —
+large relative to a single small-class block, but **still only 1/16th of one
+segment**, carved back-to-back with whatever else the bump cursor placed
+before and after it, with **no page-boundary guarantee at either edge**.
+
+So under the segment model as it exists TODAY, remap-in-place (§4, direction
+b) is a dead end — not because the OS primitive is weak, but because this
+codebase's OWN carve discipline never produces the "one object, cleanly
+page-isolated, nothing else sharing its pages" precondition the OS primitive
+requires. This is the same shape of finding OPT-H's R20-3 design already
+made for a different mechanism (§1.3 of that doc: "the only genuinely free
+lunch is bump-tail adjacency, a single-slot-per-segment resource") — here the
+resource that would need to be free (page-isolated ownership) is *rarer than*
+tail-adjacency, not more common, because it additionally requires page
+ALIGNMENT at both edges, which nothing in the carve path currently arranges
+for medium objects specifically.
+
+The one path that could admit the primitive is the MediumExtent redesign
+named in the task brief's point 4a: give every candidate-for-promotion medium
+object **its own dedicated, page-aligned VA region from carve time** (structurally
+the same thing this crate already does for Large — see §4's comparison).
+That removes the neighbor-sharing problem by construction, but it is a
+**different mechanism with a different cost model** (every candidate object
+pays an OS reservation at ALLOCATION time, not just at promotion time) — not
+a small patch to the existing shared-segment carve path. This document does
+not design MediumExtent in full (that is out of scope per the task brief's
+framing — it names it as "direction (a)" for future comparison, not something
+to build here); it establishes that direction (b) is closed and that (a) is
+the only surviving direction, and specifies the cheap Stage-1 measurement
+(§5) a future round would need before investing in designing (a) in full.
+
+---
+
+## 1. The exact per-OS primitive and its constraints
+
+### 1.1 What `crates/vmem/src/lib.rs` already provides — read in full
+
+`crates/vmem/src/lib.rs` (1394 lines) is confirmed, per the file's own module
+doc (lines 1-24) and CLAUDE.md's own "single-file seam crate" exception, to be
+the **entire** OS-reservation surface for this crate — every raw
+`VirtualAlloc`/`VirtualFree`/`mmap`/`munmap`/`madvise`/`sysconf`/
+`GetSystemInfo` FFI declaration used anywhere in `sefer-alloc` lives here (no
+`windows-sys`, no `libc` dependency — raw `extern "system"`/`extern "C"`
+blocks declared locally, lines 933-943 for Windows, 1247-1260 for Unix).
+
+The complete inventory of what it exposes:
+
+- **Reserve** (`reserve_aligned`/`try_reserve_aligned`, lines 353-386): the
+  over-reserve + trim technique — reserve `size + align` bytes at a
+  kernel-chosen address (`VirtualAlloc(NULL, .., MEM_RESERVE, ..)` /
+  `mmap(NULL, .., MAP_PRIVATE|MAP_ANON, ..)`), find the aligned sub-range,
+  trim the excess. **The base is always kernel-chosen**, never a caller-target
+  address — there is no `VirtualAlloc(hint_address, ..)` / `mmap(hint_addr,
+  MAP_FIXED, ..)` call anywhere in this file.
+- **Release** (`release`/`Drop`, lines 388-410, 324-332): `VirtualFree(..,
+  MEM_RELEASE)` / `munmap` — returns the WHOLE reservation to the OS.
+- **Decommit/recommit** (`decommit`/`decommit_lazy`/`recommit`, lines 416-530):
+  `MEM_DECOMMIT`/`madvise(MADV_DONTNEED|MADV_FREE)` and `VirtualAlloc(..,
+  MEM_COMMIT, ..)` — return/restore PHYSICAL backing within an EXISTING,
+  already-based reservation. Never changes any address.
+- **Incremental commit** (`commit_range`/`try_commit_range`, lines 536-606,
+  `lazy-commit` feature): commits a sub-range of an existing reservation that
+  was reserved-but-uncommitted. Same base, no relocation.
+- **Huge pages** (`reserve_aligned_huge`, `huge-pages` feature, lines
+  689-731): `MAP_HUGETLB`/`MEM_LARGE_PAGES` — a page-size hint at RESERVE
+  time, not a post-hoc operation on a live mapping.
+- **`leak_zeroed_pages`** (lines 737-782): reserve-and-leak for
+  process-lifetime sidecars. Not relevant here.
+- **`Reservation::from_raw_parts`** (lines 266-321): adopts an
+  externally-obtained reservation (used for the `numa-shim` cross-crate
+  handoff) into the RAII lifecycle. Still assumes the reservation's base is
+  whatever the external call produced — no relocation semantics.
+
+**Confirmed: nothing in this file is close to placeholder VA /
+`MEM_REPLACE_PLACEHOLDER` / `MapViewOfFile3`, nor to `mremap`.** A
+process-wide grep for `mremap`, `MEM_REPLACE_PLACEHOLDER`, `VirtualAlloc2`,
+`MapViewOfFile3`, `MEM_RESERVE_PLACEHOLDER` across the ENTIRE repository
+(not just `crates/vmem`) returns **zero** hits in any `src/`, `crates/`, or
+`benches/` file — the only 3 files mentioning any of those tokens at all are
+this round's own review docs (`docs/reviews/2026-07-26-r22-plan.md`,
+`docs/reviews/2026-07-26-oh-review-r19-r21.md`) and an unrelated historical
+checkpoint (`docs/checkpoints/2026-07-05-perf-X-arc-planned.md`) that merely
+name-check the idea in passing. This would be **entirely new FFI surface**
+on both platforms — nothing to extend, only to invent.
+
+### 1.2 Windows: placeholder VA + `MEM_REPLACE_PLACEHOLDER`
+
+The real Windows 10 (1803+)/Server 2016+ mechanism this task names:
+
+- `VirtualAlloc2(process, addr, size, MEM_RESERVE | MEM_RESERVE_PLACEHOLDER,
+  PAGE_NOACCESS, ...)` reserves a VA range as a *placeholder* — address
+  space with no backing, explicitly markable as splittable/replaceable.
+- To move a payload: (1) `VirtualFreeEx(.., MEM_RELEASE |
+  MEM_PRESERVE_PLACEHOLDER)` demotes the *source* range back to an
+  unbacked placeholder (releasing its physical/pagefile-backed pages,
+  keeping the VA reservation itself alive as a placeholder), OR the
+  mapping is done via `MapViewOfFile3` against a **pagefile-backed section
+  object** (`CreateFileMapping2`/`NtCreateSection`) — the section object,
+  not the VA range, is what actually owns the physical pages; (2) at the
+  DESTINATION placeholder, `MapViewOfFile3(section, process, dest_addr,
+  ..., MEM_REPLACE_PLACEHOLDER, ...)` maps the SAME section object's pages
+  at a new address.
+- **The hard constraint this task brief itself names, confirmed against the
+  real API contract**: this mechanism moves a **section-backed mapping**,
+  not raw anonymous `VirtualAlloc` memory. `VirtualAlloc`-committed memory
+  (which is exactly what every `crates/vmem` reservation is — see §1.1,
+  there is no section object anywhere in this crate) has no section handle
+  to re-map elsewhere; you cannot `MapViewOfFile3` a `VirtualAlloc` region.
+  **Adopting this mechanism would require re-architecting every segment's
+  underlying memory model from `VirtualAlloc`/anonymous-mmap to
+  file-mapping-backed** (a pagefile-backed section on Windows, `memfd`/
+  shared anonymous mapping analogue on Linux) — a foundational change to
+  `crates/vmem`'s entire reservation strategy, not an additive function. This
+  is a materially larger commitment than the task brief's framing ("does
+  `crates/vmem` already wrap anything close") suggests when read at face
+  value: the honest answer is not just "no, needs new FFI" but "no, and the
+  new FFI needs a different backing-store model than every allocation this
+  crate has ever made."
+- Granularity: `VirtualAlloc2`/`MapViewOfFile3` operate at the OS
+  **allocation granularity** (`SYSTEM_INFO::dwAllocationGranularity`, 64 KiB
+  on all Windows targets sefer-alloc supports — distinct from
+  `dwPageSize`, 4 KiB) for the placeholder's base address, and page
+  granularity (`dwPageSize`) for split points. A placeholder can be SPLIT
+  (`VirtualFreeEx(.., MEM_PRESERVE_PLACEHOLDER)` on a sub-range) so a
+  sub-region of a larger reservation *can* become independently
+  replaceable — but only along page boundaries, and only if the placeholder
+  was created (or later split) with that sub-region as a distinct
+  placeholder unit BEFORE any real mapping occupied it. Retrofitting a
+  split onto an already-live, already-carved 4 MiB segment (today's
+  reality — see §3) is not what this API is for; it is designed for
+  reserve-time layout planning, not after-the-fact carving-out of one live
+  object from a mixed-content region.
+
+### 1.3 Linux: `mremap`
+
+- `mremap(old_addr, old_size, new_size, MREMAP_MAYMOVE[, new_addr])` —
+  POSIX/Linux-specific (glibc/musl wrap the raw syscall; this crate would
+  need a new raw `extern "C"` declaration, following the exact pattern
+  `libc_mmap`/`libc_munmap` already establish at `crates/vmem/src/lib.rs`
+  lines 1247-1260, since the crate deliberately has no `libc` dependency —
+  §1.1).
+- **Constraint directly relevant to §3's finding**: `mremap`'s `old_addr`
+  must be **page-aligned**, and — critically — the kernel operates on
+  `old_addr`'s **VMA** (virtual memory area): the man page is explicit that
+  `mremap` "expands (or shrinks) an existing memory mapping" and moves
+  "all the pages" in the specified range. If `[old_addr, old_addr+old_size)`
+  spans only PART of a VMA that also backs other live data (the common case
+  here — see §3: one segment is one `mmap`-created VMA containing many
+  carved blocks), `mremap` **still only touches the byte range you name,
+  splitting the VMA if needed** — Linux CAN in principle remap an arbitrary
+  page-aligned sub-range of a larger anonymous mapping, unlike Windows'
+  placeholder model which needs the sub-region pre-declared. This is a real
+  asymmetry between the two platforms' primitives that any future revisit
+  must not paper over: **Linux's `mremap` is structurally more permissive
+  than Windows' placeholder-VA mechanism for this specific ask** (it does
+  not require a pre-existing section object or a pre-split placeholder), but
+  it still requires the moved range to be an exact, page-aligned span whose
+  bytes belong ENTIRELY to the object being moved — the neighbor-sharing
+  problem (§3) is unchanged: if the 256 KiB object's first or last page
+  also holds bytes of an ADJACENT carved block (no alignment guarantee at
+  either edge, per §3.2), `mremap`-ing the page-aligned span containing it
+  would move (and by Linux's copy-on-move-into-a-new-mapping semantics for
+  the destination, effectively duplicate/orphan) the neighbor's bytes too —
+  silent corruption of whichever block does NOT end up at the address the
+  allocator's segment-lookup arithmetic (§3.4) expects it at.
+- Granularity: page-size multiples (4 KiB on x86-64 Linux, matching this
+  crate's `PAGE` constant, `crates/vmem/src/lib.rs:111`; up to 64 KiB on
+  some `aarch64` configs per that same file's own `MAX_REALISTIC_PAGE_SIZE`
+  doc, lines 75-93). No allocation-granularity distinction the way Windows
+  has one.
+
+### 1.4 Cross-platform disparity this design must flag
+
+The two platforms' primitives are NOT equivalent in what they need as a
+precondition: Linux's `mremap` can act on an arbitrary page-aligned
+sub-range of any anonymous mapping today, with no prior architectural
+change; Windows' placeholder-VA path requires switching the ENTIRE
+reservation strategy to section-object-backed mappings first (§1.2). Any
+future design that wanted to pursue this would either need to accept a
+Linux-only implementation (with Windows falling back to the existing copy
+path — a real, but real-COST, platform-parity gap for a crate whose stated
+target from `crates/vmem`'s own doc comment is being cross-platform "the
+one crate whose ENTIRE purpose is the unsafe OS calls" for BOTH `mmap`- and
+`VirtualAlloc`-based hosts), or would need to fund the section-object
+rearchitecture on Windows as a prerequisite. Neither option is free, and
+this asymmetry is itself evidence the mechanism's true cost is higher than
+"add one function to `crates/vmem`."
+
+---
+
+## 2. The crux: can one medium block be remapped independently of its neighbors?
+
+### 2.1 First claim to verify — a medium/small segment is ONE shared mapping (TRUE, re-confirmed)
+
+`src/alloc_core/segment_header.rs`'s own module doc (lines 19-32) and
+`PageMap`'s doc (lines 177-191, quoted verbatim by R20-3 §1.1 and
+re-verified here) state this explicitly: a small/medium segment carves from
+**one segment-wide bump cursor** (`SegmentHeader::bump`, `SegmentMeta::
+bump_of`/`set_bump`, `segment_header.rs:1138-1152`) shared across **every**
+size class ever carved from that segment. `carve_block`
+(`src/alloc_core/alloc_core_small.rs:1429-1557`, read in full for this
+design) does exactly what R20-3 §1.1 already documented:
+
+```text
+let bump = meta.bump_of();
+let aligned_bump = align_up(bump, block_size);   // round UP to THIS carve's block_size
+if aligned_bump + block_size > SEGMENT { return None; }
+... (lazy-commit grow-on-carve, unchanged by anything here) ...
+meta.set_bump(aligned_bump + block_size);
+... (page-map "first class wins" marking, diagnostic-only) ...
+Node::deref(segment, aligned_bump)
+```
+
+`PageMap`'s doc is explicit that this is a *shipped design decision*, not an
+edge case: "under this substrate's shared-bump-cursor model a page is
+mixed-class... `PageMap` is therefore NOT a reliable class oracle." A 256
+KiB medium block and a 64-byte small block routinely sit back-to-back in the
+same segment, sharing the one `mmap`/`VirtualAlloc` mapping that IS the
+segment's single OS reservation (`src/alloc_core/os.rs:65`, `SEGMENT = 1 <<
+22` = 4 MiB — one `Segment::reserve` call, one `aligned_vmem::Reservation`,
+per segment, confirmed by reading `os.rs` in full for this design).
+
+### 2.2 Second claim to verify — does a promoted medium object (≥256 KiB = ≥64 pages) monopolize whole pages?
+
+**Individually, yes — trivially, since 256 KiB is itself an exact multiple
+of the 4 KiB page size (64 pages exactly). The question that actually
+matters is whether its NEIGHBORS' bytes intrude on its first/last page**,
+and the carve arithmetic answers this precisely:
+
+`carve_block`'s `align_up(bump, block_size)` rounds the START of a new carve
+UP to a multiple of the class's OWN `block_size` — **not** up to a page
+boundary, and **not** relative to any OTHER class's block size. For the
+medium ladder (256/320/384/512/768/1024 KiB — `src/alloc_core/size_classes.rs`
+`EXTRAS`, confirmed present at exactly those values in this build), every
+one of those sizes happens to be a multiple of 4 KiB (256 KiB = 65536×4KiB;
+320 KiB = 81920×4KiB; etc. — trivially true since they are all whole
+multiples of 64 KiB), so a medium block's OWN start and end, in isolation,
+ARE always page-aligned when carved as a medium class. **But that is not
+the question that matters**: the bump cursor is SHARED with every smaller
+class too (§2.1) — a segment's carve ORDER interleaves small classes (as
+small as 16 B, `size_classes.rs`'s base geometric ladder) with medium
+classes, and small-class carves are page-**mis**aligned relative to a
+following medium carve's own page-aligned start ONLY IF the small carve
+that precedes it does not itself end on a page boundary.
+
+Working the actual arithmetic: suppose the bump cursor sits at some
+non-page-aligned offset `X` after a run of small-class carves (entirely
+possible — a 96-byte class's blocks do not sum to a multiple of 4 KiB in
+general), and the NEXT carve requested is a 256 KiB medium block.
+`align_up(X, 262144)` rounds `X` UP to the next 256 KiB boundary — which is
+ALSO a page boundary (256 KiB is a multiple of 4 KiB) — so **the medium
+block's own start IS always page-aligned**, regardless of what came
+before, because `align_up` to a page-aligned `block_size` always lands on
+a page boundary. This is the one point in the medium ladder's favor: **the
+medium block's START is guaranteed page-aligned by construction** (a
+strictly stronger and more useful fact than R20-3's tail-adjacency
+analysis needed, because that design only cared about END-of-segment
+adjacency, not page alignment at both edges).
+
+**The END is the actual problem.** After the medium block's `block_size`
+bytes, `bump` becomes `aligned_bump + block_size` — itself ALSO a page
+boundary (same reasoning: page-aligned start + page-aligned multiple length
+= page-aligned end). So a medium block's `[start, end)` span, purely by
+this arithmetic, is **exactly page-aligned at both edges, in isolation**.
+This looks favorable at first glance — but it does NOT mean nothing else
+lives on those pages: it means nothing FROM THE SAME CARVE STREAM's prior
+carve straddles the boundary. It says nothing about the `mmap`/
+`VirtualAlloc`-level VMA that surrounds it (the whole 4 MiB segment is ONE
+VMA — §2.1), and more importantly it says nothing about whether the pages
+immediately AFTER the medium block (where the bump cursor now sits) get
+claimed by the medium object's later grow or by an entirely different
+class's carve that happens next, in the exact scenario R10-2's own harness
+exercises (16 simultaneously-live objects being carved and grown
+interleaved). **The medium object's OWN [start,end) is page-clean at the
+moment of its OWN carve** — but that says nothing about the SEGMENT-LEVEL
+question a remap actually needs answered, which is the subject of §2.3.
+
+### 2.3 The real blocker: the segment, not the block, is the OS-level mapping unit
+
+Page-alignment of one block's own span is a NECESSARY but NOT SUFFICIENT
+condition for remapping it independently. Both `mremap` and Windows'
+placeholder mechanism (§1.2/§1.3) operate on ranges *carved out of an
+existing OS-level mapping* — and the OS-level mapping here is the **whole 4
+MiB segment**, one single `mmap`/`VirtualAlloc` call
+(`src/alloc_core/os.rs`'s `Segment::reserve`, thin wrapper over
+`aligned_vmem::reserve_aligned`). Neither primitive has any concept of "this
+byte range within my VMA is objectA, that one is objectB" — that
+distinction exists ONLY in this crate's own `SegmentHeader`/`BinTable`/bump
+cursor bookkeeping, which the kernel knows nothing about.
+
+So "is the medium block's own span page-aligned" (§2.2, answered: yes, by
+construction) is a necessary but insufficient condition. The SUFFICIENT
+condition `mremap`/placeholder-VA actually need is: **"is this span the
+ONLY live content currently anywhere in the pages it occupies, AND does the
+allocator have some way to tell the kernel to move exactly this span
+without disturbing the REST of the segment's one VMA."** For `mremap`
+specifically (Linux, §1.3), the man page confirms partial-VMA remap is
+mechanically possible (the kernel will split the VMA as needed) — so the
+TECHNICAL capability exists on Linux. The blocker is not "can the kernel do
+a partial move" (it can, on Linux) but **"can this crate's segment-identity
+model tolerate the result"** — which is §3's question, and where the real
+NO-GO lives, independent of page alignment.
+
+### 2.4 Answer to the task brief's central question
+
+**Is a medium block's page-aligned span ever the CURRENT single occupant of
+its pages, with no live sibling sharing them?** Given §2.2's finding (the
+span itself is always page-clean at carve time), the practical answer
+reduces to: **yes, in the instant right after that one carve, before
+anything else is carved past it** — but this is NOT a stable, checkable
+precondition an implementation could gate on cheaply, because unlike
+OPT-H's tail-adjacency check (a single cheap comparison against the CURRENT
+bump cursor, R20-3 §2.1 precondition 3), "is there STILL nothing else
+sharing my pages" would need to hold not just at carve time but at
+PROMOTION time (potentially much later, after arbitrary intervening
+carves/frees of other objects in the same segment) — and nothing in
+`SegmentHeader`/`BinTable`/`PageMap` tracks "which OTHER blocks, if any,
+have since been carved into the page range `[my_start, my_end)`" (`PageMap`
+is explicitly NOT a reliable class oracle for this, §2.1, and even if it
+were, it tracks CLASS not LIVENESS). Determining this at promotion time
+would require a new O(segment-size) scan or new bookkeeping this document
+did not find any existing hook for — a real, additional design burden
+direction (b) would need to solve even if the OS-primitive/FFI and
+segment-identity problems (§1, §3) were both somehow resolved.
+
+**Bottom line for point 2 of the task brief:** the neighbor-sharing problem
+is real, but its precise shape differs from a naive "objects are randomly
+misaligned" story — medium blocks ARE page-aligned by construction (§2.2),
+but that alignment is a snapshot fact at carve time with no standing
+invariant that it stays true (no sibling later claims the same pages)
+through to promotion time, and no existing structure tracks whether it
+does. This is a second, independent blocker on top of §3's segment-identity
+blocker, not a restatement of it.
+
+---
+
+## 3. Interaction with `SegmentTable` identity — does the model assume a stable base address?
+
+### 3.1 `segment_base_of` is a pure bitmask of the POINTER'S OWN address
+
+`src/alloc_core/os.rs:95-123`, read in full: `segment_base_of(addr) = addr &
+!(SEGMENT - 1)` and `segment_base_of_ptr` is the pointer-preserving
+equivalent (`ptr.map_addr(|a| a & !(SEGMENT - 1))`). This is not a lookup —
+it is arithmetic performed directly on whatever address the caller currently
+holds. **There is no indirection layer that could be updated to redirect
+"old address → new address"**: every live pointer a caller holds into a
+segment, and every subsequent `dealloc`/`realloc` call using that pointer,
+independently re-derives the segment base by masking the CALLER'S copy of
+the address. If the segment's bytes moved to a new base, EVERY outstanding
+pointer into that segment — not just the one object being promoted, but
+EVERY sibling object sharing the segment (§2.1) — would still carry its OLD
+address, and `segment_base_of_ptr` on that stale address would mask to the
+OLD base, which no longer has a live segment there (or, worse, now has some
+OTHER live segment there if the VA range got reused).
+
+### 3.2 `SegmentTable` stores and hashes on that exact base pointer
+
+`src/alloc_core/segment_table.rs` (read in full for this design): the
+registry is "a fixed-capacity array of segment-base pointers" (module doc,
+lines 1-30) plus an open-addressing hash table (`hash_slots`, OPT-B, lines
+144-150) whose **key IS the segment base pointer itself** — `contains_base`/
+`contains_base_ro` (lines 455, 475) probe the hash table by the exact base
+address. There is no separate "segment ID" that decouples identity from
+address the way, say, a generational-index scheme would — the base address
+**is** the identity, doubly so: once as the bitmask target every `dealloc`/
+`realloc` call computes from a live pointer (§3.1), and again as the literal
+hash key `SegmentTable` uses for membership/ownership checks
+(`dealloc_routing`'s cross-thread `contains_base` probe, per the task
+brief's own citation).
+
+### 3.3 Consequence: remapping breaks EVERY live pointer into the segment, not just the promoted one
+
+Combining §3.1 and §3.2: **this crate's entire addressing model assumes a
+segment's base address is stable for its entire lifetime.** This is not an
+incidental implementation detail that a small patch could work around — it
+is the SAME "membrane inversion" design (`segment_table.rs`'s own doc,
+lines 1-9) that makes `segment_of(ptr)` an O(1) bitmask instead of a lookup
+in the first place: the speed of that O(1) path is PURCHASED by the
+assumption that the bitmask always yields the right answer, which requires
+the base to never move.
+
+Remapping the WHOLE segment (not a sub-region) to a new address would:
+1. Invalidate every OTHER live pointer sharing that segment (§2.1) — their
+   holders have no way to learn the new address; the very next `dealloc`/
+   `realloc` on any of them masks to the OLD (now-stale or reused) base and
+   either silently misbehaves or, if `hardened`'s magic/generation checks
+   catch the mismatch, is treated as a foreign/corrupted pointer.
+2. Require updating `SegmentTable`'s hash-table entry (remove old base,
+   insert new base) — mechanically possible in isolation, but only solves
+   the REGISTRY's bookkeeping, not the problem in point 1 (the registry was
+   never the bottleneck; the bitmask arithmetic every caller independently
+   performs is).
+3. Require the OWN thread doing the remap to somehow also fix up its
+   *thread-local* fast paths that cache a segment base directly (e.g.
+   `AllocCore`'s `small_cur` field, `alloc_core_small.rs:1430`, which is
+   exactly the field `carve_block` reads to find "the current small
+   segment" — if the segment being remapped IS `small_cur`, every
+   subsequent carve into "the same" segment needs `small_cur` updated too,
+   in addition to the registry).
+
+**Remapping a sub-region within a segment (moving just the promoted
+object's bytes, leaving the rest of the segment's mapping and its base
+address untouched) does not have this problem** — the segment's identity
+never changes, only some of its internal bytes relocate to a NEW,
+independent mapping (effectively: the promoted object silently becomes its
+own segment elsewhere, and the OLD segment's now-vacated span becomes an
+unusual "hole" other blocks in that segment must never be carved into
+again). This is mechanically closer to viable than moving the whole
+segment — but it still needs an answer to §2's "how do you know nothing
+else currently lives in those exact pages" problem, AND it introduces a new
+hazard neither of the OS primitives nor this crate's existing model has any
+precedent for: a segment with a page-aligned HOLE in the middle of its
+address range that must be tracked as permanently unusable (not simply
+"freed," since nothing else was ever carved there and the bump cursor has
+already advanced past it) — no existing `BinTable`/free-list/`PageMap`
+mechanism represents "these bytes are gone, never carve here again, but
+this is not a normal free."
+
+### 3.4 Resolution of the task brief's central tension (point 3)
+
+The task brief poses this as an explicit tension to work through, not
+pre-answer: "remapping a WHOLE segment... might be more structurally
+compatible... but only helps if the segment holds JUST that one promoted
+object (which contradicts the shared-multi-block-segment model)." Having
+now read both sides against the actual source (§2.1, §3.1-3.3): **this
+tension does not resolve in favor of either whole-segment or sub-region
+remap under the CURRENT model** — whole-segment remap is only clean when
+the segment is single-occupant, which contradicts §2.1's confirmed shared
+model for essentially every real segment; sub-region remap avoids that
+contradiction but trades it for an unrepresented "permanent hole"
+bookkeeping problem this crate's data structures have no slot for, on top
+of still needing §2.4's promotion-time neighbor-liveness check that this
+document found no cheap existing mechanism for. **Neither direction is
+buildable as a modification of the EXISTING shared-segment model** — this is
+the honest resolution: the tension is real, and it resolves as "both sides
+of it are blocked," not "one side wins."
+
+---
+
+## 4. Which representation could actually admit this primitive
+
+Per the task brief's explicit instruction to compare directions (a) and (b)
+rather than parallel-design them:
+
+### 4a. MediumExtent — a dedicated single-object-per-mapping segment kind
+
+Give a promotable medium object its OWN page-aligned VA region from carve
+time — structurally the SAME thing `SegmentKind::Large`
+(`segment_header.rs:156-158`, "holds ONE allocation of arbitrary size/align.
+No page map") already does, and the same thing `AllocCore::alloc_large`
+(`src/alloc_core/alloc_core_large.rs:127`, read for this design) already
+implements: **Large is already a "one object owns its whole reservation"
+model.** A MediumExtent kind would be, structurally, "Large but for objects
+in the 256 KiB–1 MiB range that MIGHT grow past the promotion threshold" —
+NOT a new invention, but reuse of the pattern this crate already ships,
+applied earlier (at first-alloc time for a candidate object) instead of at
+promotion time.
+
+This resolves BOTH of §2's and §3's blockers simultaneously, by
+construction, for exactly the reason Large already sidesteps them:
+- **No neighbor-sharing** (§2): the mapping holds exactly one object from
+  the start — there is no "was anything else ever carved into these pages"
+  question, because nothing else is EVER carved into a MediumExtent's
+  pages.
+- **No segment-identity break** (§3): the SAME identity argument that lets
+  Large's whole-segment-is-one-allocation model work today (a Large
+  segment's base IS the allocation's effective identity, and it never
+  needs an in-place sub-region move because there is nothing else in the
+  segment to preserve) applies verbatim. A remap of a MediumExtent, IF one
+  were later added, would be a WHOLE-segment remap of a single-occupant
+  segment — exactly the clean case §3.4 identified as the only
+  structurally compatible one, now actually achieved (not contradicted) by
+  construction.
+
+**But this is explicitly a DIFFERENT mechanism with a different, real cost
+trade-off**, exactly as the task brief frames it: every object that becomes
+a MediumExtent candidate needs its OWN OS reservation at FIRST-ALLOC time
+(not a cheap bump-carve sharing an existing segment's slack) — undermining
+`medium-classes`' own stated value proposition (density: R10-2 §3.1's
+alloc/free density win, the same trade-off R20-3 §5.4 already flagged for
+the OTHER un-designed lever, over-allocation headroom). Unlike Large
+(where one-object-per-segment is acceptable because Large objects are, by
+definition, already big enough that per-object OS-reservation overhead is
+proportionally small), a MediumExtent candidate starts as small as 256 KiB
+— 1/16th of a segment — so paying a FULL segment's worth of OS reservation
+overhead for every candidate, even those that never actually grow past the
+promotion threshold, is a materially different economic trade than what
+`medium-classes` was built to buy. **This is not analyzed to a verdict
+here** — it is a genuinely separate, nontrivial design question (which
+objects become MediumExtent candidates? All medium-class allocations, or
+only ones showing a growth pattern? What is the reservation-overhead
+break-even point?) that the task brief itself scopes as future work, not
+this document's job to settle (§0, §6).
+
+### 4b. Remap-in-place within the EXISTING shared-segment model
+
+Per §2 and §3's findings: **this is a dead end, and this document says so
+explicitly, per the task brief's own instruction not to force a design
+around a blocked direction.** Both the neighbor-liveness check (§2.4, no
+cheap mechanism exists to confirm "nothing else shares my exact pages" at
+promotion time, only at carve time) and the segment-identity assumption
+(§3.1-3.3, base-address stability is load-bearing throughout the addressing
+model, not a soft convention) block this direction independently of each
+other — either alone is sufficient to block it, and both are present. A
+sub-region remap (§3.3's second paragraph) is the least-bad variant of this
+direction, but it still needs §2.4's unsolved liveness check AND introduces
+an unrepresented "permanent hole" concept with no existing data-structure
+slot. This document does not recommend pursuing 4b further under the
+current segment model; the LCM/tail-adjacency-style closed-form argument
+that closed OPT-H (R22-6) has a real analogue here — the resource remap-
+in-place would need (a page-isolated, promotion-time-verified, single-
+occupant span within an otherwise-shared mapping) is structurally rarer
+than tail-adjacency was, not more common, because it additionally demands
+persistent isolation through time, which nothing in the shared-bump-cursor
+model was ever built to guarantee or even track.
+
+### 4c. Explicit comparison table
+
+| | 4a: MediumExtent | 4b: remap-in-place, shared segment |
+|---|---|---|
+| Neighbor-sharing problem (§2) | Solved by construction (one object, one mapping) | Unsolved — no promotion-time liveness check exists |
+| Segment-identity stability (§3) | Preserved (same pattern as Large) | Broken (whole-segment) or needs new "permanent hole" bookkeeping (sub-region) |
+| New FFI needed (§1) | Same remap primitive question applies EQUALLY — MediumExtent only fixes the segment-model blocker, not the FFI gap | Same FFI gap |
+| Cost model change | Yes — per-candidate-object OS reservation at first-alloc, not promotion time (density trade-off, undermines part of `medium-classes`' own value prop) | None to the existing model (if it worked) — but it doesn't (§2, §3) |
+| Buildable as an incremental patch? | No — a new segment kind, new carve path, new promotion logic | No — blocked outright |
+
+**This table is the honest output of the task brief's point 4 instruction**:
+4a is not "the winner" in some unqualified sense — it is the ONLY direction
+that is even STRUCTURALLY compatible with a remap primitive, at the cost of
+being a materially larger, separately-scoped redesign with its own
+unresolved economic question (density vs. speed), not a refinement of the
+existing promotion mechanism.
+
+---
+
+## 5. A concrete Stage-1 measurement plan
+
+Per this project's established cheap-counters-before-implementation
+discipline (R17-10 §5.1, R20-3 §6, R21-2's own precedent — read as the
+template): **the cheapest possible diagnostic does not touch the OS-remap
+question at all** — it tests 4a's PRECONDITION for being worthwhile before
+anyone designs 4a in full, and separately, independently, tests whether 4b
+has ANY viable footing before more analysis is spent on it.
+
+### 5.1 For 4a (MediumExtent) — the real gating question is workload shape, not mechanism
+
+The MediumExtent redesign only pays for itself if a MATERIAL fraction of
+medium-class allocations actually go on to cross
+`MEDIUM_REALLOC_PROMOTION_THRESHOLD` (256 KiB, confirmed at
+`src/registry/heap_core_free.rs:157`) — if most medium objects are
+allocated once and never grow past it, giving them all their own OS
+reservation up front is pure density loss for no realloc-speed benefit
+(§4a). This is measurable **today, with zero new code**, using counters
+this crate already has: `#[cfg(feature = "alloc-stats")]`'s existing
+allocation/promotion counters (the same family R14-4/R18-2/R20-2 already
+read for their own cache-hit-rate proxies) already distinguish "medium
+allocations made" from "promotions triggered." The cheapest possible
+Stage-1 probe is: **run the existing `paired_ab_medium_workload.rs` harness
+(R10-2's own, zero modification) plus the R20-3-recommended
+single-hot-buffer harness (not yet built — same artifact R20-3 §6.1 point 2
+already named as the next round's most actionable deliverable, still
+outstanding), and read off `promotions_triggered / medium_allocations_made`
+for each** — a ratio close to 1 (most medium objects DO eventually promote)
+would argue MediumExtent's up-front-reservation cost is well-spent; a ratio
+close to 0 (most medium objects never promote) would argue it is not,
+independent of whatever the OS-remap mechanism itself could achieve. This
+measurement is ALREADY implied by existing counters — no new instrumentation
+is needed, only a new invocation and a division.
+
+### 5.2 For 4b (remap-in-place) — falsify the neighbor-sharing assumption directly, if anyone doubts §2's reading
+
+Although §2/§3's source-grounded reading already concludes 4b is blocked,
+the cheapest possible empirical check — should a future reader want direct
+evidence rather than trusting this document's static-analysis argument —
+is a **diagnostic-only, `page-map-diag`-gated counter** (mirroring the
+existing `page-map-diag` feature's own diagnostic-only stance, `PageMap`'s
+struct doc) added at the EXACT MOMENT a medium object crosses
+`MEDIUM_REALLOC_PROMOTION_THRESHOLD` (the existing `try_promote_to_large`
+call site, `src/registry/heap_core_free.rs:1276`): walk the promoted
+object's own page range `[off, off+old_size)` against `PageMap`'s existing
+per-page "first class wins" records (already carried, zero new storage) and
+count how many of those pages show a DIFFERENT class than the promoted
+object's own — a nonzero count is direct, cheap, existing-data evidence
+that a neighbor's carve landed on a page this object also occupies, i.e. a
+DIRECT falsification (or confirmation) of §2.4's "no persistent liveness
+guarantee" argument, without writing any new counter machinery, reusing
+`PageMap` exactly as it already exists. Given `PageMap`'s own documented
+caveat ("NOT a reliable class oracle... first class wins" — a page could
+show the PROMOTED object's own class even if a later, different-class
+neighbor also touched it, if the promoted object carved first), this
+would need to be read as a LOWER BOUND on neighbor-sharing (it can
+undercount, never overcount) — still directionally decisive: even a lower
+bound showing frequent neighbor-sharing would be sufficient to keep 4b
+closed; it could never singlehandedly resurrect it, since `PageMap`'s known
+undercounting bias only makes a "sharing is common" finding MORE credible,
+never less.
+
+**Decision gate:** given §2/§3's already-conclusive static reading, this
+Stage-1 measurement for 4b is offered as an OPTIONAL falsification exercise
+for a skeptical future reader, not a prerequisite this document itself
+treats as unresolved — unlike 4a (§5.1), where the workload-shape question
+is genuinely open and this document does not claim to have measured it.
+
+---
+
+## 6. Honest verdict
+
+**NO-GO for 4b (remap-in-place within the existing shared-segment model).**
+Both independent blockers this document found — §2.4's unsolved
+promotion-time neighbor-liveness check, and §3.1-3.3's load-bearing
+base-address-stability assumption threaded through `segment_base_of_ptr`,
+`SegmentTable`'s hash keys, and `AllocCore::small_cur` — would each alone be
+sufficient to block this direction; both being present makes this an
+unambiguous, not a marginal, NO-GO. This is the honest, source-grounded
+answer to the task brief's central open question (points 2-3): the
+neighbor-sharing problem is real and the segment-identity model genuinely
+does assume base-address stability for the segment's whole lifetime, exactly
+as the task brief suspected it might.
+
+**CONDITIONAL-GO for 4a (MediumExtent), as a SEPARATE future design task, not
+as a continuation of THIS mechanism.** The precondition for proceeding is
+squarely economic, not technical: §5.1's workload-shape measurement (what
+fraction of medium allocations actually cross the promotion threshold) must
+show a material fraction promoting before the up-front per-object
+reservation cost is justified. This document does not run that measurement
+(per its own DESIGN-ONLY scope) — it identifies that the measurement is
+CHEAP (reuses existing `alloc-stats` counters, needs only the
+already-separately-recommended single-hot-buffer harness, R20-3 §6.1 point
+2, still not built) and names it as the correct Stage 1 for whoever designs
+4a next, exactly as R20-3's own CONDITIONAL-GO was gated on a Stage-1
+measurement rather than settled by reasoning alone.
+
+**Why this is not a plain NO-GO overall:** unlike a design that finds no
+surviving direction at all, this investigation found ONE (4a) that is
+structurally sound (reuses an already-shipped pattern — Large's
+one-object-per-segment model — rather than inventing a new one) even though
+it was not this document's job to fully design or measure. That is the
+same "the missing piece is narrowly empirical, not a doubt about soundness"
+shape R20-3 §9 used to justify ITS OWN CONDITIONAL-GO over a NO-GO, applied
+here to a narrower slice (4a only, not the mechanism this document was
+actually asked to investigate, which is 4b/general remap — and THAT part is
+unambiguously closed).
+
+**Why 4b is not left CONDITIONAL either:** unlike 4a, where the open
+question is a measurable economic trade-off that could in principle
+resolve either way, 4b's blockers (§2.4, §3.1-3.3) are architectural
+invariants of the CURRENT segment model, not workload-dependent facts a
+measurement could move. No conceivable Stage-1 counter changes the answer
+to "does `segment_base_of_ptr` assume base-address stability" (yes,
+verified by reading the source) or "does anything track promotion-time
+neighbor liveness" (no, verified by reading the source) — these are
+source-code facts, not empirical ones, which is why §5.2 frames its own
+measurement as an optional falsification exercise rather than a genuine
+open question the way §5.1's is for 4a.
+
+---
+
+## 7. What does NOT work and why (explicit summary, per R20-3's template)
+
+- **Whole-segment remap under the current shared-segment model** does not
+  work: contradicts the confirmed shared-multi-block reality (§2.1) — a
+  segment holding many live siblings cannot be relocated on behalf of just
+  one of them without invalidating every other live pointer into it (§3.3).
+- **Sub-region remap of just the promoted object's pages, leaving the rest
+  of the segment in place**, does not work TODAY: needs (a) a
+  promotion-time neighbor-liveness check this crate has no existing
+  mechanism for (§2.4), and (b) new bookkeeping for a permanent
+  "carved-then-vacated, never reusable" hole that no existing
+  `BinTable`/`PageMap`/free-list structure represents (§3.3).
+- **Retrofitting Windows placeholder-VA onto the existing `VirtualAlloc`-
+  based reservation model** does not work at all, independent of the
+  segment-sharing question: placeholder-VA/`MEM_REPLACE_PLACEHOLDER`
+  fundamentally operates on section-object-backed mappings, and
+  `crates/vmem` (confirmed by reading it in full, §1.1) uses plain
+  anonymous `VirtualAlloc`, which has no section handle to remap (§1.2). This
+  would require rearchitecting the ENTIRE Windows reservation strategy, not
+  adding one function.
+- **A cross-platform-uniform implementation** does not work even if
+  everything else were solved: Linux's `mremap` can act on a sub-VMA range
+  today (§1.3); Windows' placeholder mechanism structurally cannot without
+  the section-object rearchitecture (§1.2) — any real implementation would
+  either be Linux-only or need to fund that Windows-side prerequisite
+  separately (§1.4).
+
+## 8. What WOULD work, scoped honestly
+
+- **MediumExtent (§4a)**: a new, Large-like one-object-per-segment kind for
+  medium-range objects, applied at first-alloc (not promotion) time.
+  Structurally sound (reuses Large's already-shipped pattern) but a
+  SEPARATE, materially larger design question than "avoid this one memcpy" —
+  its cost model trades per-object OS-reservation overhead for realloc
+  speed, the OPPOSITE trade-off direction from what made `medium-classes`
+  attractive in the first place (density). Gated on §5.1's cheap,
+  already-instrumentable workload-shape measurement before anyone designs it
+  in full.
+
+---
+
+## 9. Files/lines this document is grounded in
+
+- `crates/vmem/src/lib.rs` — read in FULL (1394 lines). §1's complete
+  inventory of what it does/doesn't provide: `reserve_aligned`/
+  `try_reserve_aligned` (lines 353-386, over-reserve+trim, kernel-chosen
+  base only), `release` (388-410), `decommit`/`decommit_lazy`/`recommit`
+  (416-530), `commit_range` (536-606, `lazy-commit`), `reserve_aligned_huge`
+  (689-731, `huge-pages`), `leak_zeroed_pages` (737-782), Windows raw FFI
+  (789-1013, `VirtualAlloc`/`VirtualFree`/`GetSystemInfo` only — no
+  `VirtualAlloc2`/`MapViewOfFile3`), Unix raw FFI (1019-1313, `mmap`/
+  `munmap`/`madvise`/`sysconf` only — no `mremap`).
+- `src/alloc_core/os.rs` — read in full. `SEGMENT = 1 << 22` (line 65,
+  4 MiB), `segment_base_of`/`segment_base_of_ptr` (95-123, the pure
+  address-bitmask identity function §3.1's argument rests on).
+- `src/alloc_core/segment_header.rs` — read the module doc (1-37),
+  `SegmentKind` (144-175, confirms `Large` is already one-object-per-
+  segment — §4a's precedent), `PageMap`'s "mixed-class"/"NOT a reliable
+  class oracle" doc (177-191), `BinTable` (992-1069), `SegmentMeta`/
+  `bump_of`/`set_bump` (1084-1152, the owner-only single-writer bump
+  cursor §2.1/§3.3 point 3 both depend on).
+- `src/alloc_core/alloc_core_small.rs:1419-1557` — `carve_block`, read in
+  full. The exact `align_up(bump, block_size)` arithmetic §2.2's
+  page-alignment finding is derived from.
+- `src/alloc_core/alloc_core_large.rs:127-` — `alloc_large`, read for §4a's
+  "Large is already one-object-per-segment" precedent.
+- `src/alloc_core/segment_table.rs` — read the module doc and struct
+  definition (1-161) in full. Confirms the base-pointer-keyed hash table
+  (`hash_slots`, `contains_base`/`contains_base_ro` at lines 455/475) §3.2's
+  argument rests on.
+- `src/alloc_core/size_classes.rs` — `EXTRAS` (grepped, confirms
+  256/320/384/512/768/1024 KiB medium ladder, matching R20-3 §5.2's own
+  citation).
+- `src/registry/heap_core_free.rs` — `MEDIUM_REALLOC_PROMOTION_THRESHOLD`
+  (line 157, 256 KiB) and `try_promote_to_large` (1276-, read its doc
+  comment) — the exact call site §5.2's optional diagnostic would attach
+  to.
+- `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` — read in FULL (this
+  document's explicit template per the task brief; §1.1-1.3's shared-bump-
+  cursor/tail-adjacency findings are the direct precedent §2's analysis
+  builds on and contrasts against).
+- `docs/perf/R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` — read in FULL.
+  The NULL destination-headroom result this design's §0 opens by
+  contrasting against (both prior levers moved the destination/carve
+  position; this one investigated moving the copy itself).
+- `docs/reviews/2026-07-26-r22-plan.md` §5 item 2 — the synthesis note
+  flagging this design's potential overlap with an independently-proposed
+  "MediumExtent/PageRun" idea, which this document's §4a explicitly
+  addresses per that note's own instruction.
+- `docs/perf/OPEN_ITEMS.md` — Active item 1 (OPT-H, already resolved
+  R22-6) is the item this design's own §0 contrasts against as "every
+  lever attacked destination/carve, never the copy" — this document does
+  NOT close or reopen that item; it is a new, separate investigation. No
+  `OPEN_ITEMS.md` edit is made by this task (design-only, no new open item
+  is created — the 4a follow-up is named here in prose, per the task
+  brief's framing as "gated on this design's own verdict before any
+  implementation task gets filed," i.e. filing that follow-up task is an
+  action for the user/orchestrator, not this document).
