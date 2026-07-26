@@ -7,6 +7,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 18 — `race_repro` watchdog disambiguated from allocator corruption, R17-4's `kind_at` Large-segment check narrowed, R10-2 realloc kill-gate re-verified still red, cross-round `OPEN_ITEMS` tracking index, stale-literal guard + adaptive Large-policy design docs (R18-1..R18-9)
+
+Round 18 — 9 commits (`dc95d1a`..`cf82135`, inclusive of both ends; 8 task
+numbers #329–#336, because R18-4 and R18-5 share one commit `1d2c9cd`/task
+#333 — the same shared-commit precedent as Round 17's R17-4/R17-5, where
+R17-5 carried no separate commit), 2026-07-25 23:48..2026-07-26 06:09 — the
+follow-up queue against the external review of the Round 13–17 waves,
+synthesized in `docs/reviews/2026-07-25-r18-plan.md`. Same zero-trust
+discipline as prior rounds throughout: every diff personally read, every
+production-affecting fix personally re-verified with a red/green
+counterfactual, commit between tasks. Unsafe-seam inventory UNCHANGED across
+the round (tier-1 stayed at 20, tier-2 stayed at 60, total 80 — verified via
+`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/ | wc -l` = 80,
+matching Round 17's ending count exactly): Round 18 was mostly
+docs/process/design work, and the one `src/` fix (R18-3) only narrowed an
+existing `#[cfg]` predicate and added a runtime bool check around an
+ALREADY-existing unsafe block, introducing no new unsafe primitive.
+
+- **R18-1 (`dc95d1a`, task #329, P1) — `race_repro.rs`'s watchdog `abort()`
+  replaced with `exit(124)`, disambiguating a watchdog timeout from allocator
+  corruption.** The watchdog historically called `std::process::abort()` on a
+  hung test. On Windows/MSVC `abort()` is implemented via `__fastfail`, whose
+  exception code is literally `STATUS_STACK_BUFFER_OVERRUN` (`0xC0000409`) —
+  indistinguishable on the crash surface from genuine stack corruption. Two
+  prior "unexplained" crashes under heavy load (Round 14/task #289, Round
+  17/task #326) are far more plausibly this exact mechanism firing under
+  severe contention than allocator corruption; three independent Round
+  17→18 reviews (oh/r17-readonly/crush) all flagged it. Fix: replaced
+  `abort()` with `exit(124)` (the conventional `timeout(1)` code,
+  unambiguous vs. any abort/SIGABRT/`__fastfail` signal); added elapsed-time
+  + progress-snapshot diagnostics before terminating; `DEADLINE_SECS` made
+  overridable via the `RACE_REPRO_DEADLINE_SECS` env var; the watchdog-thread
+  panic is no longer silently swallowed (now logged via `eprintln!`).
+  Verified via a real counterfactual: temporarily injecting a 30 s sleep with
+  `RACE_REPRO_DEADLINE_SECS=2` induced the watchdog to fire and exit 124
+  exactly, as designed.
+- **R18-2 (`8833baa`, task #331, P1) — R10-2 `medium-classes` realloc
+  kill-gate re-run on post-R17-4/R18-3 code; STILL RED.** Re-ran
+  `scripts/r10_2_medium_gate.mjs` (unchanged) on `main`@`912740f`, since the
+  original "1,700–2,300× slower" verdict was measured on code carrying the
+  R17-4 4 MiB Large-segment leak and predates R18-3's `kind_at` narrowing. 20
+  A/B/B/A pairs (80 launches) per phase. Result:
+  `production,medium-classes` realloc is still ~1,180× slower (the commit
+  bounded the leak 1.3 GiB → 49 MiB — leak fixed — but per-op TIME is
+  essentially unchanged, ~67.6 µs vs ~72 µs in R14-4; the ratio dropped only
+  because the baseline got slower under this session's heavier host load);
+  `production,medium-classes,large-cache-extended` ~380× slower
+  (`large-cache-extended` helps ~3.5× but cannot remove the structural
+  promotion `memcpy`). Same-vs-same control passed (harness honesty
+  confirmed). **Verdict: STILL RED** — closing this gate needs R10-2 §5's
+  in-place medium-grow mechanism, out of scope here. Added `R14_4...md`
+  §7.1/§10 + summary CSV + 3 cited raw logs.
+- **R18-3 (`912740f`, task #330, P1) — R17-4's `kind_at(base)` Large-segment
+  check narrowed to the promotion-reachable domain.** Three independent
+  reviews found R17-4's `kind_at(base)` Large-segment check reads
+  unconditionally for EVERY small-classified free under `medium-classes`
+  (even tiny 16/32/64 B frees that cannot have reached promotion), gated by a
+  `#[cfg]` (bare `medium-classes`) wider than the actual promotion-compiled
+  predicate. Fix: (1) realigned branch (A)'s `#[cfg]` 1:1 with the real
+  promotion predicate; (2) added a runtime size gate (`cfg!(hardened) ||
+  layout.size() >= THRESHOLD`) BEFORE the `kind_at` read — but NOT
+  unconditionally skipped under `hardened`, since a `GlobalAlloc`-contract
+  violation can fabricate any small layout, not just ones at/above the
+  promotion threshold; verified red/green against
+  `tests/regression_hardened_large_kind_own_free.rs`. Branch (B) (the
+  hardened-only defensive no-op) broadened to fire whenever promotion
+  compiles OFF, not just when `medium-classes` is absent. Added
+  `medium_class_dealloc_churn_16b` (first iai baseline for the small-free
+  path under `production,medium-classes` where branch A actually compiles in:
+  8,275 Ir). Plain `production` byte-identical (`small_churn_16b` 8,051 Ir,
+  `large_alloc_free_cycle` 3,308 Ir, unchanged from R17-3). **Note (found in
+  Round 19's zero-trust review, task #337):** this fix, as landed, still left
+  a real hardened/UAF gap under promotion-reachable combos — see Round 19's
+  R19-1 for the follow-up correction; do not read this entry as the final
+  state of this logic.
+- **R18-4 / R18-5 (`1d2c9cd`, task #333, P2) — two small doc fixes in one
+  commit** (mirrors R17-4/R17-5's shared-commit precedent; R18-5 carries no
+  separate commit). **R18-4:** `heap_core_free.rs`'s pad-target decision
+  comment self-contradicted ("Padding is default" vs. its own "no artificial
+  padding" two sentences above) — corrected to "No padding is the default".
+  **R18-5:** the `class-aware-dirty` "recoverability" retention rationale
+  (CHANGELOG's R17-7 entry + `R14_3...md` §6) read as if the feature rescues
+  a pre-existing baseline danger; clarified that the R13-1 lost-wakeup class
+  is a property of the feature's OWN per-class sidecar — the baseline build
+  (feature off) has no such sidecar and never carried this risk, so the latch
+  is a derate back to baseline behaviour, not a rescue. Also stated the
+  sub-window axis honestly: R17-7's raw logs show ~3.2M-ns `window_ns`
+  medians for BOTH arms across both runs — no directional sub-window effect
+  confirmed either. Docs/comments only, no logic touched.
+- **R18-6 (`ed75b06`, task #334, P2, design-only) — design note for guarding
+  against the stale-derived-numeric-literal-in-comment defect class.**
+  Evaluated four candidate guards against this defect class (4 recurrences
+  across 3 rounds: R15-5, R16-2, R17-5, R17-6). Rejected a reactive
+  known-pair list (the same discipline that already failed 4×) and a general
+  grep lint (unsound against this repo's own historical prose, e.g.
+  `bootstrap.rs:228`'s "1024→4096 raise"). Recommended the "cite the const
+  name, not the resolved literal" convention (the only variant with a track
+  record of actually preventing recurrence — Rust cannot inject a live value
+  into `//` comments) as the standing rule, plus selective test-side
+  mirrored-const tripwires (precedent: `dbg_max_segments`/
+  `dbg_words_per_class` from R15-1, `dbg_promotion_compiled` from R16-5) for
+  the highest-risk constant families. Flagged a live at-risk site
+  (`dirty_by_class.rs:37-39`'s restated derived literals) as doc-debt for a
+  future round — this became Round 19's R19-9.
+- **R18-7 (`290374b` + follow-up `4ba35dc`, task #332, P2, read-only) —
+  `PERF_PLAN_beat_mimalloc_small_medium.md` found EXHAUSTED, not dormant.**
+  Investigated whether the plan is dormant (as three prior reviews assumed)
+  or exhausted. Finding: EXHAUSTED — all of Э1–Э5 landed in Round 7 (cited to
+  commits `4908fce`/`38e1a44`/`184123e`/`3b9123e`/`671a81b`/`2dede7d`), plus
+  Э6–Э11 across P6/P7. The README's "2.4–2.7× cold gap" headline is a single
+  host-drifted 2026-07-23 run whose 256 B row (2.71×) contradicts every prior
+  measurement (1.06×–1.66×) — a host-drift signature, not a regression.
+  **Follow-up (`4ba35dc`):** zero-trust review of the first draft caught a
+  real factual error before it landed — the draft claimed no CI perf-gate job
+  exists, based on a grep that checked only `ci.yml` and missed the separate
+  `.github/workflows/perf-gate.yml` (task #127/#128: schedule nightly +
+  `workflow_dispatch` + labelled-PR, already confirmed working earlier this
+  same session). Corrected sections 0/4/5/6/8 accordingly. **Note (Round 19,
+  task #339):** the correction pass itself missed one residual copy of the
+  retracted claim in §7 ("Files inspected") — fixed by R19-3.
+- **R18-8 (task #336, folded into the amended `cf82135`) — added
+  `docs/perf/OPEN_ITEMS.md`, a durable cross-round tracking index.** A
+  session-surviving index of every item a `docs/perf/*.md` gate report or
+  design doc has flagged as open/deferred/follow-up, paired with a new
+  mandatory CLAUDE.md "Phased delivery" rule requiring every new round to
+  check this index first. Motivated by R14-4's explicitly-marked-open item
+  ("re-run `scripts/r10_2_medium_gate.mjs` once R14-5 lands") hanging
+  unnoticed through three entire rounds (15, 16, 17), caught only by an
+  external review accidentally re-reading the right file — the in-session
+  TaskList does not survive a session boundary, so a fresh session inherits
+  no memory of prior rounds' flagged-open items; this index does. Cataloged
+  14 items at creation (tiered Active/Deferred/Low-priority) with a "Recently
+  resolved" closure trail. **Note (Round 19, task #338):** one cataloged item
+  (NUMA node-aware bit selection) was found stale at creation — already
+  resolved by R11-6/task #234 — and moved to "Recently resolved" by R19-2.
+- **R18-9 (`60633e3`, task #335, P3, design-only) — unified adaptive
+  Large-policy design doc, modelled on R17-10's structure.** Proposes a
+  coordinated measurement matrix for the three opt-in Large features
+  (`medium-classes`, `exact-span-large`+`large-reserved-capacity`,
+  `large-cache-extended`) plus the runtime budget knob. Flags two premise
+  inaccuracies in the plan it evaluates: `primordial-lazy-commit` is already
+  in `production` and isn't a Large mechanism (the "five switches" framing
+  overstates the space), and the cache budget is `large-cache-extended`'s
+  runtime dimension, not a sixth toggle. Key boundary marked: a unified
+  policy coordinates existing levers but does NOT close the R10-2 realloc
+  kill-gate — the residual ~19–67 ms is structural promotion `memcpy` (per
+  R18-2), needing the separate, un-designed in-place-medium-grow mechanism
+  (R10-2 §5).
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users.** No feature-list change landed this round — `Cargo.toml`'s
+`production = [...]` is byte-identical to the end of Round 17 (verified via
+`git diff dc95d1a^..cf82135 -- Cargo.toml`, empty diff). Of the
+production-affecting work, only R18-1 (test-only, no `src/` production code)
+and R18-3 (the one real `src/` fix — narrows an existing `#[cfg]`,
+iai-confirmed byte-identical Ir under plain `production`, per its own numbers
+above: `small_churn_16b` 8,051 Ir, `large_alloc_free_cycle` 3,308 Ir,
+unchanged from R17-3) touch runtime code at all; everything else (R18-2,
+R18-4/5, R18-6, R18-7, R18-8, R18-9) is docs/process/design-only, zero
+runtime effect. Unsafe-seam inventory unchanged (80 total, 20 tier-1 + 60
+tier-2, matching Round 17's ending count exactly).
+
 ### Round 17 — unsound `&mut T`/raw-deref `os.rs` sidecar closure, bootstrap zero-loop recovery, a real Large-segment leak root-caused at last, deterministic recycle oracle, design doc for batched deferred reclaim (R17-1..R17-10)
 
 Round 17 — 11 commits (`70a8f2f`..`cbebd45`, inclusive of both ends; 10 R17-1..R17-10
