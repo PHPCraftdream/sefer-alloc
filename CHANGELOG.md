@@ -7,6 +7,237 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Rounds 19–21 — hardened Large no-op UAF closed, Round 18 CHANGELOG backfilled, promotion-reachable `#[cfg]` canonicalized into one macro, R10-2 kill-gate's reserved-capacity lever measured NULL, OPT-H in-place medium-grow designed (CONDITIONAL-GO) then found NO-GO on Stage-1 evidence, mimalloc Ir-arm feasibility confirmed (R19-1..R19-9, R20-1..R20-4, R21-1..R21-2)
+
+**What actually moved across all three rounds, stated plainly up front.**
+Plain `--features production`'s composition is byte-identical across the
+entire span — verified via `git diff --stat 46ea2db^..b6af12d -- Cargo.toml`,
+which shows only `26 insertions(+)`, all of it two additive `[[example]]`
+bench-harness blocks for R21-1 (`paired_ab_hot_buffer_off`/`_on`); no
+`[features]` table entry changed. Of the one real `src/` behavior change in
+the whole range — R19-1's hardened Large no-op fix — the corrected code path
+is unreachable under `production`: it requires BOTH `hardened` AND
+`medium-classes` compiled in together, and neither feature is in
+`production`'s list. So the honest answer to "did Rounds 19–21 speed
+anything up?" is **no** — nothing in this span changes plain `production`'s
+runtime behavior or performance at all; R19-1 is a defensive-correctness fix
+gated behind an opt-in hardening feature, and the rest of the three rounds is
+measurement (mostly NULL/NO-GO results), design work, feasibility analysis,
+and process/doc cleanup. This mirrors the "Production vs. opt-in" framing the
+Round 18 section below already uses, extended across three rounds because the
+same conclusion holds for all of them.
+
+#### Round 19 (`46ea2db`..`4ca952d`, 9 commits, tasks #337–#345), 2026-07-26 07:03..08:42 — the immediate zero-trust follow-up queue against Round 18's own review, plus the backfilled Round 18 CHANGELOG entry itself
+
+- **[correctness/security fix] R19-1 (`46ea2db`, task #337, P1) — closed a
+  real hardened Large no-op contract violation reachable under promotion.**
+  R18-3's branch (A) in `HeapCore::dealloc_own_thread_with_base` routed ANY
+  small-layout free of a Large-kind segment straight to `self.core.dealloc`
+  whenever `medium-classes`' promotion predicate compiled in — correct for a
+  legitimate promoted-and-grown block, but under `hardened` it also silently,
+  ACTUALLY freed the segment for a fabricated/mismatched small layout on a
+  never-promoted Large pointer, instead of the detected-no-op contract
+  `hardened` (task #25) promises. Fix: gate the real dealloc call, under
+  `hardened`, on `large_layout_consistent(base, layout.size())` (the same
+  task #138 primitive `heap_core_xthread.rs` already uses for the analogous
+  cross-thread check) — a mismatch now degrades to the same defensive no-op
+  branch (B) uses; the non-`hardened` path is untouched. Personally verified
+  with a real red/green counterfactual: reverting only the source fix and
+  re-running the new branch-A no-op test under `--features "hardened
+  medium-classes"` crashes with a genuine `STATUS_ACCESS_VIOLATION` — proof
+  this was a real, exploitable UAF, not a theoretical concern. Unreachable
+  under plain `production` (needs `hardened` + `medium-classes` together,
+  neither in `production`).
+- **[doc/process fix] R19-2 (`ee3a3d7`, task #338, P2) — resolved a stale
+  `OPEN_ITEMS.md` entry.** Item #12 (NUMA node-aware bit selection) described
+  a pre-R11-6 state; R11-6 (task #234) already added the node-indexed
+  `class_nonempty_by_node` bitmap. Moved to "Recently resolved", remaining
+  items renumbered gap-free.
+- **[doc/process fix] R19-3 (`5c3bf76`, task #339, P2) — finished R18-7's
+  self-correction.** The `4ba35dc` follow-up had corrected sections
+  0/4/5/6/8 of `R18_7_MIMALLOC_GAP_STATUS.md` but missed one residual copy of
+  the retracted "no perf-gate job exists" claim in §7 ("Files inspected") —
+  independently caught by both the `@oh` and `/crush` Round 18 reviews. Fixed
+  the bullet and added `perf-gate.yml` as its own cited evidence-trail entry.
+- **[doc/process fix] R19-4 (`979b9d5`, task #340, P2) — fixed a stale
+  line-range citation in `912740f`'s own commit message.** The cited
+  `heap_core_free.rs:929-933` was actually the unrelated R4-2 null-base
+  guard; the real supporting text is `try_promote_to_large`'s own doc
+  comment. Not amending the already-landed commit message (git-safety
+  convention) — added a historical citation note in-place instead.
+- **[doc/process fix] R19-5 (`36b7cc7`, task #341, P2) — backfilled the
+  missing Round 18 CHANGELOG entry** (the "### Round 18" section
+  immediately below this one), flagged by both the `@oh` and `/crush` Round
+  18 reviews. Matches the established Round 15–17 format; cross-references
+  the three Round 19 follow-up corrections (R19-1, R19-2, R19-3) landing in
+  this same round queue so a reader doesn't mistake the original Round 18
+  entries for their final state.
+- **[doc/process fix] R19-6 (`1b6c6cd`, task #342, P2) — three purely
+  additive methodology clarifications to the R14-4 gate report.** No
+  numbers/tables/claims changed: (1) a leading callout in §0 pointing to
+  §7.1's current ~1,180×/~380× verdict (R18-2) before the original stale
+  ~1,700–2,300× table; (2) a §10.3 caveat that the "full-round" figure is an
+  arithmetic sum of three independently-paired phase means, not its own
+  paired statistic; (3) a §10.6 note recommending a future re-run read
+  `AllocStats::large_cache_hits` directly instead of inferring it.
+- **[test infrastructure] R19-7 (`a302d16`, task #343, P1) — the
+  `race_repro` watchdog's thread panic now fails the test, not just logs
+  it.** `impl Drop for Watchdog` (R18-1) previously only `eprintln!`'d on a
+  watchdog-thread panic — easy to miss in CI scrollback, with `cargo test`
+  reporting the test as passed regardless. Fix: re-panic on the main thread,
+  guarded by `!std::thread::panicking()` (so an already-unwinding return
+  doesn't trigger a double-panic abort, preserving R18-1's disambiguation
+  discipline). Verified with a real red/green counterfactual: an injected
+  unconditional watchdog panic now fails the test as designed; the fix
+  short-circuited back to `if false && ...` reproduces the old silent-pass
+  gap.
+- **[test infrastructure] R19-8 (`e7dbe16`, task #344, P2, refactor — no
+  behavior change, say so explicitly) — canonicalized the
+  promotion-reachable `#[cfg]` predicate into one macro.** The predicate
+  (`medium-classes && (!exact-span-large || (large-reserved-capacity &&
+  !numa-aware))`) was hand-duplicated at 4 sites in `heap_core_free.rs` — a
+  drift risk flagged by Round 19's own synthesis review. Introduced
+  `medium_promotion_reachable!`, wrapping either an item or a statement in
+  the identical `#[cfg(...)]` gate; rewired all 4 sites to invoke it, bodies
+  and doc comments unchanged. Purely textual canonicalization — no logic,
+  no behavior change; verified across all 6 promotion-reachable ON/OFF
+  transitions plus the existing regression suites, all green.
+- **[test infrastructure] R19-9 (`4ca952d`, task #345, P2) — fixed the
+  stale-literal-prone comment in `dirty_by_class.rs` (flagged by R18-6) plus
+  a v4 tripwire test.** Rewrote the module doc comment per R18-6's v3
+  convention (cite the const names/formula first, concrete numbers as an
+  explicitly-labeled "as of this writing" snapshot). Added a v4 tripwire
+  (`tests/dirty_by_class_sidecar_sizing_tripwire.rs`) recomputing the
+  sidecar's byte footprint from the real compiled constants, so a future
+  size-class change fails this test instead of silently leaving the prose
+  stale. Verified non-vacuous with a deliberately-wrong `EXPECTED_BYTES`
+  counterfactual (goes red as expected, reverted to green).
+
+#### Round 20 (`6b5390d`..`e5addae`, 4 commits, tasks #346–#349), 2026-07-26 08:56..09:53 — measurement, design, and feasibility work against `OPEN_ITEMS.md`'s two remaining Active items
+
+- **[doc/process fix] R20-1 (`6b5390d`, task #346, P2) — fixed stale
+  "pending the Linux Ir gate" wording.** `perf-gate.yml` (task #127/#128)
+  already runs the deterministic Ir gate on `ubuntu-latest`, but
+  `CHANGELOG.md` and `docs/ALLOC_BENCH.md` still framed the P7 cold-recycle
+  verdict as future-tense in five places. Both are historical/point-in-time
+  records, so original prose is kept intact — a "(Resolved: ...)" note added
+  after each stale sentence instead. Also fixed `OPEN_ITEMS.md`'s own item
+  #3 citation, itself stale/wrong (pointed at an unrelated M2-guard
+  sentence) — the same citation-drift class R19-4 fixed for a commit
+  message. Left one genuinely different, still-open "pending that gate"
+  mention untouched after verifying it refers to a different gate.
+- **[measurement — NULL result] R20-2 (`ee5f2aa`, task #347, P1) — C4 gate:
+  reserved-capacity headroom does NOT reduce the promotion `memcpy`.**
+  Measured `OPEN_ITEMS.md` active item 2: does `large-reserved-capacity`'s
+  geometric growth headroom (with `exact-span-large`) reduce the structural
+  medium→Large promotion `memcpy` R18-2 found and left RED? A direct,
+  load-matched paired A/B/B/A comparison (20 pairs/80 launches) between C1
+  (`production,medium-classes`) and C4 (`production,medium-classes,
+  exact-span-large,large-reserved-capacity`) gave mean delta +967 µs, SD
+  3.577 ms, t=1.209 (<< crit 2.101), sign test dead-even 10/20 —
+  statistically indistinguishable from noise. Confirms R18-2's own §10.7
+  mechanism prediction: the promotion `memcpy` happens before the fresh
+  Large segment's `reserved_capacity` is established, so headroom can only
+  help a later grow, never the copy that created the promotion. Reported a
+  methodological finding honestly: a naive comparison against R18-2's
+  previously-published number looked like a ~24% improvement, collapsing to
+  ~5%, then to noise, once measured fresh in the same session — a
+  cross-session host-load artifact, not a feature effect. Genuine orthogonal
+  finding: `exact-span-large` roughly halves resident commit for this
+  workload, unrelated to the realloc-speed null result. R10-2's kill-gate
+  remains RED; moved `OPEN_ITEMS.md` active item 2 to "Recently resolved".
+- **[design-only, no implementation] R20-3 (`9a4fe15`, task #348, P1,
+  CONDITIONAL-GO) — designed OPT-H, an in-place medium-class grow
+  mechanism.** The first document to propose an actual mechanism for
+  `OPEN_ITEMS.md`'s active item 1 (the promotion-time `memcpy` itself,
+  confirmed by three rounds of measurement — R14-4, R18-2, R20-2 — to be the
+  genuine remaining lever), rather than just naming the gap. Grounded
+  against the real carve/`BinTable` substrate: identifies OPT-H, a
+  tail-of-segment bump-extend for a block that is currently its segment's
+  most-recently-carved, not-yet-grown-or-freed block, with zero new
+  `SegmentHeader` fields and zero new `BinTable` variants. Honest scope
+  assessment: structurally bounded to one eligible block per segment at a
+  time, so it explicitly predicts it will NOT close R10-2's own
+  N=16-simultaneous-object harness — its real target is the un-measured
+  single-hot-growing-buffer pattern. Verdict: CONDITIONAL-GO, gated on a
+  not-yet-built single-hot-buffer diagnostic harness showing a material hit
+  rate (this became R21-1/R21-2). `OPEN_ITEMS.md` active item 1 updated in
+  place (not moved to "Recently resolved" — design is not implementation).
+- **[feasibility-only, no implementation] R20-4 (`e5addae`, task #349, P2) —
+  mimalloc Ir-arm feasibility: FEASIBLE, cheaper than assumed.** Answered
+  `OPEN_ITEMS.md`'s last remaining Active item — whether a deterministic
+  cross-allocator Ir number can settle the cold-16B mimalloc gap argued on
+  wall-clock alone for 10 rounds. VERDICT: FEASIBLE, no architectural
+  blocker: mimalloc's C core is statically linked (no dynamic-link/JIT
+  attribution gap); the assumed need for a separate bench binary (one
+  `#[global_allocator]` per process) does not apply, since neither existing
+  bench file ever installs one — a mimalloc arm can live in the same
+  `perf_gate_iai.rs` file; the CI C-toolchain question is already retired
+  (`--all-features` clippy already compiles the mimalloc-linking bench on
+  the same runner image). One non-blocking nuance: `scripts/iai.mjs`'s
+  marginal-Ir/op column needs its own bootstrap-proxy bench so a mimalloc
+  constant isn't conflated with SeferAlloc's. `OPEN_ITEMS.md` item 2 updated
+  in place, staying Active (implementation is still future work) — this
+  closed out `OPEN_ITEMS.md`'s Active tier entirely for the round, though
+  neither item is fully implemented.
+
+#### Round 21 (`517a85b`..`b6af12d`, 2 commits, tasks #350–#351), 2026-07-26 10:58..12:35 — OPT-H's own Stage-1 measure-before-build discipline, per R20-3's own gate
+
+- **[bench harness, no src change] R21-1 (`517a85b`, task #350, P2) —
+  built the single-hot-buffer harness OPT-H's Stage 1 needs.** The existing
+  R10-2/R18-2/R20-2 harness (16 simultaneously-live objects) is deliberately
+  adversarial and structurally cannot represent the single-hot-buffer
+  workload (Vec-style repeated append) OPT-H actually targets. New harness:
+  ONE buffer, allocated once (untimed), repeatedly grown through the exact
+  medium-class ladder, reset and repeated for 20 rounds; two wrapper
+  binaries (`paired_ab_hot_buffer_{off,on}`) share one workload file,
+  mirroring the existing `paired_ab_medium_{off,on}` pattern so the
+  existing statistics engine works unmodified. Harness-only: no `src/`
+  change, no allocator logic change, one additive Cargo.toml `[[example]]`
+  block per binary (2 total). Personally verified: built and ran both
+  binaries — off (baseline) ~310 ns/round via OPT-G's existing in-place
+  Large grow; on (promotion path) ~31,120 ns/round, ~100× slower, matching
+  the expected repeated-first-crossing-promotion-cost shape.
+- **[observation-only diagnostic, NO-GO verdict] R21-2 (`b6af12d`, task
+  #351, P1) — OPT-H Stage-1 diagnostic counters: NO-GO on current
+  evidence.** Implemented OPT-H's precondition-checking logic (the six
+  conditions from R20-3's design §2.1) as OBSERVATION-ONLY diagnostics
+  (`OPT_H_ATTEMPTS`/`OPT_H_HITS`, storage always compiled, increment gated
+  behind `alloc-stats`) inside `AllocCore::realloc_inplace_fast_path_known_
+  base`'s existing OPT-F decline arm — it never changes what pointer is
+  returned or what memory is touched; every cross-class grow still falls
+  through unchanged. New regression test proves the precondition logic
+  actually discriminates (a genuinely tail-adjacent grow vs. the same shape
+  on a non-tail block), not merely compiles. Stage-1 measurement result:
+  R10-2's existing N=16 harness shows 0/320 attempts hit (matches the
+  design's own prediction); R21-1's new single-hot-buffer harness ALSO
+  shows 0/20 — root-caused to a structural property of that harness's own
+  construction (its buffer already sits at the promotion threshold, so it
+  promotes to Large on its very first grow crossing every round). Verdict:
+  CONDITIONAL-GO trigger NOT MET — NO-GO for implementing OPT-H's real grow
+  action on current evidence; not a rejection of the mechanism's soundness,
+  since neither available harness demonstrates the predicted victim
+  workload materializing. Full trace in
+  `docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md`. `OPEN_ITEMS.md`'s active item
+  1 updated with this verdict.
+
+**Production vs. opt-in — what actually changed for default `--features
+production` users, across all three rounds.** Nothing. `Cargo.toml`'s
+`production = [...]` list is unchanged across the entire `46ea2db^..b6af12d`
+span (only two additive `[[example]]` bench-harness blocks were added, no
+`[features]` entry touched — see the summary paragraph above for the exact
+diffstat). The one real `src/` behavior change, R19-1, is a hardened-only
+defensive-correctness fix unreachable under plain `production` (it requires
+`hardened` AND `medium-classes` together, neither of which `production`
+carries). R19-8's macro refactor and R21-2's diagnostic counters both compile
+out entirely under plain `production` (zero-cost, verified per their own
+commits above). Everything else across the three rounds — R19-2 through
+R19-6, R19-9, R20-1, R20-3, R20-4, R21-1 — is docs/process/design/
+measurement/feasibility work with no runtime code change at all. Unsafe-seam
+inventory unchanged across the whole span (80 total: 20 tier-1 + 60 tier-2,
+matching Round 18's ending count exactly, via the crate's own self-verifying
+`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`).
+
 ### Round 18 — `race_repro` watchdog disambiguated from allocator corruption, R17-4's `kind_at` Large-segment check narrowed, R10-2 realloc kill-gate re-verified still red, cross-round `OPEN_ITEMS` tracking index, stale-literal guard + adaptive Large-policy design docs (R18-1..R18-9)
 
 Round 18 — 9 commits (`dc95d1a`..`cf82135`, inclusive of both ends; 8 task
