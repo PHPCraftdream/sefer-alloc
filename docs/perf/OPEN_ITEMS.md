@@ -69,10 +69,23 @@ for completeness.
    `perf_gate_iai.rs`.** "The single biggest open question the plan left on the
    table": the cold-16 B gap has been a 10-round wall-clock argument because
    nobody has the deterministic cross-allocator `Ir` number that would settle
-   whether the residual is honest page-map work or ceremony. Requires a
-   feasibility check (is a cross-allocator `Ir` comparison even meaningful under
-   `iai-callgrind` for a C library called via FFI?) before committing. Evidence:
-   `R18_7_MIMALLOC_GAP_STATUS.md` §3b (lines 154–170) + §6 (lines 270–281).
+   whether the residual is honest page-map work or ceremony. **Feasibility
+   check done — R20-4 (task #349), 2026-07-26: FEASIBLE**, and cheaper than
+   the original framing assumed: mimalloc's C core is statically linked into
+   the same binary Callgrind already instruments (no dynamic-link/JIT
+   attribution gap), this repo's own established pattern
+   (`benches/global_alloc.rs`) already calls `mimalloc::MiMalloc` directly via
+   `GlobalAlloc` without installing it as `#[global_allocator]` — so a mimalloc
+   arm can live in the SAME `perf_gate_iai.rs` file, no new bench binary
+   required — and the CI C-toolchain question is already retired by
+   `ci.yml`'s currently-green `clippy --all-features` job, which already
+   compiles mimalloc's `cc`-built static lib on the identical `ubuntu-latest`
+   image `perf-gate.yml` uses. Still NOT implemented — this item stays open
+   for the actual arm (new `#[library_benchmark]` fns + an arm-aware
+   bootstrap-constant fix in `scripts/iai.mjs`, see the report §8). Evidence:
+   `R18_7_MIMALLOC_GAP_STATUS.md` §3b (lines 154–170) + §6 (lines 270–281);
+   `R20_4_MIMALLOC_IR_ARM_FEASIBILITY.md` (full report, §0/§8 for the verdict
+   and implementation sketch).
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
