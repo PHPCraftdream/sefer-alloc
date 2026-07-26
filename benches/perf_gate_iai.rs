@@ -60,6 +60,8 @@ use std::hint::black_box;
 #[cfg(target_os = "linux")]
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 #[cfg(target_os = "linux")]
+use mimalloc::MiMalloc;
+#[cfg(target_os = "linux")]
 use sefer_alloc::SeferAlloc;
 
 /// Number of alloc/dealloc pairs per churn iteration. Kept small relative to
@@ -493,6 +495,189 @@ fn seg_cycle_decommit_256k() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// R22-15 (task #366) — mimalloc comparison arms.
+//
+// Per R20-4's (task #349) feasibility finding (docs/perf/
+// R20_4_MIMALLOC_IR_ARM_FEASIBILITY.md, §8 implementation sketch): mimalloc's
+// C core is statically linked into this same binary (libmimalloc-sys's
+// build.rs "we only ever build a static lib"), so Callgrind's instruction
+// count for it is exactly as attributable as SeferAlloc's own Rust code --
+// no dynamic-link/JIT attribution gap. Per benches/global_alloc.rs's already-
+// established pattern (module doc there, lines 12-19), mimalloc is called
+// DIRECTLY through its `GlobalAlloc` impl on a locally-constructed
+// `mimalloc::MiMalloc` value -- NEVER installed as `#[global_allocator]` --
+// so it can live in the SAME bench binary/file as the SeferAlloc arms above,
+// with no new bench target and no `Cargo.toml`/CI change required.
+//
+// Every mimalloc bench below is a byte-for-byte mirror of its SeferAlloc
+// sibling (same op counts, same sizes, same alignment, same alloc/dealloc
+// shape) so the comparison is apples-to-apples -- only the allocator value
+// differs (`mi.alloc(layout)` / `mi.dealloc(ptr, layout)` in place of
+// `sefer.alloc(layout)` / `sefer.dealloc(ptr, layout)`).
+//
+// `mimalloc_bootstrap_proxy` mirrors `large_alloc_free_cycle`'s role as the
+// SeferAlloc bootstrap proxy, per R20-4 §8's flagged nuance: mimalloc's own
+// one-time init cost (its first-call thread-local heap setup) is a
+// DIFFERENT constant from SeferAlloc's (different allocator, different
+// internal bookkeeping) -- subtracting SeferAlloc's `large_alloc_free_cycle`
+// constant from a mimalloc row would silently corrupt the marginal-Ir/op
+// decomposition. `scripts/iai.mjs` is taught (see BOOTSTRAP_BENCH_BY_PREFIX
+// there) to apply THIS proxy's Ir only to `mimalloc_*` rows.
+
+// Small-block (16 B) alloc+dealloc churn via mimalloc -- mirrors
+// `small_churn_16b` exactly (same CHURN_OPS, same layout).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_small_churn_16b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { mi.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// 256 B @ align(8) alloc+dealloc churn via mimalloc -- mirrors `churn_256b`
+// exactly.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_churn_256b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(256, 8).unwrap();
+    for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { mi.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Cold first-touch of tiny 16 B blocks via mimalloc -- mirrors
+// `cold_alloc_free_256x16b` exactly (COLD_BATCH distinct blocks allocated,
+// then all freed).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_free_256x16b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Cold first-touch of 64 B blocks via mimalloc -- mirrors
+// `cold_alloc_free_256x64b` exactly.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_free_256x64b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(64, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Steady-state cold recycle of tiny 16 B blocks via mimalloc -- mirrors
+// `recycle_alloc_free_256x16b` exactly (2 rounds: round 1 populates whatever
+// free-list mimalloc maintains, round 2 drains it).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_recycle_alloc_free_256x16b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for _round in 0..2 {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { mi.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the same
+                // layout, and is freed exactly once per round.
+                unsafe { mi.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
+// Steady-state cold recycle of 64 B blocks via mimalloc -- mirrors
+// `recycle_alloc_free_256x64b` exactly.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_recycle_alloc_free_256x64b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(64, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for _round in 0..2 {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { mi.alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by an `alloc` call above with the same
+                // layout, and is freed exactly once per round.
+                unsafe { mi.dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
+// mimalloc bootstrap proxy -- mirrors `large_alloc_free_cycle`'s role
+// exactly: a single-shot 4 MiB alloc+free via mimalloc, touching no small-
+// class/magazine-equivalent path, so its Ir is (mimalloc's one-time process
+// init + one large alloc+free) -- the cleanest mimalloc-specific bootstrap
+// constant this bench set can offer (see the R22-15 module note above and
+// `scripts/iai.mjs`'s per-prefix bootstrap map).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_bootstrap_proxy() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(4 * 1024 * 1024, 8).unwrap();
+    // SAFETY: layout has non-zero size and valid alignment.
+    let ptr = unsafe { mi.alloc(layout) };
+    black_box(ptr);
+    if !ptr.is_null() {
+        // SAFETY: ptr was returned by the `alloc` call directly above with
+        // the same layout.
+        unsafe { mi.dealloc(ptr, layout) };
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -510,6 +695,13 @@ library_benchmark_group!(
         churn_write_256b,
         multiseg_cold_256k,
         seg_cycle_decommit_256k,
+        mimalloc_small_churn_16b,
+        mimalloc_churn_256b,
+        mimalloc_cold_alloc_free_256x16b,
+        mimalloc_cold_alloc_free_256x64b,
+        mimalloc_recycle_alloc_free_256x16b,
+        mimalloc_recycle_alloc_free_256x64b,
+        mimalloc_bootstrap_proxy,
 );
 
 #[cfg(target_os = "linux")]

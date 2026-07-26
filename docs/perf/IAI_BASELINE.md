@@ -1408,3 +1408,81 @@ Worktree used for the direct `e6b9b3a` re-measurement was removed on
 completion (`git worktree remove`); `git worktree list` confirmed clean
 before and after.
 
+## R22-15 (2026-07-26) — mimalloc comparison arms, a NEW baseline (not a refresh)
+
+Task #366 (R22-15) executed R20-4's (task #349) feasibility sketch
+(`docs/perf/R20_4_MIMALLOC_IR_ARM_FEASIBILITY.md` §8): added 7 mimalloc
+`#[library_benchmark]` fns to `benches/perf_gate_iai.rs`, each mirroring an
+existing SeferAlloc bench byte-for-byte (same op count/size/alignment/shape),
+and taught `scripts/iai.mjs` to use an ARM-AWARE bootstrap constant (mimalloc
+rows subtract `mimalloc_bootstrap_proxy`'s Ir, never SeferAlloc's
+`large_alloc_free_cycle`) so the marginal-Ir/op and derived ratio columns are
+not corrupted by conflating the two allocators' different one-time init
+costs. Full report: `docs/perf/R22_15_MIMALLOC_IR_ARM_GATE.md`. This section
+is a NEW baseline (the mimalloc arms did not exist before this task) — it
+does not replace or invalidate the SeferAlloc-only reference table above
+(the "R5-R2b" section immediately preceding this one remains the SeferAlloc
+reference; the 13 existing SeferAlloc bench numbers are unchanged by this
+task, confirmed identical before/after the diff).
+
+**Measured (production features, WSL2/valgrind 3.22.0/iai-callgrind 0.14.2,
+commit `506758c`), three back-to-back `npm run iai` runs, `Ir` byte-identical
+across all three:**
+
+| bench | Ir | L1 | L2 | RAM | EstCycles | Ir/op* |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| mimalloc_small_churn_16b | 16,629 | 21,426 | 68 | 504 | 39,406 | 55.9 |
+| mimalloc_churn_256b | 16,130 | 20,938 | 71 | 458 | 37,323 | 48.1 |
+| mimalloc_cold_alloc_free_256x16b | 32,325 | 41,772 | 97 | 506 | 59,967 | 75.3 |
+| mimalloc_cold_alloc_free_256x64b | 33,329 | 42,928 | 107 | 713 | 68,418 | 79.2 |
+| mimalloc_recycle_alloc_free_256x16b | 53,020 | 68,678 | 96 | 509 | 86,973 | 78.1 |
+| mimalloc_recycle_alloc_free_256x64b | 54,024 | 69,832 | 108 | 716 | 95,432 | 80.0 |
+| mimalloc_bootstrap_proxy (mimalloc bootstrap proxy; marginal figure N/A) | 13,050 | 16,713 | 77 | 515 | 35,123 | — |
+
+**Derived Sefer/mimalloc marginal-Ir/op ratio** (both sides bootstrap-
+subtracted using their OWN arm's proxy — SeferAlloc via
+`large_alloc_free_cycle`, Ir=3,308 this run; mimalloc via
+`mimalloc_bootstrap_proxy`, Ir=13,050 this run):
+
+| workload | Sefer Ir/op | mimalloc Ir/op | ratio (Sefer÷mi) |
+| --- | ---: | ---: | ---: |
+| small_churn_16b / mimalloc_small_churn_16b | 74.1 | 55.9 | **1.326** |
+| churn_256b / mimalloc_churn_256b | 74.1 | 48.1 | **1.541** |
+| cold_alloc_free_256x16b / mimalloc_cold_alloc_free_256x16b | 183.0 | 75.3 | **2.430** |
+| cold_alloc_free_256x64b / mimalloc_cold_alloc_free_256x64b | 183.0 | 79.2 | **2.311** |
+| recycle_alloc_free_256x16b / mimalloc_recycle_alloc_free_256x16b | 185.6 | 78.1 | **2.376** |
+| recycle_alloc_free_256x64b / mimalloc_recycle_alloc_free_256x64b | 185.6 | 80.0 | **2.320** |
+
+**Headline, reported honestly (see the gate report's §0 for the full
+discussion):** SeferAlloc retires **1.3x more instructions/op than mimalloc
+on the hot magazine-churn path**, and **~2.3-2.4x more on the cold-carve /
+freelist-recycle path** — real, substantial, deterministically-measured
+headroom versus mimalloc on this bench suite, not a favorable result for
+SeferAlloc and not spun as one. This is the first deterministic answer to
+the question `R18_7_MIMALLOC_GAP_STATUS.md` §3b left open.
+
+**Determinism caveat (honestly reported, not papered over):** `Ir` was
+byte-identical across three runs for every bench, both allocators, with zero
+exceptions. The cache-simulation columns (`L1`/`L2`/`RAM Hits`,
+`EstCycles`), however, showed a small (±1 hit) run-to-run jitter on SEVERAL
+`mimalloc_*` benches specifically (e.g. `mimalloc_cold_alloc_free_256x16b`'s
+L2: 98 → 97 → 97 across three runs) — SeferAlloc's own cache columns were
+byte-identical across all three runs with zero exceptions. `Ir` itself never
+moved on either allocator; this is a cache-simulation-count jitter only, does
+not affect the PASS/FAIL judge, and is recorded as a genuine (if minor) new
+finding for whoever next relies on mimalloc's cache columns as a comparison
+axis. See the full gate report §4 for the raw evidence citations.
+
+Raw logs: `docs/perf/_raw_r22_15_mimalloc_ir_arm.log` (definitive run, full
+203-line stdout, committed in full) and
+`docs/perf/_raw_r22_15_mimalloc_ir_arm_rerun1.log` (second independent run,
+the determinism-cross-check citation). Companion machine-readable summary:
+`docs/perf/R22_15_MIMALLOC_IR_ARM_GATE_summary.csv`.
+
+`production`'s feature composition is unchanged by this task (`mimalloc` was
+already an unconditional dev-dependency, gated by no feature; `Cargo.toml`
+has zero diff for this task) — no README/production-composition-change
+refresh is owed per `CLAUDE.md`'s own rule; this section exists because it
+is a NEW baseline (the arms did not exist before), not a refresh of an
+existing one.
+

@@ -117,7 +117,42 @@ const LINUX_TARGET = '/tmp/sefer-iai';
 // loop bounds change there, update the matching entry here. A bench absent from
 // this map (or mapped to null) prints "-" in the marginal column — it is a
 // best-effort SIGNAL column and MUST NOT affect pass/fail (Ir stays the judge).
-const BOOTSTRAP_BENCH = 'large_alloc_free_cycle';
+//
+// R22-15 (task #366): mimalloc comparison arms were added to
+// benches/perf_gate_iai.rs, mirroring the SeferAlloc arms byte-for-byte (same
+// op counts, same layouts). Per R20-4's (task #349) flagged nuance, mimalloc's
+// one-time process/thread-local-heap init cost is a DIFFERENT constant from
+// SeferAlloc's — subtracting SeferAlloc's `large_alloc_free_cycle` from a
+// `mimalloc_*` row would silently corrupt the marginal-Ir/op number. So the
+// bootstrap constant is now ARM-AWARE: `BOOTSTRAP_BENCH_BY_PREFIX` maps a
+// bench-name prefix to the bootstrap-proxy bench name used for THAT arm only.
+// `bootstrapFor(name)` picks the most specific (longest) matching prefix; the
+// empty-string prefix '' is the fallback for every non-mimalloc (SeferAlloc)
+// bench, preserving today's behavior byte-for-byte for the existing 13
+// benches.
+const BOOTSTRAP_BENCH_BY_PREFIX = {
+  '': 'large_alloc_free_cycle',
+  mimalloc_: 'mimalloc_bootstrap_proxy',
+};
+/** Legacy single-name export retained for any external reference; the actual
+ * lookup used by this script is `bootstrapBenchFor`, which is prefix-aware. */
+const BOOTSTRAP_BENCH = BOOTSTRAP_BENCH_BY_PREFIX[''];
+/**
+ * The bootstrap-proxy bench name whose Ir should be subtracted for a given
+ * bench `name`, chosen by the longest matching key in
+ * `BOOTSTRAP_BENCH_BY_PREFIX` (so `mimalloc_*` benches use
+ * `mimalloc_bootstrap_proxy` while every other bench keeps using
+ * `large_alloc_free_cycle`, the pre-R22-15 behavior).
+ */
+function bootstrapBenchFor(name) {
+  let best = '';
+  for (const prefix of Object.keys(BOOTSTRAP_BENCH_BY_PREFIX)) {
+    if (prefix !== '' && name.startsWith(prefix) && prefix.length > best.length) {
+      best = prefix;
+    }
+  }
+  return BOOTSTRAP_BENCH_BY_PREFIX[best];
+}
 const BENCH_OPS = {
   // churn family: CHURN_OPS (64) alloc→dealloc pairs.
   small_churn_16b: 64,
@@ -147,6 +182,17 @@ const BENCH_OPS = {
   multiseg_cold_256k: 68,
   // seg-cycle decommit: SEGCYCLE_ROUNDS (6) × SEGCYCLE_BATCH (34) = 204 pairs.
   seg_cycle_decommit_256k: 204,
+  // R22-15: mimalloc arms mirror their SeferAlloc siblings' op counts exactly
+  // (same CHURN_OPS / COLD_BATCH / 2-round loops in benches/perf_gate_iai.rs).
+  mimalloc_small_churn_16b: 64,
+  mimalloc_churn_256b: 64,
+  // the mimalloc bootstrap proxy — 1 pair, defines the mimalloc constant, so
+  // its own marginal figure is meaningless; reported as "-" (mapped null).
+  mimalloc_bootstrap_proxy: null,
+  mimalloc_cold_alloc_free_256x16b: 256,
+  mimalloc_cold_alloc_free_256x64b: 256,
+  mimalloc_recycle_alloc_free_256x16b: 512,
+  mimalloc_recycle_alloc_free_256x64b: 512,
 };
 const wslRoot = winToWsl(REPO_ROOT);
 
@@ -345,13 +391,17 @@ function fmt(n) {
 }
 
 /**
- * Marginal Ir per operation for one bench, given the bootstrap constant `B`
- * (the `large_alloc_free_cycle` raw Ir). Returns `(ir - B) / ops`, rounded to
- * one decimal, or `null` when the bench has no op-count entry, when it IS the
- * bootstrap proxy, or when `B` is unknown (bootstrap bench absent/filtered).
- * See the F2 block near the top of this file for the full rationale.
+ * Marginal Ir per operation for one bench, given a `bootstrapByName` lookup
+ * (bench name -> that bench's own bootstrap-proxy raw Ir; see
+ * `bootstrapBenchFor`/R22-15's arm-aware map above). Returns
+ * `(ir - B) / ops`, rounded to one decimal, or `null` when the bench has no
+ * op-count entry, when it IS a bootstrap proxy itself, or when its arm's `B`
+ * is unknown (that arm's bootstrap bench absent/filtered). See the F2 block
+ * near the top of this file for the full rationale; see R22-15 for why `B`
+ * is now looked up per-arm instead of a single shared scalar.
  */
-function marginalIrPerOp(row, bootstrap) {
+function marginalIrPerOp(row, bootstrapByName) {
+  const bootstrap = bootstrapByName.get(bootstrapBenchFor(row.name));
   if (bootstrap == null || !Number.isFinite(bootstrap)) return null;
   const ops = BENCH_OPS[row.name];
   if (ops == null || ops <= 0) return null;
@@ -368,7 +418,52 @@ function fmtMarginal(n) {
       });
 }
 
-function printTable(rows, bootstrap) {
+/**
+ * Derived Sefer/mimalloc Ir ratio for a bench PAIR that share a workload
+ * shape (e.g. `cold_alloc_free_256x16b` vs `mimalloc_cold_alloc_free_
+ * 256x16b`). R22-15 (task #366): reported as a first-class number alongside
+ * the raw table, using the SAME bootstrap-subtracted marginal Ir/op each arm
+ * already reports (not raw Ir, which would conflate the two allocators'
+ * different bootstrap constants). Returns `null` when either side's marginal
+ * figure is unavailable (bench absent/filtered, or no op-count entry).
+ */
+function seferMimallocRatio(seferMarginal, mimallocMarginal) {
+  if (
+    seferMarginal == null ||
+    mimallocMarginal == null ||
+    !Number.isFinite(seferMarginal) ||
+    !Number.isFinite(mimallocMarginal) ||
+    mimallocMarginal === 0
+  ) {
+    return null;
+  }
+  return Math.round((seferMarginal / mimallocMarginal) * 1000) / 1000;
+}
+
+/** Format a Sefer/mimalloc ratio (three decimals), or "-" for null. */
+function fmtRatio(n) {
+  return n == null || !Number.isFinite(n)
+    ? '-'
+    : n.toLocaleString('en-US', {
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3,
+      });
+}
+
+// R22-15: bench-name pairs this report derives a Sefer/mimalloc ratio for —
+// every mimalloc arm added has a byte-for-byte SeferAlloc sibling (mirrored
+// op counts/layouts; see the module note in benches/perf_gate_iai.rs), so
+// each pair here is a genuine apples-to-apples workload-shape match.
+const RATIO_PAIRS = [
+  ['small_churn_16b', 'mimalloc_small_churn_16b'],
+  ['churn_256b', 'mimalloc_churn_256b'],
+  ['cold_alloc_free_256x16b', 'mimalloc_cold_alloc_free_256x16b'],
+  ['cold_alloc_free_256x64b', 'mimalloc_cold_alloc_free_256x64b'],
+  ['recycle_alloc_free_256x16b', 'mimalloc_recycle_alloc_free_256x16b'],
+  ['recycle_alloc_free_256x64b', 'mimalloc_recycle_alloc_free_256x64b'],
+];
+
+function printTable(rows, bootstrapByName) {
   if (!rows.length) {
     console.log('[iai] (no Ir parsed)');
     return;
@@ -384,26 +479,71 @@ function printTable(rows, bootstrap) {
   console.log(
     `  ${'-'.repeat(w)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}`,
   );
+  const marginals = new Map();
   for (const r of rows) {
-    const marg = marginalIrPerOp(r, bootstrap);
+    const marg = marginalIrPerOp(r, bootstrapByName);
+    marginals.set(r.name, marg);
     console.log(
       `  ${r.name.padEnd(w)}  ${fmt(r.ir).padStart(cw)}  ${fmt(r.l1).padStart(cw)}  ${fmt(r.l2).padStart(cw)}  ${fmt(r.ram).padStart(cw)}  ${fmt(r.cycles).padStart(cw)}  ${fmtMarginal(marg).padStart(cw)}`,
     );
   }
-  // Footnote: make the column's meaning + the constant used unmissable in the
-  // raw report (a reader diffing two runs must know this is bootstrap-adjusted,
-  // not a raw metric). See finding F2.
-  if (bootstrap != null && Number.isFinite(bootstrap)) {
+  // Footnote: make the column's meaning + the constant(s) used unmissable in
+  // the raw report (a reader diffing two runs must know this is
+  // bootstrap-adjusted, not a raw metric). See finding F2. R22-15: the
+  // bootstrap constant is now per-arm — SeferAlloc rows subtract
+  // `large_alloc_free_cycle`, `mimalloc_*` rows subtract
+  // `mimalloc_bootstrap_proxy` — so both are named here.
+  const seferB = bootstrapByName.get('large_alloc_free_cycle');
+  const miB = bootstrapByName.get('mimalloc_bootstrap_proxy');
+  if (seferB != null || miB != null) {
     console.log(
-      `\n  * Ir/op = (Ir − ${fmt(bootstrap)}) / ops — marginal instruction count per\n` +
-        `    operation, with the one-time process bootstrap subtracted (constant taken\n` +
-        `    from ${BOOTSTRAP_BENCH}). Comparable across benches; the honest unit for\n` +
-        `    per-op thresholds (review finding F2). "-" = bootstrap proxy / no op-count.`,
+      `\n  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with\n` +
+        `    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc\n` +
+        `    rows use large_alloc_free_cycle (B=${fmt(seferB)}); mimalloc_* rows use\n` +
+        `    mimalloc_bootstrap_proxy (B=${fmt(miB)}) — the two allocators' bootstrap\n` +
+        `    constants are never mixed (R22-15/task #366). Comparable across benches\n` +
+        `    within the SAME arm; the honest unit for per-op thresholds (review finding\n` +
+        `    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.`,
     );
   } else {
     console.log(
-      `\n  * Ir/op omitted: ${BOOTSTRAP_BENCH} (the bootstrap constant) was not in this\n` +
-        `    run (filtered out?). Run without a filter, or include ${BOOTSTRAP_BENCH}.`,
+      `\n  * Ir/op omitted: neither large_alloc_free_cycle nor mimalloc_bootstrap_proxy\n` +
+        `    (the bootstrap constants) were in this run (filtered out?). Run without a\n` +
+        `    filter, or include the bootstrap bench(es) for the arm(s) you want.`,
+    );
+  }
+
+  // R22-15 (task #366): derived Sefer/mimalloc Ir ratio, printed as a
+  // first-class table when at least one mimalloc arm ran alongside its
+  // SeferAlloc sibling. Uses the bootstrap-subtracted marginal Ir/op on BOTH
+  // sides (not raw Ir) so the ratio compares steady-state per-op cost, not
+  // one-time process bootstrap (which differs in shape between the two
+  // allocators by construction).
+  const ratioRows = RATIO_PAIRS.filter(
+    ([seferName, miName]) => marginals.has(seferName) || marginals.has(miName),
+  );
+  if (ratioRows.length) {
+    const rw = Math.max(...ratioRows.map(([s]) => s.length), 'workload'.length);
+    console.log(`\n  Sefer/mimalloc marginal Ir/op ratio (workload-matched pairs):\n`);
+    console.log(
+      `  ${'workload'.padEnd(rw)}  ${head('Sefer Ir/op')}  ${head('mi Ir/op')}  ${head('ratio')}`,
+    );
+    console.log(
+      `  ${'-'.repeat(rw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}  ${'-'.repeat(cw)}`,
+    );
+    for (const [seferName, miName] of ratioRows) {
+      const seferMarg = marginals.get(seferName) ?? null;
+      const miMarg = marginals.get(miName) ?? null;
+      const ratio = seferMimallocRatio(seferMarg, miMarg);
+      console.log(
+        `  ${seferName.padEnd(rw)}  ${fmtMarginal(seferMarg).padStart(cw)}  ${fmtMarginal(miMarg).padStart(cw)}  ${fmtRatio(ratio).padStart(cw)}`,
+      );
+    }
+    console.log(
+      `\n  ratio = Sefer Ir/op ÷ mimalloc Ir/op — > 1.000 means SeferAlloc retires MORE\n` +
+        `    instructions per op than mimalloc on that workload (i.e. mimalloc is\n` +
+        `    cheaper in Ir); < 1.000 means the reverse. "-" when a pair's row is\n` +
+        `    missing/filtered on either side.`,
     );
   }
 }
@@ -420,13 +560,23 @@ try {
   const compileErr = /^error(\[|:)/m.test(out);
   const allRows = parseMetrics(out);
   const rows = allRows.filter((r) => wanted(r.name));
-  // Bootstrap constant for the marginal Ir/op column is taken from the FULL
+  // Bootstrap constants for the marginal Ir/op column are taken from the FULL
   // (unfiltered) run, so the column still works when the user filters the
-  // report down to benches that exclude `large_alloc_free_cycle`. Null if the
-  // proxy bench was not produced at all (e.g. a filter passed to cargo).
-  const bootstrapRow = allRows.find((r) => r.name === BOOTSTRAP_BENCH);
-  const bootstrap = bootstrapRow ? bootstrapRow.ir : null;
-  printTable(rows, bootstrap);
+  // report down to benches that exclude a bootstrap proxy. R22-15: this is now
+  // a name -> Ir map covering EVERY bootstrap-proxy bench name that appears in
+  // BOOTSTRAP_BENCH_BY_PREFIX's values (today: `large_alloc_free_cycle` for
+  // SeferAlloc rows, `mimalloc_bootstrap_proxy` for mimalloc rows), so each
+  // arm's marginal figure is computed against its OWN constant, never the
+  // other arm's. A missing proxy (filtered out) simply leaves that arm's
+  // entries absent from the map — `marginalIrPerOp` already treats a missing
+  // bootstrap as "no marginal figure" (prints "-"), not a crash.
+  const bootstrapNames = new Set(Object.values(BOOTSTRAP_BENCH_BY_PREFIX));
+  const bootstrapByName = new Map();
+  for (const name of bootstrapNames) {
+    const row = allRows.find((r) => r.name === name);
+    if (row) bootstrapByName.set(name, row.ir);
+  }
+  printTable(rows, bootstrapByName);
 
   // For a MEASUREMENT tool, "pass" = it ran and produced an Ir for every
   // requested bench. A compile error, a missing runner, or a requested bench
