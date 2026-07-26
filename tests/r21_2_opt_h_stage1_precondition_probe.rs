@@ -59,18 +59,22 @@
 //!    via precondition 4 alone — verified directly, see this task's
 //!    red/green mutation counterfactual below). Scenario 3 uses a DIFFERENT
 //!    class pair, 384 KiB → 1 MiB (`SCENARIO_3_OLD_SIZE`/
-//!    `SCENARIO_3_NEW_SIZE`), and targets the 8th-carved block of 9 in a
-//!    fresh segment (offset `3145728`, received at call #2 due to the LIFO
-//!    refill free list): `3145728 % 1048576 == 0`, so precondition 4
-//!    INDEPENDENTLY holds, while precondition 3 fails (the 9th object is
-//!    carved after it, so it is not the tail). Asserts
+//!    `SCENARIO_3_NEW_SIZE`), and targets whichever carved block is BOTH
+//!    new-class-aligned (a multiple of `SCENARIO_3_NEW_SIZE`) AND not the
+//!    segment's tail — found by DISCOVERING, at test time, how many objects
+//!    of `SCENARIO_3_OLD_SIZE` actually fit in a fresh segment under the
+//!    CURRENT build's feature combination (`discover_fresh_segment_capacity`),
+//!    then searching the real carved offsets for a candidate, rather than
+//!    hardcoding an assumed count/index (see the R22-15 note below — the
+//!    original hardcoded "9 objects, 8th-carved" assumption broke under
+//!    `--all-features`, where fewer objects fit). Asserts
 //!    `dbg_opt_h_attempts()` increments by 1 and `dbg_opt_h_hits()` does
 //!    NOT increment — and because alignment is independently satisfied
 //!    here, a hit could ONLY be explained by the tail-adjacency check being
 //!    skipped, making this the test that actually isolates precondition 3.
-//!    See `SCENARIO_3_TARGET_OFFSET`'s doc comment for the full carve-order
-//!    derivation, with the same `assert_eq!`/`assert_ne!` intermediate-state
-//!    sanity checks scenarios 1/2 use.
+//!    See `discover_fresh_segment_capacity`'s doc comment for the full
+//!    carve-order derivation, with the same `assert_eq!`/`assert_ne!`
+//!    intermediate-state sanity checks scenarios 1/2 use.
 //!
 //! **Non-vacuity, personally re-verified for this task (R22-2):** temporarily
 //! hardcoding `let tail_adjacent = true;` immediately after its real
@@ -117,13 +121,43 @@
 //! (`EXPECTED_TAIL_OFFSET` and the LIFO call-order note above) still holds
 //! with `hardened`, `medium-classes-wide`, `numa-aware`,
 //! `small-segment-lazy-commit`, `experimental`, and every other feature this
-//! crate defines also turned on. Scenario 3 (added in R22-2, task #353,
-//! after that `--all-features` verification) has not yet had its own
-//! independent `--all-features` re-run recorded in this comment — it is
-//! expected to hold unchanged for the same reason (same carve-order
-//! mechanics, same `medium-classes` size-class table), but that specific
-//! claim is unverified until a future `--all-features` CI run is observed
-//! green with this scenario present.
+//! crate defines also turned on.
+//!
+//! **R22-15 (task #366): scenario 3's own `--all-features` gap, found and
+//! closed.** Scenario 3 (added in R22-2, task #353, after the R22-11
+//! verification above) had NOT itself been re-run under `--all-features`
+//! before this task — exactly the gap R22-11 had closed for scenarios 1/2 —
+//! and when `npm run check`'s `test (--all-features)` step finally exercised
+//! it, it failed: scenario 3's original design hardcoded "a fresh segment
+//! fits exactly 9 objects of 384 KiB" and "the target is the 8th-carved
+//! block (call #2)", both true under `production,medium-classes,alloc-stats`
+//! but NOT under `--all-features`, where the segment's larger metadata
+//! footprint (additional per-block bookkeeping pulled in by `hardened` and
+//! possibly other features) leaves room for only **8** objects of 384 KiB,
+//! not 9 — confirmed by direct measurement (`alloc #8` panicked, i.e. the
+//! 9th object, index 8, spilled). Fixed by making the test DISCOVER its own
+//! carve-count and target offset at run time instead of hardcoding them —
+//! see `discover_fresh_segment_capacity` and the target-search loop in
+//! `opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow` — so the
+//! scenario now self-adapts to whatever segment capacity the CURRENT
+//! feature combination produces, rather than assuming one measured under a
+//! single config. Confirmed by direct measurement that under
+//! `--all-features` the discovered capacity is 8 (carve order starts at the
+//! 2nd 384-KiB granule, offset `786432`, rather than the 1st, because the
+//! larger metadata region consumes one more granule up front), the
+//! discovered tail is the 9th-carved granule (offset `3538944`), and the
+//! discovered target (first non-tail, new-class-aligned candidate) is the
+//! 8th-carved granule (offset `3145728`) — the same NUMERIC offsets the
+//! original R22-2 hardcoding used, just reached by search instead of
+//! assumption, and now additionally correct under the 9-object config where
+//! carving starts at the 1st granule instead. All three scenarios,
+//! including scenario 3 under this fix, are verified passing under both
+//! `--features "alloc-core,medium-classes,alloc-stats"` and
+//! `--all-features` (see this task's own commit for the exact command
+//! output); the tail_adjacent-hardcoded-to-true mutation counterfactual
+//! (see the R22-2 non-vacuity note above) was independently re-run against
+//! this new discovery-based geometry and still correctly flips scenario 3
+//! red while scenario 2 stays green.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -159,8 +193,12 @@ const NEW_SIZE: usize = 1024 * KIB;
 /// new-class-aligned AND non-tail within a single fresh segment: of its four
 /// carve positions (768 KiB, 1536 KiB, 2304 KiB, 3072 KiB), only the true
 /// tail (3072 KiB) is a multiple of 1 MiB. 384 KiB→1 MiB does have such a
-/// position (see `SCENARIO_3_TARGET_OFFSET` below), so scenario 3 uses this
-/// different pair instead of forcing the 768 KiB pair to do double duty.
+/// position under every feature combination checked so far (see
+/// `discover_fresh_segment_capacity` and
+/// `opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow`, which
+/// DISCOVER that position at test time rather than hardcoding it — R22-15),
+/// so scenario 3 uses this different pair instead of forcing the 768 KiB
+/// pair to do double duty.
 const SCENARIO_3_OLD_SIZE: usize = 384 * KIB;
 /// Scenario 3's NEW class — same 1 MiB top rung scenarios 1/2 grow into.
 const SCENARIO_3_NEW_SIZE: usize = 1024 * KIB;
@@ -193,52 +231,6 @@ const SCENARIO_3_NEW_SIZE: usize = 1024 * KIB;
 /// TAIL block (4th carved) at **index 1**, not index 3.
 const EXPECTED_TAIL_OFFSET: usize = 4 * OLD_SIZE;
 
-/// Scenario 3's carve-order geometry for `SCENARIO_3_OLD_SIZE` (384 KiB),
-/// derived the same way `EXPECTED_TAIL_OFFSET` is (a throwaway probe
-/// enumerating every carve offset for every medium-classes rung; see this
-/// task's own report, `docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md` §2, for the
-/// pointer to the enumeration this scenario's geometry was selected from).
-///
-/// A fresh segment fits exactly 9 objects of 384 KiB (carve order: the
-/// `n`-th carved block sits at offset `n * 384 KiB`, for `n` in `1..=9`; the
-/// loop below carves exactly 9 and asserts every one lands in the same
-/// segment, so this "9" is verified at test time, not merely assumed here).
-///
-/// This scenario targets the **8th-carved** block, offset
-/// `8 * 384 KiB == 3145728 == 3 MiB` (`SCENARIO_3_TARGET_OFFSET` below),
-/// which is:
-///   - **new-class-aligned** (precondition 4): `3145728 % SCENARIO_3_NEW_SIZE
-///     (1048576) == 0` — `3145728 / 1048576 == 3`, an exact multiple.
-///   - **in-capacity** (precondition 5): `3145728 + 1048576 == 4194304 ==
-///     SEGMENT`, so the grown block exactly fits, same as scenario 1.
-///   - **NOT tail-adjacent** (precondition 3 correctly fails): the code's own
-///     tail-adjacency test is `off + old_block_size == meta.bump_of()`. For
-///     the 8th-carved block, `off + old_block_size == 3145728 + 393216 ==
-///     3538944` — which IS where `bump` sat right after the 8th carve, but
-///     by the time this scenario's `realloc` runs, the 9th object has
-///     ALSO been carved (it is carved by the SAME refill batch, before
-///     control ever returns to the test), advancing `bump` one further
-///     block to `3538944 + 393216 == 3932160`. So at the moment of the
-///     grow, `meta.bump_of() == 3932160 != 3538944`, and precondition 3
-///     correctly fails: the 8th-carved block is no longer the tail, the
-///     9th-carved block (offset `SCENARIO_3_TAIL_OFFSET == 3538944`) is.
-///
-/// **Carve order vs. call order.** Exactly as `EXPECTED_TAIL_OFFSET`'s doc
-/// derives for the 768 KiB case: call #0 gets the 1st-carved block directly
-/// (offset `384 KiB`), then the LIFO refill free list means call #1 pops the
-/// LAST-carved (9th, true tail) block, call #2 pops the 8th-carved block,
-/// call #3 pops the 7th-carved, and so on down to call #8 popping the
-/// 2nd-carved block. So the 8th-carved block (offset `3145728`, this
-/// scenario's target) is received by **call #2**.
-const SCENARIO_3_TARGET_OFFSET: usize = 8 * SCENARIO_3_OLD_SIZE;
-/// The true bump-tail offset once all 9 objects are carved: the 9th (last)
-/// carved block's offset, `9 * SCENARIO_3_OLD_SIZE == 3456 KiB == 3538944`.
-/// (The bump CURSOR itself, `meta.bump_of()`, sits one block further, at
-/// `SCENARIO_3_TAIL_OFFSET + SCENARIO_3_OLD_SIZE == 3932160`, after the 9th
-/// carve advances it — this constant names the 9th block's own START
-/// offset, matching `EXPECTED_TAIL_OFFSET`'s naming convention.)
-const SCENARIO_3_TAIL_OFFSET: usize = 9 * SCENARIO_3_OLD_SIZE;
-
 fn layout(size: usize) -> Layout {
     Layout::from_size_align(size, ALIGN).unwrap()
 }
@@ -249,40 +241,130 @@ fn layout(size: usize) -> Layout {
 /// the FIRST segment only. Panics if fewer than `count` objects fit (the
 /// scenario's own precondition).
 fn alloc_into_first_segment(a: &mut AllocCore, count: usize) -> Vec<(*mut u8, usize)> {
-    alloc_sized_into_first_segment(a, OLD_SIZE, count)
+    let (out, spilled) = alloc_sized_into_first_segment(a, OLD_SIZE, count);
+    assert!(
+        !spilled,
+        "alloc #{} landed in a DIFFERENT segment than alloc #0 — the \
+         scenario's assumption that {count} objects of {OLD_SIZE} bytes fit \
+         in one fresh segment is broken; adjust `count` or investigate a \
+         size-class/metadata-layout change",
+        out.len()
+    );
+    out
 }
 
 /// Generalized form of [`alloc_into_first_segment`], parameterized on the
 /// object size — needed by scenario 3, which carves `SCENARIO_3_OLD_SIZE`
 /// (384 KiB) objects rather than scenarios 1/2's `OLD_SIZE` (768 KiB).
-/// Otherwise identical: allocate `count` objects of `size` bytes, asserting
-/// every one lands in the SAME (first) segment.
+///
+/// Allocates up to `count` objects of `size` bytes, stopping EARLY (without
+/// carving the one that would spill) the moment an allocation's segment base
+/// differs from the first one's — i.e. this never asserts a fixed carve
+/// count holds; it discovers how many actually fit in the fresh segment
+/// under the CURRENT build's exact feature combination (segment/metadata
+/// footprint varies by feature set, e.g. `hardened`'s per-`MIN_BLOCK`-granule
+/// generation table — see the module doc's R22-2/R22-15 note). Returns
+/// `(carved, spilled)`: `carved` holds only the objects that landed in the
+/// first segment (in call order), and `spilled` is `true` iff fewer than
+/// `count` objects fit (i.e. the `count`-th call would have, or did, spill
+/// into a new segment) — callers that need an exact count to hold treat
+/// `spilled` as a hard failure (see [`alloc_into_first_segment`]); callers
+/// that only need "as many as actually fit" (scenario 3) use `carved.len()`
+/// directly instead of asserting against a hardcoded expectation.
 fn alloc_sized_into_first_segment(
     a: &mut AllocCore,
     size: usize,
     count: usize,
-) -> Vec<(*mut u8, usize)> {
+) -> (Vec<(*mut u8, usize)>, bool) {
     let l = layout(size);
     let mut out = Vec::with_capacity(count);
     let mut first_base: Option<usize> = None;
-    for i in 0..count {
+    for _ in 0..count {
         let p = a.alloc(l);
-        assert!(!p.is_null(), "alloc #{i} of {size} bytes failed");
+        assert!(!p.is_null(), "alloc of {size} bytes failed");
         let base = SegmentLayout::segment_base_of(p as usize);
         match first_base {
             None => first_base = Some(base),
-            Some(b) => assert_eq!(
-                base, b,
-                "alloc #{i} landed in a DIFFERENT segment than alloc #0 — the \
-                 scenario's assumption that {count} objects of {size} \
-                 bytes fit in one fresh segment is broken; adjust `count` or \
-                 investigate a size-class/metadata-layout change"
-            ),
+            Some(b) if base != b => {
+                // This object spilled into a new segment — it was not
+                // requested to be freed by this helper (the scenario's own
+                // `AllocCore` is dropped whole at the end of the test), so
+                // simply stop collecting and report the spill.
+                return (out, true);
+            }
+            Some(_) => {}
         }
         let off = p as usize - base;
         out.push((p, off));
     }
-    out
+    (out, false)
+}
+
+/// Discover how many objects of `size` bytes actually fit in a FRESH
+/// segment, under whatever feature combination this binary was compiled
+/// with — by carving objects one at a time into a brand-new `AllocCore`
+/// until one spills into a second segment, then reporting how many landed
+/// in the first. This is the "derive geometry from real observed behavior,
+/// don't hardcode an assumption" pattern `EXPECTED_TAIL_OFFSET`'s doc
+/// comment already establishes, applied to scenario 3's carve COUNT itself
+/// (not just its offset arithmetic) — needed because `hardened` and other
+/// `--all-features` combinations shrink the segment's usable payload space
+/// enough that fewer objects fit than under the config this scenario was
+/// originally authored against.
+///
+/// `upper_bound` must be large enough that the (`upper_bound`+1)-th object
+/// is guaranteed to spill under every feature combination this crate
+/// supports — it exists only to keep the probe finite, not as an assumed
+/// answer.
+///
+/// **Why this replaced a hardcoded count (R22-15).** Scenario 3's original
+/// design (R22-2) hardcoded "a fresh segment fits exactly 9 objects of
+/// `SCENARIO_3_OLD_SIZE` (384 KiB)" — true under
+/// `production,medium-classes,alloc-stats`, but NOT under `--all-features`,
+/// where the segment's usable payload shrinks (additional per-block
+/// metadata — `hardened`'s per-`MIN_BLOCK`-granule generation table, and
+/// possibly `medium-classes-wide`/`numa-aware`/`small-segment-lazy-commit`'s
+/// own overhead — leaves room for only 8), so the hardcoded "9" panicked
+/// (`alloc #8 landed in a DIFFERENT segment`). Rather than feature-gate a
+/// second hardcoded constant (equally brittle to the NEXT feature
+/// combination), the test now derives "how many objects of
+/// `SCENARIO_3_OLD_SIZE` fit in a fresh segment" from the real allocator
+/// behavior of the CURRENT build via this function, then searches the
+/// actual carved offsets for one that is new-class-aligned AND not the
+/// tail (see `opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow`)
+/// — extending `EXPECTED_TAIL_OFFSET`'s "derive, don't hardcode" house
+/// style to the carve COUNT itself, not just to which index holds the tail.
+///
+/// The reasoning that motivates 384 KiB→1 MiB over the 768 KiB→1 MiB pair
+/// scenarios 1/2 use is unchanged from the original R22-2 design: of the
+/// 768 KiB pair's four carve positions (768 KiB, 1536 KiB, 2304 KiB, 3072
+/// KiB) in one fresh segment, only the true tail (3072 KiB) is a multiple
+/// of 1 MiB — so that pair has no candidate that is BOTH new-class-aligned
+/// AND non-tail, and can't isolate precondition 3 on its own. The 384 KiB
+/// pair carves more, smaller blocks per segment, giving more 1-MiB-aligned
+/// candidate offsets to search among — the search in
+/// `opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow` finds
+/// whichever ones the ACTUAL carve count under this build produces, rather
+/// than assuming a fixed index.
+///
+/// **Carve order vs. call order.** Exactly as `EXPECTED_TAIL_OFFSET`'s doc
+/// derives for the 768 KiB case: call #0 gets the 1st-carved block directly,
+/// then the LIFO refill free list means call #1 pops the LAST-carved (true
+/// tail) block, call #2 pops the 2nd-to-last-carved block, and so on in
+/// descending carve order. `alloc_sized_into_first_segment`'s returned
+/// vector is in CALL order, so `carved[0]` is the 1st-carved block and
+/// `carved[1..]` are the remaining blocks in descending carve-order (i.e.
+/// `carved[1]` is the true tail).
+fn discover_fresh_segment_capacity(a: &mut AllocCore, size: usize, upper_bound: usize) -> usize {
+    let (carved, spilled) = alloc_sized_into_first_segment(a, size, upper_bound);
+    assert!(
+        spilled,
+        "expected at least one object of {size} bytes, among {upper_bound} \
+         carved into a fresh segment, to spill into a second segment — \
+         `upper_bound` is too small to observe the fresh-segment capacity; \
+         raise it"
+    );
+    carved.len()
 }
 
 /// Scenario 1 — the load-bearing positive case: a genuinely tail-adjacent,
@@ -451,32 +533,79 @@ fn opt_h_attempts_but_not_hits_for_a_non_tail_adjacent_grow() {
 /// Uses a DIFFERENT class pair (384 KiB → 1 MiB, `SCENARIO_3_OLD_SIZE`/
 /// `SCENARIO_3_NEW_SIZE`) than scenarios 1/2 (768 KiB → 1 MiB), because the
 /// 768 KiB pair has no carve position that is both new-class-aligned and
-/// non-tail within one fresh segment — see `SCENARIO_3_TARGET_OFFSET`'s doc
-/// comment for the full derivation and the exhaustive-enumeration backing
-/// for why 384 KiB → 1 MiB was chosen instead.
+/// non-tail within one fresh segment. The exact carve COUNT and target
+/// offset are DISCOVERED at test time (not hardcoded — see
+/// `discover_fresh_segment_capacity`'s doc comment for why R22-15 replaced
+/// the original hardcoded "9 objects, index 2" assumption, which broke
+/// under `--all-features`).
 #[test]
 fn opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow() {
     let _guard = serial();
 
-    let mut a = AllocCore::new().expect("AllocCore::new");
-    // Carve exactly 9 objects of 384 KiB into the first segment — the most
-    // that fits before a 10th would exceed SEGMENT (verified by
-    // `alloc_sized_into_first_segment`'s own same-segment assertion on every
-    // one of the 9 calls). The 8th-carved block (offset 3145728, received at
-    // CALL #2 due to the LIFO refill free list — see
-    // `SCENARIO_3_TARGET_OFFSET`'s doc comment) is this scenario's target:
-    // 1-MiB-aligned (precondition 4 holds) but not the tail (precondition 3
-    // fails, since the 9th object is carved after it).
-    let objs = alloc_sized_into_first_segment(&mut a, SCENARIO_3_OLD_SIZE, 9);
-    let (target_ptr, target_off) = objs[2];
-    assert_eq!(
-        target_off, SCENARIO_3_TARGET_OFFSET,
-        "call #2's object offset does not match the hand-verified expected \
-         target offset — the scenario's geometry assumption is stale \
-         (metadata layout, refill-batch size, or size-class table changed)"
+    // Discover how many objects of SCENARIO_3_OLD_SIZE actually fit in a
+    // fresh segment under THIS build's exact feature combination, using a
+    // throwaway `AllocCore` (its segment is never touched again). 64 is a
+    // generous upper bound: SEGMENT (4 MiB) / SCENARIO_3_OLD_SIZE (384 KiB)
+    // is under 11 even with zero metadata overhead, so 64 carves are
+    // guaranteed to spill into a second segment well before the bound is
+    // reached, under any plausible metadata footprint.
+    let capacity = {
+        let mut probe = AllocCore::new().expect("AllocCore::new (capacity probe)");
+        discover_fresh_segment_capacity(&mut probe, SCENARIO_3_OLD_SIZE, 64)
+    };
+    assert!(
+        capacity >= 3,
+        "need at least 3 objects of {SCENARIO_3_OLD_SIZE} bytes to fit in a \
+         fresh segment for this scenario to have a non-tail candidate at \
+         all (got {capacity}) — the size-class table or segment size \
+         changed enough that this scenario's premise no longer holds"
     );
+
+    // Carve `capacity` objects into a FRESH AllocCore (the probe above
+    // already spilled its own segment, so it can't be reused) — this is the
+    // exact number that fits, verified moments ago against this build's own
+    // real behavior, not assumed.
+    let mut a = AllocCore::new().expect("AllocCore::new");
+    let (objs, spilled) = alloc_sized_into_first_segment(&mut a, SCENARIO_3_OLD_SIZE, capacity);
+    assert!(
+        !spilled && objs.len() == capacity,
+        "discovered capacity ({capacity}) did not reproduce identically on \
+         a second fresh AllocCore — fresh-segment carving is expected to be \
+         deterministic; got {} objects before a spill",
+        objs.len()
+    );
+
+    // `objs` is in CALL order: `objs[0]` is the 1st-carved block (received
+    // directly), `objs[1]` is the LAST-carved (true tail) block (the LIFO
+    // refill free list's head — see `EXPECTED_TAIL_OFFSET`'s doc comment for
+    // the full carve-order-vs-call-order derivation, which applies
+    // identically here), and `objs[2..]` are the remaining blocks in
+    // descending carve order. The true tail is therefore `objs[1]`; search
+    // every OTHER carved offset for one that independently satisfies
+    // precondition 4 (new-class alignment) — that is this scenario's
+    // target, isolating precondition 3 exactly as the original design
+    // intended, just without assuming its position in advance.
+    let (_, tail_off) = objs[1];
+    let target = objs
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(i, (_, off))| *i != 1 && *off % SCENARIO_3_NEW_SIZE == 0)
+        .map(|(_, pair)| pair);
+    let (target_ptr, target_off) = target.unwrap_or_else(|| {
+        panic!(
+            "no carved offset among {} objects (fresh-segment capacity for \
+             {SCENARIO_3_OLD_SIZE} bytes under this build) is BOTH \
+             new-class-aligned (multiple of {SCENARIO_3_NEW_SIZE}) AND \
+             distinct from the tail offset ({tail_off}) — this build's \
+             carve-order geometry no longer admits a candidate that \
+             isolates precondition 3 this way; the scenario needs a \
+             different class pair or a wider capacity search",
+            objs.len()
+        )
+    });
     assert_ne!(
-        target_off, SCENARIO_3_TAIL_OFFSET,
+        target_off, tail_off,
         "the target offset unexpectedly matches the tail offset — the \
          scenario needs the target to be a DISTINCT, earlier-carved slot \
          than the tail"

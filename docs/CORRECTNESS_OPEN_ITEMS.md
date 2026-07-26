@@ -190,6 +190,44 @@ scoping decision is the pending step, not implementation).
      closed (R22-1); the `clippy -D warnings` gap is not. Fixing is out of
      scope for this tracking task (task #354/R22-3).
 
+3. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
+   `--all-features` step, discovered post-Round-22 while investigating a
+   real (now-fixed) test failure.**
+
+   - `tests/regression_segment_table_tombstone_rebuild.rs::backshift_no_latency_spike_at_threshold_boundary`
+     — failed twice across two independent `npm run check` runs (2026-07-26,
+     post-R22-18) with "slowest dealloc (N ns) is 42.2x the median" (an
+     `O(HASH_CAPACITY)` per-delete regression signal); passed cleanly 3/3
+     times when re-run in isolation immediately after each failure. The
+     test's own panic message already self-documents the risk: "(Coarse
+     wall-clock; confirm with `npm run iai`.)"
+   - `tests/dealloc_sublinear.rs::own_thread_free_is_subquadratic` — failed
+     once across the same investigation window; passed cleanly when re-run
+     in isolation. Asserts wall-clock free-time scaling is sub-quadratic —
+     a timing assertion with no feature gate, sensitive to host CPU
+     contention under `npm run check`'s parallel-test-binary load.
+   - **Plausible root-cause category:** both are coarse wall-clock latency
+     assertions (not `alloc-stats`-counter-based like item 1 above) that
+     compare a measured operation's time against a computed multiple of the
+     median — inherently sensitive to scheduler/CPU contention when many
+     test binaries run in parallel (as `npm run check`'s `--all-features`
+     step does), not a correctness regression in the code under test. Both
+     tests already carry their own "this is coarse, verify with iai if in
+     doubt" disclaimer in their assertion messages, suggesting the authors
+     were aware of this risk when writing them.
+   - **Next step:** either (a) serialize these two tests against the rest of
+     the suite (a `TEST_LOCK`-style process-wide mutex, matching the pattern
+     already used elsewhere in this suite for stats-sensitive tests), or (b)
+     widen their tolerance multiplier, or (c) accept them as known-flaky
+     wall-clock canaries and exclude them from `npm run check`'s pass/fail
+     gate specifically (deterministic `Ir`-based judges remain the real
+     regression gate; these two are best-effort human-readable signals).
+     Not decided here — tracked so it does not go unnoticed the way the
+     analogous perf-only gap did before `OPEN_ITEMS.md` existed.
+   - **Status:** open, unowned. Not fixed — out of scope for the task that
+     found it (a fix for `tests/r21_2_opt_h_stage1_precondition_probe.rs`'s
+     own unrelated `--all-features` geometry bug).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
