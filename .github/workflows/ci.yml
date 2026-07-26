@@ -175,6 +175,28 @@ jobs:
       - name: test (--features "hardened batch-api")
         if: ${{ !cancelled() }}
         run: cargo test --features "hardened batch-api" --no-fail-fast
+      # R22-1 (task #352): commit 46ea2db (R19-1, task #337) fixed a real
+      # hardened/UAF-shaped contract-violation bug in the Large-dealloc branch
+      # (A) of `src/registry/heap_core_free.rs` -- under `hardened`, it now
+      # checks `large_layout_consistent(base, layout.size())` before treating a
+      # cross-thread Large free as legitimate. Both that branch and its two new
+      # regression tests (`promoted_large_matching_free_actually_frees`,
+      # `large_ptr_small_layout_free_is_noop_branch_a` in
+      # `tests/regression_hardened_large_kind_own_free.rs`) require BOTH
+      # `hardened` AND the "promotion-reachable" predicate encoded in the
+      # `medium_promotion_reachable!` macro (`heap_core_free.rs`, ~line 97):
+      # `medium-classes AND (not(exact-span-large) OR (large-reserved-capacity
+      # AND not(numa-aware)))`. No row above satisfies both: none of the three
+      # steps in THIS job turn on `medium-classes` at all, so branch (A) does
+      # not even compile there; `--all-features` (below, other job) turns on
+      # `medium-classes` but ALSO `exact-span-large` AND `numa-aware` together,
+      # which makes the predicate false. Plain `hardened medium-classes` (no
+      # `exact-span-large`) keeps the predicate's first disjunct
+      # (`not(exact-span-large)`) true, so the fix and both tests actually
+      # compile AND run here for the first time.
+      - name: test (--features "hardened medium-classes")
+        if: ${{ !cancelled() }}
+        run: cargo test --features "hardened medium-classes" --no-fail-fast
 
   test-gated-bodies:
     # C2 (bug-hunt review 2026-07-09): the steps below ship tests whose
