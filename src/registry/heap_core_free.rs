@@ -24,6 +24,13 @@ use crate::alloc_core::os;
     // branch (B) (`hardened && !promotion`). The union simplifies to
     // `promotion || hardened` (absorption: a || (b && !a) == a || b). Under
     // plain `production` neither term is true → import compiles out.
+    //
+    // R19-8 (task #344): the inner `all(medium-classes, any(...))` term here
+    // is the SAME promotion-reachable predicate canonicalized into the
+    // `medium_promotion_reachable!` macro below — it must stay hand-written
+    // and in sync by inspection, because `#[cfg(...)]` cannot accept a macro
+    // invocation as its argument (this term is COMBINED with `hardened` via
+    // `any(...)`, not the bare predicate the macro wraps).
     any(
         feature = "hardened",
         all(
@@ -44,35 +51,111 @@ use crate::alloc_core::{node::Node, AllocCore};
 
 use super::heap_core::HeapCore;
 
-/// R14-4 (task #289): the requested-size threshold above which a GROWING
-/// realloc of a Small/medium-classified block (`medium-classes` only) is
-/// diverted directly to a Large allocation instead of walking the medium
-/// size-class ladder one class at a time. 256 KiB — the smallest
-/// `medium-classes` class — per the design doc's recommendation
-/// (`R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` §0): by this size the
-/// object has already paid for at least one medium-class carve, so promoting
-/// it is not premature for a buffer that turns out to be a one-shot small
-/// object, while still capturing roughly half the growth ladder's copy cost
-/// (the doc's own threshold sweep: 128 KiB promotes too eagerly, paying RSS
-/// for objects that may never grow again; 384 KiB defers too long, leaving
-/// most of the ladder-walk cost on the table).
+/// R19-8 (task #344): single source of truth for the promotion-reachable
+/// `#[cfg]` predicate, otherwise hand-duplicated across 4 sites in this file
+/// (the `MEDIUM_REALLOC_PROMOTION_THRESHOLD` const, branch (A)'s gated
+/// block, `realloc`'s promotion call site, and `try_promote_to_large`'s own
+/// definition). Wraps either an item (`const`/`fn`) or a statement (a bare
+/// block or `if`) in the identical `#[cfg(...)]` gate so those 4 sites can
+/// never textually diverge from each other.
 ///
-/// R15-3 (task #305, review finding P2-3): gated by the SAME extended
-/// predicate as the promotion call site and `try_promote_to_large` below, not
-/// bare `medium-classes` — see the call site's doc comment for the full root
-/// cause. This constant is used ONLY inside that narrower-gated call site, so
-/// its own `#[cfg]` must match exactly or it becomes an "unused constant"
-/// warning (promoted to a hard error under `-D warnings`, per this crate's
-/// `npm run check`) in any build where `medium-classes` is on but the
-/// zero-headroom exclusion has switched promotion off.
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
-const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
+/// Three arms, matched on a literal leading token rather than on the `item`/
+/// `stmt` fragment specifiers directly, for a real reason discovered while
+/// building this macro (not a style preference): a naive two-arm design —
+/// `($item:item) => {...}; ($stmt:stmt) => {...};` — breaks no matter which
+/// arm is listed first.
+///
+///   - `item` first: `macro_rules!` tries arms in order, and an
+///     `item`-fragment parse that fails (e.g. against a leading `{` or `if`,
+///     as at the two statement call sites) is a HARD parse error ("expected
+///     an item keyword"), not a graceful fall-through to the next arm — it
+///     aborts the whole match instead of trying the `stmt` arm that would
+///     have succeeded.
+///   - `stmt` first (or a single `stmt`-only arm): the `stmt` fragment
+///     grammar DOES accept a bare item (a `const`/`fn` declaration is a
+///     valid "item statement"), so it matches the two item call sites too —
+///     but then splicing `#[cfg(...)] $stmt` back in at ITEM position (a
+///     `const` at module scope, an `fn` inside `impl HeapCore`) fails
+///     ("expected item after attributes"): an interpolated `stmt` fragment
+///     is opaque, and an outer attribute directly preceding it cannot be
+///     re-attached to the item hiding inside it.
+///
+/// The fix: capture the `const`/`fn` sites via `$(#[$m:meta])* const/fn
+/// $($rest:tt)*` — plain token-tree matching, which is transparent (no
+/// fragment-opacity restriction) and never commits to full item/stmt grammar
+/// before falling through, so a literal-keyword mismatch (e.g. `const`
+/// against a `{`-led block) is a graceful "try the next arm", not a hard
+/// error. The generic `$stmt:stmt` arm last catches the two remaining
+/// (block / bare `if`) call sites, where the fragment IS spliced back into
+/// genuine statement position, so no opacity issue arises there.
+///
+/// Does NOT cover the `SegmentKind` import cfg or branch (B)'s cfg — both
+/// COMBINE this predicate with `hardened` (union / negation respectively),
+/// and Rust's `#[cfg(...)]` attribute cannot accept a macro invocation as its
+/// argument, so those two remain hand-written (see their own comments for
+/// the cross-reference back to this macro).
+macro_rules! medium_promotion_reachable {
+    ($(#[$m:meta])* const $($rest:tt)*) => {
+        $(#[$m])*
+        #[cfg(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        ))]
+        const $($rest)*
+    };
+    ($(#[$m:meta])* fn $($rest:tt)*) => {
+        $(#[$m])*
+        #[cfg(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        ))]
+        fn $($rest)*
+    };
+    ($stmt:stmt) => {
+        #[cfg(all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        ))]
+        $stmt
+    };
+}
+
+medium_promotion_reachable! {
+    /// R14-4 (task #289): the requested-size threshold above which a GROWING
+    /// realloc of a Small/medium-classified block (`medium-classes` only) is
+    /// diverted directly to a Large allocation instead of walking the medium
+    /// size-class ladder one class at a time. 256 KiB — the smallest
+    /// `medium-classes` class — per the design doc's recommendation
+    /// (`R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` §0): by this size the
+    /// object has already paid for at least one medium-class carve, so promoting
+    /// it is not premature for a buffer that turns out to be a one-shot small
+    /// object, while still capturing roughly half the growth ladder's copy cost
+    /// (the doc's own threshold sweep: 128 KiB promotes too eagerly, paying RSS
+    /// for objects that may never grow again; 384 KiB defers too long, leaving
+    /// most of the ladder-walk cost on the table).
+    ///
+    /// R15-3 (task #305, review finding P2-3): gated by the SAME extended
+    /// predicate as the promotion call site and `try_promote_to_large` below, not
+    /// bare `medium-classes` — see the call site's doc comment for the full root
+    /// cause. This constant is used ONLY inside that narrower-gated call site, so
+    /// its own `#[cfg]` must match exactly or it becomes an "unused constant"
+    /// warning (promoted to a hard error under `-D warnings`, per this crate's
+    /// `npm run check`) in any build where `medium-classes` is on but the
+    /// zero-headroom exclusion has switched promotion off.
+    ///
+    /// R19-8 (task #344): the `#[cfg]` gating this const is now generated by
+    /// the `medium_promotion_reachable!` macro above, not hand-written.
+    const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
+}
 
 impl HeapCore {
     /// Deallocate `ptr` (previously returned by [`alloc`](Self::alloc)).
@@ -277,13 +360,7 @@ impl HeapCore {
                     //     frees) is DISABLED under `hardened` — see the inline
                     //     comment at the `if` below for the full RED-test
                     //     rationale.
-                    #[cfg(all(
-                        feature = "medium-classes",
-                        any(
-                            not(feature = "exact-span-large"),
-                            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-                        )
-                    ))]
+                    medium_promotion_reachable! {
                     {
                         // Under `hardened`: always check (defence-in-depth — a
                         // contract violation can use ANY small layout; the
@@ -360,6 +437,7 @@ impl HeapCore {
                             return;
                         }
                     }
+                    }
 
                     // (B) Promotion-OFF + hardened: defensive no-op (task #25).
                     //     R18-3 broadens the cfg from bare `not(medium-classes)`
@@ -373,6 +451,15 @@ impl HeapCore {
                     //     For non-`medium-classes` builds the cfg is equivalent
                     //     (promotion predicate is false when `medium-classes` is
                     //     absent) so behaviour is byte-identical to pre-R18-3.
+                    //
+                    //     R19-8 (task #344): the inner `all(medium-classes,
+                    //     any(...))` term below is the negation of the SAME
+                    //     promotion-reachable predicate canonicalized into the
+                    //     `medium_promotion_reachable!` macro above — it must
+                    //     stay hand-written and in sync by inspection, because
+                    //     `#[cfg(...)]` cannot accept a macro invocation as its
+                    //     argument (this term is negated and combined with
+                    //     `hardened`, not the bare predicate the macro wraps).
                     #[cfg(all(
                         feature = "hardened",
                         not(all(
@@ -894,13 +981,7 @@ impl HeapCore {
                 //       done; no functionality is lost, only a
                 //       counterproductive promotion in this one triple
                 //       combination.
-                #[cfg(all(
-                    feature = "medium-classes",
-                    any(
-                        not(feature = "exact-span-large"),
-                        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-                    )
-                ))]
+                medium_promotion_reachable! {
                 if new_size > old_layout.size()
                     && new_size >= MEDIUM_REALLOC_PROMOTION_THRESHOLD
                     && crate::alloc_core::size_classes::SizeClasses::class_for(
@@ -914,6 +995,7 @@ impl HeapCore {
                     if let Some(p) = self.try_promote_to_large(base, ptr, old_layout, new_size) {
                         return p;
                     }
+                }
                 }
                 //   (3) Move leg — in-place did not apply: alloc a fresh block
                 //       through `HeapCore::alloc` (magazine-aware: drains via
@@ -1020,6 +1102,7 @@ impl HeapCore {
         }
     }
 
+    medium_promotion_reachable! {
     /// R14-4 (task #289), Stage 2 of `docs/perf/
     /// R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md`: attempt to promote a
     /// currently-Small/medium-classified, own-segment block directly to a
@@ -1121,13 +1204,10 @@ impl HeapCore {
     /// dead-but-compiled code inviting a future call site to reintroduce the
     /// same hazard is exactly the kind of drift a `#[cfg]` at the
     /// definition, matching the call site 1:1, forecloses at compile time.
-    #[cfg(all(
-        feature = "medium-classes",
-        any(
-            not(feature = "exact-span-large"),
-            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-        )
-    ))]
+    ///
+    /// R19-8 (task #344): the `#[cfg]` gating this fn is now generated by the
+    /// `medium_promotion_reachable!` macro defined near the top of this file,
+    /// not hand-written.
     fn try_promote_to_large(
         &mut self,
         base: *mut u8,
@@ -1195,5 +1275,6 @@ impl HeapCore {
             self.dealloc(ptr, old_layout)
         };
         Some(new_ptr)
+    }
     }
 }
