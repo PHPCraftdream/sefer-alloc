@@ -199,6 +199,22 @@ impl Drop for Watchdog {
             // itself completed (else `done` wouldn't be set and we wouldn't
             // be dropping normally), but the watchdog thread panicked on
             // the way out; recover the payload if it's a string.
+            //
+            // R19-7/task #343: an `eprintln!` alone is easy to miss in CI
+            // scrollback, so surface the panic as a genuine test FAILURE by
+            // re-panicking on the main thread — but ONLY when the main
+            // thread is not already unwinding from its own assertion panic.
+            // Panicking a second time on the SAME thread while it is already
+            // unwinding is a double panic, which Rust turns into an
+            // immediate process abort — exactly the
+            // abort/`__fastfail`/STATUS_STACK_BUFFER_OVERRUN-shaped crash
+            // signature this whole file (R18-1/task #329) restructured
+            // `exit(124)` specifically to stop being confused with allocator
+            // corruption. The `std::thread::panicking()` guard preserves
+            // that property: a normal return re-panics (→ caught by the
+            // harness `catch_unwind` → reported as a failed test), while an
+            // already-unwinding return keeps only the diagnostic `eprintln!`
+            // above and lets the original panic propagate undisturbed.
             if let Err(err) = h.join() {
                 let msg: String = err
                     .downcast_ref::<String>()
@@ -209,6 +225,15 @@ impl Drop for Watchdog {
                     "[watchdog] watcher thread did not exit cleanly: the test itself \
                      completed, but the watchdog panicked on the way out. Payload: {msg}"
                 );
+                // R19-7 (task #343): see the block comment above for why
+                // this is guarded by `!std::thread::panicking()`. When the
+                // main thread is returning normally, this panic propagates
+                // out of `drop` and the test harness reports the test as
+                // FAILED instead of letting a watchdog panic slip by as
+                // stderr noise.
+                if !std::thread::panicking() {
+                    panic!("watchdog thread panicked on the way out: {msg}");
+                }
             }
         }
     }
