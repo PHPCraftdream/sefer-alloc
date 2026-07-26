@@ -62,7 +62,7 @@ Two `#[doc(hidden)]` read accessors, `AllocCore::dbg_opt_h_attempts()` /
 ## 2. Correctness verification (before trusting the hit-rate numbers)
 
 A new regression test,
-`tests/r21_2_opt_h_stage1_precondition_probe.rs`, hand-constructs two
+`tests/r21_2_opt_h_stage1_precondition_probe.rs`, hand-constructs three
 scenarios directly against `AllocCore` (no registry-level promotion in the
 way):
 
@@ -77,16 +77,41 @@ way):
 2. **`opt_h_attempts_but_not_hits_for_a_non_tail_adjacent_grow`** — the SAME
    grow shape applied to the 1st-carved 768 KiB block in the same segment
    (no longer the tail once 3 more objects were carved after it). Asserts
-   `dbg_opt_h_attempts()` increments but `dbg_opt_h_hits()` does NOT.
+   `dbg_opt_h_attempts()` increments but `dbg_opt_h_hits()` does NOT. **This
+   scenario's offset (768 KiB) is independently non-1-MiB-aligned
+   (`786432 % 1048576 != 0`), so precondition 4 (new-class alignment) also
+   independently blocks it — this scenario alone does not isolate
+   precondition 3 (tail-adjacency) specifically; see scenario 3 below,
+   added by R22-2 (task #353) to close that gap.**
+3. **`opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow`** (added
+   by R22-2, task #353) — a DIFFERENT cross-class grow shape, 384 KiB→1 MiB,
+   at the 8th-carved (of 9) block in a fresh segment (offset `3145728`,
+   received at call #2 due to the LIFO refill free list). This offset
+   INDEPENDENTLY satisfies precondition 4 (`3145728 % 1048576 == 0`) while
+   failing precondition 3 (the 9th object is carved after it, so it is not
+   the tail). Asserts `dbg_opt_h_attempts()` increments but
+   `dbg_opt_h_hits()` does NOT — and because alignment holds independently
+   here, this is the scenario that actually isolates precondition 3: a hit
+   here could only be explained by the tail-adjacency check itself being
+   skipped.
 
-**Non-vacuity check (personally re-verified during this task, not merely
-claimed):** temporarily forcing `tail_adjacent = true` AND `new_class_aligned
-= true` (leaving only the capacity check real) made test 2 fail exactly as
-expected — proving the negative assertion is sensitive to the real
-precondition logic, not trivially true. Reverting restored both tests to
-green.
+**Non-vacuity check (personally re-verified, including during R22-2):**
+temporarily hardcoding `let tail_adjacent = true;` immediately after its
+real computation (neutralizing ONLY precondition 3, leaving precondition 4
+real) makes scenario 3 fail exactly as expected, while scenario 2 remains
+green (scenario 2's offset is still independently blocked by precondition 4
+alone, so it does not detect this specific mutation) — confirming scenario 3,
+not scenario 2, is the test that is sensitive to precondition 3 specifically.
+Reverting the hardcode restored all three tests to green with a
+byte-identical `alloc_core.rs` diff to before the experiment.
+(An earlier, weaker version of this check — forcing `tail_adjacent = true`
+AND `new_class_aligned = true` together, leaving only the capacity check
+real — was run when this report was first written and is superseded by the
+isolated single-flag check above; the earlier check could not, by itself,
+attribute the resulting test failure to precondition 3 rather than
+precondition 4, since both were forced simultaneously.)
 
-**Both tests pass** under `--features "production,medium-classes,alloc-stats"`.
+**All three tests pass** under `--features "production,medium-classes,alloc-stats"`.
 
 ---
 
