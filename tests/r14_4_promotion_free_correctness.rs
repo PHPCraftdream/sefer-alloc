@@ -28,11 +28,35 @@
 #![cfg(all(feature = "alloc-global", feature = "medium-classes"))]
 
 use std::alloc::{GlobalAlloc, Layout};
+use std::sync::Mutex;
 
 use sefer_alloc::SeferAlloc;
 
 const ALIGN: usize = 8;
 const PROMOTION_THRESHOLD: usize = 256 * 1024;
+
+// Both tests in this file read `a.stats()` — which reads the PROCESS-WIDE
+// `segments_reserved_total`/`segments_released_total` atomics (see
+// `src/alloc_core/os.rs`) — and compute a delta across their own
+// snapshot-before/snapshot-after window, asserting that delta stays
+// leak-free. `cargo test` runs test functions concurrently across multiple
+// OS threads within the SAME process by default; any OTHER test in this
+// binary (or the sibling test function in THIS file) reserving/releasing a
+// segment between one test's snapshots pollutes its delta with unrelated
+// activity, producing a spurious "released_delta > reserved_delta" failure.
+// This mirrors the established pattern in
+// `tests/directory_authoritative_miss.rs`'s `TEST_LOCK`: a file-scoped
+// `Mutex<()>` held for a whole test body serialises every test in this file
+// against each other so each one observes a quiescent counter window.
+// (This does not protect against unrelated activity from OTHER test
+// *binaries* running as separate processes — cargo test isolates process
+// memory per binary, so that is a non-issue — only against races between
+// test *functions* inside this one binary, which is exactly what the
+// documented flake was.)
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
 
 /// Mirrors `tests/r14_4_promotion_move_leg_reduction.rs`'s constant of the
 /// same name byte-for-byte. Not used to gate any assertion in this file (see
@@ -54,6 +78,7 @@ fn layout(size: usize) -> Layout {
 /// allocation.
 #[test]
 fn canary_survives_promotion_and_free_leaves_no_leak() {
+    let _guard = serial();
     let a = SeferAlloc::new();
 
     let old_size = 96 * 1024;
@@ -161,6 +186,7 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
 /// bounded).
 #[test]
 fn repeated_promote_and_free_does_not_leak_unboundedly() {
+    let _guard = serial();
     let a = SeferAlloc::new();
     let stats_before = a.stats();
 

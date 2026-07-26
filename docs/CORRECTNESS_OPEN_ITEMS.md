@@ -60,63 +60,8 @@ scoping decision is the pending step, not implementation).
 
 ### [T] Tracked, not yet actioned
 
-1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**
-   (`tests/r14_4_promotion_free_correctness.rs`).
-
-   - **First observed:** R19-1 (task #337, commit `46ea2db`), "failed 1 of 3
-     runs" on pristine pre-fix code (confirmed unrelated to that commit's
-     hardened-Large-dealloc fix).
-   - **Independently reproduced twice more in Round 22:**
-     - R22-1 (task #352, commit `00fb53c`): the delegated agent's full-suite
-       run under `--features "hardened medium-classes"` reproduced it firing
-       "at its documented ~1-in-3 rate" (per that commit's message, "Out of
-       scope, tracked separately" paragraph).
-     - R22-5 / task #356's test run (see TaskList context for this task):
-       reproduced again at "roughly the same rate" per this task's own
-       prompt.
-   - **Exact failing assertion** (the test has two `assert!` sites; the one
-     implicated by "failed 1 of 3 runs" is the leak-bound check — see the
-     test file's lines 131–135):
-     ```text
-     assert!(
-         released_delta <= reserved_delta,
-         "released_delta ({released_delta}) must not exceed reserved_delta \
-          ({reserved_delta}) — a double-release would indicate corruption"
-     );
-     ```
-     (There is a second, weaker monotonicity assertion earlier in the same
-     test — `segments_reserved_total` must not go backwards — but the
-     "released_delta <= reserved_delta" assertion is the one shaped like the
-     failure this item's reproductions describe.)
-   - **Plausible root-cause category:** the test computes `reserved_delta`
-     and `released_delta` as snapshots of PROCESS-WIDE counters
-     (`a.stats()` reads `segments_reserved_total`/`segments_released_total`,
-     which are not scoped to this single `SeferAlloc` instance's activity —
-     see the test's own comment at lines 110–117 acknowledging the delta is
-     "since `stats_before`", i.e. it assumes no concurrent activity touches
-     the same counters between the two snapshots). `cargo test` runs test
-     binaries with multiple test-thread parallelism by default; if any
-     OTHER `#[test]` in the same binary (or a background reclaim/decommit
-     thread the allocator itself spins up) reserves or releases a segment
-     on the shared global counters between this test's `stats_before` and
-     `stats_after_free` reads, the delta comparison is not actually
-     isolated to this test's own grow+free round-trip, despite the comment
-     asserting it is. This would manifest as exactly the observed
-     "flaky, ~1-in-3, otherwise reproducible" signature — a genuine race in
-     test isolation (shared global allocator state read concurrently by
-     other test threads), not a bug in the allocator's own free/promotion
-     path. **Next step:** re-run this specific test with
-     `cargo test ... -- --test-threads=1` for the affected binary across
-     enough iterations to see whether the flake rate drops to zero; if it
-     does, the fix is either (a) make the test single-threaded-safe (run it
-     in isolation, e.g. via `#[test]` + a process-level mutex already used
-     elsewhere in this suite for stats-sensitive tests, if such a pattern
-     exists), or (b) switch the assertion to a per-allocation-tracked delta
-     that does not depend on global-counter isolation at all.
-   - **Status:** open, unowned. Not yet fixed — out of scope for this
-     tracking task (task #354/R22-3); tracked here so it cannot go another
-     three rounds unnoticed the way the perf-only analog did before
-     `docs/perf/OPEN_ITEMS.md` existed.
+_(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
+was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
 
 2. **Clippy dead-code — `--features "hardened medium-classes"` is not
    clippy-clean.**
@@ -232,4 +177,42 @@ scoping decision is the pending step, not implementation).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
-_(none yet — this file was created in R22-3, task #354.)_
+1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**
+   (`tests/r14_4_promotion_free_correctness.rs`) — **RESOLVED** by an urgent
+   CI-fix task (2026-07-26), responding to `origin/main` CI run `30217256247`
+   / job `89833506941` failing on the `test (--features "hardened
+   medium-classes")` step with `error: 1 target failed: --test
+   r14_4_promotion_free_correctness`.
+
+   - **Root cause, confirmed:** `SEGMENTS_RESERVED_TOTAL`/
+     `SEGMENTS_RELEASED_TOTAL` (`src/alloc_core/os.rs:52,57`) are
+     process-wide `static AtomicU64`s. Both `#[test]` functions in this file
+     (`canary_survives_promotion_and_free_leaves_no_leak` and
+     `repeated_promote_and_free_does_not_leak_unboundedly`) read `a.stats()`
+     — which loads these same global atomics — take a before/after
+     snapshot, and assert a leak-free delta. `cargo test` runs test
+     functions concurrently on multiple OS threads within one process by
+     default; the two tests in this file (or any other test in the same
+     binary) could reserve/release a segment on the shared counters between
+     one test's own snapshots, polluting its delta with unrelated activity
+     — exactly the historically observed "failed 1 of 3 runs" signature.
+   - **Fix:** added a file-scoped `static TEST_LOCK: Mutex<()>` + `serial()`
+     helper (the SAME established pattern already used in
+     `tests/directory_authoritative_miss.rs`, `tests/alloc_zeroed_fresh_large_skip.rs`,
+     `tests/r13_3_magazine_virgin_hit_skips_zero.rs`,
+     `tests/r21_2_opt_h_stage1_precondition_probe.rs` for tests that read
+     process-wide stats/diagnostic counters), and bound `let _guard =
+     serial();` at the top of BOTH test functions in the file (both read
+     the same global counters, so both needed serialization, not just the
+     one named in the CI failure). No assertion logic was changed — the
+     `released_delta <= reserved_delta` leak-bound check is untouched.
+   - **Verification:** 4 full runs of the exact CI command (`cargo test
+     --features "hardened medium-classes" --no-fail-fast`, matching R22-1's
+     CI row exactly — 223 test binaries each run) — all clean, 0 failures.
+     Additionally ~190 direct repeated invocations of the specific compiled
+     test binary (`--test-threads=4/8/16`, mimicking CI-like concurrency)
+     plus several `cargo test --test r14_4_promotion_free_correctness`
+     invocations — 0 failures out of roughly 200+ total runs, against the
+     historical ~1-in-3 failure rate. `cargo fmt --check` clean on the
+     changed file.
+   - **Files changed:** `tests/r14_4_promotion_free_correctness.rs` only.
