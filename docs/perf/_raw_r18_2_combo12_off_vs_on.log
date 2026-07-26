@@ -1,0 +1,117 @@
+[r10-2] Building baseline arm (production, no medium-classes)...
+(node:21344) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 5.94s
+[r10-2] Building treatment arm (production + medium-classes)...
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `release` profile [optimized] target(s) in 13.82s
+[r10-2] Both arms built:
+  off: D:/dev/rust/.cargo-target/release/examples/paired_ab_medium_off.exe
+  on : D:/dev/rust/.cargo-target/release/examples/paired_ab_medium_on.exe
+
+[r10-2] === Phase: alloc (20 pairs) ===
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+# ── SAMPLE: first A/B/B/A block of raw per-process RESULT lines (one block of 4 launches). ──
+RESULT arm=medium_off
+RESULT elapsed_ns=22408600
+RESULT alloc_ns=4307200
+RESULT free_ns=18049000
+RESULT realloc_ns=52400
+RESULT segments_reserved_total=329
+RESULT rss_after_kib=3480
+RESULT commit_after_kib=34556
+.RESULT arm=medium_on
+RESULT elapsed_ns=58476700
+RESULT alloc_ns=159000
+RESULT free_ns=57000
+RESULT realloc_ns=58260700
+RESULT segments_reserved_total=172
+RESULT rss_after_kib=9884
+RESULT commit_after_kib=50576
+.RESULT arm=medium_on
+RESULT elapsed_ns=54452400
+RESULT alloc_ns=151300
+RESULT free_ns=73500
+RESULT realloc_ns=54227600
+RESULT segments_reserved_total=172
+RESULT rss_after_kib=9576
+RESULT commit_after_kib=50528
+.RESULT arm=medium_off
+RESULT elapsed_ns=18000100
+RESULT alloc_ns=3304900
+RESULT free_ns=14649300
+RESULT realloc_ns=45900
+RESULT segments_reserved_total=329
+RESULT rss_after_kib=3172
+RESULT commit_after_kib=34508
+.RESULT arm=medium_off
+RESULT elapsed_ns=17111100
+RESULT alloc_ns=3162900
+RESULT free_ns=13899500
+# ── TRUNCATED — remaining 1884 per-process RESULT lines (identical shape; segments_reserved_total is a constant per arm, phase-times vary) omitted for size. ──
+# ── Full uncurated stdout reproducible via: node scripts/r10_2_medium_gate.mjs --skip-build --pairs 20 (after building both arms). Per-arm aggregates are in R18_2_MEDIUM_REALLOC_GATE_RERUN_summary.csv. ──
+.
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=3.681 ms  sd=328.332 us  se=73.417 us  t=50.132  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=0/20  B-faster=20/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T00-54-20-823Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md's verdict criteria. A same-vs-same control run
+  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --
+  if it does not, that indicates a harness bug (non-reproducible workload, background load
+  bleeding into the timed region), not a real self-difference.
+
+[r10-2] === Phase: free (20 pairs) ===
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+.
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=14.891 ms  sd=433.096 us  se=96.843 us  t=153.767  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=0/20  B-faster=20/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T00-54-28-833Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md's verdict criteria. A same-vs-same control run
+  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --
+  if it does not, that indicates a harness bug (non-reproducible workload, background load
+  bleeding into the timed region), not a real self-difference.
+
+[r10-2] === Phase: realloc (20 pairs) ===
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+.
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=-66.055 ms  sd=7.746 ms  se=1.732 ms  t=-38.137  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=20/20  B-faster=0/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T00-54-37-193Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+  docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md's verdict criteria. A same-vs-same control run
+  (--arms sefer,sefer) should show t well under `crit` and a roughly even sign-test split --
+  if it does not, that indicates a harness bug (non-reproducible workload, background load
+  bleeding into the timed region), not a real self-difference.
+
+[r10-2] === All phases complete ===
+[r10-2] Config files (generated, gitignored):
+  alloc: D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/_r10_2_alloc.json
+  free: D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/_r10_2_free.json
+  realloc: D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/_r10_2_realloc.json
+[r10-2] Provenance JSONs (one per phase) written to docs/perf/paired_ab_runs/
+[r10-2] Read the three === A vs B === blocks above for the paired t-test / sign-test
+       verdict per phase. See docs/perf/R10_2_MEDIUM_CLASSES_NATIVE_GATE.md for the full report.
+

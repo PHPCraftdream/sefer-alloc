@@ -376,16 +376,88 @@ actual kill-gate question, and it is negative.
    NOT change the pad-target decision (§2.1's SEGMENT-rounding argument is
    independent of the anomaly, and post-fix all three arms are
    indistinguishable).
-2. **R14-5's large-cache hardening may flip this gate's verdict** — worth
-   re-running `scripts/r10_2_medium_gate.mjs` against this task's promotion
-   mechanism once R14-5 lands, since the root cause (§5) is cache-slot
-   pressure, which R14-5 directly targets.
+2. **R14-5's large-cache hardening may flip this gate's verdict — RESOLVED
+   (does NOT flip) by R18-2 (task #331).** The re-run was performed on
+   2026-07-26 on post-R17-4/R18-3 code (`main` @ `912740f`), for three
+   feature compositions: `production` (baseline), `production,medium-classes`,
+   and `production,medium-classes,large-cache-extended`. The `large-cache-
+   extended` arm (8→40 slots) does substantially HELP the realloc phase
+   (~3.5×: 66 ms → 19 ms; cache-hit-rate proxy 46% → 94%) but does NOT bring
+   it under the 20% kill-gate (still ~380× slower than the baseline's
+   near-zero in-place Large realloc). Full numbers, the SD/mean-delta
+   resolvability check, and the same-vs-same control are in §10; the refined
+   verdict is in §7's R18-2 block. The root cause is now confirmed as
+   structural promotion-copy cost (the 256 KiB memcpy per promoted object
+   that dense packing forces on a cross-class realloc-grow), NOT the leak
+   R17-4 fixed — the leak inflated COMMIT (1.3 GiB → 50 MiB, fixed), not
+   TIME.
 
 ---
 
 ## 7. Verdict
 
-**GATE: CONDITIONAL-GO on the mechanism, RED on R10-2's specific kill-gate.**
+### 7.1 R18-2 re-run (task #331, 2026-07-26) — CURRENT verdict
+
+The original verdict below (§7.2) was measured on code carrying the real
+4 MiB Large-segment leak that R17-4 (task #321, commit `1b761f4`) later found
+and fixed, and before R18-3 (task #330, commit `912740f`) narrowed the
+`kind_at` check. **That old "1,700–2,300× slower" framing must NOT be cited
+as an argument against promoting `medium-classes` — it was confounded by the
+leak.** R18-2 re-ran `scripts/r10_2_medium_gate.mjs --pairs 20` (the exact
+original harness, zero source/script changes) on current `main` @ `912740f`
+for three feature compositions, 20 A/B/B/A pairs (80 process launches) per
+phase, 3 phases each. Full numbers + SD/mean-delta resolvability + the
+same-vs-same control are in §10; headline:
+
+| Arm B (treatment) vs Arm A=`production` | realloc mean Δ (A−B) | realloc per-op (B) | B/A ratio | `segments` (B) | `commit` (B) | SD/Δ | resolvable? | realloc kill-gate (20%) |
+|---|---:|---:|---:|---:|---:|---:|:---:|:---:|
+| `production,medium-classes` | **−66.06 ms** | 67.6 µs/realloc | ~1,180× | 172 | 49 MiB | 11.7% | YES | **FAIL (RED)** |
+| `production,medium-classes,large-cache-extended` | **−19.38 ms** | 19.6 µs/realloc | ~380× | 20 | 81 MiB | 10.7% | YES | **FAIL (RED)** |
+| (control: `production` vs `production`, same-vs-same) | +0.0006 ms | — | — | 329 | 34 MiB | 1229% | NO (expected; t=0.36≪crit, sign 8/12 → harness honesty PASS) | n/a |
+
+(Baseline `production` realloc is ~0.056 ms / ~58 ns per realloc — an
+in-place Large header update within the dedicated 4 MiB span, near-zero by
+design, so the percentage frame is degenerate; see R10-2 §4.2. The absolute
+per-op cost and the SD/Δ ratio are the honest frames. The alloc/free wins
+are confirmed fully preserved: alloc Δ≈+3.3–3.7 ms, free Δ≈+14.7–14.9 ms,
+B-faster 20/20 in every run — see §10.)
+
+**CURRENT GATE: still RED on R10-2's realloc kill-gate, for BOTH
+`production,medium-classes` and `production,medium-classes,large-cache-
+extended`.** This is an honest negative result — the R17-4 leak fix and the
+R18-3 `kind_at` narrowing did NOT flip the gate. What they DID change:
+
+- **The leak is gone (CONFIRMED, OBSERVED).** `medium_on` commit dropped
+  1,330,000 KiB (≈1.3 GiB, R14-4 §5) → 50,518 KiB (≈49 MiB); `segments`
+  324 → 172. The dealloc-routing bug that made every promoted-then-freed
+  Large segment leak is fixed; the cache now reuses spans as designed.
+- **`large-cache-extended` materially helps but does not clear the gate
+  (CONFIRMED, OBSERVED).** 40 slots cut the realloc gap ~3.5× (66→19 ms) and
+  raised the cache-hit-rate proxy (segments 172→20 ⇒ ~46%→~94% of the 320
+  realloc-phase promotions now reuse a cached span), at the cost of higher
+  resident commit (50→81 MiB, the expected RSS-for-fewer-OS-round-trips
+  trade-off). The residual ~19 ms is the genuine promotion `memcpy`
+  (16 objects × 256 KiB × 20 rounds ≈ 80 MiB copied) plus per-promotion
+  `alloc_large` bookkeeping even on a cache hit — structural to dense
+  packing, not a bug.
+- **The environment CAN resolve these effects (CONFIRMED).** SD/Δ is
+  2.9–11.7% for every real phase (the host was under heavy load, 66–94%
+  CPU, which inflated absolute times and SD, but every measured delta is
+  8–34× its own SD). This is the opposite of the R17-7 situation a third
+  review flagged (SD 7.7 ms > delta 1.2 ms); here no effect is sub-noise.
+
+**Refined recommendation (not a decision):** the realloc concern for
+`medium-classes` is **still open and still RED** even after the leak fix and
+even with `large-cache-extended`. Do NOT promote `medium-classes` into
+`production` on the strength of this gate. The remaining regression is the
+structural memcpy cost of cross-class realloc-grow under dense packing
+(R10-2 §5's own diagnosis); closing it would require one of R10-2 §5's
+mitigations (in-place medium-class grow within a segment, or growth
+headroom / over-allocation within the medium class) — none of which R17-4 or
+R18-3 implemented. This task does **not** modify `Cargo.toml`'s
+`production = [...]` list.
+
+### 7.2 Original verdict at task time (2026-07-23, on pre-R17-4 leaky code)
 
 - The Stage-2 promotion mechanism is implemented correctly (design doc's
   §4.2 "no new bookkeeping" claim verified for real, not just argued), all
@@ -445,3 +517,170 @@ every prior R13/R14 gate report in this project).
   `docs/perf/_raw_r14_4_iai_medium.log` — raw iai logs backing §0 row 4/§5.2.
 - This document.
 - No `Cargo.toml` `production = [...]` edit; no other `src/` file touched.
+
+---
+
+## 10. R18-2 re-run detail (task #331, 2026-07-26)
+
+This section is the full evidence backing the §7.1 verdict. It is a
+MEASUREMENT-ONLY re-run on current `main` @ `912740f` (post-R17-4 leak fix
+`1b761f4`, post-R18-3 `kind_at` narrowing `912740f`); **no `src/`, no
+`Cargo.toml`, no script was modified** — `scripts/r10_2_medium_gate.mjs` was
+invoked exactly as the original R10-2/R14-4 reports specify.
+
+### 10.1 Environment and disclosure
+
+- **Host / CPU:** 11th Gen Intel Core i7-11800H @ 2.30GHz, 8C/16T. Windows 10
+  Pro x86-64, native. Power plan: Balanced. `rustc 1.97.0`.
+- **Host CPU load during measurement: 66–94% (HIGH — shared dev-host).** This
+  is the same structural condition prior rounds flagged (R17-7, R14-3 §2.4).
+  It inflates absolute wall-times and the per-pair SD, but — as §10.4 shows —
+  every measured delta is a large multiple of its own SD, so no effect here
+  is sub-noise. The numbers are NOT clean-room; they are honest numbers from
+  a loaded host, and the verdict rests on the delta/SD ratio, not on the
+  absolute times.
+- **Commit measured:** `main` @ `912740f` (clean working tree for the gate
+  runs; the only later edits are this doc + the summary CSV + the
+  force-added raw logs).
+
+### 10.2 Three feature compositions (each vs `production` baseline = arm A)
+
+The R10-2 harness pairs ONE baseline (`paired_ab_medium_off`, built
+`--features production`) against ONE treatment (`paired_ab_medium_on`).
+Three treatments were measured by rebuilding the ON arm with different
+feature sets and re-invoking the gate with `--skip-build`:
+
+| combo | arm A (baseline) | arm B (treatment) |
+|---|---|---|
+| 1+2 | `production` | `production,medium-classes` |
+| 3 | `production` | `production,medium-classes,large-cache-extended` |
+
+(Combo "1" and "2" in the task framing are the baseline arm A and the
+medium-classes arm B of the same run — they share one A/B/B/A session.)
+
+### 10.3 Results — per-arm means over 120 launches (20 pairs × 2 A-slots / 2 B-slots × 3 phases = 120 per arm)
+
+Per-op conversions use the harness's fixed op counts: alloc/free phases do
+16 × 20 = 320 ops each; the realloc phase does 16 objects × 3 grow-steps ×
+20 rounds = 960 realloc-grows. `segments_reserved_total` and the commit/RSS
+snapshots are emitted once per launch; `segments` is a deterministic
+constant per arm (min == max across all 120 launches), which is itself a
+signal that the allocator's reservation pattern is stable run-to-run.
+
+| combo | arm | alloc (launch-mean) | free | realloc (launch-mean) | realloc per-op | segments | commit | rss |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1+2 | A `production` | 3.75 ms | 15.15 ms | 0.056 ms | ~58 ns | 329 | 33.7 MiB | 3.1 MiB |
+| 1+2 | B `…,medium-classes` | 0.151 ms | 0.076 ms | 64.94 ms | ~67.6 µs | 172 | 49.3 MiB | 9.3 MiB |
+| 3 | A `production` | 3.47 ms | 14.81 ms | 0.050 ms | ~52 ns | 329 | 33.7 MiB | 3.1 MiB |
+| 3 | B `…,medium-classes,large-cache-extended` | 0.137 ms | 0.080 ms | 18.80 ms | ~19.6 µs | 20 | 81.4 MiB | 11.4 MiB |
+
+**Full-round criterion time (sum of the three phase means) vs sub-window.**
+Per CLAUDE.md's wall-clock-gate rule, both axes are reported for the same
+harness: the **realloc phase is the sub-window** that decides the kill-gate
+(the 20% threshold is on realloc specifically), and the **full round**
+(alloc+free+realloc) is the net:
+
+| combo | arm | full round (alloc+free+realloc) | net B vs A |
+|---|---|---:|---|
+| 1+2 | A `production` | 18.96 ms | — |
+| 1+2 | B `…,medium-classes` | 65.17 ms | **B ~3.4× slower overall** (realloc dominates the alloc+free wins) |
+| 3 | A `production` | 18.33 ms | — |
+| 3 | B `…,medium-classes,large-cache-extended` | 19.02 ms | **B ~1.04× (≈ break-even overall)** — `large-cache-extended`'s realloc cut (~19 ms) is now comparable to the alloc+free savings (~18 ms) |
+
+The combo-3 full-round near-break-even is notable but does NOT clear the
+gate: the gate is on the realloc SUB-WINDOW, which is still ~380× (and the
+net is only break-even for THIS specifically realloc-heavy 16-object
+workload; a less realloc-heavy program would see only the alloc/free wins).
+
+### 10.4 Paired statistics + SD/mean-delta resolvability (the R17-7 check)
+
+The runner reports the paired t-test on the 20 block-paired deltas (A−B).
+The SD/Δ column is the methodological check a third review
+(`docs/reviews/2026-07-25-crush-review-r13-r17.md` §4.1) demanded after
+R17-7: there, SD (7.7–8.2 ms) exceeded the mean delta (1.2–1.25 ms), so the
+host could not resolve an effect that small. Here, for every REAL phase, SD
+is 2.9–11.7% of |Δ| (Δ is 8–34× its own SD) → **the host DOES resolve every
+effect**. The control row's "not resolvable" is the CORRECT outcome for a
+same-vs-same run (no real effect exists; t ≈ 0).
+
+| combo | phase | paired Δ (A−B) | SD | t | sign (A/B) | sig? | SD/Δ | resolvable? |
+|---|---|---:|---:|---:|:---:|:---:|---:|:---:|
+| 1+2 | alloc | +3.681 ms | 0.328 ms | 50.13 | 0 / 20 | REAL | 8.9% | YES |
+| 1+2 | free | +14.891 ms | 0.433 ms | 153.77 | 0 / 20 | REAL | 2.9% | YES |
+| 1+2 | realloc | **−66.055 ms** | 7.746 ms | −38.14 | 20 / 0 | REAL | 11.7% | YES |
+| 3 | alloc | +3.262 ms | 0.120 ms | 122.05 | 0 / 20 | REAL | 3.7% | YES |
+| 3 | free | +14.721 ms | 0.508 ms | 129.72 | 0 / 20 | REAL | 3.4% | YES |
+| 3 | realloc | **−19.378 ms** | 2.066 ms | −41.94 | 20 / 0 | REAL | 10.7% | YES |
+| control | realloc | +0.0006 ms | 0.0077 ms | 0.364 | 8 / 12 | NOT sig | 1229% | NO (expected; null result) |
+
+### 10.5 Same-vs-same control (harness honesty)
+
+`node scripts/paired-ab-runner.mjs --config docs/perf/paired_ab_runs/_r10_2_realloc.json --arms A,A --pairs 20`
+(both arms = the `production` OFF exe, realloc phase): t=0.364 ≪ crit 2.101,
+sign 8/12 (near-even). The harness has NO spurious self-difference on the
+phase that decides the kill-gate.
+
+### 10.6 Cache-hit-rate proxy (the metric the task asked for)
+
+The R10-2 gate binaries do NOT emit `large_cache_hits` (the original gate
+deliberately omitted `alloc-stats`, and R14-4 §2.2's explicit `large_cache_hits`
+numbers came from a SEPARATE temporary-instrumented pad-target probe, not the
+gate binaries). Per R14-4 §5's own diagnostic method, `segments_reserved_total`
+IS the cache-miss proxy: each promotion that misses the large cache reserves
+a fresh 4 MiB span; each hit reuses a cached span (no new reservation). The
+realloc phase does exactly 16 promotions × 20 rounds = 320 `alloc_large`
+calls under `medium-classes`; for arm B the alloc/free phases use the medium
+path (no Large reservations), so `segments` ≈ fresh reservations among those
+320:
+
+- `production,medium-classes`: 172 fresh / 320 ⇒ **~46% hit rate** (≈ 8 of 16
+  per round reuse a cached span — matches the 8-slot design limit exactly;
+  R14-4 §5's "roughly half miss" prediction, now on non-leaky code).
+- `production,medium-classes,large-cache-extended`: 20 fresh / 320 ⇒ **~94%
+  hit rate** (40 slots catch almost every promotion). This is the
+  `large-cache-extended` win, and it is what cut the realloc time ~3.5×.
+- Both still leave a non-zero realloc cost (the promotion `memcpy`), so both
+  still fail the 20% gate.
+
+### 10.7 Why the gate is still RED (root cause, post-fix)
+
+R14-4 §5 attributed the ~2,000× to "roughly half of every round's promotions
+pay a genuine fresh OS `VirtualAlloc` instead of a cache hit" — i.e.
+cache-slot pressure (16 promoted objects, 8 slots). That diagnosis was
+CORRECT about the mechanism but was entangled with the R17-4 leak, which
+made COMMIT unbounded (1.3 GiB). R17-4 fixed the COMMIT path (dealloc
+routing) but did NOT change the TIME path: the per-promotion cost is still
+(alloc_large — a fresh `VirtualAlloc` on a miss, or a cache lookup on a hit)
++ a 256 KiB `copy_nonoverlapping` of the preserved prefix. The leak only
+added commit, not wall-clock. Hence post-fix: commit is bounded (49 MiB),
+the time regression is essentially unchanged at ~1,180× (combo 1+2), and it
+is now cleanly attributable to genuine promotion work, not a leak artifact.
+The ratio dropped from R14-4's "~1,700–2,300×" to "~1,180×" NOT because
+`medium_on` got faster — its absolute realloc cost is essentially unchanged
+(~67.6 µs/op now vs ~72 µs/op in R14-4) — but because the BASELINE realloc
+happened to measure slower under this session's heavier host load (~58 ns/op
+now vs ~39 ns/op in R14-4; the baseline's near-zero cost is load-sensitive).
+The load-invariant comparison is the absolute medium realloc per-op (~67 µs),
+which R17-4 did not move. `large-cache-extended` removes the miss penalty (94% hits, 66→19 ms) but
+cannot remove the structural memcpy — that requires R10-2 §5's mitigations
+(in-place medium grow / growth headroom), which are out of scope for R17-4 /
+R18-3 / R18-2.
+
+### 10.8 Raw logs + machine-readable summary (committed via `git add -f`)
+
+- `docs/perf/_raw_r18_2_combo12_off_vs_on.log` — combo 1+2 full gate run
+  (truncated to the three `=== A vs B ===` summary blocks + build banner +
+  one sample A/B/B/A block, per the R14-10 truncation precedent; full
+  uncurated stdout reproducible via `node scripts/r10_2_medium_gate.mjs
+  --pairs 20`).
+- `docs/perf/_raw_r18_2_combo3_off_vs_onext.log` — combo 3 (with
+  `large-cache-extended`), same truncation.
+- `docs/perf/_raw_r18_2_control_off_vs_off.log` — same-vs-same control
+  (untruncated; it is the harness-honesty evidence).
+- `docs/perf/R18_2_MEDIUM_REALLOC_GATE_RERUN_summary.csv` — machine-readable
+  companion (commit, features, per-phase means, paired Δ/SD/t/sign,
+  SD/Δ ratio, resolvable flag, segments/commit/rss, hit-rate proxy).
+- Provenance JSONs (one per phase, with every raw per-process sample + git
+  commit + rustc + CPU + power plan) were written to
+  `docs/perf/paired_ab_runs/2026-07-26T*.json` (gitignored by repo
+  convention; reproducible by re-running the gate).
