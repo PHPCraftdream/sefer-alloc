@@ -100,6 +100,39 @@ fn small_churn_16b() {
     }
 }
 
+// R18-3 (task #330) — the FIRST instruction-count baseline for the dealloc
+// hot path under `production,medium-classes`, the configuration where R17-4's
+// Large-segment `kind_at` routing check (`dealloc_own_thread_with_base`,
+// `src/registry/heap_core_free.rs` branch A) actually COMPILES IN. R17-4's
+// "zero hot-path cost" claim was measured only under plain `production` (where
+// branch A compiles out entirely) — this bench closes that proof gap by
+// tracking the path WITH the check present. The R18-3 runtime size gate
+// (`layout.size() >= MEDIUM_REALLOC_PROMOTION_THRESHOLD`) short-circuits the
+// `kind_at` field load for every 16 B free below the 256 KiB threshold, so this
+// bench measures exactly the cost of that gate on the common small-free path.
+//
+// Structurally identical to `small_churn_16b` (same 16 B alloc→dealloc churn)
+// but named and documented for the medium-classes config: under plain
+// `production` both produce identical Ir (branch A absent); under
+// `production,medium-classes` THIS row is the tracked baseline. Run via:
+//   node scripts/iai.mjs --features 'production medium-classes' medium_class_dealloc_churn_16b
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn medium_class_dealloc_churn_16b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { sefer.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
 // 640 B @ align(128) alloc+dealloc churn — the tokio-shaped over-alignment
 // case at the center of the task #114 regression (align>16 previously
 // burned a full 4 MiB segment per allocation instead of routing through
@@ -465,6 +498,7 @@ library_benchmark_group!(
     name = perf_gate;
     benchmarks =
         small_churn_16b,
+        medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,
         realloc_grow,

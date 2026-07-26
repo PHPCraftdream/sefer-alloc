@@ -121,6 +121,11 @@ const BOOTSTRAP_BENCH = 'large_alloc_free_cycle';
 const BENCH_OPS = {
   // churn family: CHURN_OPS (64) alloc→dealloc pairs.
   small_churn_16b: 64,
+  // R18-3 medium-classes dealloc baseline: same CHURN_OPS (64) pairs as
+  // small_churn_16b; the Ir delta between the two under
+  // --features 'production medium-classes' is the cost of branch A's
+  // runtime-gated kind_at check on the small-free hot path.
+  medium_class_dealloc_churn_16b: 64,
   aligned_churn_640b_a128: 64,
   churn_256b: 64,
   churn_write_256b: 64,

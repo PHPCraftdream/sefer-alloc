@@ -20,7 +20,20 @@ use crate::alloc_core::os;
 #[cfg(all(
     feature = "alloc-global",
     feature = "fastbin",
-    any(feature = "medium-classes", feature = "hardened")
+    // R18-3: `SegmentKind` is used in branch (A) (promotion predicate) and
+    // branch (B) (`hardened && !promotion`). The union simplifies to
+    // `promotion || hardened` (absorption: a || (b && !a) == a || b). Under
+    // plain `production` neither term is true → import compiles out.
+    any(
+        feature = "hardened",
+        all(
+            feature = "medium-classes",
+            any(
+                not(feature = "exact-span-large"),
+                all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+            )
+        )
+    )
 ))]
 use crate::alloc_core::segment_header::SegmentKind;
 #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
@@ -174,8 +187,8 @@ impl HeapCore {
                 if let Some(c) = SizeClasses::class_for(size, align) {
                     let cnt = self.tcache.classes[c].count as usize;
 
-                    // ── F7 (task #25; corrected R17-4/task #321): Large-segment
-                    //    kind routing vs. defensive no-op ──
+                    // ── F7 (task #25; R17-4/task #321; R18-3/task #330):
+                    //    Large-segment kind routing vs. defensive no-op ──
                     //
                     // `class_for` returning `Some(c)` above keys the free on
                     // the *layout*, not on where `ptr` actually lives. Two
@@ -206,45 +219,82 @@ impl HeapCore {
                     //     grown case AND any genuine contract violation (the
                     //     segment is freed by kind, not by the layout).
                     //
-                    // (B) **Under any non-`medium-classes` build (incl. plain
-                    //     `production`) — structurally UNREACHABLE legitimately.**
-                    //     `SMALL_MAX` is ~253 KiB, so every Large allocation is
-                    //     > 253 KiB, and its (contract-correct) dealloc layout
-                    //     is > 253 KiB too → `class_for` returns `None` → the
-                    //     free never enters this `Some(c)` arm at all. The ONLY
-                    //     way to reach here with a Large segment is a genuine
-                    //     `GlobalAlloc`-contract violation (caller frees a Large
-                    //     pointer with a fabricated small layout). For THAT case
-                    //     F7's original task #25 design stands: a `hardened`-
-                    //     only defensive no-op (the magazine oracles would read
-                    //     bitmap state out of the Large payload — so reject
-                    //     before them). Keeping this branch `hardened`-gated
-                    //     (and a no-op, not a routing) leaves the production
-                    //     small-free hot path byte-for-byte unchanged — no
-                    //     `kind_at` field load, no `unsafe` call — since under
-                    //     plain `production` neither `medium-classes` nor
-                    //     `hardened` is on and BOTH branches compile out.
+                    // (B) **Promotion-OFF builds — contract violations only.**
+                    //     When promotion is compiled OUT (non-`medium-classes`
+                    //     OR `medium-classes` with `exact-span-large` zero-
+                    //     headroom, e.g. `--all-features` where `numa-aware`
+                    //     defeats `large-reserved-capacity`), a LEGITIMATE
+                    //     Large-with-small-layout is structurally unreachable.
+                    //     But the ILLEGITIMATE case — a `GlobalAlloc`-contract
+                    //     violation (caller frees a Large pointer with a
+                    //     fabricated small layout) — is still reachable, and
+                    //     `hardened` exists to defend against it: without a
+                    //     guard the magazine oracles read bitmap state out of
+                    //     the Large payload → silent aliasing. F7's task #25
+                    //     defensive no-op covers it. R18-3 broadens (B)'s cfg
+                    //     from `hardened && not(medium-classes)` to
+                    //     `hardened && NOT(promotion-predicate)` so it ALSO fires
+                    //     under `medium-classes`-without-promotion — the gap the
+                    //     original bare-`medium-classes` branch (A) accidentally
+                    //     covered by routing-to-substrate, which R18-3's cfg
+                    //     narrowing of (A) exposed (`regression_hardened_large_
+                    //     kind_own_free` went RED: 2 MiB Large freed with 64-byte
+                    //     layout aliased via the magazine when neither branch
+                    //     compiled). For non-`medium-classes` builds (B)'s cfg
+                    //     is equivalent to pre-R18-3 (promotion predicate is
+                    //     false when `medium-classes` is absent) — byte-identical
+                    //     behaviour. Under plain `production` (no `hardened`,
+                    //     no `medium-classes`) both branches compile out: no
+                    //     `kind_at` load, no `unsafe` call on the hot path.
                     //
-                    //     R17-4 deliberately did NOT make (B) route-to-substrate
-                    //     like (A): under `medium-classes` the routing is a
-                    //     load-bearing correctness fix, but under plain
-                    //     `production` the scenario is unreachable legitimately
-                    //     and the unconditional `kind_at` load it would require
-                    //     is pure overhead on every small free. `npm run iai`
-                    //     confirms zero instruction-count delta on `production`
-                    //     vs. `b8612bc` (the pre-R17-4 commit): both branches
-                    //     compile out, the generated code is identical.
+                    // Mutually exclusive: (A) requires promotion ON; (B) requires
+                    // promotion OFF (and `hardened`). Together they cover every
+                    // `hardened` build + every promotion build; the only configs
+                    // where NEITHER fires are non-hardened non-promotion (plain
+                    // `production`, and `production,medium-classes,exact-span-
+                    // large` without `hardened`) — consistent with the crate's
+                    // stance that contract-violation defence is `hardened`-opt-in.
                     //
-                    // The two `#[cfg]` blocks are mutually exclusive: under
-                    // `--all-features` (`medium-classes` AND `hardened` both on)
-                    // branch (A) wins and branch (B) compiles out — so the
-                    // correctness routing always takes priority over the
-                    // defensive no-op when the legit scenario is reachable.
+                    // R17-4's "zero hot-path cost" iai claim was measured only
+                    // under plain `production` (where neither branch compiles).
+                    // R18-3 closes the proof gap: `medium_class_dealloc_churn_16b`
+                    // records the FIRST instruction-count baseline under
+                    // `production,medium-classes` — where (A) DOES compile in —
+                    // so the runtime-gated `kind_at` check's cost is a tracked
+                    // metric, not an unmeasured assumption.
 
-                    // (A) `medium-classes`: correctness-critical routing.
-                    #[cfg(feature = "medium-classes")]
+                    // (A) Promotion ON: route-to-substrate. Correctness-critical
+                    //     for legit promotion-grown blocks (must reach the
+                    //     Large dealloc branch), AND defensive for hardened
+                    //     builds (contract violations route-to-substrate too).
+                    //     The runtime size gate (skip `kind_at` for sub-threshold
+                    //     frees) is DISABLED under `hardened` — see the inline
+                    //     comment at the `if` below for the full RED-test
+                    //     rationale.
+                    #[cfg(all(
+                        feature = "medium-classes",
+                        any(
+                            not(feature = "exact-span-large"),
+                            all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+                        )
+                    ))]
                     {
-                        if SegmentHeader::kind_at(base) == SegmentKind::Large {
+                        // Under `hardened`: always check (defence-in-depth — a
+                        // contract violation can use ANY small layout; the
+                        // promotion soundness argument only covers LEGITIMATE
+                        // allocations). Under non-hardened: skip `kind_at` for
+                        // sub-threshold frees (a legit Large-with-small-layout
+                        // requires size ≥ the promotion threshold). `cfg!`
+                        // constant-folds — hardened builds get an unconditional
+                        // check, non-hardened get the size gate. Verified RED
+                        // without the `cfg!` short-circuit: the
+                        // `regression_hardened_large_kind_own_free` test (2 MiB
+                        // Large freed with 64-byte layout) aliases via the
+                        // magazine when the size gate skips `kind_at`.
+                        if (cfg!(feature = "hardened")
+                            || layout.size() >= MEDIUM_REALLOC_PROMOTION_THRESHOLD)
+                            && SegmentHeader::kind_at(base) == SegmentKind::Large
+                        {
                             // SAFETY: this own-thread body is reached only from
                             // `HeapCore::dealloc`, an `unsafe fn` whose caller
                             // bound `ptr`/`layout` to the `GlobalAlloc::dealloc`
@@ -260,9 +310,31 @@ impl HeapCore {
                         }
                     }
 
-                    // (B) non-`medium-classes`: original F7 hardened-only
-                    // defensive no-op (task #25). Unchanged from pre-R17-4.
-                    #[cfg(all(feature = "hardened", not(feature = "medium-classes")))]
+                    // (B) Promotion-OFF + hardened: defensive no-op (task #25).
+                    //     R18-3 broadens the cfg from bare `not(medium-classes)`
+                    //     to the negation of the promotion predicate, so it also
+                    //     fires under `medium-classes`-without-promotion (e.g.
+                    //     `--all-features`, where `numa-aware` defeats
+                    //     `large-reserved-capacity`). Under plain
+                    //     `production,medium-classes,exact-span-large` (no
+                    //     hardened) NEITHER (A) nor (B) compiles — consistent
+                    //     with plain `production` (no defence without hardened).
+                    //     For non-`medium-classes` builds the cfg is equivalent
+                    //     (promotion predicate is false when `medium-classes` is
+                    //     absent) so behaviour is byte-identical to pre-R18-3.
+                    #[cfg(all(
+                        feature = "hardened",
+                        not(all(
+                            feature = "medium-classes",
+                            any(
+                                not(feature = "exact-span-large"),
+                                all(
+                                    feature = "large-reserved-capacity",
+                                    not(feature = "numa-aware")
+                                )
+                            )
+                        ))
+                    ))]
                     {
                         if SegmentHeader::kind_at(base) == SegmentKind::Large {
                             return; // Large-segment free via small layout — no-op
