@@ -37,7 +37,7 @@ use std::alloc::Layout;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::registry::{bootstrap, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
 
 static SERIAL: AtomicBool = AtomicBool::new(false);
 
@@ -177,16 +177,24 @@ fn large_ptr_small_layout_free_is_noop() {
 // ─────────────────────────────────────────────────────────────────────────
 // R19-1 (task #337) — branch (A) coverage.
 //
-// The two tests below are compiled ONLY under the SAME promotion-reachable
-// predicate `heap_core_free.rs`'s branch (A) uses, layered on this file's
-// `#![cfg(hardened, alloc-global, fastbin)]`. So they run under
-// `--features "hardened medium-classes"` (where branch (A) compiles —
-// `exact-span-large` is off, so `not(exact-span-large)` is true) and are
-// absent under bare `--features "hardened"` (branch (B) only). This is the
-// feature combination the original test could never compile, so it could not
-// catch the branch-(A) bug where a fabricated small-layout free on a Large
-// pointer was routed straight to `self.core.dealloc` (really freeing the
-// segment) instead of being a detected no-op.
+// The tests below exercise branch (A) (the promotion-reachable path),
+// gated by a RUNTIME check on `HeapCore::dbg_promotion_compiled()` (R22-9,
+// task #360) rather than a hand-written `#[cfg(...)]` mirroring
+// `heap_core_free.rs`'s `medium_promotion_reachable!` predicate. Originally
+// (R19-1/R22-5) these were `#[cfg]`-gated, which meant the test functions
+// did not even COMPILE under a feature set where the predicate is false
+// (e.g. `--all-features`, where `numa-aware` + `exact-span-large` are both
+// on) — the exact CI-coverage gap R22-1/task #352 and review flagged: a
+// compile-only regression in these functions could go undetected by any CI
+// job that never builds the true-predicate feature combination. Now the
+// functions always compile (under whatever base `#![cfg(...)]` this file
+// already requires — `hardened`, `alloc-global`, `fastbin`) and each starts
+// with `if !HeapCore::dbg_promotion_compiled() { return; }`: under
+// `--features "hardened medium-classes"` (predicate true — `exact-span-large`
+// is off) the body actually runs; under any config where the predicate is
+// false (e.g. bare `--features "hardened"`, or `--all-features`) the test
+// runs and trivially passes via the early return instead of being absent
+// from the compiled test binary.
 // ─────────────────────────────────────────────────────────────────────────
 
 /// R19-1 (task #337), branch (A) sub-scenario (a): a LEGITIMATE promoted-and-
@@ -196,15 +204,12 @@ fn large_ptr_small_layout_free_is_noop() {
 /// "small" under `medium-classes` (300 KiB < 1 MiB SMALL_MAX) even though it
 /// lives in a Large segment, so this is exactly the case branch (A) exists to
 /// route to `self.core.dealloc`.
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
 #[test]
 fn promoted_large_matching_free_actually_frees() {
+    if !HeapCore::dbg_promotion_compiled() {
+        return;
+    }
+
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
@@ -266,15 +271,12 @@ fn promoted_large_matching_free_actually_frees() {
 /// which freed/unregistered the segment; this test goes RED. After the fix,
 /// the `large_layout_consistent` check fails (64 B != 2 MiB) and the free
 /// degrades to the same defensive no-op branch (B) uses.
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
 #[test]
 fn large_ptr_small_layout_free_is_noop_branch_a() {
+    if !HeapCore::dbg_promotion_compiled() {
+        return;
+    }
+
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
@@ -378,15 +380,12 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
 /// mismatch below would NOT have been detected, `self.core.dealloc` would
 /// have run, and `dbg_owner_id_for` would read `None` (segment actually
 /// freed) instead of the `Some(_)` this test asserts.
-#[cfg(all(
-    feature = "medium-classes",
-    any(
-        not(feature = "exact-span-large"),
-        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
-    )
-))]
 #[test]
 fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
+    if !HeapCore::dbg_promotion_compiled() {
+        return;
+    }
+
     let _g = SerialGuard::acquire();
     let _ = bootstrap::ensure();
 
