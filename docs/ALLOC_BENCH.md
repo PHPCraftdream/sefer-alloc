@@ -622,7 +622,9 @@ classifies once, and makes one scan branchless. **On this noisy single-host
 wall-clock the cold-tiny improvement is MODEST and within noise** — we do NOT
 claim the plan's projected ~1.1–1.2× as achieved. The deterministic proof is
 the iai-callgrind `Ir` gate on Linux CI, and the honest verdict is framed as
-**pending that gate**.
+**pending that gate**. (Resolved: `.github/workflows/perf-gate.yml`, task
+#127/#128, now runs this exact Ir gate on `ubuntu-latest` — see R18-7's status
+doc, `docs/perf/R18_7_MIMALLOC_GAP_STATUS.md`.)
 
 ### The five eurekas that landed (all counterfactually verified byte-identical)
 
@@ -684,6 +686,11 @@ Churn stands where P6 left it (16 B still ~1.6× faster, 256 B still ≈ parity)
 P7 did not regress the front we already won.
 
 ### The verdict — instruction-count win, deterministic proof PENDING the Linux Ir gate
+
+(Resolved: `.github/workflows/perf-gate.yml`, task #127/#128, now runs this
+exact Ir gate on `ubuntu-latest` — see R18-7's status doc,
+`docs/perf/R18_7_MIMALLOC_GAP_STATUS.md`. The "PENDING"/"pending" framing below
+is kept as the honest point-in-time record of what was true when P7 landed.)
 
 - **What P7 is:** an instruction-count reduction on the steady-state cold
   recycle path (batch the freelist drain/flush, classify once, branchless

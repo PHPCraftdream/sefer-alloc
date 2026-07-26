@@ -4455,6 +4455,9 @@ was already O(1)); it does not move the headline tables.
   wall-clock on this machine cannot cleanly resolve the per-op instruction
   savings. The real, DETERMINISTIC proof is the iai `Ir` gate on Linux CI (see
   the `recycle_*` benches below); the P7 cold verdict is **pending that gate**.
+  (Resolved: `.github/workflows/perf-gate.yml`, task #127/#128, now runs this
+  exact Ir gate on `ubuntu-latest` — see R18-7's status doc,
+  `docs/perf/R18_7_MIMALLOC_GAP_STATUS.md`.)
   Churn (the won front) is **UNREGRESSED** (16 B still ~1.6× faster, 256 B
   still ≈ parity). Guarantees intact: the batching removed only shared-
   bookkeeping tautologies and kept every per-block guard (`is_free`,
@@ -4472,7 +4475,10 @@ round 1 freed, isolating exactly the Э7/Э8 recycle path the single-round
 `Ir` deltas; their `Ir` baseline is captured on the first Linux perf-gate run.
 The P7 cold verdict specifically is **pending this Linux Ir gate** — the
 wall-clock numbers above are noisy comparative measurements from a single
-noisy Windows dev host, not a statistical suite.
+noisy Windows dev host, not a statistical suite. (Resolved:
+`.github/workflows/perf-gate.yml`, task #127/#128, now runs this exact Ir gate
+on `ubuntu-latest` — see R18-7's status doc,
+`docs/perf/R18_7_MIMALLOC_GAP_STATUS.md`.)
 
 ### Reliability, stress & release-doc pass (R1–R4, S1–S3, D1 — #153–#168)
 
