@@ -121,17 +121,11 @@ for completeness.
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
-12. **R10-6 — NUMA node-aware bit selection for the segment directory.** Under
-    `numa-aware` the directory-driven lookup is disabled (linear-scan fallback
-    preserves local-first preference); the bitmap is maintained so the sidecar
-    stays consistent for a future round that adds node-aware bit selection.
-    Niche; revisit if NUMA placement becomes a real target. Evidence:
-    `R10_6_NUMA_DIRECTORY_JUDGE.md` (lines 81–93).
-13. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
+12. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
     the warm heap (no page faults) would give the fairest batch-vs-tcache
     comparison; "explicitly left for a future task if the 16 B / n=1024 signal
     warrants it." Evidence: `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343).
-14. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
+13. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
     `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
@@ -158,3 +152,10 @@ for completeness.
   per-block page-map/fault work or unverifiable without the cross-allocator `Ir`
   number (→ open item #4 above). Recorded in
   `R18_7_MIMALLOC_GAP_STATUS.md` §1/§5.
+- **R10-6 — NUMA node-aware bit selection for the segment directory.**
+  Resolved by **R11-6 (task #234)**: added the node-indexed
+  `class_nonempty_by_node` bitmap and wired the per-bucket scan so the
+  directory-driven lookup is active under `numa-aware` too (local-first, then
+  shared unknown bucket, then foreign real-node buckets ascending) — not
+  "disabled, linear scan only" as R10-6 originally found. See
+  `src/alloc_core/alloc_core_small.rs:554-571`'s own "R11-6 UPDATE" comment.
