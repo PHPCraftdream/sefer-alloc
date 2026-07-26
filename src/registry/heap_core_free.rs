@@ -215,9 +215,15 @@ impl HeapCore {
                     //     R14-4 gate §2.2 `nopad`/`floor512kib` 0-cache-hit /
                     //     249-segment anomaly). `AllocCore::dealloc` frees the
                     //     whole segment via the header's `span_usable`,
-                    //     ignoring the layout — correct for both the in-place-
-                    //     grown case AND any genuine contract violation (the
-                    //     segment is freed by kind, not by the layout).
+                    //     ignoring the layout — correct for the in-place-grown
+                    //     case. Under `hardened`, a genuine contract violation
+                    //     (a fabricated small layout on a never-promoted Large
+                    //     pointer) is now caught by the consistency check in
+                    //     branch (A) below (R19-1/task #337) and degrades to a
+                    //     no-op rather than really freeing the segment; only a
+                    //     LEGITIMATE promoted-and-grown free (or any
+                    //     non-hardened build, which makes no defence promise)
+                    //     reaches the real `self.core.dealloc` call.
                     //
                     // (B) **Promotion-OFF builds — contract violations only.**
                     //     When promotion is compiled OUT (non-`medium-classes`
@@ -295,17 +301,62 @@ impl HeapCore {
                             || layout.size() >= MEDIUM_REALLOC_PROMOTION_THRESHOLD)
                             && SegmentHeader::kind_at(base) == SegmentKind::Large
                         {
-                            // SAFETY: this own-thread body is reached only from
-                            // `HeapCore::dealloc`, an `unsafe fn` whose caller
-                            // bound `ptr`/`layout` to the `GlobalAlloc::dealloc`
-                            // contract; `base` was proven ours by
-                            // `dealloc_routing`'s `contains_base` check. The
-                            // substrate routes by `kind` (Large) and frees the
-                            // segment via `span_usable`, ignoring the layout.
-                            #[allow(unsafe_code)]
-                            unsafe {
-                                self.core.dealloc(ptr, layout)
-                            };
+                            // R19-1 (task #337): under `hardened`, verify the
+                            // caller's layout is consistent with the segment's
+                            // CURRENT `large_size` before treating this as the
+                            // correctness-required real Large free. Reuses the
+                            // exact primitive (task #138) the cross-thread
+                            // Large-free routing path already uses for the same
+                            // kind of check (`heap_core_xthread.rs`'s
+                            // `dealloc_routing`): `large_layout_consistent`
+                            // compares `layout.size().max(MIN_BLOCK)` against
+                            // `SegmentHeader::large_size_at(base)` — exact match
+                            // for a LEGITIMATE promoted-and-grown free (the
+                            // header's `large_size` is updated on both initial
+                            // promotion and every subsequent OPT-G in-place
+                            // grow), mismatch for essentially any fabricated/
+                            // mismatched small layout. On a mismatch under
+                            // `hardened`, degrade to the SAME defensive no-op
+                            // branch (B) uses instead of really freeing the
+                            // segment (a `GlobalAlloc` contract violation is
+                            // exactly what `hardened`'s task #25 exists to
+                            // defend against as a detected no-op, NOT a silent
+                            // real free). The non-hardened path makes no such
+                            // defence promise and is left untouched (touching
+                            // it risks an unmeasured perf/behavior change on
+                            // the production hot path). `alloc-xthread` — the
+                            // gate on `large_layout_consistent` — is always on
+                            // wherever this branch compiles: `fastbin` (which
+                            // this function is gated on) implies
+                            // `alloc-xthread`.
+                            if !cfg!(feature = "hardened")
+                                || crate::alloc_core::deferred_large::large_layout_consistent(
+                                    base,
+                                    layout.size(),
+                                )
+                            {
+                                // SAFETY: this own-thread body is reached only
+                                // from `HeapCore::dealloc`, an `unsafe fn`
+                                // whose caller bound `ptr`/`layout` to the
+                                // `GlobalAlloc::dealloc` contract; `base` was
+                                // proven ours by `dealloc_routing`'s
+                                // `contains_base` check. The substrate routes
+                                // by `kind` (Large) and frees the segment via
+                                // `span_usable`, ignoring the layout.
+                                #[allow(unsafe_code)]
+                                unsafe {
+                                    self.core.dealloc(ptr, layout)
+                                };
+                                return;
+                            }
+                            // hardened + inconsistent layout: a fabricated/
+                            // illegitimate free of a Large pointer with a
+                            // mismatched small layout. Defensive no-op (task
+                            // #25), matching branch (B)'s contract. Branch (B)
+                            // cannot compile here (its cfg is the negation of
+                            // this branch's, so the two are mutually
+                            // exclusive), so this returns directly instead of
+                            // falling through to it.
                             return;
                         }
                     }
