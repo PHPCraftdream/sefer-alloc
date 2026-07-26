@@ -120,6 +120,52 @@ Core instructions, mandatory for all code in this repository. They
   re-run — see `docs/perf/R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md`
   and `docs/perf/R13_9_CLASS_AWARE_DIRTY_PRODUCTION_GATE.md` for the
   established pattern.
+  - **Boundary rule for what counts as an artifact requiring raw logs +
+    summary CSV** (R22-14/task #365): **any report whose verdict (GO /
+    NO-GO / NULL / CONDITIONAL-GO) rests on measured numbers owes raw logs +
+    a summary CSV, regardless of whether the measurement came from
+    criterion/iai, a `paired-ab-runner.mjs` process-level judge, or an
+    ad-hoc probe built for a single one-off question; a design or
+    feasibility report that cites no measured numbers (pure reasoning,
+    closed-form derivation, or a qualitative code-reading conclusion) does
+    not.** The test is "does the verdict rest on a number obtained by
+    *running something*", not the measurement's pedigree or permanence —
+    `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md`'s criterion-driven
+    ns/op numbers and `R21_2_OPT_H_STAGE1_HIT_RATE.md`'s 0/320 and 0/20
+    attempt/hit counts from a throwaway diagnostic-counter probe are the
+    same category under this rule, even though one is a permanent
+    benchmark harness and the other was a single-use wrapper never meant
+    to be a reporting pipeline: both are "I ran code and read off a
+    number, and the recommendation depends on that number." This closes a
+    real gap the rule left open until now: R21-2 published 0/320 and 0/20
+    as its explicit decision basis but committed neither a raw log nor a
+    summary CSV — only prose reconstruction instructions for a probe
+    binary its own text said was "not committed" — leaving it ambiguous
+    whether R21-2 even owed logs under the pre-R22-14 wording, which named
+    only "a perf-gate report" without defining that phrase. Applied
+    retroactively to `R21_2_OPT_H_STAGE1_HIT_RATE.md` in the same commit
+    that added this rule: the throwaway wrapper was promoted to a small
+    permanent committed example (`examples/r21_2_opt_h_stage1_probe.rs`,
+    observation-only, reusing the existing `OPT_H_ATTEMPTS`/`OPT_H_HITS`
+    counters and the existing `paired_ab_medium_workload.rs`/
+    `paired_ab_hot_buffer_workload.rs` shared harnesses — no new counters,
+    no behavior change), and its output committed as
+    `docs/perf/_raw_r21_2_stage1_measurement.log` +
+    `docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE_summary.csv`, reproducing (not
+    re-deriving) the exact already-published 0/320 and 0/20 result. This
+    was the cheaper and more honest of the two options weighed (re-run and
+    commit vs. add an explicit in-report exemption note): the measurement
+    was genuinely reproducible from already-existing test infrastructure
+    (the counters and both harness files pre-date this rule and were never
+    the throwaway part — only the one-off `main()` wrapper around them
+    was), so there was no real reason to leave a documented reproducibility
+    gap standing when closing it cost one small `examples/` file. A report
+    that truly cannot be regenerated from anything committed (e.g. it
+    depended on since-deleted throwaway code, or external state that no
+    longer exists) would instead take the exemption-note route — add a
+    line to the report itself stating why it falls outside this rule —
+    rather than inventing new measurement code after the fact to manufacture
+    a raw log; that path was not needed here.
   - **A cited raw log may be truncated to its relevant section, with an
     explicit truncation marker** (R14-10/task #295) — the log does not have
     to be committed in full just because one section of it is the cited

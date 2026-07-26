@@ -972,6 +972,22 @@ required-features = ["alloc-global"]
 name = "paired_ab_hot_buffer_on"
 required-features = ["alloc-global"]
 
+# R22-14 (task #365): small, permanent, committed reproduction of R21-2's
+# (task #351) Stage-1 OPT-H diagnostic hit-rate measurement
+# (`docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md` §3), promoted from that report's
+# throwaway `cat > examples/_tmp_probe.rs <<'RS' ... RS` reconstruction
+# instructions. Observation-only: calls the two EXISTING
+# `AllocCore::dbg_opt_h_attempts`/`dbg_opt_h_hits` accessors after running the
+# two EXISTING, unmodified `paired_ab_medium_workload.rs` /
+# `paired_ab_hot_buffer_workload.rs` shared harnesses in one process. No new
+# counters, no behavior change. `medium-classes` + `alloc-stats` are required
+# because OPT-H's diagnostic branch and its accessors only increment/read
+# meaningfully under that combination (see `docs/perf/
+# R21_2_OPT_H_STAGE1_HIT_RATE.md` §3's own build line).
+[[example]]
+name = "r21_2_opt_h_stage1_probe"
+required-features = ["alloc-global", "medium-classes", "alloc-stats"]
+
 # R10-5 (task #230): process-level A/B/B/A judge for the warm-Large-cache-hit
 # question R9-4 §2.4 left open. Two wrappers around ONE shared warm-recycle
 # workload (`examples/_shared/paired_ab_large_cache_workload.rs`, `include!`d

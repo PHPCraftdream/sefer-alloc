@@ -1,0 +1,20 @@
+R21-2 (task #351) / R22-14 (task #365) Stage-1 OPT-H diagnostic counter
+measurement — raw output, reproduced from a committed probe.
+
+Measured on commit: 272478c (R22-13, task #364; measurement itself is
+identical to R21-2's original reading taken at 517a85b + its own uncommitted
+diff, later committed as b6af12d — the counters/preconditions have not
+changed since).
+Build: cargo build --release --example r21_2_opt_h_stage1_probe --features "production,medium-classes,alloc-stats"
+Run:   cargo run --release --example r21_2_opt_h_stage1_probe --features "production,medium-classes,alloc-stats"
+CPU: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T)
+OS: win32
+rustc: 1.97.0 (2d8144b78 2026-07-07)
+
+=== Probe binary output (examples/r21_2_opt_h_stage1_probe.rs) ===
+harness=r10_2_medium_workload opt_h_attempts=320 opt_h_hits=0
+harness=r21_1_hot_buffer_workload opt_h_attempts=20 opt_h_hits=0
+
+Matches docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE.md §3.1/§3.2 exactly (320/0,
+20/0) — this reproduces the original published result via a small committed
+example, not a new measurement.

@@ -145,15 +145,35 @@ wrongly justify a GO decision that an independently-verified precondition 6
 would not support.
 
 Per the design's own §6.1 plan, both harnesses were run with
-`--features "production,medium-classes,alloc-stats"`, via a small one-off
-instrumented wrapper (`include!`ing the existing unmodified shared workload
-file and printing `AllocCore::dbg_opt_h_attempts()`/`dbg_opt_h_hits()` after
-the run — not a new permanent reporting pipeline, per the task's own
-guidance; not committed, reconstructable from the two commands below).
+`--features "production,medium-classes,alloc-stats"`.
+
+**(R22-14/task #365 update, 2026-07-26):** at first writing, this measurement
+was taken via a throwaway, uncommitted one-off wrapper (`include!`ing the
+existing unmodified shared workload file and printing
+`AllocCore::dbg_opt_h_attempts()`/`dbg_opt_h_hits()` after the run), with only
+prose reconstruction instructions committed in its place — CLAUDE.md's
+"Raw perf logs"/"machine-readable summary" rules did not yet have an explicit
+boundary rule for whether a report like this one owed committed raw logs.
+R22-14 added that boundary rule (see CLAUDE.md's "Phased delivery" section)
+and, applying it here, promoted the throwaway wrapper to a small permanent
+committed example, **`examples/r21_2_opt_h_stage1_probe.rs`**
+(`required-features = ["alloc-global", "medium-classes", "alloc-stats"]` in
+`Cargo.toml`) — observation-only, adds no new counters, calls only the two
+EXISTING `dbg_opt_h_attempts`/`dbg_opt_h_hits` accessors after running the
+same two EXISTING unmodified shared workload files this section already
+cited. Its output is committed at
+`docs/perf/_raw_r21_2_stage1_measurement.log` (`git add -f`'d, per the
+`_raw_*.log` gitignore exception) with a companion
+`docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE_summary.csv`. Re-running it reproduced
+the exact numbers below (320/0, 20/0) — this is a re-confirmation of the
+original reading, not a new measurement. The old reconstruction recipe below
+is kept as-is (historical record of how the number was first obtained); the
+committed example is now the authoritative reproduction path going forward.
 
 ### 3.1 R10-2's existing adversarial harness (`examples/_shared/paired_ab_medium_workload.rs`, unmodified)
 
-Reconstruction:
+Reconstruction (superseded by `examples/r21_2_opt_h_stage1_probe.rs`, see the
+update note above — kept for historical record):
 ```text
 cat > examples/_tmp_probe.rs <<'RS'
 use sefer_alloc::{AllocCore, SeferAlloc};
@@ -175,7 +195,8 @@ opt_h_attempts=320
 opt_h_hits=0
 ```
 
-Hit rate: **0 / 320 = 0%**.
+Hit rate: **0 / 320 = 0%**. Reproduced via the committed example — see
+`docs/perf/_raw_r21_2_stage1_measurement.log`.
 
 This matches the design's own §5.2 prediction (N=16-simultaneous-object
 harness, 20 rounds → 320 first-grow-crossing attempts, at most one
@@ -186,8 +207,9 @@ segment, `off = 256 KiB`, and `256 KiB % 320 KiB = 256 KiB ≠ 0`).
 
 ### 3.2 R21-1's single-hot-buffer harness (`examples/_shared/paired_ab_hot_buffer_workload.rs`, unmodified, task #350)
 
-Reconstruction: identical shape, `include!("_shared/paired_ab_hot_buffer_workload.rs")`
-+ `run_hot_buffer_workload()`.
+Reconstruction (superseded by `examples/r21_2_opt_h_stage1_probe.rs`, see the
+§3 update note above): identical shape,
+`include!("_shared/paired_ab_hot_buffer_workload.rs")` + `run_hot_buffer_workload()`.
 
 **Result:**
 ```text
@@ -195,7 +217,8 @@ opt_h_attempts=20
 opt_h_hits=0
 ```
 
-Hit rate: **0 / 20 = 0%**.
+Hit rate: **0 / 20 = 0%**. Reproduced via the committed example — see
+`docs/perf/_raw_r21_2_stage1_measurement.log`.
 
 `ROUNDS = 20` in this harness; the attempt count (20) confirms EXACTLY one
 OPT-H-eligible attempt per round, not five (one per `GROW_STEPS` rung) as
@@ -373,6 +396,16 @@ only remaining unexplored variant if a future round wants to revisit this.
 
 **Not committed, not pushed** — per this round's explicit instruction, this
 diff awaits a separate zero-trust review pass before any commit.
+
+(R22-14/task #365, 2026-07-26: three more files join this report's own
+history, added by the raw-logs/summary-CSV retrofit described in §3's update
+note above — `examples/r21_2_opt_h_stage1_probe.rs` (new, committed
+example), `Cargo.toml` (new `[[example]]` entry for it), and
+`docs/perf/R21_2_OPT_H_STAGE1_HIT_RATE_summary.csv` (new companion summary).
+`docs/perf/_raw_r21_2_stage1_measurement.log` is `_raw_*.log`-gitignored
+scratch, `git add -f`'d alongside these per the established convention — not
+listed in §7 above since §7 predates the gitignore exception being invoked
+for this report specifically.)
 
 (Resolved, R22-4/task #355, 2026-07-26: this statement itself went stale the
 moment the zero-trust review passed and the diff was committed as `b6af12d`

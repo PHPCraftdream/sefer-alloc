@@ -1,0 +1,3 @@
+commit,features,cpu,os,rustc,harness,opt_h_attempts,opt_h_hits,hit_rate_pct,verdict
+272478c,"production,medium-classes,alloc-stats",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,r10_2_medium_workload (examples/_shared/paired_ab_medium_workload.rs),320,0,0.0,NO-GO (floor; not "a material majority" per design's CONDITIONAL-GO trigger)
+272478c,"production,medium-classes,alloc-stats",11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),win32,1.97.0,r21_1_hot_buffer_workload (examples/_shared/paired_ab_hot_buffer_workload.rs),20,0,0.0,NO-GO (floor; not "a material majority" per design's CONDITIONAL-GO trigger)
