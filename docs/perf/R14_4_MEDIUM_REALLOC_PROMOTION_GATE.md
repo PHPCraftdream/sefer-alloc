@@ -23,6 +23,21 @@ instruction-count (iai) axis. Single physical host — see §8.
 
 ## 0. Headline summary
 
+**UPDATED VERDICT (R18-2, task #331, 2026-07-26) — see §7.1 for the full
+current numbers.** The table below and this section's original
+"~1,700–2,300× slower" framing were measured on code carrying a real 4 MiB
+Large-segment leak (fixed by R17-4/task #321) and predate R18-3's (task #330)
+`kind_at` narrowing; §7.1 explicitly says that old framing "must NOT be cited
+as an argument against promoting `medium-classes` — it was confounded by the
+leak." The CURRENT, re-verified numbers on post-R17-4/R18-3 code (`main` @
+`912740f`) are ~1,180× (combo 1+2, `production,medium-classes`) / ~380×
+(combo 3, with `large-cache-extended`) slower on the realloc sub-window —
+still RED, still does NOT clear the 20% kill-gate — but the original §0
+figures below overstate the gap because of the leak. The original table and
+prose are preserved unchanged below as historical record (§7.2 keeps them
+explicitly as "Original verdict at task time"); read §7.1 before drawing any
+conclusion from this section alone.
+
 | # | Measurement | Baseline | Treatment (Stage 2 promotion) | Verdict |
 |---|---|---|---|---|
 | 1 | R10-2 judge, realloc phase, 10 paired A/B/B/A rounds | `medium_off` ≈ 15.3–17.7 ms/20-round-block (≈29–42 µs/realloc) | `medium_on` (promotion active) ≈ 65.5–71.2 ms/20-round-block | mean Δ = **−69.1 ms** (A−B), t=−142.3, sign 10/10 A-faster → **medium_on still ~1,700–2,300× slower — does NOT clear the 20% kill-gate** |
@@ -587,6 +602,17 @@ harness: the **realloc phase is the sub-window** that decides the kill-gate
 | 3 | A `production` | 18.33 ms | — |
 | 3 | B `…,medium-classes,large-cache-extended` | 19.02 ms | **B ~1.04× (≈ break-even overall)** — `large-cache-extended`'s realloc cut (~19 ms) is now comparable to the alloc+free savings (~18 ms) |
 
+**Methodological caveat:** the full-round figures above are the ARITHMETIC
+SUM of the three independently-paired phase means in §10.4 (alloc/free/
+realloc), not a single paired sample of their own — there is no full-round
+SD/t/sign-test in this measurement. A genuine full-round paired statistic
+would require a 4th runner pass measuring one combined alloc+free+realloc
+sequence per launch (rather than three separate phase timers) and running
+its OWN paired A/B/B/A comparison. Not done here; flagged for a future
+re-run if the full-round number is ever load-bearing for a decision — today
+it is presented as context, not as the kill-gate criterion (the gate itself
+is on the realloc sub-window alone, per this section's own framing above).
+
 The combo-3 full-round near-break-even is notable but does NOT clear the
 gate: the gate is on the realloc SUB-WINDOW, which is still ~380× (and the
 net is only break-even for THIS specifically realloc-heavy 16-object
@@ -641,6 +667,19 @@ path (no Large reservations), so `segments` ≈ fresh reservations among those
   `large-cache-extended` win, and it is what cut the realloc time ~3.5×.
 - Both still leave a non-zero realloc cost (the promotion `memcpy`), so both
   still fail the 20% gate.
+
+**Methodology note for a future re-run.** The proxy above is only necessary
+because the gate binaries deliberately omit `alloc-stats` (its per-hit
+increment is a hot-path cost the gate ships without). A future re-run should
+build the ON arm with `--features "production,medium-classes,alloc-stats"`
+(combo 3 adds `,large-cache-extended`) and read the REAL counter directly —
+the public `AllocStats::large_cache_hits` field (`src/global/alloc_stats.rs`,
+surfaced through the existing `#[doc(hidden)]` dbg accessor) reads `0`
+without that feature and the true count with it. That replaces the
+`segments_reserved_total` miss-inference with the exact counter the task
+framing asked for, and removes the implicit "one `alloc_large` call == one
+promoted object" coupling the proxy relies on (true for THIS workload's
+shape, but a property a direct counter would not assume).
 
 ### 10.7 Why the gate is still RED (root cause, post-fix)
 
