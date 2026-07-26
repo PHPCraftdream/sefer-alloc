@@ -12,7 +12,11 @@ two-stage discipline, `docs/perf/R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md`
 
 **Date:** 2026-07-26. **Base revision:** `main` @ `517a85b` (R21-1, task #350)
 plus this task's own uncommitted diff (`src/alloc_core/alloc_core.rs`,
-`src/alloc_core/alloc_core_core_diag.rs`).
+`src/alloc_core/alloc_core_core_diag.rs`). (Resolved: this diff, including
+this report itself, was committed as `b6af12d` — see §7's file list and the
+matching note at the end of this document. The "uncommitted" framing above is
+kept as the honest point-in-time record of what was true when this report was
+first drafted, before that commit landed.)
 
 ---
 
@@ -346,3 +350,24 @@ only remaining unexplored variant if a future round wants to revisit this.
 
 **Not committed, not pushed** — per this round's explicit instruction, this
 diff awaits a separate zero-trust review pass before any commit.
+
+(Resolved, R22-4/task #355, 2026-07-26: this statement itself went stale the
+moment the zero-trust review passed and the diff was committed as `b6af12d`
+— `git show b6af12d --stat` confirms this exact file, plus
+`src/alloc_core/alloc_core.rs`, `src/alloc_core/alloc_core_core_diag.rs`,
+`tests/r21_2_opt_h_stage1_precondition_probe.rs`, `docs/ARCHITECTURE.md`, and
+`docs/perf/OPEN_ITEMS.md`, were all part of that one commit. The self-
+description above was never updated at commit time and sat stale through the
+rest of Round 21 and all of Round 22 so far. This is the same
+"derived-statement-goes-stale-when-the-thing-it-derives-from-moves" defect
+class `docs/DESIGN_stale_literal_guard.md` catalogs for numeric literals —
+here the "derived" fact is a commit-status claim rather than a number, but
+the rot mechanism is identical. Worth one honest note on the irony: Round 19
+spent 4 commits (R19-2/3/4, R20-1) fixing exactly this staleness class, and
+this file went stale with the same shape inside the very next couple of
+rounds after that cleanup landed — the fix does not appear to have carried
+forward into new prose by itself; each new "committed?"/"pending?"
+self-description still needs its own follow-up correction when the
+underlying fact changes. Per R20-1's precedent, this correction is applied
+as an appended note rather than rewriting the historical sentence above into
+present tense.)
