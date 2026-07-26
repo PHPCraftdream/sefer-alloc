@@ -54,6 +54,18 @@ Core instructions, mandatory for all code in this repository. They
 
 ## Phased delivery
 
+- **Round start: check the open-items index.** Before forming a new round's
+  task queue, read `docs/perf/OPEN_ITEMS.md` end-to-end and decide, for each
+  item a prior round's gate report flagged as open / deferred / follow-up,
+  whether this round closes it, defers it (with a one-line reason appended in
+  the index), or leaves it — none may be silently ignored. When a gate report
+  newly flags an open item, add it to that index in the same commit; when one
+  is closed, move it to the index's "Recently resolved" trail (R18-8/task #336:
+  R14-4's explicitly-marked-open "re-run `scripts/r10_2_medium_gate.mjs` once
+  R14-5 lands" item hung unnoticed through rounds 15–17 and was caught only by
+  an accidental external re-read; the in-session TaskList does not survive a
+  session boundary, so a fresh session inherits no memory of prior rounds'
+  flagged-open items — this index does).
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
 - **Between phases: run tests and commit.** Before moving to the next phase,
