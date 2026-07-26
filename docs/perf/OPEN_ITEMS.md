@@ -154,6 +154,27 @@ for completeness.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **Product fate of `medium-classes` — should it ship, in any form?**
+  Resolved by **R22-18 (task #369)**, 2026-07-26: **decision recorded, not
+  merely deferred again.** After 4 independent NULL/NO-GO attempts across 3
+  rounds to clear the realloc axis (R18-2's ~1,180×/~380× re-run, R20-2's
+  NULL on reserved-capacity headroom, R21-2's 0%/0% OPT-H hit rate, R22-6's
+  closed-form LCM proof that the medium ladder cannot support OPT-H
+  structurally, and R22-16's design-level NO-GO on OS-level remap), this
+  record recommends **(b) — a named opt-in workload profile**, not (a) ship
+  in `production` (rejected — the realloc regression is real, large, and
+  unanimous across every measurement) and not (c) reject-and-remove
+  (rejected — the alloc/free win, ~31×/~211×, is real, thrice-reproduced,
+  and never contradicted; removal would delete a genuine win to solve a
+  problem a documentation commitment solves just as durably). Full evidence
+  re-verification, the three-option tradeoff analysis, a stub for the
+  workload-profile doc, and an explicit "what would count as new evidence to
+  reopen this" falsifiability clause are in
+  `docs/perf/R22_18_MEDIUM_CLASSES_FATE_DECISION.md`. This closes the
+  recurring re-measurement cost the R22 plan synthesis
+  (`docs/reviews/2026-07-26-r22-plan.md` §2.3 item 4) flagged — a future
+  round should cite this record rather than re-measuring, absent one of the
+  three narrowly-defined reopen triggers §5 of that document names.
 - **R10-2 §5 #1 — in-place medium-class grow within a segment (OPT-H).**
   Closed by **R22-6 (task #357)**, 2026-07-26, with a closed-form arithmetic
   proof, not a further measurement. R21-2 (task #351) had already found a 0%
