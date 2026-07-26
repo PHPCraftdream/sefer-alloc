@@ -348,12 +348,26 @@ warm-up runs (both not significant, with much smaller raw deltas), the
 full-round production wall-clock effect of `class-aware-dirty` is **not
 statistically confirmed in either direction** across all four process-level
 measurements taken to date. `class-aware-dirty` stays in `production` on
-**recoverability grounds** (it closes the lost-wakeup class from R13-1,
-which remains true regardless of the wall-clock question) — its full-round
-production wall-clock effect has not been established with confidence by any
-process-level measurement so far, and this task's own attempt, run under a
-disclosed-noisy environment, adds two more inconclusive data points rather
-than resolving the question. A future re-attempt on a machine independently
+**recoverability grounds** — but stated carefully: the lost-wakeup class from
+R13-1 that the latch closes is itself a property of this feature's OWN
+per-class sidecar (a sidecar-OOM push that raced a later materialization could
+silently diverge from the coarse per-segment bitmap). The baseline `production`
+build WITHOUT `class-aware-dirty` uses only that coarse per-segment dirty
+bitmap and has NO per-class sidecar that could miss a push, so it never
+carried this risk; R13-1's latch is a one-way derate that falls BACK to the
+coarse scan (i.e. back to baseline behaviour) once the sidecar is
+untrustworthy. The feature therefore ships its own hazard and its own safety
+net — "recoverability" here means self-contained correctness of the
+optimization path, NOT that it rescues a pre-existing danger in the baseline.
+Its full-round production wall-clock effect has not been established with
+confidence by any process-level measurement so far, and the sub-window
+`window_ns` central tendency is likewise indistinguishable between on and off
+(R17-7's raw logs, `docs/perf/_raw_r17_7_warmup_ab_run{1,2}.log`, show ~3.2M-ns
+medians for BOTH arms across both runs, paired t −0.714/−0.683 vs crit 2.101),
+so it is retained as a latency-tail/correctness policy rather than a confirmed
+throughput optimization on either axis — and this task's own attempt, run
+under a disclosed-noisy environment, adds two more inconclusive data points
+rather than resolving the question. A future re-attempt on a machine independently
 confirmed idle (not just "less busy than last time") is the only way to
 close this gap with actual confidence; this task does not claim to be that
 attempt.

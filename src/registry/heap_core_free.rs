@@ -1041,8 +1041,8 @@ impl HeapCore {
     /// no padding) therefore stands on §2.1's rounding rationale, which is
     /// INDEPENDENT of the (now-fixed) anomaly; see
     /// `docs/perf/R14_4_MEDIUM_REALLOC_PROMOTION_GATE.md` §2.2 (closed) and
-    /// `tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs`. Padding is
-    /// default; a caller whose growth pattern would benefit from headroom
+    /// `tests/r17_4_inplace_grown_large_dealloc_routes_by_kind.rs`. No padding
+    /// is the default; a caller whose growth pattern would benefit from headroom
     /// beyond one `SEGMENT` is exactly what the opt-in `large-reserved-capacity`
     /// feature already exists to provide (via `AllocCore::alloc_large`'s own
     /// `reserved_capacity` mechanism), and that feature's benefit is

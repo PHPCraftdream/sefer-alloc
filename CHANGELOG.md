@@ -133,10 +133,26 @@ tier-1 unchanged at 20): R17-1 added two `#[allow(unsafe_code)]` sites in
   crossed significance in the "on slower" direction). Combined with R14-3's
   two original runs, all four process-level measurements taken to date fail to
   confirm a full-round `production` wall-clock effect in either direction.
-  `class-aware-dirty` therefore remains in `production` UNCHANGED on
-  recoverability grounds (it closes the R13-1 lost-wakeup class) — NOT on any
-  confirmed speedup. Its full-round wall-clock effect stays unconfirmed by any
-  process-level measurement so far.
+  `class-aware-dirty` therefore remains in `production` UNCHANGED — but the
+  "recoverability" basis is narrower than a first reading suggests. The R13-1
+  lost-wakeup class the latch closes is itself a property of this feature's
+  OWN per-class sidecar (a sidecar-OOM push that raced a later materialization
+  could silently diverge from the coarse per-segment bitmap — see the R13-1
+  entry below). The baseline `production` build WITHOUT `class-aware-dirty`
+  uses only that coarse per-segment dirty bitmap and has NO per-class sidecar
+  that could miss a push, so it never carried this risk; R13-1's latch is a
+  one-way derate that falls BACK to the coarse scan (i.e. back to baseline
+  behaviour) once the sidecar is untrustworthy. In other words the feature
+  ships its own hazard and its own safety net — "recoverability" does NOT mean
+  it rescues a pre-existing danger in the baseline. It is therefore retained
+  as a self-contained correctness/latency-tail policy, NOT on any confirmed
+  speedup: the full-round wall-clock effect stays unconfirmed by any
+  process-level measurement so far, and the sub-window `window_ns` central
+  tendency is likewise indistinguishable between on and off — R17-7's own raw
+  logs (`docs/perf/_raw_r17_7_warmup_ab_run{1,2}.log`) show ~3.2M-ns medians
+  for BOTH arms across both runs (run 1 on marginally lower, run 2 on
+  marginally higher) with the paired t (−0.714, −0.683) well under crit 2.101
+  in both, so no directional sub-window effect is confirmed either.
 - **R17-8 (`ea8ff86`, task #325, P2) — deterministic `trim_for_recycle` release
   oracle.** `regression_r4_3_teardown_trim.rs` (R16-6, task #316) had
   documented an unreproduced load-sensitive flake (`segments_released_total`
