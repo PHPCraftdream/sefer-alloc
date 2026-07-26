@@ -157,6 +157,51 @@ medium_promotion_reachable! {
     const MEDIUM_REALLOC_PROMOTION_THRESHOLD: usize = 256 * 1024;
 }
 
+/// DIAGNOSTIC (R22-12, task #363): process-wide count of `hardened` defensive
+/// no-ops fired on a Large-kind own-thread `dealloc` — i.e. a `GlobalAlloc`
+/// contract violation (a fabricated/mismatched small layout freeing a pointer
+/// that actually lives in a Large segment) that `hardened` detected and
+/// rejected instead of silently corrupting the magazine.
+///
+/// **One shared counter for BOTH of this file's defensive-no-op return
+/// points**, not two independent ones:
+///
+///   - **branch (A)'s mismatch case** (`dealloc_own_thread_with_base`,
+///     promotion compiled in): `large_layout_consistent` rejects the
+///     caller's layout against the segment's current `large_size`/
+///     `large_align` (R19-1/task #337, extended by R22-5/task #356 to also
+///     check align) — the free degrades to a no-op instead of really
+///     freeing the segment.
+///   - **branch (B)** (`dealloc_own_thread_with_base`, promotion NOT
+///     compiled in): `kind_at(base) == Large` on a free keyed by a small
+///     layout is, in a promotion-off build, structurally ALWAYS a contract
+///     violation (task #25's original defensive no-op).
+///
+/// From an integrator's point of view these are the SAME observable event —
+/// "hardened detected and rejected a contract-violating Large free" — just
+/// reached via two different `#[cfg]`-mutually-exclusive code shapes (branch
+/// (A) requires the promotion predicate; branch (B) requires its negation;
+/// see this file's own comments at each branch for why they can never both
+/// compile in the same build). Splitting them into two counters would ask an
+/// integrator to know which internal branch fired for a distinction that
+/// carries no actionable difference on their side — both mean "fix your
+/// caller, it is passing a layout that does not match the pointer".
+///
+/// **This counter has ZERO effect on allocator behavior** — the decision to
+/// reject was already made by the surrounding `if`/`#[cfg]`; this only counts
+/// how often that pre-existing decision fires. Read via
+/// [`HeapCore::dbg_hardened_large_noop_count`]. Reads 0 unless `alloc-stats`
+/// is on — the per-event increment is gated behind `alloc-stats`, matching
+/// [`OPT_H_ATTEMPTS`](crate::alloc_core::alloc_core::OPT_H_ATTEMPTS)'s
+/// convention; the static itself is always compiled (gated on `alloc-core`,
+/// which both `hardened` and plain `medium-classes` promotion depend on
+/// transitively — see `Cargo.toml`) so the accessor has a stable definition
+/// regardless of the rest of the feature set. Relaxed ordering — a
+/// diagnostic count, not a synchronization primitive.
+#[cfg(feature = "alloc-core")]
+pub(crate) static HARDENED_LARGE_NOOP_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 impl HeapCore {
     /// Deallocate `ptr` (previously returned by [`alloc`](Self::alloc)).
     ///
@@ -437,6 +482,16 @@ impl HeapCore {
                             // this branch's, so the two are mutually
                             // exclusive), so this returns directly instead of
                             // falling through to it.
+                            //
+                            // R22-12 (task #363): count this detected-and-
+                            // rejected contract violation — see
+                            // `HARDENED_LARGE_NOOP_COUNT`'s doc for why this
+                            // shares ONE counter with branch (B) below.
+                            #[cfg(feature = "alloc-stats")]
+                            HARDENED_LARGE_NOOP_COUNT.fetch_add(
+                                1,
+                                core::sync::atomic::Ordering::Relaxed,
+                            );
                             return;
                         }
                     }
@@ -478,6 +533,13 @@ impl HeapCore {
                     ))]
                     {
                         if SegmentHeader::kind_at(base) == SegmentKind::Large {
+                            // R22-12 (task #363): count this detected-and-
+                            // rejected contract violation — see
+                            // `HARDENED_LARGE_NOOP_COUNT`'s doc for why this
+                            // shares ONE counter with branch (A) above.
+                            #[cfg(feature = "alloc-stats")]
+                            HARDENED_LARGE_NOOP_COUNT
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                             return; // Large-segment free via small layout — no-op
                         }
                     }

@@ -30,6 +30,21 @@
 //!
 //! Gated to `hardened` (which pulls `fastbin`): only that build compiles the
 //! guard and the magazine path it defends.
+//!
+//! ## R22-12 (task #363): `HARDENED_LARGE_NOOP_COUNT` as a stronger oracle
+//!
+//! Every test below that drives one of these two no-op branches now ALSO
+//! asserts that `HeapCore::dbg_hardened_large_noop_count()` advances by
+//! exactly 1 across the hazardous free — in addition to (not replacing) the
+//! existing `dbg_owner_id_for` liveness check. `dbg_owner_id_for` proves
+//! "the segment was not actually freed"; it does NOT prove the defensive
+//! no-op branch is what caused that (a segment could stay registered for an
+//! unrelated reason if the guard code were deleted entirely and some OTHER
+//! path happened not to touch it). The counter proves the no-op branch
+//! itself actually executed. Under `!alloc-stats` the counter always reads
+//! 0 (the increment is gated), so the delta assertions below are themselves
+//! gated to `alloc-stats` — run with `--features "hardened medium-classes
+//! alloc-stats"` to exercise them.
 
 #![cfg(all(feature = "hardened", feature = "alloc-global", feature = "fastbin"))]
 
@@ -97,9 +112,29 @@ fn large_ptr_small_layout_free_is_noop() {
     // pattern out of the payload bytes rather than incidental zeros.
     unsafe { std::ptr::write_bytes(large, 0xCC, LARGE_SIZE) };
 
+    // R22-12 (task #363): snapshot the shared no-op counter BEFORE the
+    // hazardous free, so the assertion below is a DELTA (robust to whatever
+    // this counter already read from earlier activity in this process/test
+    // binary), not an absolute value.
+    #[cfg(feature = "alloc-stats")]
+    let noop_before = HeapCore::dbg_hardened_large_noop_count();
+
     // The hazardous own-thread free of the Large pointer with a SMALL layout —
     // must be a NO-OP under the hardened Large-kind guard.
     unsafe { (*heap).dealloc(large, small_layout) };
+
+    // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1 —
+    // proof the defensive no-op branch itself actually ran, not just that the
+    // segment happens to still be registered (see this file's module doc for
+    // why this is a strictly stronger oracle than `dbg_owner_id_for` alone).
+    #[cfg(feature = "alloc-stats")]
+    assert_eq!(
+        HeapCore::dbg_hardened_large_noop_count(),
+        noop_before + 1,
+        "HARDENED_LARGE_NOOP_COUNT did not advance by exactly 1 across the \
+         mismatched small-layout free — the defensive no-op branch did not \
+         fire as expected"
+    );
 
     // The Large payload must be untouched (the free must not have mutated it).
     unsafe {
@@ -303,10 +338,27 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
         "Large segment must be registered before the free"
     );
 
+    // R22-12 (task #363): snapshot the shared no-op counter BEFORE the
+    // hazardous free (delta assertion — see the module doc).
+    #[cfg(feature = "alloc-stats")]
+    let noop_before = HeapCore::dbg_hardened_large_noop_count();
+
     // The ILLEGITIMATE own-thread free of the Large pointer with a SMALL
     // layout — under `hardened` + branch (A) this MUST be a detected no-op,
     // NOT a real free (the bug being fixed).
     unsafe { (*heap).dealloc(large, small_layout) };
+
+    // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1
+    // — proof branch (A)'s mismatch case itself fired, not just that the
+    // segment happens to still be registered.
+    #[cfg(feature = "alloc-stats")]
+    assert_eq!(
+        HeapCore::dbg_hardened_large_noop_count(),
+        noop_before + 1,
+        "HARDENED_LARGE_NOOP_COUNT did not advance by exactly 1 across \
+         branch (A)'s mismatched small-layout free — the defensive no-op \
+         branch did not fire as expected"
+    );
 
     // The REAL oracle (R19-1): the segment must STILL be registered. Before
     // the fix this returned `None` — branch (A) had actually freed it via
@@ -425,7 +477,24 @@ fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
         "promoted Large segment must be registered before the free"
     );
 
+    // R22-12 (task #363): snapshot the shared no-op counter BEFORE the
+    // hazardous free (delta assertion — see the module doc).
+    #[cfg(feature = "alloc-stats")]
+    let noop_before = HeapCore::dbg_hardened_large_noop_count();
+
     unsafe { (*heap).dealloc(promoted, wrong_align_layout) };
+
+    // R22-12 (task #363): the no-op counter must have advanced by EXACTLY 1
+    // — proof branch (A)'s mismatch case (this time via the align check,
+    // not the size check) itself fired.
+    #[cfg(feature = "alloc-stats")]
+    assert_eq!(
+        HeapCore::dbg_hardened_large_noop_count(),
+        noop_before + 1,
+        "HARDENED_LARGE_NOOP_COUNT did not advance by exactly 1 across the \
+         same-size-wrong-align free — the defensive no-op branch did not \
+         fire as expected"
+    );
 
     // The REAL oracle: the segment must STILL be registered — a same-size-
     // wrong-align free must be a detected no-op, not a real free.

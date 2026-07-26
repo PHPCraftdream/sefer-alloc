@@ -346,4 +346,20 @@ impl HeapCore {
             )
         ))
     }
+
+    /// TEST/DIAGNOSTIC (R22-12, task #363): process-wide count of `hardened`
+    /// defensive no-ops fired on a Large-kind own-thread `dealloc` — see
+    /// [`HARDENED_LARGE_NOOP_COUNT`](super::heap_core_free::HARDENED_LARGE_NOOP_COUNT)'s
+    /// doc comment for exactly which two branches (`heap_core_free.rs`'s
+    /// branch (A) mismatch case and branch (B)) share this one counter and
+    /// why. Relaxed load — diagnostic only. Reads 0 unless `alloc-stats` is
+    /// on (the increment sites are gated); the accessor itself is always
+    /// compiled (gated on `alloc-core`, same as the static) so callers need
+    /// no `#[cfg]`.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-core")]
+    #[must_use]
+    pub fn dbg_hardened_large_noop_count() -> u64 {
+        super::heap_core_free::HARDENED_LARGE_NOOP_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+    }
 }
