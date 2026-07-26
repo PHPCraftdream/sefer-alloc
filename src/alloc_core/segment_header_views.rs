@@ -135,6 +135,36 @@ impl SegmentHeader {
         Node::read_usize(Node::offset(base, off) as *const usize)
     }
 
+    /// Read the header's `large_align` field only (field-specific `usize`
+    /// load, mirrors `large_size_at`'s exact pattern). R22-5 (task #356):
+    /// used alongside `large_size_at` by
+    /// [`large_layout_consistent`](crate::alloc_core::deferred_large::large_layout_consistent)
+    /// to sanity-check that the freeing layout's ALIGNMENT — not just its
+    /// size — is consistent with the CURRENT occupant of the segment before
+    /// treating a free as legitimate. `GlobalAlloc`'s contract requires the
+    /// caller to pass back the identical `Layout` (size AND align) it
+    /// allocated with, so a size-only check leaves a gap: a fabricated free
+    /// with the right size but a wrong align would previously pass.
+    ///
+    /// `large_align` is written once at segment construction
+    /// (`SegmentHeader::large`) and on every large-cache-hit reuse
+    /// (`AllocCore::alloc_large`'s hit path rewrites the WHOLE header via
+    /// `Node::write_struct` before the segment is handed to a new caller —
+    /// never mutated in place field-by-field), so a field-specific read here
+    /// does not race the owner's disjoint `bump` writes (same discipline as
+    /// `kind_at`/`magic_at`/`large_size_at`). It IS, by design, able to
+    /// observe a DIFFERENT value than the one the freeing thread's stale
+    /// `Layout` was allocated against, if the segment has already been
+    /// reclaimed and reused for a new allocation between the free and this
+    /// read — that race is exactly what this check exists to catch (same
+    /// rationale as `large_size_at`'s doc).
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    pub(crate) fn large_align_at(base: *mut u8) -> usize {
+        let off = core::mem::offset_of!(SegmentHeader, large_align);
+        Node::read_usize(Node::offset(base, off) as *const usize)
+    }
+
     /// Read the header's `segment_id` field only (field-specific `u32` load).
     /// Used by [`SegmentTable::unregister`](super::segment_table::SegmentTable::unregister)
     /// / [`SegmentTable::recycle`](super::segment_table::SegmentTable::recycle)

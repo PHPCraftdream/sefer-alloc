@@ -358,3 +358,94 @@ fn large_ptr_small_layout_free_is_noop_branch_a() {
 
     unsafe { HeapRegistry::recycle(heap) };
 }
+
+/// R22-5 (task #356), branch (A) sub-scenario (c): a promoted Large block
+/// freed with the SAME size but a DIFFERENT align than it was allocated with
+/// must be a detected no-op — `large_layout_consistent` now checks
+/// `layout.align()` against `SegmentHeader::large_align_at(base)` in
+/// addition to size, closing the gap where a fabricated free with the right
+/// size but wrong align previously passed branch (A)'s consistency gate
+/// (`SegmentHeader::large_align_at` did not exist before this task; the
+/// check compared size only). `try_promote_to_large`
+/// (`heap_core_free.rs:~1258`) preserves the ORIGINAL layout's align
+/// (`self.core.alloc_large(new_size, old_layout.align())`), so the promoted
+/// segment's `large_align` is exactly the align the block was allocated
+/// with — a free carrying the SAME size but a DIFFERENT align is,
+/// unambiguously, not the layout this block was allocated with.
+///
+/// Counterfactual: before this task, `large_layout_consistent` compared only
+/// `layout.size().max(MIN_BLOCK)` against `large_size_at(base)` — the align
+/// mismatch below would NOT have been detected, `self.core.dealloc` would
+/// have run, and `dbg_owner_id_for` would read `None` (segment actually
+/// freed) instead of the `Some(_)` this test asserts.
+#[cfg(all(
+    feature = "medium-classes",
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
+))]
+#[test]
+fn promoted_large_same_size_wrong_align_free_is_noop_branch_a() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    // Same shape as `promoted_large_matching_free_actually_frees`: start
+    // below the promotion threshold (256 KiB) so the initial alloc lands in
+    // a Small segment, align 8.
+    let medium_layout = Layout::from_size_align(128 * 1024, 8).unwrap();
+    // Grow past the threshold (>= 256 KiB) but still under `medium-classes`'
+    // SMALL_MAX (1 MiB) so the post-promotion dealloc layout classifies
+    // "small" — exercising branch (A)'s "classify-small but live-in-Large"
+    // routing, same as the sibling test.
+    const NEW_SIZE: usize = 300 * 1024;
+
+    let medium = unsafe { (*heap).alloc(medium_layout) };
+    assert!(!medium.is_null(), "medium alloc returned null");
+
+    // Growing realloc fires `try_promote_to_large`, preserving the ORIGINAL
+    // layout's align (8) — `self.core.alloc_large(new_size,
+    // old_layout.align())`.
+    let promoted = unsafe { (*heap).realloc(medium, medium_layout, NEW_SIZE) };
+    assert!(!promoted.is_null(), "promoting realloc returned null");
+    assert_ne!(
+        promoted, medium,
+        "promotion must move the block to a new Large segment"
+    );
+
+    // Fabricated free: SAME size (NEW_SIZE) as the real occupant, but a
+    // DIFFERENT align (64 instead of 8) — a `GlobalAlloc` contract violation
+    // this task's align check must now catch.
+    let wrong_align_layout = Layout::from_size_align(NEW_SIZE, 64).unwrap();
+
+    assert!(
+        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_some(),
+        "promoted Large segment must be registered before the free"
+    );
+
+    unsafe { (*heap).dealloc(promoted, wrong_align_layout) };
+
+    // The REAL oracle: the segment must STILL be registered — a same-size-
+    // wrong-align free must be a detected no-op, not a real free.
+    assert!(
+        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_some(),
+        "R22-5 ALIGN CHECK BROKEN: a same-size-but-wrong-align free of a \
+         promoted Large segment actually unregistered/freed it — \
+         `large_layout_consistent` must reject on align mismatch too"
+    );
+
+    // The block is still ours to free legitimately with its REAL layout
+    // (align 8) — heap stays sound.
+    let real_layout = Layout::from_size_align(NEW_SIZE, 8).unwrap();
+    unsafe { (*heap).dealloc(promoted, real_layout) };
+    assert!(
+        unsafe { (*heap).dbg_owner_id_for(promoted) }.is_none(),
+        "promoted Large segment must be unregistered after the legitimate \
+         matching-layout free"
+    );
+
+    unsafe { HeapRegistry::recycle(heap) };
+}

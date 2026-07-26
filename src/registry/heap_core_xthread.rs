@@ -940,17 +940,18 @@ impl HeapCore {
             // `drain_large_deferred_free`, called from `alloc`).
             //
             // 0.3.0 (task #138, A1 post-reuse mitigation): before queuing,
-            // check that `layout`'s size matches the CURRENT occupant's
-            // `large_size` in the header. A stale double-free whose segment
-            // was ALREADY reclaimed+reused between the original free and
-            // this call will, in the overwhelming majority of cases,
-            // observe a header describing a DIFFERENT allocation — this is
-            // NOT a full fix (a reuse that happens to request the
-            // bit-identical size is not caught; double-free is UB by
-            // contract) but narrows the post-reuse corruption window. See
+            // check that `layout`'s size AND align (R22-5, task #356) match
+            // the CURRENT occupant's `large_size`/`large_align` in the
+            // header. A stale double-free whose segment was ALREADY
+            // reclaimed+reused between the original free and this call will,
+            // in the overwhelming majority of cases, observe a header
+            // describing a DIFFERENT allocation — this is NOT a full fix (a
+            // reuse that happens to request the bit-identical size AND align
+            // is not caught; double-free is UB by contract) but narrows the
+            // post-reuse corruption window. See
             // `alloc_core::deferred_large::large_layout_consistent`'s doc
             // comment for the full rationale and residual limit.
-            if crate::alloc_core::deferred_large::large_layout_consistent(base, layout.size()) {
+            if crate::alloc_core::deferred_large::large_layout_consistent(base, layout) {
                 Self::push_large_deferred_free(owner_tf, base);
             }
             return;

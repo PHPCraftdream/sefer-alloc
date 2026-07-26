@@ -387,12 +387,16 @@ impl HeapCore {
                             // kind of check (`heap_core_xthread.rs`'s
                             // `dealloc_routing`): `large_layout_consistent`
                             // compares `layout.size().max(MIN_BLOCK)` against
-                            // `SegmentHeader::large_size_at(base)` — exact match
-                            // for a LEGITIMATE promoted-and-grown free (the
-                            // header's `large_size` is updated on both initial
-                            // promotion and every subsequent OPT-G in-place
-                            // grow), mismatch for essentially any fabricated/
-                            // mismatched small layout. On a mismatch under
+                            // `SegmentHeader::large_size_at(base)`, AND (R22-5,
+                            // task #356) `layout.align()` against
+                            // `SegmentHeader::large_align_at(base)` — exact
+                            // match on both for a LEGITIMATE promoted-and-grown
+                            // free (the header's `large_size` is updated on both
+                            // initial promotion and every subsequent OPT-G
+                            // in-place grow; `large_align` is fixed at promotion
+                            // and never changed by a grow — a realloc's align is
+                            // fixed by contract), mismatch for essentially any
+                            // fabricated/mismatched layout. On a mismatch under
                             // `hardened`, degrade to the SAME defensive no-op
                             // branch (B) uses instead of really freeing the
                             // segment (a `GlobalAlloc` contract violation is
@@ -408,8 +412,7 @@ impl HeapCore {
                             // `alloc-xthread`.
                             if !cfg!(feature = "hardened")
                                 || crate::alloc_core::deferred_large::large_layout_consistent(
-                                    base,
-                                    layout.size(),
+                                    base, layout,
                                 )
                             {
                                 // SAFETY: this own-thread body is reached only

@@ -23,13 +23,16 @@
 //! Before treating a cross-thread free as a Large-segment free (queuing it
 //! onto the owner's deferred-free stack), check that the CALLER's `Layout`
 //! is consistent with what the segment header currently claims about its
-//! occupant: `layout.size() == SegmentHeader::large_size_at(base)`.
-//! `large_size` is the EXACT requested size recorded at allocation time (for
-//! both a fresh reservation and a large-cache-hit reuse — see
-//! `SegmentHeader::large`'s doc comment), and `GlobalAlloc`'s contract
+//! occupant: `layout.size() == SegmentHeader::large_size_at(base)` AND
+//! `layout.align() == SegmentHeader::large_align_at(base)`. Both `large_size`
+//! and `large_align` are the EXACT requested size/align recorded at
+//! allocation time (for both a fresh reservation and a large-cache-hit reuse
+//! — see `SegmentHeader::large`'s doc comment), and `GlobalAlloc`'s contract
 //! requires the caller to pass back the identical `Layout` it allocated
-//! with, so for a LEGITIMATE free this is an exact match, not a heuristic
-//! range check.
+//! with, so for a LEGITIMATE free this is an exact match on both fields, not
+//! a heuristic range check. R22-5 (task #356): the align half of this check
+//! was added after the size-only check shipped (task #138) — a fabricated
+//! free with the right size but a wrong align previously passed.
 //!
 //! If the segment has been reclaimed and reused since the stale pointer was
 //! captured, the NEW occupant's `large_size` will, in the overwhelming
@@ -46,26 +49,39 @@
 //! segment's deferred-free stack or double-queuing it for reclaim.
 use crate::alloc_core::segment_header::SegmentHeader;
 
-/// Returns `true` if `layout`'s size matches the CURRENT occupant's
-/// `large_size` as recorded in the segment header at `base`. `base` MUST
-/// already be confirmed live (`magic_at(base) == SEGMENT_MAGIC`) and
-/// `SegmentKind::Large` by the caller — this function only adds the
-/// size-consistency check on top of that.
+/// Returns `true` if `layout`'s size AND align match the CURRENT occupant's
+/// `large_size`/`large_align` as recorded in the segment header at `base`.
+/// `base` MUST already be confirmed live (`magic_at(base) == SEGMENT_MAGIC`)
+/// and `SegmentKind::Large` by the caller — this function only adds the
+/// size/align-consistency check on top of that.
 ///
-/// `layout_size` is the caller's RAW `layout.size()`. The alloc path clamps
-/// every request to `MIN_BLOCK` before it reaches `alloc_large`
-/// (`AllocCore::alloc` does `layout.size().max(MIN_BLOCK)`), so the header's
-/// `large_size` is the CLAMPED size. The comparison must therefore clamp the
-/// caller's size the same way — otherwise a legitimate cross-thread free of a
-/// tiny-but-huge-aligned block (`size < MIN_BLOCK`, `align > SMALL_MAX` — a
-/// valid `Layout` via the raw alloc API) would compare `raw != clamped`,
-/// be dropped as "inconsistent", and permanently leak the segment + its
-/// `SegmentTable` slot (the #114/#130 leak-to-abort class). Found by the
-/// full 0.3.0 review; the clamp lives HERE (the single shared point) so both
-/// faces' call sites stay symmetric with the alloc path by construction.
+/// `layout`'s RAW `size()` is clamped to `MIN_BLOCK` before comparison. The
+/// alloc path clamps every request to `MIN_BLOCK` before it reaches
+/// `alloc_large` (`AllocCore::alloc` does `layout.size().max(MIN_BLOCK)`), so
+/// the header's `large_size` is the CLAMPED size. The comparison must
+/// therefore clamp the caller's size the same way — otherwise a legitimate
+/// cross-thread free of a tiny-but-huge-aligned block (`size < MIN_BLOCK`,
+/// `align > SMALL_MAX` — a valid `Layout` via the raw alloc API) would
+/// compare `raw != clamped`, be dropped as "inconsistent", and permanently
+/// leak the segment + its `SegmentTable` slot (the #114/#130 leak-to-abort
+/// class). Found by the full 0.3.0 review; the clamp lives HERE (the single
+/// shared point) so both faces' call sites stay symmetric with the alloc
+/// path by construction.
+///
+/// `layout.align()` is compared UNCLAMPED against `large_align_at(base)`:
+/// unlike size, the alloc path does not normalize the stored `large_align`
+/// beyond what the caller requested (the `align.max(PAGE)` clamp applied in
+/// `alloc_large_slow` governs only the header's OWN placement within the
+/// segment, not the `large_align` field's stored value — see
+/// `SegmentHeader::large`'s construction call sites in
+/// `alloc_core_large.rs`), so a legitimate free's raw `layout.align()` is
+/// always the exact value stored. R22-5 (task #356).
 #[cfg(feature = "alloc-xthread")]
 #[inline(always)]
-pub(crate) fn large_layout_consistent(base: *mut u8, layout_size: usize) -> bool {
-    let clamped = layout_size.max(crate::alloc_core::size_classes::MIN_BLOCK);
+pub(crate) fn large_layout_consistent(base: *mut u8, layout: core::alloc::Layout) -> bool {
+    let clamped = layout
+        .size()
+        .max(crate::alloc_core::size_classes::MIN_BLOCK);
     SegmentHeader::large_size_at(base) == clamped
+        && SegmentHeader::large_align_at(base) == layout.align()
 }

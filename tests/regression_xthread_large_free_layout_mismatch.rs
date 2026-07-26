@@ -12,11 +12,12 @@
 //! that has ALREADY been reclaimed and handed to a brand-new allocation is,
 //! by address alone, indistinguishable from a legitimate free of that new
 //! allocation. The mitigation (`alloc_core::deferred_large::
-//! large_layout_consistent`) checks that the freeing `Layout`'s size matches
-//! the CURRENT occupant's `large_size` header field before queuing the
-//! segment for reclaim; on a mismatch, the free is dropped as a no-op
-//! instead of corrupting the (still-live, still-in-use) reused segment's
-//! deferred-free stack.
+//! large_layout_consistent`) checks that the freeing `Layout`'s size AND
+//! align (R22-5, task #356 — align was added after this task's initial
+//! size-only check) match the CURRENT occupant's `large_size`/`large_align`
+//! header fields before queuing the segment for reclaim; on a mismatch, the
+//! free is dropped as a no-op instead of corrupting the (still-live,
+//! still-in-use) reused segment's deferred-free stack.
 //!
 //! This test does not attempt to reconstruct the exact reuse race (that
 //! would require racing the internal reclaim/reuse timing) — it instead
@@ -341,5 +342,245 @@ fn xthread_large_free_tiny_size_huge_align_is_reclaimed() {
     for &p in &ptrs2 {
         unsafe { (*heap).dealloc(p, layout) };
     }
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// R22-5 (task #356): a cross-thread free whose `Layout` has the SAME size
+/// as the live segment's `large_size` but a DIFFERENT align than its
+/// `large_align` must ALSO be dropped as a no-op — `large_layout_consistent`
+/// now checks `layout.align()` against `SegmentHeader::large_align_at(base)`
+/// in addition to size (`SegmentHeader::large_align_at` did not exist before
+/// this task; the mitigation compared size only, so a same-size-wrong-align
+/// fabricated free previously passed and was WRONGLY queued/reclaimed).
+///
+/// Counterfactual: with the align half of the check removed (reverting to
+/// the pre-R22-5 size-only comparison), the mismatched-align free below
+/// would ALSO get queued and reclaimed — `DBG_LARGE_XTHREAD_RECLAIMED`'s
+/// delta would be `1` instead of the asserted `0`, and the segment would be
+/// unregistered/reclaimed while `p` is still expected to be live, exactly
+/// the same non-vacuity shape as `xthread_large_free_mismatched_layout_is_dropped`
+/// above (verified by the same reasoning: this is the identical code path,
+/// gated on the newly-added align comparison instead of the size one).
+#[test]
+fn xthread_large_free_same_size_wrong_align_is_dropped() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    const SIZE: usize = 2 * 1024 * 1024;
+    const N_FILLER: usize = 20;
+    // Real allocation: align 8.
+    let real_layout = Layout::from_size_align(SIZE, 8).unwrap();
+    // A fabricated free layout with the SAME size but a DIFFERENT align
+    // (4096 instead of 8) — models a stale/fabricated free whose `Layout`
+    // no longer (or never did) match the segment's current occupant's
+    // align, the align-analogue of `wrong_layout` above.
+    let wrong_align_layout = Layout::from_size_align(SIZE, 4096).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    let baseline = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+
+    let p = unsafe { (*heap).alloc(real_layout) };
+    assert!(!p.is_null(), "alloc returned null");
+    unsafe {
+        std::ptr::write_bytes(p, 0xCC, SIZE);
+    }
+    let addr = p as usize;
+
+    // Remote thread frees with the WRONG align (same size) — must be a
+    // no-op (not even QUEUED, let alone reclaimed).
+    thread::spawn(move || {
+        let _ = bootstrap::ensure();
+        let remote_heap = HeapRegistry::claim();
+        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        unsafe { (*remote_heap).dealloc(addr as *mut u8, wrong_align_layout) };
+        unsafe { HeapRegistry::recycle(remote_heap) };
+    })
+    .join()
+    .unwrap();
+
+    // The segment must remain fully valid IMMEDIATELY.
+    unsafe {
+        assert_eq!(p.read(), 0xCC, "segment corrupted by the dropped free");
+    }
+
+    // Force the owner's `alloc_large` slow path to run repeatedly, same
+    // drain-forcing shape as the size-mismatch test above.
+    let mut filler: Vec<*mut u8> = Vec::with_capacity(N_FILLER);
+    for i in 0..N_FILLER {
+        let q = unsafe { (*heap).alloc(real_layout) };
+        assert!(!q.is_null(), "filler alloc[{i}] returned null");
+        filler.push(q);
+    }
+
+    let after_mismatch = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+    assert_eq!(
+        after_mismatch,
+        baseline,
+        "a cross-thread free with a mismatched align (same size) was \
+         reclaimed (delta {} != 0) — the layout-vs-header consistency \
+         mitigation did not drop it as expected",
+        after_mismatch - baseline
+    );
+
+    unsafe {
+        assert_eq!(
+            p.read(),
+            0xCC,
+            "segment corrupted/reused after drain-forcing round — the \
+             mismatched-align free was wrongly queued and later reclaimed"
+        );
+    }
+    assert!(
+        !filler.contains(&p),
+        "p's segment was reclaimed and reused by a filler allocation — the \
+         mismatched-align free was wrongly queued"
+    );
+
+    // The owner can still legitimately free `p` afterward — heap stays sound.
+    unsafe { (*heap).dealloc(p, real_layout) };
+    for &q in &filler {
+        unsafe { (*heap).dealloc(q, real_layout) };
+    }
+
+    let p2 = unsafe { (*heap).alloc(real_layout) };
+    assert!(
+        !p2.is_null(),
+        "heap unusable after dropped mismatched-align free"
+    );
+    unsafe { (*heap).dealloc(p2, real_layout) };
+
+    unsafe { HeapRegistry::recycle(heap) };
+}
+
+/// R22-5 (task #356) — the cache-HIT-reuse scenario the align check exists
+/// for: a Large segment is freed (own-thread — deposited into the
+/// `alloc-decommit` large cache), then reused by a NEW allocation of the
+/// SAME size but a DIFFERENT align. The header's `large_align` is rewritten
+/// by the reuse (`AllocCore::alloc_large`'s cache-hit path does a FULL-struct
+/// `Node::write_struct` with the NEW request's `align` — see
+/// `alloc_core_large.rs`'s cache-hit arm and `SegmentHeader::large_align`'s
+/// doc: "describe the CURRENT occupant, not the segment's history"). A stale
+/// free carrying the ORIGINAL (now-superseded) align must be rejected even
+/// though its size still matches the new occupant — this is exactly the gap
+/// R22-5 closes (a size-only check would have let this through).
+///
+/// Gated on `alloc-decommit` (the large cache) in addition to this file's
+/// `alloc-global`+`alloc-xthread`.
+///
+/// Reuse is confirmed structurally (not via a hit-rate counter, which needs
+/// `alloc-stats`): the best-fit large-cache admission rule
+/// (`slot.usable_size >= usable && slot.usable_size <= usable *
+/// LARGE_CACHE_SIZE_FACTOR`) with a SAME-size second request against a
+/// freshly-deposited SAME-size slot is a guaranteed hit against that exact
+/// slot, so the second allocation's address must equal the first's — this
+/// pointer-identity check is the oracle for "the segment was reused", the
+/// same structural style `regression_large_cache_span_usable_stable.rs` uses
+/// (deriving what a hit implies rather than reading a stats-gated counter).
+#[cfg(feature = "alloc-decommit")]
+#[test]
+fn xthread_large_free_stale_align_after_cache_hit_reuse_is_dropped() {
+    let _g = SerialGuard::acquire();
+    let _ = bootstrap::ensure();
+
+    const SIZE: usize = 2 * 1024 * 1024;
+    const N_FILLER: usize = 20;
+    // A: the original allocation, align 8.
+    let layout_a = Layout::from_size_align(SIZE, 8).unwrap();
+    // B: the SAME size, but a DIFFERENT align (4096) — a legitimate NEW
+    // request that reuses A's cached segment on a cache hit.
+    let layout_b = Layout::from_size_align(SIZE, 4096).unwrap();
+
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    let baseline = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+
+    // Allocate and immediately (own-thread) free A — deposits the segment
+    // into the large cache under `alloc-decommit`.
+    let pa = unsafe { (*heap).alloc(layout_a) };
+    assert!(!pa.is_null(), "alloc A returned null");
+    let addr_a = pa as usize;
+    unsafe { (*heap).dealloc(pa, layout_a) };
+
+    // Allocate B: same size as A, different align. The large-cache admission
+    // rule is satisfied (same usable size), so this MUST be served as a
+    // cache hit reusing A's exact segment.
+    let pb = unsafe { (*heap).alloc(layout_b) };
+    assert!(!pb.is_null(), "alloc B returned null");
+    assert_eq!(
+        pb as usize, addr_a,
+        "B did not reuse A's segment address — the cache-hit-reuse \
+         precondition for this test did not hold (test premise invalid, \
+         not a mitigation failure)"
+    );
+    unsafe {
+        std::ptr::write_bytes(pb, 0xCC, SIZE);
+    }
+
+    // Remote thread frees the SAME address with the STALE layout_a (matching
+    // size, but align 8 instead of B's actual 4096) — this must be dropped:
+    // a size-only check would have let it through (size still matches), but
+    // the align now describes A's history, not B's current occupancy.
+    thread::spawn(move || {
+        let _ = bootstrap::ensure();
+        let remote_heap = HeapRegistry::claim();
+        assert!(!remote_heap.is_null(), "remote HeapRegistry::claim failed");
+        unsafe { (*remote_heap).dealloc(addr_a as *mut u8, layout_a) };
+        unsafe { HeapRegistry::recycle(remote_heap) };
+    })
+    .join()
+    .unwrap();
+
+    // B's segment must remain fully valid IMMEDIATELY.
+    unsafe {
+        assert_eq!(
+            pb.read(),
+            0xCC,
+            "B's segment corrupted by the dropped stale-align free"
+        );
+    }
+
+    // Force the owner's `alloc_large` slow path to run repeatedly.
+    let mut filler: Vec<*mut u8> = Vec::with_capacity(N_FILLER);
+    for i in 0..N_FILLER {
+        let q = unsafe { (*heap).alloc(layout_b) };
+        assert!(!q.is_null(), "filler alloc[{i}] returned null");
+        filler.push(q);
+    }
+
+    let after_mismatch = DBG_LARGE_XTHREAD_RECLAIMED.load(Ordering::Relaxed);
+    assert_eq!(
+        after_mismatch,
+        baseline,
+        "R22-5 CACHE-HIT-REUSE GAP: a stale cross-thread free carrying A's \
+         ORIGINAL align (but matching B's current size) was reclaimed \
+         (delta {} != 0) after B reused A's segment via a cache hit — the \
+         align half of `large_layout_consistent` failed to catch a \
+         same-size-different-align reuse",
+        after_mismatch - baseline
+    );
+
+    unsafe {
+        assert_eq!(
+            pb.read(),
+            0xCC,
+            "B's segment corrupted/reused after drain-forcing round — the \
+             stale-align free was wrongly queued and later reclaimed"
+        );
+    }
+    assert!(
+        !filler.contains(&pb),
+        "B's segment was reclaimed and reused by a filler allocation — the \
+         stale-align free was wrongly queued"
+    );
+
+    // The owner can still legitimately free B afterward — heap stays sound.
+    unsafe { (*heap).dealloc(pb, layout_b) };
+    for &q in &filler {
+        unsafe { (*heap).dealloc(q, layout_b) };
+    }
+
     unsafe { HeapRegistry::recycle(heap) };
 }
