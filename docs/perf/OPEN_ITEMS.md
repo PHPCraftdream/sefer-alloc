@@ -50,21 +50,30 @@ for completeness.
    R18-2's re-run: ~1,180× / ~380× slower than baseline's in-place Large
    realloc, and unmoved by R20-2's NULL result on destination-side reserved
    capacity). Reaffirmed as the one lever no existing-feature coordination
-   addresses by `R18_9...md` §9, `R14_4...md` §7, and `R20_2...md` §6.4. **A
-   design now exists** (R20-3, task #348):
-   `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` proposes "OPT-H" — a tail-of-segment
-   bump-cursor in-place grow, sound and zero-new-metadata, but structurally
-   bounded to blocks that are the segment's most-recently-carved,
-   not-yet-grown-or-freed block at grow time — and its own analysis (§5.2)
-   predicts it will NOT close R10-2's existing N=16-simultaneous-object
-   harness (at most one object per segment is ever eligible at a time); its
-   real target is the un-measured single-hot-growing-buffer pattern R10-2 §5
-   itself named. Verdict: **CONDITIONAL-GO**, gated on a not-yet-built
-   single-hot-buffer harness showing a material hit rate in Stage 1
-   diagnostics (§6/§9 of the design) — still NOT implemented. Evidence:
-   `R10_2_MEDIUM_CLASSES_NATIVE_GATE.md` §5 item 1 (lines 343–347);
-   `R18_9_ADAPTIVE_LARGE_POLICY_DESIGN.md` §8.1/§9 (lines 613–623, 680–683);
-   `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5/§6/§9.
+   addresses by `R18_9...md` §9, `R14_4...md` §7, and `R20_2...md` §6.4. A
+   design existed (R20-3, task #348): `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`
+   proposed "OPT-H" — a tail-of-segment bump-cursor in-place grow, sound and
+   zero-new-metadata, CONDITIONAL-GO pending a Stage-1 hit-rate measurement
+   on a new single-hot-buffer harness. **Stage 1 measured, R21-2 (task #351,
+   2026-07-26): trigger NOT met.** Both harnesses show a **0% hit rate**:
+   R10-2's existing N=16 harness (0/320 attempts, matching §5.2's
+   prediction) AND — more decisively — R21-1's new single-hot-buffer harness
+   built specifically to realize OPT-H's predicted victim pattern (0/20
+   attempts). Root cause (traced in `R21_2_OPT_H_STAGE1_HIT_RATE.md` §4):
+   the single-hot-buffer harness promotes to Large on its very first grow
+   crossing every round (by construction — `REALLOC_BASE` already sits at
+   `MEDIUM_REALLOC_PROMOTION_THRESHOLD`), so OPT-H's code path is reached
+   only once per round, always at the same alignment-unfriendly carve
+   position (`256 KiB % 320 KiB ≠ 0`). **Verdict: NO-GO for implementing
+   OPT-H's real grow action on current evidence** — not a rejection of the
+   mechanism's soundness, but neither available harness demonstrates the
+   predicted victim workload materializing. A genuinely un-promoted,
+   walks-the-Small-ladder-without-crossing-into-Large harness is the one
+   remaining unexplored variant if this lever is revisited; not yet built,
+   not scoped. Evidence: `R10_2_MEDIUM_CLASSES_NATIVE_GATE.md` §5 item 1
+   (lines 343–347); `R18_9_ADAPTIVE_LARGE_POLICY_DESIGN.md` §8.1/§9 (lines
+   613–623, 680–683); `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5/§6/§9;
+   `R21_2_OPT_H_STAGE1_HIT_RATE.md` (full Stage-1 measurement + verdict).
 2. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
    `perf_gate_iai.rs`.** "The single biggest open question the plan left on the
    table": the cold-16 B gap has been a 10-round wall-clock argument because

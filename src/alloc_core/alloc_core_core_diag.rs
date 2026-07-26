@@ -560,6 +560,34 @@ impl AllocCore {
         directory_stats::WASTED_DIRTY_DRAINS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351): process-wide count of
+    /// cross-class Small/Primordial grow attempts that reach OPT-H's
+    /// (proposed, not-yet-implemented — see
+    /// `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`) precondition-1 check
+    /// in [`super::alloc_core::AllocCore::realloc_inplace_fast_path_known_base`].
+    /// This is the Stage-1 hit-rate DENOMINATOR; pairs with
+    /// [`dbg_opt_h_hits`](Self::dbg_opt_h_hits). Relaxed load — diagnostic
+    /// only. Reads 0 unless `alloc-stats` is on (the increment site is
+    /// gated); the accessor is always compiled so callers need no `#[cfg]`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_opt_h_attempts() -> u64 {
+        super::alloc_core::OPT_H_ATTEMPTS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351): process-wide count of
+    /// cross-class Small/Primordial grow attempts (counted by
+    /// [`dbg_opt_h_attempts`](Self::dbg_opt_h_attempts)) where ALL SIX of
+    /// OPT-H's preconditions additionally held (design §2.1). This is the
+    /// Stage-1 hit-rate NUMERATOR. Relaxed load — diagnostic only. Reads 0
+    /// unless `alloc-stats` is on; the accessor is always compiled so callers
+    /// need no `#[cfg]`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_opt_h_hits() -> u64 {
+        super::alloc_core::OPT_H_HITS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// R7-A0: process-wide count of slots examined by
     /// `find_segment_with_free_impl` (the linear scan). This is the primary
     /// scan-cost counter -- it is LIVE in A0 (incremented per slot visited

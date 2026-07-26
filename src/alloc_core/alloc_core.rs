@@ -271,6 +271,59 @@ pub(crate) static LARGE_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
 pub(crate) static SMALL_ZERO_PASS_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351,
+/// `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §6.1/§8 step 1):
+/// process-wide count of times [`AllocCore::realloc_inplace_fast_path_known_base`]
+/// reaches a cross-class Small/Primordial grow attempt that OPT-H (a
+/// **proposed, NOT YET IMPLEMENTED** in-place tail-of-segment grow mechanism —
+/// see the design doc) would need to evaluate: `old_class`/`new_class` both
+/// resolve to Some, `new_class != old_class`, and
+/// `block_size(new_class) > block_size(old_class)` (design §2.1 precondition
+/// 1). This is the Stage-1 hit-rate DENOMINATOR. Paired with
+/// [`OPT_H_HITS`] (the numerator: how often ALL SIX preconditions hold).
+///
+/// **This counter has ZERO effect on allocator behavior.** No grow action is
+/// taken here — the call site that increments this counter still falls
+/// through to `None` exactly as before this counter existed, letting the
+/// caller's existing promotion/move-leg path run unchanged. Only observation.
+///
+/// Read via [`AllocCore::dbg_opt_h_attempts`]. Reads 0 unless `alloc-stats` is
+/// on — the per-event increment is gated behind `alloc-stats`, matching
+/// [`LARGE_ZERO_PASS_CALLS`]'s convention; the static itself is always
+/// compiled so the accessor has a stable definition regardless of the rest of
+/// the feature set. Relaxed ordering — a diagnostic count, not a
+/// synchronization primitive.
+pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351): process-wide count of times
+/// the cross-class Small/Primordial grow attempts counted by
+/// [`OPT_H_ATTEMPTS`] additionally satisfy ALL SIX of OPT-H's preconditions
+/// (`docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §2.1): growing cross-class
+/// (already implied, since this is only ever incremented alongside
+/// `OPT_H_ATTEMPTS`), Small/Primordial segment kind (already implied by the
+/// call site), tail-adjacency (`off + block_size(old_class) ==
+/// meta.bump_of()`), new-class alignment (`off % block_size(new_class) ==
+/// 0`), segment capacity (`off + block_size(new_class) <= SEGMENT`), and the
+/// lazy-commit frontier (trivially satisfied when
+/// `primordial-lazy-commit`/`small-segment-lazy-commit` are both off; see the
+/// call site's own comment for why a tail-adjacent block's frontier is always
+/// already sufficient when those features are on). This is the Stage-1
+/// hit-rate NUMERATOR — the fraction `OPT_H_HITS / OPT_H_ATTEMPTS` is the hit
+/// rate the design's CONDITIONAL-GO trigger (§9) is measured against.
+///
+/// **This counter has ZERO effect on allocator behavior**, exactly like
+/// [`OPT_H_ATTEMPTS`] — incrementing it does NOT cause an in-place grow; the
+/// call site still falls through to `None` unconditionally. By construction,
+/// `OPT_H_HITS` is only ever incremented in the same call where
+/// `OPT_H_ATTEMPTS` was also incremented (the six-precondition check is
+/// nested inside the precondition-1 check that bumps `OPT_H_ATTEMPTS`), so
+/// `OPT_H_HITS <= OPT_H_ATTEMPTS` always holds.
+///
+/// Read via [`AllocCore::dbg_opt_h_hits`]. Reads 0 unless `alloc-stats` is on
+/// (same gating convention as [`OPT_H_ATTEMPTS`]). Relaxed ordering.
+pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
 /// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
 /// NOT one of this heap's registered segments, so `dealloc` silently drops it
@@ -1828,6 +1881,102 @@ impl AllocCore {
             ) {
                 if new_class == old_class {
                     return Some(ptr);
+                }
+                // OPT-H STAGE-1 DIAGNOSTIC ONLY (R21-2, task #351,
+                // `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §6.1/§8 step
+                // 1) — OBSERVATION, NOT IMPLEMENTATION. OPT-F declined (the
+                // class changed), so this is exactly the case a FUTURE OPT-H
+                // mechanism would target: a cross-class Small/Primordial
+                // grow. We only COUNT how often OPT-H's six preconditions
+                // (design §2.1) would hold here; we do NOT carve, do NOT
+                // move `bump`, do NOT return `Some` — the function still
+                // falls through to the unchanged `None` below in every case,
+                // exactly as before this diagnostic existed.
+                //
+                // The entire precondition-evaluation block below is gated on
+                // `alloc-stats` (not just the two `fetch_add` calls) so that
+                // a plain `production` build (which does NOT include
+                // `alloc-stats`) pays zero cost here: no extra branch, no
+                // extra load, no extra arithmetic on the hot path beyond what
+                // OPT-F already computed. This is a stricter gate than the
+                // `LARGE_ZERO_PASS_CALLS`/`SMALL_ZERO_PASS_CALLS` precedent
+                // needs (those sit on a path that already does multi-KiB
+                // work), because this new comparison chain sits directly on
+                // the realloc-grow hot path callers execute on every
+                // cross-class Small/medium grow, `alloc-stats` or not.
+                #[cfg(feature = "alloc-stats")]
+                if super::size_classes::SizeClasses::block_size(new_class)
+                    > super::size_classes::SizeClasses::block_size(old_class)
+                {
+                    // Precondition 1 holds (growing, cross-class). This is
+                    // the Stage-1 denominator. Precondition 2 (segment kind
+                    // Small/Primordial) is already established by the
+                    // enclosing `if matches!(kind, ...)` above.
+                    OPT_H_ATTEMPTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+                    let off = ptr as usize - base as usize;
+                    let old_block_size = super::size_classes::SizeClasses::block_size(old_class);
+                    let new_block_size = super::size_classes::SizeClasses::block_size(new_class);
+                    let meta = super::segment_header::SegmentMeta::new(base);
+
+                    // Precondition 3 (tail-adjacency): this block must be
+                    // the segment's current bump tail — the most-recently
+                    // carved, not-yet-grown-or-freed block. Reusing the
+                    // existing owner-only `bump_of` accessor (same
+                    // single-field read `carve_block` itself uses), not
+                    // hand-rolling a new bump read.
+                    let tail_adjacent = off + old_block_size == meta.bump_of();
+                    // Precondition 4 (new-class alignment): the offset must
+                    // be a legal carve position for `new_class` — i.e.
+                    // indistinguishable from an ordinarily-carved
+                    // `new_class` block to every subsystem that later reads
+                    // this offset (BinTable free-list reuse on dealloc).
+                    let new_class_aligned = off.is_multiple_of(new_block_size);
+                    // Precondition 5 (segment capacity): the grown block
+                    // must still fit within the segment (same `SEGMENT`
+                    // constant OPT-G's Large-path checks and `carve_block`
+                    // use — not a hardcoded literal).
+                    let fits_segment = off + new_block_size <= super::os::SEGMENT;
+                    // Precondition 6 (lazy-commit frontier). Under
+                    // `primordial-lazy-commit`/`small-segment-lazy-commit`,
+                    // `carve_block` never advances `bump` past
+                    // `committed_payload_end` without first committing the
+                    // tail up to at least the new `bump` value (see
+                    // `carve_block`'s B2 grow-on-carve block,
+                    // `alloc_core_small.rs:1508-1533`: it commits BEFORE
+                    // `set_bump`, and only ever sets
+                    // `committed_payload_end` to a value `>=` the new
+                    // `bump`). So for a block that satisfies precondition 3
+                    // (`off + old_block_size == bump`), the frontier is
+                    // already `>= bump == off + old_block_size` at every
+                    // instant — i.e. the frontier is always at least as far
+                    // as the CURRENT tail. This does NOT by itself prove the
+                    // frontier already covers `off + new_block_size` (the
+                    // GROWN tail may extend past the current frontier if
+                    // `new_block_size > old_block_size` pushes past a
+                    // `GROW_CHUNK` boundary the frontier hasn't reached yet)
+                    // — a real OPT-H implementation would still need to run
+                    // `carve_block`'s own commit-frontier step for the
+                    // stretch `[bump, off + new_block_size)`. For THIS
+                    // observation-only Stage-1 counter, when the lazy-commit
+                    // features are OFF there is nothing to commit (trivially
+                    // satisfied); when they are ON we do NOT independently
+                    // verify the frontier already covers the grown tail —
+                    // this is a known, documented overcount for lazy-commit
+                    // builds specifically (Stage-1 hit rate on such a build
+                    // may be a slight overcount versus a real
+                    // implementation's actual hit rate), not a new checked
+                    // code path, per this task's explicit scope boundary
+                    // (inventing frontier-verification logic here would add
+                    // an untested new code path for a precondition that, in
+                    // this observation-only task, has zero behavioral
+                    // consequence either way).
+                    let lazy_commit_frontier_ok = true;
+
+                    if tail_adjacent && new_class_aligned && fits_segment && lazy_commit_frontier_ok
+                    {
+                        OPT_H_HITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    }
                 }
             }
         }
