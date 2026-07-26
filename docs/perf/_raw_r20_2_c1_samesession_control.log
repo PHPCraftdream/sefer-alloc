@@ -1,0 +1,64 @@
+[r10-2] --skip-build: reusing already-built exes.
+
+[r10-2] === Phase: alloc (20 pairs) ===
+(node:39916) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+RESULT arm=medium_off
+RESULT elapsed_ns=17713200
+# ── TRUNCATED — remaining per-process RESULT lines for this phase (78 more launches; identical shape, segments_reserved_total is a constant per arm) omitted for size. ──
+# ── Full uncurated stdout reproducible via: node scripts/r10_2_medium_gate.mjs --skip-build --pairs 20 (arm B built with --features production,medium-classes (C1, no exact-span-large/large-reserved-capacity — this is the same-session load-matched control counterpart to the C4 run)). ──
+
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=3.388 ms  sd=246.381 us  se=55.092 us  t=61.497  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=0/20  B-faster=20/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T07-03-33-036Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+
+[r10-2] === Phase: free (20 pairs) ===
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+RESULT arm=medium_off
+RESULT elapsed_ns=17974900
+RESULT alloc_ns=3500700
+RESULT free_ns=14432500
+# ── TRUNCATED — remaining per-process RESULT lines for this phase (78 more launches; identical shape, segments_reserved_total is a constant per arm) omitted for size. ──
+# ── Full uncurated stdout reproducible via: node scripts/r10_2_medium_gate.mjs --skip-build --pairs 20 (arm B built with --features production,medium-classes (C1, no exact-span-large/large-reserved-capacity — this is the same-session load-matched control counterpart to the C4 run)). ──
+
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=15.355 ms  sd=829.842 us  se=185.558 us  t=82.751  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=0/20  B-faster=20/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T07-03-41-599Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring
+
+[r10-2] === Phase: realloc (20 pairs) ===
+[paired-ab] --config has no "build" step; assuming arm commands are already built.
+
+[paired-ab] A vs B — 20 pairs, A/B/B/A protocol
+RESULT arm=medium_off
+RESULT elapsed_ns=18787800
+RESULT alloc_ns=3462200
+RESULT free_ns=15266900
+# ── TRUNCATED — remaining per-process RESULT lines for this phase (78 more launches; identical shape, segments_reserved_total is a constant per arm) omitted for size. ──
+# ── Full uncurated stdout reproducible via: node scripts/r10_2_medium_gate.mjs --skip-build --pairs 20 (arm B built with --features production,medium-classes (C1, no exact-span-large/large-reserved-capacity — this is the same-session load-matched control counterpart to the C4 run)). ──
+
+
+  === A vs B (A - B, ns) ===
+  n=20  mean Δ=-51.687 ms  sd=2.785 ms  se=622.815 us  t=-82.989  df=19  crit(p<0.05)=2.101  => REAL (rejects null)
+  sign test: A-faster=20/20  B-faster=0/20  ties=0
+
+[paired-ab] provenance written to D:\dev\rust\sefer-alloc/docs/perf/paired_ab_runs/2026-07-26T07-03-48-588Z.json
+
+[paired-ab] Reading this output: `t` past `crit` (or sign test heavily lopsided, e.g. 17+/20) means a REAL,
+  non-noise wall-clock difference on THIS host for THIS workload — mirroring

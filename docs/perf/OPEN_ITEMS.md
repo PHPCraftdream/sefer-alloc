@@ -52,14 +52,7 @@ for completeness.
    existing-feature coordination addresses by `R18_9...md` §9 and `R14_4...md`
    §7. Evidence: `R10_2_MEDIUM_CLASSES_NATIVE_GATE.md` §5 item 1 (lines 343–347);
    `R18_9_ADAPTIVE_LARGE_POLICY_DESIGN.md` §8.1/§9 (lines 613–623, 680–683).
-2. **R18-9 §9 — execute the §3 coordinated Large-policy matrix (esp. cell C4).**
-   The design doc's own named next step: measure
-   `production,medium-classes,exact-span-large,large-reserved-capacity` on the
-   R10-2 realloc harness to test whether reserved-capacity headroom can reduce
-   the structural promotion memcpy. Reuses `scripts/r10_2_medium_gate.mjs`, no
-   new harness. Binary-ish outcome (null result is itself valuable). Evidence:
-   `R18_9_ADAPTIVE_LARGE_POLICY_DESIGN.md` §9 (lines 660–687).
-3. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
+2. **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
    `perf_gate_iai.rs`.** "The single biggest open question the plan left on the
    table": the cold-16 B gap has been a 10-round wall-clock argument because
    nobody has the deterministic cross-allocator `Ir` number that would settle
@@ -70,27 +63,27 @@ for completeness.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
-4. **R17-10 — batched deferred reclaim (sub-design A + B).** Design-only;
+3. **R17-10 — batched deferred reclaim (sub-design A + B).** Design-only;
    proposes a future-round implementation + dual-axis wall-clock gate. Sub-design
    A (batch the per-block decommit check) is independent and small; sub-design B
    (deferred cross-segment finalization within one `drain_dirty_segments` sweep)
    is CONDITIONAL on a §5.1 stage-1 finding that a non-negligible fraction of
    sweeps empty >1 segment — check BEFORE writing B's code. Evidence:
    `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
-5. **R11-7 page-run layer (R12-13 deferred).** NO-GO now; the complete design
+4. **R11-7 page-run layer (R12-13 deferred).** NO-GO now; the complete design
    remains a reusable CONDITIONAL-GO starting point IF a real workload
    materializes that allocates thousands of simultaneously-live 1.25–2.0 MiB (or
    larger uniform-size) objects and is measured `MAX_SEGMENTS`-bound or
    OS-reservation-syscall-bound (not RSS-bound — that is solved wherever
    `exact-span-large` is enabled). No demonstrated victim exists today.
    Evidence: `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
-6. **R14-7 expandable / chained `SegmentTable`.** Design-only; implement ONLY
+5. **R14-7 expandable / chained `SegmentTable`.** Design-only; implement ONLY
    when (1) a real workload needs >`MAX_SEGMENTS`−1 (4095) simultaneously-live
    Large objects, OR (2) a future `MAX_SEGMENTS` raise stops being "cheap" by
    §1's criteria, OR (3) page-run is pursued (then re-evaluate this doc's
    tagged-`SegmentId` widening alongside it — both touch the same header field).
    Evidence: `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
-7. **R10-4 run-origin oracle (class-align carve).** DESIGN-ONLY, CONDITIONAL GO.
+6. **R10-4 run-origin oracle (class-align carve).** DESIGN-ONLY, CONDITIONAL GO.
    Sound and real density gain (wide classes 2/1/1 → 3/2/2), but only worth it
    if `medium-classes-wide` is pursued — which is itself NO-GO'd for
    `production` (large realloc regression). Re-evaluate only if wide classes are
@@ -98,27 +91,27 @@ for completeness.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
-8. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
+7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.** Deferred "if a future review wants a
    number attached to the 'cheap' claim" specifically for N=1/2/4 (R13-8 already
    measured the 24-distinct-size turnover shape). Evidence:
    `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
-9. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
+8. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
     Deferred "if 4×'s real numbers ever stop being enough"; would need new
     per-segment chain-identity state or a threaded hint through the shared
     `alloc_large_slow` path. Evidence:
     `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
-10. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
+9. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
     Explicitly NOT recommended now (ceiling below this task's own noise floor).
     Revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward the
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
-11. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
+10. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
     the warm heap (no page faults) would give the fairest batch-vs-tcache
     comparison; "explicitly left for a future task if the 16 B / n=1024 signal
     warrants it." Evidence: `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343).
-12. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
+11. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
     `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
@@ -127,6 +120,25 @@ for completeness.
 
 ## Recently resolved (closure trail — do not re-list as open)
 
+- **R18-9 §9 — execute the §3 coordinated Large-policy matrix, cell C4.**
+  Resolved by **R20-2 (task #347)**, 2026-07-26: **NULL verdict.** Measured
+  `production,medium-classes,exact-span-large,large-reserved-capacity` (C4)
+  against the R10-2 realloc-heavy harness (W1), plus a direct, load-matched
+  paired A/B/B/A comparison against C1 (`production,medium-classes` alone) —
+  the decisive test showed no statistically resolvable difference
+  (t=1.209 ≪ crit 2.101, sign test dead-even 10/20). Reserved-capacity
+  headroom does NOT reduce the structural medium→Large promotion `memcpy`
+  cost; this confirms R18-2 §10.7's mechanism-level prediction (the copy
+  happens at promotion time, before the fresh Large segment's
+  `reserved_capacity` is established, so headroom can only help a later grow,
+  never the copy that created the promotion). A genuine but orthogonal
+  finding: `exact-span-large` still roughly halves resident commit for this
+  workload (~50.5 MiB → ~23.9 MiB) with an identical cache-hit-rate proxy —
+  a memory win, not a realloc-speed win, and it does not move R10-2's kill
+  gate. The one remaining lever for R10-2's gate is unchanged: item 1 above
+  (in-place medium-class grow), still not designed. Recorded in
+  `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` (full report) + companion
+  `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE_summary.csv`.
 - **R18-7 §6 (docs fix) — correct the stale "pending the Linux Ir gate"
   wording.** Resolved by **R20-1 (task #346)**, 2026-07-26: added a short
   "(Resolved: ...)" note right after each stale "pending"-framed sentence in
@@ -153,7 +165,7 @@ for completeness.
   Resolved by **R18-7 (task #335)**: the plan's named eurekas are exhausted
   (every tautology already removed); the residual 16 B gap is either honest
   per-block page-map/fault work or unverifiable without the cross-allocator `Ir`
-  number (→ open item #3 above). Recorded in
+  number (→ open item #2 above). Recorded in
   `R18_7_MIMALLOC_GAP_STATUS.md` §1/§5.
 - **R10-6 — NUMA node-aware bit selection for the segment directory.**
   Resolved by **R11-6 (task #234)**: added the node-indexed
