@@ -71,6 +71,16 @@
 //! from) + `alloc-stats` (the counters read 0, and never move, without it) +
 //! `alloc-core` (for `AllocCore` itself). Compiles as an empty test binary (0
 //! tests, pass by absence) under any other feature configuration.
+//!
+//! **Verified under `--all-features`** (task #362, R22-11) — the only CI row
+//! that satisfies all three required features simultaneously
+//! (`test (gated bodies + all-features)`'s closing `cargo test --all-features`
+//! step, `.github/workflows/ci.yml`) — both tests above pass unchanged at
+//! commit `00fb53c`, confirming the hand-derived carve-order geometry
+//! (`EXPECTED_TAIL_OFFSET` and the LIFO call-order note above) still holds
+//! with `hardened`, `medium-classes-wide`, `numa-aware`,
+//! `small-segment-lazy-commit`, `experimental`, and every other feature this
+//! crate defines also turned on.
 
 #![cfg(all(
     feature = "alloc-core",
