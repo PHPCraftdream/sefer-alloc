@@ -31,7 +31,12 @@ flagged-open items. This file does.
 **Scope.** This index covers `docs/perf/*.md` only (gate reports + perf design
 docs). It is NOT a general issue tracker — code `TODO`/`FIXME` comments, roadmap
 wishes, and `docs/reviews/*` plan items are out of scope unless a perf gate
-report explicitly flags them as a follow-up.
+report explicitly flags them as a follow-up. For the analogous durable index
+covering correctness bugs, flaky tests, and CI-coverage gaps (the class of
+item this file's own scope deliberately excludes), see the sibling document
+`docs/CORRECTNESS_OPEN_ITEMS.md` (added R22-3, task #354, after two
+independent reviews found R19-1's flaky-test and clippy-dead-code follow-ups
+tracked nowhere durable).
 
 **Tier key.** **[A]** active / high-value — a real next step a round should
 consider taking. **[D]** deferred design — a complete CONDITIONAL-GO design

@@ -54,18 +54,31 @@ Core instructions, mandatory for all code in this repository. They
 
 ## Phased delivery
 
-- **Round start: check the open-items index.** Before forming a new round's
-  task queue, read `docs/perf/OPEN_ITEMS.md` end-to-end and decide, for each
-  item a prior round's gate report flagged as open / deferred / follow-up,
-  whether this round closes it, defers it (with a one-line reason appended in
-  the index), or leaves it — none may be silently ignored. When a gate report
-  newly flags an open item, add it to that index in the same commit; when one
-  is closed, move it to the index's "Recently resolved" trail (R18-8/task #336:
-  R14-4's explicitly-marked-open "re-run `scripts/r10_2_medium_gate.mjs` once
-  R14-5 lands" item hung unnoticed through rounds 15–17 and was caught only by
-  an accidental external re-read; the in-session TaskList does not survive a
-  session boundary, so a fresh session inherits no memory of prior rounds'
-  flagged-open items — this index does).
+- **Round start: check BOTH open-items indexes.** Before forming a new
+  round's task queue, read `docs/perf/OPEN_ITEMS.md` end-to-end AND its
+  sibling `docs/CORRECTNESS_OPEN_ITEMS.md` end-to-end, and decide, for each
+  item a prior round's gate report / commit message / review flagged as open
+  / deferred / follow-up, whether this round closes it, defers it (with a
+  one-line reason appended in the relevant index), or leaves it — none may be
+  silently ignored. `docs/perf/OPEN_ITEMS.md` covers perf gate reports and
+  perf design docs only (see its own `## Scope`); `docs/CORRECTNESS_OPEN_ITEMS.md`
+  covers correctness bugs, flaky tests, and CI-coverage gaps flagged from ANY
+  source (commit messages, code comments, reviews) — the two are
+  deliberately separate files with separate scopes, not one merged index.
+  When a gate report / commit / review newly flags an open item, add it to
+  the appropriate index in the same commit; when one is closed, move it to
+  that index's "Recently resolved" trail (R18-8/task #336: R14-4's
+  explicitly-marked-open "re-run `scripts/r10_2_medium_gate.mjs` once R14-5
+  lands" item hung unnoticed through rounds 15–17 and was caught only by an
+  accidental external re-read; R22-3/task #354: R19-1's commit message
+  flagged a flaky test and a clippy dead-code combo as follow-ups that then
+  existed in NEITHER index — because at the time there was no correctness
+  sibling for `OPEN_ITEMS.md`'s deliberately perf-only scope to defer to —
+  and the flaky item was independently reproduced twice more before this
+  gap was noticed and `docs/CORRECTNESS_OPEN_ITEMS.md` was created to close
+  it; the in-session TaskList does not survive a session boundary, so a
+  fresh session inherits no memory of prior rounds' flagged-open items —
+  these indexes do).
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
 - **Between phases: run tests and commit.** Before moving to the next phase,
