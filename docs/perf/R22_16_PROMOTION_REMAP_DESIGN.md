@@ -1,5 +1,22 @@
 # R22-16 — Remap-instead-of-copy for the medium→Large promotion memcpy: design (NOT implementation)
 
+> **CORRECTION (2026-07-27, task #373, R23-4).** This document's §2.4
+> "promotion-time neighbor-liveness check" blocker for sub-region remap is
+> **WRONG** — independently re-verified against the actual `carve_block`/
+> `carve_batch`/`decommit_empty_segment_impl` source. A live carved block's
+> byte range is provably exclusive for its entire live lifetime (bump-carve
+> is monotonically forward-only; the only backward bump reset requires the
+> WHOLE segment to already be empty), so no runtime "who else is on my
+> pages" check is needed for Linux sub-region remap specifically. §3's
+> whole-segment base-address-stability blocker is UNAFFECTED and remains a
+> real NO-GO. The revised verdict — NO-GO for whole-segment remap,
+> CONDITIONAL-GO for Linux sub-region remap pending a correctness
+> prototype, Windows unaffected (still blocked by the section-object
+> constraint, §1.2) — is in the new **§10. CORRECTION** at the end of this
+> document. Original content below is preserved verbatim per this project's
+> "append, don't rewrite" convention; do not cite §0/§2.4/§6's original
+> framing without reading §10 first.
+
 **Task:** R22-16 (task #367, P1). **DESIGN-ONLY.** No `src/` change, no
 `Cargo.toml` change, no `crates/vmem/src/lib.rs` change, no `tests/` change, no
 benchmark run. This document investigates whether an OS-level VA-remap
@@ -810,3 +827,334 @@ open question the way §5.1's is for 4a.
   brief's framing as "gated on this design's own verdict before any
   implementation task gets filed," i.e. filing that follow-up task is an
   action for the user/orchestrator, not this document).
+
+---
+
+## 10. CORRECTION (2026-07-27, task #373, R23-4)
+
+### 10.1 What was wrong — §2.4's "promotion-time neighbor-liveness check"
+
+§2.4 (and the §6/§7 verdict text that leans on it) claims the sub-region
+remap direction needs an unsolved runtime check: "is there STILL nothing
+else sharing my pages" at PROMOTION time, "not just at carve time," because
+(§2.4's own words) "nothing in `SegmentHeader`/`BinTable`/`PageMap` tracks
+which OTHER blocks, if any, have since been carved into the page range
+`[my_start, my_end)`." **This premise is false.** It was re-derived
+independently for this correction, reading the current source directly (not
+re-trusting the original document's description, and not trusting the task
+prompt's description either — both were checked against the file as it
+stands today):
+
+1. **`carve_block`** (`src/alloc_core/alloc_core_small.rs:1429-1557`): reads
+   `bump = meta.bump_of()` (line 1438), computes
+   `aligned_bump = align_up(bump, block_size)` (line 1439), bails with
+   `None` if `aligned_bump + block_size > SEGMENT` (line 1440-1442),
+   otherwise carves `[aligned_bump, aligned_bump+block_size)` and finishes
+   with `meta.set_bump(aligned_bump + block_size)` (line 1535). Every
+   carved range starts at or after the bump position that existed
+   immediately before the carve, and the bump only ever moves forward by
+   this call.
+2. **`carve_batch`** (`src/alloc_core/alloc_core_small.rs:1608-` , the
+   batched sibling): identical shape — `bump = meta.bump_of()` (line 1619),
+   `aligned_start = align_up(bump, block_size)` (line 1620), same
+   `> SEGMENT` bail (line 1621), and the batch's own close,
+   `meta.set_bump(aligned_start + n * block_size)` (line 1688), is
+   explicitly documented (line 1686-1687) as "byte-identical to the final
+   `set_bump` of the n-th sequential carve." Also forward-only.
+3. **Every call site of `set_bump` in the whole crate** was enumerated
+   (`grep -rn "set_bump" src/`): the only two are the two above (forward,
+   monotonic) and exactly one other pair, both inside
+   **`decommit_empty_segment_impl`** (`src/alloc_core/alloc_core_small_pool.rs:751`
+   and `:812`), both `meta.set_bump(payload_start)` — a backward reset to
+   the segment's payload start. There is no fourth call site anywhere in
+   `src/`.
+4. **`decommit_empty_segment_impl`'s reset is gated on the whole segment
+   already being empty.** Its two production call paths both require this:
+   - `decommit_empty_segment_for_release` (line 730-732), whose only
+     production caller is `release_empty_segment_now`
+     (`alloc_core_small_pool.rs:429-431`) and the pool-eviction path
+     (`release_or_pool_empty_segment`) — both reachable only from
+     `dec_live_and_maybe_decommit` (`alloc_core_small_pool.rs:78-113`)
+     having already returned `true`, which requires (line 85)
+     `live != 0 || base == small_cur || meta.is_decommitted()` to be
+     **false** — i.e. `live_count == 0` (the whole segment, every class,
+     is empty), the segment is not the current carve target, and it is not
+     already decommitted.
+   - The other reachable path, `dbg_force_decommit_retain_for`
+     (`alloc_core_small_pool.rs:694-707`), is a `#[doc(hidden)]` **test-only**
+     hook (used by `tests/alloc_zeroed_virgin_small_skip.rs` to exercise the
+     `release_follows == false` retain-and-recommit leg, which the function's
+     own doc comment says "has ZERO production callers today"). Its own doc
+     is explicit that it does **not** check `live_count` itself and instead
+     trusts "the caller is responsible for having emptied the segment
+     first." This is a real gap in the abstract ("some code path resets
+     bump without checking liveness") worth flagging honestly per this
+     project's zero-trust convention — but it is not a production code
+     path: it is unreachable from any allocator entry point
+     (`alloc`/`dealloc`/`realloc`), gated behind `#[doc(hidden)]` +
+     `alloc-decommit`, and invoked only by one integration test that itself
+     empties the segment first. It does not weaken the monotonicity
+     argument for any real promotion.
+5. `dec_live_and_maybe_decommit`'s own doc comment (lines 100-111) already
+   states, in the code's own words, why the reset must wait for full
+   emptiness: an in-place `set_bump(payload_start)` performed while blocks
+   are still live "would push every freed block's offset `>= bump`, making
+   a pooled segment's free-list blocks unreachable" — the author already
+   understood the reset requires whole-segment emptiness; §2.4's claim that
+   nothing enforces this was simply not checked against this function
+   before being written.
+
+**Conclusion:** a live (carved-but-not-yet-freed) medium block's byte range
+`[start, end)` is exclusive for its entire live lifetime. No other carve can
+land inside it (carve only extends the bump forward past everything already
+carved, per points 1-2), and no bump reset can revisit it while it's live
+either (the reset requires `live_count == 0` for the WHOLE segment, per
+points 3-4, which is false while this object — one of that segment's live
+blocks — is still live). This is a closed-form, source-derived guarantee,
+not something that needs a promotion-time runtime scan. §2.4's blocker does
+not exist for the production allocation paths; it was an unverified premise
+in the original document, not a re-derivation from the actual carve/decommit
+code (the original document cites `PageMap`/`BinTable`/`SegmentHeader`
+generically at line 373-374 but never actually reads `carve_block`'s own
+control flow or `dec_live_and_maybe_decommit`'s liveness gate — the two
+functions this correction's argument rests on).
+
+### 10.2 §3's whole-segment base-address-stability blocker — UNAFFECTED, still real
+
+§3.1-3.3's argument does not depend on §2.4 at all, and this correction does
+not touch it. `segment_base_of_ptr` (`src/alloc_core/os.rs:95-123`) is a pure
+bitmask of the pointer's own address with no indirection layer; `SegmentTable`
+(`src/alloc_core/segment_table.rs`) hashes on that exact base pointer as its
+membership key; and `AllocCore::small_cur` caches a segment base directly for
+the owner's fast carve path. Moving a segment's OWN base address would still
+invalidate every other live pointer sharing it (§3.3, points 1-3) — none of
+that reasoning used the neighbor-liveness claim this correction retracts. It
+is re-confirmed here, independently, by re-reading `os.rs:95-123` and
+`segment_table.rs`'s module doc + `contains_base`/`contains_base_ro` for this
+correction: the finding stands exactly as §3 originally stated it.
+**Whole-segment remap remains NO-GO under the current segment model.**
+
+### 10.3 The "permanent hole" bookkeeping concern — only PARTIALLY resolved by monotonicity, not fully solved
+
+§3.3's second paragraph flagged a "permanent hole" concern for sub-region
+remap: after a promoted object's bytes move away, its vacated byte range
+within the still-live segment needs some representation so "other blocks in
+that segment must never be carved into again." The task brief that produced
+this correction asked whether monotonicity dissolves this too. **It does
+not, fully** — investigated here by tracing what TODAY's (unmodified,
+memcpy-based) promotion actually does to the source block, since that is the
+baseline any remap design must change relative to:
+
+- `try_promote_to_large` (`src/registry/heap_core_free.rs:1276-1343`) does
+  `alloc_large` for the new location, `Node::copy_nonoverlapping` to copy the
+  bytes, then **`self.dealloc(ptr, old_layout)`** on the OLD block (line
+  1338-1341) — an entirely ordinary free through the normal `dealloc_small`
+  path. That path pushes the freed offset onto its size class's
+  `BinTable` free list (`src/alloc_core/segment_header.rs:999-1069`,
+  `BinTable::set_head`).
+- Confirmed medium classes participate in this SAME `BinTable` indexing:
+  `SMALL_CLASS_COUNT = SIZE_CLASS_TABLE.len() = GEO_COUNT + EXTRAS.len()`
+  (`src/alloc_core/size_classes.rs:138,165`), and `EXTRAS` under
+  `medium-classes` IS the six-class medium ladder (256 KiB-1 MiB,
+  `size_classes.rs:95-111`) — there is no separate free-list mechanism for
+  medium; it is the same per-class `BinTable` head/offset scheme small
+  classes use.
+- **This means today's memcpy-based promotion's freed source offset is NOT
+  a permanent hole at all** — it is a completely ordinary free-list entry,
+  reusable by a LATER same-class carve/free-list-pop in that same segment,
+  exactly like freeing any other medium block. Monotonicity of `bump`
+  (§10.1) is irrelevant to this reuse path, because free-list reuse never
+  touches `bump` — it hands out an already-carved offset a second time via
+  `BinTable`, not via a new bump-advance.
+- **The permanent-hole problem is therefore a NEW hazard a remap design
+  introduces, not an existing one monotonicity resolves.** If a future
+  sub-region-remap promotion moves the object's physical pages away
+  WITHOUT running the ordinary `dealloc`/free-list-push (which it must not
+  do — pushing the offset onto `BinTable` and later handing it to a new
+  allocation would hand out an offset whose physical pages no longer belong
+  to this segment, a use-after-remap correctness bug), then that offset
+  must instead be marked as permanently unusable — never pushed to
+  `BinTable`, never reachable via a future `carve_block`/`carve_batch` (already
+  true, by §10.1's monotonicity, for as long as bump does not re-carve it —
+  but that is a NECESSARY, not SUFFICIENT, condition, since the free-list
+  path is the other way an already-carved offset becomes live-again, and
+  monotonicity says nothing about the free-list). **No existing data
+  structure represents "carved once, vacated, must never be pushed to
+  BinTable or reissued" today** — `BinTable`'s `FREE_LIST_NULL` sentinel
+  means "empty list," not "this specific offset is forbidden," and nothing
+  in `PageMap`/`SegmentHeader` has a per-offset "permanently retired" bit.
+  This is a genuine, still-open bookkeeping gap a remap prototype would need
+  to close (e.g. a per-offset "retired" bitmap, or simply never routing a
+  remap-promoted object's freeing through `dealloc_small` at all and instead
+  accounting for the vacated span only at segment-teardown/decommit time —
+  both are viable but neither exists today and neither is designed in this
+  correction).
+- **Segment-teardown/decommit accounting is comparatively easier and IS
+  helped by monotonicity**, though only partially: `dec_live_and_maybe_decommit`
+  gates the WHOLE-segment decommit/release/pool-recycle path on
+  `live_count == 0` for the ENTIRE segment (§10.1 point 4) — a remap-vacated
+  span does not need its own special teardown handling AT THE WHOLE-SEGMENT
+  level, because when the segment's `live_count` does reach zero, the entire
+  4 MiB payload gets decommitted/released uniformly regardless of which
+  offsets were "normal frees" vs. "remap-vacated holes" (`decommit_empty_segment_impl`
+  does not distinguish — it resets the whole payload). The open question is
+  narrower than "does teardown work at all" (yes, whole-segment teardown is
+  agnostic to how any given offset became non-live) — it is specifically
+  "does anything, before whole-segment teardown, accidentally hand the
+  vacated span's offset back out as if it were a normal free" (yes, today,
+  via `BinTable`, unless a remap design explicitly excludes the vacated
+  offset from ever being pushed there). **Honest summary: monotonicity
+  fully resolves the CARVE-side reuse risk (bump will never re-visit a
+  vacated span), but does NOT resolve the FREE-LIST-side reuse risk (an
+  ordinary `dealloc` on the vacated span, if a remap design mistakenly ran
+  one, would make that span reachable again via `BinTable` — the mechanism
+  monotonicity does not touch at all)** — so the "permanent hole" concern is
+  real, but its resolution is a matter of "do not free the vacated span
+  through the ordinary path," a design discipline any remap implementation
+  must observe, not a hole in the allocator's existing data structures that
+  blocks the idea outright.
+
+### 10.4 Revised verdict
+
+**NO-GO for WHOLE-segment remap under the current segment model** — the
+base-address stability blocker (§3.1-3.3, re-confirmed unaffected at §10.2)
+is real, structural, and unaffected by this correction.
+
+**CONDITIONAL-GO for LINUX SUB-REGION remap specifically** — §2.4's
+neighbor-liveness blocker is retracted (§10.1): a live medium block's page
+range is provably exclusive for its whole lifetime, so no promotion-time "who
+else is on my pages" scan is needed. What remains is: (a) the FFI gap (§1.3 —
+`mremap` needs a new raw `extern "C"` declaration, not otherwise a blocker,
+Linux's primitive is structurally permissive enough per §1.3/§1.4's own
+finding), and (b) the free-list-side "permanent hole" discipline (§10.3) —
+tractable (do not route a remap-promoted block's old offset through ordinary
+`dealloc`), but genuinely unbuilt and unproven today.
+
+**Windows remains NO-GO, on a SEPARATE blocker this correction does not
+touch.** §1.2 is explicit and independent of both §2.4 and §3: Windows'
+placeholder-VA / `MEM_REPLACE_PLACEHOLDER` mechanism only moves
+section-object-backed mappings (`MapViewOfFile3` against a
+`CreateFileMapping2`/`NtCreateSection` section handle), and every reservation
+`crates/vmem` makes is plain anonymous `VirtualAlloc` with no section handle
+to remap — "adopting this mechanism would require re-architecting every
+segment's underlying memory model... a foundational change... not an
+additive function" (§1.2's own words). This is a backing-store
+architecture mismatch, has nothing to do with neighbor-sharing or
+segment-identity, and is untouched by this correction. Windows sub-region
+remap is therefore NO-GO for a different, orthogonal reason than either of
+the two blockers §2/§3 discuss.
+
+**Overall, revised:** NO-GO for whole-segment remap (base-address stability,
+§10.2 — unaffected, still real) and NO-GO for Windows sub-region/whole-segment
+remap (section-object backing mismatch, §1.2 — untouched by this
+correction); **CONDITIONAL-GO specifically for Linux sub-region remap**,
+pending a correctness prototype that (i) proves out the free-list-exclusion
+discipline §10.3 identifies as the one remaining unbuilt piece, and (ii)
+adds the new `mremap` FFI surface §1.3 already scoped. This is narrower than
+a blanket "sub-region remap is viable" — it is Linux-only, and it trades one
+retracted blocker (neighbor-liveness) for one still-open, but concretely
+scoped and tractable, design discipline (never free-list-push a
+remap-vacated offset).
+
+### 10.5 Sketch of the minimal correctness-prototype gate (DESIGN ONLY — not implemented)
+
+Following the same checklist-style structure this document's own §4/§5 used
+for their design sketches (a bulleted precondition/scope list, not
+prescriptive code):
+
+- **Linux-only.** No Windows leg — Windows falls back to the existing
+  `try_promote_to_large` memcpy path unconditionally (§1.2/§1.4's
+  cross-platform disparity is not resolved by this correction and is not in
+  scope to resolve).
+- **Page-aligned medium block only.** Restrict the prototype to objects
+  whose class is one of the six medium classes (256/320/384/512/768/1024
+  KiB, all multiples of the page size, §2.2's finding — unaffected by this
+  correction) so the object's own `[start, end)` span is guaranteed
+  page-aligned at both edges by construction, exactly as §2.2 already
+  derived.
+- **Remap exactly the object's byte range**, i.e. `mremap(old_addr,
+  old_layout.size(), new_size, MREMAP_MAYMOVE)` with `old_addr` = the
+  promoted block's carved address and `old_layout.size()` its exact
+  page-aligned span — never a rounded-up-to-VMA-boundary superset that
+  could touch a neighbor (there is no neighbor risk during the object's live
+  window per §10.1, but the remap call itself must still be scoped to
+  exactly this span, not "the rest of the segment," since the segment's VMA
+  extends further and other blocks legitimately live elsewhere in it).
+- **Destination registration.** The `mremap` return address becomes a new
+  Large/extent registration: run the same `stamp_segment_owner` +
+  `SegmentTable` registration bookkeeping `alloc_large` already performs for
+  a fresh Large segment (§4a's Large-model precedent is the template here,
+  even though this is sub-region remap, not MediumExtent) — the moved
+  object must become a first-class, independently-tracked Large allocation,
+  not merely "some bytes that moved."
+- **Vacated-range marking (per §10.3's finding).** The old `[start, end)`
+  span must be excluded from `BinTable`'s free-list push that
+  `try_promote_to_large`'s current `self.dealloc(ptr, old_layout)` call
+  performs — a remap-based promotion must NOT call ordinary `dealloc` on the
+  source span. Instead: either (a) a per-offset "retired" marker (new
+  bookkeeping, not designed here) that `carve`/free-list-pop paths check and
+  skip, or (b) account for the vacated span only passively, at
+  whole-segment teardown time (§10.3's finding that whole-segment
+  decommit/release is already agnostic to how an offset went non-live) —
+  accepting that the vacated span's bytes are simply "not reachable by
+  anything, and not tracked as free," until the whole segment eventually
+  empties and gets torn down uniformly. Either option needs to be chosen and
+  built; neither is built today.
+- **The old address must never enter `BinTable` or any free-list.** This is
+  the one correctness-critical invariant a prototype's test suite must
+  directly assert: after a remap-promotion, no future `alloc` on that
+  segment/class may ever return the vacated offset. A regression test
+  should carve-promote-then-exhaust-the-class's-free-list and assert the
+  vacated offset never reappears.
+- **Any error path (remap failure, e.g. `mremap` returning `MAP_FAILED` under
+  address-space pressure or a kernel that refuses the move) falls back to
+  the existing memcpy move-leg unconditionally** — `try_promote_to_large`'s
+  current `alloc_large` + `copy_nonoverlapping` + `dealloc` sequence remains
+  the universal fallback; remap is purely an optional fast path attempted
+  first, never a replacement that removes the memcpy code.
+
+This sketch is NOT an implementation plan with file/line targets — it is the
+minimal shape a future round's correctness-prototype task would need to
+fill in, matching this document's own established practice of scoping a
+Stage-1/prototype gate without writing its code (§5's own Stage-1 sketch is
+the precedent this follows).
+
+### 10.6 Verification performed for this correction
+
+- Read this entire document in full before writing anything (per the
+  project's zero-trust convention — not just the §2.4/§3 sections the task
+  prompt named).
+- Re-read `carve_block` (`alloc_core_small.rs:1429-1557`) and `carve_batch`
+  (`alloc_core_small.rs:1608-1721`) in full against the CURRENT source (not
+  the line numbers cited in the original document, which had drifted
+  slightly) — confirmed both are forward-only bump advances.
+- Grepped every `set_bump` call site in `src/` (not just the two the task
+  prompt named) to confirm there is no other backward-reset path — found
+  exactly the two forward call sites plus the two backward-reset call sites
+  inside `decommit_empty_segment_impl`, no others.
+- Traced every caller of `decommit_empty_segment_impl` /
+  `decommit_empty_segment_for_release` / `unpool_if_present`'s sibling paths,
+  and found a genuine caveat the task prompt's framing did not name:
+  `dbg_force_decommit_retain_for`, a `#[doc(hidden)]` test-only hook, resets
+  bump WITHOUT checking `live_count` itself (trusting its one test caller to
+  have emptied the segment first). Reported honestly in §10.1 point 4 as a
+  real gap in the abstract, assessed as not weakening the production-path
+  argument (unreachable from any real allocation entry point).
+- Traced `try_promote_to_large` (`heap_core_free.rs:1276-1343`) end to end to
+  determine what today's promotion actually does to the source block —
+  found it calls ordinary `dealloc`, which confirmed the "permanent hole"
+  question needed to be answered relative to `BinTable`/free-list reuse, not
+  relative to `bump`/carve reuse (§10.3's central finding).
+- Confirmed medium classes share `BinTable`/`SMALL_CLASS_COUNT` indexing
+  with small classes (`size_classes.rs:138,165,95-111`) — establishing that
+  a promoted medium object's freed offset is reachable via the SAME
+  free-list mechanism small blocks use, not a separate medium-only
+  structure.
+- Re-read §3.1-3.3 in full to confirm the base-address-stability argument
+  does not depend on anything this correction retracts — confirmed
+  independent (§10.2).
+- Re-read §1.2 in full to confirm the Windows blocker (section-object
+  backing) is a separate, third blocker untouched by this correction
+  (§10.4's Windows paragraph).
+- No `src/`, `benches/`, or `Cargo.toml` file was modified. This correction
+  is documentation-only, per the task's own scope.

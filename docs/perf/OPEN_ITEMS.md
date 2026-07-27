@@ -204,6 +204,54 @@ for completeness.
    (what fraction of medium allocations actually cross the promotion
    threshold). Evidence: `R22_16_PROMOTION_REMAP_DESIGN.md` (full report,
    §4/§6 for the two candidate directions and verdict, pending correction).
+   **2026-07-27 update — DONE (task #373, R23-4):** the correction landed.
+   Independently re-verified §2.4's blocker against the CURRENT source (not
+   just re-trusting the flagged premise): `carve_block`
+   (`alloc_core_small.rs:1429-1557`) and `carve_batch` (`:1608-1721`) are
+   both monotonically forward-only bump advances, and a full `grep -rn
+   "set_bump" src/` found the ONLY backward reset
+   (`decommit_empty_segment_impl`, `alloc_core_small_pool.rs:751,812`) is
+   reachable, on every production path, only after
+   `dec_live_and_maybe_decommit` has confirmed the WHOLE segment's
+   `live_count == 0` — so a live medium block's byte range is provably
+   exclusive for its entire lifetime, exactly as this update's prior
+   paragraph expected. §2.4's neighbor-liveness blocker is retracted;
+   §3.1-3.3's base-address-stability blocker for whole-segment remap is
+   confirmed independent and unaffected. **New finding beyond what was
+   expected going in:** traced `try_promote_to_large`
+   (`src/registry/heap_core_free.rs:1276-1343`) and found today's
+   memcpy-based promotion frees the source block through the perfectly
+   ordinary `dealloc` → `BinTable` free-list path (medium classes share the
+   same `BinTable`/`SMALL_CLASS_COUNT` indexing as small classes,
+   `size_classes.rs:138,165,95-111`) — so the "permanent hole" bookkeeping
+   concern §3.3 originally flagged is **only partially solved by
+   monotonicity**: bump will never re-carve a vacated span (solved), but
+   nothing stops that span's offset from being pushed onto `BinTable` and
+   reissued via ordinary free-list reuse (NOT solved — this is a new design
+   discipline a remap implementation must observe, not a currently-existing
+   blocker). Also disclosed, not silently fixed: a `#[doc(hidden)]`
+   test-only hook (`dbg_force_decommit_retain_for`,
+   `alloc_core_small_pool.rs:694-707`) resets bump without itself checking
+   `live_count` (trusting its one test caller to have emptied the segment
+   first) — unreachable from any production alloc/dealloc/realloc path, so
+   it does not weaken the production-path argument, but is exactly the kind
+   of edge case this task was told to look for and report honestly rather
+   than paper over. **Revised verdict:** NO-GO for whole-segment remap
+   (base-address stability, unaffected) and NO-GO for Windows specifically
+   (a third, separate blocker — placeholder-VA/`MEM_REPLACE_PLACEHOLDER`
+   only moves section-object-backed mappings, and `crates/vmem` uses plain
+   anonymous `VirtualAlloc` with no section handle, §1.2 — untouched by
+   this correction); **CONDITIONAL-GO for LINUX SUB-REGION remap
+   specifically**, pending a correctness prototype that adds the `mremap`
+   FFI surface AND builds the still-missing "never free-list-push a
+   remap-vacated offset" discipline §10.3 identifies as the one remaining
+   unbuilt piece. A DESIGN-ONLY (not implemented) sketch of that prototype's
+   minimal scope (Linux-only, page-aligned medium block only, exact-span
+   remap, new Large/extent registration, vacated-range exclusion from
+   `BinTable`, mandatory memcpy fallback on any remap error) is recorded.
+   Full derivation: `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the correction
+   section) — original §0-§9 content preserved verbatim per this project's
+   "append, don't rewrite" convention.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 

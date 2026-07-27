@@ -190,6 +190,22 @@ pay a full OS reservation up front, the opposite of the whole point). This
 is the "last untried asymptotic lever" the task prompt references, and it,
 too, closes NO-GO for the mechanism actually asked about.
 
+**2026-07-27 correction pointer (task #373, R23-4):** blocker 1 above
+(the promotion-time neighbor-liveness check) has since been retracted as a
+flawed premise — `carve_block`/`carve_batch`'s bump-monotonicity plus
+`decommit_empty_segment_impl`'s empty-only reset gate together prove a live
+medium block's byte range is exclusive for its whole lifetime, with no
+runtime check needed. Blocker 2 (base-address stability) is confirmed
+independent and unaffected. Revised: Linux sub-region remap is
+CONDITIONAL-GO pending a correctness prototype (an unbuilt `mremap` FFI
+surface plus a still-missing "never free-list-push a remap-vacated offset"
+discipline); Windows and whole-segment remap remain NO-GO. This does not
+change §0/§3's ship decision for `medium-classes` itself (the realloc axis
+is still RED, unmeasured by any new evidence) — see §5's falsifiability
+clause update for the precise scope of what did and did not change. Full
+derivation: `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (original §0-§9 preserved
+verbatim there per the same convention).
+
 ### 1.7 Cross-check: is anyone depending on `medium-classes` today?
 
 `medium-classes` is not in `production` (confirmed: `Cargo.toml:474`,
@@ -401,8 +417,40 @@ narrowly as one of:
    than "someone has a new idea for remap," specifically a capability that
    falsifies one of R22-16 §2.4/§3.1-3.3's two architectural blockers.
 
-Absent one of these three, the correct action for a future round that
-encounters `medium-classes`' realloc axis again is to **cite this record**
+   **2026-07-27 update (task #373, R23-4) — trigger 3 PARTIALLY satisfied,
+   not fully, and by a different mechanism than this trigger anticipated.**
+   This trigger was worded for a NEW OS/platform capability arriving from
+   outside; what actually happened is narrower and already-landed: an
+   independent re-verification of R22-16's OWN reasoning (not a new OS
+   capability) found §2.4's "promotion-time neighbor-liveness check"
+   blocker was based on a flawed premise — reading `carve_block`/
+   `carve_batch`'s bump-monotonicity and `decommit_empty_segment_impl`'s
+   empty-only reset gate directly (not trusting §2.4's original claim)
+   shows a live medium block's byte range is provably exclusive for its
+   whole lifetime, with no runtime check needed. §2.4 is retracted;
+   §3.1-3.3's whole-segment base-address-stability blocker is confirmed
+   independent and UNAFFECTED (this correction falsifies only ONE of the
+   two named architectural blockers, not both). **Practical effect on THIS
+   falsifiability clause: Linux sub-region remap moved from "blocked by two
+   independent architectural arguments" to "CONDITIONAL-GO pending a
+   correctness prototype"** — a real, material change in status, but
+   explicitly NOT "the feature now works" — no prototype has been built,
+   no `mremap` FFI exists yet, and a genuinely new bookkeeping discipline
+   (never free-list-push a remap-vacated offset — the "permanent hole"
+   question, only partially resolved by monotonicity, see
+   `R22_16_PROMOTION_REMAP_DESIGN.md` §10.3) remains unbuilt. This does
+   **not** reopen the "should `medium-classes` ship" decision itself (§0/§3
+   above stand: the realloc axis is still RED today, with no code change
+   and no measurement showing otherwise) — it reopens exactly one design
+   sub-question (is sub-region remap worth prototyping) that this record's
+   §1.6 had marked fully closed. Tracked as a still-open, not-yet-satisfied
+   engineering item in `docs/perf/OPEN_ITEMS.md` item 6, not as evidence
+   that clears this record's own bar. Full derivation:
+   `R22_16_PROMOTION_REMAP_DESIGN.md` §10.
+
+Absent one of these three (or their equivalent partial-satisfaction update
+above), the correct action for a future round that encounters
+`medium-classes`' realloc axis again is to **cite this record**
 (and the 4 reports it summarizes), not to re-measure. This is the
 falsifiable form of "closed until new evidence" — it names what would count,
 so silence past this point is a deliberate closure, not an oversight the way
