@@ -67,6 +67,18 @@ for completeness.
    whoever designs this next, not an assumed-solved prerequisite. Evidence:
    `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` (full report, §4 for the
    design sketch + the soundness caveat).
+   **2026-07-27 update:** an independent read-only review
+   (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found the "18.6%"
+   figure is NOT an isolated `contains_base` measurement — the probe arm
+   (`benches/perf_gate_iai.rs:232-239`) calls `dbg_segment_base_of_ptr` +
+   `dbg_contains_base` as two separate non-inlined function calls plus
+   `black_box`, so the reported share is really
+   `(segment_base_of_ptr + contains_base + call-boundary overhead)`, an
+   upper envelope, not a precise isolated cost; the "conservative lower
+   bound" framing above is unproven either direction. Queued for
+   correction: task #370 (R23-1) will add a `segment_base_of_ptr`-only
+   arm to isolate the true `contains_base`-only share before this item's
+   number is cited further.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
@@ -95,34 +107,58 @@ for completeness.
    if `medium-classes-wide` is pursued — which is itself NO-GO'd for
    `production` (large realloc regression). Re-evaluate only if wide classes are
    re-opened. Evidence: `R10_4_RUN_ORIGIN_ORACLE_DESIGN.md` §0/§7/§8.
+6. **R22-16 — remap-instead-of-copy for the medium→Large promotion memcpy
+   (MediumExtent sub-path).** DESIGN-ONLY. **Status pending correction (task
+   #373/R23-4):** the design doc as committed verdicts NO-GO for
+   remap-in-place under the current shared-segment model, reasoning that a
+   promotion-time "is anyone else sharing my pages" check is unsolved — an
+   independent review (`docs/reviews/2026-07-26-r22-readonly-review.md` P1)
+   found, and I personally re-verified against `carve_block`'s bump-
+   monotonicity (`src/alloc_core/alloc_core_small.rs`) and the empty-segment-
+   only reset (`decommit_empty_segment_impl`,
+   `src/alloc_core/alloc_core_small_pool.rs`), that this specific blocker is
+   based on a flawed premise: a live carved block's byte range is provably
+   exclusive for its entire live lifetime, so no promotion-time check is
+   actually needed for LINUX sub-region remap specifically. The
+   base-address-stability blocker for WHOLE-segment remap is real and
+   unaffected. Task #373 will correct the document's verdict (expected:
+   NO-GO for whole-segment remap stands; Linux sub-region remap becomes
+   CONDITIONAL-GO pending a correctness prototype) — do not cite this
+   item's current NO-GO framing until that correction lands. Separately, the
+   MediumExtent one-object-per-segment redesign (a different, larger-scope
+   mechanism reusing the `SegmentKind::Large` pattern) remains its own
+   CONDITIONAL-GO, gated on a still-unrun Stage-1 workload-shape measurement
+   (what fraction of medium allocations actually cross the promotion
+   threshold). Evidence: `R22_16_PROMOTION_REMAP_DESIGN.md` (full report,
+   §4/§6 for the two candidate directions and verdict, pending correction).
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
-6. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
+7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
    narrow working-set-after-burst shape.** Deferred "if a future review wants a
    number attached to the 'cheap' claim" specifically for N=1/2/4 (R13-8 already
    measured the 24-distinct-size turnover shape). Evidence:
    `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
-7. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
+8. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
     Deferred "if 4×'s real numbers ever stop being enough"; would need new
     per-segment chain-identity state or a threaded hint through the shared
     `alloc_large_slow` path. Evidence:
     `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
-8. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
+9. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
     Explicitly NOT recommended now (ceiling below this task's own noise floor).
     Revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward the
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
-9. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
+10. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
     the warm heap (no page faults) would give the fairest batch-vs-tcache
     comparison; "explicitly left for a future task if the 16 B / n=1024 signal
     warrants it." Evidence: `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343).
-10. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
+11. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
     `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
-11. **R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).**
+12. **R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).**
     Not a variant of the now-closed medium-ladder item (see "Recently resolved"
     below) — a DIFFERENT ladder with much friendlier LCM ratios. The
     geometric run below the medium classes steps by ~1.25× per class (e.g.
@@ -166,6 +202,21 @@ for completeness.
   a sibling item; a stale-open item sitting one round past its actual
   resolution, caught in passing rather than by a dedicated check.) Evidence:
   `R22_15_MIMALLOC_IR_ARM_GATE.md` (full report).
+  **2026-07-27 update:** an independent read-only review
+  (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found this ratio's
+  bootstrap-subtraction is asymmetric across the two allocators
+  (`large_alloc_free_cycle` = 3308 Ir is ~41% of Sefer's raw churn Ir;
+  `mimalloc_bootstrap_proxy` = 13050 Ir is ~78% of mimalloc's raw churn
+  Ir), making the 1.326x-2.430x figures two small remainders after two
+  differently-sized subtractions — a real statistical fragility
+  `scripts/iai.mjs`'s own comment already flags as an approximation
+  designed for within-allocator regression tracking, not cross-allocator
+  ratios. The DIRECTION of the gap (SeferAlloc costs more `Ir` than
+  mimalloc) is not in doubt, but the exact multiplier is provisional.
+  Queued for correction: task #371 (R23-2) will add a warm `N`-vs-`2N`
+  matched-workload gate that cancels the bootstrap constant
+  algebraically instead of subtracting an external proxy, and publish
+  both figures side by side.
 - **Product fate of `medium-classes` — should it ship, in any form?**
   Resolved by **R22-18 (task #369)**, 2026-07-26: **decision recorded, not
   merely deferred again.** After 4 independent NULL/NO-GO attempts across 3
@@ -247,7 +298,7 @@ for completeness.
   This closes item 1 as NO-GO on geometric grounds for the medium ladder
   specifically. It does NOT foreclose OPT-H as a mechanism (§2's soundness
   argument is untouched) nor the sub-16 KiB geometric ladder, which has much
-  friendlier ratios — see the new [L]-tier item 11 above for that narrower,
+  friendlier ratios — see the new [L]-tier item 12 above for that narrower,
   optional, low-priority probe. Evidence: `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md`
   §2.1 (preconditions); `src/alloc_core/size_classes.rs:106-111` (`EXTRAS`);
   the LCM table above (re-derived independently for this closure, not copied
