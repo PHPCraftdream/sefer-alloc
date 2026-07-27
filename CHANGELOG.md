@@ -74,6 +74,21 @@ docs-only edit; `git diff --stat` on `Cargo.toml` across the round is empty.
   README.md's own `readme_unsafe_inventory_counts_match_reality` test
   correctly went red until the README's count was updated in the same
   commit.
+- **[correction] R24-1 (task #379) — the R23-3 "80.8%" headline directly
+  above describes a 64-block batch-free-with-overflow workload, not ordinary
+  hot free.** Re-verified against current source: the bench arms free 64
+  distinct pointers in one sequential pass, hitting the magazine overflow arm
+  (`cnt == TCACHE_CAP = 16`) six times (at frees #17/25/33/41/49/57); so the
+  74.70 Ir/free averages 58 non-overflow pushes with 6 overflow events
+  (bitmap-clear + `flush_class` on 8 blocks each + 8-pointer compaction), not
+  an isolated "M2 oracles + magazine push" cost. Cross-check: 22.38 (alloc
+  hit) + 92.50 (this free) = 114.88 > the entire 69.0 Ir hot pair, so the
+  92.50 free is NOT the free half of that pair — the workloads measure
+  different magazine states. Corrected next step is the R24-2 (task #380)
+  measurement split (decompose free by magazine state), not remediation.
+  Docs-only correction; no `src/` behavior change. Full arithmetic:
+  `docs/perf/R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §9 (original §0–§8
+  preserved verbatim); item-1 note updated in `docs/perf/OPEN_ITEMS.md`.
 - **[design correction] R23-4 (task #373) — corrected a real logic error in
   this project's own R22-16 design doc: Linux sub-region `mremap` is
   CONDITIONAL-GO, not NO-GO.** R22-16 argued sub-region remap needed an
@@ -109,8 +124,10 @@ docs-only edit; `git diff --stat` on `Cargo.toml` across the round is empty.
   other.** `backshift_no_latency_spike_at_threshold_boundary` got a
   deterministic replacement: a new `alloc-stats`-gated
   `HASH_REMOVE_MAX_SCAN_STEPS` high-water-mark counter for
-  `SegmentTable::hash_remove`'s backward-shift scan, asserted against an
-  exact bound instead of a nanosecond ratio — zero flake surface. Verified
+  `SegmentTable::hash_remove`'s backward-shift scan, asserted against a
+  deterministic regression threshold (`4 * W`, calibrated to this wave —
+  reliably catches a full O(HASH_CAPACITY) regression; not a proven O(cluster)
+  worst-case) instead of a nanosecond ratio — zero flake surface. Verified
   non-vacuous via a mutation counterfactual (force the scan to burn
   `HASH_CAPACITY-1` extra steps; confirmed the new test fails; reverted),
   run independently twice (once by the delegated task, once personally).

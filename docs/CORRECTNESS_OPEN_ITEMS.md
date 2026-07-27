@@ -313,9 +313,15 @@ _(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
      (`#[cfg(feature = "alloc-stats")]`, same file) drives the identical
      `W = 600`-distinct-bases wave-then-drain shape as the original and
      asserts the high-water mark stays `<= 4 * W` (`HASH_CAPACITY = 8192`
-     would be ~13.6x that bound) — an exact per-run assertion, zero timing,
-     zero retries. The original wall-clock test is KEPT (not deleted, for
-     manual/`--ignored` diagnostic value) but marked `#[ignore = "..."]`
+     would be ~13.6x that bound) — a deterministic per-run assertion, zero
+     timing, zero retries. (R24-1/task #379 wording-precision note: the
+     MEASUREMENT is exact per-run, but the `4 * W = 2400` threshold is a
+     regression bound calibrated to this wave's `W = 600`, not a proven
+     O(cluster) worst-case for arbitrary configurations — it reliably catches
+     a full O(`HASH_CAPACITY`) regression but could miss a smaller
+     pathological cluster under 2400 steps.) The original wall-clock test is
+     KEPT (not deleted, for manual/`--ignored` diagnostic value) but marked
+     `#[ignore = "..."]`
      with a message pointing at the deterministic replacement and
      `npm run iai`.
    - **`tests/dealloc_sublinear.rs::own_thread_free_is_subquadratic` —

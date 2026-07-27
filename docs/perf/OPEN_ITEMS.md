@@ -152,6 +152,27 @@ for completeness.
    `R23_3_HOT_PATH_ATTRIBUTION_GATE_summary.csv` +
    `docs/perf/_raw_r23_3_hot_path_attribution_run1.log` /
    `_raw_r23_3_hot_path_attribution_run2.log`.
+   **2026-07-27 update — CORRECTED (task #379, R24-1):** the R23-3 DONE note
+   directly above (and R23-3's own report §0) name the measured 74.70 Ir/free
+   (80.8%) as "the own-thread free body: M2 oracles + magazine push (fused)"
+   and frame it as the dominant cost of an ordinary hot free. That framing is
+   wrong: the bench arms free 64 DISTINCT pointers in one sequential pass,
+   which hits the magazine overflow arm (`cnt == TCACHE_CAP = 16`) six times
+   — so 74.70 Ir/free is an average over 58 non-overflow pushes AND 6
+   overflow events (bitmap-clear pass + `flush_class` on 8 blocks each +
+   8-pointer compaction), i.e. a 64-block batch-free-with-overflow workload,
+   NOT an isolated "M2 oracles + magazine push" cost and NOT representative
+   of the interleaved `small_churn_16b` hot pair. Cross-check: 22.38 (alloc
+   hit) + 92.50 (this free) = 114.88 > the entire 69.0 Ir hot pair —
+   impossible if 92.50 were the free half of that pair; the workloads measure
+   different magazine states. **Corrected characterization:** the free path's
+   real dominant cost is NOT isolated by R23-3; whether the cheap non-overflow
+   push or the overflow event dominates ordinary hot free is unmeasured. The
+   actual next step is the follow-up measurement split **R24-2 (task #380)**,
+   NOT immediate remediation of a still-incorrectly-named mechanism. Full
+   arithmetic and the falsified "consistent with the free-path table"
+   sentence: `R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §9 (the correction section;
+   original §0–§8 preserved verbatim).
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

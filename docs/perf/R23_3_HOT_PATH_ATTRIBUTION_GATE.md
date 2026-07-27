@@ -1,5 +1,21 @@
 # R23-3 — orthogonal hot-path attribution: which component of the 16 B alloc/free path costs what
 
+> **CORRECTED 2026-07-27 (task #379, R24-1) — see §9.** The §0 headline names
+> the measured 74.70 Ir/free (80.8% of the real free loop) as "own-thread body:
+> M2 oracle checks + magazine push (fused)" and frames it as the dominant cost
+> of an ordinary hot free. That name and framing are wrong in a checkable way:
+> the bench arms (`dealloc_free_only_16b` / `dealloc_own_thread_body_only_16b`)
+> free 64 DISTINCT pointers in ONE sequential pass, which hits the magazine
+> overflow arm (`cnt == TCACHE_CAP`) six times — so 74.70 Ir/free is an average
+> over 58 non-overflow pushes AND 6 overflow events (bitmap-clear pass +
+> `flush_class` on 8 blocks each + 8-pointer compaction + final push), not an
+> isolated "M2 oracles + magazine push" cost, and not representative of the
+> interleaved alloc-then-immediately-free shape of `small_churn_16b`'s hot pair.
+> The original §0–§8 are preserved verbatim as published history; §9 has the
+> full arithmetic, the cross-check that falsifies the "consistent with the
+> free-path table" sentence, and the corrected next step (R24-2's measurement
+> split, not immediate remediation).
+
 **Task #372 (R23-3), Round 23.** Executes
 `docs/reviews/2026-07-26-r22-readonly-review.md` §4.1/§6's own P0
 recommendation ("R23-3: split hot alloc / hot free / cold alloc / cold
@@ -482,3 +498,144 @@ here.
 
 - `docs/perf/_raw_r23_3_hot_path_attribution_run1.log`
 - `docs/perf/_raw_r23_3_hot_path_attribution_run2.log`
+
+---
+
+## 9. CORRECTION (2026-07-27, task #379, R24-1) — the 74.70 Ir/free is a 64-block batch-free average, NOT an isolated "M2 oracles + magazine push" cost
+
+An independent read-only review
+(`docs/reviews/2026-07-27-r23-readonly-review.md` P0) found — and this task
+personally re-verified against the CURRENT source before writing anything
+(line numbers below are current as of this correction, not the original
+report's) — that §0's headline mis-names what the 74.70 Ir/free figure
+actually measures. The number is correct; the NAME and the "80.8% of an
+ordinary hot free" framing are not.
+
+### 9.1 What was wrong — the bench arms free 64 distinct pointers in one sequential pass
+
+Both `dealloc_free_only_16b` and `dealloc_own_thread_body_only_16b`
+(`benches/perf_gate_iai.rs`) pre-allocate `CHURN_OPS = 64` DISTINCT pointers
+into an array, then free all 64 in ONE sequential pass:
+
+```text
+let mut ptrs: [*mut u8; CHURN_OPS] = [...; CHURN_OPS];   // CHURN_OPS = 64
+for slot in ptrs.iter_mut() { *slot = unsafe { (*heap).alloc(layout) }; }
+for &ptr in &ptrs        { unsafe { (*heap).dealloc(ptr, layout) }; }   // 64 frees in a row
+```
+
+This is NOT the interleaved alloc-then-immediately-free shape of
+`small_churn_16b` (where each block is freed before the next is allocated,
+so the magazine never accumulates). Here the magazine fills up.
+
+### 9.2 The free path splits at `cnt == TCACHE_CAP`, and the overflow arm is expensive
+
+`HeapCore::dealloc_own_thread_with_base`
+(`src/registry/heap_core_free.rs`) reads `let cnt = self.tcache.classes[c].count`
+(line 316) and branches:
+
+- **Cheap arm** (`cnt < TCACHE_CAP`, lines 712-742): `mark_magazine` bitmap
+  write + `slots[cnt] = ptr` + `count += 1` + return. This IS "M2 oracles +
+  magazine push" (the oracles ran just above, lines 666-710, in the same
+  straight-line block).
+- **Overflow arm** (`cnt == TCACHE_CAP`, lines 744-816): a loop over
+  `slots[0..FLUSH_N]` re-deriving `segment_base_of_ptr` + constructing
+  `SegmentMeta` + `clear_magazine` for each of 8 blocks (762-768); then
+  `flush_class` on those same 8 blocks (774-778); then an 8-pointer
+  compaction shift `slots[i] = slots[i + FLUSH_N]` for `i in 0..remaining`
+  (779-783); then the normal push at `slots[remaining]` (800-802).
+
+`TCACHE_CAP = 16`, `FLUSH_N = TCACHE_CAP / 2 = 8`
+(`src/registry/tcache.rs:48,124`).
+
+### 9.3 The arithmetic — 6 overflow events, 48 of 64 blocks touch `flush_class`
+
+Freeing 64 blocks sequentially from an empty magazine (count starts at 0;
+`cnt` is the PRE-push count):
+
+- Frees #1–16: cheap (cnt 0..15, each `< 16`); after free #16 the count is 16.
+- Free #17: `cnt == 16 == TCACHE_CAP` → **OVERFLOW #1**. Flush the 8 oldest
+  blocks, compact, push; count becomes `remaining + 1 = 9`.
+- Frees #18–24: cheap (count 9→16).
+- Free #25: **OVERFLOW #2**. ... and so on.
+
+The overflow arm fires at frees **#17, 25, 33, 41, 49, 57 — six events**.
+After overflow #57 the count is 9; frees #58–64 (seven frees) are cheap,
+leaving count at 16. Totals:
+
+- 58 cheap pushes + 6 overflow-arm frees = 64 frees ✓
+- 6 overflow events × `FLUSH_N = 8` = **48 distinct blocks flushed via
+  `flush_class`** (each block is flushed at most once — once `flush_class`
+  returns it to the substrate it leaves the magazine permanently) = **75% of
+  the 64 blocks**.
+- 16 blocks remain in the magazine at the end (64 − 48) ✓.
+
+So the measured 74.70 Ir/free is an AVERAGE over 58 cheap pushes interleaved
+with 6 expensive overflow events. The name "M2 oracle checks + magazine push
+(fused)" describes only the cheap arm; the overflow arm's bitmap-clear pass,
+`flush_class`, and 8-pointer compaction are baked into the same average. This
+is a batch-free-with-amortized-overflow workload, not ordinary interleaved
+hot free, and not "the free half of `small_churn_16b`'s steady hot pair".
+
+### 9.4 Cross-check that confirms the workloads are non-comparable
+
+The report's own §0 prose claims the magazine-hit alloc (22.4 Ir/op) leaves
+"roughly two-thirds of a churn op's cost on the free half, consistent with
+the free-path table above." That consistency claim does not hold:
+
+- R23-2's steady hot pair (`small_churn_16b`): **69.0 Ir / alloc+free pair**.
+- R23-3's isolated magazine-alloc-hit: **22.38 Ir / alloc**.
+- R23-3's claimed real free (this report's 92.50 Ir/free total): **92.50 Ir / free**.
+
+`22.38 + 92.50 = 114.88`, which is **more than the entire 69.0 Ir hot pair** —
+impossible if 92.50 were genuinely the free half of the same steady-state
+pair. This is not a counter bug: the three numbers were measured on different
+magazine states (the 92.50 free is the 64-block batch-free-with-overflow
+shape; the 69.0 pair is genuinely interleaved). It falsifies the specific
+"consistent with the free-path table" sentence. The free-path table
+describes a batch-free workload, not the free half of the hot pair.
+
+### 9.5 What this does and does NOT change
+
+- **The measured Ir numbers stand.** 74.70, 92.50, 22.38, 9.03, 8.17 are all
+  correct measurements of the bench arms that produced them. What changes is
+  their INTERPRETATION: "74.70 Ir/free" is "the own-thread body's cost on a
+  64-block sequential batch-free, averaged over 58 cheap pushes and 6
+  overflow events", not "the fused M2-oracle-plus-push cost of one ordinary
+  hot free".
+- **The corrected headline:** the free path's real dominant cost is NOT
+  isolated by this report. The 80.8% figure is a batch-free-with-overflow
+  average; whether the cheap non-overflow push or the overflow event
+  dominates ordinary hot free is NOT yet measured.
+- **§7's recommendation is withdrawn.** "Best single next remediation target:
+  M2 oracles + magazine push, 80.8%" was premised on the mis-named headline.
+  The correct next step is NOT immediate remediation of a still-incorrectly-
+  named mechanism, but the follow-up MEASUREMENT split already queued as a
+  separate task — **R24-2 (task #380): decompose the free path by magazine
+  state**: non-overflow push alone (controlled `count < TCACHE_CAP`) vs. a
+  single isolated overflow event vs. batch sizes 1/8/16/17/32/64 vs. the
+  genuinely interleaved `small_churn_16b` free half. That split — explicitly
+  out of scope for THIS docs-only correction task — is the mandatory gate
+  before any remediation of either the cheap push or the overflow path.
+
+### 9.6 Verification performed for this correction
+
+- Re-read `src/registry/tcache.rs:48,124` — `TCACHE_CAP = 16`, `FLUSH_N = 8`,
+  current and unchanged.
+- Re-read `src/registry/heap_core_free.rs:316` (`let cnt = ...count`) and the
+  two arms at `:712-742` (cheap) and `:744-816` (overflow) — the split and
+  the overflow body are as described in §9.2.
+- Re-read `benches/perf_gate_iai.rs` — `CHURN_OPS = 64` (line 81); both
+  `dealloc_free_only_16b` and `dealloc_own_thread_body_only_16b` allocate 64
+  distinct pointers then free all 64 in one sequential pass (NOT
+  `small_churn_16b`'s interleaved shape).
+- Traced the count by hand: overflows fire at frees #17, 25, 33, 41, 49, 57
+  (6 events); 48 blocks flushed (75%); 58 cheap pushes; 16 remain. (Note: an
+  earlier summary of this finding listed the overflow frees as #16, 24, 32,
+  40, 48, 56 — that is off by one; `cnt` is the PRE-push count, so the first
+  overflow is the 17th free, not the 16th. The event COUNT of 6, and the
+  48-block / 75% share, are unchanged by this off-by-one.)
+- Cross-check `22.38 + 92.50 = 114.88 > 69.0` arithmetic confirmed against
+  this report's §0/§5.2 and R23-2's 69.0 Ir/pair.
+- No `src/` behavior touched; this is a docs-only correction (the report's
+  own numbers are preserved verbatim; only their interpretation is corrected
+  in this appended section).

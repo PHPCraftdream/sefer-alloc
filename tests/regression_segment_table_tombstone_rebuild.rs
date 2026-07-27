@@ -57,12 +57,19 @@
 //! that counts exactly the quantity this test's (b) claim is about: no single
 //! delete visits more hash slots than the CURRENT cluster length — never
 //! `HASH_CAPACITY`. `backshift_max_scan_steps_bounded_at_threshold_boundary`
-//! (below, `#[cfg(feature = "alloc-stats")]`) asserts an EXACT bound on that
-//! count instead of a wall-clock ratio: with `W = 600` distinct live bases and
-//! `HASH_CAPACITY = 8192` (load factor well under 50%), no single
-//! `hash_remove` call should need more than a small multiple of `W` scan
-//! steps — nowhere near `HASH_CAPACITY`. This has zero flake surface (no
-//! timing, no retry): it is exact per-process-run.
+//! (below, `#[cfg(feature = "alloc-stats")]`) asserts a deterministic
+//! regression threshold on that count instead of a wall-clock ratio: with
+//! `W = 600` distinct live bases and `HASH_CAPACITY = 8192` (load factor
+//! well under 50%), no single `hash_remove` call should need more than a
+//! small multiple of `W` scan steps — nowhere near `HASH_CAPACITY`. This has
+//! zero flake surface (no timing, no retry): the MEASUREMENT is exact
+//! per-process-run. The THRESHOLD (`4 * W = 2400`) is a regression bound
+//! calibrated to THIS test wave's parameters, not a mathematically proven
+//! O(cluster) worst-case for the open-addressing table under arbitrary
+//! configurations — it reliably catches a full O(`HASH_CAPACITY`) regression
+//! (which would need ~8192 steps, over 3x this threshold) but could in
+//! principle miss a much smaller pathological cluster that stays under 2400
+//! steps.
 //!
 //! The original wall-clock test is KEPT (renamed intent unchanged) but
 //! `#[ignore]`d — not blocking in `cargo test`/`npm run check`/CI, retained
@@ -249,9 +256,12 @@ fn backshift_no_latency_spike_at_threshold_boundary() {
 }
 
 // ===========================================================================
-// R23-6 (task #375) — deterministic replacement for (b) above: an EXACT
-// bound on `hash_remove`'s per-call scan-step count, instead of a wall-clock
-// ratio. No timing, no retries, no flake surface.
+// R23-6 (task #375) — deterministic replacement for (b) above: a regression
+// threshold on `hash_remove`'s per-call scan-step count, instead of a
+// wall-clock ratio. No timing, no retries, no flake surface. (R24-1/task
+// #379 wording-precision note: the MEASUREMENT is exact per-run, but the
+// `4 * W` threshold is a calibrated regression bound for this wave, not a
+// proven O(cluster) worst-case — see the test doc comment below.)
 // ===========================================================================
 
 /// Same drive-a-wave-of-`W`-distinct-bases-then-drain shape as
