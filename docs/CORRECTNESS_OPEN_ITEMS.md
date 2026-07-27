@@ -66,43 +66,8 @@ was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
 _(item 2, the 11 `--features "hardened medium-classes"` clippy dead-code
 errors, was resolved by R23-5 (task #374) — see "Recently resolved" below.)_
 
-3. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
-   `--all-features` step, discovered post-Round-22 while investigating a
-   real (now-fixed) test failure.**
-
-   - `tests/regression_segment_table_tombstone_rebuild.rs::backshift_no_latency_spike_at_threshold_boundary`
-     — failed twice across two independent `npm run check` runs (2026-07-26,
-     post-R22-18) with "slowest dealloc (N ns) is 42.2x the median" (an
-     `O(HASH_CAPACITY)` per-delete regression signal); passed cleanly 3/3
-     times when re-run in isolation immediately after each failure. The
-     test's own panic message already self-documents the risk: "(Coarse
-     wall-clock; confirm with `npm run iai`.)"
-   - `tests/dealloc_sublinear.rs::own_thread_free_is_subquadratic` — failed
-     once across the same investigation window; passed cleanly when re-run
-     in isolation. Asserts wall-clock free-time scaling is sub-quadratic —
-     a timing assertion with no feature gate, sensitive to host CPU
-     contention under `npm run check`'s parallel-test-binary load.
-   - **Plausible root-cause category:** both are coarse wall-clock latency
-     assertions (not `alloc-stats`-counter-based like item 1 above) that
-     compare a measured operation's time against a computed multiple of the
-     median — inherently sensitive to scheduler/CPU contention when many
-     test binaries run in parallel (as `npm run check`'s `--all-features`
-     step does), not a correctness regression in the code under test. Both
-     tests already carry their own "this is coarse, verify with iai if in
-     doubt" disclaimer in their assertion messages, suggesting the authors
-     were aware of this risk when writing them.
-   - **Next step:** either (a) serialize these two tests against the rest of
-     the suite (a `TEST_LOCK`-style process-wide mutex, matching the pattern
-     already used elsewhere in this suite for stats-sensitive tests), or (b)
-     widen their tolerance multiplier, or (c) accept them as known-flaky
-     wall-clock canaries and exclude them from `npm run check`'s pass/fail
-     gate specifically (deterministic `Ir`-based judges remain the real
-     regression gate; these two are best-effort human-readable signals).
-     Not decided here — tracked so it does not go unnoticed the way the
-     analogous perf-only gap did before `OPEN_ITEMS.md` existed.
-   - **Status:** open, unowned. Not fixed — out of scope for the task that
-     found it (a fix for `tests/r21_2_opt_h_stage1_precondition_probe.rs`'s
-     own unrelated `--all-features` geometry bug).
+_(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
+(task #375) — see "Recently resolved" below.)_
 
 4. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
    assertion proves no double-release, not no leak.**
@@ -317,3 +282,100 @@ errors, was resolved by R23-5 (task #374) — see "Recently resolved" below.)_
      `src/registry/heap_core_xthread.rs`, `src/registry/heap_registry.rs`,
      `tests/regression_batch_flush.rs`, `.github/workflows/ci.yml`, and this
      index.
+
+3. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
+   `--all-features` step** — **RESOLVED** by R23-6 (task #375). One
+   independent read-only review first corrected the originally-proposed fix
+   (a `TEST_LOCK`-style mutex): a mutex only serializes test FUNCTIONS
+   within ONE test binary/process, but the actual flakiness source is CPU
+   contention from MULTIPLE test binaries (separate OS processes) running
+   concurrently under `npm run check`'s `--all-features` step, plus the CI
+   runner's own background load — a mutex inside one binary cannot
+   serialize against a different process. That correction was confirmed
+   independently before this task began and is reflected in the fix below
+   (no `TEST_LOCK` was added to either file).
+
+   - **`tests/regression_segment_table_tombstone_rebuild.rs::backshift_no_latency_spike_at_threshold_boundary`
+     — got a deterministic replacement.** The test's (b) claim ("no single
+     `unregister`/`recycle` does `O(HASH_CAPACITY)` work") maps exactly onto
+     `SegmentTable::hash_remove`'s backward-shift scan-step count (the
+     `j = (j+1) & mask` walk across both its find-the-slot and
+     shift-the-cluster phases). Added `HASH_REMOVE_MAX_SCAN_STEPS`
+     (`src/alloc_core/segment_table.rs`) — a process-wide high-water-mark
+     `AtomicU64`, `alloc-stats`-gated increment (same convention as
+     `OPT_H_ATTEMPTS`/`HARDENED_LARGE_NOOP_COUNT`), reset hook
+     `reset_hash_remove_max_scan_steps`, and `AllocCore` accessors
+     `dbg_hash_remove_max_scan_steps`/`dbg_reset_hash_remove_max_scan_steps`
+     (`src/alloc_core/alloc_core_core_diag.rs`) — deliberately a MAX not a
+     sum, matching the original test's own "no single call is an outlier"
+     framing rather than conflating many small deletes with one large one.
+     New test `backshift_max_scan_steps_bounded_at_threshold_boundary`
+     (`#[cfg(feature = "alloc-stats")]`, same file) drives the identical
+     `W = 600`-distinct-bases wave-then-drain shape as the original and
+     asserts the high-water mark stays `<= 4 * W` (`HASH_CAPACITY = 8192`
+     would be ~13.6x that bound) — an exact per-run assertion, zero timing,
+     zero retries. The original wall-clock test is KEPT (not deleted, for
+     manual/`--ignored` diagnostic value) but marked `#[ignore = "..."]`
+     with a message pointing at the deterministic replacement and
+     `npm run iai`.
+   - **`tests/dealloc_sublinear.rs::own_thread_free_is_subquadratic` —
+     no clean deterministic replacement exists; demoted to non-blocking.**
+     Investigated seriously (per this task's explicit instruction not to
+     default to demotion): the guard this test protects
+     (`AllocCore::dealloc_small`'s M2 double-free check,
+     `src/alloc_core/alloc_core_small.rs`) is, by design, an UNCONDITIONAL
+     O(1) `AllocBitmap::is_free` bit test with NO loop — Phase 13.4a already
+     replaced the O(free-list-length) `free_list_contains` walk this test
+     guards against with exactly that O(1) bitmap test. A call-count counter
+     ("how many times was the guard tested") would read identically (= N
+     after N frees) under BOTH the correct O(1) implementation and the
+     regressed O(N²) walk it guards against — the walk's CALL COUNT never
+     changed across that regression, only its internal LENGTH did, and there
+     is no length-dependent loop left in production code to instrument. The
+     only way to get a counter would be adding one to code that would first
+     need to reintroduce the very walk being guarded against — not a
+     diagnostic-only addition. Per this task's constraint ("if a new counter
+     requires touching a genuinely hot path... stop and explain the
+     tradeoff"), this test is `#[ignore]`d instead, with a message pointing
+     at manual `--ignored` runs and `npm run iai` /
+     `benches/perf_gate_iai.rs`'s `small_churn_16b`-family arms as the
+     deterministic Ir-based judges for this same free-path cost.
+   - **Mechanism confirmed:** `scripts/check-all.mjs` runs `cargo test
+     --features <combo>` for each of its feature-matrix entries and fails
+     the whole gate on ANY test failure (including any `#[ignore]`d-off
+     test simply not running) — `#[ignore]` is exactly the mechanism
+     `cargo test` (and therefore this repo's CI/`check-all.mjs`) already
+     uses to exclude a test from the blocking pass/fail gate while keeping
+     it runnable via `cargo test -- --ignored`, so no `check-all.mjs`/CI
+     workflow change was needed.
+   - **Non-vacuity — mutation counterfactual (the new deterministic test):**
+     temporarily forced `hash_remove`'s phase-1 find loop to burn
+     `HASH_CAPACITY - 1` extra counter increments before matching (simulating
+     the pre-N3 O(HASH_CAPACITY) tombstone-scan regression class directly,
+     without touching pointer/unsafe logic) —
+     `backshift_max_scan_steps_bounded_at_threshold_boundary` FAILED
+     immediately (`max_steps = 8191` against the `2400` bound, with a
+     message correctly naming the O(HASH_CAPACITY) regression class);
+     reverted, and the test passed again. Confirms the new test is
+     non-vacuous — it fails without the property it's checking for holding.
+     No counterfactual was performed for `own_thread_free_is_subquadratic`
+     (it was demoted, not replaced) — its own pre-existing counterfactual
+     documentation (module doc comment, "author-verified" restoring the old
+     `free_list_contains` walk trips the assertion) is unchanged and still
+     applies to manual/`--ignored` runs.
+   - **Verification:** `cargo test --features production` (223 binaries),
+     `cargo test --features "production alloc-stats"` (223 binaries, exit
+     0 — this is the combo that actually compiles and runs the new
+     deterministic test), and `cargo test --all-features` all green, 0
+     failures. Both previously-flaky tests confirmed `... ignored, <reason>`
+     under every combo they're compiled under; the new deterministic test
+     confirmed `... ok` under `production alloc-stats` and `--all-features`,
+     and confirmed ABSENT (not vacuously passing) under plain `production`
+     (no `alloc-stats`). `cargo clippy --all-targets -- -D warnings` clean
+     across all three CI feature-matrix entries (`""`, `experimental`,
+     `--all-features`). `cargo fmt --all -- --check` clean on all touched
+     files.
+   - **Files changed:** `src/alloc_core/segment_table.rs`,
+     `src/alloc_core/alloc_core_core_diag.rs`,
+     `tests/regression_segment_table_tombstone_rebuild.rs`,
+     `tests/dealloc_sublinear.rs`, and this index.

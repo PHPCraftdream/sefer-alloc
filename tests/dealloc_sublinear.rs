@@ -28,6 +28,39 @@
 //! damp first-touch noise. The signal between O(N) and O(N²) at these N is huge
 //! (the old path was ~100× slower at N≈1024), so the coarse measurement is
 //! ample to separate the two regimes without flaking.
+//!
+//! ## R23-6 (task #375) — `#[ignore]`d: no clean deterministic replacement
+//!
+//! This test flaked once under `npm run check`'s `--all-features` step
+//! (multiple test BINARIES — separate OS processes — competing for CPU; see
+//! `docs/CORRECTNESS_OPEN_ITEMS.md` item 3, moved to "Recently resolved", for
+//! the investigation). Unlike
+//! `tests/regression_segment_table_tombstone_rebuild.rs`'s sibling flaky
+//! test (which got a deterministic `alloc-stats` scan-step counter
+//! replacement — R23-6), THIS test has **no clean deterministic counter
+//! replacement**: the guard it protects
+//! (`AllocCore::dealloc_small`'s M2 double-free check, see
+//! `src/alloc_core/alloc_core_small.rs`) is, by design, an UNCONDITIONAL
+//! O(1) `AllocBitmap::is_free` bit test with no loop — it does exactly one
+//! bit-test per free regardless of N. A counter that increments once per
+//! `dealloc_small` call would read exactly N after N frees under BOTH the
+//! correct O(1) implementation and the regressed O(N²)
+//! `free_list_contains`-walk implementation this test guards against (the
+//! walk still only gets invoked once per free — its length is what changes,
+//! not its call count) — such a counter cannot distinguish the two
+//! complexity classes, so it would be a vacuous, not a deterministic,
+//! guard. Actually counting the walk's internal steps would require adding
+//! a counter to code that no longer contains a loop at all (there would be
+//! nothing to instrument without reintroducing the very walk being guarded
+//! against), which is not a diagnostic-only addition — it is production hot
+//! path.
+//!
+//! `#[ignore]`d rather than deleted (retains its diagnostic value run in
+//! isolation, and its counterfactual documentation above remains accurate);
+//! run manually via `cargo test --features alloc-core --test
+//! dealloc_sublinear -- --ignored`, or defer to `npm run iai` /
+//! `benches/perf_gate_iai.rs`'s `small_churn_16b`-family arms, which are the
+//! deterministic Ir-based judges for this same free-path cost.
 
 #![cfg(feature = "alloc-core")]
 
@@ -54,6 +87,11 @@ fn free_phase_nanos(n: usize, layout: Layout) -> u128 {
     start.elapsed().as_nanos()
 }
 
+#[ignore = "coarse wall-clock; flaky under concurrent test-binary CPU contention \
+            (docs/CORRECTNESS_OPEN_ITEMS.md item 3, resolved R23-6/task #375) — \
+            no clean deterministic counter replacement exists (the guard it \
+            protects is an unconditional O(1) bitmap test with no loop to \
+            instrument); run manually with --ignored, or use npm run iai instead"]
 #[test]
 fn own_thread_free_is_subquadratic() {
     // One small class (16 B). All blocks share the class, so every free's guard

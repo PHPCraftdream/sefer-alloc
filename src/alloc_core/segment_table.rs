@@ -50,6 +50,48 @@
 
 use core::mem::size_of;
 
+/// R23-6 (task #375) DIAGNOSTIC ONLY: process-wide count of hash-slot probe
+/// steps performed by a SINGLE [`SegmentTable::hash_remove`] call's
+/// backward-shift scan (the `j = (j+1) & mask` walk documented on
+/// `hash_remove` — one increment per slot visited while scanning the cluster
+/// for a shift candidate). This is the exact quantity
+/// `tests/regression_segment_table_tombstone_rebuild.rs`'s
+/// `backshift_no_latency_spike_at_threshold_boundary` wall-clock check was
+/// trying to approximate: "no single delete does more than a small,
+/// cluster-bounded amount of work — never `O(HASH_CAPACITY)`". A wall-clock
+/// nanosecond measurement is a noisy PROXY for this; this counter is the
+/// exact thing.
+///
+/// Deliberately a MAX, not a running sum: the correctness claim under test is
+/// a per-call BOUND ("no single delete is a dramatic outlier"), not a total
+/// amount of work across many deletes — a sum would conflate "many small
+/// deletes" with "one large delete" the same way the wall-clock test's own
+/// max/median ratio does NOT (it isolates the single worst call). Reset via
+/// [`reset_hash_remove_max_scan_steps`] at the start of a measurement window
+/// so each test/bench run reads a clean high-water mark.
+///
+/// **This counter has ZERO effect on allocator behavior** — `hash_remove`'s
+/// control flow is unchanged; this only counts steps the walk was already
+/// going to take. Read via
+/// [`AllocCore::dbg_hash_remove_max_scan_steps`](super::alloc_core::AllocCore::dbg_hash_remove_max_scan_steps).
+/// Reads 0 unless `alloc-stats` is on — the per-step increment is gated
+/// behind `alloc-stats`, matching
+/// [`OPT_H_ATTEMPTS`](super::alloc_core::OPT_H_ATTEMPTS)'s convention; the
+/// static itself is always compiled so the accessor has a stable definition
+/// regardless of the rest of the feature set. Relaxed ordering — a
+/// diagnostic count, not a synchronization primitive.
+pub(crate) static HASH_REMOVE_MAX_SCAN_STEPS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R23-6 (task #375): reset [`HASH_REMOVE_MAX_SCAN_STEPS`] to 0. Test/bench
+/// hook — lets a measurement window (e.g. one wave of a threshold-boundary
+/// test) start from a clean high-water mark instead of accumulating across
+/// the whole process lifetime.
+#[doc(hidden)]
+pub fn reset_hash_remove_max_scan_steps() {
+    HASH_REMOVE_MAX_SCAN_STEPS.store(0, core::sync::atomic::Ordering::Relaxed);
+}
+
 /// Maximum number of simultaneously live segments the registry can hold WITHOUT
 /// recycling. Each live large/huge allocation consumes one segment slot; each
 /// small segment can serve thousands of small allocations. Under `alloc-decommit`
@@ -798,6 +840,12 @@ impl SegmentTable {
         let start = Self::hash_index(base);
         let mask = HASH_CAPACITY - 1;
         let mut i = start;
+        // R23-6 (task #375): count of probe/scan steps THIS call takes, both
+        // phases (find + backward-shift) combined — the exact quantity the
+        // "no single delete does O(HASH_CAPACITY) work" claim is about. Local
+        // to this call; folded into the process-wide max at the end.
+        #[cfg(feature = "alloc-stats")]
+        let mut steps: u64 = 0;
         // 1. Find the slot currently holding `base`.
         loop {
             let entry = self.hash_slot_read(i);
@@ -811,6 +859,10 @@ impl SegmentTable {
             }
             // A different live entry: skip and continue probing.
             i = (i + 1) & mask;
+            #[cfg(feature = "alloc-stats")]
+            {
+                steps += 1;
+            }
             debug_assert!(i != start, "hash_remove looped without finding base");
         }
         // 2. Backward-shift deletion: fill the hole at `i` by pulling later
@@ -848,6 +900,10 @@ impl SegmentTable {
                 hole = j;
             }
             j = (j + 1) & mask;
+            #[cfg(feature = "alloc-stats")]
+            {
+                steps += 1;
+            }
             debug_assert!(
                 j != i,
                 "hash_remove backward-shift looped — no empty slot found in cluster"
@@ -855,6 +911,14 @@ impl SegmentTable {
         }
         // 3. The final hole is genuinely empty now (nothing shifted into it).
         self.hash_slot_write(hole, core::ptr::null_mut());
+        // R23-6: fold this call's step count into the process-wide max (a
+        // relaxed compare-exchange loop — `fetch_max` is not available pre-
+        // 1.45-independent of MSRV concerns here, but the crate already uses
+        // plain AtomicU64; use `fetch_max`, stable since Rust 1.45).
+        #[cfg(feature = "alloc-stats")]
+        {
+            HASH_REMOVE_MAX_SCAN_STEPS.fetch_max(steps, core::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Check whether `base` is present in the hash table (O(1) average).

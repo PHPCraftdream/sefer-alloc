@@ -137,6 +137,30 @@ impl AllocCore {
         self.table.contains_base_ro(os::segment_base_of_ptr(ptr))
     }
 
+    /// R23-6 (task #375) DIAGNOSTIC ONLY: process-wide high-water mark of
+    /// hash-slot probe steps any SINGLE `SegmentTable::hash_remove` call has
+    /// taken since the last [`AllocCore::dbg_reset_hash_remove_max_scan_steps`]
+    /// — see
+    /// [`segment_table::HASH_REMOVE_MAX_SCAN_STEPS`](super::segment_table::HASH_REMOVE_MAX_SCAN_STEPS)
+    /// for the full rationale. Deterministic replacement for the wall-clock
+    /// "no single dealloc is a dramatic outlier" check in
+    /// `tests/regression_segment_table_tombstone_rebuild.rs`. Reads 0 unless
+    /// `alloc-stats` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_hash_remove_max_scan_steps() -> u64 {
+        super::segment_table::HASH_REMOVE_MAX_SCAN_STEPS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// R23-6 (task #375): reset the high-water mark read by
+    /// [`AllocCore::dbg_hash_remove_max_scan_steps`] to 0. Test hook only —
+    /// lets a measurement window (e.g. one wave of a threshold-boundary test)
+    /// start clean instead of accumulating across the whole process.
+    #[doc(hidden)]
+    pub fn dbg_reset_hash_remove_max_scan_steps() {
+        super::segment_table::reset_hash_remove_max_scan_steps();
+    }
+
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
     /// `SegmentTable::dbg_hash_contains_only` — see that method's doc comment
     /// for why this exists (isolating Tier-2's cost deterministically,
