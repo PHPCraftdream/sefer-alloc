@@ -1123,6 +1123,66 @@ fn cold_alloc_free_256x16b_4n() {
     }
 }
 
+// R24-5 (task #383) -- the ALLOC-ONLY shared prefix for the cold alloc/free
+// split. Byte-identical to `cold_alloc_free_256x16b` EXCEPT the free loop is
+// removed (COLD_BATCH pointers deliberately leaked -- each
+// `#[library_benchmark]` runs in its own fresh process under callgrind, so
+// leaking here has no effect on any other bench; same rationale as
+// `dealloc_prealloc_only_16b`'s doc comment). `free_cost(N) =
+// Ir(cold_alloc_free) - Ir(cold_alloc_only)` isolates JUST the free work
+// (R24-2's shared-prefix technique scaled from CHURN_OPS=64 to COLD_BATCH=256),
+// and the N/2N/4N trio yields the bootstrap-cancelled per-op ALLOC cost
+// `c_alloc = (Ir(_2n) - Ir(_N)) / N` (R23-2's technique). See
+// `docs/perf/R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_only_256x16b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): this arm exists ONLY to measure the
+    // shared alloc prefix's own Ir -- see the doc comment above.
+}
+
+// R24-5 (task #383) -- the `2N` sibling of `cold_alloc_only_256x16b`,
+// byte-identical except for the batch size (`COLD_BATCH_2N`), for the
+// bootstrap-cancelled per-op ALLOC cost `c = (Ir(2N) - Ir(N)) / N`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_only_256x16b_2n() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_2N] = [core::ptr::null_mut(); COLD_BATCH_2N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): alloc-only shared prefix.
+}
+
+// R24-5 (task #383) -- the `4N` sibling (`COLD_BATCH_4N`), added for the same
+// linearity cross-check rationale as `cold_alloc_free_256x16b_4n`
+// (`c` derived from (N,2N) cross-checked against `c` from (2N,4N)).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_only_256x16b_4n() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_4N] = [core::ptr::null_mut(); COLD_BATCH_4N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): alloc-only shared prefix.
+}
+
 // Front A — same cold first-touch shape as `cold_alloc_free_256x16b`, but with
 // 64 B blocks (align 8). Second tiny size class on the carve/refill path.
 #[cfg(target_os = "linux")]
@@ -1179,6 +1239,48 @@ fn recycle_alloc_free_256x16b() {
             }
         }
     }
+}
+
+// R24-5 (task #383) -- recycle round-2 ALLOC-ONLY isolation. Round 1 here is
+// byte-identical to `cold_alloc_free_256x16b`'s whole body (alloc COLD_BATCH +
+// free COLD_BATCH, populating the BinTable freelist); round 2 then allocates
+// COLD_BATCH again -- draining that recycled freelist -- but does NOT free. So:
+//   round2_alloc_only = Ir(recycle_alloc_only) - Ir(cold_alloc_free)
+//   round2_free_only  = Ir(recycle_alloc_free) - Ir(recycle_alloc_only)
+// (the two sum to the round-2 total R23-3 measured via
+// `recycle_alloc_free - cold_alloc_free`). This splits round 2 the same way
+// the alloc-only/free-only pair above split round 1, isolating the
+// recycled-refill alloc cost on the SAME SeferAlloc/HeapCore face as the
+// virgin alloc cost. Round-2 pointers are deliberately leaked (own fresh
+// process per bench). See `docs/perf/R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn recycle_alloc_only_256x16b() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+
+    // Round 1: alloc + free (populate the freelist round 2 drains).
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an alloc call above with the same
+            // layout, and is freed exactly once.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+
+    // Round 2: alloc-only (drain the recycled freelist) -- NO free.
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Round-2 pointers deliberately leaked (own fresh process per bench).
 }
 
 // P7 Front — same two-round steady-state recycle shape as
@@ -1538,6 +1640,56 @@ fn mimalloc_cold_alloc_free_256x16b_4n() {
     }
 }
 
+// R24-5 (task #383) -- mimalloc's alloc-only shared prefix, giving mimalloc's
+// OWN alloc/free split so the cross-allocator comparison is per-half (alloc
+// vs alloc, free vs free), not full-round-only. `free_mi(N) =
+// Ir(mimalloc_cold_alloc_free) - Ir(mimalloc_cold_alloc_only)`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_only_256x16b() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): mimalloc alloc-only shared prefix.
+}
+
+// R24-5 (task #383) -- the `2N` sibling of `mimalloc_cold_alloc_only_256x16b`
+// (`COLD_BATCH_2N`), for mimalloc's bootstrap-cancelled per-op ALLOC cost.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_only_256x16b_2n() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_2N] = [core::ptr::null_mut(); COLD_BATCH_2N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): mimalloc alloc-only shared prefix.
+}
+
+// R24-5 (task #383) -- the `4N` sibling (`COLD_BATCH_4N`), mimalloc's own
+// linearity cross-check counterpart to `cold_alloc_only_256x16b_4n`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_only_256x16b_4n() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_4N] = [core::ptr::null_mut(); COLD_BATCH_4N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    // Deliberately leaked (never freed): mimalloc alloc-only shared prefix.
+}
+
 // Cold first-touch of 64 B blocks via mimalloc -- mirrors
 // `cold_alloc_free_256x64b` exactly.
 #[cfg(target_os = "linux")]
@@ -1660,8 +1812,12 @@ library_benchmark_group!(
         cold_alloc_free_256x16b,
         cold_alloc_free_256x16b_2n,
         cold_alloc_free_256x16b_4n,
+        cold_alloc_only_256x16b,
+        cold_alloc_only_256x16b_2n,
+        cold_alloc_only_256x16b_4n,
         cold_alloc_free_256x64b,
         recycle_alloc_free_256x16b,
+        recycle_alloc_only_256x16b,
         recycle_alloc_free_256x64b,
         churn_256b,
         churn_write_256b,
@@ -1673,6 +1829,9 @@ library_benchmark_group!(
         mimalloc_cold_alloc_free_256x16b,
         mimalloc_cold_alloc_free_256x16b_2n,
         mimalloc_cold_alloc_free_256x16b_4n,
+        mimalloc_cold_alloc_only_256x16b,
+        mimalloc_cold_alloc_only_256x16b_2n,
+        mimalloc_cold_alloc_only_256x16b_4n,
         mimalloc_cold_alloc_free_256x64b,
         mimalloc_recycle_alloc_free_256x16b,
         mimalloc_recycle_alloc_free_256x64b,

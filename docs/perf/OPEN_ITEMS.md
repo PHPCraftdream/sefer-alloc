@@ -261,6 +261,47 @@ for completeness.
    `R24_4_BULK_MASK_PRIMITIVES_GATE.md` +
    `R24_4_BULK_MASK_PRIMITIVES_GATE_summary.csv` +
    `docs/perf/_raw_r24_4_baseline.log` / `_raw_r24_4_after.log`.
+   **2026-07-27 update — DONE (task #383, R24-5):** `cold_alloc_free_256x16b`'s
+   ~2× cold-gap headline (R23-2: SeferAlloc 203.86 vs mimalloc 101.81 Ir/op) is
+   now split into its alloc-only and free-only halves, localizing where the gap
+   actually lives. **Outcome (a) confirmed: the gap is OVERWHELMINGLY in the
+   FREE half.** Per-half ratios (mimalloc's own split built alongside via three
+   new `mimalloc_cold_alloc_only` arms so the comparison is alloc-vs-alloc /
+   free-vs-free, not full-round-only): alloc-only Sefer 91.05 vs mi 71.81 =
+   **1.27×**; free-only Sefer 108.77 vs mi 30.24 = **3.60×**. The full-round
+   2.0× is a BLEND masking how lop-sided the gap is (R23-2's "2.002×" is the
+   average of a 1.27× alloc gap and a 3.60× free gap — NOT a uniform gap).
+   **R24-2 reconciliation HOLDS within 2.6%:** the free half at N=256 is
+   exactly the overflow mechanic R24-2 isolated at N≤64 — `floor((256-17)/8)+1
+   = 30` overflows (period 8, `FLUSH_N=8`) × 571 Ir + 226 cheap × 44.25 =
+   27,130.5 predicted vs 27,846 measured; **overflow is 61.5% of the free-half
+   cost** (vs 57.9% at N=64 — the share grows as overflows accumulate). The
+   task brief's own "~15 overflows at N=256" estimate was an under-count (R24-2's
+   confirmed period-8 pattern implies 30; the "~15" model would miss by 31%).
+   The two refill numbers: virgin ≈ 1099 Ir/event, recycled ≈ 961 Ir/event
+   (both DERIVED via `c_pop=22.38` from R23-3, NOT directly isolated — fused
+   with the pop, no standalone-refill hook added to avoid the R24-2 §5.1
+   Heisenberg risk); recycled is 12.5% CHEAPER than virgin (freelist-drain
+   skips the commit-frontier-grow), and round-2 alloc+free sums to 188.20
+   Ir/op — matching R23-3's independently-published round-2 total EXACTLY.
+   `carve_batch_only_16b` (23.05 Ir/block, reproduced R23-3) is the pure-carve
+   primitive FLOOR, NOT a refill (the real `refill_magazine_slow` is ~3× it —
+   carve + magazine-load + P4 stamp-dedupe + 15 `mark_magazine` RMWs + 2
+   drains). **Caveat the task's own framing was prescient about: the root cause
+   (free-side overflow) is now understood, but the two approaches already tried
+   — R24-3 (flush_magazine_class bitmap-clear merge) and R24-4 (bulk-mask
+   primitive), both targeting the overflow's 84-Ir bitmap-clear sub-cost —
+   measured NO-GO regressions. The overflow's larger UNTRIED lever is
+   `flush_class` itself (~487 Ir/event, the non-isolable remainder R24-2 §5.1
+   flagged), NOT further bitmap-clear work; a flush_class isolation measurement
+   would be the next measurement task.** Measurement only, zero `src/` changes,
+   **zero new hooks** (pure shared-prefix subtraction + N/2N; nothing for R24-6
+   to track); 7 new bench arms (50 total). Full decomposition, the three-outcome
+   verdict table, and the 30-overflow reconciliation arithmetic:
+   `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md` (full report) +
+   `R24_5_COLD_ALLOC_FREE_SPLIT_GATE_summary.csv` +
+   `docs/perf/_raw_r24_5_run1.log` / `_raw_r24_5_run2.log` (byte-identical `Ir`
+   across both runs; 12 reference arms reproduced R23-2/R24-2/R23-3 exactly).
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
