@@ -227,6 +227,40 @@ for completeness.
    `R24_3_FLUSH_MAGAZINE_CLASS_GATE.md` +
    `R24_3_FLUSH_MAGAZINE_CLASS_GATE_summary.csv` +
    `docs/perf/_raw_r24_3_merged_run1.log`.
+   **2026-07-27 update — NO-GO (task #382, R24-4):** the bulk-mask primitive
+   (`SegmentBitmap::clear_many`/`set_many` accumulator + domain wrappers) was
+   implemented, fully correctness-verified (unit test 10/10 + mutation-nonvacuous;
+   single- AND multi-segment `alloc_batch` integration tests + mutation-nonvacuous;
+   clippy clean on `""`/`production`/`--all-features`), and applied at site #1
+   (`heap_core_alloc.rs`'s `alloc_batch` deferred-clear — the loop whose own
+   comment named the primitive as "the natural follow-up"). The in-context Ir
+   gate — the SAME `alloc_batch_drain*` arm measured BEFORE (old per-block loop)
+   vs AFTER (bulk clear), NOT a standalone hook, under `production batch-api`
+   (`alloc_batch` is `fastbin + batch-api`, NOT in `production`; no in-tree
+   production caller per R23-7) — measured a **+14 Ir/block REGRESSION**
+   (`alloc_batch_drain15_16b` 3,685→3,894 = +209 Ir; `alloc_batch_drain8_16b`
+   3,640→3,752 = +112 Ir), scaling linearly with drain count. All reference arms
+   byte-identical (same toolchain). **Root cause:** the bulk primitive's
+   per-offset bookkeeping (a stack-array store + the accumulator's
+   compare/branch/accumulate) costs more in-context than the HOT-CACHE-LINE RMWs
+   it coalesces (each ~3–4 Ir; the "8 consecutive 16 B blocks = 1 byte" ceiling
+   treated an RMW as a costly unit, but here it is cheap). This is the SAME
+   Heisenberg CLASS as R24-3 (operation-count ceiling ≠ in-context instruction
+   cost) via a DIFFERENT mechanism — site #1's loop IS dynamic-length (R24-3's
+   constant-unroll trap does not apply), yet a different risk materialized: the
+   bulk replacement's own per-offset overhead. **"Dynamic-length loop" was
+   necessary but NOT sufficient** to avoid the class. Site #2
+   (`flush_all_tcache` teardown) was NOT attempted (per the "STOP at first-site
+   regression" gate; it uses the same hot bitmap and would likely reproduce).
+   All `src/`/`tests/`/`benches/`/`ARCHITECTURE.md` changes reverted; tree
+   byte-identical to HEAD (`e530a9f`). **Two bitmap-clear NO-GOs in a row
+   (R24-3, R24-4) indicate per-segment bitmap-clear loops are already efficiently
+   compiled and NOT a fruitful target for RMW-coalescing primitives; the
+   arithmetic ceiling should not be cited as a savings target for these sites
+   without a fresh in-context measurement.** Full evidence and root cause:
+   `R24_4_BULK_MASK_PRIMITIVES_GATE.md` +
+   `R24_4_BULK_MASK_PRIMITIVES_GATE_summary.csv` +
+   `docs/perf/_raw_r24_4_baseline.log` / `_raw_r24_4_after.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

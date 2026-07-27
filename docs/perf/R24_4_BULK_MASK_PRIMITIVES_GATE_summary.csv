@@ -1,0 +1,32 @@
+metric,baseline_ir,after_ir,delta_ir,verdict,note
+report,R24_4_BULK_MASK_PRIMITIVES_GATE,,,,NO-GO at site #1 (alloc_batch); site #2 not attempted
+task,382 (R24-4),Round 24,,,,
+base_revision,e530a9f (R24-3 clean-reverted HEAD),,,,
+platform,WSL2 Ubuntu 24.04 + valgrind + iai-callgrind-runner 0.14.2,,,,
+features,production batch-api (alloc_batch gated fastbin+batch-api; not in production),,,,
+measurement_method,in-context before/after of the SAME alloc_batch arm (NOT a standalone hook),,,,
+primitive,SegmentBitmap::clear_many/set_many accumulator (reverted),,,,
+site_1,heap_core_alloc.rs alloc_batch deferred-clear (reverted),,,,
+site_2,heap_core_tcache.rs flush_all_tcache (NOT attempted),,,,
+,,,,
+arm,baseline_ir,after_ir,delta_ir,verdict,per_block_ir
+alloc_batch_drain15_16b,3685,3894,+209,REGRESSION,+13.9 (209/15)
+alloc_batch_drain8_16b,3640,3752,+112,REGRESSION,+14.0 (112/8)
+,,,,
+reference_arm,baseline_ir,after_ir,delta_ir,verdict,note
+small_churn_16b,8052,8052,0,UNCHANGED,same toolchain sanity
+dealloc_prealloc_only_16b,7007,7007,0,UNCHANGED,same toolchain sanity
+dealloc_free_only_16b,12927,12927,0,UNCHANGED,same toolchain sanity
+dealloc_free_only_16b_n8,7371,7371,0,UNCHANGED,same toolchain sanity
+dealloc_free_only_16b_n16,7715,7715,0,UNCHANGED,same toolchain sanity
+dealloc_free_only_16b_n17,8286,8286,0,UNCHANGED,same toolchain sanity
+dealloc_overflow_bitmap_clear_only_16b,7455,7455,0,UNCHANGED,same toolchain sanity
+carve_batch_only_16b,68284,68284,0,UNCHANGED,same toolchain sanity
+cold_alloc_free_256x16b,50180,50180,0,UNCHANGED,same toolchain sanity
+,,,,
+note,reference arms +1-4 Ir vs R24-2 (production-only) because this run adds batch-api->experimental; before/after both under same feature set so offset cancels,,,,
+,,,,
+root_cause,bulk primitive per-offset bookkeeping (stack-array store + accumulator compare/branch/accumulate) exceeds the hot-cache-line RMW cost it coalesces (~3-4 Ir/RMW); +14 Ir/block scales linearly with drain count,,,,
+heisenberg_class,SAME as R24-3 (operation-count ceiling != in-context instruction cost) via DIFFERENT mechanism (primitive overhead, not lost compiler unroll); dynamic-length loop was necessary but not sufficient,,,,
+correctness_before_revert,unit test 10/10 PASS + mutation-nonvacuous; integration single+multi-segment PASS + mutation-nonvacuous; cargo test production PASS; clippy ""/production/all-features clean,,,,
+revert,src/tests/benches/ARCHITECTURE.md byte-identical to HEAD e530a9f; only docs retained,,,,
