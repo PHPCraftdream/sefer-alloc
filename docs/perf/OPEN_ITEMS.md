@@ -208,6 +208,25 @@ for completeness.
    `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` (full report) +
    `R24_2_FREE_BY_MAGAZINE_STATE_GATE_summary.csv` +
    `docs/perf/_raw_r24_2_run1.log` / `_raw_r24_2_run2.log`.
+   **2026-07-27 update — NO-GO (task #381, R24-3):** the `flush_magazine_class`
+   merge was implemented (shape (a): unconditional clear loop inside `flush_run`,
+   opt-in via a new `flush_magazine_class` wrapper; `dealloc_batch` unchanged via
+   `flush_class` → `flush_class_inner(..., false)`), correctness-verified (full
+   test suite green; 3 new counterfactual tests including the M2-hazard mutation
+   passed), but the Ir gate measured a **+37 Ir/overflow-event REGRESSION**
+   (expected: -84 Ir improvement). Root cause: the pre-pass was a fixed-length
+   loop (`FLUSH_N` = 8, `const`) that the compiler fully unrolls and CSE's with
+   `flush_class`'s run-grouping (which calls `segment_base_of_ptr` on the same 8
+   pointers); the merged clear loop inside `flush_run` is dynamic-length
+   (`run: &[*mut u8]`) and cannot be unrolled, adding loop overhead that exceeds
+   the saved CSE'd cost. **The standalone-measured 84 Ir (R24-2) overstated the
+   real in-context cost** — the exact Heisenberg risk R24-2 §5.1 warned about.
+   All production code reverted; tree clean at HEAD (`3bc9c91`). **R24-4 (task
+   #382, bulk-mask primitives) remains BLOCKED** — the 84 Ir is not actionable as
+   a savings target. Full evidence and root cause:
+   `R24_3_FLUSH_MAGAZINE_CLASS_GATE.md` +
+   `R24_3_FLUSH_MAGAZINE_CLASS_GATE_summary.csv` +
+   `docs/perf/_raw_r24_3_merged_run1.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
