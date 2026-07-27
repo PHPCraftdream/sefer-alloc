@@ -76,6 +76,15 @@ jobs:
         run: cargo clippy --all-targets --features experimental -- -D warnings
       - name: clippy (--all-features)
         run: cargo clippy --all-targets --all-features -- -D warnings
+      # R23-5 (task #374): `hardened medium-classes` was covered by `cargo
+      # test` since R22-1 (task #352) but NOT by a `clippy -D warnings` row —
+      # 11 pre-existing dead-code lints (predicate mismatches between an
+      # item's own `#[cfg]` and its only caller's, e.g. `alloc-decommit`-only
+      # consumers of `alloc-xthread`-gated items) were stable across 3+
+      # rounds under this exact combination, tracked in
+      # `docs/CORRECTNESS_OPEN_ITEMS.md` item 2 until fixed and closed here.
+      - name: clippy (--features "hardened medium-classes")
+        run: cargo clippy --all-targets --features "hardened medium-classes" -- -D warnings
 
   # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
   # feature-set matrix jobs into 4 jobs, grouped by theme (the same

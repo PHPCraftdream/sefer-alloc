@@ -63,77 +63,8 @@ scoping decision is the pending step, not implementation).
 _(item 1, the `canary_survives_promotion_and_free_leaves_no_leak` flaky test,
 was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
 
-2. **Clippy dead-code — `--features "hardened medium-classes"` is not
-   clippy-clean.**
-
-   - **Exact combination:** `cargo clippy --all-targets --features "hardened
-     medium-classes" -- -D warnings`.
-   - **First observed:** R19-1 (task #337, commit `46ea2db`), "11 dead-code
-     errors confirmed present identically on pristine code — that combo is
-     simply outside today's CI feature matrix, also a follow-up."
-   - **CI status as of this round:** R22-1 (task #352, commit `00fb53c`)
-     added a `cargo test --features "hardened medium-classes"` row to
-     `ci.yml`'s hardened-tier job — so this feature combo IS now exercised
-     by `cargo test` in CI — but deliberately did NOT add a `clippy -D
-     warnings` row for it (explicitly out of scope for that task; see its
-     commit message: "Out of scope, tracked separately: the 11 dead-code
-     clippy warnings under 'hardened medium-classes' (pre-existing, task
-     #354)"). R22-5 (task #356, commit `de5e0dc`) independently re-ran the
-     same clippy invocation as part of its own zero-trust verification and
-     confirmed "exactly 11 pre-existing dead-code errors (the same baseline
-     R19-1's commit message already documented), none from any file this
-     change touches" — i.e. the count has been stable at 11 across at least
-     two independent re-runs three rounds apart.
-   - **The actual 11 dead-code lint errors** (from a fresh run performed for
-     this task, 2026-07-26, on `main` @ `91510ce`):
-     1. `src/alloc_core/alloc_core.rs:54` — unused import `SMALL_CLASS_COUNT`
-        (`use super::size_classes::{AllocKind, SizeClasses, SMALL_CLASS_COUNT};`)
-     2. `src/alloc_core/alloc_core_large.rs:448` — variable does not need to
-        be mutable: `let mut seg = Segment::reserve(usable);`
-     3. `src/alloc_core/alloc_core_small.rs:893` — unused variable
-        `small_cur`: `let small_cur = self.small_cur;`
-     4. `src/alloc_core/alloc_core_small.rs:1941` — variable does not need to
-        be mutable: `let mut seg = Segment::reserve(SEGMENT);`
-     5. `src/alloc_core/alloc_core_small_reclaim.rs:506` — unused variable
-        `small_cur`: `let small_cur = self.small_cur;`
-     6. `src/alloc_core/alloc_core.rs:2115` — method `small_cur` is never
-        used: `pub(crate) fn small_cur(&self) -> *mut u8`
-     7. `src/alloc_core/sidecar.rs:230` — function `reserve_zeroed_with` is
-        never used: `pub(crate) unsafe fn reserve_zeroed_with<T>(fixup:
-        impl FnOnce(*mut T)) -> Option<*mut T>`
-     8. `src/alloc_core/sidecar.rs:275` — function `deref` is never used:
-        `pub(crate) unsafe fn deref<T>(p: *const T) -> &'static T`
-     9. `src/alloc_core/sidecar.rs:303` — function `deref_mut` is never
-        used: `pub(crate) unsafe fn deref_mut<T>(p: *mut T) -> &'static mut T`
-     10. `src/registry/heap_core_xthread.rs:586` — constant
-         `EMPTIED_BASES_CAP` is never used: `const EMPTIED_BASES_CAP: usize
-         = 64;`
-     11. `src/registry/heap_registry.rs:523` — struct `ConflictRollback` is
-         never constructed: `struct ConflictRollback { ... }`
-
-     (Compiler summary: "could not compile `sefer-alloc` (lib test) due to
-     11 previous errors" / "could not compile `sefer-alloc` (lib) due to 11
-     previous errors" — both counts agree at 11.)
-   - **Plausible root-cause category:** these read as ordinary
-     feature-combination dead-code fallout, not a real bug — items 1–5 look
-     like leftover `small_cur`/mutability artifacts from a refactor that
-     changed under a DIFFERENT feature combination than `hardened
-     medium-classes`, leaving stale code paths only this specific
-     intersection still compiles; items 7–9 (`sidecar.rs`'s
-     `reserve_zeroed_with`/`deref`/`deref_mut`) and 10–11
-     (`EMPTIED_BASES_CAP`, `ConflictRollback`) look like helpers written for
-     a code path that is itself feature-gated differently than `hardened
-     medium-classes` gates it, so under this exact combo the caller is
-     compiled out but the helper is not. **Next step:** for each item,
-     check whether the caller/consumer is gated behind a DIFFERENT feature
-     predicate than the item itself (a `#[cfg(...)]` mismatch) — if so, the
-     fix is aligning the two predicates (add `medium-classes`/`hardened` to
-     the item's own gate, or widen the caller's), not deleting the item
-     outright, since some of these may be genuinely used under other
-     feature combinations already in CI.
-   - **Status:** open, unowned. The `cargo test` gap for this combo is now
-     closed (R22-1); the `clippy -D warnings` gap is not. Fixing is out of
-     scope for this tracking task (task #354/R22-3).
+_(item 2, the 11 `--features "hardened medium-classes"` clippy dead-code
+errors, was resolved by R23-5 (task #374) — see "Recently resolved" below.)_
 
 3. **Two flaky coarse-wall-clock tests surfaced by `npm run check`'s
    `--all-features` step, discovered post-Round-22 while investigating a
@@ -254,3 +185,135 @@ was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
      it — fixing the test-isolation race was that commit's actual, correct
      scope. See open item 4 above ("Open items" §`[T]`) for a tracked
      follow-up on strengthening leak detection itself.
+
+2. **Clippy dead-code — `--features "hardened medium-classes"` was not
+   clippy-clean (11 errors)** — **RESOLVED** by R23-5 (task #374). All 11
+   were genuine `#[cfg(...)]` predicate mismatches (an item gated one way,
+   its only consumer gated a DIFFERENT way, so under the specific
+   intersection `hardened medium-classes` the consumer compiled out but the
+   item did not) — confirmed exhaustively per item via `grep` across
+   `src/`, `tests/`, `benches/`, `crates/` before touching anything; NONE
+   were genuine orphans, so nothing was deleted.
+
+   - **Items 1, 2, 4 — independent single-item mismatches:**
+     - `src/alloc_core/alloc_core.rs:54` (unused import `SMALL_CLASS_COUNT`):
+       both of the import's only two usages
+       (`alloc_core.rs:711`/`directory_miss_streak` field,
+       `alloc_core.rs:978`/its initializer) are
+       `#[cfg(feature = "alloc-segment-directory")]`-gated, but the `use`
+       itself was not. Fix: split the import so `SMALL_CLASS_COUNT` gets its
+       own `#[cfg(feature = "alloc-segment-directory")]` line, matching its
+       usages; `AllocKind`/`SizeClasses` (used unconditionally elsewhere)
+       stay ungated.
+     - `src/alloc_core/alloc_core_large.rs:448` and
+       `src/alloc_core/alloc_core_small.rs:1941` (`let mut seg = ...` "does
+       not need to be mutable"): both `seg` bindings are reassigned ONLY
+       inside a `#[cfg(feature = "alloc-decommit")]` pool-drain-and-retry
+       block a few lines below; with `alloc-decommit` off (as under
+       `hardened medium-classes`) the binding is genuinely never mutated.
+       Fix: `#[allow(unused_mut)]` on each binding, following the identical
+       established pattern already at
+       `src/registry/heap_core_ownership.rs:167` for the same
+       feature-conditional-mutation shape.
+   - **Items 3, 5, 6 — one unified root cause (`small_cur`), as suspected in
+     the task brief:** `AllocCore::small_cur()` (`alloc_core.rs`, was gated
+     `#[cfg(feature = "alloc-xthread")]`) has exactly one caller in the
+     entire crate — `heap_core_xthread.rs::drain_heap_overflow`, which reads
+     it ONLY inside its own `#[cfg(feature = "alloc-decommit")]` block
+     (feeding `dec_live_and_maybe_decommit`, which itself requires that
+     feature). `alloc-xthread` without `alloc-decommit` (exactly `hardened
+     medium-classes`: `hardened = ["fastbin"]` →
+     `["alloc-global","alloc-xthread"]`, neither of which pulls in
+     `alloc-decommit`) left the method callable-but-uncalled. The two local
+     `let small_cur = self.small_cur;` bindings
+     (`alloc_core_small.rs:893`, `alloc_core_small_reclaim.rs:506`) are the
+     SAME pattern one level down: each is read only inside its own sibling
+     `#[cfg(feature = "alloc-decommit")]` block a few lines later. Fix:
+     tightened `small_cur()`'s gate to
+     `#[cfg(all(feature = "alloc-xthread", feature = "alloc-decommit"))]`
+     (its true minimal predicate, matching its one caller), and gated both
+     local bindings `#[cfg(feature = "alloc-decommit")]` directly (matching
+     their one reader each). Verified two OTHER `let small_cur = ...`
+     bindings at `alloc_core_small.rs:1132` and `:2545` were NOT in the
+     11-error list and left untouched — clippy did not flag them (their
+     enclosing functions/blocks have their own gating that made them a
+     non-issue under this combo), confirming the fix was scoped to exactly
+     the 3 flagged sites, not a mechanical crate-wide rename.
+   - **Items 7-9 — one unified root cause (`sidecar.rs`), as suspected in
+     the task brief:** `reserve_zeroed_with` has exactly one caller,
+     `os.rs::reserve_directory_sidecar`, gated
+     `#[cfg(feature = "alloc-segment-directory")]`. `deref`/`deref_mut` each
+     have TWO independent consumer groups — `alloc_core_small.rs`'s
+     `directory`/`directory_mut`/`maybe_materialize_directory` +
+     `alloc_core_core_diag.rs`'s `dbg_rebuild_directory` (all inside
+     `#[cfg(feature = "alloc-segment-directory")]`), and
+     `large_cache_extended.rs`'s `deref_large_cache_extension[_mut]`
+     forwarders (the whole module gated
+     `#[cfg(feature = "large-cache-extended")]`) — either feature alone
+     keeps them used. Under `hardened medium-classes`, `alloc-segment-directory`
+     is off AND `large-cache-extended = ["alloc-decommit"]` is transitively
+     off too (via `alloc-decommit`), so all three functions had zero live
+     callers. Fix: followed the EXISTING convention already used one
+     function above in the same file (`reserve`'s
+     `#[cfg_attr(not(feature = "large-cache-extended"), allow(dead_code))]`,
+     predating this task) rather than a hard `#[cfg]` on the function
+     itself (keeps these generic `pub(crate) fn`s type-checking under
+     `cargo-hack`-style per-feature builds) —
+     `#[cfg_attr(not(feature = "alloc-segment-directory"), allow(dead_code))]`
+     on `reserve_zeroed_with`, and
+     `#[cfg_attr(not(any(feature = "alloc-segment-directory", feature = "large-cache-extended")), allow(dead_code))]`
+     on `deref`/`deref_mut` (the `any(...)` reflecting their two independent
+     consumer groups, neither of which alone is necessary).
+   - **Items 10-11 — two independent single-item mismatches, as suspected:**
+     - `src/registry/heap_core_xthread.rs:586`
+       (`const EMPTIED_BASES_CAP: usize = 64;`, itself ungated): every
+       actual usage (the `emptied_bases`/`emptied_count` declarations and
+       both `if emptied_count < EMPTIED_BASES_CAP` comparisons) is already
+       `#[cfg(feature = "alloc-decommit")]`-gated; only the constant
+       declaration itself lacked the gate. Fix: added
+       `#[cfg(feature = "alloc-decommit")]` to the `const` line, matching
+       its usages.
+     - `src/registry/heap_registry.rs:523` (`struct ConflictRollback`, and
+       its `impl Drop`): constructed exactly once, inside
+       `claim_with_config`'s config-mismatch branch — and
+       `claim_with_config` itself is `#[cfg(feature = "alloc-decommit")]`-gated
+       ("Only present under `alloc-decommit`", per its own doc comment).
+       Fix: added `#[cfg(feature = "alloc-decommit")]` to both the struct
+       and its `impl Drop`.
+   - **One additional latent issue found and fixed in the same task (not
+     among the original 11, but the same predicate-mismatch class, and
+     newly exposed by fixing the 11 above — the lib now compiles under this
+     combo, so `--all-targets` reaches this test target for the first
+     time):** `tests/regression_batch_flush.rs`'s `DECOMMIT_COUNTER_SERIAL`/
+     `SerialGuard` (a `TEST_LOCK`-style serialization guard) and its
+     `use std::sync::atomic::{AtomicBool, Ordering}` import were declared
+     unconditionally, but every actual use is inside
+     `#[cfg(feature = "alloc-decommit")]`-gated test functions. Fixed the
+     same way: gated the static/struct/impls/import on
+     `#[cfg(feature = "alloc-decommit")]`.
+   - **No deletions.** Every one of the 11 (plus the 1 latent test-file
+     issue) was confirmed genuinely used under some other feature
+     combination already in this project's CI matrix before any fix was
+     applied — verified by `grep`ing every call site across the whole repo
+     (not just under `hardened medium-classes`).
+   - **Verification:**
+     `cargo clippy --all-targets --features "hardened medium-classes" -- -D warnings`
+     — 0 errors, 0 warnings (down from the stable 11). No new warning
+     surfaced as a side effect of any individual fix (re-ran the full
+     command after each fix). `cargo test` green across all of: `""`
+     (default), `production`, `--all-features`, `hardened medium-classes`,
+     `production alloc-stats`, `pinning` (the full
+     `scripts/check-all.mjs` test-step feature matrix) — 0 failures in
+     every combination. `cargo fmt --all -- --check` clean.
+   - **CI:** added a 4th step to the `clippy` job in `.github/workflows/ci.yml`
+     (`clippy (--features "hardened medium-classes")`, alongside the
+     existing `clippy ()` / `clippy (--features experimental)` /
+     `clippy (--all-features)` steps in that same job) so this combination's
+     `-D warnings` gate now runs per-PR, not just `cargo test` (closed
+     R22-1's deliberately-left-open gap).
+   - **Files changed:** `src/alloc_core/alloc_core.rs`,
+     `src/alloc_core/alloc_core_large.rs`, `src/alloc_core/alloc_core_small.rs`,
+     `src/alloc_core/alloc_core_small_reclaim.rs`, `src/alloc_core/sidecar.rs`,
+     `src/registry/heap_core_xthread.rs`, `src/registry/heap_registry.rs`,
+     `tests/regression_batch_flush.rs`, `.github/workflows/ci.yml`, and this
+     index.

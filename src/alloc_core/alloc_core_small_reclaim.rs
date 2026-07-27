@@ -503,6 +503,11 @@ impl AllocCore {
                 continue;
             }
             let ring = SegmentMeta::new(base).remote_ring();
+            // Only read inside the `alloc-decommit` arm below
+            // (`dec_live_and_maybe_decommit` exists only under that feature)
+            // — gate the binding itself so a build without `alloc-decommit`
+            // does not warn it unused (R23-5, task #374).
+            #[cfg(feature = "alloc-decommit")]
             let small_cur = self.small_cur;
             #[cfg(feature = "alloc-decommit")]
             let mut decommit_happened = false;

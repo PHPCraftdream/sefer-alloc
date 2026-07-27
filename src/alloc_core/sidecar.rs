@@ -194,6 +194,15 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 ///
 /// Returns `None` only on OOM, exactly like [`reserve`].
 ///
+/// The only current caller is `os::reserve_directory_sidecar` (gated on
+/// `alloc-segment-directory`). A build with that feature off — e.g.
+/// `hardened medium-classes` (R23-5, task #374) — would otherwise warn this
+/// unused; harmless (not part of the CI feature matrix: `""`, `experimental`,
+/// `--all-features`, all of which either have the feature on or exercise this
+/// function through `--all-features`), silenced for `cargo-hack`-style
+/// per-feature builds — same pattern as [`reserve`]'s own
+/// `#[cfg_attr]` above.
+///
 /// `unsafe fn`, not a safe function with a prose-only caller contract: `T` is
 /// generic and not every `T` is valid at all-zero (e.g. an enum without a
 /// zero discriminant, `&U`, `NonNull<U>`, a function pointer, a `bool` byte
@@ -227,6 +236,7 @@ pub(crate) fn reserve<T>(value: T) -> Option<*mut T> {
 ///   [`reserve`]: stored once, then accessed only through [`deref`]/
 ///   [`deref_mut`] under the same owner-only single-writer discipline.
 #[must_use]
+#[cfg_attr(not(feature = "alloc-segment-directory"), allow(dead_code))]
 pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(*mut T)) -> Option<*mut T> {
     // Formalises the doc comment above: `leak_zeroed_pages` only guarantees
     // `PAGE`-alignment, so any `T` whose `align_of` exceeds one page would
@@ -271,7 +281,22 @@ pub(crate) unsafe fn reserve_zeroed_with<T>(fixup: impl FnOnce(*mut T)) -> Optio
 /// - The `&'static` returned must not be held live across any call that may
 ///   produce a `&'static mut T` to the SAME sidecar (i.e. [`deref_mut`]) —
 ///   callers must not let the two borrows overlap.
+///
+/// Two independent consumer groups call this: `alloc_core_small.rs`'s
+/// `directory`/`directory_mut`/`maybe_materialize_directory` and
+/// `alloc_core_core_diag.rs`'s `dbg_rebuild_directory` (all gated on
+/// `alloc-segment-directory`), and `large_cache_extended.rs`'s
+/// `deref_large_cache_extension`/`deref_large_cache_extension_mut` (gated on
+/// `large-cache-extended`) — either feature alone keeps this function used;
+/// a build with BOTH off — e.g. `hardened medium-classes` (R23-5, task #374)
+/// — would otherwise warn this unused; harmless (not part of the CI feature
+/// matrix), silenced for `cargo-hack`-style per-feature builds — same
+/// pattern as [`reserve`]'s own `#[cfg_attr]` above.
 #[inline]
+#[cfg_attr(
+    not(any(feature = "alloc-segment-directory", feature = "large-cache-extended")),
+    allow(dead_code)
+)]
 pub(crate) unsafe fn deref<T>(p: *const T) -> &'static T {
     debug_assert!(!p.is_null(), "sidecar::deref: null pointer");
     // SAFETY: caller contract above establishes non-null, properly aligned,
@@ -299,7 +324,15 @@ pub(crate) unsafe fn deref<T>(p: *const T) -> &'static T {
 ///   writer can race this access.
 /// - No other reference (shared or mutable) to this sidecar may be live for
 ///   the duration of the returned `&'static mut`'s use.
+///
+/// Same two independent consumer groups as [`deref`] (see its doc comment):
+/// `alloc-segment-directory` and `large-cache-extended`, either sufficient
+/// alone.
 #[inline]
+#[cfg_attr(
+    not(any(feature = "alloc-segment-directory", feature = "large-cache-extended")),
+    allow(dead_code)
+)]
 pub(crate) unsafe fn deref_mut<T>(p: *mut T) -> &'static mut T {
     debug_assert!(!p.is_null(), "sidecar::deref_mut: null pointer");
     // SAFETY: caller contract above establishes non-null, properly aligned,

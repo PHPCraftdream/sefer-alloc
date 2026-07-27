@@ -441,10 +441,14 @@ impl AllocCore {
             // usable`, e.g. right at the `LARGE_RESERVED_CAP_BYTES` cap).
             #[cfg(feature = "large-reserved-capacity")]
             let mut seg = Segment::reserve_capacity_exact(reserved_capacity_target, usable);
+            // `mut` is needed under `alloc-decommit` (the pool-drain-and-retry
+            // arm below reassigns `seg`). Silence the unused-mut warning when
+            // `alloc-decommit` is off and this binding is never reassigned.
             #[cfg(all(
                 not(feature = "large-reserved-capacity"),
                 not(feature = "exact-span-large")
             ))]
+            #[allow(unused_mut)]
             let mut seg = Segment::reserve(usable);
             #[cfg(all(not(feature = "large-reserved-capacity"), feature = "exact-span-large"))]
             let mut seg = Segment::reserve_exact(usable);

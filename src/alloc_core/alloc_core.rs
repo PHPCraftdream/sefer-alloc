@@ -51,7 +51,9 @@ use super::segment_header::align_up;
 use super::segment_header::SegmentMeta;
 use super::segment_header::{SegmentHeader, SegmentKind};
 use super::segment_table::SegmentTable;
-use super::size_classes::{AllocKind, SizeClasses, SMALL_CLASS_COUNT};
+#[cfg(feature = "alloc-segment-directory")]
+use super::size_classes::SMALL_CLASS_COUNT;
+use super::size_classes::{AllocKind, SizeClasses};
 
 // ---------------------------------------------------------------------------
 // OPT-E — large-segment free-cache (feature = "alloc-decommit")
@@ -2116,7 +2118,15 @@ impl AllocCore {
     /// thin `pub(crate)` accessor is the sole reason `HeapCore::
     /// drain_heap_overflow` (`src/registry/heap_core.rs`, `registry` module,
     /// outside `alloc_core`) needs to exist.
-    #[cfg(feature = "alloc-xthread")]
+    ///
+    /// Gated on `all(alloc-xthread, alloc-decommit)`, not `alloc-xthread`
+    /// alone: the sole call site (`heap_core_xthread.rs::drain_heap_overflow`)
+    /// only reads `small_cur` inside its own `#[cfg(feature =
+    /// "alloc-decommit")]` block (it feeds `dec_live_and_maybe_decommit`,
+    /// which exists only under that feature) — `alloc-xthread` without
+    /// `alloc-decommit` (e.g. `hardened medium-classes`) left this method
+    /// genuinely unused (R23-5, task #374).
+    #[cfg(all(feature = "alloc-xthread", feature = "alloc-decommit"))]
     #[must_use]
     pub(crate) fn small_cur(&self) -> *mut u8 {
         self.small_cur

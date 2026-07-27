@@ -890,6 +890,11 @@ impl AllocCore {
                 let ring = meta_for_ring.remote_ring();
                 let cached_head = meta_for_ring.ring_drain_head_of();
                 if ring.tail_relaxed() != cached_head {
+                    // Only read inside the `alloc-decommit` arm below
+                    // (`dec_live_and_maybe_decommit` exists only under that
+                    // feature) — gate the binding itself so a build without
+                    // `alloc-decommit` does not warn it unused (R23-5, task #374).
+                    #[cfg(feature = "alloc-decommit")]
                     let small_cur = self.small_cur;
                     #[cfg(feature = "alloc-decommit")]
                     let mut decommit_happened = false;
@@ -1937,7 +1942,11 @@ impl AllocCore {
                     os::SEGMENTS_RESERVED_TOTAL.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 })
             };
+            // `mut` is needed under `alloc-decommit` (the pool-drain-and-retry
+            // arm below reassigns `seg`). Silence the unused-mut warning when
+            // `alloc-decommit` is off and this binding is never reassigned.
             #[cfg(not(feature = "small-segment-lazy-commit"))]
+            #[allow(unused_mut)]
             let mut seg = Segment::reserve(SEGMENT);
             // Mechanism 2 (task #51 / follow-up): same pool-drain-and-retry
             // guard as the numa-aware arm above.

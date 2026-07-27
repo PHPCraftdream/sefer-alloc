@@ -583,6 +583,11 @@ impl HeapCore {
         // `debug_assert!` — see its doc comment). So this is real
         // defence-in-depth against the saturating-arithmetic edge case, not
         // dead code.
+        // Only read by the `alloc-decommit`-gated declarations/usages below
+        // — gate the constant itself so a build without `alloc-decommit`
+        // (e.g. `hardened medium-classes`) does not warn it unused
+        // (R23-5, task #374).
+        #[cfg(feature = "alloc-decommit")]
         const EMPTIED_BASES_CAP: usize = 64;
         #[cfg(feature = "alloc-decommit")]
         let mut emptied_bases: [*mut u8; EMPTIED_BASES_CAP] =

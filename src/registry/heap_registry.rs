@@ -520,12 +520,19 @@ fn push_back_after_oom(reg: &Registry, slot: &HeapSlot, idx: u32) {
 /// natural unwinding. (Under `panic = "abort"` the `debug_assert!` aborts the
 /// process and the guard never runs, but then there is no leak either: the
 /// process is gone.)
+// Constructed only inside `claim_with_config`'s config-mismatch branch,
+// itself `#[cfg(feature = "alloc-decommit")]`-gated (that method is "only
+// present under `alloc-decommit`" — see its own doc comment above). A build
+// without `alloc-decommit` (e.g. `hardened medium-classes`) would otherwise
+// leave this struct never constructed (R23-5, task #374).
+#[cfg(feature = "alloc-decommit")]
 struct ConflictRollback {
     reg: &'static Registry,
     slot: &'static HeapSlot,
     idx: u32,
 }
 
+#[cfg(feature = "alloc-decommit")]
 impl Drop for ConflictRollback {
     fn drop(&mut self) {
         push_back_after_oom(self.reg, self.slot, self.idx);

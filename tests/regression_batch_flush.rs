@@ -31,6 +31,7 @@
 
 use std::alloc::Layout;
 use std::collections::HashSet;
+#[cfg(feature = "alloc-decommit")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sefer_alloc::{AllocCore, SegmentLayout};
@@ -46,9 +47,16 @@ use sefer_alloc::{AllocCore, SegmentLayout};
 /// of tests in this file that consult that counter, mirroring the
 /// `SerialGuard` pattern already established elsewhere in the test suite
 /// (see `tests/regression_hardened_large_kind_own_free.rs`).
+// Only constructed/read by the `alloc-decommit`-gated tests below (the ones
+// that read `AllocCore::dbg_decommit_count()`) — gate the whole serialization
+// primitive itself so a build without `alloc-decommit` (e.g. `hardened
+// medium-classes`) does not warn it unused (R23-5, task #374).
+#[cfg(feature = "alloc-decommit")]
 static DECOMMIT_COUNTER_SERIAL: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "alloc-decommit")]
 struct SerialGuard;
+#[cfg(feature = "alloc-decommit")]
 impl SerialGuard {
     fn acquire() -> Self {
         while DECOMMIT_COUNTER_SERIAL
@@ -60,6 +68,7 @@ impl SerialGuard {
         SerialGuard
     }
 }
+#[cfg(feature = "alloc-decommit")]
 impl Drop for SerialGuard {
     fn drop(&mut self) {
         DECOMMIT_COUNTER_SERIAL.store(false, Ordering::Release);
