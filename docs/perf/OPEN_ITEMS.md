@@ -243,6 +243,40 @@ for completeness.
   matched-workload gate that cancels the bootstrap constant
   algebraically instead of subtracting an external proxy, and publish
   both figures side by side.
+  **2026-07-27 update — DONE (task #371, R23-2):** added six `_2n`/`_4n`
+  sibling bench arms (`small_churn_16b_2n`, `mimalloc_small_churn_16b_2n`,
+  `cold_alloc_free_256x16b_2n`/`_4n`, and their mimalloc mirrors) and
+  computed `c = (Ir(2N) - Ir(N)) / N` for both allocators, cancelling the
+  bootstrap constant algebraically with no proxy bench needed. Measured
+  `npm run iai` (5 independent runs across two build stages,
+  byte-identical `Ir` throughout). **Correcting the "direction is not in
+  doubt" claim directly above: it WAS in doubt, and on the hot-churn
+  workload the direction flips.** Hot-churn ratio: 1.326 -> **0.896**
+  (SeferAlloc's genuine marginal cost, 69.0 Ir/op, is LOWER than
+  mimalloc's, 77.0 Ir/op — SeferAlloc is marginally CHEAPER on this
+  workload once the asymmetric proxy is removed, not 1.3x costlier).
+  Cold-carve ratio: 2.430 -> **~2.0-2.08** (a 3-point N/2N/4N linearity
+  check found both allocators' marginal cost drifts down slightly,
+  3.7%-7.4%, as batch size grows — not the segment-crossing failure mode
+  the correctness caveat worried about, but a genuine small non-linearity
+  reported honestly; the ratio stays near 2.0 regardless of which adjacent
+  point-pair is used — direction unchanged here, magnitude reduced ~18%
+  from 2.430). Isolation-mechanism investigation confirmed each
+  `#[library_benchmark]` fn runs in its own fresh process under Callgrind
+  (already documented three times in `benches/perf_gate_iai.rs`'s own
+  comments), so no separate "warm-up" pre-loop was needed — the existing
+  single-timed-loop pattern already bakes in the full bootstrap cost per
+  bench by construction. The four remaining R22-15 pairs (`churn_256b`,
+  both `recycle_alloc_free_256x*b` pairs) were NOT re-measured with N/2N
+  arms in this task (scoped to the two required pairs plus a linearity
+  extension) and remain unverified under this corrected method. Evidence:
+  `R23_2_WARM_N_2N_MIMALLOC_GATE.md` (full report) +
+  `R23_2_WARM_N_2N_MIMALLOC_GATE_summary.csv` +
+  `docs/perf/_raw_r23_2_warm_n_2n_gate.log` /
+  `_raw_r23_2_warm_n_2n_gate_rerun1.log`. Original 1.326x-2.430x figures and
+  their history preserved verbatim in `R22_15_MIMALLOC_IR_ARM_GATE.md` per
+  this file's own "do not delete, only correct the interpretation"
+  convention (see that report's §9).
 - **Product fate of `medium-classes` — should it ship, in any form?**
   Resolved by **R22-18 (task #369)**, 2026-07-26: **decision recorded, not
   merely deferred again.** After 4 independent NULL/NO-GO attempts across 3

@@ -1,5 +1,24 @@
 # R22-15 — mimalloc `Ir` arm in `benches/perf_gate_iai.rs`: measured, not spun
 
+> **CORRECTED 2026-07-27 (task #371, R23-2) — see §9.** The 1.3x-2.4x
+> bootstrap-subtracted ratio table below (§0, §2) is preserved verbatim as
+> already-published history (do not re-derive or delete it), but an
+> independent read-only review
+> (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found the
+> bootstrap-subtraction method is asymmetric across the two allocators
+> (`large_alloc_free_cycle`=3,308 Ir is only ~41% of Sefer's raw churn Ir;
+> `mimalloc_bootstrap_proxy`=13,050 Ir is ~78% of mimalloc's raw churn Ir),
+> which can skew the derived ratio. **A corrected measurement — an N/2N
+> matched-workload gate that cancels the bootstrap constant algebraically
+> instead of subtracting an external proxy — finds the hot-churn ratio
+> FLIPS below 1.0 (0.896: SeferAlloc becomes marginally CHEAPER than
+> mimalloc per op) and the cold-carve ratio SHRINKS from 2.430 to ~2.0-2.08
+> (direction unchanged, magnitude reduced ~18%).** See §9 for the full
+> derivation and `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md` for the
+> complete corrected report. Cite the **corrected N/2N ratios (0.896 for hot
+> churn, ~2.0-2.08 for cold-carve)**, not the original 1.326/2.430, as this
+> gate's headline going forward.
+
 **Task #366 (R22-15), Round 22. P1 — highest-priority measurement action of
 the round per all three independent Round 19-21 reviews.** This executes the
 implementation sketch `docs/perf/R20_4_MIMALLOC_IR_ARM_FEASIBILITY.md` (R20-4,
@@ -340,3 +359,110 @@ TaskList are directly informed by this number:
 No NO-GO/GO verdict is rendered here on any code change, because none was
 proposed — this task's entire mandate was "measure and report the number
 honestly," which is what §0-§4 do.
+
+---
+
+## 9. CORRECTION (2026-07-27, task #371, R23-2) — the bootstrap-subtraction asymmetry, and the algebraic N/2N fix
+
+### 9.1 What was wrong
+
+An independent read-only review
+(`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found — and this
+correcting task personally re-verified by reading the raw numbers in §2's
+table above — that §3's arm-aware bootstrap-subtraction fix, while correctly
+avoiding conflating the two allocators' bootstrap constants, does not by
+itself make the resulting ratio a clean per-op comparison: the two proxy
+constants are very DIFFERENTLY SIZED fractions of their own arm's raw churn
+Ir. `large_alloc_free_cycle` = 3,308 Ir is only ~41% of Sefer's raw
+`small_churn_16b` = 8,051 Ir, while `mimalloc_bootstrap_proxy` = 13,050 Ir is
+~78% of mimalloc's raw `mimalloc_small_churn_16b` = 16,629 Ir. Subtracting a
+much LARGER fraction from mimalloc's total than from Sefer's total, then
+dividing both remainders by the same op count, does not produce two
+remainders whose ratio is a clean signal of true per-op cost — the more
+uncertain and disproportionately-sized the subtracted constant, the more the
+resulting per-op figure is dominated by what the proxy happened to measure,
+not by genuine per-op behavior. Both proxies are meant to represent "one-time
+process/thread-heap bootstrap cost," but they are measured via completely
+different one-shot workloads (a 4 MiB alloc+free through each allocator's own
+path) with no guarantee of representing "the same conceptual constant"
+fairly for both.
+
+### 9.2 The fix: cancel `B` algebraically via N/2N, no proxy bench needed
+
+Given the SAME workload shape run at two op counts `N` and `2N`, both
+`Ir(N) = B + N*c` and `Ir(2N) = B + 2N*c` hold for whatever one-time constant
+`B` is actually present (confirmed present INSIDE every single bench's Ir,
+not shared across benches — see R23-2's own report §1 for the full
+isolation-mechanism investigation: each `#[library_benchmark]` fn runs in its
+own fresh process under Callgrind, so `B` is baked into every bench's raw Ir
+by construction, with no cross-fn memoization to worry about). Then:
+
+```text
+c = (Ir(2N) - Ir(N)) / N
+```
+
+cancels `B` without needing to measure it via ANY proxy bench — no risk of a
+mismatched/asymmetric proxy constant, because no proxy constant is used at
+all.
+
+### 9.3 Corrected numbers
+
+Six new `#[library_benchmark]` arms were added to `benches/perf_gate_iai.rs`
+(`small_churn_16b_2n`, `mimalloc_small_churn_16b_2n`,
+`cold_alloc_free_256x16b_2n`, `mimalloc_cold_alloc_free_256x16b_2n`, plus a
+`4n` linearity-check pair for the cold-carve workload). Measured via `npm
+run iai`, five independent runs, byte-identical `Ir` throughout (same
+determinism property this gate has always had):
+
+| workload | OLD ratio (bootstrap-subtracted, this report's §0/§2) | NEW ratio (N/2N-derived) |
+|---|---:|---:|
+| small_churn_16b (hot churn) | 1.326 | **0.896** (SeferAlloc CHEAPER — direction flips) |
+| cold_alloc_free_256x16b (cold carve) | 2.430 | **2.002** (2.00-2.08 across a 3-point linearity check; direction unchanged, magnitude reduced ~18%) |
+
+### 9.4 Revised verdict
+
+R22-15's original "SeferAlloc costs 1.3x-2.4x mimalloc's instructions per op
+on every matched workload" headline (§0 above) is **not an accurate
+characterization once the bootstrap constant is handled without an
+asymmetric external proxy**. On the two pairs re-measured with the corrected
+method: the hot-churn direction REVERSES (SeferAlloc is marginally cheaper,
+not 1.3x costlier), and the cold-carve premium, while still real, shrinks
+from ~2.4x to ~2.0x. The remaining four pairs from §2's original table
+(`churn_256b`, `recycle_alloc_free_256x16b`/`64b` and their mimalloc mirrors)
+were NOT re-measured with N/2N arms in the R23-2 correcting task (scoped to
+the two required pairs plus a linearity extension) and remain unverified
+under this corrected method — this correction does not claim they would also
+shift, only that the two pairs actually re-measured did, one of them enough
+to flip sign. Full derivation, the linearity sanity-check (confirming no
+segment-crossing artifact, but finding a genuine small 3.7%-7.4%
+non-linearity in BOTH allocators that does not change the qualitative
+conclusion), and the isolation-mechanism investigation are in
+`docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md`.
+
+### 9.5 Verification performed (this correction)
+
+- Read this report's own §3's bootstrap-asymmetry mechanism (§3's own text
+  already explains the arm-aware constant lookup; the review's finding is
+  about the SIZE of the two constants relative to their arms, not about
+  whether they were correctly attributed per-arm — R22-15's §3 fix was
+  correct as far as it went, just insufficient to make the ratio itself
+  clean).
+- Investigated iai-callgrind's per-fn isolation model FIRST, before writing
+  any new bench code (R23-2 report §1) — confirmed via pre-existing
+  in-repo documentation (three separate comments in
+  `benches/perf_gate_iai.rs`) plus the documented `iai-callgrind`
+  per-process invocation architecture.
+- Added six new bench arms, ran `npm run iai` five times across two build
+  stages (2N arms, then 2N+4N arms), confirmed byte-identical Ir for every
+  bench (pre-existing and new) across all five runs.
+- Performed the linearity sanity-check the correctness caveat demanded,
+  both structurally (segment-capacity headroom at all three op counts) and
+  empirically (3-point cross-check of `c`), and reported the small
+  non-linearity found honestly rather than assuming clean scaling.
+- `cargo fmt --all -- --check` and `cargo check --bench perf_gate_iai
+  --features production` — clean, both before and after each build stage.
+- Confirmed `production`'s feature composition and `Cargo.toml` are
+  unchanged by this correction.
+
+See `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md` for the complete report,
+raw logs, and companion summary CSV.

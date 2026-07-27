@@ -1,0 +1,5 @@
+commit,features,cpu,os,rustc_wsl,valgrind,workload,arm,ir_n,ir_2n,ir_4n,n,derived_c_ir_per_op,old_bootstrap_subtracted_ratio,new_n2n_derived_ratio
+7f2a9ef,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,small_churn_16b,sefer,8051,12467,,64,69.00,1.326,0.8961
+7f2a9ef,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,small_churn_16b,mimalloc,16629,21557,,64,77.00,1.326,0.8961
+7f2a9ef,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,cold_alloc_free_256x16b,sefer,50164,102353,202867,256,203.86,2.430,2.0023
+7f2a9ef,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,cold_alloc_free_256x16b,mimalloc,32325,58389,106653,256,101.81,2.430,2.0023

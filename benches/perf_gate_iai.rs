@@ -91,6 +91,53 @@ const CHURN_OPS: usize = 64;
 #[cfg(target_os = "linux")]
 const COLD_BATCH: usize = 256;
 
+// R23-2 (task #371) — warm N/2N matched-workload op counts, added to cancel
+// the one-time process bootstrap constant `B` ALGEBRAICALLY instead of
+// subtracting an external bootstrap-proxy bench's raw Ir (R22-15's
+// `large_alloc_free_cycle` / `mimalloc_bootstrap_proxy` approach, corrected
+// here per `docs/reviews/2026-07-26-r22-readonly-review.md` P1's asymmetry
+// finding — see `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md` §1 for why the
+// two proxies are differently-sized fractions of their own arm's raw churn
+// Ir, corrupting the cross-allocator ratio).
+//
+// Each `#[library_benchmark]` fn runs in its OWN fresh process under
+// Callgrind (see `dealloc_prealloc_only_16b`'s doc comment above, and R22-17
+// §2's module note) — there is no cross-fn memoization of `SeferAlloc::new()`
+// or mimalloc's lazy static init between benches, so whatever one-time
+// bootstrap cost `B` exists is baked into EVERY bench's raw Ir already,
+// including these new N/2N arms; no separate untimed "warm-up" pre-loop is
+// needed to make these arms "start warm" — the existing single-timed-loop
+// pattern already IS the correct shape. Given `Ir(N) = B + N*c` and
+// `Ir(2N) = B + 2N*c` for the SAME workload shape at two op counts, `c =
+// (Ir(2N) - Ir(N)) / N` cancels `B` without needing to measure it via any
+// proxy bench at all.
+//
+// `CHURN_OPS_2N` doubles `CHURN_OPS` (64 -> 128); `COLD_BATCH_2N` doubles
+// `COLD_BATCH` (256 -> 512). Both stay well inside the primordial segment's
+// single 4 MiB payload region (512 x 64 B = 32,768 B, a small fraction of one
+// `SEGMENT`; see `src/alloc_core/os.rs::SEGMENT = 1 << 22` and
+// `src/alloc_core/segment_header.rs`'s `primordial_meta_end()`/
+// `small_meta_end()` asserts), so doubling does NOT cross a segment-capacity
+// boundary the N-sized workload didn't already cross — the correctness
+// caveat the task brief flagged does not apply to these two op counts (see
+// the report's linearity sanity-check for the empirical confirmation).
+#[cfg(target_os = "linux")]
+const CHURN_OPS_2N: usize = CHURN_OPS * 2;
+#[cfg(target_os = "linux")]
+const COLD_BATCH_2N: usize = COLD_BATCH * 2;
+
+// R23-2 (task #371) — a THIRD cold-carve op count (`COLD_BATCH_4N` = 4 x
+// `COLD_BATCH` = 1,024), added ONLY for the cold-carve pair, to empirically
+// test the linearity assumption `Ir(k*N) = B + k*N*c` the N/2N trick relies
+// on: with a third point, `c` computed from (N, 2N) can be cross-checked
+// against `c` computed from (2N, 4N) — if the workload is genuinely linear
+// (no segment-boundary/geometry effect that N and 2N didn't already share),
+// the two independently-derived `c` values should closely agree. 1,024 x
+// 64 B = 65,536 B, still a small fraction of one 4 MiB `SEGMENT` — no
+// segment-crossing risk (same margin argument as `COLD_BATCH_2N` above).
+#[cfg(target_os = "linux")]
+const COLD_BATCH_4N: usize = COLD_BATCH * 4;
+
 // Small-block (16 B) alloc+dealloc churn — the magazine/tcache fast path
 // exercised by every allocator-heavy workload (db_handler-shaped included).
 #[cfg(target_os = "linux")]
@@ -99,6 +146,29 @@ fn small_churn_16b() {
     let sefer = SeferAlloc::new();
     let layout = Layout::from_size_align(16, 8).unwrap();
     for _ in 0..CHURN_OPS {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { sefer.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R23-2 (task #371) — the `2N` sibling of `small_churn_16b`, BYTE-IDENTICAL
+// except for the op count (`CHURN_OPS_2N` = 2 x `CHURN_OPS`). Paired with
+// `small_churn_16b`'s raw Ir to derive `c = (Ir(2N) - Ir(N)) / N`, the
+// per-op cost with the one-time process bootstrap `B` cancelled
+// algebraically — see the `CHURN_OPS_2N` doc comment above and
+// `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn small_churn_16b_2n() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    for _ in 0..CHURN_OPS_2N {
         // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
         let ptr = unsafe { sefer.alloc(layout) };
         black_box(ptr);
@@ -449,6 +519,57 @@ fn cold_alloc_free_256x16b() {
     }
 }
 
+// R23-2 (task #371) — the `2N` sibling of `cold_alloc_free_256x16b`,
+// BYTE-IDENTICAL except for the batch size (`COLD_BATCH_2N` = 2 x
+// `COLD_BATCH`, still well within one primordial segment's payload capacity
+// — see the `COLD_BATCH_2N` doc comment above). Paired with
+// `cold_alloc_free_256x16b`'s raw Ir to derive the bootstrap-cancelled
+// per-op cost `c = (Ir(2N) - Ir(N)) / N` on the cold-carve path — see
+// `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_free_256x16b_2n() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_2N] = [core::ptr::null_mut(); COLD_BATCH_2N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R23-2 (task #371) — the `4N` sibling, added ONLY for this cold-carve
+// pair, purely as a linearity sanity-check (see `COLD_BATCH_4N`'s doc
+// comment above): with three op counts (N, 2N, 4N), `c` derived from
+// (N, 2N) can be cross-checked against `c` derived from (2N, 4N).
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn cold_alloc_free_256x16b_4n() {
+    let sefer = SeferAlloc::new();
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_4N] = [core::ptr::null_mut(); COLD_BATCH_4N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { sefer.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { sefer.dealloc(ptr, layout) };
+        }
+    }
+}
+
 // Front A — same cold first-touch shape as `cold_alloc_free_256x16b`, but with
 // 64 B blocks (align 8). Second tiny size class on the carve/refill path.
 #[cfg(target_os = "linux")]
@@ -752,6 +873,28 @@ fn mimalloc_small_churn_16b() {
     }
 }
 
+// R23-2 (task #371) -- the `2N` sibling of `mimalloc_small_churn_16b`,
+// BYTE-IDENTICAL except for the op count (`CHURN_OPS_2N`). Paired with
+// `mimalloc_small_churn_16b`'s raw Ir to derive mimalloc's own
+// bootstrap-cancelled per-op cost `c = (Ir(2N) - Ir(N)) / N` on the hot
+// churn path -- see `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_small_churn_16b_2n() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    for _ in 0..CHURN_OPS_2N {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        let ptr = unsafe { mi.alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the immediately preceding `alloc`
+            // call with the same layout.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
 // 256 B @ align(8) alloc+dealloc churn via mimalloc -- mirrors `churn_256b`
 // exactly.
 #[cfg(target_os = "linux")]
@@ -780,6 +923,54 @@ fn mimalloc_cold_alloc_free_256x16b() {
     let mi = MiMalloc;
     let layout = Layout::from_size_align(16, 8).unwrap();
     let mut ptrs: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R23-2 (task #371) -- the `2N` sibling of `mimalloc_cold_alloc_free_256x16b`,
+// BYTE-IDENTICAL except for the batch size (`COLD_BATCH_2N`). Paired with
+// `mimalloc_cold_alloc_free_256x16b`'s raw Ir to derive mimalloc's own
+// bootstrap-cancelled per-op cost `c = (Ir(2N) - Ir(N)) / N` on the cold-carve
+// path -- see `docs/perf/R23_2_WARM_N_2N_MIMALLOC_GATE.md`.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_free_256x16b_2n() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_2N] = [core::ptr::null_mut(); COLD_BATCH_2N];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { mi.alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by an `alloc` call above with the same
+            // layout, and is freed exactly once.
+            unsafe { mi.dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R23-2 (task #371) -- the `4N` sibling, added ONLY for this cold-carve pair,
+// purely as a linearity sanity-check -- mirrors `cold_alloc_free_256x16b_4n`
+// exactly, via mimalloc.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn mimalloc_cold_alloc_free_256x16b_4n() {
+    let mi = MiMalloc;
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let mut ptrs: [*mut u8; COLD_BATCH_4N] = [core::ptr::null_mut(); COLD_BATCH_4N];
     for slot in ptrs.iter_mut() {
         // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
         *slot = unsafe { mi.alloc(layout) };
@@ -891,6 +1082,7 @@ library_benchmark_group!(
     name = perf_gate;
     benchmarks =
         small_churn_16b,
+        small_churn_16b_2n,
         dealloc_prealloc_only_16b,
         dealloc_free_only_16b,
         dealloc_contains_base_probe_only_16b,
@@ -900,6 +1092,8 @@ library_benchmark_group!(
         large_alloc_free_cycle,
         realloc_grow,
         cold_alloc_free_256x16b,
+        cold_alloc_free_256x16b_2n,
+        cold_alloc_free_256x16b_4n,
         cold_alloc_free_256x64b,
         recycle_alloc_free_256x16b,
         recycle_alloc_free_256x64b,
@@ -908,8 +1102,11 @@ library_benchmark_group!(
         multiseg_cold_256k,
         seg_cycle_decommit_256k,
         mimalloc_small_churn_16b,
+        mimalloc_small_churn_16b_2n,
         mimalloc_churn_256b,
         mimalloc_cold_alloc_free_256x16b,
+        mimalloc_cold_alloc_free_256x16b_2n,
+        mimalloc_cold_alloc_free_256x16b_4n,
         mimalloc_cold_alloc_free_256x64b,
         mimalloc_recycle_alloc_free_256x16b,
         mimalloc_recycle_alloc_free_256x64b,
