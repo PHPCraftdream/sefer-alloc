@@ -7,6 +7,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Round 23 — Round 22's own measurements corrected against two independent reviews: `contains_base` re-isolated (8.8%, not 18.6%), mimalloc ratio flips on hot churn (0.896x) via a warm N/2N gate, the free path's real dominant cost found (own-thread body, 80.8%), R22-16's flawed neighbor-liveness blocker retracted (Linux sub-region remap now CONDITIONAL-GO), 11 pre-existing clippy dead-code errors closed, one flaky test replaced with a deterministic counter, batch API consumer question closed by decision record (R23-1..R23-7, tasks #370–#376)
+
+**What actually moved this round, stated plainly up front.** Round 23 is a
+correction round: two independent read-only reviews of Round 22
+(`docs/reviews/2026-07-26-r22-readonly-review.md`,
+`docs/reviews/2026-07-27-post-r22-followups-readonly-review.md`) found that
+several of Round 22's own headline measurements did not hold up under
+tighter methodology, and — most notably — that Round 22's own R22-16 design
+doc contained a real logic error in a verdict this session had itself
+committed. Every finding from both reviews was personally re-derived
+against the actual source before being acted on, per this project's
+zero-trust convention; none were accepted at face value. Round 23 landed 7
+tasks: 3 measurement corrections, 1 design-verdict correction, 1
+correctness/CI fix, 1 test-infrastructure fix, and 1 product decision record
+— plus several smaller fixes caught incidentally along the way and folded
+into the same commits (a README unsafe-inventory-count regression, a
+12-round-stale `OPEN_ITEMS.md` entry). Plain `--features production`'s
+composition is **unchanged** across the whole round — every new item is
+either `#[doc(hidden)]`/`alloc-stats`-gated measurement tooling or a
+docs-only edit; `git diff --stat` on `Cargo.toml` across the round is empty.
+
+- **[measurement correction] R23-1 (task #370) — `contains_base`'s isolated
+  share of a real free's `Ir` is 8.8%, not R22-17's original 18.6%.** The
+  first review found R22-17's probe arm bundled `segment_base_of_ptr`'s own
+  arithmetic and a second non-inlined call boundary into one "contains_base"
+  label. Added a genuinely isolated `dealloc_segment_base_of_ptr_probe_only_16b`
+  arm; decomposition from two independent, byte-identical `npm run iai` runs:
+  `segment_base_of_ptr` alone is 9.8% (578/5,920 `Ir`), `contains_base` alone
+  is 8.8% (523/5,920) — summing back to the original 18.6% exactly, with no
+  unaccounted residual. Original figure preserved as published history; the
+  corrected number is what future rounds should cite.
+- **[measurement correction] R23-2 (task #371) — a warm N/2N matched gate
+  replaces R22-15's asymmetric bootstrap-subtraction, and the correction
+  MATERIALLY changes the headline, not just its decimals.** R22-15's
+  Sefer-vs-mimalloc `Ir` ratio subtracted two differently-sized one-shot
+  "bootstrap proxy" constants (3,308 Ir for Sefer, ~4x that for mimalloc)
+  from two totals, then divided by the same op count — the review found this
+  skews the ratio in mimalloc's favor. Replaced it with `c = (Ir(2N) -
+  Ir(N)) / N` across matched op-count pairs, which cancels the one-time
+  per-process bootstrap constant algebraically with no external proxy
+  needed. Result: the hot-churn ratio **flips** from 1.326 to **0.896**
+  (SeferAlloc becomes marginally *cheaper* than mimalloc per op, the
+  opposite of the original headline), and the cold-carve ratio shrinks from
+  2.430 to **~2.0–2.08** (direction unchanged, magnitude down ~18%). A
+  3-point N/2N/4N linearity check found a genuine small (3.7–7.4%)
+  non-linearity in both allocators, reported honestly, not large enough to
+  change the qualitative conclusion.
+- **[measurement] R23-3 (task #372) — full orthogonal hot-path attribution
+  finds the free path's real dominant cost: the own-thread free body,
+  80.8%, more than 4x the routing prefix (`contains_base` +
+  `segment_base_of_ptr`, 18.6% combined) prior rounds focused on.** Built 6
+  new N/2N- and shared-prefix-isolated bench arms plus 4 new `#[doc(hidden)]`
+  measurement hooks (`dbg_hash_contains_only`,
+  `dbg_dealloc_own_thread_with_base`) to decompose hot alloc-magazine-hit
+  (22.4 Ir/op), free-routing Tier-1/Tier-2 `contains_base`, the fused M2
+  double-free-oracle + magazine-push free body (80.8%), and cold
+  carve-vs-recycle-pop. Finding: recycle-pop (188.2 Ir/op, full path) is
+  roughly on par with virgin-carve (203.86 Ir/op), not costlier — revising
+  R22-15/R23-2's "cold-carve/recycle is the main remaining candidate"
+  framing. Two self-caught methodology bugs (an invalid N/2N pair, a missing
+  `#[inline(always)]` that inflated one measurement past the real free
+  loop's own total) were disclosed and fixed in the same task, not carried
+  forward. Caught and fixed a real regression along the way: the new
+  `unsafe fn` hook pushed the tier-2 unsafe-seam count 60→61, and
+  README.md's own `readme_unsafe_inventory_counts_match_reality` test
+  correctly went red until the README's count was updated in the same
+  commit.
+- **[design correction] R23-4 (task #373) — corrected a real logic error in
+  this project's own R22-16 design doc: Linux sub-region `mremap` is
+  CONDITIONAL-GO, not NO-GO.** R22-16 argued sub-region remap needed an
+  unsolved "promotion-time neighbor-liveness check." Independently
+  re-verified (personally, before *and* during delegation) that this premise
+  is false: `carve_block`/`carve_batch` always advance the bump cursor
+  monotonically forward, and the only backward bump reset
+  (`decommit_empty_segment_impl`) is reachable, on every production path,
+  only after the whole segment's `live_count` is confirmed zero — so a live
+  carved block's byte range is provably exclusive for its entire lifetime,
+  no runtime check needed. Whole-segment remap's NO-GO (base-address
+  stability) is unaffected and remains real. New finding beyond the expected
+  correction: today's memcpy-based promotion frees its source block through
+  the *ordinary* `dealloc`→`BinTable` free-list path, so a future remap
+  design must still avoid ever routing a remap-vacated offset through
+  ordinary free — bump-monotonicity alone does not solve this, disclosed as
+  a genuinely open (not currently blocking) design discipline.
+- **[correctness fix] R23-5 (task #374) — closed all 11 pre-existing
+  `cargo clippy --features "hardened medium-classes" -D warnings` dead-code
+  errors, stable since R19-1 across 3+ rounds.** All 11 were genuine
+  `#[cfg(...)]` predicate mismatches (an item gated one way, its sole
+  consumer gated a different way, so under this specific feature
+  intersection the consumer compiled out but the item did not) — confirmed
+  exhaustively per item via whole-crate grep before touching anything; none
+  were true orphans, nothing deleted. Added a `clippy (--features "hardened
+  medium-classes")` row to CI, closing a gap R22-1 deliberately left open
+  when it added a `cargo test` row for this combo but not clippy. One latent
+  predicate-mismatch issue in a test file, exposed only once the lib
+  compiled clean and `--all-targets` reached that target for the first
+  time, was found and fixed in the same pass.
+- **[test infrastructure] R23-6 (task #375) — replaced one of two flaky
+  coarse wall-clock tests with a deterministic counter; honestly demoted the
+  other.** `backshift_no_latency_spike_at_threshold_boundary` got a
+  deterministic replacement: a new `alloc-stats`-gated
+  `HASH_REMOVE_MAX_SCAN_STEPS` high-water-mark counter for
+  `SegmentTable::hash_remove`'s backward-shift scan, asserted against an
+  exact bound instead of a nanosecond ratio — zero flake surface. Verified
+  non-vacuous via a mutation counterfactual (force the scan to burn
+  `HASH_CAPACITY-1` extra steps; confirmed the new test fails; reverted),
+  run independently twice (once by the delegated task, once personally).
+  `own_thread_free_is_subquadratic` has **no** clean deterministic
+  replacement — the guard it protects is an unconditional O(1) bitmap test
+  with no loop left to instrument — honestly demoted to `#[ignore]` rather
+  than forcing a fake counter. An earlier-proposed `TEST_LOCK`-mutex fix was
+  correctly NOT used: the flakiness source is cross-process CPU contention
+  (multiple test binaries), which a mutex inside one process cannot
+  address. Both original wall-clock tests are kept, not deleted, for manual
+  `--ignored`/`npm run iai` cross-checks.
+- **[decision] R23-7 (task #376) — batch API downstream-consumer question
+  closed by decision record; no new benchmark built.** An independent review
+  flagged that the batch API has a measured win (R10-7, 1.1–1.6x) but no
+  real downstream caller, so its effect on typical `Box`/`Vec`-shaped usage
+  is zero. Investigated whether a more realistic benchmark than what already
+  exists could be cheaply built and found it already does: R10-7's
+  `batch_tcache` arm goes through the warm magazine and is measured against
+  the real warm `SeferAlloc` scalar path across a realistic batch-size
+  sweep — building a 4th-generation microbench would add no information.
+  Confirmed by grep that `alloc_batch`/`dealloc_batch` have exactly one call
+  chain in `src/` (`SeferAlloc`→`HeapCore`, both under the non-`production`
+  `batch-api` feature) — no in-tree production caller exists. Wrote
+  `docs/perf/R23_7_BATCH_API_CONSUMER_STATUS.md` with an explicit
+  3-trigger falsifiability clause instead. Caught and fixed, in the same
+  pass, a 12-round-stale `OPEN_ITEMS.md` entry (R9-9's warm-batch-arm ask,
+  actually resolved by R10-7 the very next round, but never marked closed
+  because that commit never touched the index).
+
+**Production vs. opt-in.** `production`'s feature composition is unchanged
+across all of Round 23 (`git diff --stat Cargo.toml` from `main`@`ff48029`
+through this round's tip is empty). The unsafe-seam count moved from 80 to
+**81** (20 tier-1 + 61 tier-2, R23-3's one new `unsafe fn` measurement hook
+— `README.md`'s own inventory tripwire test caught and enforced this),
+verified via `grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`.
+
 ### Round 22 — three independent Rounds 19–21 reviews synthesized, `hardened+medium-classes` CI gap closed, `large_layout_consistent` extended to align, OPT-H closed on geometric grounds, mimalloc `Ir` arm landed (1.3x-2.4x gap measured), `contains_base` found MATERIAL (18.6% of free), `medium-classes`' product fate decided (R22-1..R22-18, tasks #352–#369)
 
 **What actually moved this round, stated plainly up front.** Round 22 opened
