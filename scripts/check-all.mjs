@@ -63,9 +63,14 @@ const steps = [
   // tests whose bodies are `#[cfg(feature = "...")]`-gated, so only a run
   // WITH the feature actually exercises them.
   {
-    name: 'test (--features "production alloc-stats")',
+    // R24-6 (task #384): `bench-internals` added so
+    // `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates on
+    // that feature — see `Cargo.toml`'s `bench-internals` doc) keeps running
+    // under this step instead of silently being skipped by its own
+    // `#![cfg]`.
+    name: 'test (--features "production alloc-stats bench-internals")',
     cmd: 'cargo',
-    args: ['test', '--features', 'production alloc-stats'],
+    args: ['test', '--features', 'production alloc-stats bench-internals'],
   },
   {
     name: 'test (--features pinning)',

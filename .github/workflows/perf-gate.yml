@@ -102,6 +102,14 @@ jobs:
         # `alloc-global` would let a magazine/large-cache regression sail
         # through silently. `production` is the crate's real-world default.
         #
+        # `bench-internals` (R24-6, task #384) — additionally required by this
+        # bench target (`Cargo.toml`'s `required-features`) because the
+        # `dealloc_own_thread_body_only_16b` arm calls
+        # `HeapCore::dbg_dealloc_own_thread_with_base`, a measurement-only
+        # `unsafe fn` hook deliberately kept OUT of `production` itself so a
+        # plain `--features production` build of the library never exposes it
+        # — this CI-only bench target opts it in explicitly.
+        #
         # Task #128 (enforcing): a PR run COMPARES against the restored `main`
         # baseline (`--baseline=main`); combined with the
         # `IAI_CALLGRIND_REGRESSION` env above, a >10% `Ir` regression exits
@@ -111,9 +119,9 @@ jobs:
         # baseline to regress against — it only records one.
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            cargo bench --bench perf_gate_iai --features production -- --baseline=main
+            cargo bench --bench perf_gate_iai --features "production bench-internals" -- --baseline=main
           else
-            cargo bench --bench perf_gate_iai --features production -- --save-baseline=main
+            cargo bench --bench perf_gate_iai --features "production bench-internals" -- --save-baseline=main
           fi
 
       # Persist the freshly-recorded `main` baseline (main / scheduled /

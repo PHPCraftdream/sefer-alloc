@@ -222,9 +222,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: test (--features "production alloc-stats")
+      # R24-6 (task #384): `bench-internals` added so
+      # `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates
+      # on that feature — see `Cargo.toml`'s `bench-internals` doc) keeps
+      # running here instead of silently being skipped by its own `#![cfg]`.
+      - name: test (--features "production alloc-stats bench-internals")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-stats" --no-fail-fast
+        run: cargo test --features "production alloc-stats bench-internals" --no-fail-fast
       - name: test (--features pinning)
         if: ${{ !cancelled() }}
         run: cargo test --features pinning --no-fail-fast
@@ -327,9 +331,11 @@ jobs:
       # the skip. The equivalent measurement WITH the feature on is
       # `class_aware_dirty_routing.rs::wasted_dirty_drains_stays_low_under_class_aware_routing`,
       # which DOES run in this step.
-      - name: test (--features "production alloc-stats" — feature-isolation copy)
+      # R24-6 (task #384): `bench-internals` added for the same reason as the
+      # sibling step above — keeps `class_aware_dirty_oom_latch.rs` running.
+      - name: test (--features "production alloc-stats bench-internals" — feature-isolation copy)
         if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-stats" --no-fail-fast
+        run: cargo test --features "production alloc-stats bench-internals" --no-fail-fast
       # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in

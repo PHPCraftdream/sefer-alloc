@@ -70,12 +70,17 @@
 //! `class-aware-dirty`, `alloc-stats`, `not(numa-aware)` — mirrors
 //! `tests/class_aware_dirty_routing.rs`.
 
+// R24-6 (task #384): `bench-internals` added because this test calls
+// `HeapCore::dbg_push_coarse_only_entry`, now gated on that feature (see
+// `Cargo.toml`'s `bench-internals` doc) so it is not reachable from a plain
+// `--features production` build of the library.
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
     feature = "alloc-segment-directory",
     feature = "class-aware-dirty",
     feature = "alloc-stats",
+    feature = "bench-internals",
     not(feature = "numa-aware")
 ))]
 

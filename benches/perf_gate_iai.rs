@@ -582,7 +582,17 @@ fn dealloc_hash_contains_only_probe_16b() {
 // `dealloc_free_only_16b`'s loop-only Ir minus BOTH `contains_base`'s (R23-1)
 // AND `segment_base_of_ptr`'s own isolated shares -- a cross-check performed
 // in the report, not assumed.
-#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+// R24-6 (task #384): `bench-internals` added because this arm calls
+// `HeapCore::dbg_dealloc_own_thread_with_base`, now gated on that feature —
+// see `Cargo.toml`'s `bench-internals` doc and this bench target's
+// `required-features` (which already requires it for the whole target; this
+// per-arm `#[cfg]` additionally keeps `--all-features` builds honest).
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
 #[library_benchmark]
 fn dealloc_own_thread_body_only_16b() {
     let _ = bootstrap::ensure();

@@ -143,6 +143,18 @@ impl HeapCore {
     /// between this push and the consuming drain); and `class_idx` is the
     /// block's actual allocated class. See the delegated fn's `# Safety` section
     /// for the full rationale and the defensive-guard caveats.
+    ///
+    /// R24-6 (task #384) note: this hook's `alloc-xthread` gate is a subset of
+    /// `production`'s feature list, so it IS reachable from a plain
+    /// `--features production` build — deliberately NOT moved behind
+    /// `bench-internals` like its two younger siblings
+    /// (`dbg_dealloc_own_thread_with_base`, `dbg_push_coarse_only_entry`):
+    /// this is the oldest hook in this file (R6-MS-4) and has ~20 existing
+    /// callers across the whole `alloc-xthread` test suite, so re-gating it
+    /// would be a disproportionate diff for a doc-precision concern. See
+    /// README.md's "Where unsafe lives" R24-6 note for the full rationale.
+    /// It remains, like its siblings, `#[doc(hidden)]`, test/measurement-only,
+    /// and excluded from any "changes production behavior" claim.
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (delegation to the unsafe producer).
@@ -303,11 +315,21 @@ impl HeapCore {
     /// carries no extra memory-safety obligation of its own — the coarse bit
     /// is read-only metadata to `drain_dirty_segments`, never dereferenced as
     /// a pointer).
+    // R24-6 (task #384): gated additionally on `bench-internals` so this
+    // `unsafe fn` measurement/test-only hook is NOT reachable from plain
+    // `--features production` (its prior gate — `alloc-xthread` +
+    // `alloc-segment-directory` + `class-aware-dirty` — is fully satisfied by
+    // `production`'s feature list on its own). Its one caller,
+    // `tests/class_aware_dirty_oom_latch.rs`, now requires `bench-internals`
+    // too. See the `bench-internals` feature doc in `Cargo.toml` for the full
+    // rationale and why the sibling `dbg_push_to_ring` (R6-MS-4) was NOT
+    // moved here.
     #[doc(hidden)]
     #[cfg(all(
         feature = "alloc-xthread",
         feature = "alloc-segment-directory",
-        feature = "class-aware-dirty"
+        feature = "class-aware-dirty",
+        feature = "bench-internals"
     ))]
     #[allow(unsafe_code)] // R13-1: `unsafe fn` boundary, mirrors `dbg_push_to_ring`.
     pub unsafe fn dbg_push_coarse_only_entry(&self, ptr: *mut u8, class_idx: usize) -> bool {
@@ -445,8 +467,20 @@ impl HeapCore {
     /// segment this heap owns (the same precondition `dealloc_routing`
     /// already establishes via its `contains_base` check before reaching this
     /// body in production).
+    // R24-6 (task #384): gated additionally on `bench-internals` so this
+    // `unsafe fn` measurement-only hook is NOT reachable from plain
+    // `--features production` (its prior gate — `alloc-global` + `fastbin` —
+    // is fully satisfied by `production`'s feature list on its own). Its one
+    // caller, `benches/perf_gate_iai.rs`, now requires `bench-internals` too
+    // (added to that bench target's `required-features` in `Cargo.toml`; CI's
+    // `perf-gate.yml` invocation passes it explicitly). See the
+    // `bench-internals` feature doc in `Cargo.toml` for the full rationale.
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals"
+    ))]
     #[inline(always)]
     #[allow(unsafe_code)] // R23-3: `unsafe fn` boundary, mirrors `dbg_push_to_ring`/`HeapCore::dealloc`.
     pub unsafe fn dbg_dealloc_own_thread_with_base(

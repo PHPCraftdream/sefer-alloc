@@ -381,6 +381,16 @@ impl AllocCore {
     /// reads the block's stamped generation (so the drain's generational guard
     /// compares against a real gen); that read is sound given `ptr` is a live
     /// in-segment block per the first bullet.
+    ///
+    /// R24-6 (task #384) note: like [`HeapCore::dbg_push_to_ring`]
+    /// (`registry::heap_core_diag`) which delegates to this fn, the
+    /// `alloc-xthread` gate here is a subset of `production`'s feature list,
+    /// so this hook IS reachable from a plain `--features production` build
+    /// — deliberately left as-is (not moved behind `bench-internals`) because
+    /// it is pre-existing debt (R6-MS-4, the oldest hook of this kind) with
+    /// ~20 existing callers; see README.md's "Where unsafe lives" R24-6 note.
+    /// Still `#[doc(hidden)]`, test/measurement-only, and excluded from any
+    /// "changes production behavior" claim.
     #[doc(hidden)]
     #[cfg(feature = "alloc-xthread")]
     #[allow(unsafe_code)] // R6-MS-4: `unsafe fn` boundary (remote-free-note producer contract).

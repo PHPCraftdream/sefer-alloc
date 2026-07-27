@@ -302,6 +302,49 @@ for completeness.
    `R24_5_COLD_ALLOC_FREE_SPLIT_GATE_summary.csv` +
    `docs/perf/_raw_r24_5_run1.log` / `_raw_r24_5_run2.log` (byte-identical `Ir`
    across both runs; 12 reference arms reproduced R23-2/R24-2/R23-3 exactly).
+   **2026-07-28 update — DONE (task #384, R24-6), CLOSES the "for R24-6
+   tracking" note above (R24-2's `dbg_dealloc_own_thread_with_base` entry)
+   and the R23-3-era review flag that motivated this task:** re-scoped
+   narrowly after a first attempt (via a different tool) tried to gate
+   essentially every `dbg_*` hook in the crate, exploded into a 130+-file
+   diff, and was reverted (nothing committed). The actual short list of
+   `unsafe fn dbg_*` hooks BOTH marked `unsafe fn` (tier-2 `#[allow(unsafe_code)]`)
+   AND reachable from plain `--features production` alone (their own `#[cfg]`
+   gate is a subset of `production`'s feature list) is **4 items**, all in
+   `src/registry/heap_core_diag.rs` / `src/alloc_core/alloc_core_small_reclaim.rs`:
+   `HeapCore::dbg_dealloc_own_thread_with_base` (R23-3, task #372 — NEW, the
+   direct motivator), `HeapCore::dbg_push_coarse_only_entry` (R13-1, task
+   #271 — pre-existing), and `HeapCore::dbg_push_to_ring` /
+   `AllocCore::dbg_push_to_ring` (R6-MS-4 — pre-existing, the oldest tier-2
+   entries in the file). **Split decision, not uniform:** the first two each
+   have exactly ONE call site (`benches/perf_gate_iai.rs` and
+   `tests/class_aware_dirty_oom_latch.rs`) and are now gated behind a new
+   `bench-internals` Cargo feature (Option A) — `production` alone no longer
+   compiles them in. `dbg_push_to_ring` (both variants) was LEFT AS-IS
+   (Option B, doc-only): it has ~20 existing callers across the whole
+   `alloc-xthread` test suite (pre-existing R6-MS-4 debt, not the new
+   regression), so re-gating it would reproduce the same disproportionate
+   diff explosion the reverted first attempt hit, for a documentation-
+   precision concern rather than a real production-surface change. Doc notes
+   added at both `dbg_push_to_ring` definitions plus a new "R24-6 note"
+   paragraph in README.md's "Where unsafe lives" section explaining the
+   split. **Verification:** the tier-2 unsafe-audit grep
+   (`grep -rnE '^\s*#!?\[allow\(unsafe_code\)\]' src/ crates/`) count is
+   UNCHANGED (still counts the `#[allow(unsafe_code)]` line regardless of
+   what `#[cfg]` surrounds it — textual, feature-gate-blind by construction,
+   confirmed correct before this task started rather than assumed), so
+   README's **61** tier-2 figure needed no update and
+   `tests/no_stale_doc_references.rs`'s
+   `readme_unsafe_inventory_counts_match_reality` tripwire passes untouched.
+   Files touched: `Cargo.toml` (new `bench-internals` feature +
+   `perf_gate_iai`'s `required-features`), `src/registry/heap_core_diag.rs`
+   (2 `#[cfg]` gates widened + 2 doc notes), `src/alloc_core/alloc_core_small_reclaim.rs`
+   (1 doc note), `benches/perf_gate_iai.rs` (1 arm's `#[cfg]` widened),
+   `tests/class_aware_dirty_oom_latch.rs` (file-level `#![cfg]` widened),
+   `.github/workflows/perf-gate.yml` + `.github/workflows/ci.yml` +
+   `scripts/check-all.mjs` (feature strings updated so the two re-gated hooks
+   keep running under CI/`npm run check`), `README.md` (feature table row +
+   "Where unsafe lives" note). No `Cargo.toml`/crate version bump.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

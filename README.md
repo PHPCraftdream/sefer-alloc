@@ -440,7 +440,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
 | [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 6 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` / `alloc_batch` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path) |
 | [`src/registry/heap_core_dealloc_batch.rs`](src/registry/heap_core_dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
-| [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 3 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1) / `dbg_dealloc_own_thread_with_base` (R23-3, task #372) — `unsafe fn` boundaries (delegation to the unsafe producer) |
+| [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 3 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) / `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer); see the R24-6 note below the table |
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 7 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` / `HeapCore::dealloc` (R14-4 promotion helper) + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
@@ -450,6 +450,40 @@ That's the full list (both tiers): **20** tier-1 module-level seams (13 in
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
+
+**R24-6 (task #384) note — measurement-only `unsafe fn dbg_*` hooks in
+`heap_core_diag.rs`.** All three of that file's `unsafe fn` entries above are
+`#[doc(hidden)]`, exist ONLY to let this crate's own `benches/perf_gate_iai.rs`
+/ `tests/` harnesses isolate a specific perf-gate sub-cost or reconstruct a
+hard-to-reach test scenario, and are never called from any production alloc
+path — none of the three changes what `SeferAlloc::alloc`/`dealloc` actually
+does. They are **not equivalent** on one axis a prior review flagged as worth
+distinguishing precisely: whether the hook's own `#[cfg]` gate happens to be
+fully satisfied by plain `--features production` alone.
+
+- `dbg_dealloc_own_thread_with_base` (R23-3, task #372) and
+  `dbg_push_coarse_only_entry` (R13-1, task #271) were both reachable from a
+  plain `production` build (their prior gates — `alloc-global + fastbin` and
+  `alloc-xthread + alloc-segment-directory + class-aware-dirty` respectively —
+  are each a subset of `production`'s feature list). Each has exactly ONE
+  caller in the whole tree (`benches/perf_gate_iai.rs` and
+  `tests/class_aware_dirty_oom_latch.rs`), so both are now additionally gated
+  behind the `bench-internals` feature (see the feature table above) — a
+  plain `--features production` build no longer compiles either in.
+- `dbg_push_to_ring` (`HeapCore`/`AllocCore`, R6-MS-4) is **deliberately left
+  as-is**: its `alloc-xthread` gate is also a `production` subset, but unlike
+  the two above it is called from ~20 files across the entire `alloc-xthread`
+  test suite (predates R23-3 by many rounds — the oldest entry in this
+  file's tier-2 list). Moving it behind a new feature would touch every one
+  of those files' gates for a documentation-precision concern, not a new
+  regression — disproportionate for this round. This note is the resolution:
+  `dbg_push_to_ring` is measurement/test-only and excluded from any
+  "changes production behavior" claim, exactly like its two siblings, even
+  though it remains textually reachable under `--features production` (the
+  `#[allow(unsafe_code)]` grep this section's count is built from is
+  feature-gate-blind by construction, so gating a hook behind a new feature
+  would not change the **61** figure above regardless — only whether it
+  compiles into a given build).
 
 ### The segment substrate (Phase 8)
 
@@ -1039,6 +1073,7 @@ The full safety stack and the relationship between layers is documented in
 | `experimental` | `std` + deps | Lock-free `LockFreeRegion` / `EpochRegion` / `ShardedRegion` (legacy/deprecated; kept for backward compat and research baseline) | off | RCU / epoch experiments only |
 | `pinning` | `experimental` + `core_affinity` | Thread-per-core pinning with `core_affinity` (`PinnedRunner` is NOT deprecated) | off | `shard == core` workloads |
 | `batch-api` | `experimental` + `alloc-core` | Tcache-aware batch alloc/dealloc (`SeferAlloc::alloc_batch`/`dealloc_batch`). **⚠ No semver guarantees** — signature/behavior may change or the feature may be removed in any release while it depends on `experimental` (R12-12) | off | you have measured a real batch-size win for your workload and accept an unstable API |
+| `bench-internals` | — | R24-6: gates the smallest set of `unsafe fn dbg_*` hooks that exist ONLY to let `benches/perf_gate_iai.rs` / one integration test isolate a perf-gate sub-cost, and whose own `#[cfg]` would otherwise be fully satisfied by `production` alone (`HeapCore::dbg_dealloc_own_thread_with_base`, `HeapCore::dbg_push_coarse_only_entry`). **NOT** in `production` — a plain `--features production` build of the library never compiles these two hooks in. Carries no code of its own. | off | never, in application code — internal to this crate's own CI perf-gate and one test |
 
 `production` is the right starting point for almost any multi-thread or
 async use of `SeferAlloc`. Without `alloc-decommit`, unregister /
