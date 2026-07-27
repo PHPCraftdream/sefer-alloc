@@ -271,10 +271,21 @@ for completeness.
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
-10. **R9-9 — warm-batch-on-`SeferAlloc`-heap arm.** A fourth bench arm reusing
-    the warm heap (no page faults) would give the fairest batch-vs-tcache
-    comparison; "explicitly left for a future task if the 16 B / n=1024 signal
-    warrants it." Evidence: `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343).
+10. ~~**R9-9 — warm-batch-on-`SeferAlloc`-heap arm.**~~ **DONE (task R10-7,
+    2026-07-21, commit `9611a56`).** Moved to "Recently resolved" below —
+    left here struck through rather than deleted so the original ask stays
+    visible next to its closure. R10-7 built exactly the fourth arm this
+    item asked for (`batch_core_warm`/`scalar_core_warm`, Part 1) plus the
+    realistic tcache-aware design (`batch_tcache`, Part 2) and measured both
+    against the real warm `SeferAlloc` scalar path. Evidence:
+    `R9_9_BATCH_BENCH_FOLLOWUP.md` (lines 334–343, the original ask);
+    `R10_7_BATCH_WARM_ARM.md` (the closure). **Caught late** (2026-07-27,
+    task #376/R23-7) — this item sat marked "open" in this index for two
+    full rounds (R11 through R23) after R10-7 had already resolved it in
+    the very next round after R9-9, because R10-7's own commit did not
+    touch `OPEN_ITEMS.md` — the same "report lands, index not updated in
+    the same commit" failure mode this file's own convention (§ "When you
+    close an item") exists to prevent.
 11. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
@@ -306,6 +317,41 @@ for completeness.
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
+
+- **R9-9 §5 — warm-batch-on-`SeferAlloc`-heap arm (this index's own item 10,
+  above).** **DONE (task R10-7, 2026-07-21, commit `9611a56`).** R10-7 built
+  the fourth arm R9-9 flagged as missing (`batch_core_warm`/
+  `scalar_core_warm`) AND the realistic tcache-aware design (`batch_tcache`,
+  draining the warm magazine + batch-refilling the remainder — the design a
+  real `SeferAlloc`-based public API would actually ship) and measured both
+  against the real warm `SeferAlloc` scalar path. Result: R9-9's
+  "no-daylight-even-warmed" inference (§3.2 of that report) is **empirically
+  refuted** — warm-batch beats warm-scalar by 1.3×-3.3× (the `AllocCore`
+  ceiling arm) and the realistic `batch_tcache` design beats it by
+  1.1×-1.6× at every measured (size, N) including N=8. Evidence:
+  `R10_7_BATCH_WARM_ARM.md` (full report, §1-§3). **Caught late**
+  (2026-07-27, task #376/R23-7): this closure sat unrecorded in this index
+  for 12 rounds because R10-7's own commit did not update `OPEN_ITEMS.md`.
+
+- **R22-readonly-review §4.6 — batch API: is there a real downstream
+  consumer, and does the measured win translate to a real workload?**
+  **DONE — decision recorded, not measured further (task #376/R23-7,
+  2026-07-27).** Investigated whether a cheaper/more-realistic benchmark
+  than what already exists (R8-7/R9-9/R10-7's batch-size sweep + real
+  `SeferAlloc`-scalar comparison arms) could be built; concluded no —
+  R10-7's `batch_tcache` arm already IS the realistic-consumer-shaped
+  measurement the review asked for (goes through the warm magazine,
+  compared against the real scalar entry point, swept across realistic
+  batch sizes). Confirmed by grep: `alloc_batch`/`dealloc_batch`
+  (`src/global/sefer_alloc.rs`) have exactly one call chain in `src/`
+  (`SeferAlloc` → `HeapCore`, both under the `batch-api` feature, which is
+  `["experimental", "alloc-core"]` and NOT part of `production`) — no
+  in-tree production caller exists, confirming the review's premise
+  exactly. Wrote a decision record (not a new benchmark) with an explicit
+  falsifiability clause (three concrete triggers: a real internal consumer
+  emerges; a downstream project adopts/requests batch-shaped allocation;
+  `dealloc_batch` gets batch-optimized closing the R10-7 §2.4 gap). Evidence:
+  `docs/perf/R23_7_BATCH_API_CONSUMER_STATUS.md` (full report).
 
 - **R18-7 §3b — add a `mimalloc` comparison arm to `perf-gate.yml` /
   `perf_gate_iai.rs`.** Implemented by **R22-15 (task #366)**, 2026-07-26
