@@ -67,7 +67,9 @@ for completeness.
    whoever designs this next, not an assumed-solved prerequisite. Evidence:
    `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` (full report, §4 for the
    design sketch + the soundness caveat).
-   **2026-07-27 update:** an independent read-only review
+   **2026-07-27 update (superseded by the 2026-07-27 DONE update directly
+   below — kept for the historical trail, not the current number):** an
+   independent read-only review
    (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found the "18.6%"
    figure is NOT an isolated `contains_base` measurement — the probe arm
    (`benches/perf_gate_iai.rs:232-239`) calls `dbg_segment_base_of_ptr` +
@@ -79,6 +81,30 @@ for completeness.
    correction: task #370 (R23-1) will add a `segment_base_of_ptr`-only
    arm to isolate the true `contains_base`-only share before this item's
    number is cited further.
+   **2026-07-27 update — DONE (task #370, R23-1):** added
+   `dealloc_segment_base_of_ptr_probe_only_16b`, an isolated arm calling ONLY
+   `dbg_segment_base_of_ptr` (never `dbg_contains_base`), following the same
+   shared-prefix-subtraction pattern as the existing three arms. Measured
+   `npm run iai` (two independent runs, byte-identical Ir): raw Ir 7,581 →
+   loop-only 578 (7,581 − 7,003 prefix) → 9.03 Ir/call. Decomposition:
+   `contains_base_only_ir = composite_probe_loop_ir (1,101) −
+   base_only_loop_ir (578) = 523`, i.e. **`contains_base`'s isolated share of
+   a real free's `Ir` is 523 / 5,920 = 8.8%** (not 18.6% — the original
+   figure was the sum of this 8.8% plus `segment_base_of_ptr`'s own 9.8%
+   (578/5,920) plus zero separately-isolable residual, since 578 + 523 =
+   1,101 exactly). **Cite 8.8% going forward, not 18.6%.** 8.8% still clears
+   a MATERIAL (non-negligible) bar, so §4's header-first design-sketch
+   discussion in the report remains valid — it was never contingent on the
+   exact percentage. The "conservative lower bound" claim from the original
+   report is retracted as unproven in either direction (per the review);
+   whether Tier-2-hash-probe-heavy workloads would show MORE than 8.8% is an
+   open question, not a proven floor. Full arithmetic, raw logs, and updated
+   summary CSV: `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (the
+   correction section) + `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE_summary.csv`
+   (R23-1 rows) + `docs/perf/_raw_r23_1_contains_base_isolation_full.log` /
+   `_raw_r23_1_contains_base_isolation_rerun1.log`. Original 18.6% figure and
+   its history preserved verbatim in the report per this file's own
+   "do not delete, only correct the interpretation" convention.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

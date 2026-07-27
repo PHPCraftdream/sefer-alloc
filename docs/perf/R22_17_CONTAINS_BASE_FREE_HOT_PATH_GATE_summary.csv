@@ -5,4 +5,15 @@ commit,features,cpu,os,rustc_wsl,valgrind,bench,raw_ir,ops,prealloc_prefix_ir,lo
 8c1f248,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,dealloc_contains_base_probe_only_16b,8104,64,7003,1101,17.2
 8c1f248,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,large_alloc_free_cycle,3308,1,,,
 # verdict,,,,,,,,,,,
-# contains_base_share_of_real_free_ir = loop_only_ir(dealloc_contains_base_probe_only_16b) / loop_only_ir(dealloc_free_only_16b) = 1101 / 5920 = 0.1860 (18.6%) -- MATERIAL (>10%)
+# contains_base_share_of_real_free_ir = loop_only_ir(dealloc_contains_base_probe_only_16b) / loop_only_ir(dealloc_free_only_16b) = 1101 / 5920 = 0.1860 (18.6%) -- MATERIAL (>10%) -- SUPERSEDED 2026-07-27 (task #370/R23-1): this composite figure bundles segment_base_of_ptr + contains_base + call-boundary overhead, see the R23-1 rows below for the isolated decomposition
+#
+# --- R23-1 (task #370) correction, 2026-07-27: isolated contains_base-only vs segment_base_of_ptr-only decomposition ---
+6b4ac50,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,dealloc_prealloc_only_16b,7003,64,0,7003,
+6b4ac50,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,dealloc_free_only_16b,12923,64,7003,5920,92.5
+6b4ac50,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,dealloc_contains_base_probe_only_16b,8104,64,7003,1101,17.2
+6b4ac50,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,dealloc_segment_base_of_ptr_probe_only_16b,7581,64,7003,578,9.0
+6b4ac50,production,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8C/16T),linux (WSL2 6.18.33.2-microsoft-standard-WSL2),1.98.0-nightly (bd08c9e71 2026-06-25),3.22.0,contains_base_only_derived,,64,,523,8.2
+# verdict_r23_1,,,,,,,,,,,
+# segment_base_of_ptr_only_share_of_real_free_ir = 578 / 5920 = 0.0976 (9.8%)
+# contains_base_only_share_of_real_free_ir (CORRECTED, cite this one) = (1101 - 578) / 5920 = 523 / 5920 = 0.0884 (8.8%) -- MATERIAL (still double-digit-adjacent, not negligible), NOT 18.6%
+# sanity_check: segment_base_of_ptr_only_ir (578) + contains_base_only_ir (523) = 1101 = composite_probe_loop_ir exactly

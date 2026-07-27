@@ -154,6 +154,28 @@ fn small_churn_16b() {
 // `alloc-xthread`, `HeapCore::dealloc` takes the `dealloc_own_thread` branch
 // directly (no `contains_base` call at all), so there would be nothing to
 // isolate.
+//
+// R23-1 (task #370) CORRECTION: an independent read-only review
+// (`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found that
+// `dealloc_contains_base_probe_only_16b`'s timed loop calls BOTH
+// `dbg_segment_base_of_ptr(ptr)` AND `dbg_contains_base(base)` per iteration
+// -- so its Ir bundles `segment_base_of_ptr`'s own arithmetic, the two
+// separate non-inlined call/return boundaries, and `contains_base`'s real
+// work together under one "contains_base probe" label. The 18.6% headline
+// (`docs/perf/R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md`) is therefore a
+// routing-prefix upper envelope, not an isolated `contains_base`-only cost.
+// `dealloc_segment_base_of_ptr_probe_only_16b` below adds the missing
+// counterfactual: the SAME loop shape, calling ONLY `dbg_segment_base_of_ptr`
+// (never `dbg_contains_base`) -- so its loop-only Ir isolates
+// `segment_base_of_ptr` alone. Given both loop-only figures:
+//   base_only_loop_ir     = dealloc_segment_base_of_ptr_probe_only_16b_ir - prealloc_only_ir
+//   contains_base_only_ir = probe_loop_ir - base_only_loop_ir
+// isolates `contains_base`'s OWN cost (the composite probe loop minus the
+// base-only loop), leaving the two calls' call/return-boundary overhead
+// bundled into the composite delta (not separately isolable without changing
+// this file's established "isolate via subtraction of shared-prefix arms"
+// pattern into per-instruction Callgrind attribution, which is out of scope
+// here -- see the report's correction section for that residual).
 #[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
 #[library_benchmark]
 fn dealloc_prealloc_only_16b() {
@@ -238,6 +260,52 @@ fn dealloc_contains_base_probe_only_16b() {
             let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
             let hit = unsafe { (*heap).dbg_contains_base(base) };
             black_box(hit);
+        }
+    }
+}
+
+// R23-1 (task #370) — isolates JUST `segment_base_of_ptr`, the missing
+// counterfactual `docs/reviews/2026-07-26-r22-readonly-review.md` (P1)
+// flagged: `dealloc_contains_base_probe_only_16b` above calls
+// `dbg_segment_base_of_ptr` THEN `dbg_contains_base` in its timed loop, so its
+// Ir bundles both functions' cost (plus two call/return boundaries) under one
+// "contains_base probe" label. This arm is BYTE-IDENTICAL to
+// `dealloc_contains_base_probe_only_16b` except the timed loop calls ONLY
+// `dbg_segment_base_of_ptr` -- never `dbg_contains_base` -- so its loop-only
+// Ir (this arm's raw Ir minus `dealloc_prealloc_only_16b`'s) isolates
+// `segment_base_of_ptr`'s own cost alone. Subtracting THIS arm's loop-only Ir
+// from `dealloc_contains_base_probe_only_16b`'s loop-only Ir then isolates
+// `contains_base`'s own cost (the composite minus the base-only piece; the
+// two calls' non-inlined call/return-boundary overhead remains bundled into
+// that difference -- seeing it separately would need per-instruction
+// Callgrind attribution, out of scope for this subtraction-based harness).
+// The pointers are never freed (same harmless per-process leak as the sibling
+// probe arm). Requires `alloc-xthread`, though `dbg_segment_base_of_ptr` itself
+// only needs `alloc-global`: kept under the same `alloc-xthread` gate as its
+// sibling arms so the three probe arms compile under the identical feature
+// predicate and stay directly comparable.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_segment_base_of_ptr_probe_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: `segment_base_of_ptr` ALONE -- deliberately does NOT call
+    // `dbg_contains_base`, unlike the composite probe arm above. Isolates the
+    // base-computation half of the routing prefix.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            black_box(base);
         }
     }
 }
@@ -826,6 +894,7 @@ library_benchmark_group!(
         dealloc_prealloc_only_16b,
         dealloc_free_only_16b,
         dealloc_contains_base_probe_only_16b,
+        dealloc_segment_base_of_ptr_probe_only_16b,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,

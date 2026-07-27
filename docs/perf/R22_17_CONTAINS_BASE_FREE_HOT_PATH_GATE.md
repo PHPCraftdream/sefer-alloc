@@ -1,5 +1,19 @@
 # R22-17 — `contains_base`'s share of a real free's `Ir`: measured MATERIAL (18.6%)
 
+> **CORRECTED 2026-07-27 (task #370, R23-1) — see §7.** The 18.6% figure
+> below is preserved verbatim as already-published history (do not re-derive
+> or delete it), but it is a **routing-prefix upper envelope**
+> (`segment_base_of_ptr` + `contains_base` + call-boundary overhead bundled
+> together), NOT an isolated `contains_base`-only cost — an independent
+> read-only review (`docs/reviews/2026-07-26-r22-readonly-review.md` P1)
+> found this and it was independently re-verified against the bench code.
+> **The corrected, properly isolated `contains_base`-only share of a real
+> free's `Ir` is 8.8% (523 / 5,920)**, with `segment_base_of_ptr`-only at 9.8%
+> (578 / 5,920) — together summing to the original composite share (8.8% +
+> 9.8% = 18.6%, no residual overhead component once decomposed this way; see
+> §7 for the full arithmetic and why). Cite **8.8%**, not 18.6%, as
+> `contains_base`'s own share going forward.
+
 **Task #368 (R22-17), Round 22.** Follows up @ox's independent Round 19-21
 review (`docs/reviews/2026-07-26-oh-review-r19-r21.md` §2.3.2), which flagged
 `HeapCore::dealloc_routing`'s `contains_base` own-thread ownership probe
@@ -373,22 +387,192 @@ instruction not to commit).
   — it is measurement-only tooling, consistent with the other `dbg_*` hooks
   in this file that exist purely to serve one test/bench caller).
 
+---
+
+## 7. CORRECTION (2026-07-27, task #370, R23-1) — isolating `contains_base` from `segment_base_of_ptr`
+
+### 7.1 What was wrong
+
+An independent read-only review
+(`docs/reviews/2026-07-26-r22-readonly-review.md` P1) found — and this task
+personally re-verified against `benches/perf_gate_iai.rs:236-243` (pre-R23-1
+line numbers) — that `dealloc_contains_base_probe_only_16b`'s timed loop is:
+
+```text
+let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+let hit = unsafe { (*heap).dbg_contains_base(base) };
+black_box(hit);
+```
+
+This is **two** function calls, not one: `dbg_segment_base_of_ptr` computes
+the base address FIRST (mirroring `dealloc_routing`'s own
+`os::segment_base_of_ptr(ptr)` call, `heap_core_xthread.rs:750`), and only
+THEN is that base handed to `dbg_contains_base`, which delegates straight to
+`SegmentTable::contains_base` (`src/registry/heap_core_diag.rs:385-387`) —
+confirmed by reading `dbg_contains_base`'s own body: it takes an
+already-computed `base: *mut u8` parameter and does nothing but forward it;
+it does NOT compute the base internally. So the probe arm's 1,101 loop-only
+Ir (§3's table) is `segment_base_of_ptr`'s own arithmetic +
+`contains_base`'s own two-tier check + two non-inlined call/return
+boundaries + the `black_box` — not `contains_base` alone. §0's "18.6%" and
+§4's MATERIAL verdict conflated all of that under one label. The review's
+independently-flagged "conservative lower bound" claim (§1.2, §4) is also
+retracted as unproven in either direction — see §7.4.
+
+### 7.2 The new isolated arm
+
+`dealloc_segment_base_of_ptr_probe_only_16b` (`benches/perf_gate_iai.rs`) is
+BYTE-IDENTICAL to `dealloc_contains_base_probe_only_16b` — same
+pre-allocation prefix, same `CHURN_OPS` (64) loop shape — except its timed
+loop calls ONLY `dbg_segment_base_of_ptr`, never `dbg_contains_base`:
+
+```text
+let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+black_box(base);
+```
+
+No new `#[doc(hidden)]` hook was needed: `dbg_segment_base_of_ptr` already
+existed (`src/registry/heap_core_diag.rs:243-245`, added R11-2), reused
+as-is. Following this file's own established "isolate via subtraction of a
+shared pre-allocation prefix" pattern (the same one `dealloc_prealloc_only_16b`
+/ `dealloc_free_only_16b` / `dealloc_contains_base_probe_only_16b` already
+use) — no new mechanism invented.
+
+### 7.3 Measured numbers — real `npm run iai`, two independent runs, byte-identical
+
+Measured on `main` @ commit `6b4ac50` (working tree otherwise carrying only
+this task's own additive edits at measurement time). Same platform as R22-17:
+WSL2 (Ubuntu, kernel `6.18.33.2-microsoft-standard-WSL2`) under Windows 10 Pro
+x86-64, `valgrind 3.22.0`, `iai-callgrind-runner 0.14.2`, WSL rustc
+`1.98.0-nightly (bd08c9e71 2026-06-25)`.
+
+Two runs: a full 24-bench `npm run iai` and an independent re-run filtered to
+`dealloc*` (`npm run iai -- dealloc`). Both produced **byte-identical** Ir/L1/
+L2/RAM/EstCycles for every dealloc-family bench, including the new arm — raw
+stdout committed (truncated per the project's truncation-marker convention;
+cargo's dependency-compile noise is cut, the bench output block is verbatim):
+
+- `docs/perf/_raw_r23_1_contains_base_isolation_full.log`
+- `docs/perf/_raw_r23_1_contains_base_isolation_rerun1.log`
+
+| bench | raw Ir | ops | loop-only Ir (raw − 7,003 prefix) | loop-only Ir/op |
+|---|---:|---:|---:|---:|
+| `dealloc_prealloc_only_16b` (shared prefix alone) | 7,003 | 64 | 0 (baseline) | — |
+| `dealloc_free_only_16b` (real free loop) | 12,923 | 64 | 5,920 | 92.5 |
+| `dealloc_contains_base_probe_only_16b` (composite: base + contains_base) | 8,104 | 64 | 1,101 | 17.2 |
+| **`dealloc_segment_base_of_ptr_probe_only_16b` (base-only, NEW)** | **7,581** | 64 | **578** | **9.03** |
+
+(First three rows reproduce §3's original numbers exactly — same commit
+lineage, same deterministic Callgrind emulation, confirming nothing else
+drifted.)
+
+### 7.4 Decomposition — the real, isolated `contains_base`-only share
+
+```text
+base_only_loop_ir      = 7,581 − 7,003                              = 578
+composite_probe_loop_ir = 8,104 − 7,003                              = 1,101
+contains_base_only_ir  = composite_probe_loop_ir − base_only_loop_ir = 1,101 − 578 = 523
+
+real_free_loop_ir = 12,923 − 7,003 = 5,920
+
+contains_base-only share of a real free's Ir      = 523 / 5,920 = 0.0884 → 8.8%
+segment_base_of_ptr-only share of a real free's Ir = 578 / 5,920 = 0.0976 → 9.8%
+sum (= original composite share, sanity check)     = 523 + 578 = 1,101 = composite_probe_loop_ir ✓ (18.6% recovered exactly)
+```
+
+**The corrected, isolated `contains_base`-only share of a real free's `Ir` is
+8.8% (523 / 5,920), not 18.6%.** `segment_base_of_ptr`'s own arithmetic
+(9.8%, 578/5,920) turns out to be the SLIGHTLY LARGER of the two pieces
+bundled into the original composite — a genuinely new finding this
+correction surfaces, not something §0–§4 could see.
+
+**On the "call/return-boundary overhead" the task asked to isolate:** this
+subtraction-based decomposition has NO separate residual term — `578 + 523 =
+1,101` exactly, with nothing left over. That is expected, not a sign the
+overhead vanished: each isolated arm (`dealloc_segment_base_of_ptr_probe_
+only_16b` and, implicitly, a hypothetical contains_base-only arm this
+decomposition never directly measures) still pays its OWN one call/return
+boundary; subtracting the base-only arm's Ir from the composite arm's Ir
+cancels the base-computation's call overhead along with its arithmetic,
+leaving `contains_base`'s call overhead bundled into the 523 figure (not
+isolable further without changing this file's whole measurement strategy
+to per-instruction Callgrind attribution — out of scope here, noted as a
+residual limitation, not silently ignored). So "8.8%" is `contains_base`
+(including its own one call boundary), not `contains_base`'s pure body
+alone with zero call overhead — a caveat honestly carried forward rather
+than claimed away.
+
+### 7.5 Revised verdict
+
+`contains_base` alone still clears a MATERIAL bar (8.8% — a mid-single/
+low-double-digit share, not the ~18.6% originally claimed, but still not
+negligible) on this single-hot-segment Tier-1-cache-hit workload. The
+`OWN_CACHE_SIZE`-workload caveat from §1.2/§4 (a workload spanning more than
+4 concurrently-hot segments would fall through to Tier 2 more often) is
+UNCHANGED by this correction — it was about `contains_base`'s own two-tier
+structure, not about the base/overhead conflation this correction fixes —
+but the "conservative lower bound" framing itself is retracted as unproven
+(the read-only review's own point): whether Tier-2 hash-probe workloads
+would show MORE than 8.8% remains an open, unverified claim, not a proven
+floor. §4's design-sketch discussion (header-first alternative, soundness
+caveat) is UNCHANGED by this correction — it was never contingent on the
+exact percentage, only on `contains_base` being non-negligible, which
+remains true at 8.8%.
+
+### 7.6 Verification performed (this correction)
+
+- Read the exact pre-existing probe-arm call chain
+  (`benches/perf_gate_iai.rs`, `dealloc_contains_base_probe_only_16b`) and
+  `dbg_contains_base`'s body (`src/registry/heap_core_diag.rs:385-387`) —
+  confirmed `dbg_contains_base` takes an already-computed `base` parameter
+  and does not compute it internally, confirming the review's finding
+  precisely.
+- Added `dealloc_segment_base_of_ptr_probe_only_16b`, following the exact
+  established shared-prefix-subtraction pattern already used by the other
+  three arms in this file — no new `#[doc(hidden)]` hook needed
+  (`dbg_segment_base_of_ptr` already existed).
+- Ran `npm run iai` (full 24-bench suite) then `npm run iai -- dealloc`
+  (independent re-run, filtered) — byte-identical Ir/L1/L2/RAM/EstCycles for
+  the new arm and all three pre-existing dealloc arms across both runs.
+- `cargo fmt --check -- benches/perf_gate_iai.rs` — clean.
+- Confirmed `production`'s feature composition is unchanged (no `Cargo.toml`
+  edit in this task).
+- No production code touched — `src/registry/heap_core_diag.rs` unchanged by
+  this task (the existing `dbg_segment_base_of_ptr`/`dbg_contains_base` hooks
+  were reused as-is); only `benches/perf_gate_iai.rs` gained the one new bench
+  function + its registration in `library_benchmark_group!`.
+
+---
+
 ## Raw logs and files needing `git add -f`
 
 `.gitignore` excludes `docs/perf/_raw_*.log` by default (R13-10/task #280);
-these two are the evidentiary basis for this report's verdict and need
+these are the evidentiary basis for this report's verdicts and need
 `git add -f`:
 
 - `docs/perf/_raw_r22_17_contains_base_free_hot_path.log` — full raw
-  `npm run iai` stdout, run 1 (production, 23 benches).
+  `npm run iai` stdout, run 1 (production, 23 benches). Original R22-17
+  evidence, unchanged.
 - `docs/perf/_raw_r22_17_contains_base_free_hot_path_rerun1.log` — full raw
   `npm run iai` stdout, run 2 (independent process re-run, confirms
-  byte-identical Ir).
+  byte-identical Ir). Original R22-17 evidence, unchanged.
+- `docs/perf/_raw_r23_1_contains_base_isolation_full.log` — full raw
+  `npm run iai` stdout (production, 24 benches, includes the new
+  `dealloc_segment_base_of_ptr_probe_only_16b` arm), truncated (cargo
+  compile noise cut, bench output verbatim) — R23-1 correction evidence.
+- `docs/perf/_raw_r23_1_contains_base_isolation_rerun1.log` — independent
+  re-run filtered to `dealloc*` benches (`npm run iai -- dealloc`), confirms
+  byte-identical Ir for the new arm — R23-1 correction evidence.
 
 Not gitignored, tracked normally (no `-f` needed):
 
-- `docs/perf/R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` — this report.
+- `docs/perf/R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` — this report
+  (§7 is the R23-1 correction).
 - `docs/perf/R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE_summary.csv` —
-  machine-readable companion (R14-10/task #295 convention).
-- `benches/perf_gate_iai.rs` — the three new bench arms.
-- `src/registry/heap_core_diag.rs` — the new `dbg_contains_base` hook.
+  machine-readable companion (R14-10/task #295 convention), extended with
+  the new isolated-arm rows.
+- `benches/perf_gate_iai.rs` — the three original R22-17 arms (unchanged)
+  plus the one new R23-1 isolation arm
+  (`dealloc_segment_base_of_ptr_probe_only_16b`).
+- `src/registry/heap_core_diag.rs` — unchanged by R23-1 (both hooks it needed
+  already existed).
