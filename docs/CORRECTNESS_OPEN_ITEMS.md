@@ -173,6 +173,30 @@ was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
      found it (a fix for `tests/r21_2_opt_h_stage1_precondition_probe.rs`'s
      own unrelated `--all-features` geometry bug).
 
+4. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
+   assertion proves no double-release, not no leak.**
+
+   - **First observed:** independent read-only review of `bc4aacf`
+     (`docs/reviews/2026-07-27-post-r22-followups-readonly-review.md`),
+     surfaced while verifying `bc4aacf`'s test-isolation-race fix (see
+     "Recently resolved" below for that fix itself).
+   - **The gap:** `tests/r14_4_promotion_free_correctness.rs`'s assertion
+     `released_delta <= reserved_delta` (line ~157) only proves the
+     released count never exceeds the reserved count — a
+     double-release/corruption guard. It does NOT prove no leak: if a grow
+     reserves a segment and never releases it, `reserved_delta=1,
+     released_delta=0` satisfies `0 <= 1` trivially, so a genuinely leaked
+     (never-released) segment would pass this assertion silently.
+   - **Status:** pre-existing (predates `bc4aacf`, which correctly left it
+     untouched — that commit's scope was the test-isolation race only, not
+     the assertion's own semantics). Not yet scheduled for a fix.
+   - **Possible future strengthening (not decided/scheduled here):** a
+     per-heap/per-allocation observable (e.g. asserting the specific freed
+     promoted base is no longer registered / reachable, or is in an
+     expected bounded decommit/cache state) rather than a process-global
+     reserved/released delta, which by construction cannot distinguish
+     "still held by something else" from "genuinely never released."
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
@@ -215,4 +239,18 @@ was resolved by an urgent CI-fix task — see "Recently resolved" below.)_
      invocations — 0 failures out of roughly 200+ total runs, against the
      historical ~1-in-3 failure rate. `cargo fmt --check` clean on the
      changed file.
-   - **Files changed:** `tests/r14_4_promotion_free_correctness.rs` only.
+   - **Files changed (test/implementation only):**
+     `tests/r14_4_promotion_free_correctness.rs`; this index entry itself
+     is the second file touched in the same commit (`bc4aacf`).
+   - **Scope of what this fix actually proves:** this fix resolved the
+     test-ISOLATION RACE only — it did not touch, and did not strengthen,
+     the test's own leak-bound assertion (`released_delta <=
+     reserved_delta`). That assertion is a DOUBLE-RELEASE guard (released
+     count never exceeding reserved count), not a proof of no leak: if a
+     grow reserved a segment and never released it, `reserved_delta=1,
+     released_delta=0` satisfies `0 <= 1` trivially, so a genuine
+     never-released segment would not be caught by this test. This
+     semantic gap pre-dates `bc4aacf` and was correctly left untouched by
+     it — fixing the test-isolation race was that commit's actual, correct
+     scope. See open item 4 above ("Open items" §`[T]`) for a tracked
+     follow-up on strengthening leak detection itself.

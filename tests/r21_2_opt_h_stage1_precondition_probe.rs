@@ -65,9 +65,9 @@
 //!    of `SCENARIO_3_OLD_SIZE` actually fit in a fresh segment under the
 //!    CURRENT build's feature combination (`discover_fresh_segment_capacity`),
 //!    then searching the real carved offsets for a candidate, rather than
-//!    hardcoding an assumed count/index (see the R22-15 note below — the
-//!    original hardcoded "9 objects, 8th-carved" assumption broke under
-//!    `--all-features`, where fewer objects fit). Asserts
+//!    hardcoding an assumed count/index (see the post-R22 follow-up note
+//!    below — the original hardcoded "9 objects, 8th-carved" assumption
+//!    broke under `--all-features`, where fewer objects fit). Asserts
 //!    `dbg_opt_h_attempts()` increments by 1 and `dbg_opt_h_hits()` does
 //!    NOT increment — and because alignment is independently satisfied
 //!    here, a hit could ONLY be explained by the tail-adjacency check being
@@ -123,8 +123,9 @@
 //! `small-segment-lazy-commit`, `experimental`, and every other feature this
 //! crate defines also turned on.
 //!
-//! **R22-15 (task #366): scenario 3's own `--all-features` gap, found and
-//! closed.** Scenario 3 (added in R22-2, task #353, after the R22-11
+//! **Post-R22 follow-up to R22-2/task #353 (commit f2764f7): scenario 3's
+//! own `--all-features` gap, found and closed.** Scenario 3 (added in
+//! R22-2, task #353, after the R22-11
 //! verification above) had NOT itself been re-run under `--all-features`
 //! before this task — exactly the gap R22-11 had closed for scenarios 1/2 —
 //! and when `npm run check`'s `test (--all-features)` step finally exercised
@@ -196,7 +197,8 @@ const NEW_SIZE: usize = 1024 * KIB;
 /// position under every feature combination checked so far (see
 /// `discover_fresh_segment_capacity` and
 /// `opt_h_attempts_but_not_hits_for_an_aligned_but_non_tail_grow`, which
-/// DISCOVER that position at test time rather than hardcoding it — R22-15),
+/// DISCOVER that position at test time rather than hardcoding it —
+/// post-R22 follow-up to R22-2/task #353, commit f2764f7),
 /// so scenario 3 uses this different pair instead of forcing the 768 KiB
 /// pair to do double duty.
 const SCENARIO_3_OLD_SIZE: usize = 384 * KIB;
@@ -257,20 +259,24 @@ fn alloc_into_first_segment(a: &mut AllocCore, count: usize) -> Vec<(*mut u8, us
 /// object size — needed by scenario 3, which carves `SCENARIO_3_OLD_SIZE`
 /// (384 KiB) objects rather than scenarios 1/2's `OLD_SIZE` (768 KiB).
 ///
-/// Allocates up to `count` objects of `size` bytes, stopping EARLY (without
-/// carving the one that would spill) the moment an allocation's segment base
-/// differs from the first one's — i.e. this never asserts a fixed carve
-/// count holds; it discovers how many actually fit in the fresh segment
-/// under the CURRENT build's exact feature combination (segment/metadata
+/// Allocates up to `count` objects of `size` bytes, stopping EARLY (the
+/// spilling allocation itself still happens — `a.alloc` cannot know in
+/// advance whether it will land in a new segment before the call — but it
+/// is excluded from the returned/counted set and left un-freed until the
+/// `AllocCore` is dropped) the moment an allocation's segment base differs
+/// from the first one's — i.e. this never asserts a fixed carve count
+/// holds; it discovers how many actually fit in the fresh segment under
+/// the CURRENT build's exact feature combination (segment/metadata
 /// footprint varies by feature set, e.g. `hardened`'s per-`MIN_BLOCK`-granule
-/// generation table — see the module doc's R22-2/R22-15 note). Returns
-/// `(carved, spilled)`: `carved` holds only the objects that landed in the
-/// first segment (in call order), and `spilled` is `true` iff fewer than
-/// `count` objects fit (i.e. the `count`-th call would have, or did, spill
-/// into a new segment) — callers that need an exact count to hold treat
-/// `spilled` as a hard failure (see [`alloc_into_first_segment`]); callers
-/// that only need "as many as actually fit" (scenario 3) use `carved.len()`
-/// directly instead of asserting against a hardcoded expectation.
+/// generation table — see the module doc's R22-2/post-R22-follow-up
+/// note). Returns `(carved, spilled)`: `carved` holds only the objects
+/// that landed in the first segment (in call order), and `spilled` is
+/// `true` iff fewer than `count` objects fit (i.e. the `count`-th call
+/// would have, or did, spill into a new segment) — callers that need an
+/// exact count to hold treat `spilled` as a hard failure (see
+/// [`alloc_into_first_segment`]); callers that only need "as many as
+/// actually fit" (scenario 3) use `carved.len()` directly instead of
+/// asserting against a hardcoded expectation.
 fn alloc_sized_into_first_segment(
     a: &mut AllocCore,
     size: usize,
@@ -317,7 +323,8 @@ fn alloc_sized_into_first_segment(
 /// supports — it exists only to keep the probe finite, not as an assumed
 /// answer.
 ///
-/// **Why this replaced a hardcoded count (R22-15).** Scenario 3's original
+/// **Why this replaced a hardcoded count (post-R22 follow-up to
+/// R22-2/task #353, commit f2764f7).** Scenario 3's original
 /// design (R22-2) hardcoded "a fresh segment fits exactly 9 objects of
 /// `SCENARIO_3_OLD_SIZE` (384 KiB)" — true under
 /// `production,medium-classes,alloc-stats`, but NOT under `--all-features`,
@@ -535,7 +542,8 @@ fn opt_h_attempts_but_not_hits_for_a_non_tail_adjacent_grow() {
 /// 768 KiB pair has no carve position that is both new-class-aligned and
 /// non-tail within one fresh segment. The exact carve COUNT and target
 /// offset are DISCOVERED at test time (not hardcoded — see
-/// `discover_fresh_segment_capacity`'s doc comment for why R22-15 replaced
+/// `discover_fresh_segment_capacity`'s doc comment for why the post-R22
+/// follow-up to R22-2/task #353 (commit f2764f7) replaced
 /// the original hardcoded "9 objects, index 2" assumption, which broke
 /// under `--all-features`).
 #[test]
