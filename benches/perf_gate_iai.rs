@@ -380,6 +380,310 @@ fn dealloc_segment_base_of_ptr_probe_only_16b() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// R23-3 (task #372) -- full orthogonal hot-path attribution, following up on
+// the read-only review's P0 recommendation
+// (`docs/reviews/2026-07-26-r22-readonly-review.md` §4.1): R22-17/R23-1
+// isolated `contains_base` (8.8%) and `segment_base_of_ptr` (9.8%) as point
+// components of a real free's Ir; this block isolates the REMAINING pieces
+// of the hot alloc/free path as far as they can be cleanly separated without
+// perturbing the very thing being measured (the Heisenberg risk the task
+// brief warned about). See `docs/perf/R23_3_HOT_PATH_ATTRIBUTION_GATE.md`
+// for the full decomposition, including what could NOT be cleanly isolated
+// and why.
+// ---------------------------------------------------------------------------
+
+// R23-3 -- hot ALLOC, magazine-HIT isolation. `HeapCore::alloc`'s magazine
+// fast path (`src/registry/heap_core_alloc.rs`) is: array pop (decrement
+// `count`, read `slots[new_cnt]`) + (under `production`, no `hardened`) one
+// `clear_magazine` bitmap write. To isolate JUST this pop cost (no carve, no
+// refill, no free intermixed), the magazine must already hold resident
+// blocks when the timed hit-drain runs. `TCACHE_CAP` (16, `src/registry/
+// tcache.rs`) bounds how many blocks one class's magazine can hold at once.
+//
+// **A first draft of this pair used the N/2N technique directly on a
+// repeated fill/drain LOOP (double the CYCLE count for 2N) and got a
+// nonsensical result: 136.6 Ir/op for a "hit-only" pop, MORE than
+// `small_churn_16b`'s own 69.0 Ir/op for a full alloc+free PAIR.** Root
+// cause, found by treating that as the red flag it was rather than
+// reporting it: doubling the cycle count doubles BOTH the fill work (carve
+// 16 + free 16) AND the hit-drain work (pop 16) in lockstep -- since fill and
+// hit are 1:1 (every pop drains a block the SAME cycle just pushed), `c =
+// (Ir(2N)-Ir(N))/N` computed a per-CYCLE marginal cost (carve+free+hit,
+// ~48 ops) divided by the wrong op count, not a hit-only marginal cost. This
+// is disclosed here rather than silently fixed, per this project's
+// zero-trust convention.
+//
+// **The corrected design** uses SHARED-PREFIX subtraction (R22-17/R23-1's
+// established technique) instead: `alloc_magazine_prefill_only_16b` runs the
+// fill (carve+free, populating the magazine to `MAGAZINE_FILL`=16 resident
+// blocks) `PREFILL_CYCLES` times with NO hit-drain at all after the last
+// fill. `alloc_magazine_hit_only_16b` is BYTE-IDENTICAL except it adds ONE
+// final hit-drain (16 pops, all magazine HITS -- `count` was just left at 16
+// by the last fill) after the same `PREFILL_CYCLES` fills. Subtracting the
+// prefill arm's Ir from the hit arm's Ir isolates exactly `MAGAZINE_FILL`
+// (16) hits' cost, with the (byte-identical, `PREFILL_CYCLES`-fold) fill
+// cost cancelled exactly -- the same shared-prefix pattern
+// `dealloc_prealloc_only_16b` already established for the free side, applied
+// here because the interleaved-cycle N/2N shape does not validly isolate
+// this component (see the paragraph above).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+const MAGAZINE_FILL: usize = 16; // TCACHE_CAP, duplicated here (bench-local,
+                                 // registry::tcache::TCACHE_CAP is not `pub`).
+                                 // Number of fill (carve+free) cycles BEFORE the timed hit-drain. Matches
+                                 // `CHURN_OPS / MAGAZINE_FILL` purely so the shared prefix's total op count is
+                                 // the same order of magnitude as this file's other CHURN_OPS-scale arms --
+                                 // not load-bearing for correctness (any positive cycle count would do; both
+                                 // arms below share the identical prefill loop).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+const PREFILL_CYCLES: usize = CHURN_OPS / MAGAZINE_FILL;
+
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn alloc_magazine_prefill_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        // Carve 16 fresh blocks (never magazine-resident before -- these are
+        // carve/refill misses, not hits).
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        // Populate the magazine: free all 16 -- each push lands in the
+        // magazine (count 0 -> 16), through the real
+        // `dealloc_own_thread_with_base` push path. After the LAST cycle,
+        // the magazine is left holding 16 resident blocks and this arm does
+        // NOT drain them -- that is exactly the shared prefix
+        // `alloc_magazine_hit_only_16b` below adds ONE more step onto.
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
+// R23-3 -- BYTE-IDENTICAL to `alloc_magazine_prefill_only_16b` except for ONE
+// added step after the shared prefill loop: drain the 16 blocks the last
+// fill cycle just pushed. `count` is 16 at that point (just populated,
+// never touched since), so every one of these 16 `alloc` calls is a
+// magazine HIT (`cnt > 0` every time, no refill). Subtracting the prefill
+// arm's Ir from this arm's Ir isolates exactly 16 hits' cost -- see the
+// module note above `MAGAZINE_FILL` for why this replaced an N/2N attempt
+// that did not validly isolate this component.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn alloc_magazine_hit_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+    // Timed-in-spirit region: drain the magazine ONE more time. `count`
+    // starts at 16 (just populated by the last prefill cycle) and every one
+    // of these 16 `alloc` calls pops from it -- all 16 are magazine HITS,
+    // never a miss/refill.
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+}
+
+// R23-3 -- free routing, Tier-2 (8192-slot open-addressing hash probe)
+// isolation. R22-17/R23-1's `contains_base` isolation measures Tier-1's
+// cache-HIT cost (this crate's benched workloads never span more than
+// `OWN_CACHE_SIZE` (4) concurrently-hot segments, so Tier-2 never fires
+// there). `dbg_hash_contains_only` (`src/alloc_core/segment_table.rs`,
+// exposed via `HeapCore::dbg_hash_contains_only`) calls the SAME production
+// `hash_contains` routine directly, unconditionally skipping the Tier-1
+// `own_cache` check -- deterministically isolating Tier-2's cost regardless
+// of OS-assigned segment addresses (see that hook's doc comment for why a
+// >4-distinct-segment WORKLOAD cannot portably force a Tier-2 hit the way a
+// direct call can). Same shared pre-allocation prefix shape as the sibling
+// probe arms above.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_hash_contains_only_probe_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: `segment_base_of_ptr` + Tier-2-only probe. Mirrors the
+    // composite `dealloc_contains_base_probe_only_16b` arm's shape exactly,
+    // swapping `dbg_contains_base` for `dbg_hash_contains_only` -- so
+    // subtracting `dealloc_segment_base_of_ptr_probe_only_16b`'s loop-only Ir
+    // from this arm's loop-only Ir isolates Tier-2's own cost, the same
+    // subtraction R23-1 used to isolate Tier-1's `contains_base`.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            let hit = unsafe { (*heap).dbg_hash_contains_only(base) };
+            black_box(hit);
+        }
+    }
+}
+
+// R23-3 -- free's POST-ROUTING body isolation: the M2 double-free oracle
+// checks (in-magazine bitmap probe + flushed/alloc-bitmap probe) and the
+// magazine push itself, i.e. everything `dealloc_own_thread_with_base`
+// (`src/registry/heap_core_free.rs`) does once ownership is already
+// established. Investigated first (per the task brief): reading
+// `dealloc_own_thread_with_base`'s body shows the oracle checks and the
+// magazine push share the SAME `base`/`off`/`meta` locals in one straight-
+// line block with no branch boundary between "check" and "push" for the
+// common (non-double-free, non-overflow) case -- they are NOT two separable
+// mechanisms the way `segment_base_of_ptr`/`contains_base` were; splitting
+// them further would need a new hook that changes what a real free actually
+// does (reading the bitmap without ever writing the magazine slot is not a
+// thing the production path does), the exact Heisenberg risk the task brief
+// warned about. So this arm isolates BOTH together, as the smallest honestly
+// separable unit past the routing prefix.
+//
+// `dbg_dealloc_own_thread_with_base` (`src/registry/heap_core_diag.rs`) is
+// the real `dealloc_own_thread_with_base` body, called with a
+// pre-computed base exactly as `dealloc_routing` calls it once
+// `contains_base` returns true -- so this arm's loop is
+// `segment_base_of_ptr` + the REAL own-thread free body, deliberately
+// skipping `contains_base`. Subtracting
+// `dealloc_segment_base_of_ptr_probe_only_16b`'s loop-only Ir from this
+// arm's isolates the post-routing body alone; it should also equal
+// `dealloc_free_only_16b`'s loop-only Ir minus BOTH `contains_base`'s (R23-1)
+// AND `segment_base_of_ptr`'s own isolated shares -- a cross-check performed
+// in the report, not assumed.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+#[library_benchmark]
+fn dealloc_own_thread_body_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: `segment_base_of_ptr` + the real own-thread free body,
+    // deliberately skipping `contains_base` (already isolated by R23-1).
+    // Actually frees every block through the production push/oracle path --
+    // no bypass, no alternate implementation.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            let base = unsafe { (*heap).dbg_segment_base_of_ptr(ptr) };
+            // SAFETY: `ptr` was returned by the alloc loop above with `layout`
+            // and is freed exactly once here; `base` is `ptr`'s true segment
+            // base (`dealloc_routing`'s own `contains_base` check already
+            // proved this same relationship in the sibling production path).
+            unsafe { (*heap).dbg_dealloc_own_thread_with_base(ptr, layout, base) };
+        }
+    }
+}
+
+// R23-3 -- cold CARVE isolation: `AllocCore::carve_batch`
+// (`src/alloc_core/alloc_core_small.rs`), the batched sibling of
+// `carve_block` that `carve_block_with_refill`'s refill loop calls
+// one-block-at-a-time. `dbg_carve_batch` (pre-existing test hook, task W4)
+// drives it DIRECTLY against a bare `AllocCore` -- no magazine, no
+// `HeapRegistry`/`HeapCore` plumbing, no BinTable refill push-back -- so
+// this arm isolates the pure bump-cursor-advance + (lazy-commit builds only)
+// commit-frontier-grow cost, without `carve_block_with_refill`'s per-extra-
+// block `dealloc_small` push into the BinTable (`cold_alloc_free_256x16b`
+// exercises that fuller path already). Freshly-constructed `AllocCore`, so
+// every carved block is genuinely virgin bump-cursor advance, never a
+// freelist pop -- see the recycle-pop isolation note below (near
+// `recycle_alloc_free_256x16b`) for the recycle-pop counterfactual, derived
+// via shared-prefix subtraction against `cold_alloc_free_256x16b`'s existing
+// row rather than a new bench arm.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn carve_batch_only_16b() {
+    let mut core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let class_idx = core
+        .dbg_layout_class_for(layout)
+        .expect("16 B/align 8 must resolve to a small class");
+    let mut out: [*mut u8; COLD_BATCH] = [core::ptr::null_mut(); COLD_BATCH];
+    let n = core.dbg_carve_batch(class_idx, &mut out);
+    black_box(&out[..n]);
+}
+
+// R23-3 -- the `2N` sibling, byte-identical except for the batch size
+// (`COLD_BATCH_2N`), for the N/2N marginal cost derivation. Uses a fresh
+// `AllocCore` (its own one-time bootstrap `B`), exactly as every other N/2N
+// pair in this file uses a fresh process/allocator per arm.
+#[cfg(target_os = "linux")]
+#[library_benchmark]
+fn carve_batch_only_16b_2n() {
+    let mut core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+    let class_idx = core
+        .dbg_layout_class_for(layout)
+        .expect("16 B/align 8 must resolve to a small class");
+    let mut out: [*mut u8; COLD_BATCH_2N] = [core::ptr::null_mut(); COLD_BATCH_2N];
+    let n = core.dbg_carve_batch(class_idx, &mut out);
+    black_box(&out[..n]);
+}
+
+// R23-3 -- recycle FREELIST-POP isolation.
+//
+// **A first draft here added `recycle_alloc_free_256x16b_2n` (an N/2N
+// sibling doubling `COLD_BATCH`) and got a nonsensical result: 399.4 Ir/op,
+// roughly DOUBLE virgin-carve's own marginal cost, for a mechanism (freelist
+// pop) that should be cheaper or comparable, never a strict multiple more
+// expensive than carving.** Root cause, again found by treating the
+// surprising number as a red flag rather than reporting it: doubling
+// `COLD_BATCH` in a TWO-ROUND bench doubles BOTH round 1 (256 extra virgin
+// carve+frees) AND round 2 (256 extra recycle-pop+frees) in lockstep, so
+// `c = (Ir(2N)-Ir(N))/COLD_BATCH` measured the marginal cost of one
+// COMBINED (carve-round + recycle-round) unit, not recycle alone -- the
+// exact same category of mistake the alloc-magazine-hit arms above hit
+// first (see `MAGAZINE_FILL`'s doc comment) and fixed the same way: replace
+// the invalid N/2N pair with shared-prefix subtraction.
+//
+// **The fix needs NO new bench arm.** `cold_alloc_free_256x16b` (this
+// file, above) already IS round 1 of `recycle_alloc_free_256x16b` in
+// isolation: both are `SeferAlloc::new()` + `COLD_BATCH` (256) virgin
+// alloc-then-free-all, byte-for-byte identical bootstrap and workload
+// shape. So `recycle_alloc_free_256x16b`'s raw Ir minus
+// `cold_alloc_free_256x16b`'s raw Ir isolates round 2 (the freelist-pop
+// round) alone, with round 1's (byte-identical) cost cancelled exactly --
+// the report performs this subtraction directly from the two existing rows;
+// see `docs/perf/R23_3_HOT_PATH_ATTRIBUTION_GATE.md`.
+
 // R18-3 (task #330) — the FIRST instruction-count baseline for the dealloc
 // hot path under `production,medium-classes`, the configuration where R17-4's
 // Large-segment `kind_at` routing check (`dealloc_own_thread_with_base`,
@@ -1087,6 +1391,12 @@ library_benchmark_group!(
         dealloc_free_only_16b,
         dealloc_contains_base_probe_only_16b,
         dealloc_segment_base_of_ptr_probe_only_16b,
+        alloc_magazine_prefill_only_16b,
+        alloc_magazine_hit_only_16b,
+        dealloc_hash_contains_only_probe_16b,
+        dealloc_own_thread_body_only_16b,
+        carve_batch_only_16b,
+        carve_batch_only_16b_2n,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,

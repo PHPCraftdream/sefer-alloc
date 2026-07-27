@@ -385,4 +385,79 @@ impl HeapCore {
     pub fn dbg_contains_base(&mut self, base: *mut u8) -> bool {
         self.core.contains_base(base)
     }
+
+    /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
+    /// `AllocCore::dbg_hash_contains_only`, exposed at the `HeapCore` level so
+    /// `benches/perf_gate_iai.rs` can measure Tier-2's (the 8192-slot
+    /// open-addressing probe) instruction cost IN ISOLATION, unconditionally
+    /// skipping the Tier-1 4-entry `own_cache` check that `dbg_contains_base`
+    /// above (mirroring the real `dealloc_routing` call) always tries first.
+    ///
+    /// **Why this hook exists instead of just constructing a >4-segment
+    /// workload for the existing `dbg_contains_base` hook:** `own_cache`'s
+    /// hit/miss behaviour is keyed by `(base >> SEGMENT_SHIFT) & 3` — a
+    /// function of the segment's OS-assigned virtual address, which
+    /// `mmap`/`VirtualAlloc` chooses, not this allocator. A workload that
+    /// allocates 5+ distinct segments does not portably guarantee a Tier-2
+    /// hit: the OS could still lay the segments out so their cache indices
+    /// never collide inside one deterministic-iai run. This hook sidesteps
+    /// that non-determinism by calling the Tier-2 probe directly — see
+    /// `SegmentTable::dbg_hash_contains_only`'s doc comment for the full
+    /// argument. Still the SAME production `hash_contains` routine
+    /// `contains_base` itself falls through to on every real Tier-1 miss —
+    /// not an alternate/bypass implementation.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
+    #[must_use]
+    pub fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
+        self.core.dbg_hash_contains_only(base)
+    }
+
+    /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
+    /// [`dealloc_own_thread_with_base`](super::heap_core_free::HeapCore::dealloc_own_thread_with_base),
+    /// exposed so `benches/perf_gate_iai.rs` can isolate the free path's
+    /// POST-ROUTING body — the M2 double-free oracle checks (in-magazine
+    /// bitmap probe + flushed/alloc-bitmap probe) and the magazine push
+    /// itself — from the ROUTING prefix (`segment_base_of_ptr` +
+    /// `contains_base`) that R22-17/R23-1 already isolated. This is the SAME
+    /// production own-thread free body `dealloc_routing` calls once ownership
+    /// is confirmed — not an alternate/bypass implementation; `base` must
+    /// already be the correct segment-aligned base for `ptr` (the same value
+    /// `dbg_segment_base_of_ptr` would produce), exactly as the real
+    /// `dealloc_routing` caller already has it in hand from its own
+    /// `contains_base` check.
+    ///
+    /// Per this file's other `dbg_push_to_ring`-style hooks, this is an
+    /// `unsafe fn`: it forwards the identical [`HeapCore::dealloc`]
+    /// caller-pointer contract (`ptr` is null or a live, exactly-once-freed
+    /// start pointer previously returned by this heap's `alloc` for the same
+    /// `layout`; `base` is that pointer's true segment base) — the same
+    /// contract `dealloc_own_thread_with_base` itself inherits from being
+    /// reachable only via the `unsafe fn dealloc`/`dealloc_routing` chain. No
+    /// new safety reasoning is introduced beyond what that existing chain
+    /// already carries.
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold the same [`GlobalAlloc::dealloc`] contract
+    /// documented on [`HeapCore::dealloc`]'s `# Safety` section for `ptr`/
+    /// `layout`, AND `base` must equal `os::segment_base_of_ptr(ptr)` for a
+    /// segment this heap owns (the same precondition `dealloc_routing`
+    /// already establishes via its `contains_base` check before reaching this
+    /// body in production).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    #[allow(unsafe_code)] // R23-3: `unsafe fn` boundary, mirrors `dbg_push_to_ring`/`HeapCore::dealloc`.
+    pub unsafe fn dbg_dealloc_own_thread_with_base(
+        &mut self,
+        ptr: *mut u8,
+        layout: Layout,
+        base: *mut u8,
+    ) {
+        // SAFETY: this method carries the identical `# Safety` contract as
+        // `HeapCore::dealloc`/`dealloc_own_thread_with_base`, forwarded to
+        // THIS caller verbatim.
+        self.dealloc_own_thread_with_base(ptr, layout, base);
+    }
 }

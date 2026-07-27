@@ -480,6 +480,37 @@ impl SegmentTable {
         self.hash_contains(base)
     }
 
+    /// MEASUREMENT-ONLY (R23-3, task #372): call the Tier-2 open-addressing
+    /// probe DIRECTLY, unconditionally skipping the Tier-1 `own_cache` check
+    /// that `contains_base`/`contains_base_ro` always try first. This exists
+    /// solely so `benches/perf_gate_iai.rs` can isolate Tier-2's own
+    /// instruction cost, which `contains_base`'s existing Tier-1-hit-shaped
+    /// benches (R22-17/R23-1) cannot show: this crate's benched workloads
+    /// stay within `OWN_CACHE_SIZE` (4) concurrently-hot segments, so every
+    /// `contains_base` call after the first is a Tier-1 hit and Tier-2 never
+    /// runs. `cache_index(base) = (base >> SEGMENT_SHIFT) & 3` depends only on
+    /// the segment's OS-assigned virtual address (`mmap`/`VirtualAlloc`
+    /// decide it, not this allocator), so a benchmark cannot portably force a
+    /// Tier-2 hit just by touching more than 4 distinct segments — the OS
+    /// might still lay them out so all their cache indices collide or spread
+    /// favourably. Calling `hash_contains` directly sidesteps that
+    /// non-determinism entirely: it measures Tier-2's real, unconditional
+    /// cost on the exact same data the production probe would (a genuinely
+    /// registered base), regardless of address layout.
+    ///
+    /// This is the SAME `hash_contains` production routine `contains_base`
+    /// falls through to on a Tier-1 miss — not an alternate/reimplemented
+    /// probe — just invoked without the Tier-1 guard in front of it. It
+    /// takes `&self` (no cache fill), matching `contains_base_ro`'s
+    /// resource-cheap surface — a bench does not need `&mut` to measure this.
+    /// Unconditional (no feature gate), mirroring `contains_base`/
+    /// `contains_base_ro` immediately above, which are themselves ungated.
+    #[doc(hidden)]
+    #[inline(always)]
+    pub(crate) fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
+        self.hash_contains(base)
+    }
+
     /// PERF-P2 (Э3): direct-mapped cache index for `base`. Segments are
     /// SEGMENT-aligned so the low `SEGMENT_SHIFT` bits are zero; shift them out
     /// first to get a dense per-segment key, then mask to `OWN_CACHE_SIZE`.

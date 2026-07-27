@@ -105,6 +105,53 @@ for completeness.
    `_raw_r23_1_contains_base_isolation_rerun1.log`. Original 18.6% figure and
    its history preserved verbatim in the report per this file's own
    "do not delete, only correct the interpretation" convention.
+   **2026-07-27 update — DONE (task #372, R23-3):** the read-only review's
+   own P0 recommendation (`docs/reviews/2026-07-26-r22-readonly-review.md`
+   §4.1/§6, "R23-3: split hot alloc / hot free / cold alloc / cold free")
+   is executed: a fuller orthogonal decomposition of the WHOLE hot alloc/free
+   path, not just the routing prefix this item's history covers.
+   **Headline finding: the routing prefix (`contains_base` 8.8% +
+   `segment_base_of_ptr` 9.8% = 18.6% combined) is NOT the dominant free-path
+   cost.** The own-thread free BODY that runs once ownership is confirmed
+   (the M2 double-free oracle checks fused with the magazine push,
+   `dealloc_own_thread_with_base`) is **80.8% of a real free's `Ir`** — more
+   than 4x the routing prefix's combined share, and previously un-isolated.
+   Investigated whether Tier-1 vs Tier-2 `contains_base` can be split by
+   workload shape (touching >`OWN_CACHE_SIZE`=4 segments): found this is NOT
+   portably forceable (`cache_index` depends on OS-assigned segment
+   addresses, not anything this allocator or a benchmark controls), and
+   built a direct-call hook (`dbg_hash_contains_only`) instead — Tier-2's
+   own cost, IF it fired, is 13.0% of this workload's total (vs Tier-1's
+   8.8%), but this gate's own single-hot-segment workload never actually
+   exercises Tier-2 in the real routing path. On the alloc side, the
+   magazine-hit pop is 22.4 Ir/op (32.4% of `small_churn_16b`'s combined
+   alloc+free marginal cost). On the cold path: pure bump-carving
+   (standalone, no magazine/refill/BinTable-push) is 23.05 Ir/op; the
+   freelist-pop round of `recycle_alloc_free_256x16b` (isolated via
+   shared-prefix subtraction against the existing `cold_alloc_free_256x16b`
+   row — no new bench arm needed) is 188.2 Ir/op, comparable to (slightly
+   below) virgin-carve's own 203.86 Ir/op full-path marginal (R23-2) — i.e.
+   recycle is NOT the costlier-than-carving mechanism a purely
+   mechanism-level read would suggest once matched to the same full-path
+   denominator. **Two self-caught methodology bugs disclosed in the report,
+   not silently fixed:** a missing `#[inline(always)]` on a new hook
+   initially inflated the own-thread-body measurement past the total free
+   loop's own cost (impossible for a sub-component); and two N/2N bench
+   pairs (magazine-hit, recycle-pop) were invalid because doubling the loop
+   count doubled a whole setup+signal cycle, not the isolated signal alone
+   — both replaced with shared-prefix subtraction (one new pair of arms;
+   the other needed no new arm since an existing bench row already served
+   as the shared prefix). **Recommendation for the next remediation task:
+   the own-thread free body (M2 oracles + magazine push), 80.8% of the free
+   path, not cold-carve/recycle** (which, per this task's finding, is
+   roughly on par with virgin-carve once matched apples-to-apples) — this
+   revises R22-15/R23-2's "cold-carve/recycle is the main remaining
+   candidate" framing. Measurement only, no remediation attempted. Full
+   decomposition, honest "not cleanly isolable" notes, and the ranked
+   table: `R23_3_HOT_PATH_ATTRIBUTION_GATE.md` (full report) +
+   `R23_3_HOT_PATH_ATTRIBUTION_GATE_summary.csv` +
+   `docs/perf/_raw_r23_3_hot_path_attribution_run1.log` /
+   `_raw_r23_3_hot_path_attribution_run2.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

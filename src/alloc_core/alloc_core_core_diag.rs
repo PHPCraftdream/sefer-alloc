@@ -137,6 +137,23 @@ impl AllocCore {
         self.table.contains_base_ro(os::segment_base_of_ptr(ptr))
     }
 
+    /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
+    /// `SegmentTable::dbg_hash_contains_only` — see that method's doc comment
+    /// for why this exists (isolating Tier-2's cost deterministically,
+    /// since the Tier-1 direct-mapped cache's hit/miss behaviour depends on
+    /// OS-assigned segment addresses, not on anything a benchmark controls).
+    /// Takes an already-computed segment BASE (unlike `dbg_contains_base`,
+    /// which derives it from an arbitrary in-segment pointer) so
+    /// `benches/perf_gate_iai.rs` can pair it with the SAME
+    /// `dbg_segment_base_of_ptr`-derived base its other probe arms already
+    /// use, keeping every probe arm's shape identical apart from which
+    /// tier of `contains_base` each one measures.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_hash_contains_only(&self, base: *mut u8) -> bool {
+        self.table.dbg_hash_contains_only(base)
+    }
+
     /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
     /// segment (field-specific read, mirrors what
     /// `SegmentTable::unregister`/`recycle` now use internally for their O(1)
