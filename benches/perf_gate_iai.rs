@@ -613,6 +613,255 @@ fn dealloc_own_thread_body_only_16b() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// R24-2 (task #380) -- decompose the free path by magazine state. R24-1
+// (task #379) corrected R23-3's "74.70 Ir/free = M2 oracles + magazine push"
+// headline: the bench arms free 64 DISTINCT pointers in one sequential pass,
+// hitting the magazine overflow arm (`cnt == TCACHE_CAP`) six times -- so
+// 74.70 Ir/free is an average over 58 non-overflow pushes AND 6 overflow
+// events, NOT an isolated push cost. This block isolates the two magazine
+// states (cheap non-overflow push vs. one overflow event) and sweeps the
+// batch size N to show how the overflow ratio amortizes. See
+// `docs/perf/R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` for the full decomposition.
+//
+// WHY THE SWEEP USES AN alloc-64 PREFIX (count -> 0), NOT alloc-N-free-N:
+// `refill_n_for_class` for the 16 B class is `TCACHE_CAP` (16), so `alloc
+// k*16` leaves the magazine at exactly `count == 0`. `alloc N` for N not a
+// multiple of 16 leaves `count == 16 - (N mod 16)`, so the free loop would
+// NOT start at count 0 -- e.g. `alloc 8 free 8` starts the frees at count 8
+// and overflows on the 8th free, and `alloc 17 free 17` gives TWO overflows,
+// not one. To make every sweep point's free loop start at count 0 (so
+// overflow fires predictably: 0 overflows for N<=16, exactly 1 at N=17, 2 at
+// N=32, 6 at N=64), every arm below allocs a FIXED 64 (= 4*16, count -> 0)
+// then frees only the first N. The shared alloc-64 prefix is byte-identical
+// to `dealloc_prealloc_only_16b`, so `free_cost(N) = Ir(arm_N) - Ir(prefix)`
+// cancels it exactly. This is disclosed here rather than silently chosen, per
+// this file's "measured, not spun" convention (same disclosure norm as
+// R23-3's §2 self-caught methodology bugs).
+// ---------------------------------------------------------------------------
+
+// R24-2 -- sweep point N=1. Shared prefix `dealloc_prealloc_only_16b` (alloc
+// 64, free 0); this arm frees the first 1. One cheap push at cnt==0.
+// `Ir(n1) - Ir(prefix)` isolates one non-overflow push at count 0.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n1() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 1 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..1] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- sweep point N=8 + the shared prefix for the cheap-push isolation
+// pair (n9 - n8 = one cheap push at cnt==8). Freeing the first 8 from count 0
+// is 8 cheap pushes (cnt 0..7), no overflow.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n8() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 8 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..8] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- measurement-1 dedicated pair partner: byte-identical to n8 PLUS one
+// more free (the 9th), a cheap push at cnt==8 (count 8 -> 9). `Ir(n9) - Ir(n8)`
+// isolates exactly one non-overflow push at count 8 -- the "pre-fill to
+// count=8, plus one timed free" shared-prefix pair the task specifies.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n9() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 9 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..9] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- sweep point N=16 + the shared prefix for the overflow isolation
+// pair (n17 - n16 = one overflow event). Freeing the first 16 from count 0 is
+// 16 cheap pushes (cnt 0..15, count -> 16), no overflow.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n16() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 16 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..16] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- sweep point N=17 + measurement-2 isolation: byte-identical to n16
+// PLUS one more free (the 17th), which hits cnt==TCACHE_CAP=16 -> the OVERFLOW
+// arm (8-block bitmap-clear pass + flush_class on 8 blocks + 8-pointer
+// compaction + final push). `Ir(n17) - Ir(n16)` isolates exactly ONE overflow
+// event's extra cost over a cheap push.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n17() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 17 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..17] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- sweep point N=32. Freeing the first 32 from count 0 hits overflow
+// at frees #17 and #25 (2 overflow events; 30 cheap pushes), showing how the
+// overflow cost amortizes as the batch grows.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_16b_n32() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free the first 32 of the 64 pre-allocated pointers.
+    for &ptr in &ptrs[..32] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R24-2 -- measurement-3: isolates the magazine-overflow BITMAP-CLEAR PASS
+// alone, via the `dbg_overflow_bitmap_clear_pass` hook (the exact production
+// loop at `heap_core_free.rs:762-768`). Shared prefix is
+// `dealloc_free_only_16b_n8` (alloc 64 + free 8, leaving the 8 freed blocks
+// magazine-resident with their bitmap bits SET); this arm adds ONE call to the
+// hook on those same 8 (bits-set) blocks. `Ir(this) - Ir(n8)` isolates the
+// 8-iteration bitmap-clear loop's cost, the single sub-cost of one overflow
+// event that is cleanly isolable and the exact target of the R24-3
+// flush_magazine_class merge. The remaining overflow sub-costs (`flush_class`
+// on 8 blocks + the 8-pointer compaction shift) are inline sequential
+// operations with no workload-level separation point from this loop, so they
+// are NOT separately isolable here -- see the report for the derived
+// (overflow_total - cheap_push - bitmap_clear) figure.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+#[library_benchmark]
+fn dealloc_overflow_bitmap_clear_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Prefill the magazine to count=8 by freeing the first 8 (count 0 -> 8);
+    // those 8 blocks are now magazine-resident with their bitmap bits SET --
+    // exactly the production overflow's bitmap state.
+    for &ptr in &ptrs[..8] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+
+    // Timed region: the bitmap-clear pass alone, on the 8 just-freed
+    // (bits-set) blocks, via the measurement hook. Subtracting n8's Ir (same
+    // setup, no hook call) isolates exactly this 8-iteration loop's cost.
+    let flush_slice: &[*mut u8] = &ptrs[..8];
+    // SAFETY: `heap` is non-null (asserted above) and points to a live
+    // HeapRegistry for this process. The hook itself is safe, but
+    // dereferencing the raw `*mut HeapRegistry` pointer requires an unsafe
+    // block (same as every other `(*heap).method()` call in this file).
+    unsafe { (*heap).dbg_overflow_bitmap_clear_pass(flush_slice) };
+    black_box(flush_slice);
+}
+
 // R23-3 -- cold CARVE isolation: `AllocCore::carve_batch`
 // (`src/alloc_core/alloc_core_small.rs`), the batched sibling of
 // `carve_block` that `carve_block_with_refill`'s refill loop calls
@@ -1395,6 +1644,13 @@ library_benchmark_group!(
         alloc_magazine_hit_only_16b,
         dealloc_hash_contains_only_probe_16b,
         dealloc_own_thread_body_only_16b,
+        dealloc_free_only_16b_n1,
+        dealloc_free_only_16b_n8,
+        dealloc_free_only_16b_n9,
+        dealloc_free_only_16b_n16,
+        dealloc_free_only_16b_n17,
+        dealloc_free_only_16b_n32,
+        dealloc_overflow_bitmap_clear_only_16b,
         carve_batch_only_16b,
         carve_batch_only_16b_2n,
         medium_class_dealloc_churn_16b,

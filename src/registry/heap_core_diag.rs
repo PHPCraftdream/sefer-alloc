@@ -460,4 +460,39 @@ impl HeapCore {
         // THIS caller verbatim.
         self.dealloc_own_thread_with_base(ptr, layout, base);
     }
+
+    /// MEASUREMENT-ONLY (R24-2, task #380): runs EXACTLY the magazine-overflow
+    /// arm's 8-block bitmap-clear pass (`src/registry/heap_core_free.rs`, the
+    /// `for &flushed in &self.tcache.classes[c].slots[0..FLUSH_N]` loop at
+    /// lines 762-768) standalone, so `benches/perf_gate_iai.rs` can isolate
+    /// THAT sub-cost of one overflow event from `flush_class` and the
+    /// 8-pointer compaction shift it is fused with inside
+    /// `dealloc_own_thread_with_base`'s overflow branch. The loop body is
+    /// copied verbatim from production (no new mechanism -- the same precedent
+    /// as `dbg_contains_base` exposing the exact production probe standalone):
+    /// `segment_base_of_ptr` + `SegmentMeta::new` + `clear_magazine` per
+    /// pointer. `clear_magazine`'s instruction cost is identical whether the
+    /// bit was set or clear (read word, clear bit, write back), so callers may
+    /// pass freshly-carved pointers whose magazine bits were never set and
+    /// still measure the real per-iteration cost; the bench arm nonetheless
+    /// feeds pointers whose bits ARE set (via a free-8 prefill) to match the
+    /// production overflow's exact bitmap state.
+    ///
+    /// Safe: `segment_base_of_ptr`/`SegmentMeta::new`/`clear_magazine` are all
+    /// safe operations on already-mapped segment memory; NO new `unsafe`
+    /// boundary is introduced (unlike `dbg_dealloc_own_thread_with_base`/
+    /// `dbg_push_to_ring`, which are `unsafe fn`). `&self` only -- this loop
+    /// touches neither the magazine array nor any `HeapCore` mutable state.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[inline(always)]
+    pub fn dbg_overflow_bitmap_clear_pass(&self, ptrs: &[*mut u8]) {
+        for &flushed in ptrs {
+            let fbase = os::segment_base_of_ptr(flushed);
+            let foff = (flushed as usize - fbase as usize) as u32;
+            SegmentMeta::new(fbase)
+                .magazine_bitmap()
+                .clear_magazine(foff);
+        }
+    }
 }

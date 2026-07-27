@@ -173,6 +173,41 @@ for completeness.
    arithmetic and the falsified "consistent with the free-path table"
    sentence: `R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §9 (the correction section;
    original §0–§8 preserved verbatim).
+   **2026-07-27 update — DONE (task #380, R24-2):** the magazine-state split
+   R24-1 queued is executed. The free path's two magazine states are now
+   cleanly isolated. **Headline finding: overflow is a BATCH phenomenon;
+   ordinary interleaved hot free has NO overflow at all.** Cheap non-overflow
+   push ≈ 43–44 Ir/full-free (one via dedicated n8→n9 pair, confirmed by
+   16-push amortization); as R23-3's "cheap arm" scope (oracle+push, routing
+   subtracted) ≈ 26 Ir. One overflow event = 571 Ir = **12.9× a cheap push**
+   (the 17th free alone, via n16→n17 pair). The overflow's ONE cleanly-isolable
+   sub-cost — the 8-block bitmap-clear pass (`heap_core_free.rs:762-768`,
+   R24-3's exact target) — is **84 Ir** via a new safe hook
+   (`dbg_overflow_bitmap_clear_pass`); the remaining ~470 Ir (flush_class + 8-
+   pointer compaction + final push) is fused in one straight-line block with no
+   workload-level separation point, reported as a single non-isolable remainder
+   per the "measured, not spun" convention (a flush_class-standalone hook would
+   run a mechanism production never runs outside the overflow arm — Heisenberg
+   risk). **Reconciliation:** R23-3's 74.70 Ir/free decomposes as
+   (58×25.8 + 6×553.8)/64 = 75.30 (0.8% reconstruction) — i.e. **~69% overflow
+   + ~31% cheap push** within the own-thread body, NOT the "fused oracle+push"
+   the original §0 named. N-sweep (N=1/8/16/17/32/64): per-free cost is FLAT at
+   ~44 Ir for N≤16 (zero overflow), steps to 75 at N=17 (first overflow),
+   climbs to 93 at N=64; overflow is **57.9% of the N=64 batch** (6 events =
+   9.4% of the frees). **Interleaved comparison:** ordinary interleaved hot
+   free (`small_churn_16b` shape) ≈ 46.6 Ir/free (69.0 pair − 22.38 alloc-hit),
+   matching the isolated cheap push within refill amortization — the 92.50
+   Ir/free batch figure is NOT ordinary hot free. **Prioritization implication
+   for R24-3 (flush_magazine_class bitmap-clear merge): saves 8.5% of
+   batch-free cost (6×84/5920), 0% of ordinary interleaved hot free (overflow
+   never fires there).** One new safe `#[doc(hidden)]` hook added (for R24-6
+   tracking: lives in the production unsafe-audit surface, gate
+   `alloc-global + fastbin`); 7 new bench arms. Measurement only, no production
+   behavior changed. Full decomposition, honest "not cleanly isolable" notes,
+   the N-sweep table, and the 74.70 reconciliation:
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` (full report) +
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE_summary.csv` +
+   `docs/perf/_raw_r24_2_run1.log` / `_raw_r24_2_run2.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
