@@ -1,0 +1,18 @@
+{
+  "_doc": "R26-3 (task #412) — A/B/B/A paired judge config: confirms R25-5/R26-1's latency/decommit finding (cap 4->8 eliminates the decommit-driven slowdown) through the REAL #[global_allocator] entry point. The two arms are near-identical binaries whose ONLY difference is POOL_SEGMENTS (4 baseline vs 8 candidate); the shared churn-with-teardown@1024B workload is byte-identical between them, so any wall-clock/decommit delta the judge resolves is attributable to that one knob. Driven by: node scripts/paired-ab-runner.mjs --config docs/perf/r26_3_run.json --arms cap4,cap8",
+  "metric": "elapsed_ns",
+  "arms": {
+    "cap4": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r26_3_teardown_ab_cap4.exe"
+    },
+    "cap8": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r26_3_teardown_ab_cap8.exe"
+    }
+  },
+  "sanity": {
+    "key": "segments_reserved_total",
+    "_doc_sanity": "Both arms install a REAL SeferAlloc #[global_allocator] and run a workload that reserves segments, so BOTH must report segments_reserved_total > 0 (unlike the built-in sefer-vs-mimalloc profile where only the sefer arm is nonzero).",
+    "nonzero_arms": ["cap4", "cap8"]
+  },
+  "features_note": "production alloc-stats"
+}

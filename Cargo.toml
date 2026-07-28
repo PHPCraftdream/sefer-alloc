@@ -1530,6 +1530,22 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r26_1_pool_cap_rss_subprocess_probe"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R26-3 (task #412): process-level A/B/B/A judge arms for confirming R25-5/R26-1's
+# latency/decommit finding (cap 4->8 eliminates the decommit-driven slowdown)
+# through the REAL `#[global_allocator]` entry point — NOT the AllocCore bypass
+# R26-1 used. Two near-identical binaries whose ONLY difference is `pool_segments`
+# (4 baseline vs 8 candidate), driven by `scripts/paired-ab-runner.mjs --config
+# docs/perf/r26_3_run.json`. Same required-features triple as the r25_5/r26_1
+# siblings (prevents the E0601 build failure a missing entry causes under plain
+# `--features production`).
+[[example]]
+name = "r26_3_teardown_ab_cap4"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r26_3_teardown_ab_cap8"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
