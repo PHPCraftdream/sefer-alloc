@@ -363,6 +363,48 @@ Core instructions, mandatory for all code in this repository. They
      `flush_magazine_class` prototype but left the R24-2-era
      `dbg_overflow_bitmap_clear_pass` hook it depended on in place under the
      wider gate, undiscovered until an independent review caught it.
+- **A benchmark/report that sweeps a runtime configuration value across
+  multiple arms (e.g. `pool_segments`, cache sizes, thread counts fed through
+  `with_config`/similar) MUST report, per arm, the evidence that the arm
+  actually ran under its labelled configuration — not just the labelled value:
+  (1) the REQUESTED config value, (2) the RESOLVED config value read back from
+  the allocator's own diagnostic surface (not assumed), (3) any
+  config-conflict-delta counter that surface exposes (e.g.
+  `config_conflicts_total()`), and (4) the process/thread identity boundary
+  the arm ran under (same-process-sequential vs subprocess-isolated) — because
+  whether cross-arm state can leak determines whether (1)–(3) alone are
+  sufficient. A config-sweep row missing any of these is not usable as
+  GO/NO-GO evidence.**
+  (R26-4/task #413: R25-5 (`docs/perf/R25_5_POOL_CAP_SWEEP_GATE.md`, task #399)
+  swept `pool_segments` = 4/8/16/32 on an RSS/commit axis by calling
+  `SeferAlloc::with_config(...)` on freshly spawned threads SEQUENTIALLY in ONE
+  process, and reported per-arm RSS labelled by the REQUESTED value only — no
+  resolved-value self-check, no config-conflict-delta, implicitly
+  same-process-sequential. It passed review and shipped a conclusion ("cap 4→8
+  wins on BOTH latency AND RSS") that reached `CHANGELOG.md`, `OPEN_ITEMS.md`,
+  and a session checkpoint. An independent review
+  (`docs/reviews/2026-07-28-r25-readonly-review.md`) then found the RSS axis
+  invalid: `HeapRegistry`'s slot lifecycle is first-claim-wins for a slot's
+  whole process lifetime (`claim_with_config` re-claim of an
+  already-materialised slot keeps the OLD config silently,
+  `src/registry/heap_registry.rs:209` / ~247-300; `recycle` returns slots to
+  `free_slots`, `:342`; `pick_slot` pops recycled slots first, `:316-322`), so
+  arm N+1's threads could silently reuse arm N's already-configured slot and
+  run under arm N's OLD `pool_segments` — rows labelled cap=8/16/32 may have
+  actually executed under cap=4. The one signal that would have caught this
+  (`CONFIG_CONFLICTS` counter, `heap_registry.rs:263`) was never read; the loud
+  signal (`debug_assert!` at `:285`) is compiled out of `--release`, which is
+  how R25-5's probe ran. Corrected in R26-2 (task #411, commit `5285e14`) and
+  remeasured in R26-1 (task #410, commit `779474e`,
+  `docs/perf/R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md`) using exactly the four
+  pieces of evidence above — subprocess-per-arm isolation (structural: a fresh
+  process has an empty registry, so cross-arm reuse is impossible by
+  construction) plus a per-arm hard-assert of resolved cap via the new safe
+  `HeapCore::dbg_pool_cap()` accessor (`src/registry/heap_core_diag.rs:259`)
+  and `config_conflicts_total()` delta == 0. R26-1's corrected finding was
+  materially different — the RSS "win" did not reproduce (RSS-neutral, not
+  RSS-beneficial) — the concrete cost: a production-default-change
+  recommendation rested on invalid data for one full round.)
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
