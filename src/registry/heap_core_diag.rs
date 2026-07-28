@@ -603,21 +603,41 @@ impl HeapCore {
     ///
     /// # Safety
     ///
-    /// For every pointer `p` in `ptrs`: `p` must currently reference a live,
-    /// this-heap-owned small-class block that this heap issued via `alloc`
-    /// and that has not been freed back to (or reused by) the allocator since
-    /// -- i.e. it must be safe to clear that block's magazine-overflow bitmap
-    /// bit, exactly as production's own overflow-flush loop
-    /// (`heap_core_free.rs`) only ever does for blocks it just flushed from
-    /// its own tcache magazine. `os::segment_base_of_ptr(p)` must land inside
-    /// a segment this heap owns, with valid, already-initialized segment
-    /// metadata at that base (true for any pointer this heap actually
-    /// returned from `alloc`). The caller must uphold the same owner-only
-    /// exclusivity `dbg_dealloc_own_thread_with_base` above documents: no
-    /// concurrent mutator may be racing this heap's magazine-bitmap state for
-    /// the same segment while this call runs. Passing a null, foreign,
-    /// dangling, unmapped, or not-owned-by-this-heap pointer is immediate
-    /// undefined behavior.
+    /// For every pointer `p` in `ptrs`: `p` must currently reference a
+    /// **magazine-resident**, this-heap-owned small-class block -- i.e. a block
+    /// this heap issued via `alloc` and has SINCE taken back via `dealloc` into
+    /// its own tcache magazine (the exact opposite of a still-handed-out,
+    /// never-freed "live" user block, which the prior wording here wrongly
+    /// demanded). The block's magazine-residency bitmap bit -- the
+    /// `mark_magazine` / `clear_magazine` pair in `magazine_bitmap.rs`, set on
+    /// magazine push (own-thread `dealloc`) and cleared on magazine pop or
+    /// flush -- must CURRENTLY BE SET, because the body of this hook
+    /// unconditionally calls `clear_magazine(foff)` for each `p`; that clear is
+    /// the operation being isolated. (`clear_magazine` is an idempotent
+    /// `byte & !mask` write, so invoking it on a block whose bit is already
+    /// clear is a benign no-op rather than undefined behavior -- but it yields
+    /// no meaningful measurement and means the caller has mis-prepared the
+    /// precondition.) `os::segment_base_of_ptr(p)` must land inside a segment
+    /// this heap owns, with valid, already-initialized segment metadata at that
+    /// base (true for any pointer this heap actually returned from `alloc`).
+    /// The caller must uphold the same owner-only exclusivity
+    /// `dbg_dealloc_own_thread_with_base` above documents: no concurrent
+    /// mutator may be racing this heap's magazine-bitmap state for the same
+    /// segment while this call runs. Passing a null, foreign, dangling,
+    /// unmapped, or not-owned-by-this-heap pointer is immediate undefined
+    /// behavior.
+    ///
+    /// Purpose / caller invariant: this hook exists purely as a
+    /// measurement-isolation trick -- `benches/perf_gate_iai.rs`'s
+    /// `dealloc_overflow_bitmap_clear_only_16b` arm prefills the magazine by
+    /// `dealloc`-ing 8 of its own just-`alloc`-ed blocks (which sets their
+    /// bits, exactly as production's own overflow-flush loop in
+    /// `heap_core_free.rs` sees them right after a magazine flush), then calls
+    /// this hook to re-time JUST the 8-iteration bitmap-clear pass in
+    /// isolation. The caller is trusted to leave the heap in a state where an
+    /// ordinary subsequent `alloc` / `dealloc` observes the (now-cleared) bits
+    /// correctly -- i.e. it must not break the magazine/free-list invariants
+    /// that production's own clear-on-flush path maintains.
     // R25-1 (task #395): gated additionally on `bench-internals`, matching
     // the R24-6 precedent exactly (`dbg_dealloc_own_thread_with_base` above /
     // `dbg_push_coarse_only_entry`) -- this `unsafe fn` measurement-only hook
