@@ -404,10 +404,10 @@ for completeness.
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 
    > **Current state**
-   > - **Status:** root-cause DONE (R24-11, task #389); RSS-gated `pool_segments` sweep DONE (R25-5, task #399) — the R24-11 "Next trigger" below is CLOSED. **No production change in either task.**
-   > - **Current number/verdict:** the R25-5 sweep (4/8/16/32, `AllocCore`-direct latency/decommit axis + `SeferAlloc`-per-thread 1T/8T/32T RSS axis, exact `bench_global_alloc_churn_with_teardown`@1024B shape) found the 4→8 step eliminates the ENTIRE measured decommit residual (**20 → 0** decommits/run in R25-5's own harness, same mechanism as R24-11's 248) at LOWER (not higher) RSS/commit cost at every thread count measured (cap=4's residual churn itself carries a real OS reserve/decommit round-trip cost cap≥8 avoids). Cap=16/32 add nothing further on either axis (workload demand tops out at 6-7 concurrent segments, self-verified via `AllocCore::dbg_pool_cap()`/`dbg_pooled_count()`). **Verdict: GO-CANDIDATE for `pool_segments=8`** (not 16/32 — no-op beyond 8), flagged for a future default-raise decision, NOT changed in R25-5.
-   > - **Next trigger:** R25-6 (task #400) evaluated and CLOSED without a design attempt — its own conditional gate ("only pursue if R25-5 shows a real latency win that a simple fixed-cap raise cannot deliver without an unacceptable per-thread RSS multiplier") is NOT met: R25-5 found the 4→8 step wins on BOTH axes simultaneously (lower latency AND lower RSS at every thread count), with no tradeoff for an adaptive design to resolve. What remains open is simply the DEFAULT-CHANGE DECISION itself — promote `DEFAULT_POOL_SEGMENTS` 4→8 in `small_segment_pool_config.rs` — deliberately left to a separate round/task per R24-11's and R25-5's explicit task-brief constraints (neither was authorized to change the default itself).
-   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`.
+   > - **Status:** latency/decommit axis of R25-5 CONFIRMED (cap 4→8 eliminates the decommit cliff, self-verified via `AllocCore::dbg_pool_cap()`); RSS/commit axis of R25-5 UNCONFIRMED pending remeasurement (task #410 / R26-1); R25-6's closure (which rested on the now-invalidated "wins on both axes, no tradeoff" claim) REOPENED, tracked via task #418 (R26-9) conditional on #410. **No production change.**
+   > - **Current number/verdict:** latency axis — GO-CANDIDATE for `pool_segments=8` STANDS (cap 4→8: 20→0 decommits/run, self-verified; cap=16/32 add nothing further on this axis). RSS axis — UNRELIABLE: rows labelled cap=8/16/32 in R25-5's RSS table may have executed under cap=4 (or an earlier arm's cap) because the probe ran all arms sequentially in one `--release` process and registry slot reuse + first-claim-wins config (`heap_registry.rs` `claim_with_config` ~:247-300, `CONFIG_CONFLICTS` ~:263, `debug_assert!` ~:285 compiled out of release) silently override mismatched configs on recycled slots. The "wins on BOTH axes simultaneously, no tradeoff" conclusion is NOT proven. See `R25_5_POOL_CAP_SWEEP_GATE.md` §8.
+   > - **Next trigger:** task #410 (R26-1) — re-measure the RSS axis with one fresh process per `(pool_segments, thread_count, repetition)`, each arm asserting resolved cap and zero `CONFIG_CONFLICTS`; its corrected data gates any RSS claim. Task #418 (R26-9) then re-evaluates R25-6's adaptive/process-wide-budget trigger condition conditional on #410. The DEFAULT-CHANGE decision (promote `DEFAULT_POOL_SEGMENTS` 4→8) remains pending valid two-axis evidence.
+   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` (§8 correction) + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` (trailing UNCONFIRMED_PENDING_R26_1 section) + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`; **R26-2 correction provenance:** `docs/reviews/2026-07-28-r25-readonly-review.md` (P0 measurement-validity finding).
 
    R24-10 (task #388) established the *mechanism* behind the 1024B teardown
    residual (the segment decommit/release/re-reserve lifecycle Mechanism-2's
@@ -477,6 +477,28 @@ for completeness.
    measure and report, do not change the default in this task). Full
    evidence, the batching-pitfall counterfactual, and the RSS-cost
    mechanism explanation: `R25_5_POOL_CAP_SWEEP_GATE.md`.
+
+   **2026-07-28 (R26-2, task #411) — CORRECTION.** The R25-5 paragraph above
+   claims cap 4→8 wins on BOTH the latency/decommit axis AND the RSS/commit axis
+   simultaneously with no tradeoff. That claim is NOT proven: only the
+   latency/decommit axis is confirmed. The RSS axis is invalidated (not merely
+   uncertain) by a methodological bug — `examples/r25_5_pool_cap_sweep_probe.rs`'s
+   `measure_rss_axis` ran the cap 4/8/16/32 arms and 1/8/32 thread counts
+   sequentially in ONE `--release` process, but the registry's slot lifecycle
+   (`src/registry/heap_registry.rs`) means an already-materialised slot keeps its
+   first-claim config: `claim_with_config` (~:209, first materialisation
+   ~:226-246; re-claim ~:247-300 "silently wins"), `recycle` (~:342) returns
+   slots to `free_slots` on thread exit, `pick_slot` (~:316-322) pops them first,
+   and the only always-compiled mismatch signal is the `CONFIG_CONFLICTS` counter
+   (~:263) — the `debug_assert!` (~:285) is compiled out of `--release`. So rows
+   labelled cap=8/16/32 may have executed under cap=4. The latency/decommit axis
+   is unaffected: it uses `AllocCore::new_with_config` directly (no registry) and
+   self-verifies via `assert_eq!(resolved_cap, pool_segments)`. Full detail, the
+   list of now-unreliable vs still-reliable report sections, and the re-stated
+   (latency-axis-only) GO-CANDIDATE: `docs/perf/R25_5_POOL_CAP_SWEEP_GATE.md` §8.
+   Remeasurement is tracked as task #410 (R26-1, subprocess-per-arm isolation);
+   R25-6's closure (which rested entirely on the "wins on both axes, no tradeoff"
+   claim) is reopened and tracked as task #418 (R26-9), conditional on #410.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

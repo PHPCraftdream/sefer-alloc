@@ -1,5 +1,21 @@
 # Checkpoint — 2026-07-28 15:15 [round25-complete]
 
+## CORRECTION (2026-07-28, R26-2, task #411)
+
+The R25-5 "wins on BOTH latency AND RSS simultaneously (no tradeoff)" claim in
+this checkpoint's Session summary is only half-confirmed: the RSS/commit axis is
+invalidated (the probe ran all arms sequentially in one `--release` process, and
+the registry's slot reuse + first-claim-wins config in
+`src/registry/heap_registry.rs` silently overrides mismatched configs on
+recycled slots, with the `debug_assert!` compiled out under `--release`), so RSS
+rows labelled cap=8/16/32 may have executed under cap=4. The latency/decommit
+axis (cap 4→8 eliminates the 20-decommit residual) is unaffected — it uses
+`AllocCore` directly and self-verifies the resolved cap. See
+`docs/perf/R25_5_POOL_CAP_SWEEP_GATE.md` §8 and
+`docs/reviews/2026-07-28-r25-readonly-review.md` for full detail; RSS
+remeasurement is tracked as task #410 (R26-1) and R25-6's reopened
+adaptive-budget work as task #418 (R26-9).
+
 ## Session summary
 Continuation of the zero-trust review/fix cycle on sefer-alloc (100%-Rust
 allocator). This session picked up after Round 24 was fully shipped

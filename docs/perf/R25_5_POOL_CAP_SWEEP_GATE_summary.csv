@@ -39,3 +39,45 @@ rss,16,32,peak_rss_delta_kib,263940,KiB
 rss,16,32,peak_commit_delta_kib,265184,KiB
 rss,32,32,peak_rss_delta_kib,264280,KiB
 rss,32,32,peak_commit_delta_kib,265636,KiB
+
+# CORRECTION (2026-07-28, R26-2, task #411)
+# The rss-axis rows above (metric_group=rss, all pool_segments/threads) are
+# UNCONFIRMED_PENDING_R26_1 and MUST NOT be treated as GO evidence. The probe
+# ran all arms sequentially in ONE process under --release, so registry slot
+# reuse (heap_registry.rs pick_slot ~:316-322 / recycle ~:342) combined with
+# first-claim-wins config (claim_with_config ~:247-300, CONFIG_CONFLICTS
+# counter ~:263, debug_assert! ~:285 compiled OUT of --release) means rows
+# labelled cap=8/16/32 may have executed under cap=4 (or an earlier arm's cap)
+# for some or all threads. See docs/perf/R25_5_POOL_CAP_SWEEP_GATE.md §8.
+# The latency-axis rows (metric_group=latency) are CONFIRMED: that axis uses
+# AllocCore::new_with_config directly (no registry) and self-verifies via
+# resolved_cap. Remeasurement tracked as task #410 (R26-1).
+#
+# Re-emission of the rss-axis rows below with an added `status` column, so the
+# unconfirmed status is machine-grepable. The original rows above are preserved
+# verbatim per the append-only convention.
+metric_group,pool_segments,threads,metric,value_kib_or_ns,unit,status
+rss,4,1,peak_rss_delta_kib,13132,KiB,UNCONFIRMED_PENDING_R26_1
+rss,4,1,peak_commit_delta_kib,17132,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,1,peak_rss_delta_kib,8216,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,1,peak_commit_delta_kib,8260,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,1,peak_rss_delta_kib,8216,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,1,peak_commit_delta_kib,8260,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,1,peak_rss_delta_kib,8232,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,1,peak_commit_delta_kib,8276,KiB,UNCONFIRMED_PENDING_R26_1
+rss,4,8,peak_rss_delta_kib,100932,KiB,UNCONFIRMED_PENDING_R26_1
+rss,4,8,peak_commit_delta_kib,124524,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,8,peak_rss_delta_kib,66508,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,8,peak_commit_delta_kib,66856,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,8,peak_rss_delta_kib,66192,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,8,peak_commit_delta_kib,66636,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,8,peak_rss_delta_kib,65888,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,8,peak_commit_delta_kib,66244,KiB,UNCONFIRMED_PENDING_R26_1
+rss,4,32,peak_rss_delta_kib,382352,KiB,UNCONFIRMED_PENDING_R26_1
+rss,4,32,peak_commit_delta_kib,463864,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,32,peak_rss_delta_kib,264748,KiB,UNCONFIRMED_PENDING_R26_1
+rss,8,32,peak_commit_delta_kib,266276,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,32,peak_rss_delta_kib,263940,KiB,UNCONFIRMED_PENDING_R26_1
+rss,16,32,peak_commit_delta_kib,265184,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,32,peak_rss_delta_kib,264280,KiB,UNCONFIRMED_PENDING_R26_1
+rss,32,32,peak_commit_delta_kib,265636,KiB,UNCONFIRMED_PENDING_R26_1

@@ -379,3 +379,99 @@ protocol) appear on stdout interleaved with the human-readable tables. Wall-cloc
 ns/cycle and RSS/commit KiB are noisy point estimates on this shared host;
 the decommit-count deltas (§0's first table) are exact relaxed-atomic reads,
 the reliable signal (same platform-honesty framing as R24-11).
+
+---
+
+## 8. CORRECTION (2026-07-28, R26-2, task #411)
+
+**The RSS/commit axis of this report (§0's second table, all of §3's RSS
+narrative that depends on the multi-thread numbers, §4's entire multi-thread
+table and its ratios, and §5's "both axes point the same direction" framing
+and GO-CANDIDATE verdict) is INVALIDATED — not merely uncertain — and must not
+be relied on. Only the latency/decommit axis stands.**
+
+### Root cause (confirmed against `src/registry/heap_registry.rs`)
+
+This report's RSS axis (`measure_rss_axis`) runs the cap 4/8/16/32 arms and the
+1/8/32-thread counts **sequentially in one process** (`cargo run --release`,
+`examples/r25_5_pool_cap_sweep_probe.rs`). The probe assumed each freshly
+spawned thread claims a fresh, never-before-configured registry slot. That
+assumption contradicts the registry's actual lifecycle:
+
+- `HeapRegistry::claim_with_config` (`src/registry/heap_registry.rs:209`): on
+  the FIRST materialisation of a slot, the caller's config wins (~lines
+  226-246). On RE-CLAIM of an already-materialised slot (~lines 247-300), "the
+  slot's existing config (set at first materialisation) silently wins" (comment
+  at ~lines 248-251) — a mismatch only increments the `CONFIG_CONFLICTS` counter
+  (~line 263) and arms a `debug_assert!` (~line 285) that is **compiled OUT of
+  release builds** (the probe was run with `--release`).
+- `HeapRegistry::recycle` (`src/registry/heap_registry.rs:342`) pushes a slot
+  back onto `free_slots` on thread exit; `pick_slot` (~line 316-322) pops from
+  `free_slots` before minting a fresh slot.
+
+Net effect: when arm N's threads exit, their already-configured slots go onto
+`free_slots`; arm N+1's threads can pop those RECYCLED slots and silently keep
+arm N's older config, with the one loud signal (`debug_assert!`) compiled out
+under `--release`. Rows labelled cap=8/16/32 in §0's second table and §4's
+multi-thread table **may have actually executed under cap=4** (or some earlier
+arm's cap) for some or all of their threads. This would also explain §0's
+"cap=8/16/32 are statistically flat with each other" RSS observation — that is
+exactly what would be seen if several arms silently ran the same config.
+
+This bug was found by `docs/reviews/2026-07-28-r25-readonly-review.md` ("P0
+measurement validity: R25-5 RSS arms may not use their labelled cap") and
+personally re-verified against source before this correction was filed.
+
+### What is now UNRELIABLE in this report
+
+- **§0's second table ("RSS/commit axis")** — every cell, single- and
+  multi-thread.
+- **§3** — insofar as it draws on the RSS-axis multi-thread numbers to explain
+  why cap=4's RSS delta is higher; the *mechanism* it describes is plausible
+  but was never independently confirmed under a config-isolated run, so the
+  narrative rests on the now-invalidated rows.
+- **§4** — the entire multi-thread aggregate RSS table and its ~8×/~32× ratios.
+- **§5** — the "both axes point the same direction, with no trade-off" framing,
+  and the GO-CANDIDATE verdict insofar as it rests on BOTH axes. The
+  GO-CANDIDATE survives ONLY on the latency/decommit axis now (re-stated below).
+
+### What REMAINS RELIABLE
+
+- **§0's first table (latency/decommit axis)** — uses
+  `AllocCore::new_with_config` directly (no registry, no shared slot state) and
+  self-verifies the swept value via `assert_eq!(resolved_cap, pool_segments)`
+  inside `measure_latency_axis`. Its finding stands: cap 4→8 eliminates the
+  entire measured decommit residual (20 → 0 decommits/run); cap=16/32 add
+  nothing further on this axis (already 0 at cap=8).
+- **§1.1-§1.3** — methodology (AllocCore-direct measurement, workload-faithful
+  byte-for-byte churn primitives, the criterion-batching-semantics pitfall and
+  its fix). These describe the latency axis, which is unaffected.
+- **§2** — the `pooled_count = 6` demand-matching finding, which comes from the
+  latency axis's own `AllocCore::dbg_pooled_count()` self-check, not the RSS
+  axis.
+
+### Re-stated verdict (latency axis only)
+
+On the latency/decommit axis alone, the GO-CANDIDATE for `pool_segments = 8`
+stands: cap 4→8 eliminates the decommit cliff (20 → 0), self-verified via
+`resolved_cap`. **No RSS/commit-axis claim in this report is currently
+trustworthy, and the "wins on BOTH axes simultaneously, no trade-off"
+conclusion is NOT proven.** The RSS axis must be re-measured with per-arm
+process isolation before any RSS claim can be made.
+
+### Follow-up tracking
+
+- **Remeasurement:** tracked as **task #410 (R26-1)** — one fresh process per
+  `(pool_segments, thread_count, repetition)`, each arm asserting the resolved
+  cap and a zero `CONFIG_CONFLICTS` delta, per the review's "Required
+  correction" recipe. That task is in progress in parallel; this correction
+  does not attempt the remeasurement.
+- **R25-6 (adaptive/process-wide pool budget) closure:** R25-6 was closed
+  solely because this report's (now-invalidated) "wins on both axes, no
+  trade-off" finding appeared to disprove its trigger condition. That closure
+  is **unsupported and reopened**; its trigger condition will be re-evaluated
+  once #410's corrected RSS data lands. The reopened work is tracked as
+  **task #418 (R26-9)**, conditional on #410.
+
+`DEFAULT_POOL_SEGMENTS` in
+`src/alloc_core/small_segment_pool_config.rs` remains `4`, unchanged.
