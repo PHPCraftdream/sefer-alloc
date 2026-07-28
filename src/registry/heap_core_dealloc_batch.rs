@@ -127,12 +127,50 @@ impl HeapCore {
     /// pop). This is judged acceptable for `dealloc_batch`'s use case: a
     /// caller freeing many blocks at once (the whole reason to call a batch
     /// API) is unlikely to immediately re-allocate the exact same class
-    /// right after a bulk free — and the magazine-first ordering means the
-    /// LAST `TCACHE_CAP` (or fewer) blocks of the batch (in `blocks` order)
-    /// still land warm, so a small batch (`N <= TCACHE_CAP`) is byte-for-byte
-    /// as warm as the scalar loop, and only a large batch's *excess* over
-    /// magazine capacity gives up warmth in exchange for fewer, larger
-    /// `flush_class` calls.
+    /// right after a bulk free.
+    ///
+    /// ## Which sub-range stays warm: the FIRST accepted blocks (R24-7, task
+    /// #385 — corrected from an R11-4 doc error)
+    ///
+    /// The loop below iterates `for &p in blocks` in slice order and fills
+    /// the magazine until `count == TCACHE_CAP`; every ACCEPTED block after
+    /// that overflows straight to `flush_class`. So with an EMPTY magazine
+    /// and a batch larger than `TCACHE_CAP`, the FIRST `TCACHE_CAP` (or
+    /// fewer) accepted blocks land magazine-warm and the batch's remaining
+    /// accepted blocks are flushed — the opposite of the "last warm"
+    /// behavior this comment claimed from the original R11-4 commit. A
+    /// small batch (`N <= TCACHE_CAP`) is byte-for-byte as warm as the
+    /// scalar loop under EITHER policy (all `N` accepted blocks fit the
+    /// magazine and occupy `slots[0..N]`), so only a LARGE batch's
+    /// *excess* over magazine capacity gives up warmth, in exchange for
+    /// fewer, larger `flush_class` calls.
+    ///
+    /// **Policy decision (R24-7): keep the implemented FIRST-warm behavior;
+    /// do NOT switch to a rolling-buffer LAST-warm design.** The "last warm"
+    /// text was never a deliberate design choice — `git blame` puts it in
+    /// the original R11-4 commit (`ff9ad7a`, 2026-07-21), unedited since,
+    /// with no recorded rationale; it matched scalar temporal-locality
+    /// intuition but was never verified against the always-first-warm
+    /// implementation, and there is no reason "last" was specifically chosen
+    /// that "first" would defeat. A last-warm rolling buffer would, per
+    /// overflow block, evict the oldest magazine entry into staging: a
+    /// `clear_magazine` RMW on a HOT L1 bitmap line (~3–4 Ir), rotation/
+    /// index arithmetic, and an extra stage write — strictly MORE per-block
+    /// work than the current overflow arm (which only writes to `stage`).
+    /// This is the SAME cost category two adjacent Round-24 tasks measured
+    /// as NO-GO regressions in this exact code region: R24-3 (task #381,
+    /// +37 Ir/overflow-event) and R24-4 (task #382, +14 Ir/block), both
+    /// because hot-cache-line RMWs here are already cheap and added
+    /// per-block bookkeeping costs more than it saves. The benefit — better
+    /// locality for a "free a large batch then immediately realloc the same
+    /// class" pattern — is contested by this comment's own use-case argument
+    /// above AND has no in-tree consumer to realize it (R23-7: the batch API
+    /// ships experimental with no production caller). Under that prior,
+    /// prototyping the rolling buffer would very likely reproduce the
+    /// R24-3/R24-4 regression class for a benefit production cannot reach
+    /// today; the honest, calibrated call is to document the actual
+    /// (first-warm) behavior. See `docs/CORRECTNESS_OPEN_ITEMS.md`
+    /// ("Recently resolved") for the durable record of this decision.
     ///
     /// ## Safety
     ///

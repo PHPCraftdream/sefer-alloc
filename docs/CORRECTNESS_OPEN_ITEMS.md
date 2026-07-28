@@ -385,3 +385,53 @@ _(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
      `src/alloc_core/alloc_core_core_diag.rs`,
      `tests/regression_segment_table_tombstone_rebuild.rs`,
      `tests/dealloc_sublinear.rs`, and this index.
+
+4. **`dealloc_batch_small` doc comment claimed the LAST `TCACHE_CAP` freed
+   blocks stay magazine-warm; the implementation keeps the FIRST.** —
+   **RESOLVED** by R24-7 (task #385), a doc-only policy decision (no `src/`
+   behavior change, no numbers measured).
+
+   - **First observed:** independent read-only review of Round 23
+     (`docs/reviews/2026-07-27-r23-readonly-review.md` §5.3).
+   - **The gap:** `src/registry/heap_core_dealloc_batch.rs`'s
+     `dealloc_batch_small` "Trade-off" doc comment (from the original R11-4
+     commit `ff9ad7a`) claimed the LAST `TCACHE_CAP` blocks stay
+     magazine-warm. The implementation iterates `for &p in blocks` in slice
+     order and fills the magazine until `count == TCACHE_CAP`, then routes
+     every further ACCEPTED block to `flush_class` — so with an empty
+     magazine the FIRST `TCACHE_CAP` accepted blocks stay warm, the opposite
+     of the claim.
+   - **Decision (option (a) of the R24-7 brief): correct the documentation
+     to describe the actual first-warm behavior; do NOT switch to a
+     rolling-buffer last-warm algorithm.** `git blame` shows the "last warm"
+     text was in the original R11-4 commit, unedited since, with no recorded
+     rationale — an aspirational doc error matching scalar temporal-locality
+     intuition, never verified against the always-first-warm implementation;
+     there is no design reason "last" was specifically chosen that "first"
+     would defeat. A last-warm rolling buffer would add, per overflow block,
+     a `clear_magazine` RMW on a hot L1 bitmap line plus rotation/index
+     arithmetic plus an extra stage write — strictly MORE per-block work
+     than the current overflow arm (which only writes to `stage`), i.e. the
+     SAME cost category two adjacent Round-24 tasks measured as NO-GO
+     regressions in this exact code region: R24-3 (task #381,
+     +37 Ir/overflow-event) and R24-4 (task #382, +14 Ir/block). The benefit
+     (locality for "free a large batch then immediately realloc same
+     class") is contested by the doc's own use-case argument AND has no
+     in-tree consumer (R23-7: the batch API ships experimental with no
+     production caller), so even a zero-cost switch would realize no
+     production benefit today. Under that prior, prototyping the rolling
+     buffer would very likely reproduce the R24-3/R24-4 regression class.
+   - **The corrected doc comment's secondary claim is unaffected and still
+     holds:** a small batch (`N <= TCACHE_CAP`) is byte-for-byte as warm as
+     the scalar loop under EITHER first- or last-warm policy (all `N`
+     accepted blocks fit the magazine).
+   - **No in-context Ir measurement was run,** because option (b) was not
+     pursued: the brief's own recommendation frames (a) as the default and
+     (b) as the higher-bar prove-it-first path, and the structural prior
+     (two NO-GOs in the same cost category + no consumer + the doc's own
+     argument against the benefit) made the measurement very likely to only
+     confirm a regression. The mandatory-if-pursued measurement gate
+     therefore did not apply.
+   - **Files changed:** `src/registry/heap_core_dealloc_batch.rs` (doc
+     comment only) and this index. Zero `src/` behavior change; `git diff
+     HEAD -- src/` shows only the doc-comment edit. No version bumps.
