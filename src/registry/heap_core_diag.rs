@@ -242,6 +242,24 @@ impl HeapCore {
         self.core.dbg_pooled_count()
     }
 
+    /// TEST-ONLY (R26-1, task #410): the resolved runtime pool cap for this
+    /// heap — thin delegation to `AllocCore::dbg_pool_cap`, exposed at the
+    /// `HeapCore` level (mirroring `dbg_pooled_count`'s existing delegation
+    /// pattern in this file) so the R26-1 subprocess-per-arm RSS probe can
+    /// self-verify each claimed heap actually resolved to the requested
+    /// `pool_segments` config (the direct proof the R25-5 RSS-axis bug —
+    /// registry-slot reuse silently keeping an earlier arm's cap — is gone).
+    /// Read-only `&self` accessor returning a `usize`; does NOT touch
+    /// allocator metadata through a raw pointer, so it is a plain safe `fn`
+    /// (same category as `dbg_pooled_count`), NOT an `unsafe fn` and NOT
+    /// `bench-internals`-gated.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_pool_cap(&self) -> usize {
+        self.core.dbg_pool_cap()
+    }
+
     /// TEST-ONLY (R11-2): resolve the base address of the segment that
     /// contains `ptr`. Thin delegation to `alloc_core::os::segment_base_of_ptr`
     /// — exposed at the `HeapCore` level because `alloc_core::os` is

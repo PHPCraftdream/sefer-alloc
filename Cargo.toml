@@ -1526,6 +1526,10 @@ required-features = ["alloc-global", "fastbin", "alloc-stats"]
 name = "r25_5_pool_cap_sweep_probe"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+[[example]]
+name = "r26_1_pool_cap_rss_subprocess_probe"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

@@ -404,10 +404,10 @@ for completeness.
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 
    > **Current state**
-   > - **Status:** latency/decommit axis of R25-5 CONFIRMED (cap 4→8 eliminates the decommit cliff, self-verified via `AllocCore::dbg_pool_cap()`); RSS/commit axis of R25-5 UNCONFIRMED pending remeasurement (task #410 / R26-1); R25-6's closure (which rested on the now-invalidated "wins on both axes, no tradeoff" claim) REOPENED, tracked via task #418 (R26-9) conditional on #410. **No production change.**
-   > - **Current number/verdict:** latency axis — GO-CANDIDATE for `pool_segments=8` STANDS (cap 4→8: 20→0 decommits/run, self-verified; cap=16/32 add nothing further on this axis). RSS axis — UNRELIABLE: rows labelled cap=8/16/32 in R25-5's RSS table may have executed under cap=4 (or an earlier arm's cap) because the probe ran all arms sequentially in one `--release` process and registry slot reuse + first-claim-wins config (`heap_registry.rs` `claim_with_config` ~:247-300, `CONFIG_CONFLICTS` ~:263, `debug_assert!` ~:285 compiled out of release) silently override mismatched configs on recycled slots. The "wins on BOTH axes simultaneously, no tradeoff" conclusion is NOT proven. See `R25_5_POOL_CAP_SWEEP_GATE.md` §8.
-   > - **Next trigger:** task #410 (R26-1) — re-measure the RSS axis with one fresh process per `(pool_segments, thread_count, repetition)`, each arm asserting resolved cap and zero `CONFIG_CONFLICTS`; its corrected data gates any RSS claim. Task #418 (R26-9) then re-evaluates R25-6's adaptive/process-wide-budget trigger condition conditional on #410. The DEFAULT-CHANGE decision (promote `DEFAULT_POOL_SEGMENTS` 4→8) remains pending valid two-axis evidence.
-   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` (§8 correction) + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` (trailing UNCONFIRMED_PENDING_R26_1 section) + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`; **R26-2 correction provenance:** `docs/reviews/2026-07-28-r25-readonly-review.md` (P0 measurement-validity finding).
+   > - **Status:** latency/decommit axis of R25-5 CONFIRMED (cap 4→8 eliminates the decommit cliff, self-verified via `AllocCore::dbg_pool_cap()`); RSS/commit axis of R25-5 REMEASURED under subprocess-per-arm isolation (R26-1, task #410) — the R25-5 "cap 4→8 wins on RSS too" claim does NOT reproduce: under isolation all four caps (4/8/16/32) produce statistically identical RSS at every thread count (1/8/32), refuting R25-5's "cap=8 is 34% cheaper on RSS at 8T" finding as an artifact of sequential single-process slot reuse. R25-6's closure REOPENED (task #418 / R26-9). **No production change.**
+   > - **Current number/verdict:** latency axis — GO-CANDIDATE for `pool_segments=8` STANDS (cap 4→8: 20→0 decommits/run, self-verified). RSS axis (R26-1 corrected, median of 3 reps, all 36 arms self-verified `verified_cap == pool_segments` AND `cfg_conflicts_delta == 0`) — RSS-NEUTRAL: cap=4 1T=13,368 KiB vs cap=8 1T=13,372 KiB (0.03% diff, within noise); cap=4 32T=423,448 vs cap=8 32T=423,444 (identical). The "wins on BOTH axes simultaneously, no tradeoff" conclusion is REFUTED for RSS: raising the cap is RSS-neutral (no benefit, no penalty), not RSS-beneficial. The GO-CANDIDATE for cap=8 survives on the latency axis alone (eliminates decommits at no RSS cost). See `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md`.
+   > - **Next trigger:** the DEFAULT-CHANGE decision (promote `DEFAULT_POOL_SEGMENTS` 4→8) remains pending — the corrected evidence is "eliminates 20 decommits/run at RSS-neutral cost," a positive but weaker case than R25-5's invalidated "faster AND cheaper on RSS." Task #418 (R26-9) re-evaluates R25-6's adaptive/process-wide-budget trigger condition: the corrected data shows no RSS trade-off to resolve (flat across caps) but also no RSS benefit from the fixed raise, so the adaptive design's value proposition (bound aggregate committed memory while letting hot heaps exceed 4) is unchanged.
+   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` (§8 correction) + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` (trailing UNCONFIRMED_PENDING_R26_1 section) + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`; **R26-1 (corrected RSS):** `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md` + `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE_summary.csv` + `docs/perf/_raw_r26_1_pool_cap_rss_subprocess_probe.log`; **R26-2 correction provenance:** `docs/reviews/2026-07-28-r25-readonly-review.md` (P0 measurement-validity finding).
 
    R24-10 (task #388) established the *mechanism* behind the 1024B teardown
    residual (the segment decommit/release/re-reserve lifecycle Mechanism-2's
@@ -499,6 +499,36 @@ for completeness.
    Remeasurement is tracked as task #410 (R26-1, subprocess-per-arm isolation);
    R25-6's closure (which rested entirely on the "wins on both axes, no tradeoff"
    claim) is reopened and tracked as task #418 (R26-9), conditional on #410.
+
+   **2026-07-28 (R26-1, task #410) — RSS AXIS REMEASURED (subprocess-per-arm).**
+   The remeasurement the R26-2 correction pointed to is now complete. A new
+   probe (`examples/r26_1_pool_cap_rss_subprocess_probe.rs`) runs each
+   `(pool_segments, thread_count, repetition)` tuple in its OWN freshly-spawned
+   OS process, eliminating the registry-slot-reuse bug by construction. Each
+   child claims heaps via `HeapRegistry::claim_with_config` (not `SeferAlloc`,
+   sidestepping its private TLS), then hard-`assert!`s BOTH (i) every claimed
+   heap's `HeapCore::dbg_pool_cap()` (new thin delegation added to
+   `src/registry/heap_core_diag.rs` this task) equals the requested
+   `pool_segments`, AND (ii) `config_conflicts_total()` delta is exactly 0 —
+   per the review's "Required correction" recipe. All 36 child runs (4 caps ×
+   3 thread-counts × 3 reps) passed both self-checks. **Result: the R25-5
+   "cap 4→8 wins on RSS too (lower RSS)" claim does NOT reproduce.** Under
+   isolation, all four caps produce statistically identical RSS at every thread
+   count (cap=4 1T=13,368 KiB vs cap=8 1T=13,372 — 0.03% diff; cap=4 32T=
+   423,448 vs cap=8 32T=423,444 — identical). The inter-cap difference at every
+   cell is smaller than the intra-cap spread across 3 reps. R25-5's dramatic
+   "cap=8 is 34% cheaper on RSS at 8T" was an artifact of cap=8's threads
+   silently reusing cap=4's already-committed segments (measuring incremental-
+   over-warm, not fresh footprint). **Re-stated verdict:** the GO-CANDIDATE
+   for `pool_segments=8` survives on the latency/decommit axis ALONE
+   (eliminates 20 decommits/run at RSS-NEUTRAL cost — no RSS benefit, but also
+   no RSS penalty). The "wins on BOTH axes simultaneously, no tradeoff"
+   framing is refuted for the RSS axis. The DEFAULT-CHANGE decision remains
+   pending — the corrected case is positive but weaker than R25-5's
+   invalidated "faster AND cheaper." Full evidence:
+   `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md` +
+   `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE_summary.csv` +
+   `docs/perf/_raw_r26_1_pool_cap_rss_subprocess_probe.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

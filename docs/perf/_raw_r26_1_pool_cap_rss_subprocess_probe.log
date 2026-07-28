@@ -1,0 +1,466 @@
+    Finished `release` profile [optimized] target(s) in 2.21s
+     Running `D:\dev\rust\.cargo-target\release\examples\r26_1_pool_cap_rss_subprocess_probe.exe`
+=== R26-1 pool_segments RSS sweep — subprocess-per-arm isolation ===
+grid: pool_segments in [4, 8, 16, 32] x threads in [1, 8, 32] x 3 reps; SIZE=1024B  CHURN_WORKING_SET=256  OPS=1024  RSS_RUN_DURATION=1.5s  RSS_BATCH_SIZE=50
+
+--- arm pool_segments=4 threads=1 rep=0/3 ---
+RESULT pool_segments=4
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13368
+RESULT peak_commit_delta_kib=17240
+RESULT rss_before_kib=3032
+RESULT rss_after_kib=16356
+OK pool_segments=4 threads=1 rep=0 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=13368 peak_commit_delta_kib=17240
+--- arm pool_segments=4 threads=1 rep=1/3 ---
+RESULT pool_segments=4
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13364
+RESULT peak_commit_delta_kib=17240
+RESULT rss_before_kib=3060
+RESULT rss_after_kib=16368
+OK pool_segments=4 threads=1 rep=1 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=13364 peak_commit_delta_kib=17240
+--- arm pool_segments=4 threads=1 rep=2/3 ---
+RESULT pool_segments=4
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13388
+RESULT peak_commit_delta_kib=17268
+RESULT rss_before_kib=3032
+RESULT rss_after_kib=16360
+OK pool_segments=4 threads=1 rep=2 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=13388 peak_commit_delta_kib=17268
+--- arm pool_segments=4 threads=8 rep=0/3 ---
+RESULT pool_segments=4
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105976
+RESULT peak_commit_delta_kib=133548
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108108
+OK pool_segments=4 threads=8 rep=0 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=105976 peak_commit_delta_kib=133548
+--- arm pool_segments=4 threads=8 rep=1/3 ---
+RESULT pool_segments=4
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105904
+RESULT peak_commit_delta_kib=133544
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108016
+OK pool_segments=4 threads=8 rep=1 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=105904 peak_commit_delta_kib=133544
+--- arm pool_segments=4 threads=8 rep=2/3 ---
+RESULT pool_segments=4
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106064
+RESULT peak_commit_delta_kib=133584
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108204
+OK pool_segments=4 threads=8 rep=2 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=106064 peak_commit_delta_kib=133584
+--- arm pool_segments=4 threads=32 rep=0/3 ---
+RESULT pool_segments=4
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423244
+RESULT peak_commit_delta_kib=532172
+RESULT rss_before_kib=3060
+RESULT rss_after_kib=423264
+OK pool_segments=4 threads=32 rep=0 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=423244 peak_commit_delta_kib=532172
+--- arm pool_segments=4 threads=32 rep=1/3 ---
+RESULT pool_segments=4
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423448
+RESULT peak_commit_delta_kib=532260
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=422688
+OK pool_segments=4 threads=32 rep=1 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=423448 peak_commit_delta_kib=532260
+--- arm pool_segments=4 threads=32 rep=2/3 ---
+RESULT pool_segments=4
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423656
+RESULT peak_commit_delta_kib=532312
+RESULT rss_before_kib=3032
+RESULT rss_after_kib=423960
+OK pool_segments=4 threads=32 rep=2 verified_cap=4 cfg_conflicts_delta=0 peak_rss_delta_kib=423656 peak_commit_delta_kib=532312
+--- arm pool_segments=8 threads=1 rep=0/3 ---
+RESULT pool_segments=8
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13392
+RESULT peak_commit_delta_kib=17268
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=16364
+OK pool_segments=8 threads=1 rep=0 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=13392 peak_commit_delta_kib=17268
+--- arm pool_segments=8 threads=1 rep=1/3 ---
+RESULT pool_segments=8
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13372
+RESULT peak_commit_delta_kib=17240
+RESULT rss_before_kib=3052
+RESULT rss_after_kib=16364
+OK pool_segments=8 threads=1 rep=1 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=13372 peak_commit_delta_kib=17240
+--- arm pool_segments=8 threads=1 rep=2/3 ---
+RESULT pool_segments=8
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13364
+RESULT peak_commit_delta_kib=17240
+RESULT rss_before_kib=3052
+RESULT rss_after_kib=16364
+OK pool_segments=8 threads=1 rep=2 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=13364 peak_commit_delta_kib=17240
+--- arm pool_segments=8 threads=8 rep=0/3 ---
+RESULT pool_segments=8
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106036
+RESULT peak_commit_delta_kib=133656
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=108608
+OK pool_segments=8 threads=8 rep=0 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=106036 peak_commit_delta_kib=133656
+--- arm pool_segments=8 threads=8 rep=1/3 ---
+RESULT pool_segments=8
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106044
+RESULT peak_commit_delta_kib=133684
+RESULT rss_before_kib=3064
+RESULT rss_after_kib=108660
+OK pool_segments=8 threads=8 rep=1 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=106044 peak_commit_delta_kib=133684
+--- arm pool_segments=8 threads=8 rep=2/3 ---
+RESULT pool_segments=8
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105992
+RESULT peak_commit_delta_kib=133624
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108196
+OK pool_segments=8 threads=8 rep=2 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=105992 peak_commit_delta_kib=133624
+--- arm pool_segments=8 threads=32 rep=0/3 ---
+RESULT pool_segments=8
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423444
+RESULT peak_commit_delta_kib=532256
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=422912
+OK pool_segments=8 threads=32 rep=0 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=423444 peak_commit_delta_kib=532256
+--- arm pool_segments=8 threads=32 rep=1/3 ---
+RESULT pool_segments=8
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423320
+RESULT peak_commit_delta_kib=532120
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=422644
+OK pool_segments=8 threads=32 rep=1 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=423320 peak_commit_delta_kib=532120
+--- arm pool_segments=8 threads=32 rep=2/3 ---
+RESULT pool_segments=8
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=424140
+RESULT peak_commit_delta_kib=532952
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=424932
+OK pool_segments=8 threads=32 rep=2 verified_cap=8 cfg_conflicts_delta=0 peak_rss_delta_kib=424140 peak_commit_delta_kib=532952
+--- arm pool_segments=16 threads=1 rep=0/3 ---
+RESULT pool_segments=16
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13360
+RESULT peak_commit_delta_kib=17240
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=16364
+OK pool_segments=16 threads=1 rep=0 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=13360 peak_commit_delta_kib=17240
+--- arm pool_segments=16 threads=1 rep=1/3 ---
+RESULT pool_segments=16
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13360
+RESULT peak_commit_delta_kib=17236
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=16364
+OK pool_segments=16 threads=1 rep=1 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=13360 peak_commit_delta_kib=17236
+--- arm pool_segments=16 threads=1 rep=2/3 ---
+RESULT pool_segments=16
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13368
+RESULT peak_commit_delta_kib=17236
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=16364
+OK pool_segments=16 threads=1 rep=2 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=13368 peak_commit_delta_kib=17236
+--- arm pool_segments=16 threads=8 rep=0/3 ---
+RESULT pool_segments=16
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105956
+RESULT peak_commit_delta_kib=133508
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108360
+OK pool_segments=16 threads=8 rep=0 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=105956 peak_commit_delta_kib=133508
+--- arm pool_segments=16 threads=8 rep=1/3 ---
+RESULT pool_segments=16
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105880
+RESULT peak_commit_delta_kib=133512
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108048
+OK pool_segments=16 threads=8 rep=1 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=105880 peak_commit_delta_kib=133512
+--- arm pool_segments=16 threads=8 rep=2/3 ---
+RESULT pool_segments=16
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106012
+RESULT peak_commit_delta_kib=133792
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=108128
+OK pool_segments=16 threads=8 rep=2 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=106012 peak_commit_delta_kib=133792
+--- arm pool_segments=16 threads=32 rep=0/3 ---
+RESULT pool_segments=16
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423444
+RESULT peak_commit_delta_kib=532388
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=422684
+OK pool_segments=16 threads=32 rep=0 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=423444 peak_commit_delta_kib=532388
+--- arm pool_segments=16 threads=32 rep=1/3 ---
+RESULT pool_segments=16
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423620
+RESULT peak_commit_delta_kib=532336
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=423728
+OK pool_segments=16 threads=32 rep=1 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=423620 peak_commit_delta_kib=532336
+--- arm pool_segments=16 threads=32 rep=2/3 ---
+RESULT pool_segments=16
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_cap=16
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423000
+RESULT peak_commit_delta_kib=531588
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=422996
+OK pool_segments=16 threads=32 rep=2 verified_cap=16 cfg_conflicts_delta=0 peak_rss_delta_kib=423000 peak_commit_delta_kib=531588
+--- arm pool_segments=32 threads=1 rep=0/3 ---
+RESULT pool_segments=32
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13384
+RESULT peak_commit_delta_kib=17276
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=16364
+OK pool_segments=32 threads=1 rep=0 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=13384 peak_commit_delta_kib=17276
+--- arm pool_segments=32 threads=1 rep=1/3 ---
+RESULT pool_segments=32
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13384
+RESULT peak_commit_delta_kib=17276
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=16364
+OK pool_segments=32 threads=1 rep=1 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=13384 peak_commit_delta_kib=17276
+--- arm pool_segments=32 threads=1 rep=2/3 ---
+RESULT pool_segments=32
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=13368
+RESULT peak_commit_delta_kib=17236
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=16364
+OK pool_segments=32 threads=1 rep=2 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=13368 peak_commit_delta_kib=17236
+--- arm pool_segments=32 threads=8 rep=0/3 ---
+RESULT pool_segments=32
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106132
+RESULT peak_commit_delta_kib=133712
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108392
+OK pool_segments=32 threads=8 rep=0 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=106132 peak_commit_delta_kib=133712
+--- arm pool_segments=32 threads=8 rep=1/3 ---
+RESULT pool_segments=32
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=105996
+RESULT peak_commit_delta_kib=133656
+RESULT rss_before_kib=3032
+RESULT rss_after_kib=108308
+OK pool_segments=32 threads=8 rep=1 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=105996 peak_commit_delta_kib=133656
+--- arm pool_segments=32 threads=8 rep=2/3 ---
+RESULT pool_segments=32
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=106052
+RESULT peak_commit_delta_kib=133656
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=108216
+OK pool_segments=32 threads=8 rep=2 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=106052 peak_commit_delta_kib=133656
+--- arm pool_segments=32 threads=32 rep=0/3 ---
+RESULT pool_segments=32
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423752
+RESULT peak_commit_delta_kib=532712
+RESULT rss_before_kib=3056
+RESULT rss_after_kib=424516
+OK pool_segments=32 threads=32 rep=0 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=423752 peak_commit_delta_kib=532712
+--- arm pool_segments=32 threads=32 rep=1/3 ---
+RESULT pool_segments=32
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423236
+RESULT peak_commit_delta_kib=532156
+RESULT rss_before_kib=3060
+RESULT rss_after_kib=423256
+OK pool_segments=32 threads=32 rep=1 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=423236 peak_commit_delta_kib=532156
+--- arm pool_segments=32 threads=32 rep=2/3 ---
+RESULT pool_segments=32
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_cap=32
+RESULT config_conflicts_delta=0
+RESULT peak_rss_delta_kib=423520
+RESULT peak_commit_delta_kib=532380
+RESULT rss_before_kib=3036
+RESULT rss_after_kib=423948
+OK pool_segments=32 threads=32 rep=2 verified_cap=32 cfg_conflicts_delta=0 peak_rss_delta_kib=423520 peak_commit_delta_kib=532380
+
+=== aggregated (median of 3 reps; min..max in parens) ===
+ pool_segments    threads     peak_rss_delta_kib  peak_commit_delta_kib   verified_cap  cfg_conflicts
+             4          1   13368 (13364..13388)   17240 (17240..17268)              4              0
+RESULT agg_peak_rss_delta_kib_pool4_threads1=13368
+RESULT agg_peak_commit_delta_kib_pool4_threads1=17240
+RESULT agg_rss_min_pool4_threads1=13364
+RESULT agg_rss_max_pool4_threads1=13388
+             4          8 105976 (105904..106064) 133548 (133544..133584)              4              0
+RESULT agg_peak_rss_delta_kib_pool4_threads8=105976
+RESULT agg_peak_commit_delta_kib_pool4_threads8=133548
+RESULT agg_rss_min_pool4_threads8=105904
+RESULT agg_rss_max_pool4_threads8=106064
+             4         32 423448 (423244..423656) 532260 (532172..532312)              4              0
+RESULT agg_peak_rss_delta_kib_pool4_threads32=423448
+RESULT agg_peak_commit_delta_kib_pool4_threads32=532260
+RESULT agg_rss_min_pool4_threads32=423244
+RESULT agg_rss_max_pool4_threads32=423656
+             8          1   13372 (13364..13392)   17240 (17240..17268)              8              0
+RESULT agg_peak_rss_delta_kib_pool8_threads1=13372
+RESULT agg_peak_commit_delta_kib_pool8_threads1=17240
+RESULT agg_rss_min_pool8_threads1=13364
+RESULT agg_rss_max_pool8_threads1=13392
+             8          8 106036 (105992..106044) 133656 (133624..133684)              8              0
+RESULT agg_peak_rss_delta_kib_pool8_threads8=106036
+RESULT agg_peak_commit_delta_kib_pool8_threads8=133656
+RESULT agg_rss_min_pool8_threads8=105992
+RESULT agg_rss_max_pool8_threads8=106044
+             8         32 423444 (423320..424140) 532256 (532120..532952)              8              0
+RESULT agg_peak_rss_delta_kib_pool8_threads32=423444
+RESULT agg_peak_commit_delta_kib_pool8_threads32=532256
+RESULT agg_rss_min_pool8_threads32=423320
+RESULT agg_rss_max_pool8_threads32=424140
+            16          1   13360 (13360..13368)   17236 (17236..17240)             16              0
+RESULT agg_peak_rss_delta_kib_pool16_threads1=13360
+RESULT agg_peak_commit_delta_kib_pool16_threads1=17236
+RESULT agg_rss_min_pool16_threads1=13360
+RESULT agg_rss_max_pool16_threads1=13368
+            16          8 105956 (105880..106012) 133512 (133508..133792)             16              0
+RESULT agg_peak_rss_delta_kib_pool16_threads8=105956
+RESULT agg_peak_commit_delta_kib_pool16_threads8=133512
+RESULT agg_rss_min_pool16_threads8=105880
+RESULT agg_rss_max_pool16_threads8=106012
+            16         32 423444 (423000..423620) 532336 (531588..532388)             16              0
+RESULT agg_peak_rss_delta_kib_pool16_threads32=423444
+RESULT agg_peak_commit_delta_kib_pool16_threads32=532336
+RESULT agg_rss_min_pool16_threads32=423000
+RESULT agg_rss_max_pool16_threads32=423620
+            32          1   13384 (13368..13384)   17276 (17236..17276)             32              0
+RESULT agg_peak_rss_delta_kib_pool32_threads1=13384
+RESULT agg_peak_commit_delta_kib_pool32_threads1=17276
+RESULT agg_rss_min_pool32_threads1=13368
+RESULT agg_rss_max_pool32_threads1=13384
+            32          8 106052 (105996..106132) 133656 (133656..133712)             32              0
+RESULT agg_peak_rss_delta_kib_pool32_threads8=106052
+RESULT agg_peak_commit_delta_kib_pool32_threads8=133656
+RESULT agg_rss_min_pool32_threads8=105996
+RESULT agg_rss_max_pool32_threads8=106132
+            32         32 423520 (423236..423752) 532380 (532156..532712)             32              0
+RESULT agg_peak_rss_delta_kib_pool32_threads32=423520
+RESULT agg_peak_commit_delta_kib_pool32_threads32=532380
+RESULT agg_rss_min_pool32_threads32=423236
+RESULT agg_rss_max_pool32_threads32=423752
+
+NOTE: each (pool_segments, thread_count, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation), eliminating the registry-slot-reuse bug that invalidated R25-5's RSS axis. Every arm hard-asserted resolved cap == requested cap AND config_conflicts_delta == 0 before its number was trusted (see each child's own output above). Median is the reported figure; (min..max) across 3 reps shows the spread. RSS/commit are process-wide deltas on a shared Windows host (noisy point estimates) but the cap/conflicts self-checks are exact.
