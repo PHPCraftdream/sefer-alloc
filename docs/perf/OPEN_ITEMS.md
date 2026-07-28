@@ -1036,3 +1036,15 @@ for completeness.
   shared unknown bucket, then foreign real-node buckets ascending) — not
   "disabled, linear scan only" as R10-6 originally found. See
   `src/alloc_core/alloc_core_small.rs:554-571`'s own "R11-6 UPDATE" comment.
+  **2026-07-28 note (R25-9, task #403):** the R24 readonly review
+  (`docs/reviews/2026-07-28-r24-readonly-review.md`, "Conditional — NUMA
+  directory") independently recommended "a node-indexed directory" as a
+  still-open ~140× high-segment-count `numa-aware` cliff, citing R10-6's
+  own pre-fix measurement. Re-verified against current source before acting
+  on it: this is **already resolved by R11-6** (14 rounds earlier) — the
+  cliff the review describes (O(S) linear scan under `numa-aware`) is
+  exactly what `class_nonempty_by_node`'s node-indexed bitmap replaced. No
+  work item opened; the review's recommendation was based on the
+  pre-R11-6 report without checking whether it had since landed. Task
+  #403 closed with this note as its resolution — no design work needed,
+  no new trigger to track.
