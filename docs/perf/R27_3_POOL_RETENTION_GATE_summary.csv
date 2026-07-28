@@ -1,0 +1,40 @@
+# R27-3 pool retention gate — machine-readable summary (companion to R27_3_POOL_RETENTION_GATE.md)
+# commit_sha=aff0aeb7619f7b18a06c836dde413134e570abed
+# feature_set=production,alloc-stats
+# platform=Windows 10 Pro x86-64, 16 logical cores (shared host)
+# example=r27_3_pool_retention_gate  probe=examples/r27_3_pool_retention_gate.rs
+# sample_count=18 children (2 configs x 3 thread_counts x 3 reps); all replications run, none silently capped
+# workload=SIZE=1024 CHURN_WORKING_SET=256 OPS=1024 PRESSURE_BATCH_SIZE=120 PRESSURE_DURATION=1.5s decay_interval_ms=1000 SEGMENT=4194304
+# rss/commit are KiB; pooled_* are segment counts; decommit/seg_* are process-wide deltas over the pressure window
+# R26-4 identity fields carried per row: pool_segments (requested), verified_cap (resolved, read back via dbg_pool_cap),
+#   config_conflicts_delta (==0), process_identity (subprocess = one fresh OS process per row)
+pool_segments,pool_byte_cap_mib,thread_count,repetition,verified_cap,config_conflicts_delta,process_identity,peak_rss_kib,peak_commit_kib,decommit_delta,seg_released_delta,seg_reserved_delta,pooled_hw_max,pooled_final_sum,pooled_final_max,rss_post_kib,commit_post_kib,rss_100ms_kib,rss_1s_kib,rss_2s_kib,pooled_predrain_max,drained_sum,rss_drain_kib,commit_drain_kib,decay_interval_ms
+4,16,1,0,4,0,subprocess,28124,34400,278,278,284,4,4,4,26652,26192,26656,26656,26656,4,4,10272,9776,1000
+4,16,1,1,4,0,subprocess,28116,34436,274,274,280,4,4,4,26680,26228,26684,26684,26684,4,4,10300,9812,1000
+4,16,1,2,4,0,subprocess,28132,34400,272,272,278,4,4,4,26532,26048,26536,26536,26536,4,4,10152,9632,1000
+4,16,8,0,4,0,subprocess,193672,267116,1226,1226,1274,4,32,4,190296,200760,190300,190300,190300,4,32,59228,69432,1000
+4,16,8,1,4,0,subprocess,193516,266644,1262,1262,1310,4,32,4,190268,200796,190272,190272,190272,4,32,59200,69468,1000
+4,16,8,2,4,0,subprocess,196424,266640,1212,1212,1260,4,32,4,190828,201372,190832,190832,190832,4,32,59760,70044,1000
+4,16,32,0,4,0,subprocess,753840,1043480,1412,1412,1604,4,128,4,745992,796136,745996,745996,745996,4,128,221708,270824,1000
+4,16,32,1,4,0,subprocess,749824,1026924,1454,1454,1646,4,128,4,745360,793584,745364,745364,745364,4,128,221076,268272,1000
+4,16,32,2,4,0,subprocess,754300,1010112,1446,1446,1638,4,128,4,745936,794652,745940,745940,745940,4,128,221652,269340,1000
+8,32,1,0,8,0,subprocess,34872,34428,0,0,8,6,5,5,34748,34288,34752,34752,34752,5,5,14284,13768,1000
+8,32,1,1,8,0,subprocess,34856,34400,0,0,8,6,5,5,34664,34400,34668,34668,34668,5,5,14200,13880,1000
+8,32,1,2,8,0,subprocess,34872,34432,0,0,8,6,5,5,34748,34292,34752,34752,34752,5,5,14284,13772,1000
+8,32,8,0,8,0,subprocess,256380,267168,0,0,64,6,40,5,255856,266360,255860,255860,255860,5,40,92060,102200,1000
+8,32,8,1,8,0,subprocess,256264,267276,0,0,64,6,40,5,255772,266320,255776,255776,255776,5,40,91976,102160,1000
+8,32,8,2,8,0,subprocess,256340,266896,0,0,64,6,40,5,256340,266896,256344,256344,256344,5,40,92544,102736,1000
+8,32,32,0,8,0,subprocess,1014448,1063980,0,0,256,6,160,5,1007360,1055292,1007364,1007364,1007364,5,160,352140,398652,1000
+8,32,32,1,8,0,subprocess,1014196,1064008,0,0,256,6,160,5,1007008,1054932,1007012,1007012,1007012,5,160,351788,398292,1000
+8,32,32,2,8,0,subprocess,1014308,1063432,0,0,256,6,160,5,1008080,1056540,1008084,1008084,1008084,5,160,352860,399900,1000
+# === aggregated medians (cap8 - cap4 retention delta) ===
+# metric,threads=1,threads=8,threads=32
+delta_rss_post_kib_cap8minus4,8096,65560,261424
+delta_rss_post_kib_per_heap,8096,8195,8170
+delta_rss_drain_kib_cap8minus4,4012,32832,130488
+delta_rss_drain_kib_per_heap,4012,4104,4078
+delta_pooled_final_sum_segs_cap8minus4,1,8,32
+pooled_hw_max_cap4,4,4,4
+pooled_hw_max_cap8,6,6,6
+decommit_delta_median_cap4,274,1226,1446
+decommit_delta_median_cap8,0,0,0
