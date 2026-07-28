@@ -13,9 +13,26 @@
 //! old value), batches up to 528 blocks never hit this path; with `STAGE_CAP =
 //! 64`, batches as small as 81 blocks do.
 //!
-//! This test exercises that path with N=200 (→ 3 flushes: 64 + 64 + 56) and
-//! verifies every block is correctly freed and recyclable — the zero-trust
-//! regression guard for the constant change.
+//! This test exercises that path with N=200 (→ 3 flushes: 64 + 64 + 56)
+//! through the PUBLIC `SeferAlloc`/`GlobalAlloc` entry point and proves,
+//! precisely: **(a) no OOM** — every one of the N post-free re-allocations
+//! through `GLOBAL` succeeds (the freed blocks were returned to the pool
+//! somewhere, not leaked), and **(b) no aliasing** — the N re-allocated
+//! pointers are mutually distinct and each independently holds its own
+//! unique write pattern. This is the zero-trust regression guard for the
+//! `STAGE_CAP` constant change AT THE PUBLIC API LEVEL.
+//!
+//! **What this test does NOT prove** (see Phase 3's comment below for the
+//! full reasoning): because it runs through the installed `#[global_allocator]`,
+//! Rust's own test-harness machinery (`Vec`/`HashSet` growth, assertion
+//! formatting) allocates from the SAME pool between the free and the
+//! re-alloc, so it cannot assert that the SPECIFIC N addresses freed by the
+//! multi-flush call are the ones reclaimed, nor can it isolate the
+//! multi-flush path's own live-count bookkeeping from the harness's
+//! incidental allocations. For that stronger, `HeapCore`-level guarantee —
+//! an exact live-count state-transition check isolated from any test-harness
+//! interference — see the companion test
+//! `tests/r25_4_dealloc_batch_multi_flush_oracle.rs` (R25-4, task #398).
 //!
 //! **Mutation counterfactual (documented, run by the reviewer):** temporarily
 //! remove the mid-loop flush block
@@ -40,8 +57,14 @@ static GLOBAL: SeferAlloc = SeferAlloc::new();
 /// the two `staged == STAGE_CAP` boundaries, then the final 56 at the
 /// post-loop flush). All 200 blocks are 16 B @ align 8, so they all land in one
 /// 4 MiB segment — a pure same-segment multi-flush stress.
+///
+/// Named `_no_oom_no_aliasing` (not `_all_blocks_recycled`): see the module
+/// doc's "What this test does NOT prove" — the public `GlobalAlloc` entry
+/// point cannot isolate exact block-level reclamation from the test
+/// harness's own incidental allocations, so the name states exactly the two
+/// properties this test actually asserts.
 #[test]
-fn dealloc_batch_large_multi_flush_all_blocks_recycled() {
+fn dealloc_batch_large_multi_flush_no_oom_no_aliasing() {
     let layout = Layout::from_size_align(16, 8).unwrap();
     let n = 200usize;
 
@@ -57,7 +80,8 @@ fn dealloc_batch_large_multi_flush_all_blocks_recycled() {
     assert_eq!(distinct_alloc.len(), n, "alloc issued duplicate pointers");
 
     // Phase 2: free all N via one dealloc_batch call — triggers the multi-flush
-    // path (3 intermediate + 1 final flush_class calls at STAGE_CAP=64).
+    // path (2 intermediate + 1 final flush_class calls at STAGE_CAP=64, i.e.
+    // 64 + 64 + 56 = 3 flushes total; see the top-of-file doc comment).
     // SAFETY: every entry was allocated by GLOBAL with `layout`; freed once.
     unsafe { GLOBAL.dealloc_batch(layout, &blocks) };
 
