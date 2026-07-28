@@ -617,6 +617,32 @@ for completeness.
    Full derivation: `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the correction
    section) — original §0-§9 content preserved verbatim per this project's
    "append, don't rewrite" convention.
+14. **R25-8 — run-encoded free batch (arithmetic free list).**
+
+    > **Current state**
+    > - **Status:** design-only, deferred (CONDITIONAL-GO).
+    > - **Current number/verdict:** CONDITIONAL-GO — design is sound (arithmetic runs are exactly how mimalloc structures its per-page free lists) but the mechanism's natural target (the magazine-overflow free path, R24-5's 3.60× free-only gap, 61.5% overflow-attributable) does NOT satisfy its own contiguity precondition: the magazine is a LIFO stack in FREE-order, and `slots[0..FLUSH_N]` (the flushed 8) are arbitrary offsets, NOT offset-contiguous, so a `(first_off, count, stride)` run-descriptor cannot encode them without an O(n) offset-sort that would exceed the per-block savings. The M2 double-free guard (`AllocBitmap::mark_free`) cannot be eliminated for run-blocks (the bitmap is the only per-block free-state record when no node is materialized), collapsing the free-side win to just `Node::write_next` — the same "cheap hot-cache-line store" class R24-4 measured as a +14 Ir/block net REGRESSION to coalesce. The one genuinely new lever (none of the three prior NO-GOs touched it) is the ALLOC side: a contiguous run lets `drain_freelist_batch` skip the per-block `read_next` dependent load (the chain walk that path's own doc calls "irreducible, no way to hoist it" — true for a scattered list, FALSE for an arithmetic run).
+    > - **Next trigger:** BOTH required — (a) R23-7's `dealloc_batch` promoted from P2/no-downstream-consumer (the ONLY shape with guaranteed contiguity, by `carve_batch` construction); the magazine-overflow path is explicitly OUTSIDE the conditional. AND (b) a Stage-1 Ir measurement on THAT consumer confirming the alloc-side `read_next` chain is the dominant remaining cost (the §4 judge is the instrument; run it ONLY after (a) fires).
+    > - **Evidence:** `R25_8_RUN_ENCODED_FREE_BATCH_DESIGN.md` (full design doc, §3.1 the contiguity finding, §3.3 the double-free-boundary finding, §5 the verdict + triggers, §4 the isolated-victim-judge spec). Triggered by R25-3's NO-GO (`R25_3_FLUSH_N_SWEEP_GATE.md`) — the third NO-GO in this exact free-path/magazine-overflow region (after R24-3, R24-4).
+
+    Design-only; triggered by R25-3's NO-GO (the third consecutive NO-GO in
+    the magazine-overflow free-path region, after R24-3's `flush_magazine_class`
+    merge and R24-4's bulk-mask primitives). Explores a run-descriptor
+    alternative to the intrusive per-block free list: record
+    `(segment, first_offset, count, stride)` for a homogeneous contiguous
+    batch, allocate FROM it arithmetically (no free-list walk while the run is
+    intact), materialize ordinary free-list nodes only on split/escape.
+    CONDITIONAL-GO: the design is sound, but the magazine-overflow free path
+    (the region that motivated the study) fails the run-descriptor's own
+    contiguity precondition (the magazine is LIFO in FREE-order, not
+    offset-order), and the M2 double-free guard forces `mark_free` to stay
+    per-block — so the free-side win collapses to a single hot store R24-4
+    already proved net-negative to coalesce. The one new lever is the alloc
+    side (`read_next` chain elimination), reachable only via a contiguous-batch
+    consumer that does not exist today (R23-7's `dealloc_batch`, P2).
+    Implement ONLY if BOTH triggers fire: (a) a real contiguous-batch consumer
+    emerges, AND (b) a Stage-1 Ir measurement on it confirms the `read_next`
+    chain is the dominant remaining cost. No `src/` change; design doc only.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
