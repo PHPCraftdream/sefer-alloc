@@ -1507,6 +1507,25 @@ required-features = ["alloc-core", "alloc-decommit"]
 name = "tokio_burn_in"
 required-features = ["alloc-global", "alloc-xthread"]
 
+# R25-3 (task #397) / R25-5 (task #399): missing `[[example]]` entries found
+# and fixed by R25-7 (task #401)'s personal zero-trust review -- both files
+# already carry a matching `#![cfg(...)]` gate, but without a Cargo.toml
+# `required-features` entry Cargo still tries to compile them under whatever
+# features ARE active, and the whole-file `#![cfg]` strips `fn main` itself
+# when the gate is false, producing a real `E0601 main function not found`
+# build failure instead of a clean skip -- reproduced with plain `cargo test
+# --features production` (this project's own `scripts/check-all.mjs` step).
+# Every other diagnostic example in this file (see `first_alloc_process`,
+# `r13_9_class_aware_dirty_sidecar_rss`, `r14_5_large_cache_extended_rss_measure`
+# above) already follows this pattern; these two simply missed it.
+[[example]]
+name = "r25_3_flush_n_oscillating_probe"
+required-features = ["alloc-global", "fastbin", "alloc-stats"]
+
+[[example]]
+name = "r25_5_pool_cap_sweep_probe"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

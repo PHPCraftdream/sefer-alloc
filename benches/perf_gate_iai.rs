@@ -1254,6 +1254,156 @@ fn dealloc_batch_fresh_64_16b() {
     unsafe { (*heap).dealloc_batch(layout, &ptrs) };
 }
 
+// R25-7 (task #401) -- `STAGE_CAP` boundary sweep. These six arms extend the
+// R24-8 `dealloc_batch_fresh_{16,64}_16b` pair to batch sizes that EXERCISE THE
+// NEW MULTI-FLUSH PATH introduced by R24-8's STAGE_CAP 512->64 reduction. With
+// STAGE_CAP=64, a batch does: first TCACHE_CAP(16) -> magazine, remaining N-16
+// -> staged, flushed in STAGE_CAP(64)-sized chunks via intermediate flush_class
+// calls. So N > STAGE_CAP + TCACHE_CAP = 80 triggers >=1 intermediate flush.
+//   N=80:   the LARGEST batch that still fits in ONE flush (64 staged + 16
+//           magazine = exactly 80, zero intermediate flushes).
+//   N=81:   the SMALLEST batch that triggers exactly ONE intermediate flush.
+//   N=128:  one intermediate (64) + one final (48) flush.
+//   N=200:  two intermediate (64+64) + one final (56) flush.
+//   N=512:  seven intermediate (64x7=448) + one final (48) flush.
+//   N=1024: fifteen intermediate (64x15=960) + one final (48) flush.
+// These arms measure whatever STAGE_CAP the tree is currently built with (they
+// do NOT hardcode a value), so they double as reusable regression infrastructure
+// for future STAGE_CAP changes -- same precedent as R24-8/R24-2/R25-3's retained
+// bench arms.
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_80_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 80] = [core::ptr::null_mut(); 80];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 80 same-segment blocks (exactly fills
+    // magazine(16) + stage(64); zero intermediate flushes at STAGE_CAP=64).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_81_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 81] = [core::ptr::null_mut(); 81];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 81 same-segment blocks (magazine(16) +
+    // stage fills to 64 -> ONE intermediate flush, then 1 final). The smallest N
+    // that triggers the mid-loop multi-flush path at STAGE_CAP=64.
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_128_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 128] = [core::ptr::null_mut(); 128];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 128 same-segment blocks (magazine(16) +
+    // one intermediate flush(64) + one final flush(48)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_200_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 200] = [core::ptr::null_mut(); 200];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 200 same-segment blocks (magazine(16) +
+    // two intermediate flushes(64+64) + one final flush(56)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_512_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 512] = [core::ptr::null_mut(); 512];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 512 same-segment blocks (magazine(16) +
+    // seven intermediate flushes(64x7=448) + one final flush(48)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_1024_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 1024] = [core::ptr::null_mut(); 1024];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 1024 same-segment blocks (magazine(16) +
+    // fifteen intermediate flushes(64x15=960) + one final flush(48)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
 // R23-3 -- recycle FREELIST-POP isolation.
 //
 // **A first draft here added `recycle_alloc_free_256x16b_2n` (an N/2N
@@ -2144,6 +2294,44 @@ fn dealloc_batch_fresh_64_16b() {
     black_box(0u8);
 }
 
+// R25-7: no-op stubs so `library_benchmark_group!` resolves when `batch-api`
+// is absent (same pattern as the 16/64 stubs above).
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_80_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_81_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_128_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_200_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_512_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_1024_16b() {
+    black_box(0u8);
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -2177,6 +2365,12 @@ library_benchmark_group!(
         carve_batch_only_16b_2n,
         dealloc_batch_fresh_16_16b,
         dealloc_batch_fresh_64_16b,
+        dealloc_batch_fresh_80_16b,
+        dealloc_batch_fresh_81_16b,
+        dealloc_batch_fresh_128_16b,
+        dealloc_batch_fresh_200_16b,
+        dealloc_batch_fresh_512_16b,
+        dealloc_batch_fresh_1024_16b,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,

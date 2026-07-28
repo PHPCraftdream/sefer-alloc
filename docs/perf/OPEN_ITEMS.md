@@ -381,6 +381,25 @@ for completeness.
    `R24_8_DEALLOC_BATCH_INTERNALS_GATE_summary.csv` +
    `docs/perf/_raw_r24_8_baseline.log` / `_raw_r24_8_inv1_after.log` /
    `_raw_r24_8_inv2_stage64.log`.
+   **2026-07-28 update — DONE (task #401, R25-7):** the N>64 evidence gap the
+   R24 readonly review's P4 flagged (R24-8 measured only N≤64, both of which
+   fit in a single flush at either STAGE_CAP — the multi-flush path R24-8
+   *introduced* was never measured for Ir) is closed by a real A/B sweep at
+   N = 80/81/128/200/512/1024 (six new iai arms) under both STAGE_CAP=64
+   (current) and STAGE_CAP=512 (the value R24-8 changed from). **Verdict:
+   CONFIRMED CLEAN — STAGE_CAP=64 beats STAGE_CAP=512 at EVERY measured N on
+   both Ir (+2,539 to +4,065) and Estimated Cycles (+6,076 to +8,168).** No
+   crossover in range. The ΔIr shrinks linearly as N grows (STAGE_CAP=64 does
+   more intermediate flush_class calls), at exactly **+109 Ir per extra
+   intermediate flush** (linear fit verified to the unit at all 5 multi-flush
+   data points: 4065−ΔIr = 109×extra_flushes). Crossover projects at
+   **N≈2,700** — far beyond the "tens to low hundreds" R23-7 frames as this
+   project's realistic batch size. `git diff HEAD -- src/` is empty (STAGE_CAP
+   kept at 64); only 6 new bench arms added (reusable regression infra, same
+   precedent as R24-2/R24-8/R25-3). Full evidence:
+   `R25_7_STAGE_CAP_BOUNDARY_GATE.md` +
+   `R25_7_STAGE_CAP_BOUNDARY_GATE_summary.csv` +
+   `docs/perf/_raw_r25_7_stage64.log` / `_raw_r25_7_stage512.log`.
 13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 

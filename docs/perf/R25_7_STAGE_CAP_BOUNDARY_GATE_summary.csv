@@ -1,0 +1,22 @@
+task,arm,stage_cap,ir,l1,l2,ram,est_cycles,intermediate_flushes,extra_flushes_vs_512,delta_ir_vs_512,delta_pct_vs_512,delta_cyc_vs_512,verdict,toolchain,feature_set
+R25-7,dealloc_batch_fresh_16_16b,64,4449,6047,97,431,21617,0,0,+4065,+47.74%,+8134,CONFIRMED CLEAN (64 wins),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_16_16b,512,8514,14191,95,431,29751,0,,,,
+R25-7,dealloc_batch_fresh_64_16b,64,12692,16131,97,465,32891,0,0,+4065,+24.26%,+8168,CONFIRMED CLEAN (64 wins),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_64_16b,512,16757,24274,95,466,41059,0,,,,
+R25-7,dealloc_batch_fresh_80_16b,64,15395,19435,99,472,36450,0,0,+4065,+20.89%,+8164,CONFIRMED CLEAN (64 wins; boundary: 0 intermediate flushes either side),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_80_16b,512,19460,27579,96,473,44614,0,,,,
+R25-7,dealloc_batch_fresh_81_16b,64,17164,21578,99,475,38698,1,1,+3956,+18.73%,+8018,CONFIRMED CLEAN (64 wins; first N with a 64-side intermediate flush),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_81_16b,512,21120,29571,97,476,46716,0,,,,
+R25-7,dealloc_batch_fresh_128_16b,64,23613,29508,98,489,47113,1,1,+3956,+14.35%,+8026,CONFIRMED CLEAN (64 wins),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_128_16b,512,27569,37499,98,490,55139,0,,,,
+R25-7,dealloc_batch_fresh_200_16b,64,36678,45482,100,521,64217,2,2,+3847,+9.49%,+7868,CONFIRMED CLEAN (64 wins),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_200_16b,512,40525,53325,98,522,72085,0,,,,
+R25-7,dealloc_batch_fresh_512_16b,64,93008,117601,105,636,140386,7,7,+3302,+3.43%,+7138,CONFIRMED CLEAN (64 wins),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_512_16b,512,96310,124689,108,637,147524,0,,,,
+R25-7,dealloc_batch_fresh_1024_16b,64,184250,232457,114,830,262077,15,14,+2539,+1.36%,+6076,CONFIRMED CLEAN (64 wins; max flush count measured; crossover projects ~N=2700),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,dealloc_batch_fresh_1024_16b,512,186789,238498,114,831,268153,1,,,,
+R25-7,overall,,,,,,,,,,,CONFIRMED CLEAN: STAGE_CAP=64 wins at every measured N (16-1024) on Ir AND EstCycles; no crossover in range; crossover projects N~2700 (far beyond realistic 'tens to low hundreds' per R23-7); no code change; src byte-identical to HEAD,,,,
+R25-7,reference_small_churn_16b,64,8051,10531,107,442,26536,n/a,n/a,n/a,n/a,n/a,n/a,reference (no STAGE_CAP dep; byte-identical across A/B in Ir),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,reference_small_churn_16b,512,8051,10533,107,440,26468,n/a,n/a,n/a,n/a,n/a,n/a,reference (no STAGE_CAP dep; Ir byte-identical, cache-sim +/-3 noise),WSL2 valgrind 3.22.0 / iai-callgrind-runner 0.14.2,production batch-api bench-internals
+R25-7,per_extra_flush_cost,,,,,,,,,,+109 Ir/flush,,n/a,linear fit: 4065-deltaIr = 109 x extra_flushes (verified at N=81/128/200/512/1024, exact to the unit),,,
+R25-7,crossover_projection,,,,,,,,,,breakeven at N~2700,,n/a,109 x extra > 4065 -> extra > 37.3; extra ~ 7N/512 -> N ~ 2729 (far beyond realistic per R23-7),,,
