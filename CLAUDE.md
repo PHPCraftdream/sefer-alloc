@@ -92,8 +92,12 @@ Core instructions, mandatory for all code in this repository. They
   claim "tests passed"); verify the tests are not vacuous (would they fail
   without the fix — counterfactual); run an adversarial audit by rust-intel
   categories (rust-cc-audit / code-review); look for out-of-scope edits,
-  TODO/placeholder, half-wired features. Commit — only after personal
-  verification. An agent's statement is a claim, not a receipt.
+  TODO/placeholder, half-wired features, and any new safe `pub fn` that
+  accepts a raw pointer and touches allocator metadata — a benchmark-only
+  `dbg_*` hook of that shape is a soundness hole by construction (see the
+  benchmark-hook rule in "Active rules"; this is exactly how the R25-1 bug was
+  missed). Commit — only after personal verification. An agent's statement is
+  a claim, not a receipt.
 - **After each wave, if the `production` feature composition changed:**
   re-run `npm run bench:table` + `npm run iai` and commit the updated
   README.md / `docs/perf/IAI_BASELINE.md` numbers in the same PR — do not
@@ -322,6 +326,43 @@ Core instructions, mandatory for all code in this repository. They
   to tier 1; tier 2 has its own rule: a single documented reason to hold
   `unsafe` applies to each item-scoped site individually, not just to seam
   modules.
+- **Benchmark-only `dbg_*` hooks that touch allocator metadata through a raw
+  pointer are `unsafe fn` + `bench-internals`-gated, full stop**
+  (R25-1/task #395: `HeapCore::dbg_overflow_bitmap_clear_pass` in
+  `src/registry/heap_core_diag.rs` was a *safe* `pub fn` that derived a segment
+  base from an arbitrary caller pointer via the bitmask
+  `os::segment_base_of_ptr` — zero validation — then wrote allocator metadata
+  (`clear_magazine`) at the derived offset; gated only on `alloc-global +
+  fastbin`, both already in plain `--features production`, so 100%-safe
+  downstream code could trigger undefined behavior through it. A
+  benchmark-only measurement hook mentally filed as "just for measurement," so
+  it was never held to the production safety bar until the R24 readonly review
+  (`docs/reviews/2026-07-28-r24-readonly-review.md`) caught it a full round
+  after it landed). Three rules, each independently enforceable:
+  1. Any `dbg_*`/measurement hook whose safety depends on a raw pointer
+     actually referencing a live, owned, mapped allocation MUST be
+     `pub unsafe fn` with a documented `# Safety` contract — "measurement-only"
+     is not an exemption the moment the function is reachable as `pub` outside
+     `#[cfg(test)]`. `dbg_dealloc_own_thread_with_base` /
+     `dbg_overflow_bitmap_clear_pass` (both in `src/registry/heap_core_diag.rs`)
+     are the positive pattern to follow.
+  2. Any hook with no production caller MUST default to gating behind the
+     `bench-internals` feature, not `alloc-global`/`fastbin`/other
+     production-composition features — otherwise the hook's `#[cfg]` is
+     satisfied by `production` alone and silently widens the safe public
+     surface of a production build. The one sanctioned exception is
+     `dbg_push_to_ring` (R6-MS-4): ~20 test files across the `alloc-xthread`
+     suite already call it, so re-gating would reproduce a 130+-file diff for a
+     documentation-precision concern rather than a regression — its R24-6
+     doc-only justification note (README §"Where unsafe lives") is the
+     resolution for that one, not a precedent to extend.
+  3. When a hook's target experiment is rejected (NO-GO), re-evaluate the hook
+     itself in the SAME task that lands the NO-GO verdict — do not leave it
+     behind as a dangling artifact. This is exactly how the R25-1 bug survived
+     a full round: R24-3's NO-GO (task #381) reverted the
+     `flush_magazine_class` prototype but left the R24-2-era
+     `dbg_overflow_bitmap_clear_pass` hook it depended on in place under the
+     wider gate, undiscovered until an independent review caught it.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
