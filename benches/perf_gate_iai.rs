@@ -834,7 +834,19 @@ fn dealloc_free_only_16b_n32() {
 // operations with no workload-level separation point from this loop, so they
 // are NOT separately isolable here -- see the report for the derived
 // (overflow_total - cheap_push - bitmap_clear) figure.
-#[cfg(all(target_os = "linux", feature = "alloc-xthread", feature = "fastbin"))]
+// R25-1 (task #395): `bench-internals` added because this arm calls
+// `HeapCore::dbg_overflow_bitmap_clear_pass`, now gated on that feature (and
+// now an `unsafe fn`) after the R24 readonly review flagged it as a safe-
+// code-reachable soundness hole — see `Cargo.toml`'s `bench-internals` doc
+// and this bench target's `required-features` (already required it at the
+// target level since R24-6; this per-arm `#[cfg]` additionally keeps
+// `--all-features` builds honest, same as the sibling arm above).
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
 #[library_benchmark]
 fn dealloc_overflow_bitmap_clear_only_16b() {
     let _ = bootstrap::ensure();
@@ -865,9 +877,17 @@ fn dealloc_overflow_bitmap_clear_only_16b() {
     // setup, no hook call) isolates exactly this 8-iteration loop's cost.
     let flush_slice: &[*mut u8] = &ptrs[..8];
     // SAFETY: `heap` is non-null (asserted above) and points to a live
-    // HeapRegistry for this process. The hook itself is safe, but
-    // dereferencing the raw `*mut HeapRegistry` pointer requires an unsafe
-    // block (same as every other `(*heap).method()` call in this file).
+    // HeapRegistry for this process (dereferencing the raw `*mut
+    // HeapRegistry` pointer requires an unsafe block, same as every other
+    // `(*heap).method()` call in this file). `dbg_overflow_bitmap_clear_pass`
+    // is itself `unsafe fn` (R25-1, task #395): its contract requires every
+    // pointer in `flush_slice` to reference a live, this-heap-owned
+    // small-class block this heap issued. `flush_slice` is exactly the first
+    // 8 entries of `ptrs`, each returned by this same heap's `alloc` above
+    // and freed exactly once via `dealloc` in the prefill loop just above,
+    // making them magazine-resident, this-heap-owned blocks with their
+    // bitmap bits set -- precisely the contract this call requires, and
+    // single-threaded (no concurrent mutator) for this whole bench arm.
     unsafe { (*heap).dbg_overflow_bitmap_clear_pass(flush_slice) };
     black_box(flush_slice);
 }

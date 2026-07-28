@@ -512,18 +512,71 @@ impl HeapCore {
     /// feeds pointers whose bits ARE set (via a free-8 prefill) to match the
     /// production overflow's exact bitmap state.
     ///
-    /// Safe: `segment_base_of_ptr`/`SegmentMeta::new`/`clear_magazine` are all
-    /// safe operations on already-mapped segment memory; NO new `unsafe`
-    /// boundary is introduced (unlike `dbg_dealloc_own_thread_with_base`/
-    /// `dbg_push_to_ring`, which are `unsafe fn`). `&self` only -- this loop
-    /// touches neither the magazine array nor any `HeapCore` mutable state.
+    /// R25-1 (task #395, P0 soundness fix): this hook derives a segment base
+    /// from EACH raw pointer via `os::segment_base_of_ptr` (a bitmask, zero
+    /// validation) and then writes allocator metadata
+    /// (`clear_magazine`) at the derived offset. Before this fix it was a
+    /// SAFE `pub fn` gated only on `alloc-global + fastbin` -- both already
+    /// part of plain `--features production` -- so any 100%-safe downstream
+    /// code could call it with an arbitrary/dangling/foreign pointer slice
+    /// and trigger a metadata write through an unvalidated address: safe-code-
+    /// reachable undefined behavior. Flagged by the R24 readonly review
+    /// (`docs/reviews/2026-07-28-r24-readonly-review.md`, "P0: safe public
+    /// diagnostic method can write through arbitrary pointers"). Fixed the
+    /// same way `dbg_dealloc_own_thread_with_base` above already handles the
+    /// identical class of hazard: (1) `unsafe fn` with a documented `#
+    /// Safety` contract, (2) `#[cfg]` additionally gated on `bench-internals`
+    /// so it is not reachable from plain `--features production` at all. Its
+    /// one caller (`benches/perf_gate_iai.rs`'s
+    /// `dealloc_overflow_bitmap_clear_only_16b` arm) already only ever fed it
+    /// pointers from a controlled free-8 prefill of its own allocations, so
+    /// the contract below was already being upheld in practice -- this
+    /// change makes that a compile-time-checked, documented boundary instead
+    /// of an implicit one.
+    ///
+    /// # Safety
+    ///
+    /// For every pointer `p` in `ptrs`: `p` must currently reference a live,
+    /// this-heap-owned small-class block that this heap issued via `alloc`
+    /// and that has not been freed back to (or reused by) the allocator since
+    /// -- i.e. it must be safe to clear that block's magazine-overflow bitmap
+    /// bit, exactly as production's own overflow-flush loop
+    /// (`heap_core_free.rs`) only ever does for blocks it just flushed from
+    /// its own tcache magazine. `os::segment_base_of_ptr(p)` must land inside
+    /// a segment this heap owns, with valid, already-initialized segment
+    /// metadata at that base (true for any pointer this heap actually
+    /// returned from `alloc`). The caller must uphold the same owner-only
+    /// exclusivity `dbg_dealloc_own_thread_with_base` above documents: no
+    /// concurrent mutator may be racing this heap's magazine-bitmap state for
+    /// the same segment while this call runs. Passing a null, foreign,
+    /// dangling, unmapped, or not-owned-by-this-heap pointer is immediate
+    /// undefined behavior.
+    // R25-1 (task #395): gated additionally on `bench-internals`, matching
+    // the R24-6 precedent exactly (`dbg_dealloc_own_thread_with_base` above /
+    // `dbg_push_coarse_only_entry`) -- this `unsafe fn` measurement-only hook
+    // is NOT reachable from plain `--features production` (its prior gate --
+    // `alloc-global` + `fastbin` -- is fully satisfied by `production`'s
+    // feature list on its own). Its one caller,
+    // `benches/perf_gate_iai.rs`'s `dealloc_overflow_bitmap_clear_only_16b`
+    // arm, now requires `bench-internals` too (the `perf_gate_iai` bench
+    // TARGET already required it since R24-6; this per-arm `#[cfg]` keeps
+    // `--all-features` builds honest, same as R24-6's own arm-level edit).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals"
+    ))]
     #[inline(always)]
-    pub fn dbg_overflow_bitmap_clear_pass(&self, ptrs: &[*mut u8]) {
+    #[allow(unsafe_code)] // R25-1 (task #395): `unsafe fn` boundary, mirrors `dbg_dealloc_own_thread_with_base` above.
+    pub unsafe fn dbg_overflow_bitmap_clear_pass(&self, ptrs: &[*mut u8]) {
         for &flushed in ptrs {
             let fbase = os::segment_base_of_ptr(flushed);
             let foff = (flushed as usize - fbase as usize) as u32;
+            // SAFETY: forwarded from this function's own `# Safety` contract
+            // -- `flushed` is caller-guaranteed to be a live, this-heap-owned
+            // block, so `fbase` is a valid owned segment base and `foff` is
+            // an in-bounds offset into that segment's magazine bitmap.
             SegmentMeta::new(fbase)
                 .magazine_bitmap()
                 .clear_magazine(foff);

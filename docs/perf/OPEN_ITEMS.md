@@ -198,8 +198,12 @@ for completeness.
    subtracted) ≈ 26 Ir. One overflow event = 571 Ir = **12.9× a cheap push**
    (the 17th free alone, via n16→n17 pair). The overflow's ONE cleanly-isolable
    sub-cost — the 8-block bitmap-clear pass (`heap_core_free.rs:762-768`,
-   R24-3's exact target) — is **84 Ir** via a new safe hook
-   (`dbg_overflow_bitmap_clear_pass`); the remaining ~470 Ir (flush_class + 8-
+   R24-3's exact target) — is **84 Ir** via a new hook
+   (`dbg_overflow_bitmap_clear_pass`; re-gated `bench-internals` and made
+   `unsafe fn` by R25-1/task #395 after a soundness review — see
+   `src/registry/heap_core_diag.rs`'s doc comment on that function; the
+   measured Ir figure itself is unaffected, only the hook's type/gate
+   changed); the remaining ~470 Ir (flush_class + 8-
    pointer compaction + final push) is fused in one straight-line block with no
    workload-level separation point, reported as a single non-isolable remainder
    per the "measured, not spun" convention (a flush_class-standalone hook would
