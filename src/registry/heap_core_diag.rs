@@ -70,6 +70,31 @@ impl HeapCore {
         self.tcache.classes[c].count as u16
     }
 
+    /// TEST-ONLY (R26-5, task #414): `true` iff `ptr` is currently sitting in
+    /// one of this heap's magazine slots for class `c` — i.e.
+    /// `self.tcache.classes[c].slots[i] == ptr` for some
+    /// `i < classes[c].count`. This is the exact "magazine-resident"
+    /// predicate the `dealloc_batch` first-warm policy produces for the first
+    /// `TCACHE_CAP` accepted blocks (see `heap_core_dealloc_batch.rs`'s doc).
+    /// Exposed so a `tests/` integration test can verify, per individual
+    /// block, whether a block freed via `dealloc_batch` ended up
+    /// magazine-resident (still live per the D1 invariant, poppable on the
+    /// next same-class `alloc`) versus genuinely flushed to the free list —
+    /// distinguishing "184 blocks correctly freed" from a cancelling pair
+    /// (one leaked + one double-processed) that nets to the same aggregate
+    /// `live_count` delta but corrupts two individual blocks' states.
+    /// Read-only linear scan of `slots[0..count]` (`count <= TCACHE_CAP ==
+    /// 16`, so bounded); does NOT touch allocator metadata, so it is a plain
+    /// safe `fn` (same category as `dbg_tcache_count`), NOT `unsafe` and NOT
+    /// `bench-internals`-gated.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[must_use]
+    pub fn dbg_tcache_contains(&self, c: usize, ptr: *mut u8) -> bool {
+        let cls = &self.tcache.classes[c];
+        cls.slots[..cls.count as usize].contains(&ptr)
+    }
+
     /// TEST-ONLY (R13-3, task #273): read the raw
     /// [`PerClass::virgin_mask`](super::tcache::PerClass) bitmask for class
     /// `c` — bit `i` set ⟺ `slots[i]` (for `i < dbg_tcache_count(c)`) is
@@ -285,6 +310,30 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_live_count_for(&self, ptr: *mut u8) -> Option<u32> {
         self.core.dbg_live_count_for(ptr)
+    }
+
+    /// TEST-ONLY (R26-5, task #414): whether `ptr`'s block is currently marked
+    /// FREE (on a free list) in its segment's alloc bitmap — the M2
+    /// double-free bit. `true` ⟺ the block's storage is on a free list and
+    /// available for reuse; `false` ⟺ the block is currently ALLOCATED
+    /// (handed out, or magazine-resident — a magazine-resident block counts
+    /// as live/allocated from the bitmap's perspective, since the magazine
+    /// push does not call `dec_live`). Thin delegation to
+    /// [`AllocCore::dbg_is_free_for`] — exposed at the `HeapCore` level
+    /// (mirroring `dbg_live_count_for`'s / `dbg_kind_at_tag`'s existing
+    /// delegation pattern in this file) so a `tests/` integration test can
+    /// inspect the FINAL per-block allocation state of individual blocks
+    /// after a batched `dealloc_batch`, not just the aggregate `live_count`
+    /// delta. Read-only `&self` accessor returning a `bool`; reads one
+    /// segment-bitmap bit for a pointer whose segment base is validated by
+    /// the delegated `contains_base_ro` check, so it is a plain safe `fn`
+    /// (same category as `dbg_live_count_for` / `dbg_kind_at_tag`), NOT an
+    /// `unsafe fn` and NOT `bench-internals`-gated.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    #[must_use]
+    pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
+        self.core.dbg_is_free_for(ptr)
     }
 
     /// TEST-ONLY (R13-1, task #271): force-trip this heap's coarse-only
