@@ -345,6 +345,22 @@ for completeness.
    `scripts/check-all.mjs` (feature strings updated so the two re-gated hooks
    keep running under CI/`npm run check`), `README.md` (feature table row +
    "Where unsafe lives" note). No `Cargo.toml`/crate version bump.
+   **2026-07-28 update — DONE (task #386, R24-8):** two independent
+   investigations into `dealloc_batch` internals. **Inv 1 (ownership cache):
+   NO-GO** — a `last_base`/`last_is_owned` cache to skip redundant
+   `contains_base` probes measured +3/−44 Ir (inconsistent sign — codegen noise,
+   not a real win); the Tier-1 `own_cache` hit is already a single compare, so
+   the cache trades one compare for another plus register pressure. Same
+   Heisenberg class as R24-3/R24-4. **Inv 2 (STAGE_CAP reduction): GO** —
+   LLVM-IR proof confirmed the 4096-byte staging-array zero-init is NOT elided
+   (array address escapes into `flush_class`, blocking DSE); reducing STAGE_CAP
+   512→64 saves a constant **−4,065 Ir/call** (−47.7% of a 16-block batch-free).
+   Implemented with correctness test (`r24_8_dealloc_batch_multi_flush.rs`,
+   mutation-confirmed) + 2 new iai arms. Full evidence:
+   `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md` +
+   `R24_8_DEALLOC_BATCH_INTERNALS_GATE_summary.csv` +
+   `docs/perf/_raw_r24_8_baseline.log` / `_raw_r24_8_inv1_after.log` /
+   `_raw_r24_8_inv2_stage64.log`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

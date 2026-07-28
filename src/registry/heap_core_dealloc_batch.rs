@@ -239,14 +239,21 @@ impl HeapCore {
     unsafe fn dealloc_batch_small(&mut self, c: usize, layout: Layout, blocks: &[*mut u8]) {
         // ── Overflow staging buffer. Bounded by `blocks.len()`, but we never
         //    allocate: a fixed on-stack chunk is flushed to `flush_class` in
-        //    pieces if `blocks` is larger than this chunk. `STAGE_CAP` is
-        //    chosen generously above `TCACHE_CAP` so the common realistic
-        //    batch (`batch_tcache` bench shape: up to a few hundred blocks)
-        //    fits in ONE `flush_class` call; a batch larger than the chunk
-        //    simply flushes in `STAGE_CAP`-sized pieces (still far fewer,
-        //    larger calls than the scalar path's `FLUSH_N`(8)-block dribble).
+        //    pieces if `blocks` is larger than this chunk. A batch larger than
+        //    the chunk simply flushes in `STAGE_CAP`-sized pieces (still far
+        //    fewer, larger calls than the scalar path's `FLUSH_N`(8)-block
+        //    dribble).
+        //
+        //    R24-8 (task #386): `STAGE_CAP` was 512 (4 KiB of stack zero-init per
+        //    call). LLVM-IR proof confirmed the 512×8 = 4096-byte zero-init is
+        //    NOT elided (the array is stack-local and only a prefix is ever
+        //    read), costing a constant ~4,065 Ir/call — 47.7% of a 16-block
+        //    same-segment batch-free (see `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`
+        //    §2). Reducing to 64 (512 B) removes that cost; batches > 80
+        //    (STAGE_CAP + TCACHE_CAP) now do intermediate flushes, but the
+        //    existing mid-loop flush logic already handles this correctly.
         // ─────────────────────────────────────────────────────────────────
-        const STAGE_CAP: usize = 512;
+        const STAGE_CAP: usize = 64;
         let mut stage: [*mut u8; STAGE_CAP] = [core::ptr::null_mut(); STAGE_CAP];
         let mut staged: usize = 0;
 

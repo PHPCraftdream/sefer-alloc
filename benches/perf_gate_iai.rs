@@ -917,6 +917,58 @@ fn carve_batch_only_16b_2n() {
     black_box(&out[..n]);
 }
 
+// R24-8 (Investigation 1 + 2) -- `HeapCore::dealloc_batch` on a fresh-carve
+// SAME-SEGMENT batch. Fresh heap, allocate N consecutive 16 B blocks (all land
+// in ONE freshly-carved segment -> N same-base `contains_base` calls, the
+// workload the proposed `last_base` ownership cache targets), then free them all
+// in ONE `dealloc_batch` call. N=16 stays within `TCACHE_CAP` (no magazine
+// overflow -> isolates `contains_base` caching + magazine fill, the cheap path);
+// N=64 overflows the magazine (48 staged -> `flush_class`, the overflow path).
+// Both sizes share ONE segment, so every `contains_base` after the first is a
+// Tier-1 `own_cache` hit AND a would-be `last_base` cache hit.
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_16_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 16] = [core::ptr::null_mut(); 16];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 16 same-segment blocks.
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_64_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 64] = [core::ptr::null_mut(); 64];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 64 same-segment blocks (magazine
+    // overflow: first 16 fill the magazine, remaining 48 staged -> flush_class).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
 // R23-3 -- recycle FREELIST-POP isolation.
 //
 // **A first draft here added `recycle_alloc_free_256x16b_2n` (an N/2N
@@ -1792,6 +1844,21 @@ fn mimalloc_bootstrap_proxy() {
     }
 }
 
+// R24-8: no-op stubs so `library_benchmark_group!` resolves when `batch-api`
+// is absent (`dealloc_batch` does not exist without that feature). These
+// produce ~0 Ir and are never the subject of a real measurement run.
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_16_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_64_16b() {
+    black_box(0u8);
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -1815,6 +1882,8 @@ library_benchmark_group!(
         dealloc_overflow_bitmap_clear_only_16b,
         carve_batch_only_16b,
         carve_batch_only_16b_2n,
+        dealloc_batch_fresh_16_16b,
+        dealloc_batch_fresh_64_16b,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,
