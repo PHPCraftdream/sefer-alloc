@@ -377,6 +377,39 @@ for completeness.
    `R24_8_DEALLOC_BATCH_INTERNALS_GATE_summary.csv` +
    `docs/perf/_raw_r24_8_baseline.log` / `_raw_r24_8_inv1_after.log` /
    `_raw_r24_8_inv2_stage64.log`.
+13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
+    re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
+
+   > **Current state**
+   > - **Status:** re-measurement DONE (R24-11, task #389); root-cause + report only, **no production change**.
+   > - **Current number/verdict:** **(i) pool-cap-exceeded.** `bench_global_alloc_churn_with_teardown`@1024B = 123.94 µs/op vs mimalloc 46.09 = **2.69×** (the R24-10 brief's "106.1 ns/op" was a µs-units slip — actual is µs; the ratio was correct). Per-size process-wide counter deltas: **0** decommits/releases at 16/64/256B (Sefer at parity, pool holds), **248** at 1024B (where the 2.69× gap is). (ii) decay ruled out (248 events in a ~0.75 s window ≫ decay's ≤1/sec). (iii) batch-flush ruled out (it is size-flat at ~5–9 µs and present at the parity sizes; the teardown cost jumps to ~102 µs only at 1024B). `working_set_cycle` corroborates (173/373 decommits at 256B/1024B, reproducing its own historical 173/367).
+   > - **Next trigger:** a round wants to close the 1024B residual via an **RSS-gated `pool_segments` sweep** (4/8/16/32, measuring decommits Δ **and** peak RSS), mirroring the existing `bench_pool_cap_sweep` / `pool_cap_sweep_spread_and_drain` harness. Otherwise this is a **documented stress-canary characteristic, not a defect** — a full 256-block teardown every iteration is not a representative workload.
+   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`.
+
+   R24-10 (task #388) established the *mechanism* behind the 1024B teardown
+   residual (the segment decommit/release/re-reserve lifecycle Mechanism-2's
+   pool was built to absorb) but did not re-measure this specific bench's 1024B
+   number against mimalloc *after* Mechanism-2 landed, nor decide which of three
+   candidates (i cap-exceeded / ii decay / iii batch-flush) dominates the
+   *current* residual. R24-11 found that **neither this perf index nor the
+   correctness sibling had tracked "was Mechanism-2's effectiveness against
+   this bench's 1024B number ever re-measured after it landed"** — exactly the
+   silently-dropped-follow-up class the CLAUDE.md "Phased delivery" convention
+   (R18-8 / R22-3 lessons) exists to prevent; this entry closes that gap.
+   Measured verdict: **(i)** — the 4-segment / 16 MiB per-thread pool cap
+   (`small_segment_pool_config.rs`, default `pool_segments=4`,
+   `pool_byte_cap=16 MiB`) is exceeded by this bench's full-teardown-every-
+   iteration shape at 1024B (248 decommit/release events), where smaller sizes
+   fit in one segment and never trip the cap (0 events, parity with mimalloc).
+   The pool cap exists to bound retained RSS, so raising it is an RSS-vs-
+   throughput trade requiring an RSS gate — **flagged as the next step, NOT
+   attempted in R24-11** (no default changed, no production file touched). The
+   bench's doc comment was simultaneously rewritten from its stale "until
+   task #51 lands Mechanism-2" framing to its current **regression-canary**
+   role (it is the only churn bench that times teardown inline; both siblings
+   use `ChurnTeardownGuard`). Full evidence, the cross-size teardown-cost
+   decomposition, and the per-event-cost caveat:
+   `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

@@ -627,14 +627,35 @@ fn bench_global_alloc_churn(c: &mut Criterion) {
 
 /// PERF-PASS-1 (task #49, G3/A2a): DELIBERATE diagnostic variant of
 /// `bench_global_alloc_churn` that keeps teardown INSIDE the timed
-/// `iter_batched` routine (the pre-fix behavior). This is not a leftover bug —
-/// it is kept on purpose as the Mechanism-2 (task #51) signal: the gap
-/// between this bench's ns/op and `global_alloc_churn`'s ns/op at the same
-/// size IS the segment decommit/release/re-reserve lifecycle cost the
-/// churn-reuse review measured (~183us of ~208us at 1024B under
-/// `alloc-decommit`). Do not "fix" this bench to exclude teardown — that
-/// would remove the only local signal for that cost class until task #51
-/// lands Mechanism-2.
+/// `iter_batched` routine (the pre-fix behavior). This is not a leftover bug.
+///
+/// **Role change — Mechanism-2 (task #51) HAS landed and is in `production`.**
+/// This bench is no longer the signal for *developing* the fix; it is now the
+/// regression CANARY *guarding* it. Both sibling churn benches
+/// (`bench_global_alloc_churn` and `bench_global_alloc_churn_write`) move
+/// teardown OUTSIDE the timed region via `ChurnTeardownGuard` (its `drop` runs
+/// `churn_teardown` untimed), so THIS is the only bench in the file whose
+/// reported ns/op includes teardown. If anyone breaks the small-segment
+/// hysteresis pool — its cap, its decay tick, or accidentally dropping
+/// `alloc-decommit` from `production` — this is the only bench that would show
+/// it. Do not "fix" this bench to exclude teardown; that would delete the
+/// canary.
+///
+/// **Current measured characterization (R24-11, task #389 — see
+/// `docs/perf/R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`).** The gap between this
+/// bench's ns/op and `global_alloc_churn`'s was ORIGINALLY the segment
+/// decommit/release/re-reserve lifecycle cost the churn-reuse review measured
+/// (~183us of ~208us at 1024B under `alloc-decommit`, pre-Mechanism-2).
+/// Mechanism-2's pool eliminated that cost at 16/64/256B (0 decommits/run,
+/// parity with mimalloc). At 1024B the pool's 4-segment cap is STILL exceeded
+/// by this bench's full-teardown-every-iteration stress pattern (248
+/// decommits/run), which is the residual gap to mimalloc (~2.7x at 1024B).
+/// The per-size `sefer.stats()` counter deltas emitted below
+/// (`decommit_calls` / `segments_released_total`, snapshotted around the
+/// rotated block) ARE this bench's own regression signal: the 16/64/256B
+/// deltas should read 0 — a nonzero value there means the pool regressed at a
+/// size that should fit comfortably in one segment; 1024B's nonzero delta is
+/// the known cap-exceeded stress case.
 fn bench_global_alloc_churn_with_teardown(c: &mut Criterion) {
     let mut group = c.benchmark_group("global_alloc_churn_with_teardown");
     group.sample_size(10);
@@ -654,6 +675,13 @@ fn bench_global_alloc_churn_with_teardown(c: &mut Criterion) {
     for &size in SIZES {
         let layout = Layout::from_size_align(size, 8).unwrap();
 
+        // R24-11 (task #389): mirror `bench_working_set_cycle`'s diagnostic —
+        // `sefer.stats()`'s `decommit_calls` (= `dbg_decommit_count`) and
+        // `segments_released_total` (= `dbg_segments_released_total`) are
+        // process-wide MONOTONIC counters, so the delta around the whole
+        // rotated block (mimalloc/System never touch Sefer's statics) isolates
+        // Sefer's teardown-attributable pool/decommit activity at this size.
+        let before = sefer.stats();
         // Confound 2 fix: rotated registration order (see module doc).
         bench_three_arms_rotated(
             &mut group,
@@ -690,6 +718,15 @@ fn bench_global_alloc_churn_with_teardown(c: &mut Criterion) {
                     BatchSize::SmallInput,
                 )
             },
+        );
+        let after = sefer.stats();
+        eprintln!(
+            "global_alloc_churn_with_teardown/{size}B: decommit_calls delta = {}, \
+             segments_released_total delta = {}",
+            after.decommit_calls.saturating_sub(before.decommit_calls),
+            after
+                .segments_released_total
+                .saturating_sub(before.segments_released_total),
         );
     }
 

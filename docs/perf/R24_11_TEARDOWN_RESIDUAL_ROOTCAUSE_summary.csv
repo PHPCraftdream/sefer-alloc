@@ -1,0 +1,13 @@
+bench,size_b,sefer_us_per_op,mimalloc_us_per_op,sefer_mimalloc_ratio,decommit_calls_delta,segments_released_total_delta,teardown_cost_us,verdict,commit_sha,platform,feature_set
+global_alloc_churn_with_teardown,16,24.42,21.26,1.15,0,0,5.50,parity (pool not engaged),ce17311,native Windows x86-64,production
+global_alloc_churn_with_teardown,64,23.35,22.20,1.05,0,0,5.04,parity (pool not engaged),ce17311,native Windows x86-64,production
+global_alloc_churn_with_teardown,256,28.25,28.31,1.00,0,0,9.16,parity (pool not engaged),ce17311,native Windows x86-64,production
+global_alloc_churn_with_teardown,1024,123.94,46.09,2.69,248,248,101.85,(i) POOL-CAP-EXCEEDED — verdict,ce17311,native Windows x86-64,production
+global_alloc_churn_no_teardown_sefer,16,18.92,,,,,,sibling baseline (teardown excluded; for decomposition),ce17311,native Windows x86-64,production
+global_alloc_churn_no_teardown_sefer,64,18.31,,,,,,sibling baseline (teardown excluded),ce17311,native Windows x86-64,production
+global_alloc_churn_no_teardown_sefer,256,19.09,,,,,,sibling baseline (teardown excluded),ce17311,native Windows x86-64,production
+global_alloc_churn_no_teardown_sefer,1024,22.09,,,,,,sibling baseline (teardown excluded),ce17311,native Windows x86-64,production
+working_set_cycle,16,217.36,,,0,0,,corroborator: pool not engaged,ce17311,native Windows x86-64,production
+working_set_cycle,64,225.69,,,0,0,,corroborator: pool not engaged,ce17311,native Windows x86-64,production
+working_set_cycle,256,255.58,,,173,173,,corroborator: pool exceeded (reproduces historical 173),ce17311,native Windows x86-64,production
+working_set_cycle,1024,270.58,,,373,373,,corroborator: pool exceeded (reproduces historical 367),ce17311,native Windows x86-64,production
