@@ -62,10 +62,10 @@ for completeness.
    (18.6%).**
 
    > **Current state**
-   > - **Status:** open — an actively-evolving multi-round hot-path investigation (R22-17 → R24-8).
-   > - **Current number/verdict:** `contains_base`-only share of a real free's `Ir` = **8.8% (523/5,920)**, NOT the original 18.6% (R23-1). The item was then reframed: the routing prefix is NOT the free path's dominant cost — the magazine-overflow mechanic is. Bitmap-clear coalescing was tried twice (R24-3, R24-4) → both NO-GO; STAGE_CAP 512→64 is a GO (−4,065 Ir/call, R24-8).
-   > - **Next trigger:** a `flush_class` isolation measurement (~487 Ir/event — the overflow's larger untried lever per R24-5); separately, Tier-2-hash-probe-heavy workloads might show `contains_base` > 8.8% (open, not a proven floor).
-   > - **Evidence:** `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (8.8%); `R23_3_HOT_PATH_ATTRIBUTION_GATE.md`; `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md`; `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`; `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`.
+   > - **Status:** open — an actively-evolving multi-round hot-path investigation (R22-17 → R26-7).
+   > - **Current number/verdict:** `contains_base`-only share of a real free's `Ir` = **8.8% (523/5,920)**, NOT the original 18.6% (R23-1). The item was then reframed: the routing prefix is NOT the free path's dominant cost — the magazine-overflow mechanic is. Bitmap-clear coalescing was tried twice (R24-3, R24-4) → both NO-GO; STAGE_CAP 512→64 is a GO (−4,065 Ir/call, R24-8); FLUSH_N sweep NO-GO (R25-3); STAGE_CAP=64 boundary re-confirmed clean N=16→1024 (R25-7); lazy `Option<[..]>` staging array NO-GO — crossover at N=17, the 4th consecutive NO-GO in this region (R26-7).
+   > - **Next trigger:** the overflow's larger untried lever remains `flush_class` isolation (~487 Ir/event, the non-isolable remainder R24-2 §5.1 flagged) — four consecutive NO-GOs (R24-3/R24-4/R25-3/R26-7) now establish this region's hot path is tightly compiled and resistant to fixed-cost-elision-via-per-block-bookkeeping, RMW-coalescing, and constant-tuning; the ~53–581 Ir zero-init arithmetic ceiling should NOT be cited as a savings target without a fresh in-context A/B. Separately, Tier-2-hash-probe-heavy workloads might show `contains_base` > 8.8% (open, not a proven floor).
+   > - **Evidence:** `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (8.8%); `R23_3_HOT_PATH_ATTRIBUTION_GATE.md`; `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md`; `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`; `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`; `R26_7_LAZY_STAGE_ARRAY_GATE.md` (4th NO-GO; isolated zero-init = ~54 Ir, not ~581).
 
    R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
    own-thread ownership probe (`SegmentTable::contains_base`, a two-tier
@@ -400,6 +400,37 @@ for completeness.
    `R25_7_STAGE_CAP_BOUNDARY_GATE.md` +
    `R25_7_STAGE_CAP_BOUNDARY_GATE_summary.csv` +
    `docs/perf/_raw_r25_7_stage64.log` / `_raw_r25_7_stage512.log`.
+   **2026-07-28 update — NO-GO (task #416, R26-7):** the R25 readonly review's
+   suggested prototype — replace `dealloc_batch_small`'s eager
+   `[*mut u8; STAGE_CAP]` (512 B zero-init on EVERY call) with a lazily-
+   materialized `Option<[*mut u8; STAGE_CAP]>` (materialized only on the first
+   overflow block) — was built as a `bench-internals`-gated A/B sibling
+   (byte-for-byte copy of `dealloc_batch`/`dealloc_batch_small`, ONLY the `stage`
+   representation changed) and measured at N=0/1/8/16/17/64/81/200/1024 via a
+   single-binary iai A/B (eager and lazy arms in ONE callgrind pass — cleaner
+   than R25-7's two-run protocol since both are functions in the same binary).
+   **Verdict: NO-GO — crossover at N=17 (the first overflow block).** The
+   hypothesis was DIRECTIONALLY correct (lazy IS cheaper when never materialized:
+   ~53 Ir / ~1–2% win, constant across N=0/1/8/16) but the win is tiny AND is
+   immediately dominated by per-overflow-block `Option`-discriminant-check
+   overhead the moment the magazine overflows: lazy is +55 Ir at N=17, growing
+   linearly at ~3 Ir/overflow-block to +3,076 Ir (+1.67%) at N=1024. Realistic
+   batch sizes (tens–low hundreds per R23-7) are ALL in the loss regime. **Key
+   calibration finding:** the direct A/B isolates the 64-entry (512 B) stack
+   zero-init at **~54 Ir (N=0)** — NOT the ~581 Ir a linear extrapolation from
+   R24-8/R25-7's 4,065 (the 512-vs-64 array-SIZE delta) would predict; that 4,065
+   measured two different array sizes in a shared codegen, not the isolated
+   64-entry init (the ~10× Heisenberg gap the direct A/B surfaces — same lesson
+   as R24-2 §5.1 / R24-3 / R24-4). **This is the 4th consecutive NO-GO in this
+   exact region (R24-3/R24-4/R25-3/R26-7)**, all the "added per-block bookkeeping
+   costs more than the one-time savings" class — R26-7 entered it through a
+   different door (a FIXED per-call cost, not per-block work), confirming the
+   class now spans both cost axes. `dealloc_batch_small` is byte-identical to
+   HEAD; the lazy variant stays as `bench-internals`-gated experimental bench
+   infra (same retained-arm precedent as R25-7). Full evidence:
+   `R26_7_LAZY_STAGE_ARRAY_GATE.md` +
+   `R26_7_LAZY_STAGE_ARRAY_GATE_summary.csv` +
+   `docs/perf/_raw_r26_7_lazy_stage.log`.
 13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 

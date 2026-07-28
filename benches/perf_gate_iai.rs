@@ -1404,6 +1404,349 @@ fn dealloc_batch_fresh_1024_16b() {
     unsafe { (*heap).dealloc_batch(layout, &ptrs) };
 }
 
+// R26-7 (task #416) -- LAZY staging-array A/B. The hypothesis under test: an
+// `Option<[*mut u8; STAGE_CAP]>` lazily materialized on the first overflow
+// block elides the ~512-byte stack zero-init the EAGER `[*mut u8; STAGE_CAP]`
+// pays on EVERY call, WITHOUT re-litigating STAGE_CAP itself (stays 64). For
+// N <= TCACHE_CAP(16) the magazine never fills, so the lazy `stage` is NEVER
+// materialized -- the win case. For N > TCACHE_CAP it materializes and the
+// extra `Option` branch/discriminant check on the staged-write path is the
+// hypothesized LOSS case (this region has a 3-for-3 NO-GO track record:
+// R24-3/R24-4/R25-3; the measurement, not the hypothesis, decides).
+//
+// The grid (the brief's exact N set): N=0/1/8/16 = never-materializes cases;
+// N=17 = first overflow (materializes, writes 1, 1 final flush); N=64/81/200/
+// 1024 = materializes and does real overflow work. The EAGER baseline at each
+// N is the existing `dealloc_batch_fresh_{16,64,81,200,1024}_16b` arm (already
+// in this file) for those 5 N's, plus the 4 NEW eager arms below
+// (`dealloc_batch_fresh_{0,1,8,17}_16b`) for the N's R25-7 did not cover. The
+// LAZY counterpart at every N is `dealloc_batch_lazy_fresh_{N}_16b` below --
+// byte-for-byte identical body, ONE call-site swap:
+//   `(*heap).dealloc_batch(...)` -> `(*heap).dbg_dealloc_batch_lazy(...)`.
+// `dbg_dealloc_batch_lazy` (src/registry/heap_core_dealloc_batch.rs) is a
+// verbatim copy of `dealloc_batch` whose small path dispatches to a verbatim
+// copy of `dealloc_batch_small` with ONLY the `stage` representation changed.
+// It is `bench-internals`-gated (no production caller) + `unsafe fn` (touches
+// allocator metadata via `flush_class`) per the benchmark-hook rule -- hence
+// these lazy arms require `bench-internals` in addition to `batch-api`.
+
+// ── EAGER baseline arms for the 4 N's R25-7's existing arms do not cover ──
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_0_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let ptrs: [*mut u8; 0] = [];
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 0 blocks. The eager path still pays
+    // the 512-byte stack zero-init (stage is allocated/zeroed unconditionally);
+    // the lazy variant (below) pays nothing here. Extreme never-materializes.
+    // SAFETY: empty slice; every (zero) entry trivially satisfies the contract.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_1_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 1] = [core::ptr::null_mut(); 1];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 1 same-segment block (within TCACHE_CAP;
+    // never overflows the magazine, so stage is never written -- never-materializes).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_8_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 8 same-segment blocks (within TCACHE_CAP;
+    // never-materializes case for the lazy variant).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+#[cfg(all(target_os = "linux", feature = "batch-api"))]
+#[library_benchmark]
+fn dealloc_batch_fresh_17_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: one batched free of 17 same-segment blocks (magazine(16) +
+    // 1 staged; the SMALLEST N that materializes the lazy stage -- 1 final
+    // flush, zero intermediate).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dealloc_batch(layout, &ptrs) };
+}
+
+// ── LAZY variant arms at every N in the grid ──
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_0_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let ptrs: [*mut u8; 0] = [];
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 0 blocks. `stage` stays `None` (never
+    // materialized); the lazy variant pays only the `Option` discriminant
+    // declaration + the (unreached) loop.
+    // SAFETY: empty slice; every (zero) entry trivially satisfies the contract.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_1_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 1] = [core::ptr::null_mut(); 1];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 1 block (never-materializes case).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_8_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 8 blocks (never-materializes case).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_16_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 16] = [core::ptr::null_mut(); 16];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 16 blocks (exactly fills TCACHE_CAP;
+    // never-materializes case -- the `cnt < TCACHE_CAP` fill is the last block
+    // taken; the overflow arm is never entered).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_17_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 17 blocks (first overflow; materializes,
+    // writes 1 entry, 1 final flush -- the first N where the lazy variant does
+    // the extra Option branch + zero-init-on-demand + get_or_insert_with).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_64_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 64] = [core::ptr::null_mut(); 64];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 64 blocks (materializes; 48 staged, 1
+    // final flush, zero intermediate).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_81_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 81] = [core::ptr::null_mut(); 81];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 81 blocks (materializes; 65 staged, 1
+    // intermediate flush(64) + 1 final flush(1)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_200_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 200] = [core::ptr::null_mut(); 200];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 200 blocks (materializes; 184 staged, 2
+    // intermediate flushes(64+64) + 1 final flush(56)).
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "batch-api",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_1024_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; 1024] = [core::ptr::null_mut(); 1024];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: lazy-stage free of 1024 blocks (materializes; 1008 staged,
+    // 15 intermediate flushes(64x15) + 1 final flush(48)). Max flush count.
+    // SAFETY: every entry was returned by the pre-allocation pass above with the
+    // same layout, and is freed exactly once here.
+    unsafe { (*heap).dbg_dealloc_batch_lazy(layout, &ptrs) };
+}
+
 // R23-3 -- recycle FREELIST-POP isolation.
 //
 // **A first draft here added `recycle_alloc_free_256x16b_2n` (an N/2N
@@ -2332,6 +2675,90 @@ fn dealloc_batch_fresh_1024_16b() {
     black_box(0u8);
 }
 
+// R26-7: no-op stubs for the 4 new eager baseline N's (0/1/8/17) + the 9 lazy
+// variant N's (0/1/8/16/17/64/81/200/1024), same pattern as the stubs above
+// (`library_benchmark_group!` must resolve when `batch-api` is absent; the lazy
+// arms additionally require `bench-internals`, but that feature is always on for
+// this bench TARGET via its `required-features`, so `not(batch-api)` is the only
+// gap these stubs fill).
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_0_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_1_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_8_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_fresh_17_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_0_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_1_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_8_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_16_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_17_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_64_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_81_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_200_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "batch-api")))]
+#[library_benchmark]
+fn dealloc_batch_lazy_fresh_1024_16b() {
+    black_box(0u8);
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -2371,6 +2798,19 @@ library_benchmark_group!(
         dealloc_batch_fresh_200_16b,
         dealloc_batch_fresh_512_16b,
         dealloc_batch_fresh_1024_16b,
+        dealloc_batch_fresh_0_16b,
+        dealloc_batch_fresh_1_16b,
+        dealloc_batch_fresh_8_16b,
+        dealloc_batch_fresh_17_16b,
+        dealloc_batch_lazy_fresh_0_16b,
+        dealloc_batch_lazy_fresh_1_16b,
+        dealloc_batch_lazy_fresh_8_16b,
+        dealloc_batch_lazy_fresh_16_16b,
+        dealloc_batch_lazy_fresh_17_16b,
+        dealloc_batch_lazy_fresh_64_16b,
+        dealloc_batch_lazy_fresh_81_16b,
+        dealloc_batch_lazy_fresh_200_16b,
+        dealloc_batch_lazy_fresh_1024_16b,
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,
