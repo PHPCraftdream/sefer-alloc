@@ -660,6 +660,34 @@ for completeness.
     argument that motivates distinguishing the two ladders) +
     `docs/perf/R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 (the single-hot-buffer
     victim pattern, which applies equally to the geometric ladder).
+13. **R25-3 — `FLUSH_N` sweep (4/8/12/16) at fixed `TCACHE_CAP`=16.**
+
+    > **Current state**
+    > - **Status:** NO-GO, fully explored — all 4 swept values measured against all 5 required gates; none beats the current baseline (`FLUSH_N=8`).
+    > - **Current number/verdict:** `FLUSH_N=16` shows the only gate-1 (bulk-free Ir) win (−1.5% at N=1024) but triggers the kill condition on gate 3 (oscillating live-set): 2.42× Ir regression, 20× refill-event-count regression (1→20 refills per 20 rounds), independently confirmed via both an Ir judge and a native tcache-hit-rate counter. `FLUSH_N=4`/`FLUSH_N=12` show no gate-1 win at all (+14.4%/+0.7%) with gate 2/3 also flat-or-worse.
+    > - **Next trigger:** none named as promising — a genuinely different mechanism (not a half-flush-RATIO tuning) would be needed; R25-8's conditional run-encoded free-batch design study is the only currently-planned follow-up touching this region, and it is a different mechanism, not a FLUSH_N retune. If `FLUSH_N=16` (or any `FLUSH_N == TCACHE_CAP`) is ever revisited for any reason, first fix the independent `virgin_mask >>= FLUSH_N` compile-time overflow this task found at that exact boundary (release-profile-only; `cargo check` in dev profile does NOT catch it) — see the report §6.
+    > - **Evidence:** `R25_3_FLUSH_N_SWEEP_GATE.md` (full report); `R25_3_FLUSH_N_SWEEP_GATE_summary.csv`.
+
+    Task #397, 2026-07-28. Swept the magazine-overflow half-flush constant
+    `FLUSH_N` across `{4, 8 (baseline), 12, 16}` with `TCACHE_CAP` held fixed,
+    gated on all 5 of: in-context Ir bulk-free sweep (N=17/32/64/256/1024),
+    free-then-immediate-realloc burst Ir, oscillating live-set (8..24)
+    boundary-stress Ir, ordinary interleaved-churn regression check, and a
+    non-Ir refill-count/tcache-hit-rate cross-check (a new example,
+    `examples/r25_3_flush_n_oscillating_probe.rs`, reusing the existing
+    `alloc-stats` `tcache_hits` counter). The oscillating gate's refill-thrash
+    finding at `FLUSH_N=16` (every overflow event during a shrink phase
+    empties the magazine completely, so the immediately-following growth
+    phase's first alloc is GUARANTEED to miss and pay the cold
+    `refill_magazine_slow` path) is the third NO-GO in this exact free-path
+    magazine-overflow code region this round cluster, after R24-3
+    (`flush_magazine_class` bitmap-clear merge) and R24-4 (bulk-mask
+    `clear_many`/`set_many` primitives) — all three confirm this region
+    resists optimization by the mechanisms tried so far. `git diff HEAD --
+    src/` is empty; the new bench arms (`benches/perf_gate_iai.rs`) and probe
+    example are kept as reusable measurement infrastructure (R24-2
+    precedent), since they measure whatever `FLUSH_N` the tree is currently
+    built with rather than hardcoding a value.
 
 ---
 

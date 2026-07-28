@@ -892,6 +892,271 @@ fn dealloc_overflow_bitmap_clear_only_16b() {
     black_box(flush_slice);
 }
 
+// ---------------------------------------------------------------------------
+// R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
+// N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
+// is the compile-time constant swept by hand-editing that file between
+// `npm run iai` runs (4, 8, 12, 16) -- these arms themselves do NOT encode
+// FLUSH_N; they measure whatever FLUSH_N the tree is currently built with, so
+// the SAME arm bodies serve every sweep point. `TCACHE_CAP` stays fixed at 16
+// per the task brief.
+//
+// Same shared-prefix-subtraction technique as the R24-2 arms above, widened
+// to reach N=1024: `PREFIX_OPS` (1024 + 64 = 1088, a multiple of 16) allocs
+// 68 full magazine-fills of distinct 16 B blocks (count -> 0 after the
+// prefix, same "why the sweep uses an alloc-N-not-alloc-then-free-then-
+// realloc prefix" reasoning R24-2 §1.2 established), then each arm frees
+// only the first N of those. `free_cost(N) = Ir(arm_N) - Ir(dealloc_prealloc_
+// only_1088_16b)` isolates the N-block free loop's cost at whatever FLUSH_N
+// is compiled in, cancelling the shared alloc prefix exactly.
+#[cfg(target_os = "linux")]
+const PREFIX_OPS: usize = 1088;
+
+// Shared prefix for the R25-3 N-sweep (alloc PREFIX_OPS, free 0). Mirrors
+// `dealloc_prealloc_only_16b` at a larger op count so N can reach 1024.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_prealloc_only_1088_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+}
+
+// R25-3 sweep point N=17: exactly one overflow event (matches R24-2's n17,
+// re-measured here under the wider PREFIX_OPS prefix so it is directly
+// comparable to the N=32/64/256/1024 points below at every FLUSH_N value).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_n17() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    for &ptr in &ptrs[..17] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R25-3 sweep point N=32.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_n32() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    for &ptr in &ptrs[..32] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R25-3 sweep point N=64.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_n64() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    for &ptr in &ptrs[..64] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R25-3 sweep point N=256.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_n256() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    for &ptr in &ptrs[..256] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R25-3 sweep point N=1024 (the widest point; PREFIX_OPS=1088 leaves 64
+// blocks unfreed so the prefix itself never fully drains during the free
+// loop -- matching the "prefix allocs strictly more than every N" invariant
+// R24-2 established).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_free_only_1088_16b_n1024() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    for &ptr in &ptrs[..1024] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// R25-3 gate 2: free-then-immediate-reallocate burst. Frees the first 17
+// pre-allocated blocks (one overflow event under FLUSH_N=8: blocks[0..8] are
+// flushed to the substrate, blocks[8..17] remain magazine-resident), THEN
+// immediately re-allocates 17 blocks of the same class and records, for each
+// re-alloc, whether it returned one of the just-freed pointers (a magazine
+// HIT / warm-retained block) or a fresh/different pointer (a MISS / re-carved
+// or free-list block). The timed region covers BOTH the 17 frees and the 17
+// re-allocs, so its Ir reflects the full free-then-realloc round trip at
+// whatever FLUSH_N is compiled in -- a smaller FLUSH_N retains more
+// just-freed blocks in the magazine (more LIFO hits on realloc), a larger
+// FLUSH_N (up to 16, emptying the magazine completely) retains fewer/none.
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn dealloc_realloc_burst_1088_16b_n17() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; PREFIX_OPS] = [core::ptr::null_mut(); PREFIX_OPS];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+
+    // Timed region: free 17, then immediately re-allocate 17 of the same
+    // class -- the exact free-then-realloc burst shape gate 2 specifies.
+    for &ptr in &ptrs[..17] {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+    let mut reallocs: [*mut u8; 17] = [core::ptr::null_mut(); 17];
+    for slot in reallocs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&reallocs);
+}
+
+// R25-3 gate 3: oscillating live-set size around the TCACHE_CAP=16 boundary
+// (8..24 blocks), repeatedly alloc/free to cross it from both directions --
+// stresses the "fits in the reduced/full magazine" vs. "needs a refill"
+// boundary a FLUSH_N change could shift. One OSC_ROUNDS iteration: allocate
+// up to 24 live blocks (crossing 16 from below), then free back down to 8
+// (crossing 16 from above), repeated OSC_ROUNDS times. All blocks are the
+// same 16 B class; `live` is a fixed-capacity ring buffer sized for the peak
+// live count (24).
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+const OSC_ROUNDS: usize = 20;
+
+#[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
+#[library_benchmark]
+fn oscillating_live_set_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut live: [*mut u8; 24] = [core::ptr::null_mut(); 24];
+    let mut live_n: usize = 0;
+    // Untimed warm-up: bring the live set to the low end (8) before the timed
+    // oscillation begins, so the FIRST timed round starts from a known state.
+    for slot in live.iter_mut().take(8) {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+        live_n += 1;
+    }
+    black_box(&live);
+
+    // Timed region: OSC_ROUNDS oscillations, each growing live_n from 8 to 24
+    // (crossing TCACHE_CAP=16 from below via allocs) then shrinking back to 8
+    // (crossing 16 from above via frees).
+    for _ in 0..OSC_ROUNDS {
+        while live_n < 24 {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            live[live_n] = unsafe { (*heap).alloc(layout) };
+            live_n += 1;
+        }
+        while live_n > 8 {
+            live_n -= 1;
+            let ptr = live[live_n];
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, and is freed exactly once (freed here, then
+                // never read again -- `live[live_n]` is overwritten by the
+                // next growth phase before any reuse).
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+    black_box(&live);
+}
+
 // R23-3 -- cold CARVE isolation: `AllocCore::carve_batch`
 // (`src/alloc_core/alloc_core_small.rs`), the batched sibling of
 // `carve_block` that `carve_block_with_refill`'s refill loop calls
@@ -1900,6 +2165,14 @@ library_benchmark_group!(
         dealloc_free_only_16b_n17,
         dealloc_free_only_16b_n32,
         dealloc_overflow_bitmap_clear_only_16b,
+        dealloc_prealloc_only_1088_16b,
+        dealloc_free_only_1088_16b_n17,
+        dealloc_free_only_1088_16b_n32,
+        dealloc_free_only_1088_16b_n64,
+        dealloc_free_only_1088_16b_n256,
+        dealloc_free_only_1088_16b_n1024,
+        dealloc_realloc_burst_1088_16b_n17,
+        oscillating_live_set_16b,
         carve_batch_only_16b,
         carve_batch_only_16b_2n,
         dealloc_batch_fresh_16_16b,

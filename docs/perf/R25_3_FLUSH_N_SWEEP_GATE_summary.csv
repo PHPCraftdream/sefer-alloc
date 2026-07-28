@@ -1,0 +1,62 @@
+metric,flush_n,value,unit,gate,notes
+commit_sha,all,667cfe76a654a90dbe5101241189c56c532dc3e1,sha1,meta,measurement commit (production feature set unchanged)
+tcache_cap,all,16,blocks,meta,held fixed per task brief
+ir_prefix_alloc1088,4,87870,Ir,gate1,dealloc_prealloc_only_1088_16b raw Ir
+ir_prefix_alloc1088,8,87870,Ir,gate1,dealloc_prealloc_only_1088_16b raw Ir
+ir_prefix_alloc1088,12,87870,Ir,gate1,dealloc_prealloc_only_1088_16b raw Ir
+ir_prefix_alloc1088,16,87870,Ir,gate1,dealloc_prealloc_only_1088_16b raw Ir
+free_cost_n17,4,1079,Ir,gate1,dealloc_free_only_1088_16b_n17 minus prefix
+free_cost_n17,8,1279,Ir,gate1,dealloc_free_only_1088_16b_n17 minus prefix (baseline)
+free_cost_n17,12,1550,Ir,gate1,dealloc_free_only_1088_16b_n17 minus prefix
+free_cost_n17,16,1775,Ir,gate1,dealloc_free_only_1088_16b_n17 minus prefix
+free_cost_n32,4,2699,Ir,gate1,dealloc_free_only_1088_16b_n32 minus prefix
+free_cost_n32,8,2448,Ir,gate1,dealloc_free_only_1088_16b_n32 minus prefix (baseline)
+free_cost_n32,12,2990,Ir,gate1,dealloc_free_only_1088_16b_n32 minus prefix
+free_cost_n32,16,2420,Ir,gate1,dealloc_free_only_1088_16b_n32 minus prefix
+free_cost_n64,4,6675,Ir,gate1,dealloc_free_only_1088_16b_n64 minus prefix
+free_cost_n64,8,5920,Ir,gate1,dealloc_free_only_1088_16b_n64 minus prefix (baseline)
+free_cost_n64,12,5956,Ir,gate1,dealloc_free_only_1088_16b_n64 minus prefix
+free_cost_n64,16,5838,Ir,gate1,dealloc_free_only_1088_16b_n64 minus prefix
+free_cost_n256,4,30531,Ir,gate1,dealloc_free_only_1088_16b_n256 minus prefix
+free_cost_n256,8,26752,Ir,gate1,dealloc_free_only_1088_16b_n256 minus prefix (baseline)
+free_cost_n256,12,26932,Ir,gate1,dealloc_free_only_1088_16b_n256 minus prefix
+free_cost_n256,16,26346,Ir,gate1,dealloc_free_only_1088_16b_n256 minus prefix
+free_cost_n1024,4,125955,Ir,gate1,dealloc_free_only_1088_16b_n1024 minus prefix
+free_cost_n1024,8,110080,Ir,gate1,dealloc_free_only_1088_16b_n1024 minus prefix (baseline)
+free_cost_n1024,12,110836,Ir,gate1,dealloc_free_only_1088_16b_n1024 minus prefix
+free_cost_n1024,16,108378,Ir,gate1,dealloc_free_only_1088_16b_n1024 minus prefix
+ir_per_free_at_n1024,4,123.00,Ir/free,gate1,free_cost_n1024 / 1024
+ir_per_free_at_n1024,8,107.50,Ir/free,gate1,free_cost_n1024 / 1024 (baseline)
+ir_per_free_at_n1024,12,108.24,Ir/free,gate1,free_cost_n1024 / 1024
+ir_per_free_at_n1024,16,105.84,Ir/free,gate1,free_cost_n1024 / 1024
+gate1_delta_vs_baseline_pct,4,14.4,percent,gate1,(free_cost_n1024[4]-free_cost_n1024[8])/free_cost_n1024[8]*100 -- REGRESSION
+gate1_delta_vs_baseline_pct,12,0.7,percent,gate1,(free_cost_n1024[12]-free_cost_n1024[8])/free_cost_n1024[8]*100 -- flat/slight regression
+gate1_delta_vs_baseline_pct,16,-1.5,percent,gate1,(free_cost_n1024[16]-free_cost_n1024[8])/free_cost_n1024[8]*100 -- modest win in isolation
+realloc_burst_cost_n17,4,2334,Ir,gate2,dealloc_realloc_burst_1088_16b_n17 minus prefix (17 frees + 17 reallocs)
+realloc_burst_cost_n17,8,2588,Ir,gate2,dealloc_realloc_burst_1088_16b_n17 minus prefix (baseline)
+realloc_burst_cost_n17,12,2913,Ir,gate2,dealloc_realloc_burst_1088_16b_n17 minus prefix
+realloc_burst_cost_n17,16,3033,Ir,gate2,dealloc_realloc_burst_1088_16b_n17 minus prefix -- WORST (full flush loses all warm blocks)
+oscillating_live_set_ir,4,25845,Ir,gate3,oscillating_live_set_16b raw Ir (20 rounds, 8..24 boundary crossing)
+oscillating_live_set_ir,8,25719,Ir,gate3,oscillating_live_set_16b raw Ir (baseline)
+oscillating_live_set_ir,12,27761,Ir,gate3,oscillating_live_set_16b raw Ir
+oscillating_live_set_ir,16,62183,Ir,gate3,oscillating_live_set_16b raw Ir -- 2.42x baseline, KILL CONDITION
+oscillating_refill_count,4,1,events,gate3/gate5,tcache misses over 320 timed allocs (20 rounds) via r25_3_flush_n_oscillating_probe example
+oscillating_refill_count,8,1,events,gate3/gate5,tcache misses over 320 timed allocs (baseline)
+oscillating_refill_count,12,2,events,gate3/gate5,tcache misses over 320 timed allocs
+oscillating_refill_count,16,20,events,gate3/gate5,tcache misses over 320 timed allocs -- 20x baseline refill rate, KILL CONDITION
+oscillating_hit_rate_pct,4,99.69,percent,gate3/gate5,tcache_hits / total_allocs
+oscillating_hit_rate_pct,8,99.69,percent,gate3/gate5,tcache_hits / total_allocs (baseline)
+oscillating_hit_rate_pct,12,99.38,percent,gate3/gate5,tcache_hits / total_allocs
+oscillating_hit_rate_pct,16,93.75,percent,gate3/gate5,tcache_hits / total_allocs
+small_churn_16b_ir,4,8051,Ir,gate4,byte-identical across all FLUSH_N values (overflow never fires on interleaved churn)
+small_churn_16b_ir,8,8051,Ir,gate4,byte-identical across all FLUSH_N values (baseline)
+small_churn_16b_ir,12,8051,Ir,gate4,byte-identical across all FLUSH_N values
+small_churn_16b_ir,16,8051,Ir,gate4,byte-identical across all FLUSH_N values
+aligned_churn_640b_a128_ir,4,7987,Ir,gate4,byte-identical across all FLUSH_N values
+aligned_churn_640b_a128_ir,8,7987,Ir,gate4,byte-identical across all FLUSH_N values (baseline)
+aligned_churn_640b_a128_ir,12,7987,Ir,gate4,byte-identical across all FLUSH_N values
+aligned_churn_640b_a128_ir,16,7987,Ir,gate4,byte-identical across all FLUSH_N values
+verdict,4,NO-GO,verdict,final,gate1 regresses +14.4% at N=1024; no compensating win
+verdict,8,BASELINE,verdict,final,current shipped value -- unchanged
+verdict,12,NO-GO,verdict,final,gate1 flat/slightly worse (+0.7%); gate2/gate3 both worse; no win to justify risk
+verdict,16,NO-GO,verdict,final,gate1 modest win (-1.5%) but gate3 kill condition triggered (2.42x Ir, 20x refills)
