@@ -195,18 +195,16 @@ const env = {
 let allOk = true;
 for (const [features, test] of entries) {
   console.log(`\n[miri] ${test} (features: ${features})`);
-  // Pass features COMMA-joined, not space-separated. Under `shell: true` on
-  // Windows a multi-word `--features "a b c"` value is re-split by the shell
-  // into separate tokens, so cargo sees stray positionals: a 2-feature entry
-  // degrades to a single bogus TESTNAME filter (silent 0-runs), and a
-  // 3+-feature entry hard-errors `unexpected argument '<feat>'`. A
-  // comma-joined value has no spaces, so it survives as one token — cargo
-  // accepts `--features a,b,c` identically.
-  const featuresArg = features.trim().split(/\s+/).join(',');
+  // `run()` defaults to `shell: false`, so the space-joined `features` value
+  // reaches cargo as ONE argv element (no shell to re-split it on whitespace).
+  // The previous COMMA-join here existed only to dodge `shell: true`'s
+  // whitespace-splitting (DEP0190); cargo accepts `--features "a b c"` and
+  // `--features "a,b,c"` identically either way.
+  const featuresArg = features.trim();
   const { code, out } = await run(
     'cargo',
     ['+nightly', 'miri', 'test', '--features', featuresArg, '--test', test],
-    { cwd: REPO_ROOT, env, shell: true },
+    { cwd: REPO_ROOT, env },
   );
   allOk = verdict(`miri:${test}`, code, out) && allOk;
 }

@@ -280,7 +280,7 @@ try {
   const { code, out } = await run(
     'cargo',
     ['bench', '--features', FEATURES, '--bench', BENCH],
-    { cwd: REPO_ROOT, shell: true },
+    { cwd: REPO_ROOT },
   );
   const compileErr = /^error(\[|:)/m.test(out);
   const byId = parseBenchOutput(out);

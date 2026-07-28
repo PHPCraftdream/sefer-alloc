@@ -92,7 +92,7 @@ for (const step of steps) {
   console.log(`\n============================================================`);
   console.log(`  ${step.name}`);
   console.log(`============================================================`);
-  const { code } = await run(step.cmd, step.args, { cwd: REPO_ROOT, shell: true });
+  const { code } = await run(step.cmd, step.args, { cwd: REPO_ROOT });
   if (code !== 0) {
     console.log(`\n[check-all] FAIL at step: ${step.name} (exit ${code})`);
     allOk = false;
@@ -105,7 +105,7 @@ if (allOk) {
   console.log(`\n============================================================`);
   console.log(`  npm run iai (deterministic instruction-count judge)`);
   console.log(`============================================================`);
-  const { code } = await run('node', ['scripts/iai.mjs'], { cwd: REPO_ROOT, shell: true });
+  const { code } = await run('node', ['scripts/iai.mjs'], { cwd: REPO_ROOT });
   if (code !== 0) {
     console.log(`\n[check-all] FAIL at step: iai (exit ${code}) — if this is "WSL not found" ` +
       `or similar environment failure (not a real regression), treat iai as a manual ` +

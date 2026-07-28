@@ -147,7 +147,6 @@ for (const [features, group] of byFeature) {
     {
       cwd: REPO_ROOT,
       env: { ...process.env, RUSTFLAGS: `${process.env.RUSTFLAGS ?? ''} --cfg loom`.trim() },
-      shell: true,
     },
   );
   // Guard against the silent "0 tests" trap: a feature-gated-out file reports

@@ -33,18 +33,16 @@ export function winToWsl(winPath) {
  */
 export function run(cmd, args, opts = {}) {
   return new Promise((res, rej) => {
-    // Node 22+ (DEP0190): with `shell: true`, argv elements are concatenated
-    // RAW instead of being auto-quoted as they used to be -- a single
-    // multi-word argument (e.g. `--features 'production alloc-stats
-    // bench-internals'`) used to survive as one shell token; it now silently
-    // splits on whitespace into separate argv entries, which cargo then
-    // rejects as unexpected positional arguments. Restore the previous
-    // behavior by quoting any argument containing whitespace ourselves
-    // before handing it to `spawn`.
-    const safeArgs = opts.shell
-      ? args.map((a) => (/\s/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
-      : args;
-    const child = spawn(cmd, safeArgs, { ...opts });
+    // `opts` defaults to `{}` (no `shell`), so `spawn` hands `args` straight
+    // to the OS process-creation call as a real argv array — no shell
+    // re-parses them, so a multi-word argument (e.g. `--features 'production
+    // alloc-stats bench-internals'`) survives as ONE argv element with zero
+    // quoting. Callers must NOT pass `shell: true`: Node 22+ (DEP0190) made
+    // that path concatenate argv RAW and silently split multi-word args on
+    // whitespace, and hand-rolled cross-shell quoting is the exact fragility
+    // this `shell: false` default exists to avoid. See
+    // scripts/argv-roundtrip-test.mjs for the regression test.
+    const child = spawn(cmd, args, opts);
     let out = '';
     const tee = (buf) => {
       const s = buf.toString();
