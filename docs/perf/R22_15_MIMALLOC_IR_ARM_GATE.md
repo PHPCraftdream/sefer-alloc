@@ -1,5 +1,7 @@
 # R22-15 — mimalloc `Ir` arm in `benches/perf_gate_iai.rs`: measured, not spun
 
+> **Current headline (R23-2 correction): on a warm N/2N matched gate the hot-churn Sefer/mimalloc ratio = 0.896 (Sefer marginally cheaper); cold-carve ≈ 2.0–2.08. The 1.326/2.430 figures below used an asymmetric bootstrap-subtraction, superseded — full story in §9.**
+>
 > **CORRECTED 2026-07-27 (task #371, R23-2) — see §9.** The 1.3x-2.4x
 > bootstrap-subtracted ratio table below (§0, §2) is preserved verbatim as
 > already-published history (do not re-derive or delete it), but an

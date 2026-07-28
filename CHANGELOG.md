@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Round 23 — Round 22's own measurements corrected against two independent reviews: `contains_base` re-isolated (8.8%, not 18.6%), mimalloc ratio flips on hot churn (0.896x) via a warm N/2N gate, the free path's real dominant cost found (own-thread body, 80.8%), R22-16's flawed neighbor-liveness blocker retracted (Linux sub-region remap now CONDITIONAL-GO), 11 pre-existing clippy dead-code errors closed, one flaky test replaced with a deterministic counter, batch API consumer question closed by decision record (R23-1..R23-7, tasks #370–#376)
 
+**Runtime improvements this round: 0** — Round 23 was a correction / measurement / tooling round; `production`'s feature composition is unchanged across the whole round (see "Production vs. opt-in" below). Every entry below is measurement, correctness, design-correction, or tooling (tagged inline) — none is a runtime speedup.
+
 **What actually moved this round, stated plainly up front.** Round 23 is a
 correction round: two independent read-only reviews of Round 22
 (`docs/reviews/2026-07-26-r22-readonly-review.md`,
@@ -27,6 +29,12 @@ into the same commits (a README unsafe-inventory-count regression, a
 composition is **unchanged** across the whole round — every new item is
 either `#[doc(hidden)]`/`alloc-stats`-gated measurement tooling or a
 docs-only edit; `git diff --stat` on `Cargo.toml` across the round is empty.
+
+#### Runtime improvements
+
+_None this round._ — Round 23 shipped no runtime speedup; every entry below is measurement, correctness, design-correction, or tooling (see the inline tags). `production`'s feature composition is unchanged.
+
+#### Measurement, correctness & tooling
 
 - **[measurement correction] R23-1 (task #370) — `contains_base`'s isolated
   share of a real free's `Ir` is 8.8%, not R22-17's original 18.6%.** The

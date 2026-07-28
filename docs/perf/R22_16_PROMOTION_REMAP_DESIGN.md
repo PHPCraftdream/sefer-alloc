@@ -1,5 +1,7 @@
 # R22-16 — Remap-instead-of-copy for the medium→Large promotion memcpy: design (NOT implementation)
 
+> **Current verdict (R23-4 correction): NO-GO for whole-segment remap (base-address stability, unchanged); CONDITIONAL-GO for Linux sub-region remap pending a correctness prototype; Windows still NO-GO. §2.4's original "neighbor-liveness check" blocker is retracted — full story in §10.**
+>
 > **CORRECTION (2026-07-27, task #373, R23-4).** This document's §2.4
 > "promotion-time neighbor-liveness check" blocker for sub-region remap is
 > **WRONG** — independently re-verified against the actual `carve_block`/

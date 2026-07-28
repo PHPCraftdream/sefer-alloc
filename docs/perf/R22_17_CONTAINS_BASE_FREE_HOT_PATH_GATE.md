@@ -1,5 +1,7 @@
 # R22-17 — `contains_base`'s share of a real free's `Ir`: measured MATERIAL (18.6%)
 
+> **Current headline (R23-1 correction): `contains_base`-only = 8.8% of a real free's `Ir` (523/5,920); `segment_base_of_ptr`-only = 9.8% (578/5,920). The 18.6% in the title and §0–§4 below is a pre-isolation upper envelope (the two summed), superseded — full story in §7.**
+>
 > **CORRECTED 2026-07-27 (task #370, R23-1) — see §7.** The 18.6% figure
 > below is preserved verbatim as already-published history (do not re-derive
 > or delete it), but it is a **routing-prefix upper envelope**

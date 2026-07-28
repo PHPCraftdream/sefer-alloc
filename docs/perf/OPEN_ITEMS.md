@@ -21,12 +21,20 @@ flagged-open items. This file does.
    closing round + task number + one-line evidence (commit / doc that records
    the resolution). Do NOT delete the entry — the closure trail is itself the
    artifact that lets a future reviewer confirm an item was actually addressed,
-   not just forgotten again.
+   not just forgotten again. If the entry carries a current-state card (see rule 3),
+   update its Status / Current-number to reflect the closure as part of the move.
 3. **When a new gate report flags an open item:** add it here in the same commit
    that lands the report (or the report's own follow-up commit), with a
    `file:line`/section pointer back to the report's own "Open items" / §6 /
    "Follow-up" section. A flag that lives only inside a single report's prose is
-   exactly the failure mode this index exists to prevent.
+   exactly the failure mode this index exists to prevent. **Current-state card
+   (added R24-9):** every item carries a compact block right after its title —
+   Status / Current number-or-verdict / Next trigger / Evidence — that states the
+   LATEST correct headline first, before the historical narrative. Fill it in when
+   adding an item, and update the Current-number / Status whenever a later round
+   supersedes the headline (the card is the first thing a reader sees; the
+   historical narrative below it is preserved unchanged, per the append-don't-
+   rewrite convention).
 
 **Scope.** This index covers `docs/perf/*.md` only (gate reports + perf design
 docs). It is NOT a general issue tracker — code `TODO`/`FIXME` comments, roadmap
@@ -51,7 +59,15 @@ for completeness.
 ### [A] Active / high-value
 
 1. **`contains_base`'s share of a real free's `Ir` — measured MATERIAL
-   (18.6%).** R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
+   (18.6%).**
+
+   > **Current state**
+   > - **Status:** open — an actively-evolving multi-round hot-path investigation (R22-17 → R24-8).
+   > - **Current number/verdict:** `contains_base`-only share of a real free's `Ir` = **8.8% (523/5,920)**, NOT the original 18.6% (R23-1). The item was then reframed: the routing prefix is NOT the free path's dominant cost — the magazine-overflow mechanic is. Bitmap-clear coalescing was tried twice (R24-3, R24-4) → both NO-GO; STAGE_CAP 512→64 is a GO (−4,065 Ir/call, R24-8).
+   > - **Next trigger:** a `flush_class` isolation measurement (~487 Ir/event — the overflow's larger untried lever per R24-5); separately, Tier-2-hash-probe-heavy workloads might show `contains_base` > 8.8% (open, not a proven floor).
+   > - **Evidence:** `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (8.8%); `R23_3_HOT_PATH_ATTRIBUTION_GATE.md`; `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md`; `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`; `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`.
+
+   R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
    own-thread ownership probe (`SegmentTable::contains_base`, a two-tier
    4-entry-cache-then-hash-probe check) accounts for 18.6% of a real free's
    instruction count on a single-hot-segment churn workload (Tier-1 cache-hit
@@ -364,33 +380,73 @@ for completeness.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
-2. **R17-10 — batched deferred reclaim (sub-design A + B).** Design-only;
-   proposes a future-round implementation + dual-axis wall-clock gate. Sub-design
+2. **R17-10 — batched deferred reclaim (sub-design A + B).**
+
+   > **Current state**
+   > - **Status:** design-only, deferred.
+   > - **Current number/verdict:** CONDITIONAL — sub-design A (batch the per-block decommit check) is independent and small; sub-design B (deferred cross-segment finalization) is conditional on a §5.1 stage-1 finding that a non-negligible fraction of `drain_dirty_segments` sweeps empty >1 segment.
+   > - **Next trigger:** a future round chooses to implement sub-design A; sub-design B is gated on its §5.1 stage-1 finding (check BEFORE writing B's code).
+   > - **Evidence:** `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
+
+   Design-only; proposes a future-round implementation + dual-axis wall-clock
+   gate. Sub-design
    A (batch the per-block decommit check) is independent and small; sub-design B
    (deferred cross-segment finalization within one `drain_dirty_segments` sweep)
    is CONDITIONAL on a §5.1 stage-1 finding that a non-negligible fraction of
    sweeps empty >1 segment — check BEFORE writing B's code. Evidence:
    `R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` §6 + §7 (lines 555–668).
-3. **R11-7 page-run layer (R12-13 deferred).** NO-GO now; the complete design
-   remains a reusable CONDITIONAL-GO starting point IF a real workload
+3. **R11-7 page-run layer (R12-13 deferred).**
+
+   > **Current state**
+   > - **Status:** NO-GO now; kept as a reusable CONDITIONAL-GO starting point.
+   > - **Current number/verdict:** NO-GO — no demonstrated victim exists today.
+   > - **Next trigger:** a real workload allocating thousands of simultaneously-live 1.25–2.0 MiB (or larger uniform-size) objects that is `MAX_SEGMENTS`-bound or OS-reservation-syscall-bound (not RSS-bound — solved wherever `exact-span-large` is enabled).
+   > - **Evidence:** `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
+
+   NO-GO now; the complete design remains a reusable CONDITIONAL-GO starting
+   point IF a real workload
    materializes that allocates thousands of simultaneously-live 1.25–2.0 MiB (or
    larger uniform-size) objects and is measured `MAX_SEGMENTS`-bound or
    OS-reservation-syscall-bound (not RSS-bound — that is solved wherever
    `exact-span-large` is enabled). No demonstrated victim exists today.
    Evidence: `R12_13_PAGE_RUN_LAYER_DEFERRED.md` §4 (lines 188–237).
-4. **R14-7 expandable / chained `SegmentTable`.** Design-only; implement ONLY
-   when (1) a real workload needs >`MAX_SEGMENTS`−1 (4095) simultaneously-live
+4. **R14-7 expandable / chained `SegmentTable`.**
+
+   > **Current state**
+   > - **Status:** design-only, deferred.
+   > - **Current number/verdict:** design-only — implement only when one of three triggers fires.
+   > - **Next trigger:** (1) a workload needing >`MAX_SEGMENTS`−1 (4095) simultaneously-live Large objects, OR (2) a `MAX_SEGMENTS` raise stops being "cheap" by §1's criteria, OR (3) page-run (item 3) is pursued (then re-evaluate this doc's tagged-`SegmentId` widening alongside it).
+   > - **Evidence:** `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
+
+   Design-only; implement ONLY when (1) a real workload
+   needs >`MAX_SEGMENTS`−1 (4095) simultaneously-live
    Large objects, OR (2) a future `MAX_SEGMENTS` raise stops being "cheap" by
    §1's criteria, OR (3) page-run is pursued (then re-evaluate this doc's
    tagged-`SegmentId` widening alongside it — both touch the same header field).
    Evidence: `R14_7_EXPANDABLE_SEGMENT_TABLE_DESIGN.md` §5 (lines 374–391).
-5. **R10-4 run-origin oracle (class-align carve).** DESIGN-ONLY, CONDITIONAL GO.
-   Sound and real density gain (wide classes 2/1/1 → 3/2/2), but only worth it
+5. **R10-4 run-origin oracle (class-align carve).**
+
+   > **Current state**
+   > - **Status:** design-only, CONDITIONAL GO.
+   > - **Current number/verdict:** CONDITIONAL GO — sound with a real density gain (wide classes 2/1/1 → 3/2/2), but only worth it if `medium-classes-wide` is pursued (itself NO-GO'd for `production` on a large-realloc regression).
+   > - **Next trigger:** `medium-classes-wide` re-opened.
+   > - **Evidence:** `R10_4_RUN_ORIGIN_ORACLE_DESIGN.md` §0/§7/§8.
+
+   DESIGN-ONLY, CONDITIONAL GO. Sound and real density gain (wide classes
+   2/1/1 → 3/2/2), but only worth it
    if `medium-classes-wide` is pursued — which is itself NO-GO'd for
    `production` (large realloc regression). Re-evaluate only if wide classes are
    re-opened. Evidence: `R10_4_RUN_ORIGIN_ORACLE_DESIGN.md` §0/§7/§8.
 6. **R22-16 — remap-instead-of-copy for the medium→Large promotion memcpy
-   (MediumExtent sub-path).** DESIGN-ONLY. **Status pending correction (task
+   (MediumExtent sub-path).**
+
+   > **Current state**
+   > - **Status:** design-only; verdict corrected in R23-4 (the original whole-NO-GO framing is superseded).
+   > - **Current number/verdict:** **NO-GO** for whole-segment remap (base-address stability, unaffected) and for Windows (separate section-object blocker); **CONDITIONAL-GO** for Linux sub-region remap pending a correctness prototype. The MediumExtent one-object-per-segment redesign is a separate CONDITIONAL-GO, gated on an unrun Stage-1 workload-shape measurement.
+   > - **Next trigger:** a Linux sub-region `mremap` correctness prototype (adds the FFI surface + the "never free-list-push a remap-vacated offset" discipline §10.3 identifies); MediumExtent needs its Stage-1 measurement.
+   > - **Evidence:** `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the R23-4 correction; original §0–§9 preserved verbatim).
+
+   DESIGN-ONLY. **Status pending correction (task
    #373/R23-4):** the design doc as committed verdicts NO-GO for
    remap-in-place under the current shared-segment model, reasoning that a
    promotion-time "is anyone else sharing my pages" check is unsolved — an
@@ -465,23 +521,53 @@ for completeness.
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
-   narrow working-set-after-burst shape.** Deferred "if a future review wants a
+   narrow working-set-after-burst shape.**
+
+   > **Current state**
+   > - **Status:** deferred, low-priority.
+   > - **Current number/verdict:** deferred — no number attached yet to the O(40) vs O(8) "cheap" claim for N=1/2/4.
+   > - **Next trigger:** a future review wants a number for the narrow working-set-after-burst shape (R13-8 already measured the 24-distinct-size turnover shape).
+   > - **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
+
+   Deferred "if a future review wants a
    number attached to the 'cheap' claim" specifically for N=1/2/4 (R13-8 already
    measured the 24-distinct-size turnover shape). Evidence:
    `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
 8. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
+
+    > **Current state**
+    > - **Status:** deferred, low-priority.
+    > - **Current number/verdict:** deferred — the 4× reserved-capacity growth factor's real numbers are still enough.
+    > - **Next trigger:** 4×'s real numbers ever stop being enough (would need new per-segment chain-identity state or a threaded hint through the shared `alloc_large_slow` path).
+    > - **Evidence:** `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
+
     Deferred "if 4×'s real numbers ever stop being enough"; would need new
     per-segment chain-identity state or a threaded hint through the shared
     `alloc_large_slow` path. Evidence:
     `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` (lines 89–95).
 9. **R15-1 §7 — nonempty-summary-word optimisation for `drain_dirty_segments`.**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended now.
+    > - **Current number/verdict:** the ceiling is below this task's own noise floor; not worth it.
+    > - **Next trigger:** revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward item 4's expandable table) OR a much-higher producer-class fan-in than N=8 becomes a real target.
+    > - **Evidence:** `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7 (lines 519–555).
+
     Explicitly NOT recommended now (ceiling below this task's own noise floor).
     Revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward the
     R14-7 expandable table) OR a much-higher producer-class fan-in than N=8
     becomes a real target. Evidence: `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7
     (lines 519–555).
 10. ~~**R9-9 — warm-batch-on-`SeferAlloc`-heap arm.**~~ **DONE (task R10-7,
-    2026-07-21, commit `9611a56`).** Moved to "Recently resolved" below —
+    2026-07-21, commit `9611a56`).**
+
+    > **Current state**
+    > - **Status:** DONE — resolved by R10-7; deliberately left struck-through in place (not moved to "Recently resolved") so the original ask stays visible next to its closure.
+    > - **Current number/verdict:** resolved — the fourth warm-batch arm R9-9 asked for (`batch_core_warm`/`scalar_core_warm` + `batch_tcache`) was built and measured against the real warm scalar path.
+    > - **Next trigger:** none (closed).
+    > - **Evidence:** `R10_7_BATCH_WARM_ARM.md` (closure); `R9_9_BATCH_BENCH_FOLLOWUP.md` (original ask).
+
+    Moved to "Recently resolved" below —
     left here struck through rather than deleted so the original ask stays
     visible next to its closure. R10-7 built exactly the fourth arm this
     item asked for (`batch_core_warm`/`scalar_core_warm`, Part 1) plus the
@@ -495,11 +581,26 @@ for completeness.
     touch `OPEN_ITEMS.md` — the same "report lands, index not updated in
     the same commit" failure mode this file's own convention (§ "When you
     close an item") exists to prevent.
-11. **R11-3 — joint threshold×pad-target sweep.** The R11-3 probe fixed the
+11. **R11-3 — joint threshold×pad-target sweep.**
+
+   > **Current state**
+   > - **Status:** low-priority, conditional.
+   > - **Current number/verdict:** only relevant if `medium-classes-wide` promotion is re-opened.
+   > - **Next trigger:** `medium-classes-wide` promotion re-opened.
+   > - **Evidence:** `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
+
+   The R11-3 probe fixed the
     pad-target at 2 MiB; "a joint threshold×pad-target sweep is future work."
     Only relevant if `medium-classes-wide` promotion is re-opened. Evidence:
     `R11_3_REALLOC_SMALL_TO_LARGE_PROMOTION_DESIGN.md` (lines 483–485).
 12. **R22-6 — sub-16 KiB geometric-ladder OPT-H probe (optional, ~1 hour).**
+
+    > **Current state**
+    > - **Status:** low-priority, optional curiosity probe (~1 hour if ever revisited).
+    > - **Current number/verdict:** optional, NOT a next step a round should plan around — the sub-16 KiB tail is already cheapest (OPT-G in-place Large-grow is ~40× faster than mimalloc), so marginal payoff is small even at a favorable hit rate.
+    > - **Next trigger:** none named (explicitly low-value, low-cost); a Vec-push-shaped 16 B→16 KiB harness would be the probe if ever run.
+    > - **Evidence:** `R20_3_INPLACE_MEDIUM_GROW_DESIGN.md` §5.3 + this file's item-1 closure entry (the LCM argument distinguishing the two ladders).
+
     Not a variant of the now-closed medium-ladder item (see "Recently resolved"
     below) — a DIFFERENT ladder with much friendlier LCM ratios. The
     geometric run below the medium classes steps by ~1.25× per class (e.g.
