@@ -1,0 +1,105 @@
+    Finished `release` profile [optimized] target(s) in 0.65s
+     Running `D:\dev\rust\.cargo-target\release\examples\r25_5_pool_cap_sweep_probe.exe`
+=== R25-5 pool_segments sweep: latency/decommit + RSS (single/8T/32T) ===
+SIZE=1024B  CHURN_WORKING_SET=256  OPS=1024  LATENCY_ITERATIONS=1200  RSS_RUN_DURATION=1.5s
+
+--- Axis 1: latency / decommit (single-thread, 1200 cycles) ---
+ pool_segments       total_ms     ns_per_cycle   decommit_delta seg_released_delta seg_reserved_delta
+  [diag] pool_segments=4: resolved_cap=4 pooled_count_at_end=4
+             4        212.412         177009.8               20                 20             24
+RESULT latency_ns_per_cycle_pool4=177009
+RESULT decommit_delta_pool4=20
+RESULT segments_released_delta_pool4=20
+RESULT segments_reserved_delta_pool4=24
+  [diag] pool_segments=8: resolved_cap=8 pooled_count_at_end=6
+             8        143.481         119567.6                0                  0              6
+RESULT latency_ns_per_cycle_pool8=119567
+RESULT decommit_delta_pool8=0
+RESULT segments_released_delta_pool8=0
+RESULT segments_reserved_delta_pool8=6
+  [diag] pool_segments=16: resolved_cap=16 pooled_count_at_end=6
+            16        129.507         107922.9                0                  0              6
+RESULT latency_ns_per_cycle_pool16=107922
+RESULT decommit_delta_pool16=0
+RESULT segments_released_delta_pool16=0
+RESULT segments_reserved_delta_pool16=6
+  [diag] pool_segments=32: resolved_cap=32 pooled_count_at_end=6
+            32        143.490         119574.7                0                  0              6
+RESULT latency_ns_per_cycle_pool32=119574
+RESULT decommit_delta_pool32=0
+RESULT segments_released_delta_pool32=0
+RESULT segments_reserved_delta_pool32=6
+
+--- Axis 2: RSS/commit, 1 concurrent thread(s), 1.5s sustained churn ---
+ pool_segments rss_before_kib   peak_rss_kib peak_rss_delta  rss_after_kib commit_before_kib peak_commit_delta  commit_after_kib
+             4           3260          16392          13132           8172               836             17132              9708
+RESULT peak_rss_kib_pool4_threads1=16392
+RESULT peak_rss_delta_kib_pool4_threads1=13132
+RESULT peak_commit_kib_pool4_threads1=17968
+RESULT peak_commit_delta_kib_pool4_threads1=17132
+             8           8172          16388           8216           8172              9708              8260              9708
+RESULT peak_rss_kib_pool8_threads1=16388
+RESULT peak_rss_delta_kib_pool8_threads1=8216
+RESULT peak_commit_kib_pool8_threads1=17968
+RESULT peak_commit_delta_kib_pool8_threads1=8260
+            16           8172          16388           8216           8172              9708              8260              9708
+RESULT peak_rss_kib_pool16_threads1=16388
+RESULT peak_rss_delta_kib_pool16_threads1=8216
+RESULT peak_commit_kib_pool16_threads1=17968
+RESULT peak_commit_delta_kib_pool16_threads1=8260
+            32           8172          16404           8232           8188              9708              8276              9724
+RESULT peak_rss_kib_pool32_threads1=16404
+RESULT peak_rss_delta_kib_pool32_threads1=8232
+RESULT peak_commit_kib_pool32_threads1=17984
+RESULT peak_commit_delta_kib_pool32_threads1=8276
+NOTE: *_before_kib/*_after_kib are cumulative process-wide figures across the WHOLE sweep run (this process never fully decommits between arms — same documented discipline as r13_9_class_aware_dirty_sidecar_rss.rs's sidecar-leak note); the reliable per-arm signal is *_delta (peak minus that arm's own fresh before-snapshot), not the absolute *_kib columns.
+
+--- Axis 2: RSS/commit, 8 concurrent thread(s), 1.5s sustained churn ---
+ pool_segments rss_before_kib   peak_rss_kib peak_rss_delta  rss_after_kib commit_before_kib peak_commit_delta  commit_after_kib
+             4           8188         109120         100932          43240              9724            124524             67992
+RESULT peak_rss_kib_pool4_threads8=109120
+RESULT peak_rss_delta_kib_pool4_threads8=100932
+RESULT peak_commit_kib_pool4_threads8=134248
+RESULT peak_commit_delta_kib_pool4_threads8=124524
+             8          43240         109748          66508          44012             67992             66856             68720
+RESULT peak_rss_kib_pool8_threads8=109748
+RESULT peak_rss_delta_kib_pool8_threads8=66508
+RESULT peak_commit_kib_pool8_threads8=134848
+RESULT peak_commit_delta_kib_pool8_threads8=66856
+            16          44012         110204          66192          44464             68720             66636             69264
+RESULT peak_rss_kib_pool16_threads8=110204
+RESULT peak_rss_delta_kib_pool16_threads8=66192
+RESULT peak_commit_kib_pool16_threads8=135356
+RESULT peak_commit_delta_kib_pool16_threads8=66636
+            32          44464         110352          65888          44620             69264             66244             69424
+RESULT peak_rss_kib_pool32_threads8=110352
+RESULT peak_rss_delta_kib_pool32_threads8=65888
+RESULT peak_commit_kib_pool32_threads8=135508
+RESULT peak_commit_delta_kib_pool32_threads8=66244
+NOTE: *_before_kib/*_after_kib are cumulative process-wide figures across the WHOLE sweep run (this process never fully decommits between arms — same documented discipline as r13_9_class_aware_dirty_sidecar_rss.rs's sidecar-leak note); the reliable per-arm signal is *_delta (peak minus that arm's own fresh before-snapshot), not the absolute *_kib columns.
+
+--- Axis 2: RSS/commit, 32 concurrent thread(s), 1.5s sustained churn ---
+ pool_segments rss_before_kib   peak_rss_kib peak_rss_delta  rss_after_kib commit_before_kib peak_commit_delta  commit_after_kib
+             4          44620         426972         382352         162728             69424            463864            267508
+RESULT peak_rss_kib_pool4_threads32=426972
+RESULT peak_rss_delta_kib_pool4_threads32=382352
+RESULT peak_commit_kib_pool4_threads32=533288
+RESULT peak_commit_delta_kib_pool4_threads32=463864
+             8         162728         427476         264748         163944            267508            266276            268872
+RESULT peak_rss_kib_pool8_threads32=427476
+RESULT peak_rss_delta_kib_pool8_threads32=264748
+RESULT peak_commit_kib_pool8_threads32=533784
+RESULT peak_commit_delta_kib_pool8_threads32=266276
+            16         163944         427884         263940         163424            268872            265184            268208
+RESULT peak_rss_kib_pool16_threads32=427884
+RESULT peak_rss_delta_kib_pool16_threads32=263940
+RESULT peak_commit_kib_pool16_threads32=534056
+RESULT peak_commit_delta_kib_pool16_threads32=265184
+            32         163424         427704         264280         163340            268208            265636            268516
+RESULT peak_rss_kib_pool32_threads32=427704
+RESULT peak_rss_delta_kib_pool32_threads32=264280
+RESULT peak_commit_kib_pool32_threads32=533844
+RESULT peak_commit_delta_kib_pool32_threads32=265636
+NOTE: *_before_kib/*_after_kib are cumulative process-wide figures across the WHOLE sweep run (this process never fully decommits between arms — same documented discipline as r13_9_class_aware_dirty_sidecar_rss.rs's sidecar-leak note); the reliable per-arm signal is *_delta (peak minus that arm's own fresh before-snapshot), not the absolute *_kib columns.
+
+NOTE: RSS/commit figures are PROCESS-WIDE snapshots (proc_probe::snapshot()), so the multi-thread arms report AGGREGATE committed memory across all concurrently-live heaps at that pool_segments value — the axis `docs/reviews/2026-07-28-r24-readonly-review.md`'s P2 section specifically asks be measured (a per-thread cap raise multiplies worst-case committed memory by every concurrent thread).

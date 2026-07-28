@@ -385,10 +385,10 @@ for completeness.
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 
    > **Current state**
-   > - **Status:** re-measurement DONE (R24-11, task #389); root-cause + report only, **no production change**.
-   > - **Current number/verdict:** **(i) pool-cap-exceeded.** `bench_global_alloc_churn_with_teardown`@1024B = 123.94 µs/op vs mimalloc 46.09 = **2.69×** (the R24-10 brief's "106.1 ns/op" was a µs-units slip — actual is µs; the ratio was correct). Per-size process-wide counter deltas: **0** decommits/releases at 16/64/256B (Sefer at parity, pool holds), **248** at 1024B (where the 2.69× gap is). (ii) decay ruled out (248 events in a ~0.75 s window ≫ decay's ≤1/sec). (iii) batch-flush ruled out (it is size-flat at ~5–9 µs and present at the parity sizes; the teardown cost jumps to ~102 µs only at 1024B). `working_set_cycle` corroborates (173/373 decommits at 256B/1024B, reproducing its own historical 173/367).
-   > - **Next trigger:** a round wants to close the 1024B residual via an **RSS-gated `pool_segments` sweep** (4/8/16/32, measuring decommits Δ **and** peak RSS), mirroring the existing `bench_pool_cap_sweep` / `pool_cap_sweep_spread_and_drain` harness. Otherwise this is a **documented stress-canary characteristic, not a defect** — a full 256-block teardown every iteration is not a representative workload.
-   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`.
+   > - **Status:** root-cause DONE (R24-11, task #389); RSS-gated `pool_segments` sweep DONE (R25-5, task #399) — the R24-11 "Next trigger" below is CLOSED. **No production change in either task.**
+   > - **Current number/verdict:** the R25-5 sweep (4/8/16/32, `AllocCore`-direct latency/decommit axis + `SeferAlloc`-per-thread 1T/8T/32T RSS axis, exact `bench_global_alloc_churn_with_teardown`@1024B shape) found the 4→8 step eliminates the ENTIRE measured decommit residual (**20 → 0** decommits/run in R25-5's own harness, same mechanism as R24-11's 248) at LOWER (not higher) RSS/commit cost at every thread count measured (cap=4's residual churn itself carries a real OS reserve/decommit round-trip cost cap≥8 avoids). Cap=16/32 add nothing further on either axis (workload demand tops out at 6-7 concurrent segments, self-verified via `AllocCore::dbg_pool_cap()`/`dbg_pooled_count()`). **Verdict: GO-CANDIDATE for `pool_segments=8`** (not 16/32 — no-op beyond 8), flagged for a future default-raise decision, NOT changed in R25-5.
+   > - **Next trigger:** R25-6 (task #400, conditional on R25-5) — design an adaptive/process-wide pool budget per the R24 readonly review's P2 preference (an adaptive design over a blanket fixed-cap raise), OR a round decides to promote `DEFAULT_POOL_SEGMENTS` 4→8 directly off R25-5's GO-CANDIDATE finding. Either way the fixed-cap-sweep question this item originally opened is now answered; what remains open is the DEFAULT-CHANGE DECISION itself (deliberately left to a separate round/task, per both R24-11's and R25-5's explicit task-brief constraints).
+   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`.
 
    R24-10 (task #388) established the *mechanism* behind the 1024B teardown
    residual (the segment decommit/release/re-reserve lifecycle Mechanism-2's
@@ -414,6 +414,50 @@ for completeness.
    use `ChurnTeardownGuard`). Full evidence, the cross-size teardown-cost
    decomposition, and the per-event-cost caveat:
    `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`.
+
+   **R25-5 (task #399) — the sweep itself.** Ran `pool_segments` = 4/8/16/32
+   with a generous 256 MiB `pool_byte_cap` against the exact
+   `bench_global_alloc_churn_with_teardown`@1024B shape, per the two-axis
+   ("do not promote from the single-thread latency result alone")
+   constraint the R24 readonly review's P2 section and this item's own
+   "Next trigger" both required. A new standalone probe
+   (`examples/r25_5_pool_cap_sweep_probe.rs`) was needed rather than
+   extending the criterion bench directly (only Sefer has a `pool_segments`
+   knob, not mimalloc/System) — it copies `bench_global_alloc_churn_with_teardown`'s
+   `churn_prefill`/`churn_step`/`churn_teardown` primitives byte-for-byte and
+   measures the latency/decommit axis via `AllocCore::new_with_config`
+   directly (mirroring `pool_cap_sweep_spread_and_drain`'s own established
+   pattern) and the RSS axis via `SeferAlloc::with_config` on N concurrent
+   OS threads (mirroring `first_alloc_process.rs`'s N-concurrent-heap RSS
+   pattern), reading peak RSS/commit through `proc_probe::snapshot()`
+   (this project's established same-instant memory probe). **A real
+   methodology pitfall was caught and fixed mid-task**: a naive sequential
+   prefill→churn→teardown loop measured ZERO decommits at every swept
+   value including the cap=4 baseline — directly contradicting R24-11's own
+   248-decommit finding — because criterion's actual
+   `iter_batched(.., BatchSize::SmallInput)` semantics batch MANY `setup`
+   calls concurrently-live before timing `routine` (`criterion-0.5.1/src/bencher.rs:236`),
+   a fundamentally different memory-pressure shape than one cycle at a
+   time; the probe was fixed to reproduce that exact batched-setup shape,
+   after which the decommit signal reproduced correctly (verified via
+   `AllocCore::dbg_pool_cap()`/`dbg_pooled_count()` self-checks — closing
+   R24-11 §1's own documented `SeferAlloc`-reachability gap for this
+   counter). **Result:** cap=4→8 eliminates the entire decommit residual
+   (20→0 in R25-5's own harness units) at LOWER RSS/commit cost (cap=4's
+   residual decommit-then-reserve churn itself costs real RSS/commit that
+   steady-state cap≥8 avoids); cap=16/32 add nothing further at either axis
+   (this workload's demand tops out at 6-7 concurrently-touched segments,
+   confirmed via the self-verifying diagnostic). The multi-thread (8T/32T)
+   axis confirms the review's warned-about linear-in-thread-count RSS
+   multiplication IS present (~8× at 8 threads, ~32× at 32 threads,
+   relative to the 1-thread delta) but that multiplication is present
+   IDENTICALLY at every swept cap including the current default — cap=8
+   does not make it worse, and in fact its per-thread footprint is smaller
+   than cap=4's. **Verdict: GO-CANDIDATE for `pool_segments=8`**, flagged
+   for a future default-raise decision (task brief's explicit constraint:
+   measure and report, do not change the default in this task). Full
+   evidence, the batching-pitfall counterfactual, and the RSS-cost
+   mechanism explanation: `R25_5_POOL_CAP_SWEEP_GATE.md`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
