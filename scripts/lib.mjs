@@ -33,7 +33,18 @@ export function winToWsl(winPath) {
  */
 export function run(cmd, args, opts = {}) {
   return new Promise((res, rej) => {
-    const child = spawn(cmd, args, { ...opts });
+    // Node 22+ (DEP0190): with `shell: true`, argv elements are concatenated
+    // RAW instead of being auto-quoted as they used to be -- a single
+    // multi-word argument (e.g. `--features 'production alloc-stats
+    // bench-internals'`) used to survive as one shell token; it now silently
+    // splits on whitespace into separate argv entries, which cargo then
+    // rejects as unexpected positional arguments. Restore the previous
+    // behavior by quoting any argument containing whitespace ourselves
+    // before handing it to `spawn`.
+    const safeArgs = opts.shell
+      ? args.map((a) => (/\s/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))
+      : args;
+    const child = spawn(cmd, safeArgs, { ...opts });
     let out = '';
     const tee = (buf) => {
       const s = buf.toString();

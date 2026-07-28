@@ -56,22 +56,26 @@ import { REPO_ROOT, winToWsl, run } from './lib.mjs';
 const RUNNER_VERSION_REQ = '^0.14';
 const RUNNER_VER_PREFIX = '0.14.';
 
-// The bench's `required-features = ["alloc-global"]`, but the CI perf-gate
-// (.github/workflows/perf-gate.yml) benches with `--features production`
-// (alloc-global + alloc-xthread + alloc-decommit + fastbin) — the real-world
-// default whose magazine/fastbin + large-cache fast paths are the whole point
-// of the gate. We match CI so the Ir baseline we record here is the SAME number
-// CI will produce. All twelve bench functions (benches/perf_gate_iai.rs's
-// `perf_gate` library_benchmark_group!) compile under `production`.
+// The bench's `required-features = ["alloc-global", "bench-internals"]`
+// (R24-6, task #384 — `bench-internals` gates 2 measurement-only unsafe hooks
+// off the production API surface), but the CI perf-gate
+// (.github/workflows/perf-gate.yml) benches with `--features "production
+// bench-internals"` (production = alloc-global + alloc-xthread +
+// alloc-decommit + fastbin + ...) — the real-world default whose
+// magazine/fastbin + large-cache fast paths are the whole point of the gate,
+// plus the two hooks R24-6 moved out of `production`. We match CI so the Ir
+// baseline we record here is the SAME number CI will produce. All bench
+// functions (benches/perf_gate_iai.rs's `perf_gate` library_benchmark_group!)
+// compile under `production bench-internals`.
 //
 // X7-Ф5 (task #193): a `--features <set>` CLI override was added so the
 // hardened-tier cost table can be recorded WITHOUT forking the script. The
-// override is backward-compatible: with no `--features` arg, `production`
-// remains the default (CI / `npm run iai` behaviour is byte-identical). The
-// override ONLY changes which feature set cargo compiles + callgrind measures;
-// the bench binary, the runner, the parser, and the report format are all
-// feature-agnostic.
-const DEFAULT_FEATURES = 'production';
+// override is backward-compatible: with no `--features` arg, `production
+// bench-internals` remains the default (CI / `npm run iai` behaviour is
+// byte-identical). The override ONLY changes which feature set cargo compiles
+// + callgrind measures; the bench binary, the runner, the parser, and the
+// report format are all feature-agnostic.
+const DEFAULT_FEATURES = 'production bench-internals';
 const FEATURES_OVERRIDE_FLAG = '--features';
 
 const BENCH = 'perf_gate_iai';
