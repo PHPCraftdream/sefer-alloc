@@ -279,3 +279,24 @@ report `test result: ok`, no `E0601`/compile regression (the exact bug class
 that hit R25-3/R25-5 from missing `[[example]] required-features` entries; the
 two new entries in §6 prevent it). Run on the same working tree as the
 measurement.
+
+---
+
+## CORRECTION (2026-07-28, R27-1, task #419)
+
+§1's abstract and §6's closing sentence phrase the pending default-change as
+"promote `DEFAULT_POOL_SEGMENTS` 4→8". That is a literal NO-OP as written:
+`AllocCore::new_with_config` resolves the effective pool cap as
+`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:837-839`),
+and `DEFAULT_POOL_BYTE_CAP = 16 MiB` (`src/alloc_core/small_segment_pool_config.rs:117`,
+`SEGMENT = 4 MiB`) already resolves to `16 MiB / 4 MiB = 4`, so `min(8, 4) = 4` —
+editing only `DEFAULT_POOL_SEGMENTS` from 4 to 8 leaves the allocator
+byte-identical. The real decision is a PAIRED change
+`(pool_segments, pool_byte_cap) = (4, 16 MiB) → (8, 32 MiB)`, which doubles the
+per-heap retained committed pool ceiling (16 MiB → 32 MiB; at 32 concurrent
+heaps, up to 1 GiB). This task's A/B arms are UNAFFECTED — both cap4 and cap8
+used a 256 MiB byte cap so the byte ceiling never bound, and they measured the
+EFFECTIVE cap, not the one-constant default edit, so every number in this report
+stands. Only the framing of the *separate* default-change decision this report
+defers to was malformed. See `docs/perf/OPEN_ITEMS.md` item 13's 2026-07-28
+R27-1 note for full detail.

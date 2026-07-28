@@ -475,3 +475,22 @@ process isolation before any RSS claim can be made.
 
 `DEFAULT_POOL_SEGMENTS` in
 `src/alloc_core/small_segment_pool_config.rs` remains `4`, unchanged.
+
+---
+
+## §9. CORRECTION (2026-07-28, R27-1, task #419)
+
+§5's "candidate for a future default raise" phrasing (and §1's abstract) could
+be read as "raise `DEFAULT_POOL_SEGMENTS` to 8" — a one-knob edit that is a
+literal NO-OP. The effective pool cap resolves as
+`min(pool_segments, pool_byte_cap / SEGMENT)` (`src/alloc_core/alloc_core.rs:837-839`);
+with the current `DEFAULT_POOL_BYTE_CAP = 16 MiB`
+(`src/alloc_core/small_segment_pool_config.rs:117`, `SEGMENT = 4 MiB`) the byte
+ceiling already resolves to `16 MiB / 4 MiB = 4`, so `min(8, 4) = 4` and editing
+only `DEFAULT_POOL_SEGMENTS` 4→8 changes nothing. A real default raise is a
+PAIRED change `(4, 16 MiB) → (8, 32 MiB)` doubling the per-heap retained
+committed ceiling (16 MiB → 32 MiB). This report's GO-CANDIDATE is for an
+EFFECTIVE cap of 8 (measured here at a 256 MiB byte cap so the byte ceiling
+never bound), so it stands; but the *default-promotion* task it defers to must
+be the paired change, not the one-knob edit. See `docs/perf/OPEN_ITEMS.md` item
+13's 2026-07-28 R27-1 note for full detail.

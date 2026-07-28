@@ -142,6 +142,47 @@ fn pool_segments_above_old_hard_cap_is_honoured() {
     );
 }
 
+/// R27-1 (task #419): a future "promote the default cap to 8" decision is a
+/// PAIRED knob change, NOT a one-knob `DEFAULT_POOL_SEGMENTS` 4→8 edit. The
+/// effective pool cap resolves as `min(pool_segments, pool_byte_cap / SEGMENT)`
+/// (`src/alloc_core/alloc_core.rs:837-839`), so with the default 16 MiB byte cap
+/// (16 MiB / 4 MiB = 4) raising `pool_segments` alone to 8 is a literal NO-OP
+/// (`min(8, 4) = 4`). This is the CI counterfactual for that bug: it would catch
+/// a future accidental one-knob "promotion" that silently ships no behaviour
+/// change. (The malformed arm below is the exact value a naive
+/// "set DEFAULT_POOL_SEGMENTS = 8" edit would produce.)
+#[test]
+fn paired_knob_promotion_is_not_a_noop() {
+    // The well-formed PAIRED change (8 segments, 32 MiB) → effective cap 8.
+    let cfg_paired = LargeCacheConfig::new().pool(
+        SmallSegmentPoolConfig::new()
+            .pool_segments(8)
+            .pool_byte_cap(32 * MIB),
+    );
+    let ac = AllocCore::new_with_config(cfg_paired).expect("primordial");
+    assert_eq!(
+        ac.dbg_pool_cap(),
+        8,
+        "paired (pool_segments=8, pool_byte_cap=32 MiB) must resolve to 8"
+    );
+
+    // The malformed one-knob version (8 segments, but the default 16 MiB byte
+    // cap left in place) → min(8, 16 MiB / 4 MiB) = min(8, 4) = 4. This is the
+    // exact NO-OP a naive "set DEFAULT_POOL_SEGMENTS = 8" edit would produce.
+    let cfg_malformed = LargeCacheConfig::new().pool(
+        SmallSegmentPoolConfig::new()
+            .pool_segments(8)
+            .pool_byte_cap(16 * MIB),
+    );
+    let ac = AllocCore::new_with_config(cfg_malformed).expect("primordial");
+    assert_eq!(
+        ac.dbg_pool_cap(),
+        4,
+        "one-knob (pool_segments=8, pool_byte_cap=16 MiB) must resolve to 4 — \
+         a naive DEFAULT_POOL_SEGMENTS-only edit is a no-op"
+    );
+}
+
 // ── 2/3/4. Admission, reuse without OS reservation, drain ────────────────────
 
 /// Emptying more segments than the cap pools EXACTLY `pool_cap` of them and
