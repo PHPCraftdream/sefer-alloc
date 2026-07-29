@@ -451,7 +451,7 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **20** tier-1 module-level seams (13 in
-`src/`, 7 in `crates/`) plus **63** tier-2 item-scoped allows across **18**
+`src/`, 7 in `crates/`) plus **67** tier-2 item-scoped allows across **18**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.

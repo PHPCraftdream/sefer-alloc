@@ -70,7 +70,7 @@ use sefer_alloc::SeferAlloc;
 // going through `SeferAlloc`'s `GlobalAlloc` facade, so the pre-allocation
 // pass can be excluded from the timed region (only the free loop is timed).
 #[cfg(all(target_os = "linux", feature = "alloc-xthread"))]
-use sefer_alloc::registry::{bootstrap, HeapRegistry};
+use sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry};
 
 /// Number of alloc/dealloc pairs per churn iteration. Kept small relative to
 /// the criterion benches (which use 1024) — callgrind emulation is far
@@ -2511,6 +2511,60 @@ fn dealloc_batch_fresh_17_16b() {
     black_box(0u8);
 }
 
+// R29-3 (task #434) — segment-lifecycle decomposition: SUPPLEMENTARY iai arms.
+//
+// These are NOT the primary verdict basis (the wall-clock decomposition in
+// `examples/r29_3_decomposition_gate.rs` is — Ir is blind to kernel time, see
+// the report's §0 caveat). They exist to characterise the Ir cost of the same
+// operations and, crucially, to demonstrate iai's blindness to the
+// kernel-time-dominated costs this decomposition hinges on: the existing
+// `large_alloc_free_cycle` arm (a full 4 MiB OS round-trip costing ~50-200 µs
+// real) reports only 3,308 Ir — these arms show the same undercounting on the
+// decommit/reserve path.
+//
+// Uses the same `bootstrap::ensure` + `HeapRegistry::claim` pattern as the
+// dealloc-only isolation arms above. The `dbg_decomp_*` hooks are gated
+// `alloc-decommit + bench-internals` at their declaration
+// (`alloc_core_small_pool.rs`/`heap_core_diag.rs`) — both must be repeated
+// here too (same pattern as `dealloc_flush_class_only_16b` above), or this
+// arm would fail to compile under `alloc-xthread` alone.
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "alloc-decommit",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn decomp_full_cycle_8x() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let pool_cap = unsafe { (*heap).dbg_pool_cap() };
+    // Pre-fill pool so releases take the release path.
+    for _ in 0..(pool_cap + 2) {
+        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+    }
+    for _ in 0..8 {
+        // SAFETY: dbg_decomp_full_cycle is a safe measurement hook.
+        let _ = unsafe { (*heap).dbg_decomp_full_cycle() };
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "alloc-decommit",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn decomp_os_roundtrip_8x() {
+    let _ = bootstrap::ensure();
+    // No heap needed — raw OS round-trip via associated function.
+    for _ in 0..8 {
+        let _ = HeapCore::dbg_decomp_os_roundtrip();
+    }
+}
+
 #[cfg(target_os = "linux")]
 library_benchmark_group!(
     name = perf_gate;
@@ -2586,6 +2640,8 @@ library_benchmark_group!(
         mimalloc_recycle_alloc_free_256x16b,
         mimalloc_recycle_alloc_free_256x64b,
         mimalloc_bootstrap_proxy,
+        decomp_full_cycle_8x,
+        decomp_os_roundtrip_8x,
 );
 
 #[cfg(target_os = "linux")]

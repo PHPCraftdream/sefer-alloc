@@ -1,0 +1,31 @@
+=== R29-3 segment-lifecycle decomposition gate ===
+Platform: linux
+Iterations: 200 (warmup: 20)
+Pool cap: 4 (pre-filled before each timed run)
+Payload: [0x12000, 0x400000) = 1006 pages (page_size = 4096)
+
+── Component breakdown (ns/cycle, median of 200) ──
+  (1)   OS reserve+release round-trip:              3676 ns
+  (2+3) table + metadata init:                    17227 ns  [= A − (1)]
+  ────────────────────────────────────────────────────────
+  (1+2+3) AVOIDABLE subtotal (A):                 20904 ns
+
+  decommit syscall (MADV_DONTNEED):              216850 ns
+  (5)   first-touch page faults:                1937261 ns  (1006 pages @ 1926 ns/fault)
+  (4)   recommit (Linux: implicit, ~0 ns):            0 ns
+  ────────────────────────────────────────────────────────
+  (4+5) IRREDUCIBLE subtotal (B):               2154111 ns
+
+── Real-world production cycle comparison ──
+  A'  current design (reserve+touch+release):      2190767 ns
+  B   reservation-only floor (decommit+reflt):      2154111 ns
+  A' − B = reservation-only SAVES:                  36656 ns/cycle
+
+═══ SPLIT — the trigger-2 verdict basis ═══
+  (1+2+3) AVOIDABLE:          20904 ns  (1.0%)
+  (4+5)   IRREDUCIBLE:      2154111 ns  (99.0%)
+
+═══ VERDICT (threshold: avoidable > 20% → trigger 2 fires) ═══
+  TRIGGER 2 does NOT fire: (1+2+3) = 1.0% — page-fault cost dominates.
+  Also: (1+2+3) is 1.0% of the real production cycle A'.
+  Item 15 should move from [D] to [L] (honest reject with evidence).

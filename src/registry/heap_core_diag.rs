@@ -650,4 +650,73 @@ impl HeapCore {
         // verbatim.
         unsafe { self.core.flush_class(class_idx, blocks) };
     }
+
+    // ── R29-3 (task #434) — segment-lifecycle decomposition delegation ──────
+    //
+    // Thin delegation to the `AllocCore`-level hooks in
+    // `alloc_core_small_pool.rs`, so `examples/r29_3_*` and
+    // `benches/perf_gate_iai.rs` can reach them through the `HeapCore`
+    // `#[doc(hidden)]` surface (the established pattern — same visibility
+    // discipline as every other `dbg_*` in this file).
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_full_cycle`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_full_cycle(&mut self) -> bool {
+        self.core.dbg_decomp_full_cycle()
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_os_roundtrip`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_os_roundtrip() -> bool {
+        crate::alloc_core::AllocCore::dbg_decomp_os_roundtrip()
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_reserve_and_keep`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {
+        self.core.dbg_decomp_reserve_and_keep()
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_release`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_release`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R29-3: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_release(&mut self, base: *mut u8) {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe { self.core.dbg_decomp_release(base) };
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_decommit_payload`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_decommit_payload`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R29-3: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_decommit_payload(base: *mut u8) {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe { crate::alloc_core::AllocCore::dbg_decomp_decommit_payload(base) };
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_payload_range`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_payload_range() -> (usize, usize) {
+        crate::alloc_core::AllocCore::dbg_decomp_payload_range()
+    }
+
+    /// R29-3 delegation — see [`AllocCore::dbg_decomp_page_size`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_page_size() -> usize {
+        crate::alloc_core::AllocCore::dbg_decomp_page_size()
+    }
 }

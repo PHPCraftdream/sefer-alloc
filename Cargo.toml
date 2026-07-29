@@ -470,7 +470,13 @@ alloc-stats = ["alloc-core"]
 # whole `alloc-xthread` test suite, and gating it too would reproduce the
 # 130+-file diff explosion a first attempt at this task hit and had to
 # revert — see `docs/perf/OPEN_ITEMS.md`'s R24-6 entry for the doc-only
-# remediation chosen for that pre-existing hook instead. This feature is NOT
+# remediation chosen for that pre-existing hook instead. From R29-3 (task #434)
+# this feature also covers the segment-lifecycle decomposition hooks
+# (`AllocCore::dbg_decomp_*` in `src/alloc_core/alloc_core_small_pool.rs` +
+# `HeapCore` delegation in `src/registry/heap_core_diag.rs`; two `pub unsafe fn`
+# — `dbg_decomp_release`/`dbg_decomp_decommit_payload` — the rest safe; one
+# caller each, `examples/r29_3_decomposition_gate.rs` +
+# `benches/perf_gate_iai.rs`'s `decomp_*` arms). This feature is NOT
 # part of `production` and carries no runtime code of its own — it exists
 # purely to keep these entry points out of a plain `--features production`
 # build's compiled surface. CI opts it in explicitly wherever one of the
@@ -1580,6 +1586,15 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 [[example]]
 name = "r27_4_real_default_ab_cap8"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+# R29-3 (task #434): segment-lifecycle decomposition measurement. Wall-clock
+# (not iai — Ir is blind to the kernel-time-dominated OS syscalls + page
+# faults this decomposition hinges on). Measures the (1+2+3)-vs-(4+5) split
+# to resolve trigger 2 of OPEN_ITEMS.md item 15 (reservation-only overflow
+# tier). Requires bench-internals for the decomposition hooks.
+[[example]]
+name = "r29_3_decomposition_gate"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #

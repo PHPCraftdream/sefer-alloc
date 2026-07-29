@@ -904,4 +904,106 @@ impl AllocCore {
         #[cfg(feature = "virgin-zero-skip")]
         meta.set_payload_virgin(false);
     }
+
+    // ── R29-3 (task #434) — segment-lifecycle decomposition hooks ─────────────
+    //
+    // Measurement-only hooks for decomposing one decommit→reserve segment-
+    // lifecycle cycle into its component costs (wall-clock, not iai — see the
+    // gate report for why Ir is blind to the kernel-time-dominated OS syscalls
+    // + page faults this decomposition hinges on). Each hook calls an EXISTING
+    // production function verbatim; they exist solely so a
+    // `std::time::Instant`-instrumented example (`examples/r29_3_*`) can reach
+    // crate-internal functions. All `bench-internals`-gated (no production
+    // caller → CLAUDE.md benchmark-hook rule 2). Hooks accepting a raw pointer
+    // are `pub unsafe fn` with `# Safety` (rule 1).
+
+    /// R29-3: ONE full reserve→release cycle (`reserve_small_segment` +
+    /// `release_or_pool_empty_segment`) without touching the payload.
+    /// Measures components (1+2+3): OS reserve+release, SegmentTable
+    /// register+recycle, metadata init — everything a reservation-only
+    /// overflow tier could avoid.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_full_cycle(&mut self) -> bool {
+        match self.reserve_small_segment() {
+            Some(base) => {
+                self.release_or_pool_empty_segment(base);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// R29-3: ONE raw OS reserve+release round-trip (`Segment::reserve` +
+    /// `os::release_segment`) with NO table bookkeeping and NO metadata
+    /// initialization. Isolates component (1): the OS-level VMA setup/teardown
+    /// alone.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_os_roundtrip() -> bool {
+        let seg = match os::Segment::reserve(SEGMENT) {
+            Some(s) => s,
+            None => return false,
+        };
+        let r = seg.reservation();
+        let rl = seg.reservation_len();
+        core::mem::forget(seg);
+        os::release_segment(r.as_ptr(), rl);
+        true
+    }
+
+    /// R29-3: reserve a small segment and return its base so the caller can
+    /// measure first-touch page-fault cost on the payload. The caller MUST
+    /// later release it via [`dbg_decomp_release`](Self::dbg_decomp_release).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {
+        self.reserve_small_segment()
+    }
+
+    /// R29-3: release a previously-reserved small segment by base.
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST be a live, registered `Small` segment base returned by
+    /// [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep) on
+    /// THIS allocator, with `live_count == 0`. Passing any other pointer is UB.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
+    pub unsafe fn dbg_decomp_release(&mut self, base: *mut u8) {
+        self.release_or_pool_empty_segment(base);
+    }
+
+    /// R29-3: decommit (`MADV_DONTNEED`) the payload pages of a live segment,
+    /// simulating the decommit a reservation-only tier would perform. After
+    /// this call, touching the payload re-faults the pages (the irreducible
+    /// recommit+first-touch cost the reservation-only design still pays).
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST be a live segment base whose payload is fully committed.
+    /// The payload pages are returned to the OS; any live data is discarded.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
+    pub unsafe fn dbg_decomp_decommit_payload(base: *mut u8) {
+        let payload_start = SegLayout::small_meta_end();
+        os::decommit_pages(base, payload_start, SEGMENT);
+    }
+
+    /// R29-3: the `[payload_start, payload_end)` byte range of a small
+    /// segment's payload (`[small_meta_end(), SEGMENT)`).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_payload_range() -> (usize, usize) {
+        (SegLayout::small_meta_end(), SEGMENT)
+    }
+
+    /// R29-3: the OS page size.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_page_size() -> usize {
+        os::PAGE
+    }
 }

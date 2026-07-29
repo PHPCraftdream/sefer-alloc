@@ -666,6 +666,28 @@ for completeness.
    would need to run to actually resolve trigger 2, so this does not become a
    silently-dropped follow-up. Evidence: item 15 in `[D]` below.
 
+   **2026-07-29 (R29-3, task #434) — DONE: trigger 2 MEASURED and DOES NOT FIRE;
+   item 15 moved from `[D]` to `[L]` (honest reject with evidence).** This is the
+   measurement R27-11 deferred. A new probe (`examples/r29_3_decomposition_gate.rs`)
+   decomposes one decommit→reserve segment-lifecycle cycle into its component costs
+   using wall-clock `std::time::Instant` around the existing production code paths
+   (`os::Segment::reserve`, `os::release_segment`, `os::decommit_pages`,
+   `SegmentTable::register`/`recycle`, `SegmentMeta`/`SegmentHeader` init) — NOT iai,
+   because callgrind is structurally blind to the kernel-time-dominated costs (OS
+   syscalls + page faults) this split hinges on (the existing `large_alloc_free_cycle`
+   iai arm reports only 3,308 Ir for a 4 MiB round-trip costing ~50-200 µs real; the
+   supplementary `decomp_*_8x` arms added in this task show the same undercounting).
+   **Result: (1+2+3) avoidable = ~24K ns = 1.0-1.3% of the cycle (across 2 saved
+   runs); (4+5) irreducible (page faults) = ~2,102-2,154K ns = 98.7-99.0%.**
+   Page-fault cost dominates by two orders of magnitude. Additionally, the decommit
+   syscall itself (`MADV_DONTNEED` page-table walk for 1,006 pages) costs
+   ~196-217K ns — an order of magnitude MORE than the entire avoidable overhead,
+   meaning the reservation-only design would be a NET LOSS on Linux. Per the task's
+   own explicit verdict rule (avoidable > 20% → trigger 2 fires), trigger 2 does NOT
+   fire. Item 15 moved from `[D]` to `[L]` with the measured 1.0-1.3% avoidable
+   share as the documented reason. Evidence:
+   `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**
@@ -831,44 +853,22 @@ for completeness.
     Implement ONLY if BOTH triggers fire: (a) a real contiguous-batch consumer
     emerges, AND (b) a Stage-1 Ir measurement on it confirms the `read_next`
     chain is the dominant remaining cost. No `src/` change; design doc only.
-15. **R27-11 — reservation-only overflow tier for the small-segment pool
-    (evaluated, NOT opened).**
+15. ~~**R27-11 — reservation-only overflow tier for the small-segment pool
+    (evaluated, NOT opened).**~~ **MOVED to `[L]` (task R29-3, #434) — trigger 2
+    measured, does NOT fire; honest reject with evidence.**
 
     > **Current state**
-    > - **Status:** evaluated (task #429, R27-11), NOT opened — one of two
-    >   required triggers is unmeasured.
-    > - **Current number/verdict:** Trigger 1 (the committed retention cost of
-    >   effective cap 8 is unacceptable for a default) **FIRES** — R27-3
-    >   measured ~+8 MiB/heap post-teardown, linearly scaling to ~+255 MiB at
-    >   32 heaps, not decaying during idle, and R27-5's design task
-    >   independently reached the same conclusion (Option 1: keep the 4/16 MiB
-    >   default, do not promote to 8/32). Trigger 2 (an isolated cost
-    >   breakdown showing OS-reserve + segment-table-setup + metadata-reinit
-    >   is a MATERIAL fraction of the segment lifecycle cost AFTER
-    >   recommit/page-fault cost is accounted for) is **UNMEASURED** — R27-4
-    >   measured the aggregate latency win from eliminating decommit→reserve
-    >   churn (22%, 9→0 decommits) but no report decomposes that churn into
-    >   its reserve/setup/metadata-reinit share vs its recommit/page-fault
-    >   share. Per this task's own rule ("do NOT start unless BOTH triggers
-    >   fire" / "if trigger 2 fails, this design must not be opened"), an
-    >   unmeasured trigger 2 cannot be treated as fired — the design is NOT
-    >   opened this round.
-    > - **Next trigger:** a Stage-1 isolated cost-breakdown probe (mirroring
-    >   R17-10 §5.1's "measure before design" discipline) that decomposes one
-    >   decommit→reserve segment-lifecycle cycle into (a) OS reserve +
-    >   segment-table setup + metadata reinitialization vs (b) recommit +
-    >   page-fault cost, on the exact `release_or_pool_empty_segment` /
-    >   `reserve_small_segment` cold-path pair R27-5 §3.1 already identified
-    >   as the correct measurement site. If (a) is a material fraction of the
-    >   cycle, trigger 2 fires and the design may be opened; if (a) is
-    >   dominated by (b), the second-tier reservation cannot help (it only
-    >   ever saves (a)) and this item should move to `[L]` instead.
-    > - **Evidence:** `docs/reviews/2026-07-28-r26-readonly-review.md`
-    >   §"A reservation-only overflow tier is a conditional alternative"
-    >   (source of the idea); `docs/perf/R27_3_POOL_RETENTION_GATE.md` +
-    >   `docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md` (trigger 1 evidence);
-    >   `docs/perf/R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` §4.2 (independent
-    >   confirmation that the default should stay conservative).
+    > - **Status:** CLOSED (R29-3, task #434) — trigger 2 measured and does NOT
+    >   fire. Moved from `[D]` to `[L]` below (item 16) with the measured
+    >   1.0-1.3% avoidable share as the documented reason.
+    > - **Current number/verdict:** (1+2+3) avoidable = ~24K ns = **1.0-1.3%**
+    >   of the segment-lifecycle cycle (across 2 saved runs); (4+5) irreducible
+    >   page-fault cost = **98.7-99.0%**. Additionally, `MADV_DONTNEED` decommit
+    >   costs ~196-217K ns — MORE than the entire avoidable overhead, so the
+    >   reservation-only design would be a NET LOSS on Linux.
+    > - **Evidence:** `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`
+    >   (the decomposition gate); see item 16 in `[L]` for the full honest-reject
+    >   entry.
 
     The idea: a SECOND tier beyond the four committed hot segments — decommit
     the payload pages but retain the VA reservation and segment-table
@@ -1024,6 +1024,37 @@ for completeness.
     example are kept as reusable measurement infrastructure (R24-2
     precedent), since they measure whatever `FLUSH_N` the tree is currently
     built with rather than hardcoding a value.
+
+16. **R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;
+    R29-3/task #434).**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended; trigger 2 measured and does NOT fire.
+    > - **Current number/verdict:** (1+2+3) avoidable = ~24K ns = **1.0-1.3%** of
+    >   the decommit→reserve segment-lifecycle cycle (across 2 saved runs); (4+5)
+    >   irreducible page-fault cost = **98.7-99.0%**. Additionally, `MADV_DONTNEED`
+    >   decommit costs ~196-217K ns — MORE than the entire avoidable overhead — so
+    >   the reservation-only design would be a NET LOSS on Linux (per-page PTE walk
+    >   of 1,006 pages > bulk VMA teardown of `munmap`).
+    > - **Next trigger:** revisit ONLY if (a) segment size shrinks dramatically
+    >   (fewer pages → MADV_DONTNEED cheaper relative to munmap), or (b) the
+    >   OS-backend changes to one where recommit is a real separate syscall
+    >   (Windows `MEM_DECOMMIT`+`MEM_COMMIT`, where the VMA-teardown-vs-page-walk
+    >   trade-off may differ).
+    > - **Evidence:** `R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md` (the
+    >   decomposition gate); `R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE_summary.csv`;
+    >   `R27_3_POOL_RETENTION_GATE.md` + `R27_4_REAL_DEFAULT_AB_GATE.md` (trigger 1
+    >   evidence — still fires); `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` §4.2.
+
+    Moved from `[D]` item 15 (R29-3, task #434): the reservation-only overflow
+    tier was a conditional design gated on BOTH triggers firing. Trigger 1
+    (retention cost unacceptable for a default) fires (R27-3/R27-4). Trigger 2
+    (avoidable overhead is a material fraction of the cycle) was unmeasured
+    until R29-3. R29-3's wall-clock decomposition measured (1+2+3) avoidable at
+    **1.0-1.3%** of the cycle — two orders of magnitude below the 20% materiality
+    threshold. Page-fault cost (98.7-99.0%) dominates overwhelmingly. The design
+    must NOT be opened; item moved here as an honest reject with the measured
+    numbers as the documented reason.
 
 ---
 
