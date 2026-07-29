@@ -727,7 +727,16 @@ pub fn dbg_teardown_then_resolve_is_foreign_no_bind() -> bool {
 /// `#[doc(hidden)]` — not part of the public API; exists solely so
 /// `tests/dealloc_only_no_bind_torn.rs` can reach this otherwise-private
 /// teardown behaviour, mirroring the established test-only-export pattern.
+// R29-7 (task #438): gated behind `bench-internals` (CLAUDE.md's
+// benchmark-hook rule 2 — no production caller). Kept a SAFE `fn`: its body
+// only reads/writes the bit-pattern of `LOCAL` (a `Cell<*mut HeapCore>`) and
+// stamps [`TORN`] via [`mark_local_torn`] — it never dereferences anything,
+// so there is no safety contract it could carry (per the tier-2 rule, each
+// `unsafe` site must have its OWN documented reason; API symmetry with its
+// `unsafe` twin below is not one). The pairing IS real — a caller should use
+// the two together — but that is a usage convention, not a soundness duty.
 #[doc(hidden)]
+#[cfg(feature = "bench-internals")]
 #[must_use]
 pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
     let saved = LOCAL.with(|c| c.get());
@@ -739,8 +748,31 @@ pub fn dbg_mark_local_torn_for_test() -> *mut HeapCore {
 /// returned by [`dbg_mark_local_torn_for_test`]. Pairs with that function;
 /// see its doc comment.
 ///
+/// # Safety
+///
+/// `saved` must be EITHER null OR a pointer previously returned by
+/// [`dbg_mark_local_torn_for_test`] for a heap THIS EXACT THREAD legitimately
+/// owns, and it must NEVER be sent across threads. Installing a pointer owned
+/// by — or shared with — another thread aliases two threads onto one
+/// [`HeapCore`], violating the single-writer invariant this module's
+/// "Soundness of the raw pointer" section rests on, which is UB. An arbitrary
+/// or dangling non-null pointer is likewise UB: the next `current()` /
+/// `current_for_alloc` resolver classifies a non-nullish value as
+/// `CurrentHeap::Own` and dereferences it.
+///
 /// `#[doc(hidden)]` — not part of the public API.
+// R29-7 (task #438): `pub unsafe fn` + `bench-internals`-gated. This hook
+// installs a caller-supplied raw pointer as THIS thread's live `LOCAL`
+// binding with zero validation — a direct instance of the R25-1 (task #395)
+// safe-`pub fn`-that-touches-allocator-state hole this crate's benchmark-hook
+// rule targets. It is covered by this file's existing tier-1
+// `#![allow(unsafe_code)]` (NO item-level `#[allow(unsafe_code)]` is added, so
+// no new tier-2 site is created): `tls_heap.rs` already holds `unsafe` for the
+// pointer handoff + `recycle`. `dbg_dealloc_own_thread_with_base` /
+// `dbg_flush_class_only` in `heap_core_diag.rs` are the item-scoped (tier-2)
+// positive pattern this mirrors where the enclosing file is otherwise safe.
 #[doc(hidden)]
-pub fn dbg_restore_local_for_test(saved: *mut HeapCore) {
+#[cfg(feature = "bench-internals")]
+pub unsafe fn dbg_restore_local_for_test(saved: *mut HeapCore) {
     let _ = LOCAL.try_with(|c| c.set(saved));
 }

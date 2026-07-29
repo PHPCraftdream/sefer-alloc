@@ -201,13 +201,24 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     // block happening to also drain out of its magazine in between).
     #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
     let (heap, grown_base, live_count_before_free) = {
-        let saved_local = tls_heap::dbg_mark_local_torn_for_test();
-        tls_heap::dbg_restore_local_for_test(saved_local);
-        let heap = saved_local;
+        // R29-7 (task #438): `dbg_mark_local_torn_for_test`/
+        // `dbg_restore_local_for_test` are now `bench-internals`-gated (they
+        // install a caller-supplied raw pointer as this thread's live `LOCAL`
+        // binding — a real soundness hole outside test code, see their doc
+        // comments in `tls_heap.rs`). This test never needed TORN semantics
+        // at all — it only ever wanted "this thread's own already-bound
+        // `HeapCore` pointer", which the production-path, side-effect-free
+        // `current_for_alloc()` already provides directly (this thread is
+        // already bound by the alloc/realloc calls above, so it always takes
+        // the `Own` fast-path arm here, never the cold bind/fallback arms).
+        let heap = match tls_heap::current_for_alloc() {
+            tls_heap::CurrentHeap::Own(p) => p,
+            tls_heap::CurrentHeap::Fallback => std::ptr::null_mut(),
+        };
         assert!(
             !heap.is_null(),
-            "this thread has no bound HeapCore — dbg_mark_local_torn_for_test \
-             returned null, which should be impossible after the alloc/realloc \
+            "this thread has no bound HeapCore — current_for_alloc() resolved \
+             to Fallback, which should be impossible after the alloc/realloc \
              calls above already bound one"
         );
         a.dbg_trim_current_thread();

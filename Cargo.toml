@@ -441,12 +441,23 @@ alloc-stats = ["alloc-core"]
 # behavior. A prior R23-3/R24-2 review flagged this as inflating the
 # production unsafe-audit surface with entry points that exist solely to
 # serve this crate's own `benches/perf_gate_iai.rs` / `tests/` harnesses.
-# Deliberately narrow: only `HeapCore::dbg_dealloc_own_thread_with_base`
-# (R23-3, task #372) and `HeapCore::dbg_push_coarse_only_entry` (R13-1, task
-# #271) are gated behind this feature — each has exactly ONE call site
-# (`benches/perf_gate_iai.rs` for the first, and
-# `tests/class_aware_dirty_oom_latch.rs` for the second), so adding the
-# feature only touches those two files' `#[cfg]`/`required-features`. The
+# Deliberately narrow. The `unsafe fn dbg_*` hooks gated behind this feature
+# are: `HeapCore::dbg_dealloc_own_thread_with_base` (R23-3, task #372; one
+# caller, `benches/perf_gate_iai.rs`), `HeapCore::dbg_push_coarse_only_entry`
+# (R13-1, task #271; one caller, `tests/class_aware_dirty_oom_latch.rs`), and
+# `HeapCore::dbg_flush_class_only` (R28-1, task #430; one caller,
+# `benches/perf_gate_iai.rs`'s `dealloc_flush_class_only_16b` arm) — all three
+# in `src/registry/heap_core_diag.rs`. From R29-7 (task #438) this feature also
+# covers the first hook OUTSIDE that file: `tls_heap::dbg_restore_local_for_
+# test` in `src/global/tls_heap.rs` (an `unsafe fn`; one caller,
+# `tests/dealloc_only_no_bind_torn.rs` — `tests/r14_4_promotion_free_correctness.rs`
+# used to call this pair too, but its only real need was "this thread's own
+# already-bound `HeapCore` pointer", which the production-path
+# `tls_heap::current_for_alloc()` already provides directly, so it was
+# switched to that instead of pulling in `bench-internals` for no reason)
+# plus its safe twin `tls_heap::dbg_mark_local_torn_for_test` (gated here too
+# per rule 2: no production caller — but kept a SAFE `fn`, see its own
+# comment for why). The
 # OLDER, pre-existing `dbg_push_to_ring` (`HeapCore`/`AllocCore`, R6-MS-4) is
 # deliberately NOT moved here: it is called from ~20 test files across the
 # whole `alloc-xthread` test suite, and gating it too would reproduce the

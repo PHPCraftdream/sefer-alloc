@@ -48,10 +48,24 @@
 
 #![cfg(all(feature = "alloc-global", feature = "alloc-xthread"))]
 
+// Used only by the `bench-internals`-gated second test below; gated to avoid
+// unused-import warnings under plain `--features production` (the first test
+// needs neither — see the matching gated imports further down).
+#[cfg(feature = "bench-internals")]
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sefer_alloc::global::{dbg_fallback_lock_acquisitions, tls_heap};
+use sefer_alloc::global::tls_heap;
+// `dbg_fallback_lock_acquisitions` is consumed ONLY by the
+// `bench-internals`-gated second test below; gate the import to match so it
+// is not flagged unused in a plain `--features production` build (where that
+// test is compiled out). `tls_heap` above stays ungated — the FIRST test still
+// uses `tls_heap::dbg_teardown_then_resolve_is_foreign_no_bind`.
+#[cfg(feature = "bench-internals")]
+use sefer_alloc::global::dbg_fallback_lock_acquisitions;
+// `SeferAlloc` is likewise consumed only by the `bench-internals`-gated second
+// test (the first test drives `tls_heap` directly, never `SeferAlloc`).
+#[cfg(feature = "bench-internals")]
 use sefer_alloc::SeferAlloc;
 
 // Serialise: `dbg_fallback_lock_acquisitions` and `LOCAL` poking are
@@ -106,6 +120,15 @@ fn torn_sentinel_resolves_to_foreign_no_bind() {
 /// End-to-end: a real TORN-thread-shaped dealloc of a genuinely foreign
 /// pointer (a) completes correctly (no corruption — verified by a follow-up
 /// round-trip) and (b) does NOT take the fallback spinlock.
+// R29-7 (task #438): gated behind `bench-internals` because it exercises
+// `tls_heap::dbg_mark_local_torn_for_test` / `dbg_restore_local_for_test`,
+// now `bench-internals`-gated (no production caller — CLAUDE.md's
+// benchmark-hook rule). The file's OTHER test,
+// `torn_sentinel_resolves_to_foreign_no_bind`, uses a DIFFERENT,
+// already-safely-gated hook (`dbg_teardown_then_resolve_is_foreign_no_bind`,
+// `alloc-xthread` only) and stays compiled under plain `production` — do NOT
+// widen the whole-file gate (that would silently drop ITS coverage too).
+#[cfg(feature = "bench-internals")]
 #[test]
 fn torn_dealloc_of_foreign_pointer_is_correct_and_skips_fallback_lock() {
     let _serial = SerialGuard::acquire();
@@ -175,7 +198,11 @@ fn torn_dealloc_of_foreign_pointer_is_correct_and_skips_fallback_lock() {
     // discipline) — otherwise every subsequent allocator call on this test
     // thread (including the control alloc below and libtest's own harness
     // bookkeeping) would keep resolving as TORN.
-    tls_heap::dbg_restore_local_for_test(saved);
+    // SAFETY: `saved` was returned by `dbg_mark_local_torn_for_test()` just
+    // above on THIS thread, is this thread's own bound `HeapCore`, and is
+    // never shared across threads — satisfying the restore hook's safety
+    // contract.
+    unsafe { tls_heap::dbg_restore_local_for_test(saved) };
 
     assert_eq!(
         after, before,
