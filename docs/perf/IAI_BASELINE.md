@@ -1244,6 +1244,27 @@ regression that defeats the experiment's own purpose.
 empty — confirmed by the orchestrator independently, not just the sub-agent's
 claim). No iai baseline was taken; there is nothing to measure.
 
+> **2026-07-29 append-correction (R29-10, task #441) — the cost R3 left
+> unisolated is now measured.** The original paragraph above is preserved
+> verbatim; this note ADDS to it rather than rewriting it. R3's "there is
+> nothing to measure" was true at R3's scope (it rejected DEFERRING the clear
+> on correctness grounds, so no implementation existed to gate), but the COST
+> of the clear block itself — the `segment_base_of_ptr` + bitmap RMW that runs
+> on EVERY magazine hit under `production` — was never isolated. R29-10
+> isolates it via a new `bench-internals`-gated `unsafe fn` hook
+> (`HeapCore::dbg_clear_magazine_on_hit`, shared-prefix subtraction, two
+> independent `npm run iai` runs byte-identical): **the alloc-hit
+> `clear_magazine` block costs 12.19 Ir/hit** (195 Ir / 16 hits). Decomposition:
+> ~9.03 Ir is `segment_base_of_ptr` (R23-1's isolated figure for the same
+> function, reproduced byte-identical) and ~3.16 Ir is the bitmap RMW residual
+> — i.e. **54.5% of a magazine hit** (the hit itself reproduced at R23-3's
+> 22.4 Ir/op exactly). R3's correctness NO-GO on deferral STANDS (the 12.19 Ir
+> is a fixed per-hit cost, not a tunable one); the measurement closes R3's
+> "never isolated" gap with a real number. The dominant sub-cost
+> (`segment_base_of_ptr`) overlaps R22-17's open header-first-design item, so
+> there is no NEW standalone lever specific to `clear_magazine`. Full report +
+> raw logs + CSV: `R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md`.
+
 ### Separate read-only finding — cost of the `hardened`-only tcache guards
 
 While investigating R3, the currently-`hardened`-only interior-pointer / Large-

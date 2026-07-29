@@ -669,6 +669,66 @@ impl HeapCore {
         unsafe { self.core.flush_class(class_idx, blocks) };
     }
 
+    /// R29-10 (task #441) MEASUREMENT-ONLY: run the EXACT production alloc-hit
+    /// `clear_magazine` block (`src/registry/heap_core_alloc.rs`, the RAD-5 E4
+    /// block that runs on EVERY magazine hit under `production`) standalone on
+    /// `issued`, so `benches/perf_gate_iai.rs` can isolate its combined Ir cost
+    /// (`segment_base_of_ptr(issued)` + `SegmentMeta::new(base).magazine_bitmap
+    /// ().clear_magazine(off)`) — the ALLOC-side sub-mechanism R3's
+    /// honest-reject (`docs/perf/IAI_BASELINE.md`) flagged as "never isolated"
+    /// (R3 rejected DEFERRING the clear for correctness reasons but admitted "no
+    /// iai baseline was taken; there is nothing to measure"). See
+    /// `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md`.
+    ///
+    /// Unlike `dbg_flush_class_only` (which delegates to one callable production
+    /// function), this hook INLINES the production block byte-for-byte: in
+    /// production the three lines are straight-line code inside the
+    /// magazine-hit branch, not a callable function, so the faithful isolation
+    /// is an exact textual copy of that straight-line block (no
+    /// alternate/bypass implementation, no extra bookkeeping). `issued` carries
+    /// the identical value the production block already receives at its call
+    /// site (`self.tcache.classes[c].slots[new_cnt]` — the just-popped
+    /// magazine-resident block).
+    ///
+    /// # Safety
+    ///
+    /// `issued` must be the exact start pointer of a currently-live allocation
+    /// residing in a segment owned by this heap's substrate — the same
+    /// precondition the production magazine-hit block already relies on. That
+    /// block re-derives the segment base via `os::segment_base_of_ptr(issued)`
+    /// and writes the magazine-residency bitmap at that derived base with ZERO
+    /// validation beyond the pointer's own segment-alignment, so a foreign,
+    /// null, interior, or already-recycled `issued` is contract UB: the derived
+    /// `base` may be unmapped (crash) or may alias an unrelated segment's bitmap
+    /// (silent metadata corruption). The individual primitives composed here
+    /// (`segment_base_of_ptr` / `SegmentMeta::new` / `magazine_bitmap` /
+    /// `clear_magazine`) are each safe `pub(crate)` fns, but their COMBINATION
+    /// derives an unchecked metadata write from a raw pointer — the exact shape
+    /// CLAUDE.md's benchmark-hook rule (the R25-1 fix for
+    /// `dbg_overflow_bitmap_clear_pass`) requires to be `pub unsafe fn` with a
+    /// documented `# Safety` contract rather than a safe `pub fn`. The sole
+    /// caller is the bench arm, which constructs `issued` as a
+    /// freshly-freed-into-the-magazine live block.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals"
+    ))]
+    #[inline(always)]
+    #[allow(unsafe_code)] // R29-10: `unsafe fn` boundary, mirrors `dbg_flush_class_only` above.
+    pub unsafe fn dbg_clear_magazine_on_hit(&self, issued: *mut u8) {
+        // Byte-for-byte copy of the production magazine-hit clear block
+        // (`heap_core_alloc.rs`'s RAD-5 E4 lines), so the isolated Ir is the
+        // real in-context cost, not an invented mechanism.
+        // SAFETY: forwarded from this caller's identical `# Safety` contract —
+        // `issued` is a live block in an owned segment, exactly as production
+        // assumes at the magazine-hit call site.
+        let base = os::segment_base_of_ptr(issued);
+        let off = (issued as usize - base as usize) as u32;
+        SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+    }
+
     // ── R29-3 (task #434) — segment-lifecycle decomposition delegation ──────
     //
     // Thin delegation to the `AllocCore`-level hooks in

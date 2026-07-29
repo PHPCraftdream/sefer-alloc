@@ -1082,6 +1082,26 @@ for completeness.
     threshold. Page-fault cost (98.7-99.0%) dominates overwhelmingly. The design
     must NOT be opened; item moved here as an honest reject with the measured
     numbers as the documented reason.
+17. **R29-10 — alloc-hit `clear_magazine` block's per-pop cost (R3's
+    never-isolated honest-reject cost, finally measured).**
+
+    > **Current state**
+    > - **Status:** honest reject — measured & CLOSED; NOT recommended, no standalone follow-up.
+    > - **Current number/verdict:** the alloc-hit RAD-5 E4 `clear_magazine` block (`segment_base_of_ptr` + `SegmentMeta::new` + `magazine_bitmap` + `clear_magazine`, runs on EVERY magazine hit under `production`) = **12.19 Ir/hit** (195 Ir / 16 hits; two independent `npm run iai` runs, byte-identical). Decomposition: **~9.03 Ir `segment_base_of_ptr`** (R23-1's isolated figure for the same function, reproduced byte-identical) + **~3.16 Ir** bitmap-RMW residual. That is **54.5% of a magazine hit** (the hit reproduced at R23-3's 22.4 Ir/op exactly).
+    > - **Next trigger:** NONE (closed). R3's correctness NO-GO on *deferring* the clear stands (the 12.19 Ir is a fixed per-hit cost, not a tunable one), and the dominant sub-cost (`segment_base_of_ptr`, ~9 of the 12 Ir) overlaps item 1's R22-17 header-first-design open item — there is no NEW standalone lever specific to `clear_magazine`. The one theoretical lever (cache the segment base alongside the slot pointer in the tcache) is speculative, doubles magazine per-slot footprint, and per R26-7's Heisenberg lesson would need an in-context A/B on `small_churn_16b` — explicitly a SEPARATE task if ever pursued, NOT opened here.
+    > - **Evidence:** `R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md` + `_summary.csv` + `_raw_r29_10_run1.log` / `_raw_r29_10_run2.log`; `IAI_BASELINE.md`'s R3 honest-reject (the origin — "no iai baseline was taken; there is nothing to measure", now corrected in place by a dated append-note).
+
+    This is the ALLOC-side sibling of item 1's free-side magazine-overflow
+    decomposition cluster (R24-2 → R28-1): five rounds isolated free-path
+    magazine sub-costs (`flush_class` 449 Ir, overflow 571 Ir, bitmap-clear 84 Ir,
+    etc.), but ZERO measurement existed for this alloc-side sub-mechanism until
+    R29-10, despite alloc and free executing equally often. The isolated 12.19
+    Ir/hit is small in absolute terms (vs 449/571/4,065 Ir material costs),
+    correctness-required (R3 NO-GO), and dominated by `segment_base_of_ptr`
+    (already R22-17's open item) — so this item enters OPEN_ITEMS as a measured
+    honest-reject, closed with the number attached (strictly more than R3
+    achieved). R3's own text in `IAI_BASELINE.md` is preserved verbatim with a
+    dated append-note pointing here.
 
 ---
 

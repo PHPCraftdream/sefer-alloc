@@ -952,6 +952,125 @@ fn dealloc_flush_class_only_16b() {
 }
 
 // ---------------------------------------------------------------------------
+// R29-10 (task #441) -- isolate the ALLOC-hit `clear_magazine` block's Ir cost,
+// the alloc-side sub-mechanism R3's honest-reject (docs/perf/IAI_BASELINE.md)
+// flagged as "never isolated" (R3 rejected DEFERRING the clear for correctness
+// but admitted "no iai baseline was taken; there is nothing to measure").
+// `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md` has the full
+// decomposition; summary here:
+//
+// The production magazine-hit fast path (src/registry/heap_core_alloc.rs, the
+// RAD-5 E4 block) runs on EVERY magazine hit under `production`:
+//     let base = os::segment_base_of_ptr(issued);
+//     let off = (issued as usize - base as usize) as u32;
+//     SegmentMeta::new(base).magazine_bitmap().clear_magazine(off);
+// forcing a `segment_base_of_ptr` + bitmap RMW the alloc hot path previously
+// did not pay AT ALL. `alloc_magazine_hit_only_16b` (R23-3) already isolates
+// the WHOLE magazine-hit pop (22.4 Ir/op), but NOT this specific 3-line
+// sub-block in isolation -- that is what this pair measures (the FIRST
+// alloc-side decomposition of a magazine-hit sub-cost; the free side has five
+// rounds of decomposition, the alloc side had zero until now).
+//
+// `alloc_clear_magazine_only_16b_prefix` allocates 16 blocks then frees them
+// (16 cheap pushes, no overflow -- TCACHE_CAP == MAGAZINE_FILL == 16), leaving
+// 16 magazine-resident blocks whose residency bits are SET (the own-thread free
+// push calls `mark_magazine`). This arm's timed region does nothing further --
+// it exists purely to measure the shared setup cost so the paired arm's
+// isolated delta cancels it.
+//
+// `alloc_clear_magazine_only_16b` repeats the IDENTICAL setup, then calls the
+// new `HeapCore::dbg_clear_magazine_on_hit` hook (src/registry/heap_core_diag.rs,
+// `bench-internals`-gated `unsafe fn` from creation per CLAUDE.md's
+// benchmark-hook rule) once per magazine-resident block -- the exact production
+// magazine-hit clear, invoked standalone. The blocks' bits ARE set at call time
+// (the frees just set them via `mark_magazine`), so this faithfully reproduces
+// the real magazine-hit scenario (a resident block whose bit gets cleared on
+// pop). `Ir(alloc_clear_magazine_only_16b) - Ir(alloc_clear_magazine_only_16b_
+// prefix)` isolates 16x the clear-block's combined cost; /16 gives the per-hit
+// cost.
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_clear_magazine_only_16b_prefix() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    // Alloc 16, then free all 16 -- 16 cheap pushes into the magazine (count
+    // 0 -> 16, NO overflow since TCACHE_CAP == MAGAZINE_FILL == 16). After this,
+    // the magazine holds 16 resident blocks whose residency bits are SET (the
+    // own-thread free push calls `mark_magazine`).
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+    // Deliberately nothing further: this arm measures ONLY the shared setup,
+    // common to the paired `alloc_clear_magazine_only_16b` arm below. Each
+    // `#[library_benchmark]` runs in its own fresh process under callgrind.
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_clear_magazine_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    // Identical setup to `alloc_clear_magazine_only_16b_prefix` (see its doc
+    // comment) -- byte-identical prefix so the paired subtraction cancels it.
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for slot in ptrs.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&ptrs);
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc loop above with the same
+            // layout, and is freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+
+    // Timed region: clear each of the 16 magazine-resident blocks' residency
+    // bit via the standalone hook -- the EXACT production magazine-hit clear
+    // block (src/registry/heap_core_alloc.rs, RAD-5 E4), invoked standalone.
+    // The bits ARE set here (the frees just set them via `mark_magazine`),
+    // matching the real magazine-hit scenario.
+    for &ptr in &ptrs {
+        if !ptr.is_null() {
+            // SAFETY: ptr is a magazine-resident block (just freed into this
+            // heap's magazine) residing in a segment this heap owns -- the
+            // hook's `# Safety` contract.
+            unsafe { (*heap).dbg_clear_magazine_on_hit(ptr) };
+        }
+    }
+    black_box(&ptrs);
+}
+
+// ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
 // N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
 // is the compile-time constant swept by hand-editing that file between
@@ -2587,6 +2706,8 @@ library_benchmark_group!(
         dealloc_free_only_16b_n32,
         dealloc_flush_class_only_16b_prefix,
         dealloc_flush_class_only_16b,
+        alloc_clear_magazine_only_16b_prefix,
+        alloc_clear_magazine_only_16b,
         dealloc_prealloc_only_1088_16b,
         dealloc_free_only_1088_16b_n17,
         dealloc_free_only_1088_16b_n32,
