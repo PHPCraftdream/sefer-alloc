@@ -71,9 +71,13 @@ fn main() {
 }
 ```
 
-`SeferAlloc::new()` uses defaults tuned for throughput-first workloads
-(unbounded large-cache, 256 MiB headroom, 1 s decay interval, 10 %
-decay rate, event-driven mode). For RSS-sensitive or container
+`SeferAlloc::new()` uses defaults whose **large-cache** policy is tuned
+for throughput (unbounded large-cache, 256 MiB headroom, 1 s decay
+interval, 10 % decay rate, event-driven mode); the **small-segment
+pool** default (`pool_segments=4, pool_byte_cap=16 MiB`) is deliberately
+RSS-conservative — see
+[Tuning the small-segment pool](#tuning-the-small-segment-pool-alloc-decommit)
+for a latency-oriented opt-in. For RSS-sensitive or container
 deployments, see [Configuration](#configuration) below.
 
 ---
@@ -1131,6 +1135,66 @@ rate. Self-damping: aggressive far from target, gentle near target, no
 oscillation. The default `budget=None` (unbounded) admits any span; if you
 want a hard RSS ceiling (containers, mobile), add
 `.budget_bytes(512 * 1024 * 1024)` to your config (or whatever fits).
+
+### Tuning the small-segment pool (`alloc-decommit`)
+
+The `alloc-decommit` feature also carries the **empty-small-segment
+hysteresis pool** (Mechanism 2): when a small segment empties, the
+allocator MAY retain it — still registered in the segment table, pages
+still committed, per-class free lists still populated — so the next
+allocation that would otherwise reserve a fresh segment pops a pooled
+one with no OS syscall, no metadata re-init, and no page fault. Its
+default (`SmallSegmentPoolConfig::DEFAULT` = `pool_segments=4,
+pool_byte_cap=16 MiB`) is deliberately **RSS-conservative** — it caps
+both how many empty segments are retained (4) and how much committed
+RSS the pool holds (16 MiB). Setting either knob to `0` disables the
+pool entirely (immediate release of every empty small segment).
+
+For latency-sensitive workloads that churn allocations across a segment
+boundary, raise BOTH knobs together via `SmallSegmentPoolConfig`,
+composed into `LargeCacheConfig`:
+
+```rust
+use sefer_alloc::{SeferAlloc, LargeCacheConfig, SmallSegmentPoolConfig};
+
+const POOL: SmallSegmentPoolConfig = SmallSegmentPoolConfig::new()
+    .pool_segments(8)
+    .pool_byte_cap(32 * 1024 * 1024);
+
+const CONFIG: LargeCacheConfig = LargeCacheConfig::new().pool(POOL);
+
+#[global_allocator]
+static GLOBAL: SeferAlloc = SeferAlloc::with_config(CONFIG);
+```
+
+**Measured benefit** (stated narrowly — do not generalize beyond the
+shape that was measured): on the 1024-byte allocate/free
+churn-with-teardown workload at batch size 120, the paired
+`(8, 32 MiB)` config ran with **~22 % lower elapsed time** and
+**9 → 0 decommit syscalls per run** versus the `(4, 16 MiB)` default,
+measured natively on Windows on a single host (paired t = 8.114,
+sign test 19/20). See
+[`docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md`](docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md).
+This is a workload-shape-specific result, not a general
+"sefer-alloc is 22 % faster" claim.
+
+**Cost — given equal prominence to the benefit:** the paired config
+retains **~+8 MiB of committed RSS per materialised heap** versus the
+`4 / 16 MiB` default (scaling linearly to **~+255 MiB across 32
+heaps**), and this retained memory does **NOT** decay during pure idle
+time — the small-pool decay is event-driven (no background thread), so
+retention persists until further allocation pressure, an explicit drain,
+or thread-exit. See
+[`docs/perf/R27_3_POOL_RETENTION_GATE.md`](docs/perf/R27_3_POOL_RETENTION_GATE.md).
+
+**Trap — both knobs must move together.** The effective runtime cap is
+`min(pool_segments, pool_byte_cap / SEGMENT)` where `SEGMENT` = 4 MiB.
+With the default `pool_byte_cap = 16 MiB`, `pool_byte_cap / SEGMENT`
+already equals 4, so a lone `.pool_segments(8)` (without also raising
+`.pool_byte_cap(...)`) resolves to `min(8, 4) = 4` — a **silent no-op**
+that changes nothing observable. Both knobs must be raised together, as
+in the recipe above. This exact trap is encoded as a CI guard:
+`tests/small_segment_pool.rs::paired_knob_promotion_is_not_a_noop`.
 
 ---
 
