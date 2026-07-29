@@ -87,7 +87,10 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     let old_layout = layout(old_size);
     // SAFETY: valid, non-zero-size layout.
     let p = unsafe { a.alloc(old_layout) };
-    assert!(!p.is_null());
+    assert!(
+        !p.is_null(),
+        "initial alloc of {old_size} bytes failed (old_layout={old_layout:?})"
+    );
 
     // Write a distinctive, position-dependent canary (not a flat byte) so a
     // partial/misaligned copy is detectable, not just a gross zeroing bug.
@@ -103,7 +106,10 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     let new_size = PROMOTION_THRESHOLD + 8192; // crosses the threshold -> promotes to Large (HAS_PROMOTION) or moves up the medium ladder otherwise
                                                // SAFETY: p live, old_layout matches, freed at most once on success.
     let grown = unsafe { a.realloc(p, old_layout, new_size) };
-    assert!(!grown.is_null(), "growing realloc failed");
+    assert!(
+        !grown.is_null(),
+        "growing realloc failed: {old_size} -> {new_size} bytes (old_layout={old_layout:?})"
+    );
 
     // Canary must have survived the growth copy across the FULL old span.
     // SAFETY: grown valid for new_size >= old_size bytes.
@@ -124,10 +130,15 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     // does not go backwards and the delta is small/bounded, never a wild
     // runaway (a sanity bound, not an exact-count assertion, since the
     // large_cache's admission policy is not this test's concern).
-    assert!(
-        stats_after_promote.segments_reserved_total >= stats_before.segments_reserved_total,
-        "segments_reserved_total must be monotonic"
-    );
+    let monotonic =
+        stats_after_promote.segments_reserved_total >= stats_before.segments_reserved_total;
+    if !monotonic {
+        eprintln!(
+            "[r14_4 diag] reserved_total went backwards: before={} after_promote={}",
+            stats_before.segments_reserved_total, stats_after_promote.segments_reserved_total
+        );
+    }
+    assert!(monotonic, "segments_reserved_total must be monotonic");
 
     // The strengthened per-base leak proof below needs `dbg_live_count_for`
     // (`alloc-decommit`-gated) and `dbg_contains_base`
@@ -281,8 +292,17 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
             (live_count_before_free, live_count_after_trim),
             (Some(before), Some(after)) if after + 1 == before
         );
+        let leak_ok = !still_registered || exactly_one_fewer;
+        if !leak_ok {
+            eprintln!(
+                "[r14_4 diag] per-base LEAK proof FAILED: grown_base={grown_base:?} \
+                 still_registered={still_registered} \
+                 live_count_before_free={live_count_before_free:?} \
+                 live_count_after_trim={live_count_after_trim:?}"
+            );
+        }
         assert!(
-            !still_registered || exactly_one_fewer,
+            leak_ok,
             "LEAK: grown_base ({grown_base:?}) is still registered in the \
              segment table after being freed and this thread's heap trimmed \
              (dbg_contains_base == true), but its live_count went from \
@@ -295,31 +315,83 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     }
 
     let stats_after_free = a.stats();
-    // No leak: the reserved/released delta introduced by this test's own
-    // grow+free round-trip must net to zero once the block is freed —
-    // i.e. every segment THIS test reserved was also released (or handed
-    // back to the large_cache, which does not increment
-    // `segments_reserved_total` again on a later reuse — the invariant this
-    // assertion checks is "reserved - released for this test's own activity
-    // does not grow unboundedly", using the delta introduced since
-    // `stats_before` as the bound).
+    // R29-1 (task #432): the `segments_reserved_total` / `segments_released_total`
+    // counters are PROCESS-WIDE and CUMULATIVE. The ORIGINAL guard here compared
+    // WINDOWED DELTAS (`released_delta <= reserved_delta` since `stats_before`);
+    // R29-1 reproduced that form's failure at ~0.3% under the
+    // `production medium-classes` combo and PROVED it unsound: the promotion grow
+    // empties `p`'s old segment, and if the allocator releases that segment to
+    // the OS during the grow, that release lands INSIDE this test's snapshot
+    // window while its matching reserve landed BEFORE the window (heap/TLS init,
+    // the primordial segment, or the sibling test in this binary that shares this
+    // thread's heap via the persistent TLS binding). So `released_delta`
+    // legitimately exceeded `reserved_delta` while `grown`'s OWN segment was
+    // provably correctly freed (`still_registered=false`, per-base proof above
+    // passed) — a window-crossing FALSE POSITIVE, not a leak or double-release.
+    //
+    // The windowed deltas are retained BELOW as diagnostic context only. The
+    // SOUND double-release invariant is GLOBAL and CUMULATIVE, not windowed:
+    // process-wide `segments_released_total` can NEVER exceed
+    // `segments_reserved_total` (every release corresponds to a prior reserve;
+    // only a genuine double-release of the same OS reservation could push
+    // released past reserved). This is window-independent and exactly captures
+    // the guard's stated intent. Leak detection is NOT this counter's job — it
+    // is the per-base proof's job above (reliable, segment-specific).
     let reserved_delta =
         stats_after_free.segments_reserved_total - stats_before.segments_reserved_total;
     let released_delta =
         stats_after_free.segments_released_total - stats_before.segments_released_total;
-    // Under `alloc-decommit` (part of `production`), a freed Large segment is
-    // deposited into the large_cache rather than immediately released to the
-    // OS (a freed medium-class segment, the `!HAS_PROMOTION` case, follows
-    // its own tcache/segment-directory retention path) — so `released_delta`
-    // may legitimately be 0 even though the block was correctly freed
-    // (structurally: it is retained on this heap, not leaked to an
-    // unreachable, still-mapped segment this process can never reclaim).
-    // What must NOT happen is a released count that EXCEEDS what was
-    // reserved (a double-release/corruption signal).
+    let no_double_release =
+        stats_after_free.segments_released_total <= stats_after_free.segments_reserved_total;
+    if !no_double_release {
+        // R29-1: failure-path-only diagnostics (zero pass-path cost). A
+        // GLOBAL released > reserved is a genuine double-release, so print the
+        // full process-wide cumulative trajectory plus `grown`'s OWN per-base
+        // registration/live-count state to localize it.
+        eprintln!(
+            "[r14_4 diag] GLOBAL double-release invariant FAILED: \
+             segments_released_total={} > segments_reserved_total={}. \
+             counter trajectory: reserved before={} after_promote={} after_free={} | \
+             released before={} after_promote={} after_free={} | \
+             windowed deltas (context): reserved_delta={} released_delta={}",
+            stats_after_free.segments_released_total,
+            stats_after_free.segments_reserved_total,
+            stats_before.segments_reserved_total,
+            stats_after_promote.segments_reserved_total,
+            stats_after_free.segments_reserved_total,
+            stats_before.segments_released_total,
+            stats_after_promote.segments_released_total,
+            stats_after_free.segments_released_total,
+            reserved_delta,
+            released_delta,
+        );
+        #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+        {
+            // SAFETY: `heap` is this thread's own live, bound `HeapCore`;
+            // read-only diagnostic probes of `grown_base`'s segment (re-read
+            // here because `still_registered`/`live_count_after_trim` above are
+            // block-scoped to the per-base proof block and not in scope here).
+            let reg_now = unsafe { (*heap).dbg_contains_base(grown_base) };
+            let lc_now = unsafe { (*heap).dbg_live_count_for(grown_base) };
+            eprintln!(
+                "[r14_4 diag] grown's OWN segment state at failure: \
+                 grown_base={grown_base:?} still_registered={} \
+                 live_count_before_free={live_count_before_free:?} \
+                 live_count_after_trim_recheck={:?} \
+                 (still_registered=false => grown's own segment is NOT the \
+                 double-released one; the released>reserved discrepancy \
+                 originates elsewhere — investigate the trajectory above)",
+                reg_now, lc_now
+            );
+        }
+    }
     assert!(
-        released_delta <= reserved_delta,
-        "released_delta ({released_delta}) must not exceed reserved_delta \
-         ({reserved_delta}) — a double-release would indicate corruption"
+        no_double_release,
+        "segments_released_total ({}) must not exceed segments_reserved_total ({}) — \
+         a process-wide released > reserved is a double-release / corruption \
+         signal (windowed deltas since stats_before, shown for context only, \
+         were reserved_delta={reserved_delta}, released_delta={released_delta})",
+        stats_after_free.segments_released_total, stats_after_free.segments_reserved_total
     );
 
     // No corruption: a subsequent, unrelated allocation must still work and
@@ -328,7 +400,10 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
     let q_layout = layout(4096);
     // SAFETY: valid, non-zero-size layout.
     let q = unsafe { a.alloc(q_layout) };
-    assert!(!q.is_null(), "unrelated post-free allocation failed");
+    assert!(
+        !q.is_null(),
+        "unrelated post-free allocation of 4096 bytes failed (q_layout={q_layout:?})"
+    );
     // SAFETY: q valid for 4096 bytes.
     unsafe {
         for i in 0..4096usize {

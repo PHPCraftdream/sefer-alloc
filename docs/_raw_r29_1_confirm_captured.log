@@ -1,0 +1,5 @@
+# R29-1 CONFIRM COMBO1 (production medium-classes) post-global-fix
+# binary: D:/dev/rust/sefer-alloc/target-r29-1-isolated/release/deps/r14_4_promotion_free_correctness-d6c4bbd83fc4a1ad.exe
+# started: Wed Jul 29 14:45:28 CEST 2026
+
+SUMMARY CONFIRM COMBO1: pass=2000 fail=0 total=2000 ended=Wed Jul 29 14:48:22 CEST 2026

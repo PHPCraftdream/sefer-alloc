@@ -1,0 +1,150 @@
+# R29-1 captured repro COMBO1 (production medium-classes), hybrid binary (old assert+diag)
+# binary: D:/dev/rust/sefer-alloc/target-r29-1-isolated/release/deps/r14_4_promotion_free_correctness-d6c4bbd83fc4a1ad.exe
+# capture: redirect to file
+# started: Wed Jul 29 14:41:04 CEST 2026
+
+=== FAIL run 404 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x24353c00000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (12080) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 404 ===
+
+=== FAIL run 453 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x170fc400000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (31624) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 453 ===
+
+=== FAIL run 539 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x1bc1fc00000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (14668) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 539 ===
+
+=== FAIL run 1128 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x1b6cc800000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (12292) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 1128 ===
+
+=== FAIL run 1370 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x1cf31c00000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (1832) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 1370 ===
+
+=== FAIL run 1547 (exit=101) ===
+
+running 2 tests
+test repeated_promote_and_free_does_not_leak_unboundedly ... ok
+test canary_survives_promotion_and_free_leaves_no_leak ... FAILED
+
+failures:
+
+---- canary_survives_promotion_and_free_leaves_no_leak stdout ----
+[r14_4 diag] WINDOWED guard FAILED (released_delta=2 > reserved_delta=1). counter trajectory: reserved before=3 after_promote=4 after_free=4 | released before=0 after_promote=1 after_free=2 | GLOBAL totals at failure: reserved_total=4 released_total=2 (global released<=reserved HOLDS => NOT a real double-release)
+[r14_4 diag] grown's OWN segment state at failure: grown_base=0x2394a400000 still_registered=false live_count_before_free=None live_count_after_trim_recheck=None (still_registered=false => grown's own segment is NOT the double-released one; the released>reserved discrepancy originates elsewhere — investigate the trajectory above)
+
+thread 'canary_survives_promotion_and_free_leaves_no_leak' (18788) panicked at tests\r14_4_promotion_free_correctness.rs:382:5:
+released_delta (2) must not exceed reserved_delta (1) — TEMP R29-1 windowed form
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    canary_survives_promotion_and_free_leaves_no_leak
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== end 1547 ===
+
+SUMMARY CAPTURED COMBO1: pass=1994 fail=6 total=2000 ended=Wed Jul 29 14:44:03 CEST 2026

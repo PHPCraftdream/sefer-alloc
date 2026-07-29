@@ -564,3 +564,91 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      index. No `src/` changes (the two counterfactual breaks used for
      non-vacuity verification were both reverted before this commit — `git
      diff` on `src/` is empty). No version bumps.
+
+   - **R29-1 correction (2026-07-29, task #432) — REOPENED then RE-RESOLVED
+     with a real root cause.** The R28-2 entry above recorded "1 anomalous
+     failure out of ~155 total runs, attributed to this session's heavy
+     concurrent multi-agent build contention on the shared `target`
+     directory" and marked the item RESOLVED on that attribution. An
+     independent readonly review
+     (`docs/reviews/2026-07-29-r28-readonly-review.md` §"P0 — the R28-2
+     anomalous failure is not explained") flagged that build-lock contention
+     explains DELAY, not a COMPLETED assertion failure, and that the original
+     root cause was therefore unproven. R29-1 investigated and confirmed the
+     review was right to flag it: the anomaly is REAL (reproduced), but its
+     root cause is a **test-logic bug (classification (a) from the task's
+     taxonomy), NOT an allocator correctness concern, NOT infrastructure**.
+     - **Reproduction:** the test binary was built from a PRIVATE isolated
+       target dir (`target-r29-1-isolated/`, since cleaned up) so shared
+       build-lock contention was structurally eliminated from the loop —
+       the same isolation technique R26-1 used. A 2000-run sweep of the
+       `production medium-classes` combo (the Large-promotion path,
+       `HAS_PROMOTION == true`) using a HYBRID binary that kept the ORIGINAL
+       windowed assertion (`released_delta <= reserved_delta`) but added
+       failure-path-only diagnostics reproduced **6 failures out of 2000
+       (0.30%)**, all with an IDENTICAL trajectory — evidence captured in
+       `docs/_raw_r29_1_repro_captured.log` (150 lines, 6 full
+       stdout/stderr dumps). The `production medium-classes exact-span-large`
+       combo (`HAS_PROMOTION == false`, the medium-ladder path) showed **0
+       failures in 600 runs** — the bug is specific to the Large-promotion
+       path.
+     - **Classification (a) — proven, not inferred.** Every one of the 6
+       captured failures shows: (1) the R28-2 per-base leak proof at line 284
+       PASSED (it ran before the failing line-319 guard and did not fire) —
+       `grown`'s own segment was correctly freed
+       (`still_registered=false`, `live_count_before_free=None`,
+       `live_count_after_trim_recheck=None`); (2) the GLOBAL cumulative
+       invariant held at failure time (`reserved_total=4 >
+       released_total=2`) — no double-release. The failing trajectory was
+       always: `reserved before=3 after_promote=4 after_free=4 | released
+       before=0 after_promote=1 after_free=2` — i.e. the promotion grow
+       released `p`'s now-empty OLD segment (reserved during heap/TLS init
+       or by the sibling test via the persistent TLS heap binding, BEFORE
+       this test's `stats_before` snapshot) INSIDE the window, while only 1
+       segment (grown's Large) was reserved INSIDE the window. The windowed
+       `released_delta <= reserved_delta` guard's premise ("every in-window
+       release has a matching in-window reserve") is INVALID for
+       process-wide cumulative counters read over an arbitrary snapshot
+       window — a segment reserved before the window can be released inside
+       it. This is the SAME mechanism the earlier `TEST_LOCK` fix (item 1
+       above) partially addressed (the concurrency race between the two
+       test FUNCTIONS) but did NOT fully close: the `TEST_LOCK` serializes
+       against the sibling test function's concurrent activity, but NOT
+       against segments left in the persistent TLS heap by PRIOR test
+       invocations on the same thread, whose later release crosses the
+       window. NO `src/` allocator code is implicated — the R28-2 per-base
+       proof (the real leak detector) correctly passed in all 6 failures.
+     - **Fix applied:** replaced the unsound WINDOWED assertion
+       (`released_delta <= reserved_delta` since `stats_before`) with the
+       sound GLOBAL cumulative invariant
+       (`segments_released_total <= segments_reserved_total`, no windowing)
+       — which is window-independent and exactly captures the guard's stated
+       intent ("a double-release would indicate corruption": only a genuine
+       double-release of the same OS reservation can push global released
+       past global reserved). Leak detection was never this counter's job
+       (the R28-2 entry's own "Scope" note at lines 121-132 already said so)
+       — it is the per-base proof's job, which is reliable and
+       segment-specific. The windowed deltas are retained as diagnostic
+       CONTEXT only (printed on the failure path, never asserted). Failure-
+       path-only diagnostics (zero pass-path cost, so they do not perturb
+       the timing of the race they diagnose) were added on every assertion
+       path in the test: the trajectory across all three snapshots, plus the
+       cfg-gated per-base `still_registered`/`live_count` state, so a future
+       CI failure is self-diagnosing from logs alone.
+     - **Fix verified:** a 2000-run sweep of the same `production
+       medium-classes` combo with the global-invariant fix showed **0
+       failures out of 2000** (evidence: `docs/_raw_r29_1_confirm_captured.log`,
+       5 lines), against the pre-fix 6/2000. All three CI-relevant feature
+       combos compile clean, including the cfg-narrowing-sensitive `hardened
+       medium-classes` combo (= `fastbin` + `medium-classes` = `alloc-global
+       + alloc-xthread` WITHOUT `alloc-decommit`, where the per-base
+       diagnostic block's `#[cfg(all(feature = "alloc-decommit", feature =
+       "alloc-xthread"))]` gate correctly compiles out — the same
+       R28-2-documented cfg-narrowing gap, re-verified not reintroduced).
+     - **Corrected status:** the R28-2 "1 anomalous failure attributed to
+       build contention" hypothesis is **REFUTED** — the anomaly is a real
+       ~0.3% false-positive rate of an unsound windowed assertion form, now
+       fixed. The item is **RESOLVED** on the corrected root cause
+       (classification (a), test-logic window-asymmetry bug, fixed and
+       verified at 0/2000). This is NOT a still-live allocator correctness
+       concern and does NOT block anything.
