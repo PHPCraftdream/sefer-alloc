@@ -533,12 +533,7 @@ fn honest_reject_sections_are_indexed() {
             if !(line.starts_with("## ") && line.contains("honest-reject")) {
                 continue;
             }
-            let token = match line
-                .trim_start_matches('#')
-                .trim_start()
-                .split_whitespace()
-                .next()
-            {
+            let token = match line.trim_start_matches('#').split_whitespace().next() {
                 Some(t) => t,
                 None => continue,
             };
