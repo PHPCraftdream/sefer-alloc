@@ -2,8 +2,22 @@
 //!
 //! A fixed array of per-class magazines, each an array of pointers (a
 //! "magazine"/"stack"). Push/pop touch only the magazine array (hot,
-//! sequential, cache-friendly); the block's own memory is not read until
-//! the user uses it (no dependent load on the hit path).
+//! sequential, cache-friendly); the block's own memory (its payload/body) is
+//! never read or written by the magazine push/pop itself — that part of the
+//! original claim still holds.
+//!
+//! **Stale since RAD-5 (2026-07-11), corrected here:** this module's pop no
+//! longer skips ALL dependent loads on the hit path. The alloc-hit magazine
+//! pop (`HeapCore::alloc`, `src/registry/heap_core_alloc.rs`'s RAD-5 E4
+//! block) derives `os::segment_base_of_ptr(issued)` from the just-popped
+//! pointer, then does a magazine-residency-bitmap read-modify-write
+//! (`SegmentMeta::new(base).magazine_bitmap().clear_magazine(off)`) at the
+//! derived offset — a load, and a store, dependent on the popped pointer's
+//! value, on EVERY magazine hit under `production`. That RMW targets the
+//! segment's bitmap metadata, a region the magazine array itself does not
+//! cover — it is not a re-read of the popped block's own body. See
+//! `docs/perf/R29_10_ALLOC_HIT_CLEAR_MAGAZINE_ISOLATION_GATE.md` for the
+//! isolated per-pop cost of this RMW.
 //!
 //! Owner-private: only the owning thread touches it. No atomics, no locks.
 //! Cross-thread frees never touch it (they go to the per-segment ring).
