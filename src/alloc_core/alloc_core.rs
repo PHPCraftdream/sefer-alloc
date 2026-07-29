@@ -404,11 +404,27 @@ pub(crate) static PROMOTION_BYTES_HIST: [core::sync::atomic::AtomicU64; 8] = [
 /// and the accessor agree on bucket boundaries by construction. Gated on
 /// `bench-internals` (unlike the statics above, which stay always-compiled
 /// so the always-available `dbg_promotion_*` accessors have a stable
-/// definition): this function's ONLY caller is the `bench-internals`-gated
-/// increment site in `try_promote_to_large`, so under plain `production`
-/// (without `bench-internals`) it has zero callers and would otherwise be
-/// `dead_code`.
-#[cfg(feature = "bench-internals")]
+/// definition) **AND** on `try_promote_to_large`'s own reachability
+/// predicate (`registry::heap_core_free`'s `medium_promotion_reachable!`
+/// macro, reproduced here verbatim since a `#[cfg]` cannot take a macro
+/// invocation as its argument): this function's ONLY caller is the
+/// `bench-internals`-gated increment site inside that function, so under any
+/// feature combination where `try_promote_to_large` itself does not compile
+/// (plain `production`, which lacks `bench-internals`; but ALSO
+/// `--all-features`, where `exact-span-large` + `large-reserved-capacity` +
+/// `numa-aware` are simultaneously on and the macro's `any(...)` term
+/// evaluates false) this has zero callers and would otherwise be `dead_code`
+/// (caught by `cargo clippy --all-features -- -D warnings`, a real CI
+/// matrix row, after the narrower `bench-internals`-only gate here missed
+/// it — R29-13/task #444 zero-trust review).
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "medium-classes",
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
+))]
 #[must_use]
 pub(crate) const fn promotion_byte_bucket(bytes: usize) -> usize {
     let b = bytes as u64;

@@ -160,12 +160,29 @@ pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
 /// `HeapCore::try_promote_to_large` (registry, `heap_core_free.rs`) can bump
 /// the SAME counters `AllocCore::dbg_promotion_*` reads — mirrors
 /// [`LARGE_ZERO_PASS_CALLS`]'s identical re-export discipline. Not public
-/// API. Gated on `bench-internals`: the only consumer is the registry-side
-/// increment site, which is itself `bench-internals`-gated (the statics
-/// themselves stay always-compiled in `alloc_core.rs` so the always-available
-/// `dbg_promotion_*` accessors have a stable definition regardless of feature
-/// set).
-#[cfg(feature = "bench-internals")]
+/// API. Gated on `bench-internals` **AND** `try_promote_to_large`'s own
+/// reachability predicate (registry's `medium_promotion_reachable!` macro,
+/// reproduced here verbatim — a `#[cfg]` cannot take a macro invocation as
+/// its argument): the only consumer of this re-export is the registry-side
+/// increment site inside that function, so under `--all-features` (where
+/// `exact-span-large` + `large-reserved-capacity` + `numa-aware` are
+/// simultaneously on and the macro's reachability `any(...)` term evaluates
+/// false, excluding `try_promote_to_large` entirely) a `bench-internals`-only
+/// gate left this re-export genuinely unused — caught by
+/// `cargo clippy --all-features -- -D warnings`, a real CI matrix row
+/// (R29-13/task #444 zero-trust review). The statics themselves stay
+/// always-compiled in `alloc_core.rs` so the always-available
+/// `dbg_promotion_*` accessors have a stable definition regardless of
+/// feature set; only this re-export (and `promotion_byte_bucket`'s
+/// definition, gated identically) need the fuller predicate.
+#[cfg(all(
+    feature = "bench-internals",
+    feature = "medium-classes",
+    any(
+        not(feature = "exact-span-large"),
+        all(feature = "large-reserved-capacity", not(feature = "numa-aware"))
+    )
+))]
 pub(crate) use alloc_core::{
     promotion_byte_bucket, PROMOTION_BYTES_HIST, PROMOTION_BYTES_MAX, PROMOTION_BYTES_MIN,
     PROMOTION_BYTES_SUM, PROMOTION_COUNT,
