@@ -201,6 +201,35 @@ Core instructions, mandatory for all code in this repository. They
   include one. See `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB_summary.csv`
   for a concrete example (companion to
   `docs/perf/R14_3_CLASS_AWARE_DIRTY_FIXED_WORK_AB.md`'s §2 tables).
+- **A perf-gate report measuring an uncommitted tree must record an
+  IMMUTABLE source identity, not just "base SHA + uncommitted changes"**
+  (R29-6/task #437). Several gate reports (e.g. `docs/perf/R27_3_POOL_RETENTION_GATE.md`,
+  `docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md`) honestly record their measured
+  source as "`main` @ `<base SHA>` + this task's uncommitted working tree" —
+  honest about what was measured, but weaker than an immutable reference for
+  later reproduction: once the working tree changes further (or the task's
+  diff is discarded without committing), there is no way to recover exactly
+  what was measured, only the base SHA plus a description of intent. Going
+  forward, a report measuring an uncommitted tree must cite ONE of:
+  1. a temporary measurement commit SHA (even on a throwaway/scratch branch
+     that is later deleted — the SHA stays resolvable via `git reflog` or
+     `git fsck --unreachable` for as long as it isn't garbage-collected, and
+     is trivially made permanent by pushing the branch if needed);
+  2. a git tree object SHA (`git write-tree`), which snapshots the exact
+     file contents without requiring a commit or a branch;
+  3. a hash of the exact patch over the base (`git diff | sha256sum`),
+     verifiable later by re-applying the patch to the cited base SHA and
+     re-hashing; or
+  4. the built executable's hash (e.g. `sha256sum target/release/<bin>`)
+     plus complete feature/config metadata (feature set, target triple,
+     rustc version) — the weakest of the four (does not reconstruct source,
+     only proves which binary ran), acceptable only when the source-level
+     options above are unavailable.
+  **Not retroactive** — same convention as the summary-CSV rule immediately
+  above: existing gate docs (including R27-3/R27-4) are not required to
+  grow an immutable identity after the fact and keep their text as the
+  honest historical record of what they actually did; this applies to NEW
+  perf-gate reports measuring an uncommitted tree going forward only.
 - **Bench-profile pinning: a pinned-commit/worktree protocol, not named
   `production-rN` Cargo feature bundles** (R14-10/task #295). `production`'s
   own composition is expected to keep changing across rounds (that is the
