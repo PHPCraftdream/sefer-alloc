@@ -326,6 +326,114 @@ pub(crate) static OPT_H_ATTEMPTS: core::sync::atomic::AtomicU64 =
 /// (same gating convention as [`OPT_H_ATTEMPTS`]). Relaxed ordering.
 pub(crate) static OPT_H_HITS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+// ===========================================================================
+// R29-5 (task #436) — promotion-frequency / copied-byte distribution counters
+// ===========================================================================
+//
+// Stage-1 diagnostic counters for the medium→Large realloc-promotion path
+// (`try_promote_to_large`, `src/registry/heap_core_free.rs`). These answer the
+// R22-16 remap-instead-of-copy design's "victim" question (does the promotion
+// memcpy actually move enough bytes, often enough, for an OS-level `mremap` to
+// have a real victim?) — `docs/perf/R29_5_PROMOTION_FREQUENCY_GATE.md`.
+//
+// Mirrors the OPT_H_ATTEMPTS/OPT_H_HITS convention exactly: the statics are
+// ALWAYS compiled (so the `dbg_promotion_*` accessors have a stable definition
+// regardless of feature set), but the per-event INCREMENT is gated behind
+// `bench-internals` (NOT `production` — per CLAUDE.md's benchmark-hook rule #2:
+// a hook with no production caller defaults to `bench-internals`, not a
+// production-composition feature). Note the promotion path itself is only
+// compiled under `medium-classes` (also not in `production`), so under plain
+// `--features production` neither the path nor any counter increment exists —
+// zero behavior change, zero surface. Reads 0 unless `bench-internals` is on.
+//
+// A promotion event increments exactly ONE bucket of the byte histogram, keyed
+// by the number of bytes the promotion copy moved (`old_layout.size()` at the
+// `try_promote_to_large` copy site). The buckets are fixed-width powers-of-two
+// (see `promotion_byte_bucket`) so the SHAPE of the distribution is preserved,
+// not just an aggregate — the design's upside scales with copied bytes, so the
+// shape matters for the verdict (R29-5's anti-p-hacking guard), not just the
+// total.
+
+/// DIAGNOSTIC (R29-5, task #436): process-wide count of successful
+/// medium→Large realloc promotions (`try_promote_to_large` returning `Some`)
+/// since process start. Read via [`AllocCore::dbg_promotion_count`]. Relaxed
+/// ordering — a diagnostic count, not a synchronization primitive. Reads 0
+/// unless `bench-internals` is on.
+pub(crate) static PROMOTION_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// DIAGNOSTIC (R29-5): cumulative bytes copied by all promotions counted by
+/// [`PROMOTION_COUNT`] (sum of `old_layout.size()` per event). `sum / count`
+/// is the mean copied bytes per promotion. Read via
+/// [`AllocCore::dbg_promotion_bytes_sum`]. Relaxed.
+pub(crate) static PROMOTION_BYTES_SUM: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// DIAGNOSTIC (R29-5): smallest `old_layout.size()` ever copied by a single
+/// promotion. Updated via `fetch_min` per event. Read via
+/// [`AllocCore::dbg_promotion_bytes_min`]. Relaxed. Initial `u64::MAX` reads
+/// as "no promotion has occurred yet" — the accessor maps that to 0.
+pub(crate) static PROMOTION_BYTES_MIN: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// DIAGNOSTIC (R29-5): largest `old_layout.size()` ever copied by a single
+/// promotion. Updated via `fetch_max` per event. Read via
+/// [`AllocCore::dbg_promotion_bytes_max`]. Relaxed.
+pub(crate) static PROMOTION_BYTES_MAX: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// DIAGNOSTIC (R29-5): per-bucket histogram of bytes copied per promotion
+/// (one increment per event in exactly one bucket, per `promotion_byte_bucket`).
+/// Read via [`AllocCore::dbg_promotion_bytes_hist`]. The buckets are:
+/// `[0,4KiB) [4KiB,16KiB) [16KiB,64KiB) [64KiB,128KiB) [128KiB,256KiB)
+/// [256KiB,512KiB) [512KiB,1MiB) [1MiB,∞)`. Relaxed.
+pub(crate) static PROMOTION_BYTES_HIST: [core::sync::atomic::AtomicU64; 8] = [
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+    core::sync::atomic::AtomicU64::new(0),
+];
+
+/// DIAGNOSTIC (R29-5): the histogram-bucket index for a given copied-byte
+/// count, matching the [`PROMOTION_BYTES_HIST`] bucket layout documented
+/// above. `pub(crate)` so the single increment site (`try_promote_to_large`)
+/// and the accessor agree on bucket boundaries by construction. Gated on
+/// `bench-internals` (unlike the statics above, which stay always-compiled
+/// so the always-available `dbg_promotion_*` accessors have a stable
+/// definition): this function's ONLY caller is the `bench-internals`-gated
+/// increment site in `try_promote_to_large`, so under plain `production`
+/// (without `bench-internals`) it has zero callers and would otherwise be
+/// `dead_code`.
+#[cfg(feature = "bench-internals")]
+#[must_use]
+pub(crate) const fn promotion_byte_bucket(bytes: usize) -> usize {
+    let b = bytes as u64;
+    // [0,4KiB)=0 [4KiB,16KiB)=1 [16KiB,64KiB)=2 [64KiB,128KiB)=3
+    // [128KiB,256KiB)=4 [256KiB,512KiB)=5 [512KiB,1MiB)=6 [1MiB,∞)=7
+    const KIB: u64 = 1024;
+    if b < 4 * KIB {
+        0
+    } else if b < 16 * KIB {
+        1
+    } else if b < 64 * KIB {
+        2
+    } else if b < 128 * KIB {
+        3
+    } else if b < 256 * KIB {
+        4
+    } else if b < 512 * KIB {
+        5
+    } else if b < 1024 * KIB {
+        6
+    } else {
+        7
+    }
+}
+
 /// DIAGNOSTIC (review finding 2.3): process-wide count of `dealloc` calls that
 /// hit the foreign-or-unroutable no-op branch — a `ptr` whose segment base is
 /// NOT one of this heap's registered segments, so `dealloc` silently drops it

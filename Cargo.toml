@@ -1605,6 +1605,18 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 name = "r29_4_segment_state_reconciliation_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
+# R29-5 (task #436): medium→Large promotion frequency / copied-byte
+# distribution gate. Stage-1 measurement-only probe answering
+# `R22_16_PROMOTION_REMAP_DESIGN.md` §5.1's workload-shape gating question
+# (does the promotion memcpy have a material victim for an OS-level `mremap`
+# design?) — reads back the new `dbg_promotion_*` counters after a realistic
+# Vec-growth-shaped workload. Requires `medium-classes` (the promotion path
+# itself is only compiled under it) in addition to `bench-internals` (the
+# counter-increment gate).
+[[example]]
+name = "r29_5_promotion_frequency_gate"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "medium-classes", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

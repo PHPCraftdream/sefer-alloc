@@ -1329,6 +1329,26 @@ impl HeapCore {
         // existing move leg copies on a grow (`copy = min(old, new)`, which
         // for a grow is always `old`).
         Node::copy_nonoverlapping(ptr, new_ptr, old_layout.size());
+        // R29-5 (task #436): record this promotion event for the
+        // promotion-frequency / copied-byte-distribution gate
+        // (`docs/perf/R29_5_PROMOTION_FREQUENCY_GATE.md`). Observation ONLY —
+        // the per-event increment is gated `bench-internals` (NOT in
+        // `production`, per CLAUDE.md's benchmark-hook rule #2), mirroring
+        // `OPT_H_ATTEMPTS`'s gating discipline; plain `--features production`
+        // (which does not include `medium-classes` either) emits nothing here.
+        // The copy above is exactly `old_layout.size()` bytes, so that is the
+        // copied-byte count recorded. No allocator decision is altered.
+        #[cfg(feature = "bench-internals")]
+        {
+            use core::sync::atomic::Ordering;
+            let copied = old_layout.size() as u64;
+            crate::alloc_core::PROMOTION_COUNT.fetch_add(1, Ordering::Relaxed);
+            crate::alloc_core::PROMOTION_BYTES_SUM.fetch_add(copied, Ordering::Relaxed);
+            crate::alloc_core::PROMOTION_BYTES_MIN.fetch_min(copied, Ordering::Relaxed);
+            crate::alloc_core::PROMOTION_BYTES_MAX.fetch_max(copied, Ordering::Relaxed);
+            let bucket = crate::alloc_core::promotion_byte_bucket(old_layout.size());
+            crate::alloc_core::PROMOTION_BYTES_HIST[bucket].fetch_add(1, Ordering::Relaxed);
+        }
         // SAFETY: `base` was proven ours & live by the caller's
         // `contains_base(base)` check before `try_promote_to_large` was
         // called; the read above was bounded by `safe_payload_read_span`;

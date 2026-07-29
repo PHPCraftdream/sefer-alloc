@@ -1,0 +1,32 @@
+    Finished `release` profile [optimized] target(s) in 2.16s
+     Running `D:\dev\rust\.cargo-target\release\examples\r29_5_promotion_frequency_gate.exe`
+=== R29-5 promotion-frequency / copied-byte-distribution gate ===
+
+workload: 4000 small-population objects (ceiling 65536 B) + 40 large-population objects (ceiling 2097152 B), 20000 background never-grown allocations (48 B each)
+
+--- raw counts ---
+RESULT total_fresh_allocs=24040
+RESULT total_growth_realloc_steps=36682
+RESULT total_alloc_activity=60722
+RESULT promotion_count=33
+RESULT promotion_bytes_sum=4325376
+RESULT promotion_bytes_min=131072
+RESULT promotion_bytes_max=131072
+RESULT promotion_bytes_mean=131072.0
+
+--- ratios (the Stage-1 gating question) ---
+RESULT ratio_promotions_over_total_alloc_activity=0.000543 (33/60722)
+RESULT ratio_promotions_over_growth_steps=0.000900 (33/36682)
+RESULT ratio_promotions_over_objects=0.008168 (33/4040)
+
+--- copied-byte histogram (the distribution, not just the aggregate) ---
+RESULT promotion_hist_bucket0_[0,4KiB)=0
+RESULT promotion_hist_bucket1_[4KiB,16KiB)=0
+RESULT promotion_hist_bucket2_[16KiB,64KiB)=0
+RESULT promotion_hist_bucket3_[64KiB,128KiB)=0
+RESULT promotion_hist_bucket4_[128KiB,256KiB)=33
+RESULT promotion_hist_bucket5_[256KiB,512KiB)=0
+RESULT promotion_hist_bucket6_[512KiB,1MiB)=0
+RESULT promotion_hist_bucket7_[1MiB,inf)=0
+
+OK promotion_count=33 total_alloc_activity=60722 ratio_vs_activity=0.000543 bytes_mean=131072.0 bytes_min=131072 bytes_max=131072

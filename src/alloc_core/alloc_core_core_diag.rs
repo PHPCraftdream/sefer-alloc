@@ -629,6 +629,81 @@ impl AllocCore {
         super::alloc_core::OPT_H_HITS.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// STAGE-1 DIAGNOSTIC ONLY (R29-5, task #436): process-wide count of
+    /// successful medium→Large realloc promotions (`try_promote_to_large`
+    /// returning `Some`) since process start — the numerator of the
+    /// promotion-frequency question
+    /// (`docs/perf/R29_5_PROMOTION_FREQUENCY_GATE.md`). Relaxed load —
+    /// diagnostic only. Reads 0 unless `bench-internals` is on (the increment
+    /// site is gated); the accessor is always compiled so callers need no
+    /// `#[cfg]`. Pairs with
+    /// [`dbg_promotion_bytes_sum`](Self::dbg_promotion_bytes_sum) and the
+    /// [`dbg_promotion_bytes_hist`](Self::dbg_promotion_bytes_hist)
+    /// distribution.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_promotion_count() -> u64 {
+        super::alloc_core::PROMOTION_COUNT.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// STAGE-1 DIAGNOSTIC ONLY (R29-5): cumulative bytes copied across all
+    /// promotions counted by [`dbg_promotion_count`](Self::dbg_promotion_count).
+    /// `sum / count` is the mean copied bytes per promotion. Relaxed. Reads 0
+    /// unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_promotion_bytes_sum() -> u64 {
+        super::alloc_core::PROMOTION_BYTES_SUM.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// STAGE-1 DIAGNOSTIC ONLY (R29-5): smallest `old_layout.size()` ever
+    /// copied by a single promotion. Relaxed. Returns 0 if no promotion has
+    /// occurred (the underlying static is initialised to `u64::MAX`, mapped to
+    /// 0 here) so an idle workload reads a non-misleading 0 rather than
+    /// `u64::MAX`. Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_promotion_bytes_min() -> u64 {
+        let v = super::alloc_core::PROMOTION_BYTES_MIN.load(core::sync::atomic::Ordering::Relaxed);
+        if v == u64::MAX {
+            0
+        } else {
+            v
+        }
+    }
+
+    /// STAGE-1 DIAGNOSTIC ONLY (R29-5): largest `old_layout.size()` ever
+    /// copied by a single promotion. Relaxed. Reads 0 unless `bench-internals`
+    /// is on (or if no promotion has occurred).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_promotion_bytes_max() -> u64 {
+        super::alloc_core::PROMOTION_BYTES_MAX.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// STAGE-1 DIAGNOSTIC ONLY (R29-5): per-bucket histogram of bytes copied
+    /// per promotion (one increment per event in exactly one bucket). The
+    /// returned array is indexed by the bucket layout documented on
+    /// [`PROMOTION_BYTES_HIST`](super::alloc_core::PROMOTION_BYTES_HIST):
+    /// `[0]=<4KiB [1]=4-16KiB [2]=16-64KiB [3]=64-128KiB [4]=128-256KiB
+    /// [5]=256-512KiB [6]=512-1024KiB [7]=>=1MiB`. Relaxed loads. Reads all-0
+    /// unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn dbg_promotion_bytes_hist() -> [u64; 8] {
+        let h = &super::alloc_core::PROMOTION_BYTES_HIST;
+        [
+            h[0].load(core::sync::atomic::Ordering::Relaxed),
+            h[1].load(core::sync::atomic::Ordering::Relaxed),
+            h[2].load(core::sync::atomic::Ordering::Relaxed),
+            h[3].load(core::sync::atomic::Ordering::Relaxed),
+            h[4].load(core::sync::atomic::Ordering::Relaxed),
+            h[5].load(core::sync::atomic::Ordering::Relaxed),
+            h[6].load(core::sync::atomic::Ordering::Relaxed),
+            h[7].load(core::sync::atomic::Ordering::Relaxed),
+        ]
+    }
+
     /// R7-A0: process-wide count of slots examined by
     /// `find_segment_with_free_impl` (the linear scan). This is the primary
     /// scan-cost counter -- it is LIVE in A0 (incremented per slot visited

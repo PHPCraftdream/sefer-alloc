@@ -796,10 +796,10 @@ for completeness.
    (MediumExtent sub-path).**
 
    > **Current state**
-   > - **Status:** design-only; verdict corrected in R23-4 (the original whole-NO-GO framing is superseded).
-   > - **Current number/verdict:** **NO-GO** for whole-segment remap (base-address stability, unaffected) and for Windows (separate section-object blocker); **CONDITIONAL-GO** for Linux sub-region remap pending a correctness prototype. The MediumExtent one-object-per-segment redesign is a separate CONDITIONAL-GO, gated on an unrun Stage-1 workload-shape measurement.
-   > - **Next trigger:** a Linux sub-region `mremap` correctness prototype (adds the FFI surface + the "never free-list-push a remap-vacated offset" discipline §10.3 identifies); MediumExtent needs its Stage-1 measurement.
-   > - **Evidence:** `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the R23-4 correction; original §0–§9 preserved verbatim).
+   > - **Status:** design-only; verdict corrected in R23-4 (the original whole-NO-GO framing is superseded). MediumExtent's Stage-1 workload-shape trigger MEASURED in R29-5 (task #436) — result: NO VICTIM, item stays deferred.
+   > - **Current number/verdict:** **NO-GO** for whole-segment remap (base-address stability, unaffected) and for Windows (separate section-object blocker); **CONDITIONAL-GO** for Linux sub-region remap pending a correctness prototype (still unrun — unaffected by R29-5). The MediumExtent one-object-per-segment redesign's own CONDITIONAL-GO precondition is now MEASURED and does NOT clear the bar: R29-5's realistic Vec-growth workload (4,000 small + 40 large objects + 20,000 background allocs) found promotions fire on only **0.054%** of total allocation activity (33/60,722) and **0.82%** of growth objects (33/4,040) ever promote even once — RARE by every denominator tried; aggregate bytes moved by promotion across the whole workload is only ~4.1 MiB (33 events × a fixed 128 KiB each — every single event lands in the SAME histogram bucket, a structural property of pure-doubling growth, not workload noise). Per the design doc's own "No victim, no implementation" rule: **NO VICTIM under this realistic workload shape** — MediumExtent stays deferred, not opened.
+   > - **Next trigger:** a Linux sub-region `mremap` correctness prototype (adds the FFI surface + the "never free-list-push a remap-vacated offset" discipline §10.3 identifies) remains open for the 4b sub-region-remap direction specifically. MediumExtent (4a) has NO live trigger after R29-5 — it would need a DIFFERENT, more promotion-heavy workload shape to be shown material (a hypothetical future finding, not something R29-5 asserts) before its own Stage-1 precondition could be reconsidered.
+   > - **Evidence:** `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the R23-4 correction; original §0–§9 preserved verbatim). `R29_5_PROMOTION_FREQUENCY_GATE.md` (the Stage-1 workload-shape measurement, task #436).
 
    DESIGN-ONLY. **Status pending correction (task
    #373/R23-4):** the design doc as committed verdicts NO-GO for
@@ -872,6 +872,43 @@ for completeness.
    Full derivation: `R22_16_PROMOTION_REMAP_DESIGN.md` §10 (the correction
    section) — original §0-§9 content preserved verbatim per this project's
    "append, don't rewrite" convention.
+   **2026-07-29 update — MediumExtent's Stage-1 trigger MEASURED, NO VICTIM
+   (task #436, R29-5):** ran the §5.1 workload-shape measurement this design
+   doc specified but never itself executed. New `bench-internals`-gated
+   diagnostic counters (`PROMOTION_COUNT`/`PROMOTION_BYTES_SUM`/
+   `PROMOTION_BYTES_MIN`/`PROMOTION_BYTES_MAX`/`PROMOTION_BYTES_HIST`,
+   `src/alloc_core/alloc_core.rs`, read via `AllocCore::dbg_promotion_*`)
+   record every `try_promote_to_large` event's copied-byte count. A new
+   example (`examples/r29_5_promotion_frequency_gate.rs`) drives a realistic
+   `Vec::push`-shaped doubling-growth workload — 4,000 small-population
+   objects (ceiling uniform in `[64B, 64KiB)`, never crossing the 256 KiB
+   threshold by construction), 40 large-population objects (ceiling uniform
+   in `[64B, 2MiB)`, a conservative 100:1 small:large ratio), plus 20,000
+   background never-grown allocations so the denominator reflects realistic
+   allocator traffic, not just the two growth populations in isolation.
+   **Result:** promotions fire on 0.054% of total allocation activity
+   (33/60,722) and 0.82% of growth objects (33/4,040) ever promote even
+   once; RARE by every denominator tried. The AGGREGATE bytes moved by all
+   33 promotion events combined is only ~4.1 MiB — small, because promotion
+   fires at most once per growth trajectory (subsequent grows ride the
+   Large-path in-place OPT-G fast path for free) and few objects ever reach
+   it. Every single promotion event copied exactly 131,072 B (128 KiB) — a
+   structural consequence of pure-doubling growth always visiting exactly
+   that value as the last medium-size step before crossing the 256 KiB
+   threshold, not measurement noise (confirmed reproducible: two independent
+   runs with the same seed produced byte-identical results). Applying the
+   design doc's own "No victim, no implementation" rule: **NO VICTIM** under
+   this realistic workload shape. MediumExtent (4a) stays deferred — this
+   task does not open a follow-up design/prototype task per its own brief,
+   even though the verdict is a clean reject-on-frequency-grounds; a
+   sufficiently different, more promotion-heavy workload shape COULD in
+   principle move this finding, but that is not asserted here, only left as
+   a theoretical door R29-5 did not need to close. Full derivation, raw
+   logs, and the summary CSV: `R29_5_PROMOTION_FREQUENCY_GATE.md` +
+   `R29_5_PROMOTION_FREQUENCY_GATE_summary.csv` +
+   `_raw_r29_5_run1.log`/`_raw_r29_5_run2.log`. The 4b (Linux sub-region
+   remap) CONDITIONAL-GO is UNCHANGED by this update — its own trigger (a
+   correctness prototype) is an orthogonal question this task did not touch.
 14. **R25-8 — run-encoded free batch (arithmetic free list).**
 
     > **Current state**

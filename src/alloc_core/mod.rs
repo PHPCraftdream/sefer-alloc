@@ -155,6 +155,21 @@ pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
 /// static itself stays always-compiled.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
+/// R29-5 (task #436) re-export seam: the medium→Large promotion-frequency /
+/// copied-byte-distribution diagnostic statics, re-exported crate-wide so
+/// `HeapCore::try_promote_to_large` (registry, `heap_core_free.rs`) can bump
+/// the SAME counters `AllocCore::dbg_promotion_*` reads — mirrors
+/// [`LARGE_ZERO_PASS_CALLS`]'s identical re-export discipline. Not public
+/// API. Gated on `bench-internals`: the only consumer is the registry-side
+/// increment site, which is itself `bench-internals`-gated (the statics
+/// themselves stay always-compiled in `alloc_core.rs` so the always-available
+/// `dbg_promotion_*` accessors have a stable definition regardless of feature
+/// set).
+#[cfg(feature = "bench-internals")]
+pub(crate) use alloc_core::{
+    promotion_byte_bucket, PROMOTION_BYTES_HIST, PROMOTION_BYTES_MAX, PROMOTION_BYTES_MIN,
+    PROMOTION_BYTES_SUM, PROMOTION_COUNT,
+};
 /// R29-4 (task #435) MEASUREMENT-ONLY: the segment-state reconciliation
 /// snapshot types returned by `AllocCore::dbg_segment_state_reconciliation`.
 /// Re-exported from the private `alloc_core_small_pool` submodule so
