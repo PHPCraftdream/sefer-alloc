@@ -32,6 +32,13 @@ export function winToWsl(winPath) {
  * capturing it for post-run scanning. Resolves to { code, out }.
  */
 export function run(cmd, args, opts = {}) {
+  if (opts.shell === true) {
+    throw new Error(
+      'run(): shell:true is forbidden — see scripts/lib.mjs\'s run() doc comment ' +
+        'for why; if you genuinely need shell syntax, that is a deliberate, ' +
+        'separate decision this project has not needed yet',
+    );
+  }
   return new Promise((res, rej) => {
     // `opts` defaults to `{}` (no `shell`), so `spawn` hands `args` straight
     // to the OS process-creation call as a real argv array — no shell

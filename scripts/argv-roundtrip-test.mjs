@@ -37,6 +37,20 @@ const TRICKY = [
   'it\'s a "test"',
   // A tab is whitespace too (`/\s/` matches it); shells also split on it.
   'a\tb\tc',
+  // `&` and `|` — the two characters that, if a shell were ever in the path,
+  // would be read as backgrounding / piping. Highest-signal proof run() bypasses
+  // any shell: under shell:true these would never arrive as one argv token.
+  'a & b | c',
+  // `%` — Windows cmd.exe's variable-expansion char; highest-signal for this
+  // project's primary dev platform (its own git status shows Windows paths).
+  // Under a cmd.exe shell `a%PATH%b` would expand to the literal PATH value;
+  // under shell:false it roundtrips verbatim.
+  'a%PATH%b',
+  // Parentheses — another shell-metacharacter class (subshelling).
+  '(grouped)',
+  // Unicode — a non-ASCII string, to prove UTF-8 argv bytes survive spawn()
+  // unmangled (this project's own winToWsl / path code reasons about non-ASCII).
+  'café — naïve 日本語',
   // Boring baseline — a single token must still roundtrip (guards against an
   // over-corrective fix that mangles simple args).
   'plain',

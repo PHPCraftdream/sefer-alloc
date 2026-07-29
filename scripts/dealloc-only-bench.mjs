@@ -95,7 +95,7 @@ async function buildExample() {
   const { code } = await run(
     'cargo',
     ['build', '--release', '--example', EXAMPLE, '--features', FEATURES],
-    { cwd: REPO_ROOT, shell: isWin },
+    { cwd: REPO_ROOT },
   );
   if (code !== 0) throw new Error(`cargo build failed (exit ${code})`);
 }

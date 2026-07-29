@@ -85,9 +85,6 @@ async function buildExample() {
   console.log(
     `[first-alloc] building example '${EXAMPLE}' (features: ${FEATURES})...`,
   );
-  // Quote the multi-word features string so a shell (Windows) does not split
-  // it into two argv tokens (cargo then rejects the second word as an
-  // unexpected positional argument).
   const { code } = await run(
     'cargo',
     [
@@ -96,9 +93,9 @@ async function buildExample() {
       '--example',
       EXAMPLE,
       '--features',
-      isWin ? `"${FEATURES}"` : FEATURES,
+      FEATURES,
     ],
-    { cwd: REPO_ROOT, shell: isWin },
+    { cwd: REPO_ROOT },
   );
   if (code !== 0) throw new Error(`cargo build failed (exit ${code})`);
 }

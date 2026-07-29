@@ -83,7 +83,7 @@ async function buildArms() {
   const { code: codeOff } = await run(
     'cargo',
     ['build', '--release', '--example', ARM_OFF, '--features', 'production,alloc-stats'],
-    { cwd: REPO_ROOT, shell: isWin },
+    { cwd: REPO_ROOT },
   );
   if (codeOff !== 0) throw new Error(`cargo build (off) failed (exit ${codeOff})`);
 
@@ -91,7 +91,7 @@ async function buildArms() {
   const { code: codeOn } = await run(
     'cargo',
     ['build', '--release', '--example', ARM_ON, '--features', 'production,medium-classes-wide,alloc-stats'],
-    { cwd: REPO_ROOT, shell: isWin },
+    { cwd: REPO_ROOT },
   );
   if (codeOn !== 0) throw new Error(`cargo build (on) failed (exit ${codeOn})`);
 

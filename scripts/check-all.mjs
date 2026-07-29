@@ -14,6 +14,7 @@
 //   npm run check
 //
 // What it runs, in order (fails fast — stops at the first red step):
+//   0. node scripts/argv-roundtrip-test.mjs   (shell:false argv regression; R27-9)
 //   1. cargo fmt --all -- --check           (rustfmt gate)
 //   2. cargo clippy --all-targets -- -D warnings                (CI matrix entry 1: "")
 //   3. cargo clippy --all-targets --features experimental -- -D warnings  (entry 2)
@@ -33,6 +34,18 @@
 import { REPO_ROOT, run } from './lib.mjs';
 
 const steps = [
+  {
+    // R27-9 (task #427): tooling-correctness precondition for every later
+    // step — they all spawn through the same run() in lib.mjs, so a
+    // regression in run()'s shell:false argv preservation would corrupt
+    // every multi-word --features value before cargo ever saw it. Runs in
+    // milliseconds and fails fast. Wired in explicitly (not left as a
+    // direct-invocation-only script) so it cannot silently rot — the same
+    // failure mode tests/no_stale_loom_files.rs (R13-5) was created to catch.
+    name: 'argv-roundtrip (shell:false regression test)',
+    cmd: 'node',
+    args: ['scripts/argv-roundtrip-test.mjs'],
+  },
   {
     name: 'rustfmt',
     cmd: 'cargo',
@@ -85,7 +98,7 @@ const steps = [
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (fmt, clippy x3, test x4, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x3, test x4, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

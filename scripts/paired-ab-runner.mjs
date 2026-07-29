@@ -229,7 +229,7 @@ async function buildArms(arms) {
     const { code } = await run(
       'cargo',
       ['build', '--release', ...exampleFlags, '--features', 'alloc-global'],
-      { cwd: REPO_ROOT, shell: isWin },
+      { cwd: REPO_ROOT },
     );
     if (code !== 0) throw new Error(`cargo build failed (exit ${code})`);
     return;
@@ -240,7 +240,6 @@ async function buildArms(arms) {
     console.log(`[paired-ab] running config build step: ${CONFIG.build.command} ${(CONFIG.build.args ?? []).join(' ')}`);
     const { code } = await run(CONFIG.build.command, CONFIG.build.args ?? [], {
       cwd: REPO_ROOT,
-      shell: isWin,
     });
     if (code !== 0) throw new Error(`config build step failed (exit ${code})`);
   } else {
