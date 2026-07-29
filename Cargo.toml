@@ -1495,6 +1495,21 @@ name = "r13_3_virgin_zero_skip_wallclock"
 harness = false
 required-features = ["alloc-global", "fastbin"]
 
+# R29-16 (task #447): calloc-shaped wall-clock gate for `virgin-zero-skip` at
+# 64 KiB -- large enough for the skipped `Node::zero` memset to dominate
+# end-to-end latency, not just instruction count (R13-3's own 8 KiB gate
+# found no significant wall-clock difference and its own text says that size
+# does not capture this feature's target shape; this fills that gap, see
+# `docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md`).
+# Requires only `alloc-global` + `fastbin` (the magazine) so the SAME bench
+# binary can be run both WITHOUT `virgin-zero-skip` (baseline) and WITH it
+# (this feature) for an honest "was / now" comparison -- see the bench file's
+# module doc.
+[[bench]]
+name = "r29_16_virgin_zero_skip_calloc_wallclock"
+harness = false
+required-features = ["alloc-global", "fastbin"]
+
 # R13-6 (task #276): production A/B wall-clock gate for the
 # `exact-span-large` (R12-3) + `large-reserved-capacity` (R12-4) opt-in pair
 # (`benches/r13_6_exact_span_reserved_capacity_wallclock.rs`). Two groups:

@@ -109,6 +109,22 @@ already exists; only the judge is missing (independently requested by the
 R28 review §1.3). **Recommendation (not actioned here): run that
 measurement in a separate task; do NOT promote on the current evidence.**
 
+**2026-07-29 update (R29-16, task #447):** that measurement was run. Isolated
+Ir at 64 KiB: virgin `alloc_zeroed` = 3,067 Ir (skip fires), recycled =
+65,624 Ir (explicit zero runs) — a real ~21.4× deterministic difference,
+confirming the feature works as designed at the instruction level. The
+wall-clock arm at the same size did NOT show a clean ON/OFF separation, for
+a specific, verified reason: `production`'s eager small-segment page-commit
+policy pays the OS first-touch page-fault cost either way, masking the
+software-level saving. Net: still **NEVER-DECIDED as a clean promotion GO**
+— the instruction-level win is real but does not (yet) demonstrate a
+wall-clock benefit under this measured workload shape; a genuine promotion
+decision would need that gap closed first (e.g. under
+`small-segment-lazy-commit` or a steady-state calloc-heavy workload). See
+`docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` for the full report and
+`docs/perf/OPEN_ITEMS.md` item 25 for the tracked current state. Still NOT
+promoted; no `production`/`Cargo.toml` change made.
+
 ### `small-segment-lazy-commit` — CONDITIONAL-keep-opt-in (a decision EXISTS)
 
 Unlike `virgin-zero-skip`, this one WAS decided. R12-9 split the old

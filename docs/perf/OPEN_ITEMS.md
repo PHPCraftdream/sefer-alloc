@@ -185,36 +185,55 @@ for completeness.
     > - **Evidence:** `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D15`.
 
-25. **R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision is
-    NEVER-DECIDED (the design's own Stage-3 promotion gate was never run).**
+25. **R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision — Stage-0/
+    Stage-3 measurement NOW DONE (R29-16, task #447); still NOT a clean GO.**
 
    > **Current state**
-   > - **Status:** deferred promotion decision — feature is BUILT and
-   >   CI-tested (`ci.yml` runs a `production virgin-zero-skip alloc-stats`
-   >   step), but NOT in `production`; the promotion verdict the feature's own
-   >   design docs queue was never produced.
-   > - **Current number/verdict:** two independent CONDITIONAL-GO designs
-   >   (`R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 Stage 3, lines 563–568;
-   >   `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8) — both
-   >   GO-for-staged-implementation, NEITHER a promotion verdict. The only
-   >   later measurement (`R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`) is a
-   >   was/now gate for the R13-3 *magazine fix* (NOT a promotion gate) and
-   >   explicitly states *"No scenario shows a statistically significant
-   >   difference at this sample size"* + that its single-threaded loop does
-   >   not capture the cold-first-touch shape the feature targets. So the
-   >   existing evidence shows no measured win AND no measured loss, on a
-   >   workload shape the report itself says is wrong for the question — it
-   >   does not support a GO or a NO-GO.
-   > - **Next trigger:** run the design's own Stage-0/Stage-3 measurement — a
-   >   `calloc`-shaped iai arm (`alloc_zeroed` on virgin pages vs recycled
-   >   pages, ≥ 64 KiB where `memset` dominates) with paired-prefix
-   >   subtraction, plus one wall-clock arm at a memset-dominated size. Cheap:
-   >   the feature already exists; only the judge is missing (also
-   >   independently requested by the R28 review §1.3,
-   >   `docs/reviews/2026-07-29-oh-acceleration-code-project-review.md`). A
-   >   green Stage 3 is the design docs' stated precondition for even
-   >   *considering* promotion.
+   > - **Status:** Stage-0/Stage-3 measurement gap CLOSED (R29-16, task #447)
+   >   — feature is BUILT and CI-tested (`ci.yml` runs a `production
+   >   virgin-zero-skip alloc-stats` step), still NOT in `production`; a
+   >   `calloc`-shaped iai isolation + wall-clock gate at 64 KiB (verified
+   >   Small-classified, well under `SegmentLayout::SMALL_MAX` ≈ 253 KiB) now
+   >   exists, but the result is a SPLIT verdict, not a clean promotion GO —
+   >   see below.
+   > - **Current number/verdict:** **Ir isolation (deterministic, 2 byte-
+   >   identical runs): REAL, LARGE win.** Virgin 64 KiB `alloc_zeroed`
+   >   (bump-carve, skip fires) = **3,067 Ir**; recycled 64 KiB `alloc_zeroed`
+   >   (free-list pop, explicit `Node::zero` runs) = **65,624 Ir** — a
+   >   **~21.4× ratio**, confirming the feature skips a real, substantial
+   >   memset exactly as designed. **Wall-clock at the SAME 64 KiB size:
+   >   still inconclusive** — repeated reps show heavily overlapping ON/OFF
+   >   ranges (virgin ~31–80 µs/16-batch, recycled ~118–227 µs/64-batch,
+   >   both configurations), with a specific, source-verified explanation:
+   >   `production`'s default composition commits ordinary Small-segment
+   >   pages EAGERLY (`primordial-lazy-commit` on, `small-segment-lazy-commit`
+   >   OFF), so a fresh 64 KiB span's first-touch OS page-fault cost is paid
+   >   either way, masking the software-level saving at the wall-clock level
+   >   even though it is provably real in isolation (Ir cannot see real
+   >   page-fault cost at all — Callgrind emulation, not real hardware
+   >   faults).
+   > - **Next trigger:** the isolated Ir win is not itself sufficient for a
+   >   promotion GO (design docs' own bar is a wall-clock-visible win under a
+   >   realistic workload). If a future round wants to pursue promotion, the
+   >   natural next measurement (NOT done here, out of R29-16's scope) is the
+   >   SAME 64 KiB comparison under a workload where the OS first-touch cost
+   >   is amortized away from the software skip — e.g. combined with
+   >   `small-segment-lazy-commit`, or a steady-state calloc-heavy workload
+   >   that recarves already-committed pages repeatedly rather than paying a
+   >   fresh reservation's first-touch cost every call.
    > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
+   >   563–568); `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8;
+   >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding,
+   >   2026-07-29 addendum records the new result in place, append-only);
+   >   **`R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md`** (the new measurement,
+   >   task #447) + `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE_summary.csv` +
+   >   `docs/perf/_raw_r29_16_calloc_isolation_run1.log` /
+   >   `_raw_r29_16_calloc_isolation_run2.log` /
+   >   `_raw_r29_16_wallclock_off_clean.log` /
+   >   `_raw_r29_16_wallclock_on_clean.log` /
+   >   `_raw_r29_16_wallclock_off_final.log` /
+   >   `_raw_r29_16_wallclock_on_final.log` /
+   >   `_raw_r29_16_wallclock_off_run1.log` / `_raw_r29_16_wallclock_on_run1.log`.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D25`.
 
 26. **R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)

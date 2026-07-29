@@ -1,0 +1,20 @@
+  Estimated Cycles:                    2497|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 79 without regressions; 0 regressed; 79 benchmarks finished in 52.9598s
+
+  bench                                              Ir            L1            L2           RAM     EstCycles        Ir/op*
+  ---------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  alloc_zeroed_calloc_virgin_64k_prefix          66,132       130,821           107         1,001       166,391             -
+  alloc_zeroed_calloc_virgin_64k                 69,199       134,706           111         1,097       173,656             -
+  alloc_zeroed_calloc_recycled_64k_prefix       134,819       264,834           129         2,125       339,854             -
+  alloc_zeroed_calloc_recycled_64k              200,443       394,982         1,157         2,135       475,492             -
+
+  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with
+    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc
+    rows use large_alloc_free_cycle (B=3,308); mimalloc_* rows use
+    mimalloc_bootstrap_proxy (B=13,050) — the two allocators' bootstrap
+    constants are never mixed (R22-15/task #366). Comparable across benches
+    within the SAME arm; the honest unit for per-op thresholds (review finding
+    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.
+
+[iai] PASS — 4 bench(es) produced Ir

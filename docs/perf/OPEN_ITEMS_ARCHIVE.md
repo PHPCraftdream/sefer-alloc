@@ -979,6 +979,34 @@ don't rewrite" convention.
    docs/indexing only — it does NOT run the missing measurement and does NOT
    change `production`'s composition.
 
+   **2026-07-29 update (R29-16, task #447):** the missing Stage-0/Stage-3
+   measurement this item named as its "Next trigger" was run. New arms
+   `benches/perf_gate_iai.rs::alloc_zeroed_calloc_{virgin,recycled}_64k[_prefix]`
+   (iai, paired-prefix subtraction, `alloc-core + alloc-decommit +
+   virgin-zero-skip + bench-internals`, Linux/WSL only) isolate ONE
+   `alloc_zeroed(64 KiB)` call's own Ir cost on a genuinely virgin
+   bump-carved block vs. a genuinely recycled/dirty free-list-popped block.
+   Result (2 byte-identical runs): virgin = 3,067 Ir, recycled = 65,624 Ir
+   (~21.4× ratio) — a real, large, deterministic confirmation that the
+   feature skips a substantial memset exactly as designed. New wall-clock
+   bench `benches/r29_16_virgin_zero_skip_calloc_wallclock.rs` (mirrors
+   R13-3's own was/now structure) at the SAME 64 KiB size found NO clean
+   ON/OFF separation across repeated reps, with a specific, source-verified
+   explanation: `production`'s default composition commits ordinary
+   Small-segment pages eagerly (`primordial-lazy-commit` on,
+   `small-segment-lazy-commit` off), so a fresh 64 KiB span's OS first-touch
+   page-fault cost is paid either way, masking the software-level saving at
+   the wall-clock level even though Ir proves it is real. No new
+   `bench-internals` hook was needed — both scenarios were built entirely
+   from already-shipped, already-safe `AllocCore::alloc`/`alloc_zeroed`/
+   `dealloc` plus pre-existing `#[doc(hidden)]` read-only diagnostics
+   (`dbg_layout_class_for`/`dbg_block_size`). No production default was
+   changed. Full report: `docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` +
+   `_summary.csv` + six `_raw_r29_16_*.log` files (see that report's §7 for
+   exact reproduction commands). `docs/perf/R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`
+   received a dated append-only addendum recording the same result in place
+   (its original "no significant difference" finding was NOT rewritten).
+
 
 ---
 

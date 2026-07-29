@@ -1071,6 +1071,201 @@ fn alloc_clear_magazine_only_16b() {
 }
 
 // ---------------------------------------------------------------------------
+// R29-16 (task #447) -- `calloc`-shaped isolation of the `virgin-zero-skip`
+// (R9-5/R11-8/R13-3) `Node::zero` skip, at a size large enough for the
+// skipped memset to be a real cost, not noise.
+//
+// This fills the measurement gap the R28 review's oh-acceleration-code-
+// project review flagged at its §1.3 and `docs/perf/OPEN_ITEMS.md` item 25:
+// the feature is built and CI-tested (`ci.yml`'s `production virgin-zero-skip
+// alloc-stats` row) but its own design docs' Stage-0/Stage-3 promotion gate
+// (`R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11) was never run, and the one existing
+// measurement (`R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`) explicitly says its
+// own single-threaded, small-class (8 KiB `TARGET_CLASS=30`) loop does NOT
+// capture the shape this feature targets: a genuinely fresh/virgin large-ish
+// allocation vs. a recycled/dirty one, at a size where the skipped
+// `Node::zero` pass is not dwarfed by everything else `alloc_zeroed` does.
+//
+// Size choice: 64 KiB (`65536`). Verified against this project's own
+// geometry (not assumed): `os::SEGMENT` is `1 << 22` = 4 MiB
+// (`src/alloc_core/os.rs:65`), and under plain `production` (no
+// `medium-classes`) `SegmentLayout::SMALL_MAX` is `258752` bytes (~253 KiB,
+// the 40th geometric-progression small-class entry -- confirmed by direct
+// build, not from the stale-looking `EXTRAS`-array top of `16384`, which is
+// only the largest EXPLICIT extra class, not the table's overall max once
+// merged with the 40-entry geometric run). 64 KiB is comfortably inside the
+// Small range (class index 42 of 49; confirmed via `dbg_layout_class_for`),
+// so the virgin-vs-recycled distinction under test here is the SMALL-path
+// one `virgin-zero-skip` actually gates -- NOT the Large-path freshness skip,
+// which is a SEPARATE, ALREADY-unconditional mechanism in `alloc_core.rs`'s
+// `alloc_zeroed` (R8-8/task #221, no feature gate at all) that this task does
+// NOT touch. 64 KiB is also comfortably larger than R13-3's own 8 KiB
+// `TARGET_CLASS`, and per the design docs' analytical memset-bandwidth table
+// (`R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §8), 64 KiB costs ~2.5 us of memset on a
+// real host at L2 bandwidth -- a size where the skipped pass is a real cost,
+// not a rounding error next to bump-carve/free-list-pop overhead.
+//
+// No new `bench-internals` hook was needed: virgin vs. recycled states are
+// constructed entirely from already-shipped, already-safe surface --
+// `AllocCore::alloc`/`dealloc`/`alloc_zeroed` (ordinary safe/`unsafe fn`
+// production API) plus the pre-existing `#[doc(hidden)]` diagnostics
+// `dbg_layout_class_for`/`dbg_block_size` (pure reads, no raw-pointer
+// metadata mutation, not gated `bench-internals` because neither one is the
+// R25-1-class hazard the CLAUDE.md benchmark-hook rule targets).
+//
+// Pattern: the established paired-prefix-subtraction shape (R28-1's
+// `flush_class` isolation, R29-10's `clear_magazine` isolation, both above).
+// `alloc_zeroed_calloc_virgin_64k_prefix` measures ONLY the shared setup (a
+// fresh `AllocCore`, i.e. one-time bootstrap `B`); the paired arm does that
+// SAME setup plus one `alloc_zeroed(64 KiB)` on a segment that has NEVER
+// served this class before -- a genuine bump-carve, `payload_virgin == true`
+// (real OS) at carve time, so `virgin-zero-skip` should fire and skip
+// `Node::zero` entirely. `Ir(virgin) - Ir(virgin_prefix)` isolates ONE virgin
+// `alloc_zeroed(64 KiB)` call's own cost.
+//
+// `alloc_zeroed_calloc_recycled_64k_prefix` / `_recycled_64k` mirror this
+// exactly, except the shared prefix additionally does one plain `alloc` +
+// `write_bytes` (dirty every byte) + `dealloc` of the SAME class/size BEFORE
+// the timed `alloc_zeroed` call -- so the timed call is guaranteed (LIFO
+// single-block free list at this class, same guarantee
+// `tests/alloc_zeroed_virgin_small_skip.rs`'s counterfactual test (b) relies
+// on) to pop the just-freed, just-dirtied block back off the free list: never
+// virgin by the dispatch conjunct (`alloc_small_with_virgin`'s doc), so
+// `Node::zero` MUST run. `Ir(recycled) - Ir(recycled_prefix)` isolates that
+// SAME shape's cost, but through the free-list-pop + explicit-zero path
+// instead of the virgin-carve + skip path.
+//
+// `Ir(virgin) - Ir(recycled)` (after each is prefix-subtracted) isolates the
+// virgin-carve-and-skip vs. recycled-pop-and-zero delta at 64 KiB -- the
+// number this task exists to produce. `docs/perf/R29_16_VIRGIN_ZERO_SKIP_
+// CALLOC_GATE.md` has the measured result.
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "virgin-zero-skip",
+    feature = "bench-internals"
+))]
+const CALLOC_SIZE_64K: usize = 65536;
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "virgin-zero-skip",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_virgin_64k_prefix() {
+    let core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    black_box(&core);
+    // Deliberately nothing further: this arm measures ONLY the shared
+    // process/AllocCore bootstrap cost, common to the paired
+    // `alloc_zeroed_calloc_virgin_64k` arm below.
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "virgin-zero-skip",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_virgin_64k() {
+    let mut core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(CALLOC_SIZE_64K, 8).unwrap();
+    core.dbg_layout_class_for(layout)
+        .expect("64 KiB must resolve to a small class under plain production");
+
+    // Timed region: ONE `alloc_zeroed` at 64 KiB on a segment that has never
+    // served this class before -- a genuine virgin bump-carve. On a real OS
+    // backend (`cfg!(not(miri))`), `payload_virgin` reads true here (fresh
+    // bootstrap segment, nothing freed yet), so `virgin-zero-skip` should
+    // skip `Node::zero` entirely.
+    let ptr = core.alloc_zeroed(layout);
+    black_box(ptr);
+    assert!(!ptr.is_null(), "virgin alloc_zeroed(64 KiB) returned null");
+    // Deliberately leaked (never freed): freeing would be extra, asymmetric
+    // work vs. the prefix arm and is not needed -- each `#[library_benchmark]`
+    // runs in its own fresh process under Callgrind.
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "virgin-zero-skip",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_recycled_64k_prefix() {
+    let mut core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(CALLOC_SIZE_64K, 8).unwrap();
+    core.dbg_layout_class_for(layout)
+        .expect("64 KiB must resolve to a small class under plain production");
+
+    // Shared setup, common to the paired `alloc_zeroed_calloc_recycled_64k`
+    // arm below: one plain `alloc` (virgin carve), dirty every byte with a
+    // recognizable non-zero pattern, then `dealloc` -- pushes this block onto
+    // the class's free list, dirty. This arm's timed region does nothing
+    // further.
+    let ptr = core.alloc(layout);
+    assert!(
+        !ptr.is_null(),
+        "recycled-prefix alloc(64 KiB) returned null"
+    );
+    unsafe { core::ptr::write_bytes(ptr, 0xAA, CALLOC_SIZE_64K) };
+    // SAFETY: ptr was returned by the `alloc` call immediately above with the
+    // same layout, and is freed exactly once.
+    unsafe { core.dealloc(ptr, layout) };
+    black_box(&core);
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "virgin-zero-skip",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_recycled_64k() {
+    let mut core = sefer_alloc::AllocCore::new().expect("primordial reservation");
+    let layout = Layout::from_size_align(CALLOC_SIZE_64K, 8).unwrap();
+    core.dbg_layout_class_for(layout)
+        .expect("64 KiB must resolve to a small class under plain production");
+
+    // Identical shared setup to `alloc_zeroed_calloc_recycled_64k_prefix`
+    // (see its doc comment) -- byte-identical prefix so the paired
+    // subtraction cancels it.
+    let ptr = core.alloc(layout);
+    assert!(!ptr.is_null(), "recycled alloc(64 KiB) returned null");
+    unsafe { core::ptr::write_bytes(ptr, 0xAA, CALLOC_SIZE_64K) };
+    // SAFETY: ptr was returned by the `alloc` call immediately above with the
+    // same layout, and is freed exactly once.
+    unsafe { core.dealloc(ptr, layout) };
+
+    // Timed region: ONE `alloc_zeroed` at 64 KiB, guaranteed (LIFO
+    // single-block free list at this class) to pop the SAME block just
+    // freed above -- dirty, never virgin by the dispatch conjunct, so
+    // `Node::zero` MUST run regardless of `virgin-zero-skip`.
+    let ptr2 = core.alloc_zeroed(layout);
+    black_box(ptr2);
+    assert!(
+        !ptr2.is_null(),
+        "recycled alloc_zeroed(64 KiB) returned null"
+    );
+    assert_eq!(
+        ptr, ptr2,
+        "expected the free-list pop to return the SAME address just freed \
+         (otherwise this arm did not exercise the recycled/dirty path)"
+    );
+    // Deliberately leaked (never freed further): each `#[library_benchmark]`
+    // runs in its own fresh process under Callgrind.
+}
+
+// ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
 // N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
 // is the compile-time constant swept by hand-editing that file between
@@ -2708,6 +2903,10 @@ library_benchmark_group!(
         dealloc_flush_class_only_16b,
         alloc_clear_magazine_only_16b_prefix,
         alloc_clear_magazine_only_16b,
+        alloc_zeroed_calloc_virgin_64k_prefix,
+        alloc_zeroed_calloc_virgin_64k,
+        alloc_zeroed_calloc_recycled_64k_prefix,
+        alloc_zeroed_calloc_recycled_64k,
         dealloc_prealloc_only_1088_16b,
         dealloc_free_only_1088_16b_n17,
         dealloc_free_only_1088_16b_n32,

@@ -69,3 +69,33 @@ claimed here.
 cargo bench --bench r13_3_virgin_zero_skip_wallclock --features "alloc-global fastbin alloc-decommit alloc-segment-directory"
 cargo bench --bench r13_3_virgin_zero_skip_wallclock --features "alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip"
 ```
+
+## 2026-07-29 addendum (R29-16, task #447) — the missing Stage-0/Stage-3 measurement, now filled
+
+This report's own text (above) flagged that its 8 KiB `TARGET_CLASS = 30`
+single-threaded loop does NOT capture the shape `virgin-zero-skip` targets:
+a genuinely fresh/virgin large-ish allocation vs. a recycled/dirty one, at a
+size where the skipped memset is not dwarfed by everything else
+`alloc_zeroed` does. That gap is now filled by
+`docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` — a `calloc`-shaped
+paired-prefix-subtraction iai isolation PLUS a wall-clock arm, both at 64 KiB
+(verified against this project's own `SegmentLayout::SMALL_MAX` ≈ 253 KiB and
+`os::SEGMENT` = 4 MiB geometry, not assumed).
+
+**This does NOT overwrite the conclusion above — it adds a second, different
+methodology reaching a compatible but more complete result, per this file's
+own append-only convention.** Headline: the isolated instruction-count (`Ir`)
+delta between a virgin 64 KiB `alloc_zeroed` (skip fires) and a recycled one
+(explicit `Node::zero` runs) is real, large, and deterministic — **3,067 Ir
+vs. 65,624 Ir, a ~21.4× ratio** — confirming the feature works exactly as
+designed at the instruction level. The WALL-CLOCK gate at this SAME 64 KiB
+size still shows no clean, reproducible ON/OFF separation (consistent with
+THIS report's own null finding above), but R29-16 identifies a specific,
+source-verified reason: `production`'s default composition commits ordinary
+Small-segment pages EAGERLY (`primordial-lazy-commit` is on,
+`small-segment-lazy-commit` is NOT), so a fresh 64 KiB span's first-touch OS
+page-fault cost is paid regardless of whether the first write is our
+`Node::zero` pass or the caller's own — masking the software-level saving at
+the wall-clock level even though it is provably real in isolation. See that
+report's §5 for the full reasoning and §4 for the raw numbers across repeated
+reps. `docs/perf/OPEN_ITEMS.md` item 25 is updated to reflect this result.

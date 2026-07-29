@@ -1,0 +1,50 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+warning: struct `SegmentStateAccount` is never constructed
+  --> src\alloc_core\alloc_core_small_pool.rs:34:12
+   |
+34 | pub struct SegmentStateAccount {
+   |            ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `SegmentStateReconciliation` is never constructed
+  --> src\alloc_core\alloc_core_small_pool.rs:53:12
+   |
+53 | pub struct SegmentStateReconciliation {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `recompute_total` is never used
+  --> src\alloc_core\alloc_core_small_pool.rs:84:8
+   |
+81 | impl SegmentStateReconciliation {
+   | ------------------------------- method in this implementation
+...
+84 |     fn recompute_total(&mut self) {
+   |        ^^^^^^^^^^^^^^^
+
+warning: `sefer-alloc` (lib) generated 3 warnings
+    Finished `bench` profile [optimized] target(s) in 45.32s
+     Running benches\r29_16_virgin_zero_skip_calloc_wallclock.rs (D:\dev\rust\.cargo-target\release\deps\r29_16_virgin_zero_skip_calloc_wallclock-48f493a71884a2ff.exe)
+Gnuplot not found, using plotters backend
+Benchmarking r29_16_virgin_zero_skip_calloc/virgin_64k
+Benchmarking r29_16_virgin_zero_skip_calloc/virgin_64k: Warming up for 200.00 ms
+Benchmarking r29_16_virgin_zero_skip_calloc/virgin_64k: Collecting 10 samples in estimated 800.26 ms (25k iterations)
+Benchmarking r29_16_virgin_zero_skip_calloc/virgin_64k: Analyzing
+r29_16_virgin_zero_skip_calloc/virgin_64k
+                        time:   [30.209 µs 30.954 µs 31.716 µs]
+                        change: [-47.524% -36.039% -24.128%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 10 measurements (30.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking r29_16_virgin_zero_skip_calloc/recycled_64k
+Benchmarking r29_16_virgin_zero_skip_calloc/recycled_64k: Warming up for 200.00 ms
+Benchmarking r29_16_virgin_zero_skip_calloc/recycled_64k: Collecting 10 samples in estimated 801.40 ms (6600 iterations)
+Benchmarking r29_16_virgin_zero_skip_calloc/recycled_64k: Analyzing
+r29_16_virgin_zero_skip_calloc/recycled_64k
+                        time:   [119.18 µs 120.49 µs 121.22 µs]
+                        change: [-11.845% -9.0231% -6.3772%] (p = 0.00 < 0.05)
+                        Performance has improved.
+

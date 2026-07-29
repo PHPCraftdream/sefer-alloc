@@ -1,0 +1,24 @@
+metric,arm,value,unit,commit_or_context,cpu_os,sample_count,feature_set
+ir,alloc_zeroed_calloc_virgin_64k_prefix,66132,Ir,run1,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_virgin_64k,69199,Ir,run1,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_recycled_64k_prefix,134819,Ir,run1,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_recycled_64k,200443,Ir,run1,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_virgin_64k_prefix,66132,Ir,run2,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_virgin_64k,69199,Ir,run2,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_recycled_64k_prefix,134819,Ir,run2,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir,alloc_zeroed_calloc_recycled_64k,200443,Ir,run2,WSL Ubuntu-24.04 Valgrind/Callgrind,1,production virgin-zero-skip bench-internals
+ir_delta_isolated,virgin_64k,3067,Ir_per_call,run1_and_run2_byte_identical,WSL Ubuntu-24.04 Valgrind/Callgrind,2,production virgin-zero-skip bench-internals
+ir_delta_isolated,recycled_64k,65624,Ir_per_call,run1_and_run2_byte_identical,WSL Ubuntu-24.04 Valgrind/Callgrind,2,production virgin-zero-skip bench-internals
+ir_delta_ratio,recycled_over_virgin,21.4,x,run1_and_run2_byte_identical,WSL Ubuntu-24.04 Valgrind/Callgrind,2,production virgin-zero-skip bench-internals
+wallclock_mean,virgin_64k_OFF,31.8,us_per_16_batch,clean_pair,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory
+wallclock_mean,virgin_64k_ON,30.9,us_per_16_batch,clean_pair,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip
+wallclock_mean,recycled_64k_OFF,120.0,us_per_64_batch,clean_pair,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory
+wallclock_mean,recycled_64k_ON,118.3,us_per_64_batch,clean_pair,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip
+wallclock_mean,virgin_64k_OFF,69.3,us_per_16_batch,final_pair_wide_ci,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory
+wallclock_mean,virgin_64k_ON,31.8,us_per_16_batch,final_pair_wide_ci,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip
+wallclock_mean,recycled_64k_OFF,177.9,us_per_64_batch,final_pair_wide_ci,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory
+wallclock_mean,recycled_64k_ON,123.1,us_per_64_batch,final_pair_wide_ci,Windows dev host (native),10,alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip
+size_bytes,target_size,65536,bytes,fixed,n/a,n/a,n/a
+size_class_idx,target_size,42,index_of_49,fixed,n/a,n/a,n/a
+small_max_bytes,production_no_medium_classes,258752,bytes,fixed,n/a,n/a,n/a
+segment_bytes,os_segment,4194304,bytes,fixed,n/a,n/a,n/a
