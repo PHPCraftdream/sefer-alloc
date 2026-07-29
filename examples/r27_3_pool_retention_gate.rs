@@ -65,10 +65,7 @@ use sefer_alloc::{
 
 /// `(pool_segments, pool_byte_cap)` arms. (4, 16 MiB) = current default;
 /// (8, 32 MiB) = the prospective paired default this gate exists to evaluate.
-const CONFIGS: &[(usize, usize)] = &[
-    (4, 16 * 1024 * 1024),
-    (8, 32 * 1024 * 1024),
-];
+const CONFIGS: &[(usize, usize)] = &[(4, 16 * 1024 * 1024), (8, 32 * 1024 * 1024)];
 
 /// Thread counts matching R26-1's grid.
 const THREAD_COUNTS: &[usize] = &[1, 8, 32];
@@ -227,8 +224,11 @@ fn run_child() {
     let ready_count = Arc::new(AtomicU64::new(0));
     let hold_ready = Arc::new(AtomicU64::new(0));
     let drain_acked = Arc::new(AtomicU64::new(0));
-    let caps: Arc<Vec<AtomicU64>> =
-        Arc::new((0..thread_count).map(|_| AtomicU64::new(u64::MAX)).collect());
+    let caps: Arc<Vec<AtomicU64>> = Arc::new(
+        (0..thread_count)
+            .map(|_| AtomicU64::new(u64::MAX))
+            .collect(),
+    );
     let pooled_hw: Arc<Vec<AtomicU64>> =
         Arc::new((0..thread_count).map(|_| AtomicU64::new(0)).collect());
     let pooled_final: Arc<Vec<AtomicU64>> =
@@ -273,7 +273,8 @@ fn run_child() {
             Arc::clone(&drained_sum),
         );
         handles.push(thread::spawn(move || {
-            let heap_ptr = HeapRegistry::claim_with_config(config_for(pool_segments, pool_byte_cap));
+            let heap_ptr =
+                HeapRegistry::claim_with_config(config_for(pool_segments, pool_byte_cap));
             assert!(
                 !heap_ptr.is_null(),
                 "HeapRegistry::claim_with_config returned null at thread {i}"
@@ -392,11 +393,22 @@ fn run_child() {
     let (rss_drain_kib, commit_drain_kib) = snapshot_kib();
 
     // Read per-heap pooled aggregates.
-    let pooled_hw_max = pooled_hw.iter().map(|a| a.load(Ordering::Acquire)).max().unwrap_or(0);
+    let pooled_hw_max = pooled_hw
+        .iter()
+        .map(|a| a.load(Ordering::Acquire))
+        .max()
+        .unwrap_or(0);
     let pooled_final_sum: u64 = pooled_final.iter().map(|a| a.load(Ordering::Acquire)).sum();
-    let pooled_final_max = pooled_final.iter().map(|a| a.load(Ordering::Acquire)).max().unwrap_or(0);
-    let pooled_predrain_max =
-        pooled_predrain.iter().map(|a| a.load(Ordering::Acquire)).max().unwrap_or(0);
+    let pooled_final_max = pooled_final
+        .iter()
+        .map(|a| a.load(Ordering::Acquire))
+        .max()
+        .unwrap_or(0);
+    let pooled_predrain_max = pooled_predrain
+        .iter()
+        .map(|a| a.load(Ordering::Acquire))
+        .max()
+        .unwrap_or(0);
     let drained_sum_total: u64 = drained_sum.iter().map(|a| a.load(Ordering::Acquire)).sum();
 
     let conflicts_delta = config_conflicts_total().saturating_sub(conflicts_before);
@@ -502,7 +514,10 @@ struct ChildMetrics {
 
 impl ChildMetrics {
     fn get(&self, k: &str) -> u64 {
-        *self.map.get(k).unwrap_or_else(|| panic!("child RESULT missing {k}"))
+        *self
+            .map
+            .get(k)
+            .unwrap_or_else(|| panic!("child RESULT missing {k}"))
     }
 }
 
@@ -538,7 +553,9 @@ fn run_one_child(
         .env("R27_3_REPETITION", repetition.to_string())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit());
-    let output = cmd.output().unwrap_or_else(|e| panic!("spawning child: {e}"));
+    let output = cmd
+        .output()
+        .unwrap_or_else(|e| panic!("spawning child: {e}"));
     if !output.status.success() {
         panic!(
             "R27-3 child (cap={pool_segments}, byte_cap={pool_byte_cap}, threads={thread_count}, \
@@ -578,9 +595,21 @@ fn run_orchestrator() {
                     pbc / (1024 * 1024)
                 );
                 let m = run_one_child(ps, pbc, tc, rep);
-                assert_eq!(m.get("pool_segments"), ps as u64, "child reported wrong pool_segments");
-                assert_eq!(m.get("thread_count"), tc as u64, "child reported wrong thread_count");
-                assert_eq!(m.get("repetition"), rep as u64, "child reported wrong repetition");
+                assert_eq!(
+                    m.get("pool_segments"),
+                    ps as u64,
+                    "child reported wrong pool_segments"
+                );
+                assert_eq!(
+                    m.get("thread_count"),
+                    tc as u64,
+                    "child reported wrong thread_count"
+                );
+                assert_eq!(
+                    m.get("repetition"),
+                    rep as u64,
+                    "child reported wrong repetition"
+                );
                 assert_eq!(
                     m.get("verified_cap"),
                     ps as u64,
@@ -600,14 +629,25 @@ fn run_orchestrator() {
     println!("=== aggregated (median of {REPETITIONS} reps; min..max in parens) ===");
     println!(
         "{:>6} {:>4} {:>8} {:>24} {:>24} {:>12} {:>12} {:>10} {:>12} {:>12} {:>12}",
-        "cap", "MiB", "threads", "peak_rss_kib", "rss_post_kib", "decommit_d", "pooled_hw",
-        "pooled_fin", "rss_2s_kib", "rss_drain", "drained",
+        "cap",
+        "MiB",
+        "threads",
+        "peak_rss_kib",
+        "rss_post_kib",
+        "decommit_d",
+        "pooled_hw",
+        "pooled_fin",
+        "rss_2s_kib",
+        "rss_drain",
+        "drained",
     );
     for &(ps, pbc) in CONFIGS {
         for &tc in THREAD_COUNTS {
             let cell: Vec<&ChildMetrics> = all
                 .iter()
-                .filter(|m| m.get("pool_segments") == ps as u64 && m.get("thread_count") == tc as u64)
+                .filter(|m| {
+                    m.get("pool_segments") == ps as u64 && m.get("thread_count") == tc as u64
+                })
                 .collect();
             let pick = |k: &str| -> Vec<u64> { cell.iter().map(|m| m.get(k)).collect() };
             let mut peak = pick("peak_rss_kib");
@@ -631,8 +671,17 @@ fn run_orchestrator() {
             let fmt = |v: &mut Vec<u64>, m: u64| format!("{m} ({}..{})", v[0], v[v.len() - 1]);
             println!(
                 "{:>6} {:>4} {:>8} {:>24} {:>24} {:>12} {:>12} {:>10} {:>12} {:>12} {:>12}",
-                ps, pbc / (1024 * 1024), tc, fmt(&mut peak, peak_m), fmt(&mut post, post_m),
-                dec_m, hw_m, fin_m, fmt(&mut r2, r2_m), fmt(&mut dr, dr_m), drained_m,
+                ps,
+                pbc / (1024 * 1024),
+                tc,
+                fmt(&mut peak, peak_m),
+                fmt(&mut post, post_m),
+                dec_m,
+                hw_m,
+                fin_m,
+                fmt(&mut r2, r2_m),
+                fmt(&mut dr, dr_m),
+                drained_m,
             );
         }
     }
@@ -644,7 +693,9 @@ fn run_orchestrator() {
         let get_med = |ps: usize, k: &str| -> u64 {
             let mut v: Vec<u64> = all
                 .iter()
-                .filter(|m| m.get("pool_segments") == ps as u64 && m.get("thread_count") == tc as u64)
+                .filter(|m| {
+                    m.get("pool_segments") == ps as u64 && m.get("thread_count") == tc as u64
+                })
                 .map(|m| m.get(k))
                 .collect();
             median(&mut v)
@@ -652,7 +703,8 @@ fn run_orchestrator() {
         let d_post = get_med(8, "rss_post_kib").saturating_sub(get_med(4, "rss_post_kib"));
         let d_2s = get_med(8, "rss_2s_kib").saturating_sub(get_med(4, "rss_2s_kib"));
         let d_drain = get_med(8, "rss_drain_kib").saturating_sub(get_med(4, "rss_drain_kib"));
-        let d_pooled = get_med(8, "pooled_final_sum").saturating_sub(get_med(4, "pooled_final_sum"));
+        let d_pooled =
+            get_med(8, "pooled_final_sum").saturating_sub(get_med(4, "pooled_final_sum"));
         println!(
             "threads={tc:>2}: Δrss_post=+{d_post} KiB  Δrss_2s=+{d_2s} KiB  Δrss_drain=+{d_drain} KiB  \
              Δpooled_final_sum=+{d_pooled} segs (~{} KiB)",
@@ -664,12 +716,31 @@ fn run_orchestrator() {
     println!();
     println!("=== CSV (one row per child) ===");
     let cols = [
-        "pool_segments", "pool_byte_cap_mib", "thread_count", "repetition", "verified_cap",
-        "config_conflicts_delta", "process_identity", "peak_rss_kib", "peak_commit_kib",
-        "decommit_delta", "seg_released_delta", "seg_reserved_delta", "pooled_hw_max",
-        "pooled_final_sum", "pooled_final_max", "rss_post_kib", "commit_post_kib",
-        "rss_100ms_kib", "rss_1s_kib", "rss_2s_kib", "pooled_predrain_max", "drained_sum",
-        "rss_drain_kib", "commit_drain_kib", "decay_interval_ms",
+        "pool_segments",
+        "pool_byte_cap_mib",
+        "thread_count",
+        "repetition",
+        "verified_cap",
+        "config_conflicts_delta",
+        "process_identity",
+        "peak_rss_kib",
+        "peak_commit_kib",
+        "decommit_delta",
+        "seg_released_delta",
+        "seg_reserved_delta",
+        "pooled_hw_max",
+        "pooled_final_sum",
+        "pooled_final_max",
+        "rss_post_kib",
+        "commit_post_kib",
+        "rss_100ms_kib",
+        "rss_1s_kib",
+        "rss_2s_kib",
+        "pooled_predrain_max",
+        "drained_sum",
+        "rss_drain_kib",
+        "commit_drain_kib",
+        "decay_interval_ms",
     ];
     println!("# {}", cols.join(","));
     for m in &all {
