@@ -568,7 +568,7 @@ fn run_one_child(
     parse_child_stdout(&stdout)
 }
 
-fn median(v: &mut Vec<u64>) -> u64 {
+fn median(v: &mut [u64]) -> u64 {
     if v.is_empty() {
         return 0;
     }
