@@ -1558,6 +1558,20 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r26_3_teardown_ab_cap8"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R27-4 (task #422): the REAL-default A/B arms — measures the latency win at the
+# REAL prospective byte caps (16 MiB / 32 MiB, NOT R26-3's 256 MiB ceiling) through
+# the real #[global_allocator]. Two near-identical binaries whose only difference
+# is the paired (pool_segments, pool_byte_cap) config, driven by
+# `scripts/paired-ab-runner.mjs --config docs/perf/r27_4_run.json`. Same
+# required-features triple as the r26_3 siblings.
+[[example]]
+name = "r27_4_real_default_ab_cap4"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r27_4_real_default_ab_cap8"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

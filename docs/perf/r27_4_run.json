@@ -1,0 +1,18 @@
+{
+  "_doc": "R27-4 (task #422) — A/B/B/A paired judge config: measures the latency win at the REAL prospective PAIRED default (pool_segments, pool_byte_cap) = (4,16MiB) -> (8,32MiB), through the REAL #[global_allocator] entry point (NOT the 256 MiB measurement ceiling R25-5/R26-1/R26-3 used). The two arms differ in BOTH pool_segments and pool_byte_cap (the paired change from task #419), unlike R26-3 which only varied pool_segments at a fixed generous 256 MiB byte cap. Since pool_cap resolves as min(pool_segments, pool_byte_cap/SEGMENT), both arms resolve to their labelled effective cap (4 and 8) — this run proves the real byte cap does not unexpectedly bind at the shipping config. Both arms also fix R26-3's warm-up-placement timing bug (warm-up batch now runs before the timer). Driven by: node scripts/paired-ab-runner.mjs --config docs/perf/r27_4_run.json --arms cap4,cap8",
+  "metric": "elapsed_ns",
+  "arms": {
+    "cap4": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r27_4_real_default_ab_cap4.exe"
+    },
+    "cap8": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r27_4_real_default_ab_cap8.exe"
+    }
+  },
+  "sanity": {
+    "key": "segments_reserved_total",
+    "_doc_sanity": "Both arms install a REAL SeferAlloc #[global_allocator] and run a workload that reserves segments, so BOTH must report segments_reserved_total > 0 (unlike the built-in sefer-vs-mimalloc profile where only the sefer arm is nonzero).",
+    "nonzero_arms": ["cap4", "cap8"]
+  },
+  "features_note": "production alloc-stats"
+}

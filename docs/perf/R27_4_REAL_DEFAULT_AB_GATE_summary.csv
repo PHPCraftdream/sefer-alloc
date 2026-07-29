@@ -1,0 +1,36 @@
+field,comparison,arm_a,arm_b,metric,n_pairs,mean_a_ns,mean_b_ns,mean_delta_a_minus_b_ns,t_stat,df,crit_005,significant,sign_a_faster,sign_b_faster,ties,decommit_calls_a,decommit_calls_b,segments_reserved_a,segments_reserved_b,unit
+# R27-4 (task #422) — REAL-default A/B latency gate: does the ~16% win R26-3 found
+# survive at the REAL byte cap (32 MiB, not 256 MiB) through the real
+# #[global_allocator]? YES — cap8 is statistically-significantly faster (t=8.114 >> crit
+# 2.101, sign test 19/20 favoring cap8), and the decommit cliff reproduces exactly at
+# the process level (cap4 decommit_calls_total=9 in all 40 launches; cap8=0 in all 40).
+# A same-vs-same control (cap4 vs cap4) shows t=-0.434 (well under crit) and an even
+# 11/9 sign split — the harness is NOT manufacturing a signal.
+#
+# This is the LATENCY half of the paired-default decision; the RETENTION half is
+# R27-3/task #421 (~+8 MiB/heap post-teardown, victim-activation-proven), cited
+# directly in the report rather than re-derived.
+#
+# git_commit: 9e96fd391e4bd4f29e7d4299c9c7f7a30464973c (dirty working tree)
+# rustc: 1.97.0 (2d8144b78 2026-07-07)
+# cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 8 cores / 16 logical
+# power_plan: Balanced
+# cargo_features: production alloc-stats
+# metric: elapsed_ns (wall-clock for 8 timed batches of 120 prefill+churn+teardown
+#         cycles @1024B = 960 timed cycles; warm-up batch runs BEFORE the timer — the
+#         R26-3 warm-up-placement fix applied from the start, so NOT comparable to
+#         R26-3's 9-batch raw ms figures; per-batch delta is the consistency check)
+# protocol: A/B/B/A, 20 pairs = 80 process launches (40 per arm)
+# real_byte_caps: cap4 = pool_segments 4 + pool_byte_cap 16 MiB (current default);
+#                 cap8 = pool_segments 8 + pool_byte_cap 32 MiB (prospective paired default)
+# resolved_effective_cap: cap4 min(4,4)=4; cap8 min(8,8)=8 (identical to R26-3's 256 MiB arms)
+# process_identity: subprocess-isolated (runner spawns fresh process per launch)
+# raw log: docs/perf/_raw_r27_4_real_default_ab.log
+# provenance: docs/perf/paired_ab_runs/2026-07-28T23-55-35-517Z.json (main run)
+#             docs/perf/paired_ab_runs/2026-07-28T23-56-02-705Z.json (control run)
+#
+# mean_a_ns / mean_b_ns are the mean of the 20 per-block representative values (each block
+# = mean of its 2 same-arm A/B/B/A samples). decommit_calls_a/b are the DISTINCT values
+# observed across all 40 launches per arm (both deterministic: a single value each).
+main,cap4,cap8,elapsed_ns,20,96713838,75310243,21403595,8.113880185734672,19,2.101,true,1,19,0,9,0,16,8,ns
+control,cap4,cap4,elapsed_ns,20,88553668,89758693,-1205025,-0.4335724801229836,19,2.101,false,11,9,0,9,9,16,16,ns
