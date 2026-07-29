@@ -200,6 +200,10 @@ const REVIEWED_SAFE: &[(&str, &str)] = &[
         "src/registry/heap_core_diag.rs::dbg_hash_contains_only",
         "delegates to (A)-classified value-based hash probe; no deref of base",
     ),
+    (
+        "src/registry/heap_core_diag.rs::dbg_directory_bit_for_ptr",
+        "mask→base→segment_bases() containment guard (return None on foreign)→read own SegmentHeader.segment_id_at→directory bit",
+    ),
 ];
 
 /// (B) Known-unfixed: safe `pub fn dbg_*` hooks that dereference or mutate
@@ -208,16 +212,13 @@ const REVIEWED_SAFE: &[(&str, &str)] = &[
 /// is for catching NEW instances, not for retroactively fixing (B) findings.
 /// Each entry here must be resolved by its own dedicated soundness task (same
 /// rigor as R29-7 / R29-8), then removed from this list.
-const KNOWN_UNFIXED: &[(&str, &str)] = &[(
-    "src/registry/heap_core_diag.rs::dbg_directory_bit_for_ptr",
-    "(B) dereferences base via SegmentHeader::segment_id_at() WITHOUT a \
-         contains_base / segment_bases guard — a null/foreign/arbitrary ptr \
-         whose segment-aligned base is unmapped causes a read of unmapped \
-         memory (crash), or of arbitrary mapped memory (garbage sid). The \
-         sibling dbg_segment_id_of in alloc_core_core_diag.rs does the SAME \
-         read but WITH an assert guard it explicitly calls 'the soundness fix \
-         here'. Filed as a follow-up soundness task.",
-)];
+///
+/// Currently EMPTY: the sole prior entry (`dbg_directory_bit_for_ptr`) was
+/// resolved by R29-17 (task #448) — it gained a `segment_bases()` containment
+/// guard that returns `None` on a foreign base before the `segment_id_at`
+/// header read, and was promoted to `REVIEWED_SAFE`. A future (B) finding
+/// re-populates this list; an empty list is the desired steady state.
+const KNOWN_UNFIXED: &[(&str, &str)] = &[];
 
 /// Heuristic false positives: the signature text contains `*mut`/`*const` but
 /// the pointer is NOT a parameter or return type — it appears only in a

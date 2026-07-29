@@ -244,7 +244,9 @@ impl HeapCore {
     /// TEST-ONLY (R11-2): read a single directory bit for the segment that
     /// contains `ptr`, resolved via the segment header's `segment_id` (so the
     /// caller does not need crate-internal access to compute `slot_idx`).
-    /// Returns `None` if the directory is not materialised or `ptr` is foreign.
+    /// Returns `None` if the directory is not materialised or `ptr` is foreign
+    /// (a foreign `ptr`'s segment-aligned base is not owned by this `AllocCore`,
+    /// so the containment guard below returns `None` before any header read).
     /// Thin delegation to `AllocCore::dbg_directory_get_bit` — exposed at the
     /// `HeapCore` level so integration tests driving cross-thread frees through
     /// `HeapCore::dealloc` can observe whether `drain_heap_overflow` synced the
@@ -255,6 +257,18 @@ impl HeapCore {
     pub fn dbg_directory_bit_for_ptr(&self, ptr: *mut u8, class_idx: usize) -> Option<bool> {
         use crate::alloc_core::segment_header::SegmentHeader;
         let base = os::segment_base_of_ptr(ptr);
+        // R29-17 (task #448): containment guard BEFORE the segment_id_at read.
+        // segment_id_at dereferences the segment header (`Node::read_u32`), so
+        // a null/foreign/arbitrary `ptr` whose segment-aligned base is unmapped
+        // would read unmapped memory (crash) or arbitrary mapped memory
+        // (garbage sid). Mirrors the `dbg_owner_id_for` guard shape in this
+        // file (return `None` on a foreign base) rather than the assert-panic
+        // shape of `dbg_segment_id_of` in `alloc_core_core_diag.rs`: this fn
+        // already returns `Option<bool>` and documents "ptr is foreign → None",
+        // and the single existing caller passes a genuinely live block.
+        if !self.core.segment_bases().any(|b| b == base) {
+            return None;
+        }
         let sid = SegmentHeader::segment_id_at(base) as usize;
         self.core.dbg_directory_get_bit(class_idx, sid)
     }
