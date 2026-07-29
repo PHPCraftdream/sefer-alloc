@@ -410,6 +410,36 @@ jobs:
           cargo test --features "production medium-classes exact-span-large" --no-fail-fast
           --test r14_4_promotion_move_leg_reduction
           --test r14_4_promotion_feature_off_non_disturbance
+      # R29-14 (P2, sourced from the 2026-07-29 "oh-acceleration-code-project"
+      # readonly review, §3.3): `--all-features` (the broadest per-PR clippy/
+      # test coverage) enables `numa-aware-mock`, which forces `numa-shim` to
+      # compile its `#[cfg(feature = "mock")]` dispatch arms instead of the
+      # real OS integration (`mbind(2)` on Linux, `VirtualAllocExNuma` on
+      # Windows) gated `#[cfg(not(feature = "mock"))]` in
+      # `crates/numa/src/lib.rs`. The shim crate itself IS tested on real
+      # kernels per-PR (`numa-shim-windows`/`numa-shim-macos`, `-p numa-shim`
+      # without `mock`), but that covers only the shim IN ISOLATION — not
+      # whether `sefer-alloc` built with `numa-aware` and WITHOUT
+      # `numa-aware-mock` still compiles/links against it (the actual
+      # integration surface: `src/alloc_core/numa.rs`'s thin wrapper calling
+      # into the shim's real functions). The only job that builds this
+      # combination is `numa-real-kernel` below, gated to `schedule`/
+      # `workflow_dispatch` (weekly) — a signature drift in e.g.
+      # `reserve_aligned_on_node` would surface at worst a week later, not on
+      # the introducing PR. A single check-only step closes that per-PR gap
+      # cheaply: `cargo check` typechecks the real (non-mock) cfg arm without
+      # needing NUMA-capable hardware to execute it (confirmed via `cargo
+      # metadata --features "production numa-aware"`: `numa-shim`'s resolved
+      # feature set is `["default", "vmem-integration"]` — `mock` is absent,
+      # unlike under `--all-features` where it is present). Folded into this
+      # job (not a new one) because it is already the home for narrow
+      # feature-COMBINATION checks on `ubuntu-latest`, including one
+      # build-only row just above (`build (--features "alloc-global
+      # alloc-xthread fastbin alloc-decommit")`) for exactly the same
+      # "compiles under no existing row" reason.
+      - name: check (--features "production numa-aware")
+        if: ${{ !cancelled() }}
+        run: cargo check --features "production numa-aware"
 
   test-windows:
     # Windows is the primary dev OS, yet only the numa-shim real-syscall path
