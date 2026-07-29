@@ -35,13 +35,14 @@
 //! ## Run
 //!
 //! ```text
-//! cargo run --release --example r27_3_pool_retention_gate --features "production alloc-stats"
+//! cargo run --release --example r27_3_pool_retention_gate --features "production alloc-stats bench-internals"
 //! ```
 
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
-    feature = "alloc-decommit"
+    feature = "alloc-decommit",
+    feature = "bench-internals"
 ))]
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 

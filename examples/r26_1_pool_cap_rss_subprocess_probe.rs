@@ -65,7 +65,7 @@
 //! ## Run
 //!
 //! ```text
-//! cargo run --release --example r26_1_pool_cap_rss_subprocess_probe --features "production alloc-stats"
+//! cargo run --release --example r26_1_pool_cap_rss_subprocess_probe --features "production alloc-stats bench-internals"
 //! ```
 //!
 //! `alloc-decommit` (pulled in by `production`) is REQUIRED —
@@ -74,7 +74,8 @@
 #![cfg(all(
     feature = "alloc-global",
     feature = "alloc-xthread",
-    feature = "alloc-decommit"
+    feature = "alloc-decommit",
+    feature = "bench-internals"
 ))]
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 

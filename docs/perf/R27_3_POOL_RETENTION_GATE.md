@@ -308,8 +308,15 @@ retention is bounded and drainable, not a permanent pin — consistent with the
 ## 7. Reproduce
 
 ```text
-cargo run --release --example r27_3_pool_retention_gate --features "production alloc-stats"
+cargo run --release --example r27_3_pool_retention_gate --features "production alloc-stats bench-internals"
 ```
+
+> **Update (R27-7/task #425, 2026-07-29):** the original reproduce command used
+> `--features "production alloc-stats"`. `HeapCore::dbg_pool_cap` (the
+> self-verification accessor this probe depends on) was re-gated to additionally
+> require `bench-internals` (no production caller → R25-10 sub-rule 2), so
+> `bench-internals` must now be appended to the `--features` list. The probe's
+> measured numbers and verdict are unchanged.
 
 The orchestrator prints each child's `RESULT key=value` lines + `OK ...`
 self-check/victim-activation summary, then the aggregated (median, min..max)

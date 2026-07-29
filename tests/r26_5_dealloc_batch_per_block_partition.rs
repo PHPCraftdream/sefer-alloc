@@ -100,7 +100,8 @@
     feature = "alloc-global",
     feature = "fastbin",
     feature = "batch-api",
-    feature = "alloc-decommit"
+    feature = "alloc-decommit",
+    feature = "bench-internals"
 ))]
 
 use std::alloc::Layout;

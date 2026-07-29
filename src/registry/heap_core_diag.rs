@@ -85,10 +85,15 @@ impl HeapCore {
     /// `live_count` delta but corrupts two individual blocks' states.
     /// Read-only linear scan of `slots[0..count]` (`count <= TCACHE_CAP ==
     /// 16`, so bounded); does NOT touch allocator metadata, so it is a plain
-    /// safe `fn` (same category as `dbg_tcache_count`), NOT `unsafe` and NOT
-    /// `bench-internals`-gated.
+    /// safe `fn` (same category as `dbg_tcache_count`), NOT `unsafe`.
+    /// `bench-internals`-gated (R27-7/task #425: no production caller → R25-10
+    /// sub-rule 2).
     #[doc(hidden)]
-    #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals"
+    ))]
     #[must_use]
     pub fn dbg_tcache_contains(&self, c: usize, ptr: *mut u8) -> bool {
         let cls = &self.tcache.classes[c];
@@ -276,10 +281,11 @@ impl HeapCore {
     /// registry-slot reuse silently keeping an earlier arm's cap — is gone).
     /// Read-only `&self` accessor returning a `usize`; does NOT touch
     /// allocator metadata through a raw pointer, so it is a plain safe `fn`
-    /// (same category as `dbg_pooled_count`), NOT an `unsafe fn` and NOT
-    /// `bench-internals`-gated.
+    /// (same category as `dbg_pooled_count`), NOT an `unsafe fn`.
+    /// `bench-internals`-gated (R27-7/task #425: no production caller → R25-10
+    /// sub-rule 2).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_pool_cap(&self) -> usize {
         self.core.dbg_pool_cap()
@@ -328,9 +334,11 @@ impl HeapCore {
     /// segment-bitmap bit for a pointer whose segment base is validated by
     /// the delegated `contains_base_ro` check, so it is a plain safe `fn`
     /// (same category as `dbg_live_count_for` / `dbg_kind_at_tag`), NOT an
-    /// `unsafe fn` and NOT `bench-internals`-gated.
+    /// `unsafe fn`.
+    /// `bench-internals`-gated (R27-7/task #425: no production caller → R25-10
+    /// sub-rule 2).
     #[doc(hidden)]
-    #[cfg(feature = "alloc-global")]
+    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_is_free_for(&self, ptr: *mut u8) -> bool {
         self.core.dbg_is_free_for(ptr)

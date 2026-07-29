@@ -1528,7 +1528,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
 [[example]]
 name = "r26_1_pool_cap_rss_subprocess_probe"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
 # R27-3 (task #421): the pool RETENTION gate. Subprocess-per-arm isolation +
 # R26-1's config self-verification, but at the pressure-producing batch 120,
@@ -1540,7 +1540,7 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # `--features production`).
 [[example]]
 name = "r27_3_pool_retention_gate"
-required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
 # R26-3 (task #412): process-level A/B/B/A judge arms for confirming R25-5/R26-1's
 # latency/decommit finding (cap 4->8 eliminates the decommit-driven slowdown)
