@@ -691,9 +691,41 @@ impl AllocCore {
     /// bypasses the LIVE-COUNT check, not the segment-KIND safety
     /// invariant — calling it on the primordial segment would be a genuine
     /// use-after-free of the registry, not merely a test artefact.
+    ///
+    /// # Safety
+    ///
+    /// The caller MUST guarantee the segment at `ptr`'s base has
+    /// `live_count == 0` — i.e. every block previously carved from that
+    /// segment has already been freed — BEFORE calling this hook. It drives
+    /// `decommit_empty_segment_impl` directly, which returns the segment's
+    /// PAYLOAD pages to the OS (`os::decommit_pages`), resets the bump cursor,
+    /// empties every class free list, and re-zeros the alloc bitmap. This hook
+    /// deliberately does NOT verify `live_count` — the very reason a real
+    /// production caller would have invoked it after observing the segment go
+    /// empty. Calling it on a segment that still owns LIVE allocations
+    /// decommits the backing pages of those live blocks; the next access
+    /// through any of them is a use-after-free / access violation. (The
+    /// `contains_base_ro` / `Small`-kind checks below reject foreign or
+    /// non-`Small` pointers by returning `false`, but they say nothing about
+    /// `live_count`.)
+    // R29-8 (task #439): `pub unsafe fn` + `bench-internals`-gated. This hook
+    // resolves `ptr`'s segment base, checks `contains_base_ro` + `Small` kind,
+    // then decommits the payload with NO `live_count` check — a direct instance
+    // of the R25-1 (task #395) safe-`pub fn`-that-touches-allocator-state hole
+    // CLAUDE.md's benchmark-hook rule targets. `AllocCore` is a crate-root
+    // re-exported public type (`src/lib.rs`), so this was reachable from 100%
+    // safe code under plain `--features production` (alloc-decommit) — worse
+    // exposure than R29-7's `#[doc(hidden)]`-module item. NEW tier-2 site:
+    // this file is NOT a tier-1 seam module (no `#![allow(unsafe_code)]`), so
+    // the item-level `#[allow(unsafe_code)]` below is required; it mirrors
+    // `dbg_dealloc_own_thread_with_base` / `dbg_flush_class_only` in
+    // `heap_core_diag.rs`. The body forwards to the SAFE
+    // `decommit_empty_segment_impl`; the `unsafe fn` signature exists solely
+    // to enforce the `live_count == 0` precondition at the call site.
     #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
-    pub fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R29-8: `unsafe fn` boundary (live_count==0 precondition).
+    pub unsafe fn dbg_force_decommit_retain_for(&self, ptr: *mut u8) -> bool {
         let base = os::segment_base_of_ptr(ptr);
         if !self.table.contains_base_ro(base) {
             return false;

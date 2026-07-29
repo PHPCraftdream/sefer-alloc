@@ -457,7 +457,14 @@ alloc-stats = ["alloc-core"]
 # switched to that instead of pulling in `bench-internals` for no reason)
 # plus its safe twin `tls_heap::dbg_mark_local_torn_for_test` (gated here too
 # per rule 2: no production caller — but kept a SAFE `fn`, see its own
-# comment for why). The
+# comment for why). From R29-8 (task #439) this feature also covers a SECOND
+# file outside `heap_core_diag.rs`: `AllocCore::dbg_force_decommit_retain_for`
+# in `src/alloc_core/alloc_core_small_pool.rs` (a `pub unsafe fn`; one caller,
+# `tests/alloc_zeroed_virgin_small_skip.rs`'s
+# `decommit_retain_path_clears_virgin_bit` test). This was a SAFE `pub fn`
+# that decommitted a caller-pointer's segment payload via
+# `decommit_empty_segment_impl` with NO `live_count` check, on a crate-root
+# re-exported public type — the same R25-1 bug class. The
 # OLDER, pre-existing `dbg_push_to_ring` (`HeapCore`/`AllocCore`, R6-MS-4) is
 # deliberately NOT moved here: it is called from ~20 test files across the
 # whole `alloc-xthread` test suite, and gating it too would reproduce the

@@ -348,6 +348,13 @@ fn interleaved_virgin_and_reuse_always_zero() {
 /// `MADV_DONTNEED`-is-advisory-and-lazy hazard). Uses the test-only
 /// `dbg_force_decommit_retain_for` hook to drive the otherwise-unreachable
 /// path directly.
+///
+/// R29-8 (task #439): gated `bench-internals` because its only mechanism is
+/// the now-`bench-internals`-gated `dbg_force_decommit_retain_for` hook (the
+/// narrower per-item pattern from R28-2/R29-7, not a wider file-level gate —
+/// this file's six sibling tests exercise ordinary production paths and keep
+/// running under plain `production virgin-zero-skip alloc-stats`).
+#[cfg(feature = "bench-internals")]
 #[test]
 fn decommit_retain_path_clears_virgin_bit() {
     let _guard = serial();
@@ -407,7 +414,15 @@ fn decommit_retain_path_clears_virgin_bit() {
     // was freed above, so `live_count == 0` genuinely holds — this drives
     // the SAME state a real (currently nonexistent) production caller would
     // have already established, just without waiting for one to exist.
-    let forced = ac.dbg_force_decommit_retain_for(ptr);
+    //
+    // SAFETY (R29-8): every block allocated into this segment (the whole
+    // `ptrs` vec) was freed in the loop immediately above — including every
+    // block on `ptr`'s own segment — so the segment's `live_count == 0`
+    // genuinely holds. `ptr` is one of those just-freed blocks
+    // (`ptr_on_new_segment`), so its base resolves to this now-empty segment.
+    // This is the exact precondition `dbg_force_decommit_retain_for`'s
+    // `# Safety` section requires but does not itself verify.
+    let forced = unsafe { ac.dbg_force_decommit_retain_for(ptr) };
     assert!(
         forced,
         "dbg_force_decommit_retain_for must find ptr's segment"

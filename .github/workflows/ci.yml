@@ -340,9 +340,9 @@ jobs:
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
       # `r13_3_magazine_virgin_hit_skips_zero.rs`.
-      - name: test (--features "production virgin-zero-skip alloc-stats")
+      - name: test (--features "production virgin-zero-skip alloc-stats bench-internals")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production virgin-zero-skip alloc-stats" --no-fail-fast
+        run: cargo test --features "production virgin-zero-skip alloc-stats bench-internals" --no-fail-fast
       # R12-11: PageMap diagnostic write sites. Additive over `alloc-core`;
       # exercises the 4 test files whose class-mismatch oracles need the
       # PageMap actually maintained to compare against.
