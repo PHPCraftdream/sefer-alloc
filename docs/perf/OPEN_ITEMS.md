@@ -201,26 +201,32 @@ for completeness.
    >   (bump-carve, skip fires) = **3,067 Ir**; recycled 64 KiB `alloc_zeroed`
    >   (free-list pop, explicit `Node::zero` runs) = **65,624 Ir** — a
    >   **~21.4× ratio**, confirming the feature skips a real, substantial
-   >   memset exactly as designed. **Wall-clock at the SAME 64 KiB size:
-   >   still inconclusive** — repeated reps show heavily overlapping ON/OFF
-   >   ranges (virgin ~31–80 µs/16-batch, recycled ~118–227 µs/64-batch,
-   >   both configurations), with a specific, source-verified explanation:
-   >   `production`'s default composition commits ordinary Small-segment
-   >   pages EAGERLY (`primordial-lazy-commit` on, `small-segment-lazy-commit`
-   >   OFF), so a fresh 64 KiB span's first-touch OS page-fault cost is paid
-   >   either way, masking the software-level saving at the wall-clock level
-   >   even though it is provably real in isolation (Ir cannot see real
-   >   page-fault cost at all — Callgrind emulation, not real hardware
-   >   faults).
+   >   memset exactly as designed; this Stage 1 result is unaffected by the
+   >   correction below (single-shot Callgrind arms, not a reused criterion
+   >   closure). **Wall-clock at the SAME 64 KiB size: UNCONFIRMED, not a
+   >   negative result** — repeated reps show heavily overlapping ON/OFF
+   >   ranges, but the "virgin" scenario's own bench design is broken: its
+   >   `b.iter()` closure frees the whole batch at the end, so every
+   >   iteration after the first pops a RECYCLED block off the free list
+   >   `alloc_small_with_virgin`'s dispatch checks BEFORE the bump-carve path
+   >   (`src/alloc_core/alloc_core_small.rs:274-297`) — the scenario never
+   >   exercises the virgin path repeatedly. §5's original "eager page-commit
+   >   masks the saving" explanation is unconfirmed as the operative cause
+   >   (an independent readonly review, R29 round, found and traced this;
+   >   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 has the full correction).
    > - **Next trigger:** the isolated Ir win is not itself sufficient for a
    >   promotion GO (design docs' own bar is a wall-clock-visible win under a
-   >   realistic workload). If a future round wants to pursue promotion, the
-   >   natural next measurement (NOT done here, out of R29-16's scope) is the
-   >   SAME 64 KiB comparison under a workload where the OS first-touch cost
-   >   is amortized away from the software skip — e.g. combined with
-   >   `small-segment-lazy-commit`, or a steady-state calloc-heavy workload
-   >   that recarves already-committed pages repeatedly rather than paying a
-   >   fresh reservation's first-touch cost every call.
+   >   realistic workload). Before anything else, the wall-clock bench itself
+   >   needs a real fix (a fresh heap/segment per timed iteration, e.g. via
+   >   `criterion::Bencher::iter_batched` with untimed per-iteration setup) and
+   >   a re-run — the current wall-clock numbers answer nothing about this
+   >   feature. Only after that: if a future round wants to pursue promotion,
+   >   the natural next measurement is the SAME 64 KiB comparison under a
+   >   workload where the OS first-touch cost is amortized away from the
+   >   software skip — e.g. combined with `small-segment-lazy-commit`, or a
+   >   steady-state calloc-heavy workload that recarves already-committed
+   >   pages repeatedly rather than paying a fresh reservation's first-touch
+   >   cost every call.
    > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
    >   563–568); `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8;
    >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding,
@@ -434,6 +440,52 @@ for completeness.
     > - **Next trigger:** none named as a next step for THIS finding (design confirmed, no discrepancy to chase). If a future round wants to weigh changing `DEFAULT_HEADROOM_BYTES`, the missing piece is a throughput/hit-rate A/B at a smaller headroom through the real `#[global_allocator]` (the large-cache analogue of R27-4) — NOT measured here; this task's scope was the retention-cost side only, mirroring R27-3's own scope boundary.
     > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` + `_summary.csv` + `docs/perf/_raw_r29_13_large_cache_retention_gate.log`.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
+
+28. **R29 post-round readonly review — perf-report methodology findings not
+    yet independently re-verified beyond this index entry.**
+
+   > **Current state**
+   > - **Status:** filed, not actioned. Source:
+   >   `docs/reviews/2026-07-29-r29-readonly-review.md`. The review's two
+   >   confirmed build breaks and the R29-16 wall-clock bench bug were
+   >   independently re-verified and fixed/corrected the same day (see item
+   >   25 above and `CHANGELOG.md`'s Round 29 entry). The findings below
+   >   were NOT independently re-verified before filing.
+   > - **Findings (at the review's own severity, unverified further):**
+   >   (a) R29-16's "21.4× Ir win" — the review calls the implied ~1
+   >   Ir/byte ratio a "Valgrind artifact"; a same-session spot-check of
+   >   `Node::zero` (a plain `core::ptr::write_bytes` call, likely lowering
+   >   to a `rep stosb`-based libc `memset` on this target) suggests
+   >   Callgrind's documented per-iteration accounting of REP-prefixed
+   >   string instructions could produce close to 1 Ir/byte as EXPECTED
+   >   behavior, not evidence the number is wrong — this specific finding
+   >   may be a methodological misunderstanding on the review's part rather
+   >   than a real problem, but neither reading was chased to a confident
+   >   conclusion. (b) R29-3 §5's "net loss" framing — a same-session
+   >   re-derivation of the two cited figures (the §3 avoidable-overhead
+   >   percentage vs. the §5 decommit-cost comparison) suggests they answer
+   >   different questions (isolated avoidable share vs. whether adopting
+   >   the reservation-only design nets positive once its own new decommit
+   >   cost is included) and are not actually contradictory — again not
+   >   chased to a confident conclusion. (c)–(h): R29-3's "median" label on
+   >   arithmetic means; an unstated/unbounded assumption in R29-3's verdict
+   >   about full-payload first-touch; R29-13's cited SHA-256 not matching
+   >   its own stated recipe (a first application of the new R29-6
+   >   immutable-provenance rule); R29-16 citing no base SHA or immutable
+   >   identity at all (same rule, not yet applied there); R29-13's "30×"/
+   >   "32×" comparisons possibly using an absolute-vs-delta or
+   >   mismatched-baseline framing (candidate corrected figures ~12×/~16× per
+   >   the review); and R29-5's headline ratio possibly conflating "rate
+   >   over all allocations" with "rate over promotable allocations"
+   >   (candidate corrected figure ~82.5% on the narrower denominator).
+   > - **Next trigger:** a future round should independently re-verify each
+   >   of (a)–(h) against the cited raw logs/source before deciding whether
+   >   to correct the underlying reports — none of these were re-derived
+   >   with the same rigor as the build-break/wall-clock-bug findings above,
+   >   and (a)/(b) in particular may not survive scrutiny as stated.
+   > - **Evidence:** `docs/reviews/2026-07-29-r29-readonly-review.md` (full
+   >   findings list, severities P1–P3).
+   Full history: none yet — filed directly, not archived.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

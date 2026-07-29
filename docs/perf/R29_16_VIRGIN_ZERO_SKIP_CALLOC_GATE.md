@@ -239,3 +239,52 @@ node scripts/iai.mjs alloc_zeroed_calloc --features "production virgin-zero-skip
 cargo bench --bench r29_16_virgin_zero_skip_calloc_wallclock --features "alloc-global fastbin alloc-decommit alloc-segment-directory"
 cargo bench --bench r29_16_virgin_zero_skip_calloc_wallclock --features "alloc-global fastbin alloc-decommit alloc-segment-directory virgin-zero-skip"
 ```
+
+## 8. 2026-07-29 correction — the wall-clock "virgin" scenario's own design is invalid; §5's eager-page-commit explanation is unconfirmed
+
+An independent readonly review (`docs/reviews/2026-07-29-r29-readonly-review.md`,
+finding P1-4) found a real bug in `bench_virgin`
+(`benches/r29_16_virgin_zero_skip_calloc_wallclock.rs`), confirmed here by
+tracing the actual dispatch order in `alloc_small_with_virgin`
+(`src/alloc_core/alloc_core_small.rs:274-297`): step 1 checks the current
+segment's free list FIRST, and only falls through to a genuine bump-carve
+(where `virgin-zero-skip` can fire) at step 3, if no free block exists
+anywhere.
+
+`bench_virgin`'s `b.iter()` closure allocates a batch of `VIRGIN_BATCH` (16)
+blocks, then frees the WHOLE BATCH at the end of the SAME closure call — and
+criterion invokes that closure many times per sample (thousands, at this
+op's cost, within the 800 ms `measurement_time` budget). Every iteration
+after the very first therefore begins with a free list already populated by
+the PREVIOUS iteration's own `dealloc` calls: from iteration 2 onward, every
+`alloc_zeroed` in the "virgin" scenario pops a RECYCLED, DIRTY block off
+that free list (step 1) — never reaching the bump-carve path (step 3) where
+`virgin-zero-skip` could actually fire. **The "virgin" wall-clock scenario,
+as coded, measures the SAME recycled-block path as the "recycled" scenario
+for all but the first of thousands of iterations.**
+
+This directly undermines §5's claimed explanation ("eager small-segment page
+commit under `production` masks the software saving") for why no ON/OFF
+wall-clock separation was observed: the more direct and sufficient
+explanation is that the bench itself does not exercise the virgin path
+repeatedly, so no separation would be expected regardless of the page-commit
+policy. §5's eager-commit mechanism may still be true in general (it is a
+correctly-traced fact about `production`'s feature composition), but it was
+NOT established as the operative cause HERE, and this report's §4/§5/§6
+wall-clock conclusions should be read as **UNCONFIRMED, not negative** — the
+wall-clock question this task set out to answer (does the Ir-level win
+surface at the wall-clock level under a realistic workload) remains open,
+not answered null.
+
+**Not corrected in this pass** (filed as a follow-up item,
+`docs/perf/OPEN_ITEMS.md`, tracked under item 25): redesigning
+`bench_virgin` to genuinely exercise the bump-carve path on every timed
+iteration (e.g. via `criterion::Bencher::iter_batched` with a fresh
+heap/segment claimed in the untimed `setup` closure per iteration, or an
+outer batch large enough that `SEGMENT`'s carve capacity is exhausted and a
+new segment is reserved within the SAME timed iteration) and re-running
+Stage 2. **§3's Stage 1 (iai) isolation is UNAFFECTED by this bug** — that
+measurement uses fresh, single-shot `AllocCore` instances per Callgrind arm
+(not a `criterion` closure reused across iterations) and independently
+confirms virgin-vs-recycled dispatch via the `ptr == ptr2`
+free-list-reuse assertion in the recycled arm; its 21.4x Ir ratio stands.

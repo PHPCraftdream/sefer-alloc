@@ -1265,6 +1265,62 @@ fn alloc_zeroed_calloc_recycled_64k() {
     // runs in its own fresh process under Callgrind.
 }
 
+// No-op stubs so `library_benchmark_group!` resolves when `virgin-zero-skip`
+// is absent, mirroring the established `dealloc_batch`/`batch-api` stub
+// pattern above (R24-8). Without these, `cargo check --bench perf_gate_iai
+// --features "production bench-internals"` (the exact command
+// `scripts/iai.mjs`'s `DEFAULT_FEATURES` and `npm run check`'s final step
+// run) fails with 4x E0433 -- caught in the R29 readonly review, not by this
+// task's own narrower verification (which always built with
+// `virgin-zero-skip` present).
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_virgin_64k_prefix() {
+    black_box(0u8);
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_virgin_64k() {
+    black_box(0u8);
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_recycled_64k_prefix() {
+    black_box(0u8);
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-core",
+    feature = "alloc-decommit",
+    feature = "bench-internals",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_calloc_recycled_64k() {
+    black_box(0u8);
+}
+
 // ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
 // N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)

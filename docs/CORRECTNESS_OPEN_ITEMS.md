@@ -73,6 +73,48 @@ _(item 4, `canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
 assertion proving no double-release but not no leak, was resolved by R28-2
 (task #431) — see "Recently resolved" below.)_
 
+5. **Findings from the R29 post-round independent readonly review
+   (`docs/reviews/2026-07-29-r29-readonly-review.md`) not yet independently
+   re-verified or actioned beyond this index entry.** The review's two P0/P1
+   build breaks (a missing iai-arm stub, an ungated dead-code pair) and the
+   R29-16 wall-clock bench design bug were independently confirmed and
+   fixed/corrected the same day (see `CHANGELOG.md`'s Round 29 entry and
+   `docs/perf/OPEN_ITEMS.md` item 25 for those). The following were NOT
+   independently re-verified before filing — flagged here at the review's
+   own confidence/severity, for a future round to check and either action or
+   dismiss:
+   - **[P2] `AllocCore::dbg_decomp_full_cycle`** (`src/alloc_core/
+     alloc_core_small_pool.rs`, R29-3/task #434) is a SAFE `pub fn` that
+     calls `reserve_small_segment` then `release_or_pool_empty_segment` on
+     the freshly-reserved base, without going through the normal
+     `alloc_small_with_virgin` caller sequence that assigns
+     `self.small_cur = base` in between (that assignment lives in a
+     different function, `alloc_core_small.rs:2210`). The review's claim is
+     that this could leave `small_cur` dangling / cause UB on the next small
+     alloc on the same heap. A first-pass trace during this session's own
+     review suggested `small_cur` is likely never touched by this hook at
+     all (the assignment it would need to collide with lives in a codepath
+     `dbg_decomp_full_cycle` doesn't call) — but this was not chased to a
+     confident conclusion, so the concern is filed rather than dismissed.
+     Needs: a focused read of every `dbg_decomp_*` hook's actual effect on
+     `small_cur` under repeated calls (as the R29-3 measurement harness
+     itself does, in a loop), and a targeted test/assertion if a real gap is
+     confirmed.
+   - **[P3] `tests/dbg_hook_safety_tripwire.rs`'s allowlist may have scope
+     holes**, per the review: possible misclassification of `any`/`not`
+     `#[cfg]` predicates, hooks keyed by an integer parameter rather than a
+     pointer, and zero-argument hooks that still return a raw pointer — none
+     independently re-verified this session. If real, these are gaps in the
+     R29-9 tripwire's own coverage (task #440), not yet a confirmed live
+     soundness hole.
+   - **[P3] R29-1's replacement leak-bound invariant** (`segments_released_total
+     <= segments_reserved_total`, task #432) may be "near-unfalsifiable" per
+     the review, meaning most of the file's actual leak coverage now rests
+     on the `alloc-decommit + alloc-xthread`-gated per-base diagnostic block
+     rather than the global counter itself. Not independently re-verified;
+     if true this narrows (but per R29-1's own scope note does not
+     eliminate) what the global invariant alone catches.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

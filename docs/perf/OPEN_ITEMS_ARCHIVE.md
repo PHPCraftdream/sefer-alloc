@@ -1007,6 +1007,22 @@ don't rewrite" convention.
    received a dated append-only addendum recording the same result in place
    (its original "no significant difference" finding was NOT rewritten).
 
+   **2026-07-29 correction (same day, independent readonly review,
+   `docs/reviews/2026-07-29-r29-readonly-review.md` finding P1-4):** the
+   wall-clock "eager page-commit" explanation above is UNCONFIRMED. The
+   "virgin" scenario's own `criterion` closure frees its whole batch at the
+   end of each `b.iter()` call; every iteration after the first therefore
+   pops a RECYCLED block off the free list (`alloc_small_with_virgin` checks
+   the free list BEFORE the bump-carve path where the skip fires,
+   `src/alloc_core/alloc_core_small.rs:274-297`) — the scenario never
+   repeatedly exercises the virgin path it claims to measure, which is a
+   simpler and more direct explanation for the observed lack of ON/OFF
+   separation than eager page-commit. The Stage 1 Ir isolation (21.4×) is
+   UNAFFECTED (single-shot Callgrind arms, not a reused closure). See
+   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 for the full correction and
+   `docs/perf/OPEN_ITEMS.md` item 25's current-state card for the updated
+   next-trigger (fix the bench, then re-run, before any promotion decision).
+
 
 ---
 

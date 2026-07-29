@@ -113,17 +113,25 @@ measurement in a separate task; do NOT promote on the current evidence.**
 Ir at 64 KiB: virgin `alloc_zeroed` = 3,067 Ir (skip fires), recycled =
 65,624 Ir (explicit zero runs) — a real ~21.4× deterministic difference,
 confirming the feature works as designed at the instruction level. The
-wall-clock arm at the same size did NOT show a clean ON/OFF separation, for
-a specific, verified reason: `production`'s eager small-segment page-commit
-policy pays the OS first-touch page-fault cost either way, masking the
-software-level saving. Net: still **NEVER-DECIDED as a clean promotion GO**
-— the instruction-level win is real but does not (yet) demonstrate a
-wall-clock benefit under this measured workload shape; a genuine promotion
-decision would need that gap closed first (e.g. under
-`small-segment-lazy-commit` or a steady-state calloc-heavy workload). See
+wall-clock arm at the same size did NOT show a clean ON/OFF separation.
+Net: still **NEVER-DECIDED as a clean promotion GO** — the instruction-level
+win is real but does not (yet) demonstrate a wall-clock benefit; a genuine
+promotion decision would need that gap closed first. See
 `docs/perf/R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` for the full report and
 `docs/perf/OPEN_ITEMS.md` item 25 for the tracked current state. Still NOT
 promoted; no `production`/`Cargo.toml` change made.
+
+**2026-07-29 correction (same day):** the wall-clock arm's own "eager
+page-commit" explanation above was found to be UNCONFIRMED — an independent
+readonly review (`docs/reviews/2026-07-29-r29-readonly-review.md`, finding
+P1-4) traced a real design bug in the "virgin" scenario itself (its
+`criterion` closure frees its whole batch each iteration, so every iteration
+after the first pops a recycled block off the free list rather than
+exercising a genuine bump-carve). The wall-clock question remains
+UNCONFIRMED, not answered null — see
+`R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 for the full correction. The
+NEVER-DECIDED verdict above is unaffected (it was already conditioned on the
+wall-clock gap, not on this specific mechanism).
 
 ### `small-segment-lazy-commit` — CONDITIONAL-keep-opt-in (a decision EXISTS)
 

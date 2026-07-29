@@ -33,7 +33,7 @@
 //!    region is a genuine first-touch carve -- `virgin-zero-skip` should
 //!    fire and skip `Node::zero` on every one.
 //! 2. **recycled** -- prime ONE 64 KiB block, dirty it, then `alloc_zeroed`
-//!    + immediate `dealloc` of the SAME class in a tight loop: every
+//!    and immediate `dealloc` of the SAME class in a tight loop: every
 //!    iteration after the first pops the just-freed (dirty) block back off
 //!    the free list -- never virgin by the dispatch conjunct
 //!    (`alloc_small_with_virgin`'s doc), so `Node::zero` MUST run every time.

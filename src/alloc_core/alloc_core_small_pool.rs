@@ -29,7 +29,15 @@ use super::alloc_core::{AllocCore, DECOMMIT_CALLS};
 
 /// R29-4 MEASUREMENT-ONLY: per-state accounting for a heap's registered
 /// segments (count + committed/reserved bytes).
+///
+/// Gated `bench-internals`: the only consumer is
+/// `dbg_segment_state_reconciliation`, itself gated `alloc-decommit +
+/// bench-internals` — an ungated definition here is `dead_code` under plain
+/// `cargo clippy --features production -- -D warnings` (caught in the R29
+/// readonly review, not by this task's own narrower verification, mirroring
+/// R29-5's identical promotion-counter gap fixed in the same round).
 #[doc(hidden)]
+#[cfg(feature = "bench-internals")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SegmentStateAccount {
     /// Number of registered segments classified into this state.
@@ -49,6 +57,7 @@ pub struct SegmentStateAccount {
 /// holds by construction (every slot classified), making the accounting
 /// self-verifying — no unaccounted-for residual bucket.
 #[doc(hidden)]
+#[cfg(feature = "bench-internals")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SegmentStateReconciliation {
     /// The primordial segment (hosts the SegmentTable registry; one per heap).
@@ -78,6 +87,7 @@ pub struct SegmentStateReconciliation {
     pub unknown_count: usize,
 }
 
+#[cfg(feature = "bench-internals")]
 impl SegmentStateReconciliation {
     /// Recompute `total` from the per-state accounts. Called internally
     /// after classification completes.
