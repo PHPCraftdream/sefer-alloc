@@ -431,6 +431,15 @@ for completeness.
    `R26_7_LAZY_STAGE_ARRAY_GATE.md` +
    `R26_7_LAZY_STAGE_ARRAY_GATE_summary.csv` +
    `docs/perf/_raw_r26_7_lazy_stage.log`.
+   **2026-07-29 correction (R27-6, task #424):** the retained lazy
+   implementation (`dbg_dealloc_batch_lazy` / `dealloc_batch_small_lazy`) and
+   its 9 iai bench arms were REMOVED from the tree — retaining a full duplicate
+   copy of correctness-sensitive unsafe shipping code as a bench-only duplicate
+   creates logic-drift risk with no compensating benefit (the arms measured the
+   COPY, not the shipping code). The 4 eager baseline arms
+   (`dealloc_batch_fresh_{0,1,8,17}_16b`) measuring the SHIPPING
+   `dealloc_batch` were retained (genuine N-grid gap fill below N=16). The
+   measurement remains valid; the code is recoverable at commit `8679105`.
 13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 

@@ -364,3 +364,34 @@ staging-array change. It is NOT reachable from plain `--features production`
 - **Production-unaffected proof:** `cargo test --features production` green
   (pre-push gate); `cargo check --features production --lib` shows no `lazy`
   symbols (the bench-gate excludes them from a `production`-only build).
+
+---
+
+## 8. Correction — implementation removed (R27-6, task #424, 2026-07-29)
+
+**Date:** 2026-07-29. The `dbg_dealloc_batch_lazy` /
+`dealloc_batch_small_lazy` implementation (~250 lines in
+`src/registry/heap_core_dealloc_batch.rs`) and its 9 iai bench arms
+(`dealloc_batch_lazy_fresh_{0,1,8,16,17,64,81,200,1024}_16b` in
+`benches/perf_gate_iai.rs`) were removed from the tree in R27-6 (task #424).
+
+Per CLAUDE.md's benchmark-only-hook rule sub-rule 3 ("when a hook's target
+experiment is rejected (NO-GO), re-evaluate the hook itself in the SAME task
+that lands the NO-GO verdict — do not leave it behind as a dangling artifact"),
+retaining a full byte-for-byte copy of correctness-sensitive unsafe shipping
+code (`dealloc_batch_small`) as a bench-only duplicate creates future logic-
+drift risk when the shipping guards/accounting change, with no compensating
+benefit: unlike R25-7's retained arms (which measure the SHIPPING code), these
+arms measured a DUPLICATE copy — a different and worse category (flagged by
+`docs/reviews/2026-07-28-r26-readonly-review.md`).
+
+The 4 eager baseline arms (`dealloc_batch_fresh_{0,1,8,17}_16b`) were
+**retained**: they measure the shipping `dealloc_batch` and fill a genuine gap
+in the N-grid (no prior arm existed below N=16; N=17 is the first-overflow
+crossover). The `README.md` tier-2 unsafe-inventory count for
+`heap_core_dealloc_batch.rs` was restored 14→7 sites, and the total tier-2
+count 69→62.
+
+The measurement above remains valid evidence — the code is recoverable by
+checking out commit `8679105`. This note records only that the implementation
+no longer lives in `src/` or `benches/` on `main`.
