@@ -935,6 +935,93 @@ for completeness.
     unknown), opening the design now would violate the task's own explicit
     conditional-entry rule. No design doc written; no `src/` change. The next
     trigger is a bounded, cheap Stage-1 measurement, not a full design.
+25. **R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision is
+    NEVER-DECIDED (the design's own Stage-3 promotion gate was never run).**
+
+   > **Current state**
+   > - **Status:** deferred promotion decision — feature is BUILT and
+   >   CI-tested (`ci.yml` runs a `production virgin-zero-skip alloc-stats`
+   >   step), but NOT in `production`; the promotion verdict the feature's own
+   >   design docs queue was never produced.
+   > - **Current number/verdict:** two independent CONDITIONAL-GO designs
+   >   (`R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 Stage 3, lines 563–568;
+   >   `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8) — both
+   >   GO-for-staged-implementation, NEITHER a promotion verdict. The only
+   >   later measurement (`R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`) is a
+   >   was/now gate for the R13-3 *magazine fix* (NOT a promotion gate) and
+   >   explicitly states *"No scenario shows a statistically significant
+   >   difference at this sample size"* + that its single-threaded loop does
+   >   not capture the cold-first-touch shape the feature targets. So the
+   >   existing evidence shows no measured win AND no measured loss, on a
+   >   workload shape the report itself says is wrong for the question — it
+   >   does not support a GO or a NO-GO.
+   > - **Next trigger:** run the design's own Stage-0/Stage-3 measurement — a
+   >   `calloc`-shaped iai arm (`alloc_zeroed` on virgin pages vs recycled
+   >   pages, ≥ 64 KiB where `memset` dominates) with paired-prefix
+   >   subtraction, plus one wall-clock arm at a memset-dominated size. Cheap:
+   >   the feature already exists; only the judge is missing (also
+   >   independently requested by the R28 review §1.3,
+   >   `docs/reviews/2026-07-29-oh-acceleration-code-project-review.md`). A
+   >   green Stage 3 is the design docs' stated precondition for even
+   >   *considering* promotion.
+   > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
+   >   563–568) + §8 (analytical win ceiling);
+   >   `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8 (independent re-verification,
+   >   same CONDITIONAL-GO); `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (the
+   >   only post-design measurement, explicitly NOT a promotion verdict);
+   >   `Cargo.toml:737–744` (feature def + the dangling "see this task's own
+   >   report for the GO/CONDITIONAL-GO/NO-GO recommendation" pointer, which
+   >   points at a recommendation that does not exist).
+
+   Surfaced by the R28 independent review §3.2
+   (`docs/reviews/2026-07-29-oh-acceleration-code-project-review.md`): a
+   pending shipping decision was living ONLY inside a `Cargo.toml` comment —
+   exactly the failure mode `docs/CORRECTNESS_OPEN_ITEMS.md`'s own stated
+   purpose (lines 46–50) says its sibling indexes exist to prevent. The full
+   non-production-feature survey this item was extracted from lives in
+   `docs/FEATURE_PROMOTION_STATUS.md`. This task (R29-12, #443) is
+   docs/indexing only — it does NOT run the missing measurement and does NOT
+   change `production`'s composition.
+26. **R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)
+    deliberately left opt-in; deferral recorded only in R12-9 + a
+    `Cargo.toml` comment, indexed nowhere until now.**
+
+   > **Current state**
+   > - **Status:** deferred promotion decision — deliberately NOT promoted;
+   >   the decision EXISTS (unlike `virgin-zero-skip`'s never-run gate, item
+   >   25) but was tracked only in `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 and
+   >   `Cargo.toml`, not in either index.
+   > - **Current number/verdict:** R12-9 split the old `alloc-lazy-commit`
+   >   into `primordial-lazy-commit` (GO, promoted into `production`) and
+   >   `small-segment-lazy-commit` (explicitly NOT part of the
+   >   recommendation). Stated reason: `small-segment-lazy-commit`'s
+   >   decommit/recommit correctness surface on every pool eviction is
+   >   "materially larger" than the primordial's one-time bootstrap
+   >   reservation; R8-10 (task #223, `852828e`) measured
+   >   empty→pool→reuse→refill cycles under this policy at 50–75× more
+   >   commit/decommit syscalls before its admission-side fix. The fix is
+   >   permanent, but the surface-size concern is qualitative, not a missing
+   >   number — so this is a reasoned CONDITIONAL-keep-opt-in, not a
+   >   never-decided gap.
+   > - **Next trigger:** re-evaluate ONLY if a future round wants to quantify
+   >   the net steady-state win/loss of `small-segment-lazy-commit` now that
+   >   R8-10's admission fix is in place (the R8-10 regression was measured;
+   >   the post-fix net effect on a long-lived small-segment churn workload
+   >   was not).
+   > - **Evidence:** `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 (lines 231–238, the
+   >   explicit "not part of this recommendation" scope-out);
+   >   `Cargo.toml:685–704` (the `small-segment-lazy-commit` feature def with
+   >   the same reasoning); `Cargo.toml:635–656` (`alloc-lazy-commit` = pure
+   >   `["primordial-lazy-commit", "small-segment-lazy-commit"]` alias, so its
+   >   promotion status reduces entirely to `small-segment-lazy-commit`'s —
+   >   `primordial-lazy-commit` is already in `production`).
+
+   `alloc-lazy-commit` is a pure combinator alias (no `#[cfg]` in `src/`
+   tests its own name; it just turns on both sub-features), so it has no
+   independent promotion decision — its status IS `small-segment-lazy-commit`'s
+   status. Surfaced by the R28 independent review §3.2; full survey in
+   `docs/FEATURE_PROMOTION_STATUS.md`. Docs/indexing only (R29-12, #443): no
+   `src/`/`Cargo.toml` feature change, no `production` re-composition.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
