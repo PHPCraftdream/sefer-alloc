@@ -14,8 +14,10 @@ field,comparison,arm_a,arm_b,metric,n_pairs,mean_a_ns,mean_b_ns,mean_delta_a_min
 # cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 8 cores / 16 logical
 # power_plan: Balanced
 # cargo_features: production alloc-stats
-# metric: elapsed_ns (wall-clock for one run_workload() call: warm-up batch + 8 timed
-#         batches of 120 prefill+churn+teardown cycles @1024B = 960 timed cycles)
+# metric: elapsed_ns (wall-clock for one run_workload() call: 9 batches of 120
+#         prefill+churn+teardown cycles @1024B = 1080 timed cycles — the first batch
+#         is an intended warm-up but is INSIDE the timed region; see the R27-8
+#         correction in R26_3_PRODUCTION_TEARDOWN_AB_GATE.md)
 # protocol: A/B/B/A, 20 pairs = 80 process launches (40 per arm)
 # raw log: docs/perf/_raw_r26_3_production_teardown_ab.log
 # provenance: docs/perf/paired_ab_runs/2026-07-28T16-25-31-476Z.json (main run)

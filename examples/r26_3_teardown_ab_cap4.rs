@@ -59,8 +59,13 @@ const OPS: usize = 1024;
 /// verified diag) — exceeds cap=4 (~2 decommits/batch) while cap=8+ absorbs it.
 const LATENCY_BATCH_SIZE: usize = 120;
 
-/// Timed batches: 8 x 120 = 960 cycles, ~110-170 ms timed region (cap=8 faster,
-/// cap=4 slower). Paired judge's 80 launches finish well under a minute.
+/// Loop-iterated batches (8 x 120 = 960 cycles). NOTE: `run_workload()` also
+/// calls `run_latency_batch` once before this loop as an intended warm-up, but
+/// `main()` takes `t0` BEFORE `run_workload()`, so that warm-up is INSIDE the
+/// timed region — the timed region is actually 9 x 120 = 1080 cycles
+/// (~110-170 ms; cap=8 faster, cap=4 slower), not 960. Paired judge's 80
+/// launches finish well under a minute. See the R27-8 correction appended to
+/// `docs/perf/R26_3_PRODUCTION_TEARDOWN_AB_GATE.md`.
 const LATENCY_BATCHES: usize = 8;
 
 /// xorshift64, seed `0xCAFE` — verbatim from `benches/global_alloc.rs` (via R25-5).
@@ -138,7 +143,11 @@ fn run_latency_batch(layout: Layout, batch_size: usize) {
     }
 }
 
-/// One untimed warm-up batch (absorbs primordial-segment bootstrap), then `LATENCY_BATCHES` timed batches.
+/// One warm-up batch (intended to absorb primordial-segment bootstrap) followed
+/// by `LATENCY_BATCHES` looped batches. NOTE: `main()` takes `t0` BEFORE this
+/// function is called, so ALL 9 batches (warm-up + 8 looped) are inside the timed
+/// region — the warm-up is NOT actually untimed. See the R27-8 correction
+/// appended to `docs/perf/R26_3_PRODUCTION_TEARDOWN_AB_GATE.md`.
 fn run_workload() {
     let layout = Layout::from_size_align(SIZE, 8).unwrap();
     run_latency_batch(layout, LATENCY_BATCH_SIZE);

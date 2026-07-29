@@ -107,9 +107,11 @@ concurrently live), THEN churn+teardown each — reproducing criterion 0.5.1's
 setup()).collect()` batching. `LATENCY_BATCH_SIZE = 120` settles the live pooled
 segment count at 6 (R25-5's verified diag), comfortably exceeding cap=4 while
 cap=8+ absorbs it with room to spare. This binary replicates that shape exactly
-(`LATENCY_BATCH_SIZE = 120`, 8 timed batches + 1 untimed warm-up = 960 timed
-cycles), only swapping the alloc/dealloc call site from `alloc.alloc` to
-`std::alloc::alloc`.
+(`LATENCY_BATCH_SIZE = 120`, 9 batches total — 1 intended-warm-up + 8 looped —
+all inside the timed region = 9 x 120 = 1080 timed cycles; see the R27-8
+correction for why the timed region is 1080, not the "960" stated in earlier
+drafts of this report), only swapping the alloc/dealloc call site from
+`alloc.alloc` to `std::alloc::alloc`.
 
 ---
 
@@ -191,8 +193,10 @@ difference is a real allocator effect, not a measurement artifact.
   real SeferAlloc and run a workload that reserves segments — unlike the
   built-in sefer-vs-mimalloc profile where only the sefer arm is nonzero). Both
   arms passed in every launch (cap4 = 16, cap8 = 8).
-- **Per-process timed region:** warm-up batch + 8 timed batches × 120 cycles =
-  960 timed prefill+churn+teardown cycles @1024B, ~110–170 ms per process —
+- **Per-process timed region:** 9 batches × 120 cycles = 1080 timed
+  prefill+churn+teardown cycles @1024B (the first batch, though *intended* as an
+  untimed warm-up, is actually inside the timed region — `main()` takes `t0`
+  before `run_workload()`; see the R27-8 correction), ~110–170 ms per process —
   comfortably multi-millisecond for stable `Instant`-based wall-clock, short
   enough that 80 launches finish in ~25 s (this project's "Speed: short
   scenario by default"). No silent caps applied.
@@ -300,3 +304,38 @@ EFFECTIVE cap, not the one-constant default edit, so every number in this report
 stands. Only the framing of the *separate* default-change decision this report
 defers to was malformed. See `docs/perf/OPEN_ITEMS.md` item 13's 2026-07-28
 R27-1 note for full detail.
+
+---
+
+## CORRECTION (2026-07-29, R27-8, task #426)
+
+§1 and §4 (and the matching module/const doc comments in
+`examples/r26_3_teardown_ab_cap4.rs` / `_cap8.rs`, and the `# metric:` line in
+`R26_3_PRODUCTION_TEARDOWN_AB_GATE_summary.csv`) describe the timed region as
+"warm-up batch + 8 timed batches × 120 cycles = 960 timed cycles," with the first
+batch "untimed." That is **not what the code does**. In `main()` the timer starts
+(`let t0 = Instant::now()`) BEFORE `run_workload()` is called, and `run_workload()`
+runs `run_latency_batch` once (the batch the doc calls the warm-up) and THEN loops
+`LATENCY_BATCHES` (8) more times — so the warm-up batch is INSIDE the timed
+interval. The timed region is therefore **9 batches × 120 cycles = 1080 timed
+cycles**, not 8 batches / 960 cycles.
+
+This is a **description error, not a measurement error**. Both arms (cap4 and
+cap8) run the identical 9-batch timed shape, so the A/B comparison and every
+number in this report stand unchanged: the paired t-test (t = 12.212), sign test
+(20/20), mean Δ (23.667 ms), and the cap4=147.58 ms / cap8=123.91 ms means are all
+correct as measured — they were simply measured over 9 timed batches each, not 8.
+(Notably §2's decommit nuance already counted "9 batches × ~1 decommit/batch" —
+that line was always consistent with the 9-batch reality.) Task #422 (R27-4,
+commit `7d60ee4`) independently confirmed the effect holds under the corrected
+warm-up-placement shape (its per-batch delta 2.68 ms/batch vs R26-3's 2.63 ms/batch
+— within noise; see `docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md` §5).
+
+Per the project's append-correction convention, the measured ns/ms figures were NOT
+edited — only the *description* of how many batches/cycles were timed. No
+re-measurement was performed and none is needed: R26-3's own decommit count (9 =
+one per batch) already reflected the true 9-batch structure. Option B (describe
+honestly, leave the code) was chosen over moving the warm-up call because the
+historical numbers are already cited from `docs/perf/OPEN_ITEMS.md` and R27-4;
+moving the code would make those published numbers uncomparable to a re-run without
+invalidating them, for no correctness gain (R27-4 already re-confirmed the effect).
