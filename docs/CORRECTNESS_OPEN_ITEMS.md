@@ -69,29 +69,9 @@ errors, was resolved by R23-5 (task #374) — see "Recently resolved" below.)_
 _(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
 (task #375) — see "Recently resolved" below.)_
 
-4. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
-   assertion proves no double-release, not no leak.**
-
-   - **First observed:** independent read-only review of `bc4aacf`
-     (`docs/reviews/2026-07-27-post-r22-followups-readonly-review.md`),
-     surfaced while verifying `bc4aacf`'s test-isolation-race fix (see
-     "Recently resolved" below for that fix itself).
-   - **The gap:** `tests/r14_4_promotion_free_correctness.rs`'s assertion
-     `released_delta <= reserved_delta` (line ~157) only proves the
-     released count never exceeds the reserved count — a
-     double-release/corruption guard. It does NOT prove no leak: if a grow
-     reserves a segment and never releases it, `reserved_delta=1,
-     released_delta=0` satisfies `0 <= 1` trivially, so a genuinely leaked
-     (never-released) segment would pass this assertion silently.
-   - **Status:** pre-existing (predates `bc4aacf`, which correctly left it
-     untouched — that commit's scope was the test-isolation race only, not
-     the assertion's own semantics). Not yet scheduled for a fix.
-   - **Possible future strengthening (not decided/scheduled here):** a
-     per-heap/per-allocation observable (e.g. asserting the specific freed
-     promoted base is no longer registered / reachable, or is in an
-     expected bounded decommit/cache state) rather than a process-global
-     reserved/released delta, which by construction cannot distinguish
-     "still held by something else" from "genuinely never released."
+_(item 4, `canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
+assertion proving no double-release but not no leak, was resolved by R28-2
+(task #431) — see "Recently resolved" below.)_
 
 ---
 
@@ -435,3 +415,152 @@ _(item 3, the two flaky coarse-wall-clock tests, was resolved by R23-6
    - **Files changed:** `src/registry/heap_core_dealloc_batch.rs` (doc
      comment only) and this index. Zero `src/` behavior change; `git diff
      HEAD -- src/` shows only the doc-comment edit. No version bumps.
+
+5. **`canary_survives_promotion_and_free_leaves_no_leak`'s leak-bound
+   assertion proved no double-release, not no leak.** — **RESOLVED** by
+   R28-2 (task #431), a test-only strengthening (no `src/` behavior change).
+
+   - **The gap (recap):** the pre-existing `released_delta <=
+     reserved_delta` assertion in
+     `tests/r14_4_promotion_free_correctness.rs` is satisfied trivially by
+     `reserved_delta=1, released_delta=0`, so a grow that reserves a segment
+     and never releases it would pass silently — the assertion is a
+     double-release/corruption guard, not a leak proof.
+   - **Observable used — no new hook needed.** Investigated existing
+     `SegmentTable`/diagnostic surface before adding anything: `HeapCore`
+     already exposes `dbg_contains_base` (`&mut self`, gated
+     `alloc-global + alloc-xthread`, `src/registry/heap_core_diag.rs:482`)
+     and `dbg_live_count_for` (`&self`, gated `alloc-decommit`,
+     `heap_core_diag.rs:317`), both safe `pub fn`s already appropriately
+     gated per the benchmark-hook rule (not new — pre-existing, ungated
+     wider than needed). Both gates are satisfied by plain `production`
+     (`alloc-xthread` and `alloc-decommit` are both in the `production`
+     feature list), so no new hook and no `bench-internals` dependency was
+     required. To reach a `*mut HeapCore` for the CURRENT thread's own
+     `SeferAlloc` from a `tests/` integration test (`SeferAlloc` itself
+     exposes no direct `HeapCore` accessor), reused the SAME established
+     save/poison/restore pattern `tests/dealloc_only_no_bind_torn.rs`
+     already uses: `sefer_alloc::global::tls_heap::dbg_mark_local_torn_for_test()`
+     (snapshot + poison `LOCAL`) immediately followed by
+     `dbg_restore_local_for_test(saved)` (undo the poison), yielding the
+     saved pointer — binding is per-THREAD (TLS), not per-`SeferAlloc`-
+     instance, so this is exactly the same `HeapCore` the test's own
+     `a.alloc`/`a.dealloc` calls already routed through.
+   - **The new assertion:** resolves `grown`'s segment base
+     (`dbg_segment_base_of_ptr`) and calls the production teardown-trim
+     primitive `SeferAlloc::dbg_trim_current_thread()` (pre-existing,
+     `src/global/sefer_alloc.rs:423` — flushes every tcache class, drains
+     the empty-small-segment hysteresis pool, evicts the large_cache) BOTH
+     immediately before taking a `live_count` baseline AND immediately after
+     freeing `grown`, so both snapshots are read in the same converged,
+     magazine/pool/cache-free regime (the double trim matters: a freed
+     block routinely sits in the per-thread magazine rather than being
+     reconciled into `live_count` immediately — see the gap found in
+     development, below). After freeing and trimming, asserts `grown_base`
+     is in exactly one of two sanctioned states: (a) fully unregistered
+     (`dbg_contains_base == false` — the Large-segment-free path always
+     calls `table.unregister` before returning, cache-admitted or not), or
+     (b) still registered but with `live_count` decreased by EXACTLY one
+     relative to the pre-free baseline (covers the `!HAS_PROMOTION`
+     medium-ladder case, where segments are shared across size classes via
+     a single per-thread `small_cur` bump cursor and routinely host other
+     live blocks). Any other outcome (segment still registered with an
+     unchanged or increased live_count) fails with a message naming the
+     leak.
+   - **Design iteration during development (kept in the report per the
+     task's non-vacuity requirement, not just the final counterfactual):**
+     two earlier designs were tried and rejected by ACTUAL feature-combo
+     test runs, not just review — (1) a bare `dbg_contains_base(grown_base)
+     == false` assumption failed under `production medium-classes
+     exact-span-large` (`HAS_PROMOTION == false`) because medium-class
+     segments are shared across size classes (`AllocCore::carve_block`'s
+     single per-thread `small_cur`), so the segment legitimately stays
+     registered with other live blocks; (2) an absolute
+     `live_count_after_free == Some(0)` assumption also failed under the
+     same combo (`live_count` went `Some(2)` before and after — unrelated
+     co-tenant blocks were still magazine-buffered, not yet reconciled),
+     which led to discovering the magazine-residency gap (`dealloc` does
+     not call `dec_live` for a block that lands in the tcache — see
+     `HeapCore::dbg_is_free_for`'s doc comment) and the final double-trim,
+     before/after-delta design above.
+   - **Non-vacuity — mutation counterfactual, run TWICE (once for the
+     Large-promoted path, once for the medium-ladder path, since they are
+     structurally different code paths):**
+     - **Large path** (`production medium-classes`, `HAS_PROMOTION ==
+       true`): commented out the `self.table.unregister(base)` call in the
+       cache-admitted leg of `AllocCore::dealloc`'s Large branch
+       (`src/alloc_core/alloc_core.rs:1451`), simulating a grow that
+       deposits a segment into `large_cache` but never removes it from the
+       table. New assertion FAILED immediately: `LEAK: grown_base (...) is
+       still registered in the segment table ... live_count went from None
+       to None`. Reverted; `git diff` confirmed byte-identical to the
+       original; test passed again.
+     - **Medium-ladder path** (`production medium-classes exact-span-large`,
+       `HAS_PROMOTION == false`): commented out the
+       `dec_live_batch_and_maybe_decommit`-driven block inside `flush_run`
+       (`src/alloc_core/alloc_core_small_magazine.rs:682-693`, guarded with
+       `#[cfg(any())]` for a clean single-site disable), simulating a leak
+       where a block returned to the magazine-flush path never reconciles
+       its live_count. New assertion FAILED with `live_count went from
+       Some(2) to Some(2)` — exactly the "no change at all" signature the
+       assertion's own doc comment predicts for this failure mode. Reverted;
+       `git diff` confirmed byte-identical to the original; test passed
+       again. (An earlier, less isolated counterfactual attempt at the same
+       Large-branch call site under this combo produced a
+       `STATUS_ACCESS_VIOLATION` crash instead of a clean assertion failure
+       — because skipping `unregister` while `large_cache_slot_set` still
+       ran created a genuinely double-owned segment that
+       `dbg_trim_current_thread`'s `evict_all` then double-freed; this was
+       diagnostic noise from an overly-blunt counterfactual site, not a
+       defect in the new assertion, so the `flush_run` site above was used
+       instead for a clean, isolated result.)
+   - **CI-compatibility gap found and fixed during zero-trust review (before
+     commit):** the strengthened block's own two accessors need
+     `alloc-decommit` (`dbg_live_count_for`) and `alloc-xthread`
+     (`dbg_contains_base`), a strictly NARROWER feature set than this file's
+     own top-level `#![cfg(all(feature = "alloc-global", feature =
+     "medium-classes"))]` gate — and `.github/workflows/ci.yml` runs a
+     dedicated `test (--features "hardened medium-classes")` step
+     (`hardened = ["fastbin"]` = `alloc-global + alloc-xthread`, WITHOUT
+     `alloc-decommit`) that exercises this exact file. The as-delegated diff
+     compiled clean only under the two combos it was directly tested against
+     (`production medium-classes[, exact-span-large]`, both of which include
+     `alloc-decommit` via `production`) and failed to compile under `hardened
+     medium-classes` with two `E0599: no method named dbg_live_count_for`
+     errors — confirmed via `cargo test --no-run --features "hardened
+     medium-classes" --test r14_4_promotion_free_correctness` BEFORE the fix.
+     Fixed by narrowing the new block's own gate to `#[cfg(all(feature =
+     "alloc-decommit", feature = "alloc-xthread"))]` (a `let (heap,
+     grown_base, live_count_before_free) = { ... };` tuple-block before the
+     unconditional `a.dealloc` call, and a second `#[cfg(...)]` block after
+     it for the assertion itself — the actual `a.dealloc(grown, ..)` call the
+     pre-existing `released_delta <= reserved_delta` assertion needs stays
+     UNCONDITIONAL either way) rather than widening the file's own top-level
+     gate, which would have silently dropped this test from the `hardened
+     medium-classes` CI row's coverage entirely. Re-verified after the fix:
+     `cargo test --no-run --features "hardened medium-classes" --test
+     r14_4_promotion_free_correctness` compiles clean and the test still
+     passes (exercising only the original double-release guard, as before
+     this task); both counterfactuals above were RE-RUN against the
+     restructured code (not just the pre-restructure version) and still fail
+     correctly.
+   - **Verification:** `cargo test --release --features "production
+     medium-classes" --test r14_4_promotion_free_correctness` and `cargo
+     test --release --features "production medium-classes exact-span-large"
+     --test r14_4_promotion_free_correctness` both green (2 passed, 0
+     failed) after the final design landed. Repeat-run flake check: 35
+     `cargo test` invocations plus 120 direct repeated binary invocations
+     (60 per feature-combo binary, `--test-threads=4`) — 1 anomalous failure
+     out of ~155 total runs, attributed to this session's heavy concurrent
+     multi-agent build contention on the shared `target` directory
+     (repeatedly observed "Blocking waiting for file lock on build
+     directory" messages throughout), not reproduced in any of the
+     subsequent 120 direct-binary runs. Full-suite regression check:
+     `cargo test --release --features production` (226 `test result: ok`
+     blocks, 0 `FAILED`) and `cargo test --release --features "production
+     medium-classes"` (226 `test result: ok` blocks, 0 `FAILED`) both clean.
+     `cargo fmt --check` clean on the changed file.
+   - **Files changed:** `tests/r14_4_promotion_free_correctness.rs` and this
+     index. No `src/` changes (the two counterfactual breaks used for
+     non-vacuity verification were both reverted before this commit — `git
+     diff` on `src/` is empty). No version bumps.

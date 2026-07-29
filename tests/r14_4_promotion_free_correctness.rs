@@ -30,6 +30,8 @@
 use std::alloc::{GlobalAlloc, Layout};
 use std::sync::Mutex;
 
+#[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+use sefer_alloc::global::tls_heap;
 use sefer_alloc::SeferAlloc;
 
 const ALIGN: usize = 8;
@@ -127,9 +129,170 @@ fn canary_survives_promotion_and_free_leaves_no_leak() {
         "segments_reserved_total must be monotonic"
     );
 
+    // The strengthened per-base leak proof below needs `dbg_live_count_for`
+    // (`alloc-decommit`-gated) and `dbg_contains_base`
+    // (`alloc-global + alloc-xthread`-gated) — a strictly narrower feature
+    // set than this file's own top-level `#![cfg(all(feature = "alloc-global",
+    // feature = "medium-classes"))]` gate, which deliberately stays loose so
+    // this file keeps compiling (and exercising the ORIGINAL `released_delta
+    // <= reserved_delta` double-release guard) under the CI-tested `hardened
+    // medium-classes` combination (`hardened = ["fastbin"]` = `alloc-global +
+    // alloc-xthread`, WITHOUT `alloc-decommit` — see
+    // `.github/workflows/ci.yml`'s `test (--features "hardened
+    // medium-classes")` step). Gating narrower, rather than widening the
+    // file's own top-level gate, keeps that CI row's existing coverage of
+    // this test unchanged (confirmed via `cargo test --no-run --features
+    // "hardened medium-classes" --test r14_4_promotion_free_correctness`,
+    // which fails to compile WITHOUT this `#[cfg]` — `dbg_live_count_for`
+    // does not exist under that feature set). The actual `a.dealloc(grown,
+    // ..)` call below stays UNCONDITIONAL either way — it is what the
+    // pre-existing `released_delta <= reserved_delta` assertion needs
+    // regardless of which combination is compiled.
+    //
+    // Snapshot this thread's TLS-bound `*mut HeapCore` via the established
+    // save/poison/restore hook (`tests/dealloc_only_no_bind_torn.rs` uses the
+    // identical pattern) — `SeferAlloc` itself exposes no direct `HeapCore`
+    // accessor, but binding is per-THREAD (TLS), not per-`SeferAlloc`-
+    // instance (see `SeferAlloc::with_config`'s "Binding semantics" doc), so
+    // the pointer this yields for the CURRENT thread is exactly the same
+    // `HeapCore` `a.alloc`/`a.dealloc` above already routed through. Poisons
+    // `LOCAL` to `TORN` as a side effect; restored immediately below before
+    // any further allocator use on this thread.
+    //
+    // Per-base observable (open item 4, `docs/CORRECTNESS_OPEN_ITEMS.md`):
+    // resolve `grown`'s segment base and take a "genuinely allocated blocks
+    // only" live_count BASELINE before freeing it, so the post-free
+    // membership check below is anchored to the SPECIFIC segment this
+    // test's own grow produced — not a process-wide counter that cannot
+    // distinguish "still held by something else" from "genuinely never
+    // released".
+    //
+    // `dbg_trim_current_thread` (the production teardown-trim primitive,
+    // normally run on thread exit) is called HERE, BEFORE the baseline
+    // snapshot, for the same reason it is called again below after the free:
+    // `live_count` only reflects blocks that have been reconciled with the
+    // substrate — a block sitting in this thread's per-class magazine
+    // (tcache) is NOT yet subtracted from `live_count` (magazine push does
+    // NOT call `dec_live`; see `HeapCore::dbg_is_free_for`'s doc comment).
+    // Under `medium-classes` (`!HAS_PROMOTION`), every Small/Primordial-kind
+    // segment is carved from a single PER-THREAD `small_cur` bump cursor
+    // shared across every small/medium size class
+    // (`AllocCore::carve_block`, `src/alloc_core/alloc_core_small.rs`), so
+    // `grown`'s segment routinely hosts OTHER blocks from this test's own
+    // earlier `p` carve or the 31-block cold-carve refill batch — some of
+    // which may still be sitting in THEIR OWN class's magazine at this
+    // point. Trimming BEFORE the baseline flushes all of that pre-existing
+    // magazine residency first, so the baseline counts only blocks that are
+    // genuinely, substrate-level allocated right now — the SAME converged
+    // regime the post-free reading below is taken in — making the two
+    // snapshots a true apples-to-apples comparison (their only possible
+    // difference is `grown`'s own departure, not an unrelated co-tenant
+    // block happening to also drain out of its magazine in between).
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+    let (heap, grown_base, live_count_before_free) = {
+        let saved_local = tls_heap::dbg_mark_local_torn_for_test();
+        tls_heap::dbg_restore_local_for_test(saved_local);
+        let heap = saved_local;
+        assert!(
+            !heap.is_null(),
+            "this thread has no bound HeapCore — dbg_mark_local_torn_for_test \
+             returned null, which should be impossible after the alloc/realloc \
+             calls above already bound one"
+        );
+        a.dbg_trim_current_thread();
+        // SAFETY: `heap` is this thread's own live, bound `HeapCore` (just
+        // resolved above); `grown` is a live pointer returned by the `realloc`
+        // above.
+        let grown_base = unsafe { (*heap).dbg_segment_base_of_ptr(grown) };
+        // SAFETY: `heap` is this thread's own live, bound `HeapCore`.
+        let live_count_before_free = unsafe { (*heap).dbg_live_count_for(grown_base) };
+        (heap, grown_base, live_count_before_free)
+    };
+
     let grown_layout = layout(new_size);
     // SAFETY: grown live, grown_layout matches, freed exactly once.
     unsafe { a.dealloc(grown, grown_layout) };
+
+    // The strengthened leak proof itself (open item 4): after freeing
+    // `grown` AND trimming this thread's heap (flushing its magazine, pool,
+    // and large cache), `grown`'s specific segment base must be in one of
+    // exactly two SANCTIONED states — never a third, silent "still there for
+    // no accounted reason" state:
+    //
+    //   (a) UNREGISTERED — `dbg_contains_base(grown_base) == false`. This is
+    //       what happens once the trim below has run: a Large segment's
+    //       `AllocCore::dealloc` Large branch always calls
+    //       `self.table.unregister(base)` (cache-admitted, budget-declined,
+    //       and no-`alloc-decommit` eager-release alike — see
+    //       `src/alloc_core/alloc_core.rs`'s Large arm) before it returns,
+    //       and `dbg_trim_current_thread`'s `evict_all` releases whatever the
+    //       cache subsequently held; a Small/Primordial segment that became
+    //       fully empty (this test's own block was its last occupant) is
+    //       either released directly or, if pool-admitted, released by the
+    //       trim's `drain_small_pool` call. A leak that skipped this
+    //       bookkeeping (e.g. a grow that reserved a segment and never
+    //       released it) would leave this `true` forever, which is exactly
+    //       the gap this assertion closes: the OLD `released_delta <=
+    //       reserved_delta` check is satisfied trivially by
+    //       `reserved_delta=1, released_delta=0` and would not catch it, but
+    //       this per-base check would.
+    //   (b) STILL REGISTERED BUT `grown`'s OWN BLOCK GENUINELY LEFT —
+    //       `dbg_contains_base(grown_base) == true` AND
+    //       `live_count_after_trim == Some(live_count_before_free - 1)`
+    //       (exactly one fewer than before this free, never equal to or
+    //       greater than before). Reachable only when the segment still
+    //       hosts OTHER live (truly allocated, not just freed-to-magazine)
+    //       blocks from the shared-`small_cur` co-tenancy described above —
+    //       after the trim, every magazine-buffered/pooled block has been
+    //       reconciled, so any REMAINING live_count reflects genuinely
+    //       allocated blocks, and `grown`'s own departure must show up as
+    //       exactly one fewer of them. A leak that left `grown`'s own
+    //       block's slot still counted as live (e.g. a `dec_live` that
+    //       silently no-oped) would violate this, and a leak that skipped
+    //       the free's bookkeeping entirely would show
+    //       `live_count_after_trim == live_count_before_free` (no change at
+    //       all) rather than a decrement.
+    //
+    // `dbg_live_count_for` itself already returns `None` (not `Some(n)`)
+    // whenever `contains_base_ro` is `false` or the segment's kind is not
+    // Small/Primordial — so for the Large-promoted case, both
+    // `live_count_before_free` and `live_count_after_trim` are `None` and
+    // the check collapses to (a) alone, exactly as expected.
+    //
+    // `a.dealloc` above may leave `grown`'s block sitting in this thread's
+    // own per-class magazine rather than immediately returning it to the
+    // substrate — same magazine-push behavior as above. Trim again so
+    // `grown`'s own departure (and only that) is reconciled into
+    // `live_count`/`dbg_contains_base` before reading them: this flushes
+    // every tcache class back to the substrate (`dec_live` runs for each),
+    // drains the empty-small-segment hysteresis pool (releases every pooled
+    // segment to the OS), and evicts the entire large_cache (releases every
+    // cached Large span) — so after this call there is no remaining
+    // ambiguous "buffered/pooled/cached" state left for `grown_base` to hide
+    // in; only the two sanctioned end-states above are possible.
+    #[cfg(all(feature = "alloc-decommit", feature = "alloc-xthread"))]
+    {
+        a.dbg_trim_current_thread();
+        // SAFETY: `heap` is this thread's own live, bound `HeapCore`.
+        let still_registered = unsafe { (*heap).dbg_contains_base(grown_base) };
+        // SAFETY: `heap` is this thread's own live, bound `HeapCore`.
+        let live_count_after_trim = unsafe { (*heap).dbg_live_count_for(grown_base) };
+        let exactly_one_fewer = matches!(
+            (live_count_before_free, live_count_after_trim),
+            (Some(before), Some(after)) if after + 1 == before
+        );
+        assert!(
+            !still_registered || exactly_one_fewer,
+            "LEAK: grown_base ({grown_base:?}) is still registered in the \
+             segment table after being freed and this thread's heap trimmed \
+             (dbg_contains_base == true), but its live_count went from \
+             {live_count_before_free:?} to {live_count_after_trim:?} — not a \
+             decrease of exactly one — so `grown`'s own block was neither \
+             unregistered (Large-style release/cache) nor validly removed from \
+             its still-registered segment's live count (Small-style free); it \
+             is unaccounted for, i.e. genuinely leaked"
+        );
+    }
 
     let stats_after_free = a.stats();
     // No leak: the reserved/released delta introduced by this test's own
