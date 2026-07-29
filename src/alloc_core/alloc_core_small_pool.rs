@@ -16,6 +16,93 @@ use super::segment_header::{
 
 use super::alloc_core::{AllocCore, DECOMMIT_CALLS};
 
+// ---------------------------------------------------------------------------
+// R29-4 (task #435) — segment-state reconciliation snapshot types.
+//
+// `SegmentStateAccount` and `SegmentStateReconciliation` are plain-data
+// containers returned by `dbg_segment_state_reconciliation`. Defined here
+// (the pool/decommit cluster) because the method that populates them lives in
+// this file's `impl AllocCore` block; re-exported via `alloc_core::mod.rs` so
+// `examples/` and `tests/` can name the return type. `#[doc(hidden)]` —
+// measurement-only, not stable public API.
+// ---------------------------------------------------------------------------
+
+/// R29-4 MEASUREMENT-ONLY: per-state accounting for a heap's registered
+/// segments (count + committed/reserved bytes).
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SegmentStateAccount {
+    /// Number of registered segments classified into this state.
+    pub count: usize,
+    /// Bytes backed by physical memory for segments in this state
+    /// (metadata + committed payload).
+    pub committed_bytes: u64,
+    /// Total virtual-address reservation bytes for segments in this state.
+    pub reserved_bytes: u64,
+}
+
+/// R29-4 MEASUREMENT-ONLY: a full per-state reconciliation of every
+/// registered segment of one heap. Every non-NULL segment-table slot is
+/// classified into exactly ONE state; `total` is the sum of all per-state
+/// accounts (plus `unknown_count` segments whose kind byte was corrupt).
+/// The identity `sum(per_state.count) + unknown_count == table.count()`
+/// holds by construction (every slot classified), making the accounting
+/// self-verifying — no unaccounted-for residual bucket.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SegmentStateReconciliation {
+    /// The primordial segment (hosts the SegmentTable registry; one per heap).
+    pub primordial: SegmentStateAccount,
+    /// An empty small segment retained in the hysteresis pool.
+    pub small_pooled: SegmentStateAccount,
+    /// A small segment actively serving allocations (`live_count > 0`) or
+    /// the current bump-carve target (`base == small_cur`).
+    pub small_active: SegmentStateAccount,
+    /// An empty small segment (`live_count == 0`) that is NOT pooled, NOT
+    /// the current carve target, and NOT decommitted — the "registered
+    /// empty but not pooled" transitional/orphan state.
+    pub small_empty_orphan: SegmentStateAccount,
+    /// A small segment whose payload pages have been decommitted but whose
+    /// table slot is still live (the `release_follows == false` retain
+    /// path — has ZERO production callers; exists only via a test hook).
+    pub small_decommitted_retained: SegmentStateAccount,
+    /// A large/huge segment currently serving a live allocation.
+    pub large_active: SegmentStateAccount,
+    /// A large/huge segment deposited into the per-heap large-object cache
+    /// (freed, waiting for reuse; `magic == 0`).
+    pub large_cached: SegmentStateAccount,
+    /// Sum of all per-state accounts above.
+    pub total: SegmentStateAccount,
+    /// Segments whose `kind` byte decoded to `Unknown` (corrupt header) —
+    /// should always be 0 in a well-formed heap.
+    pub unknown_count: usize,
+}
+
+impl SegmentStateReconciliation {
+    /// Recompute `total` from the per-state accounts. Called internally
+    /// after classification completes.
+    fn recompute_total(&mut self) {
+        let states = [
+            self.primordial,
+            self.small_pooled,
+            self.small_active,
+            self.small_empty_orphan,
+            self.small_decommitted_retained,
+            self.large_active,
+            self.large_cached,
+        ];
+        self.total = states
+            .iter()
+            .fold(SegmentStateAccount::default(), |acc, s| {
+                SegmentStateAccount {
+                    count: acc.count + s.count,
+                    committed_bytes: acc.committed_bytes + s.committed_bytes,
+                    reserved_bytes: acc.reserved_bytes + s.reserved_bytes,
+                }
+            });
+    }
+}
+
 impl AllocCore {
     /// Phase 35 (M6 decommit) — the shared dec-then-maybe-decommit step, called
     /// after a block returns to a segment's free list (own-thread `dealloc_small`
@@ -1005,5 +1092,115 @@ impl AllocCore {
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_page_size() -> usize {
         os::PAGE
+    }
+
+    /// R29-4 (task #435) MEASUREMENT-ONLY: reconcile every registered segment
+    /// of this heap into exactly ONE state, with committed/reserved bytes
+    /// totalled per state. Iterates every non-NULL segment-table slot
+    /// (`table.base_at(i)` for `i in 0..table.count()`), reads each segment's
+    /// header, and classifies it into one of seven mutually-exclusive states
+    /// (see [`SegmentStateReconciliation`]). The identity
+    /// `sum(per_state.count) + unknown_count == table.count()` holds by
+    /// construction: every slot is classified, none is skipped.
+    ///
+    /// **Safety analysis (CLAUDE.md benchmark-hook rule):** this is a plain
+    /// SAFE `pub fn`, NOT `unsafe fn`, because:
+    /// 1. It does NOT derive a segment base from a caller-provided raw
+    ///    pointer — every base comes from `self.table.base_at(i)`, the
+    ///    table's OWN non-NULL slot (inherently validated by the table's
+    ///    register/recycle invariant). This is a strictly WEAKER access
+    ///    pattern than `dbg_live_count_for` / `dbg_is_decommitted_for`
+    ///    (which take a caller `*mut u8` and validate via
+    ///    `contains_base_ro`), both of which are already safe `pub fn`.
+    /// 2. It performs NO mutation — read-only classification.
+    /// 3. The per-segment header reads (`SegmentMeta::new(base).header()`,
+    ///    field-specific reads for `live_count`/`decommitted`/`pool_prev`)
+    ///    are the SAME seam the existing `dbg_*_for` accessors use, on bases
+    ///    the table guarantees are live and mapped.
+    ///
+    /// `bench-internals`-gated (rule 2: no production caller). The
+    /// `alloc-decommit` gate is inherited from this file's module-level gate
+    /// (every method here is decommit-specific).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_segment_state_reconciliation(&self) -> SegmentStateReconciliation {
+        let mut rec = SegmentStateReconciliation::default();
+        let n = self.table.count() as usize;
+        let small_cur = self.small_cur;
+        let seg_bytes = SEGMENT as u64;
+
+        for i in 0..n {
+            let base = self.table.base_at(i);
+            if base.is_null() {
+                continue; // Recycled slot — not counted.
+            }
+
+            let kind = SegmentHeader::kind_at(base);
+            match kind {
+                SegmentKind::Primordial => {
+                    rec.primordial.count += 1;
+                    rec.primordial.committed_bytes += seg_bytes;
+                    rec.primordial.reserved_bytes += seg_bytes;
+                }
+                SegmentKind::Small => {
+                    let meta = SegmentMeta::new(base);
+                    let live = meta.live_count_of();
+                    let decommitted = meta.is_decommitted();
+                    // Pool membership test (same disjunction `unpool_if_present`
+                    // / `release_or_pool_empty_segment` use): pooled iff it IS
+                    // the head, OR its `pool_prev` is non-null.
+                    let is_pooled = self.pool_head == base || !meta.pool_prev_of().is_null();
+                    let is_cur = base == small_cur;
+
+                    if decommitted {
+                        // Payload pages returned to OS; only metadata region
+                        // stays committed.
+                        let meta_bytes = SegLayout::small_meta_end() as u64;
+                        rec.small_decommitted_retained.count += 1;
+                        rec.small_decommitted_retained.committed_bytes += meta_bytes;
+                        rec.small_decommitted_retained.reserved_bytes += seg_bytes;
+                    } else if is_pooled {
+                        rec.small_pooled.count += 1;
+                        rec.small_pooled.committed_bytes += seg_bytes;
+                        rec.small_pooled.reserved_bytes += seg_bytes;
+                    } else if live > 0 || is_cur {
+                        rec.small_active.count += 1;
+                        rec.small_active.committed_bytes += seg_bytes;
+                        rec.small_active.reserved_bytes += seg_bytes;
+                    } else {
+                        // live == 0, not pooled, not small_cur, not decommitted
+                        // — the "registered empty but not pooled" orphan state.
+                        rec.small_empty_orphan.count += 1;
+                        rec.small_empty_orphan.committed_bytes += seg_bytes;
+                        rec.small_empty_orphan.reserved_bytes += seg_bytes;
+                    }
+                }
+                SegmentKind::Large => {
+                    let hdr = SegmentMeta::new(base).header();
+                    let span = hdr.span_usable as u64;
+                    let res_len = hdr.reservation_len as u64;
+                    // A cached Large segment has its `magic` field atomically
+                    // zeroed at deposit (`alloc_core.rs` large-cache deposit
+                    // path); an active Large segment retains `SEGMENT_MAGIC`.
+                    let is_cached = hdr.magic == 0;
+                    if is_cached {
+                        rec.large_cached.count += 1;
+                        rec.large_cached.committed_bytes += span;
+                        rec.large_cached.reserved_bytes += res_len;
+                    } else {
+                        rec.large_active.count += 1;
+                        rec.large_active.committed_bytes += span;
+                        rec.large_active.reserved_bytes += res_len;
+                    }
+                }
+                SegmentKind::Unknown => {
+                    rec.unknown_count += 1;
+                }
+            }
+        }
+
+        rec.recompute_total();
+        rec
     }
 }

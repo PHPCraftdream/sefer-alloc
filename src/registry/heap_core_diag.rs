@@ -305,6 +305,24 @@ impl HeapCore {
         self.core.dbg_pool_cap()
     }
 
+    /// R29-4 (task #435) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_segment_state_reconciliation`] — exposed at the
+    /// `HeapCore` level (mirroring `dbg_pooled_count`'s / `dbg_pool_cap`'s
+    /// existing delegation pattern in this file) so the R29-4 probe can
+    /// snapshot the per-state segment accounting from a claimed heap.
+    /// Returns a [`SegmentStateReconciliation`] that classifies every
+    /// registered segment into exactly one state. Read-only `&self`;
+    /// does NOT mutate allocator state. `bench-internals`-gated
+    /// (no production caller → R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_segment_state_reconciliation(
+        &self,
+    ) -> crate::alloc_core::SegmentStateReconciliation {
+        self.core.dbg_segment_state_reconciliation()
+    }
+
     /// TEST-ONLY (R11-2): resolve the base address of the segment that
     /// contains `ptr`. Thin delegation to `alloc_core::os::segment_base_of_ptr`
     /// — exposed at the `HeapCore` level because `alloc_core::os` is

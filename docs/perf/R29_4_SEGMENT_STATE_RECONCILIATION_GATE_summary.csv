@@ -1,0 +1,5 @@
+commit_sha,feature_set,arm,measurement_point,primordial_count,primordial_committed_kib,small_pooled_count,small_pooled_committed_kib,small_active_count,small_active_committed_kib,small_empty_orphan_count,small_empty_orphan_committed_kib,small_decommitted_retained_count,small_decommitted_retained_committed_kib,large_active_count,large_active_committed_kib,large_cached_count,large_cached_committed_kib,total_count,total_committed_kib,unknown_count,table_count,identity_holds,verified_cap,config_conflicts_delta,decommit_total,drained,pooled_post
+db35617,production+alloc-stats+bench-internals,cap4_16MiB,post_teardown,1,4096,4,16384,1,4096,0,0,0,0,0,0,0,0,6,24576,0,6,true,4,0,40,NA,4
+db35617,production+alloc-stats+bench-internals,cap4_16MiB,post_drain,1,4096,0,0,1,4096,0,0,0,0,0,0,0,0,2,8192,0,2,true,4,0,40,4,0
+db35617,production+alloc-stats+bench-internals,cap8_32MiB,post_teardown,1,4096,5,20480,2,8192,0,0,0,0,0,0,0,0,8,32768,0,8,true,8,0,0,NA,5
+db35617,production+alloc-stats+bench-internals,cap8_32MiB,post_drain,1,4096,0,0,2,8192,0,0,0,0,0,0,0,0,3,12288,0,3,true,8,0,0,5,0

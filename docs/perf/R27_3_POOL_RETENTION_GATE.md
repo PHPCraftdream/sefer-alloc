@@ -201,6 +201,24 @@ and the **post-drain residual** Δ (cap8−cap4) drops to ~+4 MiB/heap (1T: +4,0
 8T: +4,104; 32T: +4,078) — i.e. the pooled tier is reclaimed, the
 committed-non-pooled tier (~+1 segment) persists.
 
+> **Correction note (R29-4/task #435, 2026-07-29):** the
+> "committed-non-pooled" tier above was INFERRED by RSS subtraction — it was
+> never reconciled to a tracked counter or named allocator state. R29-4
+> (`docs/perf/R29_4_SEGMENT_STATE_RECONCILIATION_GATE.md`) built a
+> per-segment-state reconciliation hook and re-ran this gate's retention
+> shape with it active. **The residual IS fully reconciled** — it is the
+> `small_active` state (+1 segment = +4,096 KiB per heap). The mechanism:
+> the extra `small_active` segment retains `live_count > 0` because
+> **magazine-resident (tcache) blocks** keep its live count nonzero (blocks
+> freed to the magazine during teardown are not returned to the segment free
+> list, so `live_count` is never decremented to 0, so the segment is never
+> pool/release-eligible — which is exactly why drain does not reclaim it).
+> The "registered-empty-but-not-pooled" state the R28 review hypothesised as
+> a candidate is **structurally empty** (count = 0 at every measurement
+> point). The decomposition table above remains valid as a phenomenological
+> RSS-subtraction split; R29-4 upgrades the second tier from "inferred" to
+> "source-verified, attributed to `small_active`."
+
 **Why this is larger than R26-3's +4,100 KiB side-channel observation.** R26-3's
 `rss_after_kib` (cap8=34,576 vs cap4=30,476, Δ=+4,100) was a SIDE-EFFECT of its
 latency A/B judge, not a controlled retention measurement, and its cap4 figure

@@ -688,6 +688,33 @@ for completeness.
    share as the documented reason. Evidence:
    `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`.
 
+   **2026-07-29 (R29-4, task #435) — DONE: the R27-3 "committed-non-pooled"
+   residual IS reconciled — to the `small_active` state.** The R28 readonly
+   review (`docs/reviews/2026-07-29-r28-readonly-review.md` lines 183–213)
+   flagged that ~+4 MiB/heap of the post-drain retention delta was real but
+   not accounted to a mechanism (inferred by RSS subtraction, never reconciled
+   to a tracked counter). This task built a per-segment-state reconciliation
+   hook (`AllocCore::dbg_segment_state_reconciliation`, `bench-internals`-gated
+   safe `pub fn`) that classifies every registered segment into exactly one of
+   seven mutually-exclusive states and totals committed/reserved bytes per
+   state. Re-running R27-3's retention shape with it active: **the residual
+   IS fully reconciled.** Post-teardown Δ = +2 segments (+8,192 KiB):
+   +1 `small_pooled` (+4,096 KiB, the pooled tier — drainable) + +1
+   `small_active` (+4,096 KiB, the residual — NOT drainable). Post-drain Δ =
+   +1 segment (+4,096 KiB) = entirely `small_active`. The mechanism: the extra
+   `small_active` segment retains `live_count > 0` because magazine-resident
+   (tcache) blocks keep its live count nonzero (freed-to-magazine blocks don't
+   decrement `live_count`, so the segment was never pool/release-eligible —
+   exactly why drain doesn't reclaim it). The "registered-empty-but-not-pooled"
+   state the review hypothesised has count = 0 at every measurement point
+   (structurally empty: `release_or_pool_empty_segment` either pools or
+   releases, never leaves a segment registered-but-empty). The reconciliation
+   identity `sum(per-state count) == table count()` holds exactly at all four
+   measurement points (hard-asserted). Evidence:
+   `docs/perf/R29_4_SEGMENT_STATE_RECONCILIATION_GATE.md` +
+   `R29_4_SEGMENT_STATE_RECONCILIATION_GATE_summary.csv` +
+   `docs/perf/_raw_r29_4_reconciliation_run1.log` / `_run2.log`.
+
 ### [D] Deferred designs — implement only if trigger/victim materializes
 
 2. **R17-10 — batched deferred reclaim (sub-design A + B).**

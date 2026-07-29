@@ -1,0 +1,130 @@
+    Finished `release` profile [optimized] target(s) in 0.85s
+     Running `D:\dev\rust\.cargo-target\release\examples\r29_4_segment_state_reconciliation_gate.exe`
+=== R29-4 segment-state reconciliation gate ===
+
+--- arm: cap4_16MiB ---
+RESULT pool_segments=4
+RESULT pool_byte_cap_mib=16
+RESULT verified_cap=4
+RESULT config_conflicts_delta=0
+RESULT pooled_post=4
+RESULT table_count_post=6
+RESULT decommit_total_post=40
+RESULT drained=4
+RESULT table_count_drain=2
+RESULT post_state_primordial_count=1
+RESULT post_state_primordial_committed_kib=4096
+RESULT post_state_primordial_reserved_kib=4096
+RESULT post_state_small_pooled_count=4
+RESULT post_state_small_pooled_committed_kib=16384
+RESULT post_state_small_pooled_reserved_kib=16384
+RESULT post_state_small_active_count=1
+RESULT post_state_small_active_committed_kib=4096
+RESULT post_state_small_active_reserved_kib=4096
+RESULT post_state_small_empty_orphan_count=0
+RESULT post_state_small_empty_orphan_committed_kib=0
+RESULT post_state_small_empty_orphan_reserved_kib=0
+RESULT post_state_small_decommitted_retained_count=0
+RESULT post_state_small_decommitted_retained_committed_kib=0
+RESULT post_state_small_decommitted_retained_reserved_kib=0
+RESULT post_state_large_active_count=0
+RESULT post_state_large_active_committed_kib=0
+RESULT post_state_large_active_reserved_kib=0
+RESULT post_state_large_cached_count=0
+RESULT post_state_large_cached_committed_kib=0
+RESULT post_state_large_cached_reserved_kib=0
+RESULT post_total_count=6
+RESULT post_total_committed_kib=24576
+RESULT post_total_reserved_kib=24576
+RESULT post_unknown_count=0
+RESULT drain_state_primordial_count=1
+RESULT drain_state_primordial_committed_kib=4096
+RESULT drain_state_primordial_reserved_kib=4096
+RESULT drain_state_small_pooled_count=0
+RESULT drain_state_small_pooled_committed_kib=0
+RESULT drain_state_small_pooled_reserved_kib=0
+RESULT drain_state_small_active_count=1
+RESULT drain_state_small_active_committed_kib=4096
+RESULT drain_state_small_active_reserved_kib=4096
+RESULT drain_state_small_empty_orphan_count=0
+RESULT drain_state_small_empty_orphan_committed_kib=0
+RESULT drain_state_small_empty_orphan_reserved_kib=0
+RESULT drain_state_small_decommitted_retained_count=0
+RESULT drain_state_small_decommitted_retained_committed_kib=0
+RESULT drain_state_small_decommitted_retained_reserved_kib=0
+RESULT drain_state_large_active_count=0
+RESULT drain_state_large_active_committed_kib=0
+RESULT drain_state_large_active_reserved_kib=0
+RESULT drain_state_large_cached_count=0
+RESULT drain_state_large_cached_committed_kib=0
+RESULT drain_state_large_cached_reserved_kib=0
+RESULT drain_total_count=2
+RESULT drain_total_committed_kib=8192
+RESULT drain_total_reserved_kib=8192
+RESULT drain_unknown_count=0
+OK cap=4 byte_cap=16MiB verified_cap=4 cfg_conflicts_delta=0 pooled_post=4 table_post=6 drained=4 table_drain=2 post_empty_orphan=0 drain_empty_orphan=0
+
+--- arm: cap8_32MiB ---
+RESULT pool_segments=8
+RESULT pool_byte_cap_mib=32
+RESULT verified_cap=8
+RESULT config_conflicts_delta=0
+RESULT pooled_post=5
+RESULT table_count_post=8
+RESULT decommit_total_post=0
+RESULT drained=5
+RESULT table_count_drain=3
+RESULT post_state_primordial_count=1
+RESULT post_state_primordial_committed_kib=4096
+RESULT post_state_primordial_reserved_kib=4096
+RESULT post_state_small_pooled_count=5
+RESULT post_state_small_pooled_committed_kib=20480
+RESULT post_state_small_pooled_reserved_kib=20480
+RESULT post_state_small_active_count=2
+RESULT post_state_small_active_committed_kib=8192
+RESULT post_state_small_active_reserved_kib=8192
+RESULT post_state_small_empty_orphan_count=0
+RESULT post_state_small_empty_orphan_committed_kib=0
+RESULT post_state_small_empty_orphan_reserved_kib=0
+RESULT post_state_small_decommitted_retained_count=0
+RESULT post_state_small_decommitted_retained_committed_kib=0
+RESULT post_state_small_decommitted_retained_reserved_kib=0
+RESULT post_state_large_active_count=0
+RESULT post_state_large_active_committed_kib=0
+RESULT post_state_large_active_reserved_kib=0
+RESULT post_state_large_cached_count=0
+RESULT post_state_large_cached_committed_kib=0
+RESULT post_state_large_cached_reserved_kib=0
+RESULT post_total_count=8
+RESULT post_total_committed_kib=32768
+RESULT post_total_reserved_kib=32768
+RESULT post_unknown_count=0
+RESULT drain_state_primordial_count=1
+RESULT drain_state_primordial_committed_kib=4096
+RESULT drain_state_primordial_reserved_kib=4096
+RESULT drain_state_small_pooled_count=0
+RESULT drain_state_small_pooled_committed_kib=0
+RESULT drain_state_small_pooled_reserved_kib=0
+RESULT drain_state_small_active_count=2
+RESULT drain_state_small_active_committed_kib=8192
+RESULT drain_state_small_active_reserved_kib=8192
+RESULT drain_state_small_empty_orphan_count=0
+RESULT drain_state_small_empty_orphan_committed_kib=0
+RESULT drain_state_small_empty_orphan_reserved_kib=0
+RESULT drain_state_small_decommitted_retained_count=0
+RESULT drain_state_small_decommitted_retained_committed_kib=0
+RESULT drain_state_small_decommitted_retained_reserved_kib=0
+RESULT drain_state_large_active_count=0
+RESULT drain_state_large_active_committed_kib=0
+RESULT drain_state_large_active_reserved_kib=0
+RESULT drain_state_large_cached_count=0
+RESULT drain_state_large_cached_committed_kib=0
+RESULT drain_state_large_cached_reserved_kib=0
+RESULT drain_total_count=3
+RESULT drain_total_committed_kib=12288
+RESULT drain_total_reserved_kib=12288
+RESULT drain_unknown_count=0
+OK cap=8 byte_cap=32MiB verified_cap=8 cfg_conflicts_delta=0 pooled_post=5 table_post=8 drained=5 table_drain=3 post_empty_orphan=0 drain_empty_orphan=0
+
+=== SUMMARY: post-teardown per-state segment counts ===
+(see RESULT lines above for full per-state breakdown)

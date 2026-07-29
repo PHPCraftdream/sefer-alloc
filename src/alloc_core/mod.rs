@@ -155,6 +155,12 @@ pub(crate) use alloc_core::LARGE_ZERO_PASS_CALLS;
 /// static itself stays always-compiled.
 #[cfg(all(feature = "alloc-stats", feature = "virgin-zero-skip"))]
 pub(crate) use alloc_core::SMALL_ZERO_PASS_CALLS;
+/// R29-4 (task #435) MEASUREMENT-ONLY: the segment-state reconciliation
+/// snapshot types returned by `AllocCore::dbg_segment_state_reconciliation`.
+/// Re-exported from the private `alloc_core_small_pool` submodule so
+/// `examples/` and `tests/` can name the return type. Not stable public API.
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+pub use alloc_core_small_pool::{SegmentStateAccount, SegmentStateReconciliation};
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]

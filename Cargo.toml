@@ -1596,6 +1596,15 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r29_3_decomposition_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
+# R29-4 (task #435): segment-state reconciliation gate. Extends R27-3's
+# retention finding by attributing the ~+4 MiB/heap "committed-non-pooled"
+# residual to a specific named segment state (or honestly reporting it does
+# not fully reconcile). Uses the new `dbg_segment_state_reconciliation` hook.
+# Same required-features as the r29_3/r27_3 siblings.
+[[example]]
+name = "r29_4_segment_state_reconciliation_gate"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
