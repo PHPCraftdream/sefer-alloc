@@ -440,27 +440,27 @@ cannot be checked at runtime, so it lives in the signature, not in prose.
 | [`src/alloc_core/segment_header_gen_table.rs`](src/alloc_core/segment_header_gen_table.rs) | 3 | `gen_at` / `bump_gen` / `init_gen_table_in_place` — atomic view + write by caller base |
 | [`src/registry/heap_core_alloc.rs`](src/registry/heap_core_alloc.rs) | 6 | Internal `bump_gen` call-site blocks in `alloc` / `refill_magazine_slow` / `alloc_batch` / `alloc_small_zeroed_via_magazine` / `refill_magazine_slow_virgin` (R13-3, `virgin-zero-skip` magazine plumbing) (hardened path) |
 | [`src/registry/heap_core_dealloc_batch.rs`](src/registry/heap_core_dealloc_batch.rs) | 7 | `dealloc_batch` / `dealloc_batch_small` — `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into scalar `dealloc` / `AllocCore::flush_class` (R11-4) |
-| [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 3 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) / `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract); see the R24-6/R25-1 note below the table |
+| [`src/registry/heap_core_diag.rs`](src/registry/heap_core_diag.rs) | 4 | `dbg_push_to_ring` / `dbg_push_coarse_only_entry` (R13-1, gated `bench-internals`) / `dbg_dealloc_own_thread_with_base` (R23-3, task #372, gated `bench-internals`) / `dbg_flush_class_only` (R28-1, task #430, gated `bench-internals`) — `unsafe fn` boundaries (delegation to the unsafe producer / documented raw-pointer contract); see the R24-6/R25-1 note below the table |
 | [`src/registry/heap_core_free.rs`](src/registry/heap_core_free.rs) | 7 | dealloc-routing `unsafe fn` boundaries (caller-pointer contract) + internal call-site blocks into `AllocCore::dealloc` / `AllocCore::flush_class` / `HeapCore::dealloc` (R14-4 promotion helper) + R17-4 Large-kind routing block in `dealloc_own_thread_with_base` |
 | [`src/registry/heap_core_tcache.rs`](src/registry/heap_core_tcache.rs) | 1 | Internal call-site block for `AllocCore::flush_class` |
 | [`src/registry/heap_core_xthread.rs`](src/registry/heap_core_xthread.rs) | 1 | Internal `gen_at` call-site block in `dealloc_foreign_routing` (hardened `pack_entry_hardened` path) |
 
 That's the full list (both tiers): **20** tier-1 module-level seams (13 in
-`src/`, 7 in `crates/`) plus **61** tier-2 item-scoped allows across **17**
+`src/`, 7 in `crates/`) plus **62** tier-2 item-scoped allows across **17**
 files. Everywhere else in the crate is forbidden / denied `unsafe`; an
 `unsafe` token not covered by a tier-1 module or a tier-2 item-level allow is
 a hard compile error in every configuration.
 
-**R24-6 (task #384) / R25-1 (task #395) note — measurement-only `unsafe fn
-dbg_*` hooks in `heap_core_diag.rs`.** All three of that file's `unsafe fn`
-entries above are `#[doc(hidden)]`, exist ONLY to let this crate's own
-`benches/perf_gate_iai.rs` / `tests/` harnesses isolate a specific perf-gate
-sub-cost or reconstruct a hard-to-reach test scenario, and are never called
-from any production alloc path — none of the three changes what
-`SeferAlloc::alloc`/`dealloc` actually does. They are **not equivalent** on
-one axis a prior review flagged as worth distinguishing precisely: whether
-the hook's own `#[cfg]` gate happens to be fully satisfied by plain
-`--features production` alone.
+**R24-6 (task #384) / R25-1 (task #395) / R28-1 (task #430) note —
+measurement-only `unsafe fn dbg_*` hooks in `heap_core_diag.rs`.** All four
+of that file's `unsafe fn` entries above are `#[doc(hidden)]`, exist ONLY to
+let this crate's own `benches/perf_gate_iai.rs` / `tests/` harnesses isolate
+a specific perf-gate sub-cost or reconstruct a hard-to-reach test scenario,
+and are never called from any production alloc path — none of the four
+changes what `SeferAlloc::alloc`/`dealloc` actually does. They are **not
+equivalent** on one axis a prior review flagged as worth distinguishing
+precisely: whether the hook's own `#[cfg]` gate happens to be fully
+satisfied by plain `--features production` alone.
 
 - `dbg_dealloc_own_thread_with_base` (R23-3, task #372) and
   `dbg_push_coarse_only_entry` (R13-1, task #271) were both reachable from
@@ -472,6 +472,17 @@ the hook's own `#[cfg]` gate happens to be fully satisfied by plain
   additionally gated behind the `bench-internals` feature (see the feature
   table above) — a plain `--features production` build no longer compiles
   either in.
+- `dbg_flush_class_only` (R28-1, task #430) — added to isolate
+  `AllocCore::flush_class`'s own standalone Ir cost inside the
+  magazine-overflow free path (see `docs/perf/
+  R28_1_FLUSH_CLASS_ISOLATION_GATE.md`) — was made `pub unsafe fn` +
+  `bench-internals`-gated (`alloc-global + fastbin + bench-internals`) from
+  the moment it was created, per CLAUDE.md's benchmark-hook rule (the rule
+  this exact R25-1 fix above prompted): it derives a `flush_class` call from
+  a caller-supplied raw-pointer slice with zero validation beyond
+  `flush_class`'s own per-block M2 guards, so it was never a candidate for a
+  safe `pub fn`. One caller (`benches/perf_gate_iai.rs`'s
+  `dealloc_flush_class_only_16b` arm).
 - *(Historical — R27-10/task #428)* a fourth hook,
   `dbg_overflow_bitmap_clear_pass` (R24-2, task #380), once lived in this
   file. It was additionally a **safe** `pub fn` that derived a segment base
@@ -492,11 +503,11 @@ the hook's own `#[cfg]` gate happens to be fully satisfied by plain
   touch every one of those files' gates for a documentation-precision
   concern, not a new regression — disproportionate for this round. This note
   is the resolution: `dbg_push_to_ring` is measurement/test-only and excluded
-  from any "changes production behavior" claim, exactly like its two
+  from any "changes production behavior" claim, exactly like its
   siblings, even though it remains textually reachable under `--features
   production` (the `#[allow(unsafe_code)]` grep this section's count is
   built from is feature-gate-blind by construction, so gating a hook behind
-  a new feature would not change the **61** figure above regardless — only
+  a new feature would not change the **62** figure above regardless — only
   whether it compiles into a given build).
 
 ### The segment substrate (Phase 8)

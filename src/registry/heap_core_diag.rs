@@ -569,4 +569,71 @@ impl HeapCore {
         // THIS caller verbatim.
         self.dealloc_own_thread_with_base(ptr, layout, base);
     }
+
+    /// R28-1 (task #430) MEASUREMENT-ONLY: run `AllocCore::flush_class`
+    /// standalone on `blocks`, exposing the ONE overflow sub-cost R24-2 §5.1
+    /// flagged as "NOT cleanly isolable without a hook that calls
+    /// `flush_class` standalone" (the ~470 Ir non-isolable remainder inside
+    /// one magazine-overflow event — `flush_class` + the 8-pointer compaction
+    /// shift + the final push, R24-2's §1.3/§4.4). This hook isolates JUST
+    /// `flush_class`'s own cost, leaving compaction + final push as a
+    /// (smaller) separate remainder — see
+    /// `docs/perf/R28_1_FLUSH_CLASS_ISOLATION_GATE.md` for the full
+    /// decomposition and the isolation arithmetic.
+    ///
+    /// Delegates to [`AllocCore::flush_class`] verbatim — production's exact
+    /// overflow-arm call (`heap_core_free.rs`'s magazine-overflow branch of
+    /// `dealloc_own_thread_with_base`), not an alternate/bypass
+    /// implementation. `class_idx`/`blocks` carry the identical contract as
+    /// the delegated call: every entry is the live start pointer of a
+    /// currently-magazine-resident block of size class `class_idx`, freed at
+    /// most once across the call. Following R24-2's own documented
+    /// disclosure of why this is the "exact Heisenberg risk" a naive
+    /// standalone call would hit: this hook does NOT itself re-derive
+    /// magazine state (it does not touch `self.tcache` at all) — the caller
+    /// (the bench arm) is responsible for constructing a `blocks` slice that
+    /// mirrors exactly what production's overflow arm passes in (already
+    /// bitmap-cleared via `dbg_overflow_bitmap_clear_pass`'s former loop, now
+    /// inlined at the call site — see the bench arm's own doc comment) and
+    /// for NOT relying on the surrounding `HeapCore`'s magazine/BinTable
+    /// invariants being intact afterward (`blocks` are returned to the
+    /// substrate for real; a subsequent alloc of the SAME class from the SAME
+    /// heap instance is a fresh carve/pop, not a re-issue of a still-resident
+    /// magazine entry).
+    ///
+    /// # Safety
+    ///
+    /// The caller must uphold [`AllocCore::flush_class`]'s `# Safety`
+    /// contract verbatim for `class_idx`/`blocks`: every non-null entry is
+    /// the exact start pointer of a currently-LIVE small-class allocation of
+    /// size class `class_idx` owned by this heap's substrate, not an interior
+    /// or foreign pointer, and each entry is freed **at most once** across
+    /// this call (a duplicate entry, or a block already on the free list, is
+    /// contract UB — the per-block M2 guards inside `flush_run` degrade
+    /// several such cases benignly at runtime, but that is defence-in-depth,
+    /// not a substitute for honouring the contract). Null entries are
+    /// permitted and skipped.
+    // `bench-internals`-gated from creation (CLAUDE.md's benchmark-hook
+    // rule): this `unsafe fn` derives allocator metadata writes from a
+    // caller-controlled raw-pointer slice with zero validation beyond
+    // `flush_class`'s own per-block M2 guards, so it must never be reachable
+    // from a plain `--features production` build — its gate (`alloc-global`
+    // + `fastbin` + `bench-internals`) matches `dbg_dealloc_own_thread_with_
+    // base`'s exact precedent above, and its ONE caller
+    // (`benches/perf_gate_iai.rs`) requires `bench-internals` on the whole
+    // bench target already (`Cargo.toml`'s `required-features`).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-global",
+        feature = "fastbin",
+        feature = "bench-internals"
+    ))]
+    #[inline(always)]
+    #[allow(unsafe_code)] // R28-1: `unsafe fn` boundary, mirrors `dbg_dealloc_own_thread_with_base` above.
+    pub unsafe fn dbg_flush_class_only(&mut self, class_idx: usize, blocks: &[*mut u8]) {
+        // SAFETY: this method carries the identical `# Safety` contract as
+        // the delegated `AllocCore::flush_class`, forwarded to THIS caller
+        // verbatim.
+        unsafe { self.core.flush_class(class_idx, blocks) };
+    }
 }

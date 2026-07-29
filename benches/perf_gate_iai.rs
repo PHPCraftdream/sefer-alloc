@@ -822,6 +822,136 @@ fn dealloc_free_only_16b_n32() {
 }
 
 // ---------------------------------------------------------------------------
+// R28-1 (task #430) -- isolate `flush_class`'s OWN standalone Ir cost, the
+// larger of the two overflow sub-costs R24-2 §5.1 flagged as non-isolable at
+// the time ("flush_class + compaction + final push", ~470 Ir, no
+// workload-level separation point). `docs/perf/R28_1_FLUSH_CLASS_ISOLATION_
+// GATE.md` has the full decomposition; summary here:
+//
+// `dealloc_flush_class_only_16b_prefix` pre-fills the magazine to count 8
+// (8 cheap pushes via real `dealloc`, byte-identical prefix shape to
+// `dealloc_free_only_16b_n8` above) and additionally allocates 8 MORE fresh
+// blocks that are left LIVE (never pushed into the magazine) -- these are the
+// `flush_class` INPUT for the paired arm below. This arm's timed region does
+// nothing further (mirrors `dealloc_prealloc_only_16b`'s "prefix-only, never
+// freed" role) -- it exists purely to measure the shared setup cost so the
+// paired arm's isolated delta cancels it.
+//
+// `dealloc_flush_class_only_16b` repeats the IDENTICAL setup, then calls the
+// new `HeapCore::dbg_flush_class_only` hook (`src/registry/heap_core_diag.rs`,
+// `bench-internals`-gated `unsafe fn` from creation per CLAUDE.md's
+// benchmark-hook rule) on the 8 live-but-not-yet-magazine-resident blocks --
+// the exact `flush_class(class_idx, &slots[0..FLUSH_N])` call production's
+// overflow arm makes (`heap_core_free.rs`), just invoked standalone instead
+// of from inside the overflow branch. `Ir(dealloc_flush_class_only_16b) -
+// Ir(dealloc_flush_class_only_16b_prefix)` isolates `flush_class`'s own cost
+// on 8 blocks -- no bitmap-clear pass, no compaction shift, no final push
+// mixed in (those three remain outside this hook's call, unlike the fused
+// overflow-arm body R24-2 measured).
+//
+// Both arms need `dbg_class_for` (to resolve the 16 B layout's `class_idx`
+// the same way production's magazine dispatch does) and `alloc-decommit`'s
+// unrelated `off >= bump` guard does NOT apply here (`flush_class` is called
+// directly, bypassing the M2 double-free oracles entirely -- by contract,
+// `blocks` must be live and not-yet-freed, which this setup guarantees: the
+// 8 blocks passed to the hook were allocated and never freed by anything in
+// this arm).
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_flush_class_only_16b_prefix() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    // Pre-fill the magazine to count 8 via 8 REAL alloc+free pairs (cheap
+    // pushes, no overflow -- byte-identical shape to `dealloc_free_only_16b_
+    // n8`'s prefix).
+    let mut warm: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in warm.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    for &ptr in &warm {
+        // SAFETY: ptr was returned by the alloc loop above with the same
+        // layout, and is freed exactly once.
+        unsafe { (*heap).dealloc(ptr, layout) };
+    }
+
+    // The 8 blocks that will be handed to `flush_class` in the paired arm --
+    // allocated here but left LIVE (never freed by this arm), matching
+    // `flush_class`'s `# Safety` contract (each entry must be a currently-LIVE
+    // allocation of the target class, freed at most once by the call itself).
+    let mut flush_input: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in flush_input.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&flush_input);
+    // Deliberately never flushed: this arm exists ONLY to measure the shared
+    // setup cost, common to the paired `dealloc_flush_class_only_16b` arm
+    // below. Each `#[library_benchmark]` runs in its own fresh process under
+    // callgrind, so leaking here has no effect on any other bench.
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-global",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "bench-internals"
+))]
+#[library_benchmark]
+fn dealloc_flush_class_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    // Identical setup to `dealloc_flush_class_only_16b_prefix` (see its doc
+    // comment) -- byte-identical prefix so the paired subtraction cancels it.
+    let mut warm: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in warm.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    for &ptr in &warm {
+        // SAFETY: ptr was returned by the alloc loop above with the same
+        // layout, and is freed exactly once.
+        unsafe { (*heap).dealloc(ptr, layout) };
+    }
+
+    let mut flush_input: [*mut u8; 8] = [core::ptr::null_mut(); 8];
+    for slot in flush_input.iter_mut() {
+        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc(layout) };
+    }
+    black_box(&flush_input);
+
+    // SAFETY: `dbg_class_for` resolves the same size class production's
+    // magazine dispatch would for this layout.
+    let class_idx = unsafe { (*heap).dbg_class_for(layout) }.expect("16 B must classify small");
+
+    // Timed region: `flush_class` standalone on the 8 live blocks -- the
+    // exact call production's overflow arm makes
+    // (`heap_core_free.rs`'s magazine-overflow branch), invoked directly
+    // instead of from inside that branch. No bitmap-clear pass, no
+    // compaction shift, no final magazine push -- those remain outside this
+    // call (see the module doc above and
+    // `docs/perf/R28_1_FLUSH_CLASS_ISOLATION_GATE.md`).
+    // SAFETY: every entry of `flush_input` is a currently-LIVE 16 B
+    // allocation of `class_idx` owned by this heap, freed at most once (this
+    // is that one free).
+    unsafe { (*heap).dbg_flush_class_only(class_idx, &flush_input) };
+}
+
+// ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
 // N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
 // is the compile-time constant swept by hand-editing that file between
@@ -2401,6 +2531,8 @@ library_benchmark_group!(
         dealloc_free_only_16b_n16,
         dealloc_free_only_16b_n17,
         dealloc_free_only_16b_n32,
+        dealloc_flush_class_only_16b_prefix,
+        dealloc_flush_class_only_16b,
         dealloc_prealloc_only_1088_16b,
         dealloc_free_only_1088_16b_n17,
         dealloc_free_only_1088_16b_n32,

@@ -62,10 +62,10 @@ for completeness.
    (18.6%).**
 
    > **Current state**
-   > - **Status:** open — an actively-evolving multi-round hot-path investigation (R22-17 → R26-7).
-   > - **Current number/verdict:** `contains_base`-only share of a real free's `Ir` = **8.8% (523/5,920)**, NOT the original 18.6% (R23-1). The item was then reframed: the routing prefix is NOT the free path's dominant cost — the magazine-overflow mechanic is. Bitmap-clear coalescing was tried twice (R24-3, R24-4) → both NO-GO; STAGE_CAP 512→64 is a GO (−4,065 Ir/call, R24-8); FLUSH_N sweep NO-GO (R25-3); STAGE_CAP=64 boundary re-confirmed clean N=16→1024 (R25-7); lazy `Option<[..]>` staging array NO-GO — crossover at N=17, the 4th consecutive NO-GO in this region (R26-7).
-   > - **Next trigger:** the overflow's larger untried lever remains `flush_class` isolation (~487 Ir/event, the non-isolable remainder R24-2 §5.1 flagged) — four consecutive NO-GOs (R24-3/R24-4/R25-3/R26-7) now establish this region's hot path is tightly compiled and resistant to fixed-cost-elision-via-per-block-bookkeeping, RMW-coalescing, and constant-tuning; the ~53–581 Ir zero-init arithmetic ceiling should NOT be cited as a savings target without a fresh in-context A/B. Separately, Tier-2-hash-probe-heavy workloads might show `contains_base` > 8.8% (open, not a proven floor).
-   > - **Evidence:** `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (8.8%); `R23_3_HOT_PATH_ATTRIBUTION_GATE.md`; `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md`; `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`; `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`; `R26_7_LAZY_STAGE_ARRAY_GATE.md` (4th NO-GO; isolated zero-init = ~54 Ir, not ~581).
+   > - **Status:** `flush_class` isolation measured (R28-1) — the "Next trigger" question below is ANSWERED; region judged likely exhausted for further micro-optimization at the per-block-cost scope (no 5th attempt opened).
+   > - **Current number/verdict:** `contains_base`-only share of a real free's `Ir` = **8.8% (523/5,920)**, NOT the original 18.6% (R23-1). The item was then reframed: the routing prefix is NOT the free path's dominant cost — the magazine-overflow mechanic is. Bitmap-clear coalescing was tried twice (R24-3, R24-4) → both NO-GO; STAGE_CAP 512→64 is a GO (−4,065 Ir/call, R24-8); FLUSH_N sweep NO-GO (R25-3); STAGE_CAP=64 boundary re-confirmed clean N=16→1024 (R25-7); lazy `Option<[..]>` staging array NO-GO — crossover at N=17, the 4th consecutive NO-GO in this region (R26-7). **`flush_class(8 blocks)`'s own standalone Ir is now measured (R28-1, task #430): 449 Ir (56.1 Ir/block) — 77.3% of one overflow event's 581 Ir total, 90.3% of R24-2's ~487 Ir fused remainder estimate (reconciles to within 2.1%).**
+   > - **Next trigger:** ANSWERED, not open. R28-1 isolated `flush_class` (the overflow's larger untried lever) and judged the region likely exhausted for further per-block-cost micro-optimization at this scope (see `R28_1_FLUSH_CLASS_ISOLATION_GATE.md` §5 for the full reasoning) — `flush_run`'s per-block work is already minimal/mostly-necessary (2 cheap guards + 1 M2 correctness guard + 1 freelist write + 1 bitmap write, metadata already hoisted per-run), and the compaction+push residual is now measured small (~48 Ir), so there is no hidden larger target left to chase in this immediate function family. Five consecutive NO-GO-or-exhausted findings now cover this region (R24-3/R24-4/R25-3/R26-7/R28-1). If a future round revisits magazine-overflow cost, the more promising angle (not explored by R28-1) is reducing HOW OFTEN overflow fires (workload-shape/`FLUSH_N`/`TCACHE_CAP` — already NO-GO'd once in R25-3) or a structural redesign of the fixed bitmap-clear+flush+compact+push sequence, not another per-block `flush_class` tuning attempt. Separately, Tier-2-hash-probe-heavy workloads might show `contains_base` > 8.8% (open, not a proven floor).
+   > - **Evidence:** `R22_17_CONTAINS_BASE_FREE_HOT_PATH_GATE.md` §7 (8.8%); `R23_3_HOT_PATH_ATTRIBUTION_GATE.md`; `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md`; `R24_5_COLD_ALLOC_FREE_SPLIT_GATE.md`; `R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`; `R26_7_LAZY_STAGE_ARRAY_GATE.md` (4th NO-GO; isolated zero-init = ~54 Ir, not ~581); `R28_1_FLUSH_CLASS_ISOLATION_GATE.md` (flush_class isolated at 449 Ir/8 blocks; region judged exhausted).
 
    R22-17 (task #368), 2026-07-26: `HeapCore::dealloc_routing`'s
    own-thread ownership probe (`SegmentTable::contains_base`, a two-tier
@@ -454,6 +454,46 @@ for completeness.
    commits; the hook/arm are recoverable in git history. This is a code
    cleanup, NOT a new verdict on the region (still open — next lever is
    `flush_class` isolation per the card above).
+   **2026-07-29 update — DONE, MEASUREMENT-ONLY (task #430, R28-1):**
+   `flush_class`'s own standalone Ir cost — the ~487 Ir "non-isolable
+   remainder" R24-2 §5.1 flagged (`flush_class` + the 8-pointer compaction
+   shift + the final magazine push, fused with no workload-level separation
+   point at the time) — is finally isolated. A new `bench-internals`-gated
+   `pub unsafe fn` hook (`HeapCore::dbg_flush_class_only`,
+   `src/registry/heap_core_diag.rs`, gated `bench-internals` **from
+   creation**, per CLAUDE.md's benchmark-hook rule — the positive
+   `dbg_dealloc_own_thread_with_base` pattern, not the R24-2-era
+   safe-`pub-fn`-then-retrofit mistake R25-1 had to fix) calls the real
+   `AllocCore::flush_class` standalone on 8 live blocks. Two new bench arms
+   (`dealloc_flush_class_only_16b_prefix` / `dealloc_flush_class_only_16b`),
+   shared-prefix subtraction, two independent `npm run iai` runs
+   (byte-identical Ir): **`flush_class(8 blocks)` = 449 Ir (56.1 Ir/block)**.
+   Reconciliation: one overflow event re-measured today at 581 Ir (vs R24-2's
+   571 — ~10 Ir/1.8% cross-round drift, unrelated code churn over 5 rounds);
+   subtracting the historical 84 Ir bitmap-clear figure (mechanism unchanged
+   post-R27-10, just no longer behind a standalone hook) gives a 497 Ir
+   remainder, reconciling with R24-2's 487 Ir estimate to within 2.1%.
+   `flush_class` alone is 90.3% of that remainder (449/497); compaction +
+   final push is a small derived residual (~48 Ir, 9.7%). **Verdict: the
+   region is judged likely exhausted for further per-block-cost
+   micro-optimization at this scope** — `flush_run`'s per-block work (2
+   cheap guards, 1 M2 correctness guard, 1 freelist write, 1 bitmap write,
+   with metadata already hoisted once per same-segment run) has no
+   un-hoisted cost left to cut without weakening the M2 double-free guard or
+   the Э8 run-batching invariant, and the compaction+push residual is now
+   confirmed small rather than a hidden larger target. No 5th optimization
+   attempt was opened — this measurement's value is closing out the "Next
+   trigger" question, joining the 4 prior NO-GOs in this region
+   (R24-3/R24-4/R25-3/R26-7) as a 5th data point that the immediate overflow
+   arm is tightly compiled. If a future round revisits magazine-overflow
+   cost, the more promising angle is reducing how often overflow fires or a
+   structural redesign of the fixed bitmap-clear+flush+compact+push
+   sequence, not further per-block `flush_class` tuning. No production
+   change (`AllocCore::flush_class`/`flush_run` byte-identical; the new hook
+   calls the existing function verbatim). Evidence:
+   `R28_1_FLUSH_CLASS_ISOLATION_GATE.md` +
+   `R28_1_FLUSH_CLASS_ISOLATION_GATE_summary.csv` +
+   `docs/perf/_raw_r28_1_run1.log` / `_raw_r28_1_run2.log`.
 13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 
