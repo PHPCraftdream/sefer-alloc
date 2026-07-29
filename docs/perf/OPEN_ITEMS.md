@@ -406,6 +406,16 @@ for completeness.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L24`.
 
+27. **R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS
+    floor measured for the first time; confirmed-by-design, no action taken.**
+
+    > **Current state**
+    > - **Status:** honest confirmation — design behaves exactly as documented; NOT a bug, NOT recommended for a default change (that question was not asked here).
+    > - **Current number/verdict:** the shipped 256 MiB default headroom converges, under maximum FORCED decay pressure (`dbg_force_decay_tick` looped to a fixed point), to a **measured floor of ~238–241 MiB/heap retained** (12.4–12.5% of an 8×34 MiB / 288 MiB fill reclaimed, the rest permanently held) — **30x the small pool's proven ~8 MiB/heap** (R27-3). Under PURE IDLE (100 ms/1 s/2 s, zero allocation activity), the idle delta is **exactly 0 KiB in all 36 measured arms** (4 headroom values × 3 thread counts × 3 reps) — idle reclaims nothing at ANY headroom setting, not only at 256 MiB. The natural fill/teardown workload never drives even one real decay tick regardless of headroom (`maybe_decay_large_cache`'s first-call timer-priming rule means a tight teardown loop never lets the 1000 ms interval elapse mid-loop) — this is read from source, not inferred, and matches the doc's "does not decay below this level" claim precisely once forced convergence is used to actually observe the floor.
+    > - **Next trigger:** none named as a next step for THIS finding (design confirmed, no discrepancy to chase). If a future round wants to weigh changing `DEFAULT_HEADROOM_BYTES`, the missing piece is a throughput/hit-rate A/B at a smaller headroom through the real `#[global_allocator]` (the large-cache analogue of R27-4) — NOT measured here; this task's scope was the retention-cost side only, mirroring R27-3's own scope boundary.
+    > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` + `_summary.csv` + `docs/perf/_raw_r29_13_large_cache_retention_gate.log`.
+   Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

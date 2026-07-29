@@ -61,6 +61,7 @@ don't rewrite" convention.
 - [[L] Low-priority — honest reject — item 22: T10 (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free` (NO-GO](#l22)
 - [[L] Low-priority — honest reject — item 23: R1 (2026-07-13) — per-segment availability hint for `find_segment_with_free` (NO-GO, clean](#l23)
 - [[L] Low-priority — honest reject — item 24: R5-R2b (2026-07-14) — the wall-clock churn regression signal is NOT an algorithmic/Ir regr](#l24)
+- [[L] Low-priority — honest reject — item 27: R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS floor measured for](#l27)
 
 ---
 
@@ -1250,6 +1251,97 @@ don't rewrite" convention.
 
 ---
 
+### L27
+
+*Back-link: `docs/perf/OPEN_ITEMS.md`, item 27 (`[L] Low-priority — honest
+reject` tier) — "**R29-13 — large-cache `headroom_bytes` (default 256
+MiB/heap) idle-RSS floor measured for the first time; confirmed-by-design, no
+action taken.**"*
+
+**2026-07-29 (R29-13, task #444).** Sourced from
+`docs/reviews/2026-07-29-oh-acceleration-code-project-review.md` §1.2: Rounds
+25–27 spent four tasks and three gate reports quantifying the small-segment
+pool's `~+8 MiB/heap` post-teardown retention floor
+(`R27_3_POOL_RETENTION_GATE.md` et al.), while the large-cache's default
+headroom — 256 MiB/heap, 32x the small pool's 16 MiB byte cap — had never
+been measured at all. This task built `examples/r29_13_large_cache_retention_gate.rs`,
+mirroring R27-3's subprocess-per-arm-isolation + config-self-verification
+methodology exactly, adapted to a LARGE-object workload (8 distinct 34 MiB
+objects per thread, one per base large-cache slot, 272 MiB designed /
+288 MiB measured fill per heap — chosen to exceed every headroom arm in the
+sweep) and to long-lived, non-exiting threads (holding each heap alive
+through post-teardown, post-idle, and post-drain measurement points, since
+the whole point is measuring the floor BEFORE `HeapCore::trim_for_recycle`
+would unconditionally reclaim everything at thread exit).
+
+Swept `headroom_bytes` ∈ {0, 16 MiB, 64 MiB, 256 MiB} at thread counts
+{1, 8, 32}, 3 repetitions each (36 child processes total, each in its own
+freshly-spawned OS process). Every arm self-verified its resolved headroom
+via a NEW thin `HeapCore::dbg_decay_config()` delegation (exposing the
+pre-existing `AllocCore::dbg_decay_config`, which already returned
+`(decay_rate_bp, decay_interval_ms, headroom_bytes)` but was not previously
+reachable from `HeapCore`/`registry`) — read back from the allocator's own
+diagnostic surface, not assumed, per CLAUDE.md's R26-4 config-sweep evidence
+rule. `config_conflicts_total()` delta was 0 in every arm (fresh-process
+isolation proven). Every arm hard-asserted admission
+(`used_post_teardown_max > 0`) and, for non-zero-headroom arms, that the
+post-teardown large-cache byte count never fell below the configured
+headroom (trivially satisfied here since no decay tick ever fires during
+the tight fill/teardown loop — see below).
+
+**Headline result:** every one of the 36 arms showed **identical**
+post-teardown `used_post_teardown_max = 301,989,888` bytes (288 MiB, the
+page-rounded physical span size of 8 × 34 MiB requests) regardless of
+`headroom_bytes` — because `maybe_decay_large_cache`'s first-call
+timer-priming rule (`src/alloc_core/alloc_core_large_cache.rs:320-356`) means
+the very first dealloc in a fresh heap only primes the 1000 ms decay-interval
+timer without decaying, and every subsequent dealloc in the SAME tight
+teardown loop (microseconds apart) also finds `elapsed < decay_interval` and
+skips decay too — so headroom has NO visible effect on the immediate
+post-teardown number; it only matters once decay actually gets a chance to
+run. Across a full 2-second idle window (100 ms/1 s/2 s samples, zero
+allocation activity), the idle delta was **exactly 0 KiB in all 36 arms** —
+direct empirical proof that pure idle reclaims nothing at ANY headroom
+setting (not merely at the 256 MiB default), because idle means
+`maybe_decay_large_cache` is never even called, so the wall clock is never
+sampled.
+
+The headroom policy's actual effect was observed only via an EXPLICIT forced
+decay-to-fixed-point (`dbg_force_decay_tick` — a new thin `HeapCore`
+delegation exposing the pre-existing `AllocCore::dbg_force_decay_tick` —
+looped until `dbg_large_cache_used()` (also newly exposed at the `HeapCore`
+level via `dbg_large_cache_used`/`dbg_large_cache_slot_sizes`, both
+pre-existing `AllocCore` accessors) stopped changing between iterations).
+Converged floors: headroom 0/16 MiB → ~0.2–3.2 MiB/heap residual
+(98.8–99.9% reclaimed — the whole-segment (~36 MiB) eviction granularity
+overshoots a 16 MiB target to near-zero); headroom 64 MiB → ~34.2–37.2
+MiB/heap (86.5–87.4% reclaimed — converges to roughly one retained segment);
+**headroom 256 MiB (the shipped default) → ~238.2–241.3 MiB/heap, only
+12.4–12.5% reclaimed** — roughly six retained ~36 MiB segments, by far the
+largest absolute and proportional floor in the sweep, exactly matching the
+doc's own claim (`large_cache_config.rs:46-48`, "the cache does not decay
+below this level") once forced convergence is used to actually observe it.
+
+**Verdict:** confirmed-by-design, NOT a bug. No default was changed
+(`DEFAULT_HEADROOM_BYTES` remains 256 MiB) — the task was measurement-only.
+Two small `src/` additions were both diagnostic-only, `bench-internals`-gated,
+no production caller, no new `unsafe`, no raw-pointer parameter: four thin
+`HeapCore` delegation wrappers in `src/registry/heap_core_diag.rs`
+(`dbg_large_cache_used`, `dbg_large_cache_slot_sizes`, `dbg_decay_config`,
+`dbg_force_decay_tick`) exposing four PRE-EXISTING `AllocCore` accessors,
+following the exact established pattern already used by
+`dbg_pooled_count`/`dbg_pool_cap`/`dbg_segment_state_reconciliation` in that
+same file. This closes the measurement-asymmetry gap the source review
+identified: the small pool and large cache retention floors are now BOTH
+quantified with the same rigor (subprocess isolation, self-verified config,
+admission proof, idle-vs-forced-drain distinction). What remains explicitly
+NOT measured (a follow-on, not opened by this task): whether a smaller
+headroom would cost anything on large-object churn throughput/hit-rate
+through the real `#[global_allocator]` — the large-cache analogue of R27-4's
+real-default A/B for the small pool. Full report:
+`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` +
+`R29_13_LARGE_CACHE_RETENTION_GATE_summary.csv` +
+`docs/perf/_raw_r29_13_large_cache_retention_gate.log`.
 
 ---
 

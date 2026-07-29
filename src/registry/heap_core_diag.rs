@@ -323,6 +323,72 @@ impl HeapCore {
         self.core.dbg_segment_state_reconciliation()
     }
 
+    /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_used`] — exposed at the `HeapCore` level
+    /// (mirroring `dbg_pooled_count`'s/`dbg_pool_cap`'s existing delegation
+    /// pattern in this file) so the R29-13 large-cache retention probe can
+    /// read the current running sum of cached large-span bytes for a claimed
+    /// heap. Read-only `&self`; does NOT mutate allocator state.
+    /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_large_cache_used(&self) -> usize {
+        self.core.dbg_large_cache_used()
+    }
+
+    /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_slot_sizes`] — exposed at the `HeapCore`
+    /// level (same pattern as `dbg_large_cache_used` above) so the R29-13
+    /// probe can count how many of the 8 base large-cache slots are
+    /// currently occupied for a claimed heap. Read-only `&self`; does NOT
+    /// mutate allocator state. `bench-internals`-gated (no production caller
+    /// → R25-10 sub-rule 2).
+    ///
+    /// Return-array length is `8` — the base large-cache slot count
+    /// (`LARGE_CACHE_SLOTS`, `pub(super)` inside `alloc_core` and therefore
+    /// not nameable from `registry`); hardcoded here rather than re-exported,
+    /// matching [`AllocCore::dbg_large_cache_slot_sizes`]'s own public
+    /// signature verbatim.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_large_cache_slot_sizes(&self) -> [Option<usize>; 8] {
+        self.core.dbg_large_cache_slot_sizes()
+    }
+
+    /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_decay_config`] — exposed at the `HeapCore` level (same
+    /// pattern as `dbg_large_cache_used` above) so the R29-13 probe can read
+    /// back the RESOLVED `(decay_rate_bp, decay_interval_ms, headroom_bytes)`
+    /// large-cache decay config for a claimed heap — the self-verification
+    /// proof that a `LargeCacheConfig::new().headroom_bytes(n)` construction
+    /// actually resolved to `n`, not assumed (per the config-sweep evidence
+    /// rule, CLAUDE.md's R26-4 entry). Read-only `&self`; does NOT mutate
+    /// allocator state. `bench-internals`-gated (no production caller →
+    /// R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_decay_config(&self) -> (u32, u64, usize) {
+        self.core.dbg_decay_config()
+    }
+
+    /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_force_decay_tick`] — exposed at the `HeapCore` level
+    /// (same pattern as `dbg_large_cache_used` above) so the R29-13 probe can
+    /// force a large-cache decay tick (bypassing the wall-clock interval)
+    /// without waiting, to demonstrate the retained cache is reclaimable via
+    /// repeated forced ticks even though pure idle never reclaims it.
+    /// `&mut self` (mutates decay-tick bookkeeping and, when a tick fires,
+    /// evicts cached spans). `bench-internals`-gated (no production caller →
+    /// R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_force_decay_tick(&mut self) {
+        self.core.dbg_force_decay_tick();
+    }
+
     /// TEST-ONLY (R11-2): resolve the base address of the segment that
     /// contains `ptr`. Thin delegation to `alloc_core::os::segment_base_of_ptr`
     /// — exposed at the `HeapCore` level because `alloc_core::os` is

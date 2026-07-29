@@ -1,0 +1,995 @@
+=== R29-13 large-cache RETENTION gate — subprocess-per-arm isolation ===
+grid: headroom_bytes=[0, 16777216, 67108864, 268435456] x threads=[1, 8, 32] x 3 reps; LARGE_OBJ_BYTES=35651584 LARGE_OBJ_COUNT=8 (per-heap fill = 272 MiB) decay_interval_ms=1000
+
+--- arm headroom=0 MiB=0 threads=1 rep=0/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3164
+RESULT peak_rss_kib=281844
+RESULT peak_commit_kib=297196
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281844
+RESULT commit_post_kib=297196
+RESULT rss_100ms_kib=281844
+RESULT rss_1s_kib=281844
+RESULT rss_2s_kib=281844
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3288
+RESULT commit_drain_kib=1708
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=1 rep=0 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281844 rss_post_kib=281844 rss_2s_kib=281844 rss_drain_kib=3288 used_predrain_sum=301989888
+--- arm headroom=0 MiB=0 threads=1 rep=1/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=281868
+RESULT peak_commit_kib=297224
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281868
+RESULT commit_post_kib=297224
+RESULT rss_100ms_kib=281868
+RESULT rss_1s_kib=281868
+RESULT rss_2s_kib=281868
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3312
+RESULT commit_drain_kib=1732
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=1 rep=1 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281868 rss_post_kib=281868 rss_2s_kib=281868 rss_drain_kib=3312 used_predrain_sum=301989888
+--- arm headroom=0 MiB=0 threads=1 rep=2/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3184
+RESULT peak_rss_kib=281864
+RESULT peak_commit_kib=297220
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281864
+RESULT commit_post_kib=297220
+RESULT rss_100ms_kib=281864
+RESULT rss_1s_kib=281864
+RESULT rss_2s_kib=281864
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3308
+RESULT commit_drain_kib=1728
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=1 rep=2 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281864 rss_post_kib=281864 rss_2s_kib=281864 rss_drain_kib=3308 used_predrain_sum=301989888
+--- arm headroom=0 MiB=0 threads=8 rep=0/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3172
+RESULT peak_rss_kib=2232280
+RESULT peak_commit_kib=2369180
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232280
+RESULT commit_post_kib=2369180
+RESULT rss_100ms_kib=2232280
+RESULT rss_1s_kib=2232280
+RESULT rss_2s_kib=2232280
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3804
+RESULT commit_drain_kib=5268
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=8 rep=0 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232280 rss_post_kib=2232280 rss_2s_kib=2232280 rss_drain_kib=3804 used_predrain_sum=2415919104
+--- arm headroom=0 MiB=0 threads=8 rep=1/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3172
+RESULT peak_rss_kib=2232284
+RESULT peak_commit_kib=2369184
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232284
+RESULT commit_post_kib=2369184
+RESULT rss_100ms_kib=2232284
+RESULT rss_1s_kib=2232284
+RESULT rss_2s_kib=2232284
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3808
+RESULT commit_drain_kib=5272
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=8 rep=1 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232284 rss_post_kib=2232284 rss_2s_kib=2232284 rss_drain_kib=3808 used_predrain_sum=2415919104
+--- arm headroom=0 MiB=0 threads=8 rep=2/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232288
+RESULT peak_commit_kib=2369184
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232288
+RESULT commit_post_kib=2369184
+RESULT rss_100ms_kib=2232288
+RESULT rss_1s_kib=2232288
+RESULT rss_2s_kib=2232288
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3812
+RESULT commit_drain_kib=5276
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=8 rep=2 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232288 rss_post_kib=2232288 rss_2s_kib=2232288 rss_drain_kib=3812 used_predrain_sum=2415919104
+--- arm headroom=0 MiB=0 threads=32 rep=0/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3168
+RESULT peak_rss_kib=8919828
+RESULT peak_commit_kib=9473064
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919828
+RESULT commit_post_kib=9473064
+RESULT rss_100ms_kib=8919828
+RESULT rss_1s_kib=8919828
+RESULT rss_2s_kib=8919828
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5912
+RESULT commit_drain_kib=17416
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=32 rep=0 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919828 rss_post_kib=8919828 rss_2s_kib=8919828 rss_drain_kib=5912 used_predrain_sum=9663676416
+--- arm headroom=0 MiB=0 threads=32 rep=1/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=8919864
+RESULT peak_commit_kib=9473104
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919864
+RESULT commit_post_kib=9473104
+RESULT rss_100ms_kib=8919864
+RESULT rss_1s_kib=8919864
+RESULT rss_2s_kib=8919864
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5948
+RESULT commit_drain_kib=17452
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=32 rep=1 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919864 rss_post_kib=8919864 rss_2s_kib=8919864 rss_drain_kib=5948 used_predrain_sum=9663676416
+--- arm headroom=0 MiB=0 threads=32 rep=2/3 ---
+RESULT headroom_bytes=0
+RESULT headroom_mib=0
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=8919832
+RESULT peak_commit_kib=9473096
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919832
+RESULT commit_post_kib=9473096
+RESULT rss_100ms_kib=8919832
+RESULT rss_1s_kib=8919832
+RESULT rss_2s_kib=8919832
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5916
+RESULT commit_drain_kib=17444
+RESULT decay_interval_ms=1000
+OK headroom=0 MiB=0 threads=32 rep=2 verified_headroom=0 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919832 rss_post_kib=8919832 rss_2s_kib=8919832 rss_drain_kib=5916 used_predrain_sum=9663676416
+--- arm headroom=16777216 MiB=16 threads=1 rep=0/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281860
+RESULT peak_commit_kib=297212
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281860
+RESULT commit_post_kib=297212
+RESULT rss_100ms_kib=281860
+RESULT rss_1s_kib=281860
+RESULT rss_2s_kib=281860
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3304
+RESULT commit_drain_kib=1724
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=1 rep=0 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281860 rss_post_kib=281860 rss_2s_kib=281860 rss_drain_kib=3304 used_predrain_sum=301989888
+--- arm headroom=16777216 MiB=16 threads=1 rep=1/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281856
+RESULT peak_commit_kib=297208
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281856
+RESULT commit_post_kib=297208
+RESULT rss_100ms_kib=281856
+RESULT rss_1s_kib=281856
+RESULT rss_2s_kib=281856
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3300
+RESULT commit_drain_kib=1720
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=1 rep=1 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281856 rss_post_kib=281856 rss_2s_kib=281856 rss_drain_kib=3300 used_predrain_sum=301989888
+--- arm headroom=16777216 MiB=16 threads=1 rep=2/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=281864
+RESULT peak_commit_kib=297216
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281864
+RESULT commit_post_kib=297216
+RESULT rss_100ms_kib=281864
+RESULT rss_1s_kib=281864
+RESULT rss_2s_kib=281864
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=3308
+RESULT commit_drain_kib=1728
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=1 rep=2 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281864 rss_post_kib=281864 rss_2s_kib=281864 rss_drain_kib=3308 used_predrain_sum=301989888
+--- arm headroom=16777216 MiB=16 threads=8 rep=0/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=2232288
+RESULT peak_commit_kib=2369188
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232288
+RESULT commit_post_kib=2369188
+RESULT rss_100ms_kib=2232288
+RESULT rss_1s_kib=2232288
+RESULT rss_2s_kib=2232288
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3812
+RESULT commit_drain_kib=5280
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=8 rep=0 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232288 rss_post_kib=2232288 rss_2s_kib=2232288 rss_drain_kib=3812 used_predrain_sum=2415919104
+--- arm headroom=16777216 MiB=16 threads=8 rep=1/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232284
+RESULT peak_commit_kib=2369184
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232284
+RESULT commit_post_kib=2369184
+RESULT rss_100ms_kib=2232284
+RESULT rss_1s_kib=2232284
+RESULT rss_2s_kib=2232284
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3808
+RESULT commit_drain_kib=5272
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=8 rep=1 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232284 rss_post_kib=2232284 rss_2s_kib=2232284 rss_drain_kib=3808 used_predrain_sum=2415919104
+--- arm headroom=16777216 MiB=16 threads=8 rep=2/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232304
+RESULT peak_commit_kib=2369212
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232304
+RESULT commit_post_kib=2369212
+RESULT rss_100ms_kib=2232304
+RESULT rss_1s_kib=2232304
+RESULT rss_2s_kib=2232304
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=3828
+RESULT commit_drain_kib=5300
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=8 rep=2 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232304 rss_post_kib=2232304 rss_2s_kib=2232304 rss_drain_kib=3828 used_predrain_sum=2415919104
+--- arm headroom=16777216 MiB=16 threads=32 rep=0/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=8919852
+RESULT peak_commit_kib=9473128
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919852
+RESULT commit_post_kib=9473128
+RESULT rss_100ms_kib=8919852
+RESULT rss_1s_kib=8919852
+RESULT rss_2s_kib=8919852
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5936
+RESULT commit_drain_kib=17480
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=32 rep=0 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919852 rss_post_kib=8919852 rss_2s_kib=8919852 rss_drain_kib=5936 used_predrain_sum=9663676416
+--- arm headroom=16777216 MiB=16 threads=32 rep=1/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=8919820
+RESULT peak_commit_kib=9473084
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919820
+RESULT commit_post_kib=9473084
+RESULT rss_100ms_kib=8919820
+RESULT rss_1s_kib=8919820
+RESULT rss_2s_kib=8919820
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5904
+RESULT commit_drain_kib=17436
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=32 rep=1 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919820 rss_post_kib=8919820 rss_2s_kib=8919820 rss_drain_kib=5904 used_predrain_sum=9663676416
+--- arm headroom=16777216 MiB=16 threads=32 rep=2/3 ---
+RESULT headroom_bytes=16777216
+RESULT headroom_mib=16
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=8919820
+RESULT peak_commit_kib=9473096
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919820
+RESULT commit_post_kib=9473096
+RESULT rss_100ms_kib=8919820
+RESULT rss_1s_kib=8919820
+RESULT rss_2s_kib=8919820
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=5904
+RESULT commit_drain_kib=17448
+RESULT decay_interval_ms=1000
+OK headroom=16777216 MiB=16 threads=32 rep=2 verified_headroom=16777216 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919820 rss_post_kib=8919820 rss_2s_kib=8919820 rss_drain_kib=5904 used_predrain_sum=9663676416
+--- arm headroom=67108864 MiB=64 threads=1 rep=0/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281860
+RESULT peak_commit_kib=297216
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281860
+RESULT commit_post_kib=297216
+RESULT rss_100ms_kib=281860
+RESULT rss_1s_kib=281860
+RESULT rss_2s_kib=281860
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=38124
+RESULT commit_drain_kib=38664
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=1 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281860 rss_post_kib=281860 rss_2s_kib=281860 rss_drain_kib=38124 used_predrain_sum=301989888
+--- arm headroom=67108864 MiB=64 threads=1 rep=1/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=281868
+RESULT peak_commit_kib=297224
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281868
+RESULT commit_post_kib=297224
+RESULT rss_100ms_kib=281868
+RESULT rss_1s_kib=281868
+RESULT rss_2s_kib=281868
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=38132
+RESULT commit_drain_kib=38672
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=1 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281868 rss_post_kib=281868 rss_2s_kib=281868 rss_drain_kib=38132 used_predrain_sum=301989888
+--- arm headroom=67108864 MiB=64 threads=1 rep=2/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281856
+RESULT peak_commit_kib=297208
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281856
+RESULT commit_post_kib=297208
+RESULT rss_100ms_kib=281856
+RESULT rss_1s_kib=281856
+RESULT rss_2s_kib=281856
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=38120
+RESULT commit_drain_kib=38656
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=1 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281856 rss_post_kib=281856 rss_2s_kib=281856 rss_drain_kib=38120 used_predrain_sum=301989888
+--- arm headroom=67108864 MiB=64 threads=8 rep=0/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3160
+RESULT peak_rss_kib=2232268
+RESULT peak_commit_kib=2369148
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232268
+RESULT commit_post_kib=2369148
+RESULT rss_100ms_kib=2232268
+RESULT rss_1s_kib=2232268
+RESULT rss_2s_kib=2232268
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=282352
+RESULT commit_drain_kib=300728
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=8 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232268 rss_post_kib=2232268 rss_2s_kib=2232268 rss_drain_kib=282352 used_predrain_sum=2415919104
+--- arm headroom=67108864 MiB=64 threads=8 rep=1/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=2232272
+RESULT peak_commit_kib=2369172
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232272
+RESULT commit_post_kib=2369172
+RESULT rss_100ms_kib=2232272
+RESULT rss_1s_kib=2232272
+RESULT rss_2s_kib=2232272
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=282356
+RESULT commit_drain_kib=300752
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=8 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232272 rss_post_kib=2232272 rss_2s_kib=2232272 rss_drain_kib=282356 used_predrain_sum=2415919104
+--- arm headroom=67108864 MiB=64 threads=8 rep=2/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=2232288
+RESULT peak_commit_kib=2369196
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232288
+RESULT commit_post_kib=2369196
+RESULT rss_100ms_kib=2232288
+RESULT rss_1s_kib=2232288
+RESULT rss_2s_kib=2232288
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=282372
+RESULT commit_drain_kib=300776
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=8 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232288 rss_post_kib=2232288 rss_2s_kib=2232288 rss_drain_kib=282372 used_predrain_sum=2415919104
+--- arm headroom=67108864 MiB=64 threads=32 rep=0/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3192
+RESULT peak_rss_kib=8919840
+RESULT peak_commit_kib=9473104
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919840
+RESULT commit_post_kib=9473104
+RESULT rss_100ms_kib=8919840
+RESULT rss_1s_kib=8919840
+RESULT rss_2s_kib=8919840
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=1120164
+RESULT commit_drain_kib=1199424
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=32 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919840 rss_post_kib=8919840 rss_2s_kib=8919840 rss_drain_kib=1120164 used_predrain_sum=9663676416
+--- arm headroom=67108864 MiB=64 threads=32 rep=1/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3184
+RESULT peak_rss_kib=8919820
+RESULT peak_commit_kib=9473128
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919820
+RESULT commit_post_kib=9473128
+RESULT rss_100ms_kib=8919820
+RESULT rss_1s_kib=8919820
+RESULT rss_2s_kib=8919820
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=1120144
+RESULT commit_drain_kib=1199452
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=32 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919820 rss_post_kib=8919820 rss_2s_kib=8919820 rss_drain_kib=1120144 used_predrain_sum=9663676416
+--- arm headroom=67108864 MiB=64 threads=32 rep=2/3 ---
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=8919848
+RESULT peak_commit_kib=9473116
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919848
+RESULT commit_post_kib=9473116
+RESULT rss_100ms_kib=8919848
+RESULT rss_1s_kib=8919848
+RESULT rss_2s_kib=8919848
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=1120172
+RESULT commit_drain_kib=1199440
+RESULT decay_interval_ms=1000
+OK headroom=67108864 MiB=64 threads=32 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919848 rss_post_kib=8919848 rss_2s_kib=8919848 rss_drain_kib=1120172 used_predrain_sum=9663676416
+--- arm headroom=268435456 MiB=256 threads=1 rep=0/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281856
+RESULT peak_commit_kib=297216
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281856
+RESULT commit_post_kib=297216
+RESULT rss_100ms_kib=281856
+RESULT rss_1s_kib=281856
+RESULT rss_2s_kib=281856
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=247044
+RESULT commit_drain_kib=260280
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=1 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281856 rss_post_kib=281856 rss_2s_kib=281856 rss_drain_kib=247044 used_predrain_sum=301989888
+--- arm headroom=268435456 MiB=256 threads=1 rep=1/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=281852
+RESULT peak_commit_kib=297220
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281852
+RESULT commit_post_kib=297220
+RESULT rss_100ms_kib=281852
+RESULT rss_1s_kib=281852
+RESULT rss_2s_kib=281852
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=247040
+RESULT commit_drain_kib=260284
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=1 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281852 rss_post_kib=281852 rss_2s_kib=281852 rss_drain_kib=247040 used_predrain_sum=301989888
+--- arm headroom=268435456 MiB=256 threads=1 rep=2/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3172
+RESULT peak_rss_kib=281852
+RESULT peak_commit_kib=297220
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=301989888
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=281852
+RESULT commit_post_kib=297220
+RESULT rss_100ms_kib=281852
+RESULT rss_1s_kib=281852
+RESULT rss_2s_kib=281852
+RESULT used_predrain_sum=301989888
+RESULT rss_drain_kib=247040
+RESULT commit_drain_kib=260284
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=1 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=281852 rss_post_kib=281852 rss_2s_kib=281852 rss_drain_kib=247040 used_predrain_sum=301989888
+--- arm headroom=268435456 MiB=256 threads=8 rep=0/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232280
+RESULT peak_commit_kib=2369176
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232280
+RESULT commit_post_kib=2369176
+RESULT rss_100ms_kib=2232280
+RESULT rss_1s_kib=2232280
+RESULT rss_2s_kib=2232280
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=1953728
+RESULT commit_drain_kib=2073688
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=8 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232280 rss_post_kib=2232280 rss_2s_kib=2232280 rss_drain_kib=1953728 used_predrain_sum=2415919104
+--- arm headroom=268435456 MiB=256 threads=8 rep=1/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232308
+RESULT peak_commit_kib=2369216
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232308
+RESULT commit_post_kib=2369216
+RESULT rss_100ms_kib=2232308
+RESULT rss_1s_kib=2232308
+RESULT rss_2s_kib=2232308
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=1953756
+RESULT commit_drain_kib=2073728
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=8 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232308 rss_post_kib=2232308 rss_2s_kib=2232308 rss_drain_kib=1953756 used_predrain_sum=2415919104
+--- arm headroom=268435456 MiB=256 threads=8 rep=2/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3176
+RESULT peak_rss_kib=2232280
+RESULT peak_commit_kib=2369188
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=2415919104
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=2232280
+RESULT commit_post_kib=2369188
+RESULT rss_100ms_kib=2232280
+RESULT rss_1s_kib=2232280
+RESULT rss_2s_kib=2232280
+RESULT used_predrain_sum=2415919104
+RESULT rss_drain_kib=1953728
+RESULT commit_drain_kib=2073700
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=8 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=2232280 rss_post_kib=2232280 rss_2s_kib=2232280 rss_drain_kib=1953728 used_predrain_sum=2415919104
+--- arm headroom=268435456 MiB=256 threads=32 rep=0/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3168
+RESULT peak_rss_kib=8919760
+RESULT peak_commit_kib=9473040
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919760
+RESULT commit_post_kib=9473040
+RESULT rss_100ms_kib=8919760
+RESULT rss_1s_kib=8919760
+RESULT rss_2s_kib=8919760
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=7805528
+RESULT commit_drain_kib=8291088
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=32 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919760 rss_post_kib=8919760 rss_2s_kib=8919760 rss_drain_kib=7805528 used_predrain_sum=9663676416
+--- arm headroom=268435456 MiB=256 threads=32 rep=1/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3180
+RESULT peak_rss_kib=8919816
+RESULT peak_commit_kib=9473104
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919816
+RESULT commit_post_kib=9473104
+RESULT rss_100ms_kib=8919816
+RESULT rss_1s_kib=8919816
+RESULT rss_2s_kib=8919816
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=7805584
+RESULT commit_drain_kib=8291152
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=32 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919816 rss_post_kib=8919816 rss_2s_kib=8919816 rss_drain_kib=7805584 used_predrain_sum=9663676416
+--- arm headroom=268435456 MiB=256 threads=32 rep=2/3 ---
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=8919796
+RESULT peak_commit_kib=9473076
+RESULT used_post_fill_max=0
+RESULT used_post_teardown_sum=9663676416
+RESULT used_post_teardown_max=301989888
+RESULT slots_occupied_max=8
+RESULT rss_post_kib=8919796
+RESULT commit_post_kib=9473076
+RESULT rss_100ms_kib=8919796
+RESULT rss_1s_kib=8919796
+RESULT rss_2s_kib=8919796
+RESULT used_predrain_sum=9663676416
+RESULT rss_drain_kib=7805564
+RESULT commit_drain_kib=8291124
+RESULT decay_interval_ms=1000
+OK headroom=268435456 MiB=256 threads=32 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 used_post_teardown_max=301989888 slots_occupied_max=8 peak_rss_kib=8919796 rss_post_kib=8919796 rss_2s_kib=8919796 rss_drain_kib=7805564 used_predrain_sum=9663676416
+
+=== aggregated (median of 3 reps; min..max in parens) ===
+headroomMB  threads             peak_rss_kib             rss_post_kib  used_post_max  slots_occ   rss_2s_kib    rss_drain used_predrain
+         0        1  281864 (281844..281868)  281864 (281844..281868)      301989888          8 281864 (281844..281868) 3308 (3288..3312)    301989888
+         0        8 2232284 (2232280..2232288) 2232284 (2232280..2232288)      301989888          8 2232284 (2232280..2232288) 3808 (3804..3812)   2415919104
+         0       32 8919832 (8919828..8919864) 8919832 (8919828..8919864)      301989888          8 8919832 (8919828..8919864) 5916 (5912..5948)   9663676416
+        16        1  281860 (281856..281864)  281860 (281856..281864)      301989888          8 281860 (281856..281864) 3304 (3300..3308)    301989888
+        16        8 2232288 (2232284..2232304) 2232288 (2232284..2232304)      301989888          8 2232288 (2232284..2232304) 3812 (3808..3828)   2415919104
+        16       32 8919820 (8919820..8919852) 8919820 (8919820..8919852)      301989888          8 8919820 (8919820..8919852) 5904 (5904..5936)   9663676416
+        64        1  281860 (281856..281868)  281860 (281856..281868)      301989888          8 281860 (281856..281868) 38124 (38120..38132)    301989888
+        64        8 2232272 (2232268..2232288) 2232272 (2232268..2232288)      301989888          8 2232272 (2232268..2232288) 282356 (282352..282372)   2415919104
+        64       32 8919840 (8919820..8919848) 8919840 (8919820..8919848)      301989888          8 8919840 (8919820..8919848) 1120164 (1120144..1120172)   9663676416
+       256        1  281852 (281852..281856)  281852 (281852..281856)      301989888          8 281852 (281852..281856) 247040 (247040..247044)    301989888
+       256        8 2232280 (2232280..2232308) 2232280 (2232280..2232308)      301989888          8 2232280 (2232280..2232308) 1953728 (1953728..1953756)   2415919104
+       256       32 8919796 (8919760..8919816) 8919796 (8919760..8919816)      301989888          8 8919796 (8919760..8919816) 7805564 (7805528..7805584)   9663676416
+
+=== CSV (one row per child) ===
+# headroom_bytes,headroom_mib,thread_count,repetition,verified_headroom,config_conflicts_delta,process_identity,large_obj_bytes,large_obj_count,peak_rss_kib,peak_commit_kib,used_post_fill_max,used_post_teardown_sum,used_post_teardown_max,slots_occupied_max,rss_post_kib,commit_post_kib,rss_100ms_kib,rss_1s_kib,rss_2s_kib,used_predrain_sum,rss_drain_kib,commit_drain_kib,decay_interval_ms
+0,0,1,0,0,0,subprocess,35651584,8,281844,297196,0,301989888,301989888,8,281844,297196,281844,281844,281844,301989888,3288,1708,1000
+0,0,1,1,0,0,subprocess,35651584,8,281868,297224,0,301989888,301989888,8,281868,297224,281868,281868,281868,301989888,3312,1732,1000
+0,0,1,2,0,0,subprocess,35651584,8,281864,297220,0,301989888,301989888,8,281864,297220,281864,281864,281864,301989888,3308,1728,1000
+0,0,8,0,0,0,subprocess,35651584,8,2232280,2369180,0,2415919104,301989888,8,2232280,2369180,2232280,2232280,2232280,2415919104,3804,5268,1000
+0,0,8,1,0,0,subprocess,35651584,8,2232284,2369184,0,2415919104,301989888,8,2232284,2369184,2232284,2232284,2232284,2415919104,3808,5272,1000
+0,0,8,2,0,0,subprocess,35651584,8,2232288,2369184,0,2415919104,301989888,8,2232288,2369184,2232288,2232288,2232288,2415919104,3812,5276,1000
+0,0,32,0,0,0,subprocess,35651584,8,8919828,9473064,0,9663676416,301989888,8,8919828,9473064,8919828,8919828,8919828,9663676416,5912,17416,1000
+0,0,32,1,0,0,subprocess,35651584,8,8919864,9473104,0,9663676416,301989888,8,8919864,9473104,8919864,8919864,8919864,9663676416,5948,17452,1000
+0,0,32,2,0,0,subprocess,35651584,8,8919832,9473096,0,9663676416,301989888,8,8919832,9473096,8919832,8919832,8919832,9663676416,5916,17444,1000
+16777216,16,1,0,16777216,0,subprocess,35651584,8,281860,297212,0,301989888,301989888,8,281860,297212,281860,281860,281860,301989888,3304,1724,1000
+16777216,16,1,1,16777216,0,subprocess,35651584,8,281856,297208,0,301989888,301989888,8,281856,297208,281856,281856,281856,301989888,3300,1720,1000
+16777216,16,1,2,16777216,0,subprocess,35651584,8,281864,297216,0,301989888,301989888,8,281864,297216,281864,281864,281864,301989888,3308,1728,1000
+16777216,16,8,0,16777216,0,subprocess,35651584,8,2232288,2369188,0,2415919104,301989888,8,2232288,2369188,2232288,2232288,2232288,2415919104,3812,5280,1000
+16777216,16,8,1,16777216,0,subprocess,35651584,8,2232284,2369184,0,2415919104,301989888,8,2232284,2369184,2232284,2232284,2232284,2415919104,3808,5272,1000
+16777216,16,8,2,16777216,0,subprocess,35651584,8,2232304,2369212,0,2415919104,301989888,8,2232304,2369212,2232304,2232304,2232304,2415919104,3828,5300,1000
+16777216,16,32,0,16777216,0,subprocess,35651584,8,8919852,9473128,0,9663676416,301989888,8,8919852,9473128,8919852,8919852,8919852,9663676416,5936,17480,1000
+16777216,16,32,1,16777216,0,subprocess,35651584,8,8919820,9473084,0,9663676416,301989888,8,8919820,9473084,8919820,8919820,8919820,9663676416,5904,17436,1000
+16777216,16,32,2,16777216,0,subprocess,35651584,8,8919820,9473096,0,9663676416,301989888,8,8919820,9473096,8919820,8919820,8919820,9663676416,5904,17448,1000
+67108864,64,1,0,67108864,0,subprocess,35651584,8,281860,297216,0,301989888,301989888,8,281860,297216,281860,281860,281860,301989888,38124,38664,1000
+67108864,64,1,1,67108864,0,subprocess,35651584,8,281868,297224,0,301989888,301989888,8,281868,297224,281868,281868,281868,301989888,38132,38672,1000
+67108864,64,1,2,67108864,0,subprocess,35651584,8,281856,297208,0,301989888,301989888,8,281856,297208,281856,281856,281856,301989888,38120,38656,1000
+67108864,64,8,0,67108864,0,subprocess,35651584,8,2232268,2369148,0,2415919104,301989888,8,2232268,2369148,2232268,2232268,2232268,2415919104,282352,300728,1000
+67108864,64,8,1,67108864,0,subprocess,35651584,8,2232272,2369172,0,2415919104,301989888,8,2232272,2369172,2232272,2232272,2232272,2415919104,282356,300752,1000
+67108864,64,8,2,67108864,0,subprocess,35651584,8,2232288,2369196,0,2415919104,301989888,8,2232288,2369196,2232288,2232288,2232288,2415919104,282372,300776,1000
+67108864,64,32,0,67108864,0,subprocess,35651584,8,8919840,9473104,0,9663676416,301989888,8,8919840,9473104,8919840,8919840,8919840,9663676416,1120164,1199424,1000
+67108864,64,32,1,67108864,0,subprocess,35651584,8,8919820,9473128,0,9663676416,301989888,8,8919820,9473128,8919820,8919820,8919820,9663676416,1120144,1199452,1000
+67108864,64,32,2,67108864,0,subprocess,35651584,8,8919848,9473116,0,9663676416,301989888,8,8919848,9473116,8919848,8919848,8919848,9663676416,1120172,1199440,1000
+268435456,256,1,0,268435456,0,subprocess,35651584,8,281856,297216,0,301989888,301989888,8,281856,297216,281856,281856,281856,301989888,247044,260280,1000
+268435456,256,1,1,268435456,0,subprocess,35651584,8,281852,297220,0,301989888,301989888,8,281852,297220,281852,281852,281852,301989888,247040,260284,1000
+268435456,256,1,2,268435456,0,subprocess,35651584,8,281852,297220,0,301989888,301989888,8,281852,297220,281852,281852,281852,301989888,247040,260284,1000
+268435456,256,8,0,268435456,0,subprocess,35651584,8,2232280,2369176,0,2415919104,301989888,8,2232280,2369176,2232280,2232280,2232280,2415919104,1953728,2073688,1000
+268435456,256,8,1,268435456,0,subprocess,35651584,8,2232308,2369216,0,2415919104,301989888,8,2232308,2369216,2232308,2232308,2232308,2415919104,1953756,2073728,1000
+268435456,256,8,2,268435456,0,subprocess,35651584,8,2232280,2369188,0,2415919104,301989888,8,2232280,2369188,2232280,2232280,2232280,2415919104,1953728,2073700,1000
+268435456,256,32,0,268435456,0,subprocess,35651584,8,8919760,9473040,0,9663676416,301989888,8,8919760,9473040,8919760,8919760,8919760,9663676416,7805528,8291088,1000
+268435456,256,32,1,268435456,0,subprocess,35651584,8,8919816,9473104,0,9663676416,301989888,8,8919816,9473104,8919816,8919816,8919816,9663676416,7805584,8291152,1000
+268435456,256,32,2,268435456,0,subprocess,35651584,8,8919796,9473076,0,9663676416,301989888,8,8919796,9473076,8919796,8919796,8919796,9663676416,7805564,8291124,1000
+
+NOTE: each (headroom_bytes, thread_count, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation). Every arm hard-asserted resolved headroom == requested headroom (read back via AllocCore::dbg_decay_config, NOT assumed) AND config_conflicts_delta == 0 (R26-4 config identity). Every arm hard-asserted used_post_teardown_max > 0 (admission proven) and, for headroom>0 arms, that the post-teardown large_cache_used_bytes never fell below headroom_bytes (the documented floor held). Idle time-series (100ms/1s/2s) demonstrates the large cache does NOT self-decay on pure idle (event-driven only, fires solely from alloc_large/dealloc); the explicit dbg_force_decay_tick loop at drain time demonstrates the retained cache IS reclaimable without a background thread, given enough forced ticks.

@@ -1557,6 +1557,26 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 name = "r27_3_pool_retention_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
+# R29-13 (task #444): the large-cache RETENTION gate. Mirrors R27-3's
+# subprocess-per-arm methodology but targets the per-shard large-segment
+# free-cache's `headroom_bytes` (default 256 MiB/heap) instead of the
+# small-pool `pool_segments`/`pool_byte_cap`. Sweeps headroom in
+# {0, 16 MiB, 64 MiB, 256 MiB} at 1/8/32 threads with long-lived,
+# non-exiting threads (the floor BEFORE `trim_for_recycle` would fire at
+# thread exit), using a LARGE-object workload (34 MiB objects, 8 per thread —
+# one per base large-cache slot) instead of R27-3's 1024 B small churn.
+# `alloc-global` (not `alloc-xthread`, unlike the r27_3 sibling) because this
+# probe only reaches `sefer_alloc::registry` (which is `alloc-global`-gated,
+# `src/lib.rs:315-317`) and `config_conflicts_total` (`alloc-xthread`-independent,
+# `src/registry/heap_registry.rs:667`) — verified by building with exactly
+# this feature set and no more (`cargo build --example
+# r29_13_large_cache_retention_gate --features "alloc-global alloc-decommit
+# bench-internals"` succeeds; without `alloc-global` it fails E0432 on
+# `sefer_alloc::registry`).
+[[example]]
+name = "r29_13_large_cache_retention_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
 # R26-3 (task #412): process-level A/B/B/A judge arms for confirming R25-5/R26-1's
 # latency/decommit finding (cap 4->8 eliminates the decommit-driven slowdown)
 # through the REAL `#[global_allocator]` entry point — NOT the AllocCore bypass
