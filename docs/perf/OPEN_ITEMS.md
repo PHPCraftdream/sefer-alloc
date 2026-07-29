@@ -46,6 +46,24 @@ item this file's own scope deliberately excludes), see the sibling document
 independent reviews found R19-1's flaky-test and clippy-dead-code follow-ups
 tracked nowhere durable).
 
+**Named in-scope source (added R29-11, task #442):** `docs/perf/IAI_BASELINE.md`
+is explicitly an in-scope source document for this index — not merely an
+instance of the abstract `docs/perf/*.md` glob above. It is the densest
+`honest-reject` source in the perf-doc corpus: eight trigger-bearing reject
+sections (X4, X5, X6, G1, T10, R1, R3, R5-R2b). The scope rule was technically
+broad enough to cover it from R14 on, but no round's start ritual ever surfaced
+the file because it was never *named* here — so those eight documented rejects
+went un-indexed across every round from R3's first appearance (2026-07-13) until
+R29-11 migrated the seven still-unindexed ones below (items 18–24; R3 itself was
+partially closed the prior task by R29-10's item 17). Naming the file explicitly
+closes that loophole: the round-start "read this file end-to-end" pass must
+treat `IAI_BASELINE.md`'s `honest-reject` sections as first-class open-item
+candidates, not background prose. The structural regression guard
+`tests/no_stale_doc_references.rs::honest_reject_sections_are_indexed` enforces
+this going forward — any new `## <TOKEN> honest-reject` heading in a
+`docs/perf/*.md` file whose `TOKEN` does not appear in this index fails the
+build.
+
 **Tier key.** **[A]** active / high-value — a real next step a round should
 consider taking. **[D]** deferred design — a complete CONDITIONAL-GO design
 exists; implement only if its trigger/victim materializes. **[L]** low-priority
@@ -1102,6 +1120,70 @@ for completeness.
     honest-reject, closed with the number attached (strictly more than R3
     achieved). R3's own text in `IAI_BASELINE.md` is preserved verbatim with a
     dated append-note pointing here.
+18. **X4 (2026-07-05) — two recycle experiments (`TCACHE_CAP` 16→32 and a 64-bit
+    bloom signature gating the M2 scan), both rejected.**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended; both sub-experiments declined.
+    > - **Current number/verdict:** **A — `TCACHE_CAP` 16→32: REJECT.** Every bench regressed, including the explicit target (recycle **+32,305** Ir; churn +22.3k; cold +25.3k; large +18.3k) — the bench shapes don't refill-miss enough to amortize a doubled cap (each refill/flush just got twice as large). Confirms the FASTBIN P6 sweep's "CAP=32+ materially worse". **B — 64-bit bloom signature gating the M2 in-magazine scan: REJECT (the won-front rule).** Recycle won big (−19,147 / −14,235; cold −8,733 / −6,997) but ALL THREE churn benches regressed ~+980 Ir — far past the ±10 hot-path kill threshold (on churn the just-popped block's signature bit is still set, so the gate never skips the scan and is pure overhead; churn is the won front, which the project does not trade).
+    > - **Next trigger:** per B's own text — "If a future arc revisits this, the shape to try is a signature that is CLEARED on pop (pop knows the slot index; clearing exactly one bit is sound only with per-slot bits, not a shared bloom — i.e. a 16-bit occupancy mask keyed by slot, which is just the scan again)."
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X4 honest-rejects (2026-07-05)" section (lines 219–244). Final tree after X4 = pristine `2a23878` (zero diff; nothing shipped).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442) — migration of a long-unindexed `honest-reject` (see the named-source note in this file's Scope). Verdict and revisit trigger copied verbatim/close-paraphrased from the source section; no re-measurement performed.
+19. **X6 (2026-07-05) — clz `class_for` vs the 16 KiB `SIZE2CLASS` LUT.**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended.
+    > - **Current number/verdict:** REJECT. A clz-based `class_for` (14-byte `CLZ_BASE` per-pow2-bucket table + ≤6-step forward scan — the 49-class geometry has 1–5 irregular classes per log2 bucket, no closed form), proven bitwise-identical to the LUT over 8,280,074 (size, align) pairs, measured: churn Ir 0 delta (the compiler const-evals `class_for` for the benches' fixed sizes), `realloc_grow` (the one dynamically-sized path) **+658 Ir** (clz+scan costs more than one indexed load), and **Estimated Cycles regressed on 10/11 benches** (churn +72…+208; recycle +72/+140; multiseg +76; only cold_64b −64). RAM hits unchanged (±4), so the LUT's 16 KiB footprint never surfaced as misses; the scan's extra loads did.
+    > - **Next trigger:** per the section's own text — "If a future arc revisits, the trigger should be a REAL-application cache profile (not microbenches) showing SIZE2CLASS lines contending." (The clz implementation and the exhaustive differential test are recoverable from the source section's description.)
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X6 honest-reject (2026-07-05)" section (lines 246–268).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442).
+20. **X5 (2026-07-05) — per-class segment-queue bitmap (cheapest variant).**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended *for the measured regime* (correctness-proven and recoverable; not a refutation of the idea).
+    > - **Current number/verdict:** REJECT. The cheapest sound variant (a per-segment `u64` bitmap of non-empty classes, bit `c` set ⟺ `BinTable.head(c) != FREE_LIST_NULL`, maintained at every empty↔nonempty transition, consulted by `find_segment_with_free` instead of loading the BinTable head cache line) was implemented, correctness-proven by 8 dedicated regression tests (counterfactual-verified: disabling any one transition makes the invariant test FAIL), and measured: it regressed the designated judge (`multiseg_cold_256k` +273 Ir) AND the won front (the four churn benches **+9 Ir** each, just under the ±10 kill threshold; recycle +810; cold +400). Mechanism: at n=3 segments the maintenance RMW (load `free_classes`, OR/AND a mask, store) on every empty↔nonempty dealloc transition is a net cost, and the `free_classes` load sits in the SAME cache line as the header already read for `kind_at` — the "avoid a BinTable-line load" premise does not hold here (no extra cache line to avoid).
+    > - **Next trigger:** per the section's own text — "a future arc that adds a ≥64-segment bench (or profiles a real application) may flip the verdict. The shape to revisit is the FULL per-class queue (skip non-matching segments entirely, not just a per-segment bit probe)." (The structural argument only materialises at n_segments ≫ 3, which no current bench models — `multiseg_cold_256k` spans only 3.)
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X5 honest-reject (2026-07-05)" section (lines 270–365, full measurement table included there). Final tree after X5 = pristine `490974d` (zero diff; nothing shipped).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). NOTE: this is the first of THREE independent attempts at the same `find_segment_with_free` scan barrier (X5 → T10 → R1, items 20/22/23 below); all three record the SAME structural barrier (every current bench models ≤3 live segments) — see R1's "confirmed a fourth time" note.
+21. **G1 (2026-07-10) — magazine double-free oracle fold into `AllocBitmap`.**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended; not implemented (zero diff for G1 specifically; task #50's other sub-parts landed independently).
+    > - **Current number/verdict:** REJECT. Folding the in-magazine double-free scan into `AllocBitmap` requires *inverting* existing load-bearing optimizations at multiple call sites (not a free relabeling): `refill_class_bump_impl`'s freelist-drain leg + `refill_class_bump`'s bump-carve leg both call `mark_alloc` on a premise that becomes false once the destination can be the magazine instead of the user; `reclaim_offset_checked`'s cross-thread ring-drain path already runs `is_free(off)` PLUS a separate `is_in_magazine` O(count) scan specifically because today's bitmap is blind to magazine residency — folding residency into the bit would make `is_in_magazine` redundant, a real behavior change to the H1-adjacent cross-thread reclaim protocol. A single alloc can legitimately set up to 32 consecutive bits (1 requested + `REFILL_BATCH`=31 refilled), which the simple "set on push, clear on pop" framing did not account for. Measured: the magazine-hit benches targeted show **exactly 0.0 Ir/op delta** (no code changed). M2 counterfactual tests confirmed non-vacuous (temporarily broke → went RED as expected).
+    > - **Next trigger:** per the section's own text — "the shape to try is NOT a simple bit redefinition but a design that (a) audits and updates every `mark_alloc`/`mark_free` call site's semantics consistently (the four sites named, at minimum), and (b) resolves whether `is_in_magazine`'s separate scan in `reclaim_offset_checked` becomes provably redundant or must be kept for the cross-thread case specifically — that analysis was not completed here … and is the actual blocker, not a fundamental soundness objection to the idea."
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "G1 honest-reject (2026-07-10)" section (lines 530–591).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442).
+22. **T10 (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free` (NO-GO, reverted).**
+
+    > **Current state**
+    > - **Status:** NO-GO, honest reject — reverted (one orthogonal sub-finding KEPT; see below).
+    > - **Current number/verdict:** NO-GO. A per-class `find_hint: [u16; SMALL_CLASS_COUNT]` "last found segment" hint (verified pre-check at scan top, written ONLY on a successful full scan — zero hot-path maintenance) failed the churn kill gate (±10 raw Ir, X4-B precedent): the `[u16; 49]` array init at `AllocCore::new` costs a constant **+44 Ir on every heap construction** (isolated cleanly by `large_alloc_free_cycle`'s raw delta — that bench touches no small class, so its entire +44 Ir IS the array init), and the four churn benches landed at **+46 raw Ir** (~5× the threshold). Cold/recycle landed flat (+0.1 Ir/op) — far below the −15…−25 Ir/op GO target; the O(n) scan at n=3 is 3 cache-hot iterations. Only the two multi-segment judges moved (`multiseg_cold_256k` −4.2 Ir/op, `seg_cycle_decommit_256k` −6.6 Ir/op) — the SAME figures X5/R1 reached.
+    > - **Next trigger:** per the section's own text — "A future arc that adds a ≥64-segment bench (or profiles a real application with 100+ long-lived small segments) may flip this verdict; the correctness-proven hint shape is recoverable from this entry's description. The shape to revisit is the FULL per-class queue (skip non-matching segments entirely), since a per-class hint alone already loses to the bootstrap cost at n=3." NOTE (kept sub-finding): T10's other, lower-risk sub-finding (`class_for` align>16 jump-ahead walk over `SIZE2CLASS`, perf#9) is **KEPT** — orthogonal to this NO-GO, pure integer arithmetic, correctness-pinned by `tests/size_classes_slow_path_equivalence.rs`.
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "T10 honest-reject (2026-07-12)" section (lines 1088–1204, full measurement table included there).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). Second of three attempts at the scan barrier (after X5, before R1).
+23. **R1 (2026-07-13) — per-segment availability hint for `find_segment_with_free` (NO-GO, clean revert).**
+
+    > **Current state**
+    > - **Status:** NO-GO, honest reject — clean revert (working tree byte-identical to pre-experiment).
+    > - **Current number/verdict:** NO-GO — the **fourth independent attempt** at this scan (after X5's per-segment bitmap and T10's per-class hint array). A single verified pre-check hint (`find_hint_slot: u32`, init `u32::MAX` = none, written on successful full scan, zero hot-path maintenance, sound-by-construction false-positive-only failure mode) PASSED the churn kill-gate (±10 Ir) at **+3 raw Ir** (the best of all three attempts — better than T10's +46 and X5's +9), but MISSED the cold/recycle target by a wide margin (+0.0…+0.1 Ir/op vs the campaign's −15…−25 Ir/op GO target): those benches fit entirely in the primordial segment (n=1, a one-iteration scan), so no scan optimization of any shape can help them. Only the two multi-segment judges moved (`multiseg_cold_256k` −4.3 Ir/op, `seg_cycle_decommit_256k` −6.6 Ir/op) — the SAME −4.3/−6.6 T10 already reached and was rejected for.
+    > - **Next trigger:** per the section's own text — "A future arc that adds a genuine ≥64-segment bench (or profiles a real long-lived-process workload with 100+ simultaneously-live small segments) is the prerequisite for re-opening R1/X5/T10 — not a new algorithmic attempt at the current bench scale. The correctness-proven hint shape here (verified pre-check, zero hot-path cost, sound-by-construction false-positive-only failure mode) is the recommended starting point if that day comes." The structural barrier (every current bench models ≤3 live segments) is now confirmed a fourth time (X5, T10, R1's design-time Tier-A analysis, and this measured result).
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R1 honest-reject (2026-07-13)" section (lines 1285–1354, full measurement table included there).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). Third and final of the three attempts at the scan barrier; together with X5 (item 20) and T10 (item 22) these share ONE next trigger (a genuine ≥64-segment bench).
+24. **R5-R2b (2026-07-14) — the wall-clock churn regression signal is NOT an algorithmic/Ir regression (honest reject of the regression hypothesis).**
+
+    > **Current state**
+    > - **Status:** honest reject of the "algorithmic regression" hypothesis — the planned IAI-based bisection is moot by construction (closed without a source change).
+    > - **Current number/verdict:** R5-R2 (the parent finding, `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`) used a rigorous paired A/B wall-clock protocol (20 alternating process-level reps, paired t-stat 3.94–5.27, sign test 17–19/20) to confirm a REAL, non-noise ~14–29% wall-clock slowdown on `global_alloc_churn`/SeferAlloc between baseline `e6b9b3a` and then-`HEAD`. R5-R2b re-measured the SAME window with `npm run iai` (the project's designated deterministic judge) and found `Ir` got FASTER, not slower: `small_churn_16b`/`churn_256b` 42,880 → 34,036 (−8,844 / **−20.6%**), `churn_write_256b` −20.3%; `EstCycles` and RAM hits moved the same direction by a similar/larger margin (e.g. `churn_256b` RAM hits 4,870 → 781). `Ir` is deterministic (byte-identical back-to-back at the same commit), so there is no `Ir` regression in this window to bisect.
+    > - **Next trigger:** **no revisit trigger for the closed hypothesis** (it was refuted, not deferred). The section explicitly calls the one adjacent open thread — a possible Windows-native effect invisible to Ir (real page-fault/`VirtualAlloc`/decommit costs, TLB behavior, ASLR/base-address-dependent cache conflicts, or a codegen divergence between the `x86_64-pc-windows-msvc` and WSL/Linux target triples, since R5-R2's wall-clock numbers came from a native Windows release build while `npm run iai` drives a Linux/Valgrind-simulated binary) — a "NEW investigation, not a continuation of R5-R2b's now-closed algorithmic-regression hypothesis", which would need Windows-native tooling (ETW / a Windows perf-counter harness) this project does not currently have wired up.
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes).
+
+    Transcribed from `IAI_BASELINE.md` (R29-11, task #442). R5-R2's wall-clock signal itself remains a methodologically sound result — R5-R2b only establishes the difference is not an Ir/algorithmic regression (plausible-but-UNVERIFIED Windows-native cause noted above).
 
 ---
 

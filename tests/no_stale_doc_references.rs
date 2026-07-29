@@ -483,3 +483,130 @@ fn group_thousands(n: usize) -> String {
     }
     out.chars().rev().collect()
 }
+
+/// Tripwire against the R29-11 (task #442) gap: every `honest-reject` section
+/// heading in `docs/perf/*.md` must be indexed somewhere in
+/// `docs/perf/OPEN_ITEMS.md`.
+///
+/// `docs/perf/IAI_BASELINE.md` carries eight trigger-bearing honest-reject
+/// sections (X4/X5/X6/G1/T10/R1/R3/R5-R2b). From R3's first appearance
+/// (2026-07-13) through R29, none of these was ever indexed in
+/// `OPEN_ITEMS.md` — the scope rule technically covered `docs/perf/*.md`, but
+/// no round's start ritual surfaced the file because it was never *named*
+/// there. R29-11 migrated the seven still-unindexed ones (R3 was already
+/// partially closed by R29-10's item 17) and named the file explicitly in
+/// `OPEN_ITEMS.md`'s Scope. This guard keeps that closed: any future
+/// `## <TOKEN> ... honest-reject ...` heading added to a `docs/perf/*.md` file
+/// whose `TOKEN` does not appear in `OPEN_ITEMS.md` fails the build.
+///
+/// It is deliberately a cheap grep-shaped check, NOT a markdown parser: it
+/// matches only H2 headings (`## `) containing the literal substring
+/// `honest-reject`, and extracts the first whitespace-delimited token after
+/// `##` (e.g. `X4`, `G1`, `T10`, `R5-R2b`). Token-boundary matching avoids
+/// `R1` matching inside `R10`/`R17` while still matching the whole `R5-R2b`.
+/// The corpus was verified clean at introduction (the only `## ...
+/// honest-reject` headings in `docs/perf/*.md` are the eight in
+/// `IAI_BASELINE.md`; other perf docs mention `honest-reject` only in prose).
+///
+/// Doc-only guard: reads doc text, never links the crate, so it runs in every
+/// feature configuration.
+#[test]
+fn honest_reject_sections_are_indexed() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let perf_dir = manifest.join("docs").join("perf");
+    let index_path = perf_dir.join("OPEN_ITEMS.md");
+    let index_text = fs::read_to_string(&index_path).expect("read docs/perf/OPEN_ITEMS.md");
+
+    // Collect every `## <TOKEN> ... honest-reject ...` heading across the
+    // perf-doc corpus, with its file + line for the diagnostic.
+    let mut md_files = Vec::new();
+    collect_md_files(&perf_dir, &mut md_files);
+    assert!(!md_files.is_empty(), "no .md files found under docs/perf");
+
+    let mut missing: Vec<String> = Vec::new();
+    for file in &md_files {
+        let text =
+            fs::read_to_string(file).unwrap_or_else(|e| panic!("read {}: {e}", file.display()));
+        for (i, line) in text.lines().enumerate() {
+            // Only real H2 headings that contain "honest-reject". This matches
+            // both "honest-reject" and "honest-rejects" (X4's plural heading).
+            if !(line.starts_with("## ") && line.contains("honest-reject")) {
+                continue;
+            }
+            let token = match line
+                .trim_start_matches('#')
+                .trim_start()
+                .split_whitespace()
+                .next()
+            {
+                Some(t) => t,
+                None => continue,
+            };
+            if !token_appears(&index_text, token) {
+                missing.push(format!(
+                    "{}:{}: heading token `{}` not indexed in docs/perf/OPEN_ITEMS.md",
+                    file.display(),
+                    i + 1,
+                    token
+                ));
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "every `## <TOKEN> honest-reject` heading in docs/perf/*.md must be \
+         indexed in docs/perf/OPEN_ITEMS.md (see R29-11/task #442 and the \
+         `IAI_BASELINE.md` named-source note in OPEN_ITEMS.md's Scope). These \
+         honest-reject section tokens are missing from the index — add an \
+         [L]-tier entry citing the section, or, if the reject is superseded, \
+         note it under the relevant existing item:\n{}",
+        missing.join("\n"),
+    );
+}
+
+/// Recursively collect every `.md` file under `dir` into `out`.
+fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_md_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            out.push(path);
+        }
+    }
+}
+
+/// Does `token` appear in `haystack` as a bounded token — i.e. the characters
+/// immediately before and after the match (if any) are non-alphanumeric?
+/// `R1` thus does NOT match inside `R10`/`R17`, while the whole `R5-R2b`
+/// (whose internal `-` is non-alphanumeric) still matches as a contiguous
+/// unit bounded on both sides by non-alphanumeric characters.
+fn token_appears(haystack: &str, token: &str) -> bool {
+    let bytes = haystack.as_bytes();
+    let tb = token.as_bytes();
+    let n = tb.len();
+    if n == 0 || n > bytes.len() {
+        return false;
+    }
+    let is_alnum = |c: u8| c.is_ascii_alphanumeric();
+    let mut from = 0usize;
+    while let Some(rel) = haystack[from..].find(token) {
+        let start = from + rel;
+        let end = start + n;
+        let left_ok = start == 0 || !is_alnum(bytes[start - 1]);
+        let right_ok = end == bytes.len() || !is_alnum(bytes[end]);
+        if left_ok && right_ok {
+            return true;
+        }
+        from = start + 1;
+        if from + n > bytes.len() {
+            break;
+        }
+    }
+    false
+}
