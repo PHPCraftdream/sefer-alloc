@@ -332,3 +332,17 @@ columns (Estimated Cycles etc.) show ±1 jitter between runs but the primary
 - **All `src/`, `tests/`, `benches/`, and `docs/ARCHITECTURE.md` changes were
   reverted** — the tree is byte-identical to HEAD (`e530a9f`). No behavior
   change shipped.
+
+---
+
+## Post-publication note (R27-10, task #428)
+
+The `dealloc_overflow_bitmap_clear_only_16b` reference arm (cited in §1 at
+7,455 Ir among the byte-identical UNCHANGED reference arms confirming same
+toolchain/host) and the `HeapCore::dbg_overflow_bitmap_clear_pass` hook it
+calls were **removed** in R27-10 (task #428) after the bitmap-clear region
+accumulated four consecutive NO-GOs. This report's NO-GO verdict is
+unaffected — it rested on the bulk-mask primitive's +14 Ir/block in-context
+regression (§1), not on this reference arm. The 7,455 figure remains a valid
+historical measurement at this report's commit; the arm is preserved in git
+history.

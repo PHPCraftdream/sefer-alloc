@@ -821,77 +821,6 @@ fn dealloc_free_only_16b_n32() {
     }
 }
 
-// R24-2 -- measurement-3: isolates the magazine-overflow BITMAP-CLEAR PASS
-// alone, via the `dbg_overflow_bitmap_clear_pass` hook (the exact production
-// loop at `heap_core_free.rs:762-768`). Shared prefix is
-// `dealloc_free_only_16b_n8` (alloc 64 + free 8, leaving the 8 freed blocks
-// magazine-resident with their bitmap bits SET); this arm adds ONE call to the
-// hook on those same 8 (bits-set) blocks. `Ir(this) - Ir(n8)` isolates the
-// 8-iteration bitmap-clear loop's cost, the single sub-cost of one overflow
-// event that is cleanly isolable and the exact target of the R24-3
-// flush_magazine_class merge. The remaining overflow sub-costs (`flush_class`
-// on 8 blocks + the 8-pointer compaction shift) are inline sequential
-// operations with no workload-level separation point from this loop, so they
-// are NOT separately isolable here -- see the report for the derived
-// (overflow_total - cheap_push - bitmap_clear) figure.
-// R25-1 (task #395): `bench-internals` added because this arm calls
-// `HeapCore::dbg_overflow_bitmap_clear_pass`, now gated on that feature (and
-// now an `unsafe fn`) after the R24 readonly review flagged it as a safe-
-// code-reachable soundness hole — see `Cargo.toml`'s `bench-internals` doc
-// and this bench target's `required-features` (already required it at the
-// target level since R24-6; this per-arm `#[cfg]` additionally keeps
-// `--all-features` builds honest, same as the sibling arm above).
-#[cfg(all(
-    target_os = "linux",
-    feature = "alloc-xthread",
-    feature = "fastbin",
-    feature = "bench-internals"
-))]
-#[library_benchmark]
-fn dealloc_overflow_bitmap_clear_only_16b() {
-    let _ = bootstrap::ensure();
-    let heap = HeapRegistry::claim();
-    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
-    let layout = Layout::from_size_align(16, 8).unwrap();
-
-    let mut ptrs: [*mut u8; CHURN_OPS] = [core::ptr::null_mut(); CHURN_OPS];
-    for slot in ptrs.iter_mut() {
-        // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
-        *slot = unsafe { (*heap).alloc(layout) };
-    }
-    black_box(&ptrs);
-
-    // Prefill the magazine to count=8 by freeing the first 8 (count 0 -> 8);
-    // those 8 blocks are now magazine-resident with their bitmap bits SET --
-    // exactly the production overflow's bitmap state.
-    for &ptr in &ptrs[..8] {
-        if !ptr.is_null() {
-            // SAFETY: ptr was returned by the alloc loop above with the same
-            // layout, freed exactly once.
-            unsafe { (*heap).dealloc(ptr, layout) };
-        }
-    }
-
-    // Timed region: the bitmap-clear pass alone, on the 8 just-freed
-    // (bits-set) blocks, via the measurement hook. Subtracting n8's Ir (same
-    // setup, no hook call) isolates exactly this 8-iteration loop's cost.
-    let flush_slice: &[*mut u8] = &ptrs[..8];
-    // SAFETY: `heap` is non-null (asserted above) and points to a live
-    // HeapRegistry for this process (dereferencing the raw `*mut
-    // HeapRegistry` pointer requires an unsafe block, same as every other
-    // `(*heap).method()` call in this file). `dbg_overflow_bitmap_clear_pass`
-    // is itself `unsafe fn` (R25-1, task #395): its contract requires every
-    // pointer in `flush_slice` to reference a live, this-heap-owned
-    // small-class block this heap issued. `flush_slice` is exactly the first
-    // 8 entries of `ptrs`, each returned by this same heap's `alloc` above
-    // and freed exactly once via `dealloc` in the prefill loop just above,
-    // making them magazine-resident, this-heap-owned blocks with their
-    // bitmap bits set -- precisely the contract this call requires, and
-    // single-threaded (no concurrent mutator) for this whole bench arm.
-    unsafe { (*heap).dbg_overflow_bitmap_clear_pass(flush_slice) };
-    black_box(flush_slice);
-}
-
 // ---------------------------------------------------------------------------
 // R25-3 (task #397) -- FLUSH_N sweep, gate 1: in-context Ir for bulk free at
 // N = 17, 32, 64, 256, 1024. `FLUSH_N` (currently 8, `src/registry/tcache.rs`)
@@ -2472,7 +2401,6 @@ library_benchmark_group!(
         dealloc_free_only_16b_n16,
         dealloc_free_only_16b_n17,
         dealloc_free_only_16b_n32,
-        dealloc_overflow_bitmap_clear_only_16b,
         dealloc_prealloc_only_1088_16b,
         dealloc_free_only_1088_16b_n17,
         dealloc_free_only_1088_16b_n32,

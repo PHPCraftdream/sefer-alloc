@@ -486,3 +486,19 @@ remediate as a separate task" convention.
 
 - `docs/perf/_raw_r24_2_run1.log`
 - `docs/perf/_raw_r24_2_run2.log`
+
+---
+
+## Post-publication note (R27-10, task #428)
+
+The `dealloc_overflow_bitmap_clear_only_16b` bench arm (§3.3 / §4.3's 84-Ir
+isolation) and the `HeapCore::dbg_overflow_bitmap_clear_pass` measurement
+hook it called (`src/registry/heap_core_diag.rs`) were **removed** in R27-10
+(task #428). The bitmap-clear optimization region this hook was built to
+isolate accumulated four consecutive NO-GOs (R24-3, R24-4, R25-3, R26-7), so
+the hook and its single consumer were deleted rather than retained as dead
+infrastructure whose only caller left a temporary magazine-state invariant
+broken on return (see `docs/reviews/2026-07-28-r26-readonly-review.md` P2).
+The 84-Ir / 7,451 figures above remain valid historical measurements at this
+report's measurement commit; to reproduce, check out that commit (the hook +
+arm are preserved in git history). See `docs/perf/OPEN_ITEMS.md` item 1.

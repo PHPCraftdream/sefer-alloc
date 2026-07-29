@@ -248,3 +248,16 @@ optimization of the existing pre-pass in-context) shows actionable savings.
 - `docs/perf/_raw_r24_3_merged_run1.log` — raw iai evidence (`git add -f`).
 - `docs/perf/OPEN_ITEMS.md` — item 1 gets a "NO-GO (task #381, R24-3)" note.
 - **All `src/` and `tests/` changes were reverted** — the tree is clean at HEAD.
+
+---
+
+## Post-publication note (R27-10, task #428)
+
+The `dealloc_overflow_bitmap_clear_only_16b` reference arm (cited in §2 at
+7,451 Ir as an unchanged standalone-hook sanity check) and the
+`HeapCore::dbg_overflow_bitmap_clear_pass` hook it calls were **removed** in
+R27-10 (task #428) after the bitmap-clear region accumulated four consecutive
+NO-GOs. This report's NO-GO verdict is unaffected — it rested on the
+`flush_magazine_class` merge's +37 Ir/overflow-event regression (§2), not on
+this reference arm. The 7,451 figure remains a valid historical measurement
+at this report's commit; the arm is preserved in git history.

@@ -440,6 +440,20 @@ for completeness.
    (`dealloc_batch_fresh_{0,1,8,17}_16b`) measuring the SHIPPING
    `dealloc_batch` were retained (genuine N-grid gap fill below N=16). The
    measurement remains valid; the code is recoverable at commit `8679105`.
+   **2026-07-29 update — DONE (task #428, R27-10):** the bitmap-clear
+   isolation hook `HeapCore::dbg_overflow_bitmap_clear_pass`
+   (`src/registry/heap_core_diag.rs`, R24-2/task #380; re-gated + made
+   `unsafe fn` by R25-1/task #395) and its single iai bench arm
+   (`dealloc_overflow_bitmap_clear_only_16b`, the 84-Ir/7,451 isolation in
+   `R24_2_FREE_BY_MAGAZINE_STATE_GATE.md` §3/§4) were REMOVED. The four
+   consecutive NO-GOs above (R24-3/R24-4/R25-3/R26-7) made the hook dead
+   measurement infrastructure, and its only caller left a temporary
+   magazine-state invariant broken on return (R26 readonly review P2) —
+   deleted rather than keep an `unsafe fn` with an implicit process-isolation
+   precondition. The measurements stay valid historical evidence at their
+   commits; the hook/arm are recoverable in git history. This is a code
+   cleanup, NOT a new verdict on the region (still open — next lever is
+   `flush_class` isolation per the card above).
 13. **R24-11 — `bench_global_alloc_churn_with_teardown`@1024B residual
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 

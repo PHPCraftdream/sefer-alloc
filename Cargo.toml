@@ -442,13 +442,9 @@ alloc-stats = ["alloc-core"]
 # production unsafe-audit surface with entry points that exist solely to
 # serve this crate's own `benches/perf_gate_iai.rs` / `tests/` harnesses.
 # Deliberately narrow: only `HeapCore::dbg_dealloc_own_thread_with_base`
-# (R23-3, task #372), `HeapCore::dbg_push_coarse_only_entry` (R13-1, task
-# #271), and `HeapCore::dbg_overflow_bitmap_clear_pass` (R24-2, task #380;
-# re-gated + made `unsafe fn` by R25-1, task #395, after the R24 readonly
-# review flagged it as a safe-code-reachable soundness hole — see that
-# function's own `# Safety` doc in `src/registry/heap_core_diag.rs`) are
-# gated behind this feature — each has exactly ONE call site
-# (`benches/perf_gate_iai.rs` for the first and third, and
+# (R23-3, task #372) and `HeapCore::dbg_push_coarse_only_entry` (R13-1, task
+# #271) are gated behind this feature — each has exactly ONE call site
+# (`benches/perf_gate_iai.rs` for the first, and
 # `tests/class_aware_dirty_oom_latch.rs` for the second), so adding the
 # feature only touches those two files' `#[cfg]`/`required-features`. The
 # OLDER, pre-existing `dbg_push_to_ring` (`HeapCore`/`AllocCore`, R6-MS-4) is
@@ -1414,11 +1410,6 @@ required-features = ["alloc-global"]
 # TARGET is CI-only (driven by `.github/workflows/perf-gate.yml`, never the
 # default `cargo bench`), so requiring one more feature on it costs nothing
 # — the workflow's invocation was updated to pass it alongside `production`.
-# R25-1 (task #395): the `dealloc_overflow_bitmap_clear_only_16b` arm also
-# now calls an `unsafe fn` (`HeapCore::dbg_overflow_bitmap_clear_pass`,
-# re-gated + re-typed for a P0 soundness fix — see that function's own doc)
-# additionally requiring `bench-internals`; this target's `required-features`
-# already covered it, no change needed here beyond this note.
 [[bench]]
 name = "perf_gate_iai"
 harness = false
