@@ -293,6 +293,79 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      if true this narrows (but per R29-1's own scope note does not
      eliminate) what the global invariant alone catches.
 
+     **[FIXED, R30-11/task #460, commit `<pending>`.]** Confirmed the review
+     right: the cumulative invariant proves no impossible double/over-release
+     occurred, but a MISSING release only makes it MORE comfortably true, so
+     it has zero leak-detection power on its own — exactly the concern this
+     item flagged. R29-1's LOGIC was untouched (still correct, not
+     re-litigated); the defect was that
+     `tests/r14_4_promotion_free_correctness.rs`'s single combined test
+     function, `canary_survives_promotion_and_free_leaves_no_leak`, kept a
+     name promising "no leak" in EVERY feature combination it compiled
+     under — including the CI-tested `hardened medium-classes` row
+     (`hardened = ["fastbin"]` = `alloc-global + alloc-xthread`, WITHOUT
+     `alloc-decommit`), where only the cumulative check (renamed, see below)
+     exists and the real per-base leak proof does not compile at all. Split
+     into two `#[test]`s, each named for exactly what it proves:
+       - `canary_survives_promotion_and_free_no_double_release` — always
+         compiled under the file's top-level gate; canary survival + the
+         cumulative `segments_released_total <= segments_reserved_total`
+         invariant (renamed from the ambiguous `no_double_release` framing
+         to an explicit "over-release", not "leak", claim in both the local
+         variable name and the assertion failure message) + no corruption.
+         Never claims "no leak".
+       - `canary_survives_promotion_and_free_leaves_no_leak_per_base` — NEW
+         name, gated `alloc-decommit + alloc-xthread` (unchanged gate,
+         unchanged assertion logic from the pre-existing per-base block);
+         the genuine per-base leak proof, compiled only where its
+         diagnostic surface (`dbg_live_count_for`, `alloc-decommit`-gated)
+         exists.
+     **Confirmed no stronger diagnostic is available for `hardened
+     medium-classes`** (deliverable 3(b) — investigated, not assumed):
+     `dbg_contains_base` alone (`alloc-global + alloc-xthread`, available
+     under `hardened`) cannot substitute for `live_count`, because without
+     `alloc-decommit` the small-segment release/pool machinery itself
+     (`dec_live_and_maybe_decommit` / `dec_live_batch_and_maybe_decommit`,
+     `src/alloc_core/alloc_core_small_pool.rs`) is entirely
+     `#[cfg(feature = "alloc-decommit")]` — small/medium segments are never
+     released or live-count-tracked at all under that combo, so
+     `dbg_contains_base` would read `true` forever regardless of whether a
+     leak occurred. This is an honest, documented gap (module doc + the
+     `no_double_release` test's own doc comment in
+     `tests/r14_4_promotion_free_correctness.rs`), not a silently accepted
+     one.
+     **Non-vacuity re-verified (both of R28-2's original counterfactual
+     paths, against the restructured file):**
+       - **Large-promoted path** (`production medium-classes`): disabled
+         `self.table.unregister(base)` in the cache-admitted leg of
+         `AllocCore::dealloc`'s Large branch
+         (`src/alloc_core/alloc_core.rs`, `#[cfg(any())]`) — reproduces
+         R28-2's own documented alternate outcome at this exact site: a
+         deterministic `STATUS_ACCESS_VIOLATION` crash (both `--release`
+         and debug profiles), because the segment becomes genuinely
+         double-owned (still in `large_cache` AND left registered) and
+         `dbg_trim_current_thread`'s `evict_all` double-frees it. A crash is
+         still a detected, non-vacuous `cargo test` failure (nonzero exit,
+         reported as failed) — reverted cleanly (`git diff` empty on
+         `src/`), test passes again.
+       - **Medium-ladder path** (`production medium-classes
+         exact-span-large`): disabled the `dec_live_batch_and_maybe_decommit`
+         block in `flush_run` (`src/alloc_core/alloc_core_small_magazine.rs`,
+         `#[cfg(any())]`) — clean assertion failure,
+         `live_count went from Some(2) to Some(2)`, exactly the "no change
+         at all" signature the assertion's own doc comment predicts.
+         Reverted cleanly (`git diff` empty on `src/`), test passes again.
+     Verified personally: all three relevant combos compile and pass
+     (`hardened medium-classes` — 2 tests, no per-base test present;
+     `production medium-classes` and `production medium-classes
+     exact-span-large` — 3 tests each, per-base test present and passing);
+     `cargo clippy --features "hardened medium-classes" --all-targets -- -D
+     warnings` and `cargo clippy --features "production bench-internals"
+     --all-targets -- -D warnings` both clean; `cargo fmt --check` clean.
+     No `src/` behavior change (the two counterfactual breaks used for
+     non-vacuity verification were both reverted before this commit — `git
+     diff` on `src/` is empty). No version bumps.
+
 6. **[T, filed 2026-07-30 during R30-1/task #450's verification]
    `examples/r29_3_decomposition_gate.rs` crashes with
    `STATUS_ACCESS_VIOLATION` when run NATIVELY on Windows** (as opposed to
