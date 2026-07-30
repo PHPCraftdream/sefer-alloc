@@ -52,8 +52,11 @@ task's working tree, landed together in the SAME commit this report cites —
 per CLAUDE.md's R29-6 immutable-source-identity rule, citing the actual
 landing commit SHA (form 1: a real, permanent commit, not a scratch hash) is
 the strongest of the four sanctioned identity forms and is used here rather
-than a patch/tree hash. **Commit that lands this report:** see `git log -1`
-at commit time (stated in the CHANGELOG entry for this task, same commit).
+than a patch/tree hash. **Commit that lands this report:** `97c2f07bf5c43478632ab01f9037a34cc648e9eb`
+(this SHA was necessarily added in a small follow-up commit after the
+landing commit itself, since a commit cannot cite its own SHA inside its
+own tree — see that follow-up commit's message for the one-line
+explanation).
 **Platform:** native Windows 10 Pro x86-64, 11th Gen Intel Core i7-11800H @
 2.30GHz (8 cores / 16 logical), rustc 1.97.0 — the SAME host as
 R27-3/R27-4/R29-13 (shared, noisy — see the wall-clock caveat in §3).
