@@ -592,6 +592,79 @@ Core instructions, mandatory for all code in this repository. They
   were already corrected append-only by R30-4/task #453 where needed, a
   separate, already-completed remediation. This rule governs NEW gate
   reports going forward.
+- **A commit subject line's conventional-commit prefix must state whether
+  runtime behavior actually changed — `perf(...)` is reserved for commits
+  that change what ships, not for measurement work that only tells you
+  about what already ships** (R30-12/task #461). This is the same
+  honesty-in-reporting discipline the Round-27/28/29 header line "**Runtime
+  improvements this round: 0**" already applies at the ROUND level, pushed
+  one level down to the individual COMMIT SUBJECT — because `git log`
+  read alone, without opening every commit body or cross-referencing that
+  round's CHANGELOG header, is a real reading path for reviewers, and a bare
+  `perf(...)` prefix on measurement-only work misleads exactly that reader
+  into concluding the allocator got faster when it did not. Concretely
+  verified before writing this rule: `79aad56` ("perf(docs): measure
+  medium->Large promotion frequency..."), `894e9e3` ("perf(docs): measure
+  the large-cache headroom's idle-RSS floor..."), and `7c2c62d` ("perf(docs):
+  calloc-shaped isolation gate...") are all Round 29 commits that add a new
+  `bench-internals`-gated diagnostic and/or a new example/bench file with
+  its own `required-features` — none touches `production`'s feature
+  composition in `Cargo.toml`, and each commit's own body says so explicitly
+  ("No production default changed" / equivalent). Round 27, 28, and 29 were
+  in fact ALL "Runtime improvements this round: 0" rounds (their CHANGELOG
+  headers, verified: line 82 "Runtime improvements this round: 0. Every task
+  is a correction, a measurement..."; line 67 "...Both tasks are
+  measurement-only / test-only..."; line 36 "...Every task is a correctness
+  fix, a measurement..." — production's composition unchanged in all three),
+  yet the commits landing inside them used the bare `perf(...)` prefix, which
+  conventionally signals a runtime-performance change. Four-prefix taxonomy,
+  applied GOING FORWARD only:
+  - `perf(runtime)` — a shipping algorithm or a PRODUCTION DEFAULT actually
+    changed: `production`'s feature composition changed, or a default
+    constant/config value changed, or a hot-path algorithm changed while
+    remaining in `production`'s always-on scope.
+  - `perf(opt-in)` — a non-default feature/profile's CODE changed (e.g.
+    something gated behind `virgin-zero-skip`, `numa-aware`, or a `Profile`
+    variant's config) — real code changed, but a user has to opt in to reach
+    it.
+  - `bench` — ONLY a judge/probe/gate-report/benchmark harness changed; no
+    shipping or opt-in algorithm code changed at all. Chosen over the
+    alternative `measurement` prefix because `bench` already has 19 commits'
+    worth of precedent in this project's own history
+    (`git log --oneline --all | grep -E '^[a-f0-9]+ bench\('`), going all the
+    way back to `465e3ba`/`92f3288` and including exactly this
+    measurement-only-verdict shape already (e.g. `0465c97 bench(perf):
+    FLUSH_N=4/8/12/16 sweep is a NO-GO...`, `e530a9f bench(perf):
+    flush_magazine_class merge is a NO-GO...`); `measurement(...)` has ZERO
+    prior commits in this project's history. Reusing the existing, already-
+    understood prefix closes the gap without introducing a second synonym
+    for reviewers to disambiguate.
+  - `docs(config)` — an existing tuning/config option was documented (e.g.
+    the README profile-comparison table R30-7/task #456 added) but no code
+    changed at all.
+  This is an ADDITIVE convention: it extends, and does not replace,
+  CHANGELOG.md's already-working bullet-tag convention (`[measurement]`,
+  `[correctness fix]`, `[process fix]`, `[docs]`, `[CI]`, etc. — see the
+  `#### Measurement, correctness & tooling` sections throughout
+  `CHANGELOG.md`). The bullet tags already solve this exact honesty problem
+  one level UP, at the CHANGELOG-entry level; this rule fills the gap one
+  level DOWN, at the raw `git log` subject-line level, where a skimming
+  reader has neither a bullet tag nor a round header in view. The same
+  measurement-vs-runtime-vs-opt-in distinction applies to new gate-report
+  titles/headers under `docs/perf/R*_....md` going forward too — a report's
+  title or opening summary line should make clear whether it describes
+  measurement-only work or an actual runtime/opt-in code change; existing
+  report titles are not required to be renamed for this.
+  **Explicitly NOT a history rewrite** — no historical commit message is
+  retagged or amended by this rule; it governs new commits going forward
+  only, the same non-retroactive posture this file already takes elsewhere:
+  the R14-10 raw-log-truncation rule above ("Do not truncate retroactively —
+  this applies to newly-committed logs going forward; logs already committed
+  stay as-is") and the R24-6 `dbg_push_to_ring` decision (left under its
+  wider gate rather than reproducing a 130+-file diff "for a documentation-
+  precision concern rather than a regression" — see the benchmark-hook rule
+  above) are both precedents already in this file for declining exactly this
+  kind of retroactive cleanup.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
