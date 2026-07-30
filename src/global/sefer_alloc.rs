@@ -178,6 +178,27 @@ impl SeferAlloc {
     /// initialisers without any allocation or OS calls.
     ///
     /// Equivalent to `SeferAlloc::with_config(LargeCacheConfig::DEFAULT)`.
+    ///
+    /// # Memory policy — read before deploying
+    ///
+    /// The default large-object cache headroom is 256 MiB **per
+    /// materialized heap/shard**, not 256 MiB process-wide — a thread-per-
+    /// core server with many concurrently active heaps multiplies this
+    /// figure by however many of them have touched a large allocation.
+    /// Idle time alone does not reclaim any of it: decay is inline and
+    /// event-driven (there is no background thread, by design), so a
+    /// quiet thread/process retains its peak large-cache usage down to
+    /// this floor indefinitely, until either more large-alloc/dealloc
+    /// traffic drives further decay ticks or the thread exits (the one
+    /// unconditional reclamation path, `HeapCore::trim_for_recycle`).
+    /// Measured in full — including the exact post-drain floor and the
+    /// 2-second, zero-byte-reclaimed idle-window result — in
+    /// `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md`. If a smaller
+    /// per-heap floor fits your deployment better, see
+    /// [`with_profile`](Self::with_profile) (`Profile::Balanced` or
+    /// `Profile::Rss`) for a shipped, one-line alternative, or
+    /// [`with_config`](Self::with_config) to set an exact
+    /// [`LargeCacheConfig::headroom_bytes`](crate::alloc_core::LargeCacheConfig::headroom_bytes).
     #[must_use]
     pub const fn new() -> Self {
         #[cfg(feature = "alloc-decommit")]

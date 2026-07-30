@@ -80,6 +80,61 @@ RSS-conservative — see
 for a latency-oriented opt-in. For RSS-sensitive or container
 deployments, see [Configuration](#configuration) below.
 
+### Memory policy — read this before you deploy `SeferAlloc::new()`
+
+> **The default large-object cache retains up to 256 MiB *per
+> materialized heap/shard*, not 256 MiB for the whole process.** Each
+> thread that materializes its own heap (the normal case under
+> `alloc-xthread`/`production` — one heap per active thread) gets its
+> own independent 256 MiB headroom floor. A server with 32 concurrently
+> active threads/heaps that have each touched a large allocation can
+> therefore retain on the order of 32 × 256 MiB of committed OS memory
+> for those heaps' lifetime, not 256 MiB total.
+>
+> **Idle alone does not reclaim any of it.** A thread/process that goes
+> quiet after a burst of large allocations does not shrink its retained
+> large-object cache on its own — decay is inline and event-driven (it
+> only runs from inside the large alloc/dealloc slow path, by design:
+> this project never spawns a background thread), so with no further
+> large-object traffic there is nothing to trigger a decay tick. This
+> was measured directly: across 36 arms sweeping headroom × thread
+> count, a 2-second idle window with zero allocation activity reclaimed
+> **exactly 0 KiB** in every arm, including at the 256 MiB default. Only
+> genuinely reclaims on (a) a thread exiting (the one unconditional
+> path, `HeapCore::trim_for_recycle`, which evicts the entire large
+> cache) or (b) enough subsequent large-alloc/dealloc traffic to drive
+> further decay ticks.
+
+This is a real, measured trade-off, not a defect: the 256 MiB default
+genuinely buys a better cache hit rate for large-object churn (see
+[Named profiles](#named-profiles-profile-alloc-decommit) below — 64 MiB
+already ties the 256 MiB default on hit rate for the measured
+workload). If a smaller per-heap floor fits your deployment better —
+long-running server with many threads, container with a tight memory
+limit — the shipped, one-line answer is a named profile:
+
+```text
+use sefer_alloc::{SeferAlloc, Profile};
+
+#[global_allocator]
+static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Balanced);
+```
+
+`Profile::Balanced` keeps the `production` small-pool default (no
+additional retention cost there) and lowers the large-cache headroom to
+64 MiB/heap — full hit-rate parity with the 256 MiB default at ~7×
+less RSS per heap. `Profile::Rss` goes further (16 MiB/heap) at a
+disclosed hit-rate cost; see [Named profiles](#named-profiles-profile-alloc-decommit)
+below for the full comparison table, or hand-roll an exact floor via
+[`LargeCacheConfig::headroom_bytes`](#configuration).
+
+Full measured methodology (36-arm subprocess-isolated sweep, the
+238–241 MiB/heap post-drain floor at the 256 MiB default, and why idle
+never triggers a decay tick) lives in
+[`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) —
+this section states the headline facts and the practical remedy; that
+report is where the full raw numbers and methodology live.
+
 ### Named profiles (`Profile`, `alloc-decommit`)
 
 R30-7 (task #456) turns the hand-assembled recipes below into three named,
