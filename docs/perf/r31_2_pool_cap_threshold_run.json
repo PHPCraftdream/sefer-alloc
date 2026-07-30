@@ -1,0 +1,24 @@
+{
+  "_doc": "R31-2 (task #465) — multi-threaded small-pool-cap THRESHOLD sweep: does R30-7's finding of a ZERO decommit_calls_total mechanism delta between cap4 and cap8 (docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) change at a LARGER cap? Four arms, same 8-thread/4-size-mix/continuous-churn workload as R30-7 (byte-identical body, examples/_shared/r31_2_pool_cap_threshold_workload.rs), swept over (pool_segments, pool_byte_cap): cap4=(4,16MiB) current default, cap8=(8,32MiB) Profile::Throughput's value, cap16=(16,64MiB), cap32=(32,128MiB). Driven pairwise (baseline cap4 vs each larger cap) by: node scripts/paired-ab-runner.mjs --config docs/perf/r31_2_pool_cap_threshold_run.json --arms cap4,capN",
+  "metric": "elapsed_ns",
+  "arms": {
+    "cap4": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_2_pool_cap_threshold_ab_cap4.exe"
+    },
+    "cap8": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_2_pool_cap_threshold_ab_cap8.exe"
+    },
+    "cap16": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_2_pool_cap_threshold_ab_cap16.exe"
+    },
+    "cap32": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_2_pool_cap_threshold_ab_cap32.exe"
+    }
+  },
+  "sanity": {
+    "key": "segments_reserved_total",
+    "_doc_sanity": "All four arms install a REAL SeferAlloc #[global_allocator] and run the multi-thread mixed-size workload, which reserves many segments under every config, so ALL arms must report segments_reserved_total > 0. The activation/mechanism-delta oracle (decommit_calls_total per arm, and whether it moves off the cap4 baseline at cap8/16/32) is checked in the gate report, not by this runner (the runner's own sanity gate only asserts nonzero segment reservation).",
+    "nonzero_arms": ["cap4", "cap8", "cap16", "cap32"]
+  },
+  "features_note": "production alloc-stats"
+}

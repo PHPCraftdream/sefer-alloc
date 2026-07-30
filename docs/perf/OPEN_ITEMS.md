@@ -107,6 +107,27 @@ for completeness.
    > - **Next trigger:** R27-5/task #423 designed (not implemented) an adaptive/process-wide pool budget as the alternative to a flat default change; verdict CONDITIONAL-GO-on-paper, recommendation is Option 1 — keep the 4/16 MiB default, document the 8/32 MiB throughput recipe (now shipped as `Profile::Throughput`, R30-7/task #456) — because the adaptive design's benefit is unproven under uniform-pressure workloads and its idle-shrink-back sub-problem is unsolved within the no-background-thread constraint. A reservation-only overflow-tier alternative was separately evaluated and NOT opened (item 15 in `[L]` below — trigger 2 measured, does not fire). Re-open ONLY if a future round has (a) a measured uneven-pressure victim workload, or (b) wants to revisit the flat 8/32 default-promotion decision itself.
    > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`; `R27_3_POOL_RETENTION_GATE.md` (retention, victim-activation-proven); `R27_4_REAL_DEFAULT_AB_GATE.md` (latency at the real paired config); `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` (the adaptive-design evaluation + Option-1 recommendation). Full dated round-by-round narrative (R25-5 → R26-1 → R26-2 → R26-3 → R27-1 → R27-2 → R27-3 → R27-4 → R27-5), including every intermediate correction and its raw-log citations, preserved in the archive below.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `A13`.
+   >
+   > **Dated addition (2026-07-30, R31-2/task #465).** R30-7 (task #456)
+   > already found the cap4-vs-cap8 latency win did not reproduce as a
+   > statistically distinguishable effect on an 8-thread/4-size-mix
+   > continuous-churn server-shaped workload, with the mechanism
+   > (`decommit_calls_total`) bit-identical (40=40) between cap4 and cap8 —
+   > leaving open whether cap8 simply wasn't large enough. R31-2 swept the
+   > SAME workload shape through cap16 and cap32 and found the mechanism
+   > delta STAYS ZERO all the way to cap 32 (`decommit_calls_total = 40` in
+   > every one of 320 process launches across all four caps), at a tighter
+   > ~4-5% minimum-detectable-effect than R30-7's own 18.8% — a clean
+   > reject, not an underpowered null. **This does not change the Option-1
+   > recommendation above** (keep the 4/16 MiB default, document the 8/32
+   > MiB recipe as `Profile::Throughput`) — R27-4's original single-threaded
+   > win is unaffected, and `Profile::Throughput`'s value is unchanged — but
+   > it materially narrows the recipe's known-applicable scope: a caller
+   > whose workload resembles R30-7/R31-2's 8-way-concurrent, mixed-size,
+   > continuous-churn shape should not expect ANY tested small-pool cap
+   > (8 through 32) to reduce decommit churn or improve latency, based on
+   > this evidence. See `docs/perf/R31_2_POOL_CAP_THRESHOLD_SWEEP_GATE.md`
+   > for the full sweep + a candidate (not proven) explanation.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
 

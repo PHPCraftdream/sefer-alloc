@@ -1785,6 +1785,31 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r30_7_throughput_profile_server_ab_throughput"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R31-2 (task #465): the multi-threaded pool-cap THRESHOLD sweep — does the
+# R30-7 finding of a ZERO mechanism delta between cap4/cap8 at 8-way
+# concurrency change at a LARGER cap (16, 32)? Four near-identical binaries,
+# one per swept `(pool_segments, pool_byte_cap)` pair: (4,16MiB) — the
+# current default — (8,32MiB) — Profile::Throughput's current value —
+# (16,64MiB), (32,128MiB). Same required-features triple as the r27_4/r30_6_latency/
+# r30_7 siblings (each installs a real `#[global_allocator]`). Shared workload
+# body (byte-identical to r30_7's, same 8-thread/4-size-mix/continuous-churn
+# shape) lives in `examples/_shared/r31_2_pool_cap_threshold_workload.rs`.
+[[example]]
+name = "r31_2_pool_cap_threshold_ab_cap4"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r31_2_pool_cap_threshold_ab_cap8"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r31_2_pool_cap_threshold_ab_cap16"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r31_2_pool_cap_threshold_ab_cap32"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
