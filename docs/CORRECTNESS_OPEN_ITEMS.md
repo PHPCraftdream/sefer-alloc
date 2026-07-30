@@ -293,7 +293,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      if true this narrows (but per R29-1's own scope note does not
      eliminate) what the global invariant alone catches.
 
-     **[FIXED, R30-11/task #460, commit `<pending>`.]** Confirmed the review
+     **[FIXED, R30-11/task #460, commit `a32acf9`.]** Confirmed the review
      right: the cumulative invariant proves no impossible double/over-release
      occurred, but a MISSING release only makes it MORE comfortably true, so
      it has zero leak-detection power on its own — exactly the concern this
