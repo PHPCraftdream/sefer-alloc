@@ -337,6 +337,24 @@ impl HeapCore {
         self.core.dbg_large_cache_used()
     }
 
+    /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_budget`] — exposed at the `HeapCore`
+    /// level (same delegation pattern as `dbg_large_cache_used` above) so
+    /// the R31-3 multi-heap RSS gate can self-verify each claimed heap's
+    /// resolved large-cache byte budget (`None` = unbounded, base cache;
+    /// `Some(256 MiB)` = `large-cache-extended`'s R17-9 finite default)
+    /// matches the expected value for the build under test, per the R26-4
+    /// config-sweep evidence rule (read back from the allocator's own
+    /// diagnostic surface, not assumed). Read-only `&self`; does NOT mutate
+    /// allocator state. `bench-internals`-gated (no production caller →
+    /// R25-10 sub-rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_large_cache_budget(&self) -> Option<usize> {
+        self.core.dbg_large_cache_budget()
+    }
+
     /// R30-6 (task #455) MEASUREMENT-ONLY: thin delegation to
     /// [`AllocCore::dbg_large_cache_hits`] — exposed at the `HeapCore` level
     /// (same delegation pattern as `dbg_large_cache_used` immediately above)
@@ -374,6 +392,54 @@ impl HeapCore {
     #[must_use]
     pub fn dbg_large_cache_slot_sizes(&self) -> [Option<usize>; 8] {
         self.core.dbg_large_cache_slot_sizes()
+    }
+
+    /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`] — exposed at the
+    /// `HeapCore` level (same pattern as `dbg_large_cache_slot_sizes` above)
+    /// so the R31-3 multi-heap RSS gate can count how many of the 32
+    /// extension-sidecar slots are currently occupied for a claimed heap.
+    /// Read-only `&self`; does NOT mutate allocator state.
+    /// `bench-internals`-gated (no production caller → R25-10 sub-rule 2),
+    /// additionally gated on `large-cache-extended` (matching the delegated
+    /// `AllocCore` method's own gate — the sidecar does not exist otherwise).
+    ///
+    /// Return-array length is `32` — `LARGE_CACHE_EXTENDED_SLOTS`,
+    /// `pub(crate)` inside `alloc_core` and therefore not nameable from
+    /// `registry`; hardcoded here rather than re-exported, matching
+    /// [`AllocCore::dbg_large_cache_extended_slot_sizes`]'s own public
+    /// signature verbatim.
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "large-cache-extended"
+    ))]
+    #[must_use]
+    pub fn dbg_large_cache_extended_slot_sizes(&self) -> [Option<usize>; 32] {
+        self.core.dbg_large_cache_extended_slot_sizes()
+    }
+
+    /// R31-3 (task #466) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_extension_materialised`] — exposed at the
+    /// `HeapCore` level (same pattern as `dbg_large_cache_slot_sizes` above)
+    /// so the R31-3 multi-heap RSS gate can confirm, per claimed heap,
+    /// whether the extension sidecar actually materialised (the
+    /// mechanism-activation proof this gate's workload — 16 distinct Large
+    /// sizes, overflowing the base 8 — is meant to trigger). Read-only
+    /// `&self`; does NOT mutate allocator state. `bench-internals`-gated (no
+    /// production caller → R25-10 sub-rule 2), additionally gated on
+    /// `large-cache-extended` (matching the delegated `AllocCore` method's
+    /// own gate).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "large-cache-extended"
+    ))]
+    #[must_use]
+    pub fn dbg_large_cache_extension_materialised(&self) -> bool {
+        self.core.dbg_large_cache_extension_materialised()
     }
 
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to

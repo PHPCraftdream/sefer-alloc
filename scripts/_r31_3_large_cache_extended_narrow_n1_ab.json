@@ -1,0 +1,16 @@
+{
+  "metric": "elapsed_ns",
+  "build": null,
+  "arms": {
+    "off": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_3_large_cache_extended_narrow_off.exe",
+      "args": ["1"]
+    },
+    "on": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_3_large_cache_extended_narrow_on.exe",
+      "args": ["1"]
+    }
+  },
+  "default_comparisons": [["off", "on"]],
+  "features_note": "off: production,alloc-stats | on: production,alloc-stats,large-cache-extended | narrow_n=1"
+}

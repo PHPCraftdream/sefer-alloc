@@ -353,29 +353,52 @@ for completeness.
    >   row).
 
 30. **R14-5 — `large-cache-extended` CONDITIONAL-GO, not promoted; owner entry
-    added R30-14 (task #463) to close a zero-owner gap.**
+    added R30-14 (task #463) to close a zero-owner gap. RE-VERIFIED R31-3
+    (task #466): all six checkpoints still hold on current `HEAD`, A/B
+    refreshed, two precondition gaps closed (N=1/2/4 timing, multi-heap RSS)
+    — a promotion PROPOSAL now exists, pending explicit user sign-off.**
 
    > **Current state**
-   > - **Status:** CONDITIONAL-GO (R14-5 §9), not promoted. Previously tracked
-   >   ONLY as one narrow deferred sub-finding inside item 7, never as its own
-   >   owned item.
+   > - **Status:** CONDITIONAL-GO (R14-5 §9), not promoted. R31-3 (task #466)
+   >   independently re-verified all six R14-5 hardening checkpoints against
+   >   present-day source, refreshed the turnover A/B, and closed the two
+   >   precondition gaps a prior review named as missing (N=1/2/4
+   >   narrow-working-set TIMING regression check, multi-heap RSS
+   >   accounting) — both come back clean. A promotion PROPOSAL is now
+   >   written (`R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §5),
+   >   explicitly NOT self-authorized, awaiting user sign-off.
    > - **Current number/verdict:** all six of R14-5's required hardening items
-   >   are clean (budget-vs-materialisation ordering fixed; a finite default
-   >   budget neutralises the adversarial RSS scenario, ~2.86× retention
-   >   reduced to ~parity; N=1/2/4 hit-path and mixed-size/adversarial
-   >   best-fit/FIFO both correctness-clean; the turnover-profile production
-   >   A/B/B/A win is statistically real, t=195.759, sign 15/15). The GO
-   >   condition is explicit and NOT optional: promotion must ship the finite
-   >   default budget (item 2) alongside the feature — an UNBOUNDED budget is
-   >   genuinely risky for adversarial wide-diversity, long-holding workloads.
-   > - **Next trigger:** a future round deciding to promote `large-cache-extended`
-   >   must ship it WITH the finite default budget, not the feature alone; no
-   >   further measurement is named as a precondition (R14-5's own six gates
-   >   are already exhaustive) — this is a shipping-decision gap, not a
-   >   measurement gap.
+   >   STILL hold on current `HEAD` (budget-vs-materialisation ordering
+   >   fixed, unchanged; finite default budget mechanism unchanged — the
+   >   NUMERIC value moved 5x/1280 MiB → 1x/256 MiB per R17-9, already
+   >   disclosed, confirmed current; N=1/2/4 hit-path and mixed-size/FIFO
+   >   correctness tests still pass; the turnover-profile A/B REPRODUCES on
+   >   current code at the current 256 MiB default, t=127.776 n=20 sign
+   >   20/20, mechanism confirmed 33.3%→100%). NEW evidence (R31-3): the
+   >   N=1/2/4 narrow-working-set TIMING question R14-5 §4 deferred is now
+   >   measured — NO regression found; the extended cache measured FASTER at
+   >   every N (t=7.1-17.8, sign 19-20/20), mechanistically explained by the
+   >   base cache's own FIFO-eviction-and-refill cost during materialisation,
+   >   not the wider scan bound itself. NEW evidence (R31-3): multi-heap RSS
+   >   accounting at 1/8/32 concurrently-claimed heaps confirms the finite
+   >   256 MiB default bounds per-heap retention with EXACT linear scaling
+   >   (no shared/amortized-state surprise in the measured workload shape) —
+   >   ~248 MiB/heap capped (ON) vs ~432 MiB/heap unbounded (OFF).
+   > - **Next trigger:** R31-3's own §5 proposal — user explicit sign-off on
+   >   promoting `large-cache-extended` (with its current, unchanged 256 MiB
+   >   default budget), coordinated with R31-9/#473's `Profile` API rework
+   >   (a named `Profile` variant may be the cleaner integration point than a
+   >   blanket `production` composition change, since R13-8's static-live-set
+   >   no-benefit caveat still applies) — if accepted, `npm run bench:table` +
+   >   `npm run iai` must be re-run and committed in the SAME PR per
+   >   CLAUDE.md's composition-change rule.
    > - **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` §9 (the
-   >   CONDITIONAL-GO + the explicit GO condition); `docs/FEATURE_PROMOTION_STATUS.md`
-   >   (survey row).
+   >   original CONDITIONAL-GO + the explicit GO condition);
+   >   `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` (the re-verification
+   >   + refreshed A/B + two new regression gates + the promotion proposal) +
+   >   its summary CSV + 9 raw logs; `docs/FEATURE_PROMOTION_STATUS.md`
+   >   (survey row, not yet updated by R31-3 — a follow-up if promotion is
+   >   accepted).
 
 31. **UNVERIFIED-BY-ME findings from the Round 30 full independent review
     (`docs/reviews/2026-07-30-r30-full-review.md` §5, P2-3 through P2-11) —

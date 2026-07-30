@@ -1097,6 +1097,28 @@ required-features = ["alloc-global"]
 name = "paired_ab_large_cache_extended_on"
 required-features = ["alloc-global"]
 
+# R31-3 (task #466, step 3): N=1/2/4 narrow-working-set-after-materialisation-
+# burst TIMING regression judge — the follow-up
+# `docs/perf/R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` item 4 deferred
+# (`docs/perf/OPEN_ITEMS.md` item 7, `[L]` tier: "a dedicated timing gate for
+# this specific narrow-working-set-after-burst shape ... deferred as a
+# follow-up"). Two wrappers around ONE shared workload
+# (`examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`,
+# `include!`d verbatim into both): force sidecar materialisation via a
+# 9-distinct-size burst, then narrow to N=1/2/4 distinct sizes and time ONLY
+# that narrow phase. `argv[1]` selects N (1/2/4, default 1).
+#   - `r31_3_large_cache_extended_narrow_off`: --features "production alloc-stats"
+#     (baseline, base 8-slot cache)
+#   - `r31_3_large_cache_extended_narrow_on` : --features "production alloc-stats large-cache-extended"
+#     (treatment, 8+32=40-slot cache, forced materialised)
+[[example]]
+name = "r31_3_large_cache_extended_narrow_off"
+required-features = ["alloc-global"]
+
+[[example]]
+name = "r31_3_large_cache_extended_narrow_on"
+required-features = ["alloc-global"]
+
 # R14-3 (task #288): fixed-work process-level A/B/B/A judge for
 # `class-aware-dirty`, built to answer a methodology gap three independent
 # Round-13 reviews raised against `benches/r12_7_class_aware_dirty_wallclock.rs`'s
@@ -1635,6 +1657,22 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 # `sefer_alloc::registry`).
 [[example]]
 name = "r29_13_large_cache_retention_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
+# R31-3 (task #466, step 3): multi-heap RSS accounting for
+# `large-cache-extended` — mirrors `r29_13_large_cache_retention_gate.rs`'s
+# subprocess-per-arm/thread-per-heap methodology exactly, sweeping thread
+# count (1/8/32) at the shipped FINITE default budget instead of a
+# `headroom_bytes` sweep. ONE source file, built twice (feature OFF/ON) —
+# same `#[cfg(feature = "large-cache-extended")]`-branching-in-one-file
+# pattern `alloc_core_large_cache.rs` itself uses, not two separate wrapper
+# files, since there is no shared workload to `include!` here (the
+# orchestrator/child re-exec logic is identical either way; only the
+# per-child cfg-gated large-cache-extended-only diagnostics differ).
+# Build/run (BASE, 8 slots):     cargo run --release --example r31_3_large_cache_extended_multi_heap_rss_gate --features "production alloc-stats bench-internals"
+#            (EXTENDED, 40 slots): cargo run --release --example r31_3_large_cache_extended_multi_heap_rss_gate --features "production alloc-stats bench-internals large-cache-extended"
+[[example]]
+name = "r31_3_large_cache_extended_multi_heap_rss_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 
 # R26-3 (task #412): process-level A/B/B/A judge arms for confirming R25-5/R26-1's

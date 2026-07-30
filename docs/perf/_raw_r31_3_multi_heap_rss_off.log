@@ -1,0 +1,176 @@
+=== R31-3 large-cache-extended MULTI-HEAP RSS gate — subprocess-per-arm isolation ===
+extended=false threads=[1, 8, 32] x 3 reps; LARGE_OBJ_COUNT=16
+
+--- arm extended=false threads=1 rep=0/3 ---
+RESULT extended=0
+RESULT thread_count=1
+RESULT repetition=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3176
+RESULT commit_before_kib=680
+RESULT peak_rss_kib=557820
+RESULT peak_commit_kib=625556
+RESULT used_post_teardown_sum=452984832
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=412940
+RESULT commit_post_kib=444980
+OK extended=false threads=1 rep=0 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=452984832 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=557820 rss_post_kib=412940 commit_post_kib=444980
+--- arm extended=false threads=1 rep=1/3 ---
+RESULT extended=0
+RESULT thread_count=1
+RESULT repetition=1
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3176
+RESULT commit_before_kib=664
+RESULT peak_rss_kib=555956
+RESULT peak_commit_kib=625540
+RESULT used_post_teardown_sum=452984832
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=412932
+RESULT commit_post_kib=444964
+OK extended=false threads=1 rep=1 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=452984832 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=555956 rss_post_kib=412932 commit_post_kib=444964
+--- arm extended=false threads=1 rep=2/3 ---
+RESULT extended=0
+RESULT thread_count=1
+RESULT repetition=2
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3160
+RESULT commit_before_kib=632
+RESULT peak_rss_kib=555948
+RESULT peak_commit_kib=625500
+RESULT used_post_teardown_sum=452984832
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=412916
+RESULT commit_post_kib=444924
+OK extended=false threads=1 rep=2 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=452984832 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=555948 rss_post_kib=412916 commit_post_kib=444924
+--- arm extended=false threads=8 rep=0/3 ---
+RESULT extended=0
+RESULT thread_count=8
+RESULT repetition=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3176
+RESULT commit_before_kib=656
+RESULT peak_rss_kib=4247592
+RESULT peak_commit_kib=4995744
+RESULT used_post_teardown_sum=3623878656
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=3280892
+RESULT commit_post_kib=3551132
+OK extended=false threads=8 rep=0 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=3623878656 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=4247592 rss_post_kib=3280892 commit_post_kib=3551132
+--- arm extended=false threads=8 rep=1/3 ---
+RESULT extended=0
+RESULT thread_count=8
+RESULT repetition=1
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3184
+RESULT commit_before_kib=668
+RESULT peak_rss_kib=4318204
+RESULT peak_commit_kib=4995756
+RESULT used_post_teardown_sum=3623878656
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=3280900
+RESULT commit_post_kib=3551148
+OK extended=false threads=8 rep=1 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=3623878656 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=4318204 rss_post_kib=3280900 commit_post_kib=3551148
+--- arm extended=false threads=8 rep=2/3 ---
+RESULT extended=0
+RESULT thread_count=8
+RESULT repetition=2
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3164
+RESULT commit_before_kib=636
+RESULT peak_rss_kib=4324368
+RESULT peak_commit_kib=4995736
+RESULT used_post_teardown_sum=3623878656
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=3280892
+RESULT commit_post_kib=3551124
+OK extended=false threads=8 rep=2 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=3623878656 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=4324368 rss_post_kib=3280892 commit_post_kib=3551124
+--- arm extended=false threads=32 rep=0/3 ---
+RESULT extended=0
+RESULT thread_count=32
+RESULT repetition=0
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3180
+RESULT commit_before_kib=664
+RESULT peak_rss_kib=14556628
+RESULT peak_commit_kib=17118976
+RESULT used_post_teardown_sum=14495514624
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=13114748
+RESULT commit_post_kib=14201036
+OK extended=false threads=32 rep=0 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=14495514624 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=14556628 rss_post_kib=13114748 commit_post_kib=14201036
+--- arm extended=false threads=32 rep=1/3 ---
+RESULT extended=0
+RESULT thread_count=32
+RESULT repetition=1
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3184
+RESULT commit_before_kib=664
+RESULT peak_rss_kib=15550496
+RESULT peak_commit_kib=17935620
+RESULT used_post_teardown_sum=14495514624
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=13114740
+RESULT commit_post_kib=14200980
+OK extended=false threads=32 rep=1 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=14495514624 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=15550496 rss_post_kib=13114740 commit_post_kib=14200980
+--- arm extended=false threads=32 rep=2/3 ---
+RESULT extended=0
+RESULT thread_count=32
+RESULT repetition=2
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=16
+RESULT rss_before_kib=3160
+RESULT commit_before_kib=632
+RESULT peak_rss_kib=15351208
+RESULT peak_commit_kib=17947912
+RESULT used_post_teardown_sum=14495514624
+RESULT used_post_teardown_max=452984832
+RESULT slots_occupied_max=8
+RESULT extension_materialised_count=0
+RESULT rss_post_kib=13114692
+RESULT commit_post_kib=14200960
+OK extended=false threads=32 rep=2 cfg_conflicts_delta=0 used_post_teardown_max=452984832 used_post_teardown_sum=14495514624 slots_occupied_max=8 extension_materialised_count=0 peak_rss_kib=15351208 rss_post_kib=13114692 commit_post_kib=14200960
+
+=== aggregated (median of 3 reps; min..max in parens) ===
+ threads             peak_rss_kib             rss_post_kib       used_max  slots_occ    ext_mat
+       1  555956 (555948..557820)  412932 (412916..412940)      452984832          8          0
+       8 4318204 (4247592..4324368) 3280892 (3280892..3280900)      452984832          8          0
+      32 15351208 (14556628..15550496) 13114740 (13114692..13114748)      452984832          8          0
+
+=== CSV (one row per child) ===
+# extended,thread_count,repetition,config_conflicts_delta,process_identity,large_obj_count,peak_rss_kib,peak_commit_kib,used_post_teardown_sum,used_post_teardown_max,slots_occupied_max,extension_materialised_count,rss_post_kib,commit_post_kib
+0,1,0,0,subprocess,16,557820,625556,452984832,452984832,8,0,412940,444980
+0,1,1,0,subprocess,16,555956,625540,452984832,452984832,8,0,412932,444964
+0,1,2,0,subprocess,16,555948,625500,452984832,452984832,8,0,412916,444924
+0,8,0,0,subprocess,16,4247592,4995744,3623878656,452984832,8,0,3280892,3551132
+0,8,1,0,subprocess,16,4318204,4995756,3623878656,452984832,8,0,3280900,3551148
+0,8,2,0,subprocess,16,4324368,4995736,3623878656,452984832,8,0,3280892,3551124
+0,32,0,0,subprocess,16,14556628,17118976,14495514624,452984832,8,0,13114748,14201036
+0,32,1,0,subprocess,16,15550496,17935620,14495514624,452984832,8,0,13114740,14200980
+0,32,2,0,subprocess,16,15351208,17947912,14495514624,452984832,8,0,13114692,14200960
+
+NOTE: each (thread_count, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation, PER HeapRegistry-instance heap — mirrors R29-13's proven methodology). Every arm hard-asserted the resolved large-cache budget matches this build's expected DEFAULT (None when large-cache-extended is OFF, Some(256 MiB) when ON, R17-9's DEFAULT_EXTENDED_BUDGET_BYTES) AND config_conflicts_delta == 0 (R26-4 config identity). Every arm hard-asserted used_post_teardown_max > 0 (admission proven) — LARGE_OBJ_COUNT (16) distinct large sizes total ~272 MiB/heap, exceeding the 256 MiB default budget either way.
