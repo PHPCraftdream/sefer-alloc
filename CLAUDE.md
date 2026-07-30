@@ -434,6 +434,79 @@ Core instructions, mandatory for all code in this repository. They
   materially different — the RSS "win" did not reproduce (RSS-neutral, not
   RSS-beneficial) — the concrete cost: a production-default-change
   recommendation rested on invalid data for one full round.)
+- **Generalizing the rule immediately above: proving the arm ran under its
+  labelled CONFIG is not the same as proving it exercised its labelled
+  MECHANISM — a benchmark/report judging a feature or code path MUST also
+  report, per arm, the evidence that the arm actually took the intended
+  code path/counter activity it claims to measure (a path-activation
+  oracle), not just that its config resolved correctly. A judge whose
+  report cites no per-arm mechanism-activation evidence is not usable as
+  GO/NO-GO evidence, exactly as the R26-4 rule already says for config
+  evidence.** Concrete mechanism classes this covers (all either already
+  countered in `src/` or trivially addable — do not assume a class applies
+  without checking the counter actually exists first): virgin bump-carves
+  vs. recycled free-list pops (`AllocCore::dbg_small_zero_pass_count`,
+  `src/alloc_core/alloc_core_core_diag.rs`); large-cache hits vs. misses
+  (`AllocCore`/`HeapCore::dbg_large_cache_hits`,
+  `src/alloc_core/alloc_core.rs` / `src/registry/heap_core_diag.rs`);
+  decommit/release/reserve call counts; promotion events; directory hits
+  vs. fallback scans; and pool cap actually resolved AND victim actually
+  activated — this last pair is the boundary case where R26-4's own
+  config-evidence and this rule's mechanism-evidence overlap (a resolved
+  `pool_segments` value is config evidence; whether the arm's workload
+  actually drove an eviction/reuse of that pool is mechanism evidence), not
+  a new item beyond what R26-4 already requires.
+  (R29-16/task #447 → R30-3/task #452: R29-16's `virgin` wall-clock scenario
+  in `benches/r29_16_virgin_zero_skip_calloc_wallclock.rs` freed its whole
+  batch inside the SAME `b.iter()` closure Criterion calls thousands of
+  times per sample, so `alloc_small_with_virgin`'s free-list-pop-first
+  dispatch order (`src/alloc_core/alloc_core_small.rs:274-297`) meant only
+  the very first call per sample was a genuine bump-carve — every call after
+  that measured the RECYCLED path under the "virgin" label. R26-4's rule did
+  not catch this: nothing about the CONFIG was wrong (the `virgin-zero-skip`
+  feature flag was correctly compiled on/off as labelled per arm) — the CODE
+  PATH exercised was wrong. This shipped a "21.4x speed win" framing that
+  survived an entire round's per-task zero-trust review before a post-round
+  independent review caught it (the underlying 21.4x Ir ratio itself stayed
+  valid evidence that zeroing work was skipped — R30-4/task #453 §(a)
+  confirmed that ratio, not a Valgrind artifact — but it was never a
+  validated wall-clock claim). Rebuilt correctly in R30-3/task #452 (commit
+  `d8f467b`,
+  `benches/r30_3_virgin_zero_skip_native_gate.rs`), which added exactly the
+  missing piece: a path-activation oracle built on the pre-existing
+  `AllocCore::dbg_small_zero_pass_count()` counter, hard-asserting
+  `min_activation_pct >= 95%` for a sample's calls before trusting that
+  sample's timing (`MIN_ACTIVATION_PCT` in that file). **This oracle caught
+  a SECOND real bug during R30-3's own development, before any number
+  shipped**: a first attempt at `VIRGIN_BATCH = 16` measured only 6.25%
+  virgin-path activation and was rejected by the gate — traced to
+  `carve_block_with_refill`'s unconditional 31-block refill batch
+  (Phase 9 amortisation) diluting same-class virgin activation to
+  roughly 1-in-32 regardless of nominal batch size; see
+  `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` §3 and the
+  `VIRGIN_BATCH` constant's doc comment in
+  `benches/r30_3_virgin_zero_skip_native_gate.rs` for the concrete
+  mechanism.) This is establishing existing good practice as a mandatory
+  rule, not inventing a novel requirement from scratch — two reports already
+  adopted it VOLUNTARILY, with no rule requiring it: **R29-13/task #444**
+  (`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §1.3) hard-asserted
+  `used_post_teardown_max > 0` (admission proven) per arm before trusting a
+  cell's retention numbers; **R30-6/task #455**
+  (`docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §1.3) independently
+  built the same style of oracle one step further — `admissions_ok` AND
+  `hits_ok` (both hard-asserted), all 36 arms passing — explicitly citing
+  R30-3's pattern as precedent.
+  **Not retroactive** — same convention as this file's other non-retroactive
+  rules (the raw-log-truncation rule and the immutable-source-identity rule
+  both state this explicitly): existing gate reports that predate this rule
+  are not required to be retrofitted with a path-activation oracle after the
+  fact. R30-3 (`benches/r30_3_virgin_zero_skip_native_gate.rs`, task #452)
+  and R30-6 (`examples/r30_6_large_cache_headroom_ab_gate.rs`, task #455)
+  are the first two REAL applications and already comply going forward.
+  R30-3's judge is the reference example for what a compliant judge looks
+  like — read its own module-doc "4. Path-activation oracle" section
+  (`benches/r30_3_virgin_zero_skip_native_gate.rs`, point 4 of its 8-point
+  design) for the concrete oracle-design register future work should match.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
