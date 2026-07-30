@@ -337,6 +337,25 @@ impl HeapCore {
         self.core.dbg_large_cache_used()
     }
 
+    /// R30-6 (task #455) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_hits`] — exposed at the `HeapCore` level
+    /// (same delegation pattern as `dbg_large_cache_used` immediately above)
+    /// so the R30-6 large-cache headroom BENEFIT-side A/B probe can read this
+    /// heap's own large-cache hit counter directly (without going through the
+    /// process-wide `large_cache_hits_total` aggregator, which would mix in
+    /// every other concurrently-claimed heap's hits and defeat a per-thread
+    /// before/after delta). Read-only `&self`; does NOT mutate allocator
+    /// state. Gated identically to the delegated `AllocCore` method itself
+    /// (`alloc-decommit` only, no `bench-internals` needed — this is a
+    /// pre-existing diagnostic counter read, not a new hook, matching
+    /// `AllocCore::dbg_large_cache_hits`'s own gate exactly).
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_large_cache_hits(&self) -> u64 {
+        self.core.dbg_large_cache_hits()
+    }
+
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
     /// [`AllocCore::dbg_large_cache_slot_sizes`] — exposed at the `HeapCore`
     /// level (same pattern as `dbg_large_cache_used` above) so the R29-13

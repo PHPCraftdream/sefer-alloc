@@ -1678,6 +1678,38 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-i
 name = "r29_5_promotion_frequency_gate"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "medium-classes", "bench-internals"]
 
+# R30-6 (task #455): large-cache `headroom_bytes` BENEFIT-side gate — the
+# hit-rate/RSS/burst-idle-burst A/B companion to R29-13's retention-cost gate
+# (docs/perf/OPEN_ITEMS.md item 27's named missing piece). Subprocess-per-arm
+# isolation + config self-verification, mirroring R29-13's own shape but with
+# a MIXED small+large workload and a burst->idle->burst sequence so a real
+# (non-forced) decay tick can be observed. Same required-features as the
+# r29_13 sibling (registry-bypass via HeapRegistry::claim_with_config).
+[[example]]
+name = "r30_6_large_cache_headroom_ab_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
+# R30-6 (task #455): the REAL-`#[global_allocator]` latency companions to the
+# gate above — one binary per headroom grid point (0/16/64/256 MiB), since
+# `SeferAlloc::with_config` bakes its `LargeCacheConfig` into a `static` at
+# compile time (same structural reason R27-4 needed separate cap4/cap8
+# binaries). Same required-features triple as the r27_4 siblings.
+[[example]]
+name = "r30_6_latency_h0"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r30_6_latency_h16"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r30_6_latency_h64"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r30_6_latency_h256"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

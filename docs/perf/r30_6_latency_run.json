@@ -1,0 +1,24 @@
+{
+  "_doc": "R30-6 (task #455) — A/B/B/A paired judge config: measures the mixed small+large-object churn latency win/loss across the large-cache headroom_bytes sweep {0, 16, 64, 256 MiB} through the REAL #[global_allocator] entry point (mirrors R27-4's own real-default AB gate shape, generalized from 2 arms to 4). Each binary is a SEPARATE compile-time-configured static (SeferAlloc::with_config bakes LargeCacheConfig at compile time — the same structural reason R27-4 needed separate cap4/cap8 binaries). Driven by: node scripts/paired-ab-runner.mjs --config docs/perf/r30_6_latency_run.json --arms h256,hN for each hN in {h0,h16,h64}.",
+  "metric": "elapsed_ns",
+  "arms": {
+    "h0": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_6_latency_h0.exe"
+    },
+    "h16": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_6_latency_h16.exe"
+    },
+    "h64": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_6_latency_h64.exe"
+    },
+    "h256": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_6_latency_h256.exe"
+    }
+  },
+  "sanity": {
+    "key": "segments_reserved_total",
+    "_doc_sanity": "Both arms install a REAL SeferAlloc #[global_allocator] and run a mixed small+large workload that reserves segments, so BOTH must report segments_reserved_total > 0.",
+    "nonzero_arms": ["h0", "h16", "h64", "h256"]
+  },
+  "features_note": "production alloc-stats"
+}

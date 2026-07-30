@@ -1,0 +1,27 @@
+# R30-6 (task #455) — large-cache headroom_bytes BENEFIT-side A/B gate summary
+# commit_sha=<see report header, this file is committed alongside the same commit that lands the measured tree>
+# feature_set_hit_rss=production alloc-stats bench-internals (examples/r30_6_large_cache_headroom_ab_gate.rs)
+# feature_set_latency=production alloc-stats (examples/r30_6_latency_h0/_h16/_h64/_h256.rs)
+# cpu=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8 cores / 16 logical)
+# os=native Windows 10 Pro x86-64 (shared host — see report Platform note)
+# rustc=1.97.0 (2d8144b78 2026-07-07)
+# section 1: hit-rate/RSS/burst-idle-burst axis (subprocess-per-arm, registry-bypass), median of 3 reps per cell
+headroom_mib,thread_count,burst1_used_max_bytes,burst2_hits_median,burst2_possible,hit_rate_pct,rss_burst2_kib_median,rss_idle_kib_median,ns_per_burst2_op_median,oracle_pass_all_reps
+0,1,67108864,7,8,87.5,52520,52540,883062.5,1
+0,8,67108864,56,64,87.5,397452,397656,3257296.9,1
+0,32,67108864,224,256,87.5,1580136,1580944,5753431.2,1
+16,1,67108864,7,8,87.5,52516,52536,1022662.5,1
+16,8,67108864,56,64,87.5,397456,397648,1113025.0,1
+16,32,67108864,224,256,87.5,1580112,1580924,8816974.6,1
+64,1,67108864,8,8,100.0,52512,52536,34012.5,1
+64,8,67108864,64,64,100.0,397448,397648,98698.4,1
+64,32,67108864,256,256,100.0,1580068,1580912,1529132.8,1
+256,1,67108864,8,8,100.0,52512,52536,72475.0,1
+256,8,67108864,64,64,100.0,397452,397652,50318.8,1
+256,32,67108864,256,256,100.0,1580072,1580920,325241.0,1
+# section 2: latency axis (real #[global_allocator], paired-ab-runner.mjs A/B/B/A, n=20 pairs each)
+comparison,mean_delta_ns,sd_ns,t_stat,df,crit_p05,verdict,sign_a_faster,sign_b_faster,ties
+h256_vs_h64,-256043,2275000,-0.503,19,2.101,NOT_SIGNIFICANT,12,8,0
+h256_vs_h16,-51097,1587000,-0.144,19,2.101,NOT_SIGNIFICANT,7,13,0
+h256_vs_h0,54453,1408000,0.173,19,2.101,NOT_SIGNIFICANT,10,10,0
+h256_vs_h256_control,-226243,892487,-1.134,19,2.101,NOT_SIGNIFICANT,14,6,0
