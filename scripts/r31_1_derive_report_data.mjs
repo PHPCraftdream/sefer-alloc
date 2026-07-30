@@ -21,13 +21,19 @@
 // 1272a52/9335979/f93e663 precedent.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
 
 const landingCommit = process.argv[2] || 'UNFILLED';
-const baseCommit = execFileSync('git', ['rev-parse', 'HEAD']).toString().trim();
+// The measured tree's TRUE base: `main` HEAD immediately before this task's
+// changes (confirmed via `git rev-parse HEAD` at session start, matching
+// this report's own "Base revision" citation) -- NOT re-derived from `git
+// rev-parse HEAD` at script-run time, which would silently drift to
+// whatever commit happens to be checked out when this script is re-run
+// later (exactly the base-vs-landing conflation R31-2's own follow-up
+// commit `f93e663` had to correct after the fact).
+const baseCommit = 'f93e66311ad3ea47aaa1a2fe2461caeb4c0968fe';
 
 const RAW_LOG = 'docs/perf/_raw_r31_1_large_cache_headroom_crossing_regime_gate.log';
 const text = read(RAW_LOG);

@@ -29,11 +29,10 @@ MiB) is untouched; this report does not change any `src/` default.**
 (clean at session start, confirmed via `git rev-parse HEAD` before any edit)
 + this task's working tree, landed together in the SAME commit this report
 cites — per CLAUDE.md's R29-6 immutable-source-identity rule (form 1: the
-actual landing commit SHA), filled in by a small follow-up commit after the
-landing commit itself (chicken-and-egg: a commit cannot cite its own SHA
+actual landing commit SHA), filled in by this small follow-up commit after
+the landing commit itself (chicken-and-egg: a commit cannot cite its own SHA
 inside its own tree — matches the `1272a52`/`c7b3eda`/`d9d30cd`/`f93e663`
-established pattern). **Landing commit:** see the follow-up commit that
-fills this placeholder.
+established pattern). **Landing commit:** `fc11cf3c03916079982bbc06bef8c2c80bf773ea`.
 **Platform:** native Windows 10 Pro x86-64, 11th Gen Intel Core i7-11800H @
 2.30GHz (8 cores / 16 logical), rustc 1.97.0 — the same host as R30-6.
 **Feature set:** `production alloc-stats bench-internals`
