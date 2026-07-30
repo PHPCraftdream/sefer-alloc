@@ -507,6 +507,91 @@ Core instructions, mandatory for all code in this repository. They
   like — read its own module-doc "4. Path-activation oracle" section
   (`benches/r30_3_virgin_zero_skip_native_gate.rs`, point 4 of its 8-point
   design) for the concrete oracle-design register future work should match.
+- **A gate report's tables and headline ratios must be DERIVED, by one
+  checked script, from raw per-sample data written before any prose is
+  written — not hand-transcribed or hand-computed.** This COMPLEMENTS,
+  does not replace, the raw-log-policy and summary-CSV-policy bullets
+  above (which govern WHICH artifacts a report owes and when they must be
+  committed); this rule governs HOW those artifacts must be produced, so a
+  report's prose cannot silently disagree with its own underlying numbers.
+  Concrete requirements, all mechanically checkable:
+  1. **Probes/examples write raw PER-SAMPLE structured data (JSON/CSV) as
+     their primary output first** — the numbers a report's tables are built
+     from must exist as a machine-readable artifact before any table or
+     headline sentence is typed.
+  2. **The summary CSV and the report's Markdown tables are DERIVED from
+     that raw data by one checked script, not retyped by hand.** This is
+     the direct fix for a transcription-typo class of bug, not a
+     hypothetical: R29-3's own landing commit (`db35617`, task #434)
+     records, in its own commit message, that zero-trust review caught the
+     report's "Run 1 (primary, cited as evidence)" prose citing numbers
+     that matched NEITHER of the two actually-saved raw logs (implying a
+     third, unsaved run had been quoted by hand) — re-cited to the real
+     content of `_raw_r29_3_decomposition_run1.log`, "with the CSV's own
+     sub-component transcription typos also fixed against the raw log" in
+     the same pass, the aggregate numbers having been correct even though
+     the sub-components typed under them were not.
+  3. **Statistic names are printed by the code that computes them, not
+     typed independently into prose later.** `examples/r29_3_decomposition_gate.rs`
+     computes `total.elapsed() / N` — an arithmetic mean — and both the
+     code's own `println!` and the report's prose call it "median";
+     confirmed CONFIRMED by R30-4/task #453 (commit `575f3a8`, finding c).
+     If the label string lives next to the computation instead of being
+     retyped in Markdown afterward, a mean cannot drift into being called a
+     median.
+  4. **Every percentage in a report must name its numerator AND
+     denominator inline.** A bare percentage with no stated denominator is
+     not an acceptable report format going forward. R29-5's headline
+     "0.054%" (33/60,722, over ALL allocations) coexisted with a far higher
+     and more decision-relevant 82.5% (33/40, over just the PROMOTABLE
+     population) that the report's own §1 data supported but its §0
+     headline table never stated — confirmed PARTIAL by R30-4 (finding h):
+     not an arithmetic error, a framing gap that naming both figures'
+     denominators inline would have foreclosed.
+  5. **Absolute retention and delta/incremental retention must be labeled
+     distinctly wherever a report compares two such quantities.**
+     `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §5 compared an
+     absolute ~238 MiB/heap floor against R27-3's cap8-minus-cap4 DELTA
+     (~8 MiB) as if both were the same kind of quantity, yielding an
+     inflated "30x" headline — confirmed PARTIAL by R30-4 (finding g); no
+     single unambiguous replacement ratio existed once the category
+     mismatch was named, only like-for-like absolute-to-absolute
+     comparisons computed fresh from each report's own tables (~7.6x/~10.3x).
+  6. **A script that computes a headline ratio must assert the arithmetic
+     it prints, not just print a hand-computed string** — e.g.
+     `assert(headroom_a / headroom_b == stated_ratio)` (or the language
+     equivalent) alongside the `println!`/table-cell write, so a wrong
+     ratio is a FAILING CHECK in the generating script, never a published
+     claim a human transcribed wrong by hand. This is the most mechanically
+     enforceable point here. The same `R29_13_LARGE_CACHE_RETENTION_GATE.md`
+     §5 headline also asserted "32x the small pool's 16 MiB cap" from
+     256/16, which is 16, not 32 — a plain arithmetic error, part of the
+     same PARTIAL finding g above, that a one-line in-script assertion
+     would have caught before the report was ever written.
+  7. **An immutable source identity (per the R29-6 rule in "Phased
+     delivery" above) must be produced BEFORE measurement, not assembled
+     after the fact from a stated recipe.** `R29_13_LARGE_CACHE_RETENTION_GATE.md`'s
+     cited provenance hash was found to be 63 hex characters — one short of a
+     valid sha256 digest's required 64 — and a reconstruction attempt
+     against the report's own stated recipe (`sha256(git diff -- ...; cat
+     ...)`) over its cited base SHA produced a genuinely DIFFERENT hash,
+     confirming the citation cannot be reproduced, not just mistyped;
+     confirmed CONFIRMED by R30-4 (finding e, commit `575f3a8`). This was
+     the first real-world test of the R29-6 immutable-provenance rule and
+     it failed on exactly the pattern this point targets: a hash
+     hand-assembled from a recipe applied to an already-mutated,
+     never-preserved working tree cannot be recomputed later, no matter how
+     precisely the recipe is restated. Capture or compute the identity
+     (temp commit SHA / `git write-tree` / patch hash / binary hash — the
+     four forms the R29-6 rule already lists) from something that exists
+     AT measurement time.
+  **Not retroactive** — same convention as the raw-log-truncation,
+  summary-CSV, and immutable-source-identity rules above: R29-3, R29-5,
+  R29-13, and R29-16 (or any other pre-existing report) are not required to
+  be regenerated through a checked-script pipeline after the fact — they
+  were already corrected append-only by R30-4/task #453 where needed, a
+  separate, already-completed remediation. This rule governs NEW gate
+  reports going forward.
 - Do not bump project or dependency versions without an explicit request.
 - Verification-first: every invariant (I1–I6) is covered by proptest and/or
   unit test; the core is run under miri.
