@@ -468,3 +468,51 @@ classes in one batch instead of many calls of one class.
   smaller per-rep timed region needed more independent samples for a stable
   mean under this fast profile — noted explicitly per CLAUDE.md's own
   guidance to flag such widenings.
+
+## 8. 2026-07-30 correction — production-layer re-gate (R31-0, task #471)
+
+**This report's §6 NO-GO verdict is SUPERSEDED by
+`docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md` (R31-0, task
+#471). This section is appended, not a rewrite — every number and claim
+above stays exactly as originally published.**
+
+The defect: this report's judge (`benches/r30_3_virgin_zero_skip_native_gate.rs`)
+deliberately used a bare `AllocCore::new()` + `core.alloc_zeroed(layout)`
+call (§2 point 2 above, chosen specifically to avoid `HeapRegistry`
+same-process slot reuse) — but that choice also, as an unintended side
+effect, bypassed the ENTIRE production magazine layer
+(`HeapCore::alloc_zeroed` → `alloc_small_zeroed_via_magazine` → on a miss,
+`refill_magazine_slow_virgin` → `AllocCore::refill_class_bump_virgin_checked`)
+that `SeferAlloc`'s real `#[global_allocator]` call chain actually goes
+through. §3's structural finding — that a same-class burst dilutes virgin
+activation to ~1-in-32 via `carve_block_with_refill`'s unconditional
+31-block FREE-LIST refill — is a real, correctly-diagnosed property of the
+bare-`AllocCore` substrate this judge measured. It does **not** describe the
+production configuration: the production magazine's OWN refill path
+(`refill_magazine_slow_virgin`) retains blocks in the MAGAZINE, not the free
+list, and stores their virgin bits in `PerClass::virgin_mask`
+(`heap_core_alloc.rs:472`) — a mechanism this judge's chosen substrate never
+exercises at all, because it never goes through `HeapCore`.
+
+R31-0's production-layer judge
+(`benches/r31_0_virgin_zero_skip_production_layer_gate.rs`), driving the
+same same-class-burst shape through `HeapCore::alloc_zeroed` on a freshly
+`HeapRegistry::claim()`'d heap (never recycled — the same anti-reuse
+discipline this report's §2 point 2 used, just applied one layer higher),
+measures **100% virgin-path activation on every swept size** (§2 of the new
+report), directly falsifying this report's §6 claim that the feature is
+"structurally useless for any same-class burst." The corrected wall-clock
+finding: a `notouch`-consumer same-class burst shows a large, reproducible,
+mechanistically-explained win (−89% to −98.6% across 4/4 sizes, stable sign
+across an independent repeat run); `onebyte`/`full`-consumer bursts remain
+sign-inconsistent and noise-dominated, matching THIS report's own §5.2
+finding for its comparable touch-heavy cells. R31-0's own verdict is a
+narrower, workload-shape-conditional GO-supporting result — not a blanket
+`production` promotion, and not enacted without separate user sign-off; see
+that report's §5 for the full reasoning.
+
+`OPEN_ITEMS.md` item 25 (the promotion-decision owner item) is REOPENED to
+cite `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md` as the current
+operative evidence; this report's own Ir-level evidence (§0) and its
+recycled-scenario, lazy-commit-crossing, and noise-floor discussions (§5,
+§5.3) remain valid supplementary context and are not superseded.

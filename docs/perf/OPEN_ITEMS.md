@@ -181,51 +181,67 @@ for completeness.
     > - **Evidence:** `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D15`.
 
-25. **R9-5 / R11-8 / R13-3 / R29-16 / R30-3 — `virgin-zero-skip` promotion
-    decision — Stage-0/Stage-3 measurement DONE with an activation-proven
-    native judge (R30-3, task #452). Verdict: NO-GO for `production`, keep
-    opt-in.**
+25. **R9-5 / R11-8 / R13-3 / R29-16 / R30-3 / R31-0 — `virgin-zero-skip`
+    promotion decision — REOPENED: R30-3's NO-GO measured the wrong
+    allocator layer (bare `AllocCore`, not the production `HeapCore`
+    magazine). R31-0 (task #471) re-measured through the real production
+    call chain. Verdict: no blanket `production` promotion (data does not
+    support one for the touch-heavy majority case), but a real,
+    reproducible, mechanistically-explained win exists for a narrower
+    touch-light/deferred-touch workload shape — still opt-in, pending
+    explicit user sign-off for any composition change.**
 
    > **Current state**
-   > - **Status:** RESOLVED for this round. R30-3 (task #452) replaced R29-16's
-   >   CONFIRMED-BROKEN wall-clock bench (its "virgin" scenario silently
-   >   measured the recycled path after its first Criterion iteration — full
-   >   root cause in the archive) with a custom `Instant`-timing-loop judge
-   >   (`benches/r30_3_virgin_zero_skip_native_gate.rs`) carrying a
-   >   PATH-ACTIVATION ORACLE (`AllocCore::dbg_small_zero_pass_count()`,
-   >   pre-existing, `alloc-stats`-gated) that proves, per cell, what fraction
-   >   of calls actually took the intended path. Feature is BUILT and
-   >   CI-tested, still NOT in `production`.
-   > - **Current number/verdict:** Oracle: **48/48 ON-binary cells (both
-   >   eager and lazy small-segment commit) pass at 100.00% minimum
-   >   activation** — the judge is proven to exercise the mechanism it claims
-   >   to measure. Native wall-clock (representative 64 KiB; full 4/16/64/128
-   >   KiB × 3-touch matrix in the report): virgin scenario OFF-vs-ON deltas
-   >   are SIGN-INCONSISTENT across sizes/touches (−43.8% to +19.9%) and not
-   >   distinguishable from this host's own same-binary repeat-run noise
-   >   (4%–45% swings observed); recycled scenario shows a SMALL but
-   >   DIRECTION-CONSISTENT regression (ON slower than OFF on all 24 cells ×
-   >   both commit policies = 48/48), attributed to `alloc_small_with_virgin`'s
-   >   extra dispatch bookkeeping on its own non-virgin path. **A separate,
-   >   load-bearing structural finding surfaced by the oracle itself during
-   >   harness development:** `carve_block_with_refill`'s unconditional
-   >   31-block refill-batch (Phase 9 amortisation, NOT gated on
-   >   `virgin-zero-skip`) caps virgin-path activation at ~1-in-32 for ANY
-   >   same-class multi-block `alloc_zeroed` burst — only a genuinely
-   >   one-call-per-class-per-heap shape (or calls spread across many
-   >   distinct classes) can exercise the skip repeatedly; a same-class
-   >   calloc loop — arguably the more realistic "calloc-heavy" victim
-   >   profile — sees it fire on ~3% of calls after the first.
-   > - **Next trigger:** none required for THIS round — the promotion
-   >   question is answered (NO-GO, keep opt-in) at the confidence this
-   >   host/sample-size combination can support. If a future round wants to
-   >   revisit: (a) a much larger sample count or a dedicated quiet
-   >   measurement host to shrink the noise floor below the Ir-predicted
-   >   effect size (a few hundred ns to low µs at these sizes, per the
-   >   §3-derived Ir figures, vs. this host's tens-of-µs same-binary
-   >   run-to-run swing), or (b) a workload shape that avoids the
-   >   refill-batch dilution entirely (many distinct classes per batch,
-   >   not one class repeated).
+   > - **Status:** REOPENED. R30-3 (task #452) built an activation-proven
+   >   judge but drove it through a BARE `AllocCore` (`AllocCore::new()` +
+   >   `core.alloc_zeroed`), never through `HeapCore`/`SeferAlloc`/a real
+   >   `#[global_allocator]` — it measured the magazine-BYPASS substrate, not
+   >   the actual `production + virgin-zero-skip` call chain
+   >   (`HeapCore::alloc_zeroed` → `alloc_small_zeroed_via_magazine` → on a
+   >   miss, `refill_magazine_slow_virgin`, which retains virginity across an
+   >   entire freshly-carved MAGAZINE refill via `PerClass::virgin_mask` —
+   >   see `tests/r13_3_magazine_virgin_hit_skips_zero.rs`). R30-3's own
+   >   ~1-in-32 same-class-burst activation ceiling is a real, correctly
+   >   diagnosed property of the bare-`AllocCore` FREE-LIST refill it used —
+   >   it does not describe the magazine-backed production path, which was
+   >   never exercised. R31-0 (task #471) rebuilt the judge through
+   >   `HeapCore::alloc_zeroed` on freshly `HeapRegistry::claim()`'d heaps
+   >   (never recycled) and measured 100% same-class-burst activation.
+   > - **Current number/verdict:** Path-activation oracle (R31-0): **4/4
+   >   retention-probe PASS** (per-size smoking-gun proof the magazine
+   >   retains virginity across a refill, `dbg_tcache_virgin_mask`) + **24/24
+   >   ON-binary activation cells PASS at 100.00% minimum** (both virgin and
+   >   recycled scenarios, all 4 sizes × 3 touches). Native wall-clock: the
+   >   `notouch` consumer category shows a **material, reproducible win of
+   >   −89% to −98.6% across all 4 swept sizes**, stable in sign and rough
+   >   magnitude across an independent repeat run — the cleanest measurement
+   >   this layer permits, since it isolates the skipped `Node::zero` memset
+   >   from page-fault noise. The `onebyte`/`full` touch categories remain
+   >   SIGN-INCONSISTENT and noise-dominated (matching R30-3's own finding
+   >   for its comparable touch-heavy cells) — no reproducible win there.
+   >   Recycled (non-virgin control) scenario: small, sign-inconsistent
+   >   deltas in both directions (7/12 ON-faster, 5/12 ON-slower) — no
+   >   consistent regression reproduces R30-3's own noisy majority-direction
+   >   finding on a differently-shaped recycled loop.
+   > - **Verdict:** the `notouch` finding is a GO-supporting result for a
+   >   NARROW, workload-shape-specific case (calloc'd buffers that are
+   >   sparse or lazily touched) — **not** a blanket `production` promotion,
+   >   since the touch-heavy majority case (a calloc'd buffer populated
+   >   shortly after allocation) shows no reproducible win. Per this
+   >   project's standing rule, no composition change was made without
+   >   explicit user sign-off; the feature remains opt-in, now correctly
+   >   characterized (genuinely ~100%-active on same-class bursts through the
+   >   real production magazine, benefit concentrated in the
+   >   touch-light/deferred-touch consumer shape) rather than the "structurally
+   >   useless for any same-class burst" characterization R30-3 shipped.
+   > - **Next trigger:** if a future round wants to pursue promotion: (a) a
+   >   caller-facing knob distinguishing sparse/lazily-touched calloc buffers
+   >   from immediately-populated ones (§5's "recommended narrower framing" in
+   >   the R31-0 report), since a blanket default would apply the proven
+   >   `notouch` win uniformly to the touch-heavy majority where it does not
+   >   reproduce; or (b) a larger sample count / quieter host to try to
+   >   resolve the `onebyte`/`full` categories' sign-inconsistent noise into a
+   >   real signal one way or the other.
    > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
    >   563–568); `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8;
    >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding);
@@ -233,12 +249,19 @@ for completeness.
    >   3,067 vs 65,624 Ir, ~21.4×, confirms real skipped work, NOT a wall-clock
    >   speed claim; its own §4/§8 wall-clock portion is SUPERSEDED, kept
    >   append-only for history) + its summary CSV + raw logs;
-   >   **`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`** (task #452, the new
-   >   activation-proven native judge and the operative promotion verdict) +
+   >   `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` (task #452, activation-proven
+   >   but WRONG-LAYER judge — §8 dated correction now points to R31-0; its
+   >   own Ir-level evidence, recycled-scenario, and lazy-commit-crossing
+   >   discussions remain valid supplementary context) +
    >   `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE_summary.csv` +
    >   `docs/perf/_raw_r30_3_off_eager.log` / `_raw_r30_3_on_eager.log` /
    >   `_raw_r30_3_off_lazy.log` / `_raw_r30_3_on_lazy.log` /
-   >   `_raw_r30_3_off_eager_run2.log` / `_raw_r30_3_on_eager_run2.log`.
+   >   `_raw_r30_3_off_eager_run2.log` / `_raw_r30_3_on_eager_run2.log`;
+   >   **`R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`** (task #471, the
+   >   corrected production-layer judge and the current operative verdict) +
+   >   `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv` +
+   >   `docs/perf/_raw_r31_0_off.log` / `_raw_r31_0_on.log` /
+   >   `_raw_r31_0_off_run2.log` / `_raw_r31_0_on_run2.log`.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D25`.
 
 26. **R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)

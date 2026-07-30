@@ -1536,6 +1536,25 @@ name = "r30_3_virgin_zero_skip_native_gate"
 harness = false
 required-features = ["alloc-global", "alloc-decommit", "alloc-stats"]
 
+# R31-0 (task #471): the PRODUCTION-LAYER wall-clock + mechanism-activation
+# gate for `virgin-zero-skip`, correcting R30-3's (task #452) NO-GO verdict --
+# R30-3's judge used BARE `AllocCore` (`AllocCore::new()` + `core.alloc_zeroed`),
+# bypassing the production magazine layer (`HeapCore::alloc_zeroed` ->
+# `alloc_small_zeroed_via_magazine` -> `refill_magazine_slow_virgin` ->
+# `refill_class_bump_virgin_checked`) that RETAINS virginity across a freshly-
+# carved refill via `PerClass::virgin_mask` (R13-3, task #273). A custom
+# `Instant`-timing-loop `fn main()` binary (harness = false), driving a FRESH
+# `HeapCore` (claimed per rep via `HeapRegistry::claim`, never recycled) through
+# same-class BURSTS, with a path-activation oracle on BOTH binaries
+# (`tcache_hits`) plus an ON-only retention probe (`dbg_tcache_virgin_mask`).
+# Required-features deliberately EXCLUDE `virgin-zero-skip` so the SAME source
+# compiles both WITHOUT it (baseline) and WITH it (treatment) -- see
+# `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
+[[bench]]
+name = "r31_0_virgin_zero_skip_production_layer_gate"
+harness = false
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
+
 # R13-6 (task #276): production A/B wall-clock gate for the
 # `exact-span-large` (R12-3) + `large-reserved-capacity` (R12-4) opt-in pair
 # (`benches/r13_6_exact_span_reserved_capacity_wallclock.rs`). Two groups:
