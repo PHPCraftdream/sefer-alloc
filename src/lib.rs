@@ -335,7 +335,11 @@ pub use alloc_core::LargeCacheConfig;
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 pub use alloc_core::LargeCacheMode;
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+pub use alloc_core::LargeCachePolicy;
+#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 pub use alloc_core::Profile;
+#[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
+pub use alloc_core::SmallPoolPolicy;
 #[cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]
 pub use alloc_core::SmallSegmentPoolConfig;
 #[cfg(feature = "alloc-core")]

@@ -341,24 +341,25 @@ impl LargeCacheConfig {
         self
     }
 
-    /// Build a config from a named, measured [`Profile`](super::profile::Profile)
-    /// preset — sets the small-pool pair (`pool_segments`/`pool_byte_cap`)
-    /// AND the large-cache `headroom_bytes` together, coherently. See
-    /// [`Profile`](super::profile::Profile)'s own docs for exactly what each
-    /// variant sets and the measured gate reports (R27-3/R27-4/R30-6) each
-    /// value is drawn from.
+    /// Build a config from a [`Profile`](super::profile::Profile) — a small
+    /// builder over two independent, named, measured axes
+    /// ([`SmallPoolPolicy`](super::profile::SmallPoolPolicy) for the
+    /// small-pool pair, [`LargeCachePolicy`](super::profile::LargeCachePolicy)
+    /// for the large-cache `headroom_bytes`). See [`Profile`](super::profile::Profile)'s
+    /// own docs for exactly what each axis sets and the measured gate reports
+    /// (R27-3/R27-4/R30-6/R31-1/R31-2) each value is drawn from.
     ///
     /// Equivalent to (illustrative, not a doctest per this project's "no
     /// doctests" rule):
     ///
     /// ```text
-    /// use sefer_alloc::{LargeCacheConfig, Profile, SmallSegmentPoolConfig};
+    /// use sefer_alloc::{LargeCacheConfig, Profile, SmallPoolPolicy, SmallSegmentPoolConfig};
     ///
     /// let cfg = LargeCacheConfig::new()
     ///     .headroom_bytes(64 * 1024 * 1024)
     ///     .pool(SmallSegmentPoolConfig::new().pool_segments(8).pool_byte_cap(32 * 1024 * 1024));
     /// // is the same resolved config as:
-    /// let cfg2 = LargeCacheConfig::for_profile(Profile::Throughput);
+    /// let cfg2 = LargeCacheConfig::for_profile(Profile::new().small_pool(SmallPoolPolicy::Throughput));
     /// ```
     ///
     /// Every other knob (`budget_bytes`, `decay_interval_ms`,

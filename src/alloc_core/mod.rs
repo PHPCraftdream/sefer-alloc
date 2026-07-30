@@ -70,11 +70,12 @@ pub(crate) mod node;
 #[doc(hidden)]
 pub mod numa;
 pub(crate) mod os;
-/// R30-7 (task #456): [`Profile`] — named, discoverable configuration
-/// presets (`Rss`/`Balanced`/`Throughput`) composing the small-pool pair
-/// (`pool_segments`/`pool_byte_cap`) with the large-cache `headroom_bytes`,
-/// from this project's own measured gate reports (R27-3/R27-4/R30-6). See
-/// the module doc for the full rationale and exact numbers.
+/// R30-7 (task #456), reworked R31-9 (task #473): [`Profile`] — a small
+/// builder composing two independent, named, measured configuration axes
+/// ([`profile::SmallPoolPolicy`] for `pool_segments`/`pool_byte_cap`,
+/// [`profile::LargeCachePolicy`] for large-cache `headroom_bytes`), from
+/// this project's own measured gate reports (R27-3/R27-4/R30-6/R31-1/R31-2).
+/// See the module doc for the full rationale and exact numbers.
 #[cfg(feature = "alloc-decommit")]
 pub mod profile;
 /// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
@@ -212,7 +213,7 @@ pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
 #[cfg(feature = "alloc-decommit")]
-pub use profile::Profile;
+pub use profile::{LargeCachePolicy, Profile, SmallPoolPolicy};
 /// R31-4 (task #467) MEASUREMENT-ONLY: re-exported so `examples/`/`tests/`
 /// can name the handle type returned by
 /// `AllocCore::dbg_decomp_reserve_and_keep` / consumed by

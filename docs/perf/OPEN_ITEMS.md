@@ -413,6 +413,14 @@ for completeness.
    >   no-benefit caveat still applies) — if accepted, `npm run bench:table` +
    >   `npm run iai` must be re-run and committed in the SAME PR per
    >   CLAUDE.md's composition-change rule.
+   > - **R31-9/task #473 update (2026-07-30):** `Profile`'s rework reserved,
+   >   but deliberately did NOT implement, exactly the integration point this
+   >   note anticipated — `LargeCachePolicy` is `#[non_exhaustive]` with a
+   >   documented (not-yet-added, not-constructible) slot for a future
+   >   `large-cache-extended`-backed variant, so if/when this item's sign-off
+   >   trigger fires, it slots into that ONE axis without touching
+   >   `SmallPoolPolicy` or requiring a `production` composition change. The
+   >   user sign-off itself is still pending — this item stays open.
    > - **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` §9 (the
    >   original CONDITIONAL-GO + the explicit GO condition);
    >   `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` (the re-verification
@@ -541,7 +549,12 @@ for completeness.
    >   task (measurement/docs-only per this task's own scope; `profile.rs`
    >   is mid-rework under R31-9/task #473, which is the more coordinated
    >   landing point for that specific doc-comment edit — flagged as an
-   >   explicit input to that task, not left silently unowned). P2-6 through
+   >   explicit input to that task, not left silently unowned). **UPDATE
+   >   (2026-07-30, R31-9/task #473): applied.** `Profile::Balanced`/
+   >   `Profile::Throughput` no longer exist (split into `SmallPoolPolicy` /
+   >   `LargeCachePolicy` axes); the regime caveat now lives on
+   >   `LargeCachePolicy::Trimmed64MiB`'s doc comment, the axis value that
+   >   replaced the old bundled 64 MiB setting. P2-6 through
    >   P2-9, P2-11 remain unverified by this task — still open for a future
    >   round per the original "Next trigger" above.
    > - **Evidence:** `docs/reviews/2026-07-30-r30-full-review.md` §5 (P2-1
@@ -757,6 +770,16 @@ for completeness.
     >   256 MiB SeferAlloc::new() default question only if a future round
     >   wants to change it (not attempted by either measurement task, R30-7,
     >   or R31-1/R31-12).
+    > - **CLOSED (2026-07-30, R31-9/task #473):** the trigger fired.
+    >   `Profile` was restructured from the flat `{Rss, Balanced, Throughput}`
+    >   enum into two independent axes; the old bundled 64 MiB value is now
+    >   `LargeCachePolicy::Trimmed64MiB`, whose doc comment
+    >   (`src/alloc_core/profile.rs`) states the regime caveat explicitly:
+    >   "parity...at a 64 MiB rounded working set" + "R31-1...measured BEYOND
+    >   that boundary and found the tie BREAKS." README's "Named profiles"
+    >   section table carries the same caveat. No further action needed on
+    >   this specific trigger; the underlying 256 MiB `SeferAlloc::new()`
+    >   default remains unchanged, as this item's own trigger scoped it.
     > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` (retention) + `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` (benefit, + its 2026-07-30 §8 addendum) + `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md` (crossing-regime benefit) + all three reports' `_summary.csv`/`_raw_*.log` companions.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
 

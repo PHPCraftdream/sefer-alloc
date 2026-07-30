@@ -106,27 +106,36 @@ deployments, see [Configuration](#configuration) below.
 > further decay ticks.
 
 This is a real, measured trade-off, not a defect: the 256 MiB default
-genuinely buys a better cache hit rate for large-object churn (see
-[Named profiles](#named-profiles-profile-alloc-decommit) below — 64 MiB
-already ties the 256 MiB default on hit rate for the measured
-workload). If a smaller per-heap floor fits your deployment better —
-long-running server with many threads, container with a tight memory
-limit — the shipped, one-line answer is a named profile:
+genuinely buys a better cache hit rate for large-object churn AT A 64
+MiB ROUNDED WORKING SET (see
+[Named profiles](#named-profiles-profile-alloc-decommit) below — that
+scoping matters: R31-1 found the 64 MiB / 256 MiB tie BREAKS once a
+burst genuinely exceeds 64 MiB). If a smaller per-heap floor fits your
+deployment better — long-running server with many threads, container
+with a tight memory limit — the shipped, one-line answer is a named
+profile:
 
 ```text
-use sefer_alloc::{SeferAlloc, Profile};
+use sefer_alloc::{SeferAlloc, Profile, LargeCachePolicy};
 
 #[global_allocator]
-static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Balanced);
+static GLOBAL: SeferAlloc = SeferAlloc::with_profile(
+    Profile::new().large_cache(LargeCachePolicy::Trimmed64MiB),
+);
 ```
 
-`Profile::Balanced` keeps the `production` small-pool default (no
-additional retention cost there) and lowers the large-cache headroom to
-64 MiB/heap — full hit-rate parity with the 256 MiB default at ~7×
-less RSS per heap. `Profile::Rss` goes further (16 MiB/heap) at a
-disclosed hit-rate cost; see [Named profiles](#named-profiles-profile-alloc-decommit)
-below for the full comparison table, or hand-roll an exact floor via
-[`LargeCacheConfig::headroom_bytes`](#configuration).
+`LargeCachePolicy::Trimmed64MiB` lowers the large-cache headroom to 64
+MiB/heap — full hit-rate parity with the 256 MiB default at ~7× less
+RSS per heap, but ONLY at a working set that rounds to 64 MiB or less;
+beyond that boundary it costs the same real hit-rate loss
+`LargeCachePolicy::LowHeadroom` (16 MiB/heap) discloses. See
+[Named profiles](#named-profiles-profile-alloc-decommit) below for the
+full comparison table, or hand-roll an exact floor via
+[`LargeCacheConfig::headroom_bytes`](#configuration). Note also that
+`headroom_bytes` (every value in this section) is a decay FLOOR, not an
+admission ceiling — see that section for
+[`LargeCacheConfig::budget_bytes`](#configuration) if you need an actual
+RSS cap.
 
 Full measured methodology (36-arm subprocess-isolated sweep, the
 238–241 MiB/heap post-drain floor at the 256 MiB default, and why idle
@@ -137,29 +146,47 @@ report is where the full raw numbers and methodology live.
 
 ### Named profiles (`Profile`, `alloc-decommit`)
 
-R30-7 (task #456) turns the hand-assembled recipes below into three named,
-discoverable constructors — `SeferAlloc::with_profile(Profile::…)` — each
-setting the small-pool pair (`pool_segments`/`pool_byte_cap`) AND the
-large-cache `headroom_bytes` together, coherently, from this project's own
-measured gate reports. None of them change `SeferAlloc::new()`'s defaults;
-each is an explicit, opt-in alternative.
+R30-7 (task #456) shipped a single flat `Profile` enum bundling a
+small-pool choice with a large-cache choice; R31-9 (task #473) reworked
+it into a small builder over **two independent axes** — `Profile` is now
+`Profile::new().small_pool(SmallPoolPolicy::…).large_cache(LargeCachePolicy::…)`
+— because the two knobs are governed by unrelated evidence (R27-3/R27-4
+for the small pool, R30-6/R31-1 for the large cache) and bundling them
+meant a caller who wanted only one win had to accept the other axis's
+trade as a package deal. `Profile::new()` (== `Profile::DEFAULT`) is
+byte-identical to `SeferAlloc::new()`; each axis is an explicit, opt-in
+alternative, independently settable.
 
 ```rust
-use sefer_alloc::{SeferAlloc, Profile};
+use sefer_alloc::{SeferAlloc, Profile, SmallPoolPolicy, LargeCachePolicy};
 
 #[global_allocator]
-static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Throughput);
+static GLOBAL: SeferAlloc = SeferAlloc::with_profile(
+    Profile::new()
+        .small_pool(SmallPoolPolicy::Throughput)
+        .large_cache(LargeCachePolicy::Trimmed64MiB),
+);
 ```
 
-| Profile | small pool (`pool_segments`, `pool_byte_cap`) | large-cache `headroom_bytes` | measured latency | measured RSS/hit-rate |
-|---|---|---|---|---|
-| `Profile::Rss` | `(4, 16 MiB)` — the `production` default | `16 MiB` | same as default (no small-pool win) | **discloses a cost**: 12.5-percentage-point large-cache hit-rate loss vs 64/256 MiB (87.5 % vs 100.0 %, exact at 1/8/32 threads — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0.1) |
-| `Profile::Balanced` | `(4, 16 MiB)` — the `production` default | `64 MiB` | same as default (no small-pool win) | full 100.0 % hit-rate parity with the 256 MiB default at ~7× less RSS (~34–37 MiB/heap vs ~238–241 MiB/heap post-drain floor — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0, [`R29_13`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0) |
-| `Profile::Throughput` | `(8, 32 MiB)` | `64 MiB` | **~22 % lower elapsed time**, 9→0 decommit syscalls/run on the 1024 B batch-120 churn-with-teardown workload (paired t=8.114, sign 19/20 — [`R27_4`](docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md)) | **discloses a cost**: ~+8 MiB/heap non-decaying small-pool retention (~+255 MiB at 32 heaps — [`R27_3`](docs/perf/R27_3_POOL_RETENTION_GATE.md) §0); large-cache side ties the 256 MiB default at ~7× less RSS, same as `Balanced` |
+**Small-pool axis (`SmallPoolPolicy`):**
+
+| Value | `pool_segments`, `pool_byte_cap` | measured latency | measured cost |
+|---|---|---|---|
+| `SmallPoolPolicy::Default` | `(4, 16 MiB)` — the `production` default | same as default | none — no additional retention above what every existing deployment already pays |
+| `SmallPoolPolicy::Throughput` | `(8, 32 MiB)` | **~22 % lower elapsed time**, 9→0 decommit syscalls/run — but ONLY measured on a single-threaded, single-shot 1024 B batch-120 churn-with-teardown workload (paired t=8.114, sign 19/20 — [`R27_4`](docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md)) | **discloses a cost**: ~+8 MiB/heap non-decaying small-pool retention (~+255 MiB at 32 heaps — [`R27_3`](docs/perf/R27_3_POOL_RETENTION_GATE.md) §0) |
+
+**Large-cache axis (`LargeCachePolicy`) — every value is a decay FLOOR,
+not an RSS bound (see `budget_bytes` above for an actual cap):**
+
+| Value | `headroom_bytes` | measured hit-rate/RSS |
+|---|---|---|
+| `LargeCachePolicy::LowHeadroom` | `16 MiB` | **discloses a cost**: 12.5-percentage-point large-cache hit-rate loss vs 64/256 MiB (87.5 % vs 100.0 %, exact at 1/8/32 threads — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0.1) |
+| `LargeCachePolicy::Trimmed64MiB` | `64 MiB` | full 100.0 % hit-rate parity with the 256 MiB default **at a 64 MiB rounded working set** (~34–37 MiB/heap vs ~238–241 MiB/heap post-drain floor — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0/§8, [`R29_13`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0) — but **NOT beyond that boundary**: [`R31_1`](docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md) measured the tie BREAKING at 128 MiB/288 MiB bursts, paying the SAME 12.5-percentage-point loss as `LowHeadroom` |
+| `LargeCachePolicy::Default` | `256 MiB` (`production` default, unchanged) | baseline — the value `SeferAlloc::new()` already uses |
 
 Every number above is cited, not invented — see the linked gate reports for
-full methodology, raw logs, and honest scope caveats (all three are
-workload-shape-specific results, not general "N % faster" claims).
+full methodology, raw logs, and honest scope caveats (every row is a
+workload-shape-specific result, not a general "N % faster" claim).
 **The `~22 %` small-pool latency win is measured on a single-threaded,
 single-shot 1024 B teardown micro-benchmark** — a follow-up check on a
 more application-shaped scenario (8 concurrent request-handler threads,
@@ -175,11 +202,17 @@ this workload does not separate them on that dimension — see
 mean (≈131 ms of a ≈697 ms mean, `crit(p<0.05)=2.101 × se`), so treat the
 `~22 %` figure as workload-shape-specific and this null as UNDERPOWERED —
 it cannot rule out a real effect up to roughly 15-19 % at this workload's
-scale, not a confirmed absence of one (see the same report's §0.2) — not a
-guarantee that transfers to every concurrent deployment. The small-pool
-win is *binary*, not graduated (R27-5 §4.1): a heap either absorbs its
-peak segment demand (zero decommits, full win) or it doesn't —
-there is no partial win from an intermediate cap.
+scale, not a confirmed absence of one (see the same report's §0.2). A
+follow-up sweep of the small-pool cap through 8/16/32 on the SAME
+8-thread server-shaped workload
+([`R31_2`](docs/perf/R31_2_POOL_CAP_THRESHOLD_SWEEP_GATE.md)) found the
+mechanism delta stays ZERO at every cap up to 32 — a genuinely more
+decisive null (~4-5 % minimum-detectable-effect) than R30-7's own — so
+`SmallPoolPolicy::Throughput`'s win does not currently have ANY
+multi-threaded server-shaped evidence behind it; the small-pool win is
+*binary*, not graduated (R27-5 §4.1): a heap either absorbs its peak
+segment demand (zero decommits, full win) or it doesn't — there is no
+partial win from an intermediate cap.
 
 > **Dated correction (2026-07-30, Round 30 review response — see
 > `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-2/P1-3).** This
@@ -189,7 +222,7 @@ there is no partial win from an intermediate cap.
 > validated the null. The corrected text above states the fuller, more
 > important finding instead: the mechanism activates IDENTICALLY in both
 > arms (40 = 40, not merely "non-zero"), so this workload does not
-> distinguish the two configs on the dimension `Profile::Throughput`
+> distinguish the two configs on the dimension `SmallPoolPolicy::Throughput`
 > exists to affect. The paragraph also originally omitted this
 > comparison's own minimum detectable effect, now added.
 

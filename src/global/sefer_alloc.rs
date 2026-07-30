@@ -195,10 +195,16 @@ impl SeferAlloc {
     /// 2-second, zero-byte-reclaimed idle-window result — in
     /// `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md`. If a smaller
     /// per-heap floor fits your deployment better, see
-    /// [`with_profile`](Self::with_profile) (`Profile::Balanced` or
-    /// `Profile::Rss`) for a shipped, one-line alternative, or
-    /// [`with_config`](Self::with_config) to set an exact
-    /// [`LargeCacheConfig::headroom_bytes`](crate::alloc_core::LargeCacheConfig::headroom_bytes).
+    /// [`with_profile`](Self::with_profile) with
+    /// [`LargeCachePolicy::Trimmed64MiB`](crate::alloc_core::LargeCachePolicy::Trimmed64MiB)
+    /// or
+    /// [`LargeCachePolicy::LowHeadroom`](crate::alloc_core::LargeCachePolicy::LowHeadroom)
+    /// for a shipped, one-line alternative — note that policy is a decay
+    /// FLOOR, not an RSS cap; see [`LargeCachePolicy`](crate::alloc_core::LargeCachePolicy)'s
+    /// doc — or [`with_config`](Self::with_config) to set an exact
+    /// [`LargeCacheConfig::headroom_bytes`](crate::alloc_core::LargeCacheConfig::headroom_bytes)
+    /// / [`LargeCacheConfig::budget_bytes`](crate::alloc_core::LargeCacheConfig::budget_bytes)
+    /// (the actual admission ceiling) directly.
     #[must_use]
     pub const fn new() -> Self {
         #[cfg(feature = "alloc-decommit")]
@@ -282,14 +288,16 @@ impl SeferAlloc {
         Self { config }
     }
 
-    /// Construct the allocator with a named, measured configuration
-    /// [`Profile`](crate::alloc_core::Profile) — `Rss`, `Balanced`, or
-    /// `Throughput` (R30-7, task #456). Each profile sets the small-pool
-    /// pair (`pool_segments`/`pool_byte_cap`) AND the large-cache
-    /// `headroom_bytes` together, coherently, from this project's own
-    /// measured gate reports; see [`Profile`](crate::alloc_core::Profile)'s
-    /// own docs for exactly what each variant sets, why, and — for
-    /// `Profile::Rss` — the hit-rate cost it explicitly trades away.
+    /// Construct the allocator with a [`Profile`](crate::alloc_core::Profile)
+    /// — a small builder over two independent, named, measured axes
+    /// (R30-7, task #456; reworked into two axes R31-9, task #473):
+    /// [`SmallPoolPolicy`](crate::alloc_core::SmallPoolPolicy) (small-pool
+    /// `pool_segments`/`pool_byte_cap`) and
+    /// [`LargeCachePolicy`](crate::alloc_core::LargeCachePolicy) (large-cache
+    /// `headroom_bytes`), each settable independently. See
+    /// [`Profile`](crate::alloc_core::Profile)'s own docs for exactly what
+    /// each axis sets, why, and — importantly for the large-cache axis — why
+    /// it is a decay floor, not an RSS bound.
     ///
     /// This is a thin, discoverable wrapper over
     /// [`LargeCacheConfig::for_profile`](crate::alloc_core::LargeCacheConfig::for_profile)
@@ -299,17 +307,23 @@ impl SeferAlloc {
     /// doctests" rule):
     ///
     /// ```text
-    /// use sefer_alloc::{SeferAlloc, Profile};
+    /// use sefer_alloc::{SeferAlloc, Profile, SmallPoolPolicy, LargeCachePolicy};
     ///
     /// #[global_allocator]
-    /// static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Throughput);
+    /// static GLOBAL: SeferAlloc = SeferAlloc::with_profile(
+    ///     Profile::new()
+    ///         .small_pool(SmallPoolPolicy::Throughput)
+    ///         .large_cache(LargeCachePolicy::Trimmed64MiB),
+    /// );
     /// ```
     ///
     /// See [`with_config`](Self::with_config)'s doc for the binding
     /// semantics (per-slot / per-thread "first to materialise wins") — the
     /// same rules apply here, since this is `with_config` under a named
     /// preset. Does NOT change [`SeferAlloc::new`]'s defaults — this is a
-    /// new, opt-in constructor alongside it.
+    /// new, opt-in constructor alongside it ([`Profile::DEFAULT`] resolves
+    /// to byte-identical settings to [`SeferAlloc::new`] should you want the
+    /// same starting point to chain axis overrides from).
     #[cfg(feature = "alloc-decommit")]
     #[must_use]
     pub const fn with_profile(profile: crate::alloc_core::Profile) -> Self {

@@ -25,7 +25,11 @@
 //! `cap4`/`cap8` and R30-6's four `latency_h*` arms needed separate
 //! binaries applies here: this file is the `default` arm, its sibling
 //! `r30_7_throughput_profile_server_ab_throughput.rs` is the
-//! `Profile::Throughput` arm. Both run the IDENTICAL workload function.
+//! `(8, 32 MiB)` small-pool / `64 MiB` large-cache arm (originally the
+//! bundled `Profile::Throughput` enum variant; R31-9/task #473 split it
+//! into `SmallPoolPolicy::Throughput` + `LargeCachePolicy::Trimmed64MiB`
+//! composed explicitly — same resolved config). Both run the IDENTICAL
+//! workload function.
 //!
 //! ## Workload shape
 //!
