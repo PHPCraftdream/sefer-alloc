@@ -234,3 +234,69 @@ decommit/recommit pair and the VMA teardown cost may differ).
 | `docs/perf/_raw_r29_3_decomposition_run2.log` | NEW — raw wall-clock run 2 |
 | `docs/perf/_raw_r29_3_iai_supplementary.log` | NEW — raw iai supplementary |
 | `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE_summary.csv` | NEW — machine-readable summary |
+
+---
+
+## 8. 2026-07-30 correction — R30-1 re-run (task #450, append-only, does not replace §3's original numbers)
+
+**Context.** R30-1 (task #450) fixed a dangling-`small_cur` soundness hazard in
+`dbg_decomp_full_cycle` / `dbg_decomp_reserve_and_keep` / `dbg_decomp_release`
+(see `docs/CORRECTNESS_OPEN_ITEMS.md` item 5 and `CHANGELOG.md`'s Round 30
+entry) — none of the hooks this gate's measurement arms A/B/C/A' call had
+their MEASURED cost changed by that fix (the fix only removes a
+`self.small_cur = base` write these hooks used to perform via
+`reserve_small_segment`; the OS/table/metadata work itself, and the
+`release_or_pool_empty_segment` call, are unchanged). As required by that
+task's verification steps, the gate was re-run after the fix to check the
+headline numbers still hold.
+
+**Measured on:** `main` @ `b5ee62dab536c95e76b50d5eeb43edf7e257c705` +
+this task's uncommitted working tree (`AllocCore::reserve_small_segment`
+split into `reserve_small_segment`/`reserve_small_segment_impl`,
+`alloc_core_small.rs`/`alloc_core_small_pool.rs`; no other production
+behavior changed). **Platform:** WSL2 (Ubuntu, kernel
+`6.18.33.2-microsoft-standard-WSL2`) under Windows 10 Pro x86-64 — same
+host/kernel as the original §0 measurement, rustc
+`1.98.0-nightly (a595d0da2 2026-06-20)`.
+
+**Numbers shifted; verdict did not.** Two fresh runs:
+
+| run | (1+2+3) A ns | (4+5) B ns | avoidable % | A' ns | raw log |
+|---|---|---|---|---|---|
+| rerun1 | 47,454 | 2,323,359 | **2.0%** | 2,465,378 | `_raw_r30_1_decomposition_rerun1.log` |
+| rerun2 | 47,124 | 2,629,966 | **1.8%** | 2,602,110 | `_raw_r30_1_decomposition_rerun2.log` |
+
+Compare to §3's original 1.0–1.3% (runs 1–2). The absolute ns figures moved
+(host/VM noise between measurement sessions — WSL2 wall-clock timing on a
+shared Windows host is not perfectly reproducible run-to-run, as this doc's
+own §1 caveat about kernel-time-dominated costs already flags), but the
+**qualitative verdict is unchanged**: (1+2+3) avoidable overhead stays a
+low-single-digit percentage, (4+5) page-fault cost still dominates at
+~98%, and **TRIGGER 2 still does NOT fire**. §6's verdict and item 15's
+`[D]`→`[L]` disposition stand as originally published.
+
+**A separate, pre-existing, UNRELATED finding surfaced during this
+re-verification, NOT caused by R30-1's fix and NOT fixed by it:** running
+`examples/r29_3_decomposition_gate` natively on Windows (rather than under
+WSL2/Linux, which is where this gate was always measured — see this doc's
+own §"Platform" note in the header) crashes with `STATUS_ACCESS_VIOLATION`
+inside Measurement B, specifically the `write_volatile` refault loop
+immediately after `HeapCore::dbg_decomp_decommit_payload`. Root cause:
+Windows `MEM_DECOMMIT` (`crates/vmem/src/lib.rs`'s
+`decommit_pages_impl` for `cfg(windows)`) genuinely UNMAPS the payload
+pages — unlike Linux `MADV_DONTNEED`, which keeps the VA mapping resident
+and re-faults transparently on next write. The example's Measurement B
+loop assumes the Linux semantics (write-after-decommit silently re-faults)
+unconditionally; on Windows this is an access violation without an
+explicit `VirtualAlloc(MEM_COMMIT)` recommit call the example never makes.
+Confirmed NOT related to R30-1's fix: isolated by running just the
+fixed hooks' pre-fill/A/C/A' loops (which never call
+`dbg_decomp_decommit_payload`) natively on Windows — hundreds of iterations
+completed cleanly; the crash reproduces identically whether R30-1's fix is
+applied or reverted, and occurs in a code path (`dbg_decomp_decommit_payload`
+→ `os::decommit_pages` → `crates/vmem`) untouched by this task's diff.
+Filed as a new tracked item in `docs/CORRECTNESS_OPEN_ITEMS.md` for a future
+round rather than fixed here (out of R30-1's scope, and this doc's own
+methodology has always measured on WSL2/Linux specifically — see the
+"Platform" line in this doc's header — so the example was never claimed to
+be native-Windows-safe in the first place).

@@ -1014,15 +1014,33 @@ impl AllocCore {
     // caller → CLAUDE.md benchmark-hook rule 2). Hooks accepting a raw pointer
     // are `pub unsafe fn` with `# Safety` (rule 1).
 
-    /// R29-3: ONE full reserve→release cycle (`reserve_small_segment` +
+    /// R29-3: ONE full reserve→release cycle (`reserve_small_segment_impl` +
     /// `release_or_pool_empty_segment`) without touching the payload.
     /// Measures components (1+2+3): OS reserve+release, SegmentTable
     /// register+recycle, metadata init — everything a reservation-only
     /// overflow tier could avoid.
+    ///
+    /// R30-1 (task #450): routes through
+    /// [`reserve_small_segment_impl`](Self::reserve_small_segment_impl) —
+    /// the cursor-free half of `reserve_small_segment` — NOT
+    /// `reserve_small_segment` itself. `reserve_small_segment`'s last
+    /// statement publishes the freshly reserved segment as the live
+    /// `self.small_cur` bump-carve cursor; this hook immediately releases
+    /// that same segment via `release_or_pool_empty_segment`, which (once
+    /// the hysteresis pool is full) genuinely returns the OS reservation and
+    /// recycles the table slot. Going through the cursor-publishing wrapper
+    /// left `small_cur` dangling at an unmapped segment with nothing to
+    /// restore it — the very next ordinary small alloc on this heap would
+    /// read through it (`pop_free(self.small_cur, ...)`), a use-after-free.
+    /// See `docs/CORRECTNESS_OPEN_ITEMS.md` item 5 for the full confirmed
+    /// trace. `reserve_small_segment_impl` performs the identical OS/table/
+    /// metadata work this hook measures, but never touches `small_cur` —
+    /// so this hook cannot disturb any other in-flight allocation on the
+    /// heap, however many times it is called.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_full_cycle(&mut self) -> bool {
-        match self.reserve_small_segment() {
+        match self.reserve_small_segment_impl() {
             Some(base) => {
                 self.release_or_pool_empty_segment(base);
                 true
@@ -1052,10 +1070,20 @@ impl AllocCore {
     /// R29-3: reserve a small segment and return its base so the caller can
     /// measure first-touch page-fault cost on the payload. The caller MUST
     /// later release it via [`dbg_decomp_release`](Self::dbg_decomp_release).
+    ///
+    /// R30-1 (task #450): routes through
+    /// [`reserve_small_segment_impl`](Self::reserve_small_segment_impl),
+    /// NOT `reserve_small_segment` — same reasoning as
+    /// [`dbg_decomp_full_cycle`](Self::dbg_decomp_full_cycle)'s doc comment.
+    /// This hook's own paired release
+    /// ([`dbg_decomp_release`](Self::dbg_decomp_release)) can genuinely
+    /// release the OS reservation; a version of this hook that published
+    /// `self.small_cur` first would leave it dangling with no restore point
+    /// once the paired release fires.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {
-        self.reserve_small_segment()
+        self.reserve_small_segment_impl()
     }
 
     /// R29-3: release a previously-reserved small segment by base.
@@ -1065,10 +1093,24 @@ impl AllocCore {
     /// `base` MUST be a live, registered `Small` segment base returned by
     /// [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep) on
     /// THIS allocator, with `live_count == 0`. Passing any other pointer is UB.
+    /// Because [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep)
+    /// never publishes `base` as `self.small_cur` (R30-1, task #450), this
+    /// release cannot leave the live cursor dangling — there is nothing to
+    /// restore.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
     pub unsafe fn dbg_decomp_release(&mut self, base: *mut u8) {
+        // Defence-in-depth (R30-1): releasing the segment the live cursor
+        // currently points at would immediately dangle `small_cur`, exactly
+        // the hazard this task fixed. Not reachable today (the paired
+        // `dbg_decomp_reserve_and_keep` never publishes its result as
+        // `small_cur`), but cheap to assert locally rather than rely solely
+        // on that non-local invariant holding forever.
+        debug_assert!(
+            base != self.small_cur,
+            "dbg_decomp_release: base is the live small_cur cursor — release would dangle it"
+        );
         self.release_or_pool_empty_segment(base);
     }
 

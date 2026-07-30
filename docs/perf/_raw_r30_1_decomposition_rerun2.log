@@ -1,0 +1,65 @@
+warning: unused import: `core::alloc::Layout`
+ --> src/registry/heap_core_diag.rs:8:5
+  |
+8 | use core::alloc::Layout;
+  |     ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::alloc_core::segment_header::SegmentMeta`
+  --> src/registry/heap_core_diag.rs:11:5
+   |
+11 | use crate::alloc_core::segment_header::SegmentMeta;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `mark_magazine` and `clear_magazine` are never used
+   --> src/alloc_core/magazine_bitmap.rs:129:19
+    |
+ 86 | impl MagazineBitmap {
+    | ------------------- methods in this implementation
+...
+129 |     pub(crate) fn mark_magazine(&mut self, off: u32) {
+    |                   ^^^^^^^^^^^^^
+...
+136 |     pub(crate) fn clear_magazine(&mut self, off: u32) {
+    |                   ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `sefer-alloc` (lib) generated 3 warnings (run `cargo fix --lib -p sefer-alloc` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 5.35s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running `target/release/examples/r29_3_decomposition_gate`
+=== R29-3 segment-lifecycle decomposition gate ===
+Platform: linux
+Iterations: 200 (warmup: 20)
+Pool cap: 4 (pre-filled before each timed run)
+Payload: [0x12000, 0x400000) = 1006 pages (page_size = 4096)
+
+── Component breakdown (ns/cycle, median of 200) ──
+  (1)   OS reserve+release round-trip:              4195 ns
+  (2+3) table + metadata init:                    42929 ns  [= A − (1)]
+  ────────────────────────────────────────────────────────
+  (1+2+3) AVOIDABLE subtotal (A):                 47124 ns
+
+  decommit syscall (MADV_DONTNEED):              271064 ns
+  (5)   first-touch page faults:                2358902 ns  (1006 pages @ 2345 ns/fault)
+  (4)   recommit (Linux: implicit, ~0 ns):            0 ns
+  ────────────────────────────────────────────────────────
+  (4+5) IRREDUCIBLE subtotal (B):               2629966 ns
+
+── Real-world production cycle comparison ──
+  A'  current design (reserve+touch+release):      2602110 ns
+  B   reservation-only floor (decommit+reflt):      2629966 ns
+  A' − B = reservation-only COSTS EXTRA:             27856 ns/cycle
+  (MADV_DONTNEED page-table walk > munmap bulk teardown)
+
+═══ SPLIT — the trigger-2 verdict basis ═══
+  (1+2+3) AVOIDABLE:          47124 ns  (1.8%)
+  (4+5)   IRREDUCIBLE:      2629966 ns  (98.2%)
+
+═══ VERDICT (threshold: avoidable > 20% → trigger 2 fires) ═══
+  TRIGGER 2 does NOT fire: (1+2+3) = 1.8% — page-fault cost dominates.
+  Also: (1+2+3) is 1.8% of the real production cycle A'.
+  Item 15 should move from [D] to [L] (honest reject with evidence).

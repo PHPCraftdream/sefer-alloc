@@ -142,6 +142,53 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      leave the allocator unusable-by-contract). Plus a counterfactual test:
      fill the pool → call the hook → perform and free a normal small alloc on
      the same heap; it must fail before the fix and pass after.
+
+     **[FIXED, R30-1/task #450, 2026-07-30.]** Took fix option 1 (the
+     "best" option in the task spec) — a measurement-only reservation
+     primitive that never touches `small_cur` at all, rather than option 2
+     (save/restore) or option 3 (`unsafe fn` + do-not-alloc-after contract).
+     Option 1 was chosen because it was structurally cheap here:
+     `reserve_small_segment`'s ENTIRE cursor-publishing side effect was
+     already isolated to its literal last statement
+     (`self.small_cur = base;`, immediately before `Some(base)`), with
+     nothing earlier in the function reading `small_cur` and nothing after
+     it depending on the write — so the function split cleanly into a new
+     `pub(super) fn reserve_small_segment_impl(&mut self) -> Option<*mut u8>`
+     (`alloc_core_small.rs`, everything BEFORE that last line) and a
+     one-line `reserve_small_segment` wrapper (`let base =
+     self.reserve_small_segment_impl()?; self.small_cur = base; Some(base)`)
+     kept for the three production callers (`alloc_small`,
+     `alloc_small_with_virgin`, `refill_class_bump_impl`), which still need
+     the publish. `dbg_decomp_full_cycle` and `dbg_decomp_reserve_and_keep`
+     (`alloc_core_small_pool.rs`) now call `reserve_small_segment_impl`
+     instead, so `small_cur` is never touched by either hook and cannot be
+     left dangling by them, at any pool fill level, however many times they
+     run. `dbg_decomp_release` additionally got a defence-in-depth
+     `debug_assert!(base != self.small_cur, ...)` (not reachable today, but
+     cheap). Added `tests/r30_1_decomp_full_cycle_cursor_safety.rs` — two
+     tests, one per hook pair named in the task, each: fills the pool to
+     capacity, drives the release branch repeatedly via the hook, then
+     performs an ordinary alloc + write + readback + free on the SAME heap.
+     **Verified non-vacuous**: temporarily reverted the two hooks' call
+     sites back to `reserve_small_segment()` (the pre-fix code) and reran —
+     `full_cycle_hook_leaves_small_cur_valid_for_ordinary_alloc` crashed the
+     whole test process with `STATUS_ACCESS_VIOLATION` (Windows hard fault,
+     exit code `0xc0000005`), a genuine use-after-free through the dangling
+     cursor — then re-applied the fix and confirmed both tests pass. Full
+     `cargo test --features "bench-internals alloc-global alloc-xthread
+     alloc-decommit fastbin alloc-segment-directory primordial-lazy-commit
+     class-aware-dirty"` is green (228 test binaries, 0 failures) including
+     this new test; `cargo clippy` clean on both `--features production`
+     and `--features "production bench-internals"`; `cargo fmt --check`
+     clean. The R29-3 gate (`docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`)
+     was re-run post-fix on its original WSL2/Linux measurement platform —
+     verdict unchanged (trigger 2 still does not fire); see that doc's new
+     §8 append-only correction section, which also documents a SEPARATE,
+     pre-existing, unrelated finding surfaced during that re-verification
+     (a native-Windows crash in the example's decommit/refault arm, caused
+     by Windows `MEM_DECOMMIT` semantics differing from Linux
+     `MADV_DONTNEED` — confirmed unrelated to this fix and filed as item 6
+     below rather than fixed here).
    - **[P3 → partly CONFIRMED, 2026-07-30] `has_bench_internals_cfg()` accepts
      any cfg attribute whose TEXT merely contains `"bench-internals"`** — so
      `not(feature = "bench-internals")` and a permissive
@@ -165,6 +212,38 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      rather than the global counter itself. Not independently re-verified;
      if true this narrows (but per R29-1's own scope note does not
      eliminate) what the global invariant alone catches.
+
+6. **[T, filed 2026-07-30 during R30-1/task #450's verification]
+   `examples/r29_3_decomposition_gate.rs` crashes with
+   `STATUS_ACCESS_VIOLATION` when run NATIVELY on Windows** (as opposed to
+   under WSL2/Linux, which is where this example's own gate report,
+   `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`, has always
+   measured — see that doc's "Platform measured" line). The crash is in
+   Measurement B: the `write_volatile` re-fault loop immediately after
+   `HeapCore::dbg_decomp_decommit_payload`. Root cause: Windows
+   `MEM_DECOMMIT` (`crates/vmem/src/lib.rs`'s `cfg(windows)`
+   `decommit_pages_impl`) genuinely UNMAPS the payload pages, unlike Linux
+   `MADV_DONTNEED`, which keeps the VA mapping resident and transparently
+   re-faults a fresh zero page on next write. The example's Measurement B
+   loop assumes the Linux semantics unconditionally (write-after-decommit
+   silently re-faults); on Windows a write to a decommitted-but-not-yet-
+   recommitted page is a hard access violation without an explicit
+   `VirtualAlloc(..., MEM_COMMIT, ...)` recommit call, which the example
+   never makes. **Confirmed unrelated to R30-1's `small_cur` fix**: the
+   crash reproduces identically with that fix applied or reverted, and
+   lives in a code path (`dbg_decomp_decommit_payload` → `os::decommit_pages`
+   → `crates/vmem`) R30-1's diff never touches; isolated by running just
+   the R30-1-relevant hooks' pre-fill/A/C/A' loops (which never call
+   `dbg_decomp_decommit_payload`) natively on Windows for hundreds of
+   iterations with no crash. **Needs (future round):** either gate
+   Measurement B's re-fault loop on `cfg(not(windows))` with an honest
+   "irreducible floor not measured on this platform" note, or add the
+   missing `VirtualAlloc(MEM_COMMIT)` recommit call before the
+   `write_volatile` loop so the measurement is platform-correct everywhere
+   (this would also make Measurement B's timing include the ACTUAL Windows
+   recommit cost — currently assumed `0 ns` "implicit" per the doc's own
+   §2 table, which is a Linux-only claim; Windows `MEM_COMMIT` is a real
+   syscall, not implicit).
 
 ---
 

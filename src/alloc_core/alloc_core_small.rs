@@ -1845,7 +1845,62 @@ impl AllocCore {
 
     /// Reserve a fresh small segment, initialise its metadata, register it,
     /// and set it as the current small segment. Returns its base.
+    ///
+    /// Thin wrapper around [`reserve_small_segment_impl`](Self::reserve_small_segment_impl)
+    /// that additionally publishes the freshly reserved segment as the live
+    /// bump-carve cursor (`self.small_cur`). Every PRODUCTION caller
+    /// (`alloc_small`, `alloc_small_with_virgin`, `refill_class_bump_impl`)
+    /// needs exactly that: the newly reserved segment becomes the carve
+    /// target for the retry that follows. See
+    /// `reserve_small_segment_impl`'s own doc for why a measurement-only
+    /// caller must NOT go through this wrapper.
+    #[inline]
     pub(super) fn reserve_small_segment(&mut self) -> Option<*mut u8> {
+        let base = self.reserve_small_segment_impl()?;
+        self.small_cur = base;
+        Some(base)
+    }
+
+    /// R30-1 (task #450): cursor-free half of [`reserve_small_segment`]'s
+    /// body — reserves+registers+initialises a fresh small segment exactly
+    /// as `reserve_small_segment` does, but returns WITHOUT publishing it as
+    /// `self.small_cur`.
+    ///
+    /// ## Why this split exists (soundness fix, R30-1)
+    ///
+    /// `self.small_cur` is the live bump-carve cursor read by every small
+    /// alloc dispatch (`alloc_small`/`alloc_small_with_virgin`'s step 1,
+    /// `self.pop_free(self.small_cur, ...)`). `reserve_small_segment`'s
+    /// FORMER single body set it unconditionally as its last statement —
+    /// correct for the three production callers, which all immediately
+    /// retry an allocation against the segment they just reserved. But the
+    /// R29-3 measurement hooks (`dbg_decomp_full_cycle`,
+    /// `dbg_decomp_reserve_and_keep`) called that same
+    /// `reserve_small_segment` purely to measure OS/table/metadata cost,
+    /// then immediately released the segment via
+    /// `release_or_pool_empty_segment` — which, when the hysteresis pool is
+    /// full, genuinely releases the OS reservation and recycles the table
+    /// slot. Neither hook restored `small_cur` afterward, so it was left
+    /// dangling at an unmapped segment; the next ordinary small alloc on
+    /// that heap would read through it (`pop_free(self.small_cur, ...)`) —
+    /// a use-after-free. See `docs/CORRECTNESS_OPEN_ITEMS.md` item 5 for the
+    /// full confirmed trace.
+    ///
+    /// This function is the fix: a measurement-only caller that has no
+    /// intention of allocating from the segment it just reserved (it only
+    /// wants to measure reserve/release cost, or first-touch/decommit cost
+    /// on an isolated segment) calls THIS instead of `reserve_small_segment`,
+    /// so `self.small_cur` — and therefore every other in-flight allocation
+    /// on this heap — is never disturbed. `pub(super)` (not further gated
+    /// itself): the `bench-internals` gate lives on the `dbg_*` callers in
+    /// `alloc_core_small_pool.rs`, matching how `reserve_small_segment`
+    /// itself is visibility-scoped.
+    ///
+    /// Production callers MUST keep using `reserve_small_segment` (the
+    /// cursor-publishing wrapper above) — this function is not a drop-in
+    /// replacement for them; skipping the cursor publish would leave a
+    /// freshly reserved segment unreachable as a carve target.
+    pub(super) fn reserve_small_segment_impl(&mut self) -> Option<*mut u8> {
         // Mechanism 2 (task #51): this path is reached only when NO registered
         // segment — including any POOLED empty segment — has a free block of the
         // requested class (`find_segment_with_free` already scanned them all,
@@ -2207,7 +2262,6 @@ impl AllocCore {
         #[cfg(feature = "alloc-segment-directory")]
         self.maybe_materialize_directory();
 
-        self.small_cur = base;
         Some(base)
     }
 }
