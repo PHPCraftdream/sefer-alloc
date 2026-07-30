@@ -260,6 +260,40 @@ impl SeferAlloc {
     pub const fn with_config(config: crate::alloc_core::LargeCacheConfig) -> Self {
         Self { config }
     }
+
+    /// Construct the allocator with a named, measured configuration
+    /// [`Profile`](crate::alloc_core::Profile) — `Rss`, `Balanced`, or
+    /// `Throughput` (R30-7, task #456). Each profile sets the small-pool
+    /// pair (`pool_segments`/`pool_byte_cap`) AND the large-cache
+    /// `headroom_bytes` together, coherently, from this project's own
+    /// measured gate reports; see [`Profile`](crate::alloc_core::Profile)'s
+    /// own docs for exactly what each variant sets, why, and — for
+    /// `Profile::Rss` — the hit-rate cost it explicitly trades away.
+    ///
+    /// This is a thin, discoverable wrapper over
+    /// [`LargeCacheConfig::for_profile`](crate::alloc_core::LargeCacheConfig::for_profile)
+    /// and [`with_config`](Self::with_config); it is `const fn`, so a
+    /// profile can be installed directly in a `#[global_allocator]` `static`
+    /// initialiser (illustrative, not a doctest per this project's "no
+    /// doctests" rule):
+    ///
+    /// ```text
+    /// use sefer_alloc::{SeferAlloc, Profile};
+    ///
+    /// #[global_allocator]
+    /// static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Throughput);
+    /// ```
+    ///
+    /// See [`with_config`](Self::with_config)'s doc for the binding
+    /// semantics (per-slot / per-thread "first to materialise wins") — the
+    /// same rules apply here, since this is `with_config` under a named
+    /// preset. Does NOT change [`SeferAlloc::new`]'s defaults — this is a
+    /// new, opt-in constructor alongside it.
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub const fn with_profile(profile: crate::alloc_core::Profile) -> Self {
+        Self::with_config(crate::alloc_core::LargeCacheConfig::for_profile(profile))
+    }
 }
 
 impl Default for SeferAlloc {

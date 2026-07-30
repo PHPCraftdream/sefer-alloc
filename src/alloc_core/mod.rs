@@ -70,6 +70,13 @@ pub(crate) mod node;
 #[doc(hidden)]
 pub mod numa;
 pub(crate) mod os;
+/// R30-7 (task #456): [`Profile`] — named, discoverable configuration
+/// presets (`Rss`/`Balanced`/`Throughput`) composing the small-pool pair
+/// (`pool_segments`/`pool_byte_cap`) with the large-cache `headroom_bytes`,
+/// from this project's own measured gate reports (R27-3/R27-4/R30-6). See
+/// the module doc for the full rationale and exact numbers.
+#[cfg(feature = "alloc-decommit")]
+pub mod profile;
 /// The per-segment non-intrusive cross-thread-free MPSC ring. Compiled in
 /// unconditionally so the segment `Layout` (`segment_header::Layout`, which
 /// always reserves the ring's bytes to keep the byte layout uniform across
@@ -197,6 +204,8 @@ pub use alloc_core_small_pool::{SegmentStateAccount, SegmentStateReconciliation}
 pub use large_cache_config::LargeCacheConfig;
 #[cfg(feature = "alloc-decommit")]
 pub use large_cache_mode::LargeCacheMode;
+#[cfg(feature = "alloc-decommit")]
+pub use profile::Profile;
 pub use segment_layout::SegmentLayout;
 /// R4-8/N3 test-only harness for direct exercise of `SegmentTable`'s
 /// open-addressing hash (backward-shift deletion). `pub` (not `pub(crate)`)

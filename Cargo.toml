@@ -1710,6 +1710,24 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r30_6_latency_h256"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R30-7 (task #456), Deliverable 4: the application-shaped (multi-thread,
+# mixed-size, continuous-cycle "server request handler") A/B pair for the
+# throughput `Profile` — does the R27-4 single-thread teardown-micro-
+# benchmark's ~22% win hold in a more realistic shape? `default` = plain
+# `SeferAlloc::new()`; `throughput` = `SeferAlloc::with_profile(Profile::Throughput)`.
+# Same required-features triple as the r27_4/r30_6_latency siblings (each
+# installs a real `#[global_allocator]`, so `alloc-global` + `alloc-xthread`
+# + `alloc-decommit` are all required). Shared workload body lives in
+# `examples/_shared/r30_7_server_shaped_workload.rs` (NOT auto-discovered as
+# its own binary — Cargo only registers files directly under `examples/`).
+[[example]]
+name = "r30_7_throughput_profile_server_ab_default"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
+[[example]]
+name = "r30_7_throughput_profile_server_ab_throughput"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

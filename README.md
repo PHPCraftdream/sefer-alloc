@@ -80,6 +80,46 @@ RSS-conservative — see
 for a latency-oriented opt-in. For RSS-sensitive or container
 deployments, see [Configuration](#configuration) below.
 
+### Named profiles (`Profile`, `alloc-decommit`)
+
+R30-7 (task #456) turns the hand-assembled recipes below into three named,
+discoverable constructors — `SeferAlloc::with_profile(Profile::…)` — each
+setting the small-pool pair (`pool_segments`/`pool_byte_cap`) AND the
+large-cache `headroom_bytes` together, coherently, from this project's own
+measured gate reports. None of them change `SeferAlloc::new()`'s defaults;
+each is an explicit, opt-in alternative.
+
+```rust
+use sefer_alloc::{SeferAlloc, Profile};
+
+#[global_allocator]
+static GLOBAL: SeferAlloc = SeferAlloc::with_profile(Profile::Throughput);
+```
+
+| Profile | small pool (`pool_segments`, `pool_byte_cap`) | large-cache `headroom_bytes` | measured latency | measured RSS/hit-rate |
+|---|---|---|---|---|
+| `Profile::Rss` | `(4, 16 MiB)` — the `production` default | `16 MiB` | same as default (no small-pool win) | **discloses a cost**: 12.5-percentage-point large-cache hit-rate loss vs 64/256 MiB (87.5 % vs 100.0 %, exact at 1/8/32 threads — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0.1) |
+| `Profile::Balanced` | `(4, 16 MiB)` — the `production` default | `64 MiB` | same as default (no small-pool win) | full 100.0 % hit-rate parity with the 256 MiB default at ~7× less RSS (~34–37 MiB/heap vs ~238–241 MiB/heap post-drain floor — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0, [`R29_13`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0) |
+| `Profile::Throughput` | `(8, 32 MiB)` | `64 MiB` | **~22 % lower elapsed time**, 9→0 decommit syscalls/run on the 1024 B batch-120 churn-with-teardown workload (paired t=8.114, sign 19/20 — [`R27_4`](docs/perf/R27_4_REAL_DEFAULT_AB_GATE.md)) | **discloses a cost**: ~+8 MiB/heap non-decaying small-pool retention (~+255 MiB at 32 heaps — [`R27_3`](docs/perf/R27_3_POOL_RETENTION_GATE.md) §0); large-cache side ties the 256 MiB default at ~7× less RSS, same as `Balanced` |
+
+Every number above is cited, not invented — see the linked gate reports for
+full methodology, raw logs, and honest scope caveats (all three are
+workload-shape-specific results, not general "N % faster" claims).
+**The `~22 %` small-pool latency win is measured on a single-threaded,
+single-shot 1024 B teardown micro-benchmark** — a follow-up check on a
+more application-shaped scenario (8 concurrent request-handler threads,
+mixed object sizes, continuous multi-round churn) found the win does
+**NOT** reproduce as a statistically distinguishable effect at that scale
+(`t=-0.119`, indistinguishable from a same-vs-same control's own noise
+band), even though the underlying pool-overflow mechanism is proven
+activated in that workload too — see
+[`R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md).
+Treat the `~22 %` figure as workload-shape-specific, not a guarantee that
+transfers to every concurrent deployment. The small-pool win is *binary*,
+not graduated (R27-5 §4.1): a heap either absorbs its peak segment demand
+(zero decommits, full win) or it doesn't —
+there is no partial win from an intermediate cap.
+
 ---
 
 ## Configuration
@@ -1277,6 +1317,8 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I6, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
+| [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design proposal (not implemented) for an explicit, caller-driven `trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve |
+| [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no — indistinguishable from noise at this scale, though the mechanism is proven activated |
 
 ---
 

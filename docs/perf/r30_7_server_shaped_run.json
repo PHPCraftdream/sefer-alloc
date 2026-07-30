@@ -1,0 +1,18 @@
+{
+  "_doc": "R30-7 (task #456), Deliverable 4 — A/B/B/A paired judge config: does the (8, 32 MiB) throughput-profile small-pool win (README, R27-4, measured on a SINGLE-THREADED single-shot 1024B teardown micro-benchmark) hold in a more application-shaped scenario? `default` = plain SeferAlloc::new(); `throughput` = SeferAlloc::with_profile(Profile::Throughput). Both run the IDENTICAL multi-thread, mixed-size, continuous-cycle 'server request handler' workload (examples/_shared/r30_7_server_shaped_workload.rs, include!d verbatim into both binaries). Driven by: node scripts/paired-ab-runner.mjs --config docs/perf/r30_7_server_shaped_run.json --arms default,throughput",
+  "metric": "elapsed_ns",
+  "arms": {
+    "default": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_7_throughput_profile_server_ab_default.exe"
+    },
+    "throughput": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r30_7_throughput_profile_server_ab_throughput.exe"
+    }
+  },
+  "sanity": {
+    "key": "segments_reserved_total",
+    "_doc_sanity": "Both arms install a REAL SeferAlloc #[global_allocator] and run the multi-thread mixed-size workload, which reserves many segments under both configs, so BOTH must report segments_reserved_total > 0. The activation oracle for the mechanism under test is decommit_calls_total > 0 for the `default` arm (proves the workload genuinely overflows the small pool's default cap, the same activation this project's other pool-cap gates (R27-3/R27-4) require before trusting a latency number) — checked in the gate report, not by this runner (the runner's own sanity gate only asserts nonzero segment reservation).",
+    "nonzero_arms": ["default", "throughput"]
+  },
+  "features_note": "production alloc-stats"
+}

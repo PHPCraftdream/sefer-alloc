@@ -341,6 +341,34 @@ impl LargeCacheConfig {
         self
     }
 
+    /// Build a config from a named, measured [`Profile`](super::profile::Profile)
+    /// preset — sets the small-pool pair (`pool_segments`/`pool_byte_cap`)
+    /// AND the large-cache `headroom_bytes` together, coherently. See
+    /// [`Profile`](super::profile::Profile)'s own docs for exactly what each
+    /// variant sets and the measured gate reports (R27-3/R27-4/R30-6) each
+    /// value is drawn from.
+    ///
+    /// Equivalent to (illustrative, not a doctest per this project's "no
+    /// doctests" rule):
+    ///
+    /// ```text
+    /// use sefer_alloc::{LargeCacheConfig, Profile, SmallSegmentPoolConfig};
+    ///
+    /// let cfg = LargeCacheConfig::new()
+    ///     .headroom_bytes(64 * 1024 * 1024)
+    ///     .pool(SmallSegmentPoolConfig::new().pool_segments(8).pool_byte_cap(32 * 1024 * 1024));
+    /// // is the same resolved config as:
+    /// let cfg2 = LargeCacheConfig::for_profile(Profile::Throughput);
+    /// ```
+    ///
+    /// Every other knob (`budget_bytes`, `decay_interval_ms`,
+    /// `decay_rate_percent`, `mode`) stays at its own built-in default —
+    /// chain further setter calls on the result to override them.
+    #[must_use]
+    pub const fn for_profile(profile: super::profile::Profile) -> Self {
+        profile.to_config()
+    }
+
     /// Set the empty-small-segment hysteresis pool config (Mechanism 2, task
     /// #51).
     ///
