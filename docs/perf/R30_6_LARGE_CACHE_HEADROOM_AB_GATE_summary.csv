@@ -1,5 +1,5 @@
 # R30-6 (task #455) — large-cache headroom_bytes BENEFIT-side A/B gate summary
-# commit_sha=<see report header, this file is committed alongside the same commit that lands the measured tree>
+# commit_sha=97c2f07bf5c43478632ab01f9037a34cc648e9eb (landing commit; corrected from a prose placeholder by the R31-12/task #476 addendum, docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md §8.3 -- data rows below unchanged)
 # feature_set_hit_rss=production alloc-stats bench-internals (examples/r30_6_large_cache_headroom_ab_gate.rs)
 # feature_set_latency=production alloc-stats (examples/r30_6_latency_h0/_h16/_h64/_h256.rs)
 # cpu=11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (8 cores / 16 logical)

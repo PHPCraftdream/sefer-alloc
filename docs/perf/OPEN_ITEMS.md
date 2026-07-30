@@ -519,13 +519,39 @@ for completeness.
    >   None of these block or change any P0/P1 verdict from Round 30 — the
    >   review's own text states none of the eleven P2s "threatens
    >   correctness."
+   > - **2026-07-30 update (R31-12, task #476):** P2-3, P2-4, and P2-10
+   >   independently RE-VERIFIED (not merely re-stated) against the raw
+   >   sources and REPAIRED. P2-3: confirmed `rss_idle_kib - rss_burst2_kib`
+   >   is `0` in **0 of 36 rows** (the wrong column pair, structurally —
+   >   `burst2` is sampled after the idle window); confirmed the intended
+   >   `rss_idle_kib - rss_burst1_kib` claim IS exact in **33 of 36 rows**.
+   >   P2-4: confirmed row `67108864,64,32,2` is the ONLY row failing a
+   >   `rss_burst1 - rss_idle <= rss_burst1/10 + 4096` sanity bound (drop of
+   >   ~1.58 GiB across a pure-idle window with zero deallocation activity);
+   >   confirmed excluding it changes no §0.1 headline (`burst2_hits_sum`
+   >   median unchanged, 256 either way). P2-10: confirmed and fixed — the
+   >   summary CSV's `commit_sha` header now reads the actual landing SHA
+   >   (`97c2f07b`). All three repairs are append-only additions to
+   >   `R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §8 (new), derived by the
+   >   checked script `scripts/r31_12_repair_r30_6_data.mjs`, not
+   >   hand-transcribed. P2-5 independently RE-VERIFIED as accurate (see
+   >   item 27's narrowed parity claim below, same task) — its stated fix
+   >   (add the regime caveat to `Profile::Balanced`'s/`Profile::Throughput`'s
+   >   doc comments in `src/alloc_core/profile.rs`) is NOT applied by this
+   >   task (measurement/docs-only per this task's own scope; `profile.rs`
+   >   is mid-rework under R31-9/task #473, which is the more coordinated
+   >   landing point for that specific doc-comment edit — flagged as an
+   >   explicit input to that task, not left silently unowned). P2-6 through
+   >   P2-9, P2-11 remain unverified by this task — still open for a future
+   >   round per the original "Next trigger" above.
    > - **Evidence:** `docs/reviews/2026-07-30-r30-full-review.md` §5 (P2-1
    >   through P2-11 in full; P2-1/P2-2 filed separately in
    >   `docs/CORRECTNESS_OPEN_ITEMS.md` item 8 as the correctness-side
    >   counterpart, per this file's own scope boundary with that sibling
-   >   index) — the review's own text is the only source cited here; this
-   >   entry is a filing, not an independent confirmation of any number in
-   >   it.
+   >   index) — the review's own text is the only source cited here for the
+   >   unverified sub-findings; P2-3/P2-4/P2-5/P2-10 additionally cite
+   >   `R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §8 (the 2026-07-30 addendum)
+   >   and `scripts/r31_12_repair_r30_6_data.mjs` as independent verification.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
@@ -690,14 +716,48 @@ for completeness.
 27. **R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS
     floor measured for the first time; confirmed-by-design, no action taken.
     R30-6 (2026-07-30) closed the "missing benefit-side" trigger this item
-    named — see the dated update below.**
+    named — see the dated update below. R31-1/R31-12 (2026-07-30, same
+    round) NARROWED R30-6's parity claim to "parity at a 64 MiB rounded
+    working set" after confirming that claim's workload actually sat AT the
+    64 MiB boundary, not below it — see the dated updates below.**
 
     > **Current state**
     > - **Status:** retention cost CONFIRMED (R29-13); benefit side ALSO measured (R30-6) — a real, evidence-backed candidate headroom value (64 MiB) was identified and is now SHIPPED (not as a default change — `SeferAlloc::new()`'s 256 MiB default is untouched) as the `headroom_bytes` for both `Profile::Balanced` and `Profile::Throughput` (R30-7/task #456, `src/alloc_core/profile.rs`).
     > - **Current number/verdict (retention, R29-13):** the shipped 256 MiB default headroom converges, under maximum FORCED decay pressure (`dbg_force_decay_tick` looped to a fixed point), to a **measured floor of ~238–241 MiB/heap retained** (12.4–12.5% of an 8×34 MiB / 288 MiB fill reclaimed, the rest permanently held). Under PURE IDLE (100 ms/1 s/2 s, zero allocation activity), the idle delta is **exactly 0 KiB in all 36 measured arms** (4 headroom values × 3 thread counts × 3 reps) — idle reclaims nothing at ANY headroom setting, not only at 256 MiB. The natural fill/teardown workload never drives even one real decay tick regardless of headroom (`maybe_decay_large_cache`'s first-call timer-priming rule means a tight teardown loop never lets the 1000 ms interval elapse mid-loop) — this is read from source, not inferred, and matches the doc's "does not decay below this level" claim precisely once forced convergence is used to actually observe the floor.
     > - **Current number/verdict (benefit, R30-6, 2026-07-30):** at a representative 48 MiB/burst mixed small+large workload (burst→idle(1200ms, > the 1000ms decay interval)→burst, so a real non-forced decay tick can fire), **64 MiB headroom achieves the IDENTICAL 100.0% hit rate as 256 MiB** (byte-exact across 1/8/32 threads: 8/8, 64/64, 256/256) — the 256 MiB default buys ZERO measured hit-rate benefit over 64 MiB at this scale, while R29-13's own retention floor for 64 MiB (~34-37 MiB/heap) is ~7× smaller than 256 MiB's (~238-241 MiB/heap). 16 MiB and 0 MiB both cost a real, reproducible **12.5-percentage-point hit-rate loss** (87.5% vs 100.0%, exact across all thread counts, not noise) — NOT a free reduction. Latency: through the REAL `#[global_allocator]` (`paired-ab-runner.mjs`, A/B/B/A, n=20 pairs), **no headroom value in {0, 16, 64} MiB shows a statistically significant latency difference from 256 MiB** in this workload (all `|t| < crit(p<0.05)=2.101`; same-vs-same control confirms the harness is not manufacturing a false positive).
-    > - **Next trigger:** none required for THIS round — R30-7/task #456 already consumed this measurement (`Profile::Balanced`/`Profile::Throughput` both ship 64 MiB headroom; `Profile::Rss` ships 16 MiB with R30-6's hit-rate cost disclosed in its doc comment). Re-open only if a future round wants to change `SeferAlloc::new()`'s own 256 MiB default (not attempted by either measurement task or by R30-7).
-    > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` (retention) + `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` (benefit) + both reports' `_summary.csv`/`_raw_*.log` companions.
+    > - **PARITY CLAIM NARROWED (2026-07-30, R31-12/task #476):** independently
+    >   confirmed, by reading `AllocCore::alloc_large`'s rounding arithmetic
+    >   (`src/alloc_core/alloc_core_large.rs:127-194`, whole-`SEGMENT` rounding,
+    >   `SEGMENT = 4 MiB`) against R30-6's OWN committed CSV
+    >   (`burst1_used_max_bytes = 67108864` = exactly 64 MiB in all 36 rows,
+    >   not the 48 MiB the report's prose names), that R30-6's "8 x 6 MiB = 48
+    >   MiB" workload actually rounds to a **64 MiB working set** — i.e. R30-6
+    >   measured EXACTLY AT the 64 MiB headroom boundary, not below it. The
+    >   64-vs-256 MiB tie is therefore **parity at a 64 MiB rounded working
+    >   set specifically, NOT general throughput/hit-rate equivalence between
+    >   64 MiB and 256 MiB headroom.** R31-1 (task #464, same round,
+    >   `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md`)
+    >   measured hit rate at two burst sizes that GENUINELY exceed 64 MiB
+    >   (128 MiB and 288 MiB, the latter at R29-13's own 34 MiB/object size)
+    >   and found the tie BREAKS: 64 MiB headroom costs the same real,
+    >   reproducible 12.5-percentage-point hit-rate loss (87.5% vs 100.0%)
+    >   that 16 MiB/0 MiB already paid in R30-6, exact and identical at
+    >   1/8/32 threads and at both crossing-regime sizes. `Profile::Balanced`
+    >   and `Profile::Throughput` (R30-7/task #456, shipped BEFORE this
+    >   narrowing) both carry 64 MiB headroom in their doc comments citing
+    >   R30-6's now-narrowed parity claim without this regime caveat — see
+    >   `src/alloc_core/profile.rs:38-45` — flagged here as an input for
+    >   R31-9/task #473 (already reworking `Profile`'s doc comments) to
+    >   incorporate, not fixed by this measurement-only task.
+    > - **Next trigger:** R31-9/task #473 should add the regime caveat (64
+    >   MiB headroom preserves full hit-rate parity ONLY up to ~64 MiB burst
+    >   occupancy; past that, it costs the same measured 12.5-percentage-point
+    >   hit-rate loss as 16 MiB) to `Profile::Balanced`'s/`Profile::Throughput`'s
+    >   doc comments and the README profile table. Re-open the underlying
+    >   256 MiB SeferAlloc::new() default question only if a future round
+    >   wants to change it (not attempted by either measurement task, R30-7,
+    >   or R31-1/R31-12).
+    > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` (retention) + `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` (benefit, + its 2026-07-30 §8 addendum) + `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md` (crossing-regime benefit) + all three reports' `_summary.csv`/`_raw_*.log` companions.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
 
 ## Recently resolved (closure trail — do not re-list as open)

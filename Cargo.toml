@@ -1802,6 +1802,18 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r31_2_pool_cap_threshold_ab_cap8"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R31-1 (task #464): the large-cache headroom BENEFIT-side gate at a burst
+# size that GENUINELY exceeds 64 MiB — R30-6's own 48-MiB-labelled workload
+# actually rounds to a 64 MiB working set (whole-SEGMENT rounding, see the
+# harness's module doc), so the 64-vs-256 MiB arms never entered the range
+# where they could differ. This sibling sweeps three burst sizes (6/12/34
+# MiB objects, rounding to 64/128/288 MiB total) x {64, 256} MiB headroom x
+# {1, 8, 32} threads, same subprocess-per-arm + config-identity + path-
+# activation-oracle methodology as r30_6.
+[[example]]
+name = "r31_1_large_cache_headroom_crossing_regime_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
 [[example]]
 name = "r31_2_pool_cap_threshold_ab_cap16"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]

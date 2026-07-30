@@ -509,3 +509,163 @@ budget for this class of sweep. No sample count was capped below this
 project's established per-cell precedent (3 reps for the subprocess axis,
 matching R27-3/R29-13; 20 pairs for the paired axis, matching R27-4's
 real-claim threshold, not its `--quick` 4-pair smoke count).
+
+---
+
+## 8. 2026-07-30 addendum (R31-12, task #476) — data-hygiene repairs, APPEND-ONLY
+
+**Nothing above this line is edited or deleted.** This section repairs five
+data-hygiene defects the Round 30 independent full review
+(`docs/reviews/2026-07-30-r30-full-review.md` §5, filed as
+`docs/perf/OPEN_ITEMS.md` item 31's P2-3/P2-4/P2-5 sub-findings) identified
+in this report and its companion CSV, none of which had been repaired before
+this addendum. Every number below was independently re-derived from the
+ALREADY-COMMITTED raw artifacts (`docs/perf/_raw_r30_6_large_cache_headroom_ab_gate.log`,
+`docs/perf/paired_ab_runs/2026-07-30T09-2{1,2}-*.json`) by
+`scripts/r31_12_repair_r30_6_data.mjs` — a checked script, not hand
+re-transcription (CLAUDE.md's "tables derived by one checked script" rule).
+No re-measurement was performed; this addendum corrects PROSE and fills gaps
+against data that was already correct.
+
+### 8.1 P2-3 repair — the idle-RSS claim's column pair was wrong (now corrected)
+
+§0.1's original text claimed *"RSS at burst2 and RSS after the 1200 ms idle
+window are identical to the KiB ... `rss_idle_kib - rss_burst2_kib` is 0 or
+within single-digit KiB noise in every row."* **This is false as written**:
+`rss_idle_kib - rss_burst2_kib` is `0` in **0 of 36 rows** (verified by
+`scripts/r31_12_repair_r30_6_data.mjs` §1) — structurally expected, not a
+data error, because `rss_burst2_kib` is sampled AFTER BURST2 runs (which
+itself allocates+frees 8 more large objects and grows RSS), so comparing it
+against the PRE-burst2 idle sample necessarily shows the burst's own
+footprint, not an idle-window delta.
+
+**The claim the report actually intended** — that idle reclaims nothing
+between BURST1's fill and the idle sample — is `rss_idle_kib -
+rss_burst1_kib == 0`, which IS exact in **33 of 36 rows** (confirmed by the
+same script), with the remaining 3 rows covered by §8.2 immediately below.
+§0.1's prose above this addendum is superseded by this corrected statement;
+the underlying finding (idle reclaims nothing) was already correct, only the
+cited column pair was wrong.
+
+### 8.2 P2-4 repair — one physically-impossible raw-log row, now excluded and flagged
+
+Raw log row `67108864,64,32,2,...` (`headroom=64 MiB, threads=32, rep=2`)
+reads `rss_burst1_kib=1,580,920` → `rss_idle_kib=424` — a claimed RSS
+collapse of ~1.58 GiB across a 1.2 second PURE IDLE window in which every
+worker thread is parked in its idle-wait loop (zero deallocation activity
+anywhere in the process). This is not physically possible for a live
+32-thread process and was neither excluded nor flagged in the original
+report.
+
+**Exclusion rule (stated explicitly, applied retroactively to this row's
+interpretation only, not to the underlying data file):** a
+`(headroom_bytes, thread_count, repetition)` row's `rss_idle_kib` sample is
+EXCLUDED from any idle-delta claim if `rss_burst1_kib - rss_idle_kib >
+rss_burst1_kib / 10 + 4096` (a >10%-plus-4-MiB drop across a window with no
+possible deallocation activity) — this bound is met by exactly this one row
+out of 36 (`docs/perf/_raw_r30_6_large_cache_headroom_ab_gate.log` line
+1056; confirmed by `scripts/r31_12_repair_r30_6_data.mjs` §1, which applies
+this exact rule mechanically). The other two non-exact rows from §8.1
+(`+4 KiB` at `256 MiB/32 threads`, reps 0 and 2) are within the tolerance
+and are NOT excluded — they are genuine single-digit-KiB noise, not a broken
+sample.
+
+**Confirmed: excluding this row changes no §0.1 headline conclusion.**
+`scripts/r31_12_repair_r30_6_data.mjs` §2 recomputes the `headroom=64
+MiB, threads=32` cell's `burst2_hits_sum` median with and without this row's
+repetition included: **256 either way** (the row's own hit-rate/oracle
+fields were valid — `oracle_pass=1` — only its RSS sample was broken; a
+median of 3 is robust to one outlier). The §0.1 headline hit-rate table is
+unaffected.
+
+**Harness fix (forward-looking, not retroactive to this already-committed
+raw log):** `examples/r31_1_large_cache_headroom_crossing_regime_gate.rs`
+(R31-1, task #464, landing in the same round) adds exactly this bound as a
+hard `assert!` inside the CHILD process, before its `RESULT` lines print —
+so a future run of that sibling harness cannot silently admit the same class
+of broken sample into a table again. This R30-6 harness
+(`examples/r30_6_large_cache_headroom_ab_gate.rs`) is NOT modified by this
+addendum (CLAUDE.md's non-retroactive convention for already-published gate
+docs/harnesses); the fix is applied going forward in the sibling file.
+
+### 8.3 Summary CSV commit-SHA placeholder — filled in
+
+`docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv`'s header carried
+a prose placeholder (`commit_sha=<see report header, this file is committed
+alongside the same commit that lands the measured tree>`) instead of the
+actual landing commit SHA this report's own header already names
+(`97c2f07bf5c43478632ab01f9037a34cc648e9eb`, filled in by the same-day
+follow-up commit `1272a52`). This addendum fills that ONE remaining
+historical placeholder — see the CSV file's own header comment for the
+correction (same append-only-correction convention: the file's data ROWS are
+untouched, only the header comment's placeholder line is corrected).
+
+### 8.4 Latency-null MDE — added (was missing from the original headline)
+
+§0.2's original headline reported a clean NULL result (`|t| < crit` for all
+four comparisons) without stating the comparison's own minimum-detectable
+effect (MDE) — R30-7's post-review correction added this for ITSELF but not
+retroactively for R30-6, per this project's own already-flagged gap.
+Computed here (same formula as R30-7 §0.2 / `scripts/r31_2_derive_report_data.mjs`:
+`MDE = crit * se`, reported in ns and as a percentage of that comparison's
+own mean elapsed time), by `scripts/r31_12_repair_r30_6_data.mjs` §3 from
+the already-committed provenance JSONs:
+
+| comparison | mean elapsed (both arms) | MDE (`crit * se`) | MDE as % of mean elapsed |
+|---|---:|---:|---:|
+| h256 vs h64 | 4.130 ms | 1.069 ms | **25.9%** |
+| h256 vs h16 | 3.468 ms | 0.746 ms | **21.5%** |
+| h256 vs h0 | 3.597 ms | 0.662 ms | **18.4%** |
+| h256 vs h256 (control) | 3.790 ms | 0.419 ms | **11.1%** |
+
+**Decision-facing reading:** this comparison's n=20-pair sample could only
+have detected a REAL latency effect of roughly 18-26% of mean elapsed time
+at `p<0.05` — a true effect smaller than that (e.g. a genuine 5-10% latency
+cost from a smaller headroom) is statistically indistinguishable from noise
+in this sample and would NOT have been caught by this gate's null result.
+The null result means "no effect this large was found," not "no effect
+exists" — the same honest reading R30-7's own MDE addition established for
+itself. This does not change §0.2's verdict (still a genuine null at the
+resolution this sample can detect) but makes the resolution explicit rather
+than implicit.
+
+### 8.5 Structural limitation — the latency axis cannot expose hit-loss cost (stated explicitly)
+
+**Documented limitation, not a data error:** every arm of R30-6's §0.2
+latency workload sees 100% cache hits (§1.6's own text already says this:
+"the tight timed loop never lets the decay timer's 1000 ms interval elapse
+mid-loop ... all four binaries reported `large_cache_hits=64`... 100%").
+This means the latency axis, AS BUILT, structurally CANNOT expose the
+latency cost of a cache MISS under a smaller headroom — it can only speak to
+"at constant 100% hit rate, is there a latency difference," which is a
+narrower question than "does a smaller headroom cost real latency." R31-1
+(task #464, same round) independently confirms the hit-rate cost is real at
+crossing-regime burst sizes (a genuine 12.5-percentage-point hit-rate loss
+at 64 MiB headroom vs 256 MiB once the burst exceeds 64 MiB) — what R30-6
+cannot say, and what remains unmeasured after this addendum, is the WALL-CLOCK
+cost of THAT hit-rate loss (a burst-idle-burst-shaped workload driven
+through the real `#[global_allocator]`, which neither R30-6 nor R31-1
+builds). §5's original text already flagged this gap qualitatively; this
+addendum states it as an explicit, permanent limitation of this report's
+latency axis, not merely a possible future extension.
+
+### 8.6 Files touched by this addendum
+
+| file | change |
+|---|---|
+| `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` | this §8 addendum (append-only; §0-§7 unedited) |
+| `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv` | header comment's commit-SHA placeholder filled in (§8.3); data rows unchanged |
+| `scripts/r31_12_repair_r30_6_data.mjs` | new — the checked derivation script this addendum's numbers come from |
+| `docs/perf/OPEN_ITEMS.md` | item 27 narrowed per §8.7 below (append-only) |
+
+### 8.7 Item 27's parity claim — narrowed (see OPEN_ITEMS.md item 27 for the full text)
+
+R31-12/task #476 independently confirmed (see §8.1's rounding arithmetic,
+also documented in `examples/r31_1_large_cache_headroom_crossing_regime_gate.rs`'s
+module doc) that R30-6's "64 MiB ties 256 MiB" finding holds ONLY at a
+burst size at or below the 64 MiB headroom target — R31-1 (task #464)
+measured a real, reproducible cost once the burst genuinely exceeds 64 MiB.
+`docs/perf/OPEN_ITEMS.md` item 27 is updated (append-only) to restate the
+parity claim as "parity at a 64 MiB rounded working set" rather than general
+throughput/hit-rate equivalence — see that file for the corrected text.
+

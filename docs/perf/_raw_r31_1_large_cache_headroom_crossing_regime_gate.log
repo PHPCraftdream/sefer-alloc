@@ -1,0 +1,1663 @@
+    Finished `release` profile [optimized] target(s) in 0.60s
+     Running `D:\dev\rust\.cargo-target\release\examples\r31_1_large_cache_headroom_crossing_regime_gate.exe`
+=== R31-1 large-cache HEADROOM crossing-regime gate — subprocess-per-arm isolation ===
+grid: burst_arms=["AT_BOUNDARY_6MiB", "CROSSING_MODEST_12MiB", "CROSSING_R29_13_34MiB"] x headroom_bytes=[67108864, 268435456] x threads=[1, 8, 32] x 3 reps; LARGE_OBJ_COUNT=8 SMALL_SIZE=1024 SMALL_WORKING_SET=64 SMALL_OPS=128 IDLE_MS=1200 decay_interval_ms=1000
+
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3168
+RESULT peak_rss_kib=52552
+RESULT rss_burst1_kib=52552
+RESULT commit_burst1_kib=67396
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52552
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52528
+RESULT commit_burst2_kib=67340
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=1140000
+RESULT small_elapsed_ns_sum=95600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=1140000 rss_burst2_kib=52528 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=52576
+RESULT rss_burst1_kib=52576
+RESULT commit_burst1_kib=67404
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52576
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52552
+RESULT commit_burst2_kib=67352
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=335600
+RESULT small_elapsed_ns_sum=53800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=335600 rss_burst2_kib=52552 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=52576
+RESULT rss_burst1_kib=52576
+RESULT commit_burst1_kib=67396
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52576
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52552
+RESULT commit_burst2_kib=67344
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=274200
+RESULT small_elapsed_ns_sum=57500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=1 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=274200 rss_burst2_kib=52552 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=397692
+RESULT rss_burst1_kib=397692
+RESULT commit_burst1_kib=530588
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397692
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397488
+RESULT commit_burst2_kib=530160
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=12258900
+RESULT small_elapsed_ns_sum=413900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=12258900 rss_burst2_kib=397488 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3208
+RESULT peak_rss_kib=397724
+RESULT rss_burst1_kib=397724
+RESULT commit_burst1_kib=530620
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397724
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397516
+RESULT commit_burst2_kib=530188
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=10806300
+RESULT small_elapsed_ns_sum=508400
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=10806300 rss_burst2_kib=397516 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=397704
+RESULT rss_burst1_kib=397700
+RESULT commit_burst1_kib=530600
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397704
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397504
+RESULT commit_burst2_kib=530176
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=5224400
+RESULT small_elapsed_ns_sum=587100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=8 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=5224400 rss_burst2_kib=397504 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=1581116
+RESULT rss_burst1_kib=1581116
+RESULT commit_burst1_kib=2118720
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581116
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580300
+RESULT commit_burst2_kib=2117008
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=54532200
+RESULT small_elapsed_ns_sum=38903200
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=54532200 rss_burst2_kib=1580300 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=1581092
+RESULT rss_burst1_kib=1581092
+RESULT commit_burst1_kib=2118692
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581092
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580252
+RESULT commit_burst2_kib=2116956
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=80352000
+RESULT small_elapsed_ns_sum=4187700
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=80352000 rss_burst2_kib=1580252 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=1581076
+RESULT rss_burst1_kib=1581076
+RESULT commit_burst1_kib=2118704
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581076
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580276
+RESULT commit_burst2_kib=2117008
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=64492200
+RESULT small_elapsed_ns_sum=10024900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=67108864 MiB=64 threads=32 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=64492200 rss_burst2_kib=1580276 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=52564
+RESULT rss_burst1_kib=52564
+RESULT commit_burst1_kib=67368
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52564
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52540
+RESULT commit_burst2_kib=67316
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=296900
+RESULT small_elapsed_ns_sum=122100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=296900 rss_burst2_kib=52540 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=52576
+RESULT rss_burst1_kib=52576
+RESULT commit_burst1_kib=67400
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52576
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52552
+RESULT commit_burst2_kib=67348
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=253600
+RESULT small_elapsed_ns_sum=45400
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=253600 rss_burst2_kib=52552 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=52576
+RESULT rss_burst1_kib=52576
+RESULT commit_burst1_kib=67392
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=52576
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=52548
+RESULT commit_burst2_kib=67336
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=756500
+RESULT small_elapsed_ns_sum=47500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=1 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=756500 rss_burst2_kib=52548 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3204
+RESULT peak_rss_kib=397712
+RESULT rss_burst1_kib=397708
+RESULT commit_burst1_kib=530600
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397712
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397512
+RESULT commit_burst2_kib=530176
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=11503900
+RESULT small_elapsed_ns_sum=668000
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=11503900 rss_burst2_kib=397512 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=397700
+RESULT rss_burst1_kib=397700
+RESULT commit_burst1_kib=530596
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397700
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397512
+RESULT commit_burst2_kib=530184
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=9224900
+RESULT small_elapsed_ns_sum=632500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=9224900 rss_burst2_kib=397512 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=397724
+RESULT rss_burst1_kib=397724
+RESULT commit_burst1_kib=530624
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=397724
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=397512
+RESULT commit_burst2_kib=530188
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=13763800
+RESULT small_elapsed_ns_sum=533000
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=8 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=13763800 rss_burst2_kib=397512 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=0/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3212
+RESULT peak_rss_kib=1581116
+RESULT rss_burst1_kib=1581116
+RESULT commit_burst1_kib=2118720
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581116
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580304
+RESULT commit_burst2_kib=2117012
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=109104600
+RESULT small_elapsed_ns_sum=3788600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=109104600 rss_burst2_kib=1580304 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=1/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=1581076
+RESULT rss_burst1_kib=1581076
+RESULT commit_burst1_kib=2118688
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581076
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580252
+RESULT commit_burst2_kib=2116968
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=120277700
+RESULT small_elapsed_ns_sum=5345600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=120277700 rss_burst2_kib=1580252 oracle=PASS
+--- arm burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=2/3 ---
+RESULT burst_label=AT_BOUNDARY_6MiB
+RESULT large_obj_bytes=6291456
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=1581096
+RESULT rss_burst1_kib=1581096
+RESULT commit_burst1_kib=2118704
+RESULT burst1_used_max=67108864
+RESULT rss_idle_kib=1581096
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=1580248
+RESULT commit_burst2_kib=2116988
+RESULT burst2_used_max=67108864
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=152340500
+RESULT small_elapsed_ns_sum=3154800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=AT_BOUNDARY_6MiB obj_bytes=6291456 headroom=268435456 MiB=256 threads=32 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=67108864 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=152340500 rss_burst2_kib=1580248 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3216
+RESULT peak_rss_kib=101744
+RESULT rss_burst1_kib=101744
+RESULT commit_burst1_kib=133076
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101744
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101724
+RESULT commit_burst2_kib=133024
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=6801900
+RESULT small_elapsed_ns_sum=58100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=6801900 rss_burst2_kib=101724 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=101728
+RESULT rss_burst1_kib=101728
+RESULT commit_burst1_kib=133056
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101728
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101704
+RESULT commit_burst2_kib=133000
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=10589400
+RESULT small_elapsed_ns_sum=62800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=10589400 rss_burst2_kib=101704 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3208
+RESULT peak_rss_kib=101740
+RESULT rss_burst1_kib=101740
+RESULT commit_burst1_kib=133068
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101740
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101716
+RESULT commit_burst2_kib=133012
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=11998600
+RESULT small_elapsed_ns_sum=55500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=1 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=11998600 rss_burst2_kib=101716 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=790924
+RESULT rss_burst1_kib=790920
+RESULT commit_burst1_kib=1055920
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790924
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790724
+RESULT commit_burst2_kib=1055492
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=184250300
+RESULT small_elapsed_ns_sum=478900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=184250300 rss_burst2_kib=790724 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=790924
+RESULT rss_burst1_kib=790924
+RESULT commit_burst1_kib=1055916
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790924
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790732
+RESULT commit_burst2_kib=1055496
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=173878000
+RESULT small_elapsed_ns_sum=511500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=173878000 rss_burst2_kib=790732 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=790932
+RESULT rss_burst1_kib=790932
+RESULT commit_burst1_kib=1055924
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790932
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790732
+RESULT commit_burst2_kib=1055496
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=164421200
+RESULT small_elapsed_ns_sum=637900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=8 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=164421200 rss_burst2_kib=790732 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=3154072
+RESULT rss_burst1_kib=3154072
+RESULT commit_burst1_kib=4219988
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154072
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153284
+RESULT commit_burst2_kib=4218288
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=1940931400
+RESULT small_elapsed_ns_sum=5053300
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=1940931400 rss_burst2_kib=3153284 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3212
+RESULT peak_rss_kib=3154120
+RESULT rss_burst1_kib=3154120
+RESULT commit_burst1_kib=4220020
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154120
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153356
+RESULT commit_burst2_kib=4218324
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=2088331000
+RESULT small_elapsed_ns_sum=11757600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=2088331000 rss_burst2_kib=3153356 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=3154100
+RESULT rss_burst1_kib=3154100
+RESULT commit_burst1_kib=4219988
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154100
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153324
+RESULT commit_burst2_kib=4218316
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=2017178700
+RESULT small_elapsed_ns_sum=28584700
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=67108864 MiB=64 threads=32 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=2017178700 rss_burst2_kib=3153324 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3192
+RESULT peak_rss_kib=101720
+RESULT rss_burst1_kib=101720
+RESULT commit_burst1_kib=133060
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101720
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101696
+RESULT commit_burst2_kib=133008
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=555200
+RESULT small_elapsed_ns_sum=67400
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=555200 rss_burst2_kib=101696 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=101728
+RESULT rss_burst1_kib=101728
+RESULT commit_burst1_kib=133060
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101728
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101704
+RESULT commit_burst2_kib=133008
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=541600
+RESULT small_elapsed_ns_sum=78300
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=541600 rss_burst2_kib=101704 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=101728
+RESULT rss_burst1_kib=101728
+RESULT commit_burst1_kib=133056
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=101728
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=101700
+RESULT commit_burst2_kib=133000
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=557900
+RESULT small_elapsed_ns_sum=47900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=1 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=557900 rss_burst2_kib=101700 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3188
+RESULT peak_rss_kib=790924
+RESULT rss_burst1_kib=790924
+RESULT commit_burst1_kib=1055904
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790924
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790720
+RESULT commit_burst2_kib=1055476
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=21393500
+RESULT small_elapsed_ns_sum=646600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=21393500 rss_burst2_kib=790720 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3224
+RESULT peak_rss_kib=790924
+RESULT rss_burst1_kib=790924
+RESULT commit_burst1_kib=1055916
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790924
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790740
+RESULT commit_burst2_kib=1055508
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=18977800
+RESULT small_elapsed_ns_sum=737900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=18977800 rss_burst2_kib=790740 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3204
+RESULT peak_rss_kib=790900
+RESULT rss_burst1_kib=790900
+RESULT commit_burst1_kib=1055892
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=790900
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=790712
+RESULT commit_burst2_kib=1055480
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=12874400
+RESULT small_elapsed_ns_sum=682000
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=8 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=12874400 rss_burst2_kib=790712 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=0/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3212
+RESULT peak_rss_kib=3154152
+RESULT rss_burst1_kib=3154152
+RESULT commit_burst1_kib=4220044
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154152
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153332
+RESULT commit_burst2_kib=4218328
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=173034700
+RESULT small_elapsed_ns_sum=47992500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=173034700 rss_burst2_kib=3153332 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=1/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=3154124
+RESULT rss_burst1_kib=3154124
+RESULT commit_burst1_kib=4220016
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154124
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153272
+RESULT commit_burst2_kib=4218292
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=184694700
+RESULT small_elapsed_ns_sum=49366900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=184694700 rss_burst2_kib=3153272 oracle=PASS
+--- arm burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=2/3 ---
+RESULT burst_label=CROSSING_MODEST_12MiB
+RESULT large_obj_bytes=12582912
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=3154028
+RESULT rss_burst1_kib=3154028
+RESULT commit_burst1_kib=4219952
+RESULT burst1_used_max=134217728
+RESULT rss_idle_kib=3154028
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=3153224
+RESULT commit_burst2_kib=4218252
+RESULT burst2_used_max=134217728
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=156255800
+RESULT small_elapsed_ns_sum=69501600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_MODEST_12MiB obj_bytes=12582912 headroom=268435456 MiB=256 threads=32 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=134217728 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=156255800 rss_burst2_kib=3153224 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3204
+RESULT peak_rss_kib=281956
+RESULT rss_burst1_kib=281956
+RESULT commit_burst1_kib=297228
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281956
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281936
+RESULT commit_burst2_kib=297176
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=28633800
+RESULT small_elapsed_ns_sum=53800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=28633800 rss_burst2_kib=281936 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=281956
+RESULT rss_burst1_kib=281956
+RESULT commit_burst1_kib=297224
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281956
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281932
+RESULT commit_burst2_kib=297168
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=23883800
+RESULT small_elapsed_ns_sum=40300
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=23883800 rss_burst2_kib=281932 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3200
+RESULT peak_rss_kib=281952
+RESULT rss_burst1_kib=281952
+RESULT commit_burst1_kib=297220
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281952
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281932
+RESULT commit_burst2_kib=297168
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=7
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=27203400
+RESULT small_elapsed_ns_sum=65500
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=1 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=7/8 burst2_elapsed_ns_sum=27203400 rss_burst2_kib=281932 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=2232748
+RESULT rss_burst1_kib=2232748
+RESULT commit_burst1_kib=2369204
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232748
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232560
+RESULT commit_burst2_kib=2368788
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=506025800
+RESULT small_elapsed_ns_sum=477000
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=506025800 rss_burst2_kib=2232560 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3204
+RESULT peak_rss_kib=2232748
+RESULT rss_burst1_kib=2232748
+RESULT commit_burst1_kib=2369204
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232748
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232556
+RESULT commit_burst2_kib=2368784
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=492440900
+RESULT small_elapsed_ns_sum=570100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=492440900 rss_burst2_kib=2232556 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=2232764
+RESULT rss_burst1_kib=2232764
+RESULT commit_burst1_kib=2369212
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232764
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232564
+RESULT commit_burst2_kib=2368784
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=56
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=468936100
+RESULT small_elapsed_ns_sum=599100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=8 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=56/64 burst2_elapsed_ns_sum=468936100 rss_burst2_kib=2232564 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=8921556
+RESULT rss_burst1_kib=8921556
+RESULT commit_burst1_kib=9473160
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921556
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920788
+RESULT commit_burst2_kib=9471460
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=5726290300
+RESULT small_elapsed_ns_sum=33914100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=0 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=5726290300 rss_burst2_kib=8920788 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3212
+RESULT peak_rss_kib=8921548
+RESULT rss_burst1_kib=8921548
+RESULT commit_burst1_kib=9473160
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921548
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920816
+RESULT commit_burst2_kib=9471460
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=6117997500
+RESULT small_elapsed_ns_sum=64433000
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=1 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=6117997500 rss_burst2_kib=8920816 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=67108864
+RESULT headroom_mib=64
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3216
+RESULT peak_rss_kib=8921528
+RESULT rss_burst1_kib=8921528
+RESULT commit_burst1_kib=9473104
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921528
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920844
+RESULT commit_burst2_kib=9471448
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=224
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=5575132700
+RESULT small_elapsed_ns_sum=3393600
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=67108864 MiB=64 threads=32 rep=2 verified_headroom=67108864 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=224/256 burst2_elapsed_ns_sum=5575132700 rss_burst2_kib=8920844 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3208
+RESULT peak_rss_kib=281964
+RESULT rss_burst1_kib=281964
+RESULT commit_burst1_kib=297232
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281964
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281936
+RESULT commit_burst2_kib=297176
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=2660300
+RESULT small_elapsed_ns_sum=58900
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=2660300 rss_burst2_kib=281936 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=281948
+RESULT rss_burst1_kib=281948
+RESULT commit_burst1_kib=297216
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281948
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281924
+RESULT commit_burst2_kib=297164
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=3026100
+RESULT small_elapsed_ns_sum=42400
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=3026100 rss_burst2_kib=281924 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=1
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=281948
+RESULT rss_burst1_kib=281948
+RESULT commit_burst1_kib=297208
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=281948
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=281924
+RESULT commit_burst2_kib=297156
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=8
+RESULT burst2_possible_sum=8
+RESULT burst2_elapsed_ns_sum=2300700
+RESULT small_elapsed_ns_sum=40800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=1 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=8/8 burst2_elapsed_ns_sum=2300700 rss_burst2_kib=281924 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3208
+RESULT peak_rss_kib=2232760
+RESULT rss_burst1_kib=2232760
+RESULT commit_burst1_kib=2369212
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232760
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232556
+RESULT commit_burst2_kib=2368784
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=74490500
+RESULT small_elapsed_ns_sum=615800
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=74490500 rss_burst2_kib=2232556 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=2232776
+RESULT rss_burst1_kib=2232776
+RESULT commit_burst1_kib=2369232
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232776
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232584
+RESULT commit_burst2_kib=2368816
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=80975600
+RESULT small_elapsed_ns_sum=891100
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=80975600 rss_burst2_kib=2232584 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=8
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3212
+RESULT peak_rss_kib=2232756
+RESULT rss_burst1_kib=2232756
+RESULT commit_burst1_kib=2369204
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=2232756
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=2232556
+RESULT commit_burst2_kib=2368780
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=64
+RESULT burst2_possible_sum=64
+RESULT burst2_elapsed_ns_sum=37204200
+RESULT small_elapsed_ns_sum=838200
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=8 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=64/64 burst2_elapsed_ns_sum=37204200 rss_burst2_kib=2232556 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=0/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=0
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3196
+RESULT peak_rss_kib=8921576
+RESULT rss_burst1_kib=8921576
+RESULT commit_burst1_kib=9473164
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921576
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920748
+RESULT commit_burst2_kib=9471468
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=1732796900
+RESULT small_elapsed_ns_sum=33952200
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=0 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=1732796900 rss_burst2_kib=8920748 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=1/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=1
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3184
+RESULT peak_rss_kib=8921552
+RESULT rss_burst1_kib=8921552
+RESULT commit_burst1_kib=9473116
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921552
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920704
+RESULT commit_burst2_kib=9471384
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=1706421000
+RESULT small_elapsed_ns_sum=7221300
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=1 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=1706421000 rss_burst2_kib=8920704 oracle=PASS
+--- arm burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=2/3 ---
+RESULT burst_label=CROSSING_R29_13_34MiB
+RESULT large_obj_bytes=35651584
+RESULT headroom_bytes=268435456
+RESULT headroom_mib=256
+RESULT thread_count=32
+RESULT repetition=2
+RESULT verified_headroom=268435456
+RESULT config_conflicts_delta=0
+RESULT large_obj_count=8
+RESULT rss_before_kib=3208
+RESULT peak_rss_kib=8921588
+RESULT rss_burst1_kib=8921588
+RESULT commit_burst1_kib=9473168
+RESULT burst1_used_max=301989888
+RESULT rss_idle_kib=8921588
+RESULT idle_ms=1200
+RESULT rss_burst2_kib=8920780
+RESULT commit_burst2_kib=9471464
+RESULT burst2_used_max=301989888
+RESULT burst2_hits_sum=256
+RESULT burst2_possible_sum=256
+RESULT burst2_elapsed_ns_sum=825066100
+RESULT small_elapsed_ns_sum=44946300
+RESULT decay_interval_ms=1000
+RESULT admissions_ok=1
+RESULT hits_ok=1
+RESULT oracle_pass=1
+OK burst=CROSSING_R29_13_34MiB obj_bytes=35651584 headroom=268435456 MiB=256 threads=32 rep=2 verified_headroom=268435456 cfg_conflicts_delta=0 burst1_used_max=301989888 burst2_hits_sum=256/256 burst2_elapsed_ns_sum=825066100 rss_burst2_kib=8920780 oracle=PASS
+
+=== aggregated (median of 3 reps; per (burst, headroom, threads) cell) ===
+                   burst headroomMB  threads    burst1_used burst2_hits/poss   hit_rate_pct   rss_b2_kib   rss_idle
+        AT_BOUNDARY_6MiB         64        1       67108864              8/8         100.0%        52552      52576
+        AT_BOUNDARY_6MiB         64        8       67108864            64/64         100.0%       397504     397704
+        AT_BOUNDARY_6MiB         64       32       67108864          256/256         100.0%      1580276    1581092
+        AT_BOUNDARY_6MiB        256        1       67108864              8/8         100.0%        52548      52576
+        AT_BOUNDARY_6MiB        256        8       67108864            64/64         100.0%       397512     397712
+        AT_BOUNDARY_6MiB        256       32       67108864          256/256         100.0%      1580252    1581096
+   CROSSING_MODEST_12MiB         64        1      134217728              7/8          87.5%       101716     101740
+   CROSSING_MODEST_12MiB         64        8      134217728            56/64          87.5%       790732     790924
+   CROSSING_MODEST_12MiB         64       32      134217728          224/256          87.5%      3153324    3154100
+   CROSSING_MODEST_12MiB        256        1      134217728              8/8         100.0%       101700     101728
+   CROSSING_MODEST_12MiB        256        8      134217728            64/64         100.0%       790720     790924
+   CROSSING_MODEST_12MiB        256       32      134217728          256/256         100.0%      3153272    3154124
+   CROSSING_R29_13_34MiB         64        1      301989888              7/8          87.5%       281932     281956
+   CROSSING_R29_13_34MiB         64        8      301989888            56/64          87.5%      2232560    2232748
+   CROSSING_R29_13_34MiB         64       32      301989888          224/256          87.5%      8920816    8921548
+   CROSSING_R29_13_34MiB        256        1      301989888              8/8         100.0%       281924     281948
+   CROSSING_R29_13_34MiB        256        8      301989888            64/64         100.0%      2232556    2232760
+   CROSSING_R29_13_34MiB        256       32      301989888          256/256         100.0%      8920748    8921576
+
+=== between-arm mechanism delta (CLAUDE.md R30-8 rule): burst1_used_max at 64 vs 256 MiB, per burst size ===
+burst=AT_BOUNDARY_6MiB threads=1: burst1_used_max(64MiB)=67108864 burst1_used_max(256MiB)=67108864 mechanism_delta=ZERO (identical admission)
+burst=AT_BOUNDARY_6MiB threads=8: burst1_used_max(64MiB)=67108864 burst1_used_max(256MiB)=67108864 mechanism_delta=ZERO (identical admission)
+burst=AT_BOUNDARY_6MiB threads=32: burst1_used_max(64MiB)=67108864 burst1_used_max(256MiB)=67108864 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_MODEST_12MiB threads=1: burst1_used_max(64MiB)=134217728 burst1_used_max(256MiB)=134217728 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_MODEST_12MiB threads=8: burst1_used_max(64MiB)=134217728 burst1_used_max(256MiB)=134217728 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_MODEST_12MiB threads=32: burst1_used_max(64MiB)=134217728 burst1_used_max(256MiB)=134217728 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_R29_13_34MiB threads=1: burst1_used_max(64MiB)=301989888 burst1_used_max(256MiB)=301989888 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_R29_13_34MiB threads=8: burst1_used_max(64MiB)=301989888 burst1_used_max(256MiB)=301989888 mechanism_delta=ZERO (identical admission)
+burst=CROSSING_R29_13_34MiB threads=32: burst1_used_max(64MiB)=301989888 burst1_used_max(256MiB)=301989888 mechanism_delta=ZERO (identical admission)
+
+=== CSV (one row per child) ===
+# burst_label,large_obj_bytes,headroom_bytes,headroom_mib,thread_count,repetition,verified_headroom,config_conflicts_delta,process_identity,large_obj_count,peak_rss_kib,rss_burst1_kib,commit_burst1_kib,burst1_used_max,rss_idle_kib,idle_ms,rss_burst2_kib,commit_burst2_kib,burst2_used_max,burst2_hits_sum,burst2_possible_sum,burst2_elapsed_ns_sum,small_elapsed_ns_sum,decay_interval_ms,admissions_ok,hits_ok,oracle_pass
+AT_BOUNDARY_6MiB,6291456,67108864,64,1,0,67108864,0,subprocess,8,52552,52552,67396,67108864,52552,1200,52528,67340,67108864,8,8,1140000,95600,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,1,1,67108864,0,subprocess,8,52576,52576,67404,67108864,52576,1200,52552,67352,67108864,8,8,335600,53800,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,1,2,67108864,0,subprocess,8,52576,52576,67396,67108864,52576,1200,52552,67344,67108864,8,8,274200,57500,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,8,0,67108864,0,subprocess,8,397692,397692,530588,67108864,397692,1200,397488,530160,67108864,64,64,12258900,413900,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,8,1,67108864,0,subprocess,8,397724,397724,530620,67108864,397724,1200,397516,530188,67108864,64,64,10806300,508400,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,8,2,67108864,0,subprocess,8,397704,397700,530600,67108864,397704,1200,397504,530176,67108864,64,64,5224400,587100,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,32,0,67108864,0,subprocess,8,1581116,1581116,2118720,67108864,1581116,1200,1580300,2117008,67108864,256,256,54532200,38903200,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,32,1,67108864,0,subprocess,8,1581092,1581092,2118692,67108864,1581092,1200,1580252,2116956,67108864,256,256,80352000,4187700,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,67108864,64,32,2,67108864,0,subprocess,8,1581076,1581076,2118704,67108864,1581076,1200,1580276,2117008,67108864,256,256,64492200,10024900,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,1,0,268435456,0,subprocess,8,52564,52564,67368,67108864,52564,1200,52540,67316,67108864,8,8,296900,122100,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,1,1,268435456,0,subprocess,8,52576,52576,67400,67108864,52576,1200,52552,67348,67108864,8,8,253600,45400,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,1,2,268435456,0,subprocess,8,52576,52576,67392,67108864,52576,1200,52548,67336,67108864,8,8,756500,47500,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,8,0,268435456,0,subprocess,8,397712,397708,530600,67108864,397712,1200,397512,530176,67108864,64,64,11503900,668000,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,8,1,268435456,0,subprocess,8,397700,397700,530596,67108864,397700,1200,397512,530184,67108864,64,64,9224900,632500,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,8,2,268435456,0,subprocess,8,397724,397724,530624,67108864,397724,1200,397512,530188,67108864,64,64,13763800,533000,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,32,0,268435456,0,subprocess,8,1581116,1581116,2118720,67108864,1581116,1200,1580304,2117012,67108864,256,256,109104600,3788600,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,32,1,268435456,0,subprocess,8,1581076,1581076,2118688,67108864,1581076,1200,1580252,2116968,67108864,256,256,120277700,5345600,1000,1,1,1
+AT_BOUNDARY_6MiB,6291456,268435456,256,32,2,268435456,0,subprocess,8,1581096,1581096,2118704,67108864,1581096,1200,1580248,2116988,67108864,256,256,152340500,3154800,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,1,0,67108864,0,subprocess,8,101744,101744,133076,134217728,101744,1200,101724,133024,134217728,7,8,6801900,58100,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,1,1,67108864,0,subprocess,8,101728,101728,133056,134217728,101728,1200,101704,133000,134217728,7,8,10589400,62800,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,1,2,67108864,0,subprocess,8,101740,101740,133068,134217728,101740,1200,101716,133012,134217728,7,8,11998600,55500,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,8,0,67108864,0,subprocess,8,790924,790920,1055920,134217728,790924,1200,790724,1055492,134217728,56,64,184250300,478900,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,8,1,67108864,0,subprocess,8,790924,790924,1055916,134217728,790924,1200,790732,1055496,134217728,56,64,173878000,511500,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,8,2,67108864,0,subprocess,8,790932,790932,1055924,134217728,790932,1200,790732,1055496,134217728,56,64,164421200,637900,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,32,0,67108864,0,subprocess,8,3154072,3154072,4219988,134217728,3154072,1200,3153284,4218288,134217728,224,256,1940931400,5053300,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,32,1,67108864,0,subprocess,8,3154120,3154120,4220020,134217728,3154120,1200,3153356,4218324,134217728,224,256,2088331000,11757600,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,67108864,64,32,2,67108864,0,subprocess,8,3154100,3154100,4219988,134217728,3154100,1200,3153324,4218316,134217728,224,256,2017178700,28584700,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,1,0,268435456,0,subprocess,8,101720,101720,133060,134217728,101720,1200,101696,133008,134217728,8,8,555200,67400,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,1,1,268435456,0,subprocess,8,101728,101728,133060,134217728,101728,1200,101704,133008,134217728,8,8,541600,78300,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,1,2,268435456,0,subprocess,8,101728,101728,133056,134217728,101728,1200,101700,133000,134217728,8,8,557900,47900,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,8,0,268435456,0,subprocess,8,790924,790924,1055904,134217728,790924,1200,790720,1055476,134217728,64,64,21393500,646600,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,8,1,268435456,0,subprocess,8,790924,790924,1055916,134217728,790924,1200,790740,1055508,134217728,64,64,18977800,737900,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,8,2,268435456,0,subprocess,8,790900,790900,1055892,134217728,790900,1200,790712,1055480,134217728,64,64,12874400,682000,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,32,0,268435456,0,subprocess,8,3154152,3154152,4220044,134217728,3154152,1200,3153332,4218328,134217728,256,256,173034700,47992500,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,32,1,268435456,0,subprocess,8,3154124,3154124,4220016,134217728,3154124,1200,3153272,4218292,134217728,256,256,184694700,49366900,1000,1,1,1
+CROSSING_MODEST_12MiB,12582912,268435456,256,32,2,268435456,0,subprocess,8,3154028,3154028,4219952,134217728,3154028,1200,3153224,4218252,134217728,256,256,156255800,69501600,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,1,0,67108864,0,subprocess,8,281956,281956,297228,301989888,281956,1200,281936,297176,301989888,7,8,28633800,53800,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,1,1,67108864,0,subprocess,8,281956,281956,297224,301989888,281956,1200,281932,297168,301989888,7,8,23883800,40300,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,1,2,67108864,0,subprocess,8,281952,281952,297220,301989888,281952,1200,281932,297168,301989888,7,8,27203400,65500,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,8,0,67108864,0,subprocess,8,2232748,2232748,2369204,301989888,2232748,1200,2232560,2368788,301989888,56,64,506025800,477000,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,8,1,67108864,0,subprocess,8,2232748,2232748,2369204,301989888,2232748,1200,2232556,2368784,301989888,56,64,492440900,570100,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,8,2,67108864,0,subprocess,8,2232764,2232764,2369212,301989888,2232764,1200,2232564,2368784,301989888,56,64,468936100,599100,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,32,0,67108864,0,subprocess,8,8921556,8921556,9473160,301989888,8921556,1200,8920788,9471460,301989888,224,256,5726290300,33914100,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,32,1,67108864,0,subprocess,8,8921548,8921548,9473160,301989888,8921548,1200,8920816,9471460,301989888,224,256,6117997500,64433000,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,67108864,64,32,2,67108864,0,subprocess,8,8921528,8921528,9473104,301989888,8921528,1200,8920844,9471448,301989888,224,256,5575132700,3393600,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,1,0,268435456,0,subprocess,8,281964,281964,297232,301989888,281964,1200,281936,297176,301989888,8,8,2660300,58900,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,1,1,268435456,0,subprocess,8,281948,281948,297216,301989888,281948,1200,281924,297164,301989888,8,8,3026100,42400,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,1,2,268435456,0,subprocess,8,281948,281948,297208,301989888,281948,1200,281924,297156,301989888,8,8,2300700,40800,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,8,0,268435456,0,subprocess,8,2232760,2232760,2369212,301989888,2232760,1200,2232556,2368784,301989888,64,64,74490500,615800,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,8,1,268435456,0,subprocess,8,2232776,2232776,2369232,301989888,2232776,1200,2232584,2368816,301989888,64,64,80975600,891100,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,8,2,268435456,0,subprocess,8,2232756,2232756,2369204,301989888,2232756,1200,2232556,2368780,301989888,64,64,37204200,838200,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,32,0,268435456,0,subprocess,8,8921576,8921576,9473164,301989888,8921576,1200,8920748,9471468,301989888,256,256,1732796900,33952200,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,32,1,268435456,0,subprocess,8,8921552,8921552,9473116,301989888,8921552,1200,8920704,9471384,301989888,256,256,1706421000,7221300,1000,1,1,1
+CROSSING_R29_13_34MiB,35651584,268435456,256,32,2,268435456,0,subprocess,8,8921588,8921588,9473168,301989888,8921588,1200,8920780,9471464,301989888,256,256,825066100,44946300,1000,1,1,1
+
+NOTE: all 54 arms passed the path-activation oracle (admissions_ok AND hits_ok).
+NOTE: each (burst_label, headroom_bytes, thread_count, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation, registry-bypass via HeapRegistry::claim_with_config). Every arm hard-asserted resolved headroom == requested headroom AND config_conflicts_delta == 0 (R26-4 config identity, all 4 pieces). Every arm additionally hard-asserted a sanity bound on rss_idle_kib vs rss_burst1_kib (R31-12 repair, applied here from the start) to reject a physically-impossible RSS collapse sample before it could enter this table.
