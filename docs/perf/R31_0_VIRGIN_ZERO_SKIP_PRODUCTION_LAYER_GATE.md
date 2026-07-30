@@ -191,6 +191,28 @@ ON-binary activation PASS.
 
 ## 3. Native wall-clock: OFF vs ON, all 24 (size × touch) cells, both scenarios
 
+**Correction (Round 31 review response, 2026-07-31 — see
+`docs/reviews/2026-07-31-r31-full-review.md` §7 P1-1):** the paragraph below
+originally read "Derived by `scripts/r31_0_summary.mjs` from the primary
+run-1 raw logs" and §3.1 originally claimed `Δ (run2)` was computed "both by
+the same checked script pass." At the time this report was first published,
+`scripts/r31_0_summary.mjs` read only the run-1 logs, re-emitted raw fields
+verbatim, and computed no percentage of any kind — every Δ value in the
+tables below, including the four bolded `notouch` headline percentages, was
+in fact **hand-computed**, not script-derived, exactly the practice
+CLAUDE.md's R30-9 rule points 1/2/6 exist to forbid. This was caught by the
+Round-31 review (which independently recomputed all 24×2 cells from the raw
+logs and found them arithmetically correct — see that review's §4.4 — so no
+published number was wrong, only the derivation-method claim). `scripts/r31_0_summary.mjs`
+has since been extended to actually read BOTH run pairs, compute every
+cell's percentage delta, and hard-`throw` if any of the four `notouch`
+deltas deviates from the value below by more than 0.1 percentage points
+(`node scripts/r31_0_summary.mjs [landing_commit]` also now writes
+`docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_deltas.csv`, the
+per-cell derived-delta companion to the summary CSV). The claim below is now
+true; it was not true as originally written. The Δ numbers themselves are
+unchanged (re-verified byte-for-byte against the extended script's output).
+
 Derived by `scripts/r31_0_summary.mjs` from the primary run-1 raw logs (one
 checked script, not hand-transcribed, per CLAUDE.md's derived-tables rule).
 `mean_ns` = mean of 15 independent fresh-heap-rep batches of `BURST = 16`
@@ -202,8 +224,11 @@ calls, `ns/op` normalized per call.
 (`_raw_r31_0_off.log`/`_raw_r31_0_on.log`); `Δ (run2)` is the SAME cells
 recomputed from the independent repeat-run logs
 (`_raw_r31_0_off_run2.log`/`_raw_r31_0_on_run2.log`), both by the same
-checked script pass, to show which cells' sign is host-noise-stable and
-which are not.
+checked script pass (`scripts/r31_0_summary.mjs`, extended per the
+correction note above — see
+`docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_deltas.csv` for the
+full 24-row machine-readable derived-delta table this section's numbers come
+from), to show which cells' sign is host-noise-stable and which are not.
 
 | Size | Touch | OFF ns/op (run1) | ON ns/op (run1) | Δ (run1) | Δ (run2) |
 |---|---|---:|---:|---:|---:|
@@ -405,7 +430,12 @@ consumer shape specifically.
 - Summary CSV: `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv`
   (commit SHA, feature set, CPU/OS/rustc, per-arm sample counts, mechanism
   signals, path-activation oracle verdict, ns/op figures — derived by
-  `scripts/r31_0_summary.mjs` from the raw logs, not hand-transcribed).
+  `scripts/r31_0_summary.mjs` from the raw logs, not hand-transcribed) plus
+  `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_deltas.csv` (added
+  in the Round 31 review-response correction — the per-cell OFF/ON ns and
+  computed percentage delta for all 24 cells × 2 runs, the machine-readable
+  source for §3's tables, with the four `notouch` headline values
+  hard-asserted against the published report by the same script).
 - Immutable source identity: §1 (base commit
   `14a9ef34145cc62188d734cf6987bcfd4dbcb088`; this report's own landing
   commit is filled in by a same-day follow-up commit per the established
