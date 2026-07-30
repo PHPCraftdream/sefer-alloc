@@ -58,7 +58,7 @@ and the already-in-`production` features are excluded by construction
 
 | feature | shipped-behind-flag | has-gate-report (doc) | promotion verdict | evidence citation |
 |---|---|---|---|---|
-| `virgin-zero-skip` | yes (`Cargo.toml:744`, `=["alloc-decommit"]`) | yes — R9-5 (design), R11-8 (re-verify), R13-3 (magazine-fix gate) | **NEVER-DECIDED** (two CONDITIONAL-GO designs; the design's own Stage-3 promotion gate was never run; R13-3 is explicitly NOT a promotion verdict) | `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines 563–568) + §8; `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8; `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (headline "No scenario shows a statistically significant difference"); `Cargo.toml:737–744`. See `OPEN_ITEMS.md` item 25. |
+| `virgin-zero-skip` | yes (`Cargo.toml:744`, `=["alloc-decommit"]`) | yes — R9-5 (design), R11-8 (re-verify), R13-3 (magazine-fix gate), R29-16 (iai isolation), R30-3 (activation-proven native gate) | **DECIDED — NO-GO for `production`, keep opt-in** (R30-3, task #452: no calloc-heavy workload shows a material, noise-distinguishable native wall-clock win; recycled/hot-churn family shows a small but consistent regression; a structural ~1-in-32 refill-batch dilution independently narrows the realistic victim profile) | `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` (operative verdict) + `_summary.csv`; `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §3 (iai isolation, still valid: 3,067 vs 65,624 Ir, ~21.4×, NOT a wall-clock claim); `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11; `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8; `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`; `Cargo.toml:737–744`. See `OPEN_ITEMS.md` item 25. |
 | `small-segment-lazy-commit` | yes (`Cargo.toml:700–704`) | yes — R12-9 (the split gate) | **CONDITIONAL-GO-not-promoted** (deliberately left opt-in; a reasoned decision EXISTS, unlike `virgin-zero-skip`) | `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 (lines 231–238, explicit scope-out); `Cargo.toml:685–704`. See `OPEN_ITEMS.md` item 26. |
 | `alloc-lazy-commit` | yes (`Cargo.toml:656`) | n/a — pure combinator alias | **reduces to `small-segment-lazy-commit`** — alias `=["primordial-lazy-commit","small-segment-lazy-commit"]`; `primordial-lazy-commit` is already in `production`, so this feature's promotion status IS `small-segment-lazy-commit`'s | `Cargo.toml:635–656` (the PURE-COMBINATOR note + the alias); `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §1. See `OPEN_ITEMS.md` item 26. |
 | `exact-span-large` | yes (`Cargo.toml:312`) | yes — R13-6 | **CONDITIONAL-GO-not-promoted** (R13-6 §7: "Promoting … unconditionally, is not recommended"; no unconditional GO or permanent NO-GO) | `R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §7 (lines 420–482). Mentioned in `OPEN_ITEMS.md` only as a passing reference inside other items (e.g. item 3 line 758), NOT as its own promotion item. |
@@ -84,7 +84,7 @@ These are the three the R28 review (§3.2) flagged as the sharpest
 dangling-promotion cases. For each, the constraint of R29-12 is honored:
 **no new measurement was run to manufacture a verdict.**
 
-### `virgin-zero-skip` — NEVER-DECIDED (needs a named missing measurement)
+### `virgin-zero-skip` — DECIDED: NO-GO for `production`, keep opt-in (R30-3, task #452; see the 2026-07-30 update below for the operative verdict — the narrative immediately below is kept for history)
 
 The feature is BUILT and CI-tested (`.github/workflows/ci.yml` runs a
 `production virgin-zero-skip alloc-stats` step). Two independent design
@@ -132,6 +132,36 @@ UNCONFIRMED, not answered null — see
 `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 for the full correction. The
 NEVER-DECIDED verdict above is unaffected (it was already conditioned on the
 wall-clock gap, not on this specific mechanism).
+
+**2026-07-30 resolution (R30-3, task #452) — verdict is now DECIDED, not
+NEVER-DECIDED.** The wall-clock judge was rebuilt (not patched) as
+`benches/r30_3_virgin_zero_skip_native_gate.rs`, a custom `Instant`-timing
+harness carrying a PATH-ACTIVATION ORACLE (built from the pre-existing
+`AllocCore::dbg_small_zero_pass_count()` counter, no new hook needed) that
+proves, per measured cell, what fraction of calls actually took the
+intended path — the exact gap that made the R29-16 bench's numbers
+untrustworthy. The oracle caught a real design bug during THIS task's own
+development before any number could ship (see
+`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` §3): `carve_block_with_refill`'s
+unconditional 31-block refill batch means ANY same-class multi-block
+`alloc_zeroed` burst pops recycled blocks for all but its first call,
+structurally capping virgin-path activation at ~1-in-32 regardless of batch
+size — the judge was corrected to a single-call-per-fresh-heap shape and
+then passed its own oracle at 100.00% minimum activation on all 48
+ON-binary cells (eager and lazy small-segment commit both). Native
+wall-clock verdict: no calloc-heavy workload shows a material,
+noise-distinguishable win at this sample size/host (virgin-scenario deltas
+are sign-inconsistent, comparable in magnitude to this host's own
+same-binary run-to-run noise); the recycled/hot-churn family shows a small
+but direction-consistent regression (ON slower on 48/48 cells), attributed
+to the feature's own extra dispatch bookkeeping on its non-virgin path.
+**Combined with the structural refill-batch dilution finding, the decision
+is NO-GO for `production` promotion — kept opt-in, recommended as a named
+narrow-profile feature** (useful only for one-call-per-class-per-heap or
+cross-class calloc patterns, not same-class calloc bursts). This is a
+genuine decision, not a further deferral: see `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`
+§6 for the full promotion-rule application and `docs/perf/OPEN_ITEMS.md`
+item 25 for the current tracked state (closed for this round).
 
 ### `small-segment-lazy-commit` — CONDITIONAL-keep-opt-in (a decision EXISTS)
 

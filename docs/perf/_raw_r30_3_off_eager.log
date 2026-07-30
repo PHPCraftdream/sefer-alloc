@@ -1,0 +1,30 @@
+   Compiling sefer-alloc v0.3.0 (D:\dev\rust\sefer-alloc)
+    Finished `bench` profile [optimized] target(s) in 5.02s
+     Running benches\r30_3_virgin_zero_skip_native_gate.rs (D:\dev\rust\.cargo-target\release\deps\r30_3_virgin_zero_skip_native_gate-9a313ca9172e2a1f.exe)
+# R30-3 virgin-zero-skip native gate -- CSV header:
+# R30_3_ROW,scenario,size,touch,reps,mean_ns_per_op,p50_ns_per_op,min_ns_per_op,max_ns_per_op,mean_activation_pct,min_activation_pct,oracle
+# cfg: virgin-zero-skip=false small-segment-lazy-commit=false VIRGIN_BATCH=1 RECYCLED_BATCH=16 VIRGIN_REPS=50 REPS=10 MIN_ACTIVATION_PCT=95
+R30_3_ROW,virgin,4k,notouch,50,58702.0,58500.0,42700.0,83500.0,100.00,100.00,PASS
+R30_3_ROW,virgin,4k,onebyte,50,70594.0,63700.0,59900.0,172200.0,100.00,100.00,PASS
+R30_3_ROW,virgin,4k,full,50,71696.0,62100.0,43400.0,140500.0,100.00,100.00,PASS
+R30_3_ROW,virgin,16k,notouch,50,67710.0,66100.0,51800.0,103300.0,100.00,100.00,PASS
+R30_3_ROW,virgin,16k,onebyte,50,69166.0,54200.0,49200.0,155200.0,100.00,100.00,PASS
+R30_3_ROW,virgin,16k,full,50,84238.0,79200.0,58600.0,216100.0,100.00,100.00,PASS
+R30_3_ROW,virgin,64k,notouch,50,117044.0,104300.0,93000.0,236800.0,100.00,100.00,PASS
+R30_3_ROW,virgin,64k,onebyte,50,134182.0,125600.0,92900.0,254400.0,100.00,100.00,PASS
+R30_3_ROW,virgin,64k,full,50,187798.0,168700.0,125100.0,581800.0,100.00,100.00,PASS
+R30_3_ROW,virgin,128k,notouch,50,206966.0,185000.0,134000.0,748300.0,100.00,100.00,PASS
+R30_3_ROW,virgin,128k,onebyte,50,203960.0,194300.0,166700.0,294600.0,100.00,100.00,PASS
+R30_3_ROW,virgin,128k,full,50,244944.0,219200.0,190700.0,657400.0,100.00,100.00,PASS
+R30_3_ROW,recycled,4k,notouch,10,73.8,62.5,56.2,125.0,0.00,0.00,FAIL
+R30_3_ROW,recycled,4k,onebyte,10,66.2,62.5,62.5,93.8,0.00,0.00,FAIL
+R30_3_ROW,recycled,4k,full,10,2938.1,3137.5,2512.5,3325.0,0.00,0.00,FAIL
+R30_3_ROW,recycled,16k,notouch,10,357.5,312.5,181.2,956.2,0.00,0.00,FAIL
+R30_3_ROW,recycled,16k,onebyte,10,328.1,312.5,268.8,531.2,0.00,0.00,FAIL
+R30_3_ROW,recycled,16k,full,10,9321.2,8587.5,7500.0,12287.5,0.00,0.00,FAIL
+R30_3_ROW,recycled,64k,notouch,10,1756.9,1718.8,1718.8,1931.2,0.00,0.00,FAIL
+R30_3_ROW,recycled,64k,onebyte,10,1798.1,1725.0,1718.8,1968.8,0.00,0.00,FAIL
+R30_3_ROW,recycled,64k,full,10,33521.2,31912.5,31262.5,46687.5,0.00,0.00,FAIL
+R30_3_ROW,recycled,128k,notouch,10,3415.6,3418.8,3393.8,3425.0,0.00,0.00,FAIL
+R30_3_ROW,recycled,128k,onebyte,10,3691.2,3762.5,3437.5,4168.8,0.00,0.00,FAIL
+R30_3_ROW,recycled,128k,full,10,74460.0,76812.5,63256.2,92987.5,0.00,0.00,FAIL

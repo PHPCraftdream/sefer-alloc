@@ -1510,6 +1510,32 @@ name = "r29_16_virgin_zero_skip_calloc_wallclock"
 harness = false
 required-features = ["alloc-global", "fastbin"]
 
+# R30-3 (task #452): the activation-proven native wall-clock judge for
+# `virgin-zero-skip`, superseding `r29_16_virgin_zero_skip_calloc_wallclock`
+# above -- that bench's "virgin" scenario frees its whole batch inside the
+# SAME `b.iter()` closure Criterion calls thousands of times per sample, so
+# every call after the first actually pops a RECYCLED block off the free
+# list instead of exercising the bump-carve path `virgin-zero-skip` gates
+# (confirmed by tracing `alloc_small_with_virgin`'s dispatch order,
+# `src/alloc_core/alloc_core_small.rs:274-297`; see
+# `docs/reviews/2026-07-30-r29-followup-readonly-review.md` §3 for the 8-point
+# judge design this bench implements, and
+# `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` for the measured result).
+# A custom `Instant`-timing-loop `fn main()` binary (harness = false, no
+# `criterion_main!`), NOT Criterion -- see the bench file's module doc for
+# why (Criterion has no first-class channel to report a per-cell
+# path-activation-oracle percentage alongside its timing). Requires only
+# `alloc-global` + `alloc-decommit` + `alloc-stats` (NOT `virgin-zero-skip`
+# itself, and NOT `small-segment-lazy-commit` itself) so the SAME binary runs
+# both WITHOUT `virgin-zero-skip` (baseline) and WITH it (treatment), crossed
+# with WITHOUT/WITH `small-segment-lazy-commit`, for four honest was/now x
+# eager/lazy-commit binaries -- see the bench file's module doc and the gate
+# report's §1 for the exact `cargo run --release --bin` invocations.
+[[bench]]
+name = "r30_3_virgin_zero_skip_native_gate"
+harness = false
+required-features = ["alloc-global", "alloc-decommit", "alloc-stats"]
+
 # R13-6 (task #276): production A/B wall-clock gate for the
 # `exact-span-large` (R12-3) + `large-reserved-capacity` (R12-4) opt-in pair
 # (`benches/r13_6_exact_span_reserved_capacity_wallclock.rs`). Two groups:

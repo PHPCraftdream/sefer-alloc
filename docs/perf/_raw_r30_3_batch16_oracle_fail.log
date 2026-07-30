@@ -1,0 +1,34 @@
+# R30-3 (task #452) -- FIRST ATTEMPT, REJECTED BY THE ORACLE.
+# This is a preserved historical record of the bench harness's original
+# design (VIRGIN_BATCH = 16, matching R29-16's own VIRGIN_BATCH precedent)
+# BEFORE the path-activation oracle caught the carve_block_with_refill
+# interaction documented in VIRGIN_BATCH's doc comment
+# (benches/r30_3_virgin_zero_skip_native_gate.rs). Kept as evidence that the
+# oracle worked as designed during THIS task's own development, not just a
+# hypothetical capability -- see docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md
+# §3. The harness was corrected to VIRGIN_BATCH = 1 immediately after this
+# run; this file is NOT part of the final measured evidence base (§5 of the
+# report), it documents the design-iteration step itself.
+#
+# Build: cargo bench --bench r30_3_virgin_zero_skip_native_gate --features "production bench-internals alloc-stats virgin-zero-skip"
+# (ON binary, eager small-segment commit; VIRGIN_BATCH was 16 at this point in development)
+#
+# R30_3_ROW,scenario,size,touch,reps,mean_ns_per_op,p50_ns_per_op,min_ns_per_op,max_ns_per_op,mean_activation_pct,min_activation_pct,oracle
+# cfg: virgin-zero-skip=true small-segment-lazy-commit=false BATCH=16 REPS=10 MIN_ACTIVATION_PCT=95
+R30_3_ROW,virgin,4k,notouch,10,3975.6,3881.3,3225.0,5368.8,6.25,6.25,FAIL
+R30_3_ROW,virgin,4k,onebyte,10,4604.4,4518.8,4306.2,5200.0,6.25,6.25,FAIL
+R30_3_ROW,virgin,4k,full,10,7294.4,7406.2,6900.0,7787.5,6.25,6.25,FAIL
+R30_3_ROW,virgin,16k,notouch,10,12536.9,13893.8,8968.8,17168.8,6.25,6.25,FAIL
+R30_3_ROW,virgin,16k,onebyte,10,18989.4,16206.2,14675.0,36312.5,6.25,6.25,FAIL
+R30_3_ROW,virgin,16k,full,10,23818.8,23343.8,19193.8,29650.0,6.25,6.25,FAIL
+R30_3_ROW,virgin,64k,notouch,10,53603.1,52687.5,45112.5,69681.2,6.25,6.25,FAIL
+R30_3_ROW,virgin,64k,onebyte,10,55030.0,54593.8,46212.5,81568.8,6.25,6.25,FAIL
+R30_3_ROW,virgin,64k,full,10,104805.0,99981.2,94850.0,137393.8,6.25,6.25,FAIL
+R30_3_ROW,virgin,128k,notouch,10,107953.8,86600.0,83381.2,182368.8,6.25,6.25,FAIL
+R30_3_ROW,virgin,128k,onebyte,10,114368.8,111337.5,89125.0,149975.0,6.25,6.25,FAIL
+R30_3_ROW,virgin,128k,full,10,211269.4,215525.0,176037.5,277231.2,6.25,6.25,FAIL
+# TRUNCATED -- recycled scenario's rows omitted (100.00%/PASS on this same
+# run, unaffected by the VIRGIN_BATCH bug; not relevant to what this file
+# documents). Full re-derivation: check out this task's landing commit and
+# temporarily set VIRGIN_BATCH = 16 in the bench source, then re-run the
+# same cargo bench invocation above.

@@ -185,61 +185,66 @@ for completeness.
     > - **Evidence:** `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D15`.
 
-25. **R9-5 / R11-8 / R13-3 — `virgin-zero-skip` promotion decision — Stage-0/
-    Stage-3 measurement NOW DONE (R29-16, task #447); still NOT a clean GO.**
+25. **R9-5 / R11-8 / R13-3 / R29-16 / R30-3 — `virgin-zero-skip` promotion
+    decision — Stage-0/Stage-3 measurement DONE with an activation-proven
+    native judge (R30-3, task #452). Verdict: NO-GO for `production`, keep
+    opt-in.**
 
    > **Current state**
-   > - **Status:** Stage-0/Stage-3 measurement gap CLOSED (R29-16, task #447)
-   >   — feature is BUILT and CI-tested (`ci.yml` runs a `production
-   >   virgin-zero-skip alloc-stats` step), still NOT in `production`; a
-   >   `calloc`-shaped iai isolation + wall-clock gate at 64 KiB (verified
-   >   Small-classified, well under `SegmentLayout::SMALL_MAX` ≈ 253 KiB) now
-   >   exists, but the result is a SPLIT verdict, not a clean promotion GO —
-   >   see below.
-   > - **Current number/verdict:** **Ir isolation (deterministic, 2 byte-
-   >   identical runs): REAL, LARGE win.** Virgin 64 KiB `alloc_zeroed`
-   >   (bump-carve, skip fires) = **3,067 Ir**; recycled 64 KiB `alloc_zeroed`
-   >   (free-list pop, explicit `Node::zero` runs) = **65,624 Ir** — a
-   >   **~21.4× ratio**, confirming the feature skips a real, substantial
-   >   memset exactly as designed; this Stage 1 result is unaffected by the
-   >   correction below (single-shot Callgrind arms, not a reused criterion
-   >   closure). **Wall-clock at the SAME 64 KiB size: UNCONFIRMED, not a
-   >   negative result** — repeated reps show heavily overlapping ON/OFF
-   >   ranges, but the "virgin" scenario's own bench design is broken: its
-   >   `b.iter()` closure frees the whole batch at the end, so every
-   >   iteration after the first pops a RECYCLED block off the free list
-   >   `alloc_small_with_virgin`'s dispatch checks BEFORE the bump-carve path
-   >   (`src/alloc_core/alloc_core_small.rs:274-297`) — the scenario never
-   >   exercises the virgin path repeatedly. §5's original "eager page-commit
-   >   masks the saving" explanation is unconfirmed as the operative cause
-   >   (an independent readonly review, R29 round, found and traced this;
-   >   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §8 has the full correction).
-   > - **Next trigger:** the isolated Ir win is not itself sufficient for a
-   >   promotion GO (design docs' own bar is a wall-clock-visible win under a
-   >   realistic workload). Before anything else, the wall-clock bench itself
-   >   needs a real fix (a fresh heap/segment per timed iteration, e.g. via
-   >   `criterion::Bencher::iter_batched` with untimed per-iteration setup) and
-   >   a re-run — the current wall-clock numbers answer nothing about this
-   >   feature. Only after that: if a future round wants to pursue promotion,
-   >   the natural next measurement is the SAME 64 KiB comparison under a
-   >   workload where the OS first-touch cost is amortized away from the
-   >   software skip — e.g. combined with `small-segment-lazy-commit`, or a
-   >   steady-state calloc-heavy workload that recarves already-committed
-   >   pages repeatedly rather than paying a fresh reservation's first-touch
-   >   cost every call.
+   > - **Status:** RESOLVED for this round. R30-3 (task #452) replaced
+   >   R29-16's CONFIRMED-BROKEN wall-clock bench (its "virgin" scenario freed
+   >   the whole batch inside the SAME reused `b.iter()` closure, so from the
+   >   2nd Criterion iteration onward every call popped a recycled block, not
+   >   a bump-carve — see the prior entry below, kept for history) with a
+   >   custom `Instant`-timing-loop judge
+   >   (`benches/r30_3_virgin_zero_skip_native_gate.rs`) carrying a
+   >   PATH-ACTIVATION ORACLE (`AllocCore::dbg_small_zero_pass_count()`,
+   >   pre-existing, `alloc-stats`-gated) that proves, per cell, what fraction
+   >   of calls actually took the intended path. Feature is BUILT and
+   >   CI-tested, still NOT in `production`.
+   > - **Current number/verdict:** Oracle: **48/48 ON-binary cells (both
+   >   eager and lazy small-segment commit) pass at 100.00% minimum
+   >   activation** — the judge is proven to exercise the mechanism it claims
+   >   to measure. Native wall-clock (representative 64 KiB; full 4/16/64/128
+   >   KiB × 3-touch matrix in the report): virgin scenario OFF-vs-ON deltas
+   >   are SIGN-INCONSISTENT across sizes/touches (−43.8% to +19.9%) and not
+   >   distinguishable from this host's own same-binary repeat-run noise
+   >   (4%–45% swings observed); recycled scenario shows a SMALL but
+   >   DIRECTION-CONSISTENT regression (ON slower than OFF on all 24 cells ×
+   >   both commit policies = 48/48), attributed to `alloc_small_with_virgin`'s
+   >   extra dispatch bookkeeping on its own non-virgin path. **A separate,
+   >   load-bearing structural finding surfaced by the oracle itself during
+   >   harness development:** `carve_block_with_refill`'s unconditional
+   >   31-block refill-batch (Phase 9 amortisation, NOT gated on
+   >   `virgin-zero-skip`) caps virgin-path activation at ~1-in-32 for ANY
+   >   same-class multi-block `alloc_zeroed` burst — only a genuinely
+   >   one-call-per-class-per-heap shape (or calls spread across many
+   >   distinct classes) can exercise the skip repeatedly; a same-class
+   >   calloc loop — arguably the more realistic "calloc-heavy" victim
+   >   profile — sees it fire on ~3% of calls after the first.
+   > - **Next trigger:** none required for THIS round — the promotion
+   >   question is answered (NO-GO, keep opt-in) at the confidence this
+   >   host/sample-size combination can support. If a future round wants to
+   >   revisit: (a) a much larger sample count or a dedicated quiet
+   >   measurement host to shrink the noise floor below the Ir-predicted
+   >   effect size (a few hundred ns to low µs at these sizes, per the
+   >   §3-derived Ir figures, vs. this host's tens-of-µs same-binary
+   >   run-to-run swing), or (b) a workload shape that avoids the
+   >   refill-batch dilution entirely (many distinct classes per batch,
+   >   not one class repeated).
    > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
    >   563–568); `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8;
-   >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding,
-   >   2026-07-29 addendum records the new result in place, append-only);
-   >   **`R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md`** (the new measurement,
-   >   task #447) + `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE_summary.csv` +
-   >   `docs/perf/_raw_r29_16_calloc_isolation_run1.log` /
-   >   `_raw_r29_16_calloc_isolation_run2.log` /
-   >   `_raw_r29_16_wallclock_off_clean.log` /
-   >   `_raw_r29_16_wallclock_on_clean.log` /
-   >   `_raw_r29_16_wallclock_off_final.log` /
-   >   `_raw_r29_16_wallclock_on_final.log` /
-   >   `_raw_r29_16_wallclock_off_run1.log` / `_raw_r29_16_wallclock_on_run1.log`.
+   >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding);
+   >   `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` (iai isolation §3 STILL VALID —
+   >   3,067 vs 65,624 Ir, ~21.4×, confirms real skipped work, NOT a wall-clock
+   >   speed claim; its own §4/§8 wall-clock portion is SUPERSEDED, kept
+   >   append-only for history) + its summary CSV + raw logs;
+   >   **`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`** (task #452, the new
+   >   activation-proven native judge and the operative promotion verdict) +
+   >   `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE_summary.csv` +
+   >   `docs/perf/_raw_r30_3_off_eager.log` / `_raw_r30_3_on_eager.log` /
+   >   `_raw_r30_3_off_lazy.log` / `_raw_r30_3_on_lazy.log` /
+   >   `_raw_r30_3_off_eager_run2.log` / `_raw_r30_3_on_eager_run2.log`.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D25`.
 
 26. **R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)

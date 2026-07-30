@@ -1023,6 +1023,44 @@ don't rewrite" convention.
    `docs/perf/OPEN_ITEMS.md` item 25's current-state card for the updated
    next-trigger (fix the bench, then re-run, before any promotion decision).
 
+   **2026-07-30 resolution (R30-3, task #452):** the wall-clock bench was
+   rebuilt from scratch, not patched — `benches/r30_3_virgin_zero_skip_native_gate.rs`,
+   a custom `Instant`-timing-loop harness (Criterion has no first-class
+   channel to report custom per-cell oracle data alongside timing, so this
+   follows the project's existing `heap_fanin_persistent.rs`/
+   `directory_threshold_probe.rs` precedent instead) carrying a
+   PATH-ACTIVATION ORACLE built from the pre-existing
+   `AllocCore::dbg_small_zero_pass_count()` counter — no new hook needed.
+   The oracle caught a real design bug during THIS task's own development
+   (a first attempt at a 16-block virgin batch measured only 6.25%
+   virgin-path activation and was rejected by the gate before any number
+   could ship): `carve_block_with_refill`'s unconditional 31-block refill
+   (Phase 9 amortisation, `src/alloc_core/alloc_core_small.rs:346-376`)
+   means any same-class multi-block burst pops recycled blocks off the
+   free list for all but the first call, capping virgin activation at
+   ~1-in-32 regardless of batch size. Fixed to a single-call-per-fresh-heap
+   shape (`VIRGIN_BATCH = 1`, `VIRGIN_REPS = 50`); the corrected judge
+   passes its own oracle at 100.00% minimum activation on all 48 ON-binary
+   cells (both eager and lazy small-segment commit). Native wall-clock
+   result: virgin-scenario OFF-vs-ON deltas are sign-inconsistent and not
+   distinguishable from this host's own same-binary run-to-run noise;
+   recycled-scenario deltas show a small but direction-consistent
+   regression (ON slower on 48/48 cells) attributed to the feature's own
+   extra dispatch bookkeeping on its non-virgin path. **Verdict: NO-GO for
+   `production` promotion** — no calloc-heavy workload demonstrates a
+   material, noise-distinguishable wall-clock win at this sample size/host,
+   and the structural ~1-in-32 refill-batch dilution independently narrows
+   the feature's realistic victim profile. Recommendation: keep
+   `virgin-zero-skip` opt-in, documented as a narrow-profile feature (only
+   useful for one-call-per-class-per-heap or cross-class calloc patterns,
+   not same-class calloc bursts). Full report:
+   `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` + `_summary.csv` + six
+   `_raw_r30_3_*.log` files (see that report's §1 for exact reproduction
+   commands). This closes item 25's outstanding next-trigger; no further
+   action is pending unless a future round wants to pursue the higher-
+   sample-count / different-workload-shape follow-ups named in that
+   report's §6.
+
 
 ---
 
