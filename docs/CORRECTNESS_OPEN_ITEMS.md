@@ -83,23 +83,74 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    independently re-verified before filing — flagged here at the review's
    own confidence/severity, for a future round to check and either action or
    dismiss:
-   - **[P2] `AllocCore::dbg_decomp_full_cycle`** (`src/alloc_core/
-     alloc_core_small_pool.rs`, R29-3/task #434) is a SAFE `pub fn` that
-     calls `reserve_small_segment` then `release_or_pool_empty_segment` on
-     the freshly-reserved base, without going through the normal
-     `alloc_small_with_virgin` caller sequence that assigns
-     `self.small_cur = base` in between (that assignment lives in a
-     different function, `alloc_core_small.rs:2210`). The review's claim is
-     that this could leave `small_cur` dangling / cause UB on the next small
-     alloc on the same heap. A first-pass trace during this session's own
-     review suggested `small_cur` is likely never touched by this hook at
-     all (the assignment it would need to collide with lives in a codepath
-     `dbg_decomp_full_cycle` doesn't call) — but this was not chased to a
-     confident conclusion, so the concern is filed rather than dismissed.
-     Needs: a focused read of every `dbg_decomp_*` hook's actual effect on
-     `small_cur` under repeated calls (as the R29-3 measurement harness
-     itself does, in a loop), and a targeted test/assertion if a real gap is
-     confirmed.
+   - **[P2 → CONFIRMED P1, 2026-07-30] `AllocCore::dbg_decomp_full_cycle`**
+     (`src/alloc_core/alloc_core_small_pool.rs:1014`, R29-3/task #434) is a
+     SAFE `pub fn` that calls `reserve_small_segment` then
+     `release_or_pool_empty_segment` on the freshly-reserved base.
+     **My original text here (below, struck) was FACTUALLY WRONG and is
+     corrected in place; the review's claim was right.**
+     > ~~"A first-pass trace during this session's own review suggested
+     > `small_cur` is likely never touched by this hook at all (the
+     > assignment it would need to collide with lives in a codepath
+     > `dbg_decomp_full_cycle` doesn't call)."~~
+
+     **Corrected trace (2026-07-30, verified line-by-line after a SECOND
+     independent review — `docs/reviews/2026-07-30-r29-followup-readonly-review.md`
+     §1.2 — reached the same conclusion and explicitly flagged my note as
+     "based on a mistaken call trace"):** `self.small_cur = base;` is the
+     **last statement of `reserve_small_segment` itself**
+     (`alloc_core_small.rs:2210`, inside the fn spanning 1848–2212) — i.e. it
+     lives in exactly the function the hook calls, not in a different
+     codepath. My error was assuming the assignment belonged to
+     `alloc_small_with_virgin` (its caller) rather than to the callee. The
+     full confirmed sequence:
+     1. `dbg_decomp_full_cycle` → `reserve_small_segment()` → sets
+        `self.small_cur = base` (`alloc_core_small.rs:2210`).
+     2. → `release_or_pool_empty_segment(base)`
+        (`alloc_core_small_pool.rs:333`). Pool full ⇒
+        `release_empty_segment_now(...)` + `self.table.recycle(base)`
+        (`:380-381`) — the OS reservation is RELEASED and the slot recycled.
+     3. Neither function clears or restores `small_cur`. It now points at
+        unmapped memory.
+     4. The next ordinary small alloc starts at
+        `alloc_small_with_virgin`'s step 1,
+        `self.pop_free(self.small_cur, ...)` (`alloc_core_small.rs:278`) — a
+        read through the released segment's header.
+
+     **Not hypothetical:** `examples/r29_3_decomposition_gate.rs:82-84`
+     DELIBERATELY pre-fills the pool (`for _ in 0..(pool_cap + 2)`, its own
+     comment: "not the pool-push path") specifically to drive the release
+     branch, then loops the hook N=200 times. The only reason there is no
+     in-tree crash is that the harness never performs an ordinary small
+     allocation afterward — that is caller luck, not a sound API.
+     `dbg_decomp_reserve_and_keep` + `dbg_decomp_release` has the identical
+     state hazard (marking only the raw-pointer half `unsafe` expresses the
+     pointer contract but not the cursor invariant).
+
+     **Why R29-9's tripwire missed it:** the scanner only selects safe
+     `pub fn dbg_*` whose signature text contains `*mut`/`*const`.
+     `dbg_decomp_full_cycle(&mut self) -> bool` takes no pointer and returns
+     none, so it is structurally out of scope — the zero-argument
+     state-invalidating hole listed in the `[P3]` tripwire item below, now
+     with a confirmed live instance.
+
+     **Needs (Round 30, correctness-before-measurement):** either a
+     measurement-only reservation primitive that does the OS/table/metadata
+     work without touching the live `small_cur`, or save-and-restore of the
+     prior cursor with an assertion that the restored base is still
+     registered (preferred over merely making the hook `unsafe`, which would
+     leave the allocator unusable-by-contract). Plus a counterfactual test:
+     fill the pool → call the hook → perform and free a normal small alloc on
+     the same heap; it must fail before the fix and pass after.
+   - **[P3 → partly CONFIRMED, 2026-07-30] `has_bench_internals_cfg()` accepts
+     any cfg attribute whose TEXT merely contains `"bench-internals"`** — so
+     `not(feature = "bench-internals")` and a permissive
+     `any(feature = "bench-internals", ...)` would both be accepted as if
+     they gated the hook (second review, §1.3). Read and confirmed by
+     inspection. No live false-accept exists today (no `dbg_*` hook currently
+     uses either shape), so this is a latent scanner weakness, not a live
+     hole — but it is a substring test standing in for a cfg-predicate
+     parse. Fix alongside the scope widening below.
    - **[P3] `tests/dbg_hook_safety_tripwire.rs`'s allowlist may have scope
      holes**, per the review: possible misclassification of `any`/`not`
      `#[cfg]` predicates, hooks keyed by an integer parameter rather than a
