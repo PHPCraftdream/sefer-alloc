@@ -198,6 +198,32 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      uses either shape), so this is a latent scanner weakness, not a live
      hole — but it is a substring test standing in for a cfg-predicate
      parse. Fix alongside the scope widening below.
+
+     **[FIXED, R30-2/task #451, 2026-07-30.]** Replaced the substring test
+     with a small hand-written recursive-descent parser
+     (`CfgParser`/`CfgExpr`/`parse_cfg_inner`/`requires_bench_internals` in
+     `tests/dbg_hook_safety_tripwire.rs`) for the actual cfg-predicate
+     grammar subset this project uses: `feature = "x"`, `all(...)`,
+     `any(...)`, `not(...)`, nested and comma-separated. `syn` is NOT a
+     dev-dependency of this crate (checked `Cargo.toml`'s
+     `[dev-dependencies]` before hand-rolling this — no `syn` entry), so a
+     small hand-rolled parser was the right call over adding a dependency
+     for a test-only predicate check. `requires_bench_internals` implements
+     exactly the rule the review specified: `all(...)` counts if ANY child
+     requires the feature (conjunction — one required child forces it on);
+     `any(...)` NEVER counts, even in the degenerate case where every branch
+     happens to require it individually (a deliberate refusal to reward the
+     more permissive shape, since rewarding it would reopen exactly the
+     `any(feature = "bench-internals", X)` hole); `not(...)` never counts.
+     Two new dedicated tests: `cfg_parser_rejects_negated_and_optional_or_bench_internals`
+     (unit-tests the parser directly against both target shapes plus the
+     genuine-gate shapes already used in this crate, including nested
+     `all(all(...))`) and `no_dbg_hook_cfg_uses_negated_or_optional_or_bench_internals_shape`
+     (re-confirms, using the NEW structural parser rather than a substring
+     match, that no current `dbg_*` hook in the crate actually uses either
+     adversarial shape — the same "no live false-accept today" fact the
+     review found by manual inspection, now asserted mechanically going
+     forward). Both pass; see the R30-2 commit for verification details.
    - **[P3] `tests/dbg_hook_safety_tripwire.rs`'s allowlist may have scope
      holes**, per the review: possible misclassification of `any`/`not`
      `#[cfg]` predicates, hooks keyed by an integer parameter rather than a
@@ -205,6 +231,60 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      independently re-verified this session. If real, these are gaps in the
      R29-9 tripwire's own coverage (task #440), not yet a confirmed live
      soundness hole.
+
+     **[FIXED, R30-2/task #451, 2026-07-30.]** Confirmed the scope gap was
+     real and live, not merely theoretical: R30-1 (task #450, commit
+     `25433c3`) found and fixed a CONFIRMED soundness bug
+     (`AllocCore::dbg_decomp_full_cycle`, a zero-argument, no-raw-pointer,
+     `&mut self -> bool` hook) that was structurally invisible to the R29-9
+     scanner, exactly the "zero-argument hook" gap this item flagged as a
+     possibility. Redesigned the tripwire's policy to be shape-independent
+     per the review's own recommendation: every crate-public `dbg_*` hook
+     (any signature shape — raw pointer, zero-arg `&mut self`,
+     `usize`/index-keyed, or an integer-encoded-address return) is now
+     enumerated by `scan_file` (which no longer branches on `*mut`/`*const`
+     substrings at all) and must land in exactly one of three buckets:
+     `PURE_OBSERVERS` (read-only, no justification needed beyond "read-only"),
+     `SAFE_MUTATORS` (safe hooks that mutate allocator/ring state, each with
+     a one-line invariant justification — bounds check, delegation to the
+     identical production code path, or a correctness-inert policy/heuristic
+     knob), or `UNSAFE_HOOKS` (already-`unsafe fn`, enumerated for exhaustive
+     accounting only, not a new safety argument). Rebuilt the allowlist from
+     scratch by enumerating every `pub fn dbg_*`/`pub unsafe fn dbg_*` in
+     `src/` and `crates/` (~140 hooks) and reading each function BODY (not
+     just its signature) to classify it — not guessed from names. Two hooks
+     surfaced during that re-classification as worth flagging explicitly
+     rather than silently accepted: `remote_free_ring.rs::dbg_set_cursors`
+     and `heap_overflow.rs::dbg_reserve_unpublished_for_test` both mutate a
+     REAL production ring's cursors under a documented "quiescent ring"
+     precondition that is enforced only by a `debug_assert!` (compiled out
+     in `--release`), not a release-surviving guard — allowlisted with an
+     explicit `[DEBUG_ASSERT ONLY]` tag in their justification (misuse can
+     only corrupt the ring's own bookkeeping — lost/miscounted entries —
+     never dereference a caller pointer or write outside the ring's own
+     cursor words, so accepted as SAFE_MUTATORS rather than escalated to
+     KNOWN_UNFIXED, but flagged so a future reviewer does not have to
+     re-derive that distinction). **Non-vacuity proof**: added
+     `widened_scanner_catches_r30_1_shape_zero_arg_mutator`, which feeds
+     `scan_file` a synthetic in-memory fixture mimicking the exact pre-fix
+     `dbg_decomp_full_cycle` shape (`pub fn ..._SCRATCH_FIXTURE(&mut self)
+     -> bool`, no cfg, no raw pointer anywhere in the signature — the
+     fixture never touches real `src/`) and asserts the widened scanner
+     finds it, classifies it safe/ungated, and that it is not allowlisted
+     (i.e. it would surface as a tripwire failure) — then separately asserts
+     the fixture's source text genuinely contains neither `*mut` nor
+     `*const`, proving the OLD R29-9 scanner would have silently skipped it.
+     Verification: `cargo test --features "bench-internals alloc-global
+     alloc-xthread alloc-decommit fastbin alloc-segment-directory
+     primordial-lazy-commit class-aware-dirty" --test
+     dbg_hook_safety_tripwire` green (4 tests); full `cargo test --features
+     "production bench-internals"` green (0 failures); `cargo clippy
+     --features "production bench-internals" --tests -- -D warnings` clean;
+     `cargo fmt --check` clean. R29-9's original commit message claim that
+     it "closes the bug class for good" is corrected by this entry and by
+     the widened test file's own header doc comment — the bug class
+     recurred through a shape the original scanner didn't model, and R30-2
+     makes the check shape-independent instead of re-asserting closure.
    - **[P3] R29-1's replacement leak-bound invariant** (`segments_released_total
      <= segments_reserved_total`, task #432) may be "near-unfalsifiable" per
      the review, meaning most of the file's actual leak coverage now rests
