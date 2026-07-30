@@ -51,8 +51,31 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
+    # R30-5 (task #454): this job's 5 clippy rows (default / experimental /
+    # --all-features / hardened medium-classes / production) are now
+    # GENERATED from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — the single
+    # source of truth also consumed by `scripts/run-check-matrix.mjs` (which
+    # `scripts/check-all.mjs`'s local `npm run check` runs as one of its
+    # steps, so local and CI execute byte-identical argv from the same
+    # manifest — see that manifest's header comment. Edit the feature
+    # combinations THERE, not in this job's steps below).
+    #
+    # This job's steps stay hand-listed (not `node scripts/run-check-matrix.mjs
+    # --kind clippy` or similar) rather than collapsed into a single script
+    # invocation, so each feature combination still gets its OWN named CI
+    # step in the Actions UI (a red step's name tells you the failing
+    # combination at a glance, same UX this job has always had) — but the
+    # feature-string LITERALS below are transcribed from, and must be kept
+    # identical to, `scripts/check-matrix.mjs`'s `PER_PR_ROWS` clippy rows;
+    # `scripts/run-check-matrix.mjs` (invoked from the `check-matrix` job
+    # below) is the actual enforcement that a drift here would be caught —
+    # if this job's hand-listed steps ever diverge from the manifest, the
+    # `check-matrix` job runs the manifest's OWN version of each row
+    # independently and would still catch a regression the manifest knows
+    # about, even if this job's copy went stale.
+    #
     # Consolidated (2026-07-12, CI job-count reduction) from 3 matrix jobs
-    # into 3 sequential steps in one job. Each matrix entry paid its own
+    # into sequential steps in one job. Each matrix entry paid its own
     # checkout + toolchain install for a lint pass that runs in well under a
     # minute — fixed per-job overhead was tripled for no parallelism benefit
     # clippy needs. This does not reduce total CI work, only how many
@@ -85,6 +108,68 @@ jobs:
       # `docs/CORRECTNESS_OPEN_ITEMS.md` item 2 until fixed and closed here.
       - name: clippy (--features "hardened medium-classes")
         run: cargo clippy --all-targets --features "hardened medium-classes" -- -D warnings
+      # R30-5 (task #454): plain `production` — the actual shipping default
+      # most users build with — was in NONE of the rows above before this
+      # task. R29-4/task #435's `SegmentStateAccount`/
+      # `SegmentStateReconciliation` dead-code combo was reachable exactly
+      # here (narrower than `--all-features`, which also turns on the
+      # `bench-internals`-gated consumer; wider than the default-features
+      # row) and shipped undetected for a full round because no row built
+      # this exact string.
+      - name: clippy (--features "production")
+        run: cargo clippy --all-targets --features "production" -- -D warnings
+
+  check-matrix:
+    # R30-5 (task #454): runs the NON-clippy rows of `scripts/check-matrix.mjs`'s
+    # `PER_PR_ROWS` manifest via the shared `scripts/run-check-matrix.mjs`
+    # runner (the SAME script `scripts/check-all.mjs`'s local `npm run check`
+    # invokes as one of its steps, so local and CI execute byte-identical
+    # argv from the same manifest). Deliberately `--kind check` here, not the
+    # full manifest — the `clippy` job above already runs all 5 clippy rows
+    # as named per-step Actions-UI entries (including the new `production`
+    # row this task added), so running them AGAIN here would double CI
+    # minutes on the same 5 combinations for zero additional coverage. This
+    # job is therefore currently just the ONE row that has no other per-PR
+    # CI home: `cargo check --bench perf_gate_iai --features "production
+    # bench-internals"` (scripts/iai.mjs's own DEFAULT_FEATURES, and `npm
+    # run check`'s LAST step — was never its own CI row before this task;
+    # its absence is exactly how R29-16's 4x E0433 shipped undetected for a
+    # full round). If a future round adds a non-clippy `PER_PR_ROWS` entry,
+    # it lands here automatically with no ci.yml edit needed — that is the
+    # whole point of the `--kind check` filter (see
+    # `scripts/run-check-matrix.mjs --help` / its own `--kind` handling).
+    #
+    # A GitHub Actions `strategy: matrix:` was considered and rejected in
+    # favor of "a CI step that runs a script which reads the manifest and
+    # executes each check in a loop" (the task brief's other sanctioned
+    # option) — the manifest mixes clippy/check/test kinds and a
+    # --bench-scoped row alongside whole-crate rows, which does not map
+    # cleanly onto a YAML `matrix:` without a second hand-maintained JSON
+    # `include:` list — exactly the duplication this task exists to remove.
+    #
+    # Node is needed only to run the .mjs runner itself; every actual check
+    # it performs is a `cargo` invocation. `PER_PR_ROWS` is deliberately
+    # small (6 rows at the time this job was added: 5 clippy + 1 check) —
+    # see CLAUDE.md's "cargo-hack feature-powerset CI" section for why an
+    # exhaustive sweep belongs in the WEEKLY `feature-powerset` job below,
+    # not here.
+    name: check-matrix (manifest-driven, non-clippy rows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/run-check-matrix.mjs --kind check --kind test
+      # R30-5: the generated "feature ABSENT" compile-check enumeration for
+      # every conditionally-registered iai arm in benches/perf_gate_iai.rs —
+      # the mechanical, automatic form of the stub rule R29-16 violated by
+      # omission (see scripts/verify-perf-gate-stubs.mjs's header). This is a
+      # pure text-scan of the bench source (no cargo invocation), so it runs
+      # in well under a second — folded into this job rather than a separate
+      # one to avoid another checkout+toolchain for a sub-second check.
+      - run: node scripts/verify-perf-gate-stubs.mjs
 
   # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
   # feature-set matrix jobs into 4 jobs, grouped by theme (the same

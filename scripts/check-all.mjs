@@ -16,11 +16,21 @@
 // What it runs, in order (fails fast — stops at the first red step):
 //   0. node scripts/argv-roundtrip-test.mjs   (shell:false argv regression; R27-9)
 //   1. cargo fmt --all -- --check           (rustfmt gate)
-//   2. cargo clippy --all-targets -- -D warnings                (CI matrix entry 1: "")
-//   3. cargo clippy --all-targets --features experimental -- -D warnings  (entry 2)
-//   4. cargo clippy --all-targets --all-features -- -D warnings           (entry 3)
-//   5. cargo test --features production                          (default prod suite)
-//   6. npm run iai                                                (deterministic judge,
+//   2-6. the 5 `clippy` rows from scripts/check-matrix.mjs's PER_PR_ROWS
+//      (R30-5: GENERATED, not hand-written — default / experimental /
+//      --all-features / hardened medium-classes / production; the last two
+//      are NEW as of R30-5, see that manifest's header for why)
+//   7. cargo test --features production                          (default prod suite)
+//   8-10. cargo test x3 more feature combos (alloc-stats+bench-internals,
+//      pinning, --all-features)
+//   11. the 1 remaining (non-clippy) PER_PR_ROWS row — `cargo check --bench
+//      perf_gate_iai --features "production bench-internals"` (R30-5:
+//      scripts/iai.mjs's own DEFAULT_FEATURES and npm run check's own final
+//      step — the exact command R29-16's 4x E0433 broke, now an
+//      independent standalone check of its own)
+//   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
+//      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
+//   13. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -32,6 +42,28 @@
 // pushes never need a red CI run to discover a problem.
 
 import { REPO_ROOT, run } from './lib.mjs';
+import { PER_PR_ROWS, rowToCargoArgs, rowLabel } from './check-matrix.mjs';
+
+// R30-5 (task #454): every row in `scripts/check-matrix.mjs`'s `PER_PR_ROWS`
+// (the single source of truth also consumed by `scripts/run-check-matrix.mjs`,
+// which `.github/workflows/ci.yml`'s `check-matrix` job runs) is generated
+// into a step here — each row runs EXACTLY ONCE in this script, split into
+// `clippyRows` (spliced in among the hand-written steps below, at the same
+// position the 3 hardcoded clippy steps used to occupy, so the step order
+// this script has always documented stays intuitive) and `otherRows` (the
+// non-clippy rows — currently just the perf-gate `check` row — appended
+// near the end, since there is no pre-existing hand-written step for them
+// to slot in next to).
+const clippyRows = PER_PR_ROWS.filter((r) => r.kind === 'clippy').map((row) => ({
+  name: `[matrix] ${rowLabel(row)}`,
+  cmd: 'cargo',
+  args: rowToCargoArgs(row),
+}));
+const otherRows = PER_PR_ROWS.filter((r) => r.kind !== 'clippy').map((row) => ({
+  name: `[matrix] ${rowLabel(row)}`,
+  cmd: 'cargo',
+  args: rowToCargoArgs(row),
+}));
 
 const steps = [
   {
@@ -51,21 +83,13 @@ const steps = [
     cmd: 'cargo',
     args: ['fmt', '--all', '--', '--check'],
   },
-  {
-    name: 'clippy ()',
-    cmd: 'cargo',
-    args: ['clippy', '--all-targets', '--', '-D', 'warnings'],
-  },
-  {
-    name: 'clippy (--features experimental)',
-    cmd: 'cargo',
-    args: ['clippy', '--all-targets', '--features', 'experimental', '--', '-D', 'warnings'],
-  },
-  {
-    name: 'clippy (--all-features)',
-    cmd: 'cargo',
-    args: ['clippy', '--all-targets', '--all-features', '--', '-D', 'warnings'],
-  },
+  // R30-5: the 5 PER_PR_ROWS clippy rows (default / experimental /
+  // --all-features / hardened medium-classes / production), generated —
+  // see the comment above `clippyRows`. Byte-identical argv to the
+  // pre-R30-5 hand-written steps for the first 3; `hardened medium-classes`
+  // and plain `production` are NEW here (they previously ran only in CI's
+  // `clippy` job / not at all, respectively).
+  ...clippyRows,
   {
     name: 'test (--features production)',
     cmd: 'cargo',
@@ -95,10 +119,25 @@ const steps = [
     cmd: 'cargo',
     args: ['test', '--all-features'],
   },
+  // R30-5: the remaining (non-clippy) PER_PR_ROWS row — currently just
+  // `check-perf-gate-iai-default` (`cargo check --bench perf_gate_iai
+  // --features "production bench-internals"`, scripts/iai.mjs's own
+  // DEFAULT_FEATURES and the exact command R29-16's 4x E0433 broke).
+  ...otherRows,
+  {
+    // R30-5: generated "feature ABSENT" compile-check enumeration for every
+    // conditionally-registered iai arm in benches/perf_gate_iai.rs — the
+    // mechanical, automatic form of the stub rule R29-16 violated by
+    // omission. See scripts/verify-perf-gate-stubs.mjs's header for the full
+    // rationale.
+    name: 'verify-perf-gate-stubs (generated feature-ABSENT check)',
+    cmd: 'node',
+    args: ['scripts/verify-perf-gate-stubs.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x3, test x4, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {
