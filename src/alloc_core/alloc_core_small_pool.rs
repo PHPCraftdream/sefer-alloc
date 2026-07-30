@@ -15,6 +15,8 @@ use super::segment_header::{
 };
 
 use super::alloc_core::{AllocCore, DECOMMIT_CALLS};
+#[cfg(feature = "bench-internals")]
+use super::reserved_small_segment::ReservedSmallSegment;
 
 // ---------------------------------------------------------------------------
 // R29-4 (task #435) — segment-state reconciliation snapshot types.
@@ -1067,9 +1069,10 @@ impl AllocCore {
         true
     }
 
-    /// R29-3: reserve a small segment and return its base so the caller can
-    /// measure first-touch page-fault cost on the payload. The caller MUST
-    /// later release it via [`dbg_decomp_release`](Self::dbg_decomp_release).
+    /// R29-3: reserve a small segment and return a typed handle so the
+    /// caller can measure first-touch page-fault cost on the payload. The
+    /// caller MUST later release it via
+    /// [`dbg_decomp_release`](Self::dbg_decomp_release).
     ///
     /// R30-1 (task #450): routes through
     /// [`reserve_small_segment_impl`](Self::reserve_small_segment_impl),
@@ -1080,33 +1083,47 @@ impl AllocCore {
     /// release the OS reservation; a version of this hook that published
     /// `self.small_cur` first would leave it dangling with no restore point
     /// once the paired release fires.
+    ///
+    /// R31-4 (task #467): returns [`ReservedSmallSegment`] instead of a
+    /// bare `*mut u8` — see that type's module doc
+    /// (`reserved_small_segment.rs`) for why. Same underlying reservation
+    /// mechanism as before; only the return type changed.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {
+    pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<ReservedSmallSegment> {
         self.reserve_small_segment_impl()
+            .map(ReservedSmallSegment::new_from_reservation)
     }
 
-    /// R29-3: release a previously-reserved small segment by base.
+    /// R29-3: release a previously-reserved small segment.
     ///
-    /// # Safety
-    ///
-    /// `base` MUST be a live, registered `Small` segment base returned by
+    /// R31-4 (task #467): takes [`ReservedSmallSegment`] BY VALUE instead of
+    /// a bare `*mut u8` — the handle can only have been produced by
     /// [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep) on
-    /// THIS allocator, with `live_count == 0`. Passing any other pointer is UB.
-    /// Because [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep)
-    /// never publishes `base` as `self.small_cur` (R30-1, task #450), this
-    /// release cannot leave the live cursor dangling — there is nothing to
-    /// restore.
+    /// SOME `AllocCore` (private field + `pub(super)` constructor forecloses
+    /// forging one), and consuming it here by value makes a second release
+    /// of the SAME handle a compile error (E0382, use of moved value)
+    /// instead of an unchecked runtime hazard. No `unsafe` needed on this
+    /// signature any more — the precondition that used to be an `unsafe fn`
+    /// contract ("base is a live, registered `Small` segment returned by the
+    /// paired reserve call") is now upheld by the type itself. Because
+    /// [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep)
+    /// never publishes the reservation as `self.small_cur` (R30-1, task
+    /// #450), this release cannot leave the live cursor dangling — there is
+    /// nothing to restore.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    #[allow(unsafe_code)] // R29-3: unsafe fn boundary (raw-pointer precondition).
-    pub unsafe fn dbg_decomp_release(&mut self, base: *mut u8) {
+    pub fn dbg_decomp_release(&mut self, handle: ReservedSmallSegment) {
+        let base = handle.into_base();
         // Defence-in-depth (R30-1): releasing the segment the live cursor
         // currently points at would immediately dangle `small_cur`, exactly
         // the hazard this task fixed. Not reachable today (the paired
         // `dbg_decomp_reserve_and_keep` never publishes its result as
         // `small_cur`), but cheap to assert locally rather than rely solely
-        // on that non-local invariant holding forever.
+        // on that non-local invariant holding forever. This is now
+        // secondary defence-in-depth, not the primary guard — the primary
+        // guard against double-release is the move-consuming signature
+        // above (a compile error, not a runtime check).
         debug_assert!(
             base != self.small_cur,
             "dbg_decomp_release: base is the live small_cur cursor — release would dangle it"

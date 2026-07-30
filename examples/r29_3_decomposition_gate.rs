@@ -119,8 +119,15 @@ fn main() {
     // The re-touch cost is the page-fault cost a reservation-only tier STILL
     // pays; the decommit cost is the MADV_DONTNEED syscall (also still paid).
     // Together = (4+5), the irreducible floor.
-    let base = unsafe { (*heap).dbg_decomp_reserve_and_keep() }
+    // R31-4 (task #467): `dbg_decomp_reserve_and_keep` now returns a typed
+    // `ReservedSmallSegment` handle instead of a bare pointer, and
+    // `dbg_decomp_release` consumes it by value — no `unsafe` needed for
+    // either call any more. `.base()` reads the payload address WITHOUT
+    // consuming the handle, for the `write_volatile`/decommit measurements
+    // below; the handle itself is consumed exactly once, at release.
+    let handle = unsafe { (*heap).dbg_decomp_reserve_and_keep() }
         .expect("reserve for first-touch measurement");
+    let base = handle.base();
 
     // Initial first-touch: fault all payload pages.
     for off in (payload_start..payload_end).step_by(page_size) {
@@ -151,7 +158,7 @@ fn main() {
     let refault_ns = refault_total as f64 / N as f64;
 
     // Release the measurement segment.
-    unsafe { (*heap).dbg_decomp_release(base) };
+    unsafe { (*heap).dbg_decomp_release(handle) };
 
     // ── Measurement A': full cycle WITH payload touch (the REAL production
     // cycle cost) ──
@@ -162,19 +169,21 @@ fn main() {
     // munmap was pure VMA teardown). A' is the honest baseline to compare B
     // (the reservation-only floor) against.
     for _ in 0..WARMUP {
-        let b2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let h2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let b2 = h2.base();
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(b2.add(off), 1u8) };
         }
-        unsafe { (*heap).dbg_decomp_release(b2) };
+        unsafe { (*heap).dbg_decomp_release(h2) };
     }
     let t0 = Instant::now();
     for _ in 0..N {
-        let b2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let h2 = unsafe { (*heap).dbg_decomp_reserve_and_keep() }.expect("reserve A'");
+        let b2 = h2.base();
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(b2.add(off), 1u8) };
         }
-        unsafe { (*heap).dbg_decomp_release(b2) };
+        unsafe { (*heap).dbg_decomp_release(h2) };
     }
     let a_prime_ns = t0.elapsed().as_nanos() as f64 / N as f64;
 

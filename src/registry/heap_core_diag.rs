@@ -363,12 +363,29 @@ impl HeapCore {
     /// process-wide `large_cache_hits_total` aggregator, which would mix in
     /// every other concurrently-claimed heap's hits and defeat a per-thread
     /// before/after delta). Read-only `&self`; does NOT mutate allocator
-    /// state. Gated identically to the delegated `AllocCore` method itself
-    /// (`alloc-decommit` only, no `bench-internals` needed — this is a
-    /// pre-existing diagnostic counter read, not a new hook, matching
-    /// `AllocCore::dbg_large_cache_hits`'s own gate exactly).
+    /// state.
+    ///
+    /// R31-4 (task #467, closing P2-2 filed in
+    /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 8): gated
+    /// `all(alloc-decommit, bench-internals)`, matching this SAME file's
+    /// four sibling `HeapCore`-level measurement delegations
+    /// (`dbg_pool_cap`, `dbg_segment_state_reconciliation`,
+    /// `dbg_large_cache_used`, `dbg_large_cache_slot_sizes`) — this hook has
+    /// no production caller, so CLAUDE.md's benchmark-hook rule 2 ("a hook
+    /// with no production caller MUST default to `bench-internals`-gating")
+    /// applies, the same rule those four siblings already cite. Previously
+    /// gated `alloc-decommit` alone (justified at the time as "matching
+    /// `AllocCore::dbg_large_cache_hits`'s own gate exactly") — that
+    /// justification was the wrong comparison: the DELEGATED method's
+    /// pre-existing gate is not the rule for a NEW `HeapCore`-level hook.
+    /// This widened this hook's presence in every plain `production` build
+    /// (`alloc-decommit` alone is inside `production`) until now. Both
+    /// current callers (`examples/r30_6_large_cache_headroom_ab_gate.rs`,
+    /// `examples/r31_1_large_cache_headroom_crossing_regime_gate.rs`) already
+    /// require `bench-internals` in their `required-features`
+    /// (`Cargo.toml`), so this tightening breaks neither.
     #[doc(hidden)]
-    #[cfg(feature = "alloc-decommit")]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     #[must_use]
     pub fn dbg_large_cache_hits(&self) -> u64 {
         self.core.dbg_large_cache_hits()
@@ -903,23 +920,27 @@ impl HeapCore {
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_reserve_and_keep`].
+    ///
+    /// R31-4 (task #467): forwards [`crate::alloc_core::ReservedSmallSegment`]
+    /// instead of a bare `*mut u8` — see that type's module doc.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<*mut u8> {
+    pub fn dbg_decomp_reserve_and_keep(
+        &mut self,
+    ) -> Option<crate::alloc_core::ReservedSmallSegment> {
         self.core.dbg_decomp_reserve_and_keep()
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_release`].
     ///
-    /// # Safety
-    ///
-    /// Same contract as [`AllocCore::dbg_decomp_release`].
+    /// R31-4 (task #467): forwards the handle by value; no `unsafe` needed
+    /// any more — see [`AllocCore::dbg_decomp_release`]'s doc comment for
+    /// why the move-consuming signature replaces the former `unsafe fn`
+    /// contract.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    #[allow(unsafe_code)] // R29-3: unsafe fn boundary, forwarded contract.
-    pub unsafe fn dbg_decomp_release(&mut self, base: *mut u8) {
-        // SAFETY: forwarded from this caller's identical `# Safety` contract.
-        unsafe { self.core.dbg_decomp_release(base) };
+    pub fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {
+        self.core.dbg_decomp_release(handle);
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_decommit_payload`].

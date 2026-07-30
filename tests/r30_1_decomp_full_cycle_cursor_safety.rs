@@ -171,15 +171,15 @@ fn reserve_and_keep_release_pair_leaves_small_cur_valid_for_ordinary_alloc() {
     assert_eq!(ac.dbg_pooled_count(), pool_cap, "pool must be at capacity");
 
     // Now drive the release branch several times via the reserve_and_keep /
-    // release pair specifically.
+    // release pair specifically. R31-4 (task #467): `dbg_decomp_reserve_and_keep`
+    // now returns a typed `ReservedSmallSegment` handle instead of a bare
+    // pointer, and `dbg_decomp_release` consumes it by value — no `unsafe`
+    // needed any more.
     for _ in 0..8 {
-        let base = ac
+        let handle = ac
             .dbg_decomp_reserve_and_keep()
             .expect("reserve_and_keep failed");
-        // SAFETY: `base` was just returned by `dbg_decomp_reserve_and_keep`
-        // on this same `ac`, with `live_count == 0` (freshly reserved,
-        // nothing ever carved from it).
-        unsafe { ac.dbg_decomp_release(base) };
+        ac.dbg_decomp_release(handle);
     }
 
     // Ordinary alloc/write/free on the same heap — the counterfactual.

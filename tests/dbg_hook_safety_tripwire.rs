@@ -63,6 +63,18 @@
 //!   `small_cur` dangling. Zero raw-pointer parameters; invisible to R29-9's
 //!   scanner by construction. Fixed by routing through a new cursor-free
 //!   `reserve_small_segment_impl`.
+//! - **R31-4** (task #467): `dbg_decomp_release` (both `AllocCore`'s and
+//!   `HeapCore`'s delegation) was, until this round, `unsafe fn(&mut self,
+//!   base: *mut u8)` — its raw-pointer precondition ("must be a live base
+//!   returned by the paired `dbg_decomp_reserve_and_keep`") was enforced
+//!   only by caller discipline plus a `debug_assert!` (compiled out in
+//!   `--release`). Retrofitted onto a typed, move-consumed
+//!   `ReservedSmallSegment` handle (`src/alloc_core/reserved_small_segment.rs`)
+//!   — unforgeable (private field, `pub(super)` constructor) and
+//!   double-release is now a COMPILE ERROR (E0382), not a runtime hazard.
+//!   Both `dbg_decomp_release` entries moved out of `UNSAFE_HOOKS` below
+//!   (they are safe `fn`s now, `bench-internals`-gated, so they need no
+//!   `SAFE_MUTATORS` entry either — gated hooks aren't in either allowlist).
 //!
 //! ## What "safe by construction" means here (classification A)
 //!
@@ -237,7 +249,6 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_hash_contains_only",
     "src/registry/heap_core_diag.rs::dbg_last_stamped_segment",
     "src/registry/heap_core_diag.rs::dbg_kind_at_tag",
-    "src/registry/heap_core_diag.rs::dbg_large_cache_hits",
 ];
 
 /// (B) Safe mutators — safe, non-`bench-internals`-gated, DO mutate
@@ -423,7 +434,6 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/alloc_core/alloc_core_small_diag.rs::dbg_magazine_bitmap_bytes_for",
     "src/alloc_core/alloc_core_small_diag.rs::dbg_corrupt_freelist_head_next",
     "src/alloc_core/alloc_core_small_diag.rs::dbg_payload_start_for",
-    "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_release",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_decommit_payload",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_force_decommit_retain_for",
     "src/alloc_core/alloc_core_small_reclaim.rs::dbg_push_to_ring",
@@ -434,7 +444,6 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_dealloc_own_thread_with_base",
     "src/registry/heap_core_diag.rs::dbg_flush_class_only",
     "src/registry/heap_core_diag.rs::dbg_clear_magazine_on_hit",
-    "src/registry/heap_core_diag.rs::dbg_decomp_release",
     "src/registry/heap_core_diag.rs::dbg_decomp_decommit_payload",
 ];
 
@@ -651,11 +660,30 @@ fn requires_bench_internals(expr: &CfgExpr) -> bool {
 /// them), ANY one of them requiring `bench-internals` is sufficient — so
 /// this scans every `#[cfg(...)]` block in `text` and returns `true` if any
 /// one, parsed alone, requires the feature.
+///
+/// R31-4 (task #467, closing P2-1 filed in `docs/CORRECTNESS_OPEN_ITEMS.md`
+/// item 8): matches the literal 6-byte `#[cfg(` — INCLUDING the open paren —
+/// not the shorter 5-byte `#[cfg` prefix the R30-2 version used. The 5-byte
+/// prefix also matches `#[cfg_attr(`, whose FIRST argument is a *predicate
+/// controlling whether the attribute's SECOND argument applies to the item*
+/// — not a condition on the item's own existence at all. A hypothetical
+/// `#[cfg_attr(feature = "bench-internals", allow(dead_code))]` on a
+/// `dbg_*` hook would, under the old 5-byte match, have its cfg-attr's
+/// first argument (`feature = "bench-internals", allow(dead_code)`) fed to
+/// `parse_cfg_inner`, which parses only the leading term
+/// (`feature = "bench-internals"`) and ignores the trailing
+/// `, allow(dead_code)` — so `requires_bench_internals` would wrongly
+/// return `true`, treating the hook as gated when `cfg_attr` never gates
+/// the item's compilation at all. The 6-byte `#[cfg(` match rejects
+/// `#[cfg_attr(` outright (its 6th byte is `_`, not `(`), closing the gap.
+/// No live hook uses this shape today (confirmed by
+/// `no_dbg_hook_cfg_uses_cfg_attr_bench_internals_shape` below) — this was a
+/// latent scanner gap, not an active false-accept.
 fn has_bench_internals_cfg(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut i = 0;
-    while i + 4 < bytes.len() {
-        if &bytes[i..i + 5] == b"#[cfg" {
+    while i + 5 < bytes.len() {
+        if &bytes[i..i + 6] == b"#[cfg(" {
             let mut depth = 0i32;
             let mut paren_start = None;
             for j in i..bytes.len() {
@@ -692,7 +720,7 @@ fn has_bench_internals_cfg(text: &str) -> bool {
                 }
             }
             if depth > 0 {
-                i += 5;
+                i += 6;
             }
         } else {
             i += 1;
@@ -1025,6 +1053,159 @@ fn cfg_parser_rejects_negated_and_optional_or_bench_internals() {
     // No #[cfg] at all.
     assert!(!has_bench_internals_cfg(""));
     assert!(!has_bench_internals_cfg("// just a comment\n"));
+}
+
+// ── P2-1 fix (R31-4, task #467) ───────────────────────────────────────────
+//
+// `docs/reviews/2026-07-30-r30-full-review.md` §5 P2-1 (filed as
+// `docs/CORRECTNESS_OPEN_ITEMS.md` item 8): the R30-2 `has_bench_internals_cfg`
+// matched the bare 5-byte prefix `#[cfg`, which ALSO matches `#[cfg_attr(`.
+// `cfg_attr`'s first argument is a predicate controlling whether the
+// attribute's SECOND argument applies to the item — it is not a condition
+// on the item's own compilation at all, unlike `cfg(...)`. Feeding that
+// first argument to `parse_cfg_inner` (as the old 5-byte match did) could
+// make a `#[cfg_attr(feature = "bench-internals", allow(dead_code))]`-
+// decorated hook look "gated" when it compiles unconditionally.
+
+/// Direct unit proof that the OLD 5-byte-prefix scanner would have wrongly
+/// accepted a `#[cfg_attr(feature = "bench-internals", ...)]` shape, and
+/// the NEW 6-byte `#[cfg(` scanner correctly rejects it. This is the
+/// counterfactual for the fix: reproduces the review's claim mechanically
+/// inside this crate's own test suite rather than trusting the review's
+/// external `rustc` extraction.
+#[test]
+fn has_bench_internals_cfg_rejects_cfg_attr_shape() {
+    let cfg_attr_text = r#"#[cfg_attr(feature = "bench-internals", allow(dead_code))]"#;
+
+    // The FIX: the current (6-byte `#[cfg(`-matching) scanner must NOT treat
+    // this as a genuine gate — cfg_attr's condition does not gate the
+    // item's existence, only whether `allow(dead_code)` is additionally
+    // applied to it.
+    assert!(
+        !has_bench_internals_cfg(cfg_attr_text),
+        "#[cfg_attr(feature = \"bench-internals\", ...)] must NOT be treated as a genuine \
+         #[cfg(feature = \"bench-internals\")] gate — cfg_attr's first argument controls \
+         whether its SECOND argument applies, not whether the item compiles at all"
+    );
+
+    // Counterfactual proving this is a real fix, not a vacuous assertion:
+    // confirm the text genuinely starts with the 5-byte prefix the OLD
+    // scanner matched on (so a reader can verify the OLD scanner would have
+    // matched here and then mis-parsed `cfg_attr`'s first argument as if it
+    // were `cfg`'s own predicate).
+    assert!(
+        cfg_attr_text.starts_with("#[cfg"),
+        "fixture must start with the old scanner's 5-byte match prefix, or this test doesn't \
+         exercise the actual regression"
+    );
+    assert!(
+        !cfg_attr_text.starts_with("#[cfg("),
+        "fixture's 6th byte must NOT be '(' (it's '_', from cfg_attr) — otherwise this fixture \
+         no longer distinguishes the old 5-byte match from the new 6-byte match"
+    );
+
+    // A genuine #[cfg(...)] gate must still be accepted (regression guard
+    // against a fix that overcorrects and rejects everything).
+    assert!(has_bench_internals_cfg(
+        r#"#[cfg(feature = "bench-internals")]"#
+    ));
+}
+
+/// End-to-end proof via the REAL `scan_file` classifier (not just the
+/// `has_bench_internals_cfg` unit): a synthetic `dbg_*` hook decorated with
+/// `#[cfg_attr(feature = "bench-internals", ...)]` — the exact adversarial
+/// shape the task describes — must be classified as UNGATED (i.e. it would
+/// surface as an "extras_safe" tripwire failure requiring allowlisting, the
+/// correct conservative behavior), never silently accepted as if genuinely
+/// gated.
+#[test]
+fn scan_file_treats_cfg_attr_bench_internals_hook_as_ungated() {
+    let synthetic_source = r#"
+impl AllocCore {
+    /// Synthetic stand-in for a hypothetical hook using cfg_attr instead of
+    /// a genuine cfg gate — P2-1's adversarial shape.
+    #[cfg_attr(feature = "bench-internals", allow(dead_code))]
+    pub fn dbg_cfg_attr_SCRATCH_FIXTURE(&mut self) -> bool {
+        true
+    }
+}
+"#;
+
+    let candidates = scan_file("SCRATCH_FIXTURE.rs", synthetic_source);
+    let hit = candidates
+        .iter()
+        .find(|c| c.id == "SCRATCH_FIXTURE.rs::dbg_cfg_attr_SCRATCH_FIXTURE")
+        .expect("scanner failed to find the synthetic cfg_attr-decorated hook at all");
+
+    assert!(!hit.is_unsafe, "fixture is `pub fn`, not `pub unsafe fn`");
+    assert!(
+        !hit.bench_internals_gated,
+        "a #[cfg_attr(feature = \"bench-internals\", ...)]-decorated hook must be classified as \
+         UNGATED — cfg_attr's condition does not gate the item's compilation, so treating it as \
+         gated would silently widen a production build's safe surface without the tripwire \
+         noticing"
+    );
+}
+
+/// Confirms no CURRENT `dbg_*` hook in the crate actually uses the
+/// `#[cfg_attr(feature = "bench-internals", ...)]` shape — this was a
+/// latent parser gap (per the review, no live instance), and this test
+/// keeps that true going forward (it would fail the moment a hook adopted
+/// the shape, forcing a human to look at it rather than silently trusting a
+/// non-gating cfg_attr).
+#[test]
+fn no_dbg_hook_cfg_uses_cfg_attr_bench_internals_shape() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    rs_files(&manifest.join("src"), &mut files);
+    rs_files(&manifest.join("crates"), &mut files);
+
+    let mut offenders = Vec::new();
+    for file in &files {
+        let text = fs::read_to_string(file).unwrap_or_default();
+        if text.contains("cfg_attr") && text.contains("\"bench-internals\"") {
+            // Coarse pre-filter (cheap); confirm precisely via the same
+            // attr-block/hook-scan walk the other structural tests use.
+            let lines: Vec<&str> = text.lines().collect();
+            let mut attr_block = String::new();
+            let mut i = 0;
+            while i < lines.len() {
+                let trimmed = lines[i].trim_start();
+                if trimmed.starts_with("///") || trimmed.starts_with("//!") {
+                    attr_block.clear();
+                    i += 1;
+                } else if trimmed.starts_with("#[") {
+                    let (attr, end) = extract_full_attribute(&lines, i);
+                    attr_block.push_str(&attr);
+                    i = end + 1;
+                } else if trimmed.starts_with("//") {
+                    i += 1;
+                } else if trimmed.starts_with("pub fn dbg_")
+                    || trimmed.starts_with("pub unsafe fn dbg_")
+                {
+                    if attr_block.contains("cfg_attr") && attr_block.contains("\"bench-internals\"")
+                    {
+                        if let Some(name) = extract_fn_name(trimmed) {
+                            offenders.push(format!("{}::{name}: {attr_block}", rel_id(file)));
+                        }
+                    }
+                    attr_block.clear();
+                    i += 1;
+                } else {
+                    attr_block.clear();
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "found dbg_* hook(s) using #[cfg_attr(..., \"bench-internals\", ...)] — this shape does \
+         NOT gate the item's compilation the way #[cfg(feature = \"bench-internals\")] does; \
+         review and convert to a genuine #[cfg(...)] gate:\n  {}",
+        offenders.join("\n  ")
+    );
 }
 
 /// Confirms no CURRENT `dbg_*` hook in the crate actually uses either of the

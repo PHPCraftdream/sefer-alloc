@@ -438,6 +438,64 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    different argument (e.g. a demonstrated scatter-caused maintenance cost,
    not just a recurrence of the already-explained bug class) to revisit.
 
+   **[FIXED, R31-4/task #467, commit `<R31_4_SHA_PLACEHOLDER>`, 2026-07-30/31.]**
+   Implemented `ReservedSmallSegment` exactly per §5.2-5.3's sketch, in a new
+   one-export file (`src/alloc_core/reserved_small_segment.rs`, per this
+   project's file-structure rule): a private `base: *mut u8` field, a
+   `pub(super)` constructor (`new_from_reservation`) reachable only from
+   `AllocCore`'s own reservation path inside `alloc_core_small_pool.rs` — no
+   `pub` constructor exists anywhere in the crate, so a handle cannot be
+   forged from an arbitrary address — and a `pub(super) fn into_base(self)
+   -> *mut u8` that consumes the handle by value (`core::mem::forget`ting
+   `self` first to disarm the `Drop` leak-detector, since this consumption
+   IS the release, not a leak). `dbg_decomp_reserve_and_keep` now returns
+   `Option<ReservedSmallSegment>`; `dbg_decomp_release` now takes
+   `ReservedSmallSegment` by value and is NO LONGER `unsafe fn` — the
+   precondition that used to live in an `unsafe fn`'s `# Safety` contract is
+   now upheld by the type itself. Calling `dbg_decomp_release(handle)` twice
+   on the same binding is `rustc` error E0382 ("use of moved value") at
+   COMPILE time — verified as the actual mechanism (not merely asserted) by
+   confirming `ReservedSmallSegment` derives no `Copy`/`Clone` and carries a
+   `Drop` impl, which makes `Copy` a hard compiler-rejected combination, not
+   a project convention that could silently lapse. The existing
+   `debug_assert!(base != self.small_cur, ...)` R30-1 added stays as
+   secondary defence-in-depth. A `#[doc(hidden)] pub fn base(&self) -> *mut
+   u8` read-only accessor (the established test-only-export pattern) lets
+   `examples/r29_3_decomposition_gate.rs` read the payload address between
+   reserve and release for its `write_volatile` measurement, without
+   weakening the unforgeability guarantee (reading a value out is not
+   constructing a new handle). Updated exactly the ~5 files the design doc
+   estimated: `src/alloc_core/alloc_core_small_pool.rs` (the two hook
+   definitions), `src/registry/heap_core_diag.rs` (the `HeapCore` forwarding
+   delegates), `examples/r29_3_decomposition_gate.rs`,
+   `tests/r30_1_decomp_full_cycle_cursor_safety.rs` (R30-1's own
+   counterfactual regression test — re-verified still passes, both its
+   tests, after the retrofit), and `tests/dbg_hook_safety_tripwire.rs`
+   (removed both `dbg_decomp_release` entries from `UNSAFE_HOOKS` — the hook
+   is safe now and stays `bench-internals`-gated, so it needs no
+   `SAFE_MUTATORS` entry either). New counterfactual test
+   `tests/r31_4_reserved_small_segment_handle.rs`: checked `Cargo.toml`'s
+   `[dev-dependencies]` first — no `trybuild` or equivalent compile-fail
+   harness exists in this crate — so per this task's own instruction, no new
+   test-tooling dependency was added; instead the file thoroughly exercises
+   the legitimate single-use and repeated-use (16-cycle) paths and documents,
+   in both a code comment and `ReservedSmallSegment`'s own module doc,
+   exactly why a second release call cannot compile. Full verification:
+   `cargo test --features "production bench-internals alloc-stats"` green
+   (230 test binaries, 0 failed); `cargo test --features "bench-internals
+   alloc-global alloc-xthread alloc-decommit fastbin alloc-segment-directory
+   primordial-lazy-commit class-aware-dirty" --test dbg_hook_safety_tripwire`
+   green (7 tests); `cargo clippy --features "production bench-internals
+   alloc-stats" --all-targets -- -D warnings` clean; `cargo clippy --features
+   production -- -D warnings` clean, confirmed via a throwaway compile probe
+   that `HeapCore::dbg_large_cache_hits` and (transitively)
+   `dbg_decomp_reserve_and_keep`/`dbg_decomp_release` are genuinely absent
+   from a plain `production` build; `cargo fmt --check` clean. Fixed two
+   resulting doc-drift failures as a side effect (test-file count 227→228,
+   README tier-2 `#[allow(unsafe_code)]` site count 68→66 — see item 8's
+   entry below for why the count dropped by 2, not the expected-from-this-
+   item-alone 1). No `production` feature composition changed.
+
 8. **[T, filed 2026-07-30, UNVERIFIED-BY-ME findings from the Round 30 full
    independent review (`docs/reviews/2026-07-30-r30-full-review.md` §5
    P2-1/P2-2)]** The following two P2 findings were NOT independently
@@ -496,6 +554,72 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    - **Evidence:** `docs/reviews/2026-07-30-r30-full-review.md` §5 P2-1,
      P2-2 (the review's own text is the only source cited here — this
      entry is a filing, not an independent confirmation).
+
+   **[FIXED, R31-4/task #467, commit `<R31_4_SHA_PLACEHOLDER>`, 2026-07-31.]**
+   Both claims independently re-verified before fixing, per the "Next
+   trigger" instruction above.
+
+   - **P2-1 confirmed and fixed.** Re-derived the review's claim directly
+     (not by re-running its external `rustc` extraction, but by tracing
+     `has_bench_internals_cfg`'s own logic): the 5-byte match `&bytes[i..i +
+     5] == b"#[cfg"` matches the prefix of `#[cfg_attr(`, and
+     `parse_cfg_inner` parses only the FIRST term of the parenthesised text
+     that follows — for `#[cfg_attr(feature = "bench-internals",
+     allow(dead_code))]` that is `feature = "bench-internals"`, which
+     `requires_bench_internals` correctly reports `true` for, wrongly
+     treating a non-gating `cfg_attr` predicate as a genuine gate. Fixed by
+     requiring the literal 6-byte `#[cfg(` (open paren included), which
+     structurally cannot match `#[cfg_attr(` (7th byte is `_`, not the
+     paren the match now requires at position 6). Two new tests added:
+     `has_bench_internals_cfg_rejects_cfg_attr_shape` (direct unit proof
+     against the exact adversarial string, plus a regression guard that a
+     genuine `#[cfg(feature = "bench-internals")]` is still accepted) and
+     `scan_file_treats_cfg_attr_bench_internals_hook_as_ungated` (end-to-end
+     proof via the real `scan_file` classifier against a synthetic
+     `cfg_attr`-decorated hook fixture — confirms it surfaces as UNGATED,
+     the correct conservative behavior, not silently accepted as gated). A
+     third test, `no_dbg_hook_cfg_uses_cfg_attr_bench_internals_shape`,
+     re-confirms (mechanically, going forward) the review's own finding that
+     no CURRENT hook in `src/`/`crates/` uses this shape — this was a
+     latent scanner gap, not a live false-accept, matching the review's own
+     assessed severity.
+   - **P2-2 confirmed and fixed.** Re-read `heap_core_diag.rs`'s
+     `dbg_large_cache_hits` and confirmed the review's claim exactly: gated
+     `#[cfg(feature = "alloc-decommit")]` alone (inside `production`), while
+     its four siblings in the same file (`dbg_pool_cap`,
+     `dbg_segment_state_reconciliation`, `dbg_large_cache_used`,
+     `dbg_large_cache_slot_sizes`) are each gated `all(alloc-decommit,
+     bench-internals)`. Tightened to match. Verified BOTH current callers
+     (`examples/r30_6_large_cache_headroom_ab_gate.rs`,
+     `examples/r31_1_large_cache_headroom_crossing_regime_gate.rs`) already
+     list `bench-internals` in their `Cargo.toml` `required-features` — the
+     review's own prediction ("nothing else should break") held, confirmed
+     rather than assumed. Removed `"src/registry/heap_core_diag.rs::dbg_large_cache_hits"`
+     from `tests/dbg_hook_safety_tripwire.rs`'s `PURE_OBSERVERS` list (a
+     gated hook is tracked in neither allowlist — `scan_file` only feeds
+     ungated hooks into the allowlist-diff check). Confirmed the hook is
+     genuinely unreachable under plain `production` via a throwaway compile
+     probe (`E0599: no method named 'dbg_large_cache_hits' found` when
+     building against `--features production` alone, deleted after
+     confirming) rather than assuming the `#[cfg]` change alone was
+     sufficient proof. This also fixed the two doc-drift test failures item
+     7's entry above flags: removing `dbg_decomp_release`'s TWO `unsafe fn`
+     `#[allow(unsafe_code)]` item-scoped sites (one in `AllocCore`, one in
+     `HeapCore`'s delegation — item 7's retrofit, not this item's gating
+     change) dropped README's tier-2 count from 68 to 66; the new
+     `tests/r31_4_reserved_small_segment_handle.rs` file brought
+     `docs/ARCHITECTURE.md`'s tracked test-file count from 227 to 228. Both
+     docs updated to match; `tests/no_stale_doc_references.rs` green.
+   - **Verification (both P2-1 and P2-2 together):** `cargo test --features
+     "production bench-internals alloc-stats"` green (230 test binaries, 0
+     failed, including the 3 new P2-1 tests); `cargo test --features
+     "bench-internals alloc-global alloc-xthread alloc-decommit fastbin
+     alloc-segment-directory primordial-lazy-commit class-aware-dirty"
+     --test dbg_hook_safety_tripwire` green (7 tests — confirms the
+     tripwire's allowlist is accurate after the P2-2 gating change); `cargo
+     clippy --features "production bench-internals alloc-stats"
+     --all-targets -- -D warnings` clean; `cargo clippy --features
+     production -- -D warnings` clean; `cargo fmt --check` clean.
 
 ---
 

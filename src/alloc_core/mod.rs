@@ -89,6 +89,13 @@ pub mod profile;
 /// isolated ring unit test. Nothing here is stable public API.
 #[doc(hidden)]
 pub mod remote_free_ring;
+/// R31-4 (task #467): [`ReservedSmallSegment`] — the typed, non-forgeable,
+/// move-consumed handle for the `dbg_decomp_reserve_and_keep`/
+/// `dbg_decomp_release` measurement hook pair. See the module doc for the
+/// full rationale (`docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md`
+/// §5's sketch, implemented here).
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+pub mod reserved_small_segment;
 /// The shared per-segment bitmap *mechanism* (the bit-test/set/clear
 /// arithmetic + `FOOTPRINT`) common to [`alloc_bitmap::AllocBitmap`] and
 /// [`magazine_bitmap::MagazineBitmap`]; task #98 / R4-6 dedup of
@@ -206,6 +213,12 @@ pub use large_cache_config::LargeCacheConfig;
 pub use large_cache_mode::LargeCacheMode;
 #[cfg(feature = "alloc-decommit")]
 pub use profile::Profile;
+/// R31-4 (task #467) MEASUREMENT-ONLY: re-exported so `examples/`/`tests/`
+/// can name the handle type returned by
+/// `AllocCore::dbg_decomp_reserve_and_keep` / consumed by
+/// `AllocCore::dbg_decomp_release`. Not stable public API.
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+pub use reserved_small_segment::ReservedSmallSegment;
 pub use segment_layout::SegmentLayout;
 /// R4-8/N3 test-only harness for direct exercise of `SegmentTable`'s
 /// open-addressing hash (backward-shift deletion). `pub` (not `pub(crate)`)
