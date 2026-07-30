@@ -605,3 +605,288 @@ fn token_appears(haystack: &str, token: &str) -> bool {
     }
     false
 }
+
+/// One row of `docs/FEATURE_PROMOTION_STATUS.md`'s survey table, as needed by
+/// [`every_undecided_feature_has_exactly_one_owner_with_a_next_trigger`].
+struct SurveyRow {
+    /// The `feature` column, e.g. "`exact-span-large`" (backticks included,
+    /// as written in the table — only used for diagnostic messages).
+    feature: String,
+    /// 1-indexed line number in `FEATURE_PROMOTION_STATUS.md`, for diagnostics.
+    line: usize,
+    /// Every distinct `OPEN_ITEMS.md` item number cited in this row's
+    /// `evidence citation` column, in the order they appear.
+    owner_items: Vec<u32>,
+}
+
+/// Parse `docs/FEATURE_PROMOTION_STATUS.md`'s `## Survey table` into rows.
+///
+/// Deliberately a plain pipe-split over `| col | col | ... |` lines, matching
+/// this file's established style (`readme_unsafe_inventory_counts_match_reality`,
+/// `honest_reject_sections_are_indexed`) rather than a real markdown-table
+/// parser — the table has a fixed 5-column shape
+/// (`feature | shipped-behind-flag | has-gate-report | promotion verdict |
+/// evidence citation`) that a `|`-split handles exactly, and this test only
+/// needs the 1st (feature), 4th (verdict), and 5th (evidence) columns.
+///
+/// A row is collected only if column 1, trimmed, starts with a backtick
+/// (`` ` ``) — this excludes the header row (`| feature | ... |`) and the
+/// `|---|---|...|` separator row, which do not.
+fn parse_survey_rows(text: &str) -> Vec<SurveyRow> {
+    let mut rows = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+            continue;
+        }
+        let cols: Vec<&str> = trimmed
+            .trim_start_matches('|')
+            .trim_end_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect();
+        if cols.len() != 5 {
+            continue;
+        }
+        let feature = cols[0];
+        if !feature.starts_with('`') {
+            continue; // header row ("feature") or separator row ("---")
+        }
+        let verdict = cols[3];
+        let evidence = cols[4];
+        // Only rows whose OWN verdict cell literally carries CONDITIONAL-GO or
+        // NEVER-DECIDED are in scope. This deliberately excludes an alias row
+        // like `alloc-lazy-commit` ("**reduces to `small-segment-lazy-commit`**")
+        // — its verdict text names neither marker, so it never entered this
+        // scan in the first place; the alias intentionally shares its target
+        // feature's owner rather than needing its own.
+        if !(verdict.contains("CONDITIONAL-GO") || verdict.contains("NEVER-DECIDED")) {
+            continue;
+        }
+        rows.push(SurveyRow {
+            feature: feature.to_string(),
+            line: i + 1,
+            owner_items: extract_open_items_citations(evidence),
+        });
+    }
+    rows
+}
+
+/// Extract every `OPEN_ITEMS.md` item number cited in `text`, matching the
+/// established citation phrasing `` `OPEN_ITEMS.md` item N `` (used
+/// consistently across this file's evidence columns) — order-preserving,
+/// duplicates within the same citation text kept as-is (callers that need
+/// "distinct owners" dedupe separately; a single row citing item N twice in
+/// its own prose is not the failure mode this test targets).
+fn extract_open_items_citations(text: &str) -> Vec<u32> {
+    const NEEDLE: &str = "OPEN_ITEMS.md";
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find(NEEDLE) {
+        let after = &rest[pos + NEEDLE.len()..];
+        // Expect (with the established phrasing) something like "` item 28"
+        // immediately after the filename — skip the closing backtick and any
+        // whitespace, then require the literal word "item".
+        let after_tick = after.trim_start_matches('`');
+        let after_tick = after_tick.trim_start();
+        if let Some(stripped) = after_tick.strip_prefix("item ") {
+            let digits: String = stripped
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if let Ok(n) = digits.parse::<u32>() {
+                out.push(n);
+            }
+        }
+        rest = after;
+    }
+    out
+}
+
+/// Does `docs/perf/OPEN_ITEMS.md` contain a numbered active-list item `N`
+/// (i.e. a line starting with `N. **`, the exact format every active item in
+/// the `## Open items` section uses) that also carries a `Next trigger`
+/// bullet? Returns `(item_exists, has_next_trigger)`.
+fn open_items_has_numbered_entry_with_trigger(open_items_text: &str, item_no: u32) -> (bool, bool) {
+    let marker = format!("{item_no}. **");
+    let lines: Vec<&str> = open_items_text.lines().collect();
+    let Some(start) = lines.iter().position(|l| l.starts_with(&marker)) else {
+        return (false, false);
+    };
+    // Scan forward from the item's title line until the NEXT numbered item
+    // (a line matching `^\d+\. \*\*`) or a `##`/`###` section heading, and
+    // check for a "Next trigger:" bullet inside that span.
+    let mut has_trigger = false;
+    for line in &lines[start + 1..] {
+        let t = line.trim_start();
+        if t.starts_with("###") || t.starts_with("## ") {
+            break;
+        }
+        // A new numbered item: digits followed by ". **".
+        let digits_prefix: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !digits_prefix.is_empty() && t[digits_prefix.len()..].starts_with(". **") {
+            break;
+        }
+        if t.contains("Next trigger:") {
+            has_trigger = true;
+        }
+    }
+    (true, has_trigger)
+}
+
+/// Tripwire against the R18-8/R22-3 zero-owner failure mode and its
+/// duplicate-owner sibling, applied to `docs/FEATURE_PROMOTION_STATUS.md`'s
+/// promotion-verdict survey table (added R30-14, task #463).
+///
+/// **Why `FEATURE_PROMOTION_STATUS.md`, not `OPEN_ITEMS.md`, is the source of
+/// CONDITIONAL-GO/NEVER-DECIDED truth for this check:** both files use the
+/// string "CONDITIONAL-GO" in prose, but `OPEN_ITEMS.md`'s occurrences
+/// outside its own feature-promotion items are almost all about DEFERRED
+/// DESIGN PROPOSALS (e.g. items 2/5/14 in the `[D]` tier — a design doc's own
+/// verdict on an unimplemented optimization, not a shipped Cargo feature
+/// awaiting a promotion decision). `FEATURE_PROMOTION_STATUS.md` was built by
+/// R29-12 (task #443) specifically as a survey of shipped, non-`production`
+/// Cargo features and their promotion status — its `## Survey table` is a
+/// literal one-row-per-feature enumeration with a dedicated `promotion
+/// verdict` column, making it the authoritative source for "which shipped
+/// FEATURES are undecided," as opposed to "which design PROPOSALS carry a
+/// conditional recommendation."
+///
+/// **What this test asserts, per flagged row:**
+/// 1. **NO ZERO owners** — the row's `evidence citation` column names at
+///    least one `OPEN_ITEMS.md item N`. This is the R18-8/R22-3 failure mode
+///    CLAUDE.md's own "Round start" bullet names by incident: R18-8/task #336
+///    found R14-4's explicitly-flagged-open item hung unnoticed through
+///    rounds 15–17 because no index owned it; R22-3/task #354 found R19-1's
+///    commit-message follow-ups existed in NEITHER index for the same reason.
+///    At the time this test was written, three features
+///    (`exact-span-large`/`large-reserved-capacity`/`large-cache-extended`)
+///    were in exactly this zero-owner state — `FEATURE_PROMOTION_STATUS.md`
+///    itself said so in its own "Other features found in a SIMILAR (less
+///    sharp) shape" section ("R29-12 does NOT create index entries for these
+///    three"). R30-14 closed that gap by adding `OPEN_ITEMS.md` items 28/29/30
+///    (one per feature) so this test is non-vacuously satisfiable today.
+/// 2. **The cited item number actually exists** in `OPEN_ITEMS.md`'s numbered
+///    active list (not a dangling reference to a renumbered/removed item).
+/// 3. **The cited item carries a stated `Next trigger:` bullet** — an owner
+///    entry with no stated trigger is not a real owner, just a pointer.
+///
+/// **What this test asserts, across ALL flagged rows together:**
+/// 4. **NO DUPLICATE owners** — no two features with their OWN, independent
+///    CONDITIONAL-GO/NEVER-DECIDED verdict cite the same `OPEN_ITEMS.md` item
+///    number. This project's CLAUDE.md cites R13-9 for the general PATTERN
+///    this guards against (hand-written CI feature-isolation rows silently
+///    becoming duplicates of each other once the underlying feature list
+///    changed) as a "same underlying problem in miniature" to the
+///    `cargo-hack` motivation, not as a citable instance of two
+///    `OPEN_ITEMS.md` entries colliding on one item number specifically —
+///    being honest about that distinction (per this test's own doc comment
+///    obligation): R13-9 is the closest ON-RECORD precedent for the general
+///    "rows silently drift into duplicates" class this rule targets, not a
+///    literal prior instance of THIS exact check's failure mode, which is
+///    reasoned from that general pattern rather than a second citable
+///    incident. The one legitimate multi-row share in the current table
+///    (`alloc-lazy-commit`, a pure alias whose own verdict text is "reduces
+///    to `small-segment-lazy-commit`", not CONDITIONAL-GO/NEVER-DECIDED
+///    itself) is excluded by construction — [`parse_survey_rows`] only
+///    collects rows whose OWN verdict cell carries one of the two markers, so
+///    the alias row never enters this scan and its shared item-26 citation
+///    with `small-segment-lazy-commit` is not flagged as a duplicate.
+///
+/// Doc-only guard: reads doc text, never links the crate, so it runs in every
+/// feature configuration.
+#[test]
+fn every_undecided_feature_has_exactly_one_owner_with_a_next_trigger() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let status_path = manifest.join("docs").join("FEATURE_PROMOTION_STATUS.md");
+    let status_text =
+        fs::read_to_string(&status_path).expect("read docs/FEATURE_PROMOTION_STATUS.md");
+    let open_items_path = manifest.join("docs").join("perf").join("OPEN_ITEMS.md");
+    let open_items_text =
+        fs::read_to_string(&open_items_path).expect("read docs/perf/OPEN_ITEMS.md");
+
+    let rows = parse_survey_rows(&status_text);
+    assert!(
+        !rows.is_empty(),
+        "parse_survey_rows found no CONDITIONAL-GO/NEVER-DECIDED rows in \
+         docs/FEATURE_PROMOTION_STATUS.md's survey table — either the table's \
+         shape changed (this test's parser expects a 5-column pipe table) or \
+         every previously-undecided feature has since been DECIDED (update \
+         this test's own non-vacuity assumption if so, rather than leaving a \
+         silently-passing empty-set check)."
+    );
+
+    let mut errors: Vec<String> = Vec::new();
+
+    // Per-row checks: exactly one citation, item exists, item has a trigger.
+    for row in &rows {
+        match row.owner_items.len() {
+            0 => errors.push(format!(
+                "FEATURE_PROMOTION_STATUS.md:{}: {} is CONDITIONAL-GO/NEVER-DECIDED \
+                 but its evidence citation names NO `OPEN_ITEMS.md item N` — this is \
+                 the R18-8/R22-3 zero-owner failure mode (see CLAUDE.md's \"Round \
+                 start\" bullet). Add a dedicated OPEN_ITEMS.md owner item.",
+                row.line, row.feature
+            )),
+            1 => {
+                let item_no = row.owner_items[0];
+                let (exists, has_trigger) =
+                    open_items_has_numbered_entry_with_trigger(&open_items_text, item_no);
+                if !exists {
+                    errors.push(format!(
+                        "FEATURE_PROMOTION_STATUS.md:{}: {} cites OPEN_ITEMS.md item \
+                         {item_no}, but no numbered item {item_no} exists in \
+                         docs/perf/OPEN_ITEMS.md — dangling owner citation.",
+                        row.line, row.feature
+                    ));
+                } else if !has_trigger {
+                    errors.push(format!(
+                        "FEATURE_PROMOTION_STATUS.md:{}: {} cites OPEN_ITEMS.md item \
+                         {item_no}, which exists but has no stated \"Next trigger:\" \
+                         bullet — an owner entry needs a stated trigger, not just a \
+                         pointer.",
+                        row.line, row.feature
+                    ));
+                }
+            }
+            n => errors.push(format!(
+                "FEATURE_PROMOTION_STATUS.md:{}: {} cites {n} distinct OPEN_ITEMS.md \
+                 items ({:?}) in one row's evidence citation — a feature should have \
+                 exactly ONE owner item, not several competing ones.",
+                row.line, row.feature, row.owner_items
+            )),
+        }
+    }
+
+    // Cross-row check: no two DIFFERENT flagged features share the same
+    // owner item number (the R13-9-pattern duplicate-owner failure mode).
+    let mut seen: std::collections::HashMap<u32, Vec<&str>> = std::collections::HashMap::new();
+    for row in &rows {
+        if row.owner_items.len() == 1 {
+            seen.entry(row.owner_items[0])
+                .or_default()
+                .push(&row.feature);
+        }
+    }
+    for (item_no, features) in &seen {
+        if features.len() > 1 {
+            errors.push(format!(
+                "OPEN_ITEMS.md item {item_no} is cited as the owner by {} DIFFERENT \
+                 features with their own independent CONDITIONAL-GO/NEVER-DECIDED \
+                 verdicts ({:?}) — each undecided feature needs its OWN owner item, \
+                 not a shared one (the R13-9-pattern duplicate-owner failure mode).",
+                features.len(),
+                features
+            ));
+        }
+    }
+
+    assert!(
+        errors.is_empty(),
+        "every CONDITIONAL-GO/NEVER-DECIDED feature in \
+         docs/FEATURE_PROMOTION_STATUS.md's survey table must have EXACTLY ONE \
+         active docs/perf/OPEN_ITEMS.md owner item with a stated next trigger \
+         (R30-14/task #463):\n{}",
+        errors.join("\n"),
+    );
+}

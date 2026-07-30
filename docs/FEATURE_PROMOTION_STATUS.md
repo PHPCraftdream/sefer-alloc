@@ -61,9 +61,9 @@ and the already-in-`production` features are excluded by construction
 | `virgin-zero-skip` | yes (`Cargo.toml:744`, `=["alloc-decommit"]`) | yes — R9-5 (design), R11-8 (re-verify), R13-3 (magazine-fix gate), R29-16 (iai isolation), R30-3 (activation-proven native gate) | **DECIDED — NO-GO for `production`, keep opt-in** (R30-3, task #452: no calloc-heavy workload shows a material, noise-distinguishable native wall-clock win; recycled/hot-churn family shows a small but consistent regression; a structural ~1-in-32 refill-batch dilution independently narrows the realistic victim profile) | `R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md` (operative verdict) + `_summary.csv`; `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md` §3 (iai isolation, still valid: 3,067 vs 65,624 Ir, ~21.4×, NOT a wall-clock claim); `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11; `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8; `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md`; `Cargo.toml:737–744`. See `OPEN_ITEMS.md` item 25. |
 | `small-segment-lazy-commit` | yes (`Cargo.toml:700–704`) | yes — R12-9 (the split gate) | **CONDITIONAL-GO-not-promoted** (deliberately left opt-in; a reasoned decision EXISTS, unlike `virgin-zero-skip`) | `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 (lines 231–238, explicit scope-out); `Cargo.toml:685–704`. See `OPEN_ITEMS.md` item 26. |
 | `alloc-lazy-commit` | yes (`Cargo.toml:656`) | n/a — pure combinator alias | **reduces to `small-segment-lazy-commit`** — alias `=["primordial-lazy-commit","small-segment-lazy-commit"]`; `primordial-lazy-commit` is already in `production`, so this feature's promotion status IS `small-segment-lazy-commit`'s | `Cargo.toml:635–656` (the PURE-COMBINATOR note + the alias); `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §1. See `OPEN_ITEMS.md` item 26. |
-| `exact-span-large` | yes (`Cargo.toml:312`) | yes — R13-6 | **CONDITIONAL-GO-not-promoted** (R13-6 §7: "Promoting … unconditionally, is not recommended"; no unconditional GO or permanent NO-GO) | `R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §7 (lines 420–482). Mentioned in `OPEN_ITEMS.md` only as a passing reference inside other items (e.g. item 3 line 758), NOT as its own promotion item. |
-| `large-reserved-capacity` | yes (`Cargo.toml:357`) | yes — R14-6 (GO rec), R20-2 (NULL on the C4 combo) | **CONDITIONAL-GO-not-promoted** (R14-6 §5 GO recommendation never acted on; R20-2 §6.1 NULL verdict on the `production+medium-classes+exact-span-large+large-reserved-capacity` combo); promotion is contingent on `exact-span-large` | `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` §5 (lines 316–340); `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` §6. Mentioned in `OPEN_ITEMS.md` item 8 only as a deferred growth-factor sub-finding. |
-| `large-cache-extended` | yes (`Cargo.toml:371`, `=["alloc-decommit"]`) | yes — R14-5 | **CONDITIONAL-GO-not-promoted** (R14-5 §9: "promotion to `production` should be considered ONLY [under its GO condition]") | `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` §9 (lines 414–446). `OPEN_ITEMS.md` item 7 carries one narrow deferred sub-finding, not the promotion question. |
+| `exact-span-large` | yes (`Cargo.toml:312`) | yes — R13-6 | **CONDITIONAL-GO-not-promoted** (R13-6 §7: "Promoting … unconditionally, is not recommended"; no unconditional GO or permanent NO-GO) | `R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §7 (lines 420–482). See `OPEN_ITEMS.md` item 28 (added R30-14, task #463 — previously only a passing reference inside item 3). |
+| `large-reserved-capacity` | yes (`Cargo.toml:357`) | yes — R14-6 (GO rec), R20-2 (NULL on the C4 combo) | **CONDITIONAL-GO-not-promoted** (R14-6 §5 GO recommendation never acted on; R20-2 §6.1 NULL verdict on the `production+medium-classes+exact-span-large+large-reserved-capacity` combo); promotion is contingent on `exact-span-large` | `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` §5 (lines 316–340); `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` §6. See `OPEN_ITEMS.md` item 29 (added R30-14, task #463 — previously only a deferred sub-finding inside item 8). |
+| `large-cache-extended` | yes (`Cargo.toml:371`, `=["alloc-decommit"]`) | yes — R14-5 | **CONDITIONAL-GO-not-promoted** (R14-5 §9: "promotion to `production` should be considered ONLY [under its GO condition]") | `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` §9 (lines 414–446). See `OPEN_ITEMS.md` item 30 (added R30-14, task #463 — previously only a narrow deferred sub-finding inside item 7). |
 | `medium-classes` | yes (`Cargo.toml:524`) | yes — R8-9, R9-3, R10-2, R14-4, R22-18 | **DECIDED-opt-in** (R22-18 §0 "Recommend (b) — formally document as a named opt-in workload profile"; well-indexed, 10 `OPEN_ITEMS.md` refs) | `R22_18_MEDIUM_CLASSES_FATE_DECISION.md` §0/§3. |
 | `medium-classes-wide` | yes (`Cargo.toml:556`) | yes — R9-4 | **NO-GO** for `production` (large-realloc regression); indexed via `OPEN_ITEMS.md` items 5 & 11 | `R9_4_1_75MIB_CLASSES_PROTOTYPE.md` §4; `OPEN_ITEMS.md` item 5 (line 786) + item 11. |
 | `batch-api` | yes (`Cargo.toml:214`) | yes — R23-7 (consumer status) | **deliberately-opt-in** — explicitly EXPERIMENTAL, nested under `experimental`, "no semver guarantees"; R23-7's open question is consumer adoption, not promotion | `Cargo.toml:172–214`; `R23_7_BATCH_API_CONSUMER_STATUS.md`. |
@@ -203,14 +203,15 @@ Beyond the three flagged, three more features share the
 CONDITIONAL-GO-design-never-promoted shape: **`exact-span-large`** (R13-6
 CONDITIONAL-GO), **`large-reserved-capacity`** (R14-6 GO rec, R20-2 NULL on
 the combined config), and **`large-cache-extended`** (R14-5
-CONDITIONAL-GO). They are less sharp than the flagged three because (a)
-their gate reports are at least *referenced* in `OPEN_ITEMS.md` (as
-sub-findings of other items, not as standalone promotion items), and (b)
-their promotion is entangled — `large-reserved-capacity` exists to
-counteract `exact-span-large`'s OPT-G headroom loss, and both are most
-useful alongside `medium-classes`, whose own fate is already DECIDED-opt-in
-(R22-18). R29-12 does NOT create index entries for these three (scope
-discipline: the task names the three flagged features); they are recorded
-here so a future round can decide whether to give them the same
-index-entry treatment. Promoting any of them to `production` is a separate,
-higher-stakes decision outside this task's scope.
+CONDITIONAL-GO). Their promotion is entangled — `large-reserved-capacity`
+exists to counteract `exact-span-large`'s OPT-G headroom loss, and both are
+most useful alongside `medium-classes`, whose own fate is already
+DECIDED-opt-in (R22-18). At the time R29-12 (task #443) wrote this file,
+none of the three had a dedicated `OPEN_ITEMS.md` owner entry (each was
+only *referenced* as a sub-finding inside another item) — R29-12
+deliberately did not create one, out of scope discipline for that task.
+**R30-14 (task #463) closed that gap**: each of the three now has its own
+dedicated `OPEN_ITEMS.md` `[D]`-tier item (28/29/30 respectively, cited in
+the survey table above), so the zero-owner state this section used to
+describe no longer holds. Promoting any of them to `production` remains a
+separate, higher-stakes decision outside either task's scope.

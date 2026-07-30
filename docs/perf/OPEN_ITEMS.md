@@ -102,14 +102,10 @@ for completeness.
     re-measured post-Mechanism-2: verdict (i) pool-cap-exceeded.**
 
    > **Current state**
-   > - **Status:** latency/decommit axis of R25-5 CONFIRMED (cap 4→8 eliminates the decommit cliff, self-verified via `AllocCore::dbg_pool_cap()`, re-confirmed through the real `#[global_allocator]` in R26-3); RSS/commit axis of R25-5 REMEASURED under subprocess-per-arm isolation (R26-1, task #410) — the R25-5 "cap 4→8 wins on RSS too" claim does NOT reproduce (under isolation all four caps produce statistically identical PEAK-live-set RSS), refuting R25-5's "cap=8 is 34% cheaper on RSS at 8T" finding as an artifact of sequential single-process slot reuse. BUT that peak-live-set flatness does NOT prove "no cap-specific RSS cost": R26-1's RSS probe ran at the LOWER-pressure `RSS_BATCH_SIZE=50` (≈12.5 MiB logical prefill, fits inside the current 4-segment/16 MiB retention region) and never recorded `dbg_pooled_count`/pool-occupancy high-water or decommit counters — i.e. victim activation (did cap 4 saturate, did cap 8 retain a 5th segment) was never proven at this probe's batch size. R26-3's OWN committed raw log (`docs/perf/_raw_r26_3_production_teardown_ab.log`, `rss_after_kib=`) shows cap8 arms deterministically retaining ~4,100 KiB more (~one 4 MiB segment) than cap4 arms AFTER teardown at the pressure-producing batch-120 workload — a REAL retention cost, now QUANTIFIED by R27-3 (task #421): ~+8 MiB/heap post-teardown (~2 segments), proven with victim activation (cap-4 saturates with decommit_delta>0; cap-8 retains 6 pooled segments high-water vs cap-4's 4, decommit_delta=0), scaling linearly to ~+255 MiB at 32 heaps; ~+4 MiB/heap of it is pooled/drainable, ~+4 MiB committed-non-pooled, and it does NOT decay during idle (event-driven decay only). R25-6 / R26-9's closure (task #418) is therefore REOPENED (task #423 / R27-5): it rested on the now-falsified "no cap-specific RSS cost" premise. **R27-4 (task #422) CONFIRMED the latency win at the REAL paired byte cap (16/32 MiB, not the 256 MiB ceiling) through the real `#[global_allocator]`** (cap8 ~22% faster, t=8.114 ≫ crit 2.101, sign 19/20, decommit 9→0 deterministic) — so BOTH halves of the paired-default decision are now measured at the REAL config. No production change.
-   > - **Current number/verdict:** latency axis — GO-CANDIDATE for `pool_segments=8` STANDS (cap 4→8: 20→0 decommits/run, self-verified; re-confirmed cap8 ~16% faster through the real `#[global_allocator]` in R26-3; R27-4 RE-CONFIRMED ~22% faster at the REAL paired byte cap (16/32 MiB, not 256 MiB) — t=8.114, sign 19/20, per-batch delta 2.68 ms vs R26-3's 2.63 ms, constant). PEAK-live-set RSS axis (R26-1, median of 3 reps, all 36 arms self-verified `verified_cap == pool_segments` AND `cfg_conflicts_delta == 0`) — flat across caps AT THIS PROBE'S LOWER-PRESSURE BATCH-50 SHAPE: cap=4 1T=13,368 KiB vs cap=8 1T=13,372 KiB (0.03% diff, within noise); cap=4 32T=423,448 vs cap=8 32T=423,444. BUT peak-live-set RSS is the wrong sole metric for a retention policy and this flatness is NOT a proof of zero retention cost (victim activation was never verified at batch 50 — see the R27-2 note below). POST-TEARDOWN RSS (R26-3's own raw log, batch-120 pressure workload): cap8 retains ~4,100 KiB more than cap4 (`rss_after_kib=34576` vs `30476`, deterministic across the A/B/B/A pairs) — a REAL retention cost, now QUANTIFIED (NOT RSS-neutral). The "wins on BOTH axes simultaneously, no tradeoff" conclusion is REFUTED for RSS; the corrected RSS headline is "flat at peak under R26-1's lower-pressure batch-50 shape (which never proved victim activation), but ~+8 MiB/heap post-teardown under the pressure-producing batch-120 workload (R27-3, task #421, victim-activation-PROVEN: cap8 retains 6 pooled segments high-water vs cap4's 4; scales linearly to ~+255 MiB at 32 heaps; does not decay during idle)."
-   > - **Next trigger:** the reservation-only overflow tier alternative (task
-   >   #429/R27-11) was evaluated and NOT opened — see item 15 in the `[D]`
-   >   tier below for the full trigger evaluation (trigger 1 fires, trigger 2
-   >   is unmeasured). The remaining open question for THIS item is unchanged:
-   >   the DEFAULT-CHANGE decision is a **PAIRED** knob change `(pool_segments, pool_byte_cap) = (4, 16 MiB) → (8, 32 MiB)`, NOT the one-knob "promote `DEFAULT_POOL_SEGMENTS` 4→8" this entry previously stated — which is a literal NO-OP under the current byte cap (see the 2026-07-28 R27-1 note below for the `min()` mechanism). The paired change DOUBLES the documented maximum retained committed pool memory per materialised heap (16 MiB → 32 MiB; at 32 concurrent heaps that is up to 1 GiB), so it is a genuine RSS-vs-throughput trade, not the cost-free change the one-knob phrasing implied. The corrected evidence for the paired change is "eliminates 20 decommits/run, confirmed through the real global allocator," at a post-teardown retention cost now QUANTIFIED by R27-3 (task #421): ~+8 MiB/heap (~2 segments; ~+4 MiB of it pooled/drainable via `dbg_drain_small_pool`, ~+4 MiB committed-non-pooled), scaling linearly to ~+255 MiB at 32 heaps — a genuine RSS-vs-throughput trade, NOT "RSS-neutral cost." The proper retention gate (R27-3) HAS LANDED: subprocess isolation + R26-1's config self-verification, at the pressure-producing batch 120, recording peak-live AND post-teardown AND post-idle RSS/commit, final/max `dbg_pooled_count`, and decommit counters, with cap4 PROVEN to saturate (decommit_delta>0, 274/1226/1446 at 1/8/32T) and cap8 PROVEN to retain 6 pooled segments high-water (vs cap4's 4) with decommit_delta=0. The default-change decision (R27-4/#422) and the adaptive-design re-evaluation (R27-5/#423) is now DONE — see `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md`: the design is sound but its headline benefit (bound aggregate RSS while granting hot heaps the latency win) is unproven under the measured uniform-pressure workloads (the global token budget is either never-binding = cap-8-for-all, or splits the win into a bimodal fleet), and its idle-shrink-back sub-problem is unsolved within the project's no-background-thread constraint (a once-grown heap stays grown until thread-exit); recommendation is Option 1 (keep 4/16 MiB default, document an 8/32 MiB throughput recipe), Option 3 deferred as CONDITIONAL-GO pending a measured uneven-pressure victim + a stage-1 counter calibration. The default-change decision itself (R27-4/#422) can proceed on this data — and as of R27-4 (task #422) BOTH halves are measured at the REAL config: latency (cap8 ~22% faster, decommit 9→0, through the real entry point at 16/32 MiB) + retention (~+8 MiB/heap, R27-3). The default-change decision is a genuine RSS-vs-throughput trade, now fully quantified. Task #418 (R26-9, adaptive/process-wide pool budget design) closure is REOPENED — tracked as task #423 (R27-5), which redoes the adaptive-design evaluation once task #421 (R27-3)'s proper retention gate lands; see the R27-2 note below.
-   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md` + `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE_summary.csv` + `docs/perf/_raw_r24_11_churn_with_teardown.log` / `_raw_r24_11_working_set_cycle.log` / `_raw_r24_11_churn_no_teardown_sefer.log`; **R25-5:** `R25_5_POOL_CAP_SWEEP_GATE.md` (§8 correction) + `R25_5_POOL_CAP_SWEEP_GATE_summary.csv` (trailing UNCONFIRMED_PENDING_R26_1 section) + `docs/perf/_raw_r25_5_pool_cap_sweep_probe.log`; **R26-1 (corrected peak-live RSS):** `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE.md` (§9 methodological-gap correction) + `R26_1_POOL_CAP_RSS_SUBPROCESS_GATE_summary.csv` + `docs/perf/_raw_r26_1_pool_cap_rss_subprocess_probe.log`; **R26-3 (post-teardown RSS showing cap8 retains ~4,100 KiB more):** `docs/perf/_raw_r26_3_production_teardown_ab.log` (grep `rss_after_kib=`); **R26-2 / R27-2 correction provenance:** `docs/reviews/2026-07-28-r25-readonly-review.md` (R26-2 P0) + `docs/reviews/2026-07-28-r26-readonly-review.md` (R27-2 P0: "R26-1 does not prove cap 8 has no retention/RSS cost", project-improvement #6); **R27-3 (the proper retention gate, victim-activation-PROVEN):** `R27_3_POOL_RETENTION_GATE.md` + `R27_3_POOL_RETENTION_GATE_summary.csv` + `docs/perf/_raw_r27_3_pool_retention_gate.log`; **R27-4 (latency at the REAL byte cap through the real `#[global_allocator]`):** `R27_4_REAL_DEFAULT_AB_GATE.md` + `R27_4_REAL_DEFAULT_AB_GATE_summary.csv` + `docs/perf/_raw_r27_4_real_default_ab.log` + `docs/perf/paired_ab_runs/2026-07-28T23-55-35-517Z.json`.
+   > - **Status:** both halves of the paired `pool_segments`/`pool_byte_cap` default-change decision (`(4, 16 MiB) → (8, 32 MiB)`) are now measured at the REAL config through the real `#[global_allocator]`; owner is R27-5/task #423's design (see Next trigger) pending a deployment-context decision. No production change made.
+   > - **Current number/verdict:** latency — cap8 is **~22% faster** than cap4 at the real paired byte cap (R27-4/task #422: t=8.114 ≫ crit 2.101, sign 19/20, decommit calls 9→0 deterministic). Retention — cap8 genuinely retains **~+8 MiB/heap post-teardown** (~2 segments; ~4 MiB pooled/drainable + ~4 MiB committed-non-pooled), victim-activation-proven, scaling linearly to ~+255 MiB at 32 heaps, and does NOT decay during idle (R27-3/task #421; supersedes the earlier R26-1 "RSS-neutral" reading, which never proved cap-4 saturation at its lower-pressure probe batch size). This is a genuine, fully-quantified RSS-vs-throughput trade, not a free win.
+   > - **Next trigger:** R27-5/task #423 designed (not implemented) an adaptive/process-wide pool budget as the alternative to a flat default change; verdict CONDITIONAL-GO-on-paper, recommendation is Option 1 — keep the 4/16 MiB default, document the 8/32 MiB throughput recipe (now shipped as `Profile::Throughput`, R30-7/task #456) — because the adaptive design's benefit is unproven under uniform-pressure workloads and its idle-shrink-back sub-problem is unsolved within the no-background-thread constraint. A reservation-only overflow-tier alternative was separately evaluated and NOT opened (item 15 in `[L]` below — trigger 2 measured, does not fire). Re-open ONLY if a future round has (a) a measured uneven-pressure victim workload, or (b) wants to revisit the flat 8/32 default-promotion decision itself.
+   > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`; `R27_3_POOL_RETENTION_GATE.md` (retention, victim-activation-proven); `R27_4_REAL_DEFAULT_AB_GATE.md` (latency at the real paired config); `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` (the adaptive-design evaluation + Option-1 recommendation). Full dated round-by-round narrative (R25-5 → R26-1 → R26-2 → R26-3 → R27-1 → R27-2 → R27-3 → R27-4 → R27-5), including every intermediate correction and its raw-log citations, preserved in the archive below.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `A13`.
 
 ### [D] Deferred designs — implement only if trigger/victim materializes
@@ -191,12 +187,10 @@ for completeness.
     opt-in.**
 
    > **Current state**
-   > - **Status:** RESOLVED for this round. R30-3 (task #452) replaced
-   >   R29-16's CONFIRMED-BROKEN wall-clock bench (its "virgin" scenario freed
-   >   the whole batch inside the SAME reused `b.iter()` closure, so from the
-   >   2nd Criterion iteration onward every call popped a recycled block, not
-   >   a bump-carve — see the prior entry below, kept for history) with a
-   >   custom `Instant`-timing-loop judge
+   > - **Status:** RESOLVED for this round. R30-3 (task #452) replaced R29-16's
+   >   CONFIRMED-BROKEN wall-clock bench (its "virgin" scenario silently
+   >   measured the recycled path after its first Criterion iteration — full
+   >   root cause in the archive) with a custom `Instant`-timing-loop judge
    >   (`benches/r30_3_virgin_zero_skip_native_gate.rs`) carrying a
    >   PATH-ACTIVATION ORACLE (`AllocCore::dbg_small_zero_pass_count()`,
    >   pre-existing, `alloc-stats`-gated) that proves, per cell, what fraction
@@ -275,6 +269,90 @@ for completeness.
    >   was not).
    > - **Evidence:** `R12_9_PRIMORDIAL_LAZY_COMMIT.md` §6 (lines 231–238, the
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D26`.
+
+28. **R13-6 — `exact-span-large` CONDITIONAL-GO, not promoted; owner entry
+    added R30-14 (task #463) to close a zero-owner gap `FEATURE_PROMOTION_STATUS.md`
+    itself flagged.**
+
+   > **Current state**
+   > - **Status:** CONDITIONAL-GO, not promoted — R13-6 explicitly declined an
+   >   unconditional GO. Previously tracked ONLY as a passing reference inside
+   >   item 3's narrative (never as its own owned item) and in
+   >   `docs/FEATURE_PROMOTION_STATUS.md`'s survey table — this is the first
+   >   dedicated `OPEN_ITEMS.md` entry.
+   > - **Current number/verdict:** the RSS win is real and large (15.8×→1.06×
+   >   at 260 KiB, §2) and unregressed, but paired with `large-reserved-capacity`
+   >   it is NET SLOWER than plain `production` on a doubling-cadence realloc
+   >   workload — iai `realloc_grow`: **+102.3% instructions, +52.7% Estimated
+   >   Cycles**, deterministic (§3.3) — which this project's own iai-authoritative
+   >   policy treats as decisive over the smaller-magnitude wall-clock deltas.
+   > - **Next trigger:** per R13-6 §7's own ordered list — (1) a follow-up
+   >   investigating whether `LARGE_RESERVED_CAP_GROWTH_FACTOR` (fixed 2×) can be
+   >   widened or made to compound across relocations, judged by the SAME
+   >   pre-existing iai `realloc_grow` bench; (2) confirmation no
+   >   `production`-shipped workload in this repo's own benches exhibits the
+   >   doubling-cadence pattern at a user-visible scale; (3) cross-platform
+   >   (real Linux/macOS, not just WSL2) confirmation the RSS win and the
+   >   realloc regression hold their relative shape.
+   > - **Evidence:** `R13_6_EXACT_SPAN_RESERVED_CAPACITY_PRODUCTION_GATE.md` §7
+   >   (the CONDITIONAL-GO recommendation + the 3-condition GO path);
+   >   `docs/FEATURE_PROMOTION_STATUS.md` (survey row).
+
+29. **R14-6 / R20-2 — `large-reserved-capacity` CONDITIONAL-GO, not promoted;
+    owner entry added R30-14 (task #463) to close a zero-owner gap.**
+
+   > **Current state**
+   > - **Status:** CONDITIONAL-GO (R14-6 §5), contingent on `exact-span-large`
+   >   (item 28); R20-2's later, more direct measurement found NO benefit on
+   >   the specific axis it targeted. Previously tracked ONLY as a deferred
+   >   growth-factor sub-finding inside item 8, never as its own owned item.
+   > - **Current number/verdict:** R20-2's paired C1-vs-C4 comparison (§6.1)
+   >   found `large-reserved-capacity`'s geometric growth headroom does **NOT**
+   >   measurably reduce the medium→Large realloc-promotion cost on top of
+   >   `medium-classes` alone (t=1.209 ≪ crit 2.101, sign test dead-even
+   >   10/20) — **verdict NULL** for that specific axis, by mechanism (§6.2):
+   >   `reserved_capacity` is set on the fresh Large segment AFTER the
+   >   promotion memcpy already ran, so it structurally cannot cheapen that
+   >   copy. Separately, `exact-span-large` (which this feature requires) DOES
+   >   show a real, reproducible commit-charge win (~50.5→~23.9 MiB, §6.3) at
+   >   identical hit rate — orthogonal to the realloc-time question, not
+   >   invalidated by the NULL verdict.
+   > - **Next trigger:** promotion is gated on `exact-span-large` (item 28)
+   >   first clearing its own CONDITIONAL-GO path; even then, R20-2's NULL
+   >   result means the specific "helps realloc-promotion cost" justification
+   >   for `large-reserved-capacity` no longer applies — any future promotion
+   >   case would need to rest on the commit-charge benefit alone (§6.3) or a
+   >   different, unmeasured workload shape where the reserved headroom IS
+   >   consulted before a promotion event.
+   > - **Evidence:** `R14_6_ADAPTIVE_RESERVED_CAPACITY_GATE.md` §5 (original GO
+   >   recommendation); `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` §6 (the
+   >   NULL verdict + mechanism); `docs/FEATURE_PROMOTION_STATUS.md` (survey
+   >   row).
+
+30. **R14-5 — `large-cache-extended` CONDITIONAL-GO, not promoted; owner entry
+    added R30-14 (task #463) to close a zero-owner gap.**
+
+   > **Current state**
+   > - **Status:** CONDITIONAL-GO (R14-5 §9), not promoted. Previously tracked
+   >   ONLY as one narrow deferred sub-finding inside item 7, never as its own
+   >   owned item.
+   > - **Current number/verdict:** all six of R14-5's required hardening items
+   >   are clean (budget-vs-materialisation ordering fixed; a finite default
+   >   budget neutralises the adversarial RSS scenario, ~2.86× retention
+   >   reduced to ~parity; N=1/2/4 hit-path and mixed-size/adversarial
+   >   best-fit/FIFO both correctness-clean; the turnover-profile production
+   >   A/B/B/A win is statistically real, t=195.759, sign 15/15). The GO
+   >   condition is explicit and NOT optional: promotion must ship the finite
+   >   default budget (item 2) alongside the feature — an UNBOUNDED budget is
+   >   genuinely risky for adversarial wide-diversity, long-holding workloads.
+   > - **Next trigger:** a future round deciding to promote `large-cache-extended`
+   >   must ship it WITH the finite default budget, not the feature alone; no
+   >   further measurement is named as a precondition (R14-5's own six gates
+   >   are already exhaustive) — this is a shipping-decision gap, not a
+   >   measurement gap.
+   > - **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` §9 (the
+   >   CONDITIONAL-GO + the explicit GO condition); `docs/FEATURE_PROMOTION_STATUS.md`
+   >   (survey row).
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
@@ -442,10 +520,10 @@ for completeness.
     named — see the dated update below.**
 
     > **Current state**
-    > - **Status:** retention cost CONFIRMED (R29-13); benefit side now ALSO measured (R30-6) — a real, evidence-backed candidate headroom value (64 MiB) is identified. NOT yet enacted as a default change (out of scope for both measurement tasks); feeds R30-7/task #456 (named profiles).
+    > - **Status:** retention cost CONFIRMED (R29-13); benefit side ALSO measured (R30-6) — a real, evidence-backed candidate headroom value (64 MiB) was identified and is now SHIPPED (not as a default change — `SeferAlloc::new()`'s 256 MiB default is untouched) as the `headroom_bytes` for both `Profile::Balanced` and `Profile::Throughput` (R30-7/task #456, `src/alloc_core/profile.rs`).
     > - **Current number/verdict (retention, R29-13):** the shipped 256 MiB default headroom converges, under maximum FORCED decay pressure (`dbg_force_decay_tick` looped to a fixed point), to a **measured floor of ~238–241 MiB/heap retained** (12.4–12.5% of an 8×34 MiB / 288 MiB fill reclaimed, the rest permanently held). Under PURE IDLE (100 ms/1 s/2 s, zero allocation activity), the idle delta is **exactly 0 KiB in all 36 measured arms** (4 headroom values × 3 thread counts × 3 reps) — idle reclaims nothing at ANY headroom setting, not only at 256 MiB. The natural fill/teardown workload never drives even one real decay tick regardless of headroom (`maybe_decay_large_cache`'s first-call timer-priming rule means a tight teardown loop never lets the 1000 ms interval elapse mid-loop) — this is read from source, not inferred, and matches the doc's "does not decay below this level" claim precisely once forced convergence is used to actually observe the floor.
     > - **Current number/verdict (benefit, R30-6, 2026-07-30):** at a representative 48 MiB/burst mixed small+large workload (burst→idle(1200ms, > the 1000ms decay interval)→burst, so a real non-forced decay tick can fire), **64 MiB headroom achieves the IDENTICAL 100.0% hit rate as 256 MiB** (byte-exact across 1/8/32 threads: 8/8, 64/64, 256/256) — the 256 MiB default buys ZERO measured hit-rate benefit over 64 MiB at this scale, while R29-13's own retention floor for 64 MiB (~34-37 MiB/heap) is ~7× smaller than 256 MiB's (~238-241 MiB/heap). 16 MiB and 0 MiB both cost a real, reproducible **12.5-percentage-point hit-rate loss** (87.5% vs 100.0%, exact across all thread counts, not noise) — NOT a free reduction. Latency: through the REAL `#[global_allocator]` (`paired-ab-runner.mjs`, A/B/B/A, n=20 pairs), **no headroom value in {0, 16, 64} MiB shows a statistically significant latency difference from 256 MiB** in this workload (all `|t| < crit(p<0.05)=2.101`; same-vs-same control confirms the harness is not manufacturing a false positive).
-    > - **Next trigger:** R30-7/task #456 (named `rss`/`balanced`/`throughput` profiles) is UNBLOCKED by this measurement and should use R30-6's 64 MiB figure as its `balanced`/`throughput` profile's headroom value (full measured hit-rate parity with 256 MiB, ~7× smaller RSS floor); a smaller `rss`-priority profile value (0-16 MiB) should carry R30-6's explicit disclosure that it costs real hit-rate in bursty large-object workloads at this scale.
+    > - **Next trigger:** none required for THIS round — R30-7/task #456 already consumed this measurement (`Profile::Balanced`/`Profile::Throughput` both ship 64 MiB headroom; `Profile::Rss` ships 16 MiB with R30-6's hit-rate cost disclosed in its doc comment). Re-open only if a future round wants to change `SeferAlloc::new()`'s own 256 MiB default (not attempted by either measurement task or by R30-7).
     > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` (retention) + `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` (benefit) + both reports' `_summary.csv`/`_raw_*.log` companions.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
 
