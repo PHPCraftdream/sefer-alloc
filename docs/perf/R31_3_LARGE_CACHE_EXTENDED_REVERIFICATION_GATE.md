@@ -12,12 +12,12 @@ to explicit user sign-off per the task brief — no `Cargo.toml` change is made
 by this task.
 
 **Date:** 2026-07-30. **Measured on commit:** `c7b3edafcd07b795ea5874b0a7986086e7bc1e2b`
-(the base commit this task's changes land on top of — this report's own
-landing commit SHA is filled in by a small follow-up commit, matching the
-established `1272a52`/`c7b3eda` pattern; see `docs/perf/OPEN_ITEMS.md` item
-30 and README §"Where unsafe lives" for prior examples of this two-commit
-pattern). Host: Windows 10 Pro, i7-11800H, `rustc 1.97.0 (2d8144b78
-2026-07-07)`.
+(the base commit this task's changes land on top of). **Landing commit:**
+`0985e22` (this report + its harnesses + its raw logs, filled in by this
+follow-up edit, matching the established `1272a52`/`c7b3eda` two-commit
+pattern — see `docs/perf/OPEN_ITEMS.md` item 30's own citation trail and
+README §"Where unsafe lives" for prior examples). Host: Windows 10 Pro,
+i7-11800H, `rustc 1.97.0 (2d8144b78 2026-07-07)`.
 
 ---
 
