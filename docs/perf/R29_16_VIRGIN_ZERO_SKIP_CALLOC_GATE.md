@@ -288,3 +288,94 @@ measurement uses fresh, single-shot `AllocCore` instances per Callgrind arm
 (not a `criterion` closure reused across iterations) and independently
 confirms virgin-vs-recycled dispatch via the `ptr == ptr2`
 free-list-reuse assertion in the recycled arm; its 21.4x Ir ratio stands.
+
+---
+
+## 9. 2026-07-30 correction (R30-4, task #453) — the "Valgrind artifact" framing for §3's 21.4× is REFUTED; a missing base-SHA gap is noted
+
+**Context.** `docs/perf/OPEN_ITEMS.md` item 28 (filed from
+`docs/reviews/2026-07-29-r29-readonly-review.md`) flagged two open questions
+about this report that were not independently re-verified at filing time:
+(a) whether the §3 "21.4× Ir" ratio (3,067 vs 65,624 Ir) reflects a genuine
+software-level instruction-count win or is instead a "Valgrind artifact" of
+the measurement tool, and (f) whether this report cites an immutable source
+identity (base commit SHA / tree hash) for its measurement, per the R29-6
+rule (`CLAUDE.md`, "Phased delivery"). Both were independently re-checked in
+task #453 (R30-4).
+
+**(a) REFUTED — the "Valgrind artifact" framing does not hold; ~1 Ir/byte
+is EXPECTED Callgrind behavior for this code shape, not a measurement
+defect.**
+
+1. `Node::zero` (`src/alloc_core/node.rs:135-144`) is a direct
+   `core::ptr::write_bytes(ptr, 0, len)` call — a plain Rust `memset`. For a
+   64 KiB length this lowers, on essentially every mainstream target
+   (including the `x86_64-unknown-linux-gnu` target this gate's Stage 1
+   arms were measured on), to a REP-prefixed bulk store (`rep stosb` or an
+   equivalent unrolled/vectorized memset sequence), not a single fixed-cost
+   instruction.
+2. Callgrind's own instrumentation model does not charge a REP-prefixed
+   string instruction once regardless of its repeat count: Valgrind's VEX
+   IR translation unrolls the REP loop, and Callgrind's per-instruction `Ir`
+   counter is incremented once per loop iteration of the translated IR, not
+   once per assembled REP instruction. This means a bulk memset over N bytes
+   legitimately costs on the order of N simulated instructions under
+   Callgrind, even though real hardware executes the same REP-prefixed
+   instruction as a handful of microcoded bursts (this is consistent with
+   what is documented/discussed in the Valgrind/Callgrind user community —
+   e.g. discussion threads describing Callgrind's per-iteration IR-unrolled
+   accounting for loop-shaped machine code — though no single official
+   Valgrind manual page was found that states the REP case explicitly by
+   name).
+3. This report's own §3 table already contains the corroborating signature
+   this correction relies on, without previously naming it as such: the
+   recycled arm's L2 hit count (1,157) and RAM hit count (2,135, ~10 more
+   than the virgin arm's 1,097) are consistent with a real memset touching
+   many distinct cache lines across a 65,536-byte span, not a fixed
+   dispatch-cost artifact — exactly the "cache-line-touching signature of a
+   real memset" §3 already describes in its own text (lines 109-112).
+
+   Recomputed check: 65,536 bytes / (65,624 − 3,067) Ir ≈ 65,536 / 62,557 ≈
+   **1.05 bytes/Ir** — an order-of-magnitude match to "~1 Ir/byte," which is
+   exactly what a REP-unrolled Callgrind memset predicts for a plain
+   `write_bytes` call, not an anomalous ratio requiring an "artifact"
+   explanation.
+
+   **Verdict: the review's "Valgrind artifact" framing does not survive
+   scrutiny.** §3's 3,067-vs-65,624-Ir / ~21.4× isolated instruction-count
+   delta stands as originally published — a real, deterministic,
+   software-level measurement of work skipped, exactly as this report's own
+   §3/§6 already stated.
+
+   **Methodological caveat added per this task's brief (valuable regardless
+   of which way the "artifact" question landed):** an `Ir` delta on a
+   REP-lowered bulk memset call is NOT directly convertible to a wall-clock
+   time delta. Callgrind counts simulated instructions retired by its IR
+   emulator, not real hardware cycles; a modern CPU executes a `rep stosb`
+   memset via a microcoded fast-string path whose real per-byte cost is
+   governed by memory bandwidth and can be one to two orders of magnitude
+   cheaper, per byte, than the emulated Ir count alone would suggest. This
+   is exactly why this report's own §4/§5 wall-clock stage was necessary in
+   the first place — §3's Ir isolation proves the software-level skip
+   fires and is large in instruction-count terms; it is not, by itself, a
+   wall-clock speed claim (this report's §6 already says this explicitly;
+   this correction just makes the underlying Callgrind-REP mechanism
+   explicit rather than asserted).
+
+**(f) CONFIRMED — this report cites no base SHA or other immutable source
+identity anywhere.** Checked: no "Base revision measured," "Measured on,"
+commit SHA, or tree/patch hash appears anywhere in this file (grep for
+`Base revision|sha256|Measured on|commit SHA|main @` returns zero matches).
+This predates the R29-6 immutable-provenance rule's first enforced
+application (R29-13, the same round) and R30-3's fix for the *replacement*
+native judge (`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`, commit `d8f467b`,
+task #452) — but this specific report, `R29_16_VIRGIN_ZERO_SKIP_CALLOC_GATE.md`,
+was never itself retrofitted. Per `CLAUDE.md`'s explicit "Not retroactive"
+carve-out for this rule, no attempt is made here to reconstruct a SHA this
+task cannot independently verify (the working tree this report measured
+against no longer exists in a form task #453 can re-derive with confidence).
+This is recorded as an honest, permanent provenance gap in this historical
+report; the operative successor measurement
+(`R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE.md`) already carries a proper immutable
+identity and is the report a future reader should treat as authoritative for
+the wall-clock/promotion question in any case (see `OPEN_ITEMS.md` item 25).

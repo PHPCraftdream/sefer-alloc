@@ -277,3 +277,64 @@ cargo build --release --features production
 compiles clean with zero new surface (the promotion path itself does not
 exist without `medium-classes`; the counter statics compile but stay
 permanently zero and unreachable-by-increment without `bench-internals`).
+
+---
+
+## 9. 2026-07-30 correction (R30-4, task #453) — the headline ratio's denominator choice needs an explicit companion figure
+
+`docs/perf/OPEN_ITEMS.md` item 28 (filed from
+`docs/reviews/2026-07-29-r29-readonly-review.md`, corroborated by
+`docs/reviews/2026-07-30-r29-followup-readonly-review.md` §2.4) flagged that
+this report's headline "RARE" framing may conflate "rate over ALL
+allocation activity" with "rate over the population that could actually
+promote." Independently re-checked in task #453 (R30-4).
+
+**CONFIRMED (as a framing gap, not an arithmetic error) — both cited
+denominators are correct, but the report never computes or states the
+narrowest, most workload-relevant one.** Recomputed directly from this
+report's own §0 numbers (33 promotions, 60,722 total allocation events, 40
+large-population objects):
+
+- `33 / 60,722 = 0.0543%` (§0's own cited "0.054%" — confirmed exact).
+- `33 / 4,040` (all growth objects, small + large populations) `= 0.8168%`
+  (§0's own cited "0.82%" — confirmed exact).
+- `33 / 40` (the 40 large-population objects — the ONLY objects in this
+  workload whose ceiling draw could ever reach the 256 KiB promotion
+  threshold; §1 already discloses this population exists and that "only 33
+  of 40 large-population objects actually promoted," but §0's headline
+  table never computes or states this ratio) `= 82.5%` — **confirmed
+  exact, not previously stated anywhere in this report.**
+
+**Both readings are correct; they answer different questions, and this
+report's headline states only the wider one.** `0.054%`/`0.82%` correctly
+describe promotion's share of this MIXED workload's total activity
+(dominated by the 20,000 background allocations and the 4,000
+small-population objects, neither of which can ever promote by
+construction). `82.5%` correctly describes how common promotion is AMONG
+the narrow subset of objects that were deliberately grown into the size
+range where promotion could even apply. Neither number is wrong; §0's table
+presenting only the wide-denominator figures under the single word "RARE"
+is a framing gap — a reader skimming §0 alone would not learn that
+promotion is the near-default outcome (82.5%) for the one population
+segment the mechanism actually targets.
+
+**Corrected framing (per this task's brief):** promotion work is a small
+fraction of allocations in THIS MIXED workload overall (0.054% of all
+activity, 0.82% of all growth objects), but common (**82.5%**, 33/40) among
+objects that were deliberately grown into the promotable region. **This
+framing specifically does NOT support rejecting the Linux `mremap` design
+for a promotion-heavy consumer workload** — this report's own population mix
+(100:1 small-to-large objects, per §1) was chosen as a REALISTIC general
+mix, not a promotion-heavy one; a real consumer workload dominated by
+large-buffer growth (e.g. a workload that is mostly the "40-object"
+population and little else) could plausibly see promotion rates
+approaching the 82.5% figure over ITS OWN total activity, not the diluted
+0.054%. §3's verdict ("NO VICTIM under this realistic workload shape") and
+`docs/perf/OPEN_ITEMS.md` item 6's "stays deferred" disposition are NOT
+reopened by this correction — this report's own §4 ("What this gate does
+NOT claim") already states no claim is made that the measured ratio
+generalizes to a promotion-heavy workload shape, and the aggregate
+copied-byte volume finding (~4.1 MiB moved in this run) is unaffected by
+denominator choice. The correction is narrower: the "RARE" headline and
+§0's table should not be read, on their own, as evidence against `mremap`
+for a workload shape this report did not measure.

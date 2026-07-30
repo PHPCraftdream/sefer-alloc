@@ -424,3 +424,118 @@ Each child independently hard-asserts `verified_headroom == headroom_bytes`,
 proven), and the retention-floor precondition for non-zero headroom arms —
 any failure `panic!`s loudly in that child's stderr and fails the
 orchestrator.
+
+---
+
+## 9. 2026-07-30 correction (R30-4, task #453) — invalid sha256 citation; corrected ratio claims
+
+`docs/perf/OPEN_ITEMS.md` item 28 (filed from
+`docs/reviews/2026-07-29-r29-readonly-review.md` and corroborated by
+`docs/reviews/2026-07-30-r29-followup-readonly-review.md` §2.6) flagged this
+report's provenance hash and two ratio claims as unverified. Both were
+independently re-checked in task #453 (R30-4).
+
+**(e) CONFIRMED — the header's cited sha256,
+`d40e8280b433892e17605b9b96c28baaebf852a8f3d70057ba64cd47ac0ec98`, is 63
+characters, not the required 64.** Counted directly
+(`echo -n '<hash>' | wc -c` → `63`). A valid sha256 hex digest is always
+exactly 64 hex characters (256 bits ÷ 4 bits/hex-digit = 64); a 63-character
+string cannot be a valid sha256 digest of anything, regardless of whether
+the stated recipe (`sha256(git diff -- Cargo.toml
+src/registry/heap_core_diag.rs; cat
+examples/r29_13_large_cache_retention_gate.rs)`) is followed exactly. This
+task attempted to identify the transcription error (e.g. a single dropped
+hex character) by reconstructing the closest candidate diff from this
+report's own base revision (`main` @ `34f3702`) forward to the commit that
+landed this task's changes (`894e9e3`), but the reconstructed diff's hash
+(`1c4ea5e19821dcf7aa04cdc3db0c06eeff847e3f5b9a7f559c01543dcecc8f3f`) does
+not match either — expected, since the original hash was computed over an
+**uncommitted working tree** at measurement time (this report's own header
+already discloses this: "a combined patch+new-file hash, not a scratch
+commit"), and that exact uncommitted tree state (including any transient
+diffs from other in-flight work present at the time, per this same report's
+own header caveat pattern used elsewhere in this doc tree, e.g. R29-3's
+"working tree carrying only this task's own additive edits... none of which
+this task touches beyond its own additions") is not reconstructable from
+git history alone. **This is filed as an honest, permanent irreproducibility
+gap, not corrected with a fabricated replacement hash** — inventing a
+64-character hash that merely "looks right" would be worse than the
+original error, since it would falsely claim reproducibility. This is
+exactly the failure mode the R29-6 immutable-provenance rule (`CLAUDE.md`)
+was written to prevent, and this is its first documented real-world miss:
+the rule requires ONE of four identity forms (temp commit SHA / git
+tree-object SHA / patch hash / built-binary hash), and this report's
+citation, even had it been 64 characters, used the weakest-justified of the
+four options (a hand-assembled patch-plus-new-file hash) for a working tree
+state that was never itself preserved as a resolvable git object — a tree
+hash (`git write-tree` at measurement time, form 2) or a scratch commit
+(form 1) would have been reproducible where this ad-hoc concatenation
+was not, even before the transcription error is considered.
+
+**(g) PARTIAL — two distinct ratio problems, one a plain arithmetic error
+(fixed), one a category mismatch (no single unambiguous replacement ratio
+exists).**
+
+1. **§ header, line 8: "32x the small pool's 16 MiB byte cap" is a plain
+   arithmetic error.** `256 / 16 = 16`, not 32. **Corrected: 256 MiB is
+   16× the small pool's 16 MiB (`DEFAULT_POOL_BYTE_CAP`, cap=4) byte cap,
+   and 8× the small pool's 32 MiB (cap=8) byte cap.** This is a
+   configured-constant-to-configured-constant comparison (both are
+   `Config` values, not measurements) and the corrected 16×/8× figures are
+   exact, not estimates.
+2. **§5 (Implications), line 344: "This is 30x the small pool's proven
+   ~8 MiB/heap retention (R27-3)" compares an ABSOLUTE quantity (this
+   report's own measured ~238 MiB/heap post-drain floor) to a DELTA
+   quantity (R27-3's cap8-minus-cap4 post-teardown RSS delta, not the small
+   pool's own absolute post-teardown retention).** Confirmed by re-reading
+   `R27_3_POOL_RETENTION_GATE.md` directly: its headline "~+8 MiB/heap"
+   (§0, "post-teardown RSS delta of ~+8 MiB per materialised heap") and its
+   own summary line ("cap8 − cap4 Δ": +8,096 / +65,560 / +261,424 KiB
+   across 1T/8T/32T) are explicitly the DIFFERENCE between the cap=8 and
+   cap=4 arms, not either arm's own absolute retained bytes. R27-3's own
+   absolute post-teardown figures (§0's table) are ~23.2-23.8 MiB/heap
+   (cap=4) and ~31.2-32.0 MiB/heap (cap=8, depending on thread count) — an
+   order of magnitude larger than the "~8 MiB" this report compares 238 MiB
+   against. This is the apples-to-oranges comparison the task hypothesis
+   named: an absolute floor (this report's 238 MiB) against another
+   report's incremental cap-change delta (R27-3's 8 MiB), not two absolute
+   retention floors.
+
+   **No single unambiguous "corrected" absolute-to-absolute ratio replaces
+   the retracted 30× figure**, because R27-3 and this report measure
+   retention at different points in each mechanism's own lifecycle (R27-3's
+   figure is POST-TEARDOWN, before any forced drain; this report's 238 MiB
+   is POST-forced-decay-to-fixed-point, i.e. already reclaimed as far as
+   possible without a full evict-all) and against different baselines
+   (cap=4 vs cap=8). Computing the two most defensible like-for-like
+   absolute comparisons directly from each report's own §0 tables (R27-3's
+   per-heap 8T KiB figures, 31,982 / 23,787 KiB, divided by 1,024 to MiB):
+   - large-cache 238.5 MiB (256 MiB headroom, post-drain, 8T) ÷ small-pool
+     31.23 MiB (cap=8, post-teardown, 8T) ≈ **7.6×**
+   - large-cache 238.5 MiB ÷ small-pool 23.23 MiB (cap=4, post-teardown,
+     8T) ≈ **10.3×**
+
+   Both computed ratios are well below the retracted 30×, confirming the
+   review's underlying point that 30× overstates the comparison, but
+   neither is offered here as *the* corrected headline — a true
+   apples-to-apples number would require re-measuring the small pool's own
+   post-forced-drain floor with `dbg_drain_small_pool` (R27-3 already has
+   this data point per its own §0: `dbg_drain_small_pool` releases pooled
+   segments, leaving only the ~+4 MiB/heap committed-non-pooled residual —
+   i.e. the small pool's OWN fully-drained floor is much closer to 0 than
+   to 8 MiB, which would push the large-cache-to-small-pool ratio even
+   higher than 7.6-10.3×, not lower) — that re-derivation is out of this
+   correction's scope and is named here as the precise follow-up a future
+   round would need for a defensible single ratio.
+
+   **This report's own line 344 sentence is retracted as stated.** The
+   corrected framing: *"the large cache's ~238 MiB/heap floor is at least
+   an order of magnitude larger than the small pool's own absolute
+   post-teardown retention (~24-32 MiB/heap, R27-3), and is not
+   comparable to R27-3's cited '+8 MiB' figure, which is a cap-4-vs-cap-8
+   DELTA, not an absolute retention floor."* §0's headline "30x" language
+   and §5's "30x"/review's-cited-"32x" characterizations should be read
+   with this correction; no other numbers in this report (the 238-241 MiB
+   floor itself, the 12.4-12.5% reclaimed figures, the 0-KiB idle-delta
+   figures) are affected — this correction is scoped to the two
+   cross-report ratio comparisons only.

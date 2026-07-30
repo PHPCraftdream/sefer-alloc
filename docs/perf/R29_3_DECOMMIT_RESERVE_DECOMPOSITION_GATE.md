@@ -300,3 +300,99 @@ round rather than fixed here (out of R30-1's scope, and this doc's own
 methodology has always measured on WSL2/Linux specifically — see the
 "Platform" line in this doc's header — so the example was never claimed to
 be native-Windows-safe in the first place).
+
+---
+
+## 9. 2026-07-30 correction (R30-4, task #453) — three independently re-verified methodology findings
+
+`docs/perf/OPEN_ITEMS.md` item 28 (filed from
+`docs/reviews/2026-07-29-r29-readonly-review.md`, findings (b)–(d), and
+independently corroborated by `docs/reviews/2026-07-30-r29-followup-readonly-review.md`
+§2.2) flagged three methodology questions about this report that were not
+independently re-verified at filing time. All three were checked in task
+#453 (R30-4) against this report's own text and
+`examples/r29_3_decomposition_gate.rs`'s actual source.
+
+**(c) CONFIRMED — "median of 200" mislabels an arithmetic mean.**
+`examples/r29_3_decomposition_gate.rs` computes every headline figure as
+`<accumulated total>.elapsed().as_nanos() as f64 / N as f64` — e.g. `a_ns`
+(line 100), `c_ns` (line 113), `decommit_ns`/`refault_ns` (lines 150-151),
+`a_prime_ns` (line 179) — a single total-elapsed-time-divided-by-N
+computation over all 200 iterations, which is an **arithmetic mean**, not a
+median (a median would require collecting all 200 per-iteration samples and
+selecting/interpolating the middle value(s); no such per-sample collection
+exists anywhere in the example). The example's own `println!` at line 185
+and this report's §3 headers (e.g. "ns/cycle, median of 200") both use the
+word "median" for these mean values. **This is a pure documentation
+relabeling fix — the underlying numbers in §3's tables are correct as
+computed and are NOT being changed here; only the word "median" is wrong
+everywhere it appears in this report's §3 headers and should be read as
+"mean."** No change to `examples/r29_3_decomposition_gate.rs` is made by
+this correction, per this task's brief (do not touch the example's code).
+
+**(d) CONFIRMED — the "irreducible" arm (B) and the real-cycle arm (A′) both
+assume full touch density; the report's unconditional framing needs this
+stated explicitly.** `examples/r29_3_decomposition_gate.rs` lines 126-127,
+135-136, 145-146, 166-167, and 174-175 all iterate
+`(payload_start..payload_end).step_by(page_size)` and `write_volatile` one
+byte to **every** page in the segment's ~1,006-page payload range — i.e.
+Measurement B (the irreducible floor) and Measurement A′ (the real
+production cycle comparison) both touch 100% of the segment's payload
+pages on every timed cycle. §6's verdict ("Page-fault cost (5) alone
+accounts for ~99% of the cycle... A reservation-only overflow tier cannot
+meaningfully help") is stated unconditionally, with no caveat that this
+conclusion is conditioned on full-payload touch density. **At a SPARSE
+touch density** (a workload that only ever touches a small fraction of a
+segment's pages before freeing it — plausible for the small-object-overflow
+churn shape the original reservation-only tier proposal targeted, per
+`docs/perf/OPEN_ITEMS.md` item 15/16's own originating context), the
+fixed `MADV_DONTNEED` decommit cost (§5: ~196-217K ns, independent of how
+many pages are subsequently touched) would make up a much larger fraction
+of a much smaller (4+5) floor, and the relative ordering this report states
+("(4+5) dominates at ~99%," "reservation-only would be a net loss") is not
+established for that regime — it could reverse. This report's own §6
+revisit trigger already gestures at a related idea ("if segment size
+shrinks dramatically") but does not name touch density as a distinct,
+independently-varying axis. **Item 15/16's `[L]` disposition in
+`docs/perf/OPEN_ITEMS.md` is NOT reopened by this correction** — the
+measured full-touch-density regime is a real, common regime (any segment
+whose payload is fully written before being freed, e.g. a filled buffer)
+and the verdict stands for it; the correction is that the "does not fire"
+conclusion is scoped to that regime, not unconditional across all touch
+densities, and a touch-density sweep is the named precondition for
+reopening the question at sparse density.
+
+**(b) CONFIRMED (with a corrected, narrower framing) — the "net loss"
+headline overstates against this report's own A′−B numbers, but the
+review's proposed "different questions" reading is only partially right.**
+Re-reading §5's own text closely: §5's "net loss" sentence ("the
+reservation-only design would ADD ~196-217K ns of decommit overhead while
+saving only ~21-27K ns... a net loss") is indeed answering a different,
+narrower question than the plain A′−B figures — it isolates the NEW
+decommit-syscall cost a reservation-only tier's own release step would add,
+compared only against the (1+2+3) avoidable share, not against the
+current design's full cost. That framing is legitimate and is not itself
+wrong. **However, §5's own very next paragraph (lines 197-200) then uses
+that framing to characterize the report's OWN measured A′−B result** — a
+positive saving in BOTH saved runs (run 1: +113,592 ns / 5.1%; run 2:
++36,656 ns / 1.7% — same sign in both runs, not a noise-driven sign flip)
+— **as "within measurement noise of zero, NOT a reliable saving," without
+citing any variance, standard deviation, or repeated-run spread to support
+that "noise" characterization anywhere in this document.** Two consistent,
+same-direction positive measurements is at minimum inconclusive evidence
+for "noise," not evidence for zero effect, absent a stated noise floor.
+**Corrected verdict, per this task's brief:** the honest characterization is
+**workload-sensitive / not currently a priority** — NOT "mathematically
+negative for all workload shapes" (the original §5/§6 framing) and NOT "a
+clear win" either (the review's own reading, if taken as "the design nets
+positive," would also overstate the correction in the other direction: two
+runs at 1.7-5.1% savings, on a metric the report itself never establishes a
+noise floor for, is not strong enough evidence to recommend building the
+tier). The precondition for reopening this question is unchanged from §6's
+existing revisit trigger, extended per finding (d) above: **a touch-density
+sweep** (this report only measured full touch density) **is the
+precondition for reopening item 15/16**, not just a segment-size or
+OS-backend change. Item 15/16's `[L]` (honest-reject) disposition in
+`docs/perf/OPEN_ITEMS.md` stands; its documented reason is corrected from
+an unconditional "net loss" to "workload-sensitive net-neutral-to-small-loss
+at full touch density, unmeasured at sparse touch density."
