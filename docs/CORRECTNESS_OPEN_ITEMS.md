@@ -438,7 +438,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    different argument (e.g. a demonstrated scatter-caused maintenance cost,
    not just a recurrence of the already-explained bug class) to revisit.
 
-   **[FIXED, R31-4/task #467, commit `<R31_4_SHA_PLACEHOLDER>`, 2026-07-30/31.]**
+   **[FIXED, R31-4/task #467, commit `ca9aba9`, 2026-07-30/31.]**
    Implemented `ReservedSmallSegment` exactly per §5.2-5.3's sketch, in a new
    one-export file (`src/alloc_core/reserved_small_segment.rs`, per this
    project's file-structure rule): a private `base: *mut u8` field, a
@@ -555,7 +555,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      P2-2 (the review's own text is the only source cited here — this
      entry is a filing, not an independent confirmation).
 
-   **[FIXED, R31-4/task #467, commit `<R31_4_SHA_PLACEHOLDER>`, 2026-07-31.]**
+   **[FIXED, R31-4/task #467, commit `ca9aba9`, 2026-07-31.]**
    Both claims independently re-verified before fixing, per the "Next
    trigger" instruction above.
 
