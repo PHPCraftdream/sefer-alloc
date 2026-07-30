@@ -39,15 +39,22 @@ swept. See §3 for the candidate explanation this task's own data supports.
 **This task does not change any `src/` default, `Profile`, or
 `Cargo.toml`'s `production` line.** Measurement only.
 
-**Date:** 2026-07-30. **Base/landing revision measured:** `main` @
-`d9d30cdf47358ebd2c60c0bbdd641c571ed0d943` — this task's own commit lands
-this report and the example/workload files together, so the measurement
-commit SHA and the tree it measured are the same commit (no chicken-and-egg
-placeholder needed, unlike R30-6/R30-7's same-day-follow-up pattern —
-`git show d9d30cdf47358ebd2c60c0bbdd641c571ed0d943:docs/perf/R31_2_POOL_CAP_THRESHOLD_SWEEP_GATE.md`
-recovers this exact report and the exact `examples/r31_2_*`/
-`examples/_shared/r31_2_*` source it measured, per CLAUDE.md's R29-6
-immutable-source-identity rule). **Platform:** native Windows 10 Pro
+**Date:** 2026-07-30. **Base revision measured:** `main` @
+`d9d30cdf47358ebd2c60c0bbdd641c571ed0d943` (HEAD immediately before this
+task's changes) + this task's uncommitted working tree at measurement time
+(the example/workload/script additions this same task lands). **Commit
+that lands this report:** `032048b4adcfbaac4d1193a97dcfb42e37fd0826` (per
+CLAUDE.md's R29-6 immutable-source-identity rule, a commit cannot cite its
+own SHA inside its own tree — the same chicken-and-egg pattern `1272a52`/
+R30-6's `b5efe8ce6099d33987f7811edc4f2411686d9bfc` and R30-7 established;
+this landing-commit SHA, not the base-SHA-plus-uncommitted-tree citation
+above, is this report's actual immutable source identity: `git show
+032048b4adcfbaac4d1193a97dcfb42e37fd0826:docs/perf/R31_2_POOL_CAP_THRESHOLD_SWEEP_GATE.md`
+recovers this exact report AS IT EXISTED AT THAT COMMIT — i.e. before this
+SHA-filling correction — and the same SHA recovers the exact
+`examples/r31_2_*`/`examples/_shared/r31_2_*` source it measured; this
+correction pass itself lands in a small follow-up commit, per the same
+`1272a52`/`c7b3eda`/`d9d30cd` established pattern). **Platform:** native Windows 10 Pro
 x86-64, 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores / 16 logical) —
 same shared host as R27-3/R27-4/R29-13/R30-6/R30-7 (shared with other
 concurrent agent work during this session; the paired A/B/B/A protocol plus
