@@ -325,6 +325,46 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    §2 table, which is a Linux-only claim; Windows `MEM_COMMIT` is a real
    syscall, not implicit).
 
+7. **[T, filed 2026-07-30, R30-10/task #459]
+   `dbg_decomp_reserve_and_keep`/`dbg_decomp_release`
+   (`src/alloc_core/alloc_core_small_pool.rs:1070-1115`) mint-then-redeem a
+   bare `*mut u8` segment base with only a `debug_assert!` (compiled out in
+   `--release`) guarding against releasing the live `small_cur` cursor —
+   the same hazard class R30-1 (task #450) fixed for `dbg_decomp_full_cycle`,
+   still standing on a weaker, non-release-surviving backstop for this
+   specific pair. R30-10's design evaluation
+   (`docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md` §5) found this
+   is the ONE current hook pair in the crate that both mints a NEW raw
+   pointer via a `dbg_*` call and requires the caller to hold and later hand
+   it back — the shape a typed, non-forgeable, move-consumed handle
+   (`ReservedSmallSegment`, sketched in that document's §5.2-5.3) would fix
+   structurally: a forged handle becomes uncomputable (private field +
+   `pub(crate)` constructor) and a double-release becomes a compile error
+   (E0382, moved value) instead of an unchecked runtime hazard. NOT
+   implemented this round — the retrofit is a small (~5-file) but
+   NOT-zero-risk diff (touches `AllocCore`'s definition, `HeapCore`'s
+   forwarding delegate in `heap_core_diag.rs:854-857`, and both real
+   callers, `examples/r29_3_decomposition_gate.rs` and R30-1's OWN
+   counterfactual regression test `tests/r30_1_decomp_full_cycle_cursor_safety.rs`)
+   that deserves its own review as the first typed-handle pattern in this
+   codebase, not a same-task rubber stamp alongside the design doc that
+   proposes it. **Trigger to action:** either (a) a 6th confirmed instance
+   of the R25-1/R29-7/R29-8/R29-17/R30-1 "safe `dbg_*` hook touches live
+   allocator state unsoundly" bug class, or (b) any future task adding a
+   SECOND mint-then-redeem raw-pointer `dbg_*` pair to the inventory
+   (enumerated in `tests/dbg_hook_safety_tripwire.rs`), at which point one
+   handle type amortizes across both pairs. Full crate-wide hook
+   relocation into one module — the OTHER piece of the architecture this
+   task evaluated — was declined outright, not deferred: measured at
+   102-139 distinct `tests/`/`examples/`/`benches/` files touched (4-5x the
+   ~26-file footprint R24-6/task #384 already declined for a SINGLE hook,
+   `dbg_push_to_ring`), AND independently shown to not address the actual
+   defect mechanism in any of the five real incidents (each was fixed by
+   changing hook BODY/signature, never by relocation — see the design
+   doc's §3 table). Not re-opened by this trigger; would need a materially
+   different argument (e.g. a demonstrated scatter-caused maintenance cost,
+   not just a recurrence of the already-explained bug class) to revisit.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
