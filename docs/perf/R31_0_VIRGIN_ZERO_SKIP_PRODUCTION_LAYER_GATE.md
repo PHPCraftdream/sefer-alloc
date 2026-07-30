@@ -75,10 +75,11 @@ measure).
 `14a9ef34145cc62188d734cf6987bcfd4dbcb088` (`main`, HEAD at task start; the
 working tree at measurement time additionally carried this task's own new
 files, landed together in the SAME commit this report cites). **Commit that
-lands this report:** `UNFILLED` — filled in by a same-day follow-up commit
-per the established chicken-and-egg pattern (a commit cannot cite its own
-SHA inside its own tree; see `1272a52`/R30-6 and `9335979`-style
-precedents in this project's history).
+lands this report:** `dece4a7025f80bc51c756e3c278a72e5b6c1a1b7` (this SHA
+was necessarily added in this small follow-up commit after the landing
+commit itself, since a commit cannot cite its own SHA inside its own tree
+— see `1272a52`/R30-6 for the established precedent for this exact
+chicken-and-egg pattern).
 
 **Reproduction:**
 
