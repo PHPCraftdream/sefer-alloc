@@ -438,6 +438,65 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    different argument (e.g. a demonstrated scatter-caused maintenance cost,
    not just a recurrence of the already-explained bug class) to revisit.
 
+8. **[T, filed 2026-07-30, UNVERIFIED-BY-ME findings from the Round 30 full
+   independent review (`docs/reviews/2026-07-30-r30-full-review.md` §5
+   P2-1/P2-2)]** The following two P2 findings were NOT independently
+   re-verified before filing — flagged here at the review's own
+   confidence/severity, for a future round to check and either action or
+   dismiss, per this file's own convention (item 5 above is the precedent
+   for this exact "filed, not fixed" pattern):
+   - **P2-1 — `has_bench_internals_cfg` (`tests/dbg_hook_safety_tripwire.rs:657`)
+     accepts `#[cfg_attr(...)]` as if it were a genuine `#[cfg(...)]` gate,
+     latent instance of the same substring-match class R30-2 (task #451)
+     fixed for two other shapes.** The review's claim: the parser's 5-byte
+     prefix match `#[cfg` also matches `#[cfg_attr(`, and the parser then
+     reads `cfg_attr`'s first argument (its *predicate*, not a gate
+     condition on the attribute's own presence) as if it were a `cfg`
+     predicate — the review states it proved this by extracting lines
+     471-702 verbatim into a standalone `rustc` binary outside this repo
+     and observing `cfg_attr(feature = "bench-internals", allow(dead_code))`
+     parse as `true` (i.e. treated as a genuine gate). The review also
+     states no live instance exists today (no `cfg_attr` in `src/` or
+     `crates/` mentions `bench-internals`, per its own grep) — i.e. this
+     is a latent parser gap, not a currently-exploitable hole, the same
+     status R30-2 itself gave the two `cfg` shapes it did fix. Suggested
+     fix per the review: match the literal `#[cfg(` (including the open
+     paren) instead of the shorter `#[cfg` prefix.
+   - **P2-2 — `HeapCore::dbg_large_cache_hits` (new, R30-6/task #455) is
+     gated `alloc-decommit` alone, not `all(alloc-decommit,
+     bench-internals)` like its four sibling measurement delegations in
+     the same file.** The review's claim:
+     `src/registry/heap_core_diag.rs:352-357` gates the hook on
+     `alloc-decommit` alone (justified in its own doc comment as "matching
+     `AllocCore::dbg_large_cache_hits`'s own gate exactly"), which is
+     inside `production` (`Cargo.toml:399`) and so widens a `production`
+     build's safe public surface; the same file's other four measurement
+     delegations (`dbg_pool_cap`, `dbg_segment_state_reconciliation`,
+     `dbg_large_cache_used`, `dbg_large_cache_slot_sizes`) are each gated
+     `all(alloc-decommit, bench-internals)` and each cite "no production
+     caller -> R25-10 sub-rule 2" — the CLAUDE.md benchmark-hook rule that
+     any hook with no production caller MUST default to `bench-internals`
+     unless it is the one sanctioned `dbg_push_to_ring` exception. The
+     review notes this is NOT a soundness issue (the hook is
+     `&self -> u64`, read-only, no pointer parameter, no mutation) and
+     that `tests/dbg_hook_safety_tripwire.rs`'s `PURE_OBSERVERS` list
+     already includes it (R30-6 added it there), so the R30-2 tripwire
+     itself is satisfied — the finding is specifically that "the
+     delegated method's pre-existing gate" is the reasoning CLAUDE.md's
+     rule 2 rejects for NEW hooks, applied here to a genuinely new hook.
+     Suggested fix per the review: add `feature = "bench-internals"` to
+     its `cfg` and adjust the tripwire's gate-list accordingly (the
+     review states the R30-6 probe that calls it already requires
+     `bench-internals`, so nothing else should break).
+   - **Next trigger:** independent re-verification of both claims (re-run
+     the review's standalone `rustc` cfg-parser extraction for P2-1;
+     re-read `heap_core_diag.rs:302-373` and the tripwire's gate-list for
+     P2-2), then either apply the review's suggested one-line fixes or
+     record a reasoned dismissal, in a future round.
+   - **Evidence:** `docs/reviews/2026-07-30-r30-full-review.md` §5 P2-1,
+     P2-2 (the review's own text is the only source cited here — this
+     entry is a filing, not an independent confirmation).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

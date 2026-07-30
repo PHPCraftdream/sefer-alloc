@@ -165,15 +165,33 @@ single-shot 1024 B teardown micro-benchmark** — a follow-up check on a
 more application-shaped scenario (8 concurrent request-handler threads,
 mixed object sizes, continuous multi-round churn) found the win does
 **NOT** reproduce as a statistically distinguishable effect at that scale
-(`t=-0.119`, indistinguishable from a same-vs-same control's own noise
-band), even though the underlying pool-overflow mechanism is proven
-activated in that workload too — see
-[`R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md).
-Treat the `~22 %` figure as workload-shape-specific, not a guarantee that
-transfers to every concurrent deployment. The small-pool win is *binary*,
-not graduated (R27-5 §4.1): a heap either absorbs its peak segment demand
-(zero decommits, full win) or it doesn't —
+(`t=-0.119`, in the same rough noise band as a same-vs-same control's own
+`t=-1.039`), and the mechanism fires identically in both arms in this
+workload (`decommit_calls_total = 40` in EVERY launch of BOTH the
+`default` and `throughput` arms — bit-identical, not merely non-zero), so
+this workload does not separate them on that dimension — see
+[`R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md)
+§0.1. This comparison's own minimum detectable effect is ≈19 % of the
+mean (≈131 ms of a ≈697 ms mean, `crit(p<0.05)=2.101 × se`), so treat the
+`~22 %` figure as workload-shape-specific and this null as UNDERPOWERED —
+it cannot rule out a real effect up to roughly 15-19 % at this workload's
+scale, not a confirmed absence of one (see the same report's §0.2) — not a
+guarantee that transfers to every concurrent deployment. The small-pool
+win is *binary*, not graduated (R27-5 §4.1): a heap either absorbs its
+peak segment demand (zero decommits, full win) or it doesn't —
 there is no partial win from an intermediate cap.
+
+> **Dated correction (2026-07-30, Round 30 review response — see
+> `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-2/P1-3).** This
+> paragraph originally read "even though the underlying pool-overflow
+> mechanism is proven activated in that workload too," citing only the
+> `default` arm's non-zero `decommit_calls_total` as if that alone
+> validated the null. The corrected text above states the fuller, more
+> important finding instead: the mechanism activates IDENTICALLY in both
+> arms (40 = 40, not merely "non-zero"), so this workload does not
+> distinguish the two configs on the dimension `Profile::Throughput`
+> exists to affect. The paragraph also originally omitted this
+> comparison's own minimum detectable effect, now added.
 
 ---
 
@@ -1373,7 +1391,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I6, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
 | [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design proposal (not implemented) for an explicit, caller-driven `trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve |
-| [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no — indistinguishable from noise at this scale, though the mechanism is proven activated |
+| [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no statistically distinguishable effect at this scale — the mechanism fires identically in both arms (`decommit_calls_total=40` in both), so this workload does not separate them; the null is underpowered (MDE ≈19% of the mean), not a confirmed absence of effect (§0.1/§0.2, corrected 2026-07-30) |
 
 ---
 

@@ -59,10 +59,14 @@ pattern in miniature. This bench follows that established convention.
 `50d5adc9e99f7817f88097901d7d0497fae53ea3` (`main`, clean at task start
 except this task's own new/modified files). This report, the new bench
 file, and all `_raw_r30_3_*.log` files below land in the SAME commit as this
-report — that commit's own SHA (recorded in `CHANGELOG.md`'s Round 30
-section for this task) is the permanent, reproducible identity: `git show
-<that SHA>:benches/r30_3_virgin_zero_skip_native_gate.rs` recovers the exact
-harness that produced every number below, byte for byte.
+report — **commit that lands this report:** `d8f467b869c226150746532c484944958ee31808`
+(this SHA was necessarily added in a small follow-up commit after the
+landing commit itself, since a commit cannot cite its own SHA inside its
+own tree — see that follow-up commit's message for the one-line
+explanation, and `1272a52`/R30-6 for the established precedent for this
+exact chicken-and-egg pattern): `git show
+d8f467b869c226150746532c484944958ee31808:benches/r30_3_virgin_zero_skip_native_gate.rs`
+recovers the exact harness that produced every number below, byte for byte.
 
 **Reproduction** (four binaries — OFF/ON crossed with eager/lazy small-segment commit):
 
@@ -384,6 +388,55 @@ below the Ir-predicted effect size, or (b) a workload shape that avoids the
 refill-batch dilution (§3) entirely, e.g. one call per class across many
 classes in one batch instead of many calls of one class.
 
+> **Dated correction (2026-07-30, Round 30 review response — see
+> `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-1).** This section's
+> earlier text (immediately above, unchanged) states the recycled family
+> shows a "direction-consistent regression ... 48/48 cells" with ON
+> "ALWAYS" slower and a quoted range of `+2.1%` to `+84.1%`. Independently
+> recomputed directly from this report's own committed
+> `docs/perf/R30_3_VIRGIN_ZERO_SKIP_NATIVE_GATE_summary.csv` (24
+> OFF-vs-ON recycled cell pairs exist, not 48 — the "48" conflated the 24
+> cells with the 2 commit policies swept, eager and lazy): **19 of 24
+> cells are ON-slower on the mean (not 24/24), 20 of 24 on `p50`** (the
+> `p50` exceptions are `eager/4k/full`, `eager/128k/onebyte`,
+> `lazy/16k/full`, `lazy/64k/notouch`); the mean-delta exceptions (ON
+> *faster*) are `eager/16k/notouch` (−8.6%), `lazy/128k/full` (−32.1%),
+> `lazy/16k/full` (−4.7%), `lazy/16k/notouch` (−2.9%), and
+> `lazy/64k/onebyte` (−1.1%). The quoted `+2.1%..+84.1%` range is the
+> **eager-arm-only** min/max (`eager/4k/full` and `eager/4k/onebyte`); the
+> full range across both commit policies is **−32.1% .. +136.8%**
+> (`lazy/128k/full` at the low end, `lazy/4k/notouch` at the high end),
+> which also makes "small" harder to sustain as a blanket descriptor for
+> every cell, even though the absolute nanosecond gaps at the smallest
+> sizes remain genuinely tiny (see the original text's own `notouch`/
+> `onebyte` absolute-ns discussion, which is unaffected by this
+> correction).
+>
+> Accordingly, "directionally consistent across every one of 24 cells and
+> both commit policies (48 cells total), which plain measurement noise
+> would not produce" should be read as: **a majority-direction trend
+> (19/24 mean, 20/24 p50) consistent with, but not conclusively proven to
+> be, extra dispatch bookkeeping on the feature's non-virgin path — 5/24
+> cells (mean) show the opposite direction**, which is still compatible
+> with a real small-magnitude effect swamped by noise in a minority of
+> cells, but is weaker evidence for a purely structural, noise-immune
+> cause than the original "ALWAYS"/"48/48" framing claimed.
+>
+> **This correction does not touch this report's other conclusions.** §6's
+> NO-GO verdict stands unchanged: its primary, load-bearing justification
+> is "no calloc-heavy workload demonstrates a material, noise-distinguishable
+> wall-clock win" (the virgin-scenario sign-inconsistent null), which this
+> finding does not affect. The recycled-family regression is now stated as
+> a majority-direction (not unanimous) trend, which is if anything a MORE
+> conservative reason to decline promotion (still no case for a win, and
+> even the regression evidence is less clean than originally stated) — the
+> verdict does not change in either direction.
+>
+> Numbers independently recomputed by the fixing task directly from the
+> committed CSV (a Node one-liner grouping the 24 recycled cells by
+> `commit_policy`+`size`+`touch` and comparing `virgin_zero_skip=false` vs
+> `=true` rows), not copied from the review without checking.
+
 ## 7. CLAUDE.md compliance checklist
 
 - Raw logs (`git add -f`'d): `docs/perf/_raw_r30_3_off_eager.log`,
@@ -401,7 +454,10 @@ classes in one batch instead of many calls of one class.
   oracle pass/fail, and the headline ns/op figures per sweep arm).
 - Immutable source identity: §1 (base commit
   `50d5adc9e99f7817f88097901d7d0497fae53ea3`; this report's own landing
-  commit is the permanent reference, recorded in `CHANGELOG.md`).
+  commit, `d8f467b869c226150746532c484944958ee31808`, is the permanent
+  reference — filled in by a same-day follow-up commit per the
+  chicken-and-egg pattern §1 explains, mirroring `1272a52`'s established
+  R30-6 precedent).
 - Fast-by-default: `VIRGIN_REPS=50`/`REPS=10` reps × the 4×3×2 matrix
   completes in low single digit seconds per binary (see raw logs' own
   timestamps) — no `sample_size`/criterion warm-up applicable since this is

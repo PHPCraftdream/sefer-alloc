@@ -354,6 +354,112 @@ for completeness.
    >   CONDITIONAL-GO + the explicit GO condition); `docs/FEATURE_PROMOTION_STATUS.md`
    >   (survey row).
 
+31. **UNVERIFIED-BY-ME findings from the Round 30 full independent review
+    (`docs/reviews/2026-07-30-r30-full-review.md` §5, P2-3 through P2-11) —
+    measurement-methodology defects in Round 30's own gate reports and
+    process docs, filed 2026-07-30 during the same round's P1 review-response
+    task, not independently re-verified before filing.**
+
+   > **Current state**
+   > - **Status:** filed, not fixed or independently re-verified — flagged
+   >   here at the review's own confidence/severity for a future round to
+   >   check and either action or dismiss, mirroring the exact "filed, not
+   >   fixed" pattern `docs/CORRECTNESS_OPEN_ITEMS.md` item 5 (and its
+   >   sibling item 8, filed the same day for this review's P2-1/P2-2) uses
+   >   for the correctness-side counterpart.
+   > - **Current number/verdict:** nine sub-findings, as the review's own §5
+   >   states them (this entry restates, does not re-derive):
+   >   - **P2-3** — `R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §0.1's idle-RSS
+   >     claim ("`rss_idle_kib - rss_burst2_kib` is 0 or within single-digit
+   >     KiB noise in every row") is false as written for all 36 CSV rows per
+   >     the review's recomputation (`|rss_idle - rss_burst2|` ranges 16-28
+   >     KiB at 1 thread up to 756-848 KiB at 32, plus one row the review
+   >     reports as −1,574,932 KiB) — the review states the comparison is
+   >     structurally wrong (`burst2` is measured AFTER the idle window, so a
+   >     difference is expected) and that the claim the report actually wants
+   >     (`rss_idle - rss_burst1 == 0`) IS satisfied in 33/36 rows per its
+   >     recomputation. The review states the finding is right, only the
+   >     cited arithmetic is not.
+   >   - **P2-4** — R30-6's raw log row `67108864,64,32,2`
+   >     (`rss_burst1_kib=1,580,920`, `rss_idle_kib=424`) is, per the review,
+   >     a physically impossible sample (a 32-thread process cannot drop to
+   >     424 KiB RSS across a 1.2s sleep) that is neither excluded nor
+   >     flagged in the report; the review notes medians protect the §0.1
+   >     headline so no conclusion changes, but suggests a sanity assertion
+   >     in the harness.
+   >   - **P2-5** — R30-6's headline ("64 MiB preserves the FULL measured
+   >     hit-rate benefit... while RSS retention drops... ~7x smaller") per
+   >     the review joins two findings from workloads at different cache
+   >     occupancy (hit-rate parity measured at 48 MiB/burst, below where
+   >     64 MiB's cap binds at all; the ~7x RSS saving is R29-13's, measured
+   >     at 272 MiB/burst, where the cap DOES bind and hit-rate cost is
+   >     unmeasured) — the review states the report body itself is honest
+   >     about this, but that `Profile::Balanced`'s/`Profile::Throughput`'s
+   >     shipped doc comments (`src/alloc_core/profile.rs:38-45,68-84`) and
+   >     the README profile table carry the headline without the regime
+   >     caveat.
+   >   - **P2-6** — per the review, `Profile::Throughput`'s doc comment cites
+   >     its "~22%" win but has no pointer to
+   >     `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`'s null result
+   >     from the SAME task/commit (README does disclose it; the API doc a
+   >     caller reads at the call site does not, per the review).
+   >   - **P2-7** — the review states `.github/workflows/ci.yml`'s `clippy`
+   >     job header comment claims the `check-matrix` job would independently
+   >     catch clippy-step drift, but `run-check-matrix.mjs`'s `--kind`
+   >     filter excludes every `clippy` row by construction, so per the
+   >     review no CI mechanism actually asserts the five hand-transcribed
+   >     clippy steps match the manifest (local `npm run check` does, per
+   >     the review's own reading of `check-all.mjs`).
+   >   - **P2-8** — the review states
+   >     `docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md` §2.1's
+   >     "160 total hooks" / §2.3's "all 160 hooks" is the CLASSIFIED total
+   >     (`PURE_OBSERVERS` + `SAFE_MUTATORS` + `UNSAFE_HOOKS`) excluding the
+   >     safe-and-`bench-internals`-gated hooks; the review's own Python
+   >     reproduction of the tripwire's scanner over `src/`+`crates/` found
+   >     179 total `pub fn dbg_*`/`pub unsafe fn dbg_*` definitions, and a
+   >     "139 files touch all three buckets" figure the review recomputed as
+   >     151. The review notes both discrepancies understate R30-10's own
+   >     relocation-cost estimate, so its NO-GO decision is safe either way.
+   >   - **P2-9** — the review states R30-14's landing commit message
+   >     (`4c52c26`) claims removed OPEN_ITEMS.md lines are "byte-identical"
+   >     to `OPEN_ITEMS_ARCHIVE.md` §A13, but its own diff of the 16 removed
+   >     lines against the archive found none byte-identical anywhere; the
+   >     review states the SUBSTANCE does hold (every load-bearing fact it
+   >     checked is present in the archive and/or the rewritten card) — a
+   >     wording defect in a commit message, not lost history, per the
+   >     review.
+   >   - **P2-10** — the review states
+   >     `R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv`'s `commit_sha`
+   >     column holds a prose placeholder ("<see report header, this file is
+   >     committed alongside...>") rather than the actual SHA, defeating the
+   >     summary-CSV rule's point (a script should not need to parse prose);
+   >     the review notes the report header itself does carry the real SHA
+   >     (`97c2f07`, via follow-up `1272a52`), so this is a one-token fix.
+   >   - **P2-11** — the review states `R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`
+   >     §0/§6 say "20 pairs, 40 process launches" when the raw log contains
+   >     80 launches per comparison (40 per arm) — its sibling `R30_6_...`
+   >     §1.6 states the equivalent correctly ("20 pairs = 80 process
+   >     launches"); plus two smaller non-functional inaccuracies the review
+   >     names in the same bullet (`scripts/check-matrix.mjs`'s JSDoc
+   >     `@property` type not matching its actual object shape; a note that
+   >     `R30_10_...`'s `awk` reproduction commands did reproduce correctly).
+   > - **Next trigger:** independent re-verification of each sub-finding
+   >   against its cited source (raw logs/CSVs for P2-3/P2-4/P2-8/P2-11, the
+   >   cited `src/`/doc files for P2-5/P2-6, `ci.yml`/`run-check-matrix.mjs`
+   >   for P2-7, the commit diff for P2-9, the CSV file directly for P2-10),
+   >   then either apply the review's suggested fixes (each stated inline in
+   >   the review's §5) or record a reasoned dismissal, in a future round.
+   >   None of these block or change any P0/P1 verdict from Round 30 — the
+   >   review's own text states none of the eleven P2s "threatens
+   >   correctness."
+   > - **Evidence:** `docs/reviews/2026-07-30-r30-full-review.md` §5 (P2-1
+   >   through P2-11 in full; P2-1/P2-2 filed separately in
+   >   `docs/CORRECTNESS_OPEN_ITEMS.md` item 8 as the correctness-side
+   >   counterpart, per this file's own scope boundary with that sibling
+   >   index) — the review's own text is the only source cited here; this
+   >   entry is a filing, not an independent confirmation of any number in
+   >   it.
+
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a

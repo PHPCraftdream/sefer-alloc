@@ -42,6 +42,36 @@ continuous-churn workload should not assume the ~22% figure transfers
 unchanged — measure their own workload if the win matters to their
 decision.
 
+> **Dated correction (2026-07-30, Round 30 review response — see
+> `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-2/P1-3, and §0.1/§0.2
+> below for the full numbers and derivations).** Three claims in the
+> summary above (unchanged) need a corrected reading:
+> 1. "**The mechanism the throughput profile targets WAS genuinely
+>    activated**" cites only the `default` arm's `decommit_calls_total`.
+>    The `throughput` arm reports the SAME value (40, bit-identical) in
+>    every one of its own 40 launches — the mechanism activated
+>    IDENTICALLY in both arms, which is a materially different (and more
+>    important) finding than "the workload touches the mechanism at all."
+>    See §0.1.
+> 2. "shows the **SAME noise-band shape**" (comparing the control to the
+>    real comparison) is not supported by the two runs' own dispersion:
+>    the control's `sd` is ~6.4× tighter and its mean per-launch runtime is
+>    ~4× faster than the real comparison's. See §0.2.
+> 3. "**the win is workload-shape-dependent**" and README's "Treat the
+>    `~22%` figure as workload-shape-specific" both read as a confirmed
+>    absence of effect. This comparison's own minimum detectable effect is
+>    ≈18.8% of the mean (≈131 ms), so the correct reading is an
+>    UNDERPOWERED null — it cannot rule out a real win or loss up to
+>    roughly 15-19% at this workload's scale — not a confirmed "no
+>    material effect here." See §0.2.
+>
+> None of this changes the report's own bottom line that R27-4's ~22%
+> figure did not reproduce as a STATISTICALLY DISTINGUISHABLE effect in
+> this workload at this sample size, and none of it retracts R27-4's
+> original finding or the `Profile::Throughput` preset — both statements
+> immediately above this note stand. What changes is the STRENGTH of
+> claim the null result supports.
+
 **Date:** 2026-07-30. **Base revision measured:** `main` @
 `1272a522a45acdbb58dd6b0dede946b1ced12fa6` (the paired-ab-runner's own
 `git_commit` field, captured automatically at measurement time) + this
@@ -49,7 +79,17 @@ task's uncommitted working tree (the profile/example/doc additions this
 same task landed) — per CLAUDE.md's R29-6 immutable-source-identity rule,
 citing the exact base SHA the provenance JSON recorded is the honest
 record available; the working tree is landed in the commit this report is
-part of, making the tree state resolvable going forward from that commit. **Platform:** native Windows 10 Pro
+part of, making the tree state resolvable going forward from that commit.
+**Commit that lands this report:** `b5efe8ce6099d33987f7811edc4f2411686d9bfc`
+(filled in by a same-day follow-up commit, per the same chicken-and-egg
+pattern `1272a52`/R30-6 established — a commit cannot cite its own SHA
+inside its own tree; per CLAUDE.md's R29-6 rule this landing-commit SHA,
+not the base-SHA-plus-uncommitted-tree citation above, is this report's
+actual immutable source identity: `git show
+b5efe8ce6099d33987f7811edc4f2411686d9bfc:docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`
+recovers this exact report, and the same SHA recovers the exact
+`examples/r30_7_*`/`examples/_shared/r30_7_*` source this report measured).
+**Platform:** native Windows 10 Pro
 x86-64, 11th Gen Intel Core i7-11800H @ 2.30GHz (8 cores / 16 logical) —
 the same shared host as R27-3/R27-4/R29-13/R30-6 (this host is shared with
 other concurrent agent work during this session; the paired A/B/B/A
@@ -90,6 +130,147 @@ mechanism R27-4 measured a ~22% win from eliminating. This is not a
 workload that never touches the pool-cap boundary; the mechanism fires,
 the effect on wall-clock is simply not distinguishable from noise at this
 concurrency/scale.
+
+> **Dated correction (2026-07-30, Round 30 review response — see
+> `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-2, and this report's
+> new §0.1 immediately below for the full per-arm numbers).** The
+> "Activation oracle" paragraph immediately above (unchanged) reads only
+> the `default` arm's `decommit_calls_total` and concludes "the mechanism
+> fires" as if that alone validates the comparison. It does not: the
+> `throughput` arm's `decommit_calls_total` is **also 40, bit-identical to
+> `default`'s, in every one of its own 40 launches** — the mechanism
+> `Profile::Throughput` exists to eliminate (R27-4's original single-thread
+> finding is 9→0 decommit calls/run) was measured here at 40→40, i.e. a
+> ZERO mechanism delta between arms at this workload's scale. The
+> corrected reading is: this oracle rules out ONE vacuity mode (the
+> workload never touches the pool-cap boundary at all — it does, in both
+> arms) but does NOT rule out the other, more consequential one (the
+> treatment never actually changed the mechanism in this workload shape) —
+> see §0.1 and §2's new hypothesis 0.
+
+---
+
+## 0.1 Per-arm mechanism-activation evidence (added 2026-07-30, review response)
+
+**This section closes P1-2 of `docs/reviews/2026-07-30-r30-full-review.md`
+§4: the original §0 "Activation oracle" paragraph above printed only the
+`default` arm's `decommit_calls_total`, which is not sufficient evidence
+that the compared mechanism actually differs between arms.** Re-parsing
+`docs/perf/_raw_r30_7_server_shaped_ab.log` (80 `RESULT` records: 40
+`default` + 40 `throughput`) for BOTH arms:
+
+| arm | n launches | `decommit_calls_total` distinct values | `large_cache_hits` distinct values | `segments_reserved_total` range |
+|---|---:|---|---|---|
+| `default` | 40 | `[40]` — bit-identical every launch | `[45]` — bit-identical every launch | 68–72 |
+| `throughput` | 40 | `[40]` — bit-identical every launch, IDENTICAL to `default`'s | `[45]` — bit-identical every launch, IDENTICAL to `default`'s | 62–72 |
+
+**The mechanism delta between arms is ZERO at this workload.**
+`Profile::Throughput`'s whole design point is a small-pool cap large
+enough to absorb the workload's peak segment demand so decommit/reserve
+churn drops to (ideally) zero — R27-4's original single-threaded
+micro-benchmark measured exactly that, 9 decommit calls/run under
+`default` vs 0 under `throughput`. Here, both arms report 40 decommit
+calls per launch, every launch, with no exceptions. Whatever this
+workload's `~-7.44 ms` nominal (non-significant) mean difference reflects,
+it is not a reduction in decommit/reserve churn — the treatment did not
+change the mechanism this comparison exists to measure, in this workload
+shape.
+
+This is stated here as **hypothesis 0**, ahead of §2's three noise-based
+hypotheses (thread-lifecycle overhead, cross-thread registry contention,
+mixed-size pressure spreading): **the simplest explanation for the null
+result is that the profile change did not change the mechanism being
+measured in this workload shape at all — not that it changed the
+mechanism but the wall-clock effect was swamped by noise.** A
+`pool_segments`/`pool_byte_cap` pair large enough to matter for a
+single-threaded 256-object/batch churn (R27-4's shape) may simply never
+become the binding constraint once 8 threads' concurrent working sets are
+each large enough (§1's ~24.1 MiB/thread/round, deliberately calibrated to
+exceed `default`'s pool) that BOTH configs churn segments continuously —
+i.e. `throughput`'s larger cap may still be undersized relative to THIS
+workload's peak demand, not merely under-exercised by it. This gate does
+not distinguish "the cap is still too small at this scale" from "some
+other structural reason the two configs converge under 8-way concurrency"
+— either would produce the observed 40=40 result — but it does rule out
+the reading in the original §0 paragraph above, that a non-zero
+`decommit_calls_total` on the `default` arm alone is sufficient evidence
+the comparison is non-vacuous.
+
+For completeness, the config almost certainly *did* take effect as
+compiled — `segments_reserved_total` reaches as low as 62 in the
+`throughput` arm and never below 68 in the `default` arm (table above),
+which is consistent with §3.4 point 2's original reasoning that a
+mis-wired config would show a starker between-arm difference — but this is
+a weak, incidental signal about config resolution, not the mechanism
+oracle §0's original paragraph claimed it was.
+
+---
+
+## 0.2 Statistical power and the control's noise regime (added 2026-07-30, review response)
+
+**This section closes P1-3 of `docs/reviews/2026-07-30-r30-full-review.md`
+§4: §0's original table and control never stated the comparison's minimum
+detectable effect, and the control's own dispersion/runtime do not match
+the real comparison's, weakening its value as a noise-floor
+characterization.** Both points independently verified against this
+report's own committed
+`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_summary.csv` and the
+two raw logs:
+
+**Minimum detectable effect.** With `se = 62.39 ms` (the real comparison's
+own standard error, from the summary CSV) and `crit(p<0.05) = 2.101`
+(§0's own stated critical value, 18 degrees of freedom, two-tailed), the
+smallest difference this comparison could distinguish from zero at p<0.05
+is `2.101 × 62.39 ms ≈ 131.1 ms`. The real comparison's own combined
+per-launch mean elapsed time (both arms, all 80 launches) is ≈697 ms
+(≈695 ms as stated in this report's headline, ≈694 ms for `default` alone
+and ≈701 ms for `throughput` alone) — so the minimum detectable effect is
+**≈131 ms / ≈697 ms ≈ 18.8% of the mean**. The 95% confidence interval on
+the mean Δ (`-7.44 ms ± 2.101 × 62.39 ms`) is **`[-138.5 ms, +123.6 ms]`**.
+**This study can barely exclude R27-4's ~22% figure and cannot exclude a
+real win or loss up to roughly 15-19% at this sample size** — the null
+result is a real null (the point estimate is close to zero and the sign
+flips between the real comparison and its own control), but it is an
+UNDERPOWERED null, not evidence that no effect up to R27-4's own magnitude
+exists at this workload's scale.
+
+**The same-vs-same control's regime does not match the real comparison's.**
+From the same summary CSV:
+
+| run | n pairs | mean Δ | sd | se | t | mean per-launch elapsed |
+|---|---:|---:|---:|---:|---:|---:|
+| `default` vs `throughput` (real) | 20 | -7.44 ms | 279.02 ms | 62.39 ms | -0.119 | ≈697 ms |
+| `default` vs `default` (control) | 20 | -10.09 ms | 43.41 ms | 9.71 ms | -1.039 | ≈171 ms |
+
+The control's standard deviation is **~6.4× tighter** (43.41 ms vs
+279.02 ms) and its mean per-launch runtime is **~4× faster** (≈171 ms vs
+≈697 ms) than the real comparison it is meant to validate — both computed
+directly from the raw per-launch `elapsed_ns` values in
+`docs/perf/_raw_r30_7_server_shaped_ab.log` (real: min 136 ms, max
+1,910 ms) vs `docs/perf/_raw_r30_7_server_shaped_control.log` (control:
+min 115 ms, max 420 ms). The report's own text discloses "this host is
+shared with other concurrent agent work," and these two runs were not
+taken under comparable host load. **The control demonstrates the harness's
+own self-consistency (it does not manufacture a false positive out of
+nothing) more than it characterizes the real comparison's noise floor** —
+the only statistic genuinely comparable between the two is the qualitative
+sign-split pattern (both non-significant, similar rough magnitude of `t`),
+not the variance or absolute timing.
+
+**Correction to this report's own framing.** This report's own top-summary
+"the win is workload-shape-dependent" and README's "Treat the `~22%`
+figure as workload-shape-specific" should be read together with the above
+(also cross-referenced from the dated correction note directly under this
+report's top summary): this gate
+found a genuine, real null at the ~131 ms/~18.8% resolution it could
+measure, but it did **not** establish that no material win exists at this
+workload shape — only that if one exists, it is smaller than roughly 15-19%
+of the mean, or this particular 20-pair sample happened to land near zero
+by chance within that resolution. A future task wanting a tighter bound
+would need either more pairs, a quieter host, or both — not attempted
+here, since a re-run is explicitly out of scope for this correction pass
+(this section restates and verifies numbers already present in the
+committed CSV/logs; it does not gather new measurement).
 
 ---
 
@@ -179,6 +360,27 @@ explanations for why an activation-proven mechanism (§0's
 `decommit_calls_total` check) produces no measurable wall-clock signal at
 this scale, offered so a future task that wants to pursue this further has
 concrete starting hypotheses rather than none.
+
+> **Dated addition (2026-07-30, Round 30 review response — see
+> `docs/reviews/2026-07-30-r30-full-review.md` §4 P1-2).** The three
+> hypotheses above all implicitly assume the premise "an activation-proven
+> mechanism produces no measurable wall-clock signal" — i.e. that the
+> mechanism DID activate and differ between arms, and something else
+> (noise, contention, scheduling) swamped its effect. §0.1 (added in the
+> same review response) shows that premise does not hold here:
+> `decommit_calls_total` is bit-identical (40) between the `default` and
+> `throughput` arms in every one of their 40 launches each — the mechanism
+> did not merely activate, it activated IDENTICALLY in both arms. This
+> should be read as **hypothesis 0, logically prior to hypotheses 1-3
+> above**: the simplest explanation for the null is that the profile
+> change did not change the mechanism being measured in this workload
+> shape at all (§0.1's `throughput`-cap-still-undersized-at-scale
+> candidate explanation), not that it changed the mechanism but the
+> wall-clock effect was swamped by noise. Hypotheses 1-3 remain honest
+> candidate explanations for residual noise/variance in general, but they
+> are not needed to explain why THIS mechanism's effect is absent — a
+> 40=40 decommit-call count is already a sufficient, and more direct,
+> explanation than "swamped by noise" for a near-zero mean latency delta.
 
 ---
 
