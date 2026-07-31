@@ -32,17 +32,22 @@
 //!   could skip (it keeps the VA mapping and segment identity alive).
 //! - **(4+5) IRREDUCIBLE** — recommit + first-touch page faults. Even a
 //!   reservation-only design still needs to recommit and fault the decommitted
-//!   payload pages. On Linux, recommit is implicit (zero-cost no-op after
-//!   `MADV_DONTNEED`); the real cost is the page faults.
+//!   payload pages. On Unix, recommit is implicit (zero-cost no-op after
+//!   `MADV_DONTNEED` — the mapping stays live, only the physical backing is
+//!   dropped); on Windows `MEM_DECOMMIT` (`VirtualFree`) actually unmaps the
+//!   pages, so a real `VirtualAlloc(MEM_COMMIT)` recommit is required before
+//!   the pages are writable again — see the R31-6 note at Measurement B below.
 //!
 //! ## Platform
 //!
 //! This binary measures wall-clock and is meaningful on any platform. The
 //! primary measurement runs on WSL2/Linux (matching every other `npm run iai`
-//! measurement host in this project). The OS-specific behaviour (Linux:
+//! measurement host in this project). The OS-specific behaviour (Unix:
 //! `mmap`/`munmap`/`MADV_DONTNEED`; Windows: `VirtualAlloc`/`VirtualFree`/
 //! `MEM_DECOMMIT`) is handled by the existing `os::` module — no new
-//! platform code here.
+//! platform code here beyond the explicit recommit call this example itself
+//! now makes (R31-6, task #469) between decommit and re-touch, required for
+//! correctness on Windows and a documented no-op on Unix/miri.
 //!
 //! See `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md` for the
 //! verdict.
@@ -112,13 +117,33 @@ fn main() {
     }
     let c_ns = t0.elapsed().as_nanos() as f64 / N as f64;
 
-    // ── Measurement B: irreducible floor = decommit + first-touch re-fault ──
+    // ── Measurement B: irreducible floor = decommit + recommit + first-touch
+    // re-fault ──
     //
     // Reserve one segment, first-touch its payload (establish committed
-    // state), then alternate: decommit (MADV_DONTNEED) → re-touch (re-fault).
-    // The re-touch cost is the page-fault cost a reservation-only tier STILL
-    // pays; the decommit cost is the MADV_DONTNEED syscall (also still paid).
-    // Together = (4+5), the irreducible floor.
+    // state), then alternate: decommit (POSIX `MADV_DONTNEED` / Windows
+    // `MEM_DECOMMIT`) → recommit → re-touch (re-fault). The re-touch cost is
+    // the page-fault cost a reservation-only tier STILL pays; the decommit
+    // cost is the decommit syscall (also still paid). Together = (4+5), the
+    // irreducible floor.
+    //
+    // R31-6 (task #469): the recommit step is NOT optional cross-platform.
+    // POSIX `MADV_DONTNEED` leaves the address-space mapping intact and only
+    // drops the physical backing — a write straight after decommit implicitly
+    // re-faults fresh zeroed pages, no recommit needed. Windows `MEM_DECOMMIT`
+    // (`VirtualFree`) actually UNMAPS the pages: writing into a decommitted
+    // range without first calling `VirtualAlloc(MEM_COMMIT)` again is an
+    // access violation, not a page fault — this example used to crash on
+    // Windows for exactly that reason. `dbg_decomp_recommit_payload` is a
+    // thin wrapper over `os::recommit_pages` (`aligned_vmem::recommit`),
+    // which already encodes the correct per-platform behaviour: a real
+    // `VirtualAlloc(MEM_COMMIT)` on Windows, and a documented no-op on
+    // Unix/miri (re-access is implicit there). Calling it unconditionally
+    // before every re-fault write is therefore correct AND representative on
+    // both platforms — it does not inflate the Linux numbers (the wrapped
+    // call is a no-op there) and it is what a reservation-only design would
+    // genuinely have to do on Windows to reach component (4) at all.
+    //
     // R31-4 (task #467): `dbg_decomp_reserve_and_keep` now returns a typed
     // `ReservedSmallSegment` handle instead of a bare pointer, and
     // `dbg_decomp_release` consumes it by value — no `unsafe` needed for
@@ -141,6 +166,10 @@ fn main() {
     // Warmup
     for _ in 0..WARMUP {
         unsafe { HeapCore::dbg_decomp_decommit_payload(base) };
+        assert!(
+            unsafe { HeapCore::dbg_decomp_recommit_payload(base) },
+            "recommit failed during warmup"
+        );
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(base.add(off), 1u8) };
         }
@@ -151,6 +180,10 @@ fn main() {
         decommit_total += td.elapsed().as_nanos();
 
         let tr = Instant::now();
+        assert!(
+            unsafe { HeapCore::dbg_decomp_recommit_payload(base) },
+            "recommit failed"
+        );
         for off in (payload_start..payload_end).step_by(page_size) {
             unsafe { core::ptr::write_volatile(base.add(off), 1u8) };
         }
@@ -209,19 +242,19 @@ fn main() {
     );
     println!();
     println!(
-        "  decommit syscall (MADV_DONTNEED):        {:>12.0} ns",
+        "  decommit syscall (MADV_DONTNEED/MEM_DECOMMIT): {:>12.0} ns",
         decommit_ns
     );
     println!(
-        "  (5)   first-touch page faults:           {:>12.0} ns  ({} pages @ {:.0} ns/fault)",
+        "  (4+5) recommit + first-touch page faults: {:>12.0} ns  ({} pages @ {:.0} ns/fault)",
         refault_ns,
         payload_pages,
         refault_ns / payload_pages as f64
     );
-    println!(
-        "  (4)   recommit (Linux: implicit, ~0 ns): {:>12.0} ns",
-        0.0
-    );
+    println!("  (4)   recommit is FOLDED into the (4+5) row above (R31-6): a real");
+    println!("        VirtualAlloc(MEM_COMMIT) on Windows, a documented no-op on");
+    println!("        Unix/miri (`os::recommit_pages`) — so the row above stays");
+    println!("        ~= first-touch alone on non-Windows hosts.");
     println!("  ────────────────────────────────────────────────────────");
     println!(
         "  (4+5) IRREDUCIBLE subtotal (B):          {:>12.0} ns",

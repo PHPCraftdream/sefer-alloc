@@ -1148,6 +1148,40 @@ impl AllocCore {
         os::decommit_pages(base, payload_start, SEGMENT);
     }
 
+    /// R31-6 (task #469): re-commit the payload pages of a segment previously
+    /// decommitted via [`dbg_decomp_decommit_payload`](Self::dbg_decomp_decommit_payload) —
+    /// thin wrapper over [`os::recommit_pages`]. On Windows this is a REAL
+    /// `VirtualAlloc(MEM_COMMIT)` (Windows `MEM_DECOMMIT` actually unmaps the
+    /// backing pages, unlike POSIX `MADV_DONTNEED`, which leaves the mapping
+    /// intact and merely drops the physical backing — re-access is implicitly
+    /// safe on Unix); on Unix/miri it is a documented no-op (`os::
+    /// recommit_pages` / `aligned_vmem::recommit` already fall back that way).
+    /// A caller measuring the re-fault cost after a decommit MUST call this
+    /// first on every platform — omitting it is exactly the bug this hook
+    /// closes (`examples/r29_3_decomposition_gate.rs`'s Measurement B used to
+    /// `write_volatile` straight into the just-decommitted range with no
+    /// intervening recommit, which crashes on Windows because the pages are
+    /// genuinely unmapped there).
+    ///
+    /// Returns `true` if the range is now committed (writes are safe),
+    /// `false` on genuine OS refusal (commit-charge exhaustion) — the caller
+    /// MUST NOT write into the range on `false`.
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST be a live segment base whose payload was previously
+    /// decommitted via [`dbg_decomp_decommit_payload`](Self::dbg_decomp_decommit_payload)
+    /// (or was never committed at all — recommit is idempotent on an
+    /// already-committed range on every backend this crate supports).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    #[allow(unsafe_code)] // R31-6: unsafe fn boundary, mirrors dbg_decomp_decommit_payload.
+    pub unsafe fn dbg_decomp_recommit_payload(base: *mut u8) -> bool {
+        let payload_start = SegLayout::small_meta_end();
+        os::recommit_pages(base, payload_start, SEGMENT)
+    }
+
     /// R29-3: the `[payload_start, payload_end)` byte range of a small
     /// segment's payload (`[small_meta_end(), SEGMENT)`).
     #[doc(hidden)]

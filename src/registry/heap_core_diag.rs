@@ -956,6 +956,19 @@ impl HeapCore {
         unsafe { crate::alloc_core::AllocCore::dbg_decomp_decommit_payload(base) };
     }
 
+    /// R31-6 (task #469) delegation — see [`AllocCore::dbg_decomp_recommit_payload`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_recommit_payload`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // R31-6: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_recommit_payload(base: *mut u8) -> bool {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe { crate::alloc_core::AllocCore::dbg_decomp_recommit_payload(base) }
+    }
+
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_payload_range`].
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
