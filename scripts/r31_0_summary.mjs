@@ -70,6 +70,19 @@ function parseRows(logText) {
 // (index: 0=tag,1=size,2=touch,3=reps,4=refill_n,5=mean_hits,6=min_hits,7=expected_hits,8=mean_zp,9=min_zp,10=mean_ns,11=p50,12=min,13=max,14=mean_act,15=min_act,16=oracle)
 function fmtVirginRecycled(featSet, vzs, fields) {
   const scenario = fields[0].slice("R31_0_".length); // "virgin" | "recycled"
+  const oracle = fields[16];
+  // CORRECTED 2026-07-31 (Round 31 review response, docs/reviews/2026-07-31-r31-full-review.md
+  // §7 P2-2): on the OFF binary (oracle == "NA"), `SMALL_ZERO_PASS_CALLS` --
+  // the counter `mean_act_pct`/`min_act_pct` are derived from -- is never
+  // incremented at all (report §2.2: the counter lives entirely inside the
+  // `#[cfg(feature = "virgin-zero-skip")]` branch), so the raw log's 100.00/0.00
+  // figures for those two columns are structurally vacuous, not a real
+  // activation measurement. Emit `NA` there too instead of the vacuous number,
+  // so a script reading only the percentage columns cannot mistake this for a
+  // real 100% activation reading. Data for every ON row (oracle=PASS/FAIL) is
+  // unchanged.
+  const meanActPct = oracle === "NA" ? "NA" : fields[14];
+  const minActPct = oracle === "NA" ? "NA" : fields[15];
   return [
     META.commit_sha,
     `"${featSet}"`,
@@ -91,12 +104,23 @@ function fmtVirginRecycled(featSet, vzs, fields) {
     fields[11],
     fields[12],
     fields[13],
-    fields[14],
-    fields[15],
-    fields[16],
+    meanActPct,
+    minActPct,
+    oracle,
     landingCommit,
   ].join(",");
 }
+
+// CORRECTED 2026-07-31 (Round 31 review response, docs/reviews/2026-07-31-r31-full-review.md
+// §7 P2-1): the 4 retention rows below carry only 16 fields (RETENTION_HEADER's
+// shape) but were being appended, with no section marker, into the SAME output
+// file under the 24-column VIRGIN_RECYCLED_HEADER -- RETENTION_HEADER was defined
+// above but never actually written anywhere, so a naive CSV reader mis-keyed the
+// retention rows' fields against the wrong header (e.g. `expected_hits` reading as
+// `true`). Fixed by writing the retention rows to their OWN file, under their OWN
+// header, instead of interleaving them into the virgin/recycled file. This is a
+// pure output-format restructuring -- no data value below changed.
+const retentionLines = [RETENTION_HEADER];
 
 // retention row: R31_0_RETENTION,size,refill_n,retained,expected_retained,mask,expected_mask,all_zero,oracle
 function fmtRetention(featSet, vzs, fields) {
@@ -152,7 +176,9 @@ for (const r of offRows1) {
 }
 for (const r of onRows1) {
   if (r[0] === "R31_0_RETENTION") {
-    lines.push(fmtRetention(ON_FEAT, "true", r));
+    // CORRECTED 2026-07-31 (P2-1): routed to the dedicated retentionLines
+    // array/file instead of being interleaved into `lines` under the wrong header.
+    retentionLines.push(fmtRetention(ON_FEAT, "true", r));
   } else {
     lines.push(fmtVirginRecycled(ON_FEAT, "true", r));
   }
@@ -266,11 +292,23 @@ const deltaOutPath = new URL(
 );
 writeFileSync(deltaOutPath, deltaLines.join("\n") + "\n");
 
+// CORRECTED 2026-07-31 (P2-1): the 4 retention rows now go to their own file,
+// under RETENTION_HEADER, instead of being interleaved into the 24-column
+// virgin/recycled file under the wrong header.
+const retentionOutPath = new URL(
+  "docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_retention.csv",
+  ROOT,
+);
+writeFileSync(retentionOutPath, retentionLines.join("\n") + "\n");
+
 console.error(
   `wrote ${lines.length - 1} data rows to docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv (landing_commit=${landingCommit})`,
 );
 console.error(
   `wrote ${deltaLines.length - 1} derived-delta rows to docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_deltas.csv`,
+);
+console.error(
+  `wrote ${retentionLines.length - 1} retention rows to docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_retention.csv`,
 );
 console.error(
   `headline check PASSED: all 4 notouch/virgin percentage deltas (run1 and run2) match the published report within ${TOLERANCE_PCT}pp`,

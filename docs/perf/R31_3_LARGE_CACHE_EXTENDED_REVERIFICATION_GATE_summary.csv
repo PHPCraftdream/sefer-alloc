@@ -22,7 +22,7 @@ multi_heap_rss,extension_materialised_count,on,threads=1,1,count,"1/1 heaps mate
 multi_heap_rss,extension_materialised_count,on,threads=8,8,count,"8/8 heaps materialised the sidecar"
 multi_heap_rss,extension_materialised_count,on,threads=32,32,count,"32/32 heaps materialised the sidecar"
 multi_heap_rss,rss_post_kib_per_heap,off,threads=1,412932,kib,"~403 MiB/heap"
-multi_heap_rss,rss_post_kib_per_heap,off,threads=8,410112,kib,"3280892/8 = ~410 MiB/heap (400.5 rounded)"
+multi_heap_rss,rss_post_kib_per_heap,off,threads=8,410112,kib,"3280892/8 = ~400.5 MiB/heap (CORRECTED 2026-07-31, R31-14a/task #483: note originally read '~410 MiB/heap (400.5 rounded)', a KiB/MiB unit slip -- 410112 KiB = 400.5 MiB, not ~410 MiB; value column unchanged)"
 multi_heap_rss,rss_post_kib_per_heap,off,threads=32,409834,kib,"13114692/32 = ~400 MiB/heap"
 multi_heap_rss,rss_post_kib_per_heap,on,threads=1,240876,kib,"~235 MiB/heap"
 multi_heap_rss,rss_post_kib_per_heap,on,threads=8,238066,kib,"1904528/8 = ~232.5 MiB/heap"

@@ -1,0 +1,5 @@
+commit_sha,feature_set,virgin_zero_skip,cpu,os,rustc,kind,size,refill_n,retained,expected_retained,mask,expected_mask,all_zero,oracle,landing_commit
+14a9ef34145cc62188d734cf6987bcfd4dbcb088,"production alloc-stats virgin-zero-skip",true,Intel_Core_i7-11800H_2.30GHz,Windows_10_Pro_10.0.19045,1.97.0,retention,4k,16,15,15,32767,32767,true,PASS,dece4a7025f80bc51c756e3c278a72e5b6c1a1b7
+14a9ef34145cc62188d734cf6987bcfd4dbcb088,"production alloc-stats virgin-zero-skip",true,Intel_Core_i7-11800H_2.30GHz,Windows_10_Pro_10.0.19045,1.97.0,retention,16k,4,3,3,7,7,true,PASS,dece4a7025f80bc51c756e3c278a72e5b6c1a1b7
+14a9ef34145cc62188d734cf6987bcfd4dbcb088,"production alloc-stats virgin-zero-skip",true,Intel_Core_i7-11800H_2.30GHz,Windows_10_Pro_10.0.19045,1.97.0,retention,64k,1,0,0,0,0,true,PASS,dece4a7025f80bc51c756e3c278a72e5b6c1a1b7
+14a9ef34145cc62188d734cf6987bcfd4dbcb088,"production alloc-stats virgin-zero-skip",true,Intel_Core_i7-11800H_2.30GHz,Windows_10_Pro_10.0.19045,1.97.0,retention,128k,1,0,0,0,0,true,PASS,dece4a7025f80bc51c756e3c278a72e5b6c1a1b7

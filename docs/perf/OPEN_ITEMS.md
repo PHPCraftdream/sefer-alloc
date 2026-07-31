@@ -104,7 +104,7 @@ for completeness.
    > **Current state**
    > - **Status:** both halves of the paired `pool_segments`/`pool_byte_cap` default-change decision (`(4, 16 MiB) → (8, 32 MiB)`) are now measured at the REAL config through the real `#[global_allocator]`; owner is R27-5/task #423's design (see Next trigger) pending a deployment-context decision. No production change made.
    > - **Current number/verdict:** latency — cap8 is **~22% faster** than cap4 at the real paired byte cap (R27-4/task #422: t=8.114 ≫ crit 2.101, sign 19/20, decommit calls 9→0 deterministic). Retention — cap8 genuinely retains **~+8 MiB/heap post-teardown** (~2 segments; ~4 MiB pooled/drainable + ~4 MiB committed-non-pooled), victim-activation-proven, scaling linearly to ~+255 MiB at 32 heaps, and does NOT decay during idle (R27-3/task #421; supersedes the earlier R26-1 "RSS-neutral" reading, which never proved cap-4 saturation at its lower-pressure probe batch size). This is a genuine, fully-quantified RSS-vs-throughput trade, not a free win.
-   > - **Next trigger:** R27-5/task #423 designed (not implemented) an adaptive/process-wide pool budget as the alternative to a flat default change; verdict CONDITIONAL-GO-on-paper, recommendation is Option 1 — keep the 4/16 MiB default, document the 8/32 MiB throughput recipe (now shipped as `Profile::Throughput`, R30-7/task #456) — because the adaptive design's benefit is unproven under uniform-pressure workloads and its idle-shrink-back sub-problem is unsolved within the no-background-thread constraint. A reservation-only overflow-tier alternative was separately evaluated and NOT opened (item 15 in `[L]` below — trigger 2 measured, does not fire). Re-open ONLY if a future round has (a) a measured uneven-pressure victim workload, or (b) wants to revisit the flat 8/32 default-promotion decision itself.
+   > - **Next trigger:** R27-5/task #423 designed (not implemented) an adaptive/process-wide pool budget as the alternative to a flat default change; verdict CONDITIONAL-GO-on-paper, recommendation is Option 1 — keep the 4/16 MiB default, document the 8/32 MiB throughput recipe (shipped as `Profile::Throughput` by R30-7/task #456; `Profile::Throughput` was later split by R31-9/task #473 into `SmallPoolPolicy::Throughput` + `LargeCachePolicy::Trimmed64MiB` — this recipe's small-pool half is now `SmallPoolPolicy::Throughput`, corrected 2026-07-31, R31-14a/task #483) — because the adaptive design's benefit is unproven under uniform-pressure workloads and its idle-shrink-back sub-problem is unsolved within the no-background-thread constraint. A reservation-only overflow-tier alternative was separately evaluated and NOT opened (item 15 in `[L]` below — trigger 2 measured, does not fire). Re-open ONLY if a future round has (a) a measured uneven-pressure victim workload, or (b) wants to revisit the flat 8/32 default-promotion decision itself.
    > - **Evidence:** `R24_11_TEARDOWN_RESIDUAL_ROOTCAUSE.md`; `R27_3_POOL_RETENTION_GATE.md` (retention, victim-activation-proven); `R27_4_REAL_DEFAULT_AB_GATE.md` (latency at the real paired config); `R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` (the adaptive-design evaluation + Option-1 recommendation). Full dated round-by-round narrative (R25-5 → R26-1 → R26-2 → R26-3 → R27-1 → R27-2 → R27-3 → R27-4 → R27-5), including every intermediate correction and its raw-log citations, preserved in the archive below.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `A13`.
    >
@@ -120,9 +120,12 @@ for completeness.
    > ~4-5% minimum-detectable-effect than R30-7's own 18.8% — a clean
    > reject, not an underpowered null. **This does not change the Option-1
    > recommendation above** (keep the 4/16 MiB default, document the 8/32
-   > MiB recipe as `Profile::Throughput`) — R27-4's original single-threaded
-   > win is unaffected, and `Profile::Throughput`'s value is unchanged — but
-   > it materially narrows the recipe's known-applicable scope: a caller
+   > MiB recipe — `SmallPoolPolicy::Throughput` as of R31-9/task #473's axis
+   > split, `Profile::Throughput` at the time this note was written;
+   > corrected 2026-07-31, R31-14a/task #483) — R27-4's original
+   > single-threaded win is unaffected, and the recipe's `(8, 32 MiB)` value
+   > is unchanged — but it materially narrows the recipe's known-applicable
+   > scope: a caller
    > whose workload resembles R30-7/R31-2's 8-way-concurrent, mixed-size,
    > continuous-churn shape should not expect ANY tested small-pool cap
    > (8 through 32) to reduce decommit churn or improve latency, based on
@@ -689,6 +692,58 @@ for completeness.
    >   in `docs/CORRECTNESS_OPEN_ITEMS.md` item 9 as the correctness-side
    >   counterpart (P2-6 fixed directly, not filed), per this file's own
    >   scope boundary with that sibling index.
+   > - **2026-07-31 update (R31-14a, task #483): P2-1, P2-2, P2-8, P2-10
+   >   independently RE-VERIFIED (not merely re-stated) against the actual
+   >   committed files and REPAIRED.**
+   >   - **P2-1** — confirmed exactly: `awk -F',' '{c[NF]++}'` over
+   >     `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv` before any
+   >     edit reproduced 49 rows at 24 fields + 4 rows at 16 fields;
+   >     confirmed in `scripts/r31_0_summary.mjs` that `RETENTION_HEADER` was
+   >     defined but never written. Fixed by routing the 4 retention rows to
+   >     their own file (`..._retention.csv`, under `RETENTION_HEADER`)
+   >     instead of interleaving them into the 24-column file. Re-running the
+   >     script against the already-committed raw logs (no re-measurement)
+   >     regenerated both files; the script's own hard-assert (all 4
+   >     `notouch`/virgin headline deltas within 0.1pp of the published
+   >     report) PASSED — no data value changed. Dated correction appended to
+   >     `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md` §7.
+   >   - **P2-2** — confirmed exactly: the report's own §2.2 states
+   >     `SMALL_ZERO_PASS_CALLS` is never incremented on the OFF binary; the
+   >     pre-fix CSV's 24 OFF-binary rows nonetheless carried numeric
+   >     `mean_act_pct`/`min_act_pct` (100.00 or 0.00) with only `oracle=NA`
+   >     signaling the vacuity. Fixed in `scripts/r31_0_summary.mjs`:
+   >     `fmtVirginRecycled` now emits `NA` in both columns whenever
+   >     `oracle == "NA"`; all 24 ON-binary rows are unchanged. Same dated
+   >     correction, `R31_0_..._GATE.md` §7.
+   >   - **P2-8** — confirmed exactly: 410,112 KiB / 1024 = 400.5 MiB, not
+   >     ~410 MiB; the CSV row's note string self-contradicted ("~410 MiB/heap
+   >     (400.5 rounded)"). The report body itself (§4.2 table, §4.3 trend)
+   >     already stated 400.5 MiB correctly — only the CSV note string was
+   >     wrong. Fixed: the note string corrected in
+   >     `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE_summary.csv` with an
+   >     inline `CORRECTED 2026-07-31` marker (the `value`/`unit` columns were
+   >     always correct, unchanged); dated correction also appended to
+   >     `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §7.
+   >   - **P2-10** — confirmed, with corrected scope: `grep -rn
+   >     "Profile::Throughput" Cargo.toml docs/perf/OPEN_ITEMS.md` found the
+   >     two live/prescriptive mentions the review named
+   >     (`Cargo.toml:1792`/`1774`, `OPEN_ITEMS.md`'s item-13 "Next
+   >     trigger"/dated-addition text) plus several MORE mentions inside this
+   >     file's own already-dated historical narrative blocks (items 26/27's
+   >     "Current state" quoting past report text, item 33's own restatement
+   >     of the review) — those are legitimately preserved history describing
+   >     what was true when written, not live stale references, and are left
+   >     as-is. Fixed the two live spots: both `Cargo.toml` comments
+   >     (R30-7's original + R31-2's own new one) now name
+   >     `SmallPoolPolicy::Throughput`/`LargeCachePolicy::Trimmed64MiB` with
+   >     an inline correction note; item 13's "Next trigger" and its R31-2
+   >     dated-addition text similarly corrected in place (this file is an
+   >     explicitly mutable living index per this file's own convention, so
+   >     no dated-addendum gate-report ceremony was needed here — a direct
+   >     in-place fix with a one-line "corrected" note was sufficient, same
+   >     treatment R31-9 already gave this file's item 26/27 blocks for the
+   >     identical rename). P2-3, P2-7, P2-9 remain open for a future round
+   >     (tracked as task #484).
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 

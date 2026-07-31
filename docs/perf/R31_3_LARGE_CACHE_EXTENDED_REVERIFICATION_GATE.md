@@ -450,3 +450,15 @@ pointer, no new `unsafe`):**
 
 **Docs:** `docs/perf/OPEN_ITEMS.md` item 30 (append-only refresh),
 `CHANGELOG.md` Round 31 section (append), this file.
+
+**CORRECTED 2026-07-31 (Round 31 review response, R31-14a/task #483):** the
+summary CSV's `rss_post_kib_per_heap,off,threads=8` row's note string
+originally read `"3280892/8 = ~410 MiB/heap (400.5 rounded)"` — a KiB/MiB
+unit slip (410,112 KiB = 400.5 MiB, not ~410 MiB; the note contradicted
+itself in one string). Its two sibling rows (threads=1 "~403 MiB", threads=32
+"~400 MiB") were already correct, and this report's own §4.2 table (line
+279: `8 | off | 432.0 MiB | 0/8 | 400.5 MiB`) and §4.3 trend line already
+stated the correct 400.5 MiB figure — only the CSV note string was wrong.
+Fixed to `"3280892/8 = ~400.5 MiB/heap (CORRECTED 2026-07-31, ...)"` in the
+CSV itself; the `value`/`unit` columns (410112/kib) were always correct and
+are unchanged.

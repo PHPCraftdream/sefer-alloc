@@ -1771,7 +1771,13 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # mixed-size, continuous-cycle "server request handler") A/B pair for the
 # throughput `Profile` — does the R27-4 single-thread teardown-micro-
 # benchmark's ~22% win hold in a more realistic shape? `default` = plain
-# `SeferAlloc::new()`; `throughput` = `SeferAlloc::with_profile(Profile::Throughput)`.
+# `SeferAlloc::new()`; `throughput` = `SeferAlloc::with_profile(Profile::new()
+# .small_pool(SmallPoolPolicy::Throughput).large_cache(LargeCachePolicy::Trimmed64MiB))`
+# (CORRECTED 2026-07-31, R31-14a/task #483: originally named the single
+# bundled `Profile::Throughput` enum variant, which R31-9/task #473 later
+# split into these two independent axis values — this comment, not the
+# example source, was left stale; see `examples/r30_7_throughput_profile_server_ab_throughput.rs`,
+# already updated by R31-9, for the actual current call).
 # Same required-features triple as the r27_4/r30_6_latency siblings (each
 # installs a real `#[global_allocator]`, so `alloc-global` + `alloc-xthread`
 # + `alloc-decommit` are all required). Shared workload body lives in
@@ -1789,7 +1795,10 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 # R30-7 finding of a ZERO mechanism delta between cap4/cap8 at 8-way
 # concurrency change at a LARGER cap (16, 32)? Four near-identical binaries,
 # one per swept `(pool_segments, pool_byte_cap)` pair: (4,16MiB) — the
-# current default — (8,32MiB) — Profile::Throughput's current value —
+# current default — (8,32MiB) — SmallPoolPolicy::Throughput's current value
+# (CORRECTED 2026-07-31, R31-14a/task #483: originally named
+# `Profile::Throughput`, which R31-9/task #473 later split into
+# `SmallPoolPolicy`/`LargeCachePolicy`; this is the small-pool axis's value) —
 # (16,64MiB), (32,128MiB). Same required-features triple as the r27_4/r30_6_latency/
 # r30_7 siblings (each installs a real `#[global_allocator]`). Shared workload
 # body (byte-identical to r30_7's, same 8-thread/4-size-mix/continuous-churn

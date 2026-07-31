@@ -435,7 +435,10 @@ consumer shape specifically.
   in the Round 31 review-response correction — the per-cell OFF/ON ns and
   computed percentage delta for all 24 cells × 2 runs, the machine-readable
   source for §3's tables, with the four `notouch` headline values
-  hard-asserted against the published report by the same script).
+  hard-asserted against the published report by the same script) plus
+  `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_retention.csv`
+  (added 2026-07-31, see §7 below — the 4 retention rows, now under their own
+  header instead of interleaved into the summary CSV's 24-column rows).
 - Immutable source identity: §1 (base commit
   `14a9ef34145cc62188d734cf6987bcfd4dbcb088`; this report's own landing
   commit is filled in by a same-day follow-up commit per the established
@@ -453,3 +456,54 @@ consumer shape specifically.
 - No production default changed — this is `bench`-prefixed measurement-only
   work per CLAUDE.md's R30-12 commit-tag rule; `Cargo.toml`'s `production`
   feature list is untouched by this task.
+
+## 7. CORRECTED 2026-07-31 — summary-CSV structural/data-hygiene fixes (Round 31 review response, R31-14a, task #483)
+
+This section is appended, not a rewrite — every number and claim in §§1-6
+above stays exactly as originally published. Two data-hygiene defects in
+`docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv`, flagged
+by `docs/reviews/2026-07-31-r31-full-review.md` §7 as P2-1 and P2-2, were
+independently re-verified against the actual committed CSV and
+`scripts/r31_0_summary.mjs` (not merely re-stated from the review) before
+being fixed. Both are pure output-format/derivation-bug corrections — no
+measured value changed.
+
+**P2-1 (structurally ragged CSV) — CONFIRMED, fixed.** Independently
+recounted with `awk -F',' '{c[NF]++}'` before any edit: 49 rows at 24 fields
+(the header + 48 virgin/recycled rows) and 4 rows at 16 fields (the
+`retention` rows), interleaved mid-file with no section marker, all under
+the single 24-column `VIRGIN_RECYCLED_HEADER`. Confirmed in
+`scripts/r31_0_summary.mjs` that `RETENTION_HEADER` was defined but never
+passed to `writeFileSync` anywhere in the file — the retention rows were
+built by `fmtRetention` and pushed into the same `lines` array as the
+virgin/recycled rows. *Fix applied:* the retention rows now go to their own
+file, `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_retention.csv`,
+under their own `RETENTION_HEADER` line (the simplest of the review's three
+suggested options — emit two files — chosen because it needed no schema
+padding and no data changed). The summary CSV is now uniformly 24 fields
+across all 49 rows. Re-running `node scripts/r31_0_summary.mjs
+dece4a7025f80bc51c756e3c278a72e5b6c1a1b7` (the report's own landing commit,
+already known — no re-measurement) regenerated both files from the
+already-committed raw logs; the script's own headline hard-assert (all four
+`notouch`/virgin percentage deltas within 0.1pp of the published §3.1
+figures) PASSED, confirming no data value moved.
+
+**P2-2 (vacuous OFF-arm activation stat) — CONFIRMED, fixed.** Independently
+re-read §2.2 above: `SMALL_ZERO_PASS_CALLS` lives entirely inside the
+`#[cfg(feature = "virgin-zero-skip")]` branch of `HeapCore::alloc_zeroed`
+and is never incremented on the OFF binary at all. Independently confirmed
+in the (pre-fix) committed CSV that all 24 OFF-binary rows nonetheless
+carried numeric `mean_act_pct`/`min_act_pct` values (100.00 for virgin cells,
+0.00 for recycled cells) with only the separate `oracle` column reading `NA`
+to signal the metric's vacuity — a script reading just the two percentage
+columns would see a meaningless "100% activation" figure. *Fix applied:*
+`scripts/r31_0_summary.mjs`'s `fmtVirginRecycled` now emits `NA` in both the
+`mean_act_pct` and `min_act_pct` columns whenever `oracle == "NA"` (i.e. on
+every OFF-binary row), leaving all 24 ON-binary rows (oracle = PASS/FAIL)
+unchanged. Verified post-fix: all 24 OFF rows now read `NA,NA,NA` across
+`mean_act_pct,min_act_pct,oracle`; all 24 ON rows are byte-identical to
+before.
+
+Both fixes are confined to `scripts/r31_0_summary.mjs`'s output-formatting
+logic and the two regenerated CSV files; no raw log, no §0-§6 prose number,
+and no headline verdict in this report changed.
