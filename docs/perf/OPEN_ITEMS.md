@@ -1265,27 +1265,46 @@ for completeness.
    >   (P2-2 through P2-5, P2-10) — the review's own source, not
    >   independently re-derived by this filing.
 
-37. **`R10_7_BATCH_WARM_ARM.md` cites 4 raw logs that were never committed —
-    discovered by `scripts/verify-gate-report.mjs`'s first CI run (check (c)
-    is FAIL-capable; this pushed the round's landing commit through CI red).**
-    The report (`docs/perf/R10_7_BATCH_WARM_ARM.md`, created commit `9611a56`,
-    2026-07-21) cites `_raw_r10_7_warm_arm.log`, `_raw_r10_7_tcache_isolated.log`,
-    `_raw_r10_7_d_vs_f.log`, `_raw_r10_7_tcache_arm.log` in its own §5 as
-    evidence, but none were ever committed under `docs/perf/`. Verified this
-    predates the raw-log-is-scratch-by-default policy (R13-10/task #280,
-    commit `1a2dd7d`) via `git merge-base --is-ancestor 9611a56 1a2dd7d`
-    (exit 0) — the report was written before the policy existed, so this is
-    pre-existing debt the new script surfaced, not a new defect. Resolved by
-    adding `R10_7_BATCH_WARM_ARM` to `scripts/verify-gate-report.mjs`'s
-    `RETROACTIVE_EXEMPT` map (check `c`), same mechanism already used for
-    `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST`.
+37. **Three reports cite raw logs that were never committed — discovered by
+    `scripts/verify-gate-report.mjs`'s first two CI runs (check (c) is
+    FAIL-capable; each pushed the round's landing commit through CI red).**
+    `R10_7_BATCH_WARM_ARM.md` (created commit `9611a56`, 2026-07-21) cites
+    `_raw_r10_7_warm_arm.log`, `_raw_r10_7_tcache_isolated.log`,
+    `_raw_r10_7_d_vs_f.log`, `_raw_r10_7_tcache_arm.log` in its own §5;
+    `R8_9_MEDIUM_CLASSES_VERDICT.md` (created `9afba66`) cites
+    `_raw_baseline_off.log`, `_raw_medium_on.log`,
+    `_raw_baseline_off_reduced.log`, `_raw_medium_on_reduced.log`;
+    `R9_3_MEDIUM_CLASSES_PRODUCTION_GATES.md` (created `c8f5f32`) cites
+    `_raw_iai_production.log`, `_raw_iai_medium.log`,
+    `_raw_criterion_production.log`, `_raw_criterion_medium.log`,
+    `_raw_firstalloc_production.log`, `_raw_firstalloc_medium.log`. None of
+    these 14 logs were ever committed under `docs/perf/` — all three reports
+    only appeared to pass locally because the missing files happened to exist
+    on the local machine as untracked scratch files left over from whenever
+    the reports were originally written (confirmed by temporarily moving them
+    aside and re-running the script locally: still `ALL GREEN` without them,
+    reproducing exactly what a clean CI checkout sees). The first CI run's
+    FAIL for R10_7 was fixed alone in the first response commit; only after a
+    SECOND CI run did R8_9/R9_3 surface, because they sort after `R10`–`R23`
+    lexicographically and a `head -300`-truncated log inspection during the
+    first response never reached them — a process gap (truncated evidence
+    inspection), not a difference in the underlying defect. All three
+    verified to predate the raw-log-is-scratch-by-default policy (R13-10/task
+    #280, commit `1a2dd7d`) via `git merge-base --is-ancestor <creation-sha>
+    1a2dd7d` (exit 0 for all three) — pre-existing debt the new script
+    surfaced, not a new defect. Resolved by adding all three to
+    `scripts/verify-gate-report.mjs`'s `RETROACTIVE_EXEMPT` map (check `c`),
+    same mechanism already used for `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST`.
 
    > **Current state**
    > - **Status:** resolved (exempted, not regenerated — the underlying raw
    >   logs are not reproducible from anything committed; a true re-run of
-   >   R10-7's harness would be a fresh measurement, not a recovery).
+   >   each report's harness would be a fresh measurement, not a recovery).
+   >   Cross-checked exhaustively against `git ls-files docs/perf` (not local
+   >   disk state) — no other report in the corpus has this defect.
    > - **Evidence:** `scripts/verify-gate-report.mjs`'s `RETROACTIVE_EXEMPT`
-   >   entry for `R10_7_BATCH_WARM_ARM`.
+   >   entries for `R10_7_BATCH_WARM_ARM`, `R8_9_MEDIUM_CLASSES_VERDICT`,
+   >   `R9_3_MEDIUM_CLASSES_PRODUCTION_GATES`.
 
 ## Recently resolved (closure trail — do not re-list as open)
 

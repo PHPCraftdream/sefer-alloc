@@ -196,6 +196,39 @@ const RETROACTIVE_EXEMPT = new Map([
       checks: ['c'],
     },
   ],
+  [
+    'R8_9_MEDIUM_CLASSES_VERDICT',
+    {
+      reason:
+        'OPEN_ITEMS.md item 37 follow-up: report cites 4 raw logs ' +
+        '(_raw_baseline_off.log, _raw_medium_on.log, ' +
+        '_raw_baseline_off_reduced.log, _raw_medium_on_reduced.log) that were ' +
+        'never committed. Verified via `git merge-base --is-ancestor 9afba66 ' +
+        '1a2dd7d` (exit 0): the report (created at 9afba66) predates the ' +
+        'raw-log-is-scratch-by-default policy (R13-10/task #280, commit ' +
+        '1a2dd7d) — same pre-existing-debt class as R10_7_BATCH_WARM_ARM ' +
+        'above, found present locally only as untracked scratch files (a ' +
+        'clean checkout, as CI uses, does not have them).',
+      checks: ['c'],
+    },
+  ],
+  [
+    'R9_3_MEDIUM_CLASSES_PRODUCTION_GATES',
+    {
+      reason:
+        'OPEN_ITEMS.md item 37 follow-up: report cites 6 raw logs ' +
+        '(_raw_iai_production.log, _raw_iai_medium.log, ' +
+        '_raw_criterion_production.log, _raw_criterion_medium.log, ' +
+        '_raw_firstalloc_production.log, _raw_firstalloc_medium.log) that ' +
+        'were never committed. Verified via `git merge-base --is-ancestor ' +
+        'c8f5f32 1a2dd7d` (exit 0): the report (created at c8f5f32) predates ' +
+        'the raw-log-is-scratch-by-default policy (R13-10/task #280, commit ' +
+        '1a2dd7d) — same pre-existing-debt class as R10_7_BATCH_WARM_ARM ' +
+        'above, found present locally only as untracked scratch files (a ' +
+        'clean checkout, as CI uses, does not have them).',
+      checks: ['c'],
+    },
+  ],
 ]);
 
 // Keyed by companion-CSV basename (the `_summary.csv` file itself, not the
