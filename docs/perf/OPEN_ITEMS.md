@@ -717,6 +717,12 @@ for completeness.
     > - **Status:** honest reject — NOT recommended now.
     > - **Current number/verdict:** the ceiling is below this task's own noise floor; not worth it.
     > - **Next trigger:** revisit ONLY if `MAX_SEGMENTS` is raised again by a large factor (toward item 4's expandable table) OR a much-higher producer-class fan-in than N=8 becomes a real target.
+    > - **Cross-reference (added 2026-07-31, task #479):** this item's trigger
+    >   is one instance of the shared "no realistic ≥64-segment / high-fan-in
+    >   macro-bench exists" precondition that item 34 below consolidates
+    >   across four independently-filed items (this one, X5/item 20,
+    >   T10/item 22, R1/item 23) — see item 34 for the canonical statement;
+    >   this entry's own history and evidence stay here unchanged.
     > - **Evidence:** `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7 (lines 519–555).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L9`.
 
@@ -811,6 +817,12 @@ for completeness.
     > - **Status:** honest reject — NOT recommended *for the measured regime* (correctness-proven and recoverable; not a refutation of the idea).
     > - **Current number/verdict:** REJECT. The cheapest sound variant (a per-segment `u64` bitmap of non-empty classes, bit `c` set ⟺ `BinTable.head(c) != FREE_LIST_NULL`, maintained at every empty↔nonempty transition, consulted by `find_segment_with_free` instead of loading the BinTable head cache line) was implemented, correctness-proven by 8 dedicated regression tests (counterfactual-verified: disabling any one transition makes the invariant test FAIL), and measured: it regressed the designated judge (`multiseg_cold_256k` +273 Ir) AND the won front (the four churn benches **+9 Ir** each, just under the ±10 kill threshold; recycle +810; cold +400). Mechanism: at n=3 segments the maintenance RMW (load `free_classes`, OR/AND a mask, store) on every empty↔nonempty dealloc transition is a net cost, and the `free_classes` load sits in the SAME cache line as the header already read for `kind_at` — the "avoid a BinTable-line load" premise does not hold here (no extra cache line to avoid).
     > - **Next trigger:** per the section's own text — "a future arc that adds a ≥64-segment bench (or profiles a real application) may flip the verdict. The shape to revisit is the FULL per-class queue (skip non-matching segments entirely, not just a per-segment bit probe)." (The structural argument only materialises at n_segments ≫ 3, which no current bench models — `multiseg_cold_256k` spans only 3.)
+    > - **Cross-reference (added 2026-07-31, task #479):** this item's
+    >   "≥64-segment bench" trigger is now the CANONICAL wording for the
+    >   shared precondition item 34 below consolidates across four
+    >   independently-filed items (this one, T10/item 22, R1/item 23,
+    >   R15-1/item 9) — see item 34 for the single cross-item statement; this
+    >   entry's own history and evidence stay here unchanged.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X5 honest-reject (2026-07-05)" section (lines 270–365, full measurement table included there). Final tree after X5 = pristine `490974d` (zero diff; nothing shipped).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L20`.
 
@@ -829,6 +841,11 @@ for completeness.
     > - **Status:** NO-GO, honest reject — reverted (one orthogonal sub-finding KEPT; see below).
     > - **Current number/verdict:** NO-GO. A per-class `find_hint: [u16; SMALL_CLASS_COUNT]` "last found segment" hint (verified pre-check at scan top, written ONLY on a successful full scan — zero hot-path maintenance) failed the churn kill gate (±10 raw Ir, X4-B precedent): the `[u16; 49]` array init at `AllocCore::new` costs a constant **+44 Ir on every heap construction** (isolated cleanly by `large_alloc_free_cycle`'s raw delta — that bench touches no small class, so its entire +44 Ir IS the array init), and the four churn benches landed at **+46 raw Ir** (~5× the threshold). Cold/recycle landed flat (+0.1 Ir/op) — far below the −15…−25 Ir/op GO target; the O(n) scan at n=3 is 3 cache-hot iterations. Only the two multi-segment judges moved (`multiseg_cold_256k` −4.2 Ir/op, `seg_cycle_decommit_256k` −6.6 Ir/op) — the SAME figures X5/R1 reached.
     > - **Next trigger:** per the section's own text — "A future arc that adds a ≥64-segment bench (or profiles a real application with 100+ long-lived small segments) may flip this verdict; the correctness-proven hint shape is recoverable from this entry's description. The shape to revisit is the FULL per-class queue (skip non-matching segments entirely), since a per-class hint alone already loses to the bootstrap cost at n=3." NOTE (kept sub-finding): T10's other, lower-risk sub-finding (`class_for` align>16 jump-ahead walk over `SIZE2CLASS`, perf#9) is **KEPT** — orthogonal to this NO-GO, pure integer arithmetic, correctness-pinned by `tests/size_classes_slow_path_equivalence.rs`.
+    > - **Cross-reference (added 2026-07-31, task #479):** consolidated with
+    >   X5/item 20, R1/item 23, and R15-1/item 9 under the single shared
+    >   "≥64-segment macro-bench" precondition — see item 34 below for the
+    >   canonical cross-item statement; this entry's own history and
+    >   evidence stay here unchanged.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "T10 honest-reject (2026-07-12)" section (lines 1088–1204, full measurement table included there).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L22`.
 
@@ -838,6 +855,12 @@ for completeness.
     > - **Status:** NO-GO, honest reject — clean revert (working tree byte-identical to pre-experiment).
     > - **Current number/verdict:** NO-GO — the **fourth independent attempt** at this scan (after X5's per-segment bitmap and T10's per-class hint array). A single verified pre-check hint (`find_hint_slot: u32`, init `u32::MAX` = none, written on successful full scan, zero hot-path maintenance, sound-by-construction false-positive-only failure mode) PASSED the churn kill-gate (±10 Ir) at **+3 raw Ir** (the best of all three attempts — better than T10's +46 and X5's +9), but MISSED the cold/recycle target by a wide margin (+0.0…+0.1 Ir/op vs the campaign's −15…−25 Ir/op GO target): those benches fit entirely in the primordial segment (n=1, a one-iteration scan), so no scan optimization of any shape can help them. Only the two multi-segment judges moved (`multiseg_cold_256k` −4.3 Ir/op, `seg_cycle_decommit_256k` −6.6 Ir/op) — the SAME −4.3/−6.6 T10 already reached and was rejected for.
     > - **Next trigger:** per the section's own text — "A future arc that adds a genuine ≥64-segment bench (or profiles a real long-lived-process workload with 100+ simultaneously-live small segments) is the prerequisite for re-opening R1/X5/T10 — not a new algorithmic attempt at the current bench scale. The correctness-proven hint shape here (verified pre-check, zero hot-path cost, sound-by-construction false-positive-only failure mode) is the recommended starting point if that day comes." The structural barrier (every current bench models ≤3 live segments) is now confirmed a fourth time (X5, T10, R1's design-time Tier-A analysis, and this measured result).
+    > - **Cross-reference (added 2026-07-31, task #479):** this item's own
+    >   text already names X5/T10 as sharing this precondition; item 34 below
+    >   makes that explicit as a standalone consolidated entry and adds
+    >   R15-1/item 9 as a fourth instance of the same family — see item 34
+    >   for the single cross-item statement; this entry's own history and
+    >   evidence stay here unchanged.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R1 honest-reject (2026-07-13)" section (lines 1285–1354, full measurement table included there).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L23`.
 
@@ -849,6 +872,184 @@ for completeness.
     > - **Next trigger:** **no revisit trigger for the closed hypothesis** (it was refuted, not deferred). The section explicitly calls the one adjacent open thread — a possible Windows-native effect invisible to Ir (real page-fault/`VirtualAlloc`/decommit costs, TLB behavior, ASLR/base-address-dependent cache conflicts, or a codegen divergence between the `x86_64-pc-windows-msvc` and WSL/Linux target triples, since R5-R2's wall-clock numbers came from a native Windows release build while `npm run iai` drives a Linux/Valgrind-simulated binary) — a "NEW investigation, not a continuation of R5-R2b's now-closed algorithmic-regression hypothesis", which would need Windows-native tooling (ETW / a Windows perf-counter harness) this project does not currently have wired up.
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L24`.
+
+34. **The missing artifact: a realistic ≥64-live-segment / long-lived-process
+    macro-bench — ONE canonical precondition for FOUR independently-filed
+    items (X5/item 20, T10/item 22, R1/item 23, R15-1/item 9), consolidated
+    here per the R30-post-response review's own observation that they all
+    wait on the identical nonexistent thing (filed 2026-07-31,
+    R31-7d1+R31-13/task #479).**
+
+   > **Current state**
+   > - **Status:** [L] low-priority / structural blocker — no macro-bench
+   >   built; this entry does not build one (docs/index reorganization only).
+   >   Cross-referenced FROM items 9, 20, 22, 23 below, which each keep their
+   >   own full independent history untouched (append-only) and now point
+   >   HERE for the shared precondition instead of separately restating it.
+   > - **Current number/verdict:** four independent NO-GO/deferred findings,
+   >   spanning three separate scan/hint mechanisms plus one drain-scan
+   >   design study, all bottomed out on the SAME structural wall: every
+   >   bench this project currently runs models **at most 3 simultaneously
+   >   live small segments** (`multiseg_cold_256k` — the widest one — spans
+   >   only 3), so any optimization whose payoff scales with segment COUNT
+   >   (a per-segment/per-class scan, hint, or queue) is structurally
+   >   invisible to measurement here regardless of its real-world value:
+   >   - **X5 (item 20)** — per-class segment-queue bitmap: REJECT at n=3
+   >     (maintenance RMW cost dominates; no cache line actually avoided at
+   >     this scale). Its own text: "a future arc that adds a ≥64-segment
+   >     bench... may flip the verdict."
+   >   - **T10 (item 22)** — per-class "last found segment" hint: NO-GO (the
+   >     `[u16; 49]` init cost alone exceeds the churn kill-gate at n=3; only
+   >     the two multi-segment judges moved, and only by the same
+   >     −4.2/−6.6 Ir/op X5 and R1 also found). Its own text: "a future arc
+   >     that adds a ≥64-segment bench (or profiles a real application with
+   >     100+ long-lived small segments) may flip this verdict."
+   >   - **R1 (item 23)** — per-segment availability hint: NO-GO, the
+   >     FOURTH independent attempt at this exact scan, explicitly framed as
+   >     confirming the barrier "a fourth time (X5, T10, R1's design-time
+   >     Tier-A analysis, and this measured result)." Its own text is the
+   >     most direct statement of the shared precondition: "a future arc
+   >     that adds a genuine ≥64-segment bench (or profiles a real
+   >     long-lived-process workload with 100+ simultaneously-live small
+   >     segments) is the prerequisite for re-opening R1/X5/T10 — not a new
+   >     algorithmic attempt at the current bench scale."
+   >   - **R15-1 (item 9)** — nonempty-summary-word optimisation for
+   >     `drain_dirty_segments`: honest reject, ceiling below the task's own
+   >     noise floor at the current scale. Its own trigger is worded
+   >     slightly differently (`MAX_SEGMENTS` raised by a large factor, OR a
+   >     much-higher producer-class fan-in than N=8) but is the SAME family
+   >     of precondition — a macro-bench with far more live segments/higher
+   >     fan-in than any current bench models — not an independent,
+   >     unrelated trigger.
+   >   Three of the four (X5, T10, R1) use IDENTICAL "≥64-segment" wording
+   >   independently arrived at across three separate rounds (2026-07-05,
+   >   2026-07-12, 2026-07-13) — strong convergent evidence this is one real
+   >   gap, not four coincidentally-similar ones. `docs/reviews/2026-07-30-fm-acceleration-review.md`
+   >   §2.3, §4 item 5, and §5 action 7 independently name this same
+   >   consolidation as worth doing ("four of them wait on ONE AND THE SAME
+   >   nonexistent artifact... worth recording as a standalone item, not
+   >   four unconnected triggers").
+   > - **Next trigger (the ONE shared precondition all four items above now
+   >   point to):** a macro-bench (or a profile of a real long-lived
+   >   application) that models **≥64 simultaneously-live small segments**
+   >   in a long-lived-process shape (R1's phrasing: "100+
+   >   simultaneously-live small segments"), built as its own scoped task —
+   >   NOT attempted by this entry, which is a docs/index reorganization
+   >   only, per this task's explicit instruction. Building that one
+   >   macro-bench either (a) reopens all four items for a fresh
+   >   re-attempt at their respective mechanisms under conditions where the
+   >   payoff would finally be visible, or (b) if the mechanisms still show
+   >   no material win at realistic scale, closes the whole family
+   >   permanently with one measurement instead of leaving four separate
+   >   "someday" triggers that a future round could re-open one at a time
+   >   without ever seeing the full multi-segment picture. Scoping the
+   >   macro-bench itself (workload shape, segment-count target, whether it
+   >   is a criterion bench vs. a `paired-ab-runner.mjs` process-level judge,
+   >   which of the four mechanisms to re-attempt first) is deliberately left
+   >   to whichever future round takes this on — out of scope for this
+   >   consolidation task.
+   > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X5 honest-reject
+   >   (2026-07-05)" / "T10 honest-reject (2026-07-12)" / "R1 honest-reject
+   >   (2026-07-13)" sections; `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7;
+   >   `docs/reviews/2026-07-30-fm-acceleration-review.md` §2.3 ("Нет
+   >   бенча с ≥64 живыми сегментами..."), §4 item 5, §5 action 7.
+
+35. **`batch-api` real-downstream-consumer scouting pass #2 — R23-7's
+    NO-CONSUMER decision RECONFIRMED (2026-07-31, R31-7d1+R31-13/task #479);
+    no new candidate found, no public API expanded, no further batch
+    micro-tuning done.**
+
+   > **Current state**
+   > - **Status:** RECONFIRMED — same verdict as R23-7 (`docs/perf/R23_7_BATCH_API_CONSUMER_STATUS.md`,
+   >   task #376, 2026-07-27), independently re-checked against the CURRENT
+   >   tree rather than assumed still true. Triggered by
+   >   `docs/reviews/2026-07-30-r30-post-response-readonly-review.md`'s "What
+   >   can still be accelerated strongly" item 4 + "Recommended next wave"
+   >   item 6, which explicitly asked whether a real downstream owner (object
+   >   pool, arena, ECS/storage slab, runtime task allocation, or any crate
+   >   already allocating/freeing homogeneous groups) has emerged since R23-7 —
+   >   NOT a request to reopen R23-7's decision itself.
+   > - **What was checked (against the tree at this task's start, `HEAD` =
+   >   `0a34ba1`):**
+   >   1. **In-tree growth since R23-7.** Grepped every `src/`, `crates/`,
+   >      `examples/` file for `.alloc_batch(`/`.dealloc_batch(` call sites
+   >      outside the API's own definition/forwarding/test files — the only
+   >      call sites remain `src/global/sefer_alloc.rs`'s four forwarding
+   >      calls into `HeapCore::alloc_batch`/`dealloc_batch` (the
+   >      `#[doc(hidden)]` registry layer) and the `fallback::with_heap` path
+   >      — structurally identical to R23-7's own §2 finding, not a new
+   >      caller.
+   >   2. **Every current `crates/` workspace member read for a
+   >      homogeneous-group alloc/free shape**, since three (`region`,
+   >      `ring-mpsc`, `tagged-index-stack`) postdate or were not enumerated
+   >      in R23-7's own file list: `region` is a `slotmap`-backed handle
+   >      store (`slotmap::SlotMap` does its own internal storage
+   >      management, never calls into `SeferAlloc::alloc_batch`); `ring-mpsc`
+   >      is `no_std` + allocation-free by design (fixed-capacity ring,
+   >      caller-supplied or owned-array backing, no heap allocation at all
+   >      in its hot path); `tagged-index-stack` is `no_std` +
+   >      `#![forbid(unsafe_code)]` + explicitly allocation-free (a bare
+   >      index recycler with no backing storage of its own) — its own doc
+   >      comment MENTIONS "object pools, entity-component stores" as
+   >      prior art this primitive is *for*, but the crate itself is not
+   >      such a consumer; it is infrastructure a future consumer could be
+   >      built on, not one that exists today. None of the three calls
+   >      `alloc_batch`/`dealloc_batch`, or would naturally: none owns a
+   >      homogeneous-group allocate/free lifecycle that isn't already
+   >      served by its own fixed/caller-supplied storage.
+   >   3. **R23-7's own three named falsifiability triggers, re-checked
+   >      individually:**
+   >      - **Trigger 1 (a real internal consumer emerges)** — NOT fired. No
+   >        bulk-deserialize path, batch node-construction step, or
+   >        `Vec::with_capacity`-style bulk-reservation helper exists or is
+   >        seriously scoped anywhere in this tree.
+   >      - **Trigger 2 (a downstream project adopts/requests batch-shaped
+   >        allocation)** — NOT fired; no issue/PR/reported workload of that
+   >        shape exists in this repository to check against (this is a
+   >        library repo, not one with a live external-user feedback
+   >        channel visible in-tree).
+   >      - **Trigger 3 (`dealloc_batch` gets batch-optimized)** — this ONE
+   >        trigger DID fire, but earlier and for an unrelated reason:
+   >        R24-8 (task #386, `docs/perf/R24_8_DEALLOC_BATCH_INTERNALS_GATE.md`)
+   >        already amortizes `dealloc_batch`'s magazine-overflow flush into
+   >        batched `AllocCore::flush_class` calls (`src/registry/heap_core_dealloc_batch.rs`,
+   >        confirmed by reading `dealloc_batch_small`'s current body — the
+   >        `STAGE_CAP`-chunked staging buffer flushes via `flush_class`, not
+   >        a per-block loop). This closes trigger 3's MECHANISM condition,
+   >        but per trigger 3's own text the point of firing it was to make
+   >        "worth re-measuring end-to-end" — and there is still no end-to-end
+   >        consumer to measure it against. A mechanism improving in isolation
+   >        does not manufacture the missing caller; this is the same
+   >        Box/Vec-path-gains-nothing-without-adoption point R23-7 §2's
+   >        headline and the R30-post-response review's own item 4 both make.
+   > - **Verdict:** **NO new candidate found. R23-7's decision stands,
+   >   unchanged, reconfirmed by independent re-check rather than assumed.**
+   >   Per this task's explicit scope, the public `batch-api` surface was NOT
+   >   expanded and no further batch micro-tuning was performed under either
+   >   outcome — this entry is a scouting-pass record, not an implementation
+   >   task.
+   > - **Next trigger:** unchanged from R23-7 §4 — any ONE of: (1) a real
+   >   in-tree consumer is implemented or seriously scoped; (2) a downstream
+   >   user demonstrably requests/adopts batch-shaped allocation with a
+   >   concrete size/batch distribution; (3) [ALREADY FIRED, see above —
+   >   retained here only as a historical marker, not an open sub-trigger].
+   >   If a future round finds a real candidate under (1) or (2), the
+   >   required judge per the R30-post-response review's own framing is
+   >   **end-to-end latency AND retained memory** for the actual downstream
+   >   workload — not another allocator-only micro-timing arm (R8-7/R9-9/
+   >   R10-7's per-op-in-isolation numbers already answer the mechanism
+   >   question; what would be new is the adoption's real effect on the
+   >   consumer's own workload).
+   > - **Evidence:** `docs/perf/R23_7_BATCH_API_CONSUMER_STATUS.md` (the
+   >   original decision + falsifiability clause, re-confirmed rather than
+   >   re-derived here); `docs/reviews/2026-07-30-r30-post-response-readonly-review.md`
+   >   "What can still be accelerated strongly" item 4, "Recommended next
+   >   wave" item 6 (the trigger for this reconfirmation);
+   >   `docs/perf/R24_8_DEALLOC_BATCH_INTERNALS_GATE.md` (trigger 3's actual
+   >   firing, pre-dating this task); `src/global/sefer_alloc.rs`,
+   >   `src/registry/heap_core_dealloc_batch.rs`, `crates/region/src/region.rs`,
+   >   `crates/ring-mpsc/src/lib.rs`, `crates/tagged-index-stack/src/lib.rs`
+   >   (the files read for this reconfirmation).
 
 27. **R29-13 — large-cache `headroom_bytes` (default 256 MiB/heap) idle-RSS
     floor measured for the first time; confirmed-by-design, no action taken.
