@@ -277,12 +277,11 @@ scenario) are the cleanest measurement this judge produces: a **consistent,
 large, mechanistically-explained win of −89% to −98.6%**, reproduced with
 the same sign and comparable magnitude on an independent repeat run
 (`docs/perf/_raw_r31_0_off_run2.log` / `_raw_r31_0_on_run2.log`, §3.1's
-right-most column). A third, uncommitted ad-hoc re-run performed during
-this task's own zero-trust review (not saved as a cited raw log, but
-reproducible on demand via §1's exact invocation) landed in the same
-−91%/−97%/−99%/−99% range across all four sizes, all negative — corroborating,
-not part of the cited evidence set. This is not noise: `Touch::None` never
-faults a page, so in the OFF arm the entire
+right-most column). A third ad-hoc re-run performed during this task's own
+zero-trust review, using §1's exact invocation, corroborated the same
+direction and order of magnitude across all four sizes — see §7 below for
+why this paragraph no longer cites that run's specific figures. This is not
+noise: `Touch::None` never faults a page, so in the OFF arm the entire
 measured cost at these sizes is dominated by exactly the work
 `virgin-zero-skip` removes — the unconditional `Node::zero`
 (`core::ptr::write_bytes`) memset over the whole allocation
@@ -346,9 +345,10 @@ regresses beyond a normal kill-gate threshold.
 - **The `notouch` virgin family shows a MATERIAL, reproducible,
   mechanistically-explained win** — 4/4 swept sizes, −89% to −98.6% on the
   primary run, reproduced with the same sign and comparable magnitude on
-  the independent repeat run (§3.1) plus a third uncommitted corroborating
-  re-run (§3's prose). This is the layer R30-3 could not reach: a genuine
-  same-class burst through the real production magazine, with 100%
+  the independent repeat run (§3.1) and corroborated qualitatively by a
+  third ad-hoc re-run (§3's prose; see §7 for why that run's specific
+  figures are no longer cited). This is the layer R30-3 could not reach: a
+  genuine same-class burst through the real production magazine, with 100%
   activation proven per arm (§2), not the ~3% ceiling R30-3's
   bare-`AllocCore` substrate imposed.
 - **The `onebyte`/`full` virgin families show a directionally favorable but
@@ -507,3 +507,37 @@ before.
 Both fixes are confined to `scripts/r31_0_summary.mjs`'s output-formatting
 logic and the two regenerated CSV files; no raw log, no §0-§6 prose number,
 and no headline verdict in this report changed.
+
+## 8. CORRECTED 2026-07-31 — §3.3's uncommitted-third-run figures removed (Round 31 review response, R31-14b, task #484)
+
+This section is appended, not a rewrite — every number and claim in §§1-7
+above stays exactly as originally published, except the two prose edits
+described below.
+
+**P2-3 (uncommitted-run citation) — CONFIRMED, fixed.** `docs/reviews/2026-07-31-r31-full-review.md`
+§7 P2-3 flagged that the original §3 prose (both in its `notouch`-family
+paragraph and again in §5's promotion decision) cited four specific
+wall-clock percentages — "−91%/−97%/−99%/−99%" — from a third ad-hoc re-run
+that was explicitly labelled "not saved as a cited raw log." Independently
+re-read against the actual committed file before fixing: `grep -n "91%\|97%\|99%"
+docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md` (pre-fix)
+confirmed both citations, and `git status`/`ls docs/perf/_raw_r31_0_*`
+confirmed no third-run raw log exists alongside the two already-committed
+`_run2` pairs — this is exactly the pattern CLAUDE.md's R30-9 point 2 (and
+the R29-3 precedent it was written against) exists to forbid: prose citing
+numbers with no committed artifact behind them.
+
+Two remediation paths were available per the task brief: commit the
+(nonexistent) log, or drop the specific figures and keep the qualitative
+statement. Committing a raw log for a run that was never saved is not
+possible after the fact without re-measuring — and re-measuring would
+produce a FOURTH number, not recover the original third run — so the
+qualitative-statement path was chosen, per this project's honest-reporting
+convention. *Fix applied:* both citations (§3's `notouch` paragraph and
+§5's promotion-decision bullet) now say the third re-run "corroborated the
+same direction and order of magnitude" without restating the four specific
+percentages; the two independently repeat-run figures that DO have a
+committed raw-log artifact behind them (§3.1's `_run2` pair, cited by
+filename) are unchanged and still carry the report's evidentiary weight.
+No measured value, table, or headline verdict changed — this is a citation
+scope correction only.

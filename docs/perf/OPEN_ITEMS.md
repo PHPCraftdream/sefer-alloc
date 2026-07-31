@@ -744,6 +744,41 @@ for completeness.
    >     treatment R31-9 already gave this file's item 26/27 blocks for the
    >     identical rename). P2-3, P2-7, P2-9 remain open for a future round
    >     (tracked as task #484).
+   > - **2026-07-31 update (R31-14b, task #484): P2-3, P2-7 independently
+   >   RE-VERIFIED (not merely re-stated) against the actual committed
+   >   reports and REPAIRED. P2-9 remains open (out of this task's assigned
+   >   scope — task #484 was scoped to P2-3, P2-4, P2-5, P2-7, P2-11, P2-12
+   >   only).**
+   >   - **P2-3** — confirmed exactly: `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`'s
+   >     pre-fix §3/§5 prose cited four specific figures
+   >     ("−91%/−97%/−99%/−99%") from a third ad-hoc re-run explicitly
+   >     labelled "not saved as a cited raw log"; confirmed no such raw log
+   >     exists alongside the two already-committed `_run2` pairs. Committing
+   >     a log for a run that was never saved is not possible after the fact
+   >     without re-measuring (which would produce a fourth number, not
+   >     recover the original third run), so the qualitative-statement path
+   >     was chosen per the task brief's own guidance. Fixed: both citations
+   >     now state the third re-run "corroborated the same direction and
+   >     order of magnitude" without restating the four specific
+   >     percentages; the `_run2` figures that DO have a committed raw-log
+   >     artifact are unchanged. Dated correction appended to
+   >     `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md` §8.
+   >   - **P2-7** — confirmed exactly: `grep -c '^[0-9]'
+   >     docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv` returns
+   >     12 (section-1 data rows, each a median of 3 reps), not 36; the
+   >     36-row count is real but lives in
+   >     `docs/perf/_raw_r30_6_large_cache_headroom_ab_gate.log` (confirmed
+   >     against `scripts/r31_12_repair_r30_6_data.mjs:56`'s own hard-assert
+   >     `expected 36 rows in R30-6 raw log`), which R31-1's prose
+   >     misattributed to "R30-6's own committed CSV." Fixed: the citation
+   >     in `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md`
+   >     now reads "R30-6's own raw log... 36 rows" with an inline
+   >     correction marker; no measured value or verdict changed. Dated
+   >     correction appended to
+   >     `R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md` §5.
+   >   - P2-4, P2-5, P2-11, P2-12 (filed in `docs/CORRECTNESS_OPEN_ITEMS.md`
+   >     item 9, not this file) were independently re-verified and fixed in
+   >     the same task — see that file's own dated update for detail.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 

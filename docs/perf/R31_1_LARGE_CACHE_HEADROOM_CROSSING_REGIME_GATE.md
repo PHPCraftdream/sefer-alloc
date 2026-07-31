@@ -9,8 +9,11 @@ working set is **64 MiB, not 48 MiB** (`AllocCore::alloc_large` rounds every
 Large allocation's usable span UP to a whole number of 4 MiB `SEGMENT`s —
 `src/alloc_core/alloc_core_large.rs:188-192` — so a 6 MiB object costs a
 2-segment, 8 MiB span; 8 objects × 8 MiB = 64 MiB, confirmed directly by
-R30-6's own committed CSV, whose `burst1_used_max_bytes` column reads
-`67108864` = exactly 64 MiB in every one of its 36 rows). R30-6's 64-vs-256
+R30-6's own raw log, whose `burst1_used_max_bytes` column reads `67108864`
+= exactly 64 MiB in every one of its 36 rows [CORRECTED 2026-07-31, see §5:
+originally misattributed to R30-6's committed summary CSV, which has 12
+section-1 data rows, not 36 — the 36-row count belongs to the raw log
+underlying that CSV]). R30-6's 64-vs-256
 MiB comparison therefore never left the 64 MiB boundary — this task supplies
 the ONE missing measurement: hit rate at a burst size that genuinely EXCEEDS
 64 MiB, per the task brief's own named range (128-272 MiB, R29-13's regime).
@@ -275,3 +278,45 @@ mechanism-delta table, and a CSV block (54 rows). The derivation script
 re-parses that CSV block from the committed raw log, hard-asserts the
 headline arithmetic, and writes the summary CSV. Measured full-matrix
 wall-clock on this host: well under the default 2-minute Bash tool timeout.
+
+## 5. CORRECTED 2026-07-31 — "36 rows" misattributed to the wrong committed artifact (Round 31 review response, R31-14b, task #484)
+
+This section is appended, not a rewrite — every measured number, table, and
+verdict in §§0-4 above stays exactly as originally published; only the one
+sentence in the opening summary (top of this file, now marked inline) is
+corrected in place, per this project's append-only convention for a
+citation-only fix.
+
+**P2-7 (misattributed row count) — CONFIRMED, fixed.** `docs/reviews/2026-07-31-r31-full-review.md`
+§7 P2-7 flagged that this report's opening paragraph said "confirmed
+directly by R30-6's own committed CSV, whose `burst1_used_max_bytes` column
+reads `67108864`... in every one of its **36 rows**." Independently
+re-verified before fixing, not merely re-stated from the review:
+
+```text
+$ grep -c '^[0-9]' docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv
+# section 1 (hit-rate/RSS) data rows: 12 (lines 10-21 of the CSV, under the
+# "# section 1: hit-rate/RSS/burst-idle-burst axis... median of 3 reps per
+# cell" comment) — each row is already a MEDIAN of 3 reps, not one of the 36
+# underlying reps.
+```
+
+The 36-row count is real and correctly cited elsewhere in this project's own
+history — `scripts/r31_12_repair_r30_6_data.mjs:56` (`if (rows.length !== 36)
+throw new Error('expected 36 rows in R30-6 raw log, got ${rows.length}')`)
+reads it directly from `docs/perf/_raw_r30_6_large_cache_headroom_ab_gate.log`
+(the raw log, already committed via the R13-6-established `git add -f`
+raw-log policy), not from the summary CSV. So the claim "67108864 in every
+row" is true of both artifacts (12 median rows and their 36 underlying reps
+all round to exactly 64 MiB — the rounding is deterministic given the fixed
+workload shape, so a median of 3 reps stays exactly 67108864), but the
+artifact NAMED in the prose ("R30-6's own committed CSV... 36 rows") was the
+wrong one.
+
+*Fix applied:* the citation now reads "R30-6's own raw log... 36 rows" with
+an inline correction note (see the top of this file) instead of attributing
+the 36-row count to the summary CSV. No measured value, table, or verdict in
+this report changed — this is a citation-target correction only, exactly
+the P2-7 boundary case CLAUDE.md's own review-response convention (see the
+sibling correction in `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`
+§8, same task) exists to fix without re-measuring anything.
