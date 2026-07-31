@@ -30,7 +30,10 @@
 //      independent standalone check of its own)
 //   12. node scripts/verify-perf-gate-stubs.mjs   (R30-5: generated "feature
 //      ABSENT" stub check for benches/perf_gate_iai.rs's library_benchmark_group!)
-//   13. npm run iai                                                (deterministic judge,
+//   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
+//      every docs/perf/R*_*.md gate report — companion CSV exists, valid
+//      40-hex SHA/no placeholder, cited raw logs exist)
+//   14. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -134,10 +137,24 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-perf-gate-stubs.mjs'],
   },
+  {
+    // R31-5a (task #480): structural checks over every docs/perf/R*_*.md gate
+    // report — companion summary CSV cited actually exists, its commit/SHA
+    // field(s) are a real 40-hex SHA (not a prose placeholder, the exact
+    // defect class R30-6's placeholder and R29-13's invalid 63-char hash
+    // both were), and every cited `_raw_*.log` filename actually exists on
+    // disk. Zero cargo invocations, pure text/regex scan — see
+    // scripts/verify-gate-report.mjs's header for the full rationale and its
+    // documented, individually-verified retroactive-exemption list for
+    // reports predating the relevant CLAUDE.md rule.
+    name: 'verify-gate-report (structural gate-report checks)',
+    cmd: 'node',
+    args: ['scripts/verify-gate-report.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, verify-gate-report, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

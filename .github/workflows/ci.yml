@@ -170,6 +170,15 @@ jobs:
       # in well under a second — folded into this job rather than a separate
       # one to avoid another checkout+toolchain for a sub-second check.
       - run: node scripts/verify-perf-gate-stubs.mjs
+      # R31-5a (task #480): structural checks over every docs/perf/R*_*.md
+      # gate report — companion summary CSV cited actually exists, its
+      # commit/SHA field(s) are a real 40-hex SHA and not a prose
+      # placeholder (the exact defect class R30-6's placeholder and R29-13's
+      # invalid 63-char hash both were), and every cited `_raw_*.log`
+      # filename actually exists on disk (see scripts/verify-gate-report.mjs's
+      # header). Also a pure text/regex scan (no cargo invocation) — folded
+      # in next to verify-perf-gate-stubs for the same reason.
+      - run: node scripts/verify-gate-report.mjs
 
   # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
   # feature-set matrix jobs into 4 jobs, grouped by theme (the same
