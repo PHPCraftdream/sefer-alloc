@@ -1,19 +1,18 @@
-// STRUCTURAL checks over a `docs/perf/R*_*.md` gate report — the machine-
-// checkable half of CLAUDE.md's "gate report tables must be derived, not
-// hand-transcribed" rule (see CLAUDE.md's "Phased delivery" section, the
-// bullet starting "A gate report's tables and headline ratios must be
-// DERIVED, by one checked script..."). R31-5 (task #480/#481/#482) splits
-// that rule's enforcement into three parts; THIS script is part (a):
-// structural checks only. Semantic checks (prose<->CSV cross-check, the
-// allocator-layer-named field, mechanism-delta evidence) are task #481
-// (R31-5b); the commit-prefix taxonomy lint is task #482 (R31-5c) — both
-// extend this same file's CHECKS array rather than becoming separate
-// scripts, so a single `npm run verify-gate-reports` stays the one command
-// that runs every mechanized gate-report rule.
+// STRUCTURAL + SEMANTIC checks over a `docs/perf/R*_*.md` gate report — the
+// machine-checkable half of CLAUDE.md's "gate report tables must be
+// derived, not hand-transcribed" rule (see CLAUDE.md's "Phased delivery"
+// section, the bullet starting "A gate report's tables and headline ratios
+// must be DERIVED, by one checked script...") plus the sibling
+// "exact entry point under test" / "same workload regime" rules. R31-5
+// (task #480/#481/#482) splits enforcement into three parts; THIS script
+// carries parts (a) [structural, task #480] and (b) [semantic, task #481].
+// The commit-prefix taxonomy lint is a SEPARATE script, task #482
+// (`scripts/verify-commit-prefixes.mjs`) — deliberately not folded in here,
+// since it scans commit subject lines, not report file content.
 //
-// Three structural checks, each independently reproducing a defect class a
-// prior round's review caught by hand and that CLAUDE.md now states as a
-// rule:
+// Three structural checks (task #480), each independently reproducing a
+// defect class a prior round's review caught by hand and that CLAUDE.md now
+// states as a rule:
 //
 //   (a) COMPANION CSV EXISTS — if a report's own text cites a
 //       `*_summary.csv` path (CLAUDE.md's summary-CSV rule, R14-10/task
@@ -50,6 +49,60 @@
 //       the citation is reproducible from the commit, not just from a
 //       re-run."
 //
+// Four semantic checks (task #481, R31-5b), each mechanizing a rule
+// CLAUDE.md states in prose and a prior round's review caught only by hand:
+//
+//   (d) PROSE<->CSV HEADLINE CROSS-CHECK — a headline number named in the
+//       report's own prose (near a keyword like "headline"/"hit rate"/
+//       "retention"/"MDE", carrying a unit like "MiB"/"%"/"ns/op"/"Ir")
+//       should reappear, at reasonable rounding, somewhere in the companion
+//       CSV's own text. This is a DELIBERATELY LIGHTWEIGHT heuristic, not
+//       NLP-grade parsing — precedent is `tests/no_stale_doc_references.rs`
+//       ("a regex/text scan... good enough text scanning over a known,
+//       hand-authored file shape"), the same register this whole script
+//       already uses. See `checkProseCsvCrossCheck`'s own doc comment for
+//       the documented limitations of this heuristic (false negatives from
+//       derived/rounded prose numbers are expected and downgrade to WARN,
+//       never silently pass as if verified).
+//
+//   (e) ALLOCATOR-LAYER-UNDER-TEST FIELD — mechanizes the CLAUDE.md rule
+//       (commit `2d9eef2`, "A gate report must name the exact entry point
+//       under test") that a report must state which layer
+//       (`AllocCore`/`HeapCore`/`SeferAlloc`/real `#[global_allocator]`/real
+//       downstream application) its verdict applies to. A report naming NO
+//       layer is WARNed (not failed — a report answering a pure-substrate
+//       question, e.g. a Stage-1 decomposition never meant to generalize to
+//       the global-allocator chain, legitimately has no such field); a
+//       report naming a layer BELOW `SeferAlloc` while its prose also uses
+//       promotion/production-verdict language is WARNed as a stronger,
+//       separate signal (the R30-3/R31-0 defect shape specifically).
+//
+//   (f) BETWEEN-ARM MECHANISM DELTA — a report comparing two or more arms
+//       must carry (in its CSV or its own prose) the actual
+//       treatment-minus-control mechanism delta, not just each arm's
+//       activation count reported separately with the reader left to
+//       subtract.
+//
+// Plus one identity-freshness check (also task #481, not lettered — it is a
+// cross-cutting check over checks (b)+(c) together, not a new report
+// dimension of its own):
+//
+//   POST-FACTO IDENTITY WARNING — warns when a report's cited commit SHA
+//   postdates its own raw-log files' mtimes, a signal (not proof) that the
+//   SHA was assembled after measurement rather than captured beforehand per
+//   CLAUDE.md's R29-6 rule. See `scripts/capture-measurement-identity.mjs`,
+//   this same task's companion helper, for the fix going forward: run it
+//   immediately before a measurement's binaries are built, not after.
+//
+// All four semantic checks are WARN-level (their own status is 'WARN', not
+// 'FAIL', and `verifyReport`'s `ok` computation only ever inspects checks
+// a/b/c) — CLAUDE.md itself treats (e) as "flag, don't hard-fail" (a
+// substrate-only report legitimately has no layer field), and
+// (d)/(f)/identity-freshness share the same false-positive risk from a
+// genuinely lightweight text heuristic. A human reading the WARN output
+// still has to use judgment; this script's job is to make sure nothing
+// goes unnoticed, not to auto-reject.
+//
 // Deliberately ZERO cargo invocations, ZERO network access, pure text/regex
 // scanning of already-committed files — same design register as
 // scripts/verify-perf-gate-stubs.mjs (see that file's own header for the
@@ -85,8 +138,9 @@
 // if invoked against a path that's actually in RETROACTIVE_EXEMPT, rather
 // than silently downgrading it to SKIP) — see the flag's own handling below.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, basename, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { REPO_ROOT } from './lib.mjs';
 
 const PERF_DIR = resolve(REPO_ROOT, 'docs/perf');
@@ -390,14 +444,423 @@ function checkRawLogsExist(text) {
 }
 
 // --------------------------------------------------------------------------
+// Check (d): prose <-> CSV headline cross-check
+// --------------------------------------------------------------------------
+//
+// LIMITATIONS OF THIS HEURISTIC (documented per the task brief's explicit
+// request — read this before trusting or extending it):
+//
+//   1. It is a NUMBER-NEAR-KEYWORD-NEAR-UNIT text scan, not a claim parser.
+//      It cannot tell "headline: 100.0% hit rate" from "not 12.5% but
+//      100.0%" — both look like a number near "hit rate" with a "%" unit.
+//   2. It only credits a prose number if the SAME number (at 2 significant
+//      rounding tolerances — exact string match, or match to 1 decimal
+//      place) appears ANYWHERE in the CSV text, in ANY column — it does not
+//      map "this prose sentence" to "this specific CSV cell." A number that
+//      coincidentally matches an unrelated CSV column (e.g. a row index or
+//      an n_pairs count) can produce a false PASS.
+//   3. It only scans for units this project's reports actually use
+//      (MiB/KiB/GiB/%/ns per op/Ir/ms) near keywords this project's reports
+//      actually use (headline/hit rate/retention/MDE/decommit/mechanism
+//      delta/RSS) — a report phrasing its headline differently, or using a
+//      unit outside this list, produces a false negative (nothing flagged),
+//      not a false PASS. This asymmetry is deliberate: a missed check is
+//      recoverable by a human reader; a false FAIL blocking `npm run check`
+//      on a legitimate report is not — hence this check is WARN-level only.
+//   4. Derived/rounded numbers (e.g. prose stating "~7x" where the CSV only
+//      has the two raw operands, not the ratio) will not match and will be
+//      WARNed even though the report is correct — a human must judge each
+//      WARN, this check does not claim to auto-verify arithmetic (that is
+//      CLAUDE.md's separate "assert the arithmetic in the generating
+//      script" rule, a different, stronger guarantee this check does not
+//      replace).
+//
+// Given these limits, check (d) is scoped deliberately narrow: it flags
+// prose numbers that are ABSENT from the CSV entirely, as a cheap tripwire
+// for the R29-3-style "quoted a number that matches neither raw source"
+// defect class — it does not attempt to be a general fact-checker.
+
+// Keywords this project's reports actually use next to a headline number
+// (see docs/perf/R30_6_*, R31_1_*, R31_2_*, R31_3_* for the vocabulary this
+// list is drawn from).
+const HEADLINE_KEYWORD_RE =
+  /\b(headline|hit[- ]rate|retention|MDE|decommit|mechanism delta|activation)\b/i;
+
+// A number-with-unit token: an integer or decimal, optionally with a sign or
+// leading `~`/`≈`, followed (with optional whitespace) by one of the units
+// this project's reports actually use. Captures the numeric part only.
+//
+// Trailing boundary is `(?![A-Za-z])` rather than `\b`: `\b` only fires on a
+// transition between a word char and a non-word char, so it correctly stops
+// "MiBs" from matching "MiB" mid-word, but it ALSO silently fails to match
+// after `%` — `%` is itself a non-word character, so "88.0% " has no
+// word/non-word transition at that point and `\b` never matches, meaning
+// EVERY percentage headline number was silently skipped before this fix
+// (caught by this task's own scratch "break it, see the check fire" test —
+// a report with a genuine "88.0%" headline number absent from its CSV
+// produced a SKIP, not the expected WARN, until this was corrected).
+// `(?![A-Za-z])` gives the same mid-word protection ("MiBs" still rejected)
+// without excluding `%`.
+const NUMBER_WITH_UNIT_RE =
+  /[~≈]?[-+]?(\d[\d,]*\.?\d*)\s?(MiB|KiB|GiB|%|ns\/op|ns|Ir|ms)(?![A-Za-z])/g;
+
+/**
+ * Scan `text` for headline-shaped number+unit tokens: a NUMBER_WITH_UNIT
+ * match within `windowChars` characters of a HEADLINE_KEYWORD_RE hit,
+ * scanning line-by-line (a report's headline sentences are always within
+ * one paragraph/line in this project's Markdown style — matching precedent:
+ * this script's own SHA_COMMENT_RE and existing citation regexes are all
+ * single-line scans, not cross-line).
+ */
+function extractHeadlineNumbers(text, windowChars = 200) {
+  const found = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!HEADLINE_KEYWORD_RE.test(line)) continue;
+    for (const m of line.matchAll(NUMBER_WITH_UNIT_RE)) {
+      const idx = m.index ?? 0;
+      const keywordMatch = HEADLINE_KEYWORD_RE.exec(line);
+      HEADLINE_KEYWORD_RE.lastIndex = 0; // reset (test() above advances it as it's global-less but be safe)
+      const keywordIdx = keywordMatch ? keywordMatch.index : 0;
+      if (Math.abs(idx - keywordIdx) > windowChars) continue;
+      const raw = m[1].replace(/,/g, '');
+      const value = Number.parseFloat(raw);
+      if (Number.isNaN(value)) continue;
+      found.push({ value, unit: m[2], token: m[0].trim(), line: line.trim() });
+    }
+  }
+  return found;
+}
+
+/** Every bare numeric token appearing anywhere in the CSV text, parsed as a
+ * float, deduplicated. Used as the match pool for check (d) — deliberately
+ * column-agnostic (see limitation #2 above).
+ *
+ * Parses CELL-BY-CELL via `splitCsvLine` (the same delimiter-aware splitter
+ * check (b)/(f) already use), NOT a raw regex scan over the whole text: a
+ * naive digit-run regex applied over unsplit CSV text treats the FIELD
+ * DELIMITER comma the same as a thousands-separator comma, so adjacent
+ * numeric cells like `...,64,1,67108864,...` collapse into one bogus token
+ * (`"64,1,67108864"` -> stripped to `64167108864`) instead of three separate
+ * values `64`, `1`, `67108864` — silently hiding the very value (a bare `64`
+ * in a `headroom_mib` column) a headline number like "64 MiB" needs to
+ * match against. Splitting into cells first, then scanning each cell's own
+ * text for numeric tokens (a cell can itself contain more than one number,
+ * e.g. a quoted features string), avoids this cross-column bleed entirely. */
+function extractCsvNumbers(csvText) {
+  const nums = new Set();
+  for (const line of csvText.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    for (const cell of splitCsvLine(line)) {
+      for (const m of cell.matchAll(/-?\d[\d,]*\.?\d*/g)) {
+        const raw = m[0].replace(/,/g, '');
+        const value = Number.parseFloat(raw);
+        if (!Number.isNaN(value)) nums.add(value);
+      }
+    }
+  }
+  return nums;
+}
+
+/** True if `value` matches some number in `pool` either exactly, rounded to
+ * 1 decimal place, or rounded to the nearest integer — the "reasonable
+ * rounding" tolerance the task brief asks for. */
+function matchesWithRounding(value, pool) {
+  if (pool.has(value)) return true;
+  const r1 = Math.round(value * 10) / 10;
+  const r0 = Math.round(value);
+  for (const p of pool) {
+    if (Math.round(p * 10) / 10 === r1) return true;
+    if (Math.round(p) === r0) return true;
+  }
+  return false;
+}
+
+/**
+ * Check (d): every headline-shaped prose number should reappear somewhere
+ * in the companion CSV. SKIPs (same as check a) when no CSV is cited at
+ * all. WARN-level only — see the limitations block above.
+ */
+function checkProseCsvCrossCheck(text, citedCsvNames) {
+  if (citedCsvNames.size === 0) {
+    return { status: 'SKIP', detail: 'report cites no *_summary.csv path (see check a)' };
+  }
+  const headlineNumbers = extractHeadlineNumbers(text);
+  if (headlineNumbers.length === 0) {
+    return { status: 'SKIP', detail: 'no headline-shaped number+unit token found near a headline keyword' };
+  }
+  const csvPool = new Set();
+  const missingCsvs = [];
+  for (const csvName of citedCsvNames) {
+    const csvPath = resolve(PERF_DIR, csvName);
+    if (!existsSync(csvPath)) {
+      missingCsvs.push(csvName);
+      continue;
+    }
+    for (const n of extractCsvNumbers(readFileSync(csvPath, 'utf8'))) csvPool.add(n);
+  }
+  if (csvPool.size === 0) {
+    return {
+      status: 'SKIP',
+      detail: missingCsvs.length > 0
+        ? `cited CSV(s) missing on disk (see check a): ${missingCsvs.join(', ')}`
+        : 'cited CSV(s) contain no numeric tokens',
+    };
+  }
+  const unmatched = headlineNumbers.filter((h) => !matchesWithRounding(h.value, csvPool));
+  if (unmatched.length > 0) {
+    const uniqueUnmatched = [...new Map(unmatched.map((h) => [h.token, h])).values()];
+    return {
+      status: 'WARN',
+      detail:
+        `${uniqueUnmatched.length} headline number(s) not found (even rounded) in the cited CSV — ` +
+        `may be a derived/rounded figure (see this check's documented limitations), verify by hand: ` +
+        uniqueUnmatched.map((h) => `"${h.token}" (from: "${truncate(h.line, 80)}")`).join('; '),
+    };
+  }
+  return {
+    status: 'PASS',
+    detail: `${headlineNumbers.length} headline number(s) all found (within rounding) in the cited CSV`,
+  };
+}
+
+// --------------------------------------------------------------------------
+// Check (e): "Allocator layer under test" field
+// --------------------------------------------------------------------------
+//
+// Mechanizes CLAUDE.md's "A gate report must name the exact entry point
+// under test..." rule (added by commit `2d9eef2`, prose text search key:
+// "the exact entry point under test"). The one report that has already
+// adopted this convention voluntarily
+// (`docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md`, `## 0.
+// Allocator layer under test (CLAUDE.md's R30-8 rule)`) is the positive
+// pattern this regex is built to recognize; `docs/perf/R31_2_...md` is the
+// KNOWN negative case the task brief names — it states its layer
+// (`#[global_allocator]`) only in flowing prose (§ header comment,
+// "Feature set" line), not through a structured field, and is exactly the
+// "flag, don't hard-fail" scenario this check is designed to produce a
+// non-vacuous WARN for.
+
+const ALLOWED_LAYERS = ['AllocCore', 'HeapCore', 'SeferAlloc', '#[global_allocator]', 'downstream application'];
+
+// A structured field: a Markdown heading or bold-label line mentioning
+// "allocator layer" or "entry point under test" (case-insensitive) —
+// matches both "## 0. Allocator layer under test" (R31-3's own heading) and
+// a bold inline label style ("**Allocator layer under test:** ...").
+const LAYER_FIELD_HEADING_RE = /(?:^#{1,6}\s.*|^\*\*)[^\n]*?(allocator layer|entry point under test)/im;
+
+// Promotion/production-verdict language — the specific combination this
+// check additionally flags when paired with a sub-SeferAlloc layer.
+const PROMOTION_LANGUAGE_RE =
+  /\b(promote|promotion)\b|production feature composition|\bGO\b.{0,40}production|production.{0,40}\bGO\b|\bNO-GO\b.{0,40}production|production.{0,40}\bNO-GO\b/i;
+
+/**
+ * Check (e): does the report declare its allocator layer via a structured
+ * field, and (if it names a layer below SeferAlloc) does it also use
+ * promotion/production-verdict language that the R30-3/R31-0 defect shape
+ * warns against? Always WARN, never FAIL — CLAUDE.md's own rule text
+ * treats a substrate-only report as legitimate.
+ */
+function checkAllocatorLayerField(text) {
+  const headingMatch = LAYER_FIELD_HEADING_RE.exec(text);
+  if (!headingMatch) {
+    return {
+      status: 'WARN',
+      detail:
+        'no structured "Allocator layer under test" / "entry point under test" field found ' +
+        '(CLAUDE.md commit 2d9eef2\'s rule; a substrate-only report legitimately has none — ' +
+        'verify by hand whether this report\'s verdict is meant to generalize to a real ' +
+        '#[global_allocator] chain)',
+    };
+  }
+  // Look at a window after the heading for which of the allowed layer names
+  // are actually mentioned (R31-3's own field names TWO layers explicitly,
+  // since different sections of that report drive different entry points —
+  // so this collects ALL layers mentioned, not just the first).
+  const windowText = text.slice(headingMatch.index, headingMatch.index + 800);
+  const namedLayers = ALLOWED_LAYERS.filter((layer) => windowText.includes(layer));
+  if (namedLayers.length === 0) {
+    return {
+      status: 'WARN',
+      detail:
+        'a layer field heading was found but names none of the five allowed values ' +
+        `(${ALLOWED_LAYERS.join(' / ')}) within the following ~800 characters — verify by hand`,
+    };
+  }
+  // The R30-3/R31-0 defect shape: layer named is strictly below SeferAlloc
+  // (bare AllocCore or HeapCore without also mentioning SeferAlloc/the real
+  // global allocator/a downstream app) AND the report's prose elsewhere
+  // uses promotion/production-verdict language.
+  const namesOnlySubSeferAlloc =
+    namedLayers.length > 0 &&
+    namedLayers.every((l) => l === 'AllocCore' || l === 'HeapCore');
+  if (namesOnlySubSeferAlloc && PROMOTION_LANGUAGE_RE.test(text)) {
+    return {
+      status: 'WARN',
+      detail:
+        `layer field names only sub-SeferAlloc layer(s) (${namedLayers.join(', ')}) but report text ` +
+        'also uses promotion/production-verdict language (promote/production feature composition/' +
+        'GO or NO-GO near "production") — this is the exact R30-3/R31-0 defect shape ' +
+        '(measuring below the layer a feature actually ships at); verify by hand',
+    };
+  }
+  return {
+    status: 'PASS',
+    detail: `layer field present, names: ${namedLayers.join(', ')}`,
+  };
+}
+
+// --------------------------------------------------------------------------
+// Check (f): between-arm mechanism delta
+// --------------------------------------------------------------------------
+//
+// Applies only to a "comparative" report — one whose CSV or prose names two
+// or more arms/comparisons AND uses mechanism/activation vocabulary (the
+// same HEADLINE_KEYWORD_RE-adjacent vocabulary check (d) already scans
+// for). A report with no comparison structure at all (e.g. a single-arm
+// Stage-1 decomposition) is SKIPped — this check does not invent a
+// two-arm requirement CLAUDE.md's rule does not impose on every report.
+
+const MECHANISM_KEYWORD_RE = /\b(mechanism delta|decommit|activation|hit[- ]rate|retention)\b/i;
+// A delta-shaped CSV column name.
+const DELTA_COLUMN_NAME_RE = /delta/i;
+// Prose stating a delta explicitly: "delta" or "Δ" near a number, or the
+// literal word "ZERO"/"zero" describing a delta (this project's own
+// R31-2 report phrases its null result as "mechanism delta ... ZERO").
+const PROSE_DELTA_RE = /(?:mechanism\s+)?delta[^.\n]{0,60}?(?:is|stays|=|:)?\s*(ZERO|zero|-?\d[\d,.]*)/i;
+
+/**
+ * Check (f): a comparative report must carry an explicit between-arm
+ * mechanism delta, not just per-arm counts left for the reader to subtract.
+ */
+function checkMechanismDelta(text, citedCsvNames) {
+  if (!MECHANISM_KEYWORD_RE.test(text)) {
+    return { status: 'SKIP', detail: 'no mechanism/activation vocabulary found — not a mechanism-comparison report' };
+  }
+  // Heuristic for "compares two or more arms": the report's own headline
+  // table markup contains a "vs"/"vs." comparison label, OR the CSV (if
+  // any) has a `comparison`/`arm` column with more than one distinct value.
+  const hasVsLanguage = /\bvs\.?\s/i.test(text);
+  let csvHasMultipleArms = false;
+  for (const csvName of citedCsvNames) {
+    const csvPath = resolve(PERF_DIR, csvName);
+    if (!existsSync(csvPath)) continue;
+    const csvText = readFileSync(csvPath, 'utf8');
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#'));
+    if (lines.length < 2) continue;
+    const header = splitCsvLine(lines[0]);
+    const armColIdx = header.findIndex((h) => /^(comparison|arm)$/i.test(h.trim()));
+    if (armColIdx === -1) continue;
+    const values = new Set(lines.slice(1).map((l) => splitCsvLine(l)[armColIdx]?.trim()).filter(Boolean));
+    if (values.size > 1) csvHasMultipleArms = true;
+  }
+  if (!hasVsLanguage && !csvHasMultipleArms) {
+    return { status: 'SKIP', detail: 'no evidence of a two-or-more-arm comparison (no "vs" language, no multi-value comparison/arm CSV column)' };
+  }
+
+  // Look for a delta column in any cited CSV.
+  let csvHasDeltaColumn = false;
+  for (const csvName of citedCsvNames) {
+    const csvPath = resolve(PERF_DIR, csvName);
+    if (!existsSync(csvPath)) continue;
+    const csvText = readFileSync(csvPath, 'utf8');
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith('#'));
+    if (lines.length === 0) continue;
+    const header = splitCsvLine(lines[0]);
+    if (header.some((h) => DELTA_COLUMN_NAME_RE.test(h.trim()))) csvHasDeltaColumn = true;
+  }
+  if (csvHasDeltaColumn) {
+    return { status: 'PASS', detail: 'comparative report; a delta-shaped column found in the cited CSV' };
+  }
+  if (PROSE_DELTA_RE.test(text)) {
+    return { status: 'PASS', detail: 'comparative report; prose explicitly states a between-arm delta' };
+  }
+  return {
+    status: 'WARN',
+    detail:
+      'comparative report (mechanism/activation vocabulary + multi-arm comparison detected) but ' +
+      'neither a delta-shaped CSV column nor explicit prose delta statement found — verify the ' +
+      'reader is not left to subtract per-arm counts by hand',
+  };
+}
+
+// --------------------------------------------------------------------------
+// Post-facto identity check: cited SHA newer than its own raw logs
+// --------------------------------------------------------------------------
+//
+// Signal (not proof) that a report's cited commit SHA was assembled AFTER
+// measurement rather than captured beforehand per CLAUDE.md's R29-6 rule —
+// mirrors the concern `scripts/capture-measurement-identity.mjs`'s header
+// comment explains in full. A report's raw logs are written at measurement
+// time (mtime on disk); if the cited SHA's own commit timestamp is LATER
+// than every one of that report's raw logs' mtimes, the SHA cannot have
+// been the tree that produced those logs — it was filled in afterward. This
+// is exactly the sanctioned "chicken-and-egg" landing-commit pattern several
+// reports already document explicitly in prose (R30-6, R30-7, R31-1, R31-2
+// all state it), so this check is WARN-level ONLY and is expected to fire
+// on those already-known, already-explained cases — it exists to catch a
+// FUTURE report that does the same thing WITHOUT the explaining prose, not
+// to relitigate the already-documented ones.
+
+function checkShaNewerThanRawLogs(text, citedRawLogNames) {
+  if (citedRawLogNames.size === 0) {
+    return { status: 'SKIP', detail: 'no cited raw logs to compare a SHA timestamp against (see check c)' };
+  }
+  // Reuse whichever 40-hex SHA(s) the report's own prose names as its
+  // "measured on" / "base revision" commit — scan prose directly (not the
+  // CSV) since this is about the report's OWN stated identity, not every
+  // SHA a companion CSV happens to carry (e.g. R31-2's CSV repeats the same
+  // base SHA on every row — scanning prose avoids treating that repetition
+  // as several independent claims).
+  const shaMatches = [...text.matchAll(/\b[0-9a-f]{40}\b/g)].map((m) => m[0]);
+  if (shaMatches.length === 0) {
+    return { status: 'SKIP', detail: 'no 40-hex SHA found in report prose' };
+  }
+  const rawLogMtimes = [...citedRawLogNames]
+    .map((name) => resolve(PERF_DIR, name))
+    .filter((p) => existsSync(p))
+    .map((p) => statSync(p).mtime);
+  if (rawLogMtimes.length === 0) {
+    return { status: 'SKIP', detail: 'cited raw log(s) missing on disk (see check c)' };
+  }
+  const earliestRawLogMtime = new Date(Math.min(...rawLogMtimes.map((d) => d.getTime())));
+
+  const laterShas = [];
+  for (const sha of new Set(shaMatches)) {
+    const r = spawnSync('git', ['log', '-1', '--format=%cI', sha], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    if (r.status !== 0 || !r.stdout.trim()) continue; // SHA not resolvable (e.g. not yet pushed, or a non-commit hex string) — not this check's concern
+    const commitDate = new Date(r.stdout.trim());
+    if (commitDate.getTime() > earliestRawLogMtime.getTime()) {
+      laterShas.push({ sha, commitDate: commitDate.toISOString() });
+    }
+  }
+  if (laterShas.length === 0) {
+    return { status: 'PASS', detail: `all cited SHA(s) predate or match the earliest cited raw log's mtime (${earliestRawLogMtime.toISOString()})` };
+  }
+  return {
+    status: 'WARN',
+    detail:
+      `${laterShas.length} cited SHA(s) postdate the earliest cited raw log's mtime ` +
+      `(${earliestRawLogMtime.toISOString()}) — possible post-facto identity assembly (see ` +
+      `scripts/capture-measurement-identity.mjs for the fix going forward; this is EXPECTED and ` +
+      `already documented in prose for the known landing-commit chicken-and-egg pattern several ` +
+      `reports use, e.g. R30-6/R30-7/R31-1/R31-2): ` +
+      laterShas.map((s) => `${s.sha.slice(0, 12)}… @ ${s.commitDate}`).join('; '),
+  };
+}
+
+// --------------------------------------------------------------------------
 // Per-report driver
 // --------------------------------------------------------------------------
 
 /**
- * Run every structural check against one report. Returns
- * `{ mdPath, results: { a, b, c }, ok }` where each result is
- * `{ status: 'PASS'|'FAIL'|'SKIP', detail }[]` (check (b) can yield more
- * than one result — one per cited companion CSV file).
+ * Run every check against one report. Returns
+ * `{ mdPath, results: { a, b, c, d, e, f, identity }, ok }` where each
+ * result is `{ status: 'PASS'|'FAIL'|'WARN'|'SKIP', detail }[]` (checks (b)
+ * can yield more than one result — one per cited companion CSV file).
+ * Checks (d)/(e)/(f)/identity are WARN-level only and never affect `ok`.
  */
 function verifyReport(mdPath) {
   const name = basename(mdPath, '.md');
@@ -405,7 +868,7 @@ function verifyReport(mdPath) {
   const exemption = RETROACTIVE_EXEMPT.get(name);
   const exemptChecks = new Set(exemption?.checks ?? []);
 
-  const results = { a: [], b: [], c: [] };
+  const results = { a: [], b: [], c: [], d: [], e: [], f: [], identity: [] };
 
   const aResult = checkCompanionCsv(mdPath, text);
   results.a.push(aResult);
@@ -437,6 +900,20 @@ function verifyReport(mdPath) {
   const cResult = checkRawLogsExist(text);
   results.c.push(cResult);
 
+  // Re-derive the cited raw-log name set the same way check (c) did, for
+  // reuse by the identity-freshness check below.
+  const citedRawLogNames = new Set();
+  for (const m of text.matchAll(RAW_LOG_CITATION_RE)) {
+    const rawName = m[1];
+    if (/[*?]/.test(rawName)) continue;
+    citedRawLogNames.add(rawName);
+  }
+
+  results.d.push(checkProseCsvCrossCheck(text, citedCsvNames));
+  results.e.push(checkAllocatorLayerField(text));
+  results.f.push(checkMechanismDelta(text, citedCsvNames));
+  results.identity.push(checkShaNewerThanRawLogs(text, citedRawLogNames));
+
   // Apply report-keyed exemptions (checks a/c): a FAIL in an exempted check
   // is downgraded to a reported, non-blocking EXEMPT status — never
   // silently dropped.
@@ -449,6 +926,9 @@ function verifyReport(mdPath) {
     );
   }
 
+  // Checks (d)/(e)/(f)/identity are WARN-level only by construction (their
+  // functions never return FAIL) — `ok` therefore only depends on (a)/(b)/(c),
+  // unchanged from before this task.
   const ok = ['a', 'b', 'c'].every((key) => results[key].every((r) => r.status !== 'FAIL'));
   return { mdPath, name, results, ok };
 }
@@ -498,6 +978,7 @@ if (newOnly) {
 console.log(`[verify-gate-report] scanning ${targets.length} report(s) under ${dirname(targets[0] ?? PERF_DIR)}\n`);
 
 let allOk = true;
+let anyWarn = false;
 for (const mdPath of targets) {
   if (!existsSync(mdPath)) {
     console.log(`FAIL  ${basename(mdPath)} — file not found`);
@@ -510,13 +991,19 @@ for (const mdPath of targets) {
     ['a', '(a) companion CSV exists'],
     ['b', '(b) valid SHA / no placeholder'],
     ['c', '(c) cited raw logs exist'],
+    ['d', '(d) prose<->CSV headline cross-check [WARN-only]'],
+    ['e', '(e) allocator layer under test field [WARN-only]'],
+    ['f', '(f) between-arm mechanism delta [WARN-only]'],
+    ['identity', '(identity) SHA vs raw-log mtime freshness [WARN-only]'],
   ]) {
     for (const r of results[key]) {
       console.log(`      ${label}: ${r.status} — ${r.detail}`);
+      if (r.status === 'WARN') anyWarn = true;
     }
   }
   if (!ok) allOk = false;
 }
 
-console.log(`\n[verify-gate-report] ${allOk ? 'ALL GREEN' : 'FAILED'} (${targets.length} report(s) scanned)`);
+console.log(`\n[verify-gate-report] ${allOk ? 'ALL GREEN' : 'FAILED'} (${targets.length} report(s) scanned)` +
+  (anyWarn ? ' — one or more WARN-level semantic checks fired; see above (does not fail the run)' : ''));
 process.exit(allOk ? 0 : 1);
