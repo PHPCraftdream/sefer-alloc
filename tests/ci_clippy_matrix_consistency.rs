@@ -210,10 +210,21 @@ fn extract_clippy_job_block(ci_yml: &str) -> &str {
 #[test]
 fn ci_clippy_steps_match_manifest_clippy_rows_exactly() {
     let manifest = manifest_dir();
+    // Normalize CRLF -> LF right after reading: `extract_clippy_job_block`
+    // reconstructs byte offsets from `lines()` output as `l.len() + 1` per
+    // line (a bare `\n` terminator). On a Windows checkout (e.g. this repo's
+    // `test windows (production)` CI job), `ci.yml` is read back with `\r\n`
+    // line endings, so that formula undercounts by 1 byte per line and the
+    // reconstructed job-block slice ends short of the real end, silently
+    // dropping trailing steps (caught with `clippy (--features "production")`
+    // missing — R32-1). Normalizing first keeps the offset math correct
+    // regardless of the checkout platform's line-ending conversion.
     let check_matrix_src = fs::read_to_string(manifest.join("scripts").join("check-matrix.mjs"))
-        .expect("read scripts/check-matrix.mjs");
+        .expect("read scripts/check-matrix.mjs")
+        .replace("\r\n", "\n");
     let ci_yml = fs::read_to_string(manifest.join(".github").join("workflows").join("ci.yml"))
-        .expect("read .github/workflows/ci.yml");
+        .expect("read .github/workflows/ci.yml")
+        .replace("\r\n", "\n");
 
     let manifest_rows = parse_manifest_clippy_rows(&check_matrix_src);
     assert!(

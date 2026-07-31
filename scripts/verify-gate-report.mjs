@@ -180,6 +180,22 @@ const RETROACTIVE_EXEMPT = new Map([
       checks: ['c'],
     },
   ],
+  [
+    'R10_7_BATCH_WARM_ARM',
+    {
+      reason:
+        'OPEN_ITEMS.md item 37: report §5 cites 4 raw logs ' +
+        '(_raw_r10_7_warm_arm.log, _raw_r10_7_tcache_isolated.log, ' +
+        '_raw_r10_7_d_vs_f.log, _raw_r10_7_tcache_arm.log) that were never ' +
+        'committed. Verified via `git merge-base --is-ancestor 9611a56 1a2dd7d` ' +
+        '(exit 0): the report (created at 9611a56) predates the raw-log-is-' +
+        'scratch-by-default policy (R13-10/task #280, commit 1a2dd7d) that ' +
+        'first required a cited raw log to be committed alongside its report ' +
+        '— pre-existing debt this script surfaced on its first CI run, not a ' +
+        'new defect.',
+      checks: ['c'],
+    },
+  ],
 ]);
 
 // Keyed by companion-CSV basename (the `_summary.csv` file itself, not the

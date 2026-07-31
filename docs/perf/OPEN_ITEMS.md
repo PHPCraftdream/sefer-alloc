@@ -1265,6 +1265,28 @@ for completeness.
    >   (P2-2 through P2-5, P2-10) — the review's own source, not
    >   independently re-derived by this filing.
 
+37. **`R10_7_BATCH_WARM_ARM.md` cites 4 raw logs that were never committed —
+    discovered by `scripts/verify-gate-report.mjs`'s first CI run (check (c)
+    is FAIL-capable; this pushed the round's landing commit through CI red).**
+    The report (`docs/perf/R10_7_BATCH_WARM_ARM.md`, created commit `9611a56`,
+    2026-07-21) cites `_raw_r10_7_warm_arm.log`, `_raw_r10_7_tcache_isolated.log`,
+    `_raw_r10_7_d_vs_f.log`, `_raw_r10_7_tcache_arm.log` in its own §5 as
+    evidence, but none were ever committed under `docs/perf/`. Verified this
+    predates the raw-log-is-scratch-by-default policy (R13-10/task #280,
+    commit `1a2dd7d`) via `git merge-base --is-ancestor 9611a56 1a2dd7d`
+    (exit 0) — the report was written before the policy existed, so this is
+    pre-existing debt the new script surfaced, not a new defect. Resolved by
+    adding `R10_7_BATCH_WARM_ARM` to `scripts/verify-gate-report.mjs`'s
+    `RETROACTIVE_EXEMPT` map (check `c`), same mechanism already used for
+    `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST`.
+
+   > **Current state**
+   > - **Status:** resolved (exempted, not regenerated — the underlying raw
+   >   logs are not reproducible from anything committed; a true re-run of
+   >   R10-7's harness would be a fresh measurement, not a recovery).
+   > - **Evidence:** `scripts/verify-gate-report.mjs`'s `RETROACTIVE_EXEMPT`
+   >   entry for `R10_7_BATCH_WARM_ARM`.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
