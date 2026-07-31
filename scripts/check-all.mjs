@@ -33,7 +33,12 @@
 //   13. node scripts/verify-gate-report.mjs   (R31-5a: structural checks over
 //      every docs/perf/R*_*.md gate report — companion CSV exists, valid
 //      40-hex SHA/no placeholder, cited raw logs exist)
-//   14. npm run iai                                                (deterministic judge,
+//   14. node scripts/verify-commit-prefixes.mjs   (R31-5c: commit-prefix
+//      lint for CLAUDE.md's R30-12 perf(runtime)/perf(opt-in)/bench/
+//      docs(config) taxonomy, local default range — see that script's own
+//      header; the precise PR-scoped complement runs as ci.yml's
+//      `commit-prefix-lint` job)
+//   15. npm run iai                                                (deterministic judge,
 //      requires WSL + valgrind — see scripts/iai.mjs; skipped with a warning if
 //      WSL is unavailable, since this is the one step that can't run on a bare
 //      Windows/Linux CI runner without the WSL layer this repo's dev scripts use)
@@ -151,10 +156,26 @@ const steps = [
     cmd: 'node',
     args: ['scripts/verify-gate-report.mjs'],
   },
+  {
+    // R31-5c (task #482): commit-prefix lint for CLAUDE.md's R30-12
+    // taxonomy (perf(runtime)/perf(opt-in)/bench/docs(config)) — see
+    // scripts/verify-commit-prefixes.mjs's header for the full rule. Local
+    // default range is `@{u}..HEAD` (or the last 40 commits if no upstream
+    // is configured) — a reasonable local approximation of "this session's
+    // unpushed work"; the precise PR-scoped complement
+    // (`base.sha..head.sha`) runs as its own `commit-prefix-lint` CI job
+    // (needs `fetch-depth: 0`, which this project's other jobs deliberately
+    // don't pay for — see that job's own comment in
+    // .github/workflows/ci.yml). Pure `git log`/`git show --stat` text
+    // scanning, zero cargo invocations — runs in well under a second.
+    name: 'verify-commit-prefixes (R30-12 taxonomy lint, local default range)',
+    cmd: 'node',
+    args: ['scripts/verify-commit-prefixes.mjs'],
+  },
 ];
 
 console.log(`[check-all] repo: ${REPO_ROOT}`);
-console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, verify-gate-report, iai) — fails fast\n`);
+console.log(`[check-all] running ${steps.length + 1} step(s) (argv-roundtrip, fmt, clippy x5 [generated], test x4, perf-gate check [generated], verify-perf-gate-stubs, verify-gate-report, verify-commit-prefixes, iai) — fails fast\n`);
 
 let allOk = true;
 for (const step of steps) {

@@ -180,6 +180,43 @@ jobs:
       # in next to verify-perf-gate-stubs for the same reason.
       - run: node scripts/verify-gate-report.mjs
 
+  commit-prefix-lint:
+    # R31-5c (task #482): lints every commit in a PR's range against
+    # CLAUDE.md's R30-12 taxonomy (perf(runtime) / perf(opt-in) / bench /
+    # docs(config) — see scripts/verify-commit-prefixes.mjs's own header for
+    # the full rule and both FAIL/WARN directions it checks).
+    #
+    # Why this is its OWN job/step, not folded into `npm run check` (unlike
+    # verify-perf-gate-stubs/verify-gate-report just above, which the local
+    # `check-all.mjs` also runs): those two check the WORKING TREE's current
+    # state, which is well-defined identically both locally and in CI. This
+    # check instead walks a COMMIT RANGE, and "which range" only has one
+    # unambiguous, CI-native answer for a pull request specifically — the
+    # PR's `base.sha..head.sha`, exactly what GitHub's PR UI diffs against.
+    # A local `npm run check` run has no equivalent unambiguous range (no
+    # PR object exists yet); scripts/verify-commit-prefixes.mjs's own
+    # default (`@{u}..HEAD` if an upstream is configured, else the last 40
+    # commits) is a REASONABLE local approximation and IS wired into
+    # `npm run check` (see scripts/check-all.mjs) for that reason — this CI
+    # job is the precise, PR-scoped complement, not a duplicate.
+    #
+    # `fetch-depth: 0` (full history) is required: the script's own
+    # non-retroactive clipping (never lints a commit at-or-before the
+    # R30-12 rule commit) calls `git merge-base --is-ancestor`, which needs
+    # real history, not the default shallow (depth-1) checkout every other
+    # job in this workflow uses.
+    name: commit-prefix-lint (R30-12 taxonomy, PR range only)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/verify-commit-prefixes.mjs "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
   # Consolidated (2026-07-12, CI job-count reduction) from 13 single-
   # feature-set matrix jobs into 4 jobs, grouped by theme (the same
   # grouping the original per-entry comments already used). Unlike
