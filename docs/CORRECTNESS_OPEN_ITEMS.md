@@ -789,6 +789,71 @@ assertion proving no double-release but not no leak, was resolved by R28-2
 
 ---
 
+10. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 32 full
+    independent review (`docs/reviews/2026-07-31-r32-full-review.md` §11
+    P2-1, P2-6, P2-7, P2-8, P2-11)]** Five P2 findings — NOT independently
+    re-verified before filing, per this file's own convention (item 9 above
+    is the direct precedent, one round earlier). The round's three P1s
+    (P1-1/P1-2/P1-3, all against R31-10) WERE independently re-verified and
+    fixed directly in the same session — see the review itself and
+    `CHANGELOG.md`'s Round 31 entry for what changed; not filed here.
+    - **P2-1 — README's per-file `unsafe` inventory row for
+      `src/registry/heap_core_diag.rs` drifted; the tripwire cannot see it.**
+      The review's claim: `README.md:594` states 6 hooks for that file; the
+      real count is **7** — R31-6 (task #469) added
+      `dbg_decomp_recommit_payload` there and correctly bumped the
+      AGGREGATE totals (66→68) and the `alloc_core_small_pool.rs` row (2→3),
+      but left this file's own row (and its 6-hook prose enumeration)
+      untouched. `tests/no_stale_doc_references.rs` asserts only the three
+      aggregate tokens, never per-file rows, so this class of drift is
+      invisible to CI by construction.
+    - **P2-6 — `CHANGELOG.md` covers 1 of Round 32's 11 tasks, and now
+      contains a claim `docs/CORRECTNESS_OPEN_ITEMS.md` item 9's own
+      resolution has since made stale.** The review's claim: only `38fbe8f`
+      (R31-10) touched `CHANGELOG.md`; absent entirely are R31-8's new
+      CLAUDE.md rule, three new process tools
+      (`verify-gate-report.mjs`/`verify-commit-prefixes.mjs`/
+      `tests/ci_clippy_matrix_consistency.rs`), R31-6's correctness fix, and
+      all ten fixed review-P2 repairs (R31-14a/b). The existing Round-31
+      CHANGELOG bullet still says "the other 11 P2s were filed, not fixed"
+      — no longer true for ten of them.
+    - **P2-7 — `tests/r31_10_trim_current_thread_api.rs`'s AC1 test asserts
+      equality on a process-wide counter across a window its sibling tests
+      in the same file can perturb.** The review's claim:
+      `SeferAlloc::stats()` is documented process-wide;
+      `ac1_trim_empties_pool_and_evicts_large_cache` asserts
+      `released_after_cache == released_before` across an alloc+dealloc
+      window while libtest runs the file's tests concurrently by default —
+      `ac3`'s two threads and `ac4`'s spawned thread(s) can each increment
+      `segments_released_total` via their own trims/`AbandonGuard::drop`.
+      Low-probability real flake vector, not yet observed. Suggested fix per
+      the review: assert a delta computed by the same thread around its own
+      trim, or serialise the file's tests.
+    - **P2-8 — `ba52822`'s commit subject `fix(examples):` under-declares
+      its diff, and the R31-5c lint structurally cannot catch this shape.**
+      The review's claim: that commit adds two new `pub unsafe fn` hooks to
+      `src/` and edits README's `unsafe` inventory under a subject naming
+      only `examples`. `verify-commit-prefixes.mjs`'s direction-2 WARN
+      applies only to `bench(...)`/`docs(...)` prefixes; a `fix(...)`
+      subject lands in the `'other'` bucket, explicitly out of the lint's
+      scope (consistent with R30-12's letter, which governs `perf` commits
+      specifically) — but it is the same reader-misleading shape the rule
+      exists to prevent for `perf`.
+    - **P2-11 — a Round 32 task committed before its own `npm run check`
+      finished, and created/removed two scratch commits directly on
+      `main`.** The review's claim: `eb6935b` (R31-5c) honestly states in
+      its own message that the full test+iai tail of `npm run check` was
+      "still completing... at commit time" — a literal deviation from
+      CLAUDE.md's "Between phases: run tests and commit" (the tree is
+      green now, independently re-confirmed by the review; no harm
+      resulted). The same task also created and removed two scratch commits
+      (`8eae855`/`3dc528d`) via `git reset --soft` directly on `main`,
+      visible only in `git reflog` — nothing was lost and history stayed
+      linear, but a shared-workspace round should prefer a scratch branch
+      or worktree for that kind of manoeuvre going forward.
+
+---
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 1. **Flaky test — `canary_survives_promotion_and_free_leaves_no_leak`**

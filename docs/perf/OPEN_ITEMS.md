@@ -1198,6 +1198,73 @@ for completeness.
     > - **Evidence:** `docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` (retention) + `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` (benefit, + its 2026-07-30 §8 addendum) + `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md` (crossing-regime benefit) + all three reports' `_summary.csv`/`_raw_*.log` companions.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L27`.
 
+36. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 32 full
+    independent review (`docs/reviews/2026-07-31-r32-full-review.md` §11
+    P2-2, P2-3, P2-4, P2-5, P2-10)]** Five P2 findings against the round's
+    new perf-report tooling (`scripts/capture-measurement-identity.mjs`,
+    `scripts/verify-gate-report.mjs`), all against the R31-10 gate report's
+    own first real use of that tooling — NOT independently re-verified
+    before filing, per this file's own "filed, not fixed" convention (items
+    31/33 are the direct precedent). Note: the review's P2-9 (a mechanism
+    misattribution in `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`
+    §0.3) was independently re-verified and fixed directly in the same
+    session that filed this item (see that report's own §4 dated
+    correction) — NOT included here.
+
+   > **Current state**
+   > - **Status:** filed, not fixed or independently re-verified.
+   > - **Current number/verdict:** five sub-findings, as the review's own §11
+   >   states them (this entry restates, does not re-derive):
+   >   - **P2-2** — `scripts/capture-measurement-identity.mjs`'s printed
+   >     recovery command (`git show <tree>: -- <path>`) is invalid: git
+   >     silently ignores the `-- <path>` and prints the root tree listing,
+   >     exiting 0 — a worse failure mode than an error. This exact string
+   >     shipped verbatim into `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`.
+   >     Suggested fix per the review: `git show <tree>:<path>` (no `--`,
+   >     verified working by the review).
+   >   - **P2-3** — the helper's two identity forms (`treeSha` from
+   >     `git write-tree`, i.e. the INDEX; `patchSha256` from `git diff HEAD`,
+   >     i.e. the WORKING TREE) are computed from different snapshots, so
+   >     they can describe different content if the index and working tree
+   >     differ at capture time. R31-10's published `patch_sha256` does not
+   >     reproduce via the obvious route. The helper's own
+   >     `patchReproduceCommand` also instructs `git apply <saved-patch>`
+   >     but the script never saves the patch. Mitigating: the primary form
+   >     (tree SHA) is valid and was verified end-to-end by the review — only
+   >     the secondary/weaker form is broken.
+   >   - **P2-4** — `verify-gate-report.mjs`'s check (d) (prose↔CSV headline
+   >     cross-check, R31-5b's headline feature) SKIPped on R31-10's own
+   >     report and on 66 of 88 reports corpus-wide, because
+   >     `HEADLINE_KEYWORD_RE` requires a headline keyword on the SAME line
+   >     as the number, and is unit-agnostic (would likely have false-WARNed
+   >     on R31-10's MiB-vs-KiB unit mismatch had it matched at all).
+   >     Suggested fix per the review: anchor on a `## Headline`-shaped
+   >     section instead of same-line keywords, and add a KiB↔MiB
+   >     normalisation pass.
+   >   - **P2-5** — check (e) (allocator layer under test) WARNs on 86 of 88
+   >     reports, check (f) on 24 — a gate that warns on nearly every input
+   >     trains readers to ignore it, and a genuinely new WARN is
+   >     indistinguishable from the ~350 pre-existing ones. Suggested fix per
+   >     the review: extend the existing (b)/(c) retroactive-exemption
+   >     mechanism to (e)/(f), or scope them to reports created after the
+   >     rule commit (the pattern `verify-commit-prefixes.mjs` already uses
+   >     via `merge-base --is-ancestor`).
+   >   - **P2-10** — R31-10's summary-CSV provenance header
+   >     (`# commit_sha=`/`# tree_sha=`/`# patch_sha256=`/`# captured_at=`/
+   >     `# platform=`) was typed by hand in `examples/r31_10_trim_rss_gate.rs`
+   >     rather than emitted by `capture-measurement-identity.mjs --json`,
+   >     which already produces these fields machine-readably — exactly
+   >     where P2-3's one unverifiable number (the patch hash) sits.
+   >     Suggested fix per the review: wire the probe to consume the
+   >     helper's own JSON output instead of hand-typing the header.
+   > - **Next trigger:** any future task that touches
+   >   `scripts/capture-measurement-identity.mjs` or
+   >   `scripts/verify-gate-report.mjs` should fix the sub-finding(s) it
+   >   touches in the same pass; otherwise a dedicated small tooling-fix task.
+   > - **Evidence:** `docs/reviews/2026-07-31-r32-full-review.md` §11
+   >   (P2-2 through P2-5, P2-10) — the review's own source, not
+   >   independently re-derived by this filing.
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below

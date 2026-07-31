@@ -1,12 +1,28 @@
 # R30-7 — an explicit, caller-driven trim/scavenge API: DESIGN PROPOSAL, not implemented this round
 
+> **IMPLEMENTED 2026-07-31 (R31-10, task #474).** This document's own title
+> and the "not implemented this round" framing below describe Round 30's
+> state at the time this proposal was written — kept as-is (append-only, not
+> rewritten) as the honest historical record of the design phase. The
+> proposal was implemented, verbatim, in Round 32: `SeferAlloc::trim_current_thread()`
+> is now a real, documented public API (`src/global/sefer_alloc.rs`), all
+> six §6 acceptance criteria below are closed by
+> `tests/r31_10_trim_current_thread_api.rs` (AC1–AC4, AC6) and
+> `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md` (AC5 — a measured,
+> reproducible **128.0 MiB RSS win** during idle for a burst→trim→idle→burst
+> sequence, vs. 0 KiB for the same sequence without the trim call). §5's
+> migration recommendation (option 2, a thin `dbg_trim_current_thread` alias)
+> was followed as written. See `CHANGELOG.md`'s Round 31 entry and
+> `README.md`'s "Memory policy" section for the shipped, user-facing summary.
+
 **Task:** R30-7 (task #456), Round 30, Deliverable 3. **DESIGN-ONLY — no
 `src/`, `Cargo.toml`, `tests/`, or `benches/` file changes anything about
-runtime behavior in this document's scope.** This proposal is written
-alongside R30-7's other two deliverables (named `Profile` presets,
-`docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md`'s throughput-profile A/B)
-but is independent of them: it does not depend on the profiles landing, and
-the profiles do not depend on this landing.
+runtime behavior in this document's scope** (at the time this design was
+written — see the IMPLEMENTED notice above for what changed since). This
+proposal is written alongside R30-7's other two deliverables (named
+`Profile` presets, `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md`'s
+throughput-profile A/B) but is independent of them: it does not depend on
+the profiles landing, and the profiles do not depend on this landing.
 
 **Style precedent:** `docs/perf/R27_5_ADAPTIVE_POOL_BUDGET_DESIGN.md` and
 `docs/perf/R17_10_BATCHED_DEFERRED_RECLAIM_DESIGN.md` — a real design with

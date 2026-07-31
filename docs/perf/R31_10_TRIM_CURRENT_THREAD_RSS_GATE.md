@@ -63,12 +63,15 @@ Summary CSV: `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE_summary.csv`.
 
 ### 0.3 Why RSS and commit differ
 
-RSS (working set) drops by 128.0 MiB — exactly the 4 × 32 MiB cached large
-spans. Commit drops by 144.3 MiB — the 128 MiB of user payload PLUS ~16 MiB
-of segment overhead (4 MiB segment headers, metadata pages, guard pages).
-This is expected: `os::release_segment` decommits the entire segment
-including its prefix, so the commit charge drops by the full segment size,
-while the working set only included the touched user pages.
+RSS (working set) drops by 128.0 MiB — exactly the 4 × 32 MiB payload touched
+by the burst. Commit drops by 144.3 MiB — **[CORRECTED 2026-07-31, see §4
+below]** each 32 MiB object actually reserves a 36 MiB usable span via
+whole-`SEGMENT` rounding (`needed.div_ceil(SEGMENT) * SEGMENT`, 9 × 4 MiB
+segments), so 4 objects commit and release 144 MiB, not 128 MiB + a small
+fixed per-segment overhead. This is expected: `os::release_segment`
+decommits the entire reserved span (all 9 segments), so the commit charge
+drops by the full rounded span size, while the working set only included the
+touched 32 MiB user payload per object.
 
 ---
 
@@ -170,3 +173,39 @@ noise, no sign instability.
   semantics (`evict_all`). A future `trim_current_thread_to_headroom()`
   variant (design §3.4, explicitly out of scope) would retain a configurable
   floor instead of emptying completely.
+
+## 4. CORRECTED 2026-07-31 — §0.3's RSS/commit gap explanation misattributed the mechanism (Round 32 review, finding P2-9)
+
+This section is appended, not a rewrite — every measured number, table, and
+verdict in §§0-3 above stays exactly as originally published; only the
+NAMED CAUSE in §0.3's prose was wrong, not the numbers.
+
+**P2-9 (misattributed mechanism) — CONFIRMED, fixed.** §0.3 explained the
+16.3 MiB gap between the 144.3 MiB commit drop and the 128.0 MiB RSS drop as
+"~16 MiB of segment overhead (4 MiB segment headers, metadata pages, guard
+pages)". Independently re-derived before accepting the correction, not
+merely re-stated from the review: the actual mechanism is whole-`SEGMENT`
+rounding, the SAME effect `0a34ba1` (this round's own first commit) added to
+CLAUDE.md as a standing evidence rule. For a 32 MiB object at 8-byte
+alignment, `AllocCore::alloc_large`'s `needed = hdr_aligned +
+align_up(size, align)` (`src/alloc_core/alloc_core_large.rs:144-153`)
+rounds to `32 MiB + one page` (the segment header's own footprint), then
+`usable = needed.div_ceil(SEGMENT) * SEGMENT` (`:190-192`, `SEGMENT` = 4 MiB,
+`src/alloc_core/os.rs:65`) rounds THAT up to **9 segments = 36 MiB** usable
+span per object — not the 32 MiB payload alone. **4 objects × 36 MiB = 144
+MiB** committed and released, matching the measured 144.3 MiB commit
+drop almost exactly (the residual ~0.3 MiB is registry/heap bookkeeping
+overhead, not segment padding); only each object's touched 32 MiB PAYLOAD
+ever entered the RSS working set, which is why RSS drops 128 MiB while
+commit drops 144 MiB. Relatedly, §2.3's workload label "128 MiB/burst"
+describes the payload total, not the 144 MiB span footprint each burst
+actually reserves — both figures are now named explicitly above rather than
+conflated.
+
+*Fix applied:* §0.3's prose corrected in place (the ONE place this
+correction touches prose rather than appending only, since the original
+sentence stated a specific, now-confirmed-wrong mechanism rather than a bare
+number) to name whole-`SEGMENT` rounding instead of "segment headers,
+metadata pages, guard pages". No measured value, table, or headline verdict
+(§0.1/§0.2/§3's GO verdict) changed — this is a mechanism-explanation
+correction only.

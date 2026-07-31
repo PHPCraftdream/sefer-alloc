@@ -18,9 +18,16 @@
 //!   `segments_released_total` deltas: A's trim releases A's cached span,
 //!   then B's trim STILL releases B's cached span — which would be
 //!   impossible if A's trim had already evicted it).
-//! - **AC4** — fallback-heap no-op: calling `trim_current_thread()` before
-//!   any per-thread heap is bound (fresh thread, no prior allocation) does
-//!   not panic and does not corrupt fallback state.
+//! - **AC4** — fallback-heap no-op: calling `trim_current_thread()` while
+//!   this thread's `CurrentHeap` resolves to `Fallback` does not panic and
+//!   does not corrupt fallback state. **Corrected post-landing** (R32
+//!   review, finding P1-1): a never-allocated thread does NOT resolve to
+//!   `Fallback` (a null `LOCAL` binds a fresh OWN heap via
+//!   `tls_heap::finish_bind`) — AC4 is now two tests,
+//!   `ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe` (the
+//!   original scenario, correctly renamed) and
+//!   `ac4b_trim_on_genuinely_torn_tls_is_safe_noop` (the actual `Fallback`
+//!   case, `bench-internals`-gated, using the existing TORN-TLS test hooks).
 //!
 //! AC5 (the measured burst-idle-burst RSS win) is a separate gate report:
 //! `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`.
@@ -30,7 +37,10 @@
 //! `alloc-global` — required for `SeferAlloc` / `global` module to exist.
 //! `alloc-decommit` — required for `trim_current_thread` itself (the
 //! mechanisms it drives — small pool, large cache — are
-//! `alloc-decommit`-only).
+//! `alloc-decommit`-only). `bench-internals` — required additionally for
+//! `ac4b_trim_on_genuinely_torn_tls_is_safe_noop` (uses the TORN-TLS test
+//! hooks, which are `bench-internals`-gated per CLAUDE.md's benchmark-hook
+//! rule).
 //!
 //! Run:
 //!   cargo test --release --features production --test r31_10_trim_current_thread_api
@@ -254,36 +264,118 @@ fn ac3_trim_does_not_affect_other_thread_heap() {
 // ---------------------------------------------------------------------------
 // AC4 — fallback-heap no-op
 // ---------------------------------------------------------------------------
+//
+// R32 review finding P1-1 (independent review,
+// docs/reviews/2026-07-31-r32-full-review.md): the ORIGINAL version of this
+// section had exactly one test, named and commented as if it exercised the
+// fallback-heap path ("no prior allocation has bound a per-thread heap"),
+// but a null `LOCAL` on a never-allocated thread resolves through
+// `tls_heap::finish_bind` to `CurrentHeap::Own` (claims a fresh registry
+// slot and binds an empty heap), NOT `CurrentHeap::Fallback` — traced in
+// `src/global/tls_heap.rs:521-530`/`:629-654`. That test was real and
+// passing, but not for the reason it claimed; the genuine fallback path
+// (`CurrentHeap::Fallback`) was never exercised. Split into two tests below:
+// the original scenario, renamed to state what it actually proves, plus a
+// new test that genuinely reaches `Fallback` via the existing
+// `bench-internals`-gated TORN-TLS test hooks.
 
+/// The original AC4 test, renamed: this is a real, useful scenario (trim on
+/// a freshly-bound, never-allocated heap must be safe) but it does NOT
+/// exercise `CurrentHeap::Fallback` — see the module comment above and
+/// [`ac4b_trim_on_genuinely_torn_tls_is_safe_noop`] below for the test that
+/// does.
 #[test]
-fn ac4_trim_on_fallback_heap_is_safe_noop() {
+fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
     let a = Arc::new(SeferAlloc::new());
 
-    // Spawn a FRESH thread that has NEVER allocated — its TLS has no
-    // per-thread heap binding, so `trim_current_thread()` resolves to the
-    // fallback heap and must be a no-op (no panic, no state corruption).
+    // Spawn a FRESH thread that has NEVER allocated. Its `LOCAL` is null, so
+    // `trim_current_thread()` claims a fresh registry slot and binds an
+    // empty `HeapCore` (`CurrentHeap::Own`, not `Fallback` — see the module
+    // comment above) and trims it (trivially: it's already empty).
     let a_for_child = Arc::clone(&a);
     let handle = thread::spawn(move || {
         // This is the FIRST thing the thread does — no prior allocation has
-        // bound a per-thread heap.
+        // bound a per-thread heap yet.
         a_for_child.trim_current_thread();
 
-        // Verify the fallback heap was not corrupted: an allocation AFTER
-        // the no-op trim must succeed and produce serviceable memory.
+        // Verify the (now bound) heap was not corrupted: an allocation AFTER
+        // the trim must succeed and produce serviceable memory.
         let layout = Layout::from_size_align(256, 8).unwrap();
         // SAFETY: valid, non-zero-size layout.
         let p = unsafe { a_for_child.alloc(layout) };
-        assert!(!p.is_null(), "alloc after no-op trim must succeed");
+        assert!(!p.is_null(), "alloc after trim must succeed");
         // SAFETY: p was just allocated, not yet freed.
         unsafe { p.write_volatile(0xAB) };
         // SAFETY: p valid, not yet freed.
         let val = unsafe { p.read_volatile() };
-        assert_eq!(val, 0xAB, "memory after no-op trim must be serviceable");
+        assert_eq!(val, 0xAB, "memory after trim must be serviceable");
         // SAFETY: p valid for `layout`, freed exactly once.
         unsafe { a_for_child.dealloc(p, layout) };
     });
 
     handle
         .join()
-        .expect("fresh thread panicked during no-op trim");
+        .expect("fresh thread panicked during trim-on-never-allocated test");
+}
+
+/// The genuine AC4 case: `trim_current_thread()` called while this thread's
+/// `LOCAL` is TORN (the state `finish_bind`/`current_for_alloc_with_config`
+/// actually maps to `CurrentHeap::Fallback` — mirroring thread-teardown
+/// mid-flight) must be a true no-op — no panic, no corruption — and the heap
+/// must work normally again once TORN is lifted.
+///
+/// Uses the existing `bench-internals`-gated test-only hook pair
+/// `tls_heap::dbg_mark_local_torn_for_test`/`dbg_restore_local_for_test`
+/// (R29-7/task #438), the SAME mechanism `tests/dealloc_only_no_bind_torn.rs`
+/// already uses to poke this exact state from a test. Runs entirely on a
+/// dedicated, freshly-spawned OS thread (not one of libtest's pooled
+/// threads), so poisoning `LOCAL` here cannot bleed into any other test.
+#[cfg(feature = "bench-internals")]
+#[test]
+fn ac4b_trim_on_genuinely_torn_tls_is_safe_noop() {
+    let a = Arc::new(SeferAlloc::new());
+    let a_for_child = Arc::clone(&a);
+    let handle = thread::spawn(move || {
+        let layout = Layout::from_size_align(64, 8).unwrap();
+
+        // Bind a real per-thread heap first (so TORN has something to poke
+        // past, not just an also-null LOCAL).
+        // SAFETY: valid, non-zero-size layout.
+        let p0 = unsafe { a_for_child.alloc(layout) };
+        assert!(!p0.is_null(), "warm-up alloc must succeed");
+        // SAFETY: p0 valid, freed exactly once.
+        unsafe { a_for_child.dealloc(p0, layout) };
+
+        // Force this thread's LOCAL into the genuinely-torn state
+        // `trim_current_thread`'s doc comment describes as its no-op case.
+        let saved = tls_heap::dbg_mark_local_torn_for_test();
+
+        // Trim while TORN: must resolve through CurrentHeap::Fallback and be
+        // a true no-op (no panic).
+        a_for_child.trim_current_thread();
+
+        // Restore LOCAL before any further allocator use on this thread —
+        // mirrors tests/dealloc_only_no_bind_torn.rs's save/restore
+        // discipline.
+        // SAFETY: `saved` was returned by `dbg_mark_local_torn_for_test()`
+        // just above on THIS thread, is this thread's own bound `HeapCore`,
+        // and is never shared across threads.
+        unsafe { tls_heap::dbg_restore_local_for_test(saved) };
+
+        // Control: the heap works normally again after TORN is lifted.
+        // SAFETY: valid, non-zero-size layout.
+        let p = unsafe { a_for_child.alloc(layout) };
+        assert!(!p.is_null(), "alloc after restore must succeed");
+        // SAFETY: p was just allocated, not yet freed.
+        unsafe { p.write_volatile(0xCD) };
+        // SAFETY: p valid, not yet freed.
+        let val = unsafe { p.read_volatile() };
+        assert_eq!(val, 0xCD, "memory after restore must be serviceable");
+        // SAFETY: p valid for `layout`, freed exactly once.
+        unsafe { a_for_child.dealloc(p, layout) };
+    });
+
+    handle
+        .join()
+        .expect("thread panicked during genuinely-torn trim test");
 }

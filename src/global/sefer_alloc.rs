@@ -469,8 +469,15 @@ impl SeferAlloc {
     /// reserve-a-fresh-segment / re-populate-the-large-cache path instead
     /// of reusing whatever this call just released.
     ///
-    /// A no-op on the fallback heap (no per-thread heap bound yet, or TLS
-    /// already torn down) — there is nothing thread-local to trim.
+    /// A no-op on the fallback heap (TLS already torn down, or the
+    /// per-thread registry is exhausted) — there is nothing thread-local to
+    /// trim. **Not** a no-op on a freshly-bound, never-allocated thread: a
+    /// call to this method is itself enough to claim a registry slot and
+    /// bind an (empty) per-thread heap (`global::tls_heap::finish_bind`),
+    /// exactly as an ordinary first allocation would — harmless (the slot's
+    /// `AbandonGuard` is armed, so it recycles normally at thread exit), but
+    /// worth knowing if you call this speculatively before any allocation on
+    /// a thread that otherwise might never bind one at all.
     ///
     /// Cost: O(live tcache classes + pooled segments + cached large spans)
     /// for THIS thread only — no cross-thread coordination, no lock
@@ -514,15 +521,33 @@ impl SeferAlloc {
     ///
     /// `#[doc(hidden)]` — not part of the public API; the established
     /// test-only export pattern documented in `src/lib.rs`'s `#[doc(hidden)]`
-    /// notes. Delegates to the public
-    /// [`trim_current_thread`](Self::trim_current_thread) (R31-10, task #474)
-    /// under `alloc-decommit`; without that feature there is nothing to trim
-    /// and this is a documented no-op.
+    /// notes.
+    ///
+    /// **Deliberately UNCONDITIONAL, not a bare `alloc-decommit`-gated
+    /// delegation to [`trim_current_thread`](Self::trim_current_thread)**
+    /// (fixed post-R31-10/task #474 — an independent review, R32, caught
+    /// that an earlier version of this hook, gated purely on
+    /// `alloc-decommit`, silently stopped flushing tcache magazines under
+    /// `alloc-global + fastbin` builds that don't also enable
+    /// `alloc-decommit`: `HeapCore::trim_for_recycle`'s own body flushes
+    /// tcache under `fastbin` independently of `alloc-decommit`, so gating
+    /// the WHOLE call on `alloc-decommit` silently dropped real work in that
+    /// configuration — exactly the class of regression
+    /// `benches/global_alloc.rs`'s cross-group isolation depends on this
+    /// hook for). This body calls `trim_for_recycle` directly, in every
+    /// feature configuration `HeapCore` compiles under, so it always
+    /// performs whatever subset of the trim work that build actually
+    /// supports (see [`trim_current_thread`](Self::trim_current_thread)'s
+    /// own body for the identical logic the public method uses when
+    /// `alloc-decommit` is enabled).
     #[doc(hidden)]
     pub fn dbg_trim_current_thread(&self) {
-        #[cfg(feature = "alloc-decommit")]
-        {
-            self.trim_current_thread();
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
+            // just resolved it for the calling thread.
+            unsafe { (*heap).trim_for_recycle() };
         }
     }
 

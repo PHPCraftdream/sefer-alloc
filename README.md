@@ -102,8 +102,16 @@ deployments, see [Configuration](#configuration) below.
 > **exactly 0 KiB** in every arm, including at the 256 MiB default. Only
 > genuinely reclaims on (a) a thread exiting (the one unconditional
 > path, `HeapCore::trim_for_recycle`, which evicts the entire large
-> cache) or (b) enough subsequent large-alloc/dealloc traffic to drive
-> further decay ticks.
+> cache), (b) enough subsequent large-alloc/dealloc traffic to drive
+> further decay ticks, or (c) an explicit
+> [`SeferAlloc::trim_current_thread()`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md)
+> call — the caller-driven API this exact gap motivated (R31-10, task
+> #474): call it once your own code knows a burst/phase has ended, and
+> it reclaims immediately instead of waiting for either (a) or (b).
+> Measured RSS win: **128.0 MiB during idle** for a representative
+> burst→trim→idle→burst sequence
+> ([`docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`](docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md)),
+> vs. 0 KiB for the same sequence without the trim call.
 
 This is a real, measured trade-off, not a defect: the 256 MiB default
 genuinely buys a better cache hit rate for large-object churn AT A 64
@@ -1423,7 +1431,7 @@ cargo run --release --example rss_probe --features "alloc-global alloc-xthread a
 | [`docs/HEAP_BENCH.md`](docs/HEAP_BENCH.md), [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-tier bench writeups |
 | [`docs/PLAN.md`](docs/PLAN.md), [`docs/ALLOC_PLAN_PHASE12-13.md`](docs/ALLOC_PLAN_PHASE12-13.md) | Phase plans, dependency DAGs, risk registers |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Identifier glossary: decodes the ID families used in source comments (I1–I6, M1–M11, Phase/P/Ф codes, Э-series, OPT-A…H, X7, W/A/MUST/SEC items, `task #NNN`) |
-| [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design proposal (not implemented) for an explicit, caller-driven `trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve |
+| [`docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md`](docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md) | Design + **implemented** (R31-10, task #474) explicit, caller-driven `SeferAlloc::trim_current_thread()` API — reclaims retention a burst-then-idle workload leaves behind, sidestepping the no-background-thread constraint R27-5's adaptive-pool-budget design could not solve; measured a real 128.0 MiB RSS win during idle in [`docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`](docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md) |
 | [`docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md`](docs/perf/R30_7_SERVER_SHAPED_THROUGHPUT_PROFILE_AB_GATE.md) | Does the `Profile::Throughput` small-pool win hold in a multi-thread, mixed-size, continuous-cycle workload (not R27-4's single-thread teardown micro-benchmark)? Measured: no statistically distinguishable effect at this scale — the mechanism fires identically in both arms (`decommit_calls_total=40` in both), so this workload does not separate them; the null is underpowered (MDE ≈19% of the mean), not a confirmed absence of effect (§0.1/§0.2, corrected 2026-07-30) |
 
 ---
