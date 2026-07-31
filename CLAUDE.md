@@ -614,6 +614,39 @@ Core instructions, mandatory for all code in this repository. They
   `docs/perf/OPEN_ITEMS.md` (item 32) so a fresh round inherits this without
   reading a review doc first, per this file's own "Round start: check BOTH
   open-items indexes" convention.
+- **Cost and benefit must be measured in the SAME workload regime — a
+  fourth instance of the R26-4/R30-8/entry-point meta-pattern above, this
+  time on the regime axis.** Do not combine (a) a parity/benefit result
+  measured where the smaller capacity is never exceeded with (b) a
+  cost/RSS-savings result measured where it IS exceeded, into one Pareto
+  claim ("small setting X gives large setting Y's benefit at N× less
+  cost"). The same arm must cross the policy boundary and measure cost,
+  benefit, and latency together. R30-6's hit-rate workload (`8 × 6 MiB`,
+  described as "48 MiB/burst") actually rounds up through whole-`SEGMENT`
+  (4 MiB) allocation rounding (`AllocCore::alloc_large`,
+  `src/alloc_core/alloc_core_large.rs:190-192`: 6 MiB → 2 segments = 8 MiB
+  usable span/object, × 8 objects = 64 MiB) to land EXACTLY on the 64 MiB
+  headroom boundary it was testing — confirmed against R30-6's own
+  committed CSV (`burst1_used_max_bytes = 67108864` = exactly 64 MiB in all
+  36 rows) by R31-12 (task #476). The 64-vs-256 MiB arm therefore could not
+  structurally differ (both arms fit the whole burst), so the resulting
+  "8/8 vs 8/8" parity was guaranteed by construction, not discovered
+  empirically. R30-6's headline nonetheless combined that parity with
+  R29-13's (task #444) ~7× retention difference — measured under a
+  different regime (large fill + forced drain) — into one Pareto claim
+  ("64 MiB gives 256 MiB's hit rate at 7× less RSS"), which then propagated
+  into the public `Profile` rustdoc. Corrected by R31-1 (task #464,
+  `docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md`), which
+  measured genuinely beyond the 64 MiB boundary and found the tie breaks
+  (a real, reproducible 12.5-point hit-rate loss). See also
+  `docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` (the
+  slot-count/`budget_bytes` axis), which — paired with R31-1 — is the
+  positive example of two reports correctly keeping their regimes
+  separate instead of merging them into a single claim.
+  **Not retroactive** — same convention as this file's other
+  non-retroactive evidence rules: R30-6 and R29-13 are not required to be
+  regenerated; R31-1/R31-12 already corrected the live claim append-only.
+  This rule governs NEW gate reports going forward.
 - **A commit subject line's conventional-commit prefix must state whether
   runtime behavior actually changed — `perf(...)` is reserved for commits
   that change what ships, not for measurement work that only tells you
