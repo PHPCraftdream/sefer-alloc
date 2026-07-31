@@ -56,6 +56,9 @@
 #[doc(hidden)]
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 #[derive(Debug)]
+#[must_use = "a ReservedSmallSegment must be passed to AllocCore::dbg_decomp_release (or \
+              consumed via into_base) — dropping it without releasing fires a debug-only \
+              leak assertion at runtime instead of a compile-time warning"]
 pub struct ReservedSmallSegment {
     /// Private FIELD: no external code can move/replace the field, or
     /// construct a `ReservedSmallSegment` via struct-literal syntax from an

@@ -566,6 +566,130 @@ for completeness.
    >   `R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md` §8 (the 2026-07-30 addendum)
    >   and `scripts/r31_12_repair_r30_6_data.mjs` as independent verification.
 
+32. **The "wrong allocator layer" defect class — a gate report must name the
+    exact entry point under test and why that layer is the decision-relevant
+    one (P1-3, `docs/reviews/2026-07-31-r31-full-review.md` §7).**
+
+   > **Current state**
+   > - **Status:** CLOSED this round — codified as a CLAUDE.md rule (see
+   >   "Active rules", sibling to the R26-4 config-evidence rule and the
+   >   R30-8 mechanism-activation rule), not left as a narrative-only finding.
+   > - **Current number/verdict:** third instance of one meta-pattern —
+   >   R25-5 measured the wrong CONFIG (→ R26-4 rule); R29-16 measured the
+   >   wrong CODE PATH (→ R30-8 rule); R30-3 measured the wrong LAYER (→ this
+   >   rule). R30-3 (task #452) built a judge that satisfied every rule that
+   >   existed at the time — including R30-8's own path-activation oracle,
+   >   honestly reporting ~3% activation and correctly diagnosing
+   >   `carve_block_with_refill`'s 31-block free-list dilution — and still
+   >   shipped a wrong NO-GO verdict, because it measured
+   >   `AllocCore::alloc_zeroed` (bypassing the magazine) instead of
+   >   `HeapCore::alloc_zeroed` (the chain `SeferAlloc`'s
+   >   `#[global_allocator]` actually uses, which retains virginity across an
+   >   entire magazine refill via `PerClass::virgin_mask`). Caught and
+   >   reopened in R31-0 (task #471, commit `dece4a7`), see this file's item
+   >   25 (REOPENED).
+   > - **Next trigger:** none — this is a standing rule, not a pending
+   >   remeasurement. A future gate report that measures below the layer a
+   >   feature actually ships at (e.g. bare `AllocCore` instead of
+   >   `HeapCore`/`SeferAlloc`) without stating why that lower layer is still
+   >   decision-relevant violates the new CLAUDE.md rule and should be
+   >   caught in that task's own zero-trust review, not deferred here.
+   > - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P1-3;
+   >   `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`; CLAUDE.md
+   >   "Active rules" (the new rule this item's closure added).
+
+33. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 31 full
+    independent review (`docs/reviews/2026-07-31-r31-full-review.md` §7
+    P2-1, P2-2, P2-3, P2-7, P2-8, P2-9, P2-10)]** The following seven P2
+    findings were NOT independently re-verified before filing — flagged
+    here at the review's own confidence/severity, for a future round to
+    check and either action or dismiss, per this file's own convention
+    (item 31 above is the direct precedent for this exact "filed, not
+    fixed" pattern, one round earlier).
+
+   > **Current state**
+   > - **Status:** filed, not fixed or independently re-verified.
+   > - **Current number/verdict:** seven sub-findings, as the review's own
+   >   §7 states them (this entry restates, does not re-derive):
+   >   - **P2-1** — R31-0's summary CSV is structurally ragged: 49 rows with
+   >     24 fields under a single 24-column header, but 4 `retention` rows
+   >     with only 16 fields interleaved mid-file with no section marker
+   >     (the review's own `awk -F',' '{c[NF]++}'` recount) — `fmtRetention`
+   >     emits against a `RETENTION_HEADER` constant defined in
+   >     `scripts/r31_0_summary.mjs` but never actually written to the file,
+   >     so a standard CSV reader mis-keys the 4 retention rows (e.g.
+   >     `expected_hits` reads as `true`). Suggested fix per the review: emit
+   >     two files, write the second header line, or pad to the wide schema.
+   >   - **P2-2** — R31-0's CSV publishes a knowingly-vacuous statistic
+   >     without marking it: all 24 OFF-binary rows carry `mean_act_pct`/
+   >     `min_act_pct` of 100.00 or 0.00, derived from a counter the report's
+   >     own §2.2 proves is never incremented on the OFF binary at all; only
+   >     the separate `oracle=NA` column signals this, so a script reading
+   >     just the percentage columns sees a meaningless "100% activation."
+   >     Suggested fix per the review: emit `NA` in those two columns on the
+   >     OFF arm too.
+   >   - **P2-3** — R31-0 §3.3 cites four specific wall-clock percentages
+   >     from a third, uncommitted, unreproducible ad-hoc re-run ("landed in
+   >     the same −91%/−97%/−99%/−99% range"), explicitly labelled
+   >     "corroborating, not part of the cited evidence set" — the review
+   >     calls this honest (materially better than the R29-3 pattern
+   >     CLAUDE.md's R30-9 rule was written against) but still four numbers
+   >     in the report with no committed artifact behind them. Suggested fix
+   >     per the review: commit the log, or drop the figures and keep only
+   >     the qualitative statement.
+   >   - **P2-7** — R31-1 misattributes "36 rows" to R30-6's own committed
+   >     CSV ("confirmed directly by R30-6's own committed CSV... in every
+   >     one of its 36 rows") when R30-6's committed CSV has 12 section-1
+   >     data rows (each a median of 3 reps); the 36 rows live in the RAW
+   >     LOG, which `scripts/r31_12_repair_r30_6_data.mjs:56` correctly cites
+   >     as "36 rows in R30-6 raw log" — the claim is true of the raw log,
+   >     wrong about the artifact named in R31-1's prose. Suggested fix per
+   >     the review: cite the raw log, or say "12 CSV rows / 36 underlying
+   >     arms."
+   >   - **P2-8** — a unit error inside R31-3's summary CSV: one row's note
+   >     reads "3280892/8 = ~410 MiB/heap" for a `rss_post_kib_per_heap`
+   >     value of 410,112 — which is 400.5 MiB, not ~410 MiB (KiB
+   >     misread as MiB in the note string); its two sibling rows
+   >     (threads=1 "~403 MiB", threads=32 "~400 MiB") are correct per the
+   >     review. Exactly the data-hygiene class R31-12/item 27 spent Round
+   >     31 repairing in R30-6's report.
+   >   - **P2-9** — immutable source identity is produced AFTER measurement
+   >     in all four R31 gate reports (each cites its own landing commit
+   >     SHA; all four provenance JSONs record `git_dirty: true` against the
+   >     pre-task base) — the review states CLAUDE.md's R30-9 point 7
+   >     requires the identity to be produced BEFORE measurement, from
+   >     something that exists AT measurement time, and a landing commit
+   >     assembled after the fact assumes without proving that the measured
+   >     working tree equals the eventually-committed tree. The review calls
+   >     this a round-wide inherited pattern, strictly stronger than the
+   >     R27-3/R27-4 baseline the original rule was written against.
+   >     Suggested fix per the review: one `git write-tree` (or `git diff |
+   >     sha256sum`) immediately before each measurement run, cited alongside
+   >     the landing SHA.
+   >   - **P2-10** — intra-round doc drift: R31-2's own NEW comments
+   >     reference `Profile::Throughput` (`Cargo.toml:1792`,
+   >     `docs/perf/OPEN_ITEMS.md:123` as it existed when R31-2 landed),
+   >     which R31-9 removed later in the SAME round — a fresh stale
+   >     reference introduced and then outdated within one round, not
+   >     inherited debt (the review separately notes `Cargo.toml:1774`
+   >     carries the same stale reference inherited from R30-7). Cosmetic
+   >     per the review.
+   > - **Next trigger:** independent re-verification of each sub-finding
+   >   against its cited source (the raw CSV files directly for P2-1/P2-2/
+   >   P2-8, the report prose + raw logs for P2-3/P2-7, the provenance JSONs
+   >   + `git log` for P2-9, `Cargo.toml`/`OPEN_ITEMS.md` grep for P2-10),
+   >   then either apply the review's suggested fixes or record a reasoned
+   >   dismissal, in a future round. None of these change any Round 31
+   >   P0/P1 verdict per the review's own text (§0: "nothing shipped a wrong
+   >   number").
+   > - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P2-1,
+   >   P2-2, P2-3, P2-7, P2-8, P2-9, P2-10 (the review's own text is the
+   >   only source cited here — this entry is a filing, not an independent
+   >   confirmation). P2-4 through P2-6, P2-11, P2-12 are filed separately
+   >   in `docs/CORRECTNESS_OPEN_ITEMS.md` item 9 as the correctness-side
+   >   counterpart (P2-6 fixed directly, not filed), per this file's own
+   >   scope boundary with that sibling index.
+
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a

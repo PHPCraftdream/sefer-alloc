@@ -592,6 +592,28 @@ Core instructions, mandatory for all code in this repository. They
   were already corrected append-only by R30-4/task #453 where needed, a
   separate, already-completed remediation. This rule governs NEW gate
   reports going forward.
+- **A gate report must name the exact entry point under test —
+  `AllocCore::…` vs `HeapCore::…` vs a real `#[global_allocator]` — and
+  state why that layer is the one the promotion/decision applies to; a
+  judge measuring below the layer a feature actually ships at is not usable
+  as promotion evidence.** This is the third instance of one meta-pattern,
+  each closed only after it had already shipped a wrong or misleading
+  verdict: R25-5 measured the wrong **config** (→ the R26-4 rule above);
+  R29-16 measured the wrong **code path** (→ the R30-8 rule above); R30-3
+  measured the wrong **layer** (→ this rule). R30-3 (task #452) built a
+  judge that satisfied every rule that existed at the time — it had a
+  path-activation oracle (R30-8's own requirement), it honestly reported
+  ~3% activation, it correctly diagnosed the mechanism
+  (`carve_block_with_refill`'s 31-block free-list dilution) — and still
+  shipped a wrong NO-GO verdict, because it measured `AllocCore::alloc_zeroed`
+  (bypassing the magazine) instead of `HeapCore::alloc_zeroed` (the actual
+  chain `SeferAlloc`'s `#[global_allocator]` uses, which retains virginity
+  across an entire magazine refill via `PerClass::virgin_mask` —
+  `src/registry/heap_core_alloc.rs`). Caught and reopened in R31-0 (task
+  #471, commit `dece4a7`). Filed as an owned item in
+  `docs/perf/OPEN_ITEMS.md` (item 32) so a fresh round inherits this without
+  reading a review doc first, per this file's own "Round start: check BOTH
+  open-items indexes" convention.
 - **A commit subject line's conventional-commit prefix must state whether
   runtime behavior actually changed — `perf(...)` is reserved for commits
   that change what ships, not for measurement work that only tells you

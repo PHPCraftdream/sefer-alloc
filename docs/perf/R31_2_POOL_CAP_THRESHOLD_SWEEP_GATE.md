@@ -302,19 +302,95 @@ this task needs while tripling the process-launch budget.
 
 ### 4.3 Config-identity fields (R26-4 contract)
 
+> **2026-07-31 correction (Round 31 review response, task following up on
+> `docs/reviews/2026-07-31-r31-full-review.md` P1-2).** Points 2 and 3 below,
+> as originally published, overstated what this task actually did: point 2
+> claimed the pool cap was "read back at runtime," and point 3 claimed a
+> config-conflict counter "does not apply." Neither is accurate —
+> `examples/_shared/r31_2_pool_cap_threshold_workload.rs`'s `run_arm` only
+> **echoes the compile-time constant it was passed** as
+> `pool_segments_requested`/`pool_byte_cap_requested`; nothing calls
+> `HeapCore::dbg_pool_cap()` or `config_conflicts_total()`. The independent
+> review verified this by reading the workload source directly and cross-
+> checking every provenance JSON's key set (`docs/reviews/2026-07-31-r31-full-review.md`
+> §7 P1-2). The review also independently checked the underlying VERDICT by
+> another route and found it holds — see the corrected points below, which
+> replace (not retract) the original text. **The original point 2/3 text is
+> struck through and preserved beneath the correction, per this project's
+> append-only convention.**
+>
+> This task's choice, per the review's own two suggested options: adding a
+> real runtime read-back (option a) would require switching the workload
+> off `SeferAlloc` (a real `#[global_allocator]`, whose per-thread
+> `HeapCore` is reached only through private TLS, `global::tls_heap::current`
+> — `pub(crate)`, not reachable from an `examples/` binary) onto
+> `HeapRegistry::claim_with_config` instead, which is exactly the substrate
+> R31-0/task #471 (this same round) demonstrated is the WRONG layer to
+> measure through when a report's conclusion is meant to apply to the real
+> `#[global_allocator]` chain (see the new CLAUDE.md rule this task also
+> adds). Since this report's whole point is a `#[global_allocator]`-layer
+> measurement, switching substrates to add a read-back would be a worse
+> trade than honestly stating the resolution was established by source
+> reading and structural argument — **option (b)** was taken.
+>
+> 2. **RESOLVED — established by source reading, not read back at runtime.**
+>    `AllocCore::new_with_config` (`src/alloc_core/alloc_core.rs:933-963`)
+>    resolves `core.pool_cap = resolved_pool_segments().min(resolved_pool_byte_cap()
+>    / SEGMENT)` (the exact assignment is at `alloc_core.rs:961-963`) — a
+>    genuine runtime computation, not a compile-time constant folded away;
+>    the report's original structural claim ("a compile-time `static` has no
+>    runtime resolution step") was itself inaccurate on this point, conflating
+>    "the CONFIG VALUE is a compile-time constant" (true — `POOL_SEGMENTS`/
+>    `POOL_BYTE_CAP` in each `r31_2_pool_cap_threshold_ab_capN.rs` are `const`)
+>    with "the RESOLUTION STEP runs at compile time" (false — `new_with_config`
+>    runs once per process, at first-heap-materialisation time, same as every
+>    other caller). For the four arms' actual constants — (4, 16 MiB),
+>    (8, 32 MiB), (16, 64 MiB), (32, 128 MiB), `SEGMENT` = 4 MiB — `min()` is
+>    the identity in every case (4, 8, 16, 32), so the resolved cap equals the
+>    requested cap for all four arms; this is a source-level/structural proof,
+>    not a per-launch runtime self-check like R31-1's/R31-3's siblings use.
+> 3. **Config-conflict counter — genuinely does not apply, for a
+>    process-identity reason (unchanged conclusion, corrected justification).**
+>    `CONFIG_CONFLICTS` (`src/registry/heap_registry.rs:72`) only increments
+>    on `HeapRegistry::claim_with_config`'s registry-slot-reuse path
+>    (`heap_registry.rs:263`) — a path this workload never reaches at all,
+>    since `SeferAlloc::with_config` bakes its config into a `static`
+>    initialiser read once per process via TLS, never through
+>    `HeapRegistry::claim_with_config`. There is no slot-reuse mechanism at
+>    this entry point for the counter to ever observe, so a zero-delta
+>    assertion would be trivially true by construction (no code path exists
+>    that could increment it) — not the same as R31-1's/R31-3's non-vacuous
+>    `assert_eq!(conflicts_delta, 0)` checks, which run against a REAL
+>    `claim_with_config` call site where a conflict is structurally possible
+>    if the isolation contract broke.
+>
+> **This correction does not change the report's headline VERDICT**
+> (§0.1's "clean reject up to cap 32," §0.2's null wall-clock result): the
+> mechanism-delta finding rests on `decommit_calls_total` (a direct,
+> per-launch counter read straight from `AllocStats`, unaffected by this
+> correction) and the four arms' constants make `min()` the identity
+> regardless of whether that identity was proven by runtime read-back or by
+> source reading — both are valid evidence, only the METHOD claimed in the
+> original text was wrong.
+>
+> ~~2. **RESOLVED** — read back at runtime and emitted as~~
+> ~~`RESULT pool_segments_requested=`/`RESULT pool_byte_cap_requested=` in~~
+> ~~every launch (§0.1's table confirms each arm reports its own distinct~~
+> ~~value in all 40 of its launches, not a mix — see the raw logs). Proven~~
+> ~~structurally too: a compile-time `static` has no runtime resolution step~~
+> ~~(identical reasoning to R27-4 §3.4/R30-7 §3.4's own latency-axis~~
+> ~~arguments) — there is no registry-slot reuse possible at this entry~~
+> ~~point (each process is one fixed `static`).~~
+> ~~3. **Config-conflict counter** — does not apply (no registry-slot reuse~~
+> ~~possible at this entry point, identical to R27-4/R30-7's own reasoning).~~
+
 1. **REQUESTED** — the `(pool_segments, pool_byte_cap)` compile-time
    `const`s each binary was built with, source-visible
    (`POOL_SEGMENTS`/`POOL_BYTE_CAP` in each `r31_2_pool_cap_threshold_ab_capN.rs`).
-2. **RESOLVED** — read back at runtime and emitted as
-   `RESULT pool_segments_requested=`/`RESULT pool_byte_cap_requested=` in
-   every launch (§0.1's table confirms each arm reports its own distinct
-   value in all 40 of its launches, not a mix — see the raw logs). Proven
-   structurally too: a compile-time `static` has no runtime resolution step
-   (identical reasoning to R27-4 §3.4/R30-7 §3.4's own latency-axis
-   arguments) — there is no registry-slot reuse possible at this entry
-   point (each process is one fixed `static`).
-3. **Config-conflict counter** — does not apply (no registry-slot reuse
-   possible at this entry point, identical to R27-4/R30-7's own reasoning).
+2. See the 2026-07-31 correction block above (originally: "RESOLVED — read
+   back at runtime...").
+3. See the 2026-07-31 correction block above (originally: "Config-conflict
+   counter — does not apply...").
 4. **Process identity** — subprocess-isolated (`paired-ab-runner.mjs`
    spawns a fresh process per launch, 320 launches total across the 4
    comparisons: 80 launches per comparison × 4).

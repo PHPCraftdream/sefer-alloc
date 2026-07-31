@@ -621,6 +621,87 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      --all-targets -- -D warnings` clean; `cargo clippy --features
      production -- -D warnings` clean; `cargo fmt --check` clean.
 
+9. **[T, filed 2026-07-31, UNVERIFIED-BY-ME findings from the Round 31 full
+   independent review (`docs/reviews/2026-07-31-r31-full-review.md` §7
+   P2-4, P2-5, P2-11, P2-12)]** The following four P2 findings were NOT
+   independently re-verified before filing — flagged here at the review's
+   own confidence/severity, for a future round to check and either action
+   or dismiss, per this file's own convention (item 8 above is the direct
+   precedent for this exact "filed, not fixed" pattern, one round earlier).
+   Note: the review's P2-6 (`ReservedSmallSegment` should be `#[must_use]`)
+   is NOT filed here — it was fixed directly in the same task that filed
+   this item (one-line, zero-risk, per the task brief's own instruction to
+   check first) — see the Round 31 review-response CHANGELOG entry.
+   - **P2-4 — `ReservedSmallSegment`'s `pub(super)` scoping doc claim is
+     wrong in three places.** The review's claim:
+     `src/alloc_core/reserved_small_segment.rs:23-27` and `:80-85` say
+     `new_from_reservation` is "callable only from within
+     `alloc_core_small_pool.rs`'s own module tree," and `:108-112` says
+     `into_base` is "not exposed outside this module tree" — both
+     overstate. Actual scope is `pub(in crate::alloc_core)` (since
+     `reserved_small_segment` is declared `pub mod` as a direct child of
+     `alloc_core` in `src/alloc_core/mod.rs:99`), reachable from every
+     sibling module under `alloc_core` (`alloc_core_large.rs`,
+     `alloc_core_small.rs`, `alloc_core_small_magazine.rs`, …), not just
+     `alloc_core_small_pool.rs` — Rust has no sibling-module-only
+     visibility, so the stated scoping is not even expressible. The review
+     states this is NOT a live exploit (whole-repo grep found exactly one
+     caller of each) and the load-bearing property (external
+     unforgeability across the crate boundary) is unaffected — a
+     documentation-only defect. Suggested fix per the review (doc-only):
+     "reachable from anywhere inside `alloc_core`; in practice called from
+     exactly one site (`alloc_core_small_pool.rs:1095`). Rust has no
+     sibling-module-only visibility, so this is the tightest expressible
+     bound."
+   - **P2-5 — the double-release counterfactual test has a cheap runtime
+     check its own file's two-options analysis missed.** The review's
+     claim: `tests/r31_4_reserved_small_segment_handle.rs` weighs exactly
+     two options (`trybuild` vs. prose) for proving a compile-error
+     property, but a third exists at zero cost:
+     `assert!(core::mem::needs_drop::<ReservedSmallSegment>())` —
+     `needs_drop` is callable at runtime, and a type with a `Drop` impl can
+     never be `Copy` (a hard rustc rule), so combined with the file's
+     existing by-value-signature exercise this is the complete
+     compile-error argument, and unlike the prose it would actually FAIL if
+     a future refactor removed `Drop` and added `Copy`.
+   - **P2-11 — `AllocCore::dbg_large_cache_hits` remains a safe `pub fn` in
+     a plain `production` build, unlike its `HeapCore`-level sibling R31-4
+     tightened.** The review's claim, verified by its own out-of-tree
+     compile probe: `AllocCore::dbg_large_cache_hits` compiles against
+     `features = ["production"]` alone (R31-4/item 8 P2-2 above tightened
+     only the `HeapCore` delegation, not this one). It is allowlisted in
+     `tests/dbg_hook_safety_tripwire.rs`'s `PURE_OBSERVERS`
+     (`:213`) and is a zero-argument `&self` counter read with no pointer
+     and no mutation, so the review calls it a *sanctioned* exception under
+     the tripwire — but notes CLAUDE.md's benchmark-hook rule 2 ("no
+     production caller ⇒ MUST default to `bench-internals`") applies to it
+     by the identical reasoning R31-4 used against its own sibling, and the
+     R31-4 commit does not say why the pair was split. Suggested fix per
+     the review: one sentence of justification, or a matching tightening
+     to `all(alloc-decommit, bench-internals)`.
+   - **P2-12 — the R31-4 retrofit narrowed tripwire coverage of the exact
+     hook shape it hardened.** The review's claim: `scan_file`
+     (`tests/dbg_hook_safety_tripwire.rs:814`) matches only `pub fn dbg_` /
+     `pub unsafe fn dbg_`; the raw-pointer RETURN that used to live on
+     `dbg_decomp_reserve_and_keep` (and was therefore scanned) now lives on
+     `ReservedSmallSegment::base(&self) -> *mut u8`, a differently-named
+     method the scanner's name-prefix match cannot see. The review calls
+     this harmless today (`bench-internals`-gated; returns a pointer the
+     caller already legitimately holds) but a coverage gap for the scanner
+     going forward. Suggested fix per the review: rename to `dbg_base()`,
+     or widen the scanner to also enumerate `#[doc(hidden)] pub fn`
+     returning `*mut`/`*const` on measurement-only types.
+   - **Next trigger:** independent re-verification of each sub-finding
+     (re-read the `mod.rs` declarations for P2-4's visibility claim;
+     confirm `needs_drop::<ReservedSmallSegment>()` for P2-5; re-run the
+     review's out-of-tree compile probe for P2-11; re-read `scan_file`'s
+     match logic for P2-12), then either apply the review's suggested fixes
+     or record a reasoned dismissal, in a future round. None of these
+     threaten correctness per the review's own text.
+   - **Evidence:** `docs/reviews/2026-07-31-r31-full-review.md` §7 P2-4,
+     P2-5, P2-11, P2-12 (the review's own text is the only source cited
+     here — this entry is a filing, not an independent confirmation).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
