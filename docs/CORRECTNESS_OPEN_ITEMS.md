@@ -702,6 +702,91 @@ assertion proving no double-release but not no leak, was resolved by R28-2
      P2-5, P2-11, P2-12 (the review's own text is the only source cited
      here — this entry is a filing, not an independent confirmation).
 
+   **[FIXED, R31-14b/task #484, 2026-07-31.]**
+   All four claims independently re-verified before fixing, per the "Next
+   trigger" instruction above.
+
+   - **P2-4 confirmed and fixed (doc-only).** Re-read `src/alloc_core/mod.rs`
+     directly: `reserved_small_segment` is declared `pub mod` as a direct
+     child of `alloc_core` (line 99), a SIBLING of `alloc_core_small_pool`
+     (declared `mod alloc_core_small_pool` at line 22), not nested inside
+     it — confirming `pub(super)` on `new_from_reservation`/`into_base`
+     resolves to `pub(in crate::alloc_core)`, reachable from every module
+     under `alloc_core`. Confirmed the single real caller via
+     `grep -n "new_from_reservation\|into_base"
+     src/alloc_core/alloc_core_small_pool.rs` → lines 1095 and 1117 exactly.
+     Fixed all three overstated doc-comment locations
+     (`reserved_small_segment.rs:23-27`, `:80-85`, `:108-112`) to state
+     "reachable from anywhere inside `alloc_core`... Rust has no
+     sibling-module-only visibility, so this is the tightest expressible
+     bound," with the exact caller line numbers cited, matching the
+     review's own suggested wording.
+   - **P2-5 confirmed and fixed.** Re-read
+     `tests/r31_4_reserved_small_segment_handle.rs` and confirmed it weighed
+     exactly two options (trybuild vs. prose), no `needs_drop` check.
+     Verified the runtime counterfactual independently: compiled a
+     throwaway `struct NoDrop { x: *mut u8 }` (no `Drop` impl) and confirmed
+     `core::mem::needs_drop::<NoDrop>()` returns `false` — proving the new
+     assertion is non-vacuous (it WOULD fail if `ReservedSmallSegment` lost
+     its `Drop` impl), not merely a decoration. Added
+     `reserved_small_segment_needs_drop_so_it_cannot_be_copy` (a new `#[test]`
+     asserting `core::mem::needs_drop::<ReservedSmallSegment>()`) plus a
+     documented "option 3" in the file's module doc explaining the argument
+     and citing this review finding.
+   - **P2-11 confirmed; decision: keep as a sanctioned exception, add
+     justification (not tighten).** Re-verified `AllocCore::dbg_large_cache_hits`
+     (`src/alloc_core/alloc_core_large_cache.rs:544`) is gated
+     `#[cfg(feature = "alloc-decommit")]` alone — reachable in plain
+     `production`. Unlike its `HeapCore` sibling (R31-4/item 8 P2-2 above,
+     which had ZERO callers outside `bench-internals`-gated examples before
+     tightening), this method has genuine `#[test]` regression callers that
+     run in a plain `production` test build without `bench-internals`:
+     `tests/alloc_zeroed_fresh_large_skip.rs` and
+     `tests/regression_large_cache_span_usable_stable.rs` both gate only on
+     `#![cfg(all(feature = "alloc-core", feature = "alloc-decommit"))]` and
+     assert on this method's return value — confirmed by running
+     `cargo test --features production --test alloc_zeroed_fresh_large_skip
+     --test regression_large_cache_span_usable_stable`, both green.
+     Tightening to `bench-internals` would break these two real test files.
+     CLAUDE.md's benchmark-hook rule 2 ("no production caller ⇒
+     `bench-internals`") does not apply here precisely because a production
+     caller (the test binary) DOES exist, which is the deciding difference
+     from the `HeapCore` sibling's case. Added a doc-comment paragraph to
+     `dbg_large_cache_hits` explaining this asymmetry explicitly, so a
+     future reader does not have to re-derive it.
+   - **P2-12 confirmed and fixed.** Re-read `tests/dbg_hook_safety_tripwire.rs`'s
+     `scan_file` (`:814`, `trimmed.starts_with("pub fn dbg_")`) and confirmed
+     it structurally cannot match `pub fn base`. Renamed
+     `ReservedSmallSegment::base` → `dbg_base` and updated all call sites
+     (`tests/r31_4_reserved_small_segment_handle.rs` ×3,
+     `examples/r29_3_decomposition_gate.rs` ×3, confirmed via a repo-wide
+     `grep -rn "handle\.base()\|h2\.base()"` returning zero hits post-fix).
+     The rename alone surfaced a SECOND, related gap the review did not
+     flag: the tripwire scans the attribute block immediately preceding
+     each `pub fn dbg_*` line, not the enclosing `impl` block's own `#[cfg]`
+     — `dbg_base` was gated only at the `impl ReservedSmallSegment` level,
+     so after the rename `cargo test --features "production bench-internals
+     alloc-stats" --test dbg_hook_safety_tripwire` genuinely FAILED
+     ("NEW unaccounted-for SAFE, non-bench-internals-gated hooks:
+     ...::dbg_base") until a redundant per-method
+     `#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]`
+     was added directly on `dbg_base` — confirming both that the tripwire
+     genuinely works end-to-end and that repeating the gate per-item (the
+     established pattern elsewhere in this crate, e.g.
+     `heap_core_diag.rs`'s methods) is required, not optional decoration.
+   - **Verification (all four together):** `cargo build --features
+     "production bench-internals alloc-stats" --all-targets` clean;
+     `cargo test --features "production bench-internals alloc-stats"` green
+     (231 test-binary result lines, 0 failed); `cargo test --features
+     production --test alloc_zeroed_fresh_large_skip --test
+     regression_large_cache_span_usable_stable --test
+     regression_large_cache_multi_size_cycle` green; `cargo clippy
+     --features "production bench-internals alloc-stats" --all-targets -- -D
+     warnings` clean; `cargo clippy --features production -- -D warnings`
+     clean; `cargo clippy --features experimental --all-targets -- -D
+     warnings` clean; `cargo clippy --all-features --all-targets -- -D
+     warnings` clean; `cargo fmt --check` clean.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

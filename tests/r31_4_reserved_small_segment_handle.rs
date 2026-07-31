@@ -15,8 +15,8 @@
 //! A compile error is, by definition, not something a `#[test]` function can
 //! exercise and pass/fail at runtime — there is no `Result`/`panic` path for
 //! "this code did not compile," because the test binary itself would not
-//! exist. Two options were weighed for proving this claim externally
-//! (per the task's own instruction):
+//! exist. Three options exist for proving this claim externally (per the
+//! task's own instruction); this file uses two of them together:
 //!
 //! 1. A `trybuild`-style compile-fail test harness (a separate crate that
 //!    compiles a small fixture and asserts it FAILS with a specific error).
@@ -32,6 +32,19 @@
 //!    `.dbg_decomp_release(handle)` call cannot compile. This is externally
 //!    verifiable by any reader without needing a special harness: the
 //!    argument is pure Rust move semantics, not a runtime property.
+//! 3. **Also chosen (R31-14b, task #484 — added after `docs/reviews/2026-07-31-r31-full-review.md`
+//!    §7 P2-5 flagged this file's original two-options analysis missed it)**:
+//!    `assert!(core::mem::needs_drop::<ReservedSmallSegment>())`.
+//!    `needs_drop` is `const`-evaluable and callable at ordinary runtime, and
+//!    a type implementing `Drop` can never also implement `Copy` — a hard
+//!    rustc rule, not a project convention. Combined with option 2's
+//!    by-value `dbg_decomp_release` signature (already exercised below),
+//!    this is the complete compile-error argument reduced to one cheap,
+//!    zero-dependency assertion — and unlike option 2's prose, it WOULD FAIL
+//!    at test time if a future refactor removed the `Drop` impl and derived
+//!    `Copy` instead, silently reopening the double-release hazard this type
+//!    exists to close. See `reserved_small_segment_needs_drop_so_it_cannot_be_copy`
+//!    below.
 //!
 //! ## The compile-error argument (verifiable by inspection, not run here)
 //!
@@ -74,6 +87,7 @@
     feature = "bench-internals"
 ))]
 
+use sefer_alloc::alloc_core::ReservedSmallSegment;
 use sefer_alloc::AllocCore;
 
 /// The legitimate single-use path: reserve, read the base (without
@@ -89,12 +103,12 @@ fn reserve_read_base_release_once_succeeds() {
         .dbg_decomp_reserve_and_keep()
         .expect("reservation must succeed on a fresh AllocCore");
 
-    // `.base()` reads the address WITHOUT consuming the handle — proves the
-    // handle is still usable for a measurement read after construction, and
-    // that reading it does not move it (an `if let Some(_) = handle.base()`-
-    // shaped API would have made this awkward; a plain `&self` accessor
-    // does not).
-    let base = handle.base();
+    // `.dbg_base()` reads the address WITHOUT consuming the handle — proves
+    // the handle is still usable for a measurement read after construction,
+    // and that reading it does not move it (an `if let Some(_) =
+    // handle.dbg_base()`-shaped API would have made this awkward; a plain
+    // `&self` accessor does not).
+    let base = handle.dbg_base();
     assert!(!base.is_null(), "reserved segment base must not be null");
 
     // Consume the handle exactly once. This MOVES `handle` — attempting to
@@ -146,7 +160,7 @@ fn repeated_reserve_release_cycles_stay_healthy() {
         let handle = ac
             .dbg_decomp_reserve_and_keep()
             .expect("reserve_and_keep failed during churn");
-        assert!(!handle.base().is_null());
+        assert!(!handle.dbg_base().is_null());
         ac.dbg_decomp_release(handle);
     }
 
@@ -166,4 +180,27 @@ fn repeated_reserve_release_cycles_stay_healthy() {
     // SAFETY: `p` was returned by the matching `ac.alloc(layout)` above, is
     // live, and is freed exactly once here.
     unsafe { ac.dealloc(p, layout) };
+}
+
+/// The third double-release counterfactual option (R31-14b, task #484 —
+/// see this file's module doc, option 3): `needs_drop` is `const`-evaluable
+/// and callable at runtime, and a type with a `Drop` impl can never also be
+/// `Copy` (a hard rustc rule). Combined with `dbg_decomp_release` taking
+/// `ReservedSmallSegment` BY VALUE (exercised by the tests above), this
+/// assertion is the complete compile-error argument reduced to one runtime
+/// check — and unlike the prose argument in this file's module doc, it
+/// WOULD FAIL here if a future refactor removed `ReservedSmallSegment`'s
+/// `Drop` impl and derived `Copy` instead, which would silently reopen the
+/// double-release hazard this type exists to close.
+#[test]
+fn reserved_small_segment_needs_drop_so_it_cannot_be_copy() {
+    assert!(
+        core::mem::needs_drop::<ReservedSmallSegment>(),
+        "ReservedSmallSegment must keep its Drop impl — a type with Drop can \
+         never be Copy, so this is the runtime half of the double-release \
+         compile-error argument this file's module doc makes; if this \
+         assertion ever fails, a refactor removed Drop (and therefore may \
+         have made the type Copy), reopening the double-release hazard \
+         ReservedSmallSegment was built to close"
+    );
 }

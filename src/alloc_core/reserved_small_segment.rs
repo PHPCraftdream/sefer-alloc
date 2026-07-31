@@ -21,13 +21,17 @@
 //! This type closes both gaps structurally:
 //!
 //! - **Unforgeable.** The only constructor is [`Self::new_from_reservation`],
-//!   `pub(super)` — reachable only from inside `alloc_core_small_pool.rs`
-//!   (the same module `AllocCore`'s own reservation methods live in), and
-//!   even there it is called exactly once, from
-//!   `AllocCore::dbg_decomp_reserve_and_keep`, immediately after a genuine
-//!   `reserve_small_segment_impl()` call succeeds. The `base` field is
+//!   `pub(super)` — since `reserved_small_segment` is a direct child module
+//!   of `alloc_core` (`src/alloc_core/mod.rs`), `pub(super)` here resolves
+//!   to `pub(in crate::alloc_core)`: reachable from anywhere inside
+//!   `alloc_core`, not only `alloc_core_small_pool.rs` — Rust has no
+//!   sibling-module-only visibility, so this is the tightest expressible
+//!   bound. In practice it is called from exactly one call site,
+//!   `AllocCore::dbg_decomp_reserve_and_keep` (`alloc_core_small_pool.rs:1095`),
+//!   immediately after a genuine `reserve_small_segment_impl()` call
+//!   succeeds. The `base` field is
 //!   private, so external code cannot construct a SECOND handle from a
-//!   pointer it read out via [`Self::base`] (that method only reads the
+//!   pointer it read out via [`Self::dbg_base`] (that method only reads the
 //!   value; it is not a constructor) — the unforgeability guarantee is
 //!   about minting handles, not about the pointer value being opaque.
 //! - **Double-release is a compile error, not a runtime hazard.**
@@ -65,7 +69,7 @@ pub struct ReservedSmallSegment {
     /// arbitrary pointer — the only way to CONSTRUCT one is
     /// [`Self::new_from_reservation`] (`pub(super)`). Reading the current
     /// value out (without constructing a new handle) is intentionally
-    /// still possible via [`Self::base`] for measurement callers that need
+    /// still possible via [`Self::dbg_base`] for measurement callers that need
     /// the address — see that method's doc for why this does not weaken
     /// the unforgeability or double-release guarantees.
     base: *mut u8,
@@ -74,12 +78,14 @@ pub struct ReservedSmallSegment {
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 impl ReservedSmallSegment {
     /// Mint a handle around a freshly reserved segment base. `pub(super)` —
-    /// callable only from within `alloc_core_small_pool.rs`'s own module
-    /// tree, and in practice called from exactly one call site
-    /// (`AllocCore::dbg_decomp_reserve_and_keep`, immediately after a real
-    /// `reserve_small_segment_impl()` success). No other module — no test,
-    /// no bench, no example — can construct a `ReservedSmallSegment` around
-    /// an address it merely computed or received from elsewhere.
+    /// reachable from anywhere inside `alloc_core` (Rust has no
+    /// sibling-module-only visibility, so this is the tightest expressible
+    /// bound); in practice called from exactly one call site
+    /// (`AllocCore::dbg_decomp_reserve_and_keep`, `alloc_core_small_pool.rs:1095`,
+    /// immediately after a real `reserve_small_segment_impl()` success). No
+    /// module OUTSIDE `alloc_core` — no test, no bench, no example — can
+    /// construct a `ReservedSmallSegment` around an address it merely
+    /// computed or received from elsewhere.
     pub(super) fn new_from_reservation(base: *mut u8) -> Self {
         Self { base }
     }
@@ -95,19 +101,45 @@ impl ReservedSmallSegment {
     /// `ReservedSmallSegment`. The double-release guarantee is unaffected —
     /// that guarantee comes from [`Self::into_base`] consuming `self` by
     /// value, not from hiding the pointer value itself.
+    ///
+    /// Named `dbg_base` (R31-14b, task #484, closing P2-12 filed in
+    /// `docs/CORRECTNESS_OPEN_ITEMS.md` item 9), not the bare `base` this
+    /// method was originally named: `tests/dbg_hook_safety_tripwire.rs`'s
+    /// `scan_file` only matches `pub fn dbg_*` / `pub unsafe fn dbg_*` by
+    /// name prefix, so a raw-pointer-returning method named without the
+    /// `dbg_` prefix was invisible to that tripwire even though it returns
+    /// exactly the shape (a raw pointer out of a measurement-only type) the
+    /// tripwire exists to enumerate. The R31-4 retrofit that moved this
+    /// pointer-return off `dbg_decomp_reserve_and_keep` (which the tripwire
+    /// DID scan) onto this method silently narrowed the tripwire's
+    /// coverage; the `dbg_` prefix restores it without widening the
+    /// scanner itself. The repeated `#[cfg(...)]` immediately below
+    /// (redundant with the enclosing `impl` block's own gate, kept anyway)
+    /// is required for the SAME reason as the rename: the tripwire's
+    /// `scan_file` reads the attribute block immediately preceding each
+    /// `pub fn dbg_*` line, not the enclosing `impl`'s attributes — this
+    /// was the exact gap the rename surfaced (`cargo test --features
+    /// "production bench-internals alloc-stats" --test
+    /// dbg_hook_safety_tripwire` failed with "NEW unaccounted-for SAFE,
+    /// non-bench-internals-gated hooks: ...::dbg_base" until this
+    /// per-method `#[cfg]` was added).
     #[doc(hidden)]
     #[must_use]
-    pub fn base(&self) -> *mut u8 {
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_base(&self) -> *mut u8 {
         self.base
     }
 
     /// Consume the handle, yielding the wrapped base for
     /// `dbg_decomp_release` to pass through to
     /// `release_or_pool_empty_segment`, and disarm the `Drop` leak-detector
-    /// below (this IS the release path, not a leak). `pub(super)` — not
-    /// exposed outside this module tree, so external code still cannot
-    /// extract the pointer; the only caller is
-    /// `AllocCore::dbg_decomp_release`.
+    /// below (this IS the release path, not a leak). `pub(super)` —
+    /// reachable from anywhere inside `alloc_core`, same bound as
+    /// [`Self::new_from_reservation`] above (Rust has no
+    /// sibling-module-only visibility); not exposed OUTSIDE `alloc_core`, so
+    /// external code still cannot extract the pointer this way. The only
+    /// caller is `AllocCore::dbg_decomp_release`
+    /// (`alloc_core_small_pool.rs:1117`).
     pub(super) fn into_base(self) -> *mut u8 {
         let base = self.base;
         // Disarm Drop's leak-detector: this consumption IS the release,
