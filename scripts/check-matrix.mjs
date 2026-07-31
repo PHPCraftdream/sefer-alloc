@@ -30,6 +30,16 @@
 // the value it buys here, and what was done instead (a single new CI step
 // that loops this manifest's PER_PR_ROWS via that runner script).
 //
+// R31-11 (task #475): `ci.yml`'s `clippy` job stays hand-transcribed from
+// this manifest's `clippy`-kind rows (kept as named per-step Actions-UI
+// entries — see that job's own header comment for the UX rationale), which
+// `run-check-matrix.mjs`'s `--kind check --kind test` filter does NOT
+// re-verify (it structurally excludes `clippy`-kind rows). The actual
+// enforcement that the transcription hasn't drifted is
+// `tests/ci_clippy_matrix_consistency.rs`, a plain `cargo test` that reads
+// this file's `PER_PR_ROWS` clippy rows and `ci.yml`'s `clippy` job steps as
+// text and fails if they disagree in count, order, or feature string.
+//
 // SCOPE — this manifest intentionally holds a SMALL, curated set of
 // high-value combinations, not an attempt at exhaustive feature-powerset
 // coverage. CLAUDE.md's "cargo-hack feature-powerset CI" section already

@@ -52,27 +52,37 @@ jobs:
 
   clippy:
     # R30-5 (task #454): this job's 5 clippy rows (default / experimental /
-    # --all-features / hardened medium-classes / production) are now
-    # GENERATED from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — the single
+    # --all-features / hardened medium-classes / production) are transcribed
+    # BY HAND from `scripts/check-matrix.mjs`'s `PER_PR_ROWS` — the single
     # source of truth also consumed by `scripts/run-check-matrix.mjs` (which
     # `scripts/check-all.mjs`'s local `npm run check` runs as one of its
-    # steps, so local and CI execute byte-identical argv from the same
-    # manifest — see that manifest's header comment. Edit the feature
-    # combinations THERE, not in this job's steps below).
+    # steps, so local `check`/`test` rows and CI's `check-matrix` job below
+    # execute byte-identical argv from the same manifest — see that
+    # manifest's header comment). Edit the feature combinations in the
+    # manifest, then keep this job's steps transcribed identically to it.
     #
     # This job's steps stay hand-listed (not `node scripts/run-check-matrix.mjs
     # --kind clippy` or similar) rather than collapsed into a single script
     # invocation, so each feature combination still gets its OWN named CI
     # step in the Actions UI (a red step's name tells you the failing
-    # combination at a glance, same UX this job has always had) — but the
-    # feature-string LITERALS below are transcribed from, and must be kept
-    # identical to, `scripts/check-matrix.mjs`'s `PER_PR_ROWS` clippy rows;
-    # `scripts/run-check-matrix.mjs` (invoked from the `check-matrix` job
-    # below) is the actual enforcement that a drift here would be caught —
-    # if this job's hand-listed steps ever diverge from the manifest, the
-    # `check-matrix` job runs the manifest's OWN version of each row
-    # independently and would still catch a regression the manifest knows
-    # about, even if this job's copy went stale.
+    # combination at a glance, same UX this job has always had).
+    #
+    # R31-11 (task #475): the `check-matrix` job below does NOT enforce that
+    # this job's transcription stays correct — its own
+    # `--kind check --kind test` filter EXCLUDES every `clippy`-kind manifest
+    # row by construction (see `run-check-matrix.mjs`'s `--kind` handling), so
+    # a drift here was previously uncaught by anything in CI or `tests/`
+    # (flagged by two independent reviews:
+    # `docs/reviews/2026-07-30-r30-post-response-readonly-review.md`'s "P2 —
+    # generated CI matrix is not yet the only source of truth" and
+    # `docs/reviews/2026-07-30-r30-full-review.md` P2-7 /
+    # `docs/perf/OPEN_ITEMS.md` item 31). The actual enforcement is
+    # `tests/ci_clippy_matrix_consistency.rs`, a plain `cargo test` that reads
+    # both this job's steps and the manifest's clippy rows as text and fails
+    # if they diverge in count, order, or feature string — it runs on every
+    # `cargo test` invocation (including `npm run check` and every CI `test-*`
+    # job), so a stale transcription here now fails fast without needing a
+    # dedicated CI job of its own.
     #
     # Consolidated (2026-07-12, CI job-count reduction) from 3 matrix jobs
     # into sequential steps in one job. Each matrix entry paid its own
@@ -124,20 +134,23 @@ jobs:
     # `PER_PR_ROWS` manifest via the shared `scripts/run-check-matrix.mjs`
     # runner (the SAME script `scripts/check-all.mjs`'s local `npm run check`
     # invokes as one of its steps, so local and CI execute byte-identical
-    # argv from the same manifest). Deliberately `--kind check` here, not the
-    # full manifest — the `clippy` job above already runs all 5 clippy rows
-    # as named per-step Actions-UI entries (including the new `production`
-    # row this task added), so running them AGAIN here would double CI
-    # minutes on the same 5 combinations for zero additional coverage. This
-    # job is therefore currently just the ONE row that has no other per-PR
-    # CI home: `cargo check --bench perf_gate_iai --features "production
-    # bench-internals"` (scripts/iai.mjs's own DEFAULT_FEATURES, and `npm
-    # run check`'s LAST step — was never its own CI row before this task;
-    # its absence is exactly how R29-16's 4x E0433 shipped undetected for a
-    # full round). If a future round adds a non-clippy `PER_PR_ROWS` entry,
-    # it lands here automatically with no ci.yml edit needed — that is the
-    # whole point of the `--kind check` filter (see
-    # `scripts/run-check-matrix.mjs --help` / its own `--kind` handling).
+    # argv from the same manifest). Deliberately `--kind check --kind test`
+    # here, not the full manifest — the `clippy` job above already runs all 5
+    # clippy rows as named per-step Actions-UI entries (including the new
+    # `production` row this task added), so running them AGAIN here would
+    # double CI minutes on the same 5 combinations for zero additional
+    # coverage (R31-11/task #475: that hand-transcription is checked instead
+    # by `tests/ci_clippy_matrix_consistency.rs`, not by this job — see the
+    # `clippy` job's own header comment). This job is therefore currently
+    # just the ONE row that has no other per-PR CI home: `cargo check --bench
+    # perf_gate_iai --features "production bench-internals"`
+    # (scripts/iai.mjs's own DEFAULT_FEATURES, and `npm run check`'s LAST
+    # step — was never its own CI row before this task; its absence is
+    # exactly how R29-16's 4x E0433 shipped undetected for a full round). If
+    # a future round adds a non-clippy `PER_PR_ROWS` entry, it lands here
+    # automatically with no ci.yml edit needed — that is the whole point of
+    # the `--kind check --kind test` filter (see `scripts/run-check-matrix.mjs
+    # --help` / its own `--kind` handling).
     #
     # A GitHub Actions `strategy: matrix:` was considered and rejected in
     # favor of "a CI step that runs a script which reads the manifest and
