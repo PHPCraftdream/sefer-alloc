@@ -1,0 +1,17 @@
+# commit_sha=ba5282253918644a11e128d6c6c06d5b4ae30d1a
+# tree_sha=065f0bc5b8d7b720d56a6316ca29dcac78867a0c
+# patch_sha256=d1aaa9cb34c9088f14c265f502942d69fd0e9dc789fe0f90f53de88e464d1b76
+# captured_at=2026-07-31T13:12:59.269Z
+# platform=Windows 10 Pro x86-64, 11th Gen Intel Core i7-11800H @ 2.30GHz, rustc 1.97.0
+# features=production
+# entry_point=SeferAlloc (direct GlobalAlloc::alloc/dealloc + trim_current_thread)
+# workload=4 × 32 MiB large objects = 128 MiB/burst, touch-all-pages, free-all → cache
+# idle_ms=500
+# arms=TRIM (burst→trim→idle→burst), NO_TRIM (burst→idle→burst)
+arm,repetition,large_obj_bytes,large_obj_count,total_burst_bytes,idle_ms,rss_before_kib,commit_before_kib,rss_burst1_kib,commit_burst1_kib,action_released_delta,rss_idle_kib,commit_idle_kib,idle_released_delta,rss_burst2_kib,commit_burst2_kib,rss_drop_burst1_to_idle_kib,commit_drop_burst1_to_idle_kib
+TRIM,0,33554432,4,134217728,500,3172,684,134344,149448,4,3276,1704,0,134364,149448,131068,147744
+TRIM,1,33554432,4,134217728,500,3176,644,134344,149408,4,3276,1664,0,134364,149408,131068,147744
+TRIM,2,33554432,4,134217728,500,3180,660,134348,149420,4,3280,1676,0,134368,149420,131068,147744
+NO_TRIM,0,33554432,4,134217728,500,3176,652,134340,149408,0,134356,149408,0,134356,149408,0,0
+NO_TRIM,1,33554432,4,134217728,500,3196,680,134364,149444,0,134380,149444,0,134380,149444,0,0
+NO_TRIM,2,33554432,4,134217728,500,3184,656,134352,149416,0,134368,149416,0,134368,149416,0,0

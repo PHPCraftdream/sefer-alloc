@@ -1823,6 +1823,17 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r31_1_large_cache_headroom_crossing_regime_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 
+# R31-10 (task #474): AC5 gate for SeferAlloc::trim_current_thread() —
+# subprocess-per-arm measurement of the burst → trim → idle → burst RSS win
+# vs the no-trim control (burst → idle → burst). Two arms (TRIM / NO_TRIM),
+# single-thread per subprocess, 128 MiB/burst (4 × 32 MiB large objects),
+# median of 3 reps. Entry point: SeferAlloc (direct GlobalAlloc calls +
+# trim_current_thread), NOT the HeapCore substrate. See
+# docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md for the report.
+[[example]]
+name = "r31_10_trim_rss_gate"
+required-features = ["alloc-global", "alloc-decommit"]
+
 [[example]]
 name = "r31_2_pool_cap_threshold_ab_cap16"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]

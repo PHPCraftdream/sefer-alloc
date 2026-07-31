@@ -454,16 +454,50 @@ impl SeferAlloc {
         }
     }
 
-    /// TEST/BENCH-ONLY: trim the CALLING thread's own heap back to a
-    /// comparable empty-ish baseline — flush every tcache class's magazine,
-    /// drain the small-segment hysteresis pool, and evict the entire large
-    /// cache. Delegates to the exact production teardown-trim primitive
-    /// (`HeapCore::trim_for_recycle`, task #95/N1) that thread-exit already
-    /// runs before a registry slot is recycled; this hook just calls it
-    /// WITHOUT tearing down TLS or recycling the slot, so the calling
-    /// thread keeps using the SAME heap afterward (an alloc right after this
-    /// call takes the normal cold-claim-a-fresh-segment path instead of
-    /// hitting a warm tcache/pool/cache the previous phase left behind).
+    /// Trim the CALLING thread's own heap back to a comparable empty-ish
+    /// baseline: flush every tcache class's magazine, drain the
+    /// small-segment hysteresis pool, and evict the entire large cache.
+    /// Call this when the calling thread KNOWS a burst/phase has ended
+    /// (e.g. after finishing a batch of request handling, before an
+    /// expected idle period) and wants its retained memory released to the
+    /// OS now, rather than waiting for the next allocation-driven decay
+    /// tick or thread-exit.
+    ///
+    /// This does NOT tear down the thread's TLS binding or recycle its
+    /// registry slot — the thread keeps using the SAME heap afterward. The
+    /// next allocation after this call takes the normal cold
+    /// reserve-a-fresh-segment / re-populate-the-large-cache path instead
+    /// of reusing whatever this call just released.
+    ///
+    /// A no-op on the fallback heap (no per-thread heap bound yet, or TLS
+    /// already torn down) — there is nothing thread-local to trim.
+    ///
+    /// Cost: O(live tcache classes + pooled segments + cached large spans)
+    /// for THIS thread only — no cross-thread coordination, no lock
+    /// contention with any other heap. Safe to call from a hot request
+    /// handler's cold "end of batch" branch; NOT intended to be called on
+    /// every allocation (it defeats the warm-cache/warm-pool amortization
+    /// this project's whole small-pool/large-cache design exists to
+    /// provide — see the design doc,
+    /// `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` §4.3, for the
+    /// mis-use hazard this creates).
+    ///
+    /// Design: `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` (R30-7,
+    /// task #456). Measured value proposition:
+    /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`.
+    #[cfg(feature = "alloc-decommit")]
+    pub fn trim_current_thread(&self) {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
+            // just resolved it for the calling thread.
+            unsafe { (*heap).trim_for_recycle() };
+        }
+    }
+
+    /// TEST/BENCH-ONLY alias for
+    /// [`trim_current_thread`](Self::trim_current_thread).
     ///
     /// **Why this exists.** `benches/global_alloc.rs`'s `criterion_main!`
     /// invokes all registered `benchmark_group()` functions in the SAME
@@ -478,24 +512,17 @@ impl SeferAlloc {
     /// group (cargo bench harness re-init, criterion setup) on every one of
     /// the 7 groups this bench registers.
     ///
-    /// On the fallback heap (TLS torn down / registry exhausted — never
-    /// expected mid-bench-run on a live thread) this is a no-op: there is no
-    /// per-thread heap to trim, and the fallback is process-shared, not
-    /// per-group state.
-    ///
     /// `#[doc(hidden)]` — not part of the public API; the established
     /// test-only export pattern documented in `src/lib.rs`'s `#[doc(hidden)]`
-    /// notes. Not reachable from normal production alloc/dealloc paths (those
-    /// never call `trim_for_recycle` except from `AbandonGuard::drop` on
-    /// thread exit).
+    /// notes. Delegates to the public
+    /// [`trim_current_thread`](Self::trim_current_thread) (R31-10, task #474)
+    /// under `alloc-decommit`; without that feature there is nothing to trim
+    /// and this is a documented no-op.
     #[doc(hidden)]
     pub fn dbg_trim_current_thread(&self) {
-        if let CurrentHeap::Own(heap) = self.current_heap() {
-            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
-            // registry slot owned by THIS thread (same single-writer
-            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
-            // just resolved it for the calling thread.
-            unsafe { (*heap).trim_for_recycle() };
+        #[cfg(feature = "alloc-decommit")]
+        {
+            self.trim_current_thread();
         }
     }
 
