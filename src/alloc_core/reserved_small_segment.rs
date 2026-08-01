@@ -3,6 +3,53 @@
 //! hook pair: `AllocCore::dbg_decomp_reserve_and_keep` /
 //! `AllocCore::dbg_decomp_release` (`alloc_core_small_pool.rs`).
 //!
+//! ## Owner-binding (R31-15, task #486)
+//!
+//! R31-4 (below) closed unforgeability and double-release, but NOT
+//! owner-binding: nothing stopped a caller from reserving a handle on one
+//! `AllocCore` and releasing it on a DIFFERENT `AllocCore` — both safe API
+//! calls, compiling cleanly:
+//!
+//! ```text
+//! let mut core_a = AllocCore::new().unwrap();
+//! let mut core_b = AllocCore::new().unwrap();
+//! let h = core_a.dbg_decomp_reserve_and_keep().unwrap();
+//! core_b.dbg_decomp_release(h);   // handle belongs to core_a, not core_b
+//! ```
+//!
+//! `dbg_decomp_release` would then pass `core_a`'s foreign base into
+//! `core_b.release_or_pool_empty_segment(base)`, mutating `core_b`'s
+//! pool/directory/`SegmentTable` state for a segment `core_b` never
+//! registered — while `core_a`'s own registration of that same base goes
+//! stale (a later lookup/drop/reuse on `core_a` could read unmapped or
+//! reused memory). This is the same bug class CLAUDE.md's benchmark-hook
+//! safety rule targets ("a safe `pub fn` that accepts a raw pointer and
+//! touches allocator metadata is a soundness hole by construction"), one
+//! level of indirection removed (the pointer is inside a typed handle
+//! instead of bare).
+//!
+//! Fixed two ways, layered:
+//!
+//! 1. **Structural owner token.** [`Self::owner_id`] stores the minting
+//!    `AllocCore`'s stable, process-wide-unique identity
+//!    (`AllocCore::dbg_reservation_owner_id`, a monotonic counter — NOT the
+//!    `&self` address, which can be reused by a different logical
+//!    `AllocCore` after a move; see that field's doc comment in
+//!    `alloc_core.rs`). `AllocCore::dbg_decomp_release` compares this
+//!    against ITS OWN `dbg_reservation_owner_id` and rejects a mismatch with
+//!    a release-build (non-`debug_assert!`) panic — not compiled out in
+//!    `--release`, unlike the pre-existing `small_cur` check.
+//! 2. **`unsafe fn` + documented precondition.** Even with the owner-id
+//!    check, `AllocCore::dbg_decomp_release` is `unsafe fn`: the owner-id
+//!    check is defence-in-depth against a wrong-core call, not a substitute
+//!    for the caller upholding "this handle is still live/unreleased" (the
+//!    owner-id check cannot detect e.g. a handle released once already via
+//!    some future safe-looking bypass, or a segment externally unregistered
+//!    through another `dbg_*` hook). Matches the established pattern for
+//!    this hook shape elsewhere in the crate (`HeapCore::
+//!    dbg_dealloc_own_thread_with_base` / `dbg_overflow_bitmap_clear_pass`,
+//!    `src/registry/heap_core_diag.rs`).
+//!
 //! ## Why this type exists (R31-4, task #467)
 //!
 //! `docs/design/R30_10_MEASUREMENT_HOOK_ISOLATION_DESIGN.md` §5 surveyed
@@ -73,21 +120,43 @@ pub struct ReservedSmallSegment {
     /// the address — see that method's doc for why this does not weaken
     /// the unforgeability or double-release guarantees.
     base: *mut u8,
+    /// R31-15 (task #486): the minting `AllocCore`'s stable
+    /// `dbg_reservation_owner_id`. Private for the same reason `base` is —
+    /// only [`Self::new_from_reservation`] sets it, and only
+    /// [`Self::owner_id`]/[`Self::into_base`] read it back. See the module
+    /// doc's "Owner-binding" section for the full rationale.
+    owner_id: u64,
 }
 
 #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
 impl ReservedSmallSegment {
-    /// Mint a handle around a freshly reserved segment base. `pub(super)` —
-    /// reachable from anywhere inside `alloc_core` (Rust has no
-    /// sibling-module-only visibility, so this is the tightest expressible
-    /// bound); in practice called from exactly one call site
-    /// (`AllocCore::dbg_decomp_reserve_and_keep`, `alloc_core_small_pool.rs:1095`,
+    /// Mint a handle around a freshly reserved segment base, stamped with
+    /// the minting `AllocCore`'s `owner_id` (R31-15, task #486 — see the
+    /// module doc's "Owner-binding" section). `pub(super)` — reachable from
+    /// anywhere inside `alloc_core` (Rust has no sibling-module-only
+    /// visibility, so this is the tightest expressible bound); in practice
+    /// called from exactly one call site
+    /// (`AllocCore::dbg_decomp_reserve_and_keep`, `alloc_core_small_pool.rs`,
     /// immediately after a real `reserve_small_segment_impl()` success). No
     /// module OUTSIDE `alloc_core` — no test, no bench, no example — can
-    /// construct a `ReservedSmallSegment` around an address it merely
-    /// computed or received from elsewhere.
-    pub(super) fn new_from_reservation(base: *mut u8) -> Self {
-        Self { base }
+    /// construct a `ReservedSmallSegment` around an address (or owner id) it
+    /// merely computed or received from elsewhere.
+    pub(super) fn new_from_reservation(base: *mut u8, owner_id: u64) -> Self {
+        Self { base, owner_id }
+    }
+
+    /// Read the owner id WITHOUT consuming the handle — so
+    /// `AllocCore::dbg_decomp_release` can capture it (alongside
+    /// [`Self::into_base`]'s pointer) BEFORE the owner-id `assert_eq!`
+    /// panics, on the mismatch path (R31-15, task #486): the handle's
+    /// leak-detecting `Drop` impl must be disarmed by consuming it via
+    /// `into_base` FIRST, so a panic during the ensuing assert does not
+    /// unwind through a still-armed `Drop` and fire a second, unrelated
+    /// panic (see `dbg_decomp_release`'s "Ordering note" for the full
+    /// double-panic-abort argument this ordering avoids). `pub(super)`,
+    /// same visibility bound as every other accessor here.
+    pub(super) fn owner_id(&self) -> u64 {
+        self.owner_id
     }
 
     /// Read the wrapped base WITHOUT consuming the handle — `#[doc(hidden)]

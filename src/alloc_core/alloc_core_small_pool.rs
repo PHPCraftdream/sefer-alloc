@@ -1088,11 +1088,18 @@ impl AllocCore {
     /// bare `*mut u8` — see that type's module doc
     /// (`reserved_small_segment.rs`) for why. Same underlying reservation
     /// mechanism as before; only the return type changed.
+    ///
+    /// R31-15 (task #486): the returned handle is now stamped with THIS
+    /// `AllocCore`'s `dbg_reservation_owner_id`, so the paired
+    /// [`dbg_decomp_release`](Self::dbg_decomp_release) can reject a
+    /// cross-core release. See `reserved_small_segment.rs`'s module doc,
+    /// "Owner-binding" section, for the full rationale.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
     pub fn dbg_decomp_reserve_and_keep(&mut self) -> Option<ReservedSmallSegment> {
+        let owner_id = self.dbg_reservation_owner_id;
         self.reserve_small_segment_impl()
-            .map(ReservedSmallSegment::new_from_reservation)
+            .map(|base| ReservedSmallSegment::new_from_reservation(base, owner_id))
     }
 
     /// R29-3: release a previously-reserved small segment.
@@ -1103,18 +1110,73 @@ impl AllocCore {
     /// SOME `AllocCore` (private field + `pub(super)` constructor forecloses
     /// forging one), and consuming it here by value makes a second release
     /// of the SAME handle a compile error (E0382, use of moved value)
-    /// instead of an unchecked runtime hazard. No `unsafe` needed on this
-    /// signature any more — the precondition that used to be an `unsafe fn`
-    /// contract ("base is a live, registered `Small` segment returned by the
-    /// paired reserve call") is now upheld by the type itself. Because
+    /// instead of an unchecked runtime hazard.
+    ///
+    /// R31-15 (task #486, CONFIRMED P0 soundness defect): R31-4 closed
+    /// unforgeability and double-release but NOT owner-binding — until this
+    /// fix, this was a **safe** `pub fn`, and nothing stopped a caller from
+    /// reserving a handle on one `AllocCore` and releasing it on a
+    /// DIFFERENT `AllocCore`, mutating the wrong heap's pool/directory/
+    /// `SegmentTable` state for a segment it never registered while the
+    /// true owner's registration of that same base went stale. Fixed two
+    /// ways, layered (see `reserved_small_segment.rs`'s module doc,
+    /// "Owner-binding" section, for the full writeup):
+    ///
+    /// 1. A release-build (non-`debug_assert!`) owner-id check below,
+    ///    rejecting a cross-core handle before it ever reaches
+    ///    `release_or_pool_empty_segment`.
+    /// 2. `unsafe fn` — defence-in-depth for preconditions the owner-id
+    ///    check cannot see (the segment must still be live/unreleased on
+    ///    the same core that reserved it), matching the established
+    ///    `unsafe fn` + `# Safety` pattern this crate uses for every other
+    ///    hook of this shape (e.g. `HeapCore::dbg_dealloc_own_thread_with_base`).
+    ///
+    /// # Safety
+    ///
+    /// `handle` MUST have been produced by a paired
     /// [`dbg_decomp_reserve_and_keep`](Self::dbg_decomp_reserve_and_keep)
-    /// never publishes the reservation as `self.small_cur` (R30-1, task
-    /// #450), this release cannot leave the live cursor dangling — there is
-    /// nothing to restore.
+    /// call on THIS SAME `AllocCore` (not merely THE SAME logical owner
+    /// under an address-based check — this is enforced structurally by the
+    /// owner-id check below, which panics on mismatch even in `--release`),
+    /// and the reserved segment must still be live/unreleased (not already
+    /// released, unregistered, or otherwise invalidated by another `dbg_*`
+    /// hook in the interim).
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    pub fn dbg_decomp_release(&mut self, handle: ReservedSmallSegment) {
+    #[allow(unsafe_code)] // R31-15: unsafe fn boundary, mirrors dbg_decomp_decommit_payload.
+    pub unsafe fn dbg_decomp_release(&mut self, handle: ReservedSmallSegment) {
+        // R31-15 (task #486): PRIMARY guard against a cross-core release —
+        // a release-build assert (NOT debug_assert!), because this is
+        // exactly the "safe-looking but touches a foreign heap's metadata"
+        // hazard CLAUDE.md's benchmark-hook rule targets; a check compiled
+        // out in --release would defeat the whole point of adding it.
+        //
+        // Ordering note: `owner_id` is read out and `into_base()` is called
+        // to disarm `ReservedSmallSegment`'s leak-detecting `Drop` impl
+        // BEFORE the `assert_eq!` below runs — asserting first, while
+        // `handle` is still a live local with its `Drop` impl armed, would
+        // unwind straight through `handle`'s own scope, firing its
+        // `debug_assert!(false, "...dropped without going through
+        // release...")` DURING that unwind — a panic-while-panicking, which
+        // Rust aborts on unconditionally (not `--release`-specific), taking
+        // down the whole process (observed as a raw
+        // STATUS_STACK_BUFFER_OVERRUN abort on Windows) instead of
+        // propagating a single clean panic. `into_base()` only extracts the
+        // raw pointer value and disarms `Drop` — it does NOT touch any
+        // allocator metadata itself, so calling it before the check is safe
+        // even on the mismatch path: `base` is then discarded by the
+        // `assert_eq!` panic below, WITHOUT `self.release_or_pool_empty_segment`
+        // (the actual pool/directory/`SegmentTable` mutation) ever running —
+        // the true owner's registration of that base is left exactly as it
+        // was, untouched by this call.
+        let owner_id = handle.owner_id();
         let base = handle.into_base();
+        assert_eq!(
+            owner_id, self.dbg_reservation_owner_id,
+            "dbg_decomp_release: handle was reserved by a DIFFERENT AllocCore (owner_id \
+             mismatch) — releasing it here would mutate the wrong heap's pool/directory/\
+             SegmentTable state for a segment this AllocCore never registered"
+        );
         // Defence-in-depth (R30-1): releasing the segment the live cursor
         // currently points at would immediately dangle `small_cur`, exactly
         // the hazard this task fixed. Not reachable today (the paired

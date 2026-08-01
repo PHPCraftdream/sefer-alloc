@@ -496,6 +496,81 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    entry below for why the count dropped by 2, not the expected-from-this-
    item-alone 1). No `production` feature composition changed.
 
+   **[REOPENED then RE-FIXED, R31-15/task #486, 2026-08-01.]** The R31-4
+   "FIXED" verdict directly above was PARTIAL, not complete: it closed
+   unforgeability and double-release, but NOT owner-binding — a third,
+   separate hazard the R31-4 entry's own prose never claimed to address (it
+   describes the forgery and double-release guarantees specifically, never
+   an owner check). CONFIRMED (independently verified by the task filer
+   before filing, not just a review's claim) as a real, safe-reachable P0:
+   `AllocCore::dbg_decomp_release(&mut self, handle: ReservedSmallSegment)`
+   was a **safe** `pub fn`, and `ReservedSmallSegment` stored only a
+   `base: *mut u8` with no owner identity — nothing stopped
+   `core_b.dbg_decomp_release(h)` where `h` was reserved on `core_a`, both
+   calls type-checking and compiling as ordinary safe code. Verified
+   non-vacuously by temporarily reverting the R31-4-era source (`git stash`
+   on just the three touched `src/` files) and confirming a throwaway probe
+   test performed the cross-core release with **no panic on any build
+   profile** — the pre-fix code had zero owner-related guard, release or
+   debug. Fixed two ways, layered:
+   1. **Structural owner token.** A new `bench-internals`-gated field
+      `AllocCore::dbg_reservation_owner_id: u64`, stamped once at
+      construction from a process-wide monotonic `AtomicU64` counter
+      (`DBG_RESERVATION_OWNER_ID_COUNTER`, `alloc_core.rs`) — deliberately
+      NOT the `&self` address (an `AllocCore` can move: it is returned by
+      value from `AllocCore::new()` and lives inline in every registry
+      `HeapSlot`, so two different logical `AllocCore`s can occupy the same
+      address at different times over a process's life). `ReservedSmallSegment`
+      gained a matching private `owner_id: u64` field, stamped by
+      `dbg_decomp_reserve_and_keep` from the minting core's id.
+      `dbg_decomp_release` compares the handle's `owner_id()` against its
+      own `dbg_reservation_owner_id` via a release-build `assert_eq!` (NOT
+      `debug_assert!` — a check compiled out in `--release` would defeat the
+      point) before ever touching `self`'s pool/directory/`SegmentTable`
+      state.
+   2. **`unsafe fn` again**, with a `# Safety` doc contract, as defence-in-
+      depth for what the owner-id check cannot see (the segment must still
+      be live/unreleased) — matching the established pattern
+      (`HeapCore::dbg_dealloc_own_thread_with_base`). Both `dbg_decomp_release`
+      entries (`AllocCore`'s and `HeapCore`'s delegation) moved back into
+      `tests/dbg_hook_safety_tripwire.rs`'s `UNSAFE_HOOKS`.
+   A genuine correctness bug was found and fixed WHILE building this fix's
+   own counterfactual test: asserting BEFORE consuming the handle (`handle`
+   still a live local with its leak-detecting `Drop` impl armed) made the
+   `assert_eq!` panic unwind straight into `ReservedSmallSegment::drop`'s
+   own `debug_assert!(false, "dropped without going through release")` — a
+   panic-during-panic, which Rust aborts on unconditionally, observed as a
+   raw `STATUS_STACK_BUFFER_OVERRUN` process abort on Windows instead of a
+   clean single panic. Fixed by reading `owner_id` and calling `into_base()`
+   (disarming `Drop`) BEFORE the `assert_eq!`; the mismatch path still never
+   reaches `self.release_or_pool_empty_segment` (the assert fires first),
+   so this ordering fix only prevents the separate double-panic-abort
+   failure mode, it does not weaken the rejection itself. New counterfactual
+   test `tests/r31_15_reserved_small_segment_cross_core_release.rs`: a
+   genuine two-`AllocCore` cross-core release (`#[should_panic(expected =
+   "handle was reserved by a DIFFERENT AllocCore")]`), a same-core positive
+   control (proving the guard doesn't false-positive on the legitimate
+   path), and a source-text check that `HeapCore::dbg_decomp_release` stays
+   a pure 1-line forward to `AllocCore::dbg_decomp_release` (justifying why
+   no separate registry-bound two-heap counterfactual was built). Full
+   verification: `cargo test --features "alloc-decommit bench-internals"`
+   green for the four directly-touched test files; `cargo test --features
+   production` green (`no_stale_doc_references.rs` initially caught the two
+   expected doc-drift failures below, both fixed in the same commit);
+   `cargo build --features production` / `--all-features` clean; `cargo
+   clippy --tests -- -D warnings` / `--features experimental` /
+   `--all-features` (the three real CI matrix entries) all clean; `cargo fmt
+   --check` clean. Doc-drift fixed as a side effect: test-file count
+   230→231 (`docs/ARCHITECTURE.md`), README tier-2 `#[allow(unsafe_code)]`
+   site count 68→70 (exactly +2: the new `dbg_decomp_release` item-level
+   allow at both the `AllocCore` and `HeapCore` layers). No `production`
+   feature composition changed — the new `dbg_reservation_owner_id` field
+   and its counter are `bench-internals`-gated, costing nothing in any
+   `production`/default build (this crate's `AllocCore` lives inline in
+   every `HeapSlot`, `MAX_HEAPS = 4096`, so an always-present field would
+   have multiplied its size by 4096 regardless of whether any caller ever
+   reaches the decomposition hooks — gating avoids that cost entirely).
+
 8. **[T, filed 2026-07-30, UNVERIFIED-BY-ME findings from the Round 30 full
    independent review (`docs/reviews/2026-07-30-r30-full-review.md` §5
    P2-1/P2-2)]** The following two P2 findings were NOT independently

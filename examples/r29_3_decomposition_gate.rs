@@ -144,14 +144,23 @@ fn main() {
     // call is a no-op there) and it is what a reservation-only design would
     // genuinely have to do on Windows to reach component (4) at all.
     //
-    // R31-4 (task #467): `dbg_decomp_reserve_and_keep` now returns a typed
+    // R31-4 (task #467): `dbg_decomp_reserve_and_keep` returns a typed
     // `ReservedSmallSegment` handle instead of a bare pointer, and
-    // `dbg_decomp_release` consumes it by value — no `unsafe` needed for
-    // either call any more. `.dbg_base()` (renamed from `.base()` by
-    // R31-14b/task #484 so `tests/dbg_hook_safety_tripwire.rs`'s
-    // `dbg_`-prefix scan sees it) reads the payload address WITHOUT
-    // consuming the handle, for the `write_volatile`/decommit measurements
-    // below; the handle itself is consumed exactly once, at release.
+    // `dbg_decomp_release` consumes it by value. `.dbg_base()` (renamed
+    // from `.base()` by R31-14b/task #484 so
+    // `tests/dbg_hook_safety_tripwire.rs`'s `dbg_`-prefix scan sees it)
+    // reads the payload address WITHOUT consuming the handle, for the
+    // `write_volatile`/decommit measurements below; the handle itself is
+    // consumed exactly once, at release.
+    //
+    // R31-15 (task #486): `dbg_decomp_release` is `unsafe fn` again (R31-4
+    // closed double-release but not owner-binding — a handle reserved on
+    // one `AllocCore`/`HeapCore` could be released on a different one,
+    // corrupting the wrong heap's state; see that function's doc comment).
+    // The `unsafe { .. }` wrapping every `dbg_decomp_release` call below was
+    // already present (needed for the `(*heap)` raw-pointer deref this
+    // example uses throughout) — this fix adds no new `unsafe` blocks here,
+    // it makes the pre-existing ones load-bearing for a second reason too.
     let handle = unsafe { (*heap).dbg_decomp_reserve_and_keep() }
         .expect("reserve for first-touch measurement");
     let base = handle.dbg_base();

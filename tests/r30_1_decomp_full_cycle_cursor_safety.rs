@@ -172,14 +172,19 @@ fn reserve_and_keep_release_pair_leaves_small_cur_valid_for_ordinary_alloc() {
 
     // Now drive the release branch several times via the reserve_and_keep /
     // release pair specifically. R31-4 (task #467): `dbg_decomp_reserve_and_keep`
-    // now returns a typed `ReservedSmallSegment` handle instead of a bare
-    // pointer, and `dbg_decomp_release` consumes it by value — no `unsafe`
-    // needed any more.
+    // returns a typed `ReservedSmallSegment` handle instead of a bare
+    // pointer, and `dbg_decomp_release` consumes it by value. R31-15 (task
+    // #486): `dbg_decomp_release` is `unsafe fn` again (owner-binding gap —
+    // see that function's doc comment); `handle` was reserved on this same
+    // `ac` immediately above, satisfying its `# Safety` contract.
     for _ in 0..8 {
         let handle = ac
             .dbg_decomp_reserve_and_keep()
             .expect("reserve_and_keep failed");
-        ac.dbg_decomp_release(handle);
+        // SAFETY: `handle` was produced by the paired
+        // `dbg_decomp_reserve_and_keep` call on this same `ac` immediately
+        // above, and is still live/unreleased.
+        unsafe { ac.dbg_decomp_release(handle) };
     }
 
     // Ordinary alloc/write/free on the same heap — the counterfactual.

@@ -874,7 +874,52 @@ pub struct AllocCore {
     /// heap.
     #[cfg(feature = "class-aware-dirty")]
     pub(crate) sidecar_oom_latch: Option<&'static core::sync::atomic::AtomicBool>,
+
+    /// R31-15 (task #486): a stable, process-wide-unique identity for THIS
+    /// `AllocCore`, stamped once at construction ([`new_inner`](Self::new_inner))
+    /// from [`DBG_RESERVATION_OWNER_ID_COUNTER`]'s `fetch_add`. Exists solely
+    /// to bind [`ReservedSmallSegment`](super::reserved_small_segment::ReservedSmallSegment)
+    /// handles to the exact `AllocCore` that minted them — see
+    /// [`dbg_decomp_release`](super::alloc_core_small_pool::AllocCore::dbg_decomp_release)'s
+    /// doc comment for the soundness hole this closes (a handle minted by one
+    /// `AllocCore` could otherwise be handed to a DIFFERENT `AllocCore`'s
+    /// `dbg_decomp_release`, corrupting the wrong heap's pool/table state).
+    ///
+    /// **Deliberately NOT the `&self` address.** An `AllocCore` is `Send` and
+    /// lives inline inside a registry `HeapSlot` / can be moved by ordinary
+    /// Rust value semantics (e.g. returned by value from `AllocCore::new()`),
+    /// so two DIFFERENT logical `AllocCore`s can transiently or permanently
+    /// occupy the same address over a process's lifetime (a moved-from slot's
+    /// old address, or a recycled/reused stack slot in a test loop) — an
+    /// address-based check would falsely accept a stale handle against a new
+    /// owner that happens to reuse the old owner's address. A monotonic
+    /// counter has no such collision: `fetch_add` on a process-global atomic
+    /// never repeats a value for the process lifetime (barring a `u64`
+    /// wraparound, astronomically unreachable for a counter incremented once
+    /// per `AllocCore` construction).
+    ///
+    /// `bench-internals`-gated: this field exists purely to support the
+    /// `dbg_decomp_reserve_and_keep`/`dbg_decomp_release` measurement-only
+    /// hook pair and has no role in any production code path. Gating it
+    /// behind `bench-internals` (rather than the narrower `alloc-decommit`
+    /// that hook pair is also gated on) keeps the field's cost at exactly
+    /// zero in every `production`/default build — `AllocCore` lives inline in
+    /// every `HeapSlot` (`MAX_HEAPS = 4096`), so an always-present field here
+    /// multiplies its size by 4096 regardless of whether any caller ever
+    /// touches the decomposition hooks (the same cost-discipline argument
+    /// [`pool_head`](Self::pool_head)'s doc comment makes for the intrusive
+    /// pool-list redesign).
+    #[cfg(feature = "bench-internals")]
+    pub(super) dbg_reservation_owner_id: u64,
 }
+
+/// R31-15 (task #486): process-wide monotonic source for
+/// [`AllocCore::dbg_reservation_owner_id`]. `bench-internals`-gated, same
+/// discipline as the field it populates — this static does not exist at all
+/// in a `production` build.
+#[cfg(feature = "bench-internals")]
+static DBG_RESERVATION_OWNER_ID_COUNTER: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 impl AllocCore {
     /// Bootstrap the allocator using default large-cache configuration.
@@ -1108,6 +1153,12 @@ impl AllocCore {
             dirty_by_class: None,
             #[cfg(feature = "class-aware-dirty")]
             sidecar_oom_latch: None,
+            // R31-15 (task #486): stamp a fresh, process-wide-unique identity
+            // for this AllocCore. See the field's own doc comment for why
+            // this must be a monotonic counter rather than `&self`'s address.
+            #[cfg(feature = "bench-internals")]
+            dbg_reservation_owner_id: DBG_RESERVATION_OWNER_ID_COUNTER
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed),
         })
     }
 

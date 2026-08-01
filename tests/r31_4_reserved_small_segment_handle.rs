@@ -80,6 +80,22 @@
 //! exactly the two-call sequence above and having it compile, link, and run
 //! (with whatever `release_or_pool_empty_segment` does on its second call
 //! against an already-recycled base).
+//!
+//! ## R31-15 (task #486) update: `dbg_decomp_release` is `unsafe fn` again
+//!
+//! R31-4 closed double-release (this file's claim, above — still true and
+//! unaffected) but left a SEPARATE gap open: owner-binding. A handle minted
+//! by `dbg_decomp_reserve_and_keep` on one `AllocCore` could be handed to
+//! `dbg_decomp_release` on a DIFFERENT `AllocCore` — both safe API calls,
+//! compiling cleanly, corrupting the wrong heap's pool/directory/
+//! `SegmentTable` state. `AllocCore::dbg_decomp_release` is `unsafe fn`
+//! again as of R31-15 (task #486) — see its doc comment in
+//! `src/alloc_core/alloc_core_small_pool.rs` for the full writeup, and
+//! `tests/r31_15_reserved_small_segment_cross_core_release.rs` for that
+//! specific counterfactual. The double-release argument this file makes is
+//! independent of and unaffected by that change — a handle still cannot be
+//! passed to `dbg_decomp_release` twice, `unsafe` or not, because it is
+//! still consumed by value.
 
 #![cfg(all(
     feature = "alloc-core",
@@ -116,7 +132,17 @@ fn reserve_read_base_release_once_succeeds() {
     // `ac.dbg_decomp_release(handle)`) is exactly the E0382 case documented
     // in this file's module doc; it is not written here because it would
     // make this file fail to compile, which is the point.
-    ac.dbg_decomp_release(handle);
+    //
+    // R31-15 (task #486): `dbg_decomp_release` is `unsafe fn` again — R31-4's
+    // move-consuming signature closed double-release but not owner-binding
+    // (a handle reserved on one `AllocCore` could be released on a
+    // different one, corrupting the wrong heap's state). `handle` was
+    // reserved on this same `ac` immediately above, satisfying the
+    // `# Safety` contract.
+    // SAFETY: `handle` was produced by the paired
+    // `dbg_decomp_reserve_and_keep` call on this same `ac` above, and is
+    // still live/unreleased.
+    unsafe { ac.dbg_decomp_release(handle) };
 
     // The allocator must remain fully healthy after the release — proves
     // `dbg_decomp_release` actually performed the real release
@@ -161,7 +187,10 @@ fn repeated_reserve_release_cycles_stay_healthy() {
             .dbg_decomp_reserve_and_keep()
             .expect("reserve_and_keep failed during churn");
         assert!(!handle.dbg_base().is_null());
-        ac.dbg_decomp_release(handle);
+        // SAFETY: `handle` was produced by the paired
+        // `dbg_decomp_reserve_and_keep` call on this same `ac` above, and is
+        // still live/unreleased.
+        unsafe { ac.dbg_decomp_release(handle) };
     }
 
     // Ordinary alloc/write/free on the same heap — confirms the heap is

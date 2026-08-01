@@ -75,6 +75,18 @@
 //!   Both `dbg_decomp_release` entries moved out of `UNSAFE_HOOKS` below
 //!   (they are safe `fn`s now, `bench-internals`-gated, so they need no
 //!   `SAFE_MUTATORS` entry either — gated hooks aren't in either allowlist).
+//! - **R31-15** (task #486, CONFIRMED P0): R31-4 closed unforgeability and
+//!   double-release but NOT owner-binding — a handle minted by
+//!   `dbg_decomp_reserve_and_keep` on one `AllocCore` could still be handed
+//!   to `dbg_decomp_release` on a DIFFERENT `AllocCore`, both safe API
+//!   calls, mutating the wrong heap's pool/directory/`SegmentTable` state.
+//!   Both `dbg_decomp_release` entries (`AllocCore`'s and `HeapCore`'s
+//!   delegation) moved BACK into `UNSAFE_HOOKS` below — `unsafe fn` again,
+//!   with a documented `# Safety` contract, PLUS a structural release-build
+//!   owner-id check (`ReservedSmallSegment::owner_id` compared against
+//!   `AllocCore::dbg_reservation_owner_id`) as a second, non-`debug_assert!`
+//!   layer. See `src/alloc_core/reserved_small_segment.rs`'s module doc
+//!   ("Owner-binding" section) for the full writeup.
 //!
 //! ## What "safe by construction" means here (classification A)
 //!
@@ -436,6 +448,7 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/alloc_core/alloc_core_small_diag.rs::dbg_payload_start_for",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_decommit_payload",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_recommit_payload",
+    "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_release",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_force_decommit_retain_for",
     "src/alloc_core/alloc_core_small_reclaim.rs::dbg_push_to_ring",
     "src/global/tls_heap.rs::dbg_restore_local_for_test",
@@ -447,6 +460,7 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_clear_magazine_on_hit",
     "src/registry/heap_core_diag.rs::dbg_decomp_decommit_payload",
     "src/registry/heap_core_diag.rs::dbg_decomp_recommit_payload",
+    "src/registry/heap_core_diag.rs::dbg_decomp_release",
 ];
 
 /// Heuristic false positives from the raw-pointer text scan retained from

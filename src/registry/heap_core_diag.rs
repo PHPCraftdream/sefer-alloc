@@ -933,14 +933,25 @@ impl HeapCore {
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_release`].
     ///
-    /// R31-4 (task #467): forwards the handle by value; no `unsafe` needed
-    /// any more — see [`AllocCore::dbg_decomp_release`]'s doc comment for
-    /// why the move-consuming signature replaces the former `unsafe fn`
+    /// R31-15 (task #486): [`AllocCore::dbg_decomp_release`] is `unsafe fn`
+    /// again (R31-4's move-consuming signature closed double-release but
+    /// not owner-binding — a cross-`AllocCore` release was still safe-
+    /// reachable UB; see that function's doc comment for the full
+    /// writeup). This delegation forwards the identical `# Safety`
     /// contract.
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_release`]: `handle` must
+    /// have been produced by a paired `dbg_decomp_reserve_and_keep` call on
+    /// THIS SAME `HeapCore`'s underlying `AllocCore`, and the segment must
+    /// still be live/unreleased.
     #[doc(hidden)]
     #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
-    pub fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {
-        self.core.dbg_decomp_release(handle);
+    #[allow(unsafe_code)] // R31-15: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_release(&mut self, handle: crate::alloc_core::ReservedSmallSegment) {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe { self.core.dbg_decomp_release(handle) };
     }
 
     /// R29-3 delegation — see [`AllocCore::dbg_decomp_decommit_payload`].
