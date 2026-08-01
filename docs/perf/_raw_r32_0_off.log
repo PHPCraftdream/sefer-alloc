@@ -1,0 +1,16 @@
+# R32-0 virgin-zero-skip COST-SIDE (LOST-front) gate
+# CSV rows: R32_0_ALLOC_{virgin|recycled},size,reps,refill_n,mean_hits,min_hits,expected_hits,mean_ns,p50_ns,min_ns,max_ns,mask_oracle
+# CSV rows: R32_0_REALLOC,label,reps,mean_ns,p50_ns
+# cfg: virgin-zero-skip=false BURST=16 REPS=15
+# --- plain alloc, virgin scenario (same-class burst on fresh heap) ---
+R32_0_ALLOC_virgin,4k,15,16,15.00,15,15,250.8,156.2,143.8,1168.8,NA
+R32_0_ALLOC_virgin,16k,15,4,12.00,12,12,481.7,450.0,393.8,656.2,NA
+R32_0_ALLOC_virgin,64k,15,1,0.00,0,0,674.2,643.8,600.0,787.5,NA
+R32_0_ALLOC_virgin,128k,15,1,0.00,0,0,1422.9,1375.0,1193.8,1725.0,NA
+# --- plain alloc, recycled scenario (primed dirty block, tight LIFO loop) ---
+R32_0_ALLOC_recycled,4k,15,16,16.00,16,16,25.0,25.0,12.5,50.0,NA
+R32_0_ALLOC_recycled,16k,15,4,16.00,16,16,25.4,25.0,25.0,31.2,NA
+R32_0_ALLOC_recycled,64k,15,1,16.00,16,16,26.7,25.0,25.0,31.2,NA
+R32_0_ALLOC_recycled,128k,15,1,16.00,16,16,27.5,25.0,18.8,31.2,NA
+# --- realloc confirmation (one representative grow, 4k->8k) ---
+R32_0_REALLOC,4k_to_8k,200,234.0,200.0

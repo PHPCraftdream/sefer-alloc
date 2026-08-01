@@ -205,15 +205,20 @@ for completeness.
     > - **Evidence:** `docs/perf/R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md`
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D15`.
 
-25. **R9-5 / R11-8 / R13-3 / R29-16 / R30-3 / R31-0 — `virgin-zero-skip`
+25. **R9-5 / R11-8 / R13-3 / R29-16 / R30-3 / R31-0 / R32-0 — `virgin-zero-skip`
     promotion decision — REOPENED: R30-3's NO-GO measured the wrong
     allocator layer (bare `AllocCore`, not the production `HeapCore`
     magazine). R31-0 (task #471) re-measured through the real production
-    call chain. Verdict: no blanket `production` promotion (data does not
-    support one for the touch-heavy majority case), but a real,
-    reproducible, mechanistically-explained win exists for a narrower
-    touch-light/deferred-touch workload shape — still opt-in, pending
-    explicit user sign-off for any composition change.**
+    call chain (the BENEFIT side). R32-0 (task #490) closed the missing
+    COST side (plain `alloc`, recycled `alloc_zeroed` cited from R31-0,
+    `realloc`) in the SAME regime. Verdict: no blanket `production`
+    promotion (data does not support one for the touch-heavy majority
+    case), but a real, reproducible, mechanistically-explained win exists
+    for a narrower touch-light/deferred-touch workload shape, and the
+    worst-case cost on non-benefiting paths is confirmed negligible
+    (~8% relative / ~1 ns absolute on the worst-case wall-clock cell) —
+    still opt-in, pending explicit user sign-off for any composition
+    change.**
 
    > **Current state**
    > - **Status:** REOPENED. R30-3 (task #452) built an activation-proven
@@ -258,6 +263,36 @@ for completeness.
    >   real production magazine, benefit concentrated in the
    >   touch-light/deferred-touch consumer shape) rather than the "structurally
    >   useless for any same-class burst" characterization R30-3 shipped.
+   > - **Cost side (R32-0, task #490):** the BENEFIT side (above) was
+   >   proven but the COST side — what does turning the feature ON cost on
+   >   paths that collect NO benefit (plain `alloc`, recycled
+   >   `alloc_zeroed`, `realloc`) — had never been measured, in violation of
+   >   CLAUDE.md's same-workload-regime cost/benefit rule. R32-0 closed this
+   >   gap at the SAME `HeapCore` layer/regime as R31-0. Source-confirmed
+   >   (`heap_core_alloc.rs`/`heap_core_free.rs`/`heap_core_dealloc_batch.rs`)
+   >   that every non-`alloc_zeroed` site the feature touches is a small,
+   >   fixed, unconditional bitmask op (never a branch on content, never
+   >   proportional to size); `realloc` itself has ZERO direct feature code
+   >   (100% inherited from `alloc`/`dealloc`). Deterministic in-process gate
+   >   (mean-of-15) could not resolve a signal this small against host noise
+   >   (every cell flips sign run-to-run); a 20-pair wall-clock paired-AB via
+   >   `paired-ab-runner.mjs` on the single worst-case cell (4 KiB
+   >   recycled/steady-state-hit, 100% magazine-hit activation) DID resolve a
+   >   real signal: t=-3.240 (crit=2.101), sign 17/20, **~8.2% relative /
+   >   ~1 ns/round absolute cost, ON slower** — confirmed real against a
+   >   same-vs-same control (t=0.101, noise). Recycled `alloc_zeroed` itself
+   >   was NOT re-measured (R31-0 §3.2 already covers it: no material,
+   >   consistent regression). **Verdict: GO on the cost side specifically —
+   >   the worst-case cost (~8%) is two orders of magnitude smaller than the
+   >   confirmed benefit (-89% to -98.6%)** — this does not change the
+   >   blanket-promotion verdict above (R31-0's touch-heavy-majority gap is
+   >   untouched by this finding) but removes cost as an open unknown for any
+   >   future narrow-promotion decision. A known confound (`alloc_zeroed`'s
+   >   magazine-hit arm pays an extra `stamp_segment_owner` call plain
+   >   `alloc`'s hit arm does not, unrelated to `virgin-zero-skip`, filed as
+   >   task #495) means R32-0's plain-`alloc` absolute-ns figures are not
+   >   directly comparable to R31-0's `alloc_zeroed` absolute-ns figures —
+   >   noted explicitly in R32-0 so this is not misread.
    > - **Next trigger:** if a future round wants to pursue promotion: (a) a
    >   caller-facing knob distinguishing sparse/lazily-touched calloc buffers
    >   from immediately-populated ones (§5's "recommended narrower framing" in
@@ -265,7 +300,8 @@ for completeness.
    >   `notouch` win uniformly to the touch-heavy majority where it does not
    >   reproduce; or (b) a larger sample count / quieter host to try to
    >   resolve the `onebyte`/`full` categories' sign-inconsistent noise into a
-   >   real signal one way or the other.
+   >   real signal one way or the other. Cost is no longer a reason to defer
+   >   (R32-0 confirms it negligible even in the worst-case arm).
    > - **Evidence:** `R9_5_VIRGIN_ZERO_SKIP_DESIGN.md` §11 (Stage 3, lines
    >   563–568); `R11_8_SMALL_VIRGIN_ZERO_SKIP_DESIGN.md` §8;
    >   `R13_3_VIRGIN_ZERO_SKIP_MAGAZINE_GATE.md` (original null finding);
@@ -282,10 +318,15 @@ for completeness.
    >   `_raw_r30_3_off_lazy.log` / `_raw_r30_3_on_lazy.log` /
    >   `_raw_r30_3_off_eager_run2.log` / `_raw_r30_3_on_eager_run2.log`;
    >   **`R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`** (task #471, the
-   >   corrected production-layer judge and the current operative verdict) +
-   >   `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv` +
+   >   corrected production-layer judge and the benefit-side operative
+   >   verdict) + `R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE_summary.csv` +
    >   `docs/perf/_raw_r31_0_off.log` / `_raw_r31_0_on.log` /
-   >   `_raw_r31_0_off_run2.log` / `_raw_r31_0_on_run2.log`.
+   >   `_raw_r31_0_off_run2.log` / `_raw_r31_0_on_run2.log`;
+   >   **`R32_0_VIRGIN_ZERO_SKIP_COST_SIDE_GATE.md`** (task #490, the
+   >   cost-side gate) + `R32_0_VIRGIN_ZERO_SKIP_COST_SIDE_GATE_summary.csv` +
+   >   `docs/perf/_raw_r32_0_off.log` / `_raw_r32_0_on.log` /
+   >   `_raw_r32_0_off_run2.log` / `_raw_r32_0_on_run2.log` /
+   >   `_raw_r32_0_cost_probe_ab.log` / `_raw_r32_0_cost_probe_ab_same_vs_same.log`.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `D25`.
 
 26. **R12-9 — `small-segment-lazy-commit` (and the `alloc-lazy-commit` alias)

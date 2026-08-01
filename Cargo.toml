@@ -1147,6 +1147,23 @@ required-features = ["alloc-core"]
 name = "r31_8_large_cache_scan_isolation_on"
 required-features = ["alloc-core", "large-cache-extended"]
 
+# R32-0 (task #490): the `paired-ab-runner.mjs` wall-clock companion probes
+# to the deterministic `benches/r32_0_virgin_zero_skip_cost_side_gate.rs`
+# gate above — real `HeapCore` production layer, plain-`alloc` RECYCLED
+# (steady-state magazine-hit) worst case at 4 KiB, one fixed-size single-shot
+# process launch per arm. See
+# `examples/_shared/r32_0_virgin_zero_skip_cost_probe_workload.rs`'s module
+# doc for the full design. Required-features deliberately differ ONLY by
+# `virgin-zero-skip` (off/on), same source `include!`d into both, mirroring
+# the R31-0/R31-8 off/on pattern.
+[[example]]
+name = "r32_0_cost_probe_alloc_recycled_off"
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
+
+[[example]]
+name = "r32_0_cost_probe_alloc_recycled_on"
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats", "virgin-zero-skip"]
+
 # R14-3 (task #288): fixed-work process-level A/B/B/A judge for
 # `class-aware-dirty`, built to answer a methodology gap three independent
 # Round-13 reviews raised against `benches/r12_7_class_aware_dirty_wallclock.rs`'s
@@ -1602,6 +1619,18 @@ required-features = ["alloc-global", "alloc-decommit", "alloc-stats"]
 # `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`.
 [[bench]]
 name = "r31_0_virgin_zero_skip_production_layer_gate"
+harness = false
+required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
+
+# R32-0 (task #490): the LOST-front (cost-side) companion to R31-0 above --
+# same `HeapCore` production layer, same sizes/REPS/BURST regime, but
+# measuring plain `alloc` (virgin + recycled) and one `realloc` confirmation
+# cell instead of `alloc_zeroed`'s WON front. Required-features deliberately
+# EXCLUDE `virgin-zero-skip` so the SAME source compiles both WITHOUT it
+# (baseline) and WITH it (treatment) -- see
+# `docs/perf/R32_0_VIRGIN_ZERO_SKIP_COST_SIDE_GATE.md`.
+[[bench]]
+name = "r32_0_virgin_zero_skip_cost_side_gate"
 harness = false
 required-features = ["alloc-global", "fastbin", "alloc-decommit", "alloc-stats"]
 

@@ -1,0 +1,16 @@
+{
+  "metric": "ns_per_round",
+  "build": null,
+  "arms": {
+    "off": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r32_0_cost_probe_alloc_recycled_off.exe",
+      "args": []
+    },
+    "on": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r32_0_cost_probe_alloc_recycled_on.exe",
+      "args": []
+    }
+  },
+  "default_comparisons": [["off", "on"]],
+  "features_note": "off: production,alloc-stats (HeapCore direct, plain alloc, 4k recycled/steady-state-hit) | on: production,alloc-stats,virgin-zero-skip (same workload)"
+}
