@@ -551,6 +551,103 @@ impl SeferAlloc {
         }
     }
 
+    /// R31-4 (task #487) MEASUREMENT-ONLY: whether the CALLING thread's own
+    /// heap's large-cache extension sidecar has materialised. A gate driving
+    /// the real `#[global_allocator]` (e.g.
+    /// `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`)
+    /// only ever has a `SeferAlloc`/`HeapCore` in hand, never a bare
+    /// `AllocCore` — this is the same in-run materialisation-oracle evidence
+    /// [`AllocCore::dbg_large_cache_extension_materialised`](crate::AllocCore::dbg_large_cache_extension_materialised)
+    /// gives a bare-`AllocCore` caller, resolved for the calling thread's own
+    /// bound heap via [`current_heap`](Self::current_heap) (never claims a
+    /// NEW slot — reads back whatever heap this thread already resolved to,
+    /// binding one via the normal first-touch path if this is the very first
+    /// call on this thread). Returns `false` on the fallback heap (TLS torn
+    /// down, or the registry is exhausted) — there is no per-thread slot to
+    /// report on. `#[doc(hidden)]` — not part of the public API; the
+    /// established test-only export pattern documented in `src/lib.rs`'s
+    /// `#[doc(hidden)]` notes. `bench-internals`-gated (no production caller
+    /// → CLAUDE.md's benchmark-hook rule 2), additionally gated on
+    /// `large-cache-extended` (matching the delegated `HeapCore`/`AllocCore`
+    /// methods' own gate — the sidecar does not exist otherwise).
+    #[doc(hidden)]
+    #[cfg(all(
+        feature = "alloc-decommit",
+        feature = "bench-internals",
+        feature = "large-cache-extended"
+    ))]
+    #[must_use]
+    pub fn dbg_current_large_cache_extension_materialised(&self) -> bool {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` rely on) — `current_heap()` just
+            // resolved it for the calling thread. `dbg_large_cache_extension_materialised`
+            // is a read-only `&self` accessor.
+            unsafe { (*heap).dbg_large_cache_extension_materialised() }
+        } else {
+            false
+        }
+    }
+
+    /// R31-4 (task #487) MEASUREMENT-ONLY: the CALLING thread's own heap's
+    /// current combined base+extension addressable large-cache slot count (8
+    /// if the extension has not materialised, 40 once it has). Same
+    /// current-thread-resolution shape as
+    /// [`dbg_current_large_cache_extension_materialised`](Self::dbg_current_large_cache_extension_materialised)
+    /// immediately above — see that method's doc for the full rationale.
+    /// Returns `0` on the fallback heap (TLS torn down, or the registry is
+    /// exhausted) — there is no per-thread slot to report on; `0` is
+    /// distinguishable from every real resolved value (always `8` or `40`).
+    /// `#[doc(hidden)]` — not part of the public API. `bench-internals`-gated
+    /// (no production caller → CLAUDE.md's benchmark-hook rule 2). Unlike
+    /// [`dbg_current_large_cache_extension_materialised`](Self::dbg_current_large_cache_extension_materialised),
+    /// NOT additionally gated on `large-cache-extended` — matching
+    /// [`HeapCore::dbg_large_cache_total_slots`](crate::registry::HeapCore::dbg_large_cache_total_slots)'s
+    /// own gate exactly (it reads `8` when the extension feature/sidecar is
+    /// absent).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_current_large_cache_total_slots(&self) -> usize {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread — same justification as
+            // `dbg_current_large_cache_extension_materialised` above.
+            unsafe { (*heap).dbg_large_cache_total_slots() }
+        } else {
+            0
+        }
+    }
+
+    /// R31-4 (task #487) MEASUREMENT-ONLY: the CALLING thread's own heap's
+    /// resolved large-cache byte budget (`None` = unbounded, base cache;
+    /// `Some(n)` = the finite ceiling this heap resolved at first
+    /// materialisation — e.g. 256 MiB, `large-cache-extended`'s R17-9
+    /// default). Same current-thread-resolution shape as
+    /// [`dbg_current_large_cache_extension_materialised`](Self::dbg_current_large_cache_extension_materialised)
+    /// above — see that method's doc for the full rationale. Returns `None`
+    /// on the fallback heap (TLS torn down, or the registry is exhausted) —
+    /// indistinguishable from a real unbounded resolution by design (this
+    /// hook is meant for a gate that has already established, via its own
+    /// `CurrentHeap::Own`-only workload shape, that it is running on a real
+    /// per-thread slot, not the fallback). `#[doc(hidden)]` — not part of the
+    /// public API. `bench-internals`-gated (no production caller →
+    /// CLAUDE.md's benchmark-hook rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_current_large_cache_budget(&self) -> Option<usize> {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread — same justification as
+            // `dbg_current_large_cache_extension_materialised` above.
+            unsafe { (*heap).dbg_large_cache_budget() }
+        } else {
+            None
+        }
+    }
+
     /// R10-7 (Part 2) — **tcache-aware batch allocation** wrapper.
     ///
     /// # ⚠ EXPERIMENTAL / UNSTABLE

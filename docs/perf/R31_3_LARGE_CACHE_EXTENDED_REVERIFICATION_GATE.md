@@ -239,6 +239,82 @@ to "the extended cache is always faster"; it specifically rebuts the
 "widened scan bound costs something on the common narrow case" concern this
 gate was built to test.
 
+### 3.4 ADDENDUM — 2026-08-01 (task #487, a Round-31 review response): the
+### workload behind §3.1-§3.3 was BROKEN — do not cite the numbers above as
+### current evidence
+
+An independent review found `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`
+(the shared harness §3.1's numbers were measured with) had two defects, both
+now fixed in that file (task #487, not this report — this addendum documents
+the correction without re-deriving a new verdict, per this project's
+append-only correction convention):
+
+1. **Wrong segment constant.** The workload hardcoded
+   `let segment = 2 * 1024 * 1024usize;` with a comment claiming this equals
+   `SegmentLayout::SEGMENT` and that a real import was being avoided to save
+   an import. Both claims were false: `SegmentLayout::SEGMENT` is 4 MiB, not
+   2 MiB, and it was always `pub` and importable. Every one of the 9
+   materialisation-burst sizes downstream of this constant was therefore
+   wrong (each roughly double what a correctly-derived size would be).
+2. **No in-run materialisation oracle.** The only assertions in the workload
+   were an alloc-succeeded null check and a length check on the size list —
+   there was no read-back proof, inside the TIMED run itself, that the ON
+   arm's sidecar had actually materialised to 40 slots (or that the OFF arm
+   stayed at 8). The "does the widened scan bound cost anything" premise this
+   gate exists to test was measured without ever confirming the widened scan
+   bound was the thing running. This is a CLAUDE.md R30-8
+   path-activation-oracle violation: the existing correctness test
+   (`tests/large_cache_extended_narrow_working_set_after_materialization.rs`)
+   proves materialisation under a DIFFERENT configuration
+   (`budget=None`, 2 MiB-derived sizes pre-fix) — borrowing that proof across
+   configurations is not the same as each arm proving it took the mechanism
+   it claims to measure, in its own timed run.
+
+**A third, more serious defect surfaced only once the missing oracle from
+point 2 was wired up and exercised against the corrected constant from point
+1:** with the real 4 MiB segment constant, the geometric-doubling
+materialisation-size ladder grows to roughly 2 GiB by its 9th entry —
+individually far above the 256 MiB default `large-cache-extended` budget
+(`DEFAULT_EXTENDED_BUDGET_BYTES`, R17-9). The budget-vs-materialisation check
+(`large_cache_deposit_budget_infeasible`) rejects a deposit whose OWN size
+exceeds the budget — a per-deposit check, not a running-total check — so
+under the ON arm's ORIGINAL `SeferAlloc::new()` config (the shipped 256 MiB
+default), only the first 6 of the 9 materialisation sizes could ever be
+admitted; the base cache would never overflow its 8 slots, and the sidecar
+would never materialise at all. In other words: even after fixing the
+segment constant, the ON arm as originally written would have silently
+measured the SAME 8-slot base-cache code path as the OFF arm — not the
+widened 40-slot scan bound the gate's entire premise depends on. This is
+exactly the failure mode CLAUDE.md's R30-8 rule (and its entry-point/regime
+generalisations) exists to catch, and it was caught here BY building the
+missing oracle, not by inspection — the oracle's first run (with an
+initially-wrong expected value of its own, `None` instead of the correct
+`Some(usize::MAX)` for an explicit unbounded override under
+`large-cache-extended`) failed loudly rather than silently passing.
+
+**Status of the numbers in §3.1-§3.3 above: SUPERSEDED, not currently
+trustworthy.** They were measured against the broken pre-fix workload
+(wrong segment constant; and, had the fix been only the constant without
+also widening the ON arm's budget, would have measured the wrong code path
+entirely). They are left in place above unmodified (append-only correction
+convention — this project does not silently rewrite prior report prose) but
+must not be cited as current evidence for the "narrow working set after
+materialisation" question. A corrected re-measurement — using the fixed
+harness (real `SegmentLayout::SEGMENT`, an ON arm built with
+`SeferAlloc::with_config(LargeCacheConfig::new().budget_bytes(usize::MAX))`
+so materialisation can actually succeed, and an in-run oracle hard-asserting
+`oracle_materialised=1` / `oracle_total_slots=40` (ON) or
+`oracle_total_slots=8` (OFF) before any timing is trusted) is filed as a
+separate follow-up, task #488, which is explicitly blocked on task #487 and
+will re-derive §3's verdict from scratch. Task #487 itself does not attempt
+that re-measurement — see that task's own scope note.
+
+The turnover A/B in §2 above is UNAFFECTED by this addendum: it uses a
+different, unmodified harness
+(`examples/paired_ab_large_cache_extended_{off,on}.rs`) that this task did
+not touch, and its own workload's sizes were never derived from the broken
+constant. Only §3 (this section) is in question.
+
 ---
 
 ## 4. Step 3b — multi-heap RSS accounting (1/8/32 heaps)

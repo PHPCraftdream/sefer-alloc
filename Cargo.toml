@@ -1107,10 +1107,16 @@ required-features = ["alloc-global"]
 # `include!`d verbatim into both): force sidecar materialisation via a
 # 9-distinct-size burst, then narrow to N=1/2/4 distinct sizes and time ONLY
 # that narrow phase. `argv[1]` selects N (1/2/4, default 1).
-#   - `r31_3_large_cache_extended_narrow_off`: --features "production alloc-stats"
+#   - `r31_3_large_cache_extended_narrow_off`: --features "production alloc-stats bench-internals"
 #     (baseline, base 8-slot cache)
-#   - `r31_3_large_cache_extended_narrow_on` : --features "production alloc-stats large-cache-extended"
-#     (treatment, 8+32=40-slot cache, forced materialised)
+#   - `r31_3_large_cache_extended_narrow_on` : --features "production alloc-stats bench-internals large-cache-extended"
+#     (treatment, unbounded budget so the 9-size burst can actually overflow
+#     the base 8 and materialise the 8+32=40-slot sidecar — see the ON
+#     wrapper's 2026-08-01/task #487 correction note for why a finite budget
+#     would have silently prevented materialisation)
+# `bench-internals` added 2026-08-01 (task #487): the shared workload's
+# in-run materialisation oracle reads `SeferAlloc::dbg_current_large_cache_*`,
+# which is `bench-internals`-gated.
 [[example]]
 name = "r31_3_large_cache_extended_narrow_off"
 required-features = ["alloc-global"]

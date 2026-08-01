@@ -459,6 +459,30 @@ impl HeapCore {
         self.core.dbg_large_cache_extension_materialised()
     }
 
+    /// R31-4 (task #487) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_large_cache_total_slots`] — exposed at the `HeapCore`
+    /// level (same delegation pattern as `dbg_large_cache_used` above) so a
+    /// gate driving the real `#[global_allocator]` (which only ever has a
+    /// `HeapCore`, never a bare `AllocCore`, in hand) can read back the
+    /// combined base+extension addressable slot count (8 if the extension
+    /// has not materialised, 40 once it has) as an in-run materialisation
+    /// oracle — the same evidence
+    /// `tests/large_cache_extended_narrow_working_set_after_materialization.rs::scan_bound_stays_forty_during_narrow_working_set_phase`
+    /// already asserts one layer down, at the `AllocCore` level. Read-only
+    /// `&self`; does NOT mutate allocator state. `bench-internals`-gated (no
+    /// production caller → R25-10 sub-rule 2). Unlike the two
+    /// `large-cache-extended`-gated siblings immediately above, this
+    /// delegates a method that is available under plain `alloc-decommit`
+    /// (it reads 8 when the extension feature/sidecar is absent), so it is
+    /// NOT additionally gated on `large-cache-extended` — matching
+    /// [`AllocCore::dbg_large_cache_total_slots`]'s own gate exactly.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_large_cache_total_slots(&self) -> usize {
+        self.core.dbg_large_cache_total_slots()
+    }
+
     /// R29-13 (task #444) MEASUREMENT-ONLY: thin delegation to
     /// [`AllocCore::dbg_decay_config`] — exposed at the `HeapCore` level (same
     /// pattern as `dbg_large_cache_used` above) so the R29-13 probe can read

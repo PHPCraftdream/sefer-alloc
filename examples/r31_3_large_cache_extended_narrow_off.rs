@@ -34,7 +34,16 @@
 //! - `RESULT segments_reserved_total=<n>` — installed-allocator sanity
 //!   counter (nonzero in both arms).
 //!
-//! **Build:** `cargo build --release --example r31_3_large_cache_extended_narrow_off --features "production alloc-stats"`
+//! **Build:** `cargo build --release --example r31_3_large_cache_extended_narrow_off --features "production alloc-stats bench-internals"`
+//!
+//! **CORRECTED 2026-08-01 (task #487):** `bench-internals` added to the
+//! required feature set — the shared workload's in-run materialisation
+//! oracle (see `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`'s
+//! module doc) reads `SeferAlloc::dbg_current_large_cache_total_slots`,
+//! which is `bench-internals`-gated. This binary's own config is unaffected
+//! (`SeferAlloc::new()` unchanged) — only the ON arm's config needed to
+//! change; see `r31_3_large_cache_extended_narrow_on.rs`'s own correction
+//! note for why.
 
 use sefer_alloc::SeferAlloc;
 
@@ -70,4 +79,9 @@ fn main() {
     proc_probe::emit_u64("rss_after_kib", rss_after_kib);
     proc_probe::emit_u64("commit_after_kib", commit_after_kib);
     proc_probe::emit_u64("segments_reserved_total", stats.segments_reserved_total);
+    #[cfg(feature = "bench-internals")]
+    proc_probe::emit_u64(
+        "oracle_total_slots",
+        GLOBAL.dbg_current_large_cache_total_slots() as u64,
+    );
 }
