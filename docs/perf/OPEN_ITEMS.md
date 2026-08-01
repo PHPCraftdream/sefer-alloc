@@ -432,6 +432,71 @@ for completeness.
    >   (survey row, not yet updated by R31-3 — a follow-up if promotion is
    >   accepted).
 
+   > **CORRECTION — 2026-08-02 (task #489, ledger reconciliation after tasks
+   > #487/#488): the N=1/2/4 narrow-working-set TIMING finding cited above
+   > ("NO regression found ... extended cache measured FASTER") is INVALID
+   > and its verdict is now the OPPOSITE — NO-GO. Do not read the paragraph
+   > above as current evidence for that sub-question; this note supersedes
+   > only the narrow-timing sub-finding, nothing else in this item's card.**
+   > An independent review found the workload behind that finding
+   > (`examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`)
+   > had two defects, fixed in commit `ac7845d` (task #487): (1) a hardcoded
+   > `2 * 1024 * 1024usize` segment constant claimed to equal
+   > `SegmentLayout::SEGMENT` when the real constant is 4 MiB, silently
+   > halving every one of the 9 materialisation-burst sizes; (2) no in-run
+   > materialisation oracle — the ON arm's claim of having actually
+   > widened to 40 slots was never checked inside the timed run itself, a
+   > CLAUDE.md R30-8 path-activation-oracle violation. Fixing the oracle
+   > surfaced a third defect: under the original 256 MiB default budget,
+   > the ON arm's materialisation sizes (corrected to real 4 MiB units)
+   > individually exceeded the budget for 3 of 9 sizes, so the ON arm never
+   > actually widened to 40 slots at all — it silently measured the SAME
+   > 8-slot code path as OFF. This is also why the previously-unexplained
+   > `segments_reserved_total` contradiction (10 OFF vs 14 ON at N=4, flagged
+   > by the R31/R32 review §3.2 "Ошибка 3") existed: a budget-rejection-driven
+   > admission divergence between arms, not a real mechanism — task #488
+   > (commit `4f89723`) proved this empirically: with the corrected workload,
+   > `segments_reserved_total` grows by an IDENTICAL, hard-asserted delta
+   > (exactly `MATERIALIZE_N`=9) in both arms at every N; the contradiction
+   > does not reproduce. Task #488 then re-derived the narrow-timing verdict
+   > from scratch, in matched state, with two complementary measurements:
+   > (a) real-process A/B (`SeferAlloc` global allocator, n=20 paired
+   > A/B/B/A) at N=1/2/4 — ON is measurably, reproducibly SLOWER at every N
+   > (t=-11.6/-7.8/-13.5, all past crit=2.101, clean same-vs-same noise-floor
+   > controls); (b) a decomposed scan-isolation microjudge (bare `AllocCore`,
+   > worst-case fixed scan position, 8 vs 40 slots, cache-hit oracle) isolates
+   > the `alloc_large` best-fit scan loop itself and shows a 5.01x ns/round
+   > ratio (79.7 ns @ 8 slots vs 399.3 ns @ 40 slots, n=20 paired, t=-29.3).
+   > **Verdict: NO-GO for "the widened O(40) scan bound is free/negligible
+   > on a narrow working set"** — a real, reproducible, matched-state-proven
+   > cost exists, small in absolute per-operation terms (order 100-500 ns per
+   > alloc+dealloc pair at these N) but not noise. This does NOT touch or
+   > reopen the turnover-win finding elsewhere in this same card (hit rate
+   > 33.3%→100%, t=127.776, sign 20/20) — that used a different, unmodified
+   > harness (`examples/paired_ab_large_cache_extended_{off,on}.rs`) never
+   > touched by tasks #487/#488, and stands unaffected. This item's overall
+   > **Status stays CONDITIONAL-GO / not promoted** (unchanged) — the
+   > promotion sign-off this item's "Next trigger" names must now weigh a
+   > confirmed narrow-working-set cost, not the withdrawn "free" claim. Full
+   > re-derivation: `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §3.4
+   > (documents the task #487 workload defects) and §8 (task #488's full
+   > matched-state re-measurement, mechanism explanation, and verdict).
+   > Follow-up promotion-policy work (how to weigh this cost against the
+   > turnover win) is tracked separately as task #491, not by this item.
+   >
+   > **Merge note:** this correction also folds in and closes out the older,
+   > separate `[L]` item 7 below ("R14-5 §4 — dedicated timing gate for
+   > O(40) vs O(8) ... deferred, low-priority, no number attached yet"),
+   > which asked for exactly the number this correction now supplies. The
+   > two entries had drifted out of sync — item 30 (this one) read as
+   > CLOSED with a "FASTER" number while item 7 still read as DEFERRED with
+   > "no number attached yet" — a ledger contradiction identified by the
+   > 2026-07-31 R31/R32 readonly review §4 ("P2: привести open-item ledgers
+   > к единому состоянию") and task #489. Item 7 is left in place below,
+   > struck through, per this file's append-only convention (see rule 2:
+   > "Do NOT delete the entry"), pointing back here as the single current
+   > source of truth for this question.
+
 31. **UNVERIFIED-BY-ME findings from the Round 30 full independent review
     (`docs/reviews/2026-07-30-r30-full-review.md` §5, P2-3 through P2-11) —
     measurement-methodology defects in Round 30's own gate reports and
@@ -782,15 +847,29 @@ for completeness.
 
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
-7. **R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
-   narrow working-set-after-burst shape.**
+7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a
+   narrow working-set-after-burst shape.**~~
 
-   > **Current state**
-   > - **Status:** deferred, low-priority.
-   > - **Current number/verdict:** deferred — no number attached yet to the O(40) vs O(8) "cheap" claim for N=1/2/4.
-   > - **Next trigger:** a future review wants a number for the narrow working-set-after-burst shape (R13-8 already measured the 24-distinct-size turnover shape).
-   > - **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).
+   > ~~**Current state**~~
+   > ~~- **Status:** deferred, low-priority.~~
+   > ~~- **Current number/verdict:** deferred — no number attached yet to the O(40) vs O(8) "cheap" claim for N=1/2/4.~~
+   > ~~- **Next trigger:** a future review wants a number for the narrow working-set-after-burst shape (R13-8 already measured the 24-distinct-size turnover shape).~~
+   > ~~- **Evidence:** `R14_5_LARGE_CACHE_EXTENDED_HARDENING_GATE.md` (lines 240–248).~~
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L7`.
+
+   > **MERGED — 2026-08-02 (task #489, ledger reconciliation):** this item
+   > asked for exactly the number item 30 (`[A]` section above) now
+   > supplies — the requested N=1/2/4 narrow-working-set-after-burst timing
+   > number for the O(40) vs O(8) scan bound now exists (task #488, commit
+   > `4f89723`): **NO-GO, ON is measurably slower at every N**, not the
+   > "cheap"/negligible outcome this item's phrasing anticipated as a
+   > possibility. This item is no longer separately tracked as deferred —
+   > item 30 above is the single current source of truth for this question
+   > going forward (its own card carries the full corrected verdict, the
+   > two prior invalid-numbers episodes, and the pointer to
+   > `R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §3.4/§8). Struck
+   > through rather than deleted, per this file's append-only convention
+   > (rule 2: "Do NOT delete the entry").
 
 8. **R14-6 §1.1 — compounding reserved-capacity growth factor (beyond 4×).**
 

@@ -927,6 +927,27 @@ assertion proving no double-release but not no leak, was resolved by R28-2
       linear, but a shared-workspace round should prefer a scratch branch
       or worktree for that kind of manoeuvre going forward.
 
+    **[P2-6 RESOLVED — 2026-08-02, task #489 ledger housekeeping.]**
+    Independently re-verified against `CHANGELOG.md`'s actual Round 31
+    section (not just trusted commit `e124a48`'s own message): all of the
+    content P2-6 named as missing is now present as CHANGELOG bullets —
+    R31-8 (task #472, the same-workload-regime CLAUDE.md rule), R31-5a
+    (task #480, `scripts/verify-gate-report.mjs`), R31-5c (task #482,
+    `scripts/verify-commit-prefixes.mjs`), R31-5b (task #481, the four
+    WARN-level checks + `scripts/capture-measurement-identity.mjs`), R31-11
+    (task #475, `tests/ci_clippy_matrix_consistency.rs`), R31-6 (task #469,
+    the Windows decommit-crash correctness fix), and both R31-14a/R31-14b
+    (tasks #483/#484, the 10 fixed review-P2 repairs) all have their own
+    bullets (`CHANGELOG.md` lines 32, 34-40 in the `[Unreleased]` → Round 31
+    section as of this check). The stale "the other 11 P2s were filed, not
+    fixed" wording P2-6 flagged has its own in-place `**UPDATE (Round 32,
+    tasks #483/#484): 10 of these 11 were independently re-verified and
+    FIXED**` correction already present in the same bullet (line 31). P2-6
+    is RESOLVED; the other four findings in this item (P2-1, P2-7, P2-8,
+    P2-11) remain open and unverified — this note closes only P2-6, per
+    this file's append-only convention (do not silently drop the other
+    four from the bundle).
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
