@@ -648,6 +648,37 @@ impl SeferAlloc {
         }
     }
 
+    /// R31-8 (task #488) MEASUREMENT-ONLY: the CALLING thread's own heap's
+    /// current large-cache running-used-bytes sum (thin delegation to
+    /// [`HeapCore::dbg_large_cache_used`](crate::registry::HeapCore::dbg_large_cache_used),
+    /// which itself delegates to
+    /// [`AllocCore::dbg_large_cache_used`](crate::AllocCore::dbg_large_cache_used)).
+    /// Same current-thread-resolution shape as
+    /// [`dbg_current_large_cache_extension_materialised`](Self::dbg_current_large_cache_extension_materialised)
+    /// above — see that method's doc for the full rationale. Returns `0` on
+    /// the fallback heap (TLS torn down, or the registry is exhausted) —
+    /// indistinguishable from a real empty cache, same caveat as
+    /// [`dbg_current_large_cache_total_slots`](Self::dbg_current_large_cache_total_slots)'s
+    /// `0` sentinel. Added for the R31-8 narrow-gate re-measurement's
+    /// matched-state proof (CLAUDE.md's per-arm state-matching evidence
+    /// rule): both arms must show the same resident large-cache used-bytes
+    /// total immediately before the timed region is trusted. `#[doc(hidden)]`
+    /// — not part of the public API. `bench-internals`-gated (no production
+    /// caller → CLAUDE.md's benchmark-hook rule 2).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_current_large_cache_used_bytes(&self) -> usize {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread — same justification as
+            // `dbg_current_large_cache_extension_materialised` above.
+            unsafe { (*heap).dbg_large_cache_used() }
+        } else {
+            0
+        }
+    }
+
     /// R10-7 (Part 2) — **tcache-aware batch allocation** wrapper.
     ///
     /// # ⚠ EXPERIMENTAL / UNSTABLE

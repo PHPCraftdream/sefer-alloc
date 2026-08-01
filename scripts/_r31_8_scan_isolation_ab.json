@@ -1,0 +1,16 @@
+{
+  "metric": "ns_per_round",
+  "build": null,
+  "arms": {
+    "off": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_8_large_cache_scan_isolation_off.exe",
+      "args": []
+    },
+    "on": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_8_large_cache_scan_isolation_on.exe",
+      "args": []
+    }
+  },
+  "default_comparisons": [["off", "on"]],
+  "features_note": "off: production,alloc-stats,bench-internals (AllocCore direct, scan_bound=8) | on: production,alloc-stats,bench-internals,large-cache-extended (AllocCore direct, scan_bound=40)"
+}

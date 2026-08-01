@@ -66,19 +66,24 @@ fn main() {
         "narrow working-set size must be 1, 2, or 4 (got {n})"
     );
 
-    let (elapsed_ns, hits, total_deallocs, rss_after_kib, commit_after_kib) =
-        run_narrow_ab_workload(&GLOBAL, n);
+    let result = run_narrow_ab_workload(&GLOBAL, n);
 
     let stats = GLOBAL.stats();
 
     proc_probe::emit("arm", "large_cache_extended_narrow_off");
     proc_probe::emit_u64("narrow_n", n as u64);
-    proc_probe::emit_ns("elapsed_ns", elapsed_ns);
-    proc_probe::emit_u64("large_cache_hits", hits);
-    proc_probe::emit_u64("total_deallocs", total_deallocs);
-    proc_probe::emit_u64("rss_after_kib", rss_after_kib);
-    proc_probe::emit_u64("commit_after_kib", commit_after_kib);
+    proc_probe::emit_ns("elapsed_ns", result.narrow_elapsed_ns);
+    proc_probe::emit_u64("large_cache_hits", result.narrow_hits);
+    proc_probe::emit_u64("total_deallocs", result.narrow_total_deallocs);
+    proc_probe::emit_u64("rss_after_kib", result.rss_after_kib);
+    proc_probe::emit_u64("commit_after_kib", result.commit_after_kib);
     proc_probe::emit_u64("segments_reserved_total", stats.segments_reserved_total);
+    proc_probe::emit_u64("segments_reserved_baseline", result.reserved_baseline);
+    proc_probe::emit_u64("segments_reserved_pre_timing", result.reserved_pre_timing);
+    proc_probe::emit_u64(
+        "large_cache_used_bytes_pre_timing",
+        result.used_bytes_pre_timing,
+    );
     #[cfg(feature = "bench-internals")]
     proc_probe::emit_u64(
         "oracle_total_slots",

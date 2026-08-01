@@ -1125,6 +1125,28 @@ required-features = ["alloc-global"]
 name = "r31_3_large_cache_extended_narrow_on"
 required-features = ["alloc-global"]
 
+# R31-8 (task #488): deterministic, native (cross-platform) scan-cost
+# isolation microjudge — a decomposed complement to the real-process narrow
+# A/B above, driving a BARE `AllocCore` (not `SeferAlloc`/the registry)
+# directly at a fixed, worst-case scan position (see
+# `examples/_shared/r31_8_large_cache_scan_isolation_workload.rs`'s module
+# doc for the full design). Two wrappers around ONE shared workload,
+# `include!`d verbatim into both, mirroring the narrow-AB off/on pattern:
+#   - `r31_8_large_cache_scan_isolation_off`: --features "production alloc-stats bench-internals"
+#     (base 8-slot cache, decoy_count=7)
+#   - `r31_8_large_cache_scan_isolation_on` : --features "production alloc-stats bench-internals large-cache-extended"
+#     (extended 40-slot cache, decoy_count=39, unbounded budget override so
+#     population can actually overflow the base 8 and materialise the
+#     sidecar — same "recover unbounded" idiom as the sibling narrow-AB ON
+#     binary)
+[[example]]
+name = "r31_8_large_cache_scan_isolation_off"
+required-features = ["alloc-core"]
+
+[[example]]
+name = "r31_8_large_cache_scan_isolation_on"
+required-features = ["alloc-core", "large-cache-extended"]
+
 # R14-3 (task #288): fixed-work process-level A/B/B/A judge for
 # `class-aware-dirty`, built to answer a methodology gap three independent
 # Round-13 reviews raised against `benches/r12_7_class_aware_dirty_wallclock.rs`'s

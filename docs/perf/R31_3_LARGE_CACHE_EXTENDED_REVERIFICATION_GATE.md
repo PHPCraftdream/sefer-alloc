@@ -538,3 +538,364 @@ stated the correct 400.5 MiB figure — only the CSV note string was wrong.
 Fixed to `"3280892/8 = ~400.5 MiB/heap (CORRECTED 2026-07-31, ...)"` in the
 CSV itself; the `value`/`unit` columns (410112/kib) were always correct and
 are unchanged.
+
+---
+
+## 8. §3 RE-MEASUREMENT — 2026-08-01 (task #488, closing the R31/R32 review's
+## §3.2 "Ошибка 3" segments_reserved_total contradiction and re-deriving §3's
+## narrow-timing verdict from scratch)
+
+**Status: this section SUPERSEDES §3.1-§3.4 above for the "does the widened
+O(40) scan bound cost anything on a narrow working set" question.** Do not
+cite §3.1-§3.3's numbers (already marked SUPERSEDED by §3.4/task #487) —
+this section is the actual re-derivation §3.4 promised, using the fixed
+workload from task #487 (commit `ac7845d`) plus this task's own additional
+fixes (matched-state proof, a decomposed scan-only microjudge, a checked
+derivation script). The §2 turnover A/B is **UNCHANGED and NOT re-examined
+here** — this section touches only the narrow-working-set-after-
+materialisation question.
+
+### 8.0 Scope, layer under test, and immutable source identity
+
+**Layer under test (CLAUDE.md's R30-8/entry-point rule):** TWO complementary
+measurements, at two DIFFERENT, explicitly-named layers:
+
+1. **§8.2 (real-process narrow A/B):** the real `#[global_allocator]`
+   `SeferAlloc` via plain `std::alloc::{alloc, dealloc}` — identical layer to
+   §2's turnover A/B and the original (superseded) §3.1. Proves the
+   end-to-end wall-clock effect a real program would observe.
+2. **§8.3 (scan-isolation microjudge):** a BARE `AllocCore` (feature
+   `alloc-core`, the established `#[doc(hidden)]` test-only export pattern),
+   constructed directly with no TLS heap-claim, no registry slot, no
+   per-thread bootstrap indirection. This is deliberately a DIFFERENT,
+   LOWER layer than §8.2 — it isolates the `alloc_large` best-fit scan loop
+   itself (`src/alloc_core/alloc_core_large.rs:215-227`) from every other
+   cost §8.2's timed region also includes (header rewrite, registry
+   register/unregister, magic-store, TLS resolution). §8.2 and §8.3 are
+   COMPLEMENTARY measurements of different questions, not two attempts at
+   the same number — see §8.4 for what each does and does not prove.
+
+**Immutable source identity (CLAUDE.md's R29-6 rule):** a git tree-object
+SHA computed via `git write-tree` against a SCOPED temporary index file
+(`GIT_INDEX_FILE` pointed at a throwaway path, never touching the shared
+repository index or working tree — this repo is a shared workspace with
+other concurrently-running agents), seeded from base commit `ac7845d`
+(task #487's landing commit) with every one of this task's changed/added
+files staged into it. An initial version of this identity was captured
+before the first measurement ran, covering only the first source edit
+(`src/global/sefer_alloc.rs`); zero-trust review after §8.1-§8.3's first
+measurement pass found one of that edit's two diagnostic forwarders
+(`dbg_current_large_cache_hits`) had zero callers anywhere in the tree (the
+shared workload ended up reading the pre-existing process-wide
+`SeferAlloc::stats().large_cache_hits` aggregator instead — see §8.1) and
+removed it as dead code, and also added a stronger cache-hit oracle to the
+§8.3 scan-isolation binaries (below) — both changes were followed by a
+fresh re-build and a fresh re-run of every affected measurement. A final
+`cargo fmt` pass (part of this task's own pre-commit verification, run
+after the last re-measurement) reformatted two of the touched files with no
+semantic change, shifting the tree SHA once more; the identity below is
+that FINAL, `cargo fmt`-clean, `cargo clippy -D warnings`-clean,
+`cargo test --release --features production`-green tree — the one every
+cited number in this section was produced by and the one this commit
+actually ships:
+
+```text
+base_commit    = ac7845d0ed90ca4ba34e2abbc2ba9a4113ef1d36
+source_tree    = a35dd00d9336a88a28059809391e2f44d0fe900c
+```
+
+(`source_tree` covers: `Cargo.toml`,
+`examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`,
+`examples/r31_3_large_cache_extended_narrow_{off,on}.rs`,
+`src/global/sefer_alloc.rs`,
+`examples/_shared/r31_8_large_cache_scan_isolation_workload.rs`,
+`examples/r31_8_large_cache_scan_isolation_{off,on}.rs`,
+`scripts/_r31_8_scan_isolation_ab.json`,
+`scripts/r31_8_derive_report_data.mjs` — every file this task changed or
+added, hashed against the same base commit.)
+
+Host: Windows 10 Pro, i7-11800H, `rustc 1.97.0 (2d8144b78 2026-07-07)` — same
+host/toolchain as the rest of this report.
+
+### 8.1 The `segments_reserved_total` contradiction — RESOLVED, and it does
+### not reappear once the workload is correct
+
+**Root cause: the old 10-vs-14 asymmetry was ENTIRELY an artifact of the
+BROKEN pre-task-#487 workload (wrong 2 MiB segment constant + 256 MiB
+default budget causing a budget-rejection-driven admission pattern that
+silently diverged between arms) — it is not a real mechanism, and it does
+not reproduce with the fixed workload.** This was established empirically,
+not assumed: re-tracing `segments_reserved_total` at fine granularity
+against the corrected workload (real 4 MiB `SegmentLayout::SEGMENT`,
+`budget_bytes(usize::MAX)` on ON) showed the counter reads **identically in
+both arms** at a pre-burst baseline checkpoint (both arms: `1`, from
+process-bootstrap `std::env::args()`/`Vec` allocation/TLS first-touch bind,
+identical code path in both binaries before the burst ever runs) and again
+immediately before the timed region (both arms: `10` — baseline `1` plus
+exactly `MATERIALIZE_N` = `9`, one fresh OS reserve per burst-phase cache
+miss against an initially-empty cache, and ZERO further reserves through
+every warm-up round and the entire timed region in either arm, at every N).
+
+This is no longer merely observed — a hard `assert_eq!` added to the shared
+workload (`examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`,
+task #488) now PROVES `(segments_reserved_pre_timing - segments_reserved_baseline)
+== MATERIALIZE_N` inside every single run, aborting loudly if it ever stops
+holding, per CLAUDE.md's matched-state evidence rule (a residual unequal
+count would mean the arms are not in comparable admission states — the run
+must not silently proceed to trust its own timing in that case). All ~120
+process launches across this task's 6 narrow-AB paired-comparison runs
+(20 pairs x 2 arms x 3 comparisons, N=1/2/4) satisfied this assertion — see
+`docs/perf/_raw_r31_8_narrow_n1.log`, `_n2.log`, `_n4.log`.
+
+**Table (derived by `scripts/r31_8_derive_report_data.mjs` from the raw
+provenance JSON `scripts/paired-ab-runner.mjs` wrote for each run — not
+hand-transcribed; every cell below is copied verbatim from that script's own
+`console.log` output):**
+
+| N | off `segments_reserved` delta (baseline→pre-timing) | on `segments_reserved` delta (baseline→pre-timing) | Identical across arms? |
+|---|---|---|---|
+| 1 | 9 (1→10) | 9 (1→10) | YES |
+| 2 | 9 (1→10) | 9 (1→10) | YES |
+| 4 | 9 (1→10) | 9 (1→10) | YES |
+
+The `large_cache_used_bytes_pre_timing` delta between arms (ON minus OFF)
+is, at every N, **exactly 8,388,608 bytes (8 MiB = 2 segments)** — the
+derivation script's own headline assertion hard-checks this equals the
+smallest of the 9 materialisation sizes (`nine_sizes[0]`, 2 segments =
+8 MiB), i.e. the ONE entry the 40-slot ON cache retains that the 8-slot OFF
+cache's FIFO eviction dropped during the burst. This is the full, named,
+mechanistically-explained asymmetry between the two arms at the pre-timing
+checkpoint — not an unexplained residual. **No genuine, unexplained
+asymmetry remains**: the matched-state discipline (capturing a pre-burst
+baseline and asserting the delta, rather than trusting an absolute magic
+number) made the old contradiction disappear entirely, and the one
+remaining difference (used-bytes) is precisely the mechanism this whole
+gate exists to test (a wider cache retains more), not an accident.
+
+### 8.2 Real-process narrow A/B, re-measured with matched-state proof
+
+Same harness shape as the original §3.1 (`examples/r31_3_large_cache_extended_narrow_{off,on}.rs`,
+`scripts/paired-ab-runner.mjs`, n=20 paired A/B/B/A), now built against the
+task #487-fixed workload PLUS this task's matched-state hard-asserts (§8.1)
+and a working-set-residency proof round (100% hits proven, via its own
+before/after hit-counter delta, immediately before the timed loop — not
+inferred from earlier warm-up rounds).
+
+**Table (derived by `scripts/r31_8_derive_report_data.mjs`; every number
+below is copied verbatim from `docs/perf/R31_8_NARROW_GATE_MATCHED_STATE_REMEASUREMENT_summary.csv`,
+which the script itself wrote):**
+
+| N | mean Δ (off − on), arithmetic mean | t | crit(p<0.05) | sign off-faster/20 | sign on-faster/20 | Verdict |
+|---|---:|---:|---:|---:|---:|---|
+| 1 | −61.055 µs | −11.631 | 2.101 | 19 | 1 | REAL, **ON SLOWER** |
+| 2 | −100.085 µs | −7.757 | 2.101 | 19 | 1 | REAL, **ON SLOWER** |
+| 4 | −187.028 µs | −13.546 | 2.101 | 20 | 0 | REAL, **ON SLOWER** |
+
+**This is the OPPOSITE direction from §3.1's superseded finding** (which
+reported ON faster, mechanistically attributed to an OFF-side FIFO-eviction
+refill cost that §8.1 above shows never existed as described). Raw logs:
+`docs/perf/_raw_r31_8_narrow_n1.log`, `_n2.log`, `_n4.log`.
+
+**Same-vs-same controls** (harness sanity, N=1 and N=4 — chosen to bracket
+the N range, matching the original §3.1's own control-coverage choice):
+
+```text
+N=1: t=-1.989  (docs/perf/_raw_r31_8_narrow_n1_same_vs_same.log)  -- noise (just under crit=2.101)
+N=4: t=-0.528  (docs/perf/_raw_r31_8_narrow_n4_same_vs_same.log)  -- noise
+```
+
+Both under `crit = 2.101` — the off-vs-on signal above is real, not
+measurement noise, though the N=1 same-vs-same control (`t = -1.989`) sits
+closer to `crit` than N=4's does; the off-vs-on N=1 signal (`t = -11.631`)
+is still nearly 6x past `crit`, well clear of that control's own noise
+ceiling.
+
+**Path-activation oracle:** every one of the ~120 process launches across
+these three N values reports `oracle_total_slots = 8` (OFF) or `40` (ON,
+with `oracle_materialised = 1`), matching the original §3.2's already-proven
+oracle discipline — unaffected by this task's changes.
+
+### 8.3 Scan-isolation microjudge — decomposing the real-process signal into
+### a scan-bound-specific component
+
+**New harness** (task #488, not present in the original §3):
+`examples/_shared/r31_8_large_cache_scan_isolation_workload.rs` +
+`examples/r31_8_large_cache_scan_isolation_{off,on}.rs`. Drives a BARE
+`AllocCore` (§8.0's layer note) with the large cache populated to a
+WORST-CASE scan shape: every slot but the LAST filled with a "decoy" entry
+too small to satisfy the target request (best-fit's `usable_size >= usable`
+guard excludes every decoy, but the scan must still visit each one — no
+early exit is possible without visiting a later, possibly-better-fitting
+slot), and the ONE entry that actually fits deposited at the fixed LAST
+slot index (index 7 of 8 for OFF, index 39 of 40 for ON). Each timed
+iteration's `alloc()` must walk the FULL scan bound to confirm best-fit;
+the immediately-following `dealloc()` redeposits at the same now-vacant
+last index, so the occupancy shape is stable across all 200,000 timed
+iterations per process launch — no re-setup needed, no drift.
+
+An IAI-callgrind instruction-count microjudge (matching this project's
+existing `benches/perf_gate_iai.rs` pattern) was considered per the task
+brief's suggestion, but NOT built as this report's cited evidence:
+`iai-callgrind` is Linux-only (its dev-dependency is scoped to
+`[target.'cfg(target_os = "linux")'.dev-dependencies]`, and Valgrind itself
+does not run on Windows), and this measurement host is Windows — a number
+this report could not itself run and verify would violate this project's
+own evidence rules. The native wall-clock microjudge below is what was
+actually run, on this host, and its own same-vs-same control is reported so
+its noise floor is visible.
+
+**Table (derived by `scripts/r31_8_derive_report_data.mjs`):**
+
+| Arm | scan bound | ns/round (arithmetic mean, n=20) |
+|---|---:|---:|
+| off | 8 | 79.7 |
+| on | 40 | 399.3 |
+
+Ratio on/off = **5.01x** (the derivation script asserts this ratio is
+`> 1.0` in-script — CLAUDE.md rule 6 — rather than trusting a hand-typed
+figure; 5.01x is printed by the same script that computed it, copied
+verbatim into this table).
+
+Paired A/B/B/A (n=20): **mean Δ (off − on) = −319.6 ns, t = −29.263, crit =
+2.101, sign off-faster = 20/20** — an extremely clean signal (raw log:
+`docs/perf/_raw_r31_8_scan_isolation.log`). Same-vs-same control: **t =
+−0.556** (`docs/perf/_raw_r31_8_scan_isolation_same_vs_same.log`), well
+under `crit` — the 20/20, t=-29 signal is unambiguously real, not noise.
+
+**Path-activation oracle:** the ON binary hard-asserts
+`dbg_large_cache_extension_materialised() == true` and
+`dbg_large_cache_total_slots() == 40` immediately after populating the
+worst-case shape, before any timing starts (mirroring §8.2's oracle
+discipline at the `AllocCore` layer directly, since this microjudge has no
+`SeferAlloc` in hand to query). Both binaries (OFF and ON) additionally
+hard-assert, via `AllocCore::dbg_large_cache_hits`'s own before/after delta
+around the sanity-probe `alloc()` call, that the worst-case-populated
+fitting entry is genuinely serviced as a cache HIT (not an accidental miss,
+which would silently measure a fresh OS reservation instead of a scan) —
+this closes the gap an earlier version of this microjudge left as an
+unverified "should be a hit" assumption.
+
+### 8.4 What each measurement proves, and what neither proves alone
+
+- **§8.2 (real-process A/B)** proves the END-TO-END wall-clock effect a
+  real program driving the real `#[global_allocator]` would observe on this
+  exact narrow-working-set-after-materialisation-burst workload shape: ON is
+  measurably, reproducibly SLOWER at N=1/2/4 on this host. It does NOT, by
+  itself, isolate WHERE in the `alloc_large`/`dealloc` dispatch chain that
+  cost comes from (the scan loop specifically, vs. header rewrite, vs.
+  registry bookkeeping, vs. some other step) — every one of those steps is
+  included in its timed region.
+- **§8.3 (scan-isolation microjudge)** proves that the `alloc_large`
+  best-fit SCAN LOOP itself, in a worst-case (full-bound-walk) position, is
+  measurably slower at scan_bound=40 than scan_bound=8, cleanly isolated
+  from every other step in the dispatch chain and from any setup-state
+  difference (§8.1 already showed setup state is matched). It does NOT, by
+  itself, prove this fully accounts for §8.2's real-process magnitude
+  (§8.2's ~61-187 µs figures include ~400 alloc+dealloc pairs per timed
+  round at 100% hit rate, i.e. the scan runs ~400-1600 times per sample
+  depending on N and ROUNDS — a per-round scan delta on the order of a few
+  hundred ns, multiplied by hundreds of scans per sample, is the right
+  order of magnitude to be a substantial contributor to §8.2's per-sample
+  deltas, but this report does not claim an exact reconciliation between
+  the two numbers — that would require instrumenting §8.2's own harness
+  with per-scan timing, which was not built here).
+- **Together**, the two measurements are mutually reinforcing (same
+  direction — wider scan bound costs more — at two different layers,
+  neither contaminated by the setup-state issue that invalidated the
+  original §3.1) but answer genuinely different questions, per CLAUDE.md's
+  entry-point-honesty rule: §8.2 is what a real caller experiences; §8.3 is
+  why.
+
+### 8.5 Verdict
+
+**NO-GO for the "the widened O(40) scan bound is free/negligible on a
+narrow working set" question — this task's re-measurement finds a REAL,
+reproducible, matched-state-proven cost, not a null result.** This is the
+opposite conclusion from the original (now-superseded) §3's "no
+narrow-working-set regression exists ... if anything, the extended cache
+measured FASTER" — that finding is confirmed WITHDRAWN, not just
+superseded-by-silence: it was measured against a broken workload whose own
+`segments_reserved_total` contradiction (§8.1) is now understood and does
+not reproduce, and the corrected, matched-state-proven re-measurement shows
+the opposite sign at every N, with two independent, complementary
+measurements (real-process end-to-end and scan-isolated) agreeing on
+direction.
+
+**Magnitude in context:** at the real-process layer (§8.2), the cost is
+tens to low-hundreds of microseconds per `ROUNDS=400`-iteration timed
+sample (i.e., on the order of 100-500 ns per alloc+dealloc pair at these N
+values) — small in absolute terms per operation, but a REAL, reproducible,
+statistically unambiguous cost (t up to 13.5x past crit), not noise. This
+NO-GO does not by itself say whether that per-operation cost is
+acceptable for a given caller's workload — that is a promotion-policy
+judgment call, explicitly OUT OF SCOPE for this task (§5's promotion
+proposal, and any update to it, is a separate, already-filed follow-up,
+task #491, which is blocked on this report and will pick up this result).
+
+**What would strengthen this further, if pursued:** an in-process
+instrumentation of §8.2's own timed loop to attribute its per-sample delta
+directly to scan-loop time (closing the §8.4 reconciliation gap noted
+above), and/or a Linux CI run of an IAI-callgrind version of §8.3's
+microjudge (deterministic instruction counts, immune to this Windows host's
+wall-clock jitter) — neither was built in this task; both are natural
+follow-ups if a more precise attribution or a second independent
+measurement modality is wanted before a promotion decision leans on this
+number specifically.
+
+### 8.6 Files changed/added (this section, task #488)
+
+**Source:**
+- `src/global/sefer_alloc.rs` — one new `bench-internals`-gated diagnostic
+  forwarder, `dbg_current_large_cache_used_bytes` (thin delegation to the
+  pre-existing `HeapCore` method of the same name, mirroring this file's
+  own `dbg_current_large_cache_budget` pattern). A second forwarder
+  (`dbg_current_large_cache_hits`) was added at measurement time, found
+  unused after zero-trust review (§8.0's post-measurement cleanup note),
+  and removed as dead code before this commit — not present in the final
+  diff. No production code changed.
+
+**Workload / harness changes:**
+- `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs` —
+  added the pre-timing matched-state proof block (§8.1), a working-set-
+  residency proof round, and an expanded `NarrowAbResult` struct carrying
+  the new diagnostic fields.
+- `examples/r31_3_large_cache_extended_narrow_{off,on}.rs` — updated to
+  consume the expanded result struct and emit the new fields.
+- `examples/_shared/r31_8_large_cache_scan_isolation_workload.rs` (new),
+  `examples/r31_8_large_cache_scan_isolation_{off,on}.rs` (new) — the §8.3
+  scan-isolation microjudge.
+- `Cargo.toml` — two new `[[example]]` entries for the scan-isolation
+  binaries.
+- `scripts/_r31_8_scan_isolation_ab.json` (new) — `paired-ab-runner.mjs`
+  config for the scan-isolation A/B.
+- `scripts/r31_8_derive_report_data.mjs` (new) — the checked derivation
+  script (CLAUDE.md's R30-9 rule) that produced every table/number in this
+  section from the raw provenance JSON.
+
+**Raw logs** (`git add -f`'d alongside this report per the raw-log policy):
+- `docs/perf/_raw_r31_8_narrow_n1.log`, `_n1_same_vs_same.log`
+- `docs/perf/_raw_r31_8_narrow_n2.log`
+- `docs/perf/_raw_r31_8_narrow_n4.log`, `_n4_same_vs_same.log`
+- `docs/perf/_raw_r31_8_scan_isolation.log`, `_same_vs_same.log`
+- `docs/perf/_raw_r31_8_source_patch.diff` (this task's full source diff
+  plus new-file contents — the human-readable companion to the
+  `source_tree` git tree-object SHA cited in §8.0)
+- Underlying full-provenance JSON (raw per-sample data + per-launch
+  diagnostics): `docs/perf/paired_ab_runs/2026-08-01T21-48-36-430Z.json`
+  (narrow n=1), `2026-08-01T21-48-46-358Z.json` (n=1 same-vs-same),
+  `2026-08-01T21-49-04-021Z.json` (n=2), `2026-08-01T21-49-13-946Z.json`
+  (n=4), `2026-08-01T21-49-23-652Z.json` (n=4 same-vs-same),
+  `2026-08-01T22-22-39-119Z.json` (scan isolation, final re-run after the
+  oracle-strengthening pass), `2026-08-01T22-22-43-158Z.json` (scan
+  isolation same-vs-same, same final re-run).
+
+**Summary CSV:** `docs/perf/R31_8_NARROW_GATE_MATCHED_STATE_REMEASUREMENT_summary.csv`.
+
+**Docs:** this file (§8, this section).
+
+**NOT touched by this section:** §2 (turnover A/B — untouched, unrelated
+harness), §4 (multi-heap RSS — untouched), §5 (promotion proposal — the
+promotion decision itself is explicitly out of scope for this task, per
+task #488's own brief; a follow-up, task #491, is separately filed and
+blocked on this report to reconsider §5 in light of this section's NO-GO
+finding).
