@@ -2,7 +2,7 @@
 
 Date: 2026-08-02.
 
-landing_commit: ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4
+landing_commit: 5289c661877462f3caf6c4e136ad3c163f6fe15b
 
 ## 0. What this is
 
@@ -414,9 +414,9 @@ this workload's total cost") would not contradict anything stated here.
 
 ## 8. Provenance
 
-- Base/landing commit: `ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4` (this
-  task's own changes are committed at this SHA — see the commit message for
-  the exact file list).
+- Base commit: `ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4`. Landing commit
+  (this task's own changes): `5289c661877462f3caf6c4e136ad3c163f6fe15b` —
+  see that commit's message for the exact file list.
 - **Immutable-source-identity caveat (CLAUDE.md's R29-6 rule, honestly
   applied):** the "before" (`OWN_CACHE_SIZE=4`) measurement was taken by
   TEMPORARILY editing the constant in the working tree, running the
