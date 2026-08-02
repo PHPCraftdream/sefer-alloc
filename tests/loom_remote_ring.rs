@@ -606,3 +606,354 @@ fn overflow_retry_concurrent_drain_never_loses_or_duplicates() {
 /// loop would have, even though the real bound (262,144) is far larger than
 /// what loom can afford to explore exhaustively.
 const MODEL_RETRY_BOUND: u32 = 3;
+
+// =========================================================================
+// F10 (task #502) — shadow/cached-head model.
+//
+// The models above (`RingModel`, `RingModel1`) predate F10 and intentionally
+// stay UNCHANGED (they prove the base protocol, independent of the shadow
+// optimization). This section adds a SEPARATE model,
+// `RingModelShadow`, mirroring the real `RemoteFreeRing::full_check` +
+// `push` shape exactly (shadow fast path, real-Acquire-load slow path with
+// refresh) so loom can explore interleavings the hand-written soundness
+// argument (see `src/alloc_core/remote_free_ring.rs`'s module doc, "F10 —
+// shadow/cached head") cannot enumerate by hand: in particular, a producer
+// reading a STALE `cached_head` concurrently with the SAME slot being
+// reserved by another producer and then drained by the consumer, all in
+// overlapping loom-scheduled steps.
+// =========================================================================
+
+/// The loom model of a shadow-head ring: `head`, `tail`, `cached_head`, and
+/// the slot array. `cached_head` mirrors the real `RemoteFreeRing`'s
+/// producer-line replica.
+struct RingModelShadow {
+    head: AtomicU32,
+    tail: AtomicU32,
+    cached_head: AtomicU32,
+    slots: [AtomicU32; CAP],
+}
+
+impl RingModelShadow {
+    fn new() -> Arc<Self> {
+        Arc::new(RingModelShadow {
+            head: AtomicU32::new(0),
+            tail: AtomicU32::new(0),
+            cached_head: AtomicU32::new(0),
+            slots: std::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+        })
+    }
+
+    /// Mirrors `RemoteFreeRing::full_check` exactly: shadow fast path
+    /// (`Relaxed` cached_head load, no `head` touch if it proves room),
+    /// falling through to the real `Acquire` head load + `Relaxed` shadow
+    /// refresh only when the shadow suggests fullness.
+    fn full_check(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head.load(Ordering::Relaxed);
+        if t.wrapping_sub(ch) < CAP as u32 {
+            return Ok(());
+        }
+        let h = self.head.load(Ordering::Acquire);
+        self.cached_head.store(h, Ordering::Relaxed);
+        if t.wrapping_sub(h) >= CAP as u32 {
+            return Err(());
+        }
+        Ok(())
+    }
+
+    /// Mirrors `RemoteFreeRing::push` exactly, using `full_check` above in
+    /// place of the pre-F10 inline `head.load(Acquire)` full-check.
+    fn push(&self, offset: u32) -> Result<(), ()> {
+        loop {
+            let t = self.tail.load(Ordering::Relaxed);
+            if self.full_check(t).is_err() {
+                return Err(());
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slots[(t as usize) % CAP].store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Identical to `RingModel::drain` (the shadow does not touch drain at
+    /// all — the module's soundness argument's whole point is that `drain`
+    /// is byte-identical pre/post F10).
+    fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+        let t = self.tail.load(Ordering::Acquire);
+        let mut h = self.head.load(Ordering::Relaxed);
+        while h != t {
+            let slot = &self.slots[(h as usize) % CAP];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            reclaim(off);
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.head.store(h, Ordering::Release);
+    }
+}
+
+/// 2 producers push UNIQUE offsets through the SHADOW-checked `push`, one
+/// consumer drains once after both join — the shadow-head analogue of
+/// `correct_ring_never_loses_or_duplicates` above. Proves the shadow
+/// mechanism itself (not just the base protocol) preserves exactly-once
+/// delivery under every interleaving loom explores, including ones where a
+/// producer's `cached_head` read races a concurrent drain's `head` store.
+#[test]
+fn shadow_ring_never_loses_or_duplicates() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelShadow::new();
+        let ring_a = Arc::clone(&ring);
+        let ta = thread::spawn(move || while ring_a.push(10).is_err() {});
+        let ring_b = Arc::clone(&ring);
+        let tb = thread::spawn(move || while ring_b.push(20).is_err() {});
+
+        ta.join().unwrap();
+        tb.join().unwrap();
+
+        let mut got_a = 0u32;
+        let mut got_b = 0u32;
+        ring.drain(|off| {
+            if off == 10 {
+                got_a += 1;
+            } else if off == 20 {
+                got_b += 1;
+            }
+        });
+
+        assert_eq!(
+            got_a, 1,
+            "offset 10 reclaimed {got_a} times (expected 1) — shadow-head loss or duplication"
+        );
+        assert_eq!(
+            got_b, 1,
+            "offset 20 reclaimed {got_b} times (expected 1) — shadow-head loss or duplication"
+        );
+    });
+}
+
+/// A `CAP = 1` shadow ring forces genuine overflow with the smallest
+/// possible producer count (2) — the shadow-head analogue of
+/// `overflow_retry_concurrent_drain_never_loses_or_duplicates` above, this
+/// time exercising the shadow's SLOW path (a `CAP = 1` ring is full after
+/// exactly one live reservation, so the shadow fast path can never prove
+/// room for the second producer — every second-producer attempt MUST take
+/// the real-Acquire-load slow path, which is exactly the path this test
+/// wants loom to explore under contention).
+struct RingModelShadow1 {
+    head: AtomicU32,
+    tail: AtomicU32,
+    cached_head: AtomicU32,
+    slot: AtomicU32,
+}
+
+impl RingModelShadow1 {
+    fn new() -> Arc<Self> {
+        Arc::new(RingModelShadow1 {
+            head: AtomicU32::new(0),
+            tail: AtomicU32::new(0),
+            cached_head: AtomicU32::new(0),
+            slot: AtomicU32::new(RING_SLOT_EMPTY),
+        })
+    }
+
+    fn full_check(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head.load(Ordering::Relaxed);
+        if t.wrapping_sub(ch) < 1 {
+            return Ok(());
+        }
+        let h = self.head.load(Ordering::Acquire);
+        self.cached_head.store(h, Ordering::Relaxed);
+        if t.wrapping_sub(h) >= 1 {
+            return Err(());
+        }
+        Ok(())
+    }
+
+    fn push(&self, offset: u32) -> Result<(), ()> {
+        loop {
+            let t = self.tail.load(Ordering::Relaxed);
+            if self.full_check(t).is_err() {
+                return Err(());
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slot.store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+        let t = self.tail.load(Ordering::Acquire);
+        let mut h = self.head.load(Ordering::Relaxed);
+        while h != t {
+            let off = self.slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            reclaim(off);
+            self.slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.head.store(h, Ordering::Release);
+    }
+}
+
+/// Shadow-head analogue of `overflow_retry_concurrent_drain_never_loses_or_duplicates`:
+/// 2 producers retry (bounded) against a `CAP = 1` shadow ring, consumer
+/// drains once after both join. Forces the shadow's slow (real-Acquire)
+/// path under genuine producer-vs-producer contention and proves no loss or
+/// duplication results.
+#[test]
+fn shadow_overflow_retry_concurrent_drain_never_loses_or_duplicates() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelShadow1::new();
+        let reclaimed: Arc<[AtomicU32; 2]> = Arc::new([AtomicU32::new(0), AtomicU32::new(0)]);
+        let landed: Arc<[AtomicU32; 2]> = Arc::new([AtomicU32::new(0), AtomicU32::new(0)]);
+
+        let mut producers = Vec::new();
+        for (i, &offset) in [10u32, 20u32].iter().enumerate() {
+            let ring_p = Arc::clone(&ring);
+            let landed_p = Arc::clone(&landed);
+            producers.push((
+                i,
+                thread::spawn(move || {
+                    for _ in 0..MODEL_RETRY_BOUND {
+                        if ring_p.push(offset).is_ok() {
+                            landed_p[i].store(1, Ordering::Relaxed);
+                            return;
+                        }
+                        thread::yield_now();
+                    }
+                }),
+            ));
+        }
+
+        for (_, p) in producers {
+            p.join().unwrap();
+        }
+
+        ring.drain(|off| {
+            let idx = match off {
+                10 => 0,
+                20 => 1,
+                _ => return,
+            };
+            reclaimed[idx].fetch_add(1, Ordering::Relaxed);
+        });
+
+        for (i, counter) in reclaimed.iter().enumerate() {
+            let seen = counter.load(Ordering::Acquire);
+            let did_land = landed[i].load(Ordering::Relaxed) == 1;
+            if did_land {
+                assert_eq!(
+                    seen, 1,
+                    "producer {i}'s offset landed (push returned Ok) but was \
+                     reclaimed {seen} times (want exactly 1) — the shadow-head \
+                     overflow-retry composition lost or duplicated a push"
+                );
+            } else {
+                assert_eq!(
+                    seen, 0,
+                    "producer {i}'s offset was reclaimed {seen} times despite \
+                     never successfully landing — a shadow-head \
+                     duplication/fabrication bug, not a retry-exhaustion artefact"
+                );
+            }
+        }
+    });
+}
+
+/// COUNTERFACTUAL: a shadow full-check that treats `cached_head` as the
+/// AUTHORITATIVE value (never re-checking against the real `head` on the
+/// slow path — i.e. `full_check` returns `Err` straight from a stale shadow
+/// without ever consulting `head.load(Acquire)`) can reject a push the ring
+/// actually has room for. This is not a SAFETY bug (an over-conservative
+/// reject just costs an extra overflow — sound) but IS a liveness/behavior
+/// regression this test pins against, proving the real implementation's
+/// "always re-derive from a fresh Acquire load on the slow path" design is
+/// load-bearing for NOT needlessly overflowing. `#[should_panic]`: loom
+/// finds the interleaving where the broken variant overflows despite the
+/// ring having room (a drain freed a slot the stale shadow didn't know
+/// about).
+#[test]
+#[should_panic(expected = "spuriously overflowed")]
+fn counterfactual_shadow_trusts_stale_cache_spuriously_overflows() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelShadow1::new();
+
+        // Pre-fill the CAP=1 ring's one slot via the correct push, so the
+        // shadow's fast path is guaranteed to see "no room" on the FIRST
+        // check (cached_head starts at 0, tail becomes 1: 1-0 >= 1 → full
+        // suggested, slow path runs, refreshes cached_head to the real
+        // head (still 0) — genuinely full, correctly returns Err). This
+        // primes cached_head to a value that will go STALE the moment the
+        // consumer drains concurrently with a second producer's check.
+        assert!(ring.push(999).is_ok(), "prefill must succeed on empty ring");
+
+        // Consumer drains concurrently — frees the one slot, advancing head
+        // 0 -> 1. A correct implementation's slow path re-reads `head` via
+        // Acquire and sees this; a broken "trust the stale shadow" variant
+        // never does.
+        let ring_c = Arc::clone(&ring);
+        let tc = thread::spawn(move || {
+            ring_c.drain(|_| {});
+        });
+
+        // Producer: BROKEN full-check that trusts a stale cached_head
+        // without ever re-deriving from the real `head` on the slow path.
+        let ring_p = Arc::clone(&ring);
+        let tp = thread::spawn(move || {
+            let t = ring_p.tail.load(Ordering::Relaxed);
+            let ch = ring_p.cached_head.load(Ordering::Relaxed);
+            if t.wrapping_sub(ch) < 1 {
+                true // would proceed to CAS — not the path under test here
+            } else {
+                // BUG: the broken variant declares overflow from the STALE
+                // shadow alone, never consulting the real (possibly-advanced)
+                // head.
+                false
+            }
+        });
+
+        tc.join().unwrap();
+        let would_admit = tp.join().unwrap();
+
+        // In the interleaving where the drain's `head` advance happens-before
+        // this check but the STALE shadow (captured before the drain) is all
+        // the broken variant consults, `would_admit` is `false` even though
+        // the ring is now genuinely empty (real head == tail == 1) — a
+        // spurious overflow the correct (re-derive-on-slow-path) design does
+        // not have.
+        assert!(
+            would_admit,
+            "spuriously overflowed: broken shadow-only full-check rejected a push \
+             the ring actually had room for, because it never re-derived from a \
+             fresh Acquire head load on the slow path"
+        );
+    });
+}

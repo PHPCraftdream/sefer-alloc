@@ -565,6 +565,47 @@ impl SeferAlloc {
         }
     }
 
+    /// F10 (task #502) TEST/BENCH-ONLY: force-drain every `RemoteFreeRing`
+    /// owned by the CALLING thread's own heap into its `BinTable`, via
+    /// [`HeapCore::dbg_drain_all_rings`](crate::registry::HeapCore::dbg_drain_all_rings).
+    ///
+    /// **Why this exists.** `HeapCore`'s normal small-alloc drain (the
+    /// "lazily drain this segment's remote-free ring before inspecting its
+    /// BinTable" step documented in `AllocCore::alloc_small`) fires only on a
+    /// free-list MISS on the current bump segment — it is not reachable on
+    /// demand from outside the allocator, and a harness that needs to force a
+    /// ring drain on a KNOWN cadence (e.g. `examples/r32_11_remote_ring_shadow_head_gate.rs`'s
+    /// favorable-regime owner thread, which must keep `RemoteFreeRing::push`'s
+    /// target ring far from capacity so the shadow-head fast path — F10,
+    /// `src/alloc_core/remote_free_ring.rs` — is the mechanism actually under
+    /// measurement, not an accident of allocation-pattern side effects) needs
+    /// a direct hook, not a hoped-for side effect. Mirrors
+    /// [`dbg_trim_current_thread`](Self::dbg_trim_current_thread)'s exact
+    /// pattern: resolve the calling thread's ALREADY-BOUND heap via
+    /// `current_heap()` (never claims a new slot — the same heap
+    /// `alloc`/`dealloc` on this thread already use) and delegate.
+    ///
+    /// `#[doc(hidden)]` — not part of the public API; the established
+    /// test-only export pattern documented in `src/lib.rs`'s `#[doc(hidden)]`
+    /// notes. `bench-internals`-gated per CLAUDE.md's benchmark-hook rule
+    /// (no production caller) — additionally gated on `alloc-xthread` (rings
+    /// do not exist otherwise; matches `HeapCore::dbg_drain_all_rings`'s own
+    /// gate).
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-xthread", feature = "bench-internals"))]
+    pub fn dbg_drain_current_thread_rings(&self) {
+        if let CurrentHeap::Own(heap) = self.current_heap() {
+            // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
+            // registry slot owned by THIS thread (same single-writer
+            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
+            // just resolved it for the calling thread; `dbg_drain_all_rings`
+            // requires `&mut HeapCore`, sound here because we are the sole
+            // writer (single-consumer-per-heap, matching every other
+            // `dbg_*` mutator in this file's identical `unsafe` shape).
+            unsafe { (*heap).dbg_drain_all_rings() };
+        }
+    }
+
     /// R31-4 (task #487) MEASUREMENT-ONLY: whether the CALLING thread's own
     /// heap's large-cache extension sidecar has materialised. A gate driving
     /// the real `#[global_allocator]` (e.g.

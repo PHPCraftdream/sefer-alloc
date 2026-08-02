@@ -48,7 +48,9 @@
 //!   │  • tail: AtomicU32  (4 B) — push reserve cursor (producers)
 //!   │  • overflow: AtomicU32 (4 B) — count of discarded pushes  │
 //!   │    (ring-full → bounded leak; sound, never corrupts)      │
-//!   │  • [56 B reserved padding]                                │
+//!   │  • cached_head: AtomicU32 (4 B) — F10 shadow-head hint,   │
+//!   │    same line as tail/overflow (producer-only touched)     │
+//!   │  • [52 B reserved padding]                                │
 //!   │  offset 128.. (data, starts on its own cache line):       │
 //!   │  • slots: [AtomicU32; RING_CAP]  (RING_CAP × 4 B)         │
 //!   │    each slot holds a block offset or RING_SLOT_EMPTY      │
@@ -72,16 +74,103 @@
 //! offset for the reservation `i`, or `RING_SLOT_EMPTY` if not-yet-written /
 //! already-drained.
 //!
-//! **Push (multi-producer):**
-//! 1. `t = tail.load(Relaxed)`. If `t.wrapping_sub(head.load(Acquire)) >= CAP`
-//!    → ring full → return `Err(Overflow)` (the caller discards the block:
-//!    bounded leak, sound). `Acquire` on the head load sees the consumer's
-//!    `Release` head advance, so a slot freed by the drain is observable.
-//! 2. CAS `tail: t → t+1` with `AcqRel` on success (the reservation is the
+//! **Push (multi-producer) — F10 shadow-head fast path.** The full check
+//! needs to know whether the ring MIGHT be full; it does not need the
+//! EXACT current `head` value unless it might be. `cached_head` is a
+//! producer-line-resident replica of the last real `head` value any producer
+//! observed. See "F10 — shadow/cached head" below for the full soundness
+//! argument; summary of the steps:
+//! 1. `t = tail.load(Relaxed)`, `ch = cached_head.load(Relaxed)` — both same
+//!    line, no cross-core traffic in the common case.
+//! 2. If `t.wrapping_sub(ch) < CAP`, the shadow already proves the ring has
+//!    room — skip straight to the CAS (step 4). This is the fast path.
+//! 3. Otherwise (shadow suggests full, or never yet refreshed): fall through
+//!    to the REAL check — `h = head.load(Acquire)`; refresh
+//!    `cached_head.store(h, Relaxed)`; if `t.wrapping_sub(h) >= CAP`, genuinely
+//!    full → `Err(Overflow)` (the caller discards the block: bounded leak,
+//!    sound). The `Acquire` here is exactly the one the module doc's original
+//!    protocol required — sees the consumer's `Release` head advance, so a
+//!    slot freed by the drain becomes observable before the overflow verdict
+//!    is taken.
+//! 4. CAS `tail: t → t+1` with `AcqRel` on success (the reservation is the
 //!    linearization point — exactly one producer wins each `t`). `Relaxed` on
 //!    failure (retry; no side-effect).
-//! 3. Store `slots[t % CAP] = offset` with `Release` (publishes the offset to
+//! 5. Store `slots[t % CAP] = offset` with `Release` (publishes the offset to
 //!    the consumer's `Acquire` slot read). Return `Ok(())`.
+//!
+//! ## F10 (task #502) — shadow/cached head: soundness argument
+//!
+//! **Claim: `head` is monotonic (only ever advances, never regresses) under
+//! every REAL (non-test) call path.** Verified by enumerating every write
+//! site: [`drain`](RemoteFreeRing::drain)'s `head.store(h, Release)`, where
+//! `h` is derived ONLY by `h = h.wrapping_add(1)` starting from the PREVIOUS
+//! stored `head` value (`self.head().load(Relaxed)` at the top of `drain`) —
+//! so each drain call's stored `head` is `>=` the value it read (wrapping
+//! arithmetic is monotonic over one lap; the only OTHER write site,
+//! [`dbg_set_cursors`](RemoteFreeRing::dbg_set_cursors), is `#[doc(hidden)]`
+//! test-only, documented to require a QUIESCENT ring, and reachable from
+//! NEITHER `push` nor any production call path). There is a SINGLE consumer
+//! per ring (the module's own MPSC contract), so there is no cross-consumer
+//! race that could interleave two `drain` calls' stores out of order.
+//!
+//! **Claim: `cached_head` can only be STALE-LOW relative to the true `head`,
+//! never stale-high.** `cached_head` is written in exactly one place: the
+//! refresh step above, `cached_head.store(h, Relaxed)` where `h` was JUST
+//! read from the real `head` via `Acquire`. Because `head` only advances, any
+//! value `cached_head` ever holds was a real, once-true value of `head` — and
+//! by the time a LATER producer reads `cached_head`, the real `head` has only
+//! moved forward (or stayed put) since that store. So at every read,
+//! `cached_head <= head` (mod wrap — both are the same class of monotonic
+//! `u32` wrapping counter as `tail`, so the ring's existing
+//! `wrapping_sub`-based comparisons apply unchanged; see the wrap note below).
+//!
+//! **Consequence for each of the three failure modes named in the survey:**
+//! - **Missed overflow (accepting a push the ring cannot hold):** cannot
+//!   happen. The shadow's fast path (`t.wrapping_sub(ch) < CAP`) only ever
+//!   makes the ring look MORE full than the real state (`ch <= head`, so
+//!   `t.wrapping_sub(ch) >= t.wrapping_sub(head)`) — never less full. A push
+//!   that the fast path accepts would ALSO be accepted by the real check
+//!   (since the real occupancy is `<=` what the shadow computed). The
+//!   converse — the fast path rejecting a push the real check would have
+//!   accepted — is possible (a stale-low `ch` inflates apparent occupancy)
+//!   but is exactly the case that falls through to step 3, which performs
+//!   the REAL `Acquire` check before ever returning `Err`. So the fast path
+//!   never itself decides "full" — it only ever decides "definitely NOT
+//!   full, skip the real check", and that decision is proven safe by the
+//!   inequality above. `Err(Overflow)` is returned ONLY from the code path
+//!   that already re-derives `h` from a fresh `Acquire` load — byte-identical
+//!   to the pre-F10 protocol on that branch.
+//! - **Lost entry:** the push protocol's entry-publishing steps (CAS-reserve
+//!   `tail`, `Release`-store the slot) are completely unmodified — F10 only
+//!   changes HOW the full-check decides whether to attempt them, never what
+//!   happens once a reservation is won. A push that reaches the CAS follows
+//!   the exact same reserve/publish sequence as before; nothing about entry
+//!   delivery changed.
+//! - **Premature slot reuse before drain:** slot reuse is gated by the SAME
+//!   invariant the pre-F10 code enforced — `tail.wrapping_sub(head) < CAP`
+//!   before a NEW reservation of a slot index is allowed. F10 does not change
+//!   what value gates the CAS attempt (the CAS itself, and its bound
+//!   `t + 1`, are unmodified); it only changes which LOAD supplies the
+//!   comparand on the common path, and that comparand is proven `<=` the
+//!   real `head` above — so F10 can only be MORE conservative about
+//!   permitting a reservation, never less.
+//!
+//! **Wrap correctness.** `cached_head` is refreshed only FROM a real `head`
+//! value, so it inherits the exact same `u32` wrapping-counter semantics as
+//! `head`/`tail` (see the compile-time `RING_CAP.is_power_of_two()` pin
+//! above, which this shadow does not disturb — it adds no new modulus
+//! arithmetic, only a `wrapping_sub` comparison identical in shape to the
+//! ones `push`/`drain` already use). The fast-path comparison uses
+//! `t.wrapping_sub(ch)`, exactly mirroring the real check's
+//! `t.wrapping_sub(h)` — a naive `<`/`>` comparison would break at the
+//! `u32::MAX → 0` wrap (the same hazard the module's existing wrap-note
+//! documents for `head`/`tail`); this shadow reuses the SAME wrapping-safe
+//! idiom, not a new one.
+//!
+//! **Worst case cost of a stale shadow:** at most ONE extra real
+//! `head.load(Acquire)` per push that the shadow's fast path declines to
+//! shortcut — never a correctness cost, only a fallback to the exact
+//! pre-F10 behaviour on that call.
 //!
 //! **Drain (single consumer):**
 //! 1. `t = tail.load(Acquire)` (sees every producer's `Release` reservation).
@@ -174,6 +263,34 @@ use super::size_classes::SMALL_CLASS_COUNT;
 /// stats). Relaxed: diagnostic only, no synchronisation implied.
 #[doc(hidden)]
 pub static DBG_RING_OVERFLOW: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// F10 (task #502) path-activation oracle: process-wide count of
+/// [`RemoteFreeRing::full_check`] calls that took the FAST (shadow-hit)
+/// path — `cached_head` alone proved the ring had room, no real
+/// `head.load(Acquire)` was issued. `bench-internals`-gated: this is a
+/// measurement-only counter with no production caller, so it defaults to the
+/// narrowest gate per CLAUDE.md's benchmark-hook rule (never widens a plain
+/// `production` build's surface). Relaxed: diagnostic only.
+#[doc(hidden)]
+#[cfg(feature = "bench-internals")]
+pub static DBG_RING_PUSH_SHADOW_FAST: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// F10 (task #502) path-activation oracle: process-wide count of
+/// [`RemoteFreeRing::full_check`] calls that took the SLOW (real
+/// `head.load(Acquire)`) path — the shadow suggested the ring might be full
+/// (or had never been refreshed) and a genuine cross-core-visible load was
+/// issued. `bench-internals`-gated, same rationale as
+/// [`DBG_RING_PUSH_SHADOW_FAST`]. `DBG_RING_PUSH_SHADOW_FAST +
+/// DBG_RING_PUSH_SHADOW_SLOW` is the total number of `full_check` calls
+/// (i.e. of push attempts, counted or uncounted) since process start — a
+/// gate's harness uses the SLOW/(FAST+SLOW) ratio as its regime oracle: near
+/// 0 proves the "favorable" (rarely-full) regime; near 1 proves the
+/// "adversarial" (often-full) regime.
+#[doc(hidden)]
+#[cfg(feature = "bench-internals")]
+pub static DBG_RING_PUSH_SHADOW_SLOW: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 /// Sentinel slot value meaning "this slot carries no offset" (either
 /// not-yet-published by a producer, or already drained by the consumer). A real
@@ -561,12 +678,36 @@ const TAIL_OFF: usize = 64;
 /// with `tail` costs nothing on the common push path and avoids spending a
 /// THIRD cache line on one counter).
 const OVERFLOW_OFF: usize = 68;
+/// F10 (task #502): offset of the `cached_head` shadow within the ring
+/// metadata — 72, immediately after `overflow` (68) on the SAME producer
+/// line as `tail`/`overflow`. Was unused reserved padding (bytes 72..128 of
+/// the cursor block were entirely unclaimed before this task — confirmed by
+/// grepping every other `_OFF` constant in this file: none references any
+/// offset in `[72, 128)`). A producer's full-check reads this field on the
+/// SAME cache line as its own `tail` load, instead of the CONSUMER's `head`
+/// line — see the module doc's "F10 — shadow/cached head" section for the
+/// full soundness argument. `CURSOR_BLOCK` (128) is unchanged, so
+/// `FOOTPRINT`/`SLOTS_OFF` and every downstream segment-metadata offset are
+/// byte-identical to before this task.
+#[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
+const CACHED_HEAD_OFF: usize = 72;
 /// Offset of the first slot within the ring metadata. PERF-PASS-4: moved
 /// from 16 to 128 (`CURSOR_BLOCK`) — the data slots now start on a line past
 /// BOTH cursor lines, so neither producer's `tail` CAS nor the consumer's
 /// `head` store dirties a line the other side is scanning for data.
 #[cfg_attr(not(feature = "alloc-xthread"), allow(dead_code))]
 const SLOTS_OFF: usize = CURSOR_BLOCK;
+
+// F10 (task #502): pin that `cached_head` fits strictly within the existing
+// `CURSOR_BLOCK` padding without colliding with `SLOTS_OFF` — a future
+// CURSOR_BLOCK shrink (unlikely, but this is exactly the kind of silent
+// layout hazard the module's other compile-time pins exist to catch) would
+// fail HERE instead of corrupting ring data at runtime.
+const _: () = assert!(
+    CACHED_HEAD_OFF + core::mem::size_of::<u32>() <= CURSOR_BLOCK,
+    "F10's cached_head field (CACHED_HEAD_OFF..+4) must fit inside CURSOR_BLOCK, \
+     strictly before SLOTS_OFF"
+);
 
 /// The per-segment non-intrusive cross-thread-free MPSC ring.
 ///
@@ -679,11 +820,40 @@ impl RemoteFreeRing {
     /// the preset. MUST be called on a quiescent ring (no concurrent push/drain)
     /// and MUST leave `tail.wrapping_sub(head) <= RING_CAP` (the ring's full
     /// invariant) — the caller is responsible for a consistent preset.
+    ///
+    /// F10 (task #502): also resets `cached_head` to the new `head` value.
+    /// Without this, a preset that MOVES `head` (e.g. from its `init_in_place`
+    /// zero to a wrap-boundary value) would leave a STALE `cached_head` behind
+    /// — harmless by the shadow's own soundness argument (a stale-low shadow
+    /// only ever forces the conservative slow path, never an unsound fast-path
+    /// accept — see the module doc), but needlessly forces every subsequent
+    /// push in the test to pay the slow path, which is not representative of
+    /// what a real preset-then-drive scenario should measure. Resetting here
+    /// keeps `dbg_set_cursors` an honest "quiescent ring, consistent state"
+    /// preset rather than relying on the shadow's stale-low safety margin to
+    /// paper over an inconsistency this seam itself introduced.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
     pub fn dbg_set_cursors(&self, head: u32, tail: u32) {
         self.head().store(head, Ordering::Release);
         self.tail().store(tail, Ordering::Release);
+        self.cached_head().store(head, Ordering::Relaxed);
+    }
+
+    /// F10 (task #502) **test surface**: advance ONLY the real `head` cursor
+    /// (`Release`, mirroring the production drain's own store), deliberately
+    /// NOT touching `cached_head` — the inverse of `dbg_set_cursors`'s
+    /// consistency-preserving reset. Lets a test simulate "the owner drained
+    /// but no producer has refreshed its shadow yet", i.e. deliberately
+    /// STALE the shadow relative to the real head, to drive the shadow's
+    /// slow path on demand and prove it still re-derives correctly (see
+    /// `tests/remote_ring_shadow_head.rs`'s adversarial-regime path-
+    /// activation coverage). MUST be called on a quiescent ring (no
+    /// concurrent push/drain), same precondition as `dbg_set_cursors`.
+    #[cfg(feature = "alloc-xthread")]
+    #[doc(hidden)]
+    pub fn dbg_advance_head_only(&self, head: u32) {
+        self.head().store(head, Ordering::Release);
     }
 
     /// **Test surface** (task: long-run u32 wrap): read the current `(head,
@@ -711,6 +881,10 @@ impl RemoteFreeRing {
         Node::write_u32(Node::offset(ring.base, HEAD_OFF) as *mut u32, 0);
         Node::write_u32(Node::offset(ring.base, TAIL_OFF) as *mut u32, 0);
         Node::write_u32(Node::offset(ring.base, OVERFLOW_OFF) as *mut u32, 0);
+        // F10: cached_head starts at 0, matching the real head's initial value
+        // (the shadow's own invariant — it only ever holds a value that was
+        // once really `head` — holds trivially at init since both start at 0).
+        Node::write_u32(Node::offset(ring.base, CACHED_HEAD_OFF) as *mut u32, 0);
         // Every slot empty.
         for i in 0..RING_CAP {
             let slot =
@@ -735,11 +909,64 @@ impl RemoteFreeRing {
     fn overflow(&self) -> &'static core::sync::atomic::AtomicU32 {
         Node::atomic_u32_at(self.base, OVERFLOW_OFF)
     }
+    /// F10 (task #502): the `&AtomicU32` producer-line shadow replica of
+    /// `head`. Same cache line as `tail`/`overflow` — reading it costs no
+    /// cross-core coherence traffic beyond what `push`'s own `tail` load
+    /// already pays. See the module doc's "F10 — shadow/cached head" section
+    /// for the full soundness argument for why a stale value here is always
+    /// safe.
+    #[cfg(feature = "alloc-xthread")]
+    fn cached_head(&self) -> &'static core::sync::atomic::AtomicU32 {
+        Node::atomic_u32_at(self.base, CACHED_HEAD_OFF)
+    }
     /// The `&AtomicU32` slot at reservation index `i` (`i % RING_CAP`).
     #[cfg(feature = "alloc-xthread")]
     fn slot(&self, i: usize) -> &'static core::sync::atomic::AtomicU32 {
         let idx = i % RING_CAP;
         Node::atomic_u32_at(self.base, SLOTS_OFF + idx * core::mem::size_of::<u32>())
+    }
+
+    /// F10 (task #502): the shared full-check used by both [`push`](Self::push)
+    /// and [`try_push_uncounted`](Self::try_push_uncounted). Returns `Ok(())`
+    /// if reservation `t` is provably within capacity; `Err(())` if the ring
+    /// is (really, `Acquire`-confirmed) full.
+    ///
+    /// **Fast path (shadow):** `ch = cached_head.load(Relaxed)` — same
+    /// producer cache line as `tail`, no cross-core traffic. If
+    /// `t.wrapping_sub(ch) < RING_CAP`, the ring provably has room (the
+    /// module doc's "F10" soundness section proves `cached_head <= head`
+    /// always, so this can only UNDER-estimate available room, never
+    /// over-estimate it) — return `Ok(())` immediately without touching the
+    /// consumer's `head` line at all.
+    ///
+    /// **Slow path (real check + shadow refresh):** only reached when the
+    /// shadow suggests the ring MIGHT be full. Performs the exact pre-F10
+    /// `head.load(Acquire)`, refreshes `cached_head` from it (`Relaxed` — the
+    /// refresh is a pure hint update, not itself a synchronisation point),
+    /// and re-checks against the REAL value before returning `Err(())`.
+    #[cfg(feature = "alloc-xthread")]
+    #[inline(always)]
+    fn full_check(&self, t: u32) -> Result<(), ()> {
+        let ch = self.cached_head().load(Ordering::Relaxed);
+        if t.wrapping_sub(ch) < RING_CAP as u32 {
+            // Shadow proves room exists (stale-low cached_head only makes
+            // this branch LESS likely to fire, never falsely fire — see the
+            // module doc soundness section). Skip the real Acquire load.
+            #[cfg(feature = "bench-internals")]
+            DBG_RING_PUSH_SHADOW_FAST.fetch_add(1, Ordering::Relaxed);
+            return Ok(());
+        }
+        // Shadow suggests full (or has never been refreshed since init, both
+        // starting at 0): fall through to the real, Acquire-ordered check —
+        // byte-identical to the pre-F10 protocol on this branch.
+        #[cfg(feature = "bench-internals")]
+        DBG_RING_PUSH_SHADOW_SLOW.fetch_add(1, Ordering::Relaxed);
+        let h = self.head().load(Ordering::Acquire);
+        self.cached_head().store(h, Ordering::Relaxed);
+        if t.wrapping_sub(h) >= RING_CAP as u32 {
+            return Err(());
+        }
+        Ok(())
     }
 
     /// Push a freed block's segment-relative `offset` into the ring. Called by
@@ -753,11 +980,11 @@ impl RemoteFreeRing {
         debug_assert_ne!(offset, RING_SLOT_EMPTY, "offset must not be the sentinel");
         loop {
             let t = self.tail().load(Ordering::Relaxed);
-            // Full check: reserved-but-undrained count == CAP → full. Acquire
-            // on the head load to see the consumer's Release head advance (a
-            // slot freed by a drain becomes observable, opening space).
-            let h = self.head().load(Ordering::Acquire);
-            if t.wrapping_sub(h) >= RING_CAP as u32 {
+            // F10: shadow-checked full-check (see `full_check`'s doc for the
+            // fast/slow path split and the module doc for the soundness
+            // argument). Semantically identical to the pre-F10
+            // `t.wrapping_sub(head.load(Acquire)) >= RING_CAP` check.
+            if self.full_check(t).is_err() {
                 // Ring full: bounded leak. Count it (diagnostic, both the
                 // per-segment cursor-block counter AND the process-wide D2
                 // counter) and bail.
@@ -813,10 +1040,9 @@ impl RemoteFreeRing {
         debug_assert_ne!(offset, RING_SLOT_EMPTY, "offset must not be the sentinel");
         loop {
             let t = self.tail().load(Ordering::Relaxed);
-            // Full check: identical to `push` — Acquire on `head` to see the
-            // consumer's Release head advance.
-            let h = self.head().load(Ordering::Acquire);
-            if t.wrapping_sub(h) >= RING_CAP as u32 {
+            // F10: identical shadow-checked full-check as `push` (see
+            // `full_check`'s doc + the module doc's soundness section).
+            if self.full_check(t).is_err() {
                 // Ring full: bounded leak, SAME as `push` — but deliberately
                 // uncounted (see doc comment above for why).
                 return Err(PushOverflow);

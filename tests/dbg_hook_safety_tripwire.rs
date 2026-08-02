@@ -373,6 +373,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
         "[DEBUG_ASSERT ONLY] directly overwrites a REAL segment's RemoteFreeRing head/tail cursors; documented quiescent-ring precondition is not runtime-enforced in release, but misuse can only corrupt the ring's own bookkeeping (lost/misdirected entries), never dereference a caller pointer or write outside the ring's own cursor words",
     ),
     (
+        "src/alloc_core/remote_free_ring.rs::dbg_advance_head_only",
+        "F10 (task #502) [DEBUG_ASSERT ONLY] directly overwrites a REAL segment's RemoteFreeRing head cursor only (the inverse of dbg_set_cursors, which also resets cached_head); same quiescent-ring precondition, same bounded blast radius as dbg_set_cursors (corrupts only this ring's own bookkeeping, never a caller pointer or memory outside the ring's own cursor word) -- see that hook's own doc comment for the full soundness argument this one shares",
+    ),
+    (
         "src/global/fallback.rs::dbg_panic_in_with_heap_releases_lock",
         "drives a real panic through the production with_heap/LockGuard RAII path; exercises, does not bypass, existing safe machinery",
     ),

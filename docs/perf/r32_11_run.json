@@ -1,0 +1,28 @@
+{
+  "_doc": "R32-11 (task #502, F10) -- A/B/B/A paired judge config for the CLEAN TIMING comparison (no shadow-oracle counter overhead): measures RemoteFreeRing::push's cross-thread cost before/after the shadow-head fix, in BOTH regimes (favorable=owner drains continuously, adversarial=owner drains on a slow bounded cadence). 'before' = base commit c9a3570bfa4393c4a8383be25c3654e1421c7671 (pre-shadow-head), built into a git worktree at D:/dev/rust/sefer-f10-before with its own CARGO_TARGET_DIR (D:/dev/rust/.cargo-target-f10-before) so it never clobbers the main tree's binary at the same example name. 'after' = the current tree, built WITHOUT bench-internals (the timing-only build mode -- see examples/r32_11_remote_ring_shadow_head_gate.rs's drain_rings() doc comment for why: WITH bench-internals, DBG_RING_PUSH_SHADOW_FAST/_SLOW's own atomic RMW on every push contaminates the timing number, which is exactly what caused a FALSE regression finding during this task's development -- see the gate report's Finding 1). The 'after' binary is COPIED to D:/dev/rust/.cargo-target/r32_11_bin/after_timing.exe (built --features 'alloc-global alloc-xthread', no bench-internals) so it is not overwritten by a later --features bench-internals build of the SAME example name used for the separate oracle-proving run. Regime fidelity for THIS (timing) run is proven by a SEPARATE oracle run (scripts/r32_11_oracle_check.sh or manual invocation of the bench-internals build) showing the identical drain-cadence logic produces the intended fast/slow-path split; the sanity gate below uses overflow_pct-derived oracle_pass as a coarse same-run cross-check.",
+  "metric": "elapsed_ns",
+  "arms": {
+    "before_favorable": {
+      "command": "D:/dev/rust/.cargo-target-f10-before/release/examples/r32_11_remote_ring_shadow_head_gate.exe",
+      "args": ["favorable"]
+    },
+    "after_favorable": {
+      "command": "D:/dev/rust/.cargo-target/r32_11_bin/after_timing.exe",
+      "args": ["favorable"]
+    },
+    "before_adversarial": {
+      "command": "D:/dev/rust/.cargo-target-f10-before/release/examples/r32_11_remote_ring_shadow_head_gate.exe",
+      "args": ["adversarial"]
+    },
+    "after_adversarial": {
+      "command": "D:/dev/rust/.cargo-target/r32_11_bin/after_timing.exe",
+      "args": ["adversarial"]
+    }
+  },
+  "sanity": {
+    "key": "oracle_pass",
+    "_doc_sanity": "Every arm's own regime-fidelity oracle (overflow_pct-based for both before and after-timing builds, since neither has the shadow fast/slow counters active in this run) must report PASS (1) -- a FAIL means the arm did not activate its intended regime and its elapsed_ns is not trustworthy evidence.",
+    "nonzero_arms": ["before_favorable", "after_favorable", "before_adversarial", "after_adversarial"]
+  },
+  "features_note": "before: alloc-global alloc-xthread bench-internals (bench-internals needed only for the drain hook, no shadow counters exist pre-F10 so no RMW-overhead confound); after: alloc-global alloc-xthread (timing-only build, no bench-internals -- see _doc)"
+}

@@ -1,0 +1,14 @@
+# R32-11 (task #502, F10) summary — landing_commit=c9a3570bfa4393c4a8383be25c3654e1421c7671
+# cpu=Intel_Core_i7-11800H_2.30GHz os=Windows_10_Pro_10.0.19045 feature_set_before="alloc-global alloc-xthread bench-internals" feature_set_after="alloc-global alloc-xthread (timing-only, no bench-internals)"
+label,arm_a,arm_b,n,mean_a_ns,mean_b_ns,ns_per_push_a,ns_per_push_b,delta_ns,pct_change,t,crit,significant,sign_a_faster,sign_b_faster,git_commit,timestamp
+favorable_trial1,before_favorable,after_favorable,20,43388492.5,27878405.0,216.9425,139.3920,15510087.5,-35.75,20.971,2.101,true,0,20,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:18:32.845Z
+favorable_trial2,before_favorable,after_favorable,20,40258062.5,27113062.5,201.2903,135.5653,13145000.0,-32.65,9.763,2.101,true,0,20,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:21:31.112Z
+favorable_trial3,before_favorable,after_favorable,20,42026282.5,29418970.0,210.1314,147.0949,12607312.5,-30.00,10.278,2.101,true,0,20,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:52:59.897Z
+favorable_before_control,before_favorable,before_favorable,20,41654270.0,43103110.0,208.2714,215.5155,-1448840.0,3.48,-0.902,2.101,false,13,7,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:20:15.598Z
+favorable_after_control,after_favorable,after_favorable,20,29103482.5,28205812.5,145.5174,141.0291,897670.0,-3.08,1.321,2.101,false,8,12,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:19:53.675Z
+adversarial_trial1,before_adversarial,after_adversarial,20,467984695.0,463502255.0,2339.9235,2317.5113,4482440.0,-0.96,3.436,2.101,true,3,17,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:19:29.944Z
+adversarial_trial2,before_adversarial,after_adversarial,20,467831027.5,457129447.5,2339.1551,2285.6472,10701580.0,-2.29,3.283,2.101,true,3,17,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:22:26.516Z
+adversarial_trial3_noisy,before_adversarial,after_adversarial,20,539764465.0,488351832.5,2698.8223,2441.7592,51412632.5,-9.53,1.919,2.101,false,6,14,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:54:14.024Z
+adversarial_trial3_n30_rerun,before_adversarial,after_adversarial,30,1165822225.0,719333365.0,5829.1111,3596.6668,446488860.0,-38.30,1.604,2.045,false,2,28,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:58:37.723Z
+adversarial_trial4,before_adversarial,after_adversarial,20,485366292.5,464822242.5,2426.8315,2324.1112,20544050.0,-4.23,3.461,2.101,true,3,17,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T20:00:14.009Z
+adversarial_after_control,after_adversarial,after_adversarial,20,459639657.5,459268010.0,2298.1983,2296.3400,371647.5,-0.08,0.260,2.101,false,11,9,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:21:10.197Z

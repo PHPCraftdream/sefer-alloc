@@ -1981,6 +1981,26 @@ required-features = ["alloc-global"]
 name = "r32_10_own_cache_tier1_thrash_gate"
 required-features = ["alloc-global", "bench-internals"]
 
+# F10 (task #502) — real cross-thread `RemoteFreeRing::push` cost harness:
+# one owner thread + PRODUCERS threads freeing owner-allocated blocks, BOTH
+# regimes (favorable/adversarial, selected by a CLI arg) in one binary per
+# CLAUDE.md's R30-6 same-workload-regime rule. `bench-internals` is OPTIONAL
+# here (not `required-features`): WITH it, the binary reads the
+# `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW` path-activation oracle counters (strong
+# regime evidence, but the counter increments themselves add real per-push
+# RMW cost that would contaminate a timing number measured in the SAME
+# build); WITHOUT it, the binary drains via a `bench-internals`-independent
+# path (`global::tls_heap::current_for_trim` + `HeapCore::dbg_drain_all_rings`
+# directly) with zero counter overhead, giving the clean `ns_per_push` this
+# gate's headline actually cites — see `drain_rings`'s own doc comment in the
+# example file for the measurement bug this two-build-mode split fixes.
+# `alloc-stats` is NOT required (this harness reads the ring's own counters
+# directly, not `SeferAlloc::stats()`). See the example file's own module doc
+# and docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md.
+[[example]]
+name = "r32_11_remote_ring_shadow_head_gate"
+required-features = ["alloc-global", "alloc-xthread"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
