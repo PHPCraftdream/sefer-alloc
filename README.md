@@ -191,6 +191,51 @@ not an RSS bound (see `budget_bytes` above for an actual cap):**
 | `LargeCachePolicy::LowHeadroom` | `16 MiB` | **discloses a cost**: 12.5-percentage-point large-cache hit-rate loss vs 64/256 MiB (87.5 % vs 100.0 %, exact at 1/8/32 threads — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0.1) |
 | `LargeCachePolicy::Trimmed64MiB` | `64 MiB` | full 100.0 % hit-rate parity with the 256 MiB default **at a 64 MiB rounded working set** (~34–37 MiB/heap vs ~238–241 MiB/heap post-drain floor — [`R30_6`](docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md) §0/§8, [`R29_13`](docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md) §0) — but **NOT beyond that boundary**: [`R31_1`](docs/perf/R31_1_LARGE_CACHE_HEADROOM_CROSSING_REGIME_GATE.md) measured the tie BREAKING at 128 MiB/288 MiB bursts, paying the SAME 12.5-percentage-point loss as `LowHeadroom` |
 | `LargeCachePolicy::Default` | `256 MiB` (`production` default, unchanged) | baseline — the value `SeferAlloc::new()` already uses |
+| `LargeCachePolicy::DiverseTurnover` | `256 MiB` (same floor as `Default`) | **requires the `large-cache-extended` Cargo feature to do anything** — see below |
+
+`LargeCachePolicy::DiverseTurnover` is a named, explicitly opt-in policy
+(task #491) for a workload with genuinely diverse, repeatedly-reused
+Large-object sizes (more than the base cache's 8 slots) — it is **not** a
+blanket throughput default and is **not** in `production`. It requires
+`--features large-cache-extended` (EXPERIMENTAL, opt-in) to have any effect:
+without that feature compiled in, this policy value resolves byte-identical
+to `Default`, because widening the large-segment free-cache from 8 to 40
+slots happens at COMPILE time, which a `Profile` axis value cannot select at
+runtime. Choosing this policy means choosing three measured things together,
+not a free lunch on any one of them:
+
+- **Turnover win:** hit rate 33.3 % → 100 % on a workload cycling through
+  more than 8 repeatedly-reused distinct Large sizes (paired n=20, `t =
+  127.776`, sign 20/20, mean ~385.7 µs/op faster —
+  [`R31_3`](docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md) §2).
+- **Narrow-working-set cost (real, not free):** on a working set that does
+  NOT need the wider cache, the widened O(40) scan bound measurably,
+  reproducibly costs more than the base 8-slot scan (real-process A/B at
+  N=1/2/4: `t = -11.6 / -7.8 / -13.5`; scan-isolated microjudge: 5.01×
+  ns/round, 8 vs 40 slots — [`R31_3`](docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md)
+  §8). Small in absolute per-operation terms (roughly 100–500 ns per
+  alloc+dealloc pair at these N) but real, not noise.
+- **Per-heap, NOT process-wide, RSS retention:** the 256 MiB budget bounds
+  retention to ~248 MiB PER HEAP (vs ~432 MiB/heap unbounded for `Default`),
+  scaling LINEARLY with concurrently-active heap count — `AllocCore` is
+  owner-only (neither `Send` nor `Sync`), so there is no cross-heap
+  coordination. A thread-per-core server running many heaps under this
+  policy multiplies the ceiling: e.g. 32 concurrently-active heaps ≈ 32 ×
+  248 MiB ≈ **7.75 GiB** of retained committed memory in the measured
+  workload shape, with nothing bounding the process-wide total —
+  [`R31_3`](docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md) §4.
+  A process-wide shared budget was considered and deliberately NOT built
+  (it would be a new cross-heap synchronization point on a path that has
+  none today, and its own contention cost would need the same rigor of
+  measurement as every other perf claim in this crate — real added scope
+  with no standing evidence yet to justify building it speculatively). If
+  you run many large-working-set heaps concurrently under this policy,
+  compute your own worst case as `(concurrently-active heap count) × (256
+  MiB)` and set [`LargeCacheConfig::budget_bytes`](#configuration)
+  explicitly per heap if that total is more than your deployment can
+  afford.
+
+Full evidence trail: `docs/perf/OPEN_ITEMS.md` item 30.
 
 Every number above is cited, not invented — see the linked gate reports for
 full methodology, raw logs, and honest scope caveats (every row is a

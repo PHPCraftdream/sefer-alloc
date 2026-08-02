@@ -53,11 +53,34 @@
 //! single-thread teardown churn, or large-cache burst/idle) silently set
 //! policy for the OTHER, unrelated tier. [`Profile`] now composes
 //! [`SmallPoolPolicy`] and [`LargeCachePolicy`] independently — any of the
-//! 2×3 combinations is directly constructible, each axis documents its own
-//! citations, and a future measured axis value (see
-//! [`LargeCachePolicy`]'s doc for the reserved, not-yet-implemented
-//! `large-cache-extended` slot) can be added to ONE axis without touching
-//! the other.
+//! 2×4 combinations is directly constructible, each axis documents its own
+//! citations, and a future measured axis value can be added to ONE axis
+//! without touching the other.
+//!
+//! ## R31-3/task #491: `LargeCachePolicy::DiverseTurnover` — a named,
+//! explicitly opt-in policy for `large-cache-extended`
+//!
+//! R31-3 (task #466) re-verified `large-cache-extended`'s turnover win on
+//! current `HEAD` (hit rate 33.3 % → 100 %, `t = 127.776`, sign 20/20) and
+//! ALSO closed two open questions in the opposite direction: a real,
+//! reproducible narrow-working-set scan cost (task #488, `t` up to −13.5),
+//! and a per-heap (not process-wide) RSS retention ceiling that scales
+//! LINEARLY with concurrently-active heap count (~248 MiB/heap × N heaps,
+//! no cross-heap coordination — `AllocCore` is owner-only, neither `Send`
+//! nor `Sync`). Task #491 weighed building a process-wide shared budget to
+//! bound the multi-heap total and explicitly declined: it would be a new
+//! cross-heap synchronization point on a path that has none today, and its
+//! own contention cost would need the same measurement rigor as every other
+//! perf claim in this crate — a second gate-report-sized undertaking with
+//! no standing evidence yet to justify building speculatively (see
+//! `docs/perf/OPEN_ITEMS.md` item 30's `large-cache-extended` sub-thread and
+//! `LargeCachePolicy::DiverseTurnover`'s own doc comment for the full
+//! evidence trail). Instead, task #491 shipped `DiverseTurnover` as a named,
+//! explicitly opt-in axis value that states all three costs/benefits inline
+//! — a caller choosing it is choosing a measured trade, not getting a
+//! silent default change. **`large-cache-extended` remains OUT of
+//! `production`'s feature list and `Profile::DEFAULT` remains
+//! `LargeCachePolicy::Default` — this is additive, not a default change.**
 //!
 //! The low-level [`LargeCacheConfig`] / [`SmallSegmentPoolConfig`] builders
 //! remain the full-control escape hatch — [`Profile`] is a convenience
@@ -121,13 +144,8 @@ pub enum SmallPoolPolicy {
 /// values only change how low the cache decays back down to once a decay
 /// tick eventually fires.
 ///
-/// `#[non_exhaustive]` — reserved for a future `large-cache-extended`-backed
-/// policy (a wider-window, diverse-turnover-oriented preset): R31-3 (task
-/// #466) proposed but has NOT been accepted (pending explicit user
-/// sign-off) promoting `large-cache-extended` to a shipped default axis
-/// value. When/if that proposal is accepted, it slots in here as a new
-/// variant without touching [`SmallPoolPolicy`] or breaking existing
-/// callers of this enum — not added yet, and not constructible today.
+/// `#[non_exhaustive]` — a future measured axis point can still be added
+/// without a breaking change.
 #[cfg(feature = "alloc-decommit")]
 #[non_exhaustive]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -176,6 +194,83 @@ pub enum LargeCachePolicy {
     /// large-cache window as a package deal the way the old bundled
     /// `Profile::Throughput` enum variant did.
     Default,
+    /// **Requires the `large-cache-extended` Cargo feature to do anything —
+    /// EXPERIMENTAL, opt-in, not in `production`.** `256 MiB` headroom (same
+    /// numeric floor as `Default` above); the behavioural difference this
+    /// variant selects for comes entirely from whether the caller's build
+    /// also has `large-cache-extended` compiled in, which widens the
+    /// large-segment free-cache from 8 to 40 slots (8 base + 32 lazily-
+    /// materialised sidecar slots) at COMPILE time. Without that feature
+    /// compiled in, this variant currently resolves identically to
+    /// `Default` — it exists as a distinct, named value so a caller who has
+    /// opted into `large-cache-extended` can express "I want the
+    /// diverse-turnover-oriented headroom" without hand-picking a number,
+    /// but it does not itself turn the sidecar on (Cargo features cannot be
+    /// selected at runtime).
+    ///
+    /// This is the named opt-in policy R31-3 (task #466) proposed and task
+    /// #491 shipped, per an explicit user request that promotion NOT be a
+    /// blanket `production`/`Profile::Default` change — see the three
+    /// bullets below and `docs/perf/OPEN_ITEMS.md` item 30 for the full
+    /// evidence trail before choosing this policy for a workload.
+    ///
+    /// **Choose this ONLY for a workload with genuinely diverse, repeatedly-
+    /// reused Large-object sizes (more than the base cache's 8 slots) —
+    /// this is a real, measured trade, not a free upgrade over `Default`:**
+    ///
+    /// - **Turnover win (the reason to choose this):** on a workload
+    ///   cycling through more than 8 repeatedly-reused distinct Large sizes,
+    ///   the base 8-slot cache's FIFO eviction thrashes — measured hit rate
+    ///   33.3 % (1600/4800) with `large-cache-extended` OFF vs **100 %**
+    ///   (4800/4800) ON, a large, reproducible win (paired n=20, `t =
+    ///   127.776`, sign 20/20, mean ~385.7 µs/op faster in the measured
+    ///   workload). See
+    ///   `docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §2
+    ///   for full methodology.
+    /// - **Narrow-working-set cost (real, measured, NOT free — CLAUDE.md's
+    ///   same-regime cost/benefit rule):** on a working set that does NOT
+    ///   need the wider cache, the widened O(40) scan bound costs
+    ///   something real, not negligible. A real-process A/B at N=1/2/4
+    ///   reused sizes found `large-cache-extended` ON measurably,
+    ///   reproducibly SLOWER (t = −11.6 / −7.8 / −13.5, all past
+    ///   crit = 2.101, clean noise-floor controls); a scan-isolated
+    ///   microjudge attributes this to the best-fit scan loop itself
+    ///   (5.01× ns/round, 8 vs 40 slots, n=20 paired t = −29.3). Magnitude
+    ///   is small in absolute per-operation terms (roughly 100–500 ns per
+    ///   alloc+dealloc pair at these N) but real, not noise. See
+    ///   `docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §8
+    ///   for full methodology.
+    /// - **Per-heap RSS retention (real, PER-HEAP, NOT process-wide
+    ///   bounded):** the 256 MiB budget enforces at ~248 MiB retained PER
+    ///   HEAP in the measured workload (vs ~432 MiB/heap for the
+    ///   unbounded-by-default base cache), scaling near-perfectly LINEARLY
+    ///   across 1/8/32 concurrently-claimed heaps —
+    ///   `docs/perf/R31_3_LARGE_CACHE_EXTENDED_REVERIFICATION_GATE.md` §4.
+    ///   **This is a predictable PER-HEAP ceiling, not a safe PROCESS-WIDE
+    ///   one**: `AllocCore` is owner-only (neither `Send` nor `Sync`), so a
+    ///   thread-per-core server running one heap per thread multiplies this
+    ///   default by however many heaps concurrently exercise a large,
+    ///   diverse working set under this policy — e.g. 32 such heaps ≈ 32 ×
+    ///   248 MiB ≈ **7.75 GiB** of retained committed memory in the
+    ///   measured workload shape, with NO cross-heap coordination bounding
+    ///   the process-wide total. A process-wide shared budget was
+    ///   considered (task #491) and deliberately NOT built: it would be a
+    ///   brand-new cross-heap synchronization point on a path that
+    ///   currently has none, and its own contention/coordination cost would
+    ///   need the same rigor of measurement this crate already requires for
+    ///   every other perf claim — a second gate-report-sized undertaking
+    ///   this task did not have standing evidence to justify building
+    ///   speculatively. If you run many large-working-set heaps
+    ///   concurrently under this policy, compute your own worst case as
+    ///   `(concurrently-active heap count) × (256 MiB)` and set
+    ///   [`LargeCacheConfig::budget_bytes`] explicitly per heap (a smaller
+    ///   per-heap cap, or `0` to disable) if that total is more than your
+    ///   deployment can afford — this policy does not do that arithmetic
+    ///   for you.
+    ///
+    /// A user choosing this policy is choosing the turnover win AND both
+    /// disclosed costs together — not getting a free lunch on any axis.
+    DiverseTurnover,
 }
 
 /// A small builder composing the two independent, named, measured
@@ -289,6 +384,12 @@ impl Profile {
             LargeCachePolicy::LowHeadroom => 16 * 1024 * 1024,
             LargeCachePolicy::Trimmed64MiB => 64 * 1024 * 1024,
             LargeCachePolicy::Default => super::large_cache_config::DEFAULT_HEADROOM_BYTES,
+            // Same numeric floor as `Default` — see `DiverseTurnover`'s own
+            // doc comment for why this variant's real effect comes from the
+            // `large-cache-extended` Cargo feature (a compile-time slot-count
+            // change `Profile` cannot express), not from a different
+            // `headroom_bytes` value.
+            LargeCachePolicy::DiverseTurnover => super::large_cache_config::DEFAULT_HEADROOM_BYTES,
         }
     }
 

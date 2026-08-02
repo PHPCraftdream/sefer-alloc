@@ -538,6 +538,68 @@ for completeness.
    > "Do NOT delete the entry"), pointing back here as the single current
    > source of truth for this question.
 
+   > **UPDATE — 2026-08-02 (task #491): named opt-in policy shipped
+   > (`LargeCachePolicy::DiverseTurnover`); process-wide retention story
+   > resolved as DOC-ONLY, not a shared-budget mechanism.**
+   > Two blockers were named for this item's promotion question: (1) the
+   > scan-cost question (resolved NO-GO by task #488, folded in above), and
+   > (2) the per-heap-not-process-wide RSS retention question. Task #491
+   > closes (2) and ships the policy scaffolding this item's own "Next
+   > trigger" anticipated, WITHOUT changing `production`'s composition or
+   > `Profile::DEFAULT` (both remain untouched — this is additive):
+   > - **Process-wide retention decision: DOC-ONLY (option 3b from the
+   >   task brief), not a shared-budget mechanism (option 3a).** A
+   >   process-wide shared budget was weighed and explicitly declined: it
+   >   would be a brand-new cross-heap synchronization point on a path that
+   >   has none today (the R17-9 design note in
+   >   `src/alloc_core/large_cache_config.rs` already rejected this same
+   >   option for the same reason when the 256 MiB default was chosen), and
+   >   its own contention/coordination cost would itself need a real
+   >   multi-thread A/B under genuine concurrent pressure before it could
+   >   be trusted — a second gate-report-sized undertaking with no standing
+   >   evidence yet to justify building speculatively, per this item's own
+   >   evidence-first discipline. Building it "just in case" without that
+   >   evidence would be exactly the kind of half-built, unmeasured
+   >   mechanism CLAUDE.md's phased-delivery rules warn against. Instead,
+   >   the linear per-heap worst case (`N heaps × 256 MiB`) is now stated
+   >   explicitly, inline, everywhere a caller would encounter this policy
+   >   before choosing it: `LargeCachePolicy::DiverseTurnover`'s own doc
+   >   comment (`src/alloc_core/profile.rs`), the `Profile` module doc's
+   >   new R31-3/task #491 section, and README's Named-profiles table —
+   >   each states the 32-heap ≈ 7.75 GiB worst case by name, not just "no
+   >   multi-heap RSS blow-up" (this item's own filed concern about R31-3's
+   >   original phrasing being too soft).
+   > - **Named opt-in policy:** `LargeCachePolicy::DiverseTurnover` (the
+   >   filer's suggested name, unchanged) added to the existing
+   >   `#[non_exhaustive]` `LargeCachePolicy` enum
+   >   (`src/alloc_core/profile.rs`) — requires `large-cache-extended`
+   >   compiled in to have any runtime effect (a `Profile` axis value
+   >   cannot itself select a compile-time Cargo feature); without that
+   >   feature, resolves byte-identical to `Default`. Its own doc comment
+   >   states all three costs/benefits together (turnover win — §2; narrow
+   >   cost — §8; per-heap-not-process-wide retention — §4), per this
+   >   item's and CLAUDE.md's same-regime cost/benefit discipline. `#[non_exhaustive]`
+   >   is preserved for a genuinely new axis point going forward.
+   >   `production`'s feature list and `Profile::DEFAULT` are unchanged —
+   >   this does not reopen or resolve this item's own promotion question,
+   >   which stays CONDITIONAL-GO / not promoted, pending the SAME explicit
+   >   user sign-off this item's "Next trigger" already named.
+   > - **Test coverage:** `tests/profile.rs` extended from a 2×3 to a 2×4
+   >   axis cross-product (`all_axis_combinations_resolve_independently`)
+   >   plus a new dedicated test
+   >   (`diverse_turnover_without_the_feature_matches_default`) proving the
+   >   feature-OFF byte-identical-to-`Default` contract holds.
+   > - **What was NOT done, and why:** the O(40) scan LAYOUT itself
+   >   (compact occupancy bitmap / size-ordered index) was explicitly out
+   >   of scope for this task (separate, already-filed backlog item —
+   >   `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` finding F8,
+   >   task #503) — this task is POLICY (when/how a user opts in), not
+   >   scan-structure redesign.
+   > - **Files:** `src/alloc_core/profile.rs` (`LargeCachePolicy::DiverseTurnover`
+   >   + module-doc section), `tests/profile.rs` (2×4 cross-product +
+   >   feature-OFF-parity test), `README.md` (Named-profiles table +
+   >   DiverseTurnover disclosure paragraph), this entry.
+
 31. **UNVERIFIED-BY-ME findings from the Round 30 full independent review
     (`docs/reviews/2026-07-30-r30-full-review.md` §5, P2-3 through P2-11) —
     measurement-methodology defects in Round 30's own gate reports and

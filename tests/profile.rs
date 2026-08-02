@@ -141,10 +141,10 @@ fn both_axes_together_compose_as_expected() {
     assert_eq!(headroom_bytes, 64 * MIB);
 }
 
-/// All six 2x3 combinations of the two axes (2 `SmallPoolPolicy` values x 3
-/// `LargeCachePolicy` values) resolve independently and correctly — the
-/// full cross product, not just the two points R30-7's original three-arm
-/// enum happened to name.
+/// All eight 2x4 combinations of the two axes (2 `SmallPoolPolicy` values x
+/// 4 `LargeCachePolicy` values, including `DiverseTurnover` — task #491)
+/// resolve independently and correctly — the full cross product, not just
+/// the two points R30-7's original three-arm enum happened to name.
 #[test]
 fn all_axis_combinations_resolve_independently() {
     for small_pool in [SmallPoolPolicy::Default, SmallPoolPolicy::Throughput] {
@@ -152,6 +152,7 @@ fn all_axis_combinations_resolve_independently() {
             LargeCachePolicy::LowHeadroom,
             LargeCachePolicy::Trimmed64MiB,
             LargeCachePolicy::Default,
+            LargeCachePolicy::DiverseTurnover,
         ] {
             let profile = Profile::new()
                 .small_pool(small_pool)
@@ -168,7 +169,13 @@ fn all_axis_combinations_resolve_independently() {
                 LargeCachePolicy::LowHeadroom => 16 * MIB,
                 LargeCachePolicy::Trimmed64MiB => 64 * MIB,
                 LargeCachePolicy::Default => 256 * MIB,
-                _ => unreachable!("test only iterates the three known LargeCachePolicy variants"),
+                // Same numeric headroom floor as `Default` — see this
+                // variant's own doc comment: its real effect (widening the
+                // large-cache slot count 8 -> 40) comes entirely from the
+                // `large-cache-extended` Cargo feature, which `Profile`
+                // cannot express as a runtime axis value.
+                LargeCachePolicy::DiverseTurnover => 256 * MIB,
+                _ => unreachable!("test only iterates the four known LargeCachePolicy variants"),
             };
 
             assert_eq!(
@@ -185,6 +192,33 @@ fn all_axis_combinations_resolve_independently() {
             );
         }
     }
+}
+
+/// `LargeCachePolicy::DiverseTurnover` without the `large-cache-extended`
+/// Cargo feature compiled in resolves BYTE-IDENTICAL to `Default` — this is
+/// the explicit contract stated in the variant's own doc comment (a
+/// `Profile` axis value cannot itself turn on a compile-time-gated Cargo
+/// feature). This test file's own `#![cfg(...)]` gate does not require
+/// `large-cache-extended`, so this test exercises exactly the "feature OFF"
+/// case that contract describes.
+#[test]
+#[cfg(not(feature = "large-cache-extended"))]
+fn diverse_turnover_without_the_feature_matches_default() {
+    let default_cfg = LargeCacheConfig::for_profile(Profile::new());
+    let diverse_cfg = LargeCacheConfig::for_profile(
+        Profile::new().large_cache(LargeCachePolicy::DiverseTurnover),
+    );
+
+    let default_ac = AllocCore::new_with_config(default_cfg).expect("primordial");
+    let diverse_ac = AllocCore::new_with_config(diverse_cfg).expect("primordial");
+
+    assert_eq!(default_ac.dbg_pool_cap(), diverse_ac.dbg_pool_cap());
+    assert_eq!(
+        default_ac.dbg_decay_config(),
+        diverse_ac.dbg_decay_config(),
+        "DiverseTurnover must resolve identically to Default when \
+         large-cache-extended is not compiled in"
+    );
 }
 
 /// Every `SmallPoolPolicy` value's resolved cap must differ from the
