@@ -311,24 +311,83 @@ impl AllocCore {
                 // carried forward the same way, from `slot.reserved_capacity`
                 // (the segment's true reserved VA span) — same rationale,
                 // never recomputed.
-                let hdr = SegmentHeader::large(
-                    u32::MAX, // placeholder; patched below once `register()` assigns the real id
-                    size,
-                    align,
-                    slot.usable_size,
-                    slot.reserved_capacity,
-                    bump,
-                    slot.reservation,
-                    slot.reservation_len,
-                );
-                Node::write_struct(slot.base as *mut SegmentHeader, hdr);
+                //
+                // F12 (task #498, docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md,
+                // docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md):
+                // this used to build a full fresh `SegmentHeader` via
+                // `SegmentHeader::large(..)` and overwrite the WHOLE 144-byte
+                // header with `Node::write_struct`. But 4 of that
+                // constructor's 8 arguments (`span_usable`/`reserved_capacity`/
+                // `reservation`/`reservation_len`) are, by the comment above,
+                // carried forward BYTE-IDENTICAL from `slot.*` — i.e. the
+                // exact same values already sitting in the header at
+                // `slot.base`, untouched since this segment's header was last
+                // constructed. Only `magic` (re-established after the
+                // large-cache deposit path atomically zeroed it —
+                // `set_magic_at`'s doc), `large_size`, `large_align`, and
+                // `bump` genuinely change; `segment_id` is handled by its own
+                // pre-existing separate 1-word patch below, unaffected by
+                // this change.
+                //
+                // Falsification pin (F12's own recipe, kept as a PERMANENT
+                // correctness assert rather than a one-shot check — cheap
+                // relative to the segment-registration work around it, and it
+                // guards an invariant a future field addition to `slot`/
+                // `CachedLarge` could silently break): read the header that
+                // is about to be partially overwritten and confirm its
+                // carried-forward fields already equal what we would have
+                // written via the old full-struct path. If this ever fires,
+                // the "carried forward unchanged" premise is FALSE and the
+                // targeted-write optimization below is unsound.
+                #[cfg(debug_assertions)]
+                {
+                    let pre = SegmentHeader::read_at(slot.base);
+                    debug_assert_eq!(
+                        pre.span_usable, slot.usable_size,
+                        "F12: large-cache slot's in-memory span_usable diverged from slot.usable_size"
+                    );
+                    debug_assert_eq!(
+                        pre.reserved_capacity, slot.reserved_capacity,
+                        "F12: large-cache slot's in-memory reserved_capacity diverged from slot.reserved_capacity"
+                    );
+                    debug_assert_eq!(
+                        pre.reservation, slot.reservation,
+                        "F12: large-cache slot's in-memory reservation diverged from slot.reservation"
+                    );
+                    debug_assert_eq!(
+                        pre.reservation_len, slot.reservation_len,
+                        "F12: large-cache slot's in-memory reservation_len diverged from slot.reservation_len"
+                    );
+                }
+                // UBFIX-6 restated for the targeted-write shape: all 4 writes
+                // below run strictly BEFORE `self.table.register(slot.base)`
+                // (a few lines down), i.e. while `slot.base` is still absent
+                // from `SegmentTable`'s `contains_base` hash table — no
+                // cross-thread reader (`magic_at`/`kind_at`/`large_size_at`/
+                // `span_usable_at`) can address this segment at all yet, so
+                // there is no reader to observe a torn/partial write between
+                // these 4 stores, and their relative ORDER among each other is
+                // immaterial for the same reason (the same argument the
+                // original full-struct `write_struct` already relied on —
+                // see the UBFIX-6 comment above). `kind`/`segment_id` are
+                // untouched here: `kind` was already `Large` from this
+                // segment's PRIOR header construction (a large-cache slot is,
+                // by construction, always a former Large segment — the cache
+                // never holds Small/Primordial spans) and does not need
+                // rewriting; `segment_id` keeps its own pre-existing
+                // post-`register()` 1-word patch below.
+                SegmentHeader::set_magic_at(slot.base, super::segment_header::SEGMENT_MAGIC);
+                SegmentHeader::set_large_size_at(slot.base, size);
+                SegmentHeader::set_large_align_at(slot.base, align);
+                SegmentHeader::set_bump_at(slot.base, bump);
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
                 // (table is genuinely full) we cannot reuse this slot; release
-                // it and fall through to the slow OS path. `hdr` is already
-                // written above, but the slot never becomes visible in that
-                // failure branch, so there is nothing to unwind.
+                // it and fall through to the slow OS path. The header fields
+                // are already written above (F12's targeted writes), but the
+                // slot never becomes visible in that failure branch, so there
+                // is nothing to unwind.
                 let id = match self.table.register(slot.base) {
                     Some(id) => id,
                     None => {

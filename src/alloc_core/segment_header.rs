@@ -1305,3 +1305,20 @@ const _: () = assert!(NO_NODE_RAW == u32::MAX);
 /// their import path.
 #[cfg(feature = "hardened")]
 pub use super::segment_header_gen_table::{bump_gen, gen_at, init_gen_table_in_place};
+
+/// F12 (task #498): exact-size compile-time pin. `size_of::<SegmentHeader>()`
+/// has drifted three times already with nothing catching the exact value
+/// (see the RAD-3/E2, `committed_payload_end`, and `reserved_capacity` doc
+/// comments above tracking 104 -> 120 -> 128 -> 136 -> current) — only the
+/// coarser `size_of::<SegmentHeader>() <= PAGE` bound (below) has ever
+/// guarded it, which would not catch a field ADDITION that silently changes
+/// which fields the large-cache hit arm's targeted field-wise write
+/// (`AllocCore::alloc_large`, `alloc_core_large.rs`) needs to cover. This
+/// assert pins the CURRENT value (144 bytes, confirmed via a `[u8; 0] =
+/// [0u8; size_of::<SegmentHeader>()]` mismatched-array-length compiler-error
+/// probe under `--features production` and `--all-features`) so a future
+/// field addition/removal fails the build here instead of silently.
+/// Deliberately an exact `==` pin (unlike the coarser `<=PAGE` bound below):
+/// this is the value the F12 targeted-write optimization's correctness
+/// argument was verified against, not a "stays under a budget" bound.
+const _: () = assert!(size_of::<SegmentHeader>() == 144);

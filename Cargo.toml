@@ -1899,6 +1899,21 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r31_2_pool_cap_threshold_ab_cap32"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 
+# R32-7 (task #498): path-activation oracle for the F12 large-cache
+# targeted-header-write gate's iai bench pair (`large_cache_prefill_only_4mib`
+# / `large_cache_hit_only_4mib` in `benches/perf_gate_iai.rs`) — confirms via
+# the public `SeferAlloc::stats().large_cache_hits` counter that the same
+# workload shape those iai benches use structurally guarantees a large-cache
+# HIT on its terminal alloc. `alloc-xthread`/`fastbin` are listed alongside
+# `alloc-global`/`alloc-decommit`/`alloc-stats` (this file's own minimum
+# feature set) because `alloc-global alloc-decommit alloc-stats` alone hits a
+# pre-existing library-level `clippy -D warnings` dead-code gap unrelated to
+# this example (filed as item 11 in docs/CORRECTNESS_OPEN_ITEMS.md,
+# 2026-08-02) — this combo was independently verified clean.
+[[example]]
+name = "r32_7_large_cache_hit_activation_oracle"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-stats"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

@@ -2149,6 +2149,20 @@ fn aligned_churn_640b_a128() {
 
 // Single-shot 4 MiB alloc+free — the dedicated-segment / OS-round-trip path
 // (D1 large_cache territory: `mmap`/`VirtualAlloc` cost per large block).
+//
+// F12 (task #498) NOTE: despite this bench's name and the pre-existing
+// module-doc bullet above claiming it covers "D1 large_cache territory",
+// this arm is a SINGLE alloc+free on a FRESH `SeferAlloc` — it never issues
+// a second `alloc` after the `dealloc`, so it can only ever take
+// `alloc_large_slow`'s fresh-OS-reservation path, NEVER the large-cache HIT
+// arm this task's targeted-field-write change modifies. Re-verified by
+// reading the body below, not assumed from the docstring (the survey this
+// task's brief cites made exactly this same assumption and was wrong — see
+// docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md §1). It
+// remains in this file, UNCHANGED, as the ±10 raw-Ir kill-gate control for
+// the OS-round-trip path (which this task's change does not touch);
+// `large_cache_hit_only_4mib` below is the arm that actually exercises the
+// changed code.
 #[cfg(target_os = "linux")]
 #[library_benchmark]
 fn large_alloc_free_cycle() {
@@ -2162,6 +2176,128 @@ fn large_alloc_free_cycle() {
         // the same layout.
         unsafe { sefer.dealloc(ptr, layout) };
     }
+}
+
+// F12 (task #498): large-cache HIT path-activation pair, mirroring the
+// `alloc_magazine_prefill_only_16b` / `alloc_magazine_hit_only_16b`
+// shared-prefix design (R23-3) that `large_alloc_free_cycle` above does NOT
+// provide for the Large-object cache. `large_alloc_free_cycle` is a single
+// alloc+free on a fresh allocator — it never issues a SECOND alloc, so it
+// can only take `alloc_large_slow` (a fresh OS reservation), never the
+// large-cache HIT arm `AllocCore::alloc_large` (`alloc_core_large.rs`)
+// modifies for this task. These two arms fix that gap.
+//
+// `alloc-decommit` gates the whole `large_cache` mechanism (it is not
+// materialised without the feature — see `AllocCore::large_cache_slot_take`/
+// `large_cache_slot_set`'s own `#[cfg(feature = "alloc-decommit")]` module
+// gate), so both arms are gated the same way, with no-op stubs below for
+// `not(alloc-decommit)` (mirroring the R24-8/R25-7 `batch-api` stub pattern
+// already in this file) so `library_benchmark_group!` still resolves under
+// `cargo check --bench perf_gate_iai --features "alloc-global
+// bench-internals"` (no `alloc-decommit`).
+//
+// Layer (R31-0's corrected-layer rule): measured through
+// `HeapRegistry::claim()` + `HeapCore::alloc`/`dealloc` — the SAME
+// `#[doc(hidden)]` test-only export surface the pre-existing magazine-hit
+// pair above already uses — not bare `AllocCore`, so this arm exercises the
+// real `#[global_allocator]` dispatch chain `SeferAlloc` uses, per the same
+// corrected-layer argument R31-0/R30-3 established.
+#[cfg(target_os = "linux")]
+const LARGE_ALLOC_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(target_os = "linux")]
+const LARGE_HIT_CYCLES: usize = 8;
+
+// Prefill/control arm: `LARGE_HIT_CYCLES` rounds of alloc(4 MiB)+free(4 MiB)
+// through `HeapCore::alloc`/`HeapCore::dealloc`, ending with the large-cache
+// holding ONE deposited 4 MiB slot (the last free's deposit) but taking NO
+// further alloc afterward — i.e. every one of these `LARGE_HIT_CYCLES`
+// allocs is itself a MISS (first-ever request) or a hit against a PRIOR
+// cycle's own deposit; either way this control arm's own final state is
+// "magazine-equivalent: cache holds one slot, undrained". Subtracting this
+// arm's Ir from the hit arm's Ir below (R23-3's shared-prefix subtraction)
+// isolates exactly the cost of the ONE extra terminal alloc the hit arm adds
+// on top of the byte-identical prefix.
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_prefill_only_4mib() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
+
+    for _ in 0..LARGE_HIT_CYCLES {
+        // SAFETY: layout has non-zero size and valid alignment.
+        let ptr = unsafe { (*heap).alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc call directly above with
+            // the same layout, freed exactly once. This deposits the segment
+            // into the large_cache (admission always succeeds here: a single
+            // same-size slot is always within `LARGE_CACHE_SIZE_FACTOR` of
+            // itself and the base cache has 8 free slots).
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+}
+
+// Treatment arm: byte-identical prefix, PLUS one more terminal
+// alloc(4 MiB) — which, immediately following the prefill loop's last
+// `dealloc`, is guaranteed to find that exact slot sitting in the
+// large_cache (same size, so best-fit always matches; nothing else can have
+// evicted or admitted a competing slot inside this single-threaded,
+// single-allocator-instance bench body) — i.e. this terminal alloc is
+// structurally guaranteed to take the large-cache HIT arm, never
+// `alloc_large_slow`. This construction IS the path-activation oracle in
+// the R30-3/R30-6 sense (workload shape makes a miss structurally
+// impossible), and is additionally confirmed by an explicit
+// `dbg_large_cache_hits()` assertion in the companion measurement script
+// (not inside the timed `#[library_benchmark]` body itself, to avoid adding
+// an extra counter-read's Ir to the timed region) — see
+// `docs/perf/R32_7_LARGE_CACHE_HIT_TARGETED_HEADER_WRITE_GATE.md` §3 for the
+// oracle read and its result.
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_hit_only_4mib() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(LARGE_ALLOC_BYTES, 8).unwrap();
+
+    for _ in 0..LARGE_HIT_CYCLES {
+        // SAFETY: layout has non-zero size and valid alignment.
+        let ptr = unsafe { (*heap).alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc call directly above with
+            // the same layout, freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+    // Timed-in-spirit region: one more alloc, guaranteed (see doc above) to
+    // be a large-cache HIT — this is the F12 targeted-write call site.
+    // SAFETY: layout has non-zero size and valid alignment.
+    let ptr = unsafe { (*heap).alloc(layout) };
+    black_box(ptr);
+    if !ptr.is_null() {
+        // SAFETY: ptr was returned by the alloc call directly above with the
+        // same layout, freed exactly once.
+        unsafe { (*heap).dealloc(ptr, layout) };
+    }
+}
+
+// R24-8/R25-7-style no-op stubs so `library_benchmark_group!` resolves when
+// `alloc-decommit` is absent (`large_cache`/`HeapRegistry::claim` are not
+// available without it).
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_prefill_only_4mib() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_hit_only_4mib() {
+    black_box(0u8);
 }
 
 // Geometric realloc growth: 64 B doubled 16x up to 4 MiB via
@@ -3130,6 +3266,8 @@ library_benchmark_group!(
         medium_class_dealloc_churn_16b,
         aligned_churn_640b_a128,
         large_alloc_free_cycle,
+        large_cache_prefill_only_4mib,
+        large_cache_hit_only_4mib,
         realloc_grow,
         cold_alloc_free_256x16b,
         cold_alloc_free_256x16b_2n,

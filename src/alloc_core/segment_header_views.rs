@@ -219,6 +219,77 @@ impl SegmentHeader {
         Node::write_usize(Node::offset(base, off) as *mut usize, size);
     }
 
+    /// F12 (task #498): overwrite the header's `large_align` field only
+    /// (field-specific `usize` store, mirrors [`set_large_size_at`](Self::set_large_size_at)).
+    /// Used by `AllocCore::alloc_large`'s large-cache HIT arm to update the
+    /// logical allocation alignment for the new occupant, as one of a
+    /// targeted set of field writes replacing a full-struct `write_struct`
+    /// (see that call site's own comment for the full UBFIX-6 safety
+    /// restatement covering the whole targeted-write group).
+    ///
+    /// Safety discipline: called only while `base` is still UNREGISTERED (not
+    /// yet inserted into `SegmentTable`'s `contains_base` hash table by
+    /// `register()`), so no cross-thread reader can address this segment at
+    /// all — same precondition as `set_large_size_at`/`set_bump_at`/
+    /// `set_magic_at` at this call site.
+    ///
+    /// `cfg_attr(not(alloc-decommit))`: the sole call site (the large-cache
+    /// hit arm) lives entirely inside `AllocCore::alloc_large`'s
+    /// `#[cfg(feature = "alloc-decommit")]` block (the large_cache mechanism
+    /// itself does not exist without that feature), so this accessor has no
+    /// caller — and would otherwise be dead code — when the feature is off.
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn set_large_align_at(base: *mut u8, align: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, large_align);
+        Node::write_usize(Node::offset(base, off) as *mut usize, align);
+    }
+
+    /// F12 (task #498): overwrite the header's `bump` field only
+    /// (field-specific `usize` store). `bump`'s usual owner-only accessor is
+    /// [`SegmentMeta::set_bump`](super::segment_header::SegmentMeta::set_bump),
+    /// which takes `&mut SegmentMeta`; this `*_at(base)` sibling exists
+    /// because `AllocCore::alloc_large`'s large-cache HIT arm only has a raw
+    /// `slot.base` pointer at this point (the segment is not yet registered,
+    /// so no `SegmentMeta` handle has been constructed for it) — same
+    /// `offset_of!`-through-`Node` discipline, same field, same owner-only
+    /// write.
+    ///
+    /// Safety discipline: called only while `base` is still UNREGISTERED —
+    /// see [`set_large_align_at`](Self::set_large_align_at)'s doc for the
+    /// shared precondition.
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn set_bump_at(base: *mut u8, bump: usize) {
+        let off = core::mem::offset_of!(SegmentHeader, bump);
+        Node::write_usize(Node::offset(base, off) as *mut usize, bump);
+    }
+
+    /// F12 (task #498): overwrite the header's `magic` field only
+    /// (field-specific `u32` store) with `SEGMENT_MAGIC`, re-establishing the
+    /// sanity magic that the large-cache deposit path atomically zeroed (see
+    /// [`magic_at`](Self::magic_at)'s doc for that Release-store writer).
+    ///
+    /// **Deliberately a PLAIN store, not an atomic one**, even though
+    /// `magic_at`'s cross-thread reader pairs an atomic Release writer with
+    /// its Acquire load in the STEADY-STATE case (a registered, live segment
+    /// whose `magic` a remote thread may concurrently zero on deposit). This
+    /// call site is different: it runs strictly BEFORE `register()` makes
+    /// `slot.base` reachable via `contains_base`, so no concurrent reader —
+    /// atomic-aware or otherwise — can observe this write at all; the
+    /// unregistered-window argument that lets the pre-existing full-struct
+    /// `Node::write_struct` (also a plain, non-atomic write) be sound here
+    /// applies identically to this narrower field-wise write. See the
+    /// UBFIX-6 comment at this accessor's only call site
+    /// (`AllocCore::alloc_large`'s large-cache hit arm,
+    /// `alloc_core_large.rs`) for the restated argument in full.
+    #[cfg_attr(not(feature = "alloc-decommit"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn set_magic_at(base: *mut u8, magic: u32) {
+        let off = core::mem::offset_of!(SegmentHeader, magic);
+        Node::write_u32(Node::offset(base, off) as *mut u32, magic);
+    }
+
     /// R12-4 (feature `large-reserved-capacity`): read the header's
     /// `reserved_capacity` field only (field-specific `usize` load, mirrors
     /// `span_usable_at`'s read pattern). Used by the OPT-G grow path to

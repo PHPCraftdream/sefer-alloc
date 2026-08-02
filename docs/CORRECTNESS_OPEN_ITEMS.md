@@ -948,6 +948,102 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     this file's append-only convention (do not silently drop the other
     four from the bundle).
 
+11. **[A, filed 2026-08-02, task #498] Three CI clippy `--all-targets`
+    rows are broken by pre-existing lint/compile errors in `examples/`,
+    unrelated to any in-scope task diff — discovered while verifying task
+    #498's own clean-clippy requirement.** Re-verified against `main` @
+    `2dfeaa3` (task #498's own base commit) in an isolated
+    `git worktree add`, confirming these are NOT caused by task #498's
+    diff:
+    - `cargo clippy --all-targets --features "hardened medium-classes" -- -D
+      warnings` fails to compile with `error[E0601]: `main` function not
+      found in crate `r31_10_trim_cost_gate`` (`examples/r31_10_trim_cost_gate.rs:326`).
+    - `cargo clippy --all-targets --features "production" -- -D warnings`
+      and `cargo clippy --all-targets --all-features -- -D warnings` both
+      fail with `clippy::doc_lazy_continuation` ("doc list item without
+      indentation") at
+      `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257`
+      (an un-indented `/// block.` continuation line under a `///   ` list
+      item), which in turn makes `examples/r31_3_large_cache_extended_narrow_on.rs`
+      and `..._off.rs` fail to compile under those two feature sets.
+    All three trace to Round 31 example files (`r31_10_trim_cost_gate.rs`,
+    `r31_3_large_cache_extended_narrow_ab_workload.rs`) that evidently were
+    never run through the exact `--all-targets --features "hardened
+    medium-classes"` / `--all-targets --features "production"` / `--all-targets
+    --all-features` invocations `.github/workflows/ci.yml`'s `clippy` job
+    actually uses at the time they landed — i.e. `npm run check`'s clippy
+    step (which per this repo's own README/CLAUDE.md coverage claims should
+    catch exactly this) apparently did not either, or drifted since. Not
+    fixed here (out of task #498's scope — that task's own diff does not
+    touch either example file, confirmed by `git diff --stat` showing no
+    overlap, and the worktree re-run at the pre-task-#498 base commit
+    reproduces the same failures with task #498's diff entirely absent).
+    Filed here per this file's own convention (item 3 of "Convention") so a
+    future round picks these up rather than rediscovering them from a
+    clean-clippy requirement a second time.
+
+12. **[T, filed 2026-08-02, task #498] `xthread_large_double_free_no_double_reclaim`
+    (`tests/regression_xthread_large_free_no_leak.rs`) failed once during a
+    full `cargo test --features production` run, not reproduced on 7
+    subsequent runs.** One full-suite run (during task #498's own
+    verification pass) reported: `assertion `left == right` failed:
+    expected exactly 50 reclaims (one per distinct double-freed segment),
+    got 42` — a plausible cross-thread reclaim-counting race under system
+    load (this test spawns real OS threads and races a remote double-free
+    against the owner's deferred-free drain; see the test file's own module
+    doc for the exact shape). NOT reproduced on: 5 consecutive isolated
+    `--test regression_xthread_large_free_no_leak -- --test-threads=1` runs,
+    1 full-suite re-run of the exact same tree that produced the original
+    failure, and 1 full-suite run of the PRE-task-#498 base commit
+    (`2dfeaa3`) in an isolated worktree (also clean) — i.e. this is not
+    caused by task #498's diff (the base commit, entirely unmodified, was
+    tested clean in the same session) and is not reliably reproducible
+    on-demand, consistent with a genuine low-probability timing flake in
+    the test's own concurrency shape rather than a real bug. Not
+    investigated further here (out of task #498's scope; the task's own
+    diff does not touch `heap_core.rs`'s deferred-free stack or
+    `reclaim_large_segment`'s deposit/release logic — only the header
+    WRITE inside the already-registered-or-not-yet-registered window, which
+    this specific test's counter never observes). Filed per this file's own
+    convention so a future round can watch for a repeat and, if one occurs,
+    has this occurrence on record as the first data point.
+
+13. **[A, filed 2026-08-02, task #498] Root-caused: `git worktree add` +
+    this environment's global `CARGO_TARGET_DIR` can leave STALE test
+    binaries that fail with misleading errors after the worktree is
+    removed — a real hazard for the worktree-isolation BEFORE/AFTER
+    measurement pattern this file's sibling `docs/perf/OPEN_ITEMS.md` (and
+    CLAUDE.md's R29-6/"bench-profile pinning" rules) already establish as
+    standard practice.** This environment sets `CARGO_TARGET_DIR=D:\dev\rust\.cargo-target`
+    globally (`env | grep CARGO_TARGET_DIR`) — a location OUTSIDE any
+    single worktree, shared by every `cargo` invocation regardless of
+    which worktree's `CARGO_MANIFEST_DIR` ran it. At least 4 test files
+    (`tests/ci_clippy_matrix_consistency.rs`, `tests/dbg_hook_safety_tripwire.rs`,
+    `tests/no_stale_doc_references.rs`, `tests/no_stale_loom_files.rs`) use
+    `env!("CARGO_MANIFEST_DIR")` — a COMPILE-TIME constant baked into the
+    compiled test binary. During task #498's own verification, two
+    `git worktree add`s were created and removed (for BEFORE-measurement
+    isolation and for a flaky-test baseline check), each building into the
+    same shared `CARGO_TARGET_DIR`. After both worktrees were removed, the
+    NEXT `cargo test --features production` run against the main tree
+    intermittently reused a stale compiled test binary (cargo's fingerprint
+    matched on identical SOURCE content, not on which worktree produced the
+    binary) whose baked-in `CARGO_MANIFEST_DIR` pointed at one of the
+    now-deleted worktree paths — producing `read scripts/check-matrix.mjs:
+    NotFound` and `panicked ... "no source files found"` errors that look
+    like real test failures but are pure build-cache staleness. Confirmed
+    the fix: `touch <file>.rs` (or any edit) on each of the 4 affected test
+    files forces a rebuild and the failures disappear; a subsequent full
+    suite run was clean. **Not itself investigated for a permanent fix**
+    (e.g. a per-worktree `CARGO_TARGET_DIR`, or a documented "run `cargo
+    clean -p sefer-alloc --profile test` after removing a measurement
+    worktree" step) — filed here so a future round doing BEFORE/AFTER
+    worktree-isolated measurement (the R14-10/R29-6-established pattern)
+    knows to either use a worktree-local `CARGO_TARGET_DIR` override or
+    force-touch/rebuild the `env!(CARGO_MANIFEST_DIR)`-dependent test files
+    after removing a scratch worktree, rather than re-diagnosing this from
+    scratch.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)
