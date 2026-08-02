@@ -295,9 +295,10 @@ functions (`commit_pages`/`reserve_lazy`), reachable only from
 
 ---
 
-**2026-08-03 (task #504) — filed. `landing_commit` placeholder: this
-report's raw logs and summary CSV cite `f126de1a77f01c6a33f605d0985a29cf71862ab5`
-(the base SHA / immutable tree identity) as the measurement basis; the
-actual landing commit SHA will be filled in a follow-up commit per this
-project's established placeholder convention (see R31-10's note on using
-the FULL 40-character SHA, never a 7-char short one).**
+**2026-08-03 (task #504) — landed at commit
+`f6c3a61e1e0ac06916327a1f41162f0bed908c93` (full 40-character SHA, per
+R31-10's fix note). Base/immutable-identity measured at
+`f126de1a77f01c6a33f605d0985a29cf71862ab5` (git tree object
+`edc3656d3e57ed1fdc27f3e1b6bc3786411276ff`) — see §0 header above; the
+summary CSV's `landing_commit` column is filled with the actual landing
+SHA in this same follow-up commit.**
