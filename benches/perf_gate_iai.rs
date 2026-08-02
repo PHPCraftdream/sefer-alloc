@@ -513,6 +513,146 @@ fn alloc_magazine_hit_only_16b() {
     black_box(&ptrs);
 }
 
+// F7 (task #495) -- `alloc_zeroed` sibling of the `alloc_magazine_prefill_only_16b`
+// / `alloc_magazine_hit_only_16b` pair immediately above, added to judge the
+// removal of `alloc_small_zeroed_via_magazine`'s hit-arm `stamp_segment_owner`
+// call (`src/registry/heap_core_alloc.rs`). BYTE-IDENTICAL fill loop (still
+// plain `alloc`/`dealloc`, so the magazine ends up populated with
+// NON-virgin blocks -- pushed-back-after-free blocks are never virgin, see
+// `dealloc_own_thread`'s R13-3 comment), so the timed hit-drain below is
+// guaranteed to take `alloc_small_zeroed_via_magazine`'s HIT arm every one
+// of the 16 times (never its `refill_magazine_slow_virgin` miss leg) --
+// this pair's own path-activation oracle, per CLAUDE.md's R30-8 rule.
+// Gated on `virgin-zero-skip` (additionally to `alloc-xthread`, which
+// implies `fastbin`): without it `alloc_zeroed`'s small-classified branch
+// does not go through `alloc_small_zeroed_via_magazine` at all (see that
+// function's own `#[cfg]`), so this pair would not measure the arm under
+// test. Layer: `HeapCore::alloc_zeroed` -- the SAME layer
+// `SeferAlloc::alloc_zeroed`'s `#[global_allocator]` chain reaches (unlike
+// R30-3's since-corrected `AllocCore`-level mistake) -- see the entry-point
+// rule in CLAUDE.md's "Active rules".
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "virgin-zero-skip"
+))]
+#[library_benchmark]
+fn alloc_zeroed_magazine_prefill_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        // Carve 16 fresh blocks via plain `alloc` (never magazine-resident
+        // before -- carve/refill misses, not hits).
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        // Populate the magazine via the real free push path. After the LAST
+        // cycle the magazine is left holding 16 resident, NON-virgin blocks
+        // (freed blocks are never virgin) and this arm does NOT drain them --
+        // the shared prefix `alloc_zeroed_magazine_hit_only_16b` below adds
+        // ONE more step onto.
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+}
+
+// F7 (task #495) -- BYTE-IDENTICAL to `alloc_zeroed_magazine_prefill_only_16b`
+// except for ONE added step after the shared prefill loop: drain the 16
+// blocks the last fill cycle just pushed, via `alloc_zeroed` instead of
+// `alloc`. `count` is 16 at that point (just populated, never touched
+// since) and every popped block is non-virgin (see the prefill arm's doc),
+// so all 16 calls take `alloc_small_zeroed_via_magazine`'s HIT arm and
+// `Node::zero` runs on every one -- this arm's own Ir therefore isolates
+// the hit arm's per-pop bookkeeping (pop + virgin-mask read/clear +
+// clear_magazine + [pre-F7] stamp_segment_owner + Node::zero(16)), exactly
+// mirroring `alloc_magazine_hit_only_16b`'s isolation shape. Subtracting the
+// prefill arm's Ir from this arm's Ir isolates 16 hits' cost; the BEFORE/AFTER
+// delta on THIS arm's raw Ir (prefill arm is untouched by the F7 change and
+// should be flat) is the `stamp_segment_owner` removal's measured saving.
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    feature = "virgin-zero-skip"
+))]
+#[library_benchmark]
+fn alloc_zeroed_magazine_hit_only_16b() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+    let layout = Layout::from_size_align(16, 8).unwrap();
+
+    let mut ptrs: [*mut u8; MAGAZINE_FILL] = [core::ptr::null_mut(); MAGAZINE_FILL];
+    for _ in 0..PREFILL_CYCLES {
+        for slot in ptrs.iter_mut() {
+            // SAFETY: layout has non-zero size and valid (power-of-two) alignment.
+            *slot = unsafe { (*heap).alloc(layout) };
+        }
+        black_box(&ptrs);
+        for &ptr in &ptrs {
+            if !ptr.is_null() {
+                // SAFETY: ptr was returned by the alloc loop above with the
+                // same layout, freed exactly once.
+                unsafe { (*heap).dealloc(ptr, layout) };
+            }
+        }
+    }
+    // Timed-in-spirit region: drain the magazine ONE more time via
+    // `alloc_zeroed`. `count` starts at 16 (just populated by the last
+    // prefill cycle, all non-virgin) and every one of these 16 calls pops
+    // from it through `alloc_small_zeroed_via_magazine`'s HIT arm -- all 16
+    // are magazine HITS, never a miss/refill (path-activation oracle: the
+    // prefill's dealloc loop guarantees non-virgin, so `is_virgin` reads
+    // false every time and `Node::zero` runs on every pop, exactly like a
+    // real non-virgin `calloc`-shaped hit workload).
+    for slot in ptrs.iter_mut() {
+        // SAFETY: `heap` was returned live (non-null) by `HeapRegistry::claim`
+        // above and is dereferenced only on the claiming thread; `layout` has
+        // non-zero size and valid (power-of-two) alignment.
+        *slot = unsafe { (*heap).alloc_zeroed(layout) };
+    }
+    black_box(&ptrs);
+}
+
+// No-op stubs so `library_benchmark_group!` resolves when `virgin-zero-skip`
+// is absent (mirrors the R24-8 `batch-api` stub pattern used elsewhere in
+// this file). Without `virgin-zero-skip`, `alloc_zeroed`'s small-classified
+// branch does not route through `alloc_small_zeroed_via_magazine` at all, so
+// there is no hit arm to measure in that configuration.
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_magazine_prefill_only_16b() {
+    black_box(0u8);
+}
+
+#[cfg(all(
+    target_os = "linux",
+    feature = "alloc-xthread",
+    feature = "fastbin",
+    not(feature = "virgin-zero-skip")
+))]
+#[library_benchmark]
+fn alloc_zeroed_magazine_hit_only_16b() {
+    black_box(0u8);
+}
+
 // R23-3 -- free routing, Tier-2 (8192-slot open-addressing hash probe)
 // isolation. R22-17/R23-1's `contains_base` isolation measures Tier-1's
 // cache-HIT cost (this crate's benched workloads never span more than
@@ -2947,6 +3087,8 @@ library_benchmark_group!(
         dealloc_segment_base_of_ptr_probe_only_16b,
         alloc_magazine_prefill_only_16b,
         alloc_magazine_hit_only_16b,
+        alloc_zeroed_magazine_prefill_only_16b,
+        alloc_zeroed_magazine_hit_only_16b,
         dealloc_hash_contains_only_probe_16b,
         dealloc_own_thread_body_only_16b,
         dealloc_free_only_16b_n1,

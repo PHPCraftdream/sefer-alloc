@@ -293,6 +293,22 @@ for completeness.
    >   task #495) means R32-0's plain-`alloc` absolute-ns figures are not
    >   directly comparable to R31-0's `alloc_zeroed` absolute-ns figures —
    >   noted explicitly in R32-0 so this is not misread.
+   > - **Confound resolved (R32-4, task #495):** the redundant
+   >   `stamp_segment_owner` call was removed from
+   >   `alloc_small_zeroed_via_magazine`'s magazine-hit arm after enumerating
+   >   all three producers of a magazine-resident block and confirming none
+   >   can place an unstamped segment's block there (same P4 guarantee plain
+   >   `alloc`'s hit arm already relies on). Measured Ir saving: −12.00/hit
+   >   (16-hit delta −192 Ir, WSL/callgrind, four plain-`alloc` kill-gate
+   >   benches confirmed exactly flat). See
+   >   `docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE.md` and
+   >   `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`'s §9
+   >   addendum (direction of bias: the confound was AGAINST the ON arm, so
+   >   R31-0/R32-0's published GO verdicts are unaffected, if anything
+   >   slightly conservative). R32-0's plain-`alloc` vs R31-0's `alloc_zeroed`
+   >   absolute-ns comparability caveat above is now historical (described
+   >   the pre-fix state at the time R32-0 was measured) — it is left
+   >   as-is per the append-only convention, not deleted.
    > - **Next trigger:** if a future round wants to pursue promotion: (a) a
    >   caller-facing knob distinguishing sparse/lazily-touched calloc buffers
    >   from immediately-populated ones (§5's "recommended narrower framing" in

@@ -1,0 +1,623 @@
+[iai] wsl: /mnt/d/dev/rust/sefer-alloc-r495-before
+[iai] features: production bench-internals virgin-zero-skip | target: /tmp/sefer-iai
+[iai] filter: alloc_zeroed_magazine, small_churn_16b, churn_256b, aligned_churn_640b_a128, cold_alloc_free_256x16b
+iai_callgrind_runner: Error: No version information found for iai-callgrind but iai-callgrind-runner (0.14.2) is >= '0.3.0'. Please update iai-callgrind to '0.14.2' in your Cargo.toml file
+__MISSING__
+[iai] runner already installed: 0.14.2 (skip install)
+
+[iai] running benches...
+
+    Finished `bench` profile [optimized] target(s) in 0.97s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running benches/perf_gate_iai.rs (/tmp/sefer-iai/release/deps/perf_gate_iai-407436acd50f8280)
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                        8437|8437                 (No change)
+  L1 Hits:                            11047|11047                (No change)
+  L2 Hits:                              103|103                  (No change)
+  RAM Hits:                             444|444                  (No change)
+  Total read+write:                   11594|11594                (No change)
+  Estimated Cycles:                   27102|27102                (No change)
+perf_gate_iai::perf_gate::small_churn_16b_2n
+  Instructions:                       13237|13237                (No change)
+  L1 Hits:                            17062|17062                (No change)
+  L2 Hits:                              104|104                  (No change)
+  RAM Hits:                             444|444                  (No change)
+  Total read+write:                   17610|17610                (No change)
+  Estimated Cycles:                   33122|33122                (No change)
+perf_gate_iai::perf_gate::dealloc_prealloc_only_16b
+  Instructions:                        7192|7192                 (No change)
+  L1 Hits:                             9327|9327                 (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             425|425                  (No change)
+  Total read+write:                    9844|9844                 (No change)
+  Estimated Cycles:                   24662|24662                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b
+  Instructions:                       13363|13363                (No change)
+  L1 Hits:                            16973|16973                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             471|471                  (No change)
+  Total read+write:                   17537|17537                (No change)
+  Estimated Cycles:                   33923|33923                (No change)
+perf_gate_iai::perf_gate::dealloc_contains_base_probe_only_16b
+  Instructions:                        8293|8293                 (No change)
+  L1 Hits:                            10621|10621                (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             427|427                  (No change)
+  Total read+write:                   11140|11140                (No change)
+  Estimated Cycles:                   26026|26026                (No change)
+perf_gate_iai::perf_gate::dealloc_segment_base_of_ptr_probe_only_16b
+  Instructions:                        7770|7770                 (No change)
+  L1 Hits:                            10033|10033                (No change)
+  L2 Hits:                               90|90                   (No change)
+  RAM Hits:                             427|427                  (No change)
+  Total read+write:                   10550|10550                (No change)
+  Estimated Cycles:                   25428|25428                (No change)
+perf_gate_iai::perf_gate::alloc_magazine_prefill_only_16b
+  Instructions:                        7832|7832                 (No change)
+  L1 Hits:                            10273|10273                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             427|427                  (No change)
+  Total read+write:                   10793|10793                (No change)
+  Estimated Cycles:                   25683|25683                (No change)
+perf_gate_iai::perf_gate::alloc_magazine_hit_only_16b
+  Instructions:                        8238|8238                 (No change)
+  L1 Hits:                            10773|10773                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             430|430                  (No change)
+  Total read+write:                   11296|11296                (No change)
+  Estimated Cycles:                   26288|26288                (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_magazine_prefill_only_16b
+  Instructions:                        7832|7832                 (No change)
+  L1 Hits:                            10273|10273                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             427|427                  (No change)
+  Total read+write:                   10793|10793                (No change)
+  Estimated Cycles:                   25683|25683                (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_magazine_hit_only_16b
+  Instructions:                        8623|8623                 (No change)
+  L1 Hits:                            11234|11234                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             435|435                  (No change)
+  Total read+write:                   11762|11762                (No change)
+  Estimated Cycles:                   26924|26924                (No change)
+perf_gate_iai::perf_gate::dealloc_hash_contains_only_probe_16b
+  Instructions:                        8538|8538                 (No change)
+  L1 Hits:                            10926|10926                (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             428|428                  (No change)
+  Total read+write:                   11446|11446                (No change)
+  Estimated Cycles:                   26366|26366                (No change)
+perf_gate_iai::perf_gate::dealloc_own_thread_body_only_16b
+  Instructions:                       12855|12855                (No change)
+  L1 Hits:                            16629|16629                (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             466|466                  (No change)
+  Total read+write:                   17187|17187                (No change)
+  Estimated Cycles:                   33399|33399                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n1
+  Instructions:                        7250|7250                 (No change)
+  L1 Hits:                             9398|9398                 (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             431|431                  (No change)
+  Total read+write:                    9921|9921                 (No change)
+  Estimated Cycles:                   24943|24943                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n8
+  Instructions:                        7579|7579                 (No change)
+  L1 Hits:                             9813|9813                 (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             430|430                  (No change)
+  Total read+write:                   10335|10335                (No change)
+  Estimated Cycles:                   25323|25323                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n9
+  Instructions:                        7625|7625                 (No change)
+  L1 Hits:                             9870|9870                 (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             431|431                  (No change)
+  Total read+write:                   10393|10393                (No change)
+  Estimated Cycles:                   25415|25415                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n16
+  Instructions:                        7947|7947                 (No change)
+  L1 Hits:                            10275|10275                (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             432|432                  (No change)
+  Total read+write:                   10799|10799                (No change)
+  Estimated Cycles:                   25855|25855                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n17
+  Instructions:                        8531|8531                 (No change)
+  L1 Hits:                            10971|10971                (No change)
+  L2 Hits:                               92|92                   (No change)
+  RAM Hits:                             458|458                  (No change)
+  Total read+write:                   11521|11521                (No change)
+  Estimated Cycles:                   27461|27461                (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_16b_n32
+  Instructions:                        9755|9755                 (No change)
+  L1 Hits:                            12496|12496                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             460|460                  (No change)
+  Total read+write:                   13049|13049                (No change)
+  Estimated Cycles:                   29061|29061                (No change)
+perf_gate_iai::perf_gate::dealloc_flush_class_only_16b_prefix
+  Instructions:                        3959|3959                 (No change)
+  L1 Hits:                             5404|5404                 (No change)
+  L2 Hits:                               94|94                   (No change)
+  RAM Hits:                             449|449                  (No change)
+  Total read+write:                    5947|5947                 (No change)
+  Estimated Cycles:                   21589|21589                (No change)
+perf_gate_iai::perf_gate::dealloc_flush_class_only_16b
+  Instructions:                        4408|4408                 (No change)
+  L1 Hits:                             5931|5931                 (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             470|470                  (No change)
+  Total read+write:                    6494|6494                 (No change)
+  Estimated Cycles:                   22846|22846                (No change)
+perf_gate_iai::perf_gate::alloc_clear_magazine_only_16b_prefix
+  Instructions:                        4380|4380                 (No change)
+  L1 Hits:                             5946|5946                 (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             427|427                  (No change)
+  Total read+write:                    6466|6466                 (No change)
+  Estimated Cycles:                   21356|21356                (No change)
+perf_gate_iai::perf_gate::alloc_clear_magazine_only_16b
+  Instructions:                        4575|4575                 (No change)
+  L1 Hits:                             6163|6163                 (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             438|438                  (No change)
+  Total read+write:                    6694|6694                 (No change)
+  Estimated Cycles:                   21958|21958                (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_virgin_64k_prefix
+  Instructions:                       66138|66138                (No change)
+  L1 Hits:                           130832|130832               (No change)
+  L2 Hits:                              109|109                  (No change)
+  RAM Hits:                            1000|1000                 (No change)
+  Total read+write:                  131941|131941               (No change)
+  Estimated Cycles:                  166377|166377               (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_virgin_64k
+  Instructions:                       69206|69206                (No change)
+  L1 Hits:                           134720|134720               (No change)
+  L2 Hits:                              111|111                  (No change)
+  RAM Hits:                            1096|1096                 (No change)
+  Total read+write:                  135927|135927               (No change)
+  Estimated Cycles:                  173635|173635               (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_recycled_64k_prefix
+  Instructions:                      134823|134823               (No change)
+  L1 Hits:                           264840|264840               (No change)
+  L2 Hits:                              130|130                  (No change)
+  RAM Hits:                            2126|2126                 (No change)
+  Total read+write:                  267096|267096               (No change)
+  Estimated Cycles:                  339900|339900               (No change)
+perf_gate_iai::perf_gate::alloc_zeroed_calloc_recycled_64k
+  Instructions:                      200448|200448               (No change)
+  L1 Hits:                           394989|394989               (No change)
+  L2 Hits:                             1159|1159                 (No change)
+  RAM Hits:                            2135|2135                 (No change)
+  Total read+write:                  398283|398283               (No change)
+  Estimated Cycles:                  475509|475509               (No change)
+perf_gate_iai::perf_gate::dealloc_prealloc_only_1088_16b
+  Instructions:                       91003|91003                (No change)
+  L1 Hits:                           117674|117674               (No change)
+  L2 Hits:                              111|111                  (No change)
+  RAM Hits:                             556|556                  (No change)
+  Total read+write:                  118341|118341               (No change)
+  Estimated Cycles:                  137689|137689               (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n17
+  Instructions:                       92341|92341                (No change)
+  L1 Hits:                           119317|119317               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             588|588                  (No change)
+  Total read+write:                  120017|120017               (No change)
+  Estimated Cycles:                  140457|140457               (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n32
+  Instructions:                       93565|93565                (No change)
+  L1 Hits:                           120843|120843               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             590|590                  (No change)
+  Total read+write:                  121545|121545               (No change)
+  Estimated Cycles:                  142053|142053               (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n64
+  Instructions:                       97173|97173                (No change)
+  L1 Hits:                           125323|125323               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             598|598                  (No change)
+  Total read+write:                  126033|126033               (No change)
+  Estimated Cycles:                  146813|146813               (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n256
+  Instructions:                      118821|118821               (No change)
+  L1 Hits:                           152202|152202               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             647|647                  (No change)
+  Total read+write:                  152961|152961               (No change)
+  Estimated Cycles:                  175407|175407               (No change)
+perf_gate_iai::perf_gate::dealloc_free_only_1088_16b_n1024
+  Instructions:                      205413|205413               (No change)
+  L1 Hits:                           259721|259721               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             840|840                  (No change)
+  Total read+write:                  260673|260673               (No change)
+  Estimated Cycles:                  289681|289681               (No change)
+perf_gate_iai::perf_gate::dealloc_realloc_burst_1088_16b_n17
+  Instructions:                       93698|93698                (No change)
+  L1 Hits:                           121033|121033               (No change)
+  L2 Hits:                              112|112                  (No change)
+  RAM Hits:                             596|596                  (No change)
+  Total read+write:                  121741|121741               (No change)
+  Estimated Cycles:                  142453|142453               (No change)
+perf_gate_iai::perf_gate::oscillating_live_set_16b
+  Instructions:                       27654|27654                (No change)
+  L1 Hits:                            35025|35025                (No change)
+  L2 Hits:                               93|93                   (No change)
+  RAM Hits:                             467|467                  (No change)
+  Total read+write:                   35585|35585                (No change)
+  Estimated Cycles:                   51835|51835                (No change)
+perf_gate_iai::perf_gate::carve_batch_only_16b
+  Instructions:                       68283|68283                (No change)
+  L1 Hits:                           133162|133162               (No change)
+  L2 Hits:                               97|97                   (No change)
+  RAM Hits:                            1047|1047                 (No change)
+  Total read+write:                  134306|134306               (No change)
+  Estimated Cycles:                  170292|170292               (No change)
+perf_gate_iai::perf_gate::carve_batch_only_16b_2n
+  Instructions:                       74191|74191                (No change)
+  L1 Hits:                           143199|143199               (No change)
+  L2 Hits:                               98|98                   (No change)
+  RAM Hits:                            1078|1078                 (No change)
+  Total read+write:                  144375|144375               (No change)
+  Estimated Cycles:                  181419|181419               (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_16_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_64_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_80_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_81_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_128_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_200_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_512_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_1024_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_0_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_1_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_8_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::dealloc_batch_fresh_17_16b
+  Instructions:                           3|3                    (No change)
+  L1 Hits:                                4|4                    (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                               1|1                    (No change)
+  Total read+write:                       5|5                    (No change)
+  Estimated Cycles:                      39|39                   (No change)
+perf_gate_iai::perf_gate::medium_class_dealloc_churn_16b
+  Instructions:                        8437|8437                 (No change)
+  L1 Hits:                            11048|11048                (No change)
+  L2 Hits:                              104|104                  (No change)
+  RAM Hits:                             442|442                  (No change)
+  Total read+write:                   11594|11594                (No change)
+  Estimated Cycles:                   27038|27038                (No change)
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                        8373|8373                 (No change)
+  L1 Hits:                            10983|10983                (No change)
+  L2 Hits:                              104|104                  (No change)
+  RAM Hits:                             443|443                  (No change)
+  Total read+write:                   11530|11530                (No change)
+  Estimated Cycles:                   27008|27008                (No change)
+perf_gate_iai::perf_gate::large_alloc_free_cycle
+  Instructions:                        3312|3312                 (No change)
+  L1 Hits:                             4757|4757                 (No change)
+  L2 Hits:                              105|105                  (No change)
+  RAM Hits:                             443|443                  (No change)
+  Total read+write:                    5305|5305                 (No change)
+  Estimated Cycles:                   20787|20787                (No change)
+perf_gate_iai::perf_gate::realloc_grow
+  Instructions:                      492622|492622               (No change)
+  L1 Hits:                          1046708|1046708              (No change)
+  L2 Hits:                             3862|3862                 (No change)
+  RAM Hits:                           70328|70328                (No change)
+  Total read+write:                 1120898|1120898              (No change)
+  Estimated Cycles:                 3527498|3527498              (No change)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       51942|51942                (No change)
+  L1 Hits:                            64441|64441                (No change)
+  L2 Hits:                              106|106                  (No change)
+  RAM Hits:                             562|562                  (No change)
+  Total read+write:                   65109|65109                (No change)
+  Estimated Cycles:                   84641|84641                (No change)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b_2n
+  Instructions:                      105923|105923               (No change)
+  L1 Hits:                           133888|133888               (No change)
+  L2 Hits:                              125|125                  (No change)
+  RAM Hits:                             658|658                  (No change)
+  Total read+write:                  134671|134671               (No change)
+  Estimated Cycles:                  157543|157543               (No change)
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b_4n
+  Instructions:                      210021|210021               (No change)
+  L1 Hits:                           264951|264951               (No change)
+  L2 Hits:                              167|167                  (No change)
+  RAM Hits:                             852|852                  (No change)
+  Total read+write:                  265970|265970               (No change)
+  Estimated Cycles:                  295606|295606               (No change)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b
+  Instructions:                       23058|23058                (No change)
+  L1 Hits:                            28613|28613                (No change)
+  L2 Hits:                              105|105                  (No change)
+  RAM Hits:                             468|468                  (No change)
+  Total read+write:                   29186|29186                (No change)
+  Estimated Cycles:                   45518|45518                (No change)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b_2n
+  Instructions:                       47103|47103                (No change)
+  L1 Hits:                            60909|60909                (No change)
+  L2 Hits:                              124|124                  (No change)
+  RAM Hits:                             499|499                  (No change)
+  Total read+write:                   61532|61532                (No change)
+  Estimated Cycles:                   78994|78994                (No change)
+perf_gate_iai::perf_gate::cold_alloc_only_256x16b_4n
+  Instructions:                       91329|91329                (No change)
+  L1 Hits:                           117668|117668               (No change)
+  L2 Hits:                              166|166                  (No change)
+  RAM Hits:                             565|565                  (No change)
+  Total read+write:                  118399|118399               (No change)
+  Estimated Cycles:                  138273|138273               (No change)
+perf_gate_iai::perf_gate::cold_alloc_free_256x64b
+  Instructions:                       51912|51912                (No change)
+  L1 Hits:                            64229|64229                (No change)
+  L2 Hits:                              106|106                  (No change)
+  RAM Hits:                             744|744                  (No change)
+  Total read+write:                   65079|65079                (No change)
+  Estimated Cycles:                   90799|90799                (No change)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      101860|101860               (No change)
+  L1 Hits:                           125542|125542               (No change)
+  L2 Hits:                               29|29                   (No change)
+  RAM Hits:                             673|673                  (No change)
+  Total read+write:                  126244|126244               (No change)
+  Estimated Cycles:                  149242|149242               (No change)
+perf_gate_iai::perf_gate::recycle_alloc_only_256x16b
+  Instructions:                       72796|72796                (No change)
+  L1 Hits:                            89361|89361                (No change)
+  L2 Hits:                              106|106                  (No change)
+  RAM Hits:                             568|568                  (No change)
+  Total read+write:                   90035|90035                (No change)
+  Estimated Cycles:                  109771|109771               (No change)
+perf_gate_iai::perf_gate::recycle_alloc_free_256x64b
+  Instructions:                      101860|101860               (No change)
+  L1 Hits:                           125347|125347               (No change)
+  L2 Hits:                               29|29                   (No change)
+  RAM Hits:                             868|868                  (No change)
+  Total read+write:                  126244|126244               (No change)
+  Estimated Cycles:                  155872|155872               (No change)
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                        8437|8437                 (No change)
+  L1 Hits:                            11046|11046                (No change)
+  L2 Hits:                              103|103                  (No change)
+  RAM Hits:                             445|445                  (No change)
+  Total read+write:                   11594|11594                (No change)
+  Estimated Cycles:                   27136|27136                (No change)
+perf_gate_iai::perf_gate::churn_write_256b
+  Instructions:                        8693|8693                 (No change)
+  L1 Hits:                            11427|11427                (No change)
+  L2 Hits:                              105|105                  (No change)
+  RAM Hits:                             446|446                  (No change)
+  Total read+write:                   11978|11978                (No change)
+  Estimated Cycles:                   27562|27562                (No change)
+perf_gate_iai::perf_gate::multiseg_cold_256k
+  Instructions:                       26136|26136                (No change)
+  L1 Hits:                            35243|35243                (No change)
+  L2 Hits:                               42|42                   (No change)
+  RAM Hits:                             745|745                  (No change)
+  Total read+write:                   36030|36030                (No change)
+  Estimated Cycles:                   61528|61528                (No change)
+perf_gate_iai::perf_gate::seg_cycle_decommit_256k
+  Instructions:                       63050|63050                (No change)
+  L1 Hits:                            84484|84484                (No change)
+  L2 Hits:                              111|111                  (No change)
+  RAM Hits:                             747|747                  (No change)
+  Total read+write:                   85342|85342                (No change)
+  Estimated Cycles:                  111184|111184               (No change)
+perf_gate_iai::perf_gate::mimalloc_small_churn_16b
+  Instructions:                       16629|16629                (No change)
+  L1 Hits:                            21422|21422                (No change)
+  L2 Hits:                               71|71                   (No change)
+  RAM Hits:                             505|505                  (No change)
+  Total read+write:                   21998|21998                (No change)
+  Estimated Cycles:                   39452|39452                (No change)
+perf_gate_iai::perf_gate::mimalloc_small_churn_16b_2n
+  Instructions:                       21557|21557                (No change)
+  L1 Hits:                            27888|27888                (No change)
+  L2 Hits:                               69|69                   (No change)
+  RAM Hits:                             505|505                  (No change)
+  Total read+write:                   28462|28462                (No change)
+  Estimated Cycles:                   45908|45908                (No change)
+perf_gate_iai::perf_gate::mimalloc_churn_256b
+  Instructions:                       16130|16130                (No change)
+  L1 Hits:                            20935|20935                (No change)
+  L2 Hits:                               73|73                   (No change)
+  RAM Hits:                             459|459                  (No change)
+  Total read+write:                   21467|21467                (No change)
+  Estimated Cycles:                   37365|37365                (No change)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b
+  Instructions:                       32325|32325                (No change)
+  L1 Hits:                            41773|41773                (No change)
+  L2 Hits:                               96|96                   (No change)
+  RAM Hits:                             506|506                  (No change)
+  Total read+write:                   42375|42375                (No change)
+  Estimated Cycles:                   59963|59963                (No change)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b_2n
+  Instructions:                       58389|58389                (No change)
+  L1 Hits:                            78267|78267                (No change)
+  L2 Hits:                              138|138                  (No change)
+  RAM Hits:                             586|586                  (No change)
+  Total read+write:                   78991|78991                (No change)
+  Estimated Cycles:                   99467|99467                (No change)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x16b_4n
+  Instructions:                      106653|106653               (No change)
+  L1 Hits:                           143421|143419               (+0.00139%) [+1.00001x]
+  L2 Hits:                              214|216                  (-0.92593%) [-1.00935x]
+  RAM Hits:                             761|761                  (No change)
+  Total read+write:                  144396|144396               (No change)
+  Estimated Cycles:                  171126|171134               (-0.00467%) [-1.00005x]
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b
+  Instructions:                       24584|24584                (No change)
+  L1 Hits:                            30948|30948                (No change)
+  L2 Hits:                               96|96                   (No change)
+  RAM Hits:                             499|499                  (No change)
+  Total read+write:                   31543|31543                (No change)
+  Estimated Cycles:                   48893|48893                (No change)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b_2n
+  Instructions:                       42968|42968                (No change)
+  L1 Hits:                            56691|56691                (No change)
+  L2 Hits:                              137|137                  (No change)
+  RAM Hits:                             579|579                  (No change)
+  Total read+write:                   57407|57407                (No change)
+  Estimated Cycles:                   77641|77641                (No change)
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_only_256x16b_4n
+  Instructions:                       75872|75872                (No change)
+  L1 Hits:                           100339|100341               (-0.00199%) [-1.00002x]
+  L2 Hits:                              215|213                  (+0.93897%) [+1.00939x]
+  RAM Hits:                             754|754                  (No change)
+  Total read+write:                  101308|101308               (No change)
+  Estimated Cycles:                  127804|127796               (+0.00626%) [+1.00006x]
+perf_gate_iai::perf_gate::mimalloc_cold_alloc_free_256x64b
+  Instructions:                       33329|33329                (No change)
+  L1 Hits:                            42928|42928                (No change)
+  L2 Hits:                              106|106                  (No change)
+  RAM Hits:                             714|714                  (No change)
+  Total read+write:                   43748|43748                (No change)
+  Estimated Cycles:                   68448|68448                (No change)
+perf_gate_iai::perf_gate::mimalloc_recycle_alloc_free_256x16b
+  Instructions:                       53020|53020                (No change)
+  L1 Hits:                            68675|68675                (No change)
+  L2 Hits:                               98|98                   (No change)
+  RAM Hits:                             510|510                  (No change)
+  Total read+write:                   69283|69283                (No change)
+  Estimated Cycles:                   87015|87015                (No change)
+perf_gate_iai::perf_gate::mimalloc_recycle_alloc_free_256x64b
+  Instructions:                       54024|54024                (No change)
+  L1 Hits:                            69833|69833                (No change)
+  L2 Hits:                              106|106                  (No change)
+  RAM Hits:                             717|717                  (No change)
+  Total read+write:                   70656|70656                (No change)
+  Estimated Cycles:                   95458|95458                (No change)
+perf_gate_iai::perf_gate::mimalloc_bootstrap_proxy
+  Instructions:                       13050|13050                (No change)
+  L1 Hits:                            16710|16710                (No change)
+  L2 Hits:                               78|78                   (No change)
+  RAM Hits:                             517|517                  (No change)
+  Total read+write:                   17305|17305                (No change)
+  Estimated Cycles:                   35195|35195                (No change)
+perf_gate_iai::perf_gate::decomp_full_cycle_8x
+  Instructions:                        7849|7849                 (No change)
+  L1 Hits:                            11499|11499                (No change)
+  L2 Hits:                               97|97                   (No change)
+  RAM Hits:                             558|558                  (No change)
+  Total read+write:                   12154|12154                (No change)
+  Estimated Cycles:                   31514|31514                (No change)
+perf_gate_iai::perf_gate::decomp_os_roundtrip_8x
+  Instructions:                        1394|1394                 (No change)
+  L1 Hits:                             1833|1833                 (No change)
+  L2 Hits:                                0|0                    (No change)
+  RAM Hits:                              18|18                   (No change)
+  Total read+write:                    1851|1851                 (No change)
+  Estimated Cycles:                    2463|2463                 (No change)
+
+Iai-Callgrind result: Ok. 81 without regressions; 0 regressed; 81 benchmarks finished in 52.7416s
+
+  bench                                             Ir            L1            L2           RAM     EstCycles        Ir/op*
+  --------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------
+  small_churn_16b                                8,437        11,047           103           444        27,102          80.1
+  small_churn_16b_2n                            13,237        17,062           104           444        33,122             -
+  alloc_zeroed_magazine_prefill_only_16b         7,832        10,273            93           427        25,683             -
+  alloc_zeroed_magazine_hit_only_16b             8,623        11,234            93           435        26,924             -
+  aligned_churn_640b_a128                        8,373        10,983           104           443        27,008          79.1
+  cold_alloc_free_256x16b                       51,942        64,441           106           562        84,641         190.0
+  cold_alloc_free_256x16b_2n                   105,923       133,888           125           658       157,543             -
+  cold_alloc_free_256x16b_4n                   210,021       264,951           167           852       295,606             -
+  churn_256b                                     8,437        11,046           103           445        27,136          80.1
+  mimalloc_small_churn_16b                      16,629        21,422            71           505        39,452          55.9
+  mimalloc_small_churn_16b_2n                   21,557        27,888            69           505        45,908             -
+  mimalloc_churn_256b                           16,130        20,935            73           459        37,365          48.1
+  mimalloc_cold_alloc_free_256x16b              32,325        41,773            96           506        59,963          75.3
+  mimalloc_cold_alloc_free_256x16b_2n           58,389        78,267           138           586        99,467             -
+  mimalloc_cold_alloc_free_256x16b_4n          106,653       143,421           214           761       171,126             -
+
+  * Ir/op = (Ir − B) / ops — marginal instruction count per operation, with
+    the one-time process bootstrap subtracted. B is taken PER ARM: SeferAlloc
+    rows use large_alloc_free_cycle (B=3,312); mimalloc_* rows use
+    mimalloc_bootstrap_proxy (B=13,050) — the two allocators' bootstrap
+    constants are never mixed (R22-15/task #366). Comparable across benches
+    within the SAME arm; the honest unit for per-op thresholds (review finding
+    F2). "-" = bootstrap proxy / no op-count / that arm's bootstrap bench absent.
+
+  Sefer/mimalloc marginal Ir/op ratio (workload-matched pairs):
+
+  workload                  Sefer Ir/op      mi Ir/op         ratio
+  -----------------------  ------------  ------------  ------------
+  small_churn_16b                  80.1          55.9         1.433
+  churn_256b                       80.1          48.1         1.665
+  cold_alloc_free_256x16b         190.0          75.3         2.523
+
+  ratio = Sefer Ir/op ÷ mimalloc Ir/op — > 1.000 means SeferAlloc retires MORE
+    instructions per op than mimalloc on that workload (i.e. mimalloc is
+    cheaper in Ir); < 1.000 means the reverse. "-" when a pair's row is
+    missing/filtered on either side.
+
+[iai] PASS — 15 bench(es) produced Ir

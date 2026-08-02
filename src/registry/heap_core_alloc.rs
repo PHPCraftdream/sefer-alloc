@@ -370,7 +370,26 @@ impl HeapCore {
                     crate::alloc_core::segment_header::bump_gen(base, off)
                 };
             }
-            self.stamp_segment_owner(issued);
+            // F7 (task #495): NO stamp here — same P4 reasoning as `alloc`'s
+            // own magazine-hit arm above. Every block that can ever sit in
+            // the magazine was placed there by one of exactly three
+            // producers: `refill_magazine_slow`, `refill_magazine_slow_virgin`
+            // (both stamp each distinct source segment via their
+            // stamp-dedupe loop before any block lands in `tcache.classes`),
+            // or the free path's own push
+            // (`dealloc_own_thread`/`dealloc_own_thread_with_base` in
+            // `heap_core_free.rs`, itself reachable only via
+            // `self.core.contains_base(base)` — i.e. only for a block whose
+            // segment is already registered in THIS heap's own `AllocCore`,
+            // which can only be true if this heap already stamped it on a
+            // prior alloc). No path can pop a magazine-resident block whose
+            // segment was never stamped with `self.id`, so this call was
+            // pure redundant overhead (an extra `segment_base_of_ptr`
+            // recompute — `clear_magazine` above already computed the same
+            // base — plus a `last_stamped_segment` compare and a Relaxed
+            // load of the owner-state word) under the arm's own P4
+            // guarantee. See `docs/perf/R31_0_VIRGIN_ZERO_SKIP_PRODUCTION_LAYER_GATE.md`'s
+            // dated addendum for the corrected A/B framing.
             return (issued, is_virgin);
         }
         // Magazine miss: the virgin-tracking sibling of `refill_magazine_slow`

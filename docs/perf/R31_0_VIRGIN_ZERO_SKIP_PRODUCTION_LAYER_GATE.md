@@ -541,3 +541,61 @@ committed raw-log artifact behind them (§3.1's `_run2` pair, cited by
 filename) are unchanged and still carry the report's evidentiary weight.
 No measured value, table, or headline verdict changed — this is a citation
 scope correction only.
+
+## 9. CORRECTED 2026-08-02 — ON-arm stamp-cost asymmetry named and fixed (R32-4, task #495)
+
+This section is appended, not a rewrite — every number, table, and verdict
+in §§0-8 above stays exactly as originally published.
+
+**Confound (independently verified, then fixed):** this report's §1-§4 A/B
+compares `virgin-zero-skip` ON (routes `HeapCore::alloc_zeroed` through
+`alloc_small_zeroed_via_magazine`) against OFF (routes through plain
+`alloc`'s own magazine-hit arm). At the time this report was written, the ON
+arm's hit path carried an extra `self.stamp_segment_owner(issued)` call on
+EVERY magazine hit that the OFF arm's equivalent hit arm (plain `alloc`'s,
+`heap_core_alloc.rs`) does NOT pay — that arm's own P4 comment already says
+"NO stamp here — the block's source segment was already stamped during the
+refill that originally pulled it," and the identical guarantee holds for
+the ON arm's hit arm (both are fed by refill functions with line-for-line
+identical stamp-dedupe loops — see R32-4's §1 enumeration,
+`docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE.md`). There
+was no stated reason for the asymmetry; it was carried over by symmetry
+from a genuinely different, magazine-bypassing sibling branch
+(`virgin-zero-skip` without `fastbin`) where the stamp IS load-bearing.
+
+**Direction of bias: against the ON arm, i.e. this report's headline
+findings UNDERSTATE `virgin-zero-skip`'s benefit.** The extra
+`stamp_segment_owner` call (`os::segment_base_of_ptr` recompute + a
+`last_stamped_segment` compare + a Relaxed atomic load of the owner-state
+word — a fourth distinct metadata cache line touched per hit) was pure
+overhead the ON arm paid on every magazine hit that the OFF arm's
+equivalent code path never pays. Every ON-arm number in this report's
+§§1-4 — the wall-clock deltas, the Ir/op figures, the `notouch` percentages
+— is therefore a conservative (worse-for-ON) measurement of the feature's
+true benefit, not an inflated one. This does NOT threaten this report's
+GO verdict (§5): the ON arm still measured a large win despite carrying
+this extra cost, so removing the cost can only widen the margin, never
+narrow it.
+
+**Fix and re-measurement:** R32-4 (task #495, commit — see that report's
+own landing-commit citation) enumerated all three producers of a
+magazine-resident block (`refill_magazine_slow`,
+`refill_magazine_slow_virgin`, and the free path's own push in
+`dealloc_own_thread`) and confirmed no producer can ever place an unstamped
+segment's block into the magazine — removing the redundant stamp call was
+therefore safe. A dedicated Ir gate
+(`benches/perf_gate_iai.rs`'s new `alloc_zeroed_magazine_prefill_only_16b` /
+`alloc_zeroed_magazine_hit_only_16b` pair) measured the isolated cost of
+the now-removed call: **−12.00 Ir per magazine hit** (16-hit delta of −192
+Ir; BEFORE/AFTER raw logs and a checked-script-derived, self-asserting
+summary CSV at
+`docs/perf/_raw_r495_stamp_removal_before.log` /
+`_raw_r495_stamp_removal_after.log` /
+`docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv` — see
+`docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE.md` for the
+full gate). This report's own §1-§4 numbers are **NOT re-measured or
+re-derived here** (per this project's append-only convention — the original
+measurement stands as the honest historical record of what was actually
+run at the time); a future round MAY choose to re-run this report's A/B
+under the now-corrected code if a tighter, confound-free headline number is
+needed, but the existing GO verdict does not require it.
