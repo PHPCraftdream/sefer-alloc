@@ -1,4 +1,4 @@
-# R32-11 (task #502, F10) summary — landing_commit=c9a3570bfa4393c4a8383be25c3654e1421c7671
+# R32-11 (task #502, F10) summary — landing_commit=d38bf73c63fa989eace81e659a3844b98f6656c5
 # cpu=Intel_Core_i7-11800H_2.30GHz os=Windows_10_Pro_10.0.19045 feature_set_before="alloc-global alloc-xthread bench-internals" feature_set_after="alloc-global alloc-xthread (timing-only, no bench-internals)"
 label,arm_a,arm_b,n,mean_a_ns,mean_b_ns,ns_per_push_a,ns_per_push_b,delta_ns,pct_change,t,crit,significant,sign_a_faster,sign_b_faster,git_commit,timestamp
 favorable_trial1,before_favorable,after_favorable,20,43388492.5,27878405.0,216.9425,139.3920,15510087.5,-35.75,20.971,2.101,true,0,20,c9a3570bfa4393c4a8383be25c3654e1421c7671,2026-08-02T19:18:32.845Z
