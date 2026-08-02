@@ -224,6 +224,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_used",
     "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_hits",
     "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_slot_sizes",
+    "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_occupied_bits",
     "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_budget",
     "src/alloc_core/alloc_core_large_cache.rs::dbg_large_cache_mode",
     "src/alloc_core/alloc_core.rs::dbg_cached_numa_node",

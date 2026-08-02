@@ -1,0 +1,56 @@
+# TRUNCATED -- full compile output and ~78 other benches cut -- full output reproducible via: CARGO_BUILD_RUSTC_WRAPPER="" cargo bench --bench perf_gate_iai --features "production bench-internals" against commit e784dbc537752c4b4537a043130fc8da2b2573b1 (task #503 base commit, pre-change: linear .position(|s| s.is_none()) free-slot scan)
+
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                        9038|9038                 (No change)
+  L1 Hits:                            12015|12017                (-0.01664%) [-1.00017x]
+  L2 Hits:                              101|100                  (+1.00000%) [+1.01000x]
+  RAM Hits:                             289|288                  (+0.34722%) [+1.00347x]
+  Total read+write:                   12405|12405                (No change)
+  Estimated Cycles:                   22635|22597                (+0.16816%) [+1.00168x]
+--
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                        8974|8974                 (No change)
+  L1 Hits:                            11950|11953                (-0.02510%) [-1.00025x]
+  L2 Hits:                              101|99                   (+2.02020%) [+1.02020x]
+  RAM Hits:                             290|289                  (+0.34602%) [+1.00346x]
+  Total read+write:                   12341|12341                (No change)
+  Estimated Cycles:                   22605|22563                (+0.18615%) [+1.00186x]
+--
+perf_gate_iai::perf_gate::large_cache_free_slot_search_prefill_only
+  Instructions:                        7924|N/A                  (*********)
+  L1 Hits:                            11504|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             407|N/A                  (*********)
+  Total read+write:                   12006|N/A                  (*********)
+  Estimated Cycles:                   26224|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_cycle_only
+  Instructions:                       11045|N/A                  (*********)
+  L1 Hits:                            16119|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             416|N/A                  (*********)
+  Total read+write:                   16630|N/A                  (*********)
+  Estimated Cycles:                   31154|N/A                  (*********)
+--
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       51548|51548                (No change)
+  L1 Hits:                            64383|64385                (-0.00311%) [-1.00003x]
+  L2 Hits:                               99|99                   (No change)
+  RAM Hits:                             410|408                  (+0.49020%) [+1.00490x]
+  Total read+write:                   64892|64892                (No change)
+  Estimated Cycles:                   79228|79160                (+0.08590%) [+1.00086x]
+--
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      100764|100764               (No change)
+  L1 Hits:                           125266|125271               (-0.00399%) [-1.00004x]
+  L2 Hits:                               23|22                   (+4.54545%) [+1.04545x]
+  RAM Hits:                             521|517                  (+0.77369%) [+1.00774x]
+  Total read+write:                  125810|125810               (No change)
+  Estimated Cycles:                  143616|143476               (+0.09758%) [+1.00098x]
+--
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                        9038|9038                 (No change)
+  L1 Hits:                            12016|12019                (-0.02496%) [-1.00025x]
+  L2 Hits:                               98|96                   (+2.08333%) [+1.02083x]
+  RAM Hits:                             291|290                  (+0.34483%) [+1.00345x]
+  Total read+write:                   12405|12405                (No change)
+  Estimated Cycles:                   22691|22649                (+0.18544%) [+1.00185x]

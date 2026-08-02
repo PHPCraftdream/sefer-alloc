@@ -1,0 +1,56 @@
+# TRUNCATED -- full compile output and ~78 other benches cut -- full output reproducible via: CARGO_BUILD_RUSTC_WRAPPER="" cargo bench --bench perf_gate_iai --features "production bench-internals" against this task working tree (task #503, after: large_cache_occupied.trailing_ones() bitmask lookup) -- see docs/perf/R32_12_LARGE_CACHE_OCCUPANCY_BITMASK_GATE.md for the exact source identity (tree SHA 705cb3487c556e1bd3897644c1bae9ac1f3b1bd2)
+
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                        9039|9039                 (No change)
+  L1 Hits:                            12021|12022                (-0.00832%) [-1.00008x]
+  L2 Hits:                               99|97                   (+2.06186%) [+1.02062x]
+  RAM Hits:                             287|288                  (-0.34722%) [-1.00348x]
+  Total read+write:                   12407|12407                (No change)
+  Estimated Cycles:                   22561|22587                (-0.11511%) [-1.00115x]
+--
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                        8975|8975                 (No change)
+  L1 Hits:                            11957|11956                (+0.00836%) [+1.00008x]
+  L2 Hits:                               98|98                   (No change)
+  RAM Hits:                             288|289                  (-0.34602%) [-1.00347x]
+  Total read+write:                   12343|12343                (No change)
+  Estimated Cycles:                   22527|22561                (-0.15070%) [-1.00151x]
+--
+perf_gate_iai::perf_gate::large_cache_free_slot_search_prefill_only
+  Instructions:                        7924|N/A                  (*********)
+  L1 Hits:                            11487|N/A                  (*********)
+  L2 Hits:                               92|N/A                  (*********)
+  RAM Hits:                             407|N/A                  (*********)
+  Total read+write:                   11986|N/A                  (*********)
+  Estimated Cycles:                   26192|N/A                  (*********)
+perf_gate_iai::perf_gate::large_cache_free_slot_search_cycle_only
+  Instructions:                       11005|N/A                  (*********)
+  L1 Hits:                            16022|N/A                  (*********)
+  L2 Hits:                               92|N/A                  (*********)
+  RAM Hits:                             416|N/A                  (*********)
+  Total read+write:                   16530|N/A                  (*********)
+  Estimated Cycles:                   31042|N/A                  (*********)
+--
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       51549|51549                (No change)
+  L1 Hits:                            64391|64388                (+0.00466%) [+1.00005x]
+  L2 Hits:                               96|98                   (-2.04082%) [-1.02083x]
+  RAM Hits:                             407|408                  (-0.24510%) [-1.00246x]
+  Total read+write:                   64894|64894                (No change)
+  Estimated Cycles:                   79116|79158                (-0.05306%) [-1.00053x]
+--
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                      100758|100758               (No change)
+  L1 Hits:                           125260|125258               (+0.00160%) [+1.00002x]
+  L2 Hits:                               23|24                   (-4.16667%) [-1.04348x]
+  RAM Hits:                             518|519                  (-0.19268%) [-1.00193x]
+  Total read+write:                  125801|125801               (No change)
+  Estimated Cycles:                  143505|143543               (-0.02647%) [-1.00026x]
+--
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                        9039|9039                 (No change)
+  L1 Hits:                            12020|12018                (+0.01664%) [+1.00017x]
+  L2 Hits:                              101|101                  (No change)
+  RAM Hits:                             286|288                  (-0.69444%) [-1.00699x]
+  Total read+write:                   12407|12407                (No change)
+  Estimated Cycles:                   22535|22603                (-0.30085%) [-1.00302x]

@@ -94,6 +94,23 @@ use super::size_classes::{AllocKind, SizeClasses};
 #[cfg(feature = "alloc-decommit")]
 pub(super) const LARGE_CACHE_SLOTS: usize = 8;
 
+// R32-12 (task #503, F8 sub-change (2)): compile-time pin that the combined
+// base+extension slot count never exceeds the 64 bits `large_cache_occupied`
+// (below) can address. Base is 8 unconditionally; the extension adds
+// `LARGE_CACHE_EXTENDED_SLOTS` (32, `large_cache_extended.rs`) only under
+// `large-cache-extended`, giving 40 total — comfortably under 64. If a future
+// round raises either constant past this bound, this assertion is the
+// intended trip-wire (widen `large_cache_occupied` to `u128` or a two-word
+// bitmask rather than silently truncating `trailing_ones()`'s addressable
+// range).
+#[cfg(feature = "large-cache-extended")]
+const _: () = assert!(
+    LARGE_CACHE_SLOTS + super::large_cache_extended::LARGE_CACHE_EXTENDED_SLOTS
+        <= u64::BITS as usize
+);
+#[cfg(all(feature = "alloc-decommit", not(feature = "large-cache-extended")))]
+const _: () = assert!(LARGE_CACHE_SLOTS <= u64::BITS as usize);
+
 /// Size-ratio bound: we only reuse a cached entry if its usable_size is at most
 /// `needed * LARGE_CACHE_SIZE_FACTOR`. Without this a very large cached segment
 /// would be permanently reused for every small large-request — wasting RSS
@@ -683,6 +700,44 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub(super) large_cache: [Option<CachedLarge>; LARGE_CACHE_SLOTS],
 
+    /// R32-12 (task #503, F8 sub-change (2)): occupancy bitmask over the
+    /// COMBINED base+extension index space (see `CombinedSlot` in
+    /// `alloc_core_large_cache.rs`) — bit `i` set ⟺ combined slot `i`
+    /// currently holds `Some(CachedLarge)`. Replaces the free-slot-search
+    /// scan (`self.large_cache.iter().position(|s| s.is_none())`,
+    /// `large_cache_find_free_slot`) with a `trailing_ones()` lookup: the
+    /// index of the lowest CLEAR bit is the lowest free slot, found without
+    /// walking the 56-byte-per-slot `[Option<CachedLarge>; N]` array at all.
+    ///
+    /// The discriminant this bit mirrors is NOT duplicated data (a bit
+    /// derived from `Option::is_some()` carries no independent value that
+    /// could drift out of sync in the sense a copied field could) — but it
+    /// IS state that must be maintained in lockstep with every occupation
+    /// change, so every site that currently sets/clears an
+    /// `Option<CachedLarge>` slot to `Some`/`None` must also set/clear the
+    /// corresponding bit here. The complete enumeration of those sites (per
+    /// CLAUDE.md's site-enumeration discipline):
+    ///   1. [`large_cache_slot_set`](Self::large_cache_slot_set) — sets the
+    ///      bit for `idx` (the slot transitions None → Some).
+    ///   2. [`large_cache_slot_take`](Self::large_cache_slot_take) — clears
+    ///      the bit for `idx` (the slot transitions Some → None).
+    ///
+    /// These are the ONLY two functions in this crate that ever write
+    /// `self.large_cache[i]` or `ext.slots[i]` (verified by grep — see
+    /// `docs/perf/R32_12_LARGE_CACHE_OCCUPANCY_BITMASK_GATE.md` §2 for the
+    /// exhaustive site list); every other mutation (deposit, cache-hit take,
+    /// eviction) already funnels through one of these two, so maintaining
+    /// the bitmask in exactly these two places keeps it correct by
+    /// construction, not by convention.
+    ///
+    /// Sized `u64`: `LARGE_CACHE_SLOTS + LARGE_CACHE_EXTENDED_SLOTS` (8 + 32
+    /// = 40) is the current combined maximum, pinned `<= u64::BITS` by the
+    /// compile-time assertions above this struct — see those assertions'
+    /// own doc for what to do if a future round raises either constant past
+    /// 64.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_occupied: u64,
+
     /// R13-7 (task #277, EXPERIMENTAL `large-cache-extended`): lazily-
     /// materialised sidecar pointer widening the large-cache from
     /// `LARGE_CACHE_SLOTS` (8) to `8 + LARGE_CACHE_EXTENDED_SLOTS` (40) total
@@ -1177,6 +1232,8 @@ impl AllocCore {
             numa_node_hits_since_refresh: 0,
             #[cfg(feature = "alloc-decommit")]
             large_cache: [const { None }; LARGE_CACHE_SLOTS],
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_occupied: 0,
             #[cfg(feature = "large-cache-extended")]
             large_cache_extension: core::ptr::null_mut(),
             #[cfg(feature = "alloc-decommit")]

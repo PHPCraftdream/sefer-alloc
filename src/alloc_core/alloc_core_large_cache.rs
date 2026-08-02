@@ -105,6 +105,13 @@ impl AllocCore {
     /// proven occupied by [`large_cache_scan_bound`]/[`large_cache_slot_get`],
     /// mirroring the pre-existing `self.large_cache[i].take().unwrap()`
     /// call sites this replaces.
+    ///
+    /// R32-12 (task #503, F8 sub-change (2)): one of the two sites (see
+    /// `large_cache_occupied`'s own doc) that maintain the occupancy
+    /// bitmask in lockstep — clears bit `idx` on every successful take
+    /// (i.e. only once the `.expect()`/extension path proves an entry
+    /// really was there, so the bitmask is never cleared for a slot that
+    /// was already empty).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
@@ -116,9 +123,11 @@ impl AllocCore {
                           // live across this call.
     pub(super) fn large_cache_slot_take(&mut self, idx: CombinedSlot) -> CachedLarge {
         if idx < LARGE_CACHE_SLOTS {
-            return self.large_cache[idx]
+            let taken = self.large_cache[idx]
                 .take()
                 .expect("large_cache_slot_take: empty base slot");
+            self.large_cache_occupied &= !(1u64 << idx);
+            return taken;
         }
         #[cfg(feature = "large-cache-extended")]
         {
@@ -127,9 +136,11 @@ impl AllocCore {
             let ext = unsafe {
                 large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
             };
-            ext.slots[idx - LARGE_CACHE_SLOTS]
+            let taken = ext.slots[idx - LARGE_CACHE_SLOTS]
                 .take()
-                .expect("large_cache_slot_take: empty extension slot")
+                .expect("large_cache_slot_take: empty extension slot");
+            self.large_cache_occupied &= !(1u64 << idx);
+            taken
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
@@ -204,6 +215,17 @@ impl AllocCore {
     /// see [`AllocCore::large_cache_deposit_budget_infeasible`], which those
     /// callers consult FIRST specifically to avoid paying this reservation
     /// attempt for a deposit that can never be admitted.
+    ///
+    /// R32-12 (task #503, F8 sub-change (2)): the base-8 scan
+    /// (`self.large_cache.iter().position(|s| s.is_none())`, one `Option`
+    /// read per slot = up to 7 cache lines at the measured 56 B/slot stride)
+    /// is replaced by `large_cache_occupied.trailing_ones()` — the index of
+    /// the lowest CLEAR bit in the occupancy bitmask, found without touching
+    /// the `large_cache` array at all. `trailing_ones() as usize` is only
+    /// used as a slot index when it is `< LARGE_CACHE_SLOTS` (checked
+    /// below); a fully-occupied base (all 8 low bits set) yields
+    /// `trailing_ones() == 8`, correctly falling through to the extension
+    /// arm exactly as the old `.position()` returning `None` did.
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension`
@@ -214,8 +236,9 @@ impl AllocCore {
                           // rules out a concurrent writer; the returned `&LargeCacheExtension`
                           // does not outlive this call.
     pub(super) fn large_cache_find_free_slot(&mut self) -> Option<CombinedSlot> {
-        if let Some(i) = self.large_cache.iter().position(|s| s.is_none()) {
-            return Some(i);
+        let base_free = self.large_cache_occupied.trailing_ones() as usize;
+        if base_free < LARGE_CACHE_SLOTS {
+            return Some(base_free);
         }
         #[cfg(feature = "large-cache-extended")]
         {
@@ -242,6 +265,13 @@ impl AllocCore {
     /// Write `entry` into the COMBINED slot `idx` (must currently be empty —
     /// mirrors the pre-existing `self.large_cache[slot_idx] = Some(..)`
     /// assignment this replaces).
+    ///
+    /// R32-12 (task #503, F8 sub-change (2)): the other of the two sites
+    /// (see `large_cache_occupied`'s own doc) that maintain the occupancy
+    /// bitmask in lockstep — sets bit `idx` unconditionally, in both the
+    /// base and extension arms (the slot transitions None → Some in both
+    /// cases; callers only ever call this on a slot just proven empty by
+    /// `large_cache_find_free_slot`).
     #[cfg(feature = "alloc-decommit")]
     #[inline]
     #[allow(unsafe_code)] // R14-1 (task #286): calls the `unsafe fn deref_large_cache_extension_mut`
@@ -254,6 +284,7 @@ impl AllocCore {
     pub(super) fn large_cache_slot_set(&mut self, idx: CombinedSlot, entry: CachedLarge) {
         if idx < LARGE_CACHE_SLOTS {
             self.large_cache[idx] = Some(entry);
+            self.large_cache_occupied |= 1u64 << idx;
             return;
         }
         #[cfg(feature = "large-cache-extended")]
@@ -264,6 +295,7 @@ impl AllocCore {
                 large_cache_extended::deref_large_cache_extension_mut(self.large_cache_extension)
             };
             ext.slots[idx - LARGE_CACHE_SLOTS] = Some(entry);
+            self.large_cache_occupied |= 1u64 << idx;
         }
         #[cfg(not(feature = "large-cache-extended"))]
         {
@@ -670,6 +702,18 @@ impl AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_large_cache_used(&self) -> usize {
         self.large_cache_used_bytes
+    }
+
+    /// TEST-ONLY (R32-12, task #503, F8 sub-change (2)): return the raw
+    /// `large_cache_occupied` bitmask. Lets a test verify the falsification-
+    /// first invariant "bit `i` set ⟺ combined slot `i` is `Some`" directly,
+    /// independent of `large_cache_slot_set`/`large_cache_slot_take`'s own
+    /// internals — see `tests/large_cache_occupancy_bitmask_invariant.rs`.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-decommit")]
+    #[must_use]
+    pub fn dbg_large_cache_occupied_bits(&self) -> u64 {
+        self.large_cache_occupied
     }
 
     /// TEST/DIAGNOSTIC-ONLY (task D1 → #133): count of `alloc_large` calls

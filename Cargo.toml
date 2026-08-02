@@ -1147,6 +1147,24 @@ required-features = ["alloc-core"]
 name = "r31_8_large_cache_scan_isolation_on"
 required-features = ["alloc-core", "large-cache-extended"]
 
+# R32-12 (task #503, F8 sub-change (2)): free-slot-search isolation
+# microjudge — a decomposed complement to R31-8's best-fit-scan microjudge
+# above, isolating the OTHER large-cache linear scan
+# (`large_cache_find_free_slot`, runs on every large-dealloc admission
+# attempt) instead of the best-fit lookup. See
+# `examples/_shared/r32_12_large_cache_free_slot_search_workload.rs`'s module
+# doc for the full design. ONE binary (not an off/on pair): this scan's
+# implementation itself changed in-place (linear `.position()` scan ->
+# `large_cache_occupied.trailing_ones()` bitmask lookup) rather than being
+# gated behind a Cargo feature, so BEFORE/AFTER is measured by building this
+# SAME file against two different source trees via `git worktree add` (the
+# established pattern for this project's non-feature-gated before/after
+# gates — see e.g. `docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md`), not
+# by two required-features variants.
+[[example]]
+name = "r32_12_large_cache_free_slot_search_isolation"
+required-features = ["alloc-core", "alloc-decommit", "alloc-stats"]
+
 # R32-0 (task #490): the `paired-ab-runner.mjs` wall-clock companion probes
 # to the deterministic `benches/r32_0_virgin_zero_skip_cost_side_gate.rs`
 # gate above — real `HeapCore` production layer, plain-`alloc` RECYCLED

@@ -2300,6 +2300,139 @@ fn large_cache_hit_only_4mib() {
     black_box(0u8);
 }
 
+// R32-12 (task #503, F8 sub-change (2)): worst-case free-slot-search Ir
+// decomposition. `large_cache_prefill_only_4mib`/`large_cache_hit_only_4mib`
+// above always deposit into an EMPTY-or-near-empty cache (slot 0 is always
+// free), so they cannot show `large_cache_find_free_slot`'s scan-bound cost
+// at all -- the native wall-clock microjudge
+// (`examples/r32_12_large_cache_free_slot_search_isolation.rs`) already
+// showed this scan is noise-dominated in wall-clock terms at scan_bound=8
+// (paired t-test t=0.492, not significant), consistent with the survey's own
+// prediction that the win is real but small at only 8 slots. This bench
+// pair gets the Ir-level (much lower noise floor than wall-clock) reading
+// for the SAME worst-case shape that native microjudge uses: 7 permanent
+// decoy entries (distinct SEGMENT-multiple sizes, occupying combined slots
+// 0..6) plus ONE cycling slot at the fixed last index (slot 7) that every
+// timed alloc/dealloc pair takes and re-deposits -- `large_cache_find_free_slot`
+// must walk all 7 occupied decoy slots before finding the one free slot on
+// every dealloc admission, the worst case for a "find first None" linear
+// scan (pre-R32-12) vs a `trailing_ones()` bitmask lookup (R32-12).
+//
+// Layer: bare `HeapCore` via `HeapRegistry::claim`, mirroring
+// `large_cache_prefill_only_4mib`/`large_cache_hit_only_4mib`'s own R31-0
+// corrected-layer choice above (the real `#[global_allocator]` dispatch
+// chain, not bare `AllocCore`).
+#[cfg(target_os = "linux")]
+const FREE_SLOT_SEARCH_DECOY_COUNT: usize = 7; // LARGE_CACHE_SLOTS - 1
+#[cfg(target_os = "linux")]
+const FREE_SLOT_SEARCH_CYCLES: usize = 8; // matches LARGE_HIT_CYCLES's shape
+
+// Prefill/control arm: deposit 7 permanent decoys (sizes 1..7 segments) at
+// combined slots 0..6, THEN prime the cycling slot once at combined slot 7
+// (size 8 segments, strictly larger than every decoy so best-fit's
+// `usable_size >= usable` guard never matches a decoy). No further alloc
+// after the prime -- this control arm's own final state is "cache holds 8
+// entries, decoys 0..6 permanent, slot 7 undrained", the byte-identical
+// prefix the hit arm below extends by exactly one more admission cycle.
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_free_slot_search_prefill_only() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
+        let sz = mult * 4 * 1024 * 1024; // SEGMENT-multiple decoy sizes
+        let layout = Layout::from_size_align(sz, 8).unwrap();
+        // SAFETY: layout has non-zero size and valid alignment.
+        let ptr = unsafe { (*heap).alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc call directly above with
+            // the same layout, freed exactly once. Permanent decoy deposit:
+            // never taken again for the rest of this bench body.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+    let cycle_size = (FREE_SLOT_SEARCH_DECOY_COUNT + 1) * 4 * 1024 * 1024;
+    let cycle_layout = Layout::from_size_align(cycle_size, 8).unwrap();
+    // SAFETY: cycle_layout has non-zero size and valid alignment.
+    let ptr = unsafe { (*heap).alloc(cycle_layout) };
+    black_box(ptr);
+    if !ptr.is_null() {
+        // SAFETY: ptr was returned by the alloc call directly above with the
+        // same layout, freed exactly once. Primes the cycling slot.
+        unsafe { (*heap).dealloc(ptr, cycle_layout) };
+    }
+}
+
+// Treatment arm: byte-identical prefix, PLUS `FREE_SLOT_SEARCH_CYCLES` more
+// alloc(cycle_size)/dealloc(cycle_size) rounds. Each round's `alloc` is a
+// cache HIT against the cycling slot (structurally guaranteed: it is the
+// ONLY slot matching `cycle_size` under best-fit -- the 7 decoys are all
+// strictly smaller and excluded by the `usable_size >= usable` guard), and
+// each round's `dealloc` re-admits at the SAME now-vacated slot -- but only
+// after `large_cache_find_free_slot` walks all 7 permanently-occupied decoy
+// slots to find it, the worst-case scan cost this bench isolates (subtract
+// the prefill arm's Ir per R23-3's shared-prefix subtraction to isolate
+// `FREE_SLOT_SEARCH_CYCLES` rounds' worth of that scan cost, amortized).
+#[cfg(all(target_os = "linux", feature = "alloc-decommit"))]
+#[library_benchmark]
+fn large_cache_free_slot_search_cycle_only() {
+    let _ = bootstrap::ensure();
+    let heap = HeapRegistry::claim();
+    assert!(!heap.is_null(), "HeapRegistry::claim returned null");
+
+    for mult in 1..=FREE_SLOT_SEARCH_DECOY_COUNT {
+        let sz = mult * 4 * 1024 * 1024;
+        let layout = Layout::from_size_align(sz, 8).unwrap();
+        // SAFETY: layout has non-zero size and valid alignment.
+        let ptr = unsafe { (*heap).alloc(layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc call directly above with
+            // the same layout, freed exactly once.
+            unsafe { (*heap).dealloc(ptr, layout) };
+        }
+    }
+    let cycle_size = (FREE_SLOT_SEARCH_DECOY_COUNT + 1) * 4 * 1024 * 1024;
+    let cycle_layout = Layout::from_size_align(cycle_size, 8).unwrap();
+    // SAFETY: cycle_layout has non-zero size and valid alignment.
+    let prime = unsafe { (*heap).alloc(cycle_layout) };
+    if !prime.is_null() {
+        // SAFETY: prime was returned by the alloc call directly above with
+        // the same layout, freed exactly once.
+        unsafe { (*heap).dealloc(prime, cycle_layout) };
+    }
+
+    // Timed-in-spirit region: FREE_SLOT_SEARCH_CYCLES more alloc/dealloc
+    // rounds against the cycling slot, each dealloc's admission paying the
+    // worst-case free-slot-search cost (7 occupied decoys walked before the
+    // one free slot).
+    for _ in 0..FREE_SLOT_SEARCH_CYCLES {
+        // SAFETY: cycle_layout has non-zero size and valid alignment.
+        let ptr = unsafe { (*heap).alloc(cycle_layout) };
+        black_box(ptr);
+        if !ptr.is_null() {
+            // SAFETY: ptr was returned by the alloc call directly above with
+            // the same layout, freed exactly once.
+            unsafe { (*heap).dealloc(ptr, cycle_layout) };
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_free_slot_search_prefill_only() {
+    black_box(0u8);
+}
+
+#[cfg(all(target_os = "linux", not(feature = "alloc-decommit")))]
+#[library_benchmark]
+fn large_cache_free_slot_search_cycle_only() {
+    black_box(0u8);
+}
+
 // Geometric realloc growth: 64 B doubled 16x up to 4 MiB via
 // `GlobalAlloc::realloc` (the C2 realloc-grow path; no `Vec` amortization
 // hiding the per-step cost).
@@ -3268,6 +3401,8 @@ library_benchmark_group!(
         large_alloc_free_cycle,
         large_cache_prefill_only_4mib,
         large_cache_hit_only_4mib,
+        large_cache_free_slot_search_prefill_only,
+        large_cache_free_slot_search_cycle_only,
         realloc_grow,
         cold_alloc_free_256x16b,
         cold_alloc_free_256x16b_2n,

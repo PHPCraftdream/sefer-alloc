@@ -1,0 +1,16 @@
+{
+  "metric": "ns_per_round",
+  "build": null,
+  "arms": {
+    "before": {
+      "command": "D:/dev/rust/.cargo-target-r32-12-before/release/examples/r32_12_large_cache_free_slot_search_isolation.exe",
+      "args": []
+    },
+    "after": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r32_12_large_cache_free_slot_search_isolation.exe",
+      "args": []
+    }
+  },
+  "default_comparisons": [["before", "after"]],
+  "features_note": "before: base commit e784dbc537752c4b4537a043130fc8da2b2573b1, linear .position(|s| s.is_none()) free-slot scan (alloc-core,alloc-decommit,alloc-stats, AllocCore direct, scan_bound=8) | after: this task's working tree, large_cache_occupied.trailing_ones() bitmask lookup (same features, AllocCore direct, scan_bound=8)"
+}
