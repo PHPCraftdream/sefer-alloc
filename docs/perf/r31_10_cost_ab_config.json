@@ -1,0 +1,19 @@
+{
+  "metric": "elapsed_ns",
+  "arms": {
+    "TRIM": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_10_trim_cost_gate.exe",
+      "args": ["--mode", "TRIM"]
+    },
+    "NO_TRIM": {
+      "command": "D:/dev/rust/.cargo-target/release/examples/r31_10_trim_cost_gate.exe",
+      "args": ["--mode", "NO_TRIM"]
+    }
+  },
+  "sanity": {
+    "key": "action_released_delta",
+    "nonzero_arms": ["TRIM"]
+  },
+  "default_comparisons": [["TRIM", "NO_TRIM"]],
+  "features_note": "production (alloc-global + alloc-xthread + alloc-decommit + fastbin); R31-10 cost-side gate (task #492), burst2 elapsed_ns"
+}

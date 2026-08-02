@@ -209,3 +209,180 @@ number) to name whole-`SEGMENT` rounding instead of "segment headers,
 metadata pages, guard pages". No measured value, table, or headline verdict
 (§0.1/§0.2/§3's GO verdict) changed — this is a mechanism-explanation
 correction only.
+
+---
+
+## 5. Cost side (task #492, 2026-08-02) — the missing counterpart CLAUDE.md's cost/benefit rule requires
+
+**Appended, not a rewrite** — §§0-4 above stay exactly as originally
+published. §§0-4 measured ONLY the RSS/commit BENEFIT of
+`trim_current_thread()`. Per CLAUDE.md's "cost and benefit must be measured
+in the SAME workload regime" rule, that is an incomplete gate for a
+policy/API optimization: this section measures the cost side — trim-call
+latency and the second-burst cold-start penalty — in the EXACT SAME
+burst → trim/no-trim → idle → burst2 regime §2.3 already established, not a
+different workload shape.
+
+**Verdict: the cost is real, large, and precisely attributable — exactly the
+counterpart the benefit side predicts.** `trim_current_thread()` itself costs
+~24.2 ms (dominated by 4 × `os::release_segment` calls evicting the 144 MiB
+large cache — see §4's whole-`SEGMENT`-rounding mechanism). The SECOND burst
+after a trim costs ~65.2 ms vs. ~0.8 ms for the no-trim control's second
+burst — an **83.3× cold-start penalty**, isolated by a paired same-workload
+A/B (not just "trim is slow", but specifically "trim moves burst2's cost from
+warm-cache-hit to cold-OS-reservation"). This is the expected, honest price
+of §0's 128 MiB RSS win: the memory `trim_current_thread()` released is
+memory the NEXT burst has to re-acquire from the OS from scratch.
+
+### 5.0 Source identity and entry point
+
+**Base revision:** `main` @ `45f3d83fdfcc2326f8dc33d12d5ad45fc36d3f5f` + this
+task's (#492) own working-tree changes. **Immutable source identity**
+(CLAUDE.md's R29-6 rule, form 2: git tree-object SHA via `git write-tree`
+against a SCOPED temporary index covering exactly this task's
+changed/added files — `src/global/sefer_alloc.rs`, `src/global/tls_heap.rs`,
+`tests/r31_10_trim_current_thread_api.rs`,
+`examples/r31_10_trim_cost_gate.rs`, `docs/perf/r31_10_cost_ab_config.json`
+— never touching the shared repo index/working tree of any
+concurrently-running agent, per this session's shared-workspace git-safety
+rule): tree SHA `63eb2faa84cba9131786871ba01c26d0460d2b5b`. Recover via
+`git show 63eb2faa84cba9131786871ba01c26d0460d2b5b: -- <path>`.
+**Landing commit SHA:** to be filled in by a follow-up commit once this
+task's work lands (the established pattern — see `1272a52`'s "fill in
+R30-6's landing-commit SHA placeholder", since a commit cannot cite its own
+SHA inside itself). **Platform:** native Windows 10 Pro x86-64, 11th Gen
+Intel Core i7-11800H @ 2.30GHz (8 cores / 16 logical), rustc 1.97.0 — same
+host as §0. **Feature set:** `production`. **Entry point under test:**
+`SeferAlloc` — the REAL installed `#[global_allocator]`
+(`examples/r31_10_trim_cost_gate.rs` installs `SeferAlloc::new()` via
+`#[global_allocator]`, one step stronger than §0's own direct-`GlobalAlloc`-call
+harness — see CLAUDE.md's entry-point rule).
+
+### 5.1 Methodology
+
+Same regime as §2.3 (workload constants byte-identical: `LARGE_OBJ_BYTES` =
+32 MiB, `LARGE_OBJ_COUNT` = 4, `IDLE_MS` = 500), extended with wall-clock
+timing around the trim call and around burst2:
+
+- **Burst1** (untimed for this gate — §0 already covers burst1's own cost):
+  allocate 4 × 32 MiB, touch every page, free all 4 (spans go to the large
+  cache).
+- **Trim (TRIM arm only), TIMED:** `a.trim_current_thread()`, wrapped in
+  `Instant::now()`/`.elapsed()` — `RESULT trim_call_ns`.
+- **Idle:** 500 ms `thread::sleep`, identical to §2.3.
+- **Burst2, TIMED:** identical shape to burst1 (4 × 32 MiB alloc + touch +
+  free), wrapped in `Instant::now()`/`.elapsed()` — `RESULT elapsed_ns`, the
+  metric paired across TRIM/NO_TRIM launches.
+
+Two measurement layers, per this project's established methodology
+(`docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`):
+
+1. **Single-shot orchestrator** (`cargo run --release --example
+   r31_10_trim_cost_gate --features production`) — a quick, unpaired,
+   both-arms-sequential view for local iteration. Not cited as evidence on
+   its own (this is what the paired A/B below is for) — used only to sanity-
+   check the harness during development.
+2. **Statistically-judged paired A/B** via `scripts/paired-ab-runner.mjs
+   --config docs/perf/r31_10_cost_ab_config.json` — the SAME
+   A/B/B/A-alternating-process, paired-t-test + sign-test protocol §0 and
+   this project's whole perf-gate history uses. 20 pairs (N=20, this
+   project's documented default for a real claim), plus a same-vs-same
+   control (`--arms TRIM,TRIM`) to confirm the harness itself is not
+   contributing a spurious signal.
+
+Mechanism oracle (CLAUDE.md's R30-8 path-activation rule, same discipline §1
+already applies to the benefit side): every TRIM launch asserts
+`action_released_delta > 0` (the trim call actually evicted the cache — same
+oracle as §1) AND `burst2_reserved_delta > 0` (burst2 actually paid a fresh
+OS reservation, not a cache hit) before its numbers are trusted; every
+NO_TRIM launch asserts both are exactly `0`.
+
+### 5.2 Headline numbers
+
+| metric | TRIM | NO_TRIM | delta (TRIM − NO_TRIM) | source |
+|---|---:|---:|---:|---|
+| `trim_call_ns` (mean, n=40 launches) | 24.220 ms | — (no trim call) | — | `docs/perf/R31_10_TRIM_CURRENT_THREAD_COST_GATE_summary.csv` |
+| burst2 `elapsed_ns` (mean, n=40 launches) | 65.163 ms | 0.782 ms | **+64.381 ms** | same |
+| burst2 `elapsed_ns` (paired t-test, n=20 pairs) | mean Δ=64.381 ms, t=331.600, crit=2.101, sign NO_TRIM-faster=20/20 | — | **REAL** (t far past crit; 20/20 sign test) | `docs/perf/paired_ab_runs/2026-08-02T00-18-11-335Z.json` |
+| same-vs-same control (TRIM vs TRIM) | mean Δ=−19.9 µs, t=−0.044, crit=2.101 | — | **NOISE, as expected** (harness sanity confirmed) | `docs/perf/paired_ab_runs/2026-08-02T00-19-14-627Z.json` |
+| cold-start ratio (burst2 TRIM / burst2 NO_TRIM) | **83.3×** | — | — | derived, asserted `> 1.0` in-script |
+
+Every number in this table is DERIVED (not hand-transcribed) by
+`scripts/r31_10_derive_cost_report_data.mjs`, which also asserts the
+headline significance/ratio claims in-script (CLAUDE.md rule 6) — a wrong
+number here would be a failing script run, not a silent transcription error.
+Reproduce:
+
+```text
+node scripts/r31_10_derive_cost_report_data.mjs \
+  docs/perf/paired_ab_runs/2026-08-02T00-18-11-335Z.json \
+  docs/perf/paired_ab_runs/2026-08-02T00-19-14-627Z.json
+```
+
+Raw provenance: `docs/perf/paired_ab_runs/2026-08-02T00-18-11-335Z.json`
+(TRIM vs NO_TRIM, 20 pairs) and
+`docs/perf/paired_ab_runs/2026-08-02T00-19-14-627Z.json` (TRIM vs TRIM
+same-vs-same control, 20 pairs) — both force-added despite
+`docs/perf/paired_ab_runs/` being `.gitignore`d by default, matching the
+established precedent for a report that cites specific provenance JSON
+filenames as its evidence (e.g. `c72a27b`'s R32-0 cost-side gate). Summary
+CSV: `docs/perf/R31_10_TRIM_CURRENT_THREAD_COST_GATE_summary.csv`.
+
+### 5.3 Mechanism oracle (CLAUDE.md R30-8 rule)
+
+Every one of the 40 raw TRIM launches (20 pairs × 2 blocks each, per the
+A/B/B/A protocol) hard-passed both oracle checks: `action_released_delta > 0`
+(the trim itself evicted the cache — matching §1's oracle exactly) AND
+`burst2_reserved_delta > 0` (burst2 paid a fresh `os::reserve`/`os::commit`
+call, not a cache hit). Every one of the 40 NO_TRIM launches confirmed both
+are exactly `0` — the cache stayed warm and burst2 never touched the OS.
+This is the between-arm mechanism delta CLAUDE.md's rule asks for: the
+83.3× wall-clock ratio is not incidental noise, it is directly attributable
+to "TRIM's burst2 pays N fresh OS reservations; NO_TRIM's burst2 pays zero."
+
+### 5.4 Interpretation — the cost is the honest mirror of the benefit
+
+§0 measured a 128.0 MiB RSS win during the IDLE window. §5.2 measures a
+64.4 ms wall-clock cost the moment the NEXT burst arrives. These are not in
+tension — they are the same mechanism viewed from two sides: memory that is
+returned to the OS during idle must be re-acquired from the OS when demand
+returns, and re-acquiring 144 MiB (4 × 9-segment spans, §4) costs real OS
+call latency (`VirtualAlloc`/commit on Windows) that a warm cache-hit does
+not pay. `trim_current_thread()`'s whole value proposition (design doc §0,
+also cited in §3 above) is trading this KNOWN, one-time, caller-controlled
+cost for RSS headroom during an IDLE period the caller has decided is coming
+— the design doc's explicit target use case ("call this when the calling
+thread KNOWS a burst/phase has ended… before an expected idle period",
+`src/global/sefer_alloc.rs`'s own `trim_current_thread` rustdoc). A caller
+that calls this on every batch boundary WITHOUT an actual idle period
+following would pay this ~64 ms tax repeatedly for no RSS benefit — exactly
+the mis-use hazard `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` §4.3
+already warns about, now with a concrete measured price tag rather than a
+qualitative warning.
+
+**Limitations (honestly stated, mirroring §3's own limitations list):**
+
+- **Single workload shape, Large-only.** Same limitation §3 already states
+  for the benefit side: this gate measures ONE burst size (128 MiB payload /
+  144 MiB span) with ONE thread, Large-class objects only. A MIXED
+  Small/Large workload variant was considered (task #492 Part B item 4) and
+  explicitly SCOPED OUT — see `examples/r31_10_trim_cost_gate.rs`'s own
+  module doc for the reasoning: the small-pool drain is a cheap O(pooled
+  segments) loop with no OS call per segment (unlike the large-cache
+  eviction's `os::release_segment` calls), so a Small-class admixture would
+  not exercise a materially different cost mechanism and would only dilute
+  the signal this gate isolates.
+- **Throughput/CPU cost not separately distinguished from wall-clock.** Task
+  #492 Part B item 3 asked whether throughput/CPU cost is distinguishable
+  from items 1/2 "at this scale" — at 4 large allocs/frees per burst, it is
+  not: wall-clock IS the throughput signal here (no concurrent contention,
+  no CPU-bound inner loop to separately profile). A future gate with a much
+  higher operation count per burst could separate CPU-bound cost from
+  OS-call-latency-bound cost; not needed to answer THIS task's question
+  (what does the design's own target regime cost).
+- **Windows-specific OS-call latency.** Same platform caveat as §3: the
+  ~24 ms trim-call cost and ~65 ms cold-burst2 cost are `VirtualAlloc`/
+  `VirtualFree` latencies on this host; other platforms' `mmap`/`munmap` or
+  `madvise` costs may differ in absolute magnitude (though the qualitative
+  shape — evict-then-reacquire costs more than staying warm — is
+  platform-independent by construction).

@@ -73,6 +73,8 @@ use super::fallback;
 use super::tls_heap::current_for_alloc;
 #[cfg(feature = "alloc-decommit")]
 use super::tls_heap::current_for_alloc_with_config;
+#[cfg(feature = "alloc-decommit")]
+use super::tls_heap::current_for_trim;
 use super::tls_heap::CurrentHeap;
 #[cfg(feature = "alloc-xthread")]
 use super::tls_heap::{current_for_dealloc, CurrentHeapForDealloc};
@@ -469,36 +471,48 @@ impl SeferAlloc {
     /// reserve-a-fresh-segment / re-populate-the-large-cache path instead
     /// of reusing whatever this call just released.
     ///
-    /// A no-op on the fallback heap (TLS already torn down, or the
-    /// per-thread registry is exhausted) — there is nothing thread-local to
-    /// trim. **Not** a no-op on a freshly-bound, never-allocated thread: a
-    /// call to this method is itself enough to claim a registry slot and
-    /// bind an (empty) per-thread heap (`global::tls_heap::finish_bind`),
-    /// exactly as an ordinary first allocation would — harmless (the slot's
-    /// `AbandonGuard` is armed, so it recycles normally at thread exit), but
-    /// worth knowing if you call this speculatively before any allocation on
-    /// a thread that otherwise might never bind one at all.
+    /// A true no-op — claims NO registry slot and touches no allocator
+    /// state — on a thread that has never allocated, on a thread whose TLS
+    /// binding is torn down (`TORN`, mid-teardown), and on a thread whose
+    /// TLS storage is already destroyed. **Fixed post-R31-10 (task #492):**
+    /// an earlier version of this method resolved via the alloc-side
+    /// [`current_heap`](Self::current_heap), which — for a freshly-bound,
+    /// never-allocated thread — would itself claim a fresh registry slot
+    /// and bind an (empty) per-thread heap (`global::tls_heap::finish_bind`)
+    /// purely as a side effect of asking "is there anything to trim?",
+    /// exactly as an ordinary first allocation would. That was harmless
+    /// (the slot's `AbandonGuard` was armed, so it still recycled correctly
+    /// at thread exit) but wasteful: a monitoring/housekeeping routine that
+    /// calls `trim_current_thread()` speculatively across many threads —
+    /// some of which never allocate — would claim a registry slot for every
+    /// one of them regardless. This method now resolves via
+    /// [`tls_heap::current_for_trim`](super::tls_heap::current_for_trim), a
+    /// **passive** resolver that reports "no live heap yet" instead of
+    /// binding one, so a thread with nothing to trim claims nothing.
     ///
     /// Cost: O(live tcache classes + pooled segments + cached large spans)
     /// for THIS thread only — no cross-thread coordination, no lock
-    /// contention with any other heap. Safe to call from a hot request
-    /// handler's cold "end of batch" branch; NOT intended to be called on
-    /// every allocation (it defeats the warm-cache/warm-pool amortization
-    /// this project's whole small-pool/large-cache design exists to
-    /// provide — see the design doc,
-    /// `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` §4.3, for the
+    /// contention with any other heap. On a thread with no bound heap the
+    /// cost is a single passive TLS read (no bind, no OS call). Safe to
+    /// call from a hot request handler's cold "end of batch" branch; NOT
+    /// intended to be called on every allocation (it defeats the
+    /// warm-cache/warm-pool amortization this project's whole
+    /// small-pool/large-cache design exists to provide — see the design
+    /// doc, `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` §4.3, for the
     /// mis-use hazard this creates).
     ///
     /// Design: `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` (R30-7,
-    /// task #456). Measured value proposition:
-    /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`.
+    /// task #456). Measured value proposition (benefit side):
+    /// `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`. Measured cost
+    /// side (trim latency + next-burst cold-start cost): the same report's
+    /// later "Cost side" section (task #492).
     #[cfg(feature = "alloc-decommit")]
     pub fn trim_current_thread(&self) {
-        if let CurrentHeap::Own(heap) = self.current_heap() {
+        if let Some(heap) = current_for_trim() {
             // SAFETY: `heap` is non-null and points to a live `HeapCore` in a
             // registry slot owned by THIS thread (same single-writer
-            // invariant `alloc`/`dealloc` above rely on) — `current_heap()`
-            // just resolved it for the calling thread.
+            // invariant `alloc`/`dealloc` above rely on) — `current_for_trim`
+            // only returns `Some` for an already-bound own-thread slot.
             unsafe { (*heap).trim_for_recycle() };
         }
     }

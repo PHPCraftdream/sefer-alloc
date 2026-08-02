@@ -70,7 +70,10 @@
 //! [`current_for_alloc_with_config`]) checks for `TORN` before the
 //! non-null check and, on a match, routes to the always-live fallback heap
 //! instead of re-arming a new slot (which would leak the just-recycled one
-//! and could resurrect a slot that another thread already re-claimed).
+//! and could resurrect a slot that another thread already re-claimed). The
+//! two PASSIVE resolvers ([`current_for_dealloc`], [`current_for_trim`]) map
+//! `TORN` (and `null`) to "nothing to do" instead — see their own doc
+//! comments for why binding/falling-back is wrong for their callers.
 //!
 //! ## Never-null (M10)
 //!
@@ -527,6 +530,44 @@ pub fn current_for_alloc_with_config(config: &crate::alloc_core::LargeCacheConfi
         Ok(p) if p.is_null() => bind_slow_tagged_with_config(*config),
         Ok(_) => CurrentHeap::Fallback, // p == TORN
         Err(_) => CurrentHeap::Fallback,
+    }
+}
+
+/// A **passive, read-only** resolver for callers that must NOT bind a slot
+/// as a side effect of asking "do I already have a heap?" — e.g.
+/// [`SeferAlloc::trim_current_thread`](super::SeferAlloc::trim_current_thread),
+/// which has nothing useful to do on a thread that has never allocated (there
+/// is no tcache/pool/cache state to trim), so speculatively claiming a fresh
+/// registry slot just to immediately trim it empty would only waste a slot.
+///
+/// Same `LOCAL`-read shape as [`current_for_alloc`]/[`current_for_dealloc`],
+/// but ALL three "no live own-thread heap" cases — `null` (never bound),
+/// `TORN` (this thread's `AbandonGuard` already recycled its slot), and
+/// `Err` (TLS destroyed) — map to `None`. **Never calls `bind_slow`/
+/// `bind_slow_tagged` and never resolves the fallback pointer**: unlike
+/// [`current_for_alloc`] (whose `null` arm binds) and unlike
+/// [`current_for_dealloc`] (whose bind-less arm still routes a live
+/// pointer through cross-thread free-routing), this resolver's whole
+/// contract is "tell me only what already exists, touch nothing new."
+///
+/// - real pointer (own heap already bound) → `Some(heap)` — identical fast
+///   path to [`current_for_alloc`]'s `Own` arm.
+/// - `null` / `TORN` / `Err` → `None` — nothing to report, nothing claimed.
+#[inline(always)]
+pub fn current_for_trim() -> Option<*mut HeapCore> {
+    match LOCAL.try_with(|c| c.get()) {
+        // Same Э2 (task #145) one-branch collapse as `current_for_alloc`/
+        // `current_for_dealloc`: real p → `< MAX-1` → Some (fast); null (0)
+        // and TORN (MAX) both fall to the cold arm below, where THIS
+        // resolver (like `current_for_dealloc`, unlike `current_for_alloc`)
+        // never binds and never touches the fallback — it maps every
+        // no-live-heap case to `None`.
+        Ok(p) if p.addr().wrapping_sub(1) < usize::MAX - 1 => Some(p),
+        // null (never bound) or TORN (slot already recycled): nothing to
+        // trim, and nothing should be claimed just to check.
+        Ok(_) => None,
+        // TLS destroyed: same treatment — nothing to report.
+        Err(_) => None,
     }
 }
 

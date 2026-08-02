@@ -948,6 +948,39 @@ for completeness.
    >     item 9, not this file) were independently re-verified and fixed in
    >     the same task — see that file's own dated update for detail.
 
+38. **R32-1 (task #492) — tiered/partial `trim_current_thread()` design
+    (`TrimOptions`/`TrimReport`-shaped API: flush-tcache-only / drain-small-
+    pool-to-a-target / trim-large-cache-to-a-budget-headroom, instead of the
+    current all-or-nothing `evict_all` semantics).**
+
+    Explicitly scoped OUT of task #492 (which shipped the passive no-bind
+    resolver fix and the cost-side gate, both required deliverables) as an
+    optional stretch goal too large to build soundly in the same task — per
+    the task's own explicit instruction not to half-build a partial/unsound
+    API rather than scope it down. No design doc, no code, no tests exist
+    for this yet; `docs/design/R30_7_TRIM_SCAVENGE_API_DESIGN.md` §3.4
+    already named a "headroom-floor variant" as explicitly out of scope at
+    design time, so this item is that same identified gap, now also
+    including the tcache-only/pool-to-target axes task #492's own brief
+    named.
+
+   > **Current state**
+   > - **Status:** not started — no design doc, no code.
+   > - **Current number/verdict:** N/A — nothing measured yet; this is a
+   >   scope note, not a rejected idea.
+   > - **Next trigger:** a future round chooses to spend a full task on the
+   >   design-first pass (mirroring `R30_7_TRIM_SCAVENGE_API_DESIGN.md`'s own
+   >   design-before-code discipline) — concrete signatures, explicit
+   >   invariants for what "trim to a budget-headroom" means when the cache
+   >   is already below that headroom, and an honest scope of what it does
+   >   NOT claim, before any implementation.
+   > - **Evidence:** `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md` §5
+   >   (the cost-side gate task #492 DID complete — its ~83.3× cold-start
+   >   penalty finding is the concrete motivating data a tiered
+   >   API would exist to soften, since a partial trim could avoid paying
+   >   the full re-materialisation cost when only partial headroom is
+   >   actually needed).
+
 ### [L] Low-priority — "honest reject" with a documented revisit trigger
 
 7. ~~**R14-5 §4 — dedicated timing gate for O(40) vs O(8) Large-cache scan on a

@@ -22,15 +22,23 @@
 //!   this thread's `CurrentHeap` resolves to `Fallback` does not panic and
 //!   does not corrupt fallback state. **Corrected post-landing** (R32
 //!   review, finding P1-1): a never-allocated thread does NOT resolve to
-//!   `Fallback` (a null `LOCAL` binds a fresh OWN heap via
-//!   `tls_heap::finish_bind`) — AC4 is now two tests,
-//!   `ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe` (the
+//!   `Fallback` under the OLD alloc-side resolution (a null `LOCAL` used to
+//!   bind a fresh OWN heap via `tls_heap::finish_bind`) — AC4 is now two
+//!   tests, `ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe` (the
 //!   original scenario, correctly renamed) and
 //!   `ac4b_trim_on_genuinely_torn_tls_is_safe_noop` (the actual `Fallback`
 //!   case, `bench-internals`-gated, using the existing TORN-TLS test hooks).
+//!   **Corrected AGAIN** (task #492): `trim_current_thread()` now resolves
+//!   via the PASSIVE `tls_heap::current_for_trim`, so a never-allocated
+//!   thread no longer binds ANYTHING — `ac4a` below now asserts this
+//!   directly (no registry slot claimed), and a new
+//!   `ac4c_trim_on_never_allocated_thread_claims_no_slot` test makes the
+//!   no-claim assertion the test's sole, explicit point.
 //!
 //! AC5 (the measured burst-idle-burst RSS win) is a separate gate report:
-//! `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`.
+//! `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`; its "Cost side"
+//! section (task #492) measures the counterpart cost (trim latency,
+//! next-burst cold-start cost).
 //!
 //! ## Feature gating
 //!
@@ -279,8 +287,10 @@ fn ac3_trim_does_not_affect_other_thread_heap() {
 // new test that genuinely reaches `Fallback` via the existing
 // `bench-internals`-gated TORN-TLS test hooks.
 
-/// The original AC4 test, renamed: this is a real, useful scenario (trim on
-/// a freshly-bound, never-allocated heap must be safe) but it does NOT
+/// The original AC4 test, renamed and strengthened (task #492): trim on a
+/// never-allocated thread must be safe AND — since `trim_current_thread()`
+/// now resolves via the passive `tls_heap::current_for_trim` instead of the
+/// binding `current_heap()` — must claim NO registry slot at all. Does NOT
 /// exercise `CurrentHeap::Fallback` — see the module comment above and
 /// [`ac4b_trim_on_genuinely_torn_tls_is_safe_noop`] below for the test that
 /// does.
@@ -288,18 +298,20 @@ fn ac3_trim_does_not_affect_other_thread_heap() {
 fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
     let a = Arc::new(SeferAlloc::new());
 
-    // Spawn a FRESH thread that has NEVER allocated. Its `LOCAL` is null, so
-    // `trim_current_thread()` claims a fresh registry slot and binds an
-    // empty `HeapCore` (`CurrentHeap::Own`, not `Fallback` — see the module
-    // comment above) and trims it (trivially: it's already empty).
+    // Spawn a FRESH thread that has NEVER allocated. Its `LOCAL` is null.
+    // Post-#492, `trim_current_thread()` on such a thread is a true no-op —
+    // it does NOT claim a registry slot (see `ac4c` below for the dedicated
+    // no-slot-claimed assertion; this test focuses on "still safe, and the
+    // thread still works normally afterward").
     let a_for_child = Arc::clone(&a);
     let handle = thread::spawn(move || {
         // This is the FIRST thing the thread does — no prior allocation has
         // bound a per-thread heap yet.
         a_for_child.trim_current_thread();
 
-        // Verify the (now bound) heap was not corrupted: an allocation AFTER
-        // the trim must succeed and produce serviceable memory.
+        // Verify the heap (bound by the FIRST REAL allocation below, not by
+        // the trim call above) is not corrupted: an allocation after the
+        // trim must succeed and produce serviceable memory.
         let layout = Layout::from_size_align(256, 8).unwrap();
         // SAFETY: valid, non-zero-size layout.
         let p = unsafe { a_for_child.alloc(layout) };
@@ -318,11 +330,80 @@ fn ac4a_trim_on_freshly_bound_never_allocated_heap_is_safe() {
         .expect("fresh thread panicked during trim-on-never-allocated test");
 }
 
+/// **New (task #492).** The no-slot-claimed assertion, isolated as its own
+/// test so a regression here fails with an unambiguous name/message rather
+/// than being buried inside `ac4a`'s broader safety check. Uses the
+/// process-wide `heaps_claimed_high_water` diagnostic (via
+/// [`SeferAlloc::stats`]) as the oracle: it is a monotonically-increasing
+/// count of registry slots ever minted (`src/registry/heap_registry.rs`'s
+/// `bump_count`), so "unchanged across the trim call" is exactly "no new
+/// slot was claimed."
+///
+/// Runs on a dedicated freshly-spawned thread (not one of libtest's pooled
+/// threads) specifically so it is guaranteed to be the FIRST thing this
+/// thread does — a pooled test thread might already have allocated (and
+/// thus already bound a slot) from an earlier test, which would make the
+/// high-water-mark comparison meaningless for this thread's own contribution.
+/// The high-water mark is process-wide and monotonic, so concurrently
+/// running tests bumping it for THEIR OWN threads does not invalidate this
+/// test's own before/after comparison — this thread's contribution is what
+/// is asserted to be zero, not the absolute value.
+#[test]
+fn ac4c_trim_on_never_allocated_thread_claims_no_slot() {
+    let a = Arc::new(SeferAlloc::new());
+    let a_for_child = Arc::clone(&a);
+    let handle = thread::spawn(move || {
+        let before = a_for_child.stats().heaps_claimed_high_water;
+
+        // FIRST thing this thread does — no prior allocation, so `LOCAL` is
+        // still null. Must be a true no-op: no slot claimed.
+        a_for_child.trim_current_thread();
+
+        let after = a_for_child.stats().heaps_claimed_high_water;
+        assert_eq!(
+            before, after,
+            "trim_current_thread() on a never-allocated thread must claim \
+             NO registry slot (heaps_claimed_high_water moved from {before} \
+             to {after})"
+        );
+
+        // Control: a REAL allocation on this thread afterward still binds a
+        // heap and works normally — proves the passive resolver did not
+        // somehow poison the thread's ability to bind later. This does NOT
+        // assert `heaps_claimed_high_water` increases by exactly one: the
+        // registry recycles exited threads' slots (whole-slot reuse, Phase
+        // 12.5), so a concurrently-running test's thread exit may have freed
+        // a slot this allocation reuses WITHOUT bumping the high-water mark
+        // (`bump_count` is only called for a genuinely NEW slot, not a
+        // recycled one) — the mark is monotonic non-decreasing, never a
+        // fixed per-alloc increment.
+        let layout = Layout::from_size_align(64, 8).unwrap();
+        // SAFETY: valid, non-zero-size layout.
+        let p = unsafe { a_for_child.alloc(layout) };
+        assert!(!p.is_null(), "alloc after no-op trim must succeed");
+        let after_alloc = a_for_child.stats().heaps_claimed_high_water;
+        assert!(
+            after_alloc >= after,
+            "heaps_claimed_high_water must be monotonic non-decreasing \
+             (after={after}, after_alloc={after_alloc})"
+        );
+        // SAFETY: p valid for `layout`, freed exactly once.
+        unsafe { a_for_child.dealloc(p, layout) };
+    });
+
+    handle
+        .join()
+        .expect("fresh thread panicked during no-slot-claimed test");
+}
+
 /// The genuine AC4 case: `trim_current_thread()` called while this thread's
-/// `LOCAL` is TORN (the state `finish_bind`/`current_for_alloc_with_config`
-/// actually maps to `CurrentHeap::Fallback` — mirroring thread-teardown
-/// mid-flight) must be a true no-op — no panic, no corruption — and the heap
-/// must work normally again once TORN is lifted.
+/// `LOCAL` is TORN (the state the passive `tls_heap::current_for_trim`
+/// resolver — post-#492 — and the old alloc-side `current_for_alloc` both
+/// map to "no live own-thread heap"; `current_for_alloc` additionally
+/// resolves the fallback heap there, `current_for_trim` deliberately does
+/// not — see `current_for_trim`'s own doc comment) must be a true no-op —
+/// no panic, no corruption, and (post-#492) no registry slot claimed — and
+/// the heap must work normally again once TORN is lifted.
 ///
 /// Uses the existing `bench-internals`-gated test-only hook pair
 /// `tls_heap::dbg_mark_local_torn_for_test`/`dbg_restore_local_for_test`
@@ -350,9 +431,16 @@ fn ac4b_trim_on_genuinely_torn_tls_is_safe_noop() {
         // `trim_current_thread`'s doc comment describes as its no-op case.
         let saved = tls_heap::dbg_mark_local_torn_for_test();
 
-        // Trim while TORN: must resolve through CurrentHeap::Fallback and be
-        // a true no-op (no panic).
+        // Trim while TORN: must resolve `current_for_trim` to `None` and be
+        // a true no-op (no panic, no new registry slot claimed).
+        let before = a_for_child.stats().heaps_claimed_high_water;
         a_for_child.trim_current_thread();
+        let after = a_for_child.stats().heaps_claimed_high_water;
+        assert_eq!(
+            before, after,
+            "trim_current_thread() while TORN must claim NO registry slot \
+             (heaps_claimed_high_water moved from {before} to {after})"
+        );
 
         // Restore LOCAL before any further allocator use on this thread —
         // mirrors tests/dealloc_only_no_bind_torn.rs's save/restore
