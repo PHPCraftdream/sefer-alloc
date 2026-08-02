@@ -1069,6 +1069,116 @@ impl AllocCore {
         true
     }
 
+    // ── task #504 (F11 step 2) — reserve-vs-commit SPLIT for the Windows
+    // decomposition gate ────────────────────────────────────────────────────
+    //
+    // `dbg_decomp_os_roundtrip` above lumps reserve+commit into ONE timed
+    // region — correct for R29-3's Linux question (where the eager path is
+    // the only one that exists) but too coarse for F11's Windows question:
+    // on Windows `win_reserve_commit` unconditionally issues TWO separate
+    // syscalls (`VirtualAlloc(MEM_RESERVE)` then `VirtualAlloc(MEM_COMMIT)`),
+    // and knowing their relative cost is exactly what step 2 needs. These two
+    // hooks reuse `os::Segment::reserve_lazy_for_measurement` (reserve the
+    // full segment, commit only 1 page up front, via `aligned_vmem::
+    // reserve_aligned_lazy`) + `os::commit_pages_for_measurement` (commit the
+    // REMAINING pages via `aligned_vmem::commit_range`) — the SAME crate-level
+    // `lazy-commit` primitive the opt-in `primordial-lazy-commit`/
+    // `small-segment-lazy-commit` POLICY features already call in production,
+    // just driven directly by a measurement hook instead of by a policy
+    // decision. Both are gated on `bench-internals` alone (forwarding
+    // `aligned-vmem/lazy-commit`, NOT any sefer-level lazy-commit policy
+    // feature — see `bench-internals`'s own `Cargo.toml` doc), so a plain
+    // `production` build never partially-commits a segment via this path.
+    //
+    // Deliberately raw `os::Segment`-based, NOT `ReservedSmallSegment` — like
+    // `dbg_decomp_os_roundtrip` above (NO table bookkeeping, NO metadata
+    // init, NO owner-binding), these two hooks isolate PURE OS-level cost.
+    // `ReservedSmallSegment` exists to guard against a cross-`AllocCore`
+    // release once a segment participates in `self.small_cur`/pool/table
+    // state (`dbg_decomp_reserve_and_keep`'s contract); these hooks never
+    // publish the segment anywhere, so the caller is trusted to pair one
+    // `dbg_decomp_win_reserve_only` with exactly one
+    // `dbg_decomp_win_commit_only` and one `dbg_decomp_win_release_only`,
+    // the same "measurement code, not production metadata" trust level
+    // `dbg_decomp_os_roundtrip` already has.
+    //
+    // On Unix/miri, `aligned_vmem::reserve_aligned_lazy` falls back to the
+    // eager fully-committed path and `commit_range` is a no-op (both crate-
+    // documented) — so `dbg_decomp_win_commit_only` measures ~0 ns there,
+    // which is the expected, honestly-reported cross-platform behavior, not
+    // a bug: there is no separate commit syscall to time on Unix.
+
+    /// task #504 (F11 step 2): reserve a `SEGMENT`-sized, `SEGMENT`-aligned
+    /// span with only the FIRST page committed. On Windows this is exactly
+    /// `VirtualAlloc(MEM_RESERVE)` (over-reserve + trim) followed by ONE
+    /// `VirtualAlloc(MEM_COMMIT, len=PAGE)` — the same two-call shape
+    /// `win_reserve_commit` always takes, except the commit length here is
+    /// deliberately tiny so [`dbg_decomp_win_commit_only`] below can
+    /// separately time committing the (large) remainder. Returns
+    /// `(base, reservation_ptr, reservation_len)` — the caller MUST later
+    /// release via [`dbg_decomp_win_release_only`], passing back the SAME
+    /// `(reservation_ptr, reservation_len)` pair.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_win_reserve_only() -> Option<(*mut u8, *mut u8, usize)> {
+        let seg = os::Segment::reserve_lazy_for_measurement(os::PAGE)?;
+        let base = seg.as_ptr();
+        let r = seg.reservation();
+        let rl = seg.reservation_len();
+        core::mem::forget(seg);
+        Some((base, r.as_ptr(), rl))
+    }
+
+    /// task #504 (F11 step 2): commit the remaining `[PAGE, SEGMENT)` range
+    /// of a segment previously reserved via [`dbg_decomp_win_reserve_only`]
+    /// (which left only the first page committed). On Windows this is
+    /// exactly ONE `VirtualAlloc(MEM_COMMIT, len=SEGMENT-PAGE)` call —
+    /// isolating that syscall's cost alone, with NO reserve and NO
+    /// first-touch page-fault cost mixed in (unlike
+    /// [`dbg_decomp_os_roundtrip`], which lumps reserve+commit, or
+    /// Measurement B's decommit/recommit/re-touch loop, which mixes commit
+    /// with faulting). On Unix/miri this is a documented no-op
+    /// (`aligned_vmem::commit_range`'s own fallback) — expected to measure
+    /// ~0 ns there, honestly reflecting that Unix has no separate commit
+    /// syscall to pay.
+    ///
+    /// Returns `true` if the range is now committed, `false` on genuine OS
+    /// refusal (commit-charge exhaustion).
+    ///
+    /// # Safety
+    ///
+    /// `base` MUST be the `base` returned by a [`dbg_decomp_win_reserve_only`]
+    /// call whose `[PAGE, SEGMENT)` range is still uncommitted (not yet
+    /// committed by a prior call to this same hook), and must not have been
+    /// released yet.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    #[allow(unsafe_code)] // task #504: unsafe fn boundary, mirrors dbg_decomp_recommit_payload.
+    pub unsafe fn dbg_decomp_win_commit_only(base: *mut u8) -> bool {
+        // SAFETY: forwarded from this function's own `# Safety` contract —
+        // `base`'s `[PAGE, SEGMENT)` range is within the live reservation and
+        // currently reserved-but-uncommitted, matching `commit_pages_for_
+        // measurement`'s own contract.
+        unsafe { os::commit_pages_for_measurement(base, os::PAGE, SEGMENT) }
+    }
+
+    /// task #504 (F11 step 2): release a segment reserved via
+    /// [`dbg_decomp_win_reserve_only`] — thin wrapper over
+    /// [`os::release_segment`], mirroring [`dbg_decomp_os_roundtrip`]'s own
+    /// release call.
+    ///
+    /// # Safety
+    ///
+    /// `(reservation_ptr, reservation_len)` MUST be the pair returned by a
+    /// [`dbg_decomp_win_reserve_only`] call not yet released.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_win_release_only(reservation_ptr: *mut u8, reservation_len: usize) {
+        os::release_segment(reservation_ptr, reservation_len);
+    }
+
     /// R29-3: reserve a small segment and return a typed handle so the
     /// caller can measure first-touch page-fault cost on the payload. The
     /// caller MUST later release it via

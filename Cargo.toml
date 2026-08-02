@@ -481,8 +481,24 @@ alloc-stats = ["alloc-core"]
 # purely to keep these entry points out of a plain `--features production`
 # build's compiled surface. CI opts it in explicitly wherever one of the
 # gated hooks is actually exercised (see `.github/workflows/perf-gate.yml`'s
-# `perf_gate_iai` invocation).
-bench-internals = []
+# `perf_gate_iai` invocation). From task #504 (F11 step 1) this feature also
+# forwards to `aligned-vmem/bench-internals`, gating that crate's own
+# `UNIX_EXACT_RESERVE_*`/`WINDOWS_RESERVE_COMMIT_CALLS` path-activation
+# counters (surfaced here via `AllocCore::dbg_unix_exact_reserve_*`/
+# `dbg_windows_reserve_commit_calls` in `src/alloc_core/alloc_core_core_diag.rs`),
+# plus `aligned-vmem/lazy-commit` — the crate-level reserve/commit-SPLIT
+# primitive (`reserve_aligned_lazy` + `commit_range`) the R32-13 Windows
+# decomposition gate's `dbg_decomp_win_reserve_only`/`dbg_decomp_win_commit_only`
+# hooks (`src/alloc_core/alloc_core_small_pool.rs`) use to time
+# `VirtualAlloc(MEM_RESERVE)` separately from `VirtualAlloc(MEM_COMMIT)`. This
+# is the CRATE-LEVEL `lazy-commit` feature only (no sefer-level lazy-commit
+# POLICY feature — `primordial-lazy-commit`/`small-segment-lazy-commit` are
+# NOT implied), so no production reservation policy changes; it only makes
+# the split primitive available to call from a measurement hook. `aligned-vmem`
+# is only pulled in by `alloc-core`, so both forwards are no-ops (unresolved
+# optional dep) unless `alloc-core` is also enabled — matching every other
+# `aligned-vmem/*` forward in this file (e.g. `alloc-lazy-commit` below).
+bench-internals = ["aligned-vmem?/bench-internals", "aligned-vmem?/lazy-commit"]
 # R6-OPT-P0-3a: EXPERIMENTAL "medium" exact size classes — the cheap first
 # experiment `docs/agent_reviews_us/radical_optimization_review.md` §4 P0-3
 # recommends running BEFORE committing to the larger page-run-layer redesign
@@ -2018,6 +2034,29 @@ required-features = ["alloc-global", "bench-internals"]
 [[example]]
 name = "r32_11_remote_ring_shadow_head_gate"
 required-features = ["alloc-global", "alloc-xthread"]
+
+# R32-13 (task #504, F11 step 2) — Windows-native segment-lifecycle
+# decomposition: ports R29-3's Linux methodology (reserve/commit/decommit/
+# release, timed separately, page-fault share isolated) to the Windows OS-
+# interface layer, the first Windows-native perf artifact in this corpus.
+# Reuses `os::Segment::reserve`/`release_segment`/`decommit_pages`/
+# `recommit_pages` (the SAME production backends `dbg_decomp_*` already
+# wraps) plus the new `dbg_decomp_win_reserve_only`/`_commit_only`/
+# `_release_only` reserve-vs-commit SPLIT hooks (task #504,
+# `alloc_core_small_pool.rs`) that isolate `VirtualAlloc(MEM_RESERVE)` from
+# `VirtualAlloc(MEM_COMMIT)` — R29-3's own decomposition lumped these into
+# ONE "OS roundtrip" figure, adequate for the Linux question but too coarse
+# for Windows, where they are two syscalls with potentially different cost.
+# Also reads back the step-1 `WINDOWS_RESERVE_COMMIT_CALLS`/
+# `UNIX_EXACT_RESERVE_*` path-activation counters as the oracle proving each
+# arm actually hit the code path it claims to measure. Runs on any platform
+# (the decomposition is meaningful everywhere; the reserve/commit SPLIT
+# collapses to ~0 ns on Unix, honestly, since Unix has no separate commit
+# syscall) but is written for and primarily measured on native Windows — see
+# docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md.
+[[example]]
+name = "r32_13_windows_reserve_commit_decomposition_gate"
+required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "bench-internals"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #

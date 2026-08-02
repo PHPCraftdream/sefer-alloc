@@ -114,6 +114,96 @@ pub const PAGE: usize = 1 << 12;
 /// always a non-zero power of two so `0` is an unambiguous sentinel.
 static PAGE_SIZE_CACHE: AtomicUsize = AtomicUsize::new(0);
 
+// ---------------------------------------------------------------------------
+// bench-internals: path-activation counters (task #504, F11 step 1).
+// ---------------------------------------------------------------------------
+//
+// Two independent questions, one instrument each:
+//
+// - Unix: `unix_reserve` tries an EXACT-size `mmap` first
+//   (`try_reserve_aligned_exact`) and only falls through to the over-reserve
+//   + trim path on a miss (wrong alignment). The survey
+//   (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11) computed this
+//   fast path is a net syscall LOSS below a 50% hit rate but noted "nothing
+//   anywhere counts this" — `UNIX_EXACT_RESERVE_HITS`/`_ATTEMPTS` settle it
+//   with a real number instead of the theoretical bound.
+// - Windows: `win_reserve_commit` unconditionally issues 2 syscalls per
+//   segment (one `MEM_RESERVE` + one `MEM_COMMIT`), over-reserving `size +
+//   align` and never trimming (Windows cannot partially release a
+//   `MEM_RESERVE` region). `WINDOWS_RESERVE_COMMIT_CALLS` counts these call
+//   PAIRS for parity/comparison against the Unix hit-rate story — there is no
+//   fast/slow-path split to measure on Windows today (that is exactly what
+//   step 3, a `VirtualAlloc2` prototype, would introduce), so this is a
+//   simple activation count, not a hit rate.
+//
+// `AtomicU64` storage, always compiled (like sefer-alloc's own `dbg_*`
+// counters); increments gated on `bench-internals` so a plain build carries
+// zero extra instructions. Relaxed — diagnostic only, no ordering obligation.
+
+#[cfg(feature = "bench-internals")]
+use core::sync::atomic::AtomicU64;
+
+/// `bench-internals`: total number of [`try_reserve_aligned_exact`] attempts
+/// (Unix only — always 0 on Windows/miri). Denominator for
+/// [`UNIX_EXACT_RESERVE_HITS`]. See the module-level "bench-internals"
+/// section doc above.
+#[cfg(feature = "bench-internals")]
+pub static UNIX_EXACT_RESERVE_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: number of [`try_reserve_aligned_exact`] attempts that
+/// succeeded (the `mmap` landed already `align`-aligned, no fallback
+/// over-reserve+trim needed). Numerator over
+/// [`UNIX_EXACT_RESERVE_ATTEMPTS`]. See the module-level "bench-internals"
+/// section doc above.
+#[cfg(feature = "bench-internals")]
+pub static UNIX_EXACT_RESERVE_HITS: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: total number of [`win_reserve_commit`] calls (Windows
+/// only — always 0 on Unix/miri). Each call issues exactly 2 syscalls
+/// (`VirtualAlloc(MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`, plus a possible
+/// third best-effort retry on a `huge-pages` commit failure — not counted
+/// here, see that call site). See the module-level "bench-internals" section
+/// doc above.
+#[cfg(feature = "bench-internals")]
+pub static WINDOWS_RESERVE_COMMIT_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_ATTEMPTS`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[must_use]
+pub fn unix_exact_reserve_attempts() -> u64 {
+    UNIX_EXACT_RESERVE_ATTEMPTS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of [`UNIX_EXACT_RESERVE_HITS`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[must_use]
+pub fn unix_exact_reserve_hits() -> u64 {
+    UNIX_EXACT_RESERVE_HITS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: relaxed snapshot of [`WINDOWS_RESERVE_COMMIT_CALLS`].
+/// Diagnostic only.
+#[cfg(feature = "bench-internals")]
+#[must_use]
+pub fn windows_reserve_commit_calls() -> u64 {
+    WINDOWS_RESERVE_COMMIT_CALLS.load(Ordering::Relaxed)
+}
+
+/// `bench-internals`: reset all three counters
+/// ([`UNIX_EXACT_RESERVE_ATTEMPTS`], [`UNIX_EXACT_RESERVE_HITS`],
+/// [`WINDOWS_RESERVE_COMMIT_CALLS`]) to 0. Test/bench hook only — lets a
+/// measurement window start from a clean count instead of accumulating
+/// across the whole process lifetime, mirroring sefer-alloc's established
+/// `dbg_reset_*` convention.
+#[cfg(feature = "bench-internals")]
+pub fn reset_bench_internals_counters() {
+    UNIX_EXACT_RESERVE_ATTEMPTS.store(0, Ordering::Relaxed);
+    UNIX_EXACT_RESERVE_HITS.store(0, Ordering::Relaxed);
+    WINDOWS_RESERVE_COMMIT_CALLS.store(0, Ordering::Relaxed);
+}
+
 /// Return the OS page size in bytes, querying the OS once and caching the
 /// result.
 ///
@@ -855,6 +945,8 @@ fn win_reserve_commit(
                 )
             };
             if !plain.is_null() {
+                #[cfg(feature = "bench-internals")]
+                WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
                 return Some((base, region, over));
             }
         }
@@ -862,6 +954,8 @@ fn win_reserve_commit(
         unsafe { winapi_virtual_release(region_ptr) };
         return None;
     }
+    #[cfg(feature = "bench-internals")]
+    WINDOWS_RESERVE_COMMIT_CALLS.fetch_add(1, Ordering::Relaxed);
     Some((base, region, over))
 }
 
@@ -1100,6 +1194,8 @@ fn try_reserve_aligned_exact(
     align: usize,
     huge: bool,
 ) -> Option<(NonNull<u8>, NonNull<u8>, usize)> {
+    #[cfg(feature = "bench-internals")]
+    UNIX_EXACT_RESERVE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
     let region_ptr = unsafe {
         // SAFETY: anonymous private mapping of exactly `size` bytes.
         let p = libc_mmap(size, huge);
@@ -1114,6 +1210,8 @@ fn try_reserve_aligned_exact(
         unsafe { libc_munmap(region_ptr as *mut u8, size) };
         return None;
     }
+    #[cfg(feature = "bench-internals")]
+    UNIX_EXACT_RESERVE_HITS.fetch_add(1, Ordering::Relaxed);
     // SAFETY: non-null and proven `align`-aligned.
     let base = unsafe { NonNull::new_unchecked(region_ptr as *mut u8) };
     #[cfg(feature = "huge-pages")]

@@ -61,6 +61,62 @@ impl AllocCore {
         super::os::segments_released_total()
     }
 
+    /// MEASUREMENT-ONLY (task #504, F11 step 1): process-wide count of
+    /// `aligned_vmem::try_reserve_aligned_exact` attempts (Unix only — always
+    /// 0 on Windows/miri). Denominator over
+    /// [`dbg_unix_exact_reserve_hits`](Self::dbg_unix_exact_reserve_hits).
+    /// See `aligned_vmem::UNIX_EXACT_RESERVE_ATTEMPTS`'s own doc for the full
+    /// rationale (settling `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`
+    /// F11's "coin flip … nothing anywhere counts this" Unix fast-path
+    /// question with a real number). Relaxed load — diagnostic only. Reads 0
+    /// unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_unix_exact_reserve_attempts() -> u64 {
+        aligned_vmem::unix_exact_reserve_attempts()
+    }
+
+    /// MEASUREMENT-ONLY (task #504, F11 step 1): the numerator complement of
+    /// [`dbg_unix_exact_reserve_attempts`](Self::dbg_unix_exact_reserve_attempts)
+    /// — count of those attempts that succeeded (already `align`-aligned, no
+    /// fallback over-reserve+trim needed). Reads 0 unless `bench-internals`
+    /// is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_unix_exact_reserve_hits() -> u64 {
+        aligned_vmem::unix_exact_reserve_hits()
+    }
+
+    /// MEASUREMENT-ONLY (task #504, F11 step 1): process-wide count of
+    /// `aligned_vmem::win_reserve_commit` calls (Windows only — always 0 on
+    /// Unix/miri). Each call issues exactly 2 syscalls (`VirtualAlloc
+    /// (MEM_RESERVE)` + `VirtualAlloc(MEM_COMMIT)`) — the parity/comparison
+    /// figure for the Unix hit-rate story above, since Windows has no
+    /// fast/slow-path split to measure today (F11 step 3 territory). Reads 0
+    /// unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_windows_reserve_commit_calls() -> u64 {
+        aligned_vmem::windows_reserve_commit_calls()
+    }
+
+    /// MEASUREMENT-ONLY (task #504, F11 step 1): reset all three
+    /// `aligned_vmem` bench-internals counters
+    /// ([`dbg_unix_exact_reserve_attempts`](Self::dbg_unix_exact_reserve_attempts),
+    /// [`dbg_unix_exact_reserve_hits`](Self::dbg_unix_exact_reserve_hits),
+    /// [`dbg_windows_reserve_commit_calls`](Self::dbg_windows_reserve_commit_calls))
+    /// to 0. Test/bench hook only — mirrors
+    /// [`dbg_reset_contains_base_tier1_counters`](Self::dbg_reset_contains_base_tier1_counters)'s
+    /// established reset-hook convention.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_reset_vmem_bench_internals_counters() {
+        aligned_vmem::reset_bench_internals_counters();
+    }
+
     /// TEST-ONLY (Phase B/C): the NUMA `node_id` stored in `ptr`'s segment
     /// header, or `None` if `ptr` is foreign. Returns `u32::MAX` (`NO_NODE_RAW`)
     /// for a segment that was not bound to a specific NUMA node (e.g. on a

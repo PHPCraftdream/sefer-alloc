@@ -1080,4 +1080,82 @@ impl HeapCore {
     pub fn dbg_decomp_page_size() -> usize {
         crate::alloc_core::AllocCore::dbg_decomp_page_size()
     }
+
+    // ── task #504 (F11 step 1) — `aligned_vmem` reservation path-activation
+    // counter delegation ──────────────────────────────────────────────────
+    //
+    // Thin delegation to the `AllocCore`-level hooks in
+    // `alloc_core_core_diag.rs`, mirroring the R29-3 decomposition
+    // delegation cluster above. `alloc-decommit` is NOT required here
+    // (unlike the decomp cluster) — these counters observe every ordinary
+    // segment reservation, not just the decommit/recommit cycle.
+
+    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_attempts`].
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_unix_exact_reserve_attempts() -> u64 {
+        crate::alloc_core::AllocCore::dbg_unix_exact_reserve_attempts()
+    }
+
+    /// task #504 delegation — see [`AllocCore::dbg_unix_exact_reserve_hits`].
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_unix_exact_reserve_hits() -> u64 {
+        crate::alloc_core::AllocCore::dbg_unix_exact_reserve_hits()
+    }
+
+    /// task #504 delegation — see [`AllocCore::dbg_windows_reserve_commit_calls`].
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_windows_reserve_commit_calls() -> u64 {
+        crate::alloc_core::AllocCore::dbg_windows_reserve_commit_calls()
+    }
+
+    /// task #504 delegation — see [`AllocCore::dbg_reset_vmem_bench_internals_counters`].
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_reset_vmem_bench_internals_counters() {
+        crate::alloc_core::AllocCore::dbg_reset_vmem_bench_internals_counters();
+    }
+
+    // ── task #504 (F11 step 2) — Windows reserve-vs-commit split delegation ─
+
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_reserve_only`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_decomp_win_reserve_only() -> Option<(*mut u8, *mut u8, usize)> {
+        crate::alloc_core::AllocCore::dbg_decomp_win_reserve_only()
+    }
+
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_commit_only`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_win_commit_only`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_win_commit_only(base: *mut u8) -> bool {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe { crate::alloc_core::AllocCore::dbg_decomp_win_commit_only(base) }
+    }
+
+    /// task #504 delegation — see [`AllocCore::dbg_decomp_win_release_only`].
+    ///
+    /// # Safety
+    ///
+    /// Same contract as [`AllocCore::dbg_decomp_win_release_only`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[allow(unsafe_code)] // task #504: unsafe fn boundary, forwarded contract.
+    pub unsafe fn dbg_decomp_win_release_only(reservation_ptr: *mut u8, reservation_len: usize) {
+        // SAFETY: forwarded from this caller's identical `# Safety` contract.
+        unsafe {
+            crate::alloc_core::AllocCore::dbg_decomp_win_release_only(
+                reservation_ptr,
+                reservation_len,
+            )
+        };
+    }
 }

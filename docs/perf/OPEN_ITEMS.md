@@ -1085,22 +1085,36 @@ for completeness.
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L13`.
 
 16. **R27-11 — reservation-only overflow tier (MOVED here from `[D]` item 15;
-    R29-3/task #434).**
+    R29-3/task #434). Trigger (b) FIRED and ANSWERED by R32-13/task #504 —
+    still does not open the design.**
 
     > **Current state**
-    > - **Status:** honest reject — NOT recommended; trigger 2 measured and does NOT fire.
-    > - **Current number/verdict:** (1+2+3) avoidable = ~24K ns = **1.0-1.3%** of
+    > - **Status:** honest reject — NOT recommended; trigger 2 measured and does NOT fire (Linux). Trigger (b) below (Windows) fired R32-13/task #504 and ALSO does not fire.
+    > - **Current number/verdict:** LINUX (R29-3): (1+2+3) avoidable = ~24K ns = **1.0-1.3%** of
     >   the decommit→reserve segment-lifecycle cycle (across 2 saved runs); (4+5)
     >   irreducible page-fault cost = **98.7-99.0%**. Additionally, `MADV_DONTNEED`
     >   decommit costs ~196-217K ns — MORE than the entire avoidable overhead — so
     >   the reservation-only design would be a NET LOSS on Linux (per-page PTE walk
-    >   of 1,006 pages > bulk VMA teardown of `munmap`).
-    > - **Next trigger:** revisit ONLY if (a) segment size shrinks dramatically
-    >   (fewer pages → MADV_DONTNEED cheaper relative to munmap), or (b) the
-    >   OS-backend changes to one where recommit is a real separate syscall
-    >   (Windows `MEM_DECOMMIT`+`MEM_COMMIT`, where the VMA-teardown-vs-page-walk
-    >   trade-off may differ).
+    >   of 1,006 pages > bulk VMA teardown of `munmap`). WINDOWS (R32-13, task
+    >   #504, native measurement — first Windows-native artifact in this corpus):
+    >   avoidable share is **4.3-4.8% (median 4.60%)** across 3 runs — LARGER than
+    >   Linux's 1.0-1.3% (mechanistically explained: Windows pays 2 real syscalls
+    >   per reserve+commit, `VirtualAlloc(MEM_RESERVE)` then `VirtualAlloc(MEM_COMMIT)`,
+    >   plus a 2x VA over-reservation Linux's single eager `mmap` avoids) but STILL
+    >   well under the 20% materiality threshold — page-fault cost dominates at
+    >   95.2-95.7% on Windows too. A NEW finding along the way: on Windows,
+    >   `VirtualAlloc(MEM_COMMIT)` costs ~2x MORE than `VirtualAlloc(MEM_RESERVE)`
+    >   (median 9,133 ns vs 4,580 ns, consistent across all 3 runs) — the OPPOSITE
+    >   of what a "reserve must search/carve, commit is just accounting" mental
+    >   model would predict.
+    > - **Next trigger:** trigger (a) (segment size shrinks dramatically) remains
+    >   untested. Trigger (b) (Windows) is now CLOSED — fired, measured, does not
+    >   change the verdict. No new trigger opened by R32-13; the design stays
+    >   deferred on both platforms now measured.
     > - **Evidence:** `R29_3_DECOMMIT_RESERVE_DECOMPOSITION_GATE.md` (the
+    >   Linux decomposition) + `R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md`
+    >   (task #504, the Windows decomposition + reserve-vs-commit split +
+    >   `_summary.csv` + `_raw_r32_13_run{1,2,3}.log`).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L16`.
 
 17. **R29-10 — alloc-hit `clear_magazine` block's per-pop cost (R3's
@@ -1203,7 +1217,24 @@ for completeness.
     > - **Status:** honest reject of the "algorithmic regression" hypothesis — the planned IAI-based bisection is moot by construction (closed without a source change).
     > - **Current number/verdict:** R5-R2 (the parent finding, `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md`) used a rigorous paired A/B wall-clock protocol (20 alternating process-level reps, paired t-stat 3.94–5.27, sign test 17–19/20) to confirm a REAL, non-noise ~14–29% wall-clock slowdown on `global_alloc_churn`/SeferAlloc between baseline `e6b9b3a` and then-`HEAD`. R5-R2b re-measured the SAME window with `npm run iai` (the project's designated deterministic judge) and found `Ir` got FASTER, not slower: `small_churn_16b`/`churn_256b` 42,880 → 34,036 (−8,844 / **−20.6%**), `churn_write_256b` −20.3%; `EstCycles` and RAM hits moved the same direction by a similar/larger margin (e.g. `churn_256b` RAM hits 4,870 → 781). `Ir` is deterministic (byte-identical back-to-back at the same commit), so there is no `Ir` regression in this window to bisect.
     > - **Next trigger:** **no revisit trigger for the closed hypothesis** (it was refuted, not deferred). The section explicitly calls the one adjacent open thread — a possible Windows-native effect invisible to Ir (real page-fault/`VirtualAlloc`/decommit costs, TLB behavior, ASLR/base-address-dependent cache conflicts, or a codegen divergence between the `x86_64-pc-windows-msvc` and WSL/Linux target triples, since R5-R2's wall-clock numbers came from a native Windows release build while `npm run iai` drives a Linux/Valgrind-simulated binary) — a "NEW investigation, not a continuation of R5-R2b's now-closed algorithmic-regression hypothesis", which would need Windows-native tooling (ETW / a Windows perf-counter harness) this project does not currently have wired up.
-    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes).
+    > - **Cross-reference (2026-08-03, R32-13/task #504):** R32-13 supplies
+    >   the first real Windows-native OS-interface (`VirtualAlloc`/`VirtualFree`)
+    >   measurement since this item was filed, decomposing a fresh-segment
+    >   reserve/commit/decommit/release cycle and finding the avoidable
+    >   (non-page-fault) share is 4.3-4.8% on Windows (vs 1.0-1.3% on Linux,
+    >   R29-3) — a real, mechanistically-explained difference (2 Windows
+    >   syscalls per reserve+commit + 2x VA over-reservation vs Linux's single
+    >   eager `mmap`), but measured on a DIFFERENT workload regime (fresh
+    >   4 MiB segment cycles, not small-object churn) from this item's own
+    >   `global_alloc_churn` signal. **Explicitly NOT claimed to explain this
+    >   item's signal** — per the survey that triggered R32-13
+    >   (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` F11:
+    >   "I am not claiming this finding explains that... I am pointing out
+    >   that the Windows OS-interface layer is the single largest unmeasured
+    >   surface in this codebase") — recorded here only as the first
+    >   quantified data point on that surface, not a resolution of this
+    >   item's still-open Windows-native investigation.
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "R5-R2b honest-reject (2026-07-14)" section (lines 1356–1430); parent `docs/perf/R5_R2_CHURN_REGRESSION_PAIRED_AB.md` (the wall-clock finding this entry closes); `docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md` (task #504, the cross-reference above).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L24`.
 
 34. **The missing artifact: a realistic ≥64-live-segment / long-lived-process

@@ -293,6 +293,28 @@ impl Segment {
         Some(Segment(reservation))
     }
 
+    /// task #504 (F11 step 2) MEASUREMENT-ONLY: identical mechanism to
+    /// [`reserve_lazy`](Self::reserve_lazy) (reserve a whole `SEGMENT`,
+    /// commit only `initial_commit` bytes up front via the same
+    /// `aligned_vmem::reserve_aligned_lazy` primitive), but gated on
+    /// `bench-internals` alone — NOT on the `primordial-lazy-commit` sefer-
+    /// level POLICY feature. This lets the R32-13 Windows decomposition gate
+    /// call the reserve-vs-commit SPLIT primitive to time
+    /// `VirtualAlloc(MEM_RESERVE)` separately from `VirtualAlloc(MEM_COMMIT)`
+    /// without pulling in (or depending on) any production reservation
+    /// policy change — see `bench-internals`'s own `Cargo.toml` doc for why
+    /// this split exists as its own hook rather than reusing `reserve_lazy`
+    /// directly. Same OOM/contract-violation `None` return; same Unix/miri
+    /// eager-fallback behavior (crate-documented on `aligned_vmem::
+    /// reserve_aligned_lazy`).
+    #[must_use]
+    #[cfg(feature = "bench-internals")]
+    pub(crate) fn reserve_lazy_for_measurement(initial_commit: usize) -> Option<Self> {
+        let reservation = vmem::reserve_aligned_lazy(SEGMENT, SEGMENT, initial_commit)?;
+        SEGMENTS_RESERVED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        Some(Segment(reservation))
+    }
+
     /// The SEGMENT-aligned usable base of this span, as a `*mut u8`. Non-null,
     /// valid for [`len`](Self::len) bytes, aligned to `SEGMENT`.
     #[must_use]
@@ -614,6 +636,31 @@ pub(crate) fn commit_pages(base: *mut u8, start_offset: usize, end_offset: usize
     // commit_range` validates only the offset alignment and `start < end`.
     // The fault-injection check (when armed) happens INSIDE `commit_range`,
     // immediately before the real syscall.
+    unsafe { vmem::commit_range(base, start_offset, end_offset) }
+}
+
+/// task #504 (F11 step 2) MEASUREMENT-ONLY: identical mechanism to
+/// [`commit_pages`] (thin wrapper over `aligned_vmem::commit_range`), gated
+/// on `bench-internals` alone instead of the three sefer-level lazy-commit
+/// POLICY features `commit_pages` requires. See
+/// [`Segment::reserve_lazy_for_measurement`] for the paired reserve-side
+/// hook and the full rationale for keeping this split independent of any
+/// production policy feature.
+///
+/// # Safety
+///
+/// Same caller contract as [`commit_pages`]: `[base + start_offset, base +
+/// end_offset)` must be within a live segment's VA reservation, currently
+/// reserved-but-uncommitted (or already committed — idempotent).
+#[must_use]
+#[cfg(feature = "bench-internals")]
+pub(crate) unsafe fn commit_pages_for_measurement(
+    base: *mut u8,
+    start_offset: usize,
+    end_offset: usize,
+) -> bool {
+    // SAFETY: forwarded from this function's own `# Safety` contract, the
+    // same one `commit_pages` documents above.
     unsafe { vmem::commit_range(base, start_offset, end_offset) }
 }
 

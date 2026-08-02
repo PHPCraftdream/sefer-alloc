@@ -455,6 +455,8 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_decommit_payload",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_recommit_payload",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_release",
+    "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_win_commit_only",
+    "src/alloc_core/alloc_core_small_pool.rs::dbg_decomp_win_release_only",
     "src/alloc_core/alloc_core_small_pool.rs::dbg_force_decommit_retain_for",
     "src/alloc_core/alloc_core_small_reclaim.rs::dbg_push_to_ring",
     "src/global/tls_heap.rs::dbg_restore_local_for_test",
@@ -467,6 +469,8 @@ const UNSAFE_HOOKS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_decomp_decommit_payload",
     "src/registry/heap_core_diag.rs::dbg_decomp_recommit_payload",
     "src/registry/heap_core_diag.rs::dbg_decomp_release",
+    "src/registry/heap_core_diag.rs::dbg_decomp_win_commit_only",
+    "src/registry/heap_core_diag.rs::dbg_decomp_win_release_only",
 ];
 
 /// Heuristic false positives from the raw-pointer text scan retained from
