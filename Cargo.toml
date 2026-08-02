@@ -1506,6 +1506,23 @@ name = "perf_gate_iai"
 harness = false
 required-features = ["alloc-global", "bench-internals"]
 
+# R32-9 (task #500) — the missing >=64-live-segment macro-bench artifact
+# `docs/perf/OPEN_ITEMS.md` item 34 / survey finding F3 both name. NOT the
+# per-commit gate (`perf_gate_iai` above stays that) — a SEPARATE, wider,
+# occasionally-run harness with a genuinely large (>=320 MiB single-thread,
+# >=1.28 GiB 4-thread) resident working set, so `iai-callgrind`'s
+# `Estimated Cycles`/RAM-hit cache SIMULATION has something large enough to
+# actually miss on. Same Linux-only / no-op-elsewhere shape as
+# `perf_gate_iai` (see that target's own comment above for the full platform
+# rationale). `bench-internals` required for `HeapCore::dbg_table_count`,
+# this harness's path-activation oracle. Run via `cargo bench --bench
+# macro_multiseg_steady_state --features "alloc-global bench-internals"` on
+# Linux (or `iai-callgrind-runner`/CI) — see the bench file's own module doc.
+[[bench]]
+name = "macro_multiseg_steady_state"
+harness = false
+required-features = ["alloc-global", "bench-internals"]
+
 # R11-5: per-call cost of `numa::current_node()` (real OS syscall / Win32 API
 # call) vs the new cached accessor `AllocCore::current_node_cached()`. Reports
 # both a 1-call-per-iter view (per-call syscall cost vs per-call cache-hit
@@ -1935,6 +1952,20 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 [[example]]
 name = "r32_8_large_cache_decay_stride_fix_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
+# R32-9 (task #500, F3): the wall-clock companion to the new
+# `benches/macro_multiseg_steady_state.rs` iai-callgrind bench (that bench is
+# Linux-only; this example is the portable arm, runs on any platform
+# including this project's Windows dev environment). Same >=64-live-segment
+# floor + mixed Small/Large steady-state churn workload, driven through
+# HeapRegistry::claim (the SAME entry point SeferAlloc's #[global_allocator]
+# itself calls into). Subprocess-per-arm isolation across a thread-count
+# sweep (1 vs 4), path-activation oracle (HeapCore::dbg_table_count, added
+# this task), config-conflict-delta evidence. See the example file's own
+# module doc and docs/perf/R32_9_MACRO_MULTISEG_STEADY_STATE_HARNESS.md.
+[[example]]
+name = "r32_9_macro_multiseg_steady_state_ab_gate"
+required-features = ["alloc-global"]
 
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #

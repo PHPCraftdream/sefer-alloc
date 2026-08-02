@@ -1286,6 +1286,30 @@ for completeness.
    >   (2026-07-13)" sections; `R15_1_MAX_SEGMENTS_DRAIN_SCAN_COST.md` §7;
    >   `docs/reviews/2026-07-30-fm-acceleration-review.md` §2.3 ("Нет
    >   бенча с ≥64 живыми сегментами..."), §4 item 5, §5 action 7.
+   > - **UPDATE (2026-08-02, R32-9/task #500): the missing artifact now
+   >   EXISTS.** `benches/macro_multiseg_steady_state.rs` (Linux-only
+   >   `iai-callgrind` bench, same platform-gating shape as
+   >   `benches/perf_gate_iai.rs`) and its portable wall-clock companion
+   >   `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs` both
+   >   establish an 80-segment floor (>= 64, oracle-verified via the new
+   >   `HeapCore::dbg_table_count`, `src/registry/heap_core_diag.rs`) held
+   >   live through a steady-state mixed Small+Large churn region, in
+   >   single-thread (`multiseg_steady_state_1t`) and 4-thread
+   >   (`multiseg_steady_state_mt4`) variants. Full design, path-activation
+   >   oracle rationale, and first smoke-test numbers (wall-clock only — no
+   >   Linux host was available to obtain real `Estimated Cycles`/RAM-hit
+   >   numbers this task; that remains for a Linux-side follow-up) in
+   >   `docs/perf/R32_9_MACRO_MULTISEG_STEADY_STATE_HARNESS.md`. Per that
+   >   report's own §1: this DIRECTLY satisfies X5/T10/R1's own stated
+   >   ">=64-segment bench" trigger; R15-1's trigger is only PARTIALLY
+   >   satisfied (the live-segment-count half, not its separate
+   >   producer-class-fan-in half — see that report's §1 for the
+   >   distinction). No mechanism was re-attempted under the new harness in
+   >   this task (infrastructure-only, per this task's own scope); #501
+   >   (`OWN_CACHE_SIZE`, F2) is the next task expected to actually use it.
+   >   This item stays open (a macro-bench existing is not the same as
+   >   X5/T10/R1/R15-1 being re-judged and closed) but its own blocking
+   >   precondition — "does the missing artifact exist" — is now resolved.
 
 35. **`batch-api` real-downstream-consumer scouting pass #2 — R23-7's
     NO-CONSUMER decision RECONFIRMED (2026-07-31, R31-7d1+R31-13/task #479);

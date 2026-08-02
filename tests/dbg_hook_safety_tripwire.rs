@@ -261,6 +261,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_hash_contains_only",
     "src/registry/heap_core_diag.rs::dbg_last_stamped_segment",
     "src/registry/heap_core_diag.rs::dbg_kind_at_tag",
+    "src/registry/heap_core_diag.rs::dbg_table_count",
 ];
 
 /// (B) Safe mutators — safe, non-`bench-internals`-gated, DO mutate

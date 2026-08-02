@@ -60,6 +60,33 @@ impl HeapCore {
         self.core.dbg_kind_at_tag(ptr)
     }
 
+    /// R32-9 (task #500) MEASUREMENT-ONLY: thin delegation to
+    /// [`AllocCore::dbg_table_count`] — exposed at the `HeapCore` level
+    /// (mirroring `dbg_kind_at_tag`'s/`dbg_owner_id_for`'s existing
+    /// delegation pattern in this file) so the new `≥64-live-segment`
+    /// macro-bench harness (`benches/macro_multiseg_steady_state.rs`,
+    /// `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs`) can read
+    /// back this heap's segment-table high-water count as its
+    /// path-activation oracle: the harness's steady-state workload never
+    /// decommits below its target floor, so within the measured window the
+    /// high-water count and the true live count coincide (see
+    /// `SegmentTable::count`'s own doc: "the number of LIVE (non-NULL)
+    /// segments is `self.bases().count()`" — strictly `<=` this value in
+    /// general, but equal here because nothing is ever recycled once the
+    /// floor is reached). Read-only `&self`; does NOT mutate allocator
+    /// state; does NOT derive a base from a caller pointer (same safety
+    /// category as `dbg_kind_at_tag`), so a plain safe `fn` is correct, not
+    /// `unsafe fn`. Gated on `alloc-global` only (matching this file's
+    /// other ungated-beyond-`alloc-global` accessors), because
+    /// `AllocCore::dbg_table_count` itself carries no additional feature
+    /// gate.
+    #[doc(hidden)]
+    #[cfg(feature = "alloc-global")]
+    #[must_use]
+    pub fn dbg_table_count(&self) -> u32 {
+        self.core.dbg_table_count()
+    }
+
     /// TEST-ONLY (P7): read the magazine count for class `c`. Widened to
     /// `u16` at this test-only boundary (task #53 shrank the internal
     /// storage to `u8` — see `PerClass::count` — but keeps this accessor's

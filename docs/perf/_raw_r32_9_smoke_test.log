@@ -1,0 +1,154 @@
+=== R32-9 macro_multiseg_steady_state wall-clock A/B gate ===
+threads=[1, 4] x 5 reps; FLOOR_LARGE_OBJECTS=80 CHURN_ROUNDS=4096 MIN_LIVE_SEGMENTS_ORACLE=64
+
+--- arm threads=1 rep=0/5 ---
+RESULT thread_count=1
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=8192
+RESULT total_elapsed_ns_summed=418600
+RESULT max_thread_elapsed_ns=418600
+RESULT ns_per_op=51.0986328125
+OK threads=1 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=51.1
+--- arm threads=1 rep=1/5 ---
+RESULT thread_count=1
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=8192
+RESULT total_elapsed_ns_summed=397500
+RESULT max_thread_elapsed_ns=397500
+RESULT ns_per_op=48.52294921875
+OK threads=1 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=48.5
+--- arm threads=1 rep=2/5 ---
+RESULT thread_count=1
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=8192
+RESULT total_elapsed_ns_summed=384500
+RESULT max_thread_elapsed_ns=384500
+RESULT ns_per_op=46.93603515625
+OK threads=1 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=46.9
+--- arm threads=1 rep=3/5 ---
+RESULT thread_count=1
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=8192
+RESULT total_elapsed_ns_summed=346800
+RESULT max_thread_elapsed_ns=346800
+RESULT ns_per_op=42.333984375
+OK threads=1 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=42.3
+--- arm threads=1 rep=4/5 ---
+RESULT thread_count=1
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=8192
+RESULT total_elapsed_ns_summed=391100
+RESULT max_thread_elapsed_ns=391100
+RESULT ns_per_op=47.74169921875
+OK threads=1 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=47.7
+--- arm threads=4 rep=0/5 ---
+RESULT thread_count=4
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=32768
+RESULT total_elapsed_ns_summed=1586400
+RESULT max_thread_elapsed_ns=476900
+RESULT ns_per_op=58.21533203125
+OK threads=4 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=58.2
+--- arm threads=4 rep=1/5 ---
+RESULT thread_count=4
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=32768
+RESULT total_elapsed_ns_summed=1792000
+RESULT max_thread_elapsed_ns=487800
+RESULT ns_per_op=59.5458984375
+OK threads=4 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=59.5
+--- arm threads=4 rep=2/5 ---
+RESULT thread_count=4
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=32768
+RESULT total_elapsed_ns_summed=1616000
+RESULT max_thread_elapsed_ns=433200
+RESULT ns_per_op=52.880859375
+OK threads=4 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=52.9
+--- arm threads=4 rep=3/5 ---
+RESULT thread_count=4
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=32768
+RESULT total_elapsed_ns_summed=2322000
+RESULT max_thread_elapsed_ns=780900
+RESULT ns_per_op=95.32470703125
+OK threads=4 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=95.3
+--- arm threads=4 rep=4/5 ---
+RESULT thread_count=4
+RESULT floor_large_objects=80
+RESULT churn_rounds=4096
+RESULT min_live_segments_oracle=64
+RESULT min_table_count_observed=81
+RESULT oracle_pass=1
+RESULT config_conflicts_delta=0
+RESULT total_ops=32768
+RESULT total_elapsed_ns_summed=1666100
+RESULT max_thread_elapsed_ns=486900
+RESULT ns_per_op=59.43603515625
+OK threads=4 floor=80 rounds=4096 min_table_count=81 oracle=PASS cfg_conflicts_delta=0 ns_per_op=59.4
+
+=== aggregated (median of 5 reps) ===
+ threads  min_table_count    ns_per_op
+       1               81         47.7
+       4               81         59.4
+
+=== CSV (one row per child) ===
+# thread_count,repetition,process_identity,floor_large_objects,churn_rounds,min_live_segments_oracle,min_table_count_observed,oracle_pass,config_conflicts_delta,total_ops,total_elapsed_ns_summed,max_thread_elapsed_ns,ns_per_op
+1,0,subprocess,80,4096,64,81,1,0,8192,418600,418600,51.099
+1,1,subprocess,80,4096,64,81,1,0,8192,397500,397500,48.523
+1,2,subprocess,80,4096,64,81,1,0,8192,384500,384500,46.936
+1,3,subprocess,80,4096,64,81,1,0,8192,346800,346800,42.334
+1,4,subprocess,80,4096,64,81,1,0,8192,391100,391100,47.742
+4,0,subprocess,80,4096,64,81,1,0,32768,1586400,476900,58.215
+4,1,subprocess,80,4096,64,81,1,0,32768,1792000,487800,59.546
+4,2,subprocess,80,4096,64,81,1,0,32768,1616000,433200,52.881
+4,3,subprocess,80,4096,64,81,1,0,32768,2322000,780900,95.325
+4,4,subprocess,80,4096,64,81,1,0,32768,1666100,486900,59.436
+
+NOTE: all 10 arms passed the path-activation oracle (every thread's dbg_table_count() >= 64 before timed churn began).
+NOTE: each (thread_count, repetition) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation, matching R29-13/R30-6's established shape), through HeapRegistry::claim -- the SAME entry point SeferAlloc's #[global_allocator] impl itself calls (see the sibling iai-callgrind bench's module doc for why this is the correct layer, not a registry-bypass shortcut past the R31-0 entry-point lesson).
