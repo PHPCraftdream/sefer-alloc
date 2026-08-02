@@ -2,7 +2,7 @@
 
 Date: 2026-08-02.
 
-landing_commit: UNFILLED_PENDING_COMMIT
+landing_commit: 2ea920b98fbf5f75b9a92d74ed32fd8e96d04c65
 
 ## 0. What this is
 
