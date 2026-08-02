@@ -247,10 +247,10 @@ changed/added files — `src/global/sefer_alloc.rs`, `src/global/tls_heap.rs`,
 concurrently-running agent, per this session's shared-workspace git-safety
 rule): tree SHA `63eb2faa84cba9131786871ba01c26d0460d2b5b`. Recover via
 `git show 63eb2faa84cba9131786871ba01c26d0460d2b5b: -- <path>`.
-**Landing commit SHA:** to be filled in by a follow-up commit once this
-task's work lands (the established pattern — see `1272a52`'s "fill in
-R30-6's landing-commit SHA placeholder", since a commit cannot cite its own
-SHA inside itself). **Platform:** native Windows 10 Pro x86-64, 11th Gen
+**Landing commit SHA:** `e6bbc6a` (filled in by this follow-up commit, the
+established pattern — see `1272a52`'s "fill in R30-6's landing-commit SHA
+placeholder", since a commit cannot cite its own SHA inside itself).
+**Platform:** native Windows 10 Pro x86-64, 11th Gen
 Intel Core i7-11800H @ 2.30GHz (8 cores / 16 logical), rustc 1.97.0 — same
 host as §0. **Feature set:** `production`. **Entry point under test:**
 `SeferAlloc` — the REAL installed `#[global_allocator]`
