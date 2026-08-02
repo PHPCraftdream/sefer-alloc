@@ -178,6 +178,47 @@ impl AllocCore {
         self.table.dbg_hash_contains_only(base)
     }
 
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): process-wide count of
+    /// `SegmentTable::contains_base` calls that HIT the Tier-1 direct-mapped
+    /// `own_cache` — see
+    /// [`CONTAINS_BASE_TIER1_HITS`](super::alloc_core::CONTAINS_BASE_TIER1_HITS)'s
+    /// own doc for the full rationale (the missing path-activation oracle
+    /// `docs/perf/OPEN_ITEMS.md` item 1's own text left as an open clause).
+    /// Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_contains_base_tier1_hits() -> u64 {
+        super::alloc_core::CONTAINS_BASE_TIER1_HITS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): the Tier-2-fallback
+    /// complement of [`AllocCore::dbg_contains_base_tier1_hits`] — see
+    /// [`CONTAINS_BASE_TIER1_MISSES`](super::alloc_core::CONTAINS_BASE_TIER1_MISSES)'s
+    /// own doc. Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    #[must_use]
+    pub fn dbg_contains_base_tier1_misses() -> u64 {
+        super::alloc_core::CONTAINS_BASE_TIER1_MISSES.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): reset both
+    /// [`CONTAINS_BASE_TIER1_HITS`](super::alloc_core::CONTAINS_BASE_TIER1_HITS)
+    /// and
+    /// [`CONTAINS_BASE_TIER1_MISSES`](super::alloc_core::CONTAINS_BASE_TIER1_MISSES)
+    /// to 0. Test/bench hook only — lets a measurement window start from a
+    /// clean count instead of accumulating across the whole process
+    /// lifetime, mirroring [`AllocCore::dbg_reset_hash_remove_max_scan_steps`]'s
+    /// established reset-hook convention.
+    #[doc(hidden)]
+    #[cfg(feature = "bench-internals")]
+    pub fn dbg_reset_contains_base_tier1_counters() {
+        super::alloc_core::CONTAINS_BASE_TIER1_HITS.store(0, core::sync::atomic::Ordering::Relaxed);
+        super::alloc_core::CONTAINS_BASE_TIER1_MISSES
+            .store(0, core::sync::atomic::Ordering::Relaxed);
+    }
+
     /// TEST-ONLY (task #135): read the stamped `segment_id` field of `ptr`'s
     /// segment (field-specific read, mirrors what
     /// `SegmentTable::unregister`/`recycle` now use internally for their O(1)

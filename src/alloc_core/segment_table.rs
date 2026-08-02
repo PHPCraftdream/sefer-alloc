@@ -137,7 +137,52 @@ pub(crate) const FREE_LIST_FOOTPRINT: usize = FREE_LIST_CAPACITY * size_of::<u32
 /// (`unregister`/`recycle`) clears the matching slot IN THE SAME FUNCTION that
 /// mutates the hash — so complete invalidation is structural, not a
 /// remember-to-invalidate discipline scattered across call sites.
-pub(crate) const OWN_CACHE_SIZE: usize = 4;
+///
+/// R32-10 (task #501, F2): raised 4 -> 16 after MEASURING (not assuming) the
+/// original value's real-world cost. `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`
+/// §F2 identified that a Large-heavy workload with N concurrently-live
+/// Large objects (N > 4) thrashes a 4-entry direct-mapped cache by
+/// construction, but `docs/perf/R23_3_HOT_PATH_ATTRIBUTION_GATE.md` §1.3/§6.2
+/// had found no PORTABLE way to force this Tier-2 fallback to build a judge
+/// (the cache index depends on OS-assigned addresses). This round built the
+/// missing instrument instead of relying on prediction: a process-wide
+/// Tier-1 hit/miss counter (`CONTAINS_BASE_TIER1_HITS`/`_MISSES`,
+/// `bench-internals`-gated, this same file's `contains_base`) plus an
+/// OBSERVATIONAL workload (`examples/r32_10_own_cache_tier1_thrash_gate.rs`)
+/// that repeatedly `realloc`s (in-place, same size — no free, no unregister)
+/// K concurrently-live Large objects and reads the REAL resulting hit rate
+/// back from the allocator's own counters — sidestepping the address-
+/// prediction problem entirely.
+///
+/// **Measured (see `docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md` for
+/// the full sweep, raw logs, and derivation script):** at `OWN_CACHE_SIZE=4`,
+/// EVERY tested K (4/8/16/24/32/48/64) thrashed completely — 0.00% Tier-1
+/// hit rate, even at K == OWN_CACHE_SIZE (confirming the survey's own point:
+/// the cache is direct-mapped, not associative, so even N == cache-size only
+/// avoids collision if the OS happens to hand out bases whose bits 22+ don't
+/// collide — which it did not on this measured run). At `OWN_CACHE_SIZE=16`:
+/// K=4 and K=8 jump to 99.99% hit rate (32764-65528 hits out of
+/// 32768-65536 calls, both cache sizes' runs 7-repetition median), K=16+
+/// still thrashes (0.00%, one K=32 outlier run showing partial ~9.4% from a
+/// favorable single-launch address collision pattern the rest of that arm's
+/// repetitions did not reproduce) — a genuine, large, reproducible hit-rate
+/// win at the K range this cache size can actually hold. The LATENCY delta
+/// on the SAME workload/arms was NOT clearly separable from this harness's
+/// own run-to-run noise (~24-29 ns/op across every arm regardless of hit
+/// rate) — an honest null on the wall-clock axis, consistent with OPEN_ITEMS
+/// item 1's own component pricing (a Tier-1 hit vs Tier-2 miss differs by
+/// only ~4 Ir, a few ns at most, small against the whole `realloc` call's
+/// cost). The standing ±10 raw-Ir churn kill-gate (four small-object
+/// benches) is untouched by this change — it only affects `SegmentTable`'s
+/// per-heap struct size and the Large-object ownership check. Must stay a
+/// power of two — [`cache_index`](SegmentTable::cache_index) masks with
+/// `OWN_CACHE_SIZE - 1`.
+pub(crate) const OWN_CACHE_SIZE: usize = 16;
+
+const _: () = assert!(
+    OWN_CACHE_SIZE.is_power_of_two(),
+    "OWN_CACHE_SIZE must be a power of two -- SegmentTable::cache_index masks with OWN_CACHE_SIZE - 1"
+);
 
 /// Bit-shift of the segment size (log₂(SEGMENT = 4 MiB) = 22). Used by the
 /// hash function to convert a segment base into a table index. Exposed as
@@ -498,9 +543,22 @@ impl SegmentTable {
         let idx = Self::cache_index(base);
         // Fast path: proven-present cache hit.
         if self.own_cache[idx] == base && !base.is_null() {
+            // R32-10 (task #501, F2): path-activation oracle — Tier-1 hit.
+            // `bench-internals`-gated (see `CONTAINS_BASE_TIER1_HITS`'s own
+            // doc in `alloc_core.rs`); compiled out entirely otherwise, so
+            // this cannot add overhead to a real production build.
+            #[cfg(feature = "bench-internals")]
+            super::alloc_core::CONTAINS_BASE_TIER1_HITS
+                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             return true;
         }
         // Miss → full O(1) hash probe. Fill the cache only on a won probe.
+        // R32-10: this call fell through to Tier-2 — count the routing
+        // decision BEFORE running the probe (a Tier-2 fallback occurred
+        // regardless of whether the probe itself then finds `base`).
+        #[cfg(feature = "bench-internals")]
+        super::alloc_core::CONTAINS_BASE_TIER1_MISSES
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         if self.hash_contains(base) {
             self.own_cache[idx] = base;
             true

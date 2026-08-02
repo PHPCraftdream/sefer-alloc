@@ -253,6 +253,42 @@ pub(super) static MAYBE_DECAY_GUARD_PASSED: core::sync::atomic::AtomicU64 =
 pub(super) static FORCE_DECAY_CLOCK_READ: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
+/// R32-10 (task #501, F2): process-wide path-activation oracle for
+/// `SegmentTable::contains_base`'s Tier-1 direct-mapped `own_cache` — counts
+/// calls that HIT the 4 (now `OWN_CACHE_SIZE`)-entry cache without falling
+/// through to the Tier-2 `hash_contains` open-addressing probe. Paired with
+/// [`CONTAINS_BASE_TIER1_MISSES`] (which counts the complementary fall-
+/// through case), this is the counter
+/// `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` finding F2 and
+/// `docs/perf/OPEN_ITEMS.md` item 1's own last-open clause ("Tier-2-hash-
+/// probe-heavy workloads might show `contains_base` > 8.8% (open, not a
+/// proven floor)") both name as never having been built: R23-3 §1.3 could
+/// only measure Tier-2's cost in isolation via a bypass hook
+/// (`SegmentTable::dbg_hash_contains_only`), never observe HOW OFTEN real
+/// production traffic actually falls through to it. Bumped only when
+/// `bench-internals` is on (matching [`MAYBE_DECAY_GUARD_PASSED`]'s
+/// convention: a plain production build never touches this counter, so it
+/// cannot affect real allocator behavior or add overhead to a release
+/// build). Read via
+/// [`AllocCore::dbg_contains_base_tier1_hits`](super::alloc_core_core_diag).
+/// Diagnostic only (Relaxed, like `DECOMMIT_CALLS`).
+#[cfg(feature = "bench-internals")]
+pub(super) static CONTAINS_BASE_TIER1_HITS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R32-10 (task #501, F2): the Tier-2-fallback complement of
+/// [`CONTAINS_BASE_TIER1_HITS`] — counts `contains_base` calls whose Tier-1
+/// `own_cache` probe MISSED and therefore fell through to the Tier-2
+/// `hash_contains` open-addressing probe (regardless of whether that Tier-2
+/// probe itself found `base` or not — this counts ROUTING, i.e. which tier
+/// did the work, not membership). `tier1_hit_rate = hits / (hits + misses)`
+/// is the quantity item 1's open clause and F2's own text both ask for.
+/// Same gating/ordering/read-accessor convention as
+/// [`CONTAINS_BASE_TIER1_HITS`].
+#[cfg(feature = "bench-internals")]
+pub(super) static CONTAINS_BASE_TIER1_MISSES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT
 /// `Node::zero` passes on the Large-classified `alloc_zeroed` path — bumped
 /// at both consumers of `alloc_large`'s freshness signal

@@ -761,6 +761,42 @@ impl HeapCore {
         self.core.dbg_hash_contains_only(base)
     }
 
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): thin delegation to
+    /// [`AllocCore::dbg_contains_base_tier1_hits`] — exposed at the
+    /// `HeapCore` level (mirroring `dbg_hash_contains_only`'s existing
+    /// delegation pattern in this file) so a macro-bench workload driven
+    /// through the real `HeapCore`/`#[global_allocator]` entry point can read
+    /// back the process-wide Tier-1 hit/miss split without reaching into
+    /// `alloc_core`-internal modules. Process-wide (a bare associated fn, no
+    /// `&self`), matching `dbg_maybe_decay_guard_passed_count`'s existing
+    /// convention for other process-wide diagnostic counters in this crate.
+    /// Reads 0 unless `bench-internals` is on.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_contains_base_tier1_hits() -> u64 {
+        crate::alloc_core::AllocCore::dbg_contains_base_tier1_hits()
+    }
+
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): the Tier-2-fallback
+    /// complement of [`HeapCore::dbg_contains_base_tier1_hits`]. See
+    /// [`AllocCore::dbg_contains_base_tier1_misses`].
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_contains_base_tier1_misses() -> u64 {
+        crate::alloc_core::AllocCore::dbg_contains_base_tier1_misses()
+    }
+
+    /// MEASUREMENT-ONLY (R32-10, task #501, F2): thin delegation to
+    /// [`AllocCore::dbg_reset_contains_base_tier1_counters`], exposed at the
+    /// `HeapCore` level for the same reason as the two accessors above.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-global", feature = "bench-internals"))]
+    pub fn dbg_reset_contains_base_tier1_counters() {
+        crate::alloc_core::AllocCore::dbg_reset_contains_base_tier1_counters();
+    }
+
     /// MEASUREMENT-ONLY (R23-3, task #372): thin delegation to
     /// [`dealloc_own_thread_with_base`](super::heap_core_free::HeapCore::dealloc_own_thread_with_base),
     /// exposed so `benches/perf_gate_iai.rs` can isolate the free path's

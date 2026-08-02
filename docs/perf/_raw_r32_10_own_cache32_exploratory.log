@@ -1,0 +1,582 @@
+    Finished `release` profile [optimized] target(s) in 0.55s
+     Running `D:\dev\rust\.cargo-target\release\examples\r32_10_own_cache_tier1_thrash_gate.exe`
+=== R32-10 own_cache Tier-1 thrash gate ===
+K_VALUES=[4, 8, 16, 24, 32, 48, 64] REPETITIONS=5 ROTATING_ROUNDS=512
+
+--- k=4 rep=0/5 ---
+RESULT k=4
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=5
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=2044
+RESULT tier1_misses=4
+RESULT tier1_total=2048
+RESULT expected_total=2048
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=63300
+RESULT ns_per_op=30.908203125
+OK k=4 rounds=512 table_count=5 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=2044 tier1_misses=4 hit_rate=99.80% oracle2=PASS ns_per_op=30.9
+--- k=4 rep=1/5 ---
+RESULT k=4
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=5
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=2044
+RESULT tier1_misses=4
+RESULT tier1_total=2048
+RESULT expected_total=2048
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=64100
+RESULT ns_per_op=31.298828125
+OK k=4 rounds=512 table_count=5 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=2044 tier1_misses=4 hit_rate=99.80% oracle2=PASS ns_per_op=31.3
+--- k=4 rep=2/5 ---
+RESULT k=4
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=5
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=2044
+RESULT tier1_misses=4
+RESULT tier1_total=2048
+RESULT expected_total=2048
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=73500
+RESULT ns_per_op=35.888671875
+OK k=4 rounds=512 table_count=5 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=2044 tier1_misses=4 hit_rate=99.80% oracle2=PASS ns_per_op=35.9
+--- k=4 rep=3/5 ---
+RESULT k=4
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=5
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=2044
+RESULT tier1_misses=4
+RESULT tier1_total=2048
+RESULT expected_total=2048
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=58000
+RESULT ns_per_op=28.3203125
+OK k=4 rounds=512 table_count=5 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=2044 tier1_misses=4 hit_rate=99.80% oracle2=PASS ns_per_op=28.3
+--- k=4 rep=4/5 ---
+RESULT k=4
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=5
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=2044
+RESULT tier1_misses=4
+RESULT tier1_total=2048
+RESULT expected_total=2048
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=79500
+RESULT ns_per_op=38.818359375
+OK k=4 rounds=512 table_count=5 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=2044 tier1_misses=4 hit_rate=99.80% oracle2=PASS ns_per_op=38.8
+--- k=8 rep=0/5 ---
+RESULT k=8
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=9
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8
+RESULT tier1_total=4096
+RESULT expected_total=4096
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=108700
+RESULT ns_per_op=26.5380859375
+OK k=8 rounds=512 table_count=9 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8 hit_rate=99.80% oracle2=PASS ns_per_op=26.5
+--- k=8 rep=1/5 ---
+RESULT k=8
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=9
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8
+RESULT tier1_total=4096
+RESULT expected_total=4096
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=113400
+RESULT ns_per_op=27.685546875
+OK k=8 rounds=512 table_count=9 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8 hit_rate=99.80% oracle2=PASS ns_per_op=27.7
+--- k=8 rep=2/5 ---
+RESULT k=8
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=9
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8
+RESULT tier1_total=4096
+RESULT expected_total=4096
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=115500
+RESULT ns_per_op=28.1982421875
+OK k=8 rounds=512 table_count=9 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8 hit_rate=99.80% oracle2=PASS ns_per_op=28.2
+--- k=8 rep=3/5 ---
+RESULT k=8
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=9
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8
+RESULT tier1_total=4096
+RESULT expected_total=4096
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=113800
+RESULT ns_per_op=27.783203125
+OK k=8 rounds=512 table_count=9 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8 hit_rate=99.80% oracle2=PASS ns_per_op=27.8
+--- k=8 rep=4/5 ---
+RESULT k=8
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=9
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8
+RESULT tier1_total=4096
+RESULT expected_total=4096
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=123200
+RESULT ns_per_op=30.078125
+OK k=8 rounds=512 table_count=9 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8 hit_rate=99.80% oracle2=PASS ns_per_op=30.1
+--- k=16 rep=0/5 ---
+RESULT k=16
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=17
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=8176
+RESULT tier1_misses=16
+RESULT tier1_total=8192
+RESULT expected_total=8192
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=294400
+RESULT ns_per_op=35.9375
+OK k=16 rounds=512 table_count=17 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=8176 tier1_misses=16 hit_rate=99.80% oracle2=PASS ns_per_op=35.9
+--- k=16 rep=1/5 ---
+RESULT k=16
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=17
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=8176
+RESULT tier1_misses=16
+RESULT tier1_total=8192
+RESULT expected_total=8192
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=235200
+RESULT ns_per_op=28.7109375
+OK k=16 rounds=512 table_count=17 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=8176 tier1_misses=16 hit_rate=99.80% oracle2=PASS ns_per_op=28.7
+--- k=16 rep=2/5 ---
+RESULT k=16
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=17
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=8176
+RESULT tier1_misses=16
+RESULT tier1_total=8192
+RESULT expected_total=8192
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=251100
+RESULT ns_per_op=30.65185546875
+OK k=16 rounds=512 table_count=17 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=8176 tier1_misses=16 hit_rate=99.80% oracle2=PASS ns_per_op=30.7
+--- k=16 rep=3/5 ---
+RESULT k=16
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=17
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=8176
+RESULT tier1_misses=16
+RESULT tier1_total=8192
+RESULT expected_total=8192
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=224300
+RESULT ns_per_op=27.38037109375
+OK k=16 rounds=512 table_count=17 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=8176 tier1_misses=16 hit_rate=99.80% oracle2=PASS ns_per_op=27.4
+--- k=16 rep=4/5 ---
+RESULT k=16
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=17
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=8176
+RESULT tier1_misses=16
+RESULT tier1_total=8192
+RESULT expected_total=8192
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=99.8046875
+RESULT churn_elapsed_ns=283800
+RESULT ns_per_op=34.6435546875
+OK k=16 rounds=512 table_count=17 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=8176 tier1_misses=16 hit_rate=99.80% oracle2=PASS ns_per_op=34.6
+--- k=24 rep=0/5 ---
+RESULT k=24
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=25
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8200
+RESULT tier1_total=12288
+RESULT expected_total=12288
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=33.268229166666664
+RESULT churn_elapsed_ns=386900
+RESULT ns_per_op=31.486002604166668
+OK k=24 rounds=512 table_count=25 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8200 hit_rate=33.27% oracle2=PASS ns_per_op=31.5
+--- k=24 rep=1/5 ---
+RESULT k=24
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=25
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8200
+RESULT tier1_total=12288
+RESULT expected_total=12288
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=33.268229166666664
+RESULT churn_elapsed_ns=293000
+RESULT ns_per_op=23.844401041666668
+OK k=24 rounds=512 table_count=25 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8200 hit_rate=33.27% oracle2=PASS ns_per_op=23.8
+--- k=24 rep=2/5 ---
+RESULT k=24
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=25
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8200
+RESULT tier1_total=12288
+RESULT expected_total=12288
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=33.268229166666664
+RESULT churn_elapsed_ns=356500
+RESULT ns_per_op=29.012044270833332
+OK k=24 rounds=512 table_count=25 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8200 hit_rate=33.27% oracle2=PASS ns_per_op=29.0
+--- k=24 rep=3/5 ---
+RESULT k=24
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=25
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8200
+RESULT tier1_total=12288
+RESULT expected_total=12288
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=33.268229166666664
+RESULT churn_elapsed_ns=374900
+RESULT ns_per_op=30.509440104166668
+OK k=24 rounds=512 table_count=25 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8200 hit_rate=33.27% oracle2=PASS ns_per_op=30.5
+--- k=24 rep=4/5 ---
+RESULT k=24
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=25
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=4088
+RESULT tier1_misses=8200
+RESULT tier1_total=12288
+RESULT expected_total=12288
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=33.268229166666664
+RESULT churn_elapsed_ns=282400
+RESULT ns_per_op=22.981770833333332
+OK k=24 rounds=512 table_count=25 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=4088 tier1_misses=8200 hit_rate=33.27% oracle2=PASS ns_per_op=23.0
+--- k=32 rep=0/5 ---
+RESULT k=32
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=33
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=16384
+RESULT tier1_total=16384
+RESULT expected_total=16384
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=467800
+RESULT ns_per_op=28.55224609375
+OK k=32 rounds=512 table_count=33 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=16384 hit_rate=0.00% oracle2=PASS ns_per_op=28.6
+--- k=32 rep=1/5 ---
+RESULT k=32
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=33
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=16384
+RESULT tier1_total=16384
+RESULT expected_total=16384
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=316100
+RESULT ns_per_op=19.293212890625
+OK k=32 rounds=512 table_count=33 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=16384 hit_rate=0.00% oracle2=PASS ns_per_op=19.3
+--- k=32 rep=2/5 ---
+RESULT k=32
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=33
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=16384
+RESULT tier1_total=16384
+RESULT expected_total=16384
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=538500
+RESULT ns_per_op=32.867431640625
+OK k=32 rounds=512 table_count=33 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=16384 hit_rate=0.00% oracle2=PASS ns_per_op=32.9
+--- k=32 rep=3/5 ---
+RESULT k=32
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=33
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=16384
+RESULT tier1_total=16384
+RESULT expected_total=16384
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=508700
+RESULT ns_per_op=31.048583984375
+OK k=32 rounds=512 table_count=33 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=16384 hit_rate=0.00% oracle2=PASS ns_per_op=31.0
+--- k=32 rep=4/5 ---
+RESULT k=32
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=33
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=16384
+RESULT tier1_total=16384
+RESULT expected_total=16384
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=312700
+RESULT ns_per_op=19.085693359375
+OK k=32 rounds=512 table_count=33 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=16384 hit_rate=0.00% oracle2=PASS ns_per_op=19.1
+--- k=48 rep=0/5 ---
+RESULT k=48
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=49
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=24576
+RESULT tier1_total=24576
+RESULT expected_total=24576
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=739400
+RESULT ns_per_op=30.086263020833332
+OK k=48 rounds=512 table_count=49 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=24576 hit_rate=0.00% oracle2=PASS ns_per_op=30.1
+--- k=48 rep=1/5 ---
+RESULT k=48
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=49
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=24576
+RESULT tier1_total=24576
+RESULT expected_total=24576
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=699200
+RESULT ns_per_op=28.450520833333332
+OK k=48 rounds=512 table_count=49 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=24576 hit_rate=0.00% oracle2=PASS ns_per_op=28.5
+--- k=48 rep=2/5 ---
+RESULT k=48
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=49
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=24576
+RESULT tier1_total=24576
+RESULT expected_total=24576
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=692600
+RESULT ns_per_op=28.181966145833332
+OK k=48 rounds=512 table_count=49 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=24576 hit_rate=0.00% oracle2=PASS ns_per_op=28.2
+--- k=48 rep=3/5 ---
+RESULT k=48
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=49
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=24576
+RESULT tier1_total=24576
+RESULT expected_total=24576
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=612500
+RESULT ns_per_op=24.922688802083332
+OK k=48 rounds=512 table_count=49 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=24576 hit_rate=0.00% oracle2=PASS ns_per_op=24.9
+--- k=48 rep=4/5 ---
+RESULT k=48
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=49
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=24576
+RESULT tier1_total=24576
+RESULT expected_total=24576
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=574900
+RESULT ns_per_op=23.392740885416668
+OK k=48 rounds=512 table_count=49 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=24576 hit_rate=0.00% oracle2=PASS ns_per_op=23.4
+--- k=64 rep=0/5 ---
+RESULT k=64
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=65
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=32768
+RESULT tier1_total=32768
+RESULT expected_total=32768
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=975700
+RESULT ns_per_op=29.7760009765625
+OK k=64 rounds=512 table_count=65 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=32768 hit_rate=0.00% oracle2=PASS ns_per_op=29.8
+--- k=64 rep=1/5 ---
+RESULT k=64
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=65
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=32768
+RESULT tier1_total=32768
+RESULT expected_total=32768
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=935800
+RESULT ns_per_op=28.558349609375
+OK k=64 rounds=512 table_count=65 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=32768 hit_rate=0.00% oracle2=PASS ns_per_op=28.6
+--- k=64 rep=2/5 ---
+RESULT k=64
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=65
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=32768
+RESULT tier1_total=32768
+RESULT expected_total=32768
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=935800
+RESULT ns_per_op=28.558349609375
+OK k=64 rounds=512 table_count=65 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=32768 hit_rate=0.00% oracle2=PASS ns_per_op=28.6
+--- k=64 rep=3/5 ---
+RESULT k=64
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=65
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=32768
+RESULT tier1_total=32768
+RESULT expected_total=32768
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=774700
+RESULT ns_per_op=23.6419677734375
+OK k=64 rounds=512 table_count=65 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=32768 hit_rate=0.00% oracle2=PASS ns_per_op=23.6
+--- k=64 rep=4/5 ---
+RESULT k=64
+RESULT rotating_rounds=512
+RESULT table_count_at_floor=65
+RESULT oracle1_pass=1
+RESULT config_conflicts_delta=0
+RESULT tier1_hits=0
+RESULT tier1_misses=32768
+RESULT tier1_total=32768
+RESULT expected_total=32768
+RESULT oracle2_pass=1
+RESULT tier1_hit_rate_pct=0
+RESULT churn_elapsed_ns=661800
+RESULT ns_per_op=20.196533203125
+OK k=64 rounds=512 table_count=65 oracle1=PASS cfg_conflicts_delta=0 tier1_hits=0 tier1_misses=32768 hit_rate=0.00% oracle2=PASS ns_per_op=20.2
+
+=== aggregated (median of 5 reps per K) ===
+     k   tier1_hits   tier1_miss  hit_rate%    ns_per_op
+     4         2044            4      99.80         31.3
+     8         4088            8      99.80         27.8
+    16         8176           16      99.80         30.7
+    24         4088         8200      33.27         29.0
+    32            0        16384       0.00         28.6
+    48            0        24576       0.00         28.2
+    64            0        32768       0.00         28.6
+
+=== CSV (one row per (k, repetition)) ===
+# k,repetition,process_identity,rotating_rounds,table_count_at_floor,oracle1_pass,config_conflicts_delta,tier1_hits,tier1_misses,tier1_total,expected_total,oracle2_pass,tier1_hit_rate_pct,churn_elapsed_ns,ns_per_op
+4,0,subprocess,512,5,1,0,2044,4,2048,2048,1,99.8047,63300,30.908
+4,1,subprocess,512,5,1,0,2044,4,2048,2048,1,99.8047,64100,31.299
+4,2,subprocess,512,5,1,0,2044,4,2048,2048,1,99.8047,73500,35.889
+4,3,subprocess,512,5,1,0,2044,4,2048,2048,1,99.8047,58000,28.320
+4,4,subprocess,512,5,1,0,2044,4,2048,2048,1,99.8047,79500,38.818
+8,0,subprocess,512,9,1,0,4088,8,4096,4096,1,99.8047,108700,26.538
+8,1,subprocess,512,9,1,0,4088,8,4096,4096,1,99.8047,113400,27.686
+8,2,subprocess,512,9,1,0,4088,8,4096,4096,1,99.8047,115500,28.198
+8,3,subprocess,512,9,1,0,4088,8,4096,4096,1,99.8047,113800,27.783
+8,4,subprocess,512,9,1,0,4088,8,4096,4096,1,99.8047,123200,30.078
+16,0,subprocess,512,17,1,0,8176,16,8192,8192,1,99.8047,294400,35.938
+16,1,subprocess,512,17,1,0,8176,16,8192,8192,1,99.8047,235200,28.711
+16,2,subprocess,512,17,1,0,8176,16,8192,8192,1,99.8047,251100,30.652
+16,3,subprocess,512,17,1,0,8176,16,8192,8192,1,99.8047,224300,27.380
+16,4,subprocess,512,17,1,0,8176,16,8192,8192,1,99.8047,283800,34.644
+24,0,subprocess,512,25,1,0,4088,8200,12288,12288,1,33.2682,386900,31.486
+24,1,subprocess,512,25,1,0,4088,8200,12288,12288,1,33.2682,293000,23.844
+24,2,subprocess,512,25,1,0,4088,8200,12288,12288,1,33.2682,356500,29.012
+24,3,subprocess,512,25,1,0,4088,8200,12288,12288,1,33.2682,374900,30.509
+24,4,subprocess,512,25,1,0,4088,8200,12288,12288,1,33.2682,282400,22.982
+32,0,subprocess,512,33,1,0,0,16384,16384,16384,1,0.0000,467800,28.552
+32,1,subprocess,512,33,1,0,0,16384,16384,16384,1,0.0000,316100,19.293
+32,2,subprocess,512,33,1,0,0,16384,16384,16384,1,0.0000,538500,32.867
+32,3,subprocess,512,33,1,0,0,16384,16384,16384,1,0.0000,508700,31.049
+32,4,subprocess,512,33,1,0,0,16384,16384,16384,1,0.0000,312700,19.086
+48,0,subprocess,512,49,1,0,0,24576,24576,24576,1,0.0000,739400,30.086
+48,1,subprocess,512,49,1,0,0,24576,24576,24576,1,0.0000,699200,28.451
+48,2,subprocess,512,49,1,0,0,24576,24576,24576,1,0.0000,692600,28.182
+48,3,subprocess,512,49,1,0,0,24576,24576,24576,1,0.0000,612500,24.923
+48,4,subprocess,512,49,1,0,0,24576,24576,24576,1,0.0000,574900,23.393
+64,0,subprocess,512,65,1,0,0,32768,32768,32768,1,0.0000,975700,29.776
+64,1,subprocess,512,65,1,0,0,32768,32768,32768,1,0.0000,935800,28.558
+64,2,subprocess,512,65,1,0,0,32768,32768,32768,1,0.0000,935800,28.558
+64,3,subprocess,512,65,1,0,0,32768,32768,32768,1,0.0000,774700,23.642
+64,4,subprocess,512,65,1,0,0,32768,32768,32768,1,0.0000,661800,20.197
+
+NOTE: all 35 (k, repetition) cells passed oracle #1 (dbg_table_count() >= k at the floor AND every timed realloc call returned the SAME pointer -- the in-place mechanism this workload exists to exercise).
+NOTE: all 35 (k, repetition) cells passed oracle #2 (tier1_total == expected_total, i.e. EXPECTED_CALLS_PER_REALLOC=1 held exactly).
+NOTE: each (k, repetition) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation), through HeapRegistry::claim -- the SAME entry point SeferAlloc's #[global_allocator] impl itself calls (R31-0 entry-point rule).

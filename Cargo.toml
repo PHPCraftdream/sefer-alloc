@@ -1967,6 +1967,20 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 name = "r32_9_macro_multiseg_steady_state_ab_gate"
 required-features = ["alloc-global"]
 
+# R32-10 (task #501, F2): the Large-heavy workload that structurally forces
+# SegmentTable::contains_base's Tier-1 direct-mapped own_cache to thrash --
+# repeated SAME-SIZE in-place realloc (no free, no unregister) across K
+# concurrently-LIVE Large objects, K swept over {4,8,16,24,32,48,64}. Reads
+# back the new bench-internals-gated CONTAINS_BASE_TIER1_HITS/_MISSES
+# counters (this task's path-activation oracle #2) to report the REAL Tier-1
+# hit rate this workload drives, at whichever OWN_CACHE_SIZE is compiled in.
+# See the example file's own module doc (including two false-start designs
+# it documents and rules out) and
+# docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md.
+[[example]]
+name = "r32_10_own_cache_tier1_thrash_gate"
+required-features = ["alloc-global", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking
