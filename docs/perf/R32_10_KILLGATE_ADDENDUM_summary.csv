@@ -1,0 +1,6 @@
+bench,base_cache4_nocounter_ir,isolate_cache16_nocounter_ir,head_cache16_withcounter_ir,delta_cache_size_alone,delta_counter_alone,delta_total,landing_commit
+small_churn_16b,8810,8846,9037,36,191,227,UNFILLED_PLACEHOLDER_40_HEX
+aligned_churn_640b_a128,8746,8782,8973,36,191,227,UNFILLED_PLACEHOLDER_40_HEX
+cold_alloc_free_256x16b,50968,51004,51547,36,543,579,UNFILLED_PLACEHOLDER_40_HEX
+recycle_alloc_free_256x16b,99185,99228,100763,43,1535,1578,UNFILLED_PLACEHOLDER_40_HEX
+churn_256b,8810,8846,9037,36,191,227,UNFILLED_PLACEHOLDER_40_HEX

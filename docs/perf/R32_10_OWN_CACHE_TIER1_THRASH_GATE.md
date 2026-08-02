@@ -358,6 +358,117 @@ running on Linux CI (or a Linux dev box) should confirm this argument with
 real numbers — flagged honestly as unconfirmed, not glossed over, per this
 backlog's "measurement-first, honest-null-is-fine" posture.
 
+### 5.2 CORRECTED 2026-08-02 — the kill gate WAS measurable (WSL) and does NOT stay flat in the raw ±10-Ir sense; decomposed into two components, one benign
+
+This section is appended, not a rewrite — §5.1 above stays exactly as
+originally published (per this project's append-only correction
+convention). §5.1's environmental excuse ("no Linux/Valgrind on this dev
+host") was **incorrect** — WSL (Ubuntu 24.04, with Valgrind installed) was
+available on this same machine the whole time; it was not checked before
+publishing §5.1's "argued, not measured" framing. Found during this task's
+own zero-trust review, immediately re-measured, and this section reports
+the actual numbers honestly, including that the raw kill-gate DOES exceed
+±10 Ir — decomposed into why, and why the decomposition still supports
+shipping.
+
+**Method.** Three arms, same 5 standing churn benches, `--features
+"production bench-internals"` (required to build `perf_gate_iai` at all —
+`bench-internals` cannot be excluded from this specific gate, unlike a
+plain user's `production`-only build):
+
+1. **`base`** — commit `ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4` (this
+   task's own base commit, `OWN_CACHE_SIZE = 4`, no Tier-1 counter — the
+   counter did not exist yet).
+2. **`isolate`** — this task's landing commit
+   (`5289c661877462f3caf6c4e136ad3c163f6fe15b`), with the two
+   `CONTAINS_BASE_TIER1_HITS`/`_MISSES` `fetch_add` calls in
+   `segment_table.rs::contains_base` TEMPORARILY commented out as a scratch,
+   uncommitted edit — isolates `OWN_CACHE_SIZE`'s array-size change ALONE,
+   with the counter held constant (absent) on both sides of this specific
+   comparison.
+3. **`head`** — the landing commit as actually shipped (`OWN_CACHE_SIZE =
+   16` **and** the counter enabled) — the real committed state.
+
+Each arm built in its own isolated `git worktree` (`base`) or a scratch
+edit reverted before committing anything (`isolate` — no commit exists for
+this arm; see the provenance note in §8 below), all run with `sccache`
+disabled (`CARGO_BUILD_RUSTC_WRAPPER=""`) to avoid an unrelated
+Windows/WSL toolchain-wrapper conflict on this dev box. Raw logs (truncated
+to the 5 target benches + the summary line, full compile output cut per
+this project's truncation-marker convention):
+`docs/perf/_raw_r32_10_killgate_cache4_nocounter.log` (base),
+`docs/perf/_raw_r32_10_killgate_cache16_nocounter.log` (isolate),
+`docs/perf/_raw_r32_10_killgate_cache16_withcounter.log` (head). Derived +
+self-asserting summary: `docs/perf/R32_10_KILLGATE_ADDENDUM_summary.csv`,
+via `scripts/r32_10_killgate_addendum_summary.mjs` (every claim below is an
+in-script `assert`, not hand-transcribed).
+
+**Results (raw `Instructions`):**
+
+| bench | base (cache=4) | isolate (cache=16, no counter) | head (cache=16, shipped) | Δ cache-size-alone | Δ counter-alone | Δ total (base→head) |
+|---|---:|---:|---:|---:|---:|---:|
+| small_churn_16b | 8,810 | 8,846 | 9,037 | +36 | +191 | **+227** |
+| aligned_churn_640b_a128 | 8,746 | 8,782 | 8,973 | +36 | +191 | **+227** |
+| churn_256b | 8,810 | 8,846 | 9,037 | +36 | +191 | **+227** |
+| cold_alloc_free_256x16b | 50,968 | 51,004 | 51,547 | +36 | +543 | **+579** |
+| recycle_alloc_free_256x16b | 99,185 | 99,228 | 100,763 | +43 | +1,535 | **+1,578** |
+
+**Headline 1 — the raw base→head delta is well past ±10 Ir on every bench
+(+227 to +1,578).** Taken at face value against the standing kill-gate
+convention, this is a FAIL. It is reported here in full rather than
+omitted.
+
+**Headline 2 — decomposed, the delta separates cleanly into two components
+with very different implications.** The `Δ cache-size-alone` column
+(base→isolate) is **small (36-43 Ir) and near-constant across all five
+benches regardless of their wildly different internal shapes** (three flat
+single-unit benches and two ~256-iteration loop benches all land within 7
+Ir of each other) — this is the same signature task #496's
+(`docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE.md`) `PerClass`
+`#[repr(C)]` fix found for a bigger zero-initialized struct: **a ONE-TIME
+per-`HeapCore::new()` zero-init cost from the larger `own_cache: [*mut u8;
+16]` array (96 extra bytes to zero vs the old 4-entry array), not a per-op
+cost.** The `Δ counter-alone` column (isolate→head) is small on the three
+flat benches (+191, roughly constant, consistent with ONE
+`contains_base` call per bench's canonical unit) and MATERIALLY LARGER on
+the two ~256-iteration benches (+543, +1,535) — consistent with a SMALL,
+FIXED per-call cost (the `fetch_add`) applied once per `contains_base`
+invocation, scaling with how many frees/in-place-reallocs each bench
+performs.
+
+**Headline 3 — the counter component (the larger share of the delta) never
+ships.** `CONTAINS_BASE_TIER1_HITS`/`_MISSES` are `#[cfg(feature =
+"bench-internals")]` — absent from every real `production`-only build a
+user actually links against (confirmed: `cargo bench --bench
+perf_gate_iai --features production` — without `bench-internals` — refuses
+to even COMPILE, "requires the features: alloc-global, bench-internals",
+because the harness itself needs the oracle; a real deployment never
+enables `bench-internals` at all). So of the +227-to-+1,578 raw delta the
+standing kill gate would report, roughly 84-97% of it (the counter
+component) is a measurement-instrument cost invisible to every real user,
+and the REMAINING real-production-path cost is the 36-43 Ir one-time
+`OWN_CACHE_SIZE` bootstrap shift — negligible against a heap's whole
+lifetime, and NOT a per-op regression (the property the kill gate exists
+to catch).
+
+**Conclusion: the shipped change does not, in fact, cause a per-op
+regression to the small-object hot path.** §6's `perf(runtime)` decision
+and §5.1's underlying argument are CONFIRMED, not overturned — but §5.1's
+own claim that the numbers were unobtainable on this dev host was wrong,
+and should have been checked (WSL) before publishing "argued, not
+measured." This addendum replaces that gap with the real numbers and their
+honest decomposition, rather than leaving the claim unconfirmed.
+
+**One methodological note for a future round building on `contains_base`:**
+any FUTURE `bench-internals`-gated counter added to a function this
+project's standing churn kill-gate benches exercise will show up as a
+non-zero delta in the raw ±10-Ir gate for the SAME reason found here — the
+gate has no way to distinguish "a real per-op regression" from "a new
+measurement instrument's own overhead" without this kind of before/after
+decomposition. A future round adding such a counter should proactively run
+this same base→isolate→head three-arm split rather than let the raw gate
+number stand unexplained.
+
 ## 6. Decision: `perf(runtime)`, shipped as the new default — with an honest scope caveat
 
 **`OWN_CACHE_SIZE` is reachable through plain `production`** (§0's
@@ -404,9 +515,14 @@ this workload's total cost") would not contradict anything stated here.
   `base`, saving the redundant `os::segment_base_of_ptr` (~9 Ir) +
   `contains_base` (~8-12 Ir) on every Large free — independent of this
   task's `OWN_CACHE_SIZE` change, and orthogonal to it.
-- **A real Linux `Estimated Cycles`/RAM-hit run of the ±10 raw-Ir churn
+- ~~**A real Linux `Estimated Cycles`/RAM-hit run of the ±10 raw-Ir churn
   kill gate** (§5.1) — this task argued but did not measure that it stays
-  flat.
+  flat.~~ **RESOLVED by §5.2** (same-day correction): measured via WSL,
+  decomposed into a benign one-time bootstrap cost (36-43 Ir) plus a
+  bench-internals-only measurement-instrument cost that never ships
+  (191-1,535 Ir). Estimated Cycles/RAM-hit breakdown specifically (as
+  opposed to raw Instructions) remains unmeasured — a narrower residual
+  follow-up than originally stated.
 - **Extending `benches/macro_multiseg_steady_state.rs` (task #500's
   harness) with a Large-heavy in-place-realloc churn variant**, so a future
   round's `iai-callgrind` `Estimated Cycles` axis can see this same effect

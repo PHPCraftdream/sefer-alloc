@@ -1,0 +1,44 @@
+# TRUNCATED -- full compile output and ~78 other benches cut -- full output reproducible via: cargo bench --bench perf_gate_iai --features "production bench-internals" against commit a3e3e18dda7da34a04f691ca0d62e0e4d968cb5f (task #501 landing commit) with the two CONTAINS_BASE_TIER1_HITS/MISSES fetch_add calls in segment_table.rs::contains_base temporarily commented out (scratch isolation edit, not committed) -- OWN_CACHE_SIZE=16, counter disabled
+# Kept: the 5 standing churn kill-gate benches + the final Iai-Callgrind summary line.
+
+perf_gate_iai::perf_gate::small_churn_16b
+  Instructions:                        8846|N/A                  (*********)
+  L1 Hits:                            11637|N/A                  (*********)
+  L2 Hits:                               99|N/A                  (*********)
+  RAM Hits:                             284|N/A                  (*********)
+  Total read+write:                   12020|N/A                  (*********)
+  Estimated Cycles:                   22072|N/A                  (*********)
+
+perf_gate_iai::perf_gate::aligned_churn_640b_a128
+  Instructions:                        8782|N/A                  (*********)
+  L1 Hits:                            11573|N/A                  (*********)
+  L2 Hits:                               96|N/A                  (*********)
+  RAM Hits:                             287|N/A                  (*********)
+  Total read+write:                   11956|N/A                  (*********)
+  Estimated Cycles:                   22098|N/A                  (*********)
+
+perf_gate_iai::perf_gate::cold_alloc_free_256x16b
+  Instructions:                       51004|N/A                  (*********)
+  L1 Hits:                            63304|N/A                  (*********)
+  L2 Hits:                               95|N/A                  (*********)
+  RAM Hits:                             405|N/A                  (*********)
+  Total read+write:                   63804|N/A                  (*********)
+  Estimated Cycles:                   77954|N/A                  (*********)
+
+perf_gate_iai::perf_gate::recycle_alloc_free_256x16b
+  Instructions:                       99228|N/A                  (*********)
+  L1 Hits:                           122200|N/A                  (*********)
+  L2 Hits:                               22|N/A                  (*********)
+  RAM Hits:                             515|N/A                  (*********)
+  Total read+write:                  122737|N/A                  (*********)
+  Estimated Cycles:                  140335|N/A                  (*********)
+
+perf_gate_iai::perf_gate::churn_256b
+  Instructions:                        8846|N/A                  (*********)
+  L1 Hits:                            11636|N/A                  (*********)
+  L2 Hits:                               99|N/A                  (*********)
+  RAM Hits:                             285|N/A                  (*********)
+  Total read+write:                   12020|N/A                  (*********)
+  Estimated Cycles:                   22106|N/A                  (*********)
+
+Iai-Callgrind result: Ok. 83 without regressions; 0 regressed; 83 benchmarks finished in 71.5028s
