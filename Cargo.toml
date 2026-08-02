@@ -1914,6 +1914,28 @@ required-features = ["alloc-global", "alloc-xthread", "alloc-decommit"]
 name = "r32_7_large_cache_hit_activation_oracle"
 required-features = ["alloc-global", "alloc-xthread", "alloc-decommit", "fastbin", "alloc-stats"]
 
+# R32-8 (task #499, F9): confound-free A/B for `maybe_decay_large_cache`'s
+# fast-path guard cost — holds `headroom_bytes` FIXED across both arms and
+# varies ONLY the `bench-internals`-gated `FORCE_DECAY_CLOCK_READ` override,
+# isolating the Instant::now() clock-read cost from R31-1's own documented
+# headroom-driven hit-rate confound. Subprocess-per-arm + config-identity +
+# path-activation-oracle methodology, same shape as r30_6/r31_1's siblings.
+[[example]]
+name = "r32_8_large_cache_decay_clock_read_ab_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
+# R32-8 (task #499, F9): validates the stride-throttle FIX's benefit in the
+# regime it targets -- a workload where large_cache_used_bytes stays
+# genuinely above headroom throughout (the LowHeadroom/Trimmed64MiB regime),
+# reusing FORCE_DECAY_CLOCK_READ as an old-shape/new-shape switch (forced=true
+# bypasses the stride throttle, reproducing the pre-fix unconditional
+# clock-read-past-headroom shape). Sibling to r32_8_large_cache_decay_clock_read_ab_gate,
+# which isolates the raw per-call clock-read cost at a headroom the workload
+# never crosses.
+[[example]]
+name = "r32_8_large_cache_decay_stride_fix_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
 # ── §0 — Flamegraph profiling: debug-info is OPT-IN, NOT persistent ──────────
 #
 # Persistent `debug = true` in [profile.release] / [profile.bench] slows linking

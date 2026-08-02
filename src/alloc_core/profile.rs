@@ -163,6 +163,28 @@ pub enum LargeCachePolicy {
     /// measured hit-rate cost — and, per this type's own doc, only after
     /// confirming you don't actually need [`LargeCacheConfig::budget_bytes`]
     /// instead (this is a floor, not a cap).
+    ///
+    /// **Second disclosed cost (R32-8, task #499): a per-large-op wall-clock
+    /// read.** This policy's whole point — keeping a heap's working set
+    /// resident ABOVE this 16 MiB floor during normal operation — puts every
+    /// large alloc/free on the "guard fails" side of
+    /// `AllocCore::maybe_decay_large_cache`'s internal fast-path guard,
+    /// which otherwise skips a `std::time::Instant::now()` read (a
+    /// `QueryPerformanceCounter` syscall on Windows) when the cache sits at
+    /// or below headroom. Measured, confound-free
+    /// (`docs/perf/R32_8_LARGE_CACHE_DECAY_CLOCK_READ_GATE.md`): **~75-138
+    /// ns per `maybe_decay_large_cache` call** (two calls per steady-state
+    /// alloc+free cycle) in the raw, unthrottled shape. A structural fix
+    /// shipped in the SAME task (a monotonic op-counter that only actually
+    /// reads the clock every ~64th call once past headroom) reduces this
+    /// specific function's own elapsed contribution by ~62-73 % in the
+    /// above-headroom regime this policy targets, at the cost of decay
+    /// ticks firing up to ~63 large ops later than before (never earlier,
+    /// never more aggressively) — see that report §4 for the exact
+    /// trade. The residual cost after the fix is smaller but NOT zero: this
+    /// policy still pays materially more clock reads than
+    /// [`LargeCachePolicy::Default`] at 256 MiB headroom, whose working set
+    /// in most measured workloads never crosses the floor at all.
     LowHeadroom,
     /// `64 MiB` headroom — R30-6's measured parity point, a genuine
     /// reduction from the `production` default's 256 MiB (NOT the same as
@@ -184,6 +206,19 @@ pub enum LargeCachePolicy {
     /// trade, not a free win, for any working set that genuinely exceeds 64
     /// MiB of concurrently-live large-object occupancy per heap — choose it
     /// knowing that regime boundary, not as a blanket throughput default.
+    ///
+    /// **Third disclosed cost (R32-8, task #499): the same per-large-op
+    /// wall-clock read documented on [`LargeCachePolicy::LowHeadroom`]
+    /// above applies here too, and for the identical structural reason** —
+    /// any working set that persists above this 64 MiB floor (the exact
+    /// regime R31-1 found the hit-rate parity breaks in) is, by the same
+    /// token, on the "guard fails" side of
+    /// `AllocCore::maybe_decay_large_cache`'s fast-path guard for its
+    /// entire above-floor duration. See `LowHeadroom`'s doc immediately
+    /// above for the measured magnitude, the structural fix that reduces
+    /// (but does not eliminate) it, and the citation
+    /// (`docs/perf/R32_8_LARGE_CACHE_DECAY_CLOCK_READ_GATE.md`) — not
+    /// repeated verbatim here to avoid drift between the two copies.
     Trimmed64MiB,
     /// The `production` default: `256 MiB` headroom
     /// ([`LargeCacheConfig::DEFAULT`]'s own value, unchanged). Selecting

@@ -13,8 +13,21 @@ use super::large_cache_mode::LargeCacheMode;
 use super::alloc_core::{
     AllocCore, CachedLarge, LargeCacheDecayConfig, LargeCacheHitCounter, LARGE_CACHE_SLOTS,
 };
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+use super::alloc_core::{FORCE_DECAY_CLOCK_READ, MAYBE_DECAY_GUARD_PASSED};
 #[cfg(feature = "large-cache-extended")]
 use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
+
+/// R32-8 (task #499, F9): once `maybe_decay_large_cache`'s headroom fast-exit
+/// no longer applies (`used > headroom`), only actually consult the clock
+/// every this-many calls — see that function's own doc for the full
+/// rationale and the exact granularity trade this buys. 64 chosen as a round
+/// power-of-two stride: at the default 1000 ms `decay_interval`, a workload
+/// sustaining even a modest few hundred large ops/second keeps the maximum
+/// possible tick-lateness (`stride - 1` ops) to a small fraction of the
+/// interval, while cutting clock reads on the "guard fails" side by ~64x.
+#[cfg(feature = "alloc-decommit")]
+const DECAY_CLOCK_CHECK_STRIDE: u32 = 64;
 
 /// R13-7 (task #277): a slot index into the COMBINED base+extension
 /// large-cache index space. `0..LARGE_CACHE_SLOTS` addresses `self
@@ -314,28 +327,114 @@ impl AllocCore {
     /// Check whether enough wall-clock time has elapsed since the last decay
     /// tick; if so, run one decay step. Called at the top of both
     /// `alloc_large` and the large-dealloc branch so the "tax" on each large
-    /// operation is a single `Instant::now()` comparison — nanosecond-range
-    /// overhead, negligible against OS reservation costs.
+    /// operation is, in the common case, a cheap counter compare —
+    /// nanosecond-range overhead, negligible against OS reservation costs.
+    ///
+    /// R32-8 (task #499, F9): the ORIGINAL guard here was "is
+    /// `large_cache_used_bytes <= headroom_bytes`, skip the clock read
+    /// entirely; otherwise ALWAYS read the clock." That shape is a cliff: two
+    /// shipped non-default profiles (`LargeCachePolicy::LowHeadroom` /
+    /// `::Trimmed64MiB`, `src/alloc_core/profile.rs`) exist SPECIFICALLY to
+    /// keep a heap's working set ABOVE `headroom_bytes` during normal
+    /// operation — i.e. by design, on the wrong side of that cliff for their
+    /// whole intended use case, paying an UNCONDITIONAL
+    /// `std::time::Instant::now()` (a `QueryPerformanceCounter` syscall on
+    /// Windows) on every large alloc/free. Measured, confound-free
+    /// (`docs/perf/R32_8_LARGE_CACHE_DECAY_CLOCK_READ_GATE.md`, fixed
+    /// headroom across arms, `FORCE_DECAY_CLOCK_READ` isolates the clock-read
+    /// cost from any headroom-driven hit-rate effect): a real, reproducible
+    /// **~74-138 ns per call across 5 independent runs** (~150 ns per
+    /// steady-state alloc+free cycle, two calls, in the tightest-clustered
+    /// runs) — consistent with task #95's own historical ~105 ns/call
+    /// anchor.
+    ///
+    /// **Fix: a cheap monotonic op-counter throttles how OFTEN the clock is
+    /// even consulted, once past headroom.** `large_cache_decay_op_count` is
+    /// incremented on every call that passes the headroom check; the clock is
+    /// only actually read every [`DECAY_CLOCK_CHECK_STRIDE`]-th such call.
+    /// Between clock reads, this function assumes the interval has NOT yet
+    /// elapsed and returns without decaying.
+    ///
+    /// **Semantic trade, stated explicitly (per the survey's own
+    /// requirement):** this trades DECAY-TICK GRANULARITY for fewer clock
+    /// reads. A decay tick that becomes due can now fire up to
+    /// `DECAY_CLOCK_CHECK_STRIDE - 1` large ops LATE (i.e. up to that many
+    /// alloc/dealloc calls after the `decay_interval` wall-clock deadline
+    /// technically passed), instead of firing on the very next call as
+    /// before. It can NEVER fire EARLY (the stride only delays a clock read,
+    /// never fabricates elapsed time), so a decay tick is never more
+    /// aggressive than the un-throttled behavior — only, at most, slightly
+    /// less prompt. On a workload with plenty of large-op traffic (the exact
+    /// regime `LowHeadroom`/`Trimmed64MiB` are chosen for), `stride - 1`
+    /// large ops is a small sliver of the 1-second default `decay_interval`;
+    /// on a workload with sparse large-op traffic the guard was already
+    /// mostly idle-triggered (see the module's event-driven-only design
+    /// note), so a modest additional delay changes little in practice. This
+    /// throttle applies ONLY on the organic call path — [`dbg_force_decay_tick`]
+    /// (used by tests and R29-13's forced-convergence measurement) explicitly
+    /// BYPASSES the stride so a forced tick still fires deterministically on
+    /// every call, exactly as before this change (see its own doc for how).
+    ///
+    /// [`dbg_force_decay_tick`]: Self::dbg_force_decay_tick
     #[cfg(feature = "alloc-decommit")]
     pub(super) fn maybe_decay_large_cache(&mut self) {
-        // FAST-PATH EARLY EXIT — avoid `Instant::now()` (a `QueryPerformanceCounter`
-        // syscall on Windows, ~50-100 ns) when there is provably no work to do.
-        // The decay can only ever release bytes when `cached > headroom`. If the
-        // cache is at or below the headroom, `run_decay_step` would compute
-        // `excess = 0` and bail anyway, so we skip the wall-clock read entirely.
+        // FAST-PATH EARLY EXIT — avoid touching the clock-read throttle at
+        // all when there is provably no work to do. The decay can only ever
+        // release bytes when `cached > headroom`. If the cache is at or
+        // below the headroom, `run_decay_step` would compute `excess = 0`
+        // and bail anyway, so we skip everything past this point entirely.
         //
-        // This covers the dominant benchmark workload (alloc+free cycle with one
-        // cached span at ~4-16 MiB, far below the 256 MiB default headroom) and
-        // restores the ~45 ns cache-hit timing that the unconditional clock read
-        // had regressed to ~150 ns. See task #95.
+        // This covers the dominant benchmark workload (alloc+free cycle with
+        // one cached span at ~4-16 MiB, far below the 256 MiB default
+        // headroom) and restores the ~45 ns cache-hit timing that an
+        // unconditional clock read had regressed to ~150 ns. See task #95.
         //
-        // Correctness: a true decay opportunity (cached > headroom) only arises
-        // *after* a `dealloc` deposit grows `large_cache_used_bytes` past
-        // `headroom_bytes`; we then hit this path on the next op and do the
-        // proper time-based decision.
-        if self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
+        // Correctness: a true decay opportunity (cached > headroom) only
+        // arises *after* a `dealloc` deposit grows `large_cache_used_bytes`
+        // past `headroom_bytes`; we then hit this path on the next op and do
+        // the proper time-based decision.
+        //
+        // R32-8/F9 measurement seam: `bench-internals` only, never compiled
+        // into a plain `production` build. `FORCE_DECAY_CLOCK_READ` lets the
+        // A/B probe force this guard to behave as if it always failed
+        // (i.e. skip straight past the fast exit) WITHOUT changing
+        // `headroom_bytes` — isolating the clock-read cost from any
+        // headroom-driven hit-rate confound (see this function's own doc
+        // above).
+        #[cfg(feature = "bench-internals")]
+        let forced = FORCE_DECAY_CLOCK_READ.load(core::sync::atomic::Ordering::Relaxed);
+        #[cfg(not(feature = "bench-internals"))]
+        let forced = false;
+        if !forced && self.large_cache_used_bytes <= self.decay_config.headroom_bytes {
             return;
         }
+
+        // R32-8/F9 STRIDE THROTTLE — past the headroom fast-exit, only
+        // actually consult the clock every DECAY_CLOCK_CHECK_STRIDE-th call.
+        // The counter is reset to 0 whenever the clock IS read below, so the
+        // stride always counts from the most recent real check. Wrapping add
+        // is fine — `% DECAY_CLOCK_CHECK_STRIDE` on a wrapped value is still
+        // a valid stride position, just not the "true" call count; only the
+        // periodicity matters, not the absolute count.
+        self.large_cache_decay_op_count = self.large_cache_decay_op_count.wrapping_add(1);
+        if !forced
+            && !self
+                .large_cache_decay_op_count
+                .is_multiple_of(DECAY_CLOCK_CHECK_STRIDE)
+            && self.last_decay_tick.is_some()
+        {
+            // Not yet due for a clock check this stride, AND the timer is
+            // already primed (a `None` timer always falls through to prime
+            // immediately below — delaying the FIRST-EVER prime would let an
+            // unbounded number of large ops pass before decay logic engages
+            // at all on a fresh heap, which is a materially different
+            // semantic than "decay ticks may fire a little late").
+            return;
+        }
+
+        #[cfg(feature = "bench-internals")]
+        MAYBE_DECAY_GUARD_PASSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        self.large_cache_decay_op_count = 0;
         let now = std::time::Instant::now();
         let elapsed = match self.last_decay_tick {
             Some(t) => now.duration_since(t),
@@ -430,6 +529,21 @@ impl AllocCore {
     /// Concretely: for a test with `decay_interval = 10s` this makes it
     /// appear as if 10 s have elapsed since the last tick, so the subsequent
     /// `maybe_decay_large_cache` fires immediately.
+    ///
+    /// R32-8 (task #499, F9): `maybe_decay_large_cache` now throttles how
+    /// often it consults the clock at all once past the headroom fast-exit
+    /// (see [`DECAY_CLOCK_CHECK_STRIDE`] and that function's own doc). This
+    /// forcing seam BYPASSES that throttle — it primes
+    /// `large_cache_decay_op_count` to exactly one call short of the stride
+    /// boundary, so the immediately-following `maybe_decay_large_cache` call
+    /// is GUARANTEED to land on a real clock read regardless of how many (or
+    /// how few) organic calls happened before it. This preserves the
+    /// documented "safe to call multiple times — each call produces exactly
+    /// one decay step" contract exactly as it held before this task —
+    /// `tests/large_cache_decay.rs` and R29-13's forced-convergence loop
+    /// (`docs/perf/R29_13_LARGE_CACHE_RETENTION_GATE.md` §1.6) both depend on
+    /// every single call reliably firing a real decay tick, never on
+    /// whichever call happens to land on a stride boundary by chance.
     #[doc(hidden)]
     #[cfg(feature = "alloc-decommit")]
     pub fn dbg_force_decay_tick(&mut self) {
@@ -443,6 +557,11 @@ impl AllocCore {
                 .checked_sub(interval)
                 .unwrap_or_else(std::time::Instant::now),
         );
+        // Bypass the stride throttle deterministically: prime the op-count to
+        // one short of the boundary so the `wrapping_add(1)` inside
+        // `maybe_decay_large_cache` lands exactly on a multiple of
+        // `DECAY_CLOCK_CHECK_STRIDE`, guaranteeing this call reads the clock.
+        self.large_cache_decay_op_count = DECAY_CLOCK_CHECK_STRIDE - 1;
         self.maybe_decay_large_cache();
     }
 
@@ -465,6 +584,29 @@ impl AllocCore {
         // moment forward (avoids a stale timer confusing the first post-config
         // call).
         self.last_decay_tick = None;
+    }
+
+    /// TEST-ONLY (R32-8, task #499, F9): process-wide count of
+    /// `maybe_decay_large_cache` calls that passed the fast-path guard and
+    /// therefore reached the `Instant::now()` read (path-activation oracle,
+    /// R30-8 rule). `bench-internals`-gated: always 0 without it. See
+    /// `MAYBE_DECAY_GUARD_PASSED`'s own doc in `alloc_core.rs`.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    #[must_use]
+    pub fn dbg_maybe_decay_guard_passed_count() -> u64 {
+        MAYBE_DECAY_GUARD_PASSED.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// TEST-ONLY (R32-8, task #499, F9): set the process-wide
+    /// `FORCE_DECAY_CLOCK_READ` override used by the F9 clock-read-cost A/B
+    /// probe. See `FORCE_DECAY_CLOCK_READ`'s own doc in `alloc_core.rs` for
+    /// exactly what this does and why it isolates the clock-read cost from
+    /// any headroom-driven hit-rate confound. `bench-internals`-gated.
+    #[doc(hidden)]
+    #[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+    pub fn dbg_set_force_decay_clock_read(forced: bool) {
+        FORCE_DECAY_CLOCK_READ.store(forced, core::sync::atomic::Ordering::Relaxed);
     }
 
     /// TEST-ONLY (Phase 2): return the current decay configuration as

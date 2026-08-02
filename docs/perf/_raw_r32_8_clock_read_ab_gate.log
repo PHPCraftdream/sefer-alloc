@@ -1,0 +1,241 @@
+=== R32-8 large-cache decay CLOCK-READ cost A/B gate — subprocess-per-arm isolation ===
+HEADROOM_BYTES=4194304 (FIXED across both arms) LARGE_OBJ_BYTES=524288 CYCLES=200000 WARMUP_CYCLES=64 REPETITIONS=7
+
+--- arm forced=false rep=0/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=16672900
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=16672900 ns_per_cycle=83.36 oracle=PASS
+--- arm forced=false rep=1/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=16805900
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=16805900 ns_per_cycle=84.03 oracle=PASS
+--- arm forced=false rep=2/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=14616700
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=14616700 ns_per_cycle=73.08 oracle=PASS
+--- arm forced=false rep=3/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=15536300
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=15536300 ns_per_cycle=77.68 oracle=PASS
+--- arm forced=false rep=4/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=17237000
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=17237000 ns_per_cycle=86.19 oracle=PASS
+--- arm forced=false rep=5/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=13713700
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=13713700 ns_per_cycle=68.57 oracle=PASS
+--- arm forced=false rep=6/7 ---
+RESULT arm=guard-real
+RESULT forced=0
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=0
+RESULT expected_calls=400000
+RESULT elapsed_ns=15128200
+RESULT oracle_pass=1
+OK arm=guard-real forced=false headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=0/400000 elapsed_ns=15128200 ns_per_cycle=75.64 oracle=PASS
+--- arm forced=true rep=0/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=46761100
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=46761100 ns_per_cycle=233.81 oracle=PASS
+--- arm forced=true rep=1/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=44847900
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=44847900 ns_per_cycle=224.24 oracle=PASS
+--- arm forced=true rep=2/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=45727800
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=45727800 ns_per_cycle=228.64 oracle=PASS
+--- arm forced=true rep=3/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=45010000
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=45010000 ns_per_cycle=225.05 oracle=PASS
+--- arm forced=true rep=4/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=43259100
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=43259100 ns_per_cycle=216.30 oracle=PASS
+--- arm forced=true rep=5/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=47517500
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=47517500 ns_per_cycle=237.59 oracle=PASS
+--- arm forced=true rep=6/7 ---
+RESULT arm=guard-forced
+RESULT forced=1
+RESULT headroom_bytes=4194304
+RESULT verified_headroom=4194304
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT warmup_cycles=64
+RESULT hits_delta=200000
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=43395400
+RESULT oracle_pass=1
+OK arm=guard-forced forced=true headroom_bytes=4194304 verified_headroom=4194304 cfg_conflicts_delta=0 cycles=200000 hits_delta=200000 guard_passed_delta=400000/400000 elapsed_ns=43395400 ns_per_cycle=216.98 oracle=PASS
+
+=== aggregated (median of 7 reps) ===
+           arm   ns_per_cycle   guard_passed     oracle
+    guard-real          77.68              0       PASS
+  guard-forced         225.05         400000       PASS
+
+=== CSV (one row per child) ===
+# arm,forced,repetition,headroom_bytes,verified_headroom,config_conflicts_delta,process_identity,large_obj_bytes,cycles,warmup_cycles,hits_delta,guard_passed_delta,expected_calls,elapsed_ns,oracle_pass
+guard-real,0,0,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,16672900,1
+guard-real,0,1,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,16805900,1
+guard-real,0,2,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,14616700,1
+guard-real,0,3,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,15536300,1
+guard-real,0,4,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,17237000,1
+guard-real,0,5,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,13713700,1
+guard-real,0,6,4194304,4194304,0,subprocess,524288,200000,64,200000,0,400000,15128200,1
+guard-forced,1,0,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,46761100,1
+guard-forced,1,1,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,44847900,1
+guard-forced,1,2,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,45727800,1
+guard-forced,1,3,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,45010000,1
+guard-forced,1,4,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,43259100,1
+guard-forced,1,5,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,47517500,1
+guard-forced,1,6,4194304,4194304,0,subprocess,524288,200000,64,200000,400000,400000,43395400,1
+
+NOTE: all 14 arms passed the path-activation oracle (guard_passed_delta matched its arm's expectation: near-0 for guard-real, == expected_calls for guard-forced).
+
+HEADLINE: guard-forced - guard-real = 147.37 ns/cycle (73.68 ns/maybe_decay_large_cache call), at HEADROOM_BYTES=4194304 fixed identically across both arms (hit rate structurally unchanged by construction).
+
+NOTE: each (forced, rep) cell ran in its OWN freshly-spawned OS process (subprocess-per-arm isolation, registry-bypass via HeapRegistry::claim_with_config). Every arm hard-asserted resolved headroom == requested headroom AND config_conflicts_delta == 0 (R26-4 config identity). headroom_bytes is IDENTICAL across both arms — only FORCE_DECAY_CLOCK_READ differs — so this is design (a) from the F9 survey finding, not a headroom sweep.

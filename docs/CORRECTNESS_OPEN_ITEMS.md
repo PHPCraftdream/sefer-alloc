@@ -1044,6 +1044,39 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     after removing a scratch worktree, rather than re-diagnosing this from
     scratch.
 
+14. **[T, filed 2026-08-02, task #499] Flaky (pre-existing, NOT caused by
+    task #499's changes) —
+    `tests/regression_xthread_large_free_layout_mismatch.rs`'s
+    `xthread_large_free_tiny_size_huge_align_is_reclaimed` fails when run as
+    part of its own 5-test file (`cargo test --test
+    regression_xthread_large_free_layout_mismatch`, default parallel test
+    threads) but passes reliably when run in isolation
+    (`... xthread_large_free_tiny_size_huge_align_is_reclaimed`, single
+    test). Failure shape: `a legitimate tiny-size/huge-align cross-thread
+    free was NOT reclaimed (delta 0)` — `DBG_LARGE_XTHREAD_RECLAIMED` did
+    not advance the expected amount, at `tests/regression_xthread_large_free_layout_mismatch.rs:334`.
+    **Confirmed pre-existing and unrelated to task #499's `maybe_decay_large_cache`
+    stride-throttle change:** reproduced identically (same failure, same
+    line) on a clean `git worktree add` at commit `48fed64355f03181c6a89f42cab636b800994c7f`
+    (the commit immediately BEFORE task #499's changes) with its own
+    isolated `CARGO_TARGET_DIR`, ruling out both task #499's own diff and
+    cross-contamination from other agents' concurrent builds in this shared
+    workspace as the cause. The test uses `SerialGuard::acquire()` (a
+    `TEST_LOCK`-style serialization primitive, per this file's own item-13
+    citation of the same pattern) but the failure's within-file-only
+    reproduction (5/5 runs failed when run with its siblings; 3/3 runs
+    passed in isolation, `cargo test ... regression_xthread_large_free_layout_mismatch`
+    invoked 3 times back-to-back) points at test-order or shared
+    process-wide-counter (`DBG_LARGE_XTHREAD_RECLAIMED` is itself a
+    process-wide static, per the test's own imports) interaction with a
+    sibling test in the same binary, not a genuine reclaim-logic regression.
+    **Not root-caused further** (which sibling test's ordering/timing
+    causes the interaction, and whether `SerialGuard` has a gap) — filed
+    here so a future round investigating cross-thread reclaim correctness
+    or CI flakiness in this file starts from "already reproduced as
+    pre-existing, isolated-run-clean" instead of re-diagnosing from
+    scratch.
+
 ---
 
 ## Recently resolved (closure trail — do not re-list as open)

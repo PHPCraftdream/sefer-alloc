@@ -1,0 +1,255 @@
+=== R32-8 large-cache decay STRIDE-THROTTLE fix validation — old-shape vs new-shape ===
+HEADROOM_BYTES=65536 (FIXED, workload stays ABOVE it) LARGE_OBJ_BYTES=524288 CYCLES=200000 WARMUP_CYCLES=64 REPETITIONS=7 assumed_stride=64
+
+--- arm forced=false rep=0/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=18725500
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=18725500 ns_per_cycle=93.63 oracle=PASS
+--- arm forced=false rep=1/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=18714800
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=18714800 ns_per_cycle=93.57 oracle=PASS
+--- arm forced=false rep=2/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=18141600
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=18141600 ns_per_cycle=90.71 oracle=PASS
+--- arm forced=false rep=3/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=16902800
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=16902800 ns_per_cycle=84.51 oracle=PASS
+--- arm forced=false rep=4/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=17056600
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=17056600 ns_per_cycle=85.28 oracle=PASS
+--- arm forced=false rep=5/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=17392500
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=17392500 ns_per_cycle=86.96 oracle=PASS
+--- arm forced=false rep=6/7 ---
+RESULT arm=new-shape
+RESULT forced=0
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=3125
+RESULT expected_calls=400000
+RESULT elapsed_ns=18746300
+RESULT oracle_pass=1
+OK arm=new-shape forced=false headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=3125/400000 elapsed_ns=18746300 ns_per_cycle=93.73 oracle=PASS
+--- arm forced=true rep=0/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=48293900
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=48293900 ns_per_cycle=241.47 oracle=PASS
+--- arm forced=true rep=1/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=47366200
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=47366200 ns_per_cycle=236.83 oracle=PASS
+--- arm forced=true rep=2/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=45776100
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=45776100 ns_per_cycle=228.88 oracle=PASS
+--- arm forced=true rep=3/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=45142000
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=45142000 ns_per_cycle=225.71 oracle=PASS
+--- arm forced=true rep=4/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=46945000
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=46945000 ns_per_cycle=234.72 oracle=PASS
+--- arm forced=true rep=5/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=46389400
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=46389400 ns_per_cycle=231.95 oracle=PASS
+--- arm forced=true rep=6/7 ---
+RESULT arm=old-shape
+RESULT forced=1
+RESULT headroom_bytes=65536
+RESULT verified_headroom=65536
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=524288
+RESULT cycles=200000
+RESULT used_before_timed=4194304
+RESULT used_after_timed=4194304
+RESULT stayed_above_headroom=1
+RESULT guard_passed_delta=400000
+RESULT expected_calls=400000
+RESULT elapsed_ns=46573400
+RESULT oracle_pass=1
+OK arm=old-shape forced=true headroom_bytes=65536 verified_headroom=65536 cfg_conflicts_delta=0 used_after_timed=4194304 guard_passed_delta=400000/400000 elapsed_ns=46573400 ns_per_cycle=232.87 oracle=PASS
+
+=== aggregated (median of 7 reps) ===
+         arm   ns_per_cycle     guard_passed     oracle
+   new-shape          90.71             3125       PASS
+   old-shape         232.87           400000       PASS
+
+=== CSV (one row per child) ===
+# arm,forced,repetition,headroom_bytes,verified_headroom,config_conflicts_delta,process_identity,large_obj_bytes,cycles,used_before_timed,used_after_timed,stayed_above_headroom,guard_passed_delta,expected_calls,elapsed_ns,oracle_pass
+new-shape,0,0,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,18725500,1
+new-shape,0,1,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,18714800,1
+new-shape,0,2,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,18141600,1
+new-shape,0,3,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,16902800,1
+new-shape,0,4,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,17056600,1
+new-shape,0,5,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,17392500,1
+new-shape,0,6,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,3125,400000,18746300,1
+old-shape,1,0,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,48293900,1
+old-shape,1,1,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,47366200,1
+old-shape,1,2,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,45776100,1
+old-shape,1,3,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,45142000,1
+old-shape,1,4,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,46945000,1
+old-shape,1,5,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,46389400,1
+old-shape,1,6,65536,65536,0,subprocess,524288,200000,4194304,4194304,1,400000,400000,46573400,1
+
+NOTE: all 14 arms passed the path-activation oracle (workload stayed above headroom throughout; guard_passed_delta matched its arm's expectation).
+
+HEADLINE: old-shape - new-shape = 142.16 ns/cycle (71.08 ns/maybe_decay_large_cache call, 61.0% of old-shape elapsed), at HEADROOM_BYTES=65536 fixed identically across both arms, workload genuinely above headroom throughout (the LowHeadroom/Trimmed64MiB regime).
+
+NOTE: each (forced, rep) cell ran in its OWN freshly-spawned OS process. Every arm hard-asserted resolved headroom == requested headroom, config_conflicts_delta == 0, AND stayed_above_headroom == true (the workload precondition this gate depends on). forced=true reproduces the OLD (pre-R32-8) unconditional-past-headroom clock-read shape by bypassing the stride throttle; forced=false is the real NEW shipped stride-throttled path.

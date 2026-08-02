@@ -221,6 +221,38 @@ pub(super) struct CachedLarge {
 pub(super) static DECOMMIT_CALLS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// R32-8 (task #499, F9): process-wide path-activation oracle for
+/// `AllocCore::maybe_decay_large_cache`'s fast-path guard — counts calls that
+/// passed the `large_cache_used_bytes <= headroom_bytes` early-exit and
+/// therefore reached the `std::time::Instant::now()` read. Bumped only when
+/// `bench-internals` is on (a plain `alloc-decommit` production build never
+/// touches this counter, matching the R30-8 CLAUDE.md convention: this is a
+/// measurement-only instrument, not a production code-path change). Read via
+/// [`AllocCore::dbg_maybe_decay_guard_passed_count`]. Diagnostic only
+/// (Relaxed, like `DECOMMIT_CALLS`).
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+pub(super) static MAYBE_DECAY_GUARD_PASSED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// R32-8 (task #499, F9): process-wide override switch used ONLY by the F9
+/// clock-read-cost A/B probe (`examples/r32_8_large_cache_decay_clock_read_ab_gate.rs`)
+/// to isolate `maybe_decay_large_cache`'s `Instant::now()` cost from the
+/// headroom/hit-rate effect. When `true`, `maybe_decay_large_cache` skips its
+/// `large_cache_used_bytes <= headroom_bytes` fast-path early-exit and always
+/// proceeds to the clock read, REGARDLESS of whether the cache is above or
+/// below headroom — i.e. it forces the "guard fails" cost shape onto a
+/// workload that would otherwise take the "guard passes" fast exit. This lets
+/// two runs at the IDENTICAL `headroom_bytes` (so hit rate is structurally
+/// unchanged — R31-1's headroom-changes-hit-rate confound is impossible by
+/// construction, since headroom is not touched) differ ONLY in whether the
+/// clock read executes. `bench-internals`-gated: never reachable in a plain
+/// `production` build, so this cannot affect real allocator behavior.
+/// Default `false` (the real guarded behavior). Diagnostic/test-only
+/// (Relaxed) — no ordering obligation, matches `DECOMMIT_CALLS`.
+#[cfg(all(feature = "alloc-decommit", feature = "bench-internals"))]
+pub(super) static FORCE_DECAY_CLOCK_READ: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 /// TEST-ONLY (R9-1, task #221 follow-up): process-wide count of EXPLICIT
 /// `Node::zero` passes on the Large-classified `alloc_zeroed` path — bumped
 /// at both consumers of `alloc_large`'s freshness signal
@@ -679,6 +711,22 @@ pub struct AllocCore {
     #[cfg(feature = "alloc-decommit")]
     pub(super) last_decay_tick: Option<std::time::Instant>,
 
+    /// R32-8 (task #499, F9): monotonic count of `maybe_decay_large_cache`
+    /// calls that passed the headroom fast-exit (i.e.
+    /// `large_cache_used_bytes` greater than `headroom_bytes`) since the
+    /// last clock read. A cheap counter increment/compare is used to decide
+    /// WHETHER to consult the clock at all, ahead of the `Instant::now()`
+    /// read itself — see
+    /// [`maybe_decay_large_cache`](Self::maybe_decay_large_cache)'s own doc
+    /// for the exact trade (decay-tick GRANULARITY vs clock-read frequency)
+    /// this buys. Reset to 0 every time the clock IS actually consulted
+    /// (`maybe_decay_large_cache`) so the stride restarts from the moment of
+    /// the last real check. Also primed by
+    /// [`dbg_force_decay_tick`](Self::dbg_force_decay_tick), which bypasses
+    /// the stride entirely — see its own doc.
+    #[cfg(feature = "alloc-decommit")]
+    pub(super) large_cache_decay_op_count: u32,
+
     // ── Phase 3 — cache operating mode ───────────────────────────────────────
     /// The large-cache operating mode, set once at `AllocCore::new_with_config`
     /// from a `LargeCacheConfig`. Stored for diagnostic/test access and as the
@@ -1111,6 +1159,8 @@ impl AllocCore {
             },
             #[cfg(feature = "alloc-decommit")]
             last_decay_tick: None,
+            #[cfg(feature = "alloc-decommit")]
+            large_cache_decay_op_count: 0,
             #[cfg(feature = "alloc-decommit")]
             large_cache_mode: LargeCacheMode::Lazy,
             #[cfg(feature = "alloc-decommit")]
