@@ -370,11 +370,9 @@ enumeration (§1) as the template for the sidecars' correctness argument.
 - **Immutable tree SHA (this task's changed/added files staged into a
   scoped temporary index over the base commit, `git write-tree`):**
   `705cb3487c556e1bd3897644c1bae9ac1f3b1bd2`.
-- **Landing commit:** see the commit this report is checked in alongside;
-  filled in a same-task follow-up if the placeholder below was not
-  resolved before the first commit (matching this session's own established
-  `docs(perf): fill R3x-y's landing-commit SHA placeholder` pattern) —
-  `landing_commit=<FILL AFTER COMMIT>`.
+- **Landing commit:** `e88390bc88c863c8861d8bdda26fb49269cf9a89` (filled in
+  this same-round follow-up commit, matching this session's own established
+  `docs(perf): fill R3x-y's landing-commit SHA placeholder` pattern).
 - **CPU/OS:** Intel Core i7-11800H @ 2.30GHz, Windows 10 Pro 10.0.19045
   (native, for the wall-clock A/B in §4); WSL2 Ubuntu 24.04 with Valgrind
   (for the Ir axis in §5/§6) — same physical host.
