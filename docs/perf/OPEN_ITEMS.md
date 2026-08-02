@@ -1142,8 +1142,8 @@ for completeness.
     > **Current state**
     > - **Status:** honest reject — NOT recommended.
     > - **Current number/verdict:** REJECT. A clz-based `class_for` (14-byte `CLZ_BASE` per-pow2-bucket table + ≤6-step forward scan — the 49-class geometry has 1–5 irregular classes per log2 bucket, no closed form), proven bitwise-identical to the LUT over 8,280,074 (size, align) pairs, measured: churn Ir 0 delta (the compiler const-evals `class_for` for the benches' fixed sizes), `realloc_grow` (the one dynamically-sized path) **+658 Ir** (clz+scan costs more than one indexed load), and **Estimated Cycles regressed on 10/11 benches** (churn +72…+208; recycle +72/+140; multiseg +76; only cold_64b −64). RAM hits unchanged (±4), so the LUT's 16 KiB footprint never surfaced as misses; the scan's extra loads did.
-    > - **Next trigger:** per the section's own text — "If a future arc revisits, the trigger should be a REAL-application cache profile (not microbenches) showing SIZE2CLASS lines contending." (The clz implementation and the exhaustive differential test are recoverable from the source section's description.)
-    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X6 honest-reject (2026-07-05)" section (lines 246–268).
+    > - **Next trigger:** per the section's own text — "If a future arc revisits, the trigger should be a REAL-application cache profile (not microbenches) showing SIZE2CLASS lines contending." (The clz implementation and the exhaustive differential test are recoverable from the source section's description.) **NARROWED (2026-08-03, F5/task #505):** the original wording is superseded — a "real-application cache profile showing SIZE2CLASS lines contending" overstates the risk, because the index (`(size-1) >> 4`) is dense from zero, so the table's hot region is exactly as small-size-dominated as the workload itself: sizes ≤1 KiB touch only 1 cache line, ≤4 KiB touch 4, ≤64 KiB touch 64 — the full ~15.8 KiB footprint is reached only by a workload dominated by *large, widely-scattered* small-class sizes (tens of KiB apart, spread across many distinct 1 KiB-wide index bands), and such a workload is inherently allocation-rate-limited elsewhere (each op already moves ≥16 KiB of payload, so one extra L2 hit on a class lookup is noise). The narrowed trigger: **"a real application whose size distribution is dominated by scattered ≥16 KiB small-class sizes"** — not any cache profile naming SIZE2CLASS, only one with that specific distribution shape. A hybrid variant (direct-indexed LUT for small sizes + clz-computed for large, mirroring mimalloc's `pages_free_direct[]` + `_mi_bin()` split) was considered and explicitly NOT recommended even if the trigger fires: per the density argument, the ~15.75 KiB the hybrid would remove is exactly the part that was never hot, so its expected win is ≈0, while it adds a branch on `size` to the hottest path in the allocator — the shape X4-B's "won-front" rule (item 18 above) already rejects.
+    > - **Evidence:** `docs/perf/IAI_BASELINE.md` "X6 honest-reject (2026-07-05)" section (lines 246–268); `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md` §F5 (2026-08-03, task #505 — re-assessment confirming REJECT still holds and "deader" than originally judged; trigger-narrowing rationale and the hybrid-variant analysis in full).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L19`.
 
 20. **X5 (2026-07-05) — per-class segment-queue bitmap (cheapest variant).**
@@ -1713,6 +1713,88 @@ for completeness.
     >   `docs/perf/R32_6_DUAL_BITMAP_GATE_summary.csv` (checked-script-derived
     >   summary, `scripts/r497_dualbitmap_summary.mjs`).
 
+39. **F13 (2026-08-03, task #505) — three areas checked and found thin/already-
+    minimal/out-of-scope: (a) over-alignment classification, (b) TLS/registry
+    binding on the ordinary path, (c) NUMA. Recorded as a NEGATIVE RESULT —
+    do not re-derive.**
+
+    > **Current state**
+    > - **Status:** dead / negative result, recorded deliberately (per this
+    >   file's own convention that an un-recorded conclusion gets re-derived
+    >   — see item 34's four-item consolidation and item 24's R25-9
+    >   re-verification-of-a-stale-reflag for two prior instances of exactly
+    >   this failure mode). None of the three sub-findings is a task; nothing
+    >   was implemented; this entry exists purely so a future round does not
+    >   re-walk this ground from scratch.
+    > - **Current number/verdict — three independent sub-verdicts:**
+    >   - **(a) `Layout` alignment > `MIN_BLOCK` (=16) on the classification
+    >     hot path — verdict THIN, not worth a round.**
+    >     `crates/size-classes/src/lib.rs:353-384` (`class_for`) and
+    >     `src/alloc_core/size_classes.rs:74` (`SMALL_ALIGN_MAX = 16`): any
+    >     request with `align > 16` (common — e.g. crossbeam/tokio's 64/128-byte
+    >     cache-padded types) misses the O(1) fast path and enters a
+    >     divisibility walk. This walk was **already optimized once** — item
+    >     22 (T10)'s own KEPT sub-finding (perf#9) is exactly this walk,
+    >     already moved from step-by-1 scan to a bitmask-round-up jump, and
+    >     is correctness-pinned by `tests/size_classes_slow_path_equivalence.rs`.
+    >     The remaining walk is typically 1-2 iterations (one table load, one
+    >     `block & (align-1)` test, one lookup). A further 1-entry
+    >     `(size, align) → class` memo was considered and rejected: it adds a
+    >     branch to the hottest path in the allocator, exactly the shape
+    >     X4-B's won-front rule (item 18 above) rejects. C1 (0.3.0) already
+    >     captured the LARGE win in this area (before it, `align > 16`
+    >     requests bypassed the magazine entirely on both alloc and free).
+    >   - **(b) TLS binding / `HeapRegistry` on the ordinary alloc/free path —
+    >     verdict ALREADY MINIMAL.** `src/global/tls_heap.rs`'s three
+    >     resolvers (`current_for_alloc`, `current_for_alloc_with_config`,
+    >     `current_for_dealloc`) each reduce to **one `LOCAL.try_with` load
+    >     plus one unsigned compare** (the Э2/task #145 trick collapses the
+    >     `null`/`TORN` sentinels into a single
+    >     `p.addr().wrapping_sub(1) < usize::MAX - 1` branch). `LOCAL` is a
+    >     `const`-initialised `Cell<*mut HeapCore>` with no `Drop`, the
+    >     configuration where std's `thread_local!` lowers to a direct
+    >     `#[thread_local]` static access with no lazy-init check and a
+    >     statically-dead `Err` arm. `HeapRegistry` is untouched after the
+    >     first bind (`bind_slow`/`claim` are `#[cold]`, once per thread).
+    >     R6-OPT-P0-1 already removed the one remaining real cost (a
+    >     bind-less thread's `dealloc` used to claim a whole registry slot +
+    >     commit a 4 MiB primordial segment just to free one foreign
+    >     pointer). **Nothing further found.** **One loose end, NOT an open
+    >     task — cheap and optional if a future round wants it:** whether
+    >     Windows-MSVC's lowering of `LOCAL.try_with` is genuinely the direct
+    >     `#[thread_local]` form or carries a per-access indirection was NOT
+    >     verified read-only; a `cargo asm` / disassembly check of
+    >     `SeferAlloc::alloc`'s prologue on `x86_64-pc-windows-msvc` would
+    >     settle it in minutes, worth doing once given item 24's standing
+    >     unexplained Windows wall-clock signal (R32-13/task #504, F11,
+    >     found the reservation-path share of that signal small — 4.3-4.8%
+    >     — leaving the TLS-access-shape question still genuinely open as a
+    >     cheap check, not as a backlog item).
+    >   - **(c) NUMA — verdict OUT OF SCOPE for `production`.** `crates/numa/`
+    >     (833 lines) + `src/alloc_core/numa.rs` (125 lines) exist as the
+    >     in-crate seam, but `numa-aware` is **not part of `production`**, so
+    >     every NUMA-touching site compiles out of the shipped configuration
+    >     entirely. Within the feature, the one plausibly-hot cost
+    >     (`numa::current_node()` per large allocation) is already cached
+    >     with a bounded refresh period (`AllocCore::current_node_cached`,
+    >     R11-5/R12-5) and invalidated at `claim`. This area has already had
+    >     **one round wasted on re-raising a settled item**
+    >     (R10-6/R11-6's `class_nonempty_by_node` work, closed, then
+    >     independently re-verified still-closed by R25-9 against a stale
+    >     re-flag — see this file's "Recently resolved" trail) — this
+    >     sub-entry exists to prevent a third pass at the same ground.
+    > - **Next trigger:** nothing, except the one optional cheap check named
+    >   in (b). For (a), the trigger would be a **measured** real workload
+    >   whose allocation mix is dominated by `align > 16` requests — a
+    >   workload-shape finding, not a fresh code reading. (b) and (c) have no
+    >   stated trigger beyond the one optional disassembly check.
+    > - **Evidence:** `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`
+    >   §F13 (full reasoning for all three sub-findings); item 22 (T10) above
+    >   for (a)'s already-optimized-once history; item 24 (R5-R2b) above and
+    >   `docs/perf/R32_13_WINDOWS_RESERVE_COMMIT_DECOMPOSITION_GATE.md` for
+    >   (b)'s cited Windows wall-clock context; this file's "Recently
+    >   resolved" trail (R10-6/R11-6, re-verified by R25-9) for (c).
+
 ## Recently resolved (closure trail — do not re-list as open)
 
 **Full write-ups moved to the archive (R29-6, task #437).** Each entry below
@@ -1738,3 +1820,41 @@ files changed) lives in `docs/perf/OPEN_ITEMS_ARCHIVE.md` §
 - **F2 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — `OWN_CACHE_SIZE = 4` is a 4-entry direct-mapped Tier-1 ownership cache that a Large-heavy workload thrashes by construction; this also answers item 1's own last-open clause below.** Opened and resolved same-round by R32-10 (task #501), 2026-08-02 — built the missing instrument first (a `bench-internals`-gated process-wide Tier-1 hit/miss counter pair, `CONTAINS_BASE_TIER1_HITS`/`_MISSES`, inside `SegmentTable::contains_base`), then a Large-heavy workload to drive it. **Two false starts, both self-caught by the harness's own path-activation oracles before any wrong number was published**: a free+realloc rotation turned out to be structurally incapable of showing ANY `OWN_CACHE_SIZE` effect, for two compounding reasons — (1) a pre-existing redundant SECOND `contains_base` call inside `AllocCore::dealloc`'s Large fallthrough always turns into a guaranteed hit, and (2) every Large free unconditionally calls `unregister`, which evicts the base's OWN cache slot at the end of the very call that warmed it, so a repeatedly-freed base's cache entry can never survive to its next visit regardless of cache size. The CORRECT shape — repeated in-place `realloc` (same size, no free, no unregister) rotating across K concurrently-LIVE Large objects — measured **0.00% Tier-1 hit rate at `OWN_CACHE_SIZE=4` for EVERY tested K (4 through 64), including K=4**, rising to **99.99% at `OWN_CACHE_SIZE=16` for K∈{4,8}** (K≥16 still thrashes at cache=16 — direct-mapped, non-associative, so K==cache-size does not guarantee distinct buckets). Shipped `OWN_CACHE_SIZE` 4→16 plus a new compile-time power-of-two pin. **Latency (ns/op) delta was an HONEST NULL** — both before/after arms sit in the same ~24-29 ns/op noise band despite the dramatic hit-rate delta, consistent with OPEN_ITEMS item 1's own ~4 Ir component-cost pricing (Tier-1 hit ~8.2 Ir vs Tier-2 miss ~12.0 Ir) being small against `realloc`'s whole cost. `perf(runtime)` — `alloc-xthread` (which makes `contains_base` the always-on ownership check) is in `production`. Standing ±10 raw-Ir churn kill gate NOT run (no Linux/Valgrind on this dev host, same constraint task #500 documented) — argued, not measured, to stay flat (the change is a per-heap struct-size constant + `bench-internals`-gated counter increments only). **CORRECTED same-day (2026-08-02, zero-trust review of this task): the "no Linux/Valgrind" excuse was wrong — WSL was available on this machine.** Re-measured: the raw kill gate does NOT stay flat (+227 to +1,578 Ir), but decomposes cleanly into a benign one-time `OWN_CACHE_SIZE` bootstrap cost (36-43 Ir, near-constant regardless of bench shape — same signature as task #496's `PerClass` finding) plus a `bench-internals`-only Tier-1 counter cost (191-1,535 Ir, scales with call count, never ships in real `production`). See `docs/perf/R32_10_OWN_CACHE_TIER1_THRASH_GATE.md` §5.2 for the full three-arm decomposition and its self-asserting derive script.
 - **F10 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — `RemoteFreeRing::push` reads the consumer's `head` cache line (cross-core coherence miss) on every cross-thread free, even though PERF-PASS-4 (task #52) already split it onto its own line.** Opened and resolved same-round by R32-11 (task #502), 2026-08-02 — implemented the survey's proposed shadow/cached-head fix (`cached_head: AtomicU32` in the ring's existing 56 B of unused cursor-block padding, offset 72, `CURSOR_BLOCK`/`FOOTPRINT` unchanged), formally verified correctness (a soundness argument proving a stale-low shadow can never cause a missed overflow/lost entry/premature slot reuse, restated in the module doc + this report's §1; a new `RingModelShadow`/`RingModelShadow1` loom model — 3 new tests among 8 total in `tests/loom_remote_ring.rs`, including a `#[should_panic]` counterfactual proving the real implementation's "always re-derive on the slow path" design is load-bearing; a new `tests/remote_ring_shadow_head.rs`, 3 tests), then built the missing cross-thread producer/consumer wall-clock harness (`examples/r32_11_remote_ring_shadow_head_gate.rs` — none existed in this project before). **Two false starts in the harness itself, both self-caught before a wrong number was published**: (1) an owner-thread-alloc/free-churn drain design showed 91% ring-overflow instead of near-0% (fixed with a new `bench-internals`-gated `SeferAlloc::dbg_drain_current_thread_rings` direct-drain hook); (2) a naive "owner never drains" adversarial design triggered `push_with_overflow_retry`'s stalled-round retry storm instead of measuring `push` itself (8,000 pushes took 5.4 SECONDS; fixed with a slow-bounded-cadence drain instead of zero). **A THIRD false result, this time in the actual before/after measurement**: the first complete comparison showed the fix making things SLOWER (t=-13.3, sign test 20/20, reproduced 3×) — root-caused to the harness's OWN path-activation oracle counters (`DBG_RING_PUSH_SHADOW_FAST`/`_SLOW`, needed to prove regime activation) adding a locked RMW to every push, contaminating the timing; fixed with a two-build-mode harness (oracle-bearing build proves the regime SEPARATELY, a `bench-internals`-free timing-only build — reaching the identical drain via `global::tls_heap::current_for_trim` + `HeapCore::dbg_drain_all_rings` directly — supplies the cited numbers). **Corrected measurement: favorable regime (owner drains promptly) −30% to −36% ns/push, 3/3 independent trials statistically significant, sign test 0/20 (before-faster) every time. Adversarial regime (owner drains rarely) −1% to −38% ns/push, direction consistent across all 5 trials (sign test always favors after), 3/5 trials reach t-test significance — the other 2 were captured under confirmed concurrent host contention (shared dev machine, not a dedicated benchmark box) that inflated variance enough to fail the magnitude-sensitive t-test despite a still-lopsided (28/30) sign test.** `perf(runtime)` — `alloc-xthread` is in `production`'s default feature set. See `docs/perf/R32_11_REMOTE_RING_SHADOW_HEAD_GATE.md` for the full soundness argument, both harness false starts, the measurement-instrument-contamination finding, and the complete multi-trial evidence table.
 - **F8 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — every large-cache scan walks a 56-byte-per-slot array-of-structs to read one 8-byte field; the survey splits its fix into a low-risk occupancy bitmask (sub-change (2)) and higher-risk `usable_size`/`seq` sidecars (sub-changes (1)/(3)) and explicitly recommends measuring the bitmask alone first.** Opened and resolved same-round by R32-12 (task #503), 2026-08-02 — **shipped the bitmask ALONE, per the survey's own "may be the whole shippable subset" framing; did NOT build the sidecars.** `AllocCore::large_cache_occupied: u64` replaces `large_cache_find_free_slot`'s linear `.position(|s| s.is_none())` scan with `trailing_ones()`; correctness argument is a complete two-site enumeration (`large_cache_slot_set`/`large_cache_slot_take` are the ONLY two functions in the crate that ever write a slot, verified by grep — every other mutation path funnels through one of these two) plus a falsification-first invariant test (`tests/large_cache_occupancy_bitmask_invariant.rs`, 4 tests, green under both `alloc-decommit` alone and with `large-cache-extended`) that caught two of its OWN false assumptions about admission-loop/budget-default behavior before either was mistaken for a bitmask bug. **Measured separately, same-regime discipline (cache genuinely near-full, 7/8 base slots permanently occupied, worst-case scan position):** native wall-clock A/B at `scan_bound=8` (production's actual base cache size) is a **confirmed noise-band NULL** (t=0.492 vs crit=2.101, 20-pair paired A/B/B/A) — exactly the survey's own honest prediction that an 8-element scan is already cheap enough to sit below a process-level timer's noise floor; same-vs-same control confirms harness sanity (t=-0.394). The Ir axis (much lower noise floor, via WSL/Valgrind, a new dedicated `large_cache_free_slot_search_{prefill,cycle}_only` iai-callgrind bench pair using R23-3's shared-prefix-subtraction pattern) shows the REAL, small, correctly-signed win the wall-clock probe couldn't resolve: **−5.0 Ir per admission** (−40 Ir over 8 rounds, prefill arm byte-identical before/after confirming the shared-prefix isolation). Standing ±10 raw-Ir churn kill gate stays flat (+1 to −6 Ir across the 5 small-object benches, well within bound). **Sidecars (1)/(3) deliberately NOT built**: the measured win at production's actual N=8 is real but small (Ir-only, invisible in wall-clock), while the sidecars would introduce a genuine REPLICATED-field hazard (`usable_size`/`seq` duplicated between `CachedLarge` and new parallel arrays) needing the SAME lockstep-maintenance discipline the survey names as the exact failure mode that killed X5 (`[L]` item 20 above: "at n=3 the maintenance RMW on every transition is a net cost") — not justified by a win this small at this scan width, and no current production workload regime drives N large enough to plausibly change that calculus. `perf(runtime)` — `alloc-decommit` is in `production`'s default feature set. See `docs/perf/R32_12_LARGE_CACHE_OCCUPANCY_BITMASK_GATE.md` for the full correctness enumeration, both false-start test fixes, and the complete Ir/wall-clock evidence tables.
+- **F5 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — the 16 KiB `SIZE2CLASS` LUT is not the cache problem item 19 (X6)'s original revisit trigger implied; re-assessment only, no code change.** Opened and resolved same-round by task #505, 2026-08-03 — docs-only re-assessment of item 19 (X6) above: confirmed REJECT still holds ("confirmed dead, and deader"), and narrowed item 19's own revisit trigger from "a real-application cache profile showing SIZE2CLASS lines contending" to "a real application whose size distribution is dominated by scattered ≥16 KiB small-class sizes" — see item 19's own current-state card for the full density argument (the LUT's index is dense from zero, so its hot region is exactly as small-size-dominated as the workload). No `src/`/`benches/`/`examples/`/`tests/` change; `docs(perf)`.
+- **F13 (`docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`) — three areas checked and found thin/already-minimal/out-of-scope (over-alignment classification, TLS/registry binding, NUMA); negative result recorded so a future round does not re-derive it.** Opened and resolved same-round by task #505, 2026-08-03 — recorded as new item 39 `[L]` above with all three sub-verdicts and the reasoning needed to avoid re-deriving them; the one loose end (a Windows-MSVC `cargo asm` check of `LOCAL.try_with`'s lowering) flagged as a cheap optional future check, not a backlog task. No `src/`/`benches/`/`examples/`/`tests/` change; `docs(perf)`.
+
+### Cross-reference — `docs/perf/SPEEDUP_OPPORTUNITY_SURVEY_2026-07-31.md`, all 14 findings (added task #505, 2026-08-03)
+
+The survey's own summary/prioritized punch list (its own §"Summary / prioritized
+punch list") ranked 14 entries (F1-F13 plus sub-finding F1b). All 14 now have a
+permanent home in this index or in `docs/CHANGELOG.md`; this table is the
+single place a reader can confirm that without re-reading the ~1,490-line
+survey doc. Every commit SHA below is the full 40-character form, verified
+against `git log --format=%H` (never `--oneline`'s abbreviated form), not
+transcribed from memory or from a prior task's prose.
+
+| Finding | One-line description | Disposition | Task # | Commit SHA (full) |
+|---|---|---|---|---|
+| F1 | Two per-segment bitmaps (alloc/magazine) laid out 32 KiB apart — pure-locality interleave | Superseded by F1b's strictly stronger form (never separately attempted); F1b's own "next trigger" leaves F1's pure-locality variant open, still blocked on the ≥64-segment macro-bench (item 34) | — (superseded, not actioned) | — | — |
+| F1b | Single 2-bit-per-granule `DualBitmap` merging `AllocBitmap`+`MagazineBitmap` | Rejected-with-evidence — implemented, correctness-verified, then measured: every bitmap-touching bench regressed 20-25x past the ±10 Ir kill gate (per-call packing-arithmetic tax on single-plane call sites outweighs the two-call-site saving) | #497 | `2dfeaa30944fb73dedd2365bb90c41ff4c198c5d` |
+| F2 | `OWN_CACHE_SIZE = 4` direct-mapped Tier-1 ownership cache thrashes under a Large-heavy workload | Shipped — raised 4→16 + built the Tier-1 hit/miss counter; hit-rate win confirmed (0.00%→99.99% at K∈{4,8}), latency delta an honest null (noise-band) | #501 | `5289c661877462f3caf6c4e136ad3c163f6fe15b` |
+| F3 | `Ir` is structurally blind to cache/coherence effects; 6+ items blocked on one missing ≥64-segment macro-bench | Shipped (infrastructure) — built `benches/macro_multiseg_steady_state.rs` + `examples/r32_9_macro_multiseg_steady_state_ab_gate.rs`, 80-segment floor, oracle-verified; item 34 updated in place (macro-bench now exists; X5/T10/R1/R15-1 not yet re-judged under it) | #500 | `2ea920b98fbf5f75b9a92d74ed32fd8e96d04c65` |
+| F4 | `PerClass` missing `#[repr(C)]` — documented one-cache-line magazine layout not actually in effect | Shipped — `#[repr(C)]` + field reorder, `count` moved offset 128→0, struct size unchanged (136 B); Ir delta measured at exactly 0 (matches survey's own prediction); `fix(perf)` (layout-correctness, not a measured speedup) | #496 | `5df56d376735933b3fb6c0097f5984771afab276` |
+| F5 | 16 KiB `SIZE2CLASS` LUT is not the cache problem item 19 (X6)'s trigger implied | Docs-only re-assessment — REJECT re-confirmed; item 19's revisit trigger narrowed | #505 | (this task's own commit) |
+| F6 | `realloc` move leg + `try_promote_to_large` re-derive `base` and re-run `contains_base` already proven earlier in the same call | Shipped — both call sites use `dealloc_own_thread_with_base`/`dealloc_own_thread` directly; correctness argument (live-segment enumeration) stated explicitly; judged by the pre-existing `realloc_grow` iai bench | #494 | `5d72bc633193938181e2d06f8c584617ebaecf42` |
+| F7 | `alloc_zeroed`'s magazine-hit arm pays a `stamp_segment_owner` plain `alloc`'s hit arm deliberately omits — also an R31-0 A/B confound | Shipped — stamp removed after enumerating all magazine-block producers; R31-0's ON/OFF asymmetry corrected in place (item 25 above, "Confound resolved" note) | #495 | `cd5c634a29aba2e57a1a91ab84a9db42dbbbf023` |
+| F8 | Large-cache scans walk a 56 B/slot array-of-structs to read one 8-byte field | Shipped, partial — occupancy-bitmask sub-change (2) only (survey's own recommended "shippable subset"); sidecars (1)/(3) deliberately NOT built (replicated-field hazard, X5's failure mode); −5.0 Ir/admission measured, wall-clock a confirmed noise-band null | #503 | `e88390bc88c863c8861d8bdda26fb49269cf9a89` |
+| F9 | `maybe_decay_large_cache`'s `Instant::now()` guard is a cliff `LowHeadroom`/`Trimmed64MiB` are designed to sit on the wrong side of | Shipped — confirmed ~74-138 ns/call clock-read cost; shipped a stride-throttle (`DECAY_CLOCK_CHECK_STRIDE = 64`) trading decay-tick granularity for fewer clock reads; 61-73% reduction measured in the exact above-headroom regime; profile doc comments updated | #499 | `74345b8b3323f071b8bc45d38035163c3ac0ffef` |
+| F10 | `RemoteFreeRing::push` reads the consumer-dirtied `head` line on every cross-thread free (one step short of PERF-PASS-4's own cache-line split) | Shipped — shadow/cached-head added in existing padding; formally verified (loom model + counterfactual); new producer/consumer wall-clock harness built; −30% to −36% ns/push in the favorable regime, direction-consistent in the adversarial regime | #502 | `d38bf73c63fa989eace81e659a3844b98f6656c5` |
+| F11 | Windows segment reservation over-reserves 2× VA, no aligned-reservation fast path; Unix fast-path hit rate unmeasured | Rejected-with-evidence (step 3 declined) — Unix/Windows counters shipped; first Windows-native reserve/commit decomposition found the avoidable share 4.3-4.8% (well under materiality), page-fault cost still dominant (~95.4%); `VirtualAlloc2` explicitly declined | #504 | `f6c3a61e1e0ac06916327a1f41162f0bed908c93` |
+| F12 | Large-cache HIT path rewrites the whole ~144-byte `SegmentHeader` when only ~5 words changed | Shipped — replaced full `write_struct` with 4 targeted field writes; UBFIX-6's unregistered-window safety argument restated and holds; −32 Ir/hit (8.5% of the hit arm's marginal cost), kill-gates flat | #498 | `eb2463a449ca3497ce2761ee32f95cdc63bac321` |
+| F13 | Over-alignment classification, TLS/registry binding, NUMA — three areas checked and found thin/minimal/out-of-scope | Negative result, docs-only — recorded as new item 39 `[L]` above; one optional cheap future check flagged (Windows-MSVC `cargo asm`), not a backlog task | #505 | (this task's own commit) |
+
+Two rows have no "shipped/rejected" disposition because none applies: **F1**
+was never separately attempted (superseded in the survey's own text by F1b
+before any task targeted it — task #497 built F1b, not F1); its pure-locality
+form remains blocked on the same ≥64-segment macro-bench precondition as item
+34. **F3**'s disposition is "shipped (infrastructure)", not "shipped
+(runtime)" — it built the missing measurement harness itself, per its own
+scope; no mechanism was re-attempted under it in the same task, so item 34
+(the four items F3's own text says it should unblock) stays open.
