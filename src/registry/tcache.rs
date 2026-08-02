@@ -160,13 +160,31 @@ pub(crate) const FLUSH_N: usize = TCACHE_CAP / 2; // 8
 /// arithmetic on this path ever approaches the `u8` range limit. Shrinking
 /// `count` from `u16` to `u8` also shrinks `PerClass` by 1 byte per class
 /// (49 classes × 1 byte saved), a minor bonus on top of the locality win.
+///
+/// F4 (task #496): `#[repr(C)]` + this DECLARATION order (`count`,
+/// `virgin_mask`, `slots`) is load-bearing, not decorative. Without
+/// `#[repr(C)]` the struct used Rust's unspecified default layout
+/// (`repr(Rust)`), and rustc's actual field-reordering heuristic (sort by
+/// descending alignment) put the 8-aligned `slots` array FIRST and the
+/// small fields LAST — verified empirically via `core::mem::offset_of!`:
+/// `offset_of(slots) == 0`, `offset_of(count) == 128` (no `virgin_mask`) /
+/// `130` (with it), `offset_of(virgin_mask) == 128`. That placed `count`
+/// 128+ bytes from `slots[0]` — always a DIFFERENT 64-byte cache line from
+/// the shallow-magazine top-of-stack accesses (`count` 1-3, the documented
+/// churn-workload common case) this struct's own doc comment above claims
+/// are colocated. `#[repr(C)]` fixes the field order to declaration order:
+/// `count` at offset 0, `virgin_mask` (when present) at offset 1, `slots`
+/// padded up to its own 8-byte alignment and starting at offset 8 in both
+/// configurations — see the `offset_of!` const-asserts on [`PerClass`]
+/// immediately below, which pin this rather than leaving it aspirational.
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct PerClass {
     /// Current magazine depth for this class (0..=`TCACHE_CAP`). `u8`: see
-    /// the [`PerClass`] doc for why `TCACHE_CAP` (16) safely fits.
+    /// the [`PerClass`] doc for why `TCACHE_CAP` (16) safely fits. F4: kept
+    /// FIRST in declaration order under `#[repr(C)]` so it lands at struct
+    /// offset 0, directly adjacent to `slots[0]`'s cache line.
     pub(crate) count: u8,
-    /// This class's pointer stack. `slots[0..count as usize]` are valid.
-    pub(crate) slots: [*mut u8; TCACHE_CAP],
     /// R13-3 (task #273): magazine-resident virginity bitmask, ONE bit per
     /// `slots` index (bit `i` set ⟺ `slots[i]` is a genuinely virgin —
     /// never-before-served, `Node::zero`-skippable — block, per the
@@ -205,9 +223,39 @@ pub(crate) struct PerClass {
     /// not one extra instruction on the magazine hot path (`alloc`'s own
     /// pop/push bodies are `cfg`-gated to skip every mask read/write below
     /// when the feature is off — see `HeapCore::alloc`'s magazine-hit arm).
+    /// F4: declared SECOND (before `slots`) so `#[repr(C)]` keeps it, too,
+    /// inside the same leading 8-byte region as `count`, ahead of the
+    /// pointer array.
     #[cfg(feature = "virgin-zero-skip")]
     pub(crate) virgin_mask: u16,
+    /// This class's pointer stack. `slots[0..count as usize]` are valid.
+    /// F4: declared LAST so `#[repr(C)]` places it after the small fields —
+    /// `#[repr(C)]` still pads `slots` up to its own 8-byte alignment (no
+    /// change from before: the struct's overall alignment is `align_of::<
+    /// *mut u8>() == 8` either way), it just no longer reorders it to the
+    /// front.
+    pub(crate) slots: [*mut u8; TCACHE_CAP],
 }
+
+// F4 (task #496): pin the `#[repr(C)]` layout claim made in this struct's
+// doc comment with the same `const _: () = assert!(...)` pattern this file
+// already uses for `TCACHE_CAP <= 16` above — so a future field reorder (or
+// an accidental removal of `#[repr(C)]`) that breaks the documented
+// one-cache-line locality fails the build instead of silently regressing
+// again the way the missing `#[repr(C)]` did originally.
+const _: () = assert!(
+    core::mem::offset_of!(PerClass, count) == 0,
+    "PerClass::count must sit at offset 0 (repr(C), declared first) for the documented magazine cache-line locality"
+);
+#[cfg(feature = "virgin-zero-skip")]
+const _: () = assert!(
+    core::mem::offset_of!(PerClass, virgin_mask) == 2,
+    "PerClass::virgin_mask must sit at offset 2 (repr(C), declared second, after u8 count + 1 pad byte)"
+);
+const _: () = assert!(
+    core::mem::offset_of!(PerClass, slots) == 8,
+    "PerClass::slots must start at offset 8 (repr(C), 8-byte-aligned pointer array placed after the small fields) for the documented magazine cache-line locality"
+);
 
 impl PerClass {
     /// Construct an empty per-class magazine (count zero, all slots null).
