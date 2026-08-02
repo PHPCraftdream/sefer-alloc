@@ -1088,12 +1088,64 @@ impl HeapCore {
                 }
                 let copy = old_layout.size().min(new_size);
                 crate::alloc_core::node::Node::copy_nonoverlapping(ptr, new_ptr, copy);
-                // SAFETY: own-segment move leg — `contains_base(base)` proved
-                // `ptr`'s segment is ours & live, the read was bounded by
-                // `safe_payload_read_span`, and `new_ptr` holds the copied
-                // prefix; freeing the old block once completes the
-                // contract-honouring realloc.
-                unsafe { self.dealloc(ptr, old_layout) };
+                // F6 (task #494): `base` is already in hand from the
+                // `contains_base(base)` check above — hand it directly to the
+                // own-thread free body instead of routing back through
+                // `HeapCore::dealloc` -> (`alloc-xthread`) `dealloc_routing`,
+                // which would RECOMPUTE `os::segment_base_of_ptr(ptr)` and
+                // RE-RUN `contains_base` from scratch. Mirrors
+                // `dealloc_routing`'s own `contains_base(base) == true` arm
+                // (`heap_core_xthread.rs`) exactly, including its `#[cfg]`
+                // split, so the two can be diffed by eye.
+                //
+                // Correctness (is `base` still ours & live here, AFTER
+                // `self.alloc(new_layout)` ran?): YES — the OLD block at
+                // `ptr` is still LIVE at this point (it is not freed until
+                // the call below), so its segment's `live_count` is > 0 the
+                // entire time `self.alloc` runs. Every path that can
+                // unregister a segment from the table requires the segment
+                // to be EMPTY (`live_count == 0`) first:
+                //   - `AllocCore::dec_live_and_maybe_decommit`
+                //     (`alloc_core_small_pool.rs`) returns `false` unless
+                //     `live == 0`; only a `true` return routes the caller to
+                //     `release_or_pool_empty_segment`, which is the ONLY
+                //     path that can reach `SegmentTable::recycle`/
+                //     `unregister`. Every one of its call sites
+                //     (`dealloc_small`, the ring-drain loops in
+                //     `find_segment_with_free_impl`, `flush_run` via
+                //     `dec_live_batch_and_maybe_decommit`) is therefore also
+                //     gated on the segment having just gone empty.
+                //   - `drain_small_pool` (`alloc_core_small_pool.rs`) only
+                //     recycles segments already sitting in the empty-segment
+                //     hysteresis pool (which a segment enters only via the
+                //     same empty-transition above).
+                //   - The large-cache `evict_at_least`/`evict_one_oldest`/
+                //     `evict_all` paths (`alloc_core_large_cache.rs`) operate
+                //     on cached (already-freed, already-unregistered-at-
+                //     deposit) large spans — structurally disjoint from a
+                //     live own-segment `base` still holding a not-yet-freed
+                //     block.
+                // So no unregister path reachable from `self.alloc` above can
+                // have removed `base` from the table: `contains_base(base)`
+                // is still `true` here, exactly as it was when first checked.
+                // This is the SAME live-block argument `try_promote_to_large`
+                // below already relies on for its own `self.dealloc(ptr,
+                // old_layout)` call with a pre-proven `base`.
+                //
+                // `contains_base(base)` proved `ptr`'s segment is ours & live
+                // (and, per the argument above, still is), the read was
+                // bounded by `safe_payload_read_span`, and `new_ptr` holds
+                // the copied prefix; freeing the old block once completes
+                // the contract-honouring realloc. Both own-thread free
+                // bodies are safe `fn`s (each wraps its own internal
+                // `unsafe { self.core.dealloc(..) }` call) — no `unsafe`
+                // block needed at this call site, mirroring
+                // `dealloc_routing`'s identical two-arm call (`heap_core_
+                // xthread.rs`).
+                #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+                self.dealloc_own_thread_with_base(ptr, old_layout, base);
+                #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
+                self.dealloc_own_thread(ptr, old_layout);
                 return new_ptr;
             }
         }
@@ -1349,16 +1401,44 @@ impl HeapCore {
             let bucket = crate::alloc_core::promotion_byte_bucket(old_layout.size());
             crate::alloc_core::PROMOTION_BYTES_HIST[bucket].fetch_add(1, Ordering::Relaxed);
         }
-        // SAFETY: `base` was proven ours & live by the caller's
-        // `contains_base(base)` check before `try_promote_to_large` was
-        // called; the read above was bounded by `safe_payload_read_span`;
-        // `new_ptr` now holds the copied prefix. Freeing the old block once
-        // completes the contract-honouring promotion, mirroring the existing
-        // move leg's identical closing step.
-        #[allow(unsafe_code)] // R6-MS-1/2: unsafe call into `HeapCore::dealloc`.
-        unsafe {
-            self.dealloc(ptr, old_layout)
-        };
+        // F6 (task #494): `base` is already a parameter here (the caller in
+        // `realloc` passed it in already proven ours & live via
+        // `contains_base`) — hand it directly to the own-thread free body
+        // instead of routing back through `HeapCore::dealloc` ->
+        // (`alloc-xthread`) `dealloc_routing`, which would RECOMPUTE
+        // `os::segment_base_of_ptr(ptr)` and RE-RUN `contains_base` from
+        // scratch. Same fix, same call shape, as `realloc`'s own move-leg
+        // dealloc above.
+        //
+        // Correctness (is `base` still ours & live here, AFTER
+        // `self.core.alloc_large(..)` + `self.stamp_segment_owner(..)` ran,
+        // and — under `alloc-xthread` — the drains that ran BEFORE
+        // `alloc_large`)? YES, by the SAME live-block argument as `realloc`'s
+        // move leg (see that call site's comment for the full enumeration):
+        // `ptr`'s OLD segment (`base`, still Small/medium-classified at this
+        // point — promotion has not happened yet) is not freed until THIS
+        // call, so its `live_count` stays > 0 for the entire body above,
+        // which no unregister path can act on without `live_count == 0`
+        // first. `self.core.alloc_large` operates on the Large-segment
+        // table/cache machinery, structurally disjoint from the Small
+        // segment `base` still belongs to; the `alloc-xthread` drains
+        // (`drain_large_deferred_free`, `drain_heap_overflow`) reclaim
+        // OTHER already-freed Large segments and never touch `base` either.
+        // So `contains_base(base)` is still `true` here, exactly as when the
+        // caller (`realloc`) first checked it.
+        //
+        // `base`'s segment is Small/medium-classified here (this is the
+        // PRE-promotion free — the OLD block, before it becomes the new
+        // Large allocation), so this is an ordinary own-thread small/medium
+        // free, the same shape `realloc`'s move leg frees. `new_ptr` now
+        // holds the copied prefix; freeing the old block once completes the
+        // contract-honouring promotion. Both own-thread free bodies are safe
+        // `fn`s (each wraps its own internal `unsafe { self.core.dealloc(..)
+        // }` call) — no `unsafe` block needed at this call site.
+        #[cfg(all(feature = "alloc-global", feature = "fastbin"))]
+        self.dealloc_own_thread_with_base(ptr, old_layout, base);
+        #[cfg(not(all(feature = "alloc-global", feature = "fastbin")))]
+        self.dealloc_own_thread(ptr, old_layout);
         Some(new_ptr)
     }
     }
