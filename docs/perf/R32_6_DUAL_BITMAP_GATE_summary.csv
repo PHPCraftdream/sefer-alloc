@@ -1,0 +1,7 @@
+bench,before_ir,after_ir,delta_ir,ops,delta_ir_per_op
+small_churn_16b,8810,9064,254,1,254.000
+churn_256b,8810,9064,254,1,254.000
+aligned_churn_640b_a128,8746,8935,189,1,189.000
+cold_alloc_free_256x16b,50968,51867,899,256,3.512
+recycle_alloc_free_256x16b,99185,101296,2111,256,8.246
+large_alloc_free_cycle,4080,4080,0,,

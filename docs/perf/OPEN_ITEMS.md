@@ -1154,6 +1154,18 @@ for completeness.
     > - **Current number/verdict:** REJECT. Folding the in-magazine double-free scan into `AllocBitmap` requires *inverting* existing load-bearing optimizations at multiple call sites (not a free relabeling): `refill_class_bump_impl`'s freelist-drain leg + `refill_class_bump`'s bump-carve leg both call `mark_alloc` on a premise that becomes false once the destination can be the magazine instead of the user; `reclaim_offset_checked`'s cross-thread ring-drain path already runs `is_free(off)` PLUS a separate `is_in_magazine` O(count) scan specifically because today's bitmap is blind to magazine residency — folding residency into the bit would make `is_in_magazine` redundant, a real behavior change to the H1-adjacent cross-thread reclaim protocol. A single alloc can legitimately set up to 32 consecutive bits (1 requested + `REFILL_BATCH`=31 refilled), which the simple "set on push, clear on pop" framing did not account for. Measured: the magazine-hit benches targeted show **exactly 0.0 Ir/op delta** (no code changed). M2 counterfactual tests confirmed non-vacuous (temporarily broke → went RED as expected).
     > - **Next trigger:** per the section's own text — "the shape to try is NOT a simple bit redefinition but a design that (a) audits and updates every `mark_alloc`/`mark_free` call site's semantics consistently (the four sites named, at minimum), and (b) resolves whether `is_in_magazine`'s separate scan in `reclaim_offset_checked` becomes provably redundant or must be kept for the cross-thread case specifically — that analysis was not completed here … and is the actual blocker, not a fundamental soundness objection to the idea."
     > - **Evidence:** `docs/perf/IAI_BASELINE.md` "G1 honest-reject (2026-07-10)" section (lines 530–591).
+    > - **Cross-reference (added 2026-08-02, task #497):** the non-semantics-
+    >   changing sibling this item's own "next trigger" implicitly ruled out
+    >   as sufficient (a shared-storage form that keeps both oracles'
+    >   semantics independent) WAS attempted — see item 38 below (F1b,
+    >   `docs/perf/R32_6_DUAL_BITMAP_GATE.md`). It confirmed the correctness
+    >   distinction from G1 is real (no semantics inversion, all four named
+    >   call sites unaffected in meaning) but was independently rejected on
+    >   MEASURED COST: every bitmap-touching bench regressed past the ±10 Ir
+    >   kill gate. So G1's specific semantics objection is closed as "not the
+    >   only blocker in this region" — a correctness-safe merge is possible,
+    >   it is simply not cheap enough to ship, for a different, orthogonal
+    >   reason (single-plane call-site addressing cost).
    Full history: `docs/perf/OPEN_ITEMS_ARCHIVE.md` § `L21`.
 
 22. **T10 (2026-07-12) — per-class "last found segment" hint for `find_segment_with_free` (NO-GO, reverted).**
@@ -1582,6 +1594,53 @@ for completeness.
    > - **Evidence:** `scripts/verify-gate-report.mjs`'s `RETROACTIVE_EXEMPT`
    >   entries for `R10_7_BATCH_WARM_ARM`, `R8_9_MEDIUM_CLASSES_VERDICT`,
    >   `R9_3_MEDIUM_CLASSES_PRODUCTION_GATES`.
+
+38. **F1b (2026-08-02, task #497) — merge `AllocBitmap`/`MagazineBitmap` into
+    one 2-bit-per-granule `DualBitmap` (honest reject, correctness-sound,
+    cost-rejected).**
+
+    > **Current state**
+    > - **Status:** honest reject — NOT recommended; not implemented (zero
+    >   diff — the working tree was reverted to the base commit's exact
+    >   state after measurement).
+    > - **Current number/verdict:** REJECT. Implemented, correctness-verified
+    >   (full test tree green under `--features production` and
+    >   `--all-features`, miri-verified on `regression_virgin_bitmap_skip.rs`,
+    >   the four named pinned counterfactuals all green), then measured:
+    >   **every bitmap-touching bench regressed**, the three churn kill-gates
+    >   (`small_churn_16b`/`churn_256b`/`aligned_churn_640b_a128`) by
+    >   +189…+254 raw Ir — 20-25× past the ±10 kill threshold —
+    >   `cold_alloc_free_256x16b`/`recycle_alloc_free_256x16b` by +899/+2,111.
+    >   The bootstrap-proxy bench (`large_alloc_free_cycle`, never touches the
+    >   small-class bitmaps) measured an EXACT 0 delta, ruling out a
+    >   process-bootstrap-codegen-shift explanation (the R32-5 pattern) — this
+    >   is a genuine per-operation cost increase. Root cause: the survey's
+    >   analysis correctly predicted a win at the TWO call sites that read
+    >   both oracles together (the free path's dual-oracle read), but did not
+    >   weigh the aggregate cost the SAME storage change imposes on the far
+    >   more numerous SINGLE-plane call sites (`pop_free`, `carve_batch`,
+    >   `drain_freelist_batch`, `flush_run`, `reclaim_offset*`) — the new
+    >   4-granules-per-byte packing needs one more arithmetic step
+    >   (`pair_shift = (granule & 3) << 1`) to locate a bit within a byte than
+    >   the old 8-granules-per-byte layout's plain `bit & 7`, paid by every
+    >   single-plane touch, which outweighs the two-call-site saving.
+    >   Correctness distinction from G1 (item 21 below) CONFIRMED real: this
+    >   design kept both oracles' semantics and every call-site meaning fully
+    >   independent (only storage/addressing shared), so it is rejected
+    >   purely on measured cost, not on G1's semantics problem.
+    > - **Next trigger:** per the report's own text — "a variant that keeps
+    >   the two bitmaps SEPARATE in storage/addressing (F1's pure-locality
+    >   interleaving form, NOT F1b's bit-packing form) would not pay this
+    >   per-call arithmetic tax... The survey's own F1 entry... is the correct
+    >   starting point for that alternative, not a further-refined F1b." F1's
+    >   own blocker (needs the missing ≥64-live-segment macro-benchmark to
+    >   show a pure cache-locality effect — item 34 above / task #500) still
+    >   applies to that alternative.
+    > - **Evidence:** `docs/perf/R32_6_DUAL_BITMAP_GATE.md` (full report),
+    >   `docs/perf/_raw_r497_dualbitmap_before_production.log` +
+    >   `docs/perf/_raw_r497_dualbitmap_after_production.log` (raw logs),
+    >   `docs/perf/R32_6_DUAL_BITMAP_GATE_summary.csv` (checked-script-derived
+    >   summary, `scripts/r497_dualbitmap_summary.mjs`).
 
 ## Recently resolved (closure trail — do not re-list as open)
 
