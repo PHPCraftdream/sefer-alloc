@@ -103,6 +103,30 @@
 // still has to use judgment; this script's job is to make sure nothing
 // goes unnoticed, not to auto-reject.
 //
+// SIGNAL-BEARING HEADLINE (task #493, R32-1) — Round 32's independent review
+// (P2-4/P2-5, filed OPEN_ITEMS.md item 36) found this script printing bare
+// "ALL GREEN" while ~350 WARNs fired across the ~90-report corpus (checks
+// (e)/(f) alone accounted for most of it: (e) WARNed on 86/88 reports, (f)
+// on 24/88) — a reader cannot tell a genuinely NEW warning from the
+// pre-existing pile, and "ALL GREEN" trains people to stop reading past the
+// headline. Two independent fixes, both applied (not either/or):
+//   1. Checks (e)/(f) are now scoped NON-RETROACTIVELY (see
+//      `CHECK_E_RULE_COMMIT`/`CHECK_F_RULE_COMMIT` and
+//      `predatesRuleCommit` below) — a report created before the CLAUDE.md
+//      rule a check mechanizes existed is SKIPped for that check, not
+//      WARNed, the same posture every other non-retroactive rule in this
+//      project already takes. This is the STRUCTURAL fix: it removes the
+//      bulk of the pre-existing pile rather than just hiding it.
+//   2. The terminal verdict line is never bare "ALL GREEN" when any WARN
+//      fired (even a legitimate, already-understood one) — it prints
+//      `PASS WITH N WARNINGS (a=.., b=..)` instead, with a live per-check
+//      breakdown, so the count itself is the signal a reader sees on every
+//      run, not something they have to grep the log for.
+// Check (d)'s own separate fix (P2-4, closes the same OPEN_ITEMS.md item
+// 36) is documented at that check's own section below (paragraph-window
+// anchoring + KiB/MiB/GiB-unit-aware comparison) — a correctness fix to
+// what the check flags, not a scoping change to WHEN it runs.
+//
 // Deliberately ZERO cargo invocations, ZERO network access, pure text/regex
 // scanning of already-committed files — same design register as
 // scripts/verify-perf-gate-stubs.mjs (see that file's own header for the
@@ -140,10 +164,87 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, basename, dirname } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import { REPO_ROOT } from './lib.mjs';
 
 const PERF_DIR = resolve(REPO_ROOT, 'docs/perf');
+
+// --------------------------------------------------------------------------
+// Non-retroactive scoping for checks (e) and (f) — task #493, R32-1
+// --------------------------------------------------------------------------
+//
+// Round 32's independent review (P2-5, filed OPEN_ITEMS.md item 36) found
+// check (e) WARNing on 86 of 88 reports and check (f) on 24 — a gate that
+// fires on nearly every input trains a reader to stop reading it, and a
+// genuinely NEW warning is indistinguishable from the pre-existing pile.
+// Weighed two fixes (the review's own list): a machine-readable
+// owner/expiry allowlist, vs. scoping each check to only fire on reports
+// created AFTER the CLAUDE.md rule that motivates it landed. The allowlist
+// was rejected here: it would require enumerating ~85 pre-existing reports
+// by hand (this task's own scope-discipline instruction explicitly forbids
+// touching dozens of individual docs/perf/*.md files just to silence
+// warnings), and — unlike checks (b)/(c)'s RETROACTIVE_EXEMPT_CSV/
+// RETROACTIVE_EXEMPT maps, each of which documents a SPECIFIC, individually-
+// verified defect in a SPECIFIC file — checks (e)/(f) do not have one
+// concrete defect per report to enumerate; they are a structural "this rule
+// did not exist yet" gap that applies uniformly to the entire pre-rule
+// corpus. Non-retroactive date-scoping (the same `git merge-base
+// --is-ancestor` technique `scripts/verify-commit-prefixes.mjs` already uses
+// for exactly this purpose — see that script's own header comment) matches
+// CLAUDE.md's own stated posture for every other non-retroactive rule in
+// this project (raw-log-truncation, summary-CSV, immutable-source-identity,
+// derived-tables, entry-point, same-workload-regime, commit-prefix — every
+// one of them is scoped by commit, not by a hand-maintained per-file list).
+//
+// Check (e) mechanizes the "exact entry point under test" rule, added by
+// commit `2d9eef2` (CLAUDE.md "Active rules", verified via `git log -1
+// --format='%H %aI %s' 2d9eef2`: 2026-07-31, "allocator-layer rule
+// codified"). Check (f) mechanizes the mechanism-activation-evidence rule
+// (the R26-4/R30-8 family) — the concrete "between-arm delta" wording traces
+// to commit `3c414d8` (verified via the same `git log` form: 2026-07-30,
+// "generalize R26-4 config-sweep-evidence rule to require
+// mechanism-activation proof (R30-8, task #457)"). A report created AT OR
+// BEFORE its rule's commit cannot have been expected to comply with a rule
+// that did not yet exist; checks (e)/(f) SKIP (not WARN) such a report.
+//
+// Full 40-hex SHAs, individually verified via `git log -1 --format=%H
+// <short>` before hardcoding — same verification discipline
+// `verify-commit-prefixes.mjs` already documents for its own
+// `R30_12_RULE_COMMIT` constant.
+const CHECK_E_RULE_COMMIT = '2d9eef2915b8d2b0bc55ba34ed5e15d2d877e975';
+const CHECK_F_RULE_COMMIT = '3c414d8ea952883403f7f615e8d0626899568140';
+
+/** The commit that first added `mdPath` to the repo (its earliest
+ * `--diff-filter=A` hit), or `null` if the file has no git history yet
+ * (e.g. a brand-new report added in the same uncommitted working tree this
+ * script is run against — in that case there is no ancestor relationship to
+ * test, so the caller should treat it as NOT predating any rule commit). */
+function reportCreationSha(mdPath) {
+  try {
+    const out = execFileSync(
+      'git',
+      ['log', '--diff-filter=A', '--format=%H', '--', mdPath],
+      { cwd: REPO_ROOT, encoding: 'utf8' },
+    ).trim();
+    if (!out) return null;
+    const lines = out.split(/\r?\n/);
+    return lines[lines.length - 1]; // oldest hit = the add
+  } catch {
+    return null;
+  }
+}
+
+/** True if `sha` is an ancestor of (or equal to) `ruleCommit` — i.e. the
+ * report predates the rule and should be exempt from the rule's check. */
+function predatesRuleCommit(sha, ruleCommit) {
+  if (!sha) return false;
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', sha, ruleCommit], { cwd: REPO_ROOT });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Each entry: reportBasename -> { reason, checks: ['a'|'b'|'c', ...] }
 // `checks` lists exactly which of this script's checks the report is known
@@ -528,6 +629,37 @@ function checkRawLogsExist(text) {
 // prose numbers that are ABSENT from the CSV entirely, as a cheap tripwire
 // for the R29-3-style "quoted a number that matches neither raw source"
 // defect class — it does not attempt to be a general fact-checker.
+//
+// FIX (task #493, R32-1, closes P2-4 / OPEN_ITEMS.md item 36): the original
+// version required the number and the keyword on the SAME physical line,
+// which SKIPped 66 of 88 reports corpus-wide — this project's Markdown style
+// routinely soft-wraps a headline sentence across several lines (e.g.
+// `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE.md:26-28`: the label
+// "**Headline for the pending decision...):**" is on one line and its
+// number, "**64 MiB preserves...**", starts on the NEXT line — a real,
+// verified instance of the bug, not a hypothetical). Two independent fixes
+// applied together:
+//   (i) `extractHeadlineNumbers` now ALSO scans a PARAGRAPH WINDOW following
+//       a headline-keyword line — up to `PARAGRAPH_WINDOW_LINES` further
+//       lines or the next blank line, whichever comes first (a Markdown
+//       paragraph boundary) — not just the keyword's own line. The original
+//       same-line scan is kept as well (a superset, not a replacement): a
+//       report phrasing its headline as literally one line still matches
+//       exactly as before.
+//   (ii) unit-aware comparison: `matchesWithRounding` now normalizes
+//       KiB/MiB/GiB tokens to a common byte magnitude before comparing,
+//       instead of comparing bare numeric magnitudes only — closing the
+//       "unit-agnostic, would not catch a KiB-vs-MiB mismatch even where it
+//       DOES match" half of P2-4 (a prose "64 MiB" bare-matching a CSV cell
+//       that is actually `65536` in a `_kib` column would previously PASS
+//       even though 65536 KiB = 64 MiB is a coincidence of magnitude, not a
+//       confirmed unit-correct match — extracting the CSV's OWN unit from
+//       its column header, when the header name carries one, e.g.
+//       `rss_burst2_kib_median`, makes the comparison unit-aware). Bare
+//       (unit-less) numeric matching is kept as a fallback for CSV cells
+//       whose column header carries no unit suffix — this is strictly
+//       additive, never a narrowing of what the old heuristic already
+//       matched.
 
 // Keywords this project's reports actually use next to a headline number
 // (see docs/perf/R30_6_*, R31_1_*, R31_2_*, R31_3_* for the vocabulary this
@@ -553,36 +685,100 @@ const HEADLINE_KEYWORD_RE =
 const NUMBER_WITH_UNIT_RE =
   /[~≈]?[-+]?(\d[\d,]*\.?\d*)\s?(MiB|KiB|GiB|%|ns\/op|ns|Ir|ms)(?![A-Za-z])/g;
 
+// How many further lines after a headline-keyword hit to also scan, when the
+// keyword's own line carries no number+unit token of its own — bounded by
+// the next blank line (a Markdown paragraph boundary), whichever comes
+// first. 6 is comfortably more than the observed real case (the R30_6
+// example above needs 2) without risking picking up a genuinely unrelated
+// number several paragraphs later.
+const PARAGRAPH_WINDOW_LINES = 6;
+
 /**
- * Scan `text` for headline-shaped number+unit tokens: a NUMBER_WITH_UNIT
- * match within `windowChars` characters of a HEADLINE_KEYWORD_RE hit,
- * scanning line-by-line (a report's headline sentences are always within
- * one paragraph/line in this project's Markdown style — matching precedent:
- * this script's own SHA_COMMENT_RE and existing citation regexes are all
- * single-line scans, not cross-line).
+ * Scan `text` for headline-shaped number+unit tokens near a
+ * HEADLINE_KEYWORD_RE hit. Two passes, both kept (additive, not a
+ * replacement — see this section's header comment, fix (i)):
+ *   (a) same-line, within `windowChars` characters of the keyword (the
+ *       original heuristic, unchanged);
+ *   (b) same PARAGRAPH: if the keyword's own line has no number+unit token
+ *       of its own, scan forward up to `PARAGRAPH_WINDOW_LINES` further
+ *       lines, stopping at the first blank line — this project's Markdown
+ *       style routinely soft-wraps a headline sentence across lines (see
+ *       fix (i)'s doc comment above for the concrete R30_6 example this
+ *       closes).
  */
 function extractHeadlineNumbers(text, windowChars = 200) {
   const found = [];
-  for (const line of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!HEADLINE_KEYWORD_RE.test(line)) continue;
+    const keywordMatch = HEADLINE_KEYWORD_RE.exec(line);
+    HEADLINE_KEYWORD_RE.lastIndex = 0; // reset (test() above advances it as it's global-less but be safe)
+    const keywordIdx = keywordMatch ? keywordMatch.index : 0;
+
+    // Pass (a): same line, within windowChars.
+    let sameLineHit = false;
     for (const m of line.matchAll(NUMBER_WITH_UNIT_RE)) {
       const idx = m.index ?? 0;
-      const keywordMatch = HEADLINE_KEYWORD_RE.exec(line);
-      HEADLINE_KEYWORD_RE.lastIndex = 0; // reset (test() above advances it as it's global-less but be safe)
-      const keywordIdx = keywordMatch ? keywordMatch.index : 0;
       if (Math.abs(idx - keywordIdx) > windowChars) continue;
+      sameLineHit = true;
       const raw = m[1].replace(/,/g, '');
       const value = Number.parseFloat(raw);
       if (Number.isNaN(value)) continue;
       found.push({ value, unit: m[2], token: m[0].trim(), line: line.trim() });
     }
+    if (sameLineHit) continue;
+
+    // Pass (b): forward paragraph window (fix (i)) — only when the keyword's
+    // own line had nothing, so a report already matched by pass (a) is not
+    // double-scanned.
+    for (let j = i + 1; j <= Math.min(i + PARAGRAPH_WINDOW_LINES, lines.length - 1); j++) {
+      const paraLine = lines[j];
+      if (paraLine.trim() === '') break; // paragraph boundary
+      for (const m of paraLine.matchAll(NUMBER_WITH_UNIT_RE)) {
+        const raw = m[1].replace(/,/g, '');
+        const value = Number.parseFloat(raw);
+        if (Number.isNaN(value)) continue;
+        found.push({ value, unit: m[2], token: m[0].trim(), line: paraLine.trim() });
+      }
+    }
   }
   return found;
 }
 
+// Byte multiplier for each unit this heuristic can normalize — used by fix
+// (ii)'s unit-aware comparison. Units with no fixed byte magnitude (%,
+// ns/op, ns, Ir, ms) are intentionally absent; matchesWithRounding falls
+// back to bare-number comparison for those, exactly as before this fix.
+const UNIT_BYTE_MULTIPLIER = { KiB: 1024, MiB: 1024 * 1024, GiB: 1024 * 1024 * 1024 };
+
+/** `value` converted to bytes if `unit` is a known byte-magnitude unit
+ * (KiB/MiB/GiB), else `null`. */
+function toBytesIfByteUnit(value, unit) {
+  const mult = UNIT_BYTE_MULTIPLIER[unit];
+  return mult ? value * mult : null;
+}
+
+// Column-header unit suffix this repo's CSVs actually use to name a
+// byte-magnitude column (see `docs/perf/R30_6_LARGE_CACHE_HEADROOM_AB_GATE_summary.csv`'s
+// `headroom_mib`/`rss_burst2_kib_median`/`rss_idle_kib_median` columns) —
+// case-insensitive, matched at a `_unit` or `_unit_` word boundary within the
+// header name so `rss_burst2_kib_median` recovers `KiB`, not just an exact
+// `kib` header.
+const CSV_HEADER_UNIT_RE = /(?:^|_)(kib|mib|gib)(?:_|$)/i;
+const HEADER_UNIT_CANONICAL = { kib: 'KiB', mib: 'MiB', gib: 'GiB' };
+
 /** Every bare numeric token appearing anywhere in the CSV text, parsed as a
- * float, deduplicated. Used as the match pool for check (d) — deliberately
- * column-agnostic (see limitation #2 above).
+ * float, deduplicated — the pre-existing column-agnostic pool (see
+ * limitation #2 above), PLUS (fix (ii)) a second, byte-normalized pool built
+ * only from cells whose OWN column header carries a recognizable byte-unit
+ * suffix (KiB/MiB/GiB). Returns `{ bareNums: Set<number>, byteNums:
+ * Set<number> }` — `byteNums` holds each such cell's value converted to
+ * bytes, so a prose "64 MiB" can be compared against it after being
+ * converted to bytes too (`toBytesIfByteUnit`), closing the unit-agnostic
+ * half of P2-4 without discarding the original bare-number fallback (a CSV
+ * cell whose header carries no unit suffix is still only checked via
+ * `bareNums`, exactly as before this fix).
  *
  * Parses CELL-BY-CELL via `splitCsvLine` (the same delimiter-aware splitter
  * check (b)/(f) already use), NOT a raw regex scan over the whole text: a
@@ -596,24 +792,49 @@ function extractHeadlineNumbers(text, windowChars = 200) {
  * text for numeric tokens (a cell can itself contain more than one number,
  * e.g. a quoted features string), avoids this cross-column bleed entirely. */
 function extractCsvNumbers(csvText) {
-  const nums = new Set();
-  for (const line of csvText.split(/\r?\n/)) {
+  const bareNums = new Set();
+  const byteNums = new Set();
+  const lines = csvText.split(/\r?\n/);
+
+  // Recover the header row's column -> unit mapping, same header-row
+  // discovery already used by checkValidSha's header-column-style scan
+  // (first non-blank, non-comment line).
+  const headerLineIdx = lines.findIndex((l) => l.trim() && !l.trim().startsWith('#'));
+  let unitByColIdx = [];
+  if (headerLineIdx !== -1) {
+    const header = splitCsvLine(lines[headerLineIdx]);
+    unitByColIdx = header.map((name) => {
+      const m = CSV_HEADER_UNIT_RE.exec(name.trim());
+      return m ? HEADER_UNIT_CANONICAL[m[1].toLowerCase()] : null;
+    });
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!line.trim() || line.trim().startsWith('#')) continue;
-    for (const cell of splitCsvLine(line)) {
+    const cells = splitCsvLine(line);
+    for (let colIdx = 0; colIdx < cells.length; colIdx++) {
+      const cell = cells[colIdx];
+      const colUnit = i === headerLineIdx ? null : unitByColIdx[colIdx];
       for (const m of cell.matchAll(/-?\d[\d,]*\.?\d*/g)) {
         const raw = m[0].replace(/,/g, '');
         const value = Number.parseFloat(raw);
-        if (!Number.isNaN(value)) nums.add(value);
+        if (Number.isNaN(value)) continue;
+        bareNums.add(value);
+        if (colUnit) {
+          const bytes = toBytesIfByteUnit(value, colUnit);
+          if (bytes !== null) byteNums.add(bytes);
+        }
       }
     }
   }
-  return nums;
+  return { bareNums, byteNums };
 }
 
 /** True if `value` matches some number in `pool` either exactly, rounded to
  * 1 decimal place, or rounded to the nearest integer — the "reasonable
  * rounding" tolerance the task brief asks for. */
-function matchesWithRounding(value, pool) {
+function numberMatchesPool(value, pool) {
   if (pool.has(value)) return true;
   const r1 = Math.round(value * 10) / 10;
   const r0 = Math.round(value);
@@ -622,6 +843,19 @@ function matchesWithRounding(value, pool) {
     if (Math.round(p) === r0) return true;
   }
   return false;
+}
+
+/** Unit-aware match (fix (ii)): if `headline.unit` is a byte-magnitude unit
+ * (KiB/MiB/GiB), first try `headline.value` converted to bytes against
+ * `byteNums` (a byte-normalized, unit-confirmed match — the strong form);
+ * fall back to the original bare-number-anywhere heuristic (`bareNums`)
+ * otherwise, exactly matching the pre-fix behavior for every unit this
+ * heuristic cannot normalize (%, ns/op, ns, Ir, ms) or when the CSV's own
+ * header carries no recoverable unit. */
+function matchesWithRounding(headline, csvPool) {
+  const bytes = toBytesIfByteUnit(headline.value, headline.unit);
+  if (bytes !== null && numberMatchesPool(bytes, csvPool.byteNums)) return true;
+  return numberMatchesPool(headline.value, csvPool.bareNums);
 }
 
 /**
@@ -637,7 +871,7 @@ function checkProseCsvCrossCheck(text, citedCsvNames) {
   if (headlineNumbers.length === 0) {
     return { status: 'SKIP', detail: 'no headline-shaped number+unit token found near a headline keyword' };
   }
-  const csvPool = new Set();
+  const csvPool = { bareNums: new Set(), byteNums: new Set() };
   const missingCsvs = [];
   for (const csvName of citedCsvNames) {
     const csvPath = resolve(PERF_DIR, csvName);
@@ -645,9 +879,11 @@ function checkProseCsvCrossCheck(text, citedCsvNames) {
       missingCsvs.push(csvName);
       continue;
     }
-    for (const n of extractCsvNumbers(readFileSync(csvPath, 'utf8'))) csvPool.add(n);
+    const { bareNums, byteNums } = extractCsvNumbers(readFileSync(csvPath, 'utf8'));
+    for (const n of bareNums) csvPool.bareNums.add(n);
+    for (const n of byteNums) csvPool.byteNums.add(n);
   }
-  if (csvPool.size === 0) {
+  if (csvPool.bareNums.size === 0) {
     return {
       status: 'SKIP',
       detail: missingCsvs.length > 0
@@ -655,7 +891,7 @@ function checkProseCsvCrossCheck(text, citedCsvNames) {
         : 'cited CSV(s) contain no numeric tokens',
     };
   }
-  const unmatched = headlineNumbers.filter((h) => !matchesWithRounding(h.value, csvPool));
+  const unmatched = headlineNumbers.filter((h) => !matchesWithRounding(h, csvPool));
   if (unmatched.length > 0) {
     const uniqueUnmatched = [...new Map(unmatched.map((h) => [h.token, h])).values()];
     return {
@@ -709,7 +945,15 @@ const PROMOTION_LANGUAGE_RE =
  * warns against? Always WARN, never FAIL — CLAUDE.md's own rule text
  * treats a substrate-only report as legitimate.
  */
-function checkAllocatorLayerField(text) {
+function checkAllocatorLayerField(text, predatesRule) {
+  if (predatesRule) {
+    return {
+      status: 'SKIP',
+      detail:
+        'report predates the "exact entry point under test" rule commit (2d9eef2, 2026-07-31) — ' +
+        'not retroactive, same posture as every other non-retroactive CLAUDE.md rule',
+    };
+  }
   const headingMatch = LAYER_FIELD_HEADING_RE.exec(text);
   if (!headingMatch) {
     return {
@@ -781,7 +1025,15 @@ const PROSE_DELTA_RE = /(?:mechanism\s+)?delta[^.\n]{0,60}?(?:is|stays|=|:)?\s*(
  * Check (f): a comparative report must carry an explicit between-arm
  * mechanism delta, not just per-arm counts left for the reader to subtract.
  */
-function checkMechanismDelta(text, citedCsvNames) {
+function checkMechanismDelta(text, citedCsvNames, predatesRule) {
+  if (predatesRule) {
+    return {
+      status: 'SKIP',
+      detail:
+        'report predates the mechanism-activation-evidence rule commit (3c414d8, 2026-07-30, R30-8) — ' +
+        'not retroactive, same posture as every other non-retroactive CLAUDE.md rule',
+    };
+  }
   if (!MECHANISM_KEYWORD_RE.test(text)) {
     return { status: 'SKIP', detail: 'no mechanism/activation vocabulary found — not a mechanism-comparison report' };
   }
@@ -958,9 +1210,13 @@ function verifyReport(mdPath) {
     citedRawLogNames.add(rawName);
   }
 
+  const creationSha = reportCreationSha(mdPath);
+  const predatesCheckE = predatesRuleCommit(creationSha, CHECK_E_RULE_COMMIT);
+  const predatesCheckF = predatesRuleCommit(creationSha, CHECK_F_RULE_COMMIT);
+
   results.d.push(checkProseCsvCrossCheck(text, citedCsvNames));
-  results.e.push(checkAllocatorLayerField(text));
-  results.f.push(checkMechanismDelta(text, citedCsvNames));
+  results.e.push(checkAllocatorLayerField(text, predatesCheckE));
+  results.f.push(checkMechanismDelta(text, citedCsvNames, predatesCheckF));
   results.identity.push(checkShaNewerThanRawLogs(text, citedRawLogNames));
 
   // Apply report-keyed exemptions (checks a/c): a FAIL in an exempted check
@@ -1026,8 +1282,22 @@ if (newOnly) {
 
 console.log(`[verify-gate-report] scanning ${targets.length} report(s) under ${dirname(targets[0] ?? PERF_DIR)}\n`);
 
+// Signal-bearing headline (task #493, R32-1, closes the "ALL GREEN despite
+// ~350 WARNs" meta-problem the review's P2-5/OPEN_ITEMS.md item 36 flagged).
+// A bare "ALL GREEN" is indistinguishable whether 0 or 350 WARNs fired,
+// which trains a reader to stop reading past the headline — the checks
+// (e)/(f) non-retroactive scoping above already cuts the WARN count
+// sharply (a structural fix), but this script must ALSO never again claim
+// "ALL GREEN" while WARNs are outstanding, so a genuinely NEW WARN is not
+// buried in an undifferentiated pile the next time the count is nonzero.
+// Chosen over a hardcoded WARN-count budget (the task brief's other listed
+// option): a fixed number would need periodic re-tuning as the corpus grows
+// and would not, by itself, make a NEW warning any easier to spot in the
+// pile — showing the live count broken down per check, every run, is more
+// informative than a single pass/fail threshold and needs no recalibration.
 let allOk = true;
-let anyWarn = false;
+let totalWarnCount = 0;
+const warnCountByCheck = { d: 0, e: 0, f: 0, identity: 0 };
 for (const mdPath of targets) {
   if (!existsSync(mdPath)) {
     console.log(`FAIL  ${basename(mdPath)} — file not found`);
@@ -1047,12 +1317,30 @@ for (const mdPath of targets) {
   ]) {
     for (const r of results[key]) {
       console.log(`      ${label}: ${r.status} — ${r.detail}`);
-      if (r.status === 'WARN') anyWarn = true;
+      if (r.status === 'WARN') {
+        totalWarnCount++;
+        if (key in warnCountByCheck) warnCountByCheck[key]++;
+      }
     }
   }
   if (!ok) allOk = false;
 }
 
-console.log(`\n[verify-gate-report] ${allOk ? 'ALL GREEN' : 'FAILED'} (${targets.length} report(s) scanned)` +
-  (anyWarn ? ' — one or more WARN-level semantic checks fired; see above (does not fail the run)' : ''));
+const warnBreakdown = Object.entries(warnCountByCheck)
+  .filter(([, n]) => n > 0)
+  .map(([key, n]) => `${key}=${n}`)
+  .join(', ');
+
+let verdict;
+if (!allOk) {
+  verdict = 'FAILED';
+} else if (totalWarnCount > 0) {
+  // Distinct terminal verdict, never bare "ALL GREEN" when WARNs are
+  // outstanding — the task brief's own explicit requirement.
+  verdict = `PASS WITH ${totalWarnCount} WARNING${totalWarnCount === 1 ? '' : 'S'} (${warnBreakdown})`;
+} else {
+  verdict = 'ALL GREEN';
+}
+
+console.log(`\n[verify-gate-report] ${verdict} (${targets.length} report(s) scanned)`);
 process.exit(allOk ? 0 : 1);

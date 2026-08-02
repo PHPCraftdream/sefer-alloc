@@ -14,3 +14,8 @@
 # files so the cited evidence is reproducible from the commit, not just from
 # a re-run. Do not `git add -f` logs a doc does not name.
 /docs/perf/_raw_*.log
+# task #493: scripts/capture-measurement-identity.mjs --patch-hash now saves
+# the patch it hashes to docs/perf/_raw_identity_<tree-sha-prefix>.patch --
+# same "scratch by default, git add -f only when a report cites it" policy
+# as the _raw_*.log rule immediately above.
+/docs/perf/_raw_identity_*.patch

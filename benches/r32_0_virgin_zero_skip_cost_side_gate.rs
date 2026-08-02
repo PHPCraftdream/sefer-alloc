@@ -392,9 +392,7 @@ fn run_realloc_confirmation() {
     ns.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let mean_ns: f64 = ns.iter().sum::<f64>() / ns.len() as f64;
     let p50_ns = percentile(&ns, 50.0);
-    println!(
-        "R32_0_REALLOC,4k_to_8k,{REALLOC_REPS},{mean_ns:.1},{p50_ns:.1}"
-    );
+    println!("R32_0_REALLOC,4k_to_8k,{REALLOC_REPS},{mean_ns:.1},{p50_ns:.1}");
 }
 
 fn main() {

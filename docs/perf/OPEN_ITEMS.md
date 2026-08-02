@@ -1480,6 +1480,52 @@ for completeness.
    >   (P2-2 through P2-5, P2-10) — the review's own source, not
    >   independently re-derived by this filing.
 
+   > **RESOLVED — 2026-08-02 (task #493).** All five sub-findings fixed
+   > directly in `scripts/capture-measurement-identity.mjs` and
+   > `scripts/verify-gate-report.mjs`, independently re-verified by the
+   > orchestrator (not just the implementing agent's claim):
+   > - **P2-2** — `recoverCommand` now omits `--` (`git show <tree>:<path>`);
+   >   personally confirmed via `node scripts/capture-measurement-identity.mjs
+   >   --json` and a live `git show <treeSha>:<path>` run.
+   > - **P2-3** — `patchSha256` is now `git diff <headSha> <treeSha>` (two
+   >   tree-ish objects), never `git diff HEAD` (the live working tree) — the
+   >   two forms cannot diverge by construction. The script also now saves
+   >   the patch to `docs/perf/_raw_identity_<tree-prefix>.patch`
+   >   (`.gitignore`d by a new rule added in the same commit, matching the
+   >   existing `_raw_*.log` policy) so `patchReproduceCommand` names a real
+   >   file. Personally ran `--patch-hash` and confirmed the file was written
+   >   and its hash matched the empty-diff case exactly (nothing was staged
+   >   at capture time).
+   > - **P2-4** — `extractHeadlineNumbers` now also scans a forward paragraph
+   >   window (not just the same line), and `matchesWithRounding` is now
+   >   unit-aware (KiB/MiB/GiB normalized to bytes via the CSV column
+   >   header's own unit suffix, with the original bare-number match kept as
+   >   a fallback).
+   > - **P2-5** — checks (e)/(f) are now scoped NON-RETROACTIVELY (same
+   >   `git merge-base --is-ancestor` technique `verify-commit-prefixes.mjs`
+   >   already uses), keyed to the exact commit each check's CLAUDE.md rule
+   >   landed at. Personally re-ran the full scan: the terminal verdict went
+   >   from a bare `FAILED`/`ALL GREEN` (masking up to ~350 WARNs) to
+   >   `PASS WITH 38 WARNINGS (d=28, e=1, identity=9)` — a >90% reduction,
+   >   and the line itself now always states the count instead of going
+   >   silent when WARNs are outstanding.
+   > - **P2-10** — documented (not retrofitted — out of scope per the task's
+   >   own instruction) as the intended flow for any NEW derive script going
+   >   forward; `scripts/r31_10_derive_cost_report_data.mjs` and
+   >   `scripts/r32_0_derive_report_data.mjs` (both landed just before this
+   >   fix) still hand-type their provenance header and are not retrofitted.
+   > **One live bug caught during this verification pass, not by the
+   > implementing agent:** the full-corpus re-scan initially reported
+   > `FAILED`, not the expected `PASS WITH N WARNINGS` — `verify-gate-report.mjs`
+   > check (b) correctly caught a genuine pre-existing defect, unrelated to
+   > this task's own diff: `R32_0_VIRGIN_ZERO_SKIP_COST_SIDE_GATE_summary.csv`'s
+   > `landing_commit` was a 7-char short SHA, not 40-hex (the same recurring
+   > bug class fixed three other times this session — R31-8, R31-10 cost
+   > gate, and now this). Fixed in a separate commit
+   > (`docs(perf): fix R32-0's landing_commit...`) before this task's own
+   > commit landed, confirmed via a normalized diff that no other CSV value
+   > changed.
+
 37. **Three reports cite raw logs that were never committed — discovered by
     `scripts/verify-gate-report.mjs`'s first two CI runs (check (c) is
     FAIL-capable; each pushed the round's landing commit through CI red).**
