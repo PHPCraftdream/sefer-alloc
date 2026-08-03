@@ -621,12 +621,13 @@ ownership check, at both cache sizes.
 ### 11.1 Main results — before (cache=4) vs after (cache=16), 20 paired A/B/B/A blocks
 
 Derived by `scripts/r33_5_latency_null_addendum_summary.mjs` from the 21
-`docs/perf/paired_ab_runs/2026-08-03T15-*.json` provenance files — every
-headline number below is an in-script `assert` the derive script enforces
-(it independently recomputes the t-test and sign test from the raw per-sample
-`churn_elapsed_ns` arrays and verifies they match the runner's own values, per
-CLAUDE.md's "a script that computes a headline ratio must assert the
-arithmetic it prints" rule).
+`docs/perf/_raw_r33_5_k{K}_{comparison}.log` files — every headline number
+below is an in-script `assert` the derive script enforces (it independently
+recomputes the t-test and sign test from the raw per-sample
+`churn_elapsed_ns` values parsed from the RESULT lines and verifies they match
+the runner's own summary line printed at the end of each log, per CLAUDE.md's
+"a script that computes a headline ratio must assert the arithmetic it prints"
+rule).
 
 | K | before ns/op (mean of 20) | after ns/op (mean of 20) | Δ ns/op | % change | t | crit (p<0.05) | significant | sign test (before/after faster) |
 |---:|---:|---:|---:|---:|---:|---:|---|---|
@@ -729,18 +730,20 @@ addendum's wall-clock evidence.
   (same host as §4.1/§5.2).
 - **Raw console logs:** `docs/perf/_raw_r33_5_k{4,8,16,24,32,48,64}_{before_after,before_control,after_control}.log`
   (21 files, `git add -f` per CLAUDE.md's raw-log policy).
-- **Full per-launch provenance (structured JSON, raw per-sample data):**
-  `docs/perf/paired_ab_runs/2026-08-03T15-{27-55-060Z,...,31-36-883Z}.json`
-  (21 files — one per comparison; the derive script reads these and
-  independently recomputes every statistic). Full file list in the companion
-  CSV's `provenance_file` column.
+- **Full per-launch provenance:** the 21 `docs/perf/_raw_r33_5_k{K}_{comparison}.log`
+  files (committed with `git add -f` per CLAUDE.md's raw-log policy) contain
+  the complete per-launch `RESULT key=value` output from every process launch
+  in the A/B/B/A protocol — the derive script parses these directly. The
+  `paired_ab_runs/` JSON files `paired-ab-runner.mjs` also writes are
+  gitignored scratch output (`/docs/perf/paired_ab_runs/` in `.gitignore`)
+  and are NOT committed or cited as evidence, matching R32-11's precedent.
 - **Checked derive script:** `scripts/r33_5_latency_null_addendum_summary.mjs`
   (reads the 21 JSON files, recomputes t-test/sign-test from raw samples,
   asserts they match the runner's values, asserts all same-vs-same controls
   are non-significant, asserts n=20 for every comparison, writes the summary
   CSV).
 - **Summary CSV:** `docs/perf/R32_10_LATENCY_NULL_PAIRED_AB_summary.csv`
-  (21 rows: 7 K values × 3 comparisons, one row per paired_ab_runs JSON file;
+  (21 rows: 7 K values × 3 comparisons, one row per `_raw_r33_5_*.log` file;
   companion to the existing `R32_10_OWN_CACHE_TIER1_THRASH_GATE_summary.csv`
   — different schema, not appended to the original).
 - **`landing_commit` field decision (per the F6 [P3] follow-up's lesson):**
