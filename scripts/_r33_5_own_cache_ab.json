@@ -1,0 +1,21 @@
+{
+  "_doc": "R33-5 (task #510) -- paired A/B config for the R32-10 OWN_CACHE_SIZE latency-null verification. Re-runs the SAME harness (examples/r32_10_own_cache_tier1_thrash_gate.rs) in child mode (R32_10_CHILD_K=<k> env var) through paired-ab-runner.mjs's A/B/B/A protocol, 20 pairs. 'before' = OWN_CACHE_SIZE=4 (patch 9da1a54e83cec28adae585eeb1d2e55a93f44581f9471f13b268ff9fe85892ae over HEAD 7d55209de6159bd42397fc28a746715c97fc91a5). 'after' = OWN_CACHE_SIZE=16 (HEAD 7d55209...). Metric is churn_elapsed_ns (integer ns, parsed correctly by the runner); ns_per_op = churn_elapsed_ns / (ROTATING_ROUNDS * K) is derived in the report. The env var R32_10_CHILD_K is set by the caller before invoking the runner.",
+  "metric": "churn_elapsed_ns",
+  "arms": {
+    "before": {
+      "command": "D:/dev/rust/.cargo-target/r33_5_bin/before.exe",
+      "args": []
+    },
+    "after": {
+      "command": "D:/dev/rust/.cargo-target/r33_5_bin/after.exe",
+      "args": []
+    }
+  },
+  "default_comparisons": [["before", "after"]],
+  "sanity": {
+    "key": "oracle2_pass",
+    "_doc_sanity": "Every arm's path-activation oracle #2 (tier1_total == expected_total) must report PASS (1) -- a FAIL means the arm did not exercise its intended mechanism and its churn_elapsed_ns is not trustworthy evidence.",
+    "nonzero_arms": ["before", "after"]
+  },
+  "features_note": "production bench-internals; before=OWN_CACHE_SIZE=4 (patch 9da1a54e...), after=OWN_CACHE_SIZE=16 (HEAD 7d55209...)"
+}

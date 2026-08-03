@@ -559,3 +559,216 @@ this workload's total cost") would not contradict anything stated here.
   (derived + headline-asserted by `scripts/r32_10_own_cache_tier1_summary.mjs`).
 - CPU/OS: Windows 10 Pro 10.0.19045, Intel Core i7-11800H @ 2.30GHz
   (same-host, same-run relative comparisons — not a cross-host claim).
+
+## 11. CORRECTED 2026-08-03 — the latency-null is now DEMONSTRATED, not merely asserted: paired-A/B with t-test + same-vs-same controls at all 7 K values (R33-5, task #510)
+
+This section is appended, not a rewrite — §4.1's Headline 4 "the latency
+signal is an HONEST NULL ... No latency win is claimed" stays exactly as
+originally published (per this project's append-only correction convention;
+see §5.2 for the established pattern). The round-32 readonly review
+(`docs/reviews/2026-08-03-round32-readonly-review.md` §7, finding F4 [P2])
+found that §4.1's null was **asserted, not demonstrated**: the report
+contained no stddev, no t-test, no confidence interval, and no same-vs-same
+control on the latency axis — only the phrase "run-to-run noise band." Two
+other tasks in the same round (R32-11 §4.1–4.3, R32-12 §4) set the bar higher
+for exactly this question (paired A/B with `t` vs `crit` plus same-vs-same
+controls). This addendum closes that gap.
+
+**Method.** The SAME harness as §4.1
+(`examples/r32_10_own_cache_tier1_thrash_gate.rs`, child mode via
+`R32_10_CHILD_K=<k>` env var, `ROTATING_ROUNDS=8192`), driven through
+`scripts/paired-ab-runner.mjs`'s A/B/B/A protocol (20 pairs = 80 process
+launches per comparison), matching R32-11's N=20 exactly. Three comparisons
+per K value:
+
+1. **before vs after** — the main comparison (`OWN_CACHE_SIZE=4` vs `=16`).
+2. **before vs before** — same-vs-same control (identical binary against
+   itself, establishes the harness noise floor).
+3. **after vs after** — same-vs-same control (same purpose, the other arm).
+
+All 7 K values from §3's sweep were measured: `{4, 8, 16, 24, 32, 48, 64}`.
+Total: 21 comparisons × 20 pairs × 4 launches = **1,680 process launches**.
+The metric is `churn_elapsed_ns` (integer ns, the total wall-clock of the
+timed rotation region); the derive script converts to `ns_per_op` by dividing
+by `ROTATING_ROUNDS × K`. The `t`-statistic itself is scale-invariant (both
+mean and SE scale by the same constant), so the significance verdict is
+identical whether computed on `churn_elapsed_ns` or `ns_per_op`.
+
+**Binaries.** "after" = built from HEAD
+(`7d55209de6159bd42397fc28a746715c97fc91a5`, `OWN_CACHE_SIZE = 16`, the
+shipped state). "before" = built from the SAME HEAD with `OWN_CACHE_SIZE`
+temporarily edited to `4` in `src/alloc_core/segment_table.rs` (the identical
+scratch-edit technique §8 documents — the constant is flipped in-place, the
+binary built, then the constant restored; `git diff` verified clean after
+restoration). Both built `--features "production bench-internals"` (the
+`bench-internals`-gated Tier-1 counters are present in BOTH arms identically,
+so their `fetch_add` overhead cancels in the paired differential — unlike
+R32-11's contaminated-timing finding, where the counter was new in only the
+AFTER arm). **Immutable source identity (CLAUDE.md R29-6 rule, option 3):**
+the "before" state's patch hash is
+`9da1a54e83cec28adae585eeb1d2e55a93f44581f9471f13b268ff9fe85892ae`
+(`sha256sum` of `git diff src/alloc_core/segment_table.rs` when
+`OWN_CACHE_SIZE` is changed `16 → 4` over HEAD `7d55209...`); the "after"
+state IS HEAD `7d55209...` directly (no patch).
+
+**Path-activation oracle.** Every one of the 1,680 launches passed oracle #2
+(`oracle2_pass = 1`, asserted by the paired-ab-runner's `sanity` gate — a
+launch that failed would have aborted before its `churn_elapsed_ns` was
+trusted). This confirms every timed region genuinely drove
+`ROTATING_ROUNDS × K` real `contains_base` calls through the production
+ownership check, at both cache sizes.
+
+### 11.1 Main results — before (cache=4) vs after (cache=16), 20 paired A/B/B/A blocks
+
+Derived by `scripts/r33_5_latency_null_addendum_summary.mjs` from the 21
+`docs/perf/paired_ab_runs/2026-08-03T15-*.json` provenance files — every
+headline number below is an in-script `assert` the derive script enforces
+(it independently recomputes the t-test and sign test from the raw per-sample
+`churn_elapsed_ns` arrays and verifies they match the runner's own values, per
+CLAUDE.md's "a script that computes a headline ratio must assert the
+arithmetic it prints" rule).
+
+| K | before ns/op (mean of 20) | after ns/op (mean of 20) | Δ ns/op | % change | t | crit (p<0.05) | significant | sign test (before/after faster) |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 4 | 31.47 | 28.61 | +2.86 | −9.1% | 1.593 | 2.101 | no | 7/13 |
+| 8 | 31.80 | 31.51 | +0.30 | −0.9% | 0.084 | 2.101 | no | 7/13 |
+| 16 | 33.77 | 32.87 | +0.90 | −2.7% | 0.289 | 2.101 | no | 9/11 |
+| 24 | 32.49 | 33.49 | −1.00 | +3.1% | −0.323 | 2.101 | no | 12/8 |
+| 32 | 31.75 | 36.88 | −5.13 | +16.2% | −1.637 | 2.101 | no | 11/9 |
+| 48 | 30.63 | 30.83 | −0.20 | +0.7% | −0.183 | 2.101 | no | 11/9 |
+| 64 | 28.59 | 29.14 | −0.55 | +1.9% | −1.729 | 2.101 | no | 13/7 |
+
+**No K value reaches statistical significance.** The maximum `|t|` across all
+7 K values is 1.729 (at K=64), well below the p<0.05 critical value of 2.101
+for df=19. The sign tests are roughly even at every K (never more lopsided
+than 13/7), nowhere near the 17+/20 lopsidedness R32-11's favorable-regime
+win showed. The latency null is **CONFIRMED**, not merely asserted.
+
+**One directional observation worth recording honestly.** At K=4 — the cell
+where the mechanism win is maximal (Tier-1 hit rate 0% → 99.99%) — the
+nominal direction **favors after** (cache=16 is nominally ~9% faster, 7/20
+sign test favoring after). This is the opposite of §4.1's single-run numbers
+(cache=16 was +8.8% slower at K=4 in the original 7-rep median), and it is
+directionally consistent with the mechanism (cache hits are cheaper than
+cache misses): a Tier-1 hit costs ~8.2 Ir vs a Tier-2 miss's ~12.0 Ir
+(OPEN_ITEMS item 1), so after *should* be marginally faster at K=4 — but the
+~4 Ir/call delta is too small relative to the whole `realloc` call's cost
+(header reads, size-class arithmetic, etc.) and the process-level timing
+noise to reach significance. §4.1's original +8.8% figure at K=4 was
+**run-to-run noise, not a real signal** — this is now demonstrated, not
+asserted.
+
+### 11.2 Same-vs-same controls — harness noise floor established
+
+All 14 control runs (7 K values × 2 controls: before-vs-before and
+after-vs-after) are cleanly NOT significant, with roughly-even sign splits:
+
+| K | control | t | crit | sign test |
+|---:|---|---:|---:|---|
+| 4 | before-vs-before | −0.667 | 2.101 | 10/10 |
+| 4 | after-vs-after | 1.147 | 2.101 | 9/10 |
+| 8 | before-vs-before | −0.403 | 2.101 | 13/7 |
+| 8 | after-vs-after | −0.852 | 2.101 | 11/9 |
+| 16 | before-vs-before | −0.156 | 2.101 | 9/11 |
+| 16 | after-vs-after | −0.371 | 2.101 | 10/10 |
+| 24 | before-vs-before | −0.185 | 2.101 | 8/12 |
+| 24 | after-vs-after | 0.922 | 2.101 | 11/9 |
+| 32 | before-vs-before | −0.117 | 2.101 | 7/13 |
+| 32 | after-vs-after | 0.259 | 2.101 | 8/12 |
+| 48 | before-vs-before | 0.720 | 2.101 | 10/10 |
+| 48 | after-vs-after | −0.259 | 2.101 | 9/11 |
+| 64 | before-vs-before | −1.248 | 2.101 | 11/9 |
+| 64 | after-vs-after | 1.361 | 2.101 | 8/12 |
+
+Every control's `|t|` is well under 2.101 and no sign test is more lopsided
+than 13/7. This confirms the before-vs-after results above are not a harness
+artifact (non-reproducible workload, host-launch-order bias, etc.) — matching
+R32-11 §4.3's and R32-12 §4's same-vs-same control conventions exactly.
+
+### 11.3 Conclusion
+
+**The original report's "honest null" latency claim (§4.1, Headline 4) is
+CONFIRMED by rigorous paired-A/B evidence, not corrected to something else.**
+The latency axis now carries: (a) N=20 paired samples per cell, (b) a `t`
+statistic vs the df=19 critical value, (c) a sign test, and (d) same-vs-same
+controls for both arms — the same evidence standard R32-11 and R32-12 applied
+to their latency axes. No statistically significant latency difference between
+`OWN_CACHE_SIZE=4` and `=16` exists at any of the 7 K values, including K=4
+(where the mechanism win is maximal) and K=48 (where §4.1's original numbers
+showed the largest nominal +9.5% delta). The `OWN_CACHE_SIZE = 16` production
+default is NOT reverted (explicitly out of scope per the review's own
+disposition — this measurement task does not license a revert).
+
+**Why the null is real, not a measurement failure.** The Tier-1 hit/miss
+delta is ~4 Ir/call (8.2 vs 12.0 Ir); at K=4 this saves ~4 × 32768 ≈ 131 K Ir
+total per timed region, a real instruction-count win — but the `realloc` call
+itself costs far more than just `contains_base` (header reads, size-class
+arithmetic, `SegmentHeader` writes), so the ~4 Ir/call delta is a small
+fraction of the total per-call cost, and that fraction is below the
+process-launch-level timing noise on this Windows `Instant::now` harness
+(~0.4–2 ns/pair standard error on this hardware, as R32-12 §4 independently
+established for the same timer class). A future Linux/Valgrind
+`Estimated Cycles` run (as §5.2 already obtained for the kill-gate axis) at
+this workload shape could potentially resolve the sub-noise delta at the Ir
+level, matching how §5.2 resolved the kill-gate question the raw ±10-Ir gate
+could not — but that is a follow-up candidate, not a deficiency in this
+addendum's wall-clock evidence.
+
+### 11.4 Provenance and reproduction
+
+- **"after" binary source identity:** HEAD `7d55209de6159bd42397fc28a746715c97fc91a5`
+  (`OWN_CACHE_SIZE = 16`, the shipped state).
+- **"before" binary source identity (R29-6 rule, option 3):** patch hash
+  `9da1a54e83cec28adae585eeb1d2e55a93f44581f9471f13b268ff9fe85892ae` (sha256
+  of `git diff src/alloc_core/segment_table.rs` over HEAD `7d55209...`,
+  changing `OWN_CACHE_SIZE` from 16 to 4). Reproducible: checkout
+  `7d55209...`, apply the one-line edit, re-hash the diff.
+- **Feature set:** `production bench-internals` for both arms (the counter
+  is present in both, cancelling in the differential).
+- **CPU/OS:** Windows 10 Pro 10.0.19045, Intel Core i7-11800H @ 2.30GHz
+  (same host as §4.1/§5.2).
+- **Raw console logs:** `docs/perf/_raw_r33_5_k{4,8,16,24,32,48,64}_{before_after,before_control,after_control}.log`
+  (21 files, `git add -f` per CLAUDE.md's raw-log policy).
+- **Full per-launch provenance (structured JSON, raw per-sample data):**
+  `docs/perf/paired_ab_runs/2026-08-03T15-{27-55-060Z,...,31-36-883Z}.json`
+  (21 files — one per comparison; the derive script reads these and
+  independently recomputes every statistic). Full file list in the companion
+  CSV's `provenance_file` column.
+- **Checked derive script:** `scripts/r33_5_latency_null_addendum_summary.mjs`
+  (reads the 21 JSON files, recomputes t-test/sign-test from raw samples,
+  asserts they match the runner's values, asserts all same-vs-same controls
+  are non-significant, asserts n=20 for every comparison, writes the summary
+  CSV).
+- **Summary CSV:** `docs/perf/R32_10_LATENCY_NULL_PAIRED_AB_summary.csv`
+  (21 rows: 7 K values × 3 comparisons, one row per paired_ab_runs JSON file;
+  companion to the existing `R32_10_OWN_CACHE_TIER1_THRASH_GATE_summary.csv`
+  — different schema, not appended to the original).
+- **`landing_commit` field decision (per the F6 [P3] follow-up's lesson):**
+  omitted from the derived CSV entirely (no `landing_commit` column). This
+  measurement task has no landing commit at derive time (the commit is created
+  after the script runs), and hardcoding a placeholder that must be
+  back-filled is exactly the pattern F6 flagged. The measurement's source
+  identity is captured in the prose above (HEAD SHA + patch hash) and in each
+  JSON file's own `git_commit` field — both more durable than a CSV column
+  that would be stale by construction.
+- **Config JSON:** `scripts/_r33_5_own_cache_ab.json` (the paired-ab-runner
+  config defining before/after binary paths, metric, and the `oracle2_pass`
+  sanity gate).
+
+**Reproduce:**
+
+```text
+# Build both binaries (after = current tree, before = OWN_CACHE_SIZE edited to 4):
+cargo build --release --example r32_10_own_cache_tier1_thrash_gate --features "production bench-internals"
+cp $CARGO_TARGET_DIR/release/examples/r32_10_own_cache_tier1_thrash_gate.exe <before_path>
+# Edit OWN_CACHE_SIZE to 4, rebuild, copy to <after_path>, restore OWN_CACHE_SIZE to 16.
+
+# Run one comparison (e.g. K=4 before vs after, 20 pairs):
+R32_10_CHILD_K=4 node scripts/paired-ab-runner.mjs --config scripts/_r33_5_own_cache_ab.json --pairs 20
+
+# Same-vs-same control:
+R32_10_CHILD_K=4 node scripts/paired-ab-runner.mjs --config scripts/_r33_5_own_cache_ab.json --arms before,before --pairs 20
+
+# Derive the summary CSV + verify all assertions:
+node scripts/r33_5_latency_null_addendum_summary.mjs
+```
