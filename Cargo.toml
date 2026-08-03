@@ -1998,6 +1998,17 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 name = "r32_8_large_cache_decay_stride_fix_gate"
 required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 
+# R33-6 (task #511): measures the RETENTION COST of R32-8's stride throttle
+# (DECAY_CLOCK_CHECK_STRIDE=64) in the low-throughput regime the original
+# report only argued qualitatively. Adapts R29-13's retention harness
+# (fill 8×34 MiB, free, measure dbg_large_cache_used) with R32-8's
+# FORCE_DECAY_CLOCK_READ switch as an old-shape/new-shape A/B, sweeping
+# n_ops = 1/8/32/63 under both LowHeadroom (16 MiB) and Trimmed64MiB
+# (64 MiB) profiles.
+[[example]]
+name = "r33_6_decay_throttle_retention_cost_gate"
+required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
+
 # R32-9 (task #500, F3): the wall-clock companion to the new
 # `benches/macro_multiseg_steady_state.rs` iai-callgrind bench (that bench is
 # Linux-only; this example is the portable arm, runs on any platform
