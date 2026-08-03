@@ -509,3 +509,59 @@ unaffected (confirmed correct by the review's §3.1) — this is purely a
 test-vacuity correction. The loom test count for this file is now 9 (was
 8; the rewritten counterfactual + 1 new companion). The two loom models
 (`RingModelShadow`, `RingModelShadow1`) were not modified.
+
+## 10. CORRECTED 2026-08-03 — §1's `head` write-site enumeration was incomplete (R33-4, task #509)
+
+This section is appended, not a rewrite — §1's soundness-argument text
+(lines 40–50 above) stays exactly as originally published (per this
+project's append-only correction convention; see §9 above for the same
+convention applied to this same report, and `R32_10_…GATE.md` §5.2 for
+the established pattern). The round-32 readonly review
+(`docs/reviews/2026-08-03-round32-readonly-review.md` §3, finding F3
+[P2]) found that §1's enumeration of write sites to `head` was
+incomplete: it stated "the only OTHER write site, `dbg_set_cursors`",
+implying exactly two sites total (`drain` + `dbg_set_cursors`), when
+there are actually FOUR:
+
+1. `drain` (`head.store(h, Release)`) — the real monotonic advance;
+   §1's description of this site is correct.
+2. `dbg_set_cursors` (`head.store(head, Release)`) — test-only; §1's
+   description is correct.
+3. `dbg_advance_head_only` (`head.store(head, Release)`) — test-only;
+   ADDED by commit `d38bf73c63fa989eace81e659a3844b98f6656c5` itself
+   (the same commit this report tracks), but not enumerated in §1. This
+   report's own §3.2 (around line 131) already acknowledges it
+   ("advances ONLY `head`, deliberately leaving the shadow stale") — so
+   the document contradicted itself within its own text.
+4. `init_in_place` (raw write of `0` to `HEAD_OFF`) — bootstrap-only;
+   zeroes both `head` AND `cached_head` together (benign).
+
+**Why it matters.** `dbg_advance_head_only` stores an arbitrary `u32`
+into `head` and deliberately does not touch `cached_head`. Storing a
+LOWER value would regress `head` below `cached_head`, producing the
+stale-HIGH shadow the monotonicity argument declares impossible — which
+would let the fast path admit a push into a full ring.
+
+**Not a live soundness hole** (per the review's §3.1): the hook is
+`#[doc(hidden)]`, `alloc-xthread`-gated, `at()` is `pub(crate)`,
+`over_test_buffer` is `pub unsafe fn`, and its only real caller
+(`tests/remote_ring_shadow_head.rs:288`) uses `wrapping_add(1)` — an
+advance, never a regression. It is correctly enumerated in
+`tests/dbg_hook_safety_tripwire.rs` under `SAFE_MUTATORS` with a
+bounded-blast-radius justification. This is a documentation-completeness
+defect in a formally-stated proof, not a shipped-code soundness bug.
+
+**Fix.** The module doc in `src/alloc_core/remote_free_ring.rs` (F10
+section, ~line 103) now lists all four write sites with a one-line note
+on each. `dbg_advance_head_only`'s own doc comment now states an
+explicit "must never regress `head`" precondition, matching the style
+`dbg_set_cursors` already uses for its own `tail.wrapping_sub(head) <=
+RING_CAP` precondition. A new drift-detection test
+(`tests/remote_free_ring_head_write_sites.rs`) mechanically re-derives
+the write-site count from the source so this enumeration cannot drift
+out of sync with the code again.
+
+**Scope.** No shipped runtime behavior changed — `full_check`, `push`,
+`drain`, and all non-doc-hidden functions are unmodified. This is purely
+a doc/comment fix plus one structural-drift test, per the review's own
+explicit finding that the shipped code is sound.

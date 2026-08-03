@@ -102,16 +102,42 @@
 //!
 //! **Claim: `head` is monotonic (only ever advances, never regresses) under
 //! every REAL (non-test) call path.** Verified by enumerating every write
-//! site: [`drain`](RemoteFreeRing::drain)'s `head.store(h, Release)`, where
-//! `h` is derived ONLY by `h = h.wrapping_add(1)` starting from the PREVIOUS
-//! stored `head` value (`self.head().load(Relaxed)` at the top of `drain`) —
-//! so each drain call's stored `head` is `>=` the value it read (wrapping
-//! arithmetic is monotonic over one lap; the only OTHER write site,
-//! [`dbg_set_cursors`](RemoteFreeRing::dbg_set_cursors), is `#[doc(hidden)]`
-//! test-only, documented to require a QUIESCENT ring, and reachable from
-//! NEITHER `push` nor any production call path). There is a SINGLE consumer
-//! per ring (the module's own MPSC contract), so there is no cross-consumer
-//! race that could interleave two `drain` calls' stores out of order.
+//! site to `head` — there are FOUR (pinned by a drift-detection test,
+//! `tests/remote_free_ring_head_write_sites.rs`, so this list cannot silently
+//! fall out of sync with the code):
+//!
+//! 1. [`drain`](RemoteFreeRing::drain)'s `head.store(h, Release)` — the
+//!    ONLY production write. `h` is derived ONLY by
+//!    `h = h.wrapping_add(1)` starting from the PREVIOUS stored `head`
+//!    value (`self.head().load(Relaxed)` at the top of `drain`), so each
+//!    drain call's stored `head` is `>=` the value it read (wrapping
+//!    arithmetic is monotonic over one lap). This is the advance the
+//!    monotonicity claim is about.
+//! 2. [`init_in_place`](RemoteFreeRing::init_in_place)'s raw write of `0`
+//!    to `HEAD_OFF` — zeroes BOTH `head` AND `cached_head` together at
+//!    bootstrap (single-writer, exclusively-owned segment, before any
+//!    `push`/`drain` can observe the ring). Benign: it cannot leave the
+//!    two cursors inconsistent and is not reachable after init.
+//! 3. [`dbg_set_cursors`](RemoteFreeRing::dbg_set_cursors) —
+//!    `#[doc(hidden)]` test-only, `alloc-xthread`-gated. Documents a
+//!    quiescent-ring precondition AND `tail.wrapping_sub(head) <=
+//!    RING_CAP`; also resets `cached_head` to match. Reachable from
+//!    neither `push` nor any production call path.
+//! 4. [`dbg_advance_head_only`](RemoteFreeRing::dbg_advance_head_only) —
+//!    `#[doc(hidden)]` test-only, `alloc-xthread`-gated. Stores an
+//!    arbitrary `u32` into `head` and deliberately does NOT touch
+//!    `cached_head`. Documents a quiescent-ring precondition AND a
+//!    "must never regress `head`" precondition (storing a value BELOW
+//!    the current `head` would leave `cached_head` above the regressed
+//!    `head` — a STALE-HIGH shadow — which this argument declares
+//!    impossible). Reachable from neither `push` nor any production
+//!    call path; its only real caller advances by `wrapping_add(1)`.
+//!
+//! Only site (1) is reachable from a production call path; sites (2)–(4)
+//! are bootstrap- or test-only with their own documented preconditions.
+//! There is a SINGLE consumer per ring (the module's own MPSC contract),
+//! so there is no cross-consumer race that could interleave two `drain`
+//! calls' stores out of order.
 //!
 //! **Claim: `cached_head` can only be STALE-LOW relative to the true `head`,
 //! never stale-high.** `cached_head` is written in exactly one place: the
@@ -849,7 +875,14 @@ impl RemoteFreeRing {
     /// slow path on demand and prove it still re-derives correctly (see
     /// `tests/remote_ring_shadow_head.rs`'s adversarial-regime path-
     /// activation coverage). MUST be called on a quiescent ring (no
-    /// concurrent push/drain), same precondition as `dbg_set_cursors`.
+    /// concurrent push/drain), same precondition as `dbg_set_cursors`,
+    /// and MUST NOT regress `head` below its current value — storing a
+    /// value lower than the current `head` would leave `cached_head`
+    /// above the regressed `head` (a STALE-HIGH shadow), which the module
+    /// doc's F10 monotonicity argument declares impossible and which
+    /// could let the fast path admit a push into a full ring. The hook's
+    /// only real caller (`tests/remote_ring_shadow_head.rs`) uses
+    /// `wrapping_add(1)` — an advance, never a regression.
     #[cfg(feature = "alloc-xthread")]
     #[doc(hidden)]
     pub fn dbg_advance_head_only(&self, head: u32) {
