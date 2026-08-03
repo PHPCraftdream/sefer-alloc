@@ -1139,7 +1139,7 @@ required-features = ["alloc-global"]
 
 [[example]]
 name = "r31_3_large_cache_extended_narrow_on"
-required-features = ["alloc-global"]
+required-features = ["alloc-global", "alloc-decommit"]
 
 # R31-8 (task #488): deterministic, native (cross-platform) scan-cost
 # isolation microjudge — a decomposed complement to the real-process narrow
@@ -1157,11 +1157,11 @@ required-features = ["alloc-global"]
 #     binary)
 [[example]]
 name = "r31_8_large_cache_scan_isolation_off"
-required-features = ["alloc-core"]
+required-features = ["alloc-core", "alloc-decommit"]
 
 [[example]]
 name = "r31_8_large_cache_scan_isolation_on"
-required-features = ["alloc-core", "large-cache-extended"]
+required-features = ["alloc-core", "large-cache-extended", "alloc-decommit"]
 
 # R32-12 (task #503, F8 sub-change (2)): free-slot-search isolation
 # microjudge — a decomposed complement to R31-8's best-fit-scan microjudge
@@ -1940,6 +1940,17 @@ required-features = ["alloc-global", "alloc-decommit", "bench-internals"]
 # docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md for the report.
 [[example]]
 name = "r31_10_trim_rss_gate"
+required-features = ["alloc-global", "alloc-decommit"]
+
+# R31-10 cost side (task #492) — the cost counterpart to the RSS gate above
+# (see docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md). Same features as the
+# RSS gate: it installs a real SeferAlloc #[global_allocator] (alloc-global)
+# and drives the trim/large-cache-eviction path (alloc-decommit). Registered
+# explicitly so cargo does NOT auto-discover and attempt to build it under
+# feature sets lacking either feature — the file's own #![cfg(all(...))] would
+# otherwise strip `fn main` and fail with E0601 under those combos.
+[[example]]
+name = "r31_10_trim_cost_gate"
 required-features = ["alloc-global", "alloc-decommit"]
 
 [[example]]

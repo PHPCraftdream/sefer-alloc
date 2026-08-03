@@ -948,39 +948,25 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     this file's append-only convention (do not silently drop the other
     four from the bundle).
 
-11. **[A, filed 2026-08-02, task #498] Three CI clippy `--all-targets`
-    rows are broken by pre-existing lint/compile errors in `examples/`,
-    unrelated to any in-scope task diff — discovered while verifying task
-    #498's own clean-clippy requirement.** Re-verified against `main` @
-    `2dfeaa3` (task #498's own base commit) in an isolated
-    `git worktree add`, confirming these are NOT caused by task #498's
-    diff:
-    - `cargo clippy --all-targets --features "hardened medium-classes" -- -D
-      warnings` fails to compile with `error[E0601]: `main` function not
-      found in crate `r31_10_trim_cost_gate`` (`examples/r31_10_trim_cost_gate.rs:326`).
-    - `cargo clippy --all-targets --features "production" -- -D warnings`
-      and `cargo clippy --all-targets --all-features -- -D warnings` both
-      fail with `clippy::doc_lazy_continuation` ("doc list item without
-      indentation") at
-      `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257`
-      (an un-indented `/// block.` continuation line under a `///   ` list
-      item), which in turn makes `examples/r31_3_large_cache_extended_narrow_on.rs`
-      and `..._off.rs` fail to compile under those two feature sets.
-    All three trace to Round 31 example files (`r31_10_trim_cost_gate.rs`,
-    `r31_3_large_cache_extended_narrow_ab_workload.rs`) that evidently were
-    never run through the exact `--all-targets --features "hardened
-    medium-classes"` / `--all-targets --features "production"` / `--all-targets
-    --all-features` invocations `.github/workflows/ci.yml`'s `clippy` job
-    actually uses at the time they landed — i.e. `npm run check`'s clippy
-    step (which per this repo's own README/CLAUDE.md coverage claims should
-    catch exactly this) apparently did not either, or drifted since. Not
-    fixed here (out of task #498's scope — that task's own diff does not
-    touch either example file, confirmed by `git diff --stat` showing no
-    overlap, and the worktree re-run at the pre-task-#498 base commit
-    reproduces the same failures with task #498's diff entirely absent).
-    Filed here per this file's own convention (item 3 of "Convention") so a
-    future round picks these up rather than rediscovering them from a
-    clean-clippy requirement a second time.
+11. **[A, filed 2026-08-02, task #498] Coverage/process gap: `npm run check`'s
+    clippy gate did not catch pre-existing example/test lint+compile errors
+    that CI's clippy job caught.** _(The BUGS this item originally enumerated
+    — the E0601 in `r31_10_trim_cost_gate` and the `doc_lazy_continuation` in
+    `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257` —
+    plus three further latent failures unmasked once those cleared (E0432/E0599
+    in `r31_3_large_cache_extended_narrow_on` and `r31_8_large_cache_scan_isolation_*`
+    from incomplete `required-features` missing `alloc-decommit`, and a
+    `clippy::int_plus_one` in `tests/remote_ring_shadow_head.rs:165`) — were ALL
+    fixed by R33-1/task #506, commit `<SHA>`; see "Recently resolved" §6 below.
+    This remaining open half is the coverage GAP, not the bugs.)_
+    `scripts/check-all.mjs` HAS run all five ci.yml clippy rows since R30-5
+    (task #454), so the local gate should have caught at least the failures
+    under the default/experimental/`--all-features` combos it exercises — yet
+    the offending commits landed red. Follow-up: determine why (procedural —
+    pushed without running `npm run check`; or an as-yet-undetected drift
+    between the local matrix and ci.yml) and tighten enforcement so a red
+    `cargo clippy --all-targets -- -D warnings` row cannot land again
+    regardless of which of the five rows breaks.
 
 12. **[T, filed 2026-08-02, task #498] `xthread_large_double_free_no_double_reclaim`
     (`tests/regression_xthread_large_free_no_leak.rs`) failed once during a
@@ -1656,3 +1642,64 @@ assertion proving no double-release but not no leak, was resolved by R28-2
        (classification (a), test-logic window-asymmetry bug, fixed and
        verified at 0/2000). This is NOT a still-live allocator correctness
        concern and does NOT block anything.
+
+6. **CI clippy `--all-targets` red on all five rows — pre-existing
+   example/test lint+compile errors** — **RESOLVED** by R33-1 (task #506,
+   commit `<SHA>`). Five distinct failures, all pre-existing on `main`
+   (four inherited from Round-31 example files, one from Round-32 task
+   #502). The brief enumerated only two and prescribed "one line of
+   doc-indent + adding the missing `fn main`"; re-running ALL five ci.yml
+   clippy rows (as the brief instructed) revealed three further latent
+   failures masked by cargo's fail-fast target scheduling — all five were
+   necessary for the DONE-WHEN criterion (all five clippy rows green):
+
+   - **E0601** in `examples/r31_10_trim_cost_gate.rs:326` — the example was
+     auto-discovered (no `[[example]]` Cargo.toml entry) but gated
+     `#![cfg(all(feature = "alloc-global", feature = "alloc-decommit"))]`,
+     so under any feature set lacking both, the cfg stripped the entire
+     crate body including `fn main`. (The brief's "add the missing
+     `fn main`" framing was a misdiagnosis — `fn main` already existed at
+     line 313; the root cause is the missing registration.) **Fix:**
+     registered it in `Cargo.toml` with
+     `required-features = ["alloc-global", "alloc-decommit"]`, mirroring
+     its sibling `r31_10_trim_rss_gate` (already correctly registered,
+     never failed).
+   - **`clippy::doc_lazy_continuation`** in
+     `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs:257`
+     — a `/// block.` continuation line under a `/// -` list item. **Fix:**
+     indented the line 2 spaces (clippy's own suggestion).
+   - **E0599** in `examples/r31_8_large_cache_scan_isolation_off.rs:41,43`
+     — calls `dbg_large_cache_hits` (`#[cfg(feature = "alloc-decommit")]`,
+     `src/alloc_core/alloc_core_large_cache.rs:751`) but its
+     `required-features` listed only `["alloc-core"]`. **Fix:** added
+     `"alloc-decommit"` to both `r31_8_large_cache_scan_isolation_off` and
+     `..._on` (which share the workload via `include!`).
+   - **E0432/E0599** in `examples/r31_3_large_cache_extended_narrow_on.rs:39,43`
+     — uses `LargeCacheConfig` + `SeferAlloc::with_config` (both
+     `alloc-decommit`-gated) but `required-features` listed only
+     `["alloc-global"]`. **Fix:** added `"alloc-decommit"`. (The `_off`
+     variant uses `SeferAlloc::new()` only and was never affected.)
+   - **`clippy::int_plus_one`** in `tests/remote_ring_shadow_head.rs:165`
+     (Round-32 task #502, commit `d38bf73`) — `fast_after >= fast_before + 1`
+     → `fast_after > fast_before` (semantically identical, clippy's
+     suggestion). NOT inherited from Round 31 — the one Round-32-origin
+     failure of the five.
+
+   - **Verification:** all five ci.yml clippy rows pass locally with
+     `-D warnings` (`cargo clippy --all-targets` for default /
+     `--features experimental` / `--all-features` /
+     `--features "hardened medium-classes"` / `--features "production"` —
+     each verified rc=0); `cargo fmt --all -- --check` clean;
+     `cargo test --features production` green. No runtime behavior changed
+     (four `Cargo.toml` example registrations + one doc-indent + one
+     clippy-suggested test rewrite).
+   - **Files changed:** `Cargo.toml` (4 example `required-features`
+     registrations), `examples/_shared/r31_3_large_cache_extended_narrow_ab_workload.rs`,
+     `tests/remote_ring_shadow_head.rs`, this index entry.
+   - **Commit prefix:** `fix(ci)` per the R30-12 taxonomy — no shipping or
+     opt-in algorithm code changed, no production default changed; all edits
+     are CI-clippy-red fixes (example registrations, a doc-indent, a
+     clippy-suggested test rewrite).
+   - **Open follow-up kept:** item 11's `npm run check` coverage-gap half
+     remains OPEN above (the bugs are fixed but the question of why the
+     local gate did not catch them is not).

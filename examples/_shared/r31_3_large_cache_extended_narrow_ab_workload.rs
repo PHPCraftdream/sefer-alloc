@@ -254,7 +254,7 @@ pub struct NarrowAbResult {
     /// timed region (after the burst + all warm-up rounds). `(reserved_pre_timing
     /// - reserved_baseline)` is traced and asserted `== MATERIALIZE_N` (9)
     /// in both arms — see `run_narrow_ab_workload`'s matched-state proof
-    /// block.
+    ///   block.
     pub reserved_pre_timing: u64,
     /// `AllocCore::dbg_large_cache_used` (this heap's running large-cache
     /// used-bytes sum), read at the same checkpoint. Expected to differ

@@ -162,7 +162,7 @@ fn shadow_survives_dbg_set_cursors_reset() {
     let fast_after = DBG_RING_PUSH_SHADOW_FAST.load(Ordering::Relaxed);
 
     assert!(
-        fast_after >= fast_before + 1,
+        fast_after > fast_before,
         "the first push after dbg_set_cursors must take the shadow FAST path \
          (cached_head was reset to match head by dbg_set_cursors): \
          fast_before={fast_before} fast_after={fast_after}"
