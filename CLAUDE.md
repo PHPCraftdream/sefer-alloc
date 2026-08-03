@@ -309,8 +309,11 @@ Core instructions, mandatory for all code in this repository. They
 ## Before every push: `npm run check`
 
 - **Run `npm run check` before pushing, every time.** It runs the fast subset
-  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all three
-  CI feature-matrix entries (`""`, `--features experimental`, `--all-features`),
+  of what CI runs — `cargo fmt --check`, `clippy -D warnings` across all five
+  CI clippy rows (default / `experimental` / `--all-features` / `hardened
+  medium-classes` / `production` — GENERATED from `scripts/check-matrix.mjs`'s
+  `PER_PR_ROWS` since R30-5/task #454, not hand-written; byte-identical to
+  ci.yml's clippy job, pinned by `tests/ci_clippy_matrix_consistency.rs`),
   `cargo test` under `production`, then
   `npm run iai` (the deterministic judge) — and fails fast at the first red
   step (`scripts/check-all.mjs`). It does NOT replace CI (CI additionally runs
@@ -321,6 +324,32 @@ Core instructions, mandatory for all code in this repository. They
   workflow jobs still pointing at test files/features deleted by an earlier
   task) — discovered only by watching the Actions run *after* pushing.
   `npm run check` is the command that would have caught all of it first.
+- **Then confirm CI went green — do not assume it.** `npm run check` and CI
+  are NOT identical: CI additionally runs miri/loom/TSan/multi-arch/no_std/MSRV
+  on a toolchain and OS this repo does NOT pin (there is no
+  `rust-toolchain.toml`), so a clean local run can still go red in CI for
+  reasons the local gate cannot reproduce. The local gate is the *first* line
+  of defense; CI is the *last*. After every push, open the GitHub Actions run
+  and confirm it is green before starting the next task. This step was absent
+  from this section until R33-2 (task #507), and `main` consequently stayed
+  red on all five clippy rows for up to 70 commits (Round 31 → Round 33): the
+  five failures fixed in `e526517befbf5a0cd0ca1a7ee62f9d84ffe509ee`
+  (R33-1/task #506) were NOT a coverage gap — `npm run check` has run all five
+  ci.yml clippy rows since R30-5 (task #454), byte-identically, pinned by
+  `tests/ci_clippy_matrix_consistency.rs` — they were pushed without `npm run
+  check` having been run (three of the five were rustc *compile errors*
+  E0601/E0599/E0432, not clippy lints, so no toolchain-drift explanation is
+  even possible; the other two — `doc_lazy_continuation`, `int_plus_one` — are
+  long-stable clippy lints), and CI's red signal then went unwatched. This repo
+  enforces the pre-push rule by discipline only — there are no git hooks
+  (`.git/hooks/` holds only samples; `core.hooksPath` unset), no
+  husky/lint-staged, and no required status check blocks a direct push to
+  `main` (commits land directly on `main`; CI runs async *after* the push). The
+  airtight version of this gate — GitHub branch protection requiring the
+  `clippy` check to pass before merge — is repo-settings-side, outside any file
+  a commit can touch, and is recommended; short of that, the local rule plus
+  the post-push CI confirmation above is the realistic ceiling, and both must
+  actually be done.
 - **`npm run bench:table`** — the companion canonical wall-clock comparison
   table (SeferAlloc vs mimalloc vs System, fixed ns/op units, fixed bench
   set) for whenever comparative numbers are asked for. Exists because ad-hoc

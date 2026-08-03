@@ -969,6 +969,58 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     `cargo clippy --all-targets -- -D warnings` row cannot land again
     regardless of which of the five rows breaks.
 
+    **R33-2 update (task #507, 2026-08-03) — ROOT CAUSE FOUND; this is NOT a
+    coverage gap.** Direct investigation (git archaeology + infrastructure
+    audit) establishes the cause is PROCEDURAL, on two independent grounds,
+    and rules out the alternatives the original framing left open:
+
+    - **NOT a coverage gap.** `scripts/check-all.mjs` runs all five ci.yml
+      clippy rows (GENERATED from `PER_PR_ROWS`, byte-identical argv, since
+      R30-5/task #454), pinned by `tests/ci_clippy_matrix_consistency.rs`. The
+      original "coverage/process gap" framing above was a misdiagnosis of the
+      *symptom* (red rows landed) as a *hole in the gate*; the gate has no
+      hole. The item's "coverage" half is therefore CLOSED.
+    - **NOT toolchain drift, NOT a later-commit reintroduction.** Three of the
+      five failures (E0601 `r31_10_trim_cost_gate`, E0432/E0599
+      `r31_3_large_cache_extended_narrow_on`, E0599 `r31_8_large_cache_scan_*`)
+      are rustc *compile errors*, not clippy lints — they cannot be caused by
+      clippy tightening and would fail under any toolchain the moment the file
+      was introduced; `git log -S` shows each was introduced WITH its
+      file/line in its own round (`0985e22d1075135bb9740b23a457d32742d2a072`
+      R31-3 = 70 commits pre-fix; `4f897237cf6e4bcbe6a722f5c124890e15f07e82`
+      task #488 = 36 commits; `e6bbc6acbc3f01b649d70b02bd41b4f664dc822e`
+      R32-1 = 30 commits; `d38bf73c63fa989eace81e659a3844b98f6656c5`
+      task #502 = 9 commits), not reintroduced by an unrelated later
+      change. The two lints (`doc_lazy_continuation`, `int_plus_one`) are
+      long-stable. No `rust-toolchain.toml` exists to have drifted.
+    - **The actual cause: the "run `npm run check` before every push"
+      convention (CLAUDE.md) was not followed for those pushes, AND the async
+      CI red signal that should have been the safety net went unwatched.** This
+      repo has NO enforcement of the convention — no git hooks (`.git/hooks/`
+      holds only samples; `core.hooksPath` unset), no husky/lint-staged, and no
+      required status check blocks a direct push to `main` (direct-commit model;
+      CI runs *after* the push).
+
+    **Disposition / hardening (R33-2):** a mandatory pre-push git hook was
+    considered and rejected as out-of-character for this repo's
+    convention-by-discipline culture (CLAUDE.md uses zero hooks; a hook that
+    silently blocks pushes a developer doesn't know about is itself a footgun)
+    and low-effectiveness in practice (the developers who skip the gate are
+    exactly those who won't install an opt-in hook). The implemented measure is
+    the appropriately-scoped one for this repo: CLAUDE.md's "Before every push:
+    `npm run check`" section is strengthened with (a) the diagnosed root cause,
+    (b) a correction of its own stale "three feature-matrix entries" text (it
+    has been five clippy rows since R30-5), and (c) the genuinely-missing piece
+    — a **post-push "confirm CI went green" step** (CI is the only async safety
+    net, runs an unpinned toolchain/OS the local gate cannot reproduce, and is
+    the thing that eventually caught this — main was red for up to 70 commits
+    purely because nobody watched the post-push run). The airtight ceiling —
+    GitHub branch protection requiring the `clippy` check before merge — is
+    recommended but is repo-settings-side, outside any file a commit can touch.
+    Residual OPEN: re-scoped to "maintain the post-push CI-watch discipline now
+    in CLAUDE.md"; the original "coverage-gap" follow-up is closed (there was
+    no gap to tighten).
+
 12. **[T, filed 2026-08-02, task #498] `xthread_large_double_free_no_double_reclaim`
     (`tests/regression_xthread_large_free_no_leak.rs`) failed once during a
     full `cargo test --features production` run, not reproduced on 7
