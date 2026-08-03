@@ -10,7 +10,7 @@
 // commit subject line's conventional-commit prefix must state whether
 // runtime behavior actually changed", R30-12/task #461): a bare `perf(...)`
 // prefix is reserved for a commit that actually changes what ships.
-// Four-prefix taxonomy:
+// Five-prefix taxonomy:
 //   - `perf(runtime)` — production's feature composition, a default
 //     constant/config, or an always-on hot-path algorithm actually changed.
 //   - `perf(opt-in)`  — a non-default feature/profile's CODE changed (real
@@ -19,6 +19,12 @@
 //     changed; no shipping or opt-in algorithm code changed at all.
 //   - `docs(config)`  — an existing tuning/config option got documented;
 //     no code changed at all.
+//   - `fix(perf)`     — shipping or opt-in code changed to restore a
+//     documented invariant / close a latent correctness defect, but NO
+//     speedup is measured or claimed (R33-13/task #518; precedent: 5df56d3).
+//     A perf-family prefix (direction-1 applies: it MUST touch src/Cargo.toml,
+//     same as perf-runtime/perf-opt-in — a fix(perf) touching nothing outside
+//     docs/examples/benches/tests/scripts should be bench/docs instead).
 // A bare `perf(...)` or `perf:` subject on a commit whose diff touches
 // nothing outside docs/examples/benches/tests/scripts is exactly the
 // R30-12 finding (`79aad56`, `894e9e3`, `7c2c62d` were all real Round-29
@@ -194,10 +200,11 @@ const PERF_BARE_RE = /^perf:/;
 const PERF_SCOPED_RE = /^perf\(([^)]*)\)!?:/;
 const BENCH_OR_DOCS_RE = /^(bench|docs)\(([^)]*)\)!?:/;
 const BENCH_BARE_RE = /^bench:/;
+const FIX_PERF_RE = /^fix\(perf\)!?:/;
 
 /** Classify one commit's subject prefix. Returns one of:
  *   'perf-runtime' | 'perf-opt-in' | 'perf-other-scope' | 'perf-bare' |
- *   'bench' | 'docs-config' | 'docs-other' | 'other' */
+ *   'bench' | 'docs-config' | 'docs-other' | 'fix-perf' | 'other' */
 function classifySubject(subject) {
   const scoped = PERF_SCOPED_RE.exec(subject);
   if (scoped) {
@@ -207,6 +214,11 @@ function classifySubject(subject) {
     return 'perf-other-scope'; // e.g. perf(large-cache): — pre-R30-12 style
   }
   if (PERF_BARE_RE.test(subject)) return 'perf-bare';
+  // fix(perf) — the fifth R30-12 slot (R33-13/task #518): a shipping/opt-in
+  // code fix with no speedup claimed, in perf-sensitive code. Checked before
+  // the generic fix(...) fallthrough (which is 'other', out of this lint's
+  // scope) so the direction-1 check below can verify it touches src/.
+  if (FIX_PERF_RE.test(subject)) return 'fix-perf';
   const bd = BENCH_OR_DOCS_RE.exec(subject);
   if (bd) {
     if (bd[1] === 'bench') return 'bench';
@@ -262,13 +274,17 @@ function main() {
       continue;
     }
 
-    if (kind === 'perf-runtime' || kind === 'perf-opt-in') {
+    if (kind === 'perf-runtime' || kind === 'perf-opt-in' || kind === 'fix-perf') {
       const paths = changedPaths(sha);
       const outside = paths.filter((p) => !isMeasurementOnlyPath(p));
       if (outside.length === 0) {
+        const claim = kind === 'perf-runtime'
+          ? 'a production-default runtime change'
+          : kind === 'perf-opt-in'
+            ? 'an opt-in runtime change'
+            : 'a shipping/opt-in code fix in perf-sensitive code';
         failures.push(
-          `${short} "${subject}" — prefix claims a ${kind === 'perf-runtime' ? 'production-default' : 'opt-in'} ` +
-            `runtime change, but every changed path is under docs/examples/benches/tests/scripts/ ` +
+          `${short} "${subject}" — prefix claims ${claim}, but every changed path is under docs/examples/benches/tests/scripts/ ` +
             `(${paths.length} path(s): ${paths.slice(0, 6).join(', ')}${paths.length > 6 ? ', …' : ''}); ` +
             `use bench: or docs(config): instead if no shipping/opt-in code actually changed.`,
         );
@@ -311,7 +327,7 @@ function main() {
     for (const f of failures) console.log(`  - ${f}`);
     console.log(
       `\n[verify-commit-prefixes] FAILED — see CLAUDE.md's R30-12 rule ("Active rules" section) ` +
-        `for the full four-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config)).`,
+        `for the full five-prefix taxonomy (perf(runtime) / perf(opt-in) / bench / docs(config) / fix(perf)).`,
     );
     process.exit(1);
   }

@@ -701,7 +701,7 @@ Core instructions, mandatory for all code in this repository. They
   measurement-only / test-only..."; line 36 "...Every task is a correctness
   fix, a measurement..." — production's composition unchanged in all three),
   yet the commits landing inside them used the bare `perf(...)` prefix, which
-  conventionally signals a runtime-performance change. Four-prefix taxonomy,
+  conventionally signals a runtime-performance change. Five-prefix taxonomy,
   applied GOING FORWARD only:
   - `perf(runtime)` — a shipping algorithm or a PRODUCTION DEFAULT actually
     changed: `production`'s feature composition changed, or a default
@@ -726,6 +726,25 @@ Core instructions, mandatory for all code in this repository. They
   - `docs(config)` — an existing tuning/config option was documented (e.g.
     the README profile-comparison table R30-7/task #456 added) but no code
     changed at all.
+  - `fix(perf)` — shipping or opt-in code changed to restore a documented
+    invariant, close a latent correctness/consistency defect, or correct a
+    previously-incorrect assumption, but NO speedup is measured or claimed
+    and no runtime algorithm or default's OBSERVABLE behavior changed (only
+    its internal correctness/consistency did). Distinguished from
+    `perf(runtime)`/`perf(opt-in)` (which claim a measured or intended speed
+    change) and from a bare `fix(...)` with no `perf` scope (which would
+    undersell that the change lives in the SAME hot-path / measurement-
+    sensitive code the `perf(...)` family already tracks). Precedent:
+    `5df56d3` (R32-5/task #496 — `PerClass` gains `#[repr(C)]` to restore a
+    documented one-cache-line magazine layout; measured at exactly 0 Ir
+    delta, `docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE.md` §6, which
+    states "`fix(perf)`, not `perf(runtime)`/`perf(opt-in)`: no runtime
+    algorithm or default changed, and no measurable speedup is claimed —
+    this is a layout-correctness fix restoring a documented invariant").
+    This slot inherits the rule's existing non-retroactive posture
+    ("Explicitly NOT a history rewrite" — below): `5df56d3` is cited as
+    precedent, not retagged; the slot governs new commits going forward
+    only.
   This is an ADDITIVE convention: it extends, and does not replace,
   CHANGELOG.md's already-working bullet-tag convention (`[measurement]`,
   `[correctness fix]`, `[process fix]`, `[docs]`, `[CI]`, etc. — see the
