@@ -193,6 +193,28 @@
 //! documents for `head`/`tail`); this shadow reuses the SAME wrapping-safe
 //! idiom, not a new one.
 //!
+//! **Wrap argument precondition — the staleness bound (the one unstated
+//! assumption above).** The inequality `cached_head <= head` holds only
+//! MODULO `2^32`, and only while the shadow's staleness lag stays strictly
+//! below `2^32` REAL head-advances. Unlike the pre-F10 check — which
+//! compared `t` against a `head` value read microseconds earlier (lag bounded
+//! by cache-coherence latency) — the shadow's lag is bounded only by the
+//! preemption window between the refresh's `Acquire` load of `head`
+//! (`full_check`'s step 3) and its immediately-following `Relaxed` store of
+//! that same value: two adjacent instructions. Were the true `head` to
+//! advance by exactly `2^32 − k` during that window, the stored value would
+//! be modularly `k` AHEAD of the true `head`, and `t.wrapping_sub(ch)` would
+//! under-report occupancy by `k` — at `k = 1` with a genuinely full ring,
+//! the fast path would admit a push it must not (premature slot reuse). This
+//! requires a producer descheduled between those two adjacent instructions
+//! while ~4.29 × 10⁹ drains complete on that one segment's ring — judged not
+//! practically reachable, consistent with how this module treats its other
+//! genuinely-reachable-but-astronomically-rare wrap hazard (the power-of-two
+//! `RING_CAP` compile-time pin, which exists for exactly the "2^32
+//! cross-thread frees on a single hot, long-lived segment" case this same
+//! window would need). Stated for candour; no code change is warranted for a
+//! hazard this remote.
+//!
 //! **Worst case cost of a stale shadow:** at most ONE extra real
 //! `head.load(Acquire)` per push that the shadow's fast path declines to
 //! shortcut — never a correctness cost, only a fallback to the exact
