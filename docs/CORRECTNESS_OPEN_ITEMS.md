@@ -957,7 +957,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
     in `r31_3_large_cache_extended_narrow_on` and `r31_8_large_cache_scan_isolation_*`
     from incomplete `required-features` missing `alloc-decommit`, and a
     `clippy::int_plus_one` in `tests/remote_ring_shadow_head.rs:165`) — were ALL
-    fixed by R33-1/task #506, commit `<SHA>`; see "Recently resolved" §6 below.
+    fixed by R33-1/task #506, commit `e526517`; see "Recently resolved" §6 below.
     This remaining open half is the coverage GAP, not the bugs.)_
     `scripts/check-all.mjs` HAS run all five ci.yml clippy rows since R30-5
     (task #454), so the local gate should have caught at least the failures
@@ -1645,7 +1645,7 @@ assertion proving no double-release but not no leak, was resolved by R28-2
 
 6. **CI clippy `--all-targets` red on all five rows — pre-existing
    example/test lint+compile errors** — **RESOLVED** by R33-1 (task #506,
-   commit `<SHA>`). Five distinct failures, all pre-existing on `main`
+   commit `e526517`). Five distinct failures, all pre-existing on `main`
    (four inherited from Round-31 example files, one from Round-32 task
    #502). The brief enumerated only two and prescribed "one line of
    doc-indent + adding the missing `fn main`"; re-running ALL five ci.yml
