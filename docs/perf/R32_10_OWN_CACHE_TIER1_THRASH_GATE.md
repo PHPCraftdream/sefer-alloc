@@ -559,6 +559,38 @@ this workload's total cost") would not contradict anything stated here.
   (derived + headline-asserted by `scripts/r32_10_own_cache_tier1_summary.mjs`).
 - CPU/OS: Windows 10 Pro 10.0.19045, Intel Core i7-11800H @ 2.30GHz
   (same-host, same-run relative comparisons — not a cross-host claim).
+- **Immutable-source-identity caveat for the §5.2 `isolate` arm
+  (CLAUDE.md's R29-6 rule, applied honestly; added 2026-08-03, task
+  #514/R33-9, in response to round-32 readonly review finding F5 [P3]):**
+  the `isolate` arm was the landing commit
+  `5289c661877462f3caf6c4e136ad3c163f6fe15b` with the two
+  `CONTAINS_BASE_TIER1_HITS`/`_MISSES` `fetch_add` calls in
+  `segment_table.rs::contains_base` temporarily commented out as a scratch
+  working-tree edit, then reverted before any commit was made (§5.2 above).
+  This note resolves §5.2's "see the provenance note in §8 below"
+  cross-reference, which previously landed only on the §4.1
+  `OWN_CACHE_SIZE=4` caveat immediately above — a different arm. The scratch
+  edit was never preserved in any recoverable form: no commit, no stash
+  (`git stash list` empty as of 2026-08-03), no scratch worktree
+  (`git worktree list` shows only the main worktree), and no saved patch
+  file; being an uncommitted working-tree change, it was never a git object
+  and thus cannot appear in the reflog or unreachable-object set. No
+  R29-6-form identity (temp commit SHA / `git write-tree` / patch hash /
+  binary hash) can therefore be retroactively produced for it without
+  violating the rule's own requirement that an immutable identity "must be
+  produced BEFORE measurement, not assembled after the fact from a stated
+  recipe" (checked-script-pipeline rule, point 7) — reconstructing a patch
+  from the verbal description and hashing it now would yield a hash of the
+  reconstruction, not of the originally-measured source state. This is the
+  exemption-note route the rule anticipates for exactly this situation,
+  flagged here explicitly rather than silently omitted. The `isolate` arm's
+  numeric results (the `Δ cache-size-alone` column in §5.2's table: +36–43
+  Ir, near-constant across all five benches) remain as originally reported
+  and are not in question; only the arm's exact source state is not
+  reproducible after the fact. The `base` and `head` arms of the same
+  three-arm split ARE fully reproducible (both are named commits:
+  `ce3f44da0a60d0f5c71b0c8bb26c1992726dccc4` and
+  `5289c661877462f3caf6c4e136ad3c163f6fe15b` respectively).
 
 ## 11. CORRECTED 2026-08-03 — the latency-null is now DEMONSTRATED, not merely asserted: paired-A/B with t-test + same-vs-same controls at all 7 K values (R33-5, task #510)
 
