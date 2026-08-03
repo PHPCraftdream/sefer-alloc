@@ -1,0 +1,1049 @@
+    Finished `release` profile [optimized] target(s) in 0.70s
+     Running `D:\dev\rust\.cargo-target\release\examples\r33_6_decay_throttle_retention_cost_gate.exe`
+=== R33-6 decay-clock-throttle RETENTION COST gate — old-shape vs new-shape, low-throughput regime ===
+profiles: ["LowHeadroom", "Trimmed64MiB"] | N_OPS_ARMS: [1, 8, 32, 63] | REPETITIONS=3 | LARGE_OBJ_BYTES=35651584 LARGE_OBJ_COUNT=8 DECAY_WAIT_MS=1100
+
+--- profile=LowHeadroom forced=false n_ops=1 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=1 rep=0 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=1 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=1 rep=1 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=1 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=1 rep=2 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=1 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=1 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=1 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=1 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=1 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=1 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=8 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=8 rep=0 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=8 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=8 rep=1 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=8 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=8 rep=2 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=8 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=8 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=8 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=8 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=8 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=8 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=32 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=32 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=32 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=32 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=32 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=32 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=32 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=32 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=32 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=32 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=32 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=32 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=63 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=63 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=63 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=63 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=LowHeadroom forced=false n_ops=63 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=false n_ops=63 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=63 rep=0/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=0
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=63 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=63 rep=1/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=1
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=63 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+--- profile=LowHeadroom forced=true n_ops=63 rep=2/3 ---
+RESULT profile=LowHeadroom
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=2
+RESULT headroom_bytes=16777216
+RESULT verified_headroom=16777216
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=LowHeadroom forced=true n_ops=63 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=1 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=1 rep=0 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=1 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=1 rep=1 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=1 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=1
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=1 rep=2 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/2 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=1 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=1 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=1 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=1 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=1 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=1
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=2
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=1 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/2 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=8 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=8 rep=0 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=8 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=8 rep=1 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=8 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=8
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=301989888
+RESULT guard_passed_delta=0
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=8 rep=2 used_before_ops=301989888 used_after_ops=301989888 guard_passed_delta=0/16 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=8 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=8 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=8 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=8 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=8 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=8
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=16
+RESULT expected_calls=16
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=8 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=16/16 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=32 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=32 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=32 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=32 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=32 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=32
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=1
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=32 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=1/64 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=32 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=32 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=32 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=32 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=32 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=32
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=64
+RESULT expected_calls=64
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=32 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=64/64 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=63 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=63 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=63 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=63 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=Trimmed64MiB forced=false n_ops=63 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=0
+RESULT n_ops=63
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=2
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=false n_ops=63 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=2/126 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=63 rep=0/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=0
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=63 rep=0 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=63 rep=1/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=1
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=63 rep=1 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+--- profile=Trimmed64MiB forced=true n_ops=63 rep=2/3 ---
+RESULT profile=Trimmed64MiB
+RESULT forced=1
+RESULT n_ops=63
+RESULT repetition=2
+RESULT headroom_bytes=67108864
+RESULT verified_headroom=67108864
+RESULT config_conflicts_delta=0
+RESULT large_obj_bytes=35651584
+RESULT large_obj_count=8
+RESULT used_post_teardown=0
+RESULT used_post_free=301989888
+RESULT used_before_ops=301989888
+RESULT used_after_ops=264241152
+RESULT guard_passed_delta=126
+RESULT expected_calls=126
+RESULT headroom_crossed=1
+RESULT oracle_pass=1
+RESULT decay_interval_ms=1000
+OK profile=Trimmed64MiB forced=true n_ops=63 rep=2 used_before_ops=301989888 used_after_ops=264241152 guard_passed_delta=126/126 oracle=PASS
+
+=== aggregated (median of 3 reps) ===
+       profile force  n_ops used_before(MiB)  used_after(MiB) retention_cost(MiB)  guard_delta
+   LowHeadroom false      1           288.00           288.00            36.00            0
+   LowHeadroom  true      1           288.00           252.00                             2
+   LowHeadroom false      8           288.00           288.00            36.00            0
+   LowHeadroom  true      8           288.00           252.00                            16
+   LowHeadroom false     32           288.00           252.00             0.00            1
+   LowHeadroom  true     32           288.00           252.00                            64
+   LowHeadroom false     63           288.00           252.00             0.00            2
+   LowHeadroom  true     63           288.00           252.00                           126
+  Trimmed64MiB false      1           288.00           288.00            36.00            0
+  Trimmed64MiB  true      1           288.00           252.00                             2
+  Trimmed64MiB false      8           288.00           288.00            36.00            0
+  Trimmed64MiB  true      8           288.00           252.00                            16
+  Trimmed64MiB false     32           288.00           252.00             0.00            1
+  Trimmed64MiB  true     32           288.00           252.00                            64
+  Trimmed64MiB false     63           288.00           252.00             0.00            2
+  Trimmed64MiB  true     63           288.00           252.00                           126
+
+=== CSV (one row per child) ===
+# profile,forced,n_ops,repetition,headroom_bytes,verified_headroom,config_conflicts_delta,process_identity,large_obj_bytes,large_obj_count,used_post_teardown,used_post_free,used_before_ops,used_after_ops,guard_passed_delta,expected_calls,headroom_crossed,oracle_pass
+LowHeadroom,0,1,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+LowHeadroom,0,1,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+LowHeadroom,0,1,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+LowHeadroom,1,1,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+LowHeadroom,1,1,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+LowHeadroom,1,1,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+LowHeadroom,0,8,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+LowHeadroom,0,8,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+LowHeadroom,0,8,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+LowHeadroom,1,8,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+LowHeadroom,1,8,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+LowHeadroom,1,8,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+LowHeadroom,0,32,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+LowHeadroom,0,32,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+LowHeadroom,0,32,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+LowHeadroom,1,32,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+LowHeadroom,1,32,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+LowHeadroom,1,32,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+LowHeadroom,0,63,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+LowHeadroom,0,63,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+LowHeadroom,0,63,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+LowHeadroom,1,63,0,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+LowHeadroom,1,63,1,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+LowHeadroom,1,63,2,16777216,16777216,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+Trimmed64MiB,0,1,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+Trimmed64MiB,0,1,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+Trimmed64MiB,0,1,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,2,1,1
+Trimmed64MiB,1,1,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+Trimmed64MiB,1,1,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+Trimmed64MiB,1,1,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,2,1,1
+Trimmed64MiB,0,8,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+Trimmed64MiB,0,8,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+Trimmed64MiB,0,8,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,301989888,0,16,1,1
+Trimmed64MiB,1,8,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+Trimmed64MiB,1,8,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+Trimmed64MiB,1,8,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,16,16,1,1
+Trimmed64MiB,0,32,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+Trimmed64MiB,0,32,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+Trimmed64MiB,0,32,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,1,64,1,1
+Trimmed64MiB,1,32,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+Trimmed64MiB,1,32,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+Trimmed64MiB,1,32,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,64,64,1,1
+Trimmed64MiB,0,63,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+Trimmed64MiB,0,63,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+Trimmed64MiB,0,63,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,2,126,1,1
+Trimmed64MiB,1,63,0,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+Trimmed64MiB,1,63,1,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+Trimmed64MiB,1,63,2,67108864,67108864,0,subprocess,35651584,8,0,301989888,301989888,264241152,126,126,1,1
+
+NOTE: all 48 arms passed the path-activation oracle.
+
+=== HEADLINE retention cost (median used_after: unforced - forced) ===
+  profile=LowHeadroom    n_ops=1   retention_cost=37748736 bytes (36.00 MiB)
+  profile=LowHeadroom    n_ops=8   retention_cost=37748736 bytes (36.00 MiB)
+  profile=LowHeadroom    n_ops=32  retention_cost=0 bytes (0.00 MiB)
+  profile=LowHeadroom    n_ops=63  retention_cost=0 bytes (0.00 MiB)
+  profile=Trimmed64MiB   n_ops=1   retention_cost=37748736 bytes (36.00 MiB)
+  profile=Trimmed64MiB   n_ops=8   retention_cost=37748736 bytes (36.00 MiB)
+  profile=Trimmed64MiB   n_ops=32  retention_cost=0 bytes (0.00 MiB)
+  profile=Trimmed64MiB   n_ops=63  retention_cost=0 bytes (0.00 MiB)
+
+NOTE: each (profile, forced, n_ops, rep) cell ran in its OWN freshly-spawned OS process. Every arm hard-asserted resolved headroom == requested, config_conflicts_delta == 0, and headroom_crossed == 1. forced=true reproduces the OLD (pre-R32-8) unconditional-past-headroom clock-read shape by bypassing the stride throttle; forced=false is the real NEW shipped stride-throttled path.

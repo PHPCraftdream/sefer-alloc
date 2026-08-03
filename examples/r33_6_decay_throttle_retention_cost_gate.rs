@@ -438,9 +438,13 @@ fn run_orchestrator() {
     println!("=== aggregated (median of {REPETITIONS} reps) ===");
     println!(
         "{:>14} {:>5} {:>6} {:>16} {:>16} {:>16} {:>12}",
-        "profile", "force", "n_ops",
-        "used_before(MiB)", "used_after(MiB)",
-        "retention_cost(MiB)", "guard_delta"
+        "profile",
+        "force",
+        "n_ops",
+        "used_before(MiB)",
+        "used_after(MiB)",
+        "retention_cost(MiB)",
+        "guard_delta"
     );
 
     for (pi, profile) in PROFILES.iter().enumerate() {

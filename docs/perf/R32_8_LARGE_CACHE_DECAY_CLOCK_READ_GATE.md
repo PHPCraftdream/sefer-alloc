@@ -354,3 +354,217 @@ magnitude and the fix that reduces (but does not eliminate) it.
   discovered in §6).
 - `docs/perf/OPEN_ITEMS.md` — F9 marked resolved (see that file's own entry
   for the exact wording).
+
+---
+
+## 9. R33-6 (task #511) — retention cost measured in the low-throughput regime
+
+Date: 2026-08-03. This section is an APPEND-ONLY addendum — §0–§8 above are
+unchanged. It closes the gap identified by
+`docs/reviews/2026-08-03-round32-readonly-review.md` §7 finding F9 [P2]:
+"the benefit (ns/call saved) is measured in a high-throughput regime, the
+cost (retention) is asserted for a low-throughput regime and never
+instrumented." This section measures that cost directly.
+
+### 9.0 What this measures
+
+The stride throttle (`DECAY_CLOCK_CHECK_STRIDE = 64`, §4) trades decay-tick
+promptness for fewer clock reads. A decay tick that becomes due can now fire
+up to 63 large ops LATE instead of on the very next call. Since decay is
+EVENT-DRIVEN ONLY (fires only on a large alloc/free, never from idle — §3 of
+R29-13's own finding), a workload that crosses the headroom and then performs
+FEWER THAN 64 further large ops now retains cached spans that the pre-change
+code would have released on the very next op. §4 argued this away
+qualitatively; this section instruments it.
+
+### 9.1 Methodology — R29-13's retention harness + R32-8's FORCE switch
+
+Adapts R29-13's proven subprocess-per-arm retention methodology
+(`examples/r29_13_large_cache_retention_gate.rs`) with R32-8's own
+`FORCE_DECAY_CLOCK_READ` A/B switch
+(`examples/r32_8_large_cache_decay_stride_fix_gate.rs`):
+
+1. Claim a heap with a profile's headroom (`LowHeadroom` = 16 MiB,
+   `Trimmed64MiB` = 64 MiB — the two non-default profiles §4's fix targets,
+   resolved via `LargeCacheConfig::new().headroom_bytes(n)`, self-verified
+   via `dbg_decay_config()`).
+2. Fill 8 × 34 MiB objects (touching every 4 KiB page), free them all →
+   cache holds ~288 MiB, well above both headrooms (same fill as R29-13).
+3. Sleep 1100 ms (> 1000 ms default `decay_interval`) so a decay tick is
+   genuinely "due."
+4. Set `FORCE_DECAY_CLOCK_READ` = forced (true = old/unthrottled shape,
+   false = new/throttled shape).
+5. Record `dbg_large_cache_used()` and `dbg_maybe_decay_guard_passed_count()`.
+6. Perform exactly `n_ops` alloc+free cycles (each takes one cached span out
+   and puts it back — the sparse-large-op workload).
+7. Re-measure both.
+
+`forced=true` bypasses both the headroom fast-exit AND the stride throttle
+(by design — §4), reproducing the OLD unconditional-clock-read-past-headroom
+shape byte-for-byte. `forced=false` is the real shipped stride-throttled path.
+Both arms use the identical headroom and workload, so the comparison is clean:
+only the stride differs.
+
+**Path-activation oracle (R30-8 rule), two pieces per arm:**
+
+1. **Headroom crossed:** `used_before_ops > headroom_bytes` — proves the arm
+   genuinely entered the above-headroom regime the stride applies to. Hard-
+   asserted in every child; `headroom_crossed == 1` in all 48 arms.
+2. **Stride mechanism exercised:** `guard_passed_delta` (clock reads during
+   the N ops) is materially lower for `forced=false` than for `forced=true`.
+   For `forced=true`, `guard_passed_delta == expected_calls` exactly (every
+   call reads the clock). For `forced=false`, it is `0` (n_ops ≤ 8, stride
+   never aligned) or a small nonzero value (n_ops ≥ 32, stride aligned once
+   or twice).
+
+**Config-sweep evidence (R26-4 rule):** every child self-verifies
+`verified_headroom == headroom_bytes` AND `config_conflicts_delta == 0` (fresh
+process ⇒ first claim is unconditionally the arm's config). All 48/48 passed.
+
+### 9.2 Results — cost (this section) and benefit (re-cited from §3) side by side
+
+Per CLAUDE.md's "cost and benefit must be measured in the SAME workload
+regime" rule: the two axes below were measured in DIFFERENT regimes by design
+(benefit in high-throughput, cost in low-throughput), and are presented
+TOGETHER here so the reader sees both sides of the trade — NOT combined into
+a single "net win/loss" Pareto claim (which would violate that rule).
+
+#### Retention cost (measured here, low-throughput regime)
+
+Median of 3 repetitions per cell. `retention_cost = median(unforced used_after)
+- median(forced used_after)`. Higher = more bytes the throttled arm retains
+that the unthrottled arm would have released.
+
+| profile | n_ops | used_before (MiB) | forced used_after (MiB) | unforced used_after (MiB) | retention_cost (MiB) | forced guard_delta / expected | unforced guard_delta / expected |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| LowHeadroom | 1 | 288.00 | 252.00 | 288.00 | **36.00** | 2/2 | 0/2 |
+| LowHeadroom | 8 | 288.00 | 252.00 | 288.00 | **36.00** | 16/16 | 0/16 |
+| LowHeadroom | 32 | 288.00 | 252.00 | 252.00 | 0.00 | 64/64 | 1/64 |
+| LowHeadroom | 63 | 288.00 | 252.00 | 252.00 | 0.00 | 126/126 | 2/126 |
+| Trimmed64MiB | 1 | 288.00 | 252.00 | 288.00 | **36.00** | 2/2 | 0/2 |
+| Trimmed64MiB | 8 | 288.00 | 252.00 | 288.00 | **36.00** | 16/16 | 0/16 |
+| Trimmed64MiB | 32 | 288.00 | 252.00 | 252.00 | 0.00 | 64/64 | 1/64 |
+| Trimmed64MiB | 63 | 288.00 | 252.00 | 252.00 | 0.00 | 126/126 | 2/126 |
+
+**All numbers byte-identical across 3 repetitions per cell (zero run-to-run
+variance) — the mechanism evidence is exact, not noisy.** 48/48 arms passed
+the path-activation oracle, config self-verification, and admission assertion.
+
+#### Latency benefit (re-cited from §3, high-throughput regime)
+
+| arm | median elapsed_ns (200,000 cycles) | ns/cycle | ns/call |
+|---|---:|---:|---:|
+| old-shape (`forced=true`) | 46,573,400 | 232.87 | 116.43 |
+| new-shape (`forced=false`) | 18,141,600 | 90.71 | 45.35 |
+
+Benefit: **71.08 ns/call saved** (61.0% reduction), measured in the
+high-throughput regime (200k alloc/free cycles, R32-8 §3, cited run 3).
+
+### 9.3 What the numbers say
+
+**The retention cost is REAL and BOUNDED.** For `n_ops` = 1 and 8 (fewer
+than ~29 ops after the decay interval elapses), the stride throttle prevents
+any clock read during those ops, so NO decay tick fires. The throttled arm
+retains the full 288 MiB cache, while the unthrottled arm fires decay on its
+very first post-interval call and releases exactly one 36 MiB segment (the
+decay step's `evict_at_least` releases whole segments — one 36 MiB span
+satisfies the 10%-of-excess target). The retention cost is exactly one
+segment = **37,748,736 bytes = 36.00 MiB**, identical for both profiles and
+across all 3 repetitions.
+
+For `n_ops` = 32 and 63, the throttled arm catches up: the op counter (which
+started at ~7 after the fill) reaches the stride boundary 64 during those
+ops, a clock read happens, elapsed ≥ interval, and one decay tick fires.
+Both arms converge to 252 MiB. The retention cost drops to **0**.
+
+**The cost is bounded by one segment per missed decay interval.** Decay only
+fires once per `decay_interval` (1000 ms default): after the first tick
+updates `last_decay_tick`, subsequent clock reads within the same interval
+find `elapsed < decay_interval` and do nothing. So even with `n_ops` = 63
+(where the throttled arm reads the clock twice), only one decay tick fires
+per interval in either arm — the throttle delays the tick, it does not skip
+it entirely across multiple intervals.
+
+**The stride-alignment threshold (~29 ops) is workload-specific.** After the
+8-object fill + teardown, the op counter rests at ~7 (the first-ever call
+past headroom resets it to 0, then the remaining 7 dealloc calls increment
+it without a clock read). Each alloc+free cycle increments the counter by 2
+(both the alloc-side and dealloc-side calls pass the headroom guard in this
+8-cached-span workload). The counter reaches the stride boundary 64 at
+`7 + 2 * n_ops ≥ 64`, i.e. `n_ops ≥ 29`. This is why `n_ops = 1` and `8`
+show the full 36 MiB cost while `n_ops = 32` and `63` show zero — the
+threshold falls between the 8 and 32 arms. A workload with a different fill
+shape (more or fewer deallocs) would have a different starting counter and
+therefore a different threshold, but the BOUND on the cost (one segment per
+missed interval) is invariant.
+
+### 9.4 Path-activation oracle results
+
+All 48/48 arms passed both oracle checks:
+
+1. `headroom_crossed == 1` in every arm (the workload genuinely entered the
+   above-headroom regime).
+2. For `forced=true`: `guard_passed_delta == expected_calls` exactly in every
+   arm (2/2, 16/16, 64/64, 126/126 — every call read the clock, confirming
+   the old-shape reproduction is exact).
+3. For `forced=false`: `guard_passed_delta < expected_calls` in every arm
+   (0/2, 0/16, 1/64, 2/126 — the stride throttle is reducing clock reads,
+   not a no-op).
+
+The derive script
+(`scripts/r33_6_decay_throttle_retention_summary.mjs`) ASSERTS all three
+conditions from the raw log — a failure is a `throw`, not a printed claim.
+
+### 9.5 Conclusion — the cost is real, bounded, and vanishes with enough ops
+
+The review's concern was correct in direction: a workload that crosses the
+headroom and performs fewer than ~29 further large ops (the stride-alignment
+threshold for this workload shape) retains one full 36 MiB cached segment
+that the pre-change code would have released on the very next op. The cost
+is not zero.
+
+But the cost is also bounded and transient:
+
+- **Bounded by one segment per missed decay interval** — the throttle delays
+  one tick, it does not skip it across multiple intervals. A subsequent burst
+  of large ops (or the next decay interval's tick) releases the same bytes.
+- **Headroom-independent** — the 36 MiB cost is identical for both
+  `LowHeadroom` (16 MiB) and `Trimmed64MiB` (64 MiB), because the cost is one
+  whole-segment eviction, and the segment size (36 MiB) is determined by the
+  workload's object size (34 MiB), not by the headroom.
+- **Vanishes once enough ops accumulate** — at `n_ops ≥ 29` (the stride
+  threshold for this workload), the throttled arm fires its delayed tick and
+  converges to the same 252 MiB as the unthrottled arm.
+
+This does NOT change the original §4 GO decision: the benefit (71 ns/call
+saved in the high-throughput regime, applied to every large alloc/free above
+headroom) is a recurring per-call cost reduction, while the retention cost
+(36 MiB per missed interval, only in the sub-29-op regime) is a one-time
+delay per decay interval. But the cost is now MEASURED, not argued — which
+is all the review asked for.
+
+### 9.6 Immutable source identity
+
+Measured on commit `5bd7c04c392aa33fbc2e31362107f75153c33c20` (this task's
+measurement-code commit on `main`, base
+`b3b18bb637855cf77ec42f317be0a196ca0739bb`). The commit adds only the example
+file + Cargo.toml registration — no production source changed. Per CLAUDE.md's
+R29-6 rule: the measurement commit SHA is a permanent git object, resolvable
+via `git show 5bd7c04` or `git log` for as long as the branch exists.
+
+**Platform:** native Windows 10 Pro x86-64, Intel Core i7-11800H.
+**Feature set:** `production alloc-stats bench-internals`.
+
+### 9.7 Files added by this task
+
+- `examples/r33_6_decay_throttle_retention_cost_gate.rs` (new) — the
+  subprocess-per-arm retention-cost probe.
+- `Cargo.toml` — `[[example]]` entry for the new example.
+- `scripts/r33_6_decay_throttle_retention_summary.mjs` (new) — the checked
+  derive script (reads raw log, asserts headline numbers, writes CSV).
+- `docs/perf/_raw_r33_6_decay_throttle_retention_cost_gate.log` (new,
+  `git add -f`) — cited raw evidence.
+- `docs/perf/R33_6_DECAY_THROTTLE_RETENTION_COST_summary.csv` (new) —
+  machine-readable companion to this section.
+
+No production source changed. `DECAY_CLOCK_CHECK_STRIDE` remains 64.
