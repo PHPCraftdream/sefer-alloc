@@ -1,4 +1,4 @@
-// F4/R32-5 (task #496): derives `docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv`
+// F4/R32-5 (task #496): derives `docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv`
 // from the four raw iai-callgrind logs this task's BEFORE/AFTER measurement
 // produced:
 //   docs/perf/_raw_r496_repr_c_before_production.log
@@ -257,10 +257,10 @@ for (const r of rows) {
   );
 }
 
-const outPath = new URL("docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv", ROOT);
+const outPath = new URL("docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv", ROOT);
 writeFileSync(outPath, lines.join("\n") + "\n");
 
-console.log("[r496-summary] wrote docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv");
+console.log("[r496-summary] wrote docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv");
 console.log(
   `[r496-summary] plain-alloc isolated magazine-hit (16 hits) delta: ${prodIsolatedDelta} Ir ` +
     `(asserted == 0; before=${prodIsolatedBefore} after=${prodIsolatedAfter})`,

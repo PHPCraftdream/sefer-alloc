@@ -47,7 +47,18 @@
 //       "when a perf-gate report cites specific `_raw_*.log` filenames as
 //       its evidence, [commit] those named files alongside the report so
 //       the citation is reproducible from the commit, not just from a
-//       re-run."
+//       re-run.
+//
+//   (h) COMPANION CSV NAMING CONVENTION (R33-11, task #516) — CLAUDE.md's
+//       summary-CSV rule requires the companion to be
+//       `docs/perf/<REPORT_BASENAME>_summary.csv` ("same base name as the
+//       report it summarizes"). Check (a) verifies a CITED CSV EXISTS; this
+//       check closes the orthogonal gap the Round-32 review's finding F8
+//       surfaced: a report can cite a CSV that EXISTS (so (a) passes) but is
+//       named after the task number (`R495_...`) instead of the report's own
+//       basename (`R32_4_...`), defeating the cross-round grep-ability the
+//       rule exists to provide. WARN-level, applies corpus-wide (the rule
+//       predates Round 32 — not scoped non-retroactively like (e)/(f)).
 //
 // Four semantic checks (task #481, R31-5b), each mechanizing a rule
 // CLAUDE.md states in prose and a prior round's review caught only by hand:
@@ -448,6 +459,70 @@ function checkCompanionCsv(mdPath, text) {
     };
   }
   return { status: 'PASS', detail: `${cited.size} cited summary CSV(s) all present: ${[...cited].join(', ')}` };
+}
+
+// --------------------------------------------------------------------------
+// Check (h): companion CSV naming convention (R33-11, task #516)
+// --------------------------------------------------------------------------
+//
+// CLAUDE.md's summary-CSV rule (R14-10/task #295) requires a report's
+// companion to be named `docs/perf/<REPORT_BASENAME>_summary.csv` ("same base
+// name as the report it summarizes"). Check (a) verifies a CITED CSV EXISTS
+// on disk; this check closes the orthogonal gap the Round-32 review's finding
+// F8 surfaced: a report can cite a CSV that EXISTS (so check (a) passes) but
+// is named after the task number (`R495_STAMP_REMOVAL_GATE_summary.csv`)
+// instead of the report's own basename
+// (`R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv`), defeating
+// the cross-round grep-ability the rule exists to provide. Check (a) FOLLOWS
+// the cited path; this check DERIVES the expected name from the report's own
+// filename and flags a mismatch — the verifier could not see this drift before
+// because it never compared the cited name against the report's basename.
+//
+// A report cites a summary CSV for one of two reasons: (1) as its OWN
+// companion (must be named `<REPORT_BASENAME>_summary.csv`), or (2) as a
+// CROSS-REFERENCE to another report's CSV (legitimate — e.g. R31_0 cites
+// R32_4's gate CSV as supporting evidence; R14_4/R18_9 cite R18_2's rerun
+// CSV). This check therefore WARNs only when NONE of a report's cited CSVs
+// matches its own basename — the signal that the report's own companion is
+// either MISNAMED (the R32_4/R32_5 defect class) or ABSENT (the report cites
+// only cross-references). A report citing its own correctly-named CSV
+// alongside cross-references PASSES (the cross-references are not its
+// concern). WARN-level only and never affects `ok`: a pure-cross-reference
+// report (e.g. R14_4, R18_9) legitimately has no own CSV, so this heuristic
+// cannot distinguish "misnamed own companion" from "cites only cross-refs" —
+// a human judges each WARN.
+//
+// NOT scoped non-retroactively: unlike checks (e)/(f) the underlying CLAUDE.md
+// rule (summary-CSV naming, "same base name as the report") predates Round 32
+// (R14-10/task #295) and is not a newly-stated rule, so this check applies to
+// the WHOLE corpus. Empirically, after the two R32-4/R32-5 fixes, only 3
+// pre-existing reports WARN under this check (R30_7 — a known, already-tracked
+// "_GATE" suffix mismatch, OPEN_ITEMS.md P2-11; and R14_4/R18_9 — pure
+// cross-references to R18_2's rerun CSV) — a low enough count that corpus-wide
+// application is a useful, not noisy, signal.
+
+function checkSummaryCsvNaming(mdPath, citedCsvNames) {
+  if (citedCsvNames.size === 0) {
+    return { status: 'SKIP', detail: 'report cites no *_summary.csv path (see check a)' };
+  }
+  const reportBasename = basename(mdPath, '.md');
+  const expected = `${reportBasename}_summary.csv`;
+  if (citedCsvNames.has(expected)) {
+    return {
+      status: 'PASS',
+      detail:
+        `report cites its own-basename CSV "${expected}"` +
+        (citedCsvNames.size > 1 ? ` (${citedCsvNames.size - 1} other cross-reference(s) not flagged)` : ''),
+    };
+  }
+  return {
+    status: 'WARN',
+    detail:
+      `no cited *_summary.csv matches the report's own basename — expected "${expected}" among cited ` +
+      `[${[...citedCsvNames].join(', ')}]. Either the report's own companion is misnamed ` +
+      `(the R32_4/R495 defect class — CLAUDE.md: "same base name as the report it summarizes") ` +
+      `or every citation is a cross-reference to another report's CSV (legitimate; verify by hand).`,
+  };
 }
 
 // --------------------------------------------------------------------------
@@ -1214,10 +1289,10 @@ function checkDeriveScriptPlaceholders() {
 
 /**
  * Run every check against one report. Returns
- * `{ mdPath, results: { a, b, c, d, e, f, identity }, ok }` where each
+ * `{ mdPath, results: { a, b, c, d, e, f, h, identity }, ok }` where each
  * result is `{ status: 'PASS'|'FAIL'|'WARN'|'SKIP', detail }[]` (checks (b)
  * can yield more than one result — one per cited companion CSV file).
- * Checks (d)/(e)/(f)/identity are WARN-level only and never affect `ok`.
+ * Checks (d)/(e)/(f)/(h)/identity are WARN-level only and never affect `ok`.
  */
 function verifyReport(mdPath) {
   const name = basename(mdPath, '.md');
@@ -1225,7 +1300,7 @@ function verifyReport(mdPath) {
   const exemption = RETROACTIVE_EXEMPT.get(name);
   const exemptChecks = new Set(exemption?.checks ?? []);
 
-  const results = { a: [], b: [], c: [], d: [], e: [], f: [], identity: [] };
+  const results = { a: [], b: [], c: [], d: [], e: [], f: [], h: [], identity: [] };
 
   const aResult = checkCompanionCsv(mdPath, text);
   results.a.push(aResult);
@@ -1257,6 +1332,8 @@ function verifyReport(mdPath) {
   const cResult = checkRawLogsExist(text);
   results.c.push(cResult);
 
+  results.h.push(checkSummaryCsvNaming(mdPath, citedCsvNames));
+
   // Re-derive the cited raw-log name set the same way check (c) did, for
   // reuse by the identity-freshness check below.
   const citedRawLogNames = new Set();
@@ -1287,7 +1364,7 @@ function verifyReport(mdPath) {
     );
   }
 
-  // Checks (d)/(e)/(f)/identity are WARN-level only by construction (their
+  // Checks (d)/(e)/(f)/(h)/identity are WARN-level only by construction (their
   // functions never return FAIL) — `ok` therefore only depends on (a)/(b)/(c),
   // unchanged from before this task.
   const ok = ['a', 'b', 'c'].every((key) => results[key].every((r) => r.status !== 'FAIL'));
@@ -1353,7 +1430,7 @@ console.log(`[verify-gate-report] scanning ${targets.length} report(s) under ${d
 // informative than a single pass/fail threshold and needs no recalibration.
 let allOk = true;
 let totalWarnCount = 0;
-const warnCountByCheck = { d: 0, e: 0, f: 0, identity: 0 };
+const warnCountByCheck = { d: 0, e: 0, f: 0, h: 0, identity: 0 };
 for (const mdPath of targets) {
   if (!existsSync(mdPath)) {
     console.log(`FAIL  ${basename(mdPath)} — file not found`);
@@ -1369,6 +1446,7 @@ for (const mdPath of targets) {
     ['d', '(d) prose<->CSV headline cross-check [WARN-only]'],
     ['e', '(e) allocator layer under test field [WARN-only]'],
     ['f', '(f) between-arm mechanism delta [WARN-only]'],
+    ['h', '(h) companion CSV naming convention [WARN-only]'],
     ['identity', '(identity) SHA vs raw-log mtime freshness [WARN-only]'],
   ]) {
     for (const r of results[key]) {

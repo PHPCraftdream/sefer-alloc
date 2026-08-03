@@ -149,7 +149,7 @@ default run use) still resolves without `virgin-zero-skip`.
   this task's full diff (stamp removal in `heap_core_alloc.rs` + the new
   bench pair in `perf_gate_iai.rs`). Landing commit SHA fills the
   `UNFILLED` placeholder in
-  `docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv` in a follow-up commit
+  `docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv` in a follow-up commit
   (chicken-and-egg — the SHA cannot cite itself), mirroring the R31-0/R31-1
   precedent for the same problem.
 - **BEFORE** (stamp present): `git worktree add ../sefer-alloc-r495-before
@@ -185,7 +185,7 @@ node scripts/r495_stamp_removal_summary.mjs [landing_commit_sha]
 Raw logs: `docs/perf/_raw_r495_stamp_removal_before.log`,
 `docs/perf/_raw_r495_stamp_removal_after.log` (both the full `npm run
 iai`-style report, not truncated). Summary CSV:
-`docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv`, produced by
+`docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv`, produced by
 `scripts/r495_stamp_removal_summary.mjs` — the one checked script; it
 hard-asserts (a) the control arm's delta is exactly 0, (b) all four
 plain-`alloc` kill-gate benches' deltas are exactly 0, and (c) the treatment

@@ -591,7 +591,7 @@ Ir; BEFORE/AFTER raw logs and a checked-script-derived, self-asserting
 summary CSV at
 `docs/perf/_raw_r495_stamp_removal_before.log` /
 `_raw_r495_stamp_removal_after.log` /
-`docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv` — see
+`docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv` — see
 `docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE.md` for the
 full gate). This report's own §1-§4 numbers are **NOT re-measured or
 re-derived here** (per this project's append-only convention — the original

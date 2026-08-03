@@ -1,4 +1,4 @@
-// F7 (task #495): derives `docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv`
+// F7 (task #495): derives `docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv`
 // from the two raw iai-callgrind logs this task's BEFORE/AFTER measurement
 // produced (`docs/perf/_raw_r495_stamp_removal_before.log` /
 // `_raw_r495_stamp_removal_after.log`). This is the ONE checked script that
@@ -170,10 +170,10 @@ for (const r of rows) {
   );
 }
 
-const outPath = new URL("docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv", ROOT);
+const outPath = new URL("docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv", ROOT);
 writeFileSync(outPath, lines.join("\n") + "\n");
 
-console.log("[r495-summary] wrote docs/perf/R495_STAMP_REMOVAL_GATE_summary.csv");
+console.log("[r495-summary] wrote docs/perf/R32_4_ALLOC_ZEROED_MAGAZINE_HIT_STAMP_REMOVAL_GATE_summary.csv");
 console.log(
   `[r495-summary] control (prefill) delta: ${prefill.delta} Ir (asserted == 0)`,
 );

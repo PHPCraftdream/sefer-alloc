@@ -141,7 +141,7 @@ Raw logs (full `npm run iai`-style reports, not truncated):
 `docs/perf/_raw_r496_repr_c_after_production.log`,
 `docs/perf/_raw_r496_repr_c_before_virginzeroskip.log`,
 `docs/perf/_raw_r496_repr_c_after_virginzeroskip.log`. Summary CSV:
-`docs/perf/R496_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv`, produced by
+`docs/perf/R32_5_PERCLASS_REPR_C_LAYOUT_FIX_GATE_summary.csv`, produced by
 `scripts/r496_perclass_repr_c_summary.mjs` — the one checked script; it
 hard-asserts (a) the isolated 16-hit magazine-pop delta is exactly 0 Ir in
 BOTH feature configurations, and (b) the plain-churn kill-gate benches
