@@ -459,3 +459,53 @@ matrix.
 - `docs/ARCHITECTURE.md` — test-file count (§6).
 - `docs/perf/OPEN_ITEMS.md` — F10 marked resolved (see that file's own
   entry for the exact wording).
+
+## 9. CORRECTED 2026-08-03 — the `#[should_panic]` loom counterfactual was vacuous; rewritten with a non-vacuity companion (R33-3, task #508)
+
+This section is appended, not a rewrite — §5's bullet for
+`counterfactual_shadow_trusts_stale_cache_spuriously_overflows` (lines
+378–384 above) stays exactly as originally published (per this project's
+append-only correction convention; see `R32_10_…GATE.md` §5.2 for the
+established pattern). The round-32 readonly review
+(`docs/reviews/2026-08-03-round32-readonly-review.md` §3, finding F2
+[P2]) found that the original test was **vacuous**: its `would_admit`
+assertion was `false` in **every** interleaving loom could schedule,
+because the broken check read `cached_head` (only possible value: 0) and
+`tail` (only possible value: 1) unconditionally — the concurrent drain
+touched `head` and the slot but never `tail` or `cached_head`, so the
+check's result was interleaving-independent. The test panicked identically
+with zero concurrency, and a `#[should_panic]` test that panics regardless
+of whether the design under test is correct is a tautology, not a
+counterfactual.
+
+**Fix.** The rewritten test
+(`tests/loom_remote_ring.rs:889`) now **joins the drain thread first**
+before running the broken check, so the drain's
+`head.store(1, Release)` is guaranteed to happen-before the check —
+`head` is deterministically 1 at check time, the ring genuinely has room
+(1 − 1 = 0 < 1), and `cached_head` is observably stale (still 0). The
+broken check now panics **specifically because** it trusts the stale
+shadow without re-deriving from the real head — a genuine counterfactual.
+
+**Non-vacuity proof (direction (b), previously entirely missing).** A new
+companion test
+(`correct_shadow_recheck_admits_after_drain_no_spurious_overflow`,
+`:961`) places the REAL `RingModelShadow1::full_check` in the **exact
+same** post-drain position (same prefill, same drain-thread-join-first
+sequencing, same stale `cached_head` = 0) and asserts it does **not**
+reject — the slow path re-derives `head` via a fresh `Acquire` load, sees
+1, refreshes `cached_head` to 1, and admits. Both directions verified
+under `RUSTFLAGS="--cfg loom" cargo test --release --features
+"alloc-core,alloc-xthread" --test loom_remote_ring` (9 tests, 0 failures):
+the counterfactual panics (`should panic … ok`), the companion does not
+(`… ok`). A scratch-swap (temporarily replacing the counterfactual's
+broken check with the real `full_check`) made the `should_panic` test
+**fail** (test did not panic as expected) — confirming the panic is caused
+by the broken check, not by structural accident. The scratch change was
+reverted before committing.
+
+**Scope.** The shipped `full_check` / `push` implementation itself is
+unaffected (confirmed correct by the review's §3.1) — this is purely a
+test-vacuity correction. The loom test count for this file is now 9 (was
+8; the rewritten counterfactual + 1 new companion). The two loom models
+(`RingModelShadow`, `RingModelShadow1`) were not modified.

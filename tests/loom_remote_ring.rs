@@ -886,18 +886,24 @@ fn shadow_overflow_retry_concurrent_drain_never_loses_or_duplicates() {
     });
 }
 
-/// COUNTERFACTUAL: a shadow full-check that treats `cached_head` as the
-/// AUTHORITATIVE value (never re-checking against the real `head` on the
-/// slow path — i.e. `full_check` returns `Err` straight from a stale shadow
-/// without ever consulting `head.load(Acquire)`) can reject a push the ring
-/// actually has room for. This is not a SAFETY bug (an over-conservative
-/// reject just costs an extra overflow — sound) but IS a liveness/behavior
-/// regression this test pins against, proving the real implementation's
-/// "always re-derive from a fresh Acquire load on the slow path" design is
-/// load-bearing for NOT needlessly overflowing. `#[should_panic]`: loom
-/// finds the interleaving where the broken variant overflows despite the
-/// ring having room (a drain freed a slot the stale shadow didn't know
-/// about).
+/// COUNTERFACTUAL: a shadow full-check that treats `cached_head` as
+/// AUTHORITATIVE — rejecting straight from the stale shadow on the slow path
+/// without ever re-deriving from the real `head` via a fresh `Acquire` load —
+/// rejects a push the ring actually has room for. This is not a SAFETY bug
+/// (an over-conservative reject costs an extra overflow — sound) but IS the
+/// liveness regression the real implementation's "always re-derive on the
+/// slow path" design exists to prevent.
+///
+/// `#[should_panic]`: the broken check, placed STRICTLY AFTER the drain's
+/// `head` advance has been observed (the drain thread is joined first so
+/// `head` is deterministically 1 at check time), rejects even though the ring
+/// is now genuinely empty. The join-first sequencing is load-bearing: without
+/// it the check could run before OR after the drain with no way to tell a
+/// stale reject from a legitimate one, making the assertion vacuously true in
+/// every interleaving (R33-3 / task #508, round-32 readonly review finding F2;
+/// see also the companion test
+/// [`correct_shadow_recheck_admits_after_drain_no_spurious_overflow`] for the
+/// non-vacuity proof).
 #[test]
 #[should_panic(expected = "spuriously overflowed")]
 fn counterfactual_shadow_trusts_stale_cache_spuriously_overflows() {
@@ -906,54 +912,98 @@ fn counterfactual_shadow_trusts_stale_cache_spuriously_overflows() {
     builder.check(|| {
         let ring = RingModelShadow1::new();
 
-        // Pre-fill the CAP=1 ring's one slot via the correct push, so the
-        // shadow's fast path is guaranteed to see "no room" on the FIRST
-        // check (cached_head starts at 0, tail becomes 1: 1-0 >= 1 → full
-        // suggested, slow path runs, refreshes cached_head to the real
-        // head (still 0) — genuinely full, correctly returns Err). This
-        // primes cached_head to a value that will go STALE the moment the
-        // consumer drains concurrently with a second producer's check.
+        // Pre-fill the CAP=1 ring's one slot via the correct push. After
+        // this: tail = 1, head = 0, cached_head = 0 (the push's fast path
+        // `0 - 0 < 1` succeeded without touching cached_head), slot = 999.
+        // The ring is genuinely full.
         assert!(ring.push(999).is_ok(), "prefill must succeed on empty ring");
 
-        // Consumer drains concurrently — frees the one slot, advancing head
-        // 0 -> 1. A correct implementation's slow path re-reads `head` via
-        // Acquire and sees this; a broken "trust the stale shadow" variant
-        // never does.
+        // Drain in a spawned thread, then JOIN before the check. The join
+        // guarantees the drain's `head.store(1, Release)` happens-before
+        // the broken check below — so `head` is observably 1 (room exists)
+        // at check time, and `cached_head` is observably stale (still 0,
+        // because drain never touches `cached_head`).
         let ring_c = Arc::clone(&ring);
         let tc = thread::spawn(move || {
             ring_c.drain(|_| {});
         });
-
-        // Producer: BROKEN full-check that trusts a stale cached_head
-        // without ever re-deriving from the real `head` on the slow path.
-        let ring_p = Arc::clone(&ring);
-        let tp = thread::spawn(move || {
-            let t = ring_p.tail.load(Ordering::Relaxed);
-            let ch = ring_p.cached_head.load(Ordering::Relaxed);
-            if t.wrapping_sub(ch) < 1 {
-                true // would proceed to CAS — not the path under test here
-            } else {
-                // BUG: the broken variant declares overflow from the STALE
-                // shadow alone, never consulting the real (possibly-advanced)
-                // head.
-                false
-            }
-        });
-
         tc.join().unwrap();
-        let would_admit = tp.join().unwrap();
+        // State is now: tail = 1, head = 1, cached_head = 0 (stale), slot = EMPTY.
+        // The ring has room (1 - 1 = 0 < 1), but cached_head says "full".
 
-        // In the interleaving where the drain's `head` advance happens-before
-        // this check but the STALE shadow (captured before the drain) is all
-        // the broken variant consults, `would_admit` is `false` even though
-        // the ring is now genuinely empty (real head == tail == 1) — a
-        // spurious overflow the correct (re-derive-on-slow-path) design does
-        // not have.
+        // BROKEN full-check: identical to RingModelShadow1::full_check
+        // EXCEPT it never re-derives from the real head on the slow path —
+        // it rejects straight from the stale shadow. This is the
+        // counterfactual: what full_check WOULD be if the "always re-derive
+        // via a fresh Acquire load on the slow path" guarantee were removed.
+        let t = ring.tail.load(Ordering::Relaxed);
+        let ch = ring.cached_head.load(Ordering::Relaxed);
+        let would_admit = if t.wrapping_sub(ch) < 1 {
+            true // shadow fast path: room (not the path exercised here)
+        } else {
+            // BUG: trusts the stale shadow and rejects WITHOUT consulting
+            // the real (advanced) head.
+            false
+        };
+
+        // The ring has room (head == tail == 1) yet the broken check
+        // rejects — a spurious overflow the correct (re-derive-on-slow-path)
+        // design does not have.
         assert!(
             would_admit,
             "spuriously overflowed: broken shadow-only full-check rejected a push \
              the ring actually had room for, because it never re-derived from a \
              fresh Acquire head load on the slow path"
+        );
+    });
+}
+
+/// Non-vacuity companion to
+/// [`counterfactual_shadow_trusts_stale_cache_spuriously_overflows`]: the
+/// REAL `RingModelShadow1::full_check` placed in the EXACT same post-drain
+/// position (same prefill, same drain-thread-join-first sequencing, same
+/// stale `cached_head`) does NOT spuriously overflow. The slow path
+/// re-derives `head` via a fresh `Acquire` load, sees the advance to 1,
+/// refreshes `cached_head`, and admits. Without this test the counterfactual
+/// above cannot prove the design is load-bearing: a `#[should_panic]` test
+/// that panics regardless of whether the fix is present is vacuous, not a
+/// counterfactual (R33-3 / task #508 / round-32 readonly review finding F2).
+#[test]
+fn correct_shadow_recheck_admits_after_drain_no_spurious_overflow() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(3);
+    builder.check(|| {
+        let ring = RingModelShadow1::new();
+        assert!(ring.push(999).is_ok(), "prefill must succeed on empty ring");
+
+        // Same drain-thread-join-first sequencing as the counterfactual.
+        let ring_c = Arc::clone(&ring);
+        let tc = thread::spawn(move || {
+            ring_c.drain(|_| {});
+        });
+        tc.join().unwrap();
+        // State: tail = 1, head = 1, cached_head = 0 (stale), slot = EMPTY.
+
+        // CORRECT full_check: the stale cached_head (0) fails the fast path,
+        // so the slow path runs — loads head via Acquire (sees 1), refreshes
+        // cached_head to 1, computes 1 - 1 = 0 < 1 → room → Ok. No spurious
+        // overflow.
+        let t = ring.tail.load(Ordering::Relaxed);
+        assert!(
+            ring.full_check(t).is_ok(),
+            "correct full_check should admit: ring has room (head == tail == 1) \
+             and the slow path re-derived head via a fresh Acquire load"
+        );
+
+        // Confirm the slow path actually executed and refreshed cached_head.
+        // This proves the admission was NOT a fast-path shortcut (impossible
+        // here — cached_head is stale at 0 — but the assertion pins it so a
+        // future refactor that accidentally fast-paths cannot silently make
+        // this test vacuous).
+        assert_eq!(
+            ring.cached_head.load(Ordering::Relaxed),
+            1,
+            "correct slow path must refresh cached_head from 0 to the real head (1)"
         );
     });
 }
