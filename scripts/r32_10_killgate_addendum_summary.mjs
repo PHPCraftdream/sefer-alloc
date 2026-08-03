@@ -16,6 +16,7 @@
 //      have reported, for the record.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -114,7 +115,7 @@ for (const r of rows) {
 }
 
 const csvHeader = 'bench,base_cache4_nocounter_ir,isolate_cache16_nocounter_ir,head_cache16_withcounter_ir,delta_cache_size_alone,delta_counter_alone,delta_total,landing_commit';
-const landingCommit = 'UNFILLED_PLACEHOLDER_40_HEX';
+const landingCommit = process.argv[2] || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
 const csvLines = [csvHeader, ...rows.map((r) =>
   `${r.bench},${r.base},${r.isolate},${r.head},${r.deltaCacheSizeAlone},${r.deltaCounterAlone},${r.deltaTotal},${landingCommit}`
 )];

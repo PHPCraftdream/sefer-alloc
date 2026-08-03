@@ -41,17 +41,18 @@
 //   node scripts/r496_perclass_repr_c_summary.mjs [landing_commit_sha]
 //
 // `landing_commit_sha` is this task's own landing commit (chicken-and-egg: a
-// commit cannot cite its own SHA inside its own tree). Omit on first
-// generation (column reads "UNFILLED"); a follow-up commit fills the
-// placeholder, mirroring the R32-4/R32-1/R32-0 precedent (commits
-// 62e217f/ceaca66/25d7576) this project already uses for the same problem.
+// commit cannot cite its own SHA inside its own tree). If omitted, the SHA is
+// derived from `git rev-parse HEAD` at run time (R33-8; see
+// scripts/r33_6_decay_throttle_retention_summary.mjs), so re-running the script
+// reproduces the column without a hand-edited follow-up commit.
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 
 const ROOT = new URL("../", import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), "utf8");
 
-const landingCommit = process.argv[2] || "UNFILLED";
+const landingCommit = process.argv[2] || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
 
 const META = {
   base_commit_sha: "62e217fa1ca599d5903fb519c16ab9f0af55a7e0",

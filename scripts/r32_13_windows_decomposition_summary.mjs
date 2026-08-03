@@ -15,11 +15,12 @@
 //   node scripts/r32_13_windows_decomposition_summary.mjs [landing_commit_sha]
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 
 const ROOT = new URL("../", import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), "utf8");
 
-const landingCommit = process.argv[2] || "UNFILLED";
+const landingCommit = process.argv[2] || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
 
 /** Parse the `# csv-start` .. `# csv-end` block out of one raw log. Returns
  * { header: string[], row: string[] }. */

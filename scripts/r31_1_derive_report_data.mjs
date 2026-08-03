@@ -15,17 +15,18 @@
 //   node scripts/r31_1_derive_report_data.mjs [landing_commit_sha]
 //
 // `landing_commit_sha` is this report's own landing commit (chicken-and-egg:
-// a commit cannot cite its own SHA inside its own tree). Omit on first
-// generation (column reads "UNFILLED"); re-run with the real SHA in the
-// follow-up commit that fills the placeholder — mirrors the
-// 1272a52/9335979/f93e663 precedent.
+// a commit cannot cite its own SHA inside its own tree). If omitted, the SHA is
+// derived from `git rev-parse HEAD` at run time (R33-8; see
+// scripts/r33_6_decay_throttle_retention_summary.mjs), so re-running the script
+// reproduces the column without a hand-edited follow-up commit.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
 
-const landingCommit = process.argv[2] || 'UNFILLED';
+const landingCommit = process.argv[2] || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
 // The measured tree's TRUE base: `main` HEAD immediately before this task's
 // changes (confirmed via `git rev-parse HEAD` at session start, matching
 // this report's own "Base revision" citation) -- NOT re-derived from `git

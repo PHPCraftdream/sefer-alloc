@@ -15,12 +15,13 @@
 //   node scripts/r32_0_derive_report_data.mjs [landing_commit_sha]
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
 const readJson = (p) => JSON.parse(read(p));
 
-const landingCommit = process.argv[2] || 'UNFILLED';
+const landingCommit = process.argv[2] || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
 
 // Immutable source identity (CLAUDE.md's R29-6 rule): base commit + a git
 // tree-object SHA computed via `git write-tree` against a SCOPED temporary

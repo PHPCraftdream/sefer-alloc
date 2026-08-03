@@ -12,11 +12,12 @@
 //   node scripts/r32_11_shadow_head_summary.mjs [landing_commit_sha]
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 
 const ROOT = new URL("../", import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), "utf8");
 
-const landingCommit = process.argv[2] || "UNFILLED";
+const landingCommit = process.argv[2] || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
 
 // Every CLEAN-TIMING (post-fix, timing-only `after` binary) provenance file
 // this report cites — all timestamps at or after 2026-08-02T19:01Z, the

@@ -168,6 +168,7 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import { REPO_ROOT } from './lib.mjs';
 
 const PERF_DIR = resolve(REPO_ROOT, 'docs/perf');
+const SCRIPTS_DIR = resolve(REPO_ROOT, 'scripts');
 
 // --------------------------------------------------------------------------
 // Non-retroactive scoping for checks (e) and (f) — task #493, R32-1
@@ -1153,6 +1154,61 @@ function checkShaNewerThanRawLogs(text, citedRawLogNames) {
 }
 
 // --------------------------------------------------------------------------
+// Global check (g): derive-script placeholder drift (R33-8, task #513)
+// --------------------------------------------------------------------------
+//
+// CLAUDE.md's "tables derived by one checked script" rule is only mechanically
+// verifiable by a reviewer if re-running the script regenerates the committed
+// CSV. A derive script that defaults a landing_commit/measurement_commit
+// column to a hardcoded sentinel string ('UNFILLED' / 'UNFILLED_PLACEHOLDER_*')
+// DEFEATS that re-derivation: the committed CSV holds the real SHA only because
+// a follow-up commit hand-edited it, so re-running the script regenerates the
+// sentinel and destroys the column (R32 review §2 finding F6). This check flags
+// any scripts/*.mjs still carrying such a hardcoded placeholder STRING literal,
+// so the convention cannot silently regress. It does NOT flag scripts that
+// derive the SHA live (execSync('git rev-parse HEAD')) or omit the column
+// entirely — both are the sanctioned fixes (see
+// scripts/r33_6_decay_throttle_retention_summary.mjs and
+// scripts/r497_dualbitmap_summary.mjs respectively). Unlike checks (a)–(f),
+// which run once per report, this is a single global scan over scripts/*.mjs;
+// a regression is a hard FAIL (not WARN) and factors into allOk.
+
+// Matches a hardcoded placeholder sentinel for a commit-SHA column: either the
+// UNFILLED_PLACEHOLDER token or a quoted 'UNFILLED'/'"UNFILLED"' string
+// literal. Deliberately requires quotes around the bare UNFILLED form so a
+// comment that merely mentions the word UNFILLED (as this very file does) is
+// NOT flagged — only an actual string-literal sentinel default is.
+const PLACEHOLDER_SENTINEL_RE = /UNFILLED_PLACEHOLDER|['"]UNFILLED['"]/;
+
+function checkDeriveScriptPlaceholders() {
+  const offenders = [];
+  for (const f of readdirSync(SCRIPTS_DIR)) {
+    // Only derive scripts (the r\d*_*.mjs family that write a docs/perf CSV),
+    // NOT infrastructure/lint scripts — this very file's own regex definition
+    // and comments legitimately contain the tokens being searched for, so
+    // scanning it would be a self-match false positive.
+    if (!/^r\d.*\.mjs$/.test(f)) continue;
+    const text = readFileSync(resolve(SCRIPTS_DIR, f), 'utf8');
+    if (PLACEHOLDER_SENTINEL_RE.test(text)) offenders.push(f);
+  }
+  if (offenders.length > 0) {
+    return {
+      status: 'FAIL',
+      detail:
+        `derive script(s) still hardcode a placeholder sentinel for a commit-SHA column ` +
+        `(re-running them would NOT regenerate their committed CSV — derive the SHA via ` +
+        `'git rev-parse HEAD' at run time, or drop the column; see ` +
+        `scripts/r33_6_decay_throttle_retention_summary.mjs / scripts/r497_dualbitmap_summary.mjs): ` +
+        offenders.join(', '),
+    };
+  }
+  return {
+    status: 'PASS',
+    detail: `no scripts/*.mjs derive script hardcodes an UNFILLED/PLACEHOLDER commit-SHA sentinel`,
+  };
+}
+
+// --------------------------------------------------------------------------
 // Per-report driver
 // --------------------------------------------------------------------------
 
@@ -1325,6 +1381,11 @@ for (const mdPath of targets) {
   }
   if (!ok) allOk = false;
 }
+
+// Global check (g) runs once over all scripts/*.mjs, not per-report.
+const placeholderResult = checkDeriveScriptPlaceholders();
+if (placeholderResult.status === 'FAIL') allOk = false;
+console.log(`      (g) derive-script placeholder drift: ${placeholderResult.status} — ${placeholderResult.detail}`);
 
 const warnBreakdown = Object.entries(warnCountByCheck)
   .filter(([, n]) => n > 0)

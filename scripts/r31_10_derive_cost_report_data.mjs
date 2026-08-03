@@ -15,6 +15,7 @@
 //   node scripts/r31_10_derive_cost_report_data.mjs <ab_run.json> <same_vs_same_run.json> [landing_commit_sha]
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => JSON.parse(readFileSync(new URL(p, ROOT), 'utf8'));
@@ -25,7 +26,7 @@ if (!abRunArg || !sameVsSameArg) {
     'usage: node scripts/r31_10_derive_cost_report_data.mjs <ab_run.json> <same_vs_same_run.json> [landing_commit_sha]',
   );
 }
-const landingCommit = landingCommitArg || 'UNFILLED';
+const landingCommit = landingCommitArg || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
 
 // Immutable source identity (CLAUDE.md's R29-6 rule, form 2: git tree-object
 // SHA via `git write-tree` against a SCOPED temporary index — base commit +
