@@ -1148,6 +1148,84 @@ jobs:
           --test regression_realloc_xthread_stamp
           --test stress_concurrent_boundaries
 
+  asan:
+    # R34-20 (task #539, audit finding G6 [low]): AddressSanitizer gate for the
+    # allocator's own raw-pointer memory operations (the `os` mmap/munmap seam,
+    # the intrusive free-list `node` seam, the realloc copy legs). ASan
+    # instruments every load/store with byte-granularity shadow memory and
+    # catches out-of-bounds access, use-after-free, and invalid free on memory
+    # that escapes a mapping — the memory-corruption dimension that complements
+    # Miri (strict-provenance UB), TSan (data races), Loom (concurrency models),
+    # Kani (proofs) and proptest.
+    #
+    # PER-PR (not weekly), mirroring the `tsan` job just above: both are
+    # nightly + `-Zbuild-std --target x86_64-unknown-linux-gnu` + a
+    # `-Zsanitizer` flag of IDENTICAL compile cost. The weekly cadence that
+    # governs `feature-powerset` (308 `cargo check` invocations) and
+    # `numa-real-kernel` (hardware-specific, heavy) does NOT apply here: the ASan
+    # harness is 2 test invocations with ~0.01s test runtime each (the ENTIRE
+    # cost is the `-Zbuild-std` std rebuild that `tsan` already pays per-PR).
+    # Measured cold via WSL (the exact commands in the two steps below, minus the
+    # WSL-only CARGO_TARGET_DIR / RUSTC_WRAPPER-scrub the local `npm run asan`
+    # wrapper adds — neither is needed on a pure-Linux runner): ~2m44s wall
+    # (compile-dominated; test execution 0.01s for all 7 tests) — comparable to
+    # the `tsan` job's own cost.
+    #
+    # The harness (`tests/asan_alloc_core.rs`) drives `AllocCore` DIRECTLY,
+    # never as `#[global_allocator]` — ASan installs its own allocator
+    # interceptors that would clash with a custom global allocator. See the test
+    # file header and `scripts/asan.mjs` for the full rationale and the precise
+    # class of bug ASan can vs cannot see inside a self-hosted mmap arena
+    # (intra-segment OOB between two allocations within one 4 MiB segment is
+    # addressable shadow and NOT redzoned — that dimension is Miri's job).
+    #
+    # Linux-only (`-Zsanitizer=address` is Linux/macOS in the Rust toolchain;
+    # the Windows MSVC target cannot run it — hence the WSL wrapper in the local
+    # `npm run asan` script, unneeded on this ubuntu-latest runner). The two
+    # passes mirror `scripts/asan.mjs`: the plain alloc-core substrate, then
+    # +alloc-decommit (the madvise/MADV_DONTNEED + recommit surface — a
+    # different mmap-touching leg worth instrumenting).
+    name: address-sanitizer (alloc-core)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Zsanitizer=address"
+      RUSTDOCFLAGS: "-Zsanitizer=address"
+      # halt_on_error=0 keeps ASan reporting every distinct error in a run;
+      # detect_leaks=0 suppresses LSan's exit-time leak scan (the allocator's
+      # own still-live mmap'd segments would noisily trip it if a test exits
+      # early — ASan's value here is OOB/UAF detection, not leak detection;
+      # mmap isn't tracked by LSan anyway). Mirrors scripts/asan.mjs verbatim.
+      ASAN_OPTIONS: "halt_on_error=0:detect_leaks=0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      # Pass 1: the plain alloc-core substrate (mmap/munmap seam, intrusive
+      # free-list, realloc copy legs). `-Zbuild-std --target` is MANDATORY: ASan
+      # only instruments code compiled WITH the flag, and the prebuilt sysroot
+      # std is NOT — so std is rebuilt from source (hence rust-src) targeting the
+      # host triple explicitly (a bare targetless `-Zsanitizer` build silently
+      # leaves std uninstrumented).
+      - name: ASan (alloc-core)
+        run: >-
+          cargo +nightly test
+          -Zbuild-std
+          --target x86_64-unknown-linux-gnu
+          --release
+          --features alloc-core
+          --test asan_alloc_core
+      # Pass 2: + alloc-decommit (the madvise/MADV_DONTNEED + recommit surface).
+      # Shares the std rebuild from pass 1 (cached in target/).
+      - name: ASan (alloc-core alloc-decommit)
+        run: >-
+          cargo +nightly test
+          -Zbuild-std
+          --target x86_64-unknown-linux-gnu
+          --release
+          --features "alloc-core alloc-decommit"
+          --test asan_alloc_core
+
   multi-arch:
     # x86 is a strong-memory model; aarch64 is weak-memory and can surface
     # ordering bugs the x86 run hides. We cross-compile and run via `cross` for
@@ -1339,6 +1417,65 @@ jobs:
       - name: Build fuzz targets
         working-directory: fuzz
         run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
+
+  fuzz-run:
+    # R34-20 (task #539, audit finding G5): the `fuzz-build` job above compiles
+    # all three libFuzzer targets on every push but NEVER runs them.
+    # fuzz/README.md calls campaigns "scheduled/manual", but until this job
+    # there was NO scheduled fuzz run in ANY workflow — the only `schedule:`
+    # trigger in ci.yml drove `numa-real-kernel` and `feature-powerset`; the
+    # three libFuzzer targets were build-checked-only. This job actually RUNS
+    # each target for a bounded time (10 min) against its committed seed corpus
+    # (fuzz/corpus/<target>/ — 8 seeds across the 3 targets, git-tracked),
+    # WEEKLY + on-demand via workflow_dispatch — the same cadence as
+    # `numa-real-kernel` and `feature-powerset`.
+    #
+    # NOT per-PR: 3 targets × 10 min = ~30 min is too heavy for every push, and
+    # a fuzz-discovered invariant violation is a latent correctness discovery
+    # (surfaced in at most a week), not a per-commit regression risk — the same
+    # weekly rationale `feature-powerset` already uses. The `fuzz-build` job
+    # above already catches fuzz-target BIT-ROT per-push (an API change that
+    # breaks a harness compiles); this job catches fuzz FINDINGS (a real
+    # invariant violation a long run surfaces).
+    #
+    # Verified clean before this job was added: all three targets smoke-tested
+    # for 15s each under WSL with 0 crashes (region_ops: 305 780 runs,
+    # global_alloc_ops: 965 runs, heap_core_ops: 24 783 runs). A target finding
+    # a crash (ASAN/UB/panic) makes this job go RED — that is the signal this
+    # job exists to produce, not a flaky failure.
+    name: fuzz targets run (weekly, 10 min/target)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          # Same musl/gnu-target note as `fuzz-build` above: cargo-fuzz links
+          # against the prebuilt std of the build target; the runner's default
+          # resolves to x86_64-unknown-linux-musl whose std is NOT installed
+          # (E0463). Force the gnu target (its std ships with the toolchain).
+          targets: x86_64-unknown-linux-gnu
+          components: rust-src
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # Each target runs for 10 min (libFuzzer's -max_total_time bounds the wall
+      # clock). cargo-fuzz auto-discovers each target's seed corpus from
+      # fuzz/corpus/<target>/. A crash (ASAN/UB/panic) exits non-zero and fails
+      # the step — exactly the signal this weekly gate exists to produce. The
+      # runner is ephemeral, so any new corpus entries or crash artifacts
+      # written during the run are discarded (the committed seeds are the stable
+      # starting point).
+      - name: fuzz run region_ops (10 min)
+        working-directory: fuzz
+        run: cargo +nightly fuzz run region_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+      - name: fuzz run global_alloc_ops (10 min)
+        working-directory: fuzz
+        run: cargo +nightly fuzz run global_alloc_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
+      - name: fuzz run heap_core_ops (10 min)
+        working-directory: fuzz
+        run: cargo +nightly fuzz run heap_core_ops --target x86_64-unknown-linux-gnu -- -max_total_time=600
 
   docs:
     name: rustdoc
