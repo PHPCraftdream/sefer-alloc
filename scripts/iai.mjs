@@ -75,7 +75,12 @@ const RUNNER_VER_PREFIX = '0.14.';
 // byte-identical). The override ONLY changes which feature set cargo compiles
 // + callgrind measures; the bench binary, the runner, the parser, and the
 // report format are all feature-agnostic.
-const DEFAULT_FEATURES = 'production bench-internals';
+// R34-3 (task #522, finding B1): `internals` added — `benches/perf_gate_iai.rs`
+// reaches `sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry}`
+// directly, and that module path is now gated behind `internals` (additive
+// over `alloc-global`, NOT implied by `production`). See `internals`'s doc
+// comment in `Cargo.toml`.
+const DEFAULT_FEATURES = 'production bench-internals internals';
 const FEATURES_OVERRIDE_FLAG = '--features';
 
 const BENCH = 'perf_gate_iai';

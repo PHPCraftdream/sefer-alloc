@@ -92,10 +92,13 @@ export const PER_PR_ROWS = [
   {
     id: 'clippy-hardened-medium-classes',
     kind: 'clippy',
-    features: 'hardened medium-classes',
+    features: 'hardened medium-classes internals',
     note:
       'R23-5/task #374: the hardened+medium-classes dead-code combination ' +
-      'that hid 11 pre-existing lints for 3+ rounds',
+      'that hid 11 pre-existing lints for 3+ rounds. `internals` added ' +
+      '(R34-3/task #522): `hardened` implies `fastbin` implies ' +
+      '`alloc-global`, and this row is `--all-targets`, which reaches this ' +
+      "repo's own white-box `tests/` suite.",
   },
 
   // --- R30-5 (task #454): the two rows Round 29 proved are missing. ---
@@ -103,23 +106,52 @@ export const PER_PR_ROWS = [
     id: 'clippy-production',
     kind: 'clippy',
     features: 'production',
+    // R34-3 (task #522, finding B1): `--lib` (not `--all-targets`) as of
+    // this feature's introduction. `alloc_core`/`global`/`registry` moved
+    // behind the new `internals` feature (additive over `alloc-core`/
+    // `alloc-global`, NOT implied by `production`), and this repo's own
+    // white-box `tests/` suite (~106 files reaching those module paths
+    // directly — `tests/` files are NOT `[[test]]` Cargo.toml targets, so
+    // they cannot carry their own `required-features`) does not compile
+    // without it. `--all-targets` would therefore fail this row for a
+    // reason unrelated to what it exists to check: whether the LIBRARY
+    // itself — the actual artifact a downstream `production`-only consumer
+    // builds — compiles clean. See `clippy-production-internals` below for
+    // the `--all-targets` coverage of this repo's own dev suite.
+    libOnly: true,
     note:
       'R29-4/task #435 escape: SegmentStateAccount/SegmentStateReconciliation ' +
       'were dead code under plain `production` (the actual shipping default) ' +
       'but no per-PR clippy row ever built exactly that feature string — ' +
       'every existing row was either narrower ("") or wider (--all-features, ' +
-      'which turns on the bench-internals-gated consumer too)',
+      'which turns on the bench-internals-gated consumer too).',
+  },
+  {
+    id: 'clippy-production-internals',
+    kind: 'clippy',
+    features: 'production internals',
+    note:
+      'R34-3/task #522 (finding B1): once `alloc_core`/`global`/`registry`\'s ' +
+      '`pub mod` path moved behind the new `internals` feature (additive ' +
+      'over `alloc-core`/`alloc-global`, NOT implied by `production`), this ' +
+      "repo's own white-box test/bench/example suite (~106 `tests/` files " +
+      'that reach those module paths directly, plus every `required-features' +
+      '` bench/example that lists `internals`) needs its own `--all-targets` ' +
+      'per-PR row — the plain `clippy-production` row above is `--lib`-only ' +
+      'and never turns `internals` on.',
   },
   {
     id: 'check-perf-gate-iai-default',
     kind: 'check',
-    features: 'production bench-internals',
+    features: 'production bench-internals internals',
     target: { flag: '--bench', name: 'perf_gate_iai' },
     note:
       'R29-16/task #447 escape: this is scripts/iai.mjs\'s own ' +
       'DEFAULT_FEATURES and npm run check\'s LAST step, yet was never an ' +
       'independent standalone CI row — a build break here (4x E0433, missing ' +
-      'virgin-zero-skip stub) shipped undetected for a full round',
+      'virgin-zero-skip stub) shipped undetected for a full round. ' +
+      '`internals` added (R34-3/task #522): `perf_gate_iai.rs` reaches ' +
+      'sefer_alloc::registry::bootstrap / HeapCore / HeapRegistry directly.',
   },
 ];
 
@@ -139,6 +171,15 @@ export function rowToCargoArgs(row) {
     args.push('clippy');
     if (row.target) {
       args.push(row.target.flag, row.target.name);
+    } else if (row.libOnly) {
+      // R34-3 (task #522): `--lib` (not `--all-targets`) scopes this row to
+      // the actual shipped-library semver surface — used for the plain
+      // `production` (no `internals`) row, since `tests/`'s ~106 files that
+      // reach `alloc_core`/`global`/`registry` directly cannot compile
+      // without `internals` and `--all-targets` would therefore fail for a
+      // reason unrelated to what this row exists to check (whether the
+      // LIBRARY compiles clean under the actual shipping default).
+      args.push('--lib');
     } else {
       args.push('--all-targets');
     }

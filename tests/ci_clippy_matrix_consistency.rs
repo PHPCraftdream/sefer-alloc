@@ -54,6 +54,10 @@ struct ManifestClippyRow {
     /// Exact `features` field value; `"__all__"` is the `--all-features`
     /// sentinel per `check-matrix.mjs`'s `ALL_FEATURES_SENTINEL`.
     features: String,
+    /// R34-3 (task #522): `true` when the row sets `libOnly: true` —
+    /// `rowToCargoArgs` emits `--lib` instead of `--all-targets` for such a
+    /// row (see that function's own comment in `scripts/check-matrix.mjs`).
+    lib_only: bool,
 }
 
 /// Parse every `{ id: '...', kind: 'clippy', features: '...', ... }` object
@@ -100,7 +104,12 @@ fn parse_manifest_clippy_rows(check_matrix_src: &str) -> Vec<ManifestClippyRow> 
             let features = extract_single_quoted_field(obj_text, "features").unwrap_or_else(|| {
                 panic!("PER_PR_ROWS clippy entry {id:?} missing `features` field: {obj_text}")
             });
-            rows.push(ManifestClippyRow { id, features });
+            let lib_only = obj_text.contains("libOnly: true");
+            rows.push(ManifestClippyRow {
+                id,
+                features,
+                lib_only,
+            });
         }
 
         rest = &rest[obj_end + 1..];
@@ -133,9 +142,16 @@ fn extract_single_quoted_field(obj_text: &str, field: &str) -> Option<String> {
 /// [`normalize_features_quoting`] strips matching quotes from the ACTUAL
 /// ci.yml line ONLY in the single-token case, so both sides are compared in
 /// this same "quoted only when the value has multiple tokens" form.
-fn expected_clippy_invocation(features: &str) -> String {
+///
+/// `lib_only` (R34-3/task #522): mirrors `rowToCargoArgs`'s `row.libOnly`
+/// branch — emits `--lib` instead of `--all-targets`.
+fn expected_clippy_invocation(features: &str, lib_only: bool) -> String {
     const ALL_FEATURES_SENTINEL: &str = "__all__";
-    let mut s = String::from("cargo clippy --all-targets");
+    let mut s = if lib_only {
+        String::from("cargo clippy --lib")
+    } else {
+        String::from("cargo clippy --all-targets")
+    };
     if features == ALL_FEATURES_SENTINEL {
         s.push_str(" --all-features");
     } else if !features.is_empty() {
@@ -264,7 +280,7 @@ fn ci_clippy_steps_match_manifest_clippy_rows_exactly() {
 
     let mut mismatches = Vec::new();
     for (i, (row, ci_line)) in manifest_rows.iter().zip(ci_invocations.iter()).enumerate() {
-        let expected = expected_clippy_invocation(&row.features);
+        let expected = expected_clippy_invocation(&row.features, row.lib_only);
         let actual = normalize_features_quoting(ci_line);
         if actual != expected {
             mismatches.push(format!(

@@ -187,7 +187,19 @@ jobs:
           # `production` is a root-crate-only feature bundle; only add it when
           # the target IS the root crate (member crates have no such feature).
           if [[ "$NAME" == "sefer-alloc" ]]; then
-            cargo test -p "$NAME" --features production --no-fail-fast
+            # R34-3 (task #522, finding B1): `alloc_core`/`global`/`registry`
+            # moved behind the new `internals` feature (additive over
+            # `alloc-core`/`alloc-global`, NOT implied by `production`) — the
+            # published crate's LIBRARY surface under plain `production` is
+            # exactly what a downstream consumer builds, so verify that
+            # compiles/links/tests clean with `--lib` (matches
+            # `scripts/check-matrix.mjs`'s `clippy-production` row). Then also
+            # run this repo's own internals-facing `tests/` suite under
+            # `production internals` — a red tree there is still a red tree
+            # this release gate must not publish, even though `internals` is
+            # not part of what a downstream consumer sees.
+            cargo test -p "$NAME" --lib --features production --no-fail-fast
+            cargo test -p "$NAME" --features "production internals" --no-fail-fast
           fi
 
       - name: cargo publish

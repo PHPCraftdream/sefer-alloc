@@ -99,9 +99,13 @@ const steps = [
   // `clippy` job / not at all, respectively).
   ...clippyRows,
   {
-    name: 'test (--features production)',
+    // R34-3 (task #522, finding B1): `internals` added — this repo's own
+    // `tests/` suite reaches `alloc_core`/`global`/`registry` directly, and
+    // that module path now requires the `internals` feature (additive over
+    // `alloc-core`/`alloc-global`, NOT implied by `production`).
+    name: 'test (--features "production internals")',
     cmd: 'cargo',
-    args: ['test', '--features', 'production'],
+    args: ['test', '--features', 'production internals'],
   },
   // C2 (bug-hunt review 2026-07-09): kept in lockstep with the CI `test`
   // job's feature matrix (.github/workflows/ci.yml). These tiers carry
@@ -112,10 +116,11 @@ const steps = [
     // `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates on
     // that feature — see `Cargo.toml`'s `bench-internals` doc) keeps running
     // under this step instead of silently being skipped by its own
-    // `#![cfg]`.
-    name: 'test (--features "production alloc-stats bench-internals")',
+    // `#![cfg]`. `internals` added (R34-3/task #522) — same whole-suite
+    // rationale as the row above.
+    name: 'test (--features "production alloc-stats bench-internals internals")',
     cmd: 'cargo',
-    args: ['test', '--features', 'production alloc-stats bench-internals'],
+    args: ['test', '--features', 'production alloc-stats bench-internals internals'],
   },
   {
     name: 'test (--features pinning)',

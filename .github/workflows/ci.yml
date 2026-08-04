@@ -116,8 +116,11 @@ jobs:
       # consumers of `alloc-xthread`-gated items) were stable across 3+
       # rounds under this exact combination, tracked in
       # `docs/CORRECTNESS_OPEN_ITEMS.md` item 2 until fixed and closed here.
+      # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
+      # implies `alloc-global`, and `--all-targets` here reaches this repo's
+      # own white-box `tests/` suite.
       - name: clippy (--features "hardened medium-classes")
-        run: cargo clippy --all-targets --features "hardened medium-classes" -- -D warnings
+        run: cargo clippy --all-targets --features "hardened medium-classes internals" -- -D warnings
       # R30-5 (task #454): plain `production` — the actual shipping default
       # most users build with — was in NONE of the rows above before this
       # task. R29-4/task #435's `SegmentStateAccount`/
@@ -126,8 +129,26 @@ jobs:
       # `bench-internals`-gated consumer; wider than the default-features
       # row) and shipped undetected for a full round because no row built
       # this exact string.
+      #
+      # R34-3 (task #522, finding B1): `--lib` (not `--all-targets`) — the
+      # `alloc_core`/`global`/`registry` module paths moved behind the new
+      # `internals` feature (additive over `alloc-core`/`alloc-global`, NOT
+      # implied by `production`), and this repo's own white-box `tests/`
+      # suite (~106 files reaching those module paths directly; `tests/`
+      # files are NOT `[[test]]` Cargo.toml targets, so they cannot carry
+      # their own `required-features`) does not compile without it.
+      # `--all-targets` would fail this row for a reason unrelated to what
+      # it checks: whether the LIBRARY — the actual artifact a downstream
+      # `production`-only consumer builds — compiles clean. See the next
+      # step for `--all-targets` coverage of this repo's own dev suite.
       - name: clippy (--features "production")
-        run: cargo clippy --all-targets --features "production" -- -D warnings
+        run: cargo clippy --lib --features "production" -- -D warnings
+      # R34-3 (task #522, finding B1): `--all-targets` companion to the row
+      # above, with `internals` added so this repo's own `tests/`/
+      # `benches/`/`examples/` (the white-box suite that reaches
+      # `alloc_core`/`global`/`registry` directly) actually compile.
+      - name: clippy (--features "production internals")
+        run: cargo clippy --all-targets --features "production internals" -- -D warnings
 
   check-matrix:
     # R30-5 (task #454): runs the NON-clippy rows of `scripts/check-matrix.mjs`'s
@@ -261,9 +282,11 @@ jobs:
         run: cargo test --features experimental --no-fail-fast # adds LockFreeRegion + EpochRegion (deprecated, legacy)
       # Phases 8–13 allocator descent. Without this, CI never exercised
       # alloc-core (the segment substrate, AllocCore).
+      # `internals` added (R34-3/task #522): this row runs the whole
+      # `tests/` tree, which reaches `alloc_core`/`global`/`registry` directly.
       - name: test (--features alloc-core)
         if: ${{ !cancelled() }}
-        run: cargo test --features alloc-core --no-fail-fast
+        run: cargo test --features "alloc-core internals" --no-fail-fast
 
   test-xthread:
     name: test (xthread progression)
@@ -272,13 +295,14 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       # Phases 9–11: per-thread Heap + SeferAlloc + cross-thread free.
+      # `internals` added (R34-3/task #522) — same whole-suite rationale.
       - name: test (--features "alloc-global alloc-xthread")
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread" --no-fail-fast
+        run: cargo test --features "alloc-global alloc-xthread internals" --no-fail-fast
       # + Phase 35 M6 decommit.
       - name: test (--features "alloc-global alloc-xthread alloc-decommit")
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread alloc-decommit" --no-fail-fast
+        run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --no-fail-fast
       # #137: the fastbin (magazine/tcache) path and the flagship
       # `production` bundle were NOT exercised in CI — the entire
       # magazine code path (the churn hot path) ran untested. Cover both:
@@ -286,10 +310,10 @@ jobs:
       # `production` bundle (fastbin + decommit + everything).
       - name: test (--features "alloc-global alloc-xthread fastbin")
         if: ${{ !cancelled() }}
-        run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
+        run: cargo test --features "alloc-global alloc-xthread fastbin internals" --no-fail-fast
       - name: test (--features production)
         if: ${{ !cancelled() }}
-        run: cargo test --features production --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
+        run: cargo test --features "production internals" --no-fail-fast # #137: the recommended flagship config (fastbin + decommit)
 
   test-hardened:
     name: test (hardened tier)
@@ -303,9 +327,11 @@ jobs:
       # would never RUN in CI — clippy's --all-features only compiles
       # it. Also covers the fastbin-without-decommit config with the
       # guard on.
+      # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
+      # implies `alloc-global`, and this row runs the whole `tests/` tree.
       - name: test (--features hardened)
         if: ${{ !cancelled() }}
-        run: cargo test --features hardened --no-fail-fast
+        run: cargo test --features "hardened internals" --no-fail-fast
       # H1 follow-up: README calls `hardened` "additive over
       # production", but no CI row built the two together — the
       # paranoid guard tier was only ever exercised WITHOUT decommit
@@ -314,7 +340,7 @@ jobs:
       # decommit (M6) recommit cycle.
       - name: test (--features "production hardened")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production hardened" --no-fail-fast
+        run: cargo test --features "production hardened internals" --no-fail-fast
       # R14 hotfix (task #299): `tests/r11_4_dealloc_batch_hardened_guards.rs`
       # exercises `HeapCore::dealloc_batch`'s hardened guards (F7/H1), which
       # requires `batch-api` directly -- `hardened` alone does not pull it in
@@ -325,9 +351,10 @@ jobs:
       # this step the file compiles to 0 tests (pass by absence) under every
       # other row here -- the same "written but never executed" class of gap
       # R13-5 (task #275) closed for other combinations.
+      # `internals` added (R34-3/task #522) — same whole-suite rationale.
       - name: test (--features "hardened batch-api")
         if: ${{ !cancelled() }}
-        run: cargo test --features "hardened batch-api" --no-fail-fast
+        run: cargo test --features "hardened batch-api internals" --no-fail-fast
       # R22-1 (task #352): commit 46ea2db (R19-1, task #337) fixed a real
       # hardened/UAF-shaped contract-violation bug in the Large-dealloc branch
       # (A) of `src/registry/heap_core_free.rs` -- under `hardened`, it now
@@ -347,9 +374,12 @@ jobs:
       # `exact-span-large`) keeps the predicate's first disjunct
       # (`not(exact-span-large)`) true, so the fix and both tests actually
       # compile AND run here for the first time.
+      # `internals` added (R34-3/task #522): `hardened` implies `fastbin`
+      # implies `alloc-global`, and this repo's own white-box `tests/`
+      # suite reaches `alloc_core`/`global`/`registry` directly.
       - name: test (--features "hardened medium-classes")
         if: ${{ !cancelled() }}
-        run: cargo test --features "hardened medium-classes" --no-fail-fast
+        run: cargo test --features "hardened medium-classes internals" --no-fail-fast
 
   test-gated-bodies:
     # C2 (bug-hunt review 2026-07-09): the steps below ship tests whose
@@ -370,9 +400,11 @@ jobs:
       # `tests/class_aware_dirty_oom_latch.rs` (which now additionally gates
       # on that feature — see `Cargo.toml`'s `bench-internals` doc) keeps
       # running here instead of silently being skipped by its own `#![cfg]`.
+      # `internals` added (R34-3/task #522): this row runs the whole
+      # `tests/` tree, which reaches `alloc_core`/`global`/`registry` directly.
       - name: test (--features "production alloc-stats bench-internals")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-stats bench-internals" --no-fail-fast
+        run: cargo test --features "production alloc-stats bench-internals internals" --no-fail-fast
       - name: test (--features pinning)
         if: ${{ !cancelled() }}
         run: cargo test --features pinning --no-fail-fast
@@ -437,9 +469,10 @@ jobs:
       # R12-3 EXPERIMENTAL: exact-page-rounded Large spans instead of
       # whole-SEGMENT rounding. Additive over `alloc-core`; verified locally
       # green together with `production`.
+      # `internals` added (R34-3/task #522) — whole-suite row.
       - name: test (--features "production exact-span-large")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production exact-span-large" --no-fail-fast
+        run: cargo test --features "production exact-span-large internals" --no-fail-fast
       # R13-5: originally the critical combo that would have caught task
       # #284's lost-wakeup bug. `class-aware-dirty` + `alloc-stats`,
       # explicitly WITHOUT `numa-aware` (`production` does not enable
@@ -477,16 +510,18 @@ jobs:
       # which DOES run in this step.
       # R24-6 (task #384): `bench-internals` added for the same reason as the
       # sibling step above — keeps `class_aware_dirty_oom_latch.rs` running.
+      # `internals` added (R34-3/task #522) — whole-suite row.
       - name: test (--features "production alloc-stats bench-internals" — feature-isolation copy)
         if: ${{ !cancelled() }}
-        run: cargo test --features "production alloc-stats bench-internals" --no-fail-fast
+        run: cargo test --features "production alloc-stats bench-internals internals" --no-fail-fast
       # R13-3: virgin-zero-skip through the magazine + the drain-prelude fix
       # (task #273/#285's sibling defect). `alloc-stats` for the
       # `SMALL_ZERO_PASS_CALLS` skip-fired oracle in
       # `r13_3_magazine_virgin_hit_skips_zero.rs`.
+      # `internals` added (R34-3/task #522) — whole-suite row.
       - name: test (--features "production virgin-zero-skip alloc-stats bench-internals")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production virgin-zero-skip alloc-stats bench-internals" --no-fail-fast
+        run: cargo test --features "production virgin-zero-skip alloc-stats bench-internals internals" --no-fail-fast
       # R12-11: PageMap diagnostic write sites. Additive over `alloc-core`;
       # exercises the 4 test files whose class-mismatch oracles need the
       # PageMap actually maintained to compare against.
@@ -545,13 +580,18 @@ jobs:
       # `--test`-filtered (narrow), matching this job's established style for
       # rows whose target is a specific mechanism rather than a broad
       # feature-union smoke check (see the `page-map-diag` row above).
+      # `internals` added (R34-3/task #522): the test file itself reaches
+      # `sefer_alloc::registry::HeapCore` directly.
       - name: test (--features "production medium-classes")
         if: ${{ !cancelled() }}
-        run: cargo test --features "production medium-classes" --test r14_4_promotion_move_leg_reduction --no-fail-fast
+        run: cargo test --features "production medium-classes internals" --test r14_4_promotion_move_leg_reduction --no-fail-fast
+      # `internals` added (R34-3/task #522):
+      # `r14_4_promotion_move_leg_reduction.rs` reaches
+      # `sefer_alloc::registry::HeapCore` directly.
       - name: test (--features "production medium-classes exact-span-large")
         if: ${{ !cancelled() }}
         run: >-
-          cargo test --features "production medium-classes exact-span-large" --no-fail-fast
+          cargo test --features "production medium-classes exact-span-large internals" --no-fail-fast
           --test r14_4_promotion_move_leg_reduction
           --test r14_4_promotion_feature_off_non_disturbance
       # R29-14 (P2, sourced from the 2026-07-29 "oh-acceleration-code-project"
@@ -597,11 +637,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --features production --no-fail-fast
+      # `internals` added (R34-3/task #522) — whole-suite row.
+      - run: cargo test --features "production internals" --no-fail-fast
       # The magazine-in-isolation config (fastbin without decommit) exercises the
       # commit-only Windows vmem path (no MEM_DECOMMIT), complementing the
       # production run above.
-      - run: cargo test --features "alloc-global alloc-xthread fastbin" --no-fail-fast
+      - run: cargo test --features "alloc-global alloc-xthread fastbin internals" --no-fail-fast
       # R13-5 (task #275): `large-reserved-capacity`'s whole benefit
       # (deferred-commit reserved-capacity in-place `realloc` growth via
       # `aligned_vmem::commit_range`) is documented as a "Windows-gated
@@ -611,7 +652,7 @@ jobs:
       # eagerly). This feature was never run on a real Windows kernel in CI
       # before. Requires `exact-span-large` transitively (Cargo feature
       # dependency).
-      - run: cargo test --features "production exact-span-large large-reserved-capacity" --no-fail-fast
+      - run: cargo test --features "production exact-span-large large-reserved-capacity internals" --no-fail-fast
 
   test-macos:
     # macOS runners are real Darwin, so the aligned-vmem `madvise(MADV_DONTNEED)`
@@ -626,10 +667,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --features production --no-fail-fast
+      # `internals` added (R34-3/task #522) — whole-suite row.
+      - run: cargo test --features "production internals" --no-fail-fast
       # The decommit path in isolation: MADV_DONTNEED on Darwin is advisory/lazy
       # (no zero-fill guarantee); these tests assert correctness holds regardless.
-      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit" --test decommit_soak --test decommit_stale_ring --no-fail-fast
+      # `internals` added (R34-3/task #522): both test files reach
+      # `sefer_alloc::alloc_core::AllocCore` directly.
+      - run: cargo test --features "alloc-global alloc-xthread alloc-decommit internals" --test decommit_soak --test decommit_stale_ring --no-fail-fast
 
   test-workspace:
     # `cargo test` at the repo root tests ONLY the root package; the workspace
@@ -712,13 +756,15 @@ jobs:
         run: cargo miri test --test region_invariants
       # Phase 8 core invariants under miri: the M6 decommit/recommit cycle
       # (zero-crossing of payload pages) over the segment substrate.
+      # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
       - name: decommit_miri_cycle
-        run: cargo miri test --features "alloc-core alloc-decommit" --test decommit_miri_cycle
+        run: cargo miri test --features "alloc-core alloc-decommit internals" --test decommit_miri_cycle
       # Phase 9–11 reclaim-offset arithmetic (cross-thread free placement)
       # under miri's strict provenance — UB-free pointer math in the
       # ring/reclaim path.
+      # `internals` added (R34-3/task #522): reaches `sefer_alloc::alloc_core::AllocCore` directly.
       - name: reclaim_offset_unit
-        run: cargo miri test --features "alloc-global alloc-xthread" --test reclaim_offset_unit
+        run: cargo miri test --features "alloc-global alloc-xthread internals" --test reclaim_offset_unit
 
   miri-alloc-core:
     # Phase F5 (task #124) align-regression tests + S3 (#168) boundary sweep,
@@ -772,8 +818,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
+      # `internals` added (R34-3/task #522): `regression_magazine_oracles.rs`
+      # reaches `sefer_alloc::registry::{bootstrap, HeapRegistry}` directly.
       - run: >-
-          cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin"
+          cargo miri test --features "alloc-global alloc-xthread alloc-decommit fastbin internals"
           --test regression_magazine_oracles
           --test regression_bump_direct_refill
 
@@ -834,8 +882,10 @@ jobs:
       # The second test (H1 aliasing guard) needs the elevated preemption
       # rate set in this job's `env` above; both share it (harmless for the
       # first test, which is phase-serialised and indifferent to the rate).
+      # `internals` added (R34-3/task #522): both test files reach
+      # `sefer_alloc::registry::{bootstrap, HeapRegistry, ...}` directly.
       - run: >-
-          cargo miri test --features "alloc-global alloc-xthread"
+          cargo miri test --features "alloc-global alloc-xthread internals"
           --test regression_xthread_large_free_no_leak
           --test regression_xthread_thread_free_alias_miri
 
@@ -1068,6 +1118,10 @@ jobs:
       # deleted along with `Heap` — `HeapCore` has no public
       # `dealloc_any_thread` to give it a faithful substitute; the
       # `regression_realloc_xthread_stamp` coverage above remains.)
+      # `internals` added (R34-3/task #522):
+      # `regression_percounter_perheap_aggregation.rs` and
+      # `regression_realloc_xthread_stamp.rs` reach
+      # `sefer_alloc::registry::{bootstrap, HeapRegistry, ...}` directly.
       - name: Run production-config tests under ThreadSanitizer
         env:
           SEFER_STRESS_OPS: "600"
@@ -1076,7 +1130,7 @@ jobs:
           cargo +nightly test
           -Zbuild-std
           --target x86_64-unknown-linux-gnu
-          --features "production"
+          --features "production internals"
           --test global_alloc_mt
           --test tls_heap_teardown_ordering_stress
           --test regression_percounter_perheap_aggregation
@@ -1115,21 +1169,22 @@ jobs:
       # zero-crossing (Phase 35). aarch64 is the load-bearing run here (weak
       # memory model can expose ordering bugs x86_64 hides); x86_64 is the
       # strong-memory baseline.
+      # `internals` added (R34-3/task #522) — whole-suite row.
       - name: Run cross-thread tests (native)
         if: ${{ !matrix.use_cross }}
-        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread"
+        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread internals"
       - name: Run cross-thread + decommit tests (native)
         if: ${{ !matrix.use_cross }}
-        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
+        run: cargo test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit internals"
       - name: Run tests (cross)
         if: ${{ matrix.use_cross }}
         run: cross test --target ${{ matrix.target }} --features experimental
       - name: Run cross-thread tests (cross)
         if: ${{ matrix.use_cross }}
-        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread"
+        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread internals"
       - name: Run cross-thread + decommit tests (cross)
         if: ${{ matrix.use_cross }}
-        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit"
+        run: cross test --target ${{ matrix.target }} --features "alloc-global alloc-xthread alloc-decommit internals"
       # Weak-memory coverage for the newest 0.3.0 magazine layer: the Э5 relaxed
       # load/store per-heap counters and the P7 batching path (the `fastbin` /
       # `production` bundle) were NEVER run on aarch64 — only the pre-magazine
@@ -1137,7 +1192,7 @@ jobs:
       # where a mis-ordered relaxed counter or batch drain would surface.
       - name: Run production tests (cross)
         if: ${{ matrix.use_cross }}
-        run: cross test --target ${{ matrix.target }} --features production
+        run: cross test --target ${{ matrix.target }} --features "production internals"
 
   numa-shim-mock:
     # NUMA Phase 1: verify wrapping logic on every CI run without real
@@ -1224,20 +1279,22 @@ jobs:
           kvm-ok || true
       - name: Build (production + numa-aware)
         run: cargo build --features "production numa-aware"
+      # `internals` added (R34-3/task #522): all three test files reach
+      # `sefer_alloc::alloc_core::{numa, AllocCore}` directly.
       - name: Compile numa_alloc tests
-        run: cargo test --features "production numa-aware" --test numa_alloc --no-run
+        run: cargo test --features "production numa-aware internals" --test numa_alloc --no-run
       - name: Compile numa_segment_id tests
-        run: cargo test --features "production numa-aware" --test numa_segment_id --no-run
+        run: cargo test --features "production numa-aware internals" --test numa_segment_id --no-run
       - name: Compile numa_seam tests
-        run: cargo test --features "production numa-aware" --test numa_seam --no-run
+        run: cargo test --features "production numa-aware internals" --test numa_seam --no-run
       - name: Run numa_alloc tests (env-guarded)
         env:
           SEFER_NUMA_TEST: "1"
-        run: cargo test --features "production numa-aware" --test numa_alloc -- --nocapture
+        run: cargo test --features "production numa-aware internals" --test numa_alloc -- --nocapture
       - name: Run numa_segment_id tests
-        run: cargo test --features "production numa-aware" --test numa_segment_id -- --nocapture
+        run: cargo test --features "production numa-aware internals" --test numa_segment_id -- --nocapture
       - name: Run numa_seam tests
-        run: cargo test --features "production numa-aware" --test numa_seam -- --nocapture
+        run: cargo test --features "production numa-aware internals" --test numa_seam -- --nocapture
 
   fuzz-build:
     # BUILD-ONLY gate for the libFuzzer targets (`region_ops`,

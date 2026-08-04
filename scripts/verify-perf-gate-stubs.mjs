@@ -30,10 +30,10 @@
 // per-PR/local check actually compiles this bench under — always turns
 // those on; there is no way to reach a "feature absent" state for them
 // without dropping `production` itself, which is out of scope for this
-// bench (see its `required-features = ["alloc-global", "bench-internals"]`
-// in Cargo.toml — `alloc-global` alone does not pull in `production`, but
-// every actual check in this repo's manifest/CI/local-gate builds this
-// bench WITH `production`, never bare `alloc-global`).
+// bench (see its `required-features = ["alloc-global", "bench-internals",
+// "internals"]` in Cargo.toml — `alloc-global` alone does not pull in
+// `production`, but every actual check in this repo's manifest/CI/local-gate
+// builds this bench WITH `production`, never bare `alloc-global`).
 //
 // This is intentionally a regex/text scan, not a real Rust parser — the
 // established style in this project's `scripts/*.mjs` tooling (see e.g.
@@ -60,6 +60,11 @@ const BENCH_FILE = resolve(REPO_ROOT, 'benches/perf_gate_iai.rs');
 const ALWAYS_ON = new Set([
   'production',
   'bench-internals',
+  // R34-3 (task #522, finding B1): `internals` joined `scripts/iai.mjs`'s
+  // `DEFAULT_FEATURES` — `perf_gate_iai.rs` reaches
+  // `sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry}` directly,
+  // and that module path is now gated behind `internals`.
+  'internals',
   'alloc-global',
   'alloc-xthread',
   'alloc-decommit',

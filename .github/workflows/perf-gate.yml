@@ -110,6 +110,11 @@ jobs:
         # plain `--features production` build of the library never exposes it
         # — this CI-only bench target opts it in explicitly.
         #
+        # `internals` (R34-3, task #522) — additionally required: this bench
+        # reaches `sefer_alloc::registry::{bootstrap, HeapCore, HeapRegistry}`
+        # directly, and that module path is now gated behind `internals`
+        # (additive over `alloc-global`, NOT implied by `production`).
+        #
         # Task #128 (enforcing): a PR run COMPARES against the restored `main`
         # baseline (`--baseline=main`); combined with the
         # `IAI_CALLGRIND_REGRESSION` env above, a >10% `Ir` regression exits
@@ -119,9 +124,9 @@ jobs:
         # baseline to regress against — it only records one.
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            cargo bench --bench perf_gate_iai --features "production bench-internals" -- --baseline=main
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --baseline=main
           else
-            cargo bench --bench perf_gate_iai --features "production bench-internals" -- --save-baseline=main
+            cargo bench --bench perf_gate_iai --features "production bench-internals internals" -- --save-baseline=main
           fi
 
       # Persist the freshly-recorded `main` baseline (main / scheduled /
