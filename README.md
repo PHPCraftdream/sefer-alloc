@@ -911,20 +911,30 @@ keeps this win without unbounded RSS amplification across cache reuse.
 
 | Bench | SeferAlloc | mimalloc | System | Notes |
 |---|---|---|---|---|
-| `realloc_grow_geometric` (64 B→4 MiB) | **~9.7 µs** | ~383 µs | ~2.78 ms | **~40× faster than mimalloc; ~290× faster than System** |
-| `realloc_grow_neighbour_pressure`     | **~906 ns** | ~1.36 ms | ~7.26 ms | **~1,500× faster than mimalloc; ~8,000× faster than System** |
+| `realloc_grow_geometric` (64 B→4 MiB) | **~238 µs** | ~431 µs | ~2.86 ms | **~1.8× faster than mimalloc; ~12× faster than System** |
+| `realloc_grow_neighbour_pressure`     | **~400 ns** | ~1.34 ms | ~7.55 ms | **~3,350× faster than mimalloc; ~18,900× faster than System** |
+
+(Re-measured 2026-08-04 by the R34-23 gate
+([`docs/perf/R34_23_REALLOC_AND_VEC_GATE.md`](docs/perf/R34_23_REALLOC_AND_VEC_GATE.md)):
+the `realloc_grow_geometric` row was previously published as "~9.7 µs / ~40×
+faster than mimalloc", but a path-activation-oracle-equipped re-verification
+found the 64 B → 4 MiB ×2 chain's final grow (2 MiB → 4 MiB) exceeds the Large
+segment's committed `span_usable` by the header-offset bytes, forcing a 2 MiB
+copy that dominates the ~238 µs timing — the published 9.7 µs was physically
+impossible given that copy. The `realloc_grow_neighbour_pressure` row is
+confirmed and even improved: sefer grows in-place (100% in-place oracle) while
+mimalloc/System copy every step.)
 
 (`realloc_grow_neighbour_pressure` was renamed from `realloc_in_place_unfavorable`
 in the 2026-07-09 review: after OPT-G the live neighbours no longer prevent
 sefer's in-place Large growth, so the bench measures sefer's header-update path
 against the copy-and-free path mimalloc/System still take — not an adversarial
-in-place case for sefer. Numbers unchanged; identical geometry, re-measured
-2026-07-06.)
+in-place case for sefer.)
 
-(Re-measured 2026-07-06 after the X-arc: OPT-G grows a Large block in place
-whenever the new size fits the already-committed 4 MiB span — a header update
-returning the same pointer, zero copy. Deterministic proof: `realloc_grow`
-1,520,714 → 561,912 Ir / −47 % Estimated Cycles in the callgrind gate.)
+(OPT-G grows a Large block in place whenever the new size fits the
+already-committed 4 MiB span — a header update returning the same pointer, zero
+copy. For the geometric chain this holds for the 256 KiB → 512 KiB → 1 MiB → 2
+MiB grows; only the final 2 → 4 MiB grow exceeds the span and copies.)
 
 ### Small-class churn vs warm bulk burst (`benches/global_alloc.rs`)
 

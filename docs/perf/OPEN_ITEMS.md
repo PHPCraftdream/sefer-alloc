@@ -432,6 +432,16 @@ for completeness.
    >   recommendation); `R20_2_C4_RESERVED_CAPACITY_HEADROOM_GATE.md` §6 (the
    >   NULL verdict + mechanism); `docs/FEATURE_PROMOTION_STATUS.md` (survey
    >   row).
+   > - **R34-23 update (task #542):** a subprocess-isolated A/B on the
+   >   `geometric_x2_4mib` realloc grow chain (64 B → 4 MiB, 16 doublings)
+   >   found LRC does NOT improve in-place rate (path-activation oracle
+   >   identical: 3 in-place + 13 declines per chain with and without LRC)
+   >   and is 3.4× SLOWER (893 µs vs 261 µs median) — root cause: LRC implies
+   >   `exact-span-large`, which shrinks initial `span_usable` from 4 MiB
+   >   (SEGMENT-rounded) to page-exact, hurting large-cache reuse; the 4×
+   >   reserved factor is outgrown within 2 doublings. **Verdict NO-GO for
+   >   the geometric-realloc-grow axis** (consistent with R20-2's NULL for
+   >   the promotion axis). See `R34_23_REALLOC_AND_VEC_GATE.md` §4.
 
 30. **R14-5 — `large-cache-extended` CONDITIONAL-GO, not promoted; owner entry
     added R30-14 (task #463) to close a zero-owner gap. RE-VERIFIED R31-3

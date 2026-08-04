@@ -1,0 +1,18 @@
+# R34-23 criterion re-verification of `benches/large_realloc.rs` realloc_grow_geometric
+# Measured 2026-08-04, same machine as the R34-23 gate (11th Gen Intel i7-11800H).
+# Command: cargo bench --bench large_realloc --features "production" -- realloc_grow_geometric
+# This is the SAME bench the README's "~9.7 µs / ~40× faster" numbers were sourced from.
+# Full output reproducible via the command above.
+
+realloc_grow_geometric/SeferAlloc
+                        time:   [229.85 µs 238.06 µs 243.31 µs]
+realloc_grow_geometric/mimalloc
+                        time:   [422.88 µs 431.64 µs 436.48 µs]
+realloc_grow_geometric/System
+                        time:   [2.7632 ms 2.8606 ms 2.9636 ms]
+
+# TRUNCATED — only the realloc_grow_geometric group shown. The bench also runs
+# large_alloc_free and realloc_grow_neighbour_pressure groups (not re-run here;
+# the neighbour_pressure re-verification is via the R34-23 direct gate, which
+# shows sefer ~400 ns vs mimalloc ~1.34 ms = ~3350× faster, consistent with
+# README's ~1500× in direction and order of magnitude).

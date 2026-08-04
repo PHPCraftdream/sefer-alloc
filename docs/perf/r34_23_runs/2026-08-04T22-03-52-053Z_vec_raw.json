@@ -1,0 +1,3376 @@
+{
+  "timestamp": "2026-08-04T22:03:52.054Z",
+  "task": "R34-23-vec",
+  "identity": {
+    "git_commit": "b2291876163c9a253340788a6a67d6d256e1109d",
+    "git_dirty": true,
+    "git_write_tree": "969edd0482071162d17bc9cdb5428048f83a28d0",
+    "rustc_version_verbose": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-pc-windows-msvc\nrelease: 1.97.0\nLLVM version: 22.1.6",
+    "cpu_model": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz (16 cores)",
+    "platform": "win32",
+    "iterations": 5,
+    "reps": 8
+  },
+  "samples": [
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11490000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12074400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12118400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11476700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8013800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2773200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1980400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2291100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2295400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1877300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4700900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6172100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6197200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5553300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5487600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7622300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9376600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8916100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8920400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8846800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7848800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8209300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7876500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7982000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7957100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2131800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1952800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1934600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1950500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2192500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5096100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5713200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4583100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3931300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3894900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7803300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6798500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6649300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8420500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6697200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12052400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12343000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9876600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12795700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14833400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2397200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2579300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3767900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3431600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3415600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7169500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6658900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6509500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7177600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7493600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11848000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12476700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11588100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11780900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 0,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12060200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7773200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8717900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8682100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9527800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11725800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2777400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2764800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2981300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2608300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2113900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5598100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6123000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6088600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6100500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5209600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7246700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6499700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8331900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6986600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7554700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14822500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15147500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14877000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9622400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10227300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3643500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2994000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2980800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2860000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2955100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4698000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4851500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7220600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7924000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7277400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12206500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11007700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9514300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11805300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11520800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12057900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12206200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11308100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7533000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7475400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2690700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2978200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2974800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2951200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3031300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5921900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5505400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5767300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5911600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5923900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8749800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8811900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8742900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8754200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 1,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7710400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10425200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11523400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12892300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11109500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14962800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3056400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3314500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3251300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3244300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3308400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7035300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7166500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6503300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6771700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7012900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11431900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11614000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11013400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9741700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12113200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7582400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10466500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8282300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7927900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12090200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2914800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2958200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2887100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2934000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2885800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4828700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4487100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5865600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5922300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5855400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8745000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9295100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8870300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9025800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9104600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8180700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9712300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8784800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7913800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10796600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2882000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3071000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2969800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2993300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2890400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5981800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6117900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5899600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6190700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5803800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9181700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9088100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9045300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9128500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 2,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7741300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10817900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7719500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8450900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12155300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11057700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1910300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2120300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2627600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2630000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2581200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3723300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4030300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5874700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5904600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5911100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8863200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8118300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6348000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6352300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7561400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10012900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7680500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7735100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7822100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8862800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2970300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3038700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2996000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2987900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2945400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5690500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6104100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6021800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5760400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5143300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8935000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6730300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6646100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7516100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8403400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10663300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10599100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14128600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 21430000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15195900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3104900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3154900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3265200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3184200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3207400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7474400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7752300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7308900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6666500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6978000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9007300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11947800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12054700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 10420500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 3,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9378500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7670000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8631100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11719500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 13807800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12311600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3039000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3033000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1973700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1960800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1923500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4182100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3969300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5273500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6192700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4740800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7682000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9202100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9047900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8988700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8843400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10010900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10540400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12303600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 19955200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12307000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3539000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 7894100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3429100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3049500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3114200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6248600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4625600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6684000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7146800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7378400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11933400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12279100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11707300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12085900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11700500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8853700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9010700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8847500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8872300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8855200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1932100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1861000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2064900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2446500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1936500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3603700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3772500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3617200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3607100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3628600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8786300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7892000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6560800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6946300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 4,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6543900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10737000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9826400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9713900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10811600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11551800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3284800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3304700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3386100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2380000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2437500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4702500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5582100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4957700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5436700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7438900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9032200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 10693000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11343000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11898900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12296700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9338600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11123500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10381700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8833300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11427400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2914600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2941400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2832600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2007800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2133700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4121000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3781100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4889600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6444000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5695300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8391400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8602300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8101900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7679800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8445000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12645400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11944000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7815500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7673300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_4mib",
+      "elapsed_ns": 8214000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2069900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2050100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2000700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1952700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1918100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5472100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5365300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4351500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3887800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6247100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8810300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9252500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9014300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9133200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 5,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9001000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7628300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9730300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11739400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7821700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7512500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1817700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1816000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2432000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3024200,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2879700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5805900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5851400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5972300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5882000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5527200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6350400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6795000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6467300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6556300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6667400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7788500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11017600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11760200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9542500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10664200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2730700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2574000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2656800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2611100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1903800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4837400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4959800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4623700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4601600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4752300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6614000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7868000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7552200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9424300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9126700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12574300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11608600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9204700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 13080400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14031100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3251600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3169900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3447000,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3836500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3515800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7356300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7504800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4866600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5276800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5830300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9215200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9142500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8790500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9574200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 6,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8476400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 10465000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7922300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7658300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11928800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 12200300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2805900,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2946100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2872500,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2787600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2875700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5815800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6388600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6004900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6101500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5992400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 7213400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9002900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9070700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8876300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "mimalloc",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 8655100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15873600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 14392900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15864700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15289200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 15288500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3493800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3383800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 3437400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2939300,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 2836700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4911200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 4960300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5700700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 7307900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 6714000,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 9202700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11742600,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12300900,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 11494700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "system",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 12264700,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7582800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 11279100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 9749400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7539500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_4mib",
+      "elapsed_ns": 7758800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1937100,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1915700,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1826400,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1864600,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "growth_1mib",
+      "elapsed_ns": 1855800,
+      "realloc_count": 18
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3617200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3836400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3766200,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 3861500,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "shrink_grow_1mib",
+      "elapsed_ns": 5882800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6316100,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6636300,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6940400,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6421800,
+      "realloc_count": 20
+    },
+    {
+      "alloc": "sefer",
+      "rep": 7,
+      "shape": "reserve_exact_geom",
+      "elapsed_ns": 6876200,
+      "realloc_count": 20
+    }
+  ]
+}

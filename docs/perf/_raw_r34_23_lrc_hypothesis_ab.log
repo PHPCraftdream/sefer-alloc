@@ -1,0 +1,18 @@
+# R34-23 large-reserved-capacity hypothesis A/B test
+# Same machine, same binary, --allocator sefer --samples 10
+# Binary hashes differ (verified md5sum: 09b554c0... without LRC vs 4e515b80... with LRC)
+
+=== WITHOUT LRC (features: production alloc-stats) ===
+CELL,geometric_x2_4mib,copied,10,261300,171900,2051300,30,0,130,5525504,11108352,9220096,19513344
+CELL,geometric_x2_4mib,untouched,10,185200,171100,220300,30,0,130,9220096,19513344,9220096,19513344
+
+=== WITH LRC (features: production alloc-stats large-reserved-capacity) ===
+CELL,geometric_x2_4mib,copied,10,892600,788600,1020200,30,0,130,7110656,7467008,12926976,14327808
+CELL,geometric_x2_4mib,untouched,10,821100,746900,956700,30,0,130,12926976,14327808,12926976,14327808
+
+# Column order: pattern,payload,samples,median_ns,min_ns,max_ns,inplace_large_delta,inplace_small_delta,decline_delta,rss_before,commit_before,rss_after,commit_after
+# Oracle deltas IDENTICAL in both (30 inplace_large, 130 decline = 3+13 per chain).
+# LRC makes geometric grow SLOWER (892 µs vs 261 µs), NOT faster.
+# Root cause: large-reserved-capacity implies exact-span-large, which shrinks
+# initial usable from 4 MiB (SEGMENT-rounded) to page-exact (~256 KiB), hurting
+# large-cache reuse. The 4× reserved-capacity factor is outgrown within 2 doublings.
