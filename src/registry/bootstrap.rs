@@ -197,6 +197,9 @@ use core::hint::spin_loop;
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(feature = "internals")]
+use core::sync::atomic::AtomicBool;
+
 // The extracted lazy CAS-published pointer cell (CRATE-P3). Under a NORMAL or
 // `production` build sefer uses the real crate type. Under `--cfg loom`, this
 // file is compiled to link sefer's OWN shadow-model loom harnesses (e.g.
@@ -543,6 +546,14 @@ impl Registry {
     /// caller in this crate derives `idx` from `pick_slot`/a previously
     /// `claim`ed heap's `id()`, both of which are range-checked before
     /// reaching here; see each call site's own range check).
+    ///
+    /// # OOM
+    ///
+    /// If the owning chunk has not yet been materialised and the OS refuses
+    /// the VM reservation, this method **aborts the process** (preserving the
+    /// historic infallible `&'static HeapSlot` contract for alloc-path
+    /// callers). Free-path callers that must not abort should use
+    /// [`slot_or_none`](Self::slot_or_none) instead (R34-15/task #534).
     #[inline]
     pub(crate) fn slot(&self, idx: usize) -> &'static HeapSlot {
         debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
@@ -553,12 +564,57 @@ impl Registry {
         unsafe { chunk.slots.get_unchecked(slot_in_chunk) }
     }
 
+    /// Fallible variant of [`slot`](Self::slot) for the **free path**
+    /// (R34-15/task #534). Returns `None` when the owning chunk has not yet
+    /// been materialised AND the OS refuses the VM reservation, instead of
+    /// aborting. Every free-path caller already has a defensive "unstamped /
+    /// garbled owner id" early-return two lines above its call site; the
+    /// `None` case folds into that same graceful bail.
+    ///
+    /// Alloc-path callers continue to use the infallible [`slot`](Self::slot)
+    /// — they run on the allocating thread where an OOM abort is the correct
+    /// policy (the allocation itself would fail immediately afterward), so
+    /// this method is deliberately NOT a drop-in replacement for `slot()`
+    /// across the crate.
+    ///
+    /// **F-3 context (documented, not fixed):** the two production callers —
+    /// `set_dirty_bit_for_segment` and `resolve_heap_overflow` in
+    /// `heap_core_xthread.rs` — read `owner_id` from *foreign* segment
+    /// memory with only an `idx < MAX_HEAPS` range check before indexing the
+    /// registry. A garbled-but-in-range id therefore triggers a FRESH OS
+    /// reservation of a registry chunk on the dealloc path. By itself this is
+    /// harmless (the chunk is a small leaked reservation that a future
+    /// `claim()` would have materialised anyway), but it is the same input
+    /// that reaches this OOM branch — which is exactly why the free path must
+    /// not abort here. For a single legitimate cross-thread free the segment
+    /// cannot be released under the freer (the block holds `live_count >= 1`
+    /// until the owner's drain), so there is no additional UAF window; the
+    /// residual risk is the same caller-contract-violation surface (double
+    /// free / stale pointer) every allocator has.
+    #[inline]
+    pub(crate) fn slot_or_none(&self, idx: usize) -> Option<&'static HeapSlot> {
+        debug_assert!(idx < MAX_HEAPS, "slot index out of range: {idx}");
+        let chunk_idx = idx / CHUNK_SLOTS;
+        let slot_in_chunk = idx % CHUNK_SLOTS;
+        let chunk = self.try_ensure_chunk(chunk_idx)?;
+        // SAFETY: `slot_in_chunk < CHUNK_SLOTS` by construction (`% CHUNK_SLOTS`).
+        Some(unsafe { chunk.slots.get_unchecked(slot_in_chunk) })
+    }
+
     /// Ensure chunk `chunk_idx` is materialised, then return a `&'static
     /// RegistryChunk` reference to it. Fast path: [`RacyPtrCell::get`] (one
     /// `Acquire` load + non-null/non-sentinel check, inside the cell). Slow
     /// path (first touch or race): [`ensure_chunk_slow`], which drives the
     /// cell's `get_or_try_init` (CAS-reserve, OS reservation, Release-publish,
     /// spin-while-INITIALIZING loser, OOM rollback).
+    ///
+    /// **OOM policy (alloc path):** on chunk-materialisation OOM this method
+    /// ABORTS the process. This preserves the historic infallible
+    /// `&'static RegistryChunk` contract for every alloc-path caller of
+    /// [`slot`](Self::slot) / `pick_slot` / `claim` (an OOM abort on the
+    /// alloc path is the correct policy — the allocation itself would fail
+    /// immediately afterward). Free-path callers use [`try_ensure_chunk`]
+    /// instead (R34-15/task #534).
     #[inline]
     fn ensure_chunk(&self, chunk_idx: usize) -> &'static RegistryChunk {
         if let Some(p) = self.chunks[chunk_idx].get() {
@@ -571,6 +627,42 @@ impl Registry {
             // leaked (`leak_zeroed_pages`) and lives for the process lifetime,
             // so `&'static` is sound.
             return unsafe { p.as_ref() };
+        }
+        match ensure_chunk_slow(&self.chunks[chunk_idx]) {
+            Some(chunk) => chunk,
+            None => {
+                // Chunk-materialisation OOM (alloc path). The cell has ALREADY
+                // rolled its sentinel back to null (anti-livelock — losers
+                // re-race; a future `slot()` call can retry this chunk index).
+                //
+                // We keep the historic ABORT policy for the alloc path
+                // (unchanged in effect from before R34-15): `Registry::slot` /
+                // `pick_slot` / `claim` assume `slot()` always succeeds
+                // (`&'static HeapSlot`, not `Option<..>`), and a
+                // chunk-materialisation OOM is exceedingly rare (the OS
+                // refusing a tens-of-KiB-to-low-MiB reservation while the
+                // process is already so starved that the `HeapCore::new()`
+                // segment reservation a few lines later would fail anyway).
+                // The free path now has a non-aborting path via
+                // [`try_ensure_chunk`] / [`slot_or_none`] (R34-15/task #534);
+                // widening `slot()` itself to `Option` remains deliberately
+                // out of scope (alloc-path callers still need the infallible
+                // `&'static` contract).
+                std::process::abort();
+            }
+        }
+    }
+
+    /// Fallible variant of [`ensure_chunk`](Self::ensure_chunk) for the
+    /// **free path** (R34-15/task #534). Returns `None` on
+    /// chunk-materialisation OOM instead of aborting. The cell's anti-livelock
+    /// rollback (sentinel back to null) runs identically in both variants —
+    /// only the caller-visible policy differs.
+    #[inline]
+    fn try_ensure_chunk(&self, chunk_idx: usize) -> Option<&'static RegistryChunk> {
+        if let Some(p) = self.chunks[chunk_idx].get() {
+            // SAFETY: same argument as `ensure_chunk`'s fast path above.
+            return Some(unsafe { p.as_ref() });
         }
         ensure_chunk_slow(&self.chunks[chunk_idx])
     }
@@ -665,6 +757,18 @@ impl Registry {
 
 static REGISTRY: Registry = Registry::new();
 
+// R34-15/task #534: test-only OOM injection for `ensure_chunk_slow`'s winner
+// closure. When set, the closure returns `None` (simulating the OS refusing
+// the `leak_zeroed_pages` reservation) WITHOUT actually exhausting VM, so a
+// test can deterministically exercise the chunk-materialisation-OOM code path
+// and prove the free path returns gracefully instead of aborting. This is a
+// plain `AtomicBool` read — it does NOT touch allocator metadata through a
+// raw pointer, so it is a safe test-injection point (not an `unsafe fn`), and
+// it is `internals`-gated so it does not widen the surface of a `production`
+// build.
+#[cfg(feature = "internals")]
+static DBG_INJECT_CHUNK_OOM: AtomicBool = AtomicBool::new(false);
+
 /// Return a `&'static` reference to the process-global registry.
 ///
 /// With the slot array chunked (R6-OPT-P0-2 round 1), `Registry` itself needs
@@ -677,13 +781,20 @@ pub fn ensure() -> &'static Registry {
     &REGISTRY
 }
 
-/// Slow path for [`Registry::ensure_chunk`]: drive the chunk's
-/// [`racy_ptr_cell::RacyPtrCell`] through its `get_or_try_init` — the CAS-reserve
-/// / OS-reserve / Release-publish / spin-while-INITIALIZING-loser / OOM-rollback
-/// protocol now lives INSIDE the cell (the extracted `UNINIT -> INITIALIZING ->
-/// READY` state machine). This function supplies only the two things the cell
-/// leaves to the caller: the winner's fallible OS reservation closure, and the
-/// process-abort OOM policy this specific call site keeps.
+/// Slow path for [`Registry::ensure_chunk`] / [`Registry::try_ensure_chunk`]:
+/// drive the chunk's [`racy_ptr_cell::RacyPtrCell`] through its
+/// `get_or_try_init` — the CAS-reserve / OS-reserve / Release-publish /
+/// spin-while-INITIALIZING-loser / OOM-rollback protocol now lives INSIDE the
+/// cell (the extracted `UNINIT -> INITIALIZING -> READY` state machine). This
+/// function supplies only the winner's fallible OS reservation closure; the
+/// OOM policy (abort for the alloc path, return `None` for the free path) lives
+/// in the CALLER ([`Registry::ensure_chunk`] vs [`Registry::try_ensure_chunk`]).
+///
+/// Returns `None` on chunk-materialisation OOM. The cell has ALREADY rolled its
+/// sentinel back to null by then (anti-livelock — losers re-race; a future
+/// call can retry this chunk index). Before R34-15 (task #534) this function
+/// aborted on OOM directly; the abort policy now lives in `ensure_chunk` (alloc
+/// path only), while `try_ensure_chunk` (free path) passes the `None` through.
 ///
 /// The cell guarantees exactly-once init, a single published pointer for all
 /// racers, Release/Acquire happens-before, and — critically for M5 — that a
@@ -693,7 +804,7 @@ pub fn ensure() -> &'static Registry {
 /// ## CRATE-P3 — why the overflow-sidecar path below did NOT also migrate
 ///
 /// The chunk site maps cleanly onto `RacyPtrCell<RegistryChunk>`: it wants a
-/// `&'static RegistryChunk`, aborts on OOM, and `RegistryChunk` is never a ZST.
+/// `&'static RegistryChunk`, and `RegistryChunk` is never a ZST.
 /// The `alloc-xthread` overflow-sidecar path (`ensure_overflow_sidecar` below)
 /// deliberately stays spelled out inline because it does NOT fit the generic
 /// cell's shape without weakening it: (a) it returns a `bool`
@@ -710,7 +821,7 @@ pub fn ensure() -> &'static Registry {
 /// instance — the shared protocol it relies on is still proved by the crate's
 /// real-type loom suite.
 #[cold]
-fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> &'static RegistryChunk {
+fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> Option<&'static RegistryChunk> {
     let published = chunk_cell.get_or_try_init(|| {
         // ── Winner init closure ───────────────────────────────────────────
         // We hold the cell's INITIALIZING sentinel; we are the SOLE
@@ -739,42 +850,30 @@ fn ensure_chunk_slow(chunk_cell: &RacyPtrCell<RegistryChunk>) -> &'static Regist
         //
         // Returning `None` on OS refusal makes the cell roll its sentinel back
         // to null (anti-livelock — losers re-race) BEFORE we get control back
-        // to run the abort policy below.
+        // to run the OOM policy in the caller.
+
+        // R34-15/task #534: test-only OOM injection. When the flag is set the
+        // closure returns `None` WITHOUT calling `leak_zeroed_pages`, so a test
+        // can deterministically exercise the chunk-materialisation-OOM path and
+        // prove the free path returns gracefully instead of aborting.
+        #[cfg(feature = "internals")]
+        if DBG_INJECT_CHUNK_OOM.load(Ordering::Relaxed) {
+            return None;
+        }
+
         let p = aligned_vmem::leak_zeroed_pages(CHUNK_SIZE)?;
         Some(p.cast::<RegistryChunk>())
     });
 
-    match published {
-        Some(p) => {
-            // SAFETY: `RacyPtrCell::get_or_try_init` returned `Some` only after
-            // the winner published a real (non-null, non-sentinel) pointer with
-            // `Release` and every other racer observed it under `Acquire`. The
-            // pointee is the fully-zeroed `RegistryChunk` reserved above (a
-            // valid state), leaked for the process lifetime, so `&'static` is
-            // sound.
-            unsafe { p.as_ref() }
-        }
-        None => {
-            // Chunk-materialisation OOM. The cell has ALREADY rolled its
-            // sentinel back to null (so no loser is wedged and a future
-            // `slot()` call can retry this chunk index) — that is the
-            // anti-livelock guarantee the inline code used to spell out via
-            // `rollback_chunk_sentinel`, now internal to `RacyPtrCell`.
-            //
-            // We keep the historic ABORT policy for THIS call site (unchanged
-            // in EFFECT from before the extraction): `Registry::slot` /
-            // `pick_slot` / `claim` assume `slot()` always succeeds (`&'static
-            // HeapSlot`, not `Option<..>`), so a chunk that cannot be
-            // materialised has no non-fatal propagation path yet. A
-            // chunk-materialisation OOM is exceedingly rare (the OS refusing a
-            // tens-of-KiB-to-low-MiB reservation while the process is already
-            // so starved that the `HeapCore::new()` segment reservation a few
-            // lines later would fail anyway); widening `slot()` to `Option` is
-            // deliberately out of scope. The cell's rollback establishes the
-            // mechanism a future `Option`-returning `slot()` could build on.
-            std::process::abort();
-        }
-    }
+    published.map(|p| {
+        // SAFETY: `RacyPtrCell::get_or_try_init` returned `Some` only after
+        // the winner published a real (non-null, non-sentinel) pointer with
+        // `Release` and every other racer observed it under `Acquire`. The
+        // pointee is the fully-zeroed `RegistryChunk` reserved above (a
+        // valid state), leaked for the process lifetime, so `&'static` is
+        // sound.
+        unsafe { p.as_ref() }
+    })
 }
 
 /// Test-only hook (R6-OPT-P0-2 round 1, generalising the pre-chunking
@@ -871,6 +970,45 @@ pub const fn dbg_num_chunks() -> usize {
 /// count it observed at entry.
 pub fn count_for_test() -> u32 {
     ensure().count.load(Ordering::Acquire)
+}
+
+// -------------------------------------------------------------------------
+// R34-15/task #534: test-only OOM-injection hooks for the chunk-materialisation
+// path. These let a test deterministically force `ensure_chunk_slow`'s OOM
+// branch (see `DBG_INJECT_CHUNK_OOM` above) and prove the free path
+// (`slot_or_none`) returns `None` instead of aborting. Gated on `internals`
+// (same surface the rest of the `#[doc(hidden)]` test hooks in this file use);
+// NOT `bench-internals`-gated because these hooks do NOT touch allocator
+// metadata through a raw pointer — `DBG_INJECT_CHUNK_OOM` is a plain
+// `AtomicBool` read, and `dbg_slot_or_none` is a thin wrapper around the
+// safe `pub(crate) slot_or_none` method (no raw pointers, no `unsafe`).
+// -------------------------------------------------------------------------
+
+/// `#[doc(hidden)]` test hook (R34-15/task #534) — not part of the public
+/// API. Sets/clears the chunk-materialisation OOM injection flag. When set,
+/// `ensure_chunk_slow`'s winner closure returns `None` WITHOUT calling
+/// `leak_zeroed_pages`, simulating the OS refusing the VM reservation. The
+/// flag is process-global; a test that sets it MUST clear it before returning
+/// (use a Drop guard) so subsequent tests are unaffected.
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+pub fn dbg_set_inject_chunk_oom(on: bool) {
+    DBG_INJECT_CHUNK_OOM.store(on, Ordering::SeqCst);
+}
+
+/// `#[doc(hidden)]` test hook (R34-15/task #534) — not part of the public
+/// API. Exercises the free-path [`Registry::slot_or_none`]: returns `true` if
+/// the slot was resolved (chunk already materialised, or materialisation
+/// succeeded), `false` if the chunk could not be materialised (OOM). A test
+/// sets the OOM injection flag via [`dbg_set_inject_chunk_oom`], calls this
+/// with a high slot index whose chunk has NOT been materialised yet, and
+/// asserts it returns `false` — proving the free path returns gracefully
+/// instead of aborting (the pre-R34-15 behaviour).
+#[cfg(feature = "internals")]
+#[doc(hidden)]
+#[must_use]
+pub fn dbg_slot_or_none(idx: usize) -> bool {
+    ensure().slot_or_none(idx).is_some()
 }
 
 // ============================================================================

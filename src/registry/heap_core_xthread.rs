@@ -344,7 +344,19 @@ fn set_dirty_bit_for_segment(
     if owner_id >= super::bootstrap::MAX_HEAPS {
         return; // Defensive: unstamped/garbled owner id.
     }
-    let slot = reg.slot(owner_id);
+    // R34-15/task #534: free-path slot resolution. `slot_or_none` returns
+    // `None` on chunk-materialisation OOM instead of aborting, folding into
+    // the same defensive bail as the garbled-id check above. F-3 context:
+    // `owner_id` is read from FOREIGN segment memory with only the
+    // `idx < MAX_HEAPS` range check above; a garbled-but-in-range id can
+    // trigger a FRESH OS reservation here. For a legitimate cross-thread
+    // free this is harmless (the block holds `live_count >= 1` until the
+    // owner's drain, so the segment cannot be released under the freer);
+    // the residual risk is the same caller-contract-violation surface
+    // (double free / stale pointer) every allocator has.
+    let Some(slot) = reg.slot_or_none(owner_id) else {
+        return; // Chunk-materialisation OOM — defensive return (R34-15).
+    };
     let word = segment_id / 64;
     let bit = 1u64 << (segment_id % 64);
     // The WORDS_PER_CLASS compile-time bound check: segment_id < MAX_SEGMENTS
@@ -1531,13 +1543,20 @@ impl HeapCore {
         if idx >= super::bootstrap::MAX_HEAPS {
             return None; // Defensive: unstamped/garbled owner id.
         }
-        // R6-OPT-P0-2: `idx < MAX_HEAPS` just checked; `slot()` resolves it
-        // through the chunked slot array (materialising the owning chunk if
-        // needed — sound here because this index was read off a LIVE
-        // segment's owner stamp, i.e. some earlier `claim()` already
-        // materialised this chunk; a fresh materialisation would still be
-        // correct, just redundant with that earlier one).
-        Some(&reg.slot(idx).overflow)
+        // R6-OPT-P0-2: `idx < MAX_HEAPS` just checked; `slot_or_none` resolves
+        // it through the chunked slot array (materialising the owning chunk if
+        // needed — sound here because this index was read off a LIVE segment's
+        // owner stamp, i.e. some earlier `claim()` already materialised this
+        // chunk; a fresh materialisation would still be correct, just redundant
+        // with that earlier one).
+        //
+        // R34-15/task #534: `slot_or_none` returns `None` on
+        // chunk-materialisation OOM instead of aborting; `map` folds the `None`
+        // into this function's existing defensive `None` return (same shape as
+        // the garbled-id check above). F-3: see `set_dirty_bit_for_segment`'s
+        // doc comment for why a garbled-but-in-range id reaching here is
+        // harmless for legitimate cross-thread frees.
+        reg.slot_or_none(idx).map(|slot| &slot.overflow)
     }
 
     /// Advisory owner-liveness probe gating
@@ -1576,13 +1595,18 @@ impl HeapCore {
         if idx >= super::bootstrap::MAX_HEAPS {
             return true;
         }
-        // R6-OPT-P0-2: `slot()` resolves through the chunked slot array —
-        // see `resolve_heap_overflow`'s identical rationale above for why a
+        // R6-OPT-P0-2: `slot_or_none` resolves through the chunked slot array
+        // — see `resolve_heap_overflow`'s identical rationale above for why a
         // (redundant, in practice) chunk materialisation here is sound.
-        super::bootstrap::ensure()
-            .slot(idx)
-            .state
-            .load(Ordering::Relaxed)
-            == super::heap_slot::STATE_LIVE
+        //
+        // R34-15/task #534: on chunk-materialisation OOM, `slot_or_none`
+        // returns `None` instead of aborting. We report `true` (live) to
+        // preserve RAD-4's original unconditional-spin behaviour — the SAME
+        // default the out-of-range id branch above uses — so the caller's
+        // spin window is not short-circuited by a transient OOM.
+        match super::bootstrap::ensure().slot_or_none(idx) {
+            Some(slot) => slot.state.load(Ordering::Relaxed) == super::heap_slot::STATE_LIVE,
+            None => true, // Chunk-materialisation OOM — preserve spin (R34-15).
+        }
     }
 }

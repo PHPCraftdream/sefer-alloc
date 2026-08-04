@@ -263,6 +263,7 @@ const PURE_OBSERVERS: &[&str] = &[
     "src/registry/heap_core_diag.rs::dbg_last_stamped_segment",
     "src/registry/heap_core_diag.rs::dbg_kind_at_tag",
     "src/registry/heap_core_diag.rs::dbg_table_count",
+    "src/registry/bootstrap.rs::dbg_slot_or_none",
 ];
 
 /// (B) Safe mutators — safe, non-`bench-internals`-gated, DO mutate
@@ -432,6 +433,10 @@ const SAFE_MUTATORS: &[(&str, &str)] = &[
     (
         "src/registry/heap_core_diag.rs::dbg_drain_small_pool",
         "delegates to the real production AllocCore::drain_small_pool teardown-trim primitive (same as trim_for_recycle)",
+    ),
+    (
+        "src/registry/bootstrap.rs::dbg_set_inject_chunk_oom",
+        "sets a plain AtomicBool test-injection flag only; no allocator metadata, no raw pointers, no soundness relevance — the flag makes ensure_chunk_slow's closure return None early, simulating an already-handled production OOM path",
     ),
 ];
 
