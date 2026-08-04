@@ -380,14 +380,56 @@ impl AllocCore {
                 SegmentHeader::set_large_size_at(slot.base, size);
                 SegmentHeader::set_large_align_at(slot.base, align);
                 SegmentHeader::set_bump_at(slot.base, bump);
+                // R34-14 (task #533): reset the three owner/deferred fields
+                // to their neutral pre-stamp values before register. The
+                // pre-eb2463a full-struct write did this implicitly via
+                // `SegmentHeader::large`'s constructor; F12's targeted writes
+                // left them carried forward, which is a real defect for
+                // `deferred_next` (a segment that went through the deferred-
+                // large-free path retains a non-`ABANDONED_TAIL` link value;
+                // a subsequent cross-thread free's
+                // `push_large_deferred_free` CAS from `ABANDONED_TAIL` then
+                // FAILS, silently dropping the free → permanent leak) and
+                // widens the defensive window for `owner_state`/
+                // `owner_thread_free` (between register and
+                // stamp_segment_owner, a stale free sees the PREVIOUS
+                // occupant's values instead of the neutral OWNER_ID_NONE/
+                // null the old full-struct write established). All three are
+                // plain stores — sound for the same unregistered-window
+                // reason as the four writes above (no cross-thread reader
+                // can address this segment yet). See the exhaustive field-
+                // classification pin in `segment_header.rs` (R34-14) for the
+                // complete inventory of every SegmentHeader field's carry-
+                // forward status.
+                {
+                    let meta = super::segment_header::SegmentMeta::new(slot.base);
+                    meta.owner_state_atomic().store(
+                        super::segment_header::pack_owner(
+                            super::segment_header::OWNER_STATE_LIVE,
+                            super::segment_header::OWNER_ID_NONE,
+                            0,
+                        ),
+                        core::sync::atomic::Ordering::Relaxed,
+                    );
+                    meta.deferred_next_atomic().store(
+                        super::segment_header::ABANDONED_TAIL,
+                        core::sync::atomic::Ordering::Relaxed,
+                    );
+                }
+                let otf_off = core::mem::offset_of!(SegmentHeader, owner_thread_free);
+                Node::write_ptr(
+                    Node::offset(slot.base, otf_off)
+                        as *mut *const core::sync::atomic::AtomicPtr<u8>,
+                    core::ptr::null(),
+                );
                 // NOW publish `slot.base` to `contains_base`/remote routing.
                 // Under alloc-decommit, `recycle()` left a NULL slot that
                 // `register()` will reuse — so this should not fail. If it does
                 // (table is genuinely full) we cannot reuse this slot; release
                 // it and fall through to the slow OS path. The header fields
-                // are already written above (F12's targeted writes), but the
-                // slot never becomes visible in that failure branch, so there
-                // is nothing to unwind.
+                // are already written above (F12's targeted writes + R34-14's
+                // owner/deferred resets), but the slot never becomes visible
+                // in that failure branch, so there is nothing to unwind.
                 let id = match self.table.register(slot.base) {
                     Some(id) => id,
                     None => {

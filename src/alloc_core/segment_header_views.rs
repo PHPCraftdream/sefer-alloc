@@ -116,13 +116,23 @@ impl SegmentHeader {
     /// comment on [`push_large_deferred_free`](crate::alloc_core::deferred_large::push_large_deferred_free)
     /// for the full rationale and its documented residual limit.
     ///
-    /// `large_size` is written once at segment construction
-    /// (`SegmentHeader::large`) and on every large-cache-hit reuse
-    /// (`AllocCore::alloc_large`'s hit path rewrites the WHOLE header via
-    /// `Node::write_struct` before the segment is handed to a new caller —
-    /// never mutated in place field-by-field), so a field-specific read here
-    /// does not race the owner's disjoint `bump` writes (same discipline as
-    /// `kind_at`/`magic_at`/`owner_thread_free_at`). It IS, by design, able to
+    /// `large_size` is written at segment construction (`SegmentHeader::large`,
+    /// via the slow path's full-struct `Node::write_struct`) and at every
+    /// large-cache-hit reuse (`AllocCore::alloc_large`'s hit path, via the
+    /// targeted `set_large_size_at` since F12/eb2463a — a single
+    /// field-specific store, NOT a whole-header rewrite). In BOTH cases the
+    /// write runs strictly BEFORE `register()` publishes the segment to
+    /// `contains_base`, so no cross-thread reader can observe the write in
+    /// progress (the publication-barrier argument — F12 changed the write's
+    /// SHAPE from full-struct to field-specific, not its TIMING). After
+    /// publication, `large_size` is touched only by the owner's own `realloc`
+    /// in-place grow path (`set_large_size_at` at a disjoint call site) — a
+    /// concurrent cross-thread read of the same pointer would itself be UB
+    /// (use-after-realloc). So a field-specific read here races neither the
+    /// publication-time write (complete before the segment is reachable) nor
+    /// the owner's hot `bump` writes (disjoint field at a disjoint offset),
+    /// the same two-pillar argument (write-before-publish +
+    /// disjoint-from-bump) that held before F12. It IS, by design, able to
     /// observe a DIFFERENT value than the one the freeing thread's stale
     /// `Layout` was allocated against, if the segment has already been
     /// reclaimed and reused for a new allocation between the free and this
@@ -146,13 +156,21 @@ impl SegmentHeader {
     /// allocated with, so a size-only check leaves a gap: a fabricated free
     /// with the right size but a wrong align would previously pass.
     ///
-    /// `large_align` is written once at segment construction
-    /// (`SegmentHeader::large`) and on every large-cache-hit reuse
-    /// (`AllocCore::alloc_large`'s hit path rewrites the WHOLE header via
-    /// `Node::write_struct` before the segment is handed to a new caller —
-    /// never mutated in place field-by-field), so a field-specific read here
-    /// does not race the owner's disjoint `bump` writes (same discipline as
-    /// `kind_at`/`magic_at`/`large_size_at`). It IS, by design, able to
+    /// `large_align` is written at segment construction (`SegmentHeader::large`,
+    /// via the slow path's full-struct `Node::write_struct`) and at every
+    /// large-cache-hit reuse (`AllocCore::alloc_large`'s hit path, via the
+    /// targeted `set_large_align_at` since F12/eb2463a — a single
+    /// field-specific store, NOT a whole-header rewrite). In BOTH cases the
+    /// write runs strictly BEFORE `register()` publishes the segment to
+    /// `contains_base`, so no cross-thread reader can observe the write in
+    /// progress (the publication-barrier argument — F12 changed the write's
+    /// SHAPE from full-struct to field-specific, not its TIMING). After
+    /// publication, `large_align` is never written again until the segment is
+    /// freed, unregistered, and reused — so a field-specific read here races
+    /// neither the publication-time write (complete before the segment is
+    /// reachable) nor the owner's hot `bump` writes (disjoint field at a
+    /// disjoint offset), the same two-pillar argument (write-before-publish +
+    /// disjoint-from-bump) that held before F12. It IS, by design, able to
     /// observe a DIFFERENT value than the one the freeing thread's stale
     /// `Layout` was allocated against, if the segment has already been
     /// reclaimed and reused for a new allocation between the free and this

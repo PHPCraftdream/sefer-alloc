@@ -1322,3 +1322,97 @@ pub use super::segment_header_gen_table::{bump_gen, gen_at, init_gen_table_in_pl
 /// this is the value the F12 targeted-write optimization's correctness
 /// argument was verified against, not a "stays under a budget" bound.
 const _: () = assert!(size_of::<SegmentHeader>() == 144);
+
+/// R34-14 (task #533): exhaustive field-classification compile-time pin for
+/// the large-cache hit path's carry-forward invariant. Adding a new field to
+/// `SegmentHeader` without classifying it here is a COMPILE ERROR: the
+/// exhaustive destructuring below (no `..`) names every field, so a new
+/// field makes this not compile until it is added AND classified into one
+/// of the carry-forward groups documented in `AllocCore::alloc_large`'s hit
+/// path (`alloc_core_large.rs`, R34-14 comment block).
+///
+/// Each field's classification (what the large-cache hit path does with it):
+///
+/// **Written before register (7 fields)** — actively stored by the hit path
+/// before `register()` publishes the segment (F12 targeted writes +
+/// R34-14 owner/deferred resets):
+/// - `magic` -> `SEGMENT_MAGIC` (F12)
+/// - `large_size` -> new size (F12)
+/// - `large_align` -> new align (F12)
+/// - `bump` -> new bump cursor (F12)
+/// - `owner_state` -> `OWNER_ID_NONE` (R34-14, was carried forward — stale
+///   value is correct for same-heap reuse but widens the register-to-stamp
+///   defensive window for stale/invalid frees)
+/// - `owner_thread_free` -> null (R34-14, was carried forward — stale value
+///   prevents `stamp_segment_owner` from re-stamping and widens the window)
+/// - `deferred_next` -> `ABANDONED_TAIL` (R34-14, was carried forward — a
+///   non-`ABANDONED_TAIL` value causes `push_large_deferred_free`'s CAS to
+///   fail, silently dropping a subsequent cross-thread free -> permanent
+///   leak)
+///
+/// **Patched after register (1 field)** — written after `register()` returns
+/// the real slot index:
+/// - `segment_id` -> registry-assigned id (pre-existing 1-word patch)
+///
+/// **Carried forward, debug-asserted (4 fields)** — verified byte-identical
+/// to what the old full-struct write would have written (F12
+/// debug_assert_eq! in the hit path):
+/// - `span_usable`, `reserved_capacity`, `reservation`, `reservation_len`
+///
+/// **Carried forward, inert for Large (9 fields)** — Large segments never
+/// use these; the stale values are never read:
+/// - `kind` (already `Large`; cache only holds former Large segments)
+/// - `live_count`, `decommitted` (Large has no small-segment decommit)
+/// - `ring_drain_head` (Large has no `RemoteFreeRing`)
+/// - `pool_next`, `pool_prev` (Large never joins the small-segment pool)
+/// - `committed_payload_end` (Large has no lazy-commit frontier)
+/// - `node_id` (re-stamped under `numa-aware`; otherwise inert)
+/// - `payload_virgin` (Large has no virgin-zero-skip)
+const _: () = {
+    let SegmentHeader {
+        bump,
+        owner_thread_free,
+        owner_state,
+        magic,
+        live_count,
+        decommitted,
+        ring_drain_head,
+        kind,
+        large_size,
+        large_align,
+        span_usable,
+        reservation,
+        reservation_len,
+        deferred_next,
+        pool_next,
+        pool_prev,
+        committed_payload_end,
+        reserved_capacity,
+        segment_id,
+        node_id,
+        payload_virgin,
+    } = SegmentHeader::large(0, 0, 0, 0, 0, 0, core::ptr::null_mut(), 0);
+    let _ = (
+        bump,
+        owner_thread_free,
+        owner_state,
+        magic,
+        live_count,
+        decommitted,
+        ring_drain_head,
+        kind,
+        large_size,
+        large_align,
+        span_usable,
+        reservation,
+        reservation_len,
+        deferred_next,
+        pool_next,
+        pool_prev,
+        committed_payload_end,
+        reserved_capacity,
+        segment_id,
+        node_id,
+        payload_virgin,
+    );
+};
