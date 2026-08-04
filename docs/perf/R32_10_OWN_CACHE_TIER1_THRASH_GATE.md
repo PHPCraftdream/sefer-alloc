@@ -770,8 +770,10 @@ addendum's wall-clock evidence.
   gitignored scratch output (`/docs/perf/paired_ab_runs/` in `.gitignore`)
   and are NOT committed or cited as evidence, matching R32-11's precedent.
 - **Checked derive script:** `scripts/r33_5_latency_null_addendum_summary.mjs`
-  (reads the 21 JSON files, recomputes t-test/sign-test from raw samples,
-  asserts they match the runner's values, asserts all same-vs-same controls
+  (reads the 21 `_raw_r33_5_k{K}_{comparison}.log` files, parses the per-launch
+  `RESULT churn_elapsed_ns=` lines, independently recomputes the paired
+  t-test/sign-test from those raw samples and cross-checks each against the
+  log's own printed t and sign-test, asserts all same-vs-same controls
   are non-significant, asserts n=20 for every comparison, writes the summary
   CSV).
 - **Summary CSV:** `docs/perf/R32_10_LATENCY_NULL_PAIRED_AB_summary.csv`
@@ -784,11 +786,33 @@ addendum's wall-clock evidence.
   after the script runs), and hardcoding a placeholder that must be
   back-filled is exactly the pattern F6 flagged. The measurement's source
   identity is captured in the prose above (HEAD SHA + patch hash) and in each
-  JSON file's own `git_commit` field — both more durable than a CSV column
-  that would be stale by construction.
+  `_raw_r33_5_*.log`'s own runner-printed t-test/sign-test summary (which the
+  derive script independently cross-checks) — both more durable than a CSV
+  column that would be stale by construction.
 - **Config JSON:** `scripts/_r33_5_own_cache_ab.json` (the paired-ab-runner
   config defining before/after binary paths, metric, and the `oracle2_pass`
   sanity gate).
+
+> **CORRECTION (R34-1/task #520) — the "NOT committed or cited as evidence,
+> matching R32-11's precedent" claim two bullets above is false.** That claim
+> (and the `b3b18bb` commit message it paraphrases) asserted paired_ab_runs/
+> was "the only commit in this repo's history to touch it" and that
+> R32-11/R32-12 "never committed paired_ab_runs/ files." Verified against
+> `git log --all --oneline -- docs/perf/paired_ab_runs/`: 13 commits touch the
+> path (12 before `81d24f9`), 33 paired_ab_runs JSON files remain force-tracked
+> in the repo today across rounds 14–32, and R32-12's own landing commit
+> `e88390b` force-added 2 of them. `docs/perf/R31_10_TRIM_CURRENT_THREAD_RSS_GATE.md`
+> §5.2 in fact depends on two force-added paired_ab_runs JSON files
+> (`2026-08-02T00-18-11-335Z.json` / `…00-19-14-627Z.json`, force-added by
+> `e6bbc6a`) as its cited provenance. So the R33-5 decision to reroute the
+> derive through `_raw_*.log` was NOT "because paired_ab_runs was
+> unprecedented" — it was because `_raw_*.log` is the project's established,
+> explicitly-documented `.gitignore`-exception citation convention (curated,
+> truncatable per the R14-10 rule, reproducible from the commit), the strictly
+> better home for this evidence. The untrack action itself (`git rm --cached`
+> of the 21 R33-5 JSON files) was and remains correct; only the stated
+> justification was wrong. The convention ambiguity this surfaced (paired_ab_runs/
+> as gitignored scratch vs. force-added cited evidence) is reconciled in `.gitignore`.
 
 **Reproduce:**
 

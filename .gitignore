@@ -4,6 +4,13 @@
 /tmp
 # R6-OPT-A6: per-run raw provenance dumps from scripts/paired-ab-runner.mjs --
 # generated output, accumulates one timestamped JSON per invocation, not source.
+# SAME scratch-by-default / `git add -f`-when-cited policy as `_raw_*.log`
+# below: some reports (R31_10 §5.2, R32-0/c72a27b, R32-12/e88390b) force-add
+# specific paired_ab_runs JSON filenames as their cited provenance, and 33 such
+# files remain tracked across rounds 14-32. R33-5 (task #510) deliberately chose
+# the curated `_raw_*.log` route instead (truncatable per R14-10, reproducible)
+# -- both are legitimate citation homes; this bare ignore line previously
+# lacked the exception clause `_raw_*.log` already documents (R34-1/task #520).
 /docs/perf/paired_ab_runs/
 # R13-10 (task #280): scratch raw command-output logs from bench/test/iai
 # sweeps (`docs/perf/_raw_*.log`) are throwaway by default -- ignored so ad-hoc
