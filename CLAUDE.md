@@ -79,6 +79,29 @@ Core instructions, mandatory for all code in this repository. They
   it; the in-session TaskList does not survive a session boundary, so a
   fresh session inherits no memory of prior rounds' flagged-open items —
   these indexes do).
+- **OPEN_ITEMS indexes are CURRENT-STATE, not archives (R34-24/task #543).**
+  `docs/perf/OPEN_ITEMS.md` and `docs/CORRECTNESS_OPEN_ITEMS.md` must read as
+  a current-state checklist at the start of every round: every open item
+  carries a current-state card (Status / Current-number-or-verdict / Next
+  trigger / Evidence) as its FIRST visible block, and a closed / null /
+  rejected item must NOT look active due to a stale header, tier placement,
+  or missing Status-card update. The structural rule (established
+  R29-6/task #437 for the perf index, which created
+  `docs/perf/OPEN_ITEMS_ARCHIVE.md` and moved the long dated closure
+  narratives there): **when an item is closed, its full closure narrative
+  moves to the archive file (or, for the correctness index which has no
+  archive file yet, to its "Recently resolved" section); the main index
+  keeps only a one-line pointer in its own "Recently resolved" section.**
+  A closed item that still sits in an active tier (`[A]`, `[D]`, `[L]`,
+  `[T]`) with no Status-card update is a structural defect — the round
+  that closes it MUST update the card to `Status: CLOSED` and move the
+  narrative in the SAME commit, not leave the header implying the item is
+  still open. If `docs/CORRECTNESS_OPEN_ITEMS.md` grows past ~1,000 lines,
+  the same split applies (create `docs/CORRECTNESS_OPEN_ITEMS_ARCHIVE.md`).
+  This rule formalizes the R29-6 split as a standing convention for BOTH
+  indexes; the full migration of older inline closure narratives is not
+  required by this rule (the R29-6 split already handles the perf index's
+  worst offenders; future closures follow the convention going forward).
 - **Every phase is delivered with tests** — code without tests is not considered
   a completed phase.
 - **Between phases: run tests and commit.** Before moving to the next phase,
@@ -230,6 +253,56 @@ Core instructions, mandatory for all code in this repository. They
   grow an immutable identity after the fact and keep their text as the
   honest historical record of what they actually did; this applies to NEW
   perf-gate reports measuring an uncommitted tree going forward only.
+- **Artifact storage policy for cited raw logs — hybrid with a per-file
+  size ceiling (R34-24/task #543).** CLAUDE.md's existing R14-10 rule
+  ("Raw perf logs are scratch by default" + "force-add when cited") was
+  written when individual raw logs were a few KiB each. At this repo's
+  current scale (257 committed `_raw_*.log` files across 34 rounds; an
+  independent bench review flagged `docs/perf` alone as 115 files /
+  ~73,000 added lines in a single wave), the force-add-when-cited
+  convention is in tension with the need to bound aggregate repository
+  growth. The resolution is a **hybrid with a per-file size ceiling** —
+  not a wholesale move of raw logs to external CI artifacts (which would
+  break the "reproducible from the commit" property the existing rules
+  deliberately preserve), nor an unbounded continuation of the status quo.
+  Three tiers, keyed on the raw log's uncompressed byte size:
+  1. **Under 200 KiB (default — no change):** a cited raw log is
+     force-added to Git verbatim, exactly as the existing R14-10
+     convention requires. As of R34-24, 253 of the 257 committed raw logs
+     fall under this ceiling (the largest is 145 KiB), so the existing
+     convention is undisturbed for the vast majority of cases.
+  2. **200 KiB – 2 MiB:** the raw log MUST be either (a) truncated per
+     the R14-10 truncation rule (keep the cited section verbatim + a
+     `# TRUNCATED` marker + reproduction command, bringing the file under
+     the ceiling), or (b) gzip-compressed to `_raw_*.log.gz` before
+     committing (text benchmark logs compress ~8-12×; the `.gz` stays IN
+     the commit, preserving reproducibility, just compressed). Choose (a)
+     when truncation loses no citable evidence (a single criterion output
+     line); choose (b) when the full log is genuinely needed (a
+     multi-thousand-line paired-A/B JSON dump).
+  3. **Over 2 MiB:** do NOT commit the raw log to Git at all, even
+     compressed. Instead commit, alongside the report: the summary CSV
+     (always required), a one-line manifest entry recording the log's
+     SHA-256 content hash (`sha256sum _raw_*.log`), the exact reproduction
+     command, and a minimal excerpt (the specific lines cited by the
+     report, under the 200 KiB ceiling). Store the full log as a GitHub
+     Actions build artifact or external object store, referenced by its
+     content hash for retrieval — the reviewer's proposed approach,
+     reserved for the rare case where a log is too large for any in-Git
+     option to be practical.
+  **The summary CSV + reproduction commands + measurement identity are
+  ALWAYS committed to Git regardless of tier** — these are the irreducible
+  reproducibility surface, already required by the existing rules. The
+  tier choice affects only the raw log's storage FORM, not whether the
+  report's evidence is reproducible from the commit. Aggregate growth is
+  tracked per-round by the round-manifest artifact (next bullet), which
+  records the count and total size of raw logs committed that round —
+  complementing the R14-10 per-file truncation rule, which bounds
+  individual log size but not the aggregate.
+  **Not retroactive** — same convention as the raw-log-truncation,
+  summary-CSV, and immutable-source-identity rules above: existing
+  committed raw logs stay as-is; this rule governs NEW cited raw logs
+  going forward.
 - **Bench-profile pinning: a pinned-commit/worktree protocol, not named
   `production-rN` Cargo feature bundles** (R14-10/task #295). `production`'s
   own composition is expected to keep changing across rounds (that is the
@@ -291,6 +364,32 @@ Core instructions, mandatory for all code in this repository. They
   on a bounded weekly cadence without taxing every push/PR with ~300 extra
   check invocations; `workflow_dispatch` lets a human force a run before a
   promotion decision if desired.
+- **Per-round manifest artifact (R34-24/task #543).** Every round that
+  lands ≥ 1 commit produces a manifest at
+  `docs/perf/round-manifests/R{N}_MANIFEST.md` recording, in one
+  machine-checkable place: (1) every commit in the round, classified by
+  its R30-12 taxonomy category (`perf(runtime)` / `perf(opt-in)` / `bench`
+  / `docs(config)` / `fix(perf)` / `feat` / `test` / `fix` / `build`),
+  with the commit list DERIVED from `git log` (cite the exact range
+  command that reproduces the table — no hand-transcription of SHAs); (2)
+  the round's net `production` default-feature impact (composition changed
+  / unchanged; new features added); (3) measured wall-clock / Ir / RSS
+  deltas, or an explicit "no `perf(runtime)`/`perf(opt-in)` commits this
+  round" statement; and (4) the final verdict per item (GO / NO-GO / NULL
+  / CORRECTION / INFRASTRUCTURE / SHIPPED). This makes the R30-12
+  commit-prefix taxonomy **self-checking at the round level** — a reviewer
+  scanning the manifest's "net default-feature impact" line and the
+  production-source commit list can confirm that no opt-in or
+  measurement-only result is framed as a default speedup, without opening
+  every commit body or cross-referencing the CHANGELOG header (an
+  independent bench review explicitly flagged this risk: "opt-in results
+  must not be presented as acceleration of ordinary `--features
+  production`"). The manifest also records the count and total size of
+  raw-log files committed that round, making aggregate `docs/perf/` growth
+  visible per-round (complementing the artifact-storage-policy and R14-10
+  per-file rules). See `docs/perf/round-manifests/R34_MANIFEST.md` for the
+  reference example. **Not retroactive** — rounds that predate this rule
+  are not required to grow a manifest after the fact.
 
 ## Speed: short scenario by default
 
@@ -329,8 +428,14 @@ Core instructions, mandatory for all code in this repository. They
   on a toolchain and OS this repo does NOT pin (there is no
   `rust-toolchain.toml`), so a clean local run can still go red in CI for
   reasons the local gate cannot reproduce. The local gate is the *first* line
-  of defense; CI is the *last*. After every push, open the GitHub Actions run
-  and confirm it is green before starting the next task. This step was absent
+  of defense; CI is the *last*. After every push, confirm CI ran green on
+  the **landing SHA** — the SHA that actually appeared on GitHub's `main`
+  after the push, NOT the commit you created locally before pushing. Read
+  it from the remote, not from your local HEAD: `git fetch && git rev-parse
+  origin/main` gives the real landing SHA (they can differ if the push was
+  rebased, amended, or force-updated mid-transit). Open the GitHub Actions
+  run for THAT SHA specifically and confirm it is green before starting
+  the next task. This step was absent
   from this section until R33-2 (task #507), and `main` consequently stayed
   red on all five clippy rows for up to 70 commits (Round 31 → Round 33): the
   five failures fixed in `e526517befbf5a0cd0ca1a7ee62f9d84ffe509ee`
