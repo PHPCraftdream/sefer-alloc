@@ -443,14 +443,18 @@ disclaimer):
   run, see the Warm bulk burst table below); the residual is honest per-block
   page-fault work, called out in
   [`docs/ALLOC_BENCH.md`](docs/ALLOC_BENCH.md).
-- On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) turned parity
-  into a rout: `realloc_grow_geometric` (64 B→4 MiB) is **~40× faster than
-  `mimalloc`** (9.7 µs vs 383 µs) and ~290× faster than `System`;
+- On **realloc** the 0.3.0 X-arc (OPT-G in-place Large growth) still wins, at
+  a more modest margin than first published: `realloc_grow_geometric`
+  (64 B→4 MiB) is **~1.8× faster than `mimalloc`** (~238 µs vs ~431 µs) and
+  ~12× faster than `System` (a path-activation-oracle re-verification found
+  the chain's final 2 MiB→4 MiB grow exceeds the committed span and copies —
+  see the R34-23 gate,
+  [`docs/perf/R34_23_REALLOC_AND_VEC_GATE.md`](docs/perf/R34_23_REALLOC_AND_VEC_GATE.md));
   `realloc_grow_neighbour_pressure` (formerly `realloc_in_place_unfavorable`;
   renamed for honesty — after OPT-G the neighbours no longer block sefer's
-  in-place growth) went from 1.1× *slower* to **~1,500× faster** (906 ns vs
-  1.36 ms) — every Large growth step that fits the committed 4 MiB span is a
-  header update returning the same pointer (re-measured 2026-07-06).
+  in-place growth) is confirmed and even better than first published: **~3,350×
+  faster** (~400 ns vs ~1.34 ms) — every Large growth step that fits the
+  committed 4 MiB span is a header update returning the same pointer.
 - On **MT cross-thread** (`malloc_macro` larson/mstress) it is competitive
   with `mimalloc`, leading at T≥2 (historical 0.2.0 shape).
 
@@ -1196,10 +1200,14 @@ cargo run   --release --example malloc_macro --features "alloc-global alloc-xthr
     baseline on this noisy host), while 64 B sits at **parity** (1.00×
     faster, vs 1.98× slower the prior run — a single-host wall-clock swing,
     not a code-driven change) and cold 1024 B **1.26× faster**.
-  - **Realloc** (`realloc_grow_geometric`): **~40× faster than `mimalloc`**,
-    ~290× faster than `System`; `realloc_grow_neighbour_pressure` (formerly
-    `realloc_in_place_unfavorable`) **~1,500× faster** (post-X-arc OPT-G
-    in-place Large growth, 2026-07-06).
+  - **Realloc** (`realloc_grow_geometric`): **~1.8× faster than `mimalloc`**,
+    ~12× faster than `System` (re-verified by the R34-23 gate; the prior
+    "~40×" figure was measured before a path-activation-oracle re-check found
+    the chain's final grow exceeds the committed span and copies — see
+    [`docs/perf/R34_23_REALLOC_AND_VEC_GATE.md`](docs/perf/R34_23_REALLOC_AND_VEC_GATE.md));
+    `realloc_grow_neighbour_pressure` (formerly
+    `realloc_in_place_unfavorable`) **~3,350× faster**, confirmed and improved
+    (post-X-arc OPT-G in-place Large growth).
   - **MT macro at T ≥ 2:** larson 1.22–1.38× faster, mstress ≈parity to 1.04×
     faster (measured 2026-07-06 post-R1/R2/R3, see
     [docs/ALLOC_BENCH.md](docs/ALLOC_BENCH.md); the earlier "1.19–1.31× faster
