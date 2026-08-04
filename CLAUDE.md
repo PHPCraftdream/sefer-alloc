@@ -268,9 +268,14 @@ Core instructions, mandatory for all code in this repository. They
   Three tiers, keyed on the raw log's uncompressed byte size:
   1. **Under 200 KiB (default — no change):** a cited raw log is
      force-added to Git verbatim, exactly as the existing R14-10
-     convention requires. As of R34-24, 253 of the 257 committed raw logs
-     fall under this ceiling (the largest is 145 KiB), so the existing
-     convention is undisturbed for the vast majority of cases.
+     convention requires. As of R34-24, ALL 256 committed `_raw_*.log`
+     files fall under this ceiling (the largest is 145 KiB —
+     `docs/perf/_raw_r34_10_sparse_decay_gate.log`; verify via `find
+     docs/perf -name '_raw_*.log' -size +200k`), so the existing convention
+     is undisturbed for every currently-committed log matching that naming
+     pattern. One raw JSON artifact committed under a different naming
+     convention (`docs/perf/r34_23_runs/*.json`, ~258 KiB, task #542) is
+     the first real tier-2 case — see point 2 below.
   2. **200 KiB – 2 MiB:** the raw log MUST be either (a) truncated per
      the R14-10 truncation rule (keep the cited section verbatim + a
      `# TRUNCATED` marker + reproduction command, bringing the file under
