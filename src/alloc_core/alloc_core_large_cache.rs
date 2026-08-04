@@ -29,6 +29,25 @@ use super::large_cache_extended::{self, LARGE_CACHE_EXTENDED_SLOTS};
 #[cfg(feature = "alloc-decommit")]
 const DECAY_CLOCK_CHECK_STRIDE: u32 = 64;
 
+/// R34-11 (task #530): cap on how many decay steps a single clock read may
+/// fire in catch-up mode. Once the stride throttle
+/// ([`DECAY_CLOCK_CHECK_STRIDE`]) lets the clock go unread for many
+/// intervals (sparse-traffic regime — see R34-10,
+/// `docs/perf/R34_10_SPARSE_DECAY_GATE.md`), a single read can find many
+/// intervals due. Without a catch-up loop, only one eviction step fires per
+/// read and the retention gap accumulates (R34-10 measured a 4-segment peak
+/// persisting for 95% of the run). This cap bounds the work done in one call
+/// while comfortably exceeding the worst observed gap: 4 segments of excess
+/// drain to headroom in exactly 4 geometric-decay steps (10% per step, each
+/// evicting at least one 4 MiB segment — see `run_decay_step`), so 8 gives
+/// a 2× margin. Worst case: 8 FIFO eviction scans + at most 8 OS
+/// `release_segment` calls per clock read — negligible against the stride's
+/// ~64-op amortization. Does NOT change when the clock is read (the R32-8
+/// stride benefit is preserved — see the gate), only how many decay steps
+/// fire once it is.
+#[cfg(feature = "alloc-decommit")]
+const DECAY_CATCHUP_MAX_STEPS: u32 = 8;
+
 /// R13-7 (task #277): a slot index into the COMBINED base+extension
 /// large-cache index space. `0..LARGE_CACHE_SLOTS` addresses `self
 /// .large_cache`; `LARGE_CACHE_SLOTS..LARGE_CACHE_SLOTS +
@@ -407,6 +426,16 @@ impl AllocCore {
     /// BYPASSES the stride so a forced tick still fires deterministically on
     /// every call, exactly as before this change (see its own doc for how).
     ///
+    /// **R34-11 (task #530) catch-up loop:** when the stride throttle does let
+    /// many intervals elapse between clock reads (sparse-traffic regime), a
+    /// single read now fires as many decay steps as intervals are due, bounded
+    /// by [`DECAY_CATCHUP_MAX_STEPS`] — not just one. R34-10 found that the
+    /// old single-step-per-read shape let the retention gap accumulate to 4
+    /// segments and persist for 95% of the run; the catch-up loop closes that
+    /// persistence (the gap drops to 0 on the first clock read instead of
+    /// staying at 3–4 segments). The timer advances by `due * decay_interval`
+    /// (not to `now`) so the sub-interval remainder carries over honestly.
+    ///
     /// [`dbg_force_decay_tick`]: Self::dbg_force_decay_tick
     #[cfg(feature = "alloc-decommit")]
     pub(super) fn maybe_decay_large_cache(&mut self) {
@@ -482,8 +511,38 @@ impl AllocCore {
         if elapsed < self.decay_config.decay_interval {
             return;
         }
-        self.last_decay_tick = Some(now);
-        self.run_decay_step();
+        // R34-11 (task #530): CATCH-UP LOOP. R34-10
+        // (`docs/perf/R34_10_SPARSE_DECAY_GATE.md`) found that the stride
+        // throttle lets many decay intervals elapse between clock reads in
+        // sparse-traffic regimes, but `run_decay_step` fired only ONE step
+        // per read — so the throttled arm accumulated a multi-segment
+        // retention gap (peak 4 segments) and NEVER caught up (persisted at
+        // ≥3 segments for 95% of the run). Fix: once the clock IS read and
+        // the interval has elapsed, fire as many steps as intervals are due,
+        // bounded by `DECAY_CATCHUP_MAX_STEPS`. The timer advances by
+        // `due * decay_interval` (NOT to `now`) so the sub-interval remainder
+        // carries over honestly to the next check. This does not change WHEN
+        // the clock is read (the R32-8 stride benefit is preserved — see
+        // `docs/perf/R34_11_CATCHUP_DECAY_GATE.md`), only HOW MANY decay
+        // steps fire once it is.
+        let interval = self.decay_config.decay_interval;
+        let intervals_due: u32 = if interval.is_zero() {
+            // Zero interval (test-only via dbg_set_decay_config): fire one
+            // step per call, advancing the timer to now (pre-R34-11 shape).
+            self.last_decay_tick = Some(now);
+            1
+        } else {
+            let ratio =
+                (elapsed.as_nanos() / interval.as_nanos()).min(DECAY_CATCHUP_MAX_STEPS as u128);
+            let due = u32::try_from(ratio).unwrap_or(DECAY_CATCHUP_MAX_STEPS);
+            if let Some(t) = self.last_decay_tick {
+                self.last_decay_tick = Some(t + interval * due);
+            }
+            due
+        };
+        for _ in 0..intervals_due {
+            self.run_decay_step();
+        }
     }
 
     /// Compute the excess over `headroom_bytes` and release `decay_rate_bp /
