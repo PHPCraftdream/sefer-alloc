@@ -1007,3 +1007,285 @@ fn correct_shadow_recheck_admits_after_drain_no_spurious_overflow() {
         );
     });
 }
+
+// =========================================================================
+// R34-19 (task #538) — shadow fast path over a RECYCLED slot with
+// INTERLEAVED (concurrent) drain.
+//
+// The models above (`RingModelShadow` CAP=4, `RingModelShadow1` CAP=1) both
+// join producers before draining (no wrap → no slot reuse) or force the slow
+// path exclusively (CAP=1). Neither reaches the interleaving F-1
+// (release-stabilization audit §1) describes: a producer proves room from the
+// shadow ALONE and reserves a slot the consumer JUST cleared, with the drain
+// genuinely racing the producers in loom's interleaving space — not joined
+// first. This model fills that gap.
+//
+// Honest limitation (stated up-front, per the project's hard-won R33-3 / task
+// #508 lesson on vacuous counterfactuals): loom's store history is append-only
+// per atomic location, so this model will almost certainly NOT detect F-1's
+// lost-update outcome even if it were present. The value is REGRESSION-PINNING
+// the protocol's shape (the shadow fast path + slow path + concurrent drain
+// compose without deadlock/panic/loss/duplication under bounded interleaving),
+// NOT proving the ordering question. That question was resolved separately in
+// R34-6 (task #525, commit a9edc87): cached_head's two accesses in full_check
+// were promoted Relaxed → Acquire/Release, restoring the happens-before edge
+// the pre-F10 head.load(Acquire) supplied. See the test's doc comment below
+// for the full statement.
+// =========================================================================
+
+/// A `CAP = 2` shadow-head ring — the smallest capacity where the F10 shadow
+/// FAST PATH (not just the slow path) can prove room for a push into a slot a
+/// concurrent consumer has JUST drained. `CAP = 1` (`RingModelShadow1`) forces
+/// every second push onto the slow path; `CAP = 2` lets the shadow prove room
+/// after a drain + a slow-path refresh, admitting the next push via the fast
+/// path alone — reserving a recycled slot index without a fresh
+/// `head.load(Acquire)`.
+///
+/// Mirrors the post-R34-6 `full_check` exactly: `cached_head.load(Acquire)` on
+/// the fast path, `cached_head.store(h, Release)` on the slow path. (The older
+/// `RingModelShadow` / `RingModelShadow1` models above still use the pre-R34-6
+/// `Relaxed` orderings; they are unchanged per scope — R34-6 updated the real
+/// implementation, not those models.)
+struct RingModelShadow2 {
+    head: AtomicU32,
+    tail: AtomicU32,
+    cached_head: AtomicU32,
+    slots: [AtomicU32; 2],
+}
+
+impl RingModelShadow2 {
+    fn new() -> Arc<Self> {
+        Arc::new(RingModelShadow2 {
+            head: AtomicU32::new(0),
+            tail: AtomicU32::new(0),
+            cached_head: AtomicU32::new(0),
+            slots: std::array::from_fn(|_| AtomicU32::new(RING_SLOT_EMPTY)),
+        })
+    }
+
+    /// Mirrors the post-R34-6 `RemoteFreeRing::full_check`: shadow fast path
+    /// (`Acquire` cached_head load), real `Acquire` head load + `Release`
+    /// shadow refresh on the slow path.
+    fn full_check(&self, _t: u32) -> Result<(), ()> {
+        // R34-19 COUNTERFACTUAL PROBE: always admit, never check room.
+        return Ok(());
+        #[allow(unreachable_code)]
+        {
+            let ch = self.cached_head.load(Ordering::Acquire);
+            let t = _t;
+            if t.wrapping_sub(ch) < 2 {
+                return Ok(());
+            }
+            let h = self.head.load(Ordering::Acquire);
+            self.cached_head.store(h, Ordering::Release);
+            if t.wrapping_sub(h) >= 2 {
+                return Err(());
+            }
+        Ok(())
+    }
+
+    /// Mirrors `RemoteFreeRing::push`: full_check → CAS-reserve → Release-store.
+    fn push(&self, offset: u32) -> Result<(), ()> {
+        loop {
+            let t = self.tail.load(Ordering::Relaxed);
+            if self.full_check(t).is_err() {
+                return Err(());
+            }
+            match self.tail.compare_exchange_weak(
+                t,
+                t.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    self.slots[(t as usize) % 2].store(offset, Ordering::Release);
+                    return Ok(());
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Identical drain to the other models (the shadow does not touch drain).
+    fn drain<F: FnMut(u32)>(&self, mut reclaim: F) {
+        let t = self.tail.load(Ordering::Acquire);
+        let mut h = self.head.load(Ordering::Relaxed);
+        while h != t {
+            let slot = &self.slots[(h as usize) % 2];
+            let off = slot.load(Ordering::Acquire);
+            if off == RING_SLOT_EMPTY {
+                break;
+            }
+            reclaim(off);
+            slot.store(RING_SLOT_EMPTY, Ordering::Relaxed);
+            h = h.wrapping_add(1);
+        }
+        self.head.store(h, Ordering::Release);
+    }
+}
+
+/// Drives the F10 shadow fast path through a **just-drained (recycled) slot**
+/// with the consumer's drain **interleaved** with the producer — not joined
+/// first.
+///
+/// # Model shape
+///
+/// One producer pushes 4 distinct offsets (10, 20, 30, 40) sequentially with
+/// bounded retry ([`MODEL_RETRY_BOUND`]); one consumer drains in a concurrent
+/// loop. `CAP = 2` means the ring is full after 2 live reservations, so 4
+/// pushes force at least one **wrap** (slot reuse) in any interleaving where
+/// the concurrent drain makes room. The interleaving this model exists to
+/// reach:
+///
+/// 1. Producer pushes 10 (fast path: `0 − 0 < 2`), pushes 20 (fast path:
+///    `1 − 0 < 2`). Ring full; `cached_head` still 0 (fast path never
+///    refreshes it).
+/// 2. Consumer drains: clears both slots, advances `head` to 2.
+/// 3. Producer pushes 30: `cached_head` is stale (0), slow path runs —
+///    `head.load(Acquire)` sees 2, `cached_head.store(2, Release)`,
+///    `2 − 2 = 0 < 2` → Ok. Reserves slot `2 % 2 = 0` (the just-drained
+///    slot). **Slow path on a recycled slot.**
+/// 4. Producer pushes 40: `cached_head` is now 2 (step 3's refresh),
+///    `3 − 2 = 1 < 2` → **fast path** — no `head.load` at all. Reserves
+///    slot `3 % 2 = 1` (the other just-drained slot). **Fast path on a
+///    recycled slot.**
+///
+/// This is exactly the F-1 interleaving shape the audit (§1, finding F-1)
+/// identifies as unmodelled. Steps 1–4 require 2 preemptions
+/// (producer→consumer after step 1, consumer→producer after step 2);
+/// `preemption_bound = 2` suffices for loom to reach it.
+///
+/// # What this model does NOT prove (honest limitation)
+///
+/// **This model is a regression-pin, not an ordering proof.** Loom's store
+/// history is append-only per atomic location: a `load` sees the latest
+/// `store` that happens-before it — it cannot surface the abstract machine's
+/// modification-order freedom that F-1's lost-update scenario depends on
+/// (the consumer's `slot.store(EMPTY)` landing *after* the producer's
+/// `slot.store(offset)` in that slot's modification order despite no
+/// happens-before edge between them). So even if the F-1 ordering bug were
+/// present in this model's protocol, loom would very likely not detect it
+/// as a lost offset.
+///
+/// What this model DOES pin: the protocol's **value-domain invariants** hold
+/// under every bounded interleaving loom explores — no offset is lost or
+/// duplicated, no deadlock or panic, the shadow fast path and slow path
+/// compose correctly through slot reuse. If a future change to `full_check`,
+/// `push`, or `drain` broke these value-domain invariants (e.g. over-admitting
+/// the fast path, skipping the slot clear, or advancing the cursor past an
+/// unpublished reservation), this test would catch it. The ordering question
+/// itself was resolved in R34-6 (task #525, commit `a9edc87`): `cached_head`'s
+/// two accesses in `full_check` were promoted `Relaxed → Acquire/Release`.
+///
+/// # Non-vacuity (counterfactual verification)
+///
+/// Verified manually (not committed as a `#[should_panic]` test, per the
+/// task's "check yourself" instruction): replacing `full_check`'s body with
+/// `Ok(())` (always admit, never check room) causes this test to FAIL under
+/// loom — in the zero-preemption interleaving where all 4 pushes execute
+/// before any drain, pushes 3 and 4 overwrite pushes 1 and 2 in the same
+/// slots (tail advances 0→4 in a 2-slot ring), and the overwritten offsets
+/// are never reclaimed. The assertion catches this as "offset landed but
+/// reclaimed 0 times." Without this check the model could be vacuously
+/// passing; see R33-3 / task #508 for the project's prior vacuous-
+/// counterfactual lesson.
+#[test]
+fn shadow_fast_path_recycled_slot_concurrent_drain_never_loses_or_duplicates() {
+    let mut builder = loom::model::Builder::new();
+    builder.preemption_bound = Some(2);
+    builder.check(|| {
+        let ring = RingModelShadow2::new();
+        let reclaimed: Arc<[AtomicU32; 4]> = Arc::new([
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+        ]);
+        let landed: Arc<[AtomicU32; 4]> = Arc::new([
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+            AtomicU32::new(0),
+        ]);
+        let producer_done = Arc::new(AtomicUsize::new(0));
+        const OFFSETS: [u32; 4] = [10, 20, 30, 40];
+
+        // Producer: push 4 offsets sequentially with bounded retry, CONCURRENT
+        // with the consumer's drain. 4 pushes into CAP=2 force at least one
+        // wrap (slot reuse) in interleavings where the drain makes room.
+        let ring_p = Arc::clone(&ring);
+        let landed_p = Arc::clone(&landed);
+        let done_p = Arc::clone(&producer_done);
+        let tp = thread::spawn(move || {
+            for (i, &off) in OFFSETS.iter().enumerate() {
+                for _ in 0..MODEL_RETRY_BOUND {
+                    if ring_p.push(off).is_ok() {
+                        landed_p[i].store(1, Ordering::Relaxed);
+                        break;
+                    }
+                    thread::yield_now();
+                }
+            }
+            done_p.fetch_add(1, Ordering::Release);
+        });
+
+        // Consumer: drain concurrently until the producer finishes, then
+        // three final drains to catch any stragglers published after the
+        // loop-exit observation.
+        let ring_c = Arc::clone(&ring);
+        let reclaimed_c = Arc::clone(&reclaimed);
+        let done_c = Arc::clone(&producer_done);
+        let tc = thread::spawn(move || {
+            loop {
+                ring_c.drain(|off| {
+                    if let Some(idx) = OFFSETS.iter().position(|&o| o == off) {
+                        reclaimed_c[idx].fetch_add(1, Ordering::Relaxed);
+                    }
+                });
+                if done_c.load(Ordering::Acquire) >= 1 {
+                    break;
+                }
+                thread::yield_now();
+            }
+            for _ in 0..3 {
+                ring_c.drain(|off| {
+                    if let Some(idx) = OFFSETS.iter().position(|&o| o == off) {
+                        reclaimed_c[idx].fetch_add(1, Ordering::Relaxed);
+                    }
+                });
+            }
+        });
+
+        tp.join().unwrap();
+        tc.join().unwrap();
+
+        // Final drain on the main thread (belt-and-suspenders).
+        ring.drain(|off| {
+            if let Some(idx) = OFFSETS.iter().position(|&o| o == off) {
+                reclaimed[idx].fetch_add(1, Ordering::Relaxed);
+            }
+        });
+
+        for (i, counter) in reclaimed.iter().enumerate() {
+            let seen = counter.load(Ordering::Acquire);
+            let did_land = landed[i].load(Ordering::Relaxed) == 1;
+            if did_land {
+                assert_eq!(
+                    seen, 1,
+                    "offset {} landed (push returned Ok) but was reclaimed \
+                     {seen} times (want exactly 1) — the shadow fast path \
+                     over a recycled slot lost or duplicated a push",
+                    OFFSETS[i]
+                );
+            } else {
+                assert_eq!(
+                    seen, 0,
+                    "offset {} was reclaimed {seen} times despite never \
+                     successfully landing — a shadow-head duplication/fabrication \
+                     bug, not a retry-exhaustion artefact",
+                    OFFSETS[i]
+                );
+            }
+        }
+    });
+}

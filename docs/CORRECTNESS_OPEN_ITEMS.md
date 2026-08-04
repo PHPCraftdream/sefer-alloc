@@ -1977,3 +1977,43 @@ assertion proving no double-release but not no leak, was resolved by R28-2
       finding whose risk is already bounded by the pin.
     - **Commit prefix:** `fix(perf)` per the R30-12 taxonomy — structural
       layout pin, no runtime behavior change, no speedup claimed.
+
+15. **G2 — no loom model exercises the F10 fast path over a recycled slot**
+    (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding G2
+    [medium]) — **RESOLVED** by R34-19 (task #538). The two existing shadow
+    loom models in `tests/loom_remote_ring.rs` neither reached the F-1
+    interleaving: `RingModelShadow` (CAP=4) joined producers before draining
+    (no wrap → no slot reuse); `RingModelShadow1` (CAP=1) forced the slow
+    path exclusively. The one thing F10 actually changed — a producer proving
+    room from the shadow alone and reserving a slot the consumer just cleared
+    — was modelled by nothing.
+
+    - **Resolution:** added `RingModelShadow2` (CAP=2, post-R34-6
+      `Acquire`/`Release` cached_head orderings) and
+      `shadow_fast_path_recycled_slot_concurrent_drain_never_loses_or_duplicates`:
+      one producer pushes 4 offsets (bounded retry) + one consumer drains
+      concurrently, `preemption_bound = 2`. CAP=2 + 4 pushes forces slot
+      reuse; the interleaving where the consumer drains between pushes 2
+      and 3 makes the producer's push 3 take the slow path (refreshing
+      `cached_head`) and push 4 take the FAST PATH into the just-drained
+      slot — the exact F-1 shape, reached in 2 preemptions.
+    - **Honest limitation (stated in the test's doc comment):** this model
+      is a **regression-pin, not an ordering proof**. Loom's store history
+      is append-only per atomic, so it cannot surface F-1's modification-
+      order freedom; even if the ordering bug were present, loom would
+      very likely not detect it. What the model pins: value-domain
+      invariants (exactly-once delivery, no overflow into occupied slot,
+      no deadlock/panic) hold under slot reuse + concurrent drain. The
+      ordering question itself was resolved in R34-6 (item 12 above).
+    - **Counterfactual verification (non-vacuity):** replacing
+      `full_check`'s body with `Ok(())` (always admit) causes the test to
+      FAIL — in the zero-preemption interleaving where all 4 pushes
+      execute before any drain, pushes 3+4 overwrite pushes 1+2 in the
+      same 2 slots, and offset 10 is reclaimed 0 times despite landing
+      (`assertion left == right failed: offset 10 landed but was
+      reclaimed 0 times`). Without this check the model could be vacuous
+      (R33-3 / task #508 lesson).
+    - **Commit prefix:** `test(loom)` — explicitly OUTSIDE the R30-12
+      five-slot taxonomy, which governs runtime/opt-in/measurement/docs
+      code changes; this is pure verification-coverage addition with zero
+      shipping code changed.
