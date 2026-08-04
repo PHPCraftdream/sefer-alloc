@@ -80,13 +80,17 @@
 //! producer-line-resident replica of the last real `head` value any producer
 //! observed. See "F10 — shadow/cached head" below for the full soundness
 //! argument; summary of the steps:
-//! 1. `t = tail.load(Relaxed)`, `ch = cached_head.load(Relaxed)` — both same
-//!    line, no cross-core traffic in the common case.
+//! 1. `t = tail.load(Relaxed)`, `ch = cached_head.load(Acquire)` — both same
+//!    line, no cross-core traffic in the common case. The `Acquire` on
+//!    `cached_head` (R34-6, finding F-1) restores the happens-before edge
+//!    the pre-F10 `head.load(Acquire)` supplied — see the "F10 ordering
+//!    supplement" below.
 //! 2. If `t.wrapping_sub(ch) < CAP`, the shadow already proves the ring has
 //!    room — skip straight to the CAS (step 4). This is the fast path.
 //! 3. Otherwise (shadow suggests full, or never yet refreshed): fall through
 //!    to the REAL check — `h = head.load(Acquire)`; refresh
-//!    `cached_head.store(h, Relaxed)`; if `t.wrapping_sub(h) >= CAP`, genuinely
+//!    `cached_head.store(h, Release)` (R34-6: pairs with the fast path's
+//!    `Acquire` load); if `t.wrapping_sub(h) >= CAP`, genuinely
 //!    full → `Err(Overflow)` (the caller discards the block: bounded leak,
 //!    sound). The `Acquire` here is exactly the one the module doc's original
 //!    protocol required — sees the consumer's `Release` head advance, so a
@@ -193,8 +197,8 @@
 //! documents for `head`/`tail`); this shadow reuses the SAME wrapping-safe
 //! idiom, not a new one.
 //!
-//! **Wrap argument precondition — the staleness bound (the one unstated
-//! assumption above).** The inequality `cached_head <= head` holds only
+//! **Wrap argument precondition — the staleness bound (ASSUMPTION, not a
+//! theorem — see below).** The inequality `cached_head <= head` holds only
 //! MODULO `2^32`, and only while the shadow's staleness lag stays strictly
 //! below `2^32` REAL head-advances. Unlike the pre-F10 check — which
 //! compared `t` against a `head` value read microseconds earlier (lag bounded
@@ -212,13 +216,57 @@
 //! genuinely-reachable-but-astronomically-rare wrap hazard (the power-of-two
 //! `RING_CAP` compile-time pin, which exists for exactly the "2^32
 //! cross-thread frees on a single hot, long-lived segment" case this same
-//! window would need). Stated for candour; no code change is warranted for a
-//! hazard this remote.
+//! window would need). This is an **ASSUMPTION** about the scheduler /
+//! preemption behaviour of the host, not a theorem of the abstract memory
+//! model — stated explicitly as such per the second-independent-review
+//! request (`docs/reviews/2026-08-04-r32-r33-global-bench-readonly-review.md`,
+//! `RemoteFreeRing::cached_head` section). No code change is warranted for
+//! a hazard this remote.
 //!
 //! **Worst case cost of a stale shadow:** at most ONE extra real
 //! `head.load(Acquire)` per push that the shadow's fast path declines to
 //! shortcut — never a correctness cost, only a fallback to the exact
 //! pre-F10 behaviour on that call.
+//!
+//! **F10 ordering supplement (R34-6, task #525, finding F-1).** The
+//! value-domain argument above (`cached_head <= head`) proves the fast
+//! path cannot over-estimate room. It does NOT by itself prove the
+//! *ordering* invariant that the pre-F10 `head.load(Acquire)` used to
+//! supply: that when a producer publishes an offset into a recycled slot,
+//! the consumer's `slot.store(EMPTY)` for that slot's previous occupant
+//! is guaranteed to precede the producer's `slot.store(offset)` in that
+//! slot's modification order. Pre-F10, every push's `head.load(Acquire)`
+//! created a synchronizes-with edge with the consumer's
+//! `head.store(h', Release)` — hence a happens-before chain through to
+//! the consumer's clear — that supplied this guarantee. The F10 fast
+//! path removed that load, and under the abstract memory model a
+//! second producer P that reads only `cached_head` (never `head`)
+//! carries no such chain: its `slot.store(offset)` and the consumer's
+//! `slot.store(EMPTY)` are unordered by happens-before. (This is NOT a
+//! data race — both are atomic on the same `AtomicU32`; it is a
+//! potential lost-update/liveness defect. The gap was identified by the
+//! release-stabilization audit (finding F-1) but confirmed NOT
+//! realisable on any hardware Rust targets — x86-TSO, ARMv8, RISC-V
+//! RVWMO, and POWER cumulativity all make the clear globally visible
+//! before P's store is issued — so it is a *proof* gap, not a *bug*.)
+//!
+//! **Resolution: promote `cached_head`'s two accesses from `Relaxed` to
+//! `Acquire`/`Release`** (R34-6). The fast path's load is now
+//! `cached_head.load(Acquire)`, and the slow path's refresh store is
+//! `cached_head.store(h, Release)`. This restores the exact edge the
+//! removed `head.load(Acquire)` supplied, on the SAME producer-owned
+//! cache line (no new cross-core traffic): a producer X whose slow path
+//! refreshes the shadow does `head.load(Acquire)` (sees the consumer's
+//! `head.store(Release)` → synchronizes-with → X's history now includes
+//! the consumer's `slot.store(EMPTY)`), then `cached_head.store(Release)`
+//! — and a later producer P that reads `cached_head.load(Acquire)`
+//! synchronizes-with X's `Release` store, inheriting the edge. The cost
+//! is fence *strength*, not a fence *instruction*: on x86-TSO both
+//! `Acquire` loads and `Release` stores compile to the SAME `mov` as
+//! `Relaxed` (verified byte-for-byte identical via disassembly — all x86
+//! loads are acquire, all non-`SeqCst` stores are release); on aarch64
+//! they are one `ldapr`/`stlr` instead of `ldr`/`str` (measured cost:
+//! noise-level, see `benches/r34_6_remote_ring_cached_head_ordering_gate.rs`).
 //!
 //! **Drain (single consumer):**
 //! 1. `t = tail.load(Acquire)` (sees every producer's `Release` reservation).
@@ -246,7 +294,13 @@
 //! - consumer slot load: `Acquire`.
 //! - consumer slot clear: `Relaxed`.
 //! - consumer head store: `Release`.
-//! - producer full-check head load: `Acquire`.
+//! - producer full-check head load (slow path): `Acquire`.
+//! - producer full-check cached_head load (fast path): `Acquire` (R34-6,
+//!   finding F-1 — restores the happens-before edge the pre-F10
+//!   `head.load(Acquire)` supplied; byte-identical `mov` to `Relaxed`
+//!   on x86-TSO, one `ldapr` on aarch64).
+//! - producer full-check cached_head refresh store (slow path): `Release`
+//!   (R34-6, finding F-1 — pairs with the fast path's `Acquire` load).
 //!
 //! ## P4 — visibility contract change (R7-A4, dirty routing)
 //!
@@ -986,23 +1040,38 @@ impl RemoteFreeRing {
     /// if reservation `t` is provably within capacity; `Err(())` if the ring
     /// is (really, `Acquire`-confirmed) full.
     ///
-    /// **Fast path (shadow):** `ch = cached_head.load(Relaxed)` — same
+    /// **Fast path (shadow):** `ch = cached_head.load(Acquire)` — same
     /// producer cache line as `tail`, no cross-core traffic. If
     /// `t.wrapping_sub(ch) < RING_CAP`, the ring provably has room (the
     /// module doc's "F10" soundness section proves `cached_head <= head`
     /// always, so this can only UNDER-estimate available room, never
     /// over-estimate it) — return `Ok(())` immediately without touching the
-    /// consumer's `head` line at all.
+    /// consumer's `head` line at all. The `Acquire` (R34-6, task #525,
+    /// finding F-1) restores the happens-before edge the pre-F10
+    /// `head.load(Acquire)` supplied: a producer whose slow path refreshed
+    /// `cached_head` with a `Release` store (below) carries the consumer's
+    /// `slot.store(EMPTY)` in its history, and THIS `Acquire` load
+    /// synchronizes-with that store — so a later producer that wins the
+    /// tail CAS into a recycled slot is guaranteed to observe the clear
+    /// before it publishes. On x86-TSO this `Acquire` load compiles to the
+    /// SAME `mov` as the old `Relaxed` (all x86 loads are acquire); the
+    /// cost is fence *strength*, not a fence instruction.
     ///
     /// **Slow path (real check + shadow refresh):** only reached when the
     /// shadow suggests the ring MIGHT be full. Performs the exact pre-F10
-    /// `head.load(Acquire)`, refreshes `cached_head` from it (`Relaxed` — the
-    /// refresh is a pure hint update, not itself a synchronisation point),
+    /// `head.load(Acquire)`, refreshes `cached_head` from it (`Release` —
+    /// the refresh now carries the synchronisation edge that the fast
+    /// path's `Acquire` load pairs with; see the ordering note above),
     /// and re-checks against the REAL value before returning `Err(())`.
     #[cfg(feature = "alloc-xthread")]
     #[inline(always)]
     fn full_check(&self, t: u32) -> Result<(), ()> {
-        let ch = self.cached_head().load(Ordering::Relaxed);
+        // R34-6 (task #525, finding F-1): Acquire — restores the happens-
+        // before edge that the pre-F10 `head.load(Acquire)` supplied (see
+        // the module doc's F10 ordering supplement). On x86-TSO this is a
+        // plain `mov` (identical to the old `Relaxed`); on aarch64 it is
+        // one `ldapr` instead of `ldr`.
+        let ch = self.cached_head().load(Ordering::Acquire);
         if t.wrapping_sub(ch) < RING_CAP as u32 {
             // Shadow proves room exists (stale-low cached_head only makes
             // this branch LESS likely to fire, never falsely fire — see the
@@ -1017,7 +1086,12 @@ impl RemoteFreeRing {
         #[cfg(feature = "bench-internals")]
         DBG_RING_PUSH_SHADOW_SLOW.fetch_add(1, Ordering::Relaxed);
         let h = self.head().load(Ordering::Acquire);
-        self.cached_head().store(h, Ordering::Relaxed);
+        // R34-6 (task #525, finding F-1): Release — pairs with the fast
+        // path's `Acquire` load so a later producer that reads this
+        // refreshed value carries the consumer's `slot.store(EMPTY)` in
+        // its happens-before past. On x86-TSO this is a plain `mov`
+        // (identical to the old `Relaxed`); on aarch64 it is one `stlr`.
+        self.cached_head().store(h, Ordering::Release);
         if t.wrapping_sub(h) >= RING_CAP as u32 {
             return Err(());
         }

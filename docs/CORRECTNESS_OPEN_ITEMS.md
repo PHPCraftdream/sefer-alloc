@@ -1849,3 +1849,37 @@ assertion proving no double-release but not no leak, was resolved by R28-2
    - **Open follow-up kept:** item 11's `npm run check` coverage-gap half
      remains OPEN above (the bugs are fixed but the question of why the
      local gate did not catch them is not).
+
+12. **F10 shadow-head ordering gap — finding F-1**
+   (`docs/reviews/2026-08-04-release-stabilization-audit.md`, finding F-1
+   [medium]) — **RESOLVED** by R34-6 (task #525). The F10 shadow-head fast
+   path in `RemoteFreeRing::full_check`
+   (`src/alloc_core/remote_free_ring.rs`) replaced every push's pre-F10
+   `head.load(Acquire)` with a `cached_head.load(Relaxed)` on the
+   producer's own cache line. The module doc's value-domain proof
+   (`cached_head <= head` always, so the fast path can only under-estimate
+   occupancy) was correct, but the ordering role the removed load played
+   was never addressed: under the abstract memory model, a producer P that
+   takes only the fast path carries no happens-before chain to the
+   consumer's `slot.store(EMPTY)`, so the consumer's clear and P's
+   `slot.store(offset)` into a recycled slot are unordered. NOT a data
+   race (both atomic on the same `AtomicU32`) — a potential
+   lost-update/liveness defect, confirmed NOT realizable on any hardware
+   Rust targets (x86-TSO, ARMv8, RISC-V RVWMO, POWER cumulativity).
+
+   - **Resolution (variant a — promote ordering):** the two `cached_head`
+     accesses in `full_check` were promoted from `Relaxed` to
+     `Acquire`/`Release`, restoring the exact happens-before edge the
+     removed `head.load(Acquire)` supplied, on the same producer-owned
+     cache line.
+   - **Cost measurement:** byte-for-byte identical assembly on x86-64
+     (verified via `objdump` — both `Acquire` load and `Release` store
+     compile to the same `mov` as `Relaxed`); wall-clock A/B (5 runs each)
+     showed fully overlapping ranges (Relaxed: 5.65–6.10 µs, A/R:
+     5.75–6.54 µs; `benches/r34_6_remote_ring_cached_head_ordering_gate.rs`).
+   - **Also:** the staleness precondition (~2³² consumer advances) was
+     explicitly labeled as an ASSUMPTION (not a theorem) in the module
+     doc, per the second independent review's request.
+   - **Commit prefix:** `fix(perf)` per the R30-12 taxonomy — shipping
+     code changed to close a latent ordering/correctness defect, no
+     speedup claimed, no observable behavior change on real hardware.

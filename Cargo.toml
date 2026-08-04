@@ -1759,6 +1759,18 @@ name = "r13_6_exact_span_reserved_capacity_wallclock"
 harness = false
 required-features = ["alloc-core", "alloc-decommit"]
 
+# R34-6 (task #525): cost gate for promoting `cached_head`'s ordering in
+# `RemoteFreeRing::full_check` from Relaxed to Acquire/Release (finding F-1,
+# release-stabilization audit). Exercises the raw ring's push→full_check
+# fast path directly — requires `internals` for the `remote_free_ring` module
+# path, `alloc-xthread` for the ring methods, and `bench-internals` for the
+# `DBG_RING_PUSH_SHADOW_FAST`/`_SLOW` path-activation oracle. See the bench
+# file's module doc for the A/B (two-worktree) measurement protocol.
+[[bench]]
+name = "r34_6_remote_ring_cached_head_ordering_gate"
+harness = false
+required-features = ["alloc-core", "alloc-xthread", "internals", "bench-internals"]
+
 # Task #52: tokio async burn-in — SeferAlloc as #[global_allocator] under a
 # real tokio multi-thread runtime with a DBMS-pipeline-like async workload.
 # All tokio-internal allocations also go through SeferAlloc.
